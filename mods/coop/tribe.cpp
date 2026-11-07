@@ -47,7 +47,7 @@ constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit t
 static uintptr_t a_TreeVt;    // Simulator::cTreeData::vftable (main vtable)
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
-    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe;
+    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe, a_MaxPop;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -1049,6 +1049,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CitizenVt = H->sym("Simulator::cCreatureCitizen::vftable");
     a_TreeVt = H->sym("Simulator::cTreeData::vftable");
     a_SpawnNpcTribe = H->sym("Simulator::SpawnNpcTribe"); // BUG-0381 (optional)
+    a_MaxPop = H->sym("SporeCoop::cTribe_MaxPopulation"); // BUG-0645 (optional)
     g_ok = a_GetPlayerTribe && a_DoAction && a_SetValueVector3 && a_BTTick && a_DoActionForObjects && a_WalkSelected &&
            a_SetSelected && a_CreateCitizen && a_AddMember && a_CitizenVt && a_TreeVt;
     if (!g_ok) {
@@ -4310,9 +4311,10 @@ std::string list()
         net::Vec3 p = tribe_pos(tribes[ti]);
         auto ms = members(tribes[ti]);
         TribeInfo ti_info = tribe_info(tribes[ti]); // the members' species (BUG-0381 tests)
-        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d\n", (unsigned)ti,
-                 tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
-                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]));
+        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d level=%d cap=%d\n",
+                 (unsigned)ti, tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
+                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]), F<int>(tribes[ti], 0x38),
+                 a_MaxPop ? thiscall<int>(a_MaxPop, tribes[ti]) : -1);
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);

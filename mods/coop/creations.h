@@ -90,7 +90,12 @@ struct Model {
     Key key; // {} = do not build it here
 };
 Model ensure_model(const Key& model, ModelKind kind, bool allow_copy = true);
-std::string content_status(); // the counters of ensure_model, for the tests and the support trace
+std::string content_status();
+// BUG-0647: guest: the key a mirror of the host's design `k` is built from (a key of ours for a design of
+// the host's own My Creations, else k); *pending: asked the host, no answer yet (do not build it yet)
+Key host_design(const Key& k, ModelKind kind, bool* pending);
+std::string design_status();
+std::string model_hash(const Key& k); // tests: the hash of the bem record this game answers for k // the counters of ensure_model, for the tests and the support trace
 bool content_all_kinds(); // the switch content.all_kinds (off: 0.7.3.5 for the new call sites)
 
 // BUG-0341: creatures with parts of the "Creepy & Cute" pack on a game without it (the game faulted

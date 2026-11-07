@@ -366,6 +366,9 @@ COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's veh
 constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
 constexpr uint32_t kTurretNoun = 0x0436F342;
 constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
+// BUG-0647: the vehicle's model key {instance, type, group} (its model object +0x34, +0x90: what cVehicle::Load
+// 0xCA67C0 sets through vt 0x94 of +0x34; runtime: +0xC4 holds the design instance, coop.memfind)
+constexpr uintptr_t kVModelKey = 0xC4;
 constexpr double kShotSend = 0.2, kShotKeep = 0.25, kShotFireEvery = 0.1;
 static uintptr_t a_FireTool, a_ToolMgrGet;
 struct Shot {
@@ -3362,6 +3365,15 @@ static bool mirror_design(void* civ, int purpose, int loco, uint32_t key[3])
     }
     if (!key[0])
         return true; // the game's own design for that purpose and locomotion (it generates one)
+    if (!g_veh_force) { // BUG-0647: the host's own design, sent by the host, under a key of ours
+        bool pending = false;
+        creations::Key hk = creations::host_design({key[0], key[1], key[2]}, creations::kMkVehicle, &pending);
+        if (pending)
+            return false; // asked the host: the mirror comes with its answer (the next state cycle)
+        key[0] = hk.instance;
+        key[1] = hk.type;
+        key[2] = hk.group;
+    }
     creations::Model m = creations::ensure_model({key[0], key[1], key[2]}, creations::kMkVehicle);
     if (m.key.instance) {
         g_veh_design_checked++;
@@ -3375,6 +3387,33 @@ static bool mirror_design(void* civ, int purpose, int loco, uint32_t key[3])
                "game's own design of that purpose and locomotion (BUG-0469)", key[0]);
     key[0] = key[1] = key[2] = 0;
     g_veh_design_fallback++;
+    return true;
+}
+
+// BUG-0647: a vehicle of this game's loaded copy of the host's world bound as a mirror: its model is the key
+// the save names (the host's own design id), which this game resolves to its own creation of that id. The
+// host's design under our key replaces it (the model object's SetModelKey, vt 0x94 of +0x34, as
+// cVehicle::Load 0xCA67C0 sets it). false: asked the host, no answer yet (do not bind it yet).
+static unsigned g_bound_redesigned;
+static bool bound_design(void* v)
+{
+    uint32_t* mk = &F<uint32_t>(v, kVModelKey);
+    if (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != 0x24682294)
+        return true;
+    bool pending = false;
+    creations::Key hk = creations::host_design({mk[0], mk[1], mk[2]}, creations::kMkVehicle, &pending);
+    if (pending)
+        return false;
+    if (hk.instance == mk[0])
+        return true;
+    creations::Model m = creations::ensure_model(hk, creations::kMkVehicle);
+    if (!m.key.instance)
+        return true; // cannot be built here: it keeps the model it has
+    uint32_t k[3] = {m.key.instance, m.key.type, m.key.group}, was = mk[0];
+    void* sp = (uint8_t*)v + kVSpatial;
+    vcall<void>(sp, 0x94 / 4, (const uint32_t*)k);
+    g_bound_redesigned++;
+    H->log(M, SK_INFO, "civ: a bound vehicle's model %08X is the host's own design: %08X here (BUG-0647)", was, k[0]);
     return true;
 }
 
@@ -3440,6 +3479,8 @@ static void guest_state(net::Reader& r)
                 v = lv;
             }
         }
+        if (v && !bound_design(v))
+            continue; // BUG-0647: the host's answer for its model first (bound on a later cycle)
         if (!v) {
             void* civ = thiscall<void*>(a_CivByPol, nm(), m.pol);
             uint32_t key[3] = {0, 0, 0};
@@ -3929,9 +3970,10 @@ std::string list()
               oz = otype >= 0 ? *(float*)(ob + 12) : 0;
         snprintf(b, sizeof b,
                  "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d "
-                 "opos=(%.1f %.1f %.1f) scale=%.2f\n",
+                 "opos=(%.1f %.1f %.1f) scale=%.2f model=%08X\n",
                  id, v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
-                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz, game::object_scale(v));
+                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz, game::object_scale(v),
+                 F<uint32_t>(v, kVModelKey));
         out += b;
         auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
@@ -4057,12 +4099,12 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b,
                  "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
                  "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u world_changes=%u "
-                 "mirror_designs=%u veh_fallback=%u build_skipped=%u\n",
+                 "mirror_designs=%u veh_fallback=%u build_skipped=%u bound_redesigned=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
                  (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
                  (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
                  (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired, g_veh_design_checked,
-                 g_veh_design_fallback, g_build_skipped);
+                 g_veh_design_fallback, g_build_skipped, g_bound_redesigned);
         return b;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
@@ -4074,6 +4116,32 @@ std::string debug(const std::vector<std::string>& a)
             g_veh_force_key[2] = a.size() > 3 ? (uint32_t)strtoul(a[3].c_str(), nullptr, 16) : 0x40646200;
         }
         return std::string("mirror vehicles: the design key ") + (g_veh_force ? "is forced for the tests" : "is the civ's own");
+    }
+    if (a.size() >= 5 && a[0] == "setdesign") { // setdesign <hex pol> <purpose> <loco> <hex inst>: tests (BUG-0647)
+        // the civ's design key of that purpose and locomotion names this vehicle design (a player's own creation)
+        void* civ = thiscall<void*>(a_CivByPol, nm(), (uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        uint32_t* k = civ ? thiscall<uint32_t*>(a_DesignKey, civ,
+                                                skg::cdecl_call<int>(a_DesignId, atoi(a[2].c_str()), atoi(a[3].c_str())))
+                          : nullptr;
+        if (!k)
+            return "no design slot";
+        k[0] = (uint32_t)strtoul(a[4].c_str(), nullptr, 16);
+        k[1] = 0x24682294;
+        k[2] = 0x40646200;
+        return "design set";
+    }
+    if (a.size() >= 4 && a[0] == "vdesign") { // vdesign <hex pol> <purpose> <loco>: that civ's design key (BUG-0647)
+        void* civ = thiscall<void*>(a_CivByPol, nm(), (uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        if (!civ)
+            return "no civilization of that political id";
+        uint32_t* k = thiscall<uint32_t*>(a_DesignKey, civ,
+                                          skg::cdecl_call<int>(a_DesignId, atoi(a[2].c_str()), atoi(a[3].c_str())));
+        if (!k)
+            return "no design";
+        char b[160];
+        snprintf(b, sizeof b, "design %08X/%08X/%08X known=%d\n", k[0], k[1], k[2],
+                 (int)creations::key_known({k[0], k[1], k[2]}));
+        return b;
     }
     if (!a.empty() && a[0] == "content") { // tests (BUG-0469): the model checks of the mirrors
         return creations::content_status();
