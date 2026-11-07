@@ -310,6 +310,17 @@ struct WalkPlace {
     float lead_speed = 0.f;
 };
 constexpr float kCatchTime = 0.25f;     // s
+// BUG-0650 (`coop.fix drive.lead_draw`): catch_prop's catch-up is held so that a frame never draws (the placing's step
+// from where the game's walk had the body plus the game's walk of the next frame) more than kDrawK x the remote's speed
+// + kDrawRate m/s (never under 0.7.8's catch_up). A walk that starts in a latency spike of the player network (+250 ms)
+// is known 0.3-0.4 s late; its lead target is then 3.6-3.8 m ahead (where the sender's body is now) and catch_prop
+// closed it at the full speed + catch_up on top of the walk: 3 x 9 + 3 m/s, 0.87-0.95 m frames at 30 fps, over the
+// test's 3 x the top speed (tribe_walk_player). With the bound such a start is closed at 14.5 m/s (9 m/s walk) in
+// ~0.25 s instead of ~0.2 s; an ordinary start's 1-1.5 m error (err / kCatchTime 4-6 m/s) is closed as before.
+// The target is not touched (smoothing it trailed and went stop-and-go, BUG-0619). Off: M1's catch_prop.
+inline bool g_lead_draw_fix = true;
+constexpr float kDrawK = 2.5f;
+constexpr float kDrawRate = 1.f; // m/s
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
 
@@ -374,8 +385,11 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         return;
     }
     float catch_up = o.catch_up;
-    if (o.catch_prop && net::g_lead_fix)
+    if (o.catch_prop && net::g_lead_fix) {
         catch_up = std::max(catch_up, std::min(err / kCatchTime, sp + o.catch_up));
+        if (g_lead_draw_fix) // BUG-0650: walk + sp + catch_up <= kDrawK x sp + kDrawRate
+            catch_up = std::min(catch_up, std::max(o.catch_up, kDrawK * sp + kDrawRate - sp - walk_sp));
+    }
     float max_step = (sp + catch_up) * (float)dt;
     if (o.lead_speed > 0)
         max_step = std::min(max_step, std::max(0.f, 2.f * o.lead_speed + catch_up - walk_sp) * (float)dt);
