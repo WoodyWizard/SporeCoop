@@ -16,8 +16,9 @@ cell`), the token is gone in the host's game, and the host's game has the part t
 shared set, parts.shared_cell).
 
 Not every token can be collected at a given moment by either game: in about 15 of 20 tries the host's own touch
-of the same token failed too (lab 20261106-010456, -011422, -012210, -013445, -014745; neither the token's level nor its graphics object
-explained which). The test then tries the next token (at most 4); it FAILS only when the host's game collects
+of the same token failed too (lab 20261106-010456, -011422, -012210, -013445, -014745). CORRECTION (2026-11-07,
+fix/w46-part-token): the cause was the game's "Goldie's demise" tutorial, started by the test's own food steps, which
+leaves both avatars' collect locks set (see main); the test now marks it played first. The test then tries the next token (at most 4); it FAILS only when the host's game collects
 a token the guest's could not, or when the guest's collect does not reach the host. When no collectable
 token turns up it fails on "a part token one of the games can collect was found": a setup failure, not this
 bug (the suite runs it in 'extended' only).
@@ -105,6 +106,12 @@ def main():
     host, guest = start('cell')
     ck = Checks()
     ck(wait(lambda: playing(host) and playing(guest), 40), 'both games play (the hatch is over)')
+    # The food the search adds (`coop.pool food 40`) passes 120-150 once: the game's one-time "Goldie's demise"
+    # tutorial (AddFoodPoints 0xE7CE10 -> 0xE79720) then left both avatars' locks set (+0x178 among them) and
+    # 0xE7B630 collected no token in either game (lab 20261107-013013: own_locks 0010 on both before every touch;
+    # the FAILs of 20261106-231404 / 20261107-004042). The test marks it played on both games (S+0x68).
+    for con in (host, guest):
+        con.call('coop.pool mate nogoldie')
     tried, result = set(), None
     for attempt in range(4):
         found = find_tokens(host, guest, tried)
