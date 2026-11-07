@@ -349,3 +349,18 @@ thread then runs the jmp's operand bytes as code.
   the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
   had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
 * Test: `kit_hooksplit` (kit_freeze.py --case hooksplit; SPORE_FIX_OFF=hookfirst fails).
+
+## One long frame is not "Present lost" (2026-11-07, fix/w46-s1-sweep)
+<a id="modkit-present-hitch"></a>
+
+* The frame source fallback (d3d9hook.cpp frame_from_game_loop, docs/06-testing.md#testing-log-gates "hitch") took
+  over when the time since the last Present was over kPresentLostSec (2 s). One long frame (a 2.5 s hitch at the game
+  saved box, a save, `kit.test.hang 2600`) was enough: the first game loop pass after it came 2.5 s after that frame's
+  Present, the fallback ran one frame from the loop (a WARN "Present has not reached SporeKit for 2 s (another overlay
+  took it over?)", on-screen labels off) and the next Present 1 ms later switched back (BUG-0653: 32 lab runs of
+  team, chat_pause, select, frames_loop, ...).
+* Now the fallback also needs kPresentLostPasses (10) game loop passes since the last Present. An overlay that took
+  Present over leaves 30-60 passes a second (the fallback comes at the same 2 s); one long frame leaves one.
+  `frames.source loop` (tests) is not gated. Switch `kit.fix presentlost 0`: the time alone (SporeKit 0.3.11).
+* Test `kit_present_hitch` (FAIL with SPORE_FIX_OFF=kit.presentlost: 3 WARN lines after three 2.6 s frames, lab
+  20261107-114245; PASS: none, the frames stay on Present, lab 20261107-114514).

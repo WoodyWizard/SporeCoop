@@ -2406,3 +2406,24 @@ BUG-0671. GOG 2024, Ghidra and lab lane 5.
   the host pairs it with a baby its own game makes within 4 s within 6 m (the relayed effect's) or makes it itself with
   0xCD74A0, and the member is the buyer's. Test tribe_guest_baby (FAIL 20261107-104918, PASS 20261107-104809) and
   tribe_guest_baby_noeffects (the relay off: see the ticket).
+
+## Each tribe's leader in a guest's game (2026-11-07, fix/w46-s1-sweep)
+<a id="tribe-leader-sync"></a>
+
+* ✔ `cTribe::SetChieftain` GOG 2024 **0xC8FEE0** (GOG 2016 0xC8FED0; `SporeCoop::cTribe_SetChieftain`): thiscall(tribe,
+  citizen) ret 4; citizen 0 = the first member of +0x340..+0x344 for which 0xC0B8D0 is true and +0xB5E is 0. It calls
+  SetLeader 0xC007A0 (+0x11C), sets the chief scale (spatial vt 0x40 of citizen vt 0x80(0)) and SetSpecializedTool(0xB).
+  The old leader keeps its staff and size (nothing resets it). GetLeader 0xC00790 (`mov eax,[ecx+0x11C]`),
+  cTribe::GetChieftain 0xC8FEC0, cCreatureCitizen +0x1010 city / +0x1014 tribe getter 0xC233F0.
+* ✔ (lab) The leader was each game's own: a guest's mirror of an NPC tribe's musician (the host's member held tool 6)
+  led its tribe in the guest's game (BUG-0652: "fields: tribe_member_tool N tool: applied 6.000, the game reads
+  11.000" in 55 runs, tribe_walk_player in 22 of 66). It kept the chief's staff (tribe.leader_tool, BUG-0583), the
+  mirror of the host's leader had a staff too. ✔ (lab 20261107-114312) right after a guest's load an NPC tribe of its
+  game had no leader at all ("the leader was none") until the field set one.
+* Fix `tribe.leader_sync`: the members' field kind (tribe_member, kid 2) has a `leader` field (2 = leads, 1 = not:
+  values under 0.001 are not sent, fields_wire::sane); the guest calls SetChieftain on the mirror of the host's
+  leader. The kind is applied before the tools' (kid 5) in the same pass, so the old leader takes its tool at once.
+  ? Side note: a tool 0 is never applied either (the same sanity range): a mirror keeps a tool its host member put
+  down (not seen as a problem; the members change tools, they do not drop them).
+* Test tribe_leader_sync (`coop.tribe chief <id>` on the guest: SetChieftain on a mirror, the state the lab saw):
+  FAIL with the fix off 20261107-114534 (the guest's #5 kept leading 15 s), PASS 20261107-114426 (1.1 s).

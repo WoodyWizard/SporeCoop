@@ -4698,3 +4698,31 @@ task for outside the frame queued just before). Turn the hold off at the end (`s
 session or world change. Frames are checked with the `frame` command 5 s and 15 s later. With `kit.outpump` off a caught
 fault inside a frame with an outside task pending freezes the mod (the game's message loop never returns): any test can
 show that, this one does on purpose.
+
+## Lab log signals that are not bugs, and detector classes (2026-11-07, fix/w46-s1-sweep)
+<a id="testing-log-signals"></a>
+
+From the S1 lab log sweep (703 runs, 2026-11-05/06) and the runs since:
+* `world: cinematic 8915F9BB still playing at the load: ended it` (about 1600 lines, every run that loads from the
+  menu): the galaxy menu's own intro, ended in the menu before a load on purpose (world.cpp end_menu_intro, docs/re/space.md
+  7.9). Now an INFO line "the galaxy menu intro (8915F9BB) ended at the load, in the menu" (BUG-0654). The same intro "in a
+  stage" (about 1000 lines) stopped with world.intro_at_once (BUG-0626): 0 lines in the 0.7.10 runs. Any other
+  cinematic ended by force stays a WARN (one: F6A4B1E1 before a held editor, BUG-0404's designed step).
+* `net: the session with the host ended: connection to host lost (timeout)` / `no answer from host (timeout)` on a
+  guest: in all 8 cases (2026-11-04..06) the host's game had crashed or stopped first (its log ends 29-30 s earlier:
+  crash tests with a fix off, a dev branch's double hook, a host hang in rel/0.7.8): the guest's timeout is right
+  (BUG-0655). Look at the host's log end before suspecting the guest.
+* `game fixes: skipped the tribe camera set-up without a simulator camera`: 7 of 7 cases (2026-11-01..05) within 0.1 s
+  of a Tribe load with the menu intro playing into the stage (BUG-0607 / BUG-0626 class); 0 in 1905 Tribe loads since
+  BUG-0626's fix. The line now names the mode and the playing cinematic (BUG-0656).
+* `frames: Present has not reached SporeKit for 2 s` right after a hitch over 2 s: fixed (kit.fix presentlost,
+  docs/02-modkit.md#modkit-present-hitch, BUG-0653).
+* Detector classes (BUG-0657; `persist` = the next sample of the run still has it): Civ projectiles and AoE areas
+  (default_tool, resource, cultural, default_ao_e_area; persist 0-25 %, only in fights) are shots relayed in 0.2 s
+  batches that live under 2 s (BUG-0477 / BUG-0530: by design); Civ `state:civ_only` (persist 0 of 11) and
+  `state:player_cities` (0 of 4) come with a capture or a new city on the host and are gone in the next sample
+  (transient); `Creature:state:species_killed` (0 of 7) is a kill the guest's game counts a moment later: now compared
+  with the guest's second dump (worlddiff, as species_only); `Space:noun_only_host:city_walls / city_territory` (and
+  the planet's cities, buildings, vehicles, herds) are a planet's surface loaded by a game whose camera is on it: not
+  compared in the whole list in Space (worlddiff SPACE_PLANET_LOD); Space `default_beam_projectile` in the host's
+  game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open).
