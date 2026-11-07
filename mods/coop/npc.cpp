@@ -1801,10 +1801,6 @@ static void guest_tick(double now)
                 o.snap = 2.5f;
                 o.keep_lost = true;
                 o.catch_prop = true; // BUG-0425
-                // BUG-0445: while the late lead catches up (walked at up to 2x) a frame draws at most 2 x the NPC's own
-                // speed + catch_up (as the Tribe member mirrors, BUG-0651)
-                if (net::g_lead_late_npc_fix && px.buf.late_catching())
-                    o.lead_speed = std::max(drive::speed(vel) / px.buf.late_rate(), 0.5f);
                 o.variant = g_walk_variant;
                 drive::walk_place(px.c, s.pos, s.rot, vel, px.drv, now, o);
                 walked = true;
@@ -2255,7 +2251,6 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.health = sp.health;
         px.buf.delay = 0.15;
         px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
-        px.buf.late_lead = true; // BUG-0445: a late state brought in over time (drive.lead_late_npc)
         px.buf.push(s, now);
         px.last_rx = now;
         break;

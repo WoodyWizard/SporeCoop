@@ -176,13 +176,6 @@ constexpr int kLateSteps = 16; // candidate times between the earliest and the s
 // 0.23 s (p90) behind M1's raw lead, p90 2.12 m against the raw lead's 1.65 m (lab 20261107-080850 #1). A start in a
 // spike or after states lost or dropped as old (0.25-0.4 s over the usual) is brought in as before. Off: 0.7.9.
 inline bool g_lead_keep_fix = true;
-// BUG-0445 (K3, `coop.fix drive.lead_late_npc`): the host's NPC proxies' lead goes through drive.lead_late too (a buffer
-// with late_lead). Their lead target jumped 2.1-3.4 m in one frame when a walking state came late over the player
-// network (a spike, a loss burst) and walk_place's snap teleported the proxy there: npc_walk_tribe at 30 fps over
-// SPORE_NET=player, 6 jumps of 2.5-3.4 m in 32 ms frames, every one a target step of the same size with a driver teleport
-// (lab 20261107-103414 #1, track npc_walk_tribe_20261107-103605.json): BUG-0650's mechanism, fixed for the members only.
-// Off: the proxies' raw M1 lead (0.7.9).
-inline bool g_lead_late_npc_fix = true;
 constexpr double kKeepRate = 1.0;
 constexpr double kKeepTau = 0.25; // s
 constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's one-way latency line with the fix
@@ -196,7 +189,6 @@ public:
     bool lead = false;         // BUG-0425: shown where the sender has it now (g_lead_fix)
     double max_extrap = 0.25;  // extrapolation limit (s)
     float smooth_max = 0;      // BUG-0619: a lead jump up to this (m) is smoothed (g_lead_smooth_fix); 0 = never
-    bool late_lead = false;    // BUG-0445: the lead through late_time (g_lead_late_npc_fix) without smooth_max's rules
     // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
     // creature was put somewhere else (the hatchling out of its egg 5-11 m, a respawn at the nest), not a
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
@@ -354,8 +346,7 @@ private:
         if (lead && g_lead_fix) {
             double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            const bool late = g_lead_late_fix && g_lead_smooth_fix &&
-                              ((smooth_max > 0 && !jittery_) || (late_lead && g_lead_late_npc_fix));
+            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && !jittery_;
             if (late)
                 tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead

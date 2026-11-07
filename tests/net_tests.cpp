@@ -632,19 +632,15 @@ static void test_interp_gap()
 // BUG-0650 (drive.lead_late): a Tribe member's walk that starts in a latency spike (its first walking state 0.35 s
 // late instead of 0.05 s) moved M1's lead target 3 m in one frame; with the fix the target steps no more than a walk
 // and is at the lead again within 1.5 s
-static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool npc = false)
+static float lead_late_max_step(bool fix, double spike_end, float* end_err)
 {
-    const bool was = g_lead_late_fix, was_npc = g_lead_late_npc_fix;
+    const bool was = g_lead_late_fix;
     const double was_ow = g_one_way;
-    if (npc) // BUG-0445: an NPC proxy's buffer (no smooth_max, late_lead), switched by drive.lead_late_npc
-        g_lead_late_npc_fix = fix;
-    else
-        g_lead_late_fix = fix;
+    g_lead_late_fix = fix;
     SnapshotBuffer b;
     b.delay = 0.2;
     b.lead = true;
-    b.smooth_max = npc ? 0.f : 6.f;
-    b.late_lead = npc;
+    b.smooth_max = 6.f;
     g_one_way = 0.05;
     // the sender sends every 1/30 s; the body stands until sender time 3.0, then walks at 9 m/s along x
     auto state = [](double st) {
@@ -687,7 +683,6 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool
     // where the sender's body is now (+ one-way): sender time now - 10 + 0.05
     *end_err = std::fabs(o.pos.x - (float)((15.9 - 1.0 / 30 - 10.0 + 0.05 - 3.0) * 9.0));
     g_lead_late_fix = was;
-    g_lead_late_npc_fix = was_npc;
     g_one_way = was_ow;
     return max_step;
 }
@@ -705,13 +700,6 @@ static void test_lead_late()
         // draws a jump at 3 x
         CHECK(on < (g_lead_keep_fix ? 0.7f : 0.6f));
         CHECK(err_on < 0.5f); // and it is at the lead again
-        // BUG-0445: the same for an NPC proxy's buffer
-        on = lead_late_max_step(true, spike_end, &err_on, true);
-        off = lead_late_max_step(false, spike_end, &err_off, true);
-        printf("  NPC proxy (drive.lead_late_npc): fix %.2f m (end error %.2f), 0.7.9 %.2f m\n", on, err_on, off);
-        CHECK(off > 2.f);
-        CHECK(on < 0.7f);
-        CHECK(err_on < 0.5f);
     }
 }
 
