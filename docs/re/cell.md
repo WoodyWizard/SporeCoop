@@ -1789,3 +1789,13 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
   the new cell (BAF1AD40 x16-18), none of the previous one is left, and every creature is of levels 9-11 (labs
   20261106-221411, -221722). A rebuild populates about twice as many creatures as the level had after its slow
   growth (39 -> 73-78).
+
+### The guest's cell against the host's NPCs and the partner (BUG-0634)
+<a id="cell-push"></a>
+
+* ✔ (runtime, `coop_cell_push.py`, `coop.pool gap`) A guest's own cell swimming into a mirror of the host's NPC
+  (AI-locked, placed at the host's pose, with its soft body) is pushed off as the host's cell is by its own NPC:
+  closest centre distance 0.67 vs 0.65 of the two sizes (median of 6 each, 46-114 collision pairs per push; lab
+  20261106-222954). Pairs with a partner's puppet are dropped on both games (h_Pair, `pairs_skipped`), so the
+  partners swim through each other; with both players on the same cell model the partner looks like an NPC of the
+  own species.
