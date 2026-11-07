@@ -60,6 +60,11 @@ def sync_counts(con):
     return tuple(int(x) for x in m.groups()) if m else (0, 0, 0, 0)
 
 
+def bodies_sent(con):
+    m = re.search(r'bodies_sent=(\d+)', con.call('coop.tribe')['out'])
+    return int(m.group(1)) if m else 0
+
+
 def sync_keys(con):
     return {ln.split()[0] for ln in con.call('coop.sync')['out'].splitlines() if ln.split() and ln.split()[0][:1] == 't'}
 
@@ -81,17 +86,20 @@ def rejoin_with_body(host, guest, ck, victim, attacker):
     together = wait_guest_in(host, guest, 150)
     ck(together, f'the guest is in the host\'s world again ({time.time() - t0:.1f} s)')
     body_checks, missing = 0, []
-    t1 = time.time()
+    t1, sent = time.time(), bodies_sent(host)
     while time.time() - t1 < 24:
         in_list = victim in members(host)
         hk, gk = sync_keys(host), sync_keys(guest)
         key = f't{victim}'
-        body = not in_list and key in hk
-        print(f'    {time.time() - t1:4.1f} s: victim in its tribe {in_list}, host lists {key} {key in hk}, guest '
-              f'{key in gk}; host t {len(hk)} guest t {len(gk)}', flush=True)
+        # the host's game keeps the body: its snapshot still sends one (tribe.member_body, bodies_sent grows)
+        now_sent = bodies_sent(host)
+        body = not in_list and now_sent > sent
+        sent = now_sent
+        print(f'    {time.time() - t1:4.1f} s: victim in its tribe {in_list}, body sent {body}, host lists {key} '
+              f'{key in hk}, guest {key in gk}; host t {len(hk)} guest t {len(gk)}', flush=True)
         if body:
             body_checks += 1
-            if key not in gk:
+            if key in hk and key not in gk:
                 missing.append(round(time.time() - t1, 1))
             host.call('coop.diag sync now')
         time.sleep(4)
