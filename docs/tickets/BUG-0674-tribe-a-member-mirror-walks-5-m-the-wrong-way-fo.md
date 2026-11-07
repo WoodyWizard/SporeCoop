@@ -1,6 +1,6 @@
 ---
 id: BUG-0674
-title: Tribe: a member mirror goes on the wrong way for 0.5 s when the host's member turns round inside a latency spike (body_trail_tribe_player: 8-9 m off, over 2 m 1.0-1.2 s)
+title: Tribe and Creature: a remote body goes on the wrong way through a latency spike (the lead extrapolates up to 0.6 s at the old speed while the host body slows or turns): members 8-9 m off, NPC proxies teleported 2.5-5.6 m
 status: open
 kind: desync
 stage: Tribe
@@ -11,10 +11,10 @@ versions: unreleased (rel/0.7.10 + fix/w46-k3-bodies)
 fixed_in:
 branch:
 commits:
-tests: body_trail_tribe_player
+tests: body_trail_tribe_player, npc_walk_tribe at SPORE_FPS=30 SPORE_NET=player
 signature:
 docs:
-related: BUG-0410, BUG-0425
+related: BUG-0410, BUG-0425, BUG-0445
 ---
 
 ## Report
@@ -38,3 +38,4 @@ How to tell it in a run: a member's worst samples of 8-9 m at 4-10 m/s in body_t
 - 2026-11-07: opened.
 - 2026-11-07: opened (fix/w46-k3-bodies, K3), not fixed there.
 - 2026-11-07 (fix/w46-k3-bodies): cause observed in the two runs (the lead's extrapolation through a spike while the host's member turned round); a known limit of the lead, left open for 0.7.11.
+- 2026-11-07 (fix/w46-k3-bodies): the after-part fixed for members (drive.lead_keep: no step back when continuity is lost, net_tests: over 2 m 0.67 s -> 0 s after the news); the extrapolation itself stays. The same mechanism makes walked NPC proxies jump 2.5-5.6 m over the player network (BUG-0445's variant, npc_walk_tribe labs 20261107-103414, -112016, -112016-2: on 0.7.9 and 0.7.10 alike). Open for 0.7.11: a lead that slows past the usual horizon, or a smaller kMaxLead for proxies.

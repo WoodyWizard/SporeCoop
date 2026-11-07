@@ -9,12 +9,12 @@ source: lab 20261101-180236, 20261101-183139, 20261101-184014 npc_walk_tribe, la
 role: guest
 versions: main 6ac351e
 fixed_in:
-branch: fix/w45-remote-bodies-2
+branch: fix/w46-k3-bodies
 commits:
 tests: npc_walk_tribe (tools/tests/coop_npc_walk.py)
 signature:
-docs:
-related: BUG-0361
+docs: docs/re/tribe.md#tribe-lead-keep
+related: BUG-0361, BUG-0650, BUG-0674
 ---
 
 ## Report
@@ -37,7 +37,7 @@ Not reproduced on 0.7.9 (rel/0.7.9 + M1's drive.lead). Observed (2026-11-06, fix
 None needed on 0.7.9. A lead smoothing (drive.lead_smooth: a new state's step of the lead target spread over 0.25 s) was written and removed: no run without it failed.
 
 ## Verification
-no-fail-run: not reproduced in 8 runs (out/lab/20261106-060825, -061720, -060427); the test stays in the suite.
+no-fail-run: not reproduced in the reported conditions (clean network, both games at full speed) on the 0.7.10 code: npc_walk_tribe out/lab/20261107-101948 3 of 3 (lane 6), 0 jumps; earlier 8 of 8 on 0.7.9 (below). Over the low fps / bad network variant (SPORE_FPS=30 SPORE_NET=player) it fails, also on 0.7.9's driving: out/lab/20261107-103414 0 of 2, -112016 (lane 6) and -112016-2 (lane 7, SPORE_FIX_OFF=drive.lead_late_npc, the 0.7.9 proxies' lead) alike: that is BUG-0674's mechanism (the lead extrapolated through a latency spike or loss burst while the NPC slows or turns: the lead target 4-5 m off when the next state comes, walk_place's snap teleports the proxy there), now tracked there.
 
 ## History
 - 2026-11-01: opened (fix/w35-monitor-gates, seen in its regression runs).
@@ -49,3 +49,4 @@ no-fail-run: not reproduced in 8 runs (out/lab/20261106-060825, -061720, -060427
   The lead removes the 0.15 s delay of the target, not the guest's own collisions (this ticket's steps of several
   proxies in the same frame: the herd pushing, inferred). Not reproduced, not marked fixed (one run).
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): 8 of 8 PASS on 0.7.9 code; the branch's own FAILs traced to a tried BUG-0409 change (removed); closed not-reproduced.
+- 2026-11-07 (fix/w46-k3-bodies, K3): the reported case (clean network) passes 3 of 3; the player-network variant reproduces 2.5-5.6 m proxy jumps on 0.7.9 and 0.7.10 code alike, decomposed from the track (lead target steps, a snap teleport each): the lead through a gap. A fix by drive.lead_late for the proxies (drive.lead_late_npc) was written, measured (no difference A/B) and reverted. Closed not-reproduced for the reported case; the variant goes to BUG-0674.
