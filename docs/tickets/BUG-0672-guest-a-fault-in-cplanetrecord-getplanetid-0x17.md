@@ -61,9 +61,16 @@ Test coop_tribe_world_map.py (suite tribe_world_map), lane 9, runs in the fix/w4
 * FAIL `SPORE_FIX_OFF=tribe.world_map`: 20261107-095148 (the fault, repeated 1221 times by the game; "the frame 2283 was
   cut off ... frames go on": with kit.outpump the frames do not stop).
 * PASS (all on) x3: 20261107-095340.
+* Regressions (lane 9, all on): play_tribe, tribe_coop, tribe_body_teardown, tribe_body_menu, tribe_dead_member,
+  long_tribe_short, detect_tribe 7/7 20261107-100128; tribe_play 5/5 20261107-103459; smoke 20261107-103836 12/14 (ui
+  skipped on one lane; tribe_coop failed once on box-select / gather order, then passed 2/2 in 20261107-110255 and in
+  20261107-100128: flaky, not this change); make test passes.
+* Not verified: tribe_of_index's all_tribes guard on its own (the clear on a world change already empties the mapping in
+  the test); the outpump path with a fault inside a Present-dispatched message (only the cut-off path was run).
 
 ## History
 - 2026-11-07: opened.
+- 2026-11-07: fixed on fix/w46-tribe-load (tribe.world_map, kit.outpump).
 
 ## Observed (2026-11-07, orchestrator)
 
