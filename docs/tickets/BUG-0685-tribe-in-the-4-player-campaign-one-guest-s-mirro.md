@@ -59,6 +59,9 @@ tribe_leader_ko (lane 5): FAIL with `SPORE_FIX_OFF=tribe.mirror_blow` out/lab/20
 once, the caption at 18.8 s); FAIL with `SPORE_FIX_OFF=tribe.mirror_blow,tribe.leader_sync,wsync.tribe_level`
 out/lab/20261107-164852 (not a 0.7.10 regression); PASS out/lab/20261107-164728 and out/lab/20261107-165013 (with
 tribe_coop, tribe_bounce_mirrors, tribe_ko, tribe_leader_sync, tribe_gameover: 6/6). make test passes.
+campaign_tc2 (the campaign's Tribe stage to Civ, 4 players, the log lines only, lab 20261107-163249): the missing
+mirror did not come again (no `t: missing`); the gate failed on `t: 1 apart` (BUG-0410/0674 class) and an NPC proxy
+3 m off, not this ticket.
 
 ## History
 - 2026-11-07: opened.

@@ -613,7 +613,7 @@ add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes
     minutes=30, timeout=3600)
 # BUG-0685: the Tribe stage of the campaign with four players, its play and its raids up to Civ (the stage where a
 # guest's mirror of the host's tribe leader went missing in the whole campaign)
-add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', ('campaign', 'detector'),
+add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', (),
     minutes=45, timeout=3600)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)

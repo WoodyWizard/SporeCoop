@@ -4794,4 +4794,6 @@ game, a test hook); the guest must show no "Alas" caption and keep its input loc
 `coop.tribe pincer` on a chief that still has members with health stops at 0.3 health: knock the others out first.
 `campaign_tc2` (about 40 min, lanes as a 4-player campaign): the campaign from the Tribe fixture to Civ, the 8 minutes
 of play and the raids of the whole campaign's Tribe stage without the 60 minutes before it. The guests' mirror log
-lines (`tribe: mirror #N goes: ... (BUG-0685)`) say when and why a member mirror went or was not made again.
+lines (`tribe: mirror #N goes: ... (BUG-0685)`) say when and why a member mirror went or was not made again. Not in
+any group (run it by name). First run (lab 20261107-163249, lane 4, the log lines without tribe.mirror_blow): no
+`t: missing`, its gate failed on known classes only (`t: 1 apart`, the BUG-0410/0674 class; an NPC proxy 3 m off).
