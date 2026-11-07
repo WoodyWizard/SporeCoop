@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -238,6 +239,15 @@ static std::string track(bool on)
         for (const char* n : {"ntdll.dll", "kernelbase.dll", "kernel32.dll", "ucrtbase.dll", "msvcrt.dll",
                               "api-ms-win-crt-heap-l1-1-0.dll", "msvcr90.dll", "msvcr80.dll"})
             add_sys(n);
+        // the tracker's own functions: stale return addresses of earlier calls lie on the stack above it
+        // (lab 20261106-210804 showed memcensus::remember as a "caller")
+        {
+            uintptr_t f[] = {(uintptr_t)&is_ret, (uintptr_t)&callers, (uintptr_t)&remember, (uintptr_t)&forget,
+                             (uintptr_t)&find, (uintptr_t)&h_alloc, (uintptr_t)&h_free};
+            uintptr_t lo = *std::min_element(std::begin(f), std::end(f)), hi = *std::max_element(std::begin(f), std::end(f));
+            if (g_nsys < 24 && hi - lo < 0x10000)
+                g_sys[g_nsys++] = {lo, hi + 0x400};
+        }
         // the game's allocator (GeneralAllocator: MallocInternal 0x927E70, MallocAlignedInternal 0x928570,
         // MMapMalloc 0x9271A0, the free and chunk helpers around them; its operator new and malloc): the caller
         // of interest is whoever asked it for memory

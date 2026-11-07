@@ -59,9 +59,14 @@ def main():
     ap.add_argument('--solo', action='store_true')
     ap.add_argument('--idle', action='store_true', help='nobody plays (the games stand)')
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--max-slope', type=float, default=None,
+                    help='FAIL when a game\'s free address space falls faster than this (MB per minute, least squares '
+                    'over the censuses from the second one on: the first minutes are the load\'s own)')
     ap.add_argument('--tour', default='', help='host, guest or host,guest: that avatar goes to a new place of the '
                     'planet every --hop seconds (a fixed sequence: comparable runs), nobody else plays')
     ap.add_argument('--hop', type=float, default=20)
+    ap.add_argument('--respawn', action='store_true', help='Creature: both games remove the partner\'s puppet every --hop '
+                    's and show it again (`coop.puppet respawn`: as a partner hidden and shown, dead, not responding)')
     ap.add_argument('--places', type=int, default=0, help='the tour cycles over this many places (0: a new place '
                     'every hop): a cache fills on the first round, a leak grows on every round')
     ap.add_argument('--crowd', type=int, default=0, help='Cell: the host puts this many of its cells around its own '
@@ -95,7 +100,7 @@ def main():
     tour = [w for w in a.tour.split(',') if w]
     hops = random.Random(1)  # the same places in every run
     next_hop = t0
-    if not tour and not a.crowd and not a.idle and a.fixture == 'creature':
+    if not tour and not a.crowd and not a.respawn and not a.idle and a.fixture == 'creature':
         import play_creature as pc
         world, sh = pc.World(lane.HOST), pc.Shared()
         sh.exit_result = None
@@ -107,11 +112,18 @@ def main():
     series = {w: [(0.0, first[w]['free_mb'], first[w]['block_mb'])] for w in games}
     last = dict(first)
     next_at = t0 + a.sample * 60
-    nhops = rounds = 0
+    nhops = rounds = total = 0
     if a.crowd:
         host.call('coop.pool food 300')
     while time.time() < deadline and not Monitor.events:
         time.sleep(5)
+        if a.respawn and time.time() >= next_hop:
+            next_hop += a.hop
+            nhops += 1
+            for w, c in games.items():
+                r = c.call('coop.puppet respawn')
+                if nhops <= 1:
+                    print(f'  respawn {w}: {r.get("out", "").strip()[:80]}', flush=True)
         if a.crowd and time.time() >= next_hop:
             next_hop += a.hop
             nhops += 1
@@ -123,6 +135,7 @@ def main():
             next_hop += a.hop
             if a.places and nhops >= a.places:
                 hops = random.Random(1)  # the same places again
+                total += nhops
                 nhops = 0
                 rounds += 1
             v = [hops.gauss(0, 1) for _ in range(3)]
@@ -146,8 +159,10 @@ def main():
                 top = diff(first[w], last[w], 'cat', 4)
                 print(f'  {m:5.1f} min {w}: free {last[w]["free_mb"]} MB block {last[w]["block_mb"]} MB | '
                       + ', '.join(f'{r[3]} {r[0] / 1024:+.0f} MB' for r in top), flush=True)
+    if a.respawn:
+        print(f'  {nhops} puppet respawns on each game', flush=True)
     if tour:
-        print(f'  {nhops} hops of {",".join(tour)}' + (f' ({rounds} rounds over {a.places} places)' if a.places else ''),
+        print(f'  {total + nhops} hops of {",".join(tour)}' + (f' ({rounds} rounds over {a.places} places)' if a.places else ''),
               flush=True)
     for p in players:
         p.join(120)
@@ -169,6 +184,18 @@ def main():
             if r[0] or r[2]:
                 print(f'    who {r[3]:60s} res {r[0] / 1024:+8.1f} MB  com {r[1] / 1024:+8.1f} MB  n {r[2]:+5d}', flush=True)
         print('MEMCENSUS ' + json.dumps({'who': w, 'series': series[w], 'first': first[w], 'last': last[w]}), flush=True)
+    if a.max_slope is not None:
+        for w in games:
+            pts = series[w][1:]
+            if len(pts) < 3:
+                ck(False, f'{w}: at least 3 censuses after the first ({len(pts)})')
+                continue
+            n = len(pts)
+            mx, my = sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n
+            sxx = sum((p[0] - mx) ** 2 for p in pts) or 1e-9
+            sl = sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx
+            ck(-sl <= a.max_slope, f'{w}: the free address space falls {-sl:.1f} MB/min (limit {a.max_slope}; '
+                                   f'{pts[0][1]} -> {pts[-1][1]} MB from {pts[0][0]} to {pts[-1][0]} min)')
     ck(not Monitor.events, 'the games survived the session')
     ck.faults(**games)
     return ck.result()

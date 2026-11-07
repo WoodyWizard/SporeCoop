@@ -4518,3 +4518,35 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
   4`), standing carriers bind both ways; BUG-0617), `tribe_gather_block` (a probe, BUG-0531: no stall seen),
   `npc_nest_backoff` / `npc_nest_backoff_near` (BUG-0562). play_creature's bot: the pack hunts together (no own hunt
   while the partner leads one).
+
+## The address space census: what fills the game's 2 GB (2026-11-06, fix/w46-addr-space)
+<a id="testing-mem-census"></a>
+
+BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is free; the census says **what** took it.
+* `coop.memcensus [depth] [grain] [top]` (any thread, read-only): a VirtualQuery walk grouped by allocation
+  (AllocationBase): `census free_mb= block_mb= regions= allocs= tracked=`, then `cat <kind> n= res_kb= com_kb=` per kind
+  (`image:sporeapp.exe | image:coop | image:sporekit.dll | image:other`, `mapped:lt1M | ge1M | ge16M`,
+  `priv:by:<module>` for private allocations whose maker is known, `priv:untracked:<size>` for the others) and
+  `who <module+rva><<module+rva>... n= res_kb= com_kb=` (the callers, deepest first, of the tracked private allocations).
+* `coop.memcensus track on|off`: a hook on ntdll's NtAllocateVirtualMemory / NtFreeVirtualMemory (test tool, never on
+  by default) remembers every new reservation with up to 6 return addresses found on the stack outside ntdll,
+  kernelbase, kernel32, the CRT, the game's allocator (GeneralAllocator: MallocInternal, MallocAlignedInternal,
+  MMapMalloc and their helpers, its operator new) and the tracker itself. So `priv:by:sporeapp.exe` is the game's own
+  heap (its allocator reserves 16 MB segments and MMapMalloc's big blocks with VirtualAlloc), `priv:by:d3d9.dll` the
+  graphics, `priv:by:coop*.dll` / `sporekit.dll` ours (their CRT heap grows through the same call). Only reservations
+  made while the tracker is on have a maker: compare two censuses of one game, not one census alone. The stack scan is
+  a heuristic (a stale return address can show as a caller; the game's own frames are named only to the nearest
+  `.sym` entry, which is often far away).
+* `tools/tests/coop_mem_census.py` (suite `mem_census*`, extended): both games switch the tracker on, a scripted
+  session runs, a census every `--sample` minutes, at the end the growth per kind and per caller between the first and
+  the last census (`MEMCENSUS {json}` lines with the series). Sessions: the play_creature bots (default), `--solo`
+  (the guest's game is closed first: `coop.leave` alone was not enough, the guest joined again), `--idle`, `--tour
+  host|guest` (that avatar goes to a new place of the planet every `--hop` s with `coop.abilities goto`, the same
+  sequence in every run), `--places N` (the tour cycles over N places: a cache fills in the first round, a leak grows
+  every round), `--respawn` (`coop.puppet respawn` on both every `--hop` s), `--crowd N` (Cell: `coop.pool crowd N 8`
+  every `--hop` s, over 256 cells in the active area: BUG-0355's case).
+* Under Wine the lanes' games have 4 GB (`of 4095 MB` in the perf line) although the GOG 2024 exe has the
+  large-address flag off (Windows: 2 GB): a lab game never runs out; judge the loss, not the free MB.
+* Noise to expect in a census diff: `mapped:ge1M` -24 MB (mappings of the start released in the first minutes),
+  `priv:untracked:ge16M` +-16 MB (one block of before the tracker freed or taken), the game heap growing in 16 MB
+  segments (a step of 16 MB is one segment, not 16 MB of new objects).
