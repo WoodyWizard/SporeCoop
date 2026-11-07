@@ -48,6 +48,8 @@ off`: 0.7.9.
 * FAIL (`SPORE_FIX_OFF=cell.eat_once`): out/lab/20261106-215119, 4 of 4 meals eaten again (1-3 times), and its
   retry 4 of 4.
 * PASS: out/lab/20261106-215503 (#1, #2): 0 eaten again, 3-4 state samples of each eaten cell left out.
+* Area tests: out/lab/20261106-223316 (cell_meat, cell_gone, cell_sync, cell_levelups, cell_new_game OK); with
+  SPORE_DETECTOR=20: out/lab/20261106-223318 (cell_kill_once, cell_eat_once OK, no detector row).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.

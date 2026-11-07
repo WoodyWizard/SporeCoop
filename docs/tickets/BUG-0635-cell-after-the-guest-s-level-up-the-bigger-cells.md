@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8
 fixed_in: unreleased
 branch: fix/w46-cell-p0
-commits: 47969057 1180b8f8
+commits: 47969057 1180b8f8 1a4de972
 tests: cell_levelup_view (coop_cell_levelup_view.py)
 signature:
 docs: docs/re/cell.md#cell-levelup-view
@@ -50,6 +50,11 @@ most of the screen, in both games alike (the cells of the old tier leave in a si
 * FAIL (`SPORE_FIX_OFF=cell.levelup_keep`): out/lab/20261106-220609: the guest lost 100% of the cells on its screen
   on each of 6 changes (host 0-36% on a level down, ~90% up; average 100% vs 42%).
 * PASS: out/lab/20261106-220831 (guest 60%, host 52%; 121-170 cells kept per wipe), 20261106-221058 (29% vs 24%).
+* The final test (the guest teleported once, SPORE_DETECTOR=20): FAIL off out/lab/20261106-224735 (guest 81%, host
+  39%); PASS out/lab/20261106-224058 #1 / #2 (40% vs 43%, 56% vs 55%); the detector shows only BUG-0480 rows and one
+  Cell:pos:cell row inside a level change (BUG-0662, a detector artefact), no churn row.
+* Area tests with the fixes: out/lab/20261106-223316 (cell_new_game, cell_levelups, cell_sync, cell_meat, cell_gone
+  all OK).
 * Earlier runs with one-level steps (no wipe at all) and an on-screen measure: 20261106-215819, -220056, -220333
   (the test was changed to three-level steps and to cells removed from each game's world).
 

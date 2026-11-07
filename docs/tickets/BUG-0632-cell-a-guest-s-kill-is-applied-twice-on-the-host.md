@@ -51,6 +51,8 @@ or break of an index once in 10 s ("refused (killed here already)", `kills_dup_r
   (npc_deaths +4, kills_in 4) and the next 3 times; its retry 3 and 3.
 * PASS: out/lab/20261106-215500 (#1, #2): every kill broken once on the host; the guest left out 10 repeated
   lethal bites.
+* Area tests: out/lab/20261106-223316 (cell_meat, cell_gone, cell_sync, cell_levelups, cell_new_game OK); with
+  SPORE_DETECTOR=20: out/lab/20261106-223318 (cell_kill_once, cell_eat_once OK, no detector row).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
