@@ -203,6 +203,7 @@ add('nest_follow', P + 'coop_nest_follow.py', minutes=8)  # BUG-0640, BUG-0496: 
 add('nest_follow_own', P + 'coop_nest_follow.py --own', minutes=8)  # BUG-0642: the same with the guest on its own creature (another species than the world's): claim, home and heal hold for it
 add('migration_probe', P + 'coop_migration_probe.py --editor', ('extended',), minutes=6)  # BUG-0640 probe: migration property, nest herd, cinematics on both games after DNA and the editors (prints only)
 add('nest_evolve_probe', P + 'coop_nest_evolve_probe.py', ('extended',), minutes=6)  # BUG-0639 probe: an NPC nest after its species died out and after the brain upgrade, on both games (prints only)
+add('family_attack', P + 'coop_family_attack.py', ('extended',), minutes=5, fixture='creature')  # BUG-0639: the guest (world species, then its own creature) bites a family member with real input: the host's family member keeps its health, the guest's game answers it as friendly like the host's
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner

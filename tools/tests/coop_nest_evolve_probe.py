@@ -20,9 +20,10 @@ from twoinst import Checks, start
 def near_mirrors(guest, home, r=25.0):
     out = []
     for line in guest.call('coop.npc list')['out'].splitlines():
-        m = re.match(r'\s*#(\d+) ([0-9A-F]+) species=(\S+) hp=([\d.]+) dist=[\d.]+ pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', line)
-        if m and sum((float(m.group(5 + i)) - home[i]) ** 2 for i in range(3)) < r * r:
-            out.append((m.group(1), m.group(3), m.group(4), 'DEAD' in line))
+        # the guest's rows: '#id species=X spawned hp=H dist=D ... at=(x y z)' (the host's have pos=)
+        m = re.match(r'\s*#(\d+) species=(\S+) spawned hp=([\d.]+) .*? at=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', line)
+        if m and sum((float(m.group(4 + i)) - home[i]) ** 2 for i in range(3)) < r * r:
+            out.append((m.group(1), m.group(2), m.group(3), 'DEAD' in line))
     return out
 
 
@@ -59,7 +60,7 @@ def main():
             s = f'{time.time() - t0:4.0f}s'
             for who, con in (('host', host), ('guest', guest)):
                 rows = [l for l in con.call('coop.nest evolve')['out'].splitlines()
-                        if 'should_evolve=1' in l or ' gen=0 ' not in l or 'extinct=1' in l or h in l]
+                        if ' gen=0 ' not in l or 'extinct=1' in l or h in l]  # (+0x85 is 1 from the herd's constructor 0xC6C2B0)
                 for l in rows[:10]:
                     print(f'  [{s}] {who} {l}', flush=True)
             print(f'  [{s}] host herd: ' + ' | '.join(host.call(f'coop.nest herd {h}')['out'].strip().splitlines()[:6]), flush=True)
