@@ -16,6 +16,7 @@ v Civ vehicles, p players) over the samples where the host's body moves:
 import bisect
 import collections
 import math
+import os
 import re
 
 MOVING = 0.5  # m/s: the host's body moves
@@ -27,7 +28,9 @@ HITCH = 0.1
 
 
 def record(con, on):
-    con.call('coop.bodyrec start' if on else 'coop.bodyrec stop')
+    # SPORE_BODYREC_DIAG=1: the guest's driving targets too (rows a/r/l<id>, K3 diagnostics; analyse() skips them)
+    diag = ' diag' if os.environ.get('SPORE_BODYREC_DIAG') == '1' else ''
+    con.call('coop.bodyrec start' + diag if on else 'coop.bodyrec stop')
 
 
 def now(con):

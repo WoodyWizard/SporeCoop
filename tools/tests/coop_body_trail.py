@@ -114,11 +114,44 @@ def hit_checks(ck, host, guest, hr, gr, hits, t_first):
            f'(longest {lg[0]:.2f} s, {lg[1]} hit at {lg[2]:.1f} s)')
 
 
+HOLD_EVERY = 8.0  # s between two planted holds (--hold)
+HOLD_S = 2.5  # s the guest's game undoes the held mirror's placings
+# m, s: the held mirror within HOLD_MAX of the host's member, over TRAIL_M m at most HOLD_TRAIL s (BUG-0386: it fell 8 m
+# behind in 0.9 s and was teleported back, again and again while the hold lasted)
+HOLD_MAX, HOLD_TRAIL = 7.0, 0.5
+
+
+def hold_checks(ck, hr, gr, holds, t_first):
+    """BUG-0386: the guest's copy of a walking member whose placings the guest's game undoes (coop.tribe undo)"""
+    worst, longest, n = [], [], 0
+    for key, th in holds:
+        h = [x for x in hr if x[1] == key and th - body_trail.GAP <= x[0] <= th + HOLD_S + body_trail.GAP]
+        g = [x for x in gr if x[1] == key and th <= x[0] <= th + HOLD_S]
+        r = body_trail.analyse(h, g, kinds='t').get('t')
+        if not r or not r['n']:
+            print(f'  hold {key} at {th - t_first:.1f} s: no moving samples')
+            continue
+        n += r['n']
+        worst.append((max(r['dist']), key, th - t_first))
+        longest.append((r['trail'][0], key, th - t_first))
+        print(f'  hold {key} at {th - t_first:.1f} s: off p90 {body_trail.pct(r["dist"], .9):.2f} max {max(r["dist"]):.2f} m, '
+              f'over {body_trail.TRAIL_M:g} m {r["trail"][0]:.2f} s', flush=True)
+    ck(len(worst) >= 4 and n >= 100, f'holds: {len(worst)} held walking members with {n} moving samples (>= 4, >= 100)')
+    if worst:
+        w, lg = max(worst), max(longest)
+        ck(w[0] <= HOLD_MAX, f'holds: the guest\'s copy of a held member within {HOLD_MAX} m of the host\'s member '
+           f'(max {w[0]:.2f} m, {w[1]} held at {w[2]:.1f} s)')
+        ck(lg[0] <= HOLD_TRAIL, f'holds: no held copy over {body_trail.TRAIL_M:g} m off for more than {HOLD_TRAIL} s '
+           f'(longest {lg[0]:.2f} s, {lg[1]} held at {lg[2]:.1f} s)')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='creature', choices=('creature', 'tribe', 'civ'))
     ap.add_argument('--secs', type=float, default=60)
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--hold', action='store_true', help='tribe: every HOLD_EVERY s the guest\'s game undoes the placings '
+                    'of one walking member\'s mirror for HOLD_S s (coop.tribe undo, BUG-0386) and those seconds are judged')
     ap.add_argument('--hits', action='store_true', help='creature: hit a walking NPC every HIT_EVERY s and judge the '
                     'seconds after each hit (BUG-0409)')
     a = ap.parse_args()
@@ -156,6 +189,7 @@ def main():
     nxt = {}
     hit = False
     hits = []  # (key, host time) of every hit (--hits)
+    holds = []  # (key, guest time) of every planted hold (--hold)
     while time.time() - tt0 < a.secs:
         now = time.time()
         g = nw.avatar_pos(guest)
@@ -172,6 +206,17 @@ def main():
             p = nw.tangent_point(centre, rng, 4, 18)
             host.call(f'coop.tribe order {i} 4 {p[0]:.1f} {p[1]:.1f} {p[2]:.1f}')
             nxt[('t', i)] = now + rng.uniform(3, 6)
+        if a.hold and members and centre and now >= nxt.get('hold', tt0 + 6):
+            i = members[len(holds) % len(members)]
+            p = nw.tangent_point(centre, rng, 25, 35)  # a long walk: 3-4 s at 9 m/s
+            host.call(f'coop.tribe order {i} 4 {p[0]:.1f} {p[1]:.1f} {p[2]:.1f}')
+            nxt[('t', i)] = now + 7
+            time.sleep(0.7)  # it walks on the guest too
+            out = guest.call(f'coop.tribe undo {i} {HOLD_S}')['out'].strip()
+            if 'undone' in out:
+                holds.append((f't{i}', body_trail.now(guest)))
+            print(f'  hold #{i}: {out[:70]}', flush=True)
+            nxt['hold'] = time.time() + HOLD_EVERY
         if a.stage == 'civ' and now >= nxt.get('v', 0):
             cities, veh = civ_state(host)
             for vid, p in list(veh.items())[:4]:
@@ -206,7 +251,10 @@ def main():
         print('  ' + line, flush=True)
     if a.hits:
         hit_checks(ck, host, guest, hr, gr, hits, t_first)
-    for kind in {'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage]:
+    if a.hold:
+        hold_checks(ck, hr, gr, holds, t_first)
+    # (--hold judges the held seconds; the trail of every kind is body_trail_tribe's)
+    for kind in ({'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage] if not a.hold else ''):
         r = res.get(kind)
         lim, tr = (NET_LIMITS if os.environ.get('SPORE_NET') else LIMITS)[(a.stage, kind)]
         ck(r is not None and r['n'] >= 200, f'{kind}: the host\'s bodies moved where the guest has copies '

@@ -152,6 +152,36 @@ constexpr double kLateRate = 0.5;
 // mirror's walk + catch_prop on top drew 0.94-0.96 m frames (tribe_walk_player 20261106-212040 #2, member 7 at 34.8 s)
 constexpr double kLateExtra = 3.0;
 constexpr int kLateSteps = 16; // candidate times between the earliest and the shown time's continuation
+// BUG-0410, BUG-0651 (K3, `coop.fix drive.lead_keep`): the member lead stays on up to a 130 ms one-way latency and a
+// late state is caught up at up to twice the body's speed. In 0.7.9 the lead went off over a one-way latency over 100 ms (BUG-0619's
+// rule against the mobile network's stop-and-go, from before drive.lead_late): the player network measures 80-101 ms and
+// a loaded guest 110-150 ms on any link (the round trip counts both games' frame times), so the members were shown
+// interpolated, 0.2 s + latency late, for whole runs (body_trail_tribe_player p90 3.2-3.4 m, coop.bodyrec diag rows,
+// lab 20261107-073841 #1, #3), and where the lead was on, drive.lead_late's catch-up at 1.33x (+3 m/s at 9 m/s) kept the
+// shown target 0.25-0.3 s behind for 0.75 s after every start known late (a latency spike, a loss burst): p90 2.36 m
+// against M1's raw lead 1.20 m (-073841 #2). drive.lead_late brings any late state in without a step, which is what
+// the no-lead rule was for, but over the mobile network (120 ms, 60 ms jitter) the lead kept on drew stop-and-go and
+// 0.9 m jumps again (tribe_walk_mobile 1 of 3 and 1 of 3 against 3 of 3 with the rule, lab 20261107-094647,
+// -095652-2 / -095652), and the latency the rule reads does not part that link from a loaded guest (mobile 109-126 ms
+// at the switch, the player network under load 100-150 ms). With the fix the rule's line is kKeepHigh (130 ms, back
+// under kKeepLow 115 ms) instead of 100 / 85 ms: the player network and a guest under a moderate load keep the lead,
+// the mobile network and a heavily loaded guest do not (BUG-0651 stays for those); the late target catches up at
+// 1 + kKeepRate x the real time (a mirror walking at that rate draws at most 2 x its speed + catch_up: tribe_walk's jump
+// is 3 x the top speed), and the mirror is walked at the target's rate with its drawn step held to 2 x its own speed +
+// catch_up (driver.h WalkPlace::lead_speed: the 16.5 m/s + catch-up frames of BUG-0650). And a new state steps the shown time back only as far as its
+// news was late: only when the lead had to go kLateNews s further than usual (the median of the last kHorizonN) past
+// the state before it when it came. drive.lead_late let every new state step back towards where the shown target was going and
+// never forward, so any speed change, turn or send jitter that made the body faster than the lead had it stepped it
+// back, one that made it slower did not step it on: with the lead kept on the shown target was still 0.07 s (p50) to
+// 0.23 s (p90) behind M1's raw lead, p90 2.12 m against the raw lead's 1.65 m (lab 20261107-080850 #1). A start in a
+// spike or after states lost or dropped as old (0.25-0.4 s over the usual) is brought in as before. Off: 0.7.9.
+inline bool g_lead_keep_fix = true;
+constexpr double kKeepRate = 1.0;
+constexpr double kKeepTau = 0.25; // s
+constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's one-way latency line with the fix
+constexpr size_t kHorizonN = 32;
+constexpr double kLateNews = 0.05; // s
+constexpr float kLateLost = 1.5f;  // m
 
 class SnapshotBuffer {
 public:
@@ -181,6 +211,8 @@ public:
         sm_have_ = false;
         lt_have_ = false;
         age_n_ = 0;
+        hz_n_ = 0;
+        lt_excess_ = 0;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -220,8 +252,20 @@ public:
                 std::array<float, kJitterN> d = devs_;
                 std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
                 jitter_ = d[n / 2];
-                jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+                // BUG-0651 (g_lead_keep_fix): the rule's line moved over what the player network and a moderately loaded
+                // guest read (80-115 ms); the mobile network (110-150 ms) stays under it
+                const double hi = g_lead_keep_fix ? kKeepHigh : kJitterHigh, lo = g_lead_keep_fix ? kKeepLow : kJitterLow;
+                jittery_ = jitter_ > hi || (jittery_ && jitter_ > lo);
             }
+        }
+        // BUG-0410 (g_lead_keep_fix): how much further than usual the lead had to go past the state before this one
+        if (!snaps_.empty()) {
+            const double h = local_now - offset_ + g_one_way - snaps_.back().t;
+            hz_[hz_n_++ % kHorizonN] = (float)h;
+            const size_t n = std::min<size_t>(hz_n_, kHorizonN);
+            std::array<float, kHorizonN> d = hz_;
+            std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+            lt_excess_ = std::max(0.0, h - (double)d[n / 2]);
         }
         age_n_++; // BUG-0650: a new state for late_time
         lt_new_ = true;
@@ -434,17 +478,26 @@ private:
             return std::min(tl, lt_t_ - (lt_local_ - local_now));
         const double adv = local_now - lt_local_;
         const Vec3 lv = lead_velocity();
-        const double rate = 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
+        // BUG-0410 (g_lead_keep_fix): the rate grows with how far the shown time is behind (kKeepTau s behind: 2x), so a
+        // spike's 0.3 s is caught up in ~0.3 s and the mobile network's 20-60 ms of jitter at 1.1-1.2x: a rate that went
+        // 1x -> 2x -> 1x with every late state drew stop-and-go there (tribe_walk_mobile uneven 11-15 %, lab 20261107-094647)
+        const double rate = g_lead_keep_fix ? 1.0 + std::min(kKeepRate, std::max(0.0, tl - lt_t_) / kKeepTau)
+                                            : 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
         double cont = std::min(tl, lt_t_ + adv);
         double t = std::min(tl, lt_t_ + adv * rate);
         if (lt_new_) {
             // a new state: of [the state before it, the continuation] the time nearest where the shown target was
             // going (the path between the two interpolated: when a latency spike ends, the states sent in it come
             // after newer ones and are dropped; the newest is then the first walking state, 2-3 m from the stand)
-            const double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
+            double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
+            if (g_lead_keep_fix && lt_excess_ < kLateNews) // BUG-0410: news on time: no step back (a frame of slack)
+                earliest = std::max(earliest, std::min(cont, tl - 0.01));
             if (cont > earliest + 1e-3) {
-                Vec3 want{lt_pos_.x + lt_vel_.x * (float)adv, lt_pos_.y + lt_vel_.y * (float)adv,
-                          lt_pos_.z + lt_vel_.z * (float)adv};
+                // BUG-0651 (g_lead_keep_fix): going on at the body's own velocity (the lead's), not the shown target's: its
+                // catch-up velocity overshot, and after a frame that stepped back (velocity 0) every new state stepped
+                // it back again (the target stood every other frame 0.07-0.1 s behind, net_tests test_lead_late)
+                const Vec3 wv = g_lead_keep_fix ? lv : lt_vel_;
+                Vec3 want{lt_pos_.x + wv.x * (float)adv, lt_pos_.y + wv.y * (float)adv, lt_pos_.z + wv.z * (float)adv};
                 double best = cont;
                 float bd = dist(lead_at(cont), want);
                 for (int i = 0; i < kLateSteps; i++) {
@@ -456,6 +509,12 @@ private:
                     }
                 }
                 t = best < cont ? best : t;
+                // BUG-0674 (g_lead_keep_fix): no point of the new path is near where the shown target was going (the lead
+                // went on the old way through a spike while the body turned round: 8 m off): continuity is lost anyway, so
+                // the shown time is the lead's at once and the body closes the error (catch_prop). Stepped back, the shown
+                // time went 0.75 s behind and the mirror 4.7 m behind that target (lab 20261107-110506 #1, member 2)
+                if (g_lead_keep_fix && bd > kLateLost)
+                    t = tl;
             }
             lt_new_ = false;
         }
@@ -471,10 +530,17 @@ private:
     }
 
 public:
+    // diagnostics (coop.bodyrec diag, K3): M1's raw lead target now (the newest state moved on to the sender's now)
+    Vec3 raw_lead(double local_now) const { return snaps_.empty() ? Vec3{} : lead_at(local_now - offset_ + g_one_way); }
     double late_behind(double local_now) const { return lt_have_ ? local_now - offset_ + g_one_way - lt_t_ : 0; }
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     double jitter() const { return jitter_; }
     bool jittery() const { return jittery_; }
+    // BUG-0651: the member lead is off (interpolated, 0.7.8) because of the link's latency
+    bool lead_off() const { return jittery_; }
+    // BUG-0651: the late lead target catches up (runs faster than the body) this frame
+    bool late_catching() const { return lt_have_ && lt_rate_ > 1.01f; }
+    float late_rate() const { return lt_have_ ? std::max(1.f, lt_rate_) : 1.f; }
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
     // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
     // lead's plus the offset's decay): the speed the mirror must walk at to stay on it
@@ -579,6 +645,10 @@ private:
     }
     // BUG-0650
     size_t age_n_ = 0; // states since clear()
+    // BUG-0410: the lead horizons at the last kHorizonN states and the newest one's excess over their median (s)
+    std::array<float, kHorizonN> hz_{};
+    size_t hz_n_ = 0;
+    double lt_excess_ = 0;
     mutable bool lt_have_ = false, lt_new_ = false;
     mutable float lt_rate_ = 1.f; // the shown sender time's rate this frame (catching up: 1 + kLateRate)
     mutable double lt_t_ = 0, lt_local_ = 0;

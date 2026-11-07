@@ -9,12 +9,12 @@ source: lab
 role: guest
 versions: 0.7.3.3
 fixed_in:
-branch: fix/w45-remote-bodies-2
+branch: fix/w46-k3-bodies
 commits: db4b6090, 462fc0f0
 tests: body_trail_hits (coop_body_trail.py --stage creature --hits), npc_walk, npc_walk_player
 signature: coop.npctrack: a walked proxy (how 3) in the flee phase after `coop.npc hosthit` moves 3.3-3.8 m in one frame (before the mod's driving), then stands 4.8 m off for 1.1 s, or flies off at 8-11 m/s with the fall animation and is teleported back 2.4-4 m
 docs: docs/re/creature.md#creature-hit-throw
-related: BUG-0361, BUG-0305, BUG-0407
+related: BUG-0361, BUG-0305, BUG-0407, BUG-0675
 ---
 
 ## Report
@@ -45,7 +45,7 @@ placing is undone while it lasts; the host's NPC is not moved that way. Not fixe
 No game fix kept (2026-11-06, fix/w45-remote-bodies-2). The described mechanism is gone in 0.7.9: observed, the guest's game never throws a living proxy (locomotion mode +0x2B0 = 3 on a guest proxy only after its death, the corpse being held at the host's place), and since npc.air (BUG-0550, 0.7.7), walk_place's keep_lost and drive.lead (BUG-0425) no proxy is held off its host NPC after a hit. A host-side throw flag (npc.host_knockback: NF_THROWN, states every frame while thrown, the proxy placed on the path, the lead up to 45 m/s) was written, measured and removed: no clear gain (mean error in the first second after a push hit 0.59-0.90 m on vs 0.94 m off), and its first version made Tribe animals jump. Kept: the probe (coop.npctrack columns lm = +0x2B0, gr = +0x137), the test body_trail_hits and the symbols (SporeCoop::CreatureBase_TakeDamage, SporeCoop::Creature_LocoReset).
 
 ## Verification
-no-fail-run: the reported hold is not reproduced with or without the tried switch. body_trail_hits (11 hits per run on walking NPCs, every other one with a push of 3, both games' own positions): longest stretch over 2 m after a hit 0.00-0.24 s in 13 runs (out/lab/20261106-042100, -042950, -043931 x3, -045011, -050936 x3, -053713 x2 and off -044526, -051608, -055638), 0.58 s once (-051608, the old code); the max distance per push hit p90 3.6-4.0 m for under 0.2 s: the host's throw (13-31 m/s) shown one NPC state period (0.1 s) plus the latency late (docs/re/creature.md#creature-hit-throw). The test now judges a hold (over 2 m at most 0.75 s, max 6 m).
+no-fail-run: the reported hold is not reproduced on 0.7.10 code. body_trail_hits (11 hits per run, every other one with a push): clean network out/lab/20261107-103912 2 of 2 (lane 6; longest over 2 m after a hit at most 0.2 s); at 30 fps over SPORE_NET=player out/lab/20261107-103414 1 of 2 and out/lab/20261107-112617-2 1 of 2: the two failures are a push hit's copy standing while the host's NPC is thrown, then stepping after it (over 2 m 0.88-0.96 s, max 6.0-7.4 m), with no throw of the proxy by the guest's game (guest lm 0): not this ticket's hold, now BUG-0675. Earlier: 13 runs of fix/w45-remote-bodies-2 (below).
 
 ## History
 - 2026-11-01: opened.
@@ -56,3 +56,4 @@ no-fail-run: the reported hold is not reproduced with or without the tried switc
   (flee phase) jumps of ~1 m in 14 ms frames after the hit were seen with and without the lead (out/lab/20261106-021152
   with, the 0.7.8 baseline npc_walk_player 20261106-011339 without): the knockback stays; not touched, open.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): probe of the locomotion mode on both games: the guest's game does not throw living proxies; the remaining error after a push is the host's throw seen one state period late, never held; a host-side throw flag tried and removed (no gain); closed not-reproduced with the runs.
+- 2026-11-07 (fix/w46-k3-bodies, K3): one more attempt on the current build with the low fps / bad network variant: the hold is not seen (the guest's game never throws a living proxy); the variant's failures are another mechanism, opened as BUG-0675. Stays not-reproduced, closed with these runs.

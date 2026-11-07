@@ -2406,3 +2406,60 @@ BUG-0671. GOG 2024, Ghidra and lab lane 5.
   the host pairs it with a baby its own game makes within 4 s within 6 m (the relayed effect's) or makes it itself with
   0xCD74A0, and the member is the buyer's. Test tribe_guest_baby (FAIL 20261107-104918, PASS 20261107-104809) and
   tribe_guest_baby_noeffects (the relay off: see the ticket).
+## The member lead kept on, and a mirror the guest's game holds back (2026-11-07, fix/w46-k3-bodies)
+<a id="tribe-lead-keep"></a>
+
+BUG-0410, BUG-0651 (`coop.fix drive.lead_keep`, net/interp.h) and BUG-0386 (`coop.fix tribe.mirror_keep`, tribe.cpp
+mirror_drive). Measured with `coop.bodyrec start diag` (SPORE_BODYREC_DIAG=1 for coop_body_trail.py): the guest records
+per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newest state moved on to the sender's now) and
+`l<id>` (x: how far the shown lead's sender time is behind M1's, plus one guest frame; y: 1 = no lead; z: walk error).
+
+* ✔ observed (body_trail_tribe_player, rel/0.7.9 code, lab 20261107-073841, load 8-16 on 6 cores): in 2 of 3 runs the
+  member lead was off for the whole run (`l` y = 1): the one-way latency BUG-0619's rule reads (half the round trip of
+  the acks, both games' frame times included) was over 100 ms; members shown interpolated, 0.2 s + latency late, p90
+  3.2-3.4 m (aim 3.5 m, the raw lead would have been 2.3 m). The 0.7.9 final check run 20261107-012856 #2 had it off
+  for 25 s of 60. The player network alone reads 80-101 ms: on the rule's edge (BUG-0651).
+* ✔ observed (the third run, lead on 83 % of the time): with the lead on the aim was p50 0.60 / p90 2.36 m off the host's
+  member against the raw lead's 0.25 / 1.20 m: drive.lead_late's catch-up at 1.33x (at most +3 m/s) kept the shown time
+  0.25-0.3 s behind for ~0.75 s after every start known late (a spike, a loss burst).
+* ✔ observed (net_tests, a catch-up at 2x): drive.lead_late's "where the shown target was going" used the shown target's
+  own velocity; after a frame that stepped back (velocity 0) the next state stepped it back again and the target stood
+  every other frame 0.07-0.1 s behind. Going on at the lead's velocity instead: no stall.
+* ✔ fix (drive.lead_keep), final: BUG-0619's no-lead rule stays for the mobile network but its line is 130 ms (back
+  under 115 ms) instead of 100 / 85 ms; the late target catches up at 1 + lag / 0.25 s (at most 2x), going on at the
+  lead's velocity; a new state steps the shown time back only when its news was late (the lead had to go over kLateNews
+  0.05 s further than the median of the last 32 horizons past the state before it) and not at all when no point of the
+  new path is within 1.5 m of where the shown target was going (a turn round inside a spike: the lead's time at once);
+  a mirror's drawn step is always held to 2 x its own speed + catch_up (WalkPlace::lead_speed). net_tests
+  test_lead_keep: over a 110 ms one-way link 0.7.9 2.79 m mean target error, the fix 0.00 m; a start known 0.3 s late
+  within 0.3 m after 0.53 s (0.7.9 1.10 s); a turn round in a spike over 2 m 0.00 s after the news (0.7.9 0.67 s).
+* ✔ observed: with the lead kept on over any link (a first version) tribe_walk_mobile went stop-and-go and drew 0.9 m
+  jumps (1 of 3, 1 of 3 against 3 of 3 with the rule, labs 20261107-094647, -095652-2 / -095652); the latency the rule
+  reads does not part the mobile network (109-126 ms at the switch) from a loaded guest (100-150 ms): BUG-0651 stays for
+  a heavily loaded guest.
+* ✔ result: body_trail_tribe_player 3 of 3 with the fix (p90 1.32-1.77 m) against 0 of 3 off (2.24 / 2.00 / 1.81 m,
+  over 2 m 1.06-1.13 s) at the same time on the other lane (labs 20261107-114838 / -114838-2, lab load 25-35).
+* ✔ observed (lab 20261107-081649, lead kept on): aim p90 1.62-2.34 m against the raw lead's 1.36-2.15 m: the lead's
+  cost is gone; what is left at a load of 12 on 6 cores is the raw lead itself (states every 0.1-0.2 s from a host at
+  16-20 fps) and the walk behind the aim (p90 0.7-0.9 m).
+* ✔ observed (BUG-0386, the track of fix/w45-remote-bodies-2 lab 20261106-172428 #2, tribe_walk_guest_walks_173129,
+  the guest's own member 2): from the frame its game's walk took over (game speed 0 -> 11-12 m/s) every placing of
+  0.38-0.40 m was undone and the game moved it 0.03-0.04 m a frame for 0.9 s while its target walked on at 9 m/s; the
+  error grew to 8 m and drive::step teleported it. walk_place never counted the placing as lost (under its 0.5 m a
+  frame) and keep_lost (BUG-0361's rule for NPC proxies) was off for mirrors. ? what holds the body there is not known
+  (no object within 3 m in the probe lines; static RE: creature pairs are not in the gameplay contact handler).
+* ✔ fix (tribe.mirror_keep): keep_lost for walked member mirrors: an error over 0.75 m that grows for 0.15 s moves it by
+  teleports with the mark at the catch-up speed until it is within 0.2 m. Test: body_trail_tribe_hold (`coop.tribe undo
+  <id> <s>` plants the hold: the game's walk and every unmarked placing undone, 0.04 m a frame; marked teleports kept).
+* ✔ observed (BUG-0445, npc_walk_tribe at 30 fps over SPORE_NET=player, labs 20261107-103414, -112016 / -112016-2,
+  tracks out/lane6|7/track/npc_walk_tribe_*.json): one-frame jumps of 2.5-5.6 m of walked animal proxies, each the frame
+  after the proxy's lead target stepped as far (the host's NPC moving smoothly at 0.2 m a frame) and walk_place's snap
+  (2.5 m) teleported it there. Some are a walking state known late (BUG-0650's case), most the lead's extrapolation
+  through a spike or loss burst (up to kMaxLead 0.6 s at the old speed) while the NPC slowed or turned: 4-5 m off when
+  the next state came. ✔ tried and reverted: drive.lead_late for the proxies' buffers (`drive.lead_late_npc`): it failed
+  on and off alike at the same time (-112016 lane 6 on, -112016-2 lane 7 off). Open as BUG-0674 (the lead through a gap).
+* ✔ (BUG-0410) with drive.lead_keep a frame of a catching-up mirror is held to 2 x its own speed + catch_up
+  (WalkPlace::lead_speed): unbounded, the game's walk at 13-17 m/s plus catch_prop drew 1.0-1.4 m frames
+  (tribe_walk_player lab 20261107-102038 #3); with catch_prop off instead a 6-9 m error took 0.6 s to close.
+* ~ BUG-0674: a member that turns round inside a latency spike is extrapolated the old way for up to kMaxLead (8-9 m
+  off for ~1 s); a limit of the lead itself, open.

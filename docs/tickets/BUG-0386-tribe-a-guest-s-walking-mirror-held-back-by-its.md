@@ -1,19 +1,19 @@
 ---
 id: BUG-0386
 title: Tribe: a guest's walking mirror held back by its own game (an obstacle?) falls 3.6 m behind and lurches 1 m per frame to catch up
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-01
 source: found by tribe_walk_mobile (fix/w30-tribe-walk)
 role: guest
 versions: unreleased
-fixed_in:
-branch: fix/w45-remote-bodies-2
-commits:
-tests: tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w46-k3-bodies
+commits: 0f0f32f1, 665d2c4a, e266ef4e
+tests: body_trail_tribe_hold (tools/tests/coop_body_trail.py --stage tribe --hold), tribe_walk_mobile
+signature: a walked member mirror at a game speed of 11-12 m/s moves 0.03-0.04 m a frame while every placing of ~0.4 m is undone; the error grows to 8 m, then a teleport
+docs: docs/re/tribe.md#tribe-lead-keep
 related: BUG-0365
 ---
 
@@ -27,13 +27,14 @@ other mirrors were 9 m away. The per-frame track: out/lane3/track/tribe_walk_gue
 (not in git). Seen once in 14 direction-views with the fix.
 
 ## Root cause
-Not found (2026-11-06, fix/w45-remote-bodies-2). Static RE (GOG 2024): creature-vs-creature contact pairs are skipped by the creature stage's gameplay contact handler (0xD3A450: type 2 pairs of two creatures, noun 0x18EB45E, are not handled; creature-vs-object goes to 0xD3A0D0, the bump of rocks and ornaments): what pushes a placed mirror back is not in the gameplay code (inferred: Havok's own solver or the locomotion's avoidance). No per-creature flag that takes one creature out of collision was found (candidates: the loco force list at creature+0xC0, add 0xC44140, clear 0xC441A0; a phantom registration like the eggs' 0xB48870). Observed: the same kind of hold on NPC proxies (BUG-0440's single audit lines: place lost while a herd mate is 3.3 m away).
+Observed (2026-11-07, fix/w46-k3-bodies, the per-frame track of fix/w45-remote-bodies-2 lab 20261106-172428 #2, out/lane9/track/tribe_walk_guest_walks_173129.json in that worktree, the guest's own member 2 on the guest at 22.3-23.7 s): while the game's speed of the mirror was 0 it was moved by the placing alone (0.3 m a frame, error 0.2-0.3 m); from the frame the game's walk took over (game speed 3 -> 11-12 m/s) every placing of 0.38-0.40 m was undone and the drawn position moved 0.03-0.04 m a frame for 0.9 s while the target walked on at 9 m/s; the error grew to 8 m and drive::step teleported it. walk_place never counted the placing as lost (its lost test needs over 0.5 m in one frame) and keep_lost (BUG-0361's rule for NPC proxies: moved by teleports with the mark while the game does not keep the place) was off for member mirrors. ? What holds the body (the game's own walk standing at 11 m/s) is still not known: no object within 3 m in the probe lines; static RE (2026-11-06, fix/w45-remote-bodies-2): creature-vs-creature contact pairs are skipped by the creature stage's gameplay contact handler (0xD3A450), no per-creature collision flag found (candidates: the loco force list at creature+0xC0, add 0xC44140, clear 0xC441A0).
 
 ## Fix
-No fix: not reproduced on 0.7.9.
+`coop.fix tribe.mirror_keep` (tribe.cpp mirror_drive): WalkPlace::keep_lost on for walked member mirrors: an error over 0.75 m that grows for 0.15 s (or a placing lost outright) moves the mirror by teleports with the mark at the catch-up speed until it is within 0.2 m of its path, the rule the NPC proxies have had since BUG-0361. Off: placed without the mark always (0.7.9). Test hook `coop.tribe undo <id> <s>` (guest): the mirror's walk and every unmarked placing undone (0.04 m a frame towards the aim), marked teleports kept: the hold as it was seen.
 
 ## Verification
-no-fail-run: tribe_walk_mobile (30 fps, mobile network) passed with drive.lead on out/lab/20261106-053105 and the runs of this branch's final code (see the report), and with it off out/lab/20261106-062826 (2 runs); M1: no stretch over 2 m longer than 0.79 s in 9 body_trail Tribe runs. One FAIL (out/lab/20261106-063850: member jumps and stop-and-go with 369 target corrections) was with a tried lead smoothing (BUG-0445, removed). Needed for a fix: the function that separates creatures or a collision flag (above).
+FAIL (SPORE_FIX_OFF=tribe.mirror_keep): body_trail_tribe_hold out/lab/20261107-083228-2 (0 of 3: held copies 7.7 m and 19.9 m off, over 2 m up to 0.99 s), out/lab/20261107-081649-2 #2 (6.5 m, over 2 m 1.88 s; #1 there ran an earlier hook that undid the placing only).
+PASS, final code: body_trail_tribe_hold out/lab/20261107-120427 (3 of 3); earlier code out/lab/20261107-101948 (3 of 3: held copies at most 2.9-3.4 m off, over 2 m at most 0.12 s), out/lab/20261107-082140 #1 (3.8 m, 0.21 s; #2 there 6.0 m for under 0.32 s failed the first 4 m gate, now 7 m). tribe_walk_mobile with the fix: out/lab/20261107-100645-2 3 of 3.
 
 ## History
 - 2026-11-01: opened.
@@ -51,3 +52,4 @@ no-fail-run: tribe_walk_mobile (30 fps, mobile network) passed with drive.lead o
   62.15 s and 8.11 m at 1.22 s), -130123 #1 (8.31 / 9.39 m, drive.lead_smooth off); body_trail_tribe -164638 ("guest:
   Tribe member steps over 5 m: t2 8.0 m at 3.5 s"). The BUG-0386 probe did not log (it needs over 2 m for 1 s in
   walk_place). Track files: out/lane9/track/tribe_walk_guest_walks_*.json of those runs.
+- 2026-11-07 (fix/w46-k3-bodies, K3): cause observed in the recorded track (the placing undone, never counted as lost, keep_lost off for mirrors); fixed by tribe.mirror_keep, test body_trail_tribe_hold with a planted hold. Status fixed, fixed_in unreleased.

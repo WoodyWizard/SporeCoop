@@ -9,7 +9,7 @@ source: fix/w34-ability-pop smoke (lab 20261101-173425)
 role: guest
 versions: 0.7.3.3+
 fixed_in:
-branch: fix/w45-remote-bodies-2
+branch: fix/w46-k3-bodies
 commits: aed2f801
 tests: chaos_tribe, play_tribe
 signature:
@@ -38,7 +38,7 @@ The same lines are in the pre-merge branch runs of 0.7.7 (fix/w43-detector2 2026
 No fix: the gate failure is not reproduced on 0.7.9. Diagnostics added (aed2f801): the audit line now has a second line with the driving's own view (its walk error, held, place lost, teleports, walked) and the nearest other proxy.
 
 ## Verification
-no-fail-run: the gate (2 audit lines in a row) did not fire in 8 chaos_tribe runs of this branch: drive.lead on out/lab/20261106-052022 (2), -053713 (2), and the regression run; drive.lead off -062826 (2). Single audit lines (below the gate): 052022 #2 (proxy 25, placed on the path, 3.2 m off for 2.1 s while it moved 5.4 m at the host NPC's 2.5 m/s: an offset the guest's game kept, not a lag) and 062826 #2 with the lead off (proxy 17, driven, 4.0 m off a standing host NPC for 2.1 s, `place lost 281` frames since it walked, the nearest other proxy 3.3 m away). What blocks a fix of those single cases: the guest's game moves a placed proxy back (place lost) next to a herd mate; the function that separates creatures is not found (static RE 2026-11-06: creature-vs-creature pairs are skipped by the creature stage's contact handler 0xD3A450, so it is in Havok's solver or the locomotion's avoidance; no per-creature collision flag found). Needed: that function or flag (see BUG-0386), or a lab case that holds one proxy on purpose.
+no-fail-run: not reproduced on 0.7.10 code (rel/0.7.10 + fix/w46-k3-bodies, drive.lead_keep, tribe.mirror_keep, drive.lead_late_npc), the gate never fired and no audit line had a stuck proxy: chaos_tribe out/lab/20261107-101948 (3 of 3, lane 6), at 30 fps over SPORE_NET=player out/lab/20261107-103414 (2 of 2, lane 7) and out/lab/20261107-112617-2 (2 of 2, lane 7); every one of the 81 `proxy_stuck=` audit lines of those runs reads 0. Earlier (0.7.9): 8 runs of fix/w45-remote-bodies-2 (below). The single cases there (a proxy the guest's game moves back next to a herd mate, `place lost`) are BUG-0386's class: tribe.mirror_keep gives the member mirrors the proxies' keep_lost rule, which the proxies have had since BUG-0361.
 
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
@@ -65,3 +65,4 @@ no-fail-run: the gate (2 audit lines in a row) did not fire in 8 chaos_tribe run
   rel/0.7.8: 2 lines) and no stretch over 2 m longer than 0.46 s in 9 body_trail Tribe runs. A host jump (21 m, the
   host's own game) is seen and is BUG-0610. Not marked fixed: chaos_tribe's gate not rerun often enough to say.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): 8 chaos_tribe runs (6 with the lead, 2 without), no gate failure; 2 single audit lines with the new diagnostics (an offset the guest's game keeps next to a herd mate); closed not-reproduced, the blocker named.
+- 2026-11-07 (fix/w46-k3-bodies, K3): one more attempt on the current build, with a low fps and bad network variant (30 fps, SPORE_NET=player): 7 of 7 chaos_tribe pass, no stuck proxy in any audit line. Stays not-reproduced, closed with these runs.

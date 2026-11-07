@@ -19,6 +19,11 @@
 - Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
 - Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
   (BUG-0671).
+- Tribe: on a connection with latency spikes or a busy PC the player tribe's citizens no longer trail 2-3 m behind on
+  the guest's screen; they are shown where the host has them now (BUG-0410).
+- Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
+  path (BUG-0386).
+- Civilization: the host's vehicles are no longer drawn a step behind on the guest's screen (BUG-0438).
 
 ## [0.7.9] - 2026-11-07
 

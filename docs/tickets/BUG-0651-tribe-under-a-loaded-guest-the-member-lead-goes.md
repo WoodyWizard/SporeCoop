@@ -9,7 +9,7 @@ source: fix/w45-lead-player lab runs (BUG-0650)
 role: guest
 versions: unreleased (rel/0.7.9 + drive.lead_smooth)
 fixed_in:
-branch:
+branch: fix/w46-k3-bodies
 commits:
 tests: body_trail_tribe, body_trail_tribe_player
 signature:
@@ -45,3 +45,4 @@ machine (the states' arrival jitter did not at the lab's load, docs/re/tribe.md#
 
 ## History
 - 2026-11-06: opened.
+- 2026-11-07 (fix/w46-k3-bodies, K3, BUG-0410): observed on the player network too (80-101 ms, the lead off for 25-60 s of a run). drive.lead_keep moves the rule's line to 130 / 115 ms: the player network and a moderate load keep the lead (body_trail_tribe_player 3 of 3 against 0 of 3, lab 20261107-114838 / -114838-2). Not fixed: a guest under a heavy load still reads 130-150 ms like the mobile network (109-126 ms at its switch); the two are not parted by this latency (the states' arrival lateness did not part them either, see above). A measure of the jitter that leaves the guest's own frame times out is still needed; open.

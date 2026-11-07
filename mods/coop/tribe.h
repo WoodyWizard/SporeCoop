@@ -94,6 +94,10 @@ struct TrackMember {
     const net::Vec3* drawn; // null: its position now
 };
 void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user);
+// diagnostics (coop.bodyrec start diag, K3): per member mirror of a guest rows `a<id>` (the driving's aim), `r<id>`
+// (M1's raw lead target), `l<id>` (x: how far the shown lead is behind M1's in s, y: 1 = no lead (jittery link), z: the
+// walk error m)
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user);
 
 // BUG-0514: the player tribe's tools (cTribeTool, tribe +0x36C: weapon racks, the fire pit, ...) with their
 // type (tool vt 0x58) and position, for the host-owned world objects (worldobj.cpp kind "tribe_tool")

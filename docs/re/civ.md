@@ -1333,3 +1333,26 @@ BUG-0649.
 * ✔ (the report's own screenshot, guest s 5930) the host's green name tag is drawn on the guest's screen, at the host's
   vehicles (where the host's mouse was), next to the blue owner tags of the vehicles with the same name. The tag is at the
   partner's mouse, not at its camera; it jumps with the mouse (up to 154 m/s in the guest's log).
+## A vehicle mirror drawn behind its own target, and the state ages of a loaded host (2026-11-07, fix/w46-k3-bodies)
+<a id="civ-place-now"></a>
+
+BUG-0438 (K3). Measured with `coop.bodyrec start diag` (SPORE_BODYREC_DIAG=1 for coop_body_trail.py): the guest records
+per vehicle mirror `w<id>` (the target guest_tick aims at: the velocity estimate moved on by the state's age and the
+one-way latency, at most kVehLead 0.3 s) and `e<id>` (x: the state's age, y: the estimate's speed, z: the error before
+the glide) next to the drawn vehicle; tools: the decomposition in docs/06-testing.md#testing-bodyrec-diag.
+
+* ✔ observed (body_trail_civ_loss, lab 20261107-074040 and the twin runs below): the drawn vehicle was 0.4-1.8 m (p50)
+  from its own target. guest_tick moved it half way from where it stood to the target every frame (StopMovement +
+  Teleport, the game does not move it), so at 15-20 m/s it was a frame's glide plus the frame the placing shows up in
+  behind the target.
+* ✔ fix `coop.fix civ.place_now`: the mirror goes on with the estimate's velocity for the last frame's time and only the
+  rest (a new state's correction, a push) is glided half per frame; the target is taken one frame ahead (the placing is
+  drawn in the next frame). Drawn vs target p50 0.98-0.99 / p90 2.24-2.99 m off (SPORE_FIX_OFF=civ.place_now, lab
+  20261107-082632, lane 7) against 0.25-0.46 / 0.94-1.49 m on (lab 20261107-082432, lane 6), at the same time and load.
+* ✔ observed: the target's own error is the state's age. At a lab load of 11-16 on 6 cores both Civ games ran at 16 fps
+  (frame p50 60 ms, p90 140 ms): the host's 0.1 s send gate gave states every 0.14 s (p50) to 0.39 s (p90, max 1.2 s),
+  ages p50 0.12-0.15 s, and the target's error grew with them (aim p50 0.5-1.2 m under 0.15 s, 1.5-1.9 m at 0.15-0.25 s,
+  2.1-2.6 m at 0.25-0.35 s, 2.8-3.5 m over). The vehicles of the test turn all the time (coop.civ move to a new point of
+  the city every second): replayed on the host's own path, a straight extrapolation from the last two states is p90
+  0.9 / 1.9 / 3.1 m off at 0.1 / 0.2 / 0.3 s, an arc (the yaw rate of the last three states) 0.8 / 1.7 / 2.9 m: no model
+  of the path makes a 0.3 s old state good at 15-20 m/s. What is left of BUG-0438 at that load is the host's frame rate.
