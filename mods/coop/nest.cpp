@@ -645,12 +645,15 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
                 void** ke = field<void**>(o, 0xAC);
                 auto& h = field<net::Vec3>(o, 0x34);
                 void* sp = game::herd_species(o);
+                // BUG-0668: the species' key instance (profile +0x504) and the key of the next generation (+0xA8[gen + 1])
+                int gen = field<int>(o, 0xF0), nk = kb && ke >= kb ? (int)((uint8_t*)ke - (uint8_t*)kb) / 12 : -1;
+                uint32_t skey = sp && !IsBadReadPtr(sp, 0x510) ? field<uint32_t>(sp, 0x504) : 0;
+                uint32_t next = gen >= 0 && gen + 1 < nk && !IsBadReadPtr(kb, (gen + 2) * 12) ? *(uint32_t*)((uint8_t*)kb + (gen + 1) * 12) : 0;
                 H->out_printf(u->out,
                               "herd %p should_evolve=%d gen=%d evolved_keys=%d threshold=%.0f extinct=%d members=%d species=%p "
-                              "home=(%.0f %.0f %.0f) dist=%.0f\n",
-                              o, (int)field<uint8_t>(o, 0x85), field<int>(o, 0xF0),
-                              kb && ke >= kb ? (int)((uint8_t*)ke - (uint8_t*)kb) / 12 : -1, field<float>(o, 0x94),
-                              (int)field<uint8_t>(o, 0x190), b && e >= b ? (int)(e - b) : -1, sp, h.x, h.y, h.z,
+                              "skey=%08X next=%08X home=(%.0f %.0f %.0f) dist=%.0f\n",
+                              o, (int)field<uint8_t>(o, 0x85), gen, nk, field<float>(o, 0x94),
+                              (int)field<uint8_t>(o, 0x190), b && e >= b ? (int)(e - b) : -1, sp, skey, next, h.x, h.y, h.z,
                               net::dist(h, u->c));
                 return true;
             },

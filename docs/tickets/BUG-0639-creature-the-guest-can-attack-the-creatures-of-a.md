@@ -11,7 +11,7 @@ versions: 0.7.8
 fixed_in:
 branch: fix/w46-creature-p0
 commits: 5a310d25, fc639e24, 3ce217e3
-tests: family_attack (coop_family_attack.py), nest_evolve_probe (coop_nest_evolve_probe.py)
+tests: family_attack (coop_family_attack.py), nest_evolve_probe (coop_nest_evolve_probe.py), nest_evolve (coop_nest_evolve.py)
 signature:
 docs:
 related: BUG-0464, BUG-0460, BUG-0418, BUG-0640, BUG-0668
@@ -59,6 +59,17 @@ no-fail-run: not reproduced, after three attempts:
   shown for a moment, or the herd evolution running apart in the two games (BUG-0668), not a rule that shields an
   evolving nest on the host.
 
+* fix/w46-herd-evo (2026-11-07): the likely cause BUG-0668 is fixed. In a game of one the game has no shield for an
+  evolving nest (its members take hits: out/lab/20261107-082348, the host's game) and the family nest is friendly
+  (CreatureFriendly 0xC0C3B0, family_attack 20261107-081513); the game's evolution step (CreatureGame_Update 0xD45740)
+  changes only the herd's generation, species and threshold. The guest now holds the host's generation and species for
+  every nest (nest_evolve PASS out/lab/20261107-100043, 20261107-100318; FAIL with the switch off
+  out/lab/20261107-095730, 100058, 100333: a nest extinct on the host shown as a new species on the guest), so its
+  game applies the host's rules to the same nest: what the guest saw as "evolving on the host" can no longer differ.
+  Status stays not-reproduced: the player's exact situation was not reproduced; the two desyncs that explain it
+  (BUG-0640 migration, BUG-0668 evolution) are fixed in 0.7.10.
+
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed not-reproduced: family_attack PASS 20261107-081513 (the guest cannot hurt the family, own creature too), nest_evolve_probe 20261107-081734: the NPC herds evolve in each game apart (new ticket BUG-0668), the members of an evolving herd take the guest's hits in the host's game (20261107-082348), no shield; likely causes BUG-0640 (fixed) and BUG-0668.
+- 2026-11-07 (fix/w46-herd-evo): likely cause BUG-0668 fixed (wsync.herd_evo), see Verification.

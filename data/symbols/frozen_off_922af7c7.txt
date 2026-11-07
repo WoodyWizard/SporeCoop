@@ -178,3 +178,5 @@ SporeCoop::cCreatureCitizen_Teardown ; BUG-0667: a citizen torn down with no tri
 SporeCoop::Citizen_BTTerminate ; BUG-0667: a detached body's tree is not ended (GOG 2024 only)
 SporeCoop::TribeHud_ptr ; BUG-0645: the guest's Tribe HUD cap is not set to the host's level (GOG 2024 only)
 SporeCoop::cTribe_MaxPopulation ; BUG-0645: the guest's player tribe level row and its cap are off (GOG 2024 only)
+SporeCoop::CreatureGame_HerdEvolveOn ; BUG-0668: the guest's own NPC herd evolution is not turned off (GOG 2024 only)
+SporeCoop::cHerd_EvolvedSpecies ; BUG-0668: the guest's nests do not take the host's species (GOG 2024 only)

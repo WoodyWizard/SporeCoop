@@ -2190,3 +2190,5 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 
 * What happens: the guest's game makes the member, the mirror reconcile removes it, the host has none.
 * Ticket: BUG-0671
+* Fixed (2026-11-07, fix/w46-herd-evo): the host owns the evolution (wsync.herd_evo, test nest_evolve);
+  docs/re/creature.md#creature-herd-evolution-owner.
