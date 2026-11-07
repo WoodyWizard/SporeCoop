@@ -2,39 +2,9 @@
 
 ## [Unreleased]
 
-### Fixed
-- Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
-  same number (BUG-0647).
-- Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members
-  as the host's tribe (BUG-0645).
-- Tribe: the member portraits on the right of the guest's screen show the host's evolved creature, no white squares
-  (BUG-0643).
-- Tribe: the other villages have the same colours for the guest as for the host (BUG-0644).
-- Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
-  host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
-  guest's map (BUG-0668, likely the "nest evolving on the host" of BUG-0639).
-- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
-  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
-  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
-- Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
-- Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
-  (BUG-0671).
-- Tribe: on a connection with latency spikes or a busy PC the player tribe's citizens no longer trail 2-3 m behind on
-  the guest's screen; they are shown where the host has them now (BUG-0410).
-- Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
-  path (BUG-0386).
-- Civilization: the host's vehicles are no longer drawn a step behind on the guest's screen (BUG-0438).
-
-## [0.7.9] - 2026-11-07
-
 ### Changed
-- Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
-  (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
-  on that continues (BUG-0410, BUG-0438).
-- A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
-  report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
-- SporeKit keeps running the mod after an error that the game itself catches; before, such an error could stop the mod
-  for the rest of the session while the game went on (found with BUG-0667).
+- Civilization: the host's vehicles are drawn where the game is moving them on the guest's screen, no longer a step
+  behind (found with BUG-0438).
 
 ### Fixed
 - Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
@@ -55,6 +25,39 @@
   low on memory, it gets that block back and you are told to save and restart, instead of crashing a few minutes
   later (a host crashed in Civilization after two hours of play). Spore keeps every creature, model and texture it
   loads until it is closed, and in co-op the host also loads what lives around the other players (BUG-0631).
+- Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
+  same number (BUG-0647).
+- Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members
+  as the host's tribe (BUG-0645).
+- Tribe: the member portraits on the right of the guest's screen show the host's evolved creature, no white squares
+  (BUG-0643).
+- Tribe: the other villages have the same colours for the guest as for the host (BUG-0644).
+- Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
+  host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
+  guest's map (BUG-0668).
+- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
+  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
+  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
+- Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
+- Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
+  (BUG-0671).
+- Tribe: on a connection with latency spikes or a busy PC the player tribe's citizens no longer trail 2-3 m behind on
+  the guest's screen; they are shown where the host has them now (BUG-0410).
+- Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
+  path (BUG-0386).
+
+## [0.7.9] - 2026-11-07
+
+### Changed
+- Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
+  (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
+  on that continues (BUG-0410, BUG-0438).
+- A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
+  report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+- SporeKit keeps running the mod after an error that the game itself catches; before, such an error could stop the mod
+  for the rest of the session while the game went on (found with BUG-0667).
+
+### Fixed
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).
