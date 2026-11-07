@@ -167,6 +167,13 @@ static void capture_if_requested()
 // which needs the frame's back buffer).
 static constexpr double kPresentLostSec = 2.0;
 static double g_last_present_t;  // last Present seen (or the device creation)
+// BUG-0653: one long frame (a 2.5 s hitch: the game saved box, a save, kit.test.hang) is not Present lost: the
+// next game loop pass came 2.5 s after the frame's Present and took over for one frame (a WARN, labels off,
+// then "Present reaches SporeKit again" 1 ms later). Present lost also needs kPresentLostPasses game loop
+// passes without a Present between them (an overlay that took Present over: 30-60 passes a second).
+// `kit.fix presentlost 0`: the time alone, as before (0.3.11).
+static constexpr int kPresentLostPasses = 10;
+static int g_loop_passes; // game loop passes since the last Present
 static bool g_loop_frames;       // frames come from the game loop now
 static bool g_in_loop_frame;
 static int g_frames_mode = -1;   // 0 auto, 1 loop: ignore Present (tests of the fallback), -1 unread
@@ -248,6 +255,7 @@ static void on_frame_begin_present()
     if (frames_mode_read() == 1)
         return; // frames=loop: as if another overlay had taken Present
     g_last_present_t = now_seconds();
+    g_loop_passes = 0;
     if (g_loop_frames) {
         g_loop_frames = false;
         SKLOG(SK_INFO, "frames: Present reaches SporeKit again; frames come from Present");
@@ -288,7 +296,11 @@ void frame_from_game_loop()
     if (!g_dev || g_in_frame || g_in_loop_frame || g_present_depth)
         return;
     bool forced = frames_mode_read() == 1;
+    if (g_loop_passes < 1000000)
+        g_loop_passes++;
     if (!forced && now_seconds() - g_last_present_t < kPresentLostSec)
+        return;
+    if (!forced && !g_loop_frames && fixed(g_fix_presentlost) && g_loop_passes < kPresentLostPasses)
         return;
     // Without focus Spore pauses and stops drawing (no Present) while the loop goes on: no frames
     // then, as before, unless background mode keeps it running (hooked GetForegroundWindow says
