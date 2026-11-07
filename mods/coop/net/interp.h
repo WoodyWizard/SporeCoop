@@ -167,8 +167,8 @@ constexpr int kLateSteps = 16; // candidate times between the earliest and the s
 // under kKeepLow 115 ms) instead of 100 / 85 ms: the player network and a guest under a moderate load keep the lead,
 // the mobile network and a heavily loaded guest do not (BUG-0651 stays for those); the late target catches up at
 // 1 + kKeepRate x the real time (a mirror walking at that rate draws at most 2 x its speed + catch_up: tribe_walk's jump
-// is 3 x the top speed), and the mirror is walked at the target's rate with no proportional catch-up on top (driver.h
-// catch_prop: the 16.5 m/s + catch-up frames of BUG-0650). And a new state steps the shown time back only as far as its
+// is 3 x the top speed), and the mirror is walked at the target's rate with its drawn step held to 2 x its own speed +
+// catch_up (driver.h WalkPlace::lead_speed: the 16.5 m/s + catch-up frames of BUG-0650). And a new state steps the shown time back only as far as its
 // news was late: only when the lead had to go kLateNews s further than usual (the median of the last kHorizonN) past
 // the state before it when it came. drive.lead_late let every new state step back towards where the shown target was going and
 // never forward, so any speed change, turn or send jitter that made the body faster than the lead had it stepped it
@@ -533,6 +533,7 @@ public:
     bool lead_off() const { return jittery_; }
     // BUG-0651: the late lead target catches up (runs faster than the body) this frame
     bool late_catching() const { return lt_have_ && lt_rate_ > 1.01f; }
+    float late_rate() const { return lt_have_ ? std::max(1.f, lt_rate_) : 1.f; }
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
     // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
     // lead's plus the offset's decay): the speed the mirror must walk at to stay on it

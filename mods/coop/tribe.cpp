@@ -307,7 +307,6 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 // 9 m/s; the error grew to 8 m and drive::step teleported it. The placing was never counted as lost (under 0.5 m a
 // frame) and keep_lost was off for mirrors. Off: placed without the mark always (0.7.9).
 static bool g_mirror_keep_fix = true;
-constexpr float kKeepNear = 1.5f; // m (BUG-0651, see mirror_drive)
 COOP_FIX("tribe.mirror_keep", "BUG-0386", g_mirror_keep_fix, "tribe: a member mirror the guest's game holds back (its placing undone) is moved on its path by marked teleports, not left to fall 8 m behind");
 // BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
 // the lead's cap kMaxLead x 9 m/s = 5.4 m)
@@ -2334,13 +2333,12 @@ static void mirror_drive(GMember& g, double now)
         // BUG-0425; BUG-0619: not while the smoothed target closes the error itself (catch_prop on top measured the
         // catch-up from the game's walk and drew walk + catch-up, 0.9-1.25 m frames), nor without the lead (0.7.8)
         o.catch_prop = g.lead_sp < 0 && !(net::g_lead_smooth_fix && g.buf.lead_off());
-        // BUG-0651 (drive.lead_keep): walked at the catching-up target's rate (up to 2x), no proportional catch-up on top
-        // while it is near the target; a big error (a turn round inside a spike: 6-9 m, BUG-0674) is closed as before,
-        // else it took 0.6 s at the speed + 3 m/s and the stretch over 2 m ran 1.0-1.2 s (lab 20261107-102038)
-        if (net::g_lead_keep_fix && g.buf.late_catching() && net::dist(game::position(g.c), g.aim) < kKeepNear)
-            o.catch_prop = false;
-        if (g.lead_sp >= 0)
-            o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
+        // BUG-0651 (drive.lead_keep): while the late lead catches up (the target and the walk at up to 2x the body's speed)
+        // a frame draws at most 2 x the body's own speed + catch_up (WalkPlace::lead_speed, BUG-0619's bound): without it
+        // the game's walk at 13-17 m/s plus catch_prop's closing drew 1.0-1.4 m frames (tribe_walk_player 20261107-102038
+        // #3); with catch_prop off instead a 6-9 m error (BUG-0674) took 0.6 s to close
+        if (net::g_lead_keep_fix && g.buf.late_catching() && g.lead_sp < 0)
+            o.lead_speed = std::max(sp / g.buf.late_rate(), 0.5f);
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m
