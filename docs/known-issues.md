@@ -1034,7 +1034,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
-* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, open)
+* 2026-11-06 (fix/w46-addr-space): the address space drain is BUG-0355's per-frame soft body calls on a full cell
+  graphics pool (8.3 MB/min with cell.gfx_full off in a crowd of 1000 cells, 0 with it on: test
+  mem_census_cell_crowd; docs/re/graphics.md#graphics-address-space), fixed in 0.7.3.2.
+* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, fixed by BUG-0355 in 0.7.3.2)
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
 <a id="issue-cell-4th-player-faults"></a>
@@ -2089,7 +2092,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   the host's halved; the bars differ by one tier) (BUG-0630, docs/re/creature.md#creature-evolution-bar).
 - Civ: the host's game crashed after ~2 h in one process with its 2 GB address space full (largest block 12 MB), in a
   model's vertex blend writing through a null buffer at +0x3995F0; ~740 MB of the drain in Creature (BUG-0631, see
-  BUG-0621).
+  BUG-0621). 2026-11-06 (fix/w46-addr-space): the drain is the game's own cache of what it loaded (skins, models), the
+  host filling it with its partner's surroundings too (no leak of the mod); core.mem_reserve gives a kept block back
+  with a notice to save and restart (docs/re/graphics.md#graphics-address-space). Still open by nature: a long
+  session on the 2 GB space (large-address flag off) can still fill it; see the ticket for the flag.
 - Cell: a guest's kill is applied twice on the host (a giant piece of meat) (BUG-0632).
 - Cell: the host cannot collect the part a kill dropped (BUG-0633).
 - Cell: the guest's cell swims through other cells (BUG-0634).

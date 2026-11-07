@@ -116,3 +116,9 @@ void write_summary(const char* why); // the summary line into the log, the repor
 std::string sync_command(const std::vector<std::string>& args);
 
 } // namespace support
+
+// mem_census.cpp (BUG-0631): `coop.memcensus`, the address space by allocation kind and by who reserved it
+namespace memcensus {
+void init(const SkHost* host, SkMod* mod);
+void on_unload();
+} // namespace memcensus

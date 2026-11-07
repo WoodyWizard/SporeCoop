@@ -20,6 +20,10 @@
   was eaten) (BUG-0636).
 - Cell: after a level change the cells on the guest's screen no longer all vanish and get replaced; the guest keeps
   what is on its screen as the host does (BUG-0635).
+- Long sessions: the game keeps a block of memory for the end of a long session. When Spore (a 32-bit game) runs
+  low on memory, it gets that block back and you are told to save and restart, instead of crashing a few minutes
+  later (a host crashed in Civilization after two hours of play). Spore keeps every creature, model and texture it
+  loads until it is closed, and in co-op the host also loads what lives around the other players (BUG-0631).
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).

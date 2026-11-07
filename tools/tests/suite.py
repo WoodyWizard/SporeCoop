@@ -608,6 +608,24 @@ for _st in ('creature', 'tribe'):
     add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, timeout=4800, fixture=_st)
     add(f'long_{_st}_short', P + f'coop_long_session.py --stage {_st} --minutes 6', ('detector',), minutes=20, fixture=_st)
 
+# BUG-0631 / BUG-0621: the address space census over a played session (docs/06-testing.md#testing-mem-census)
+add('mem_census', P + 'coop_mem_census.py --minutes 20', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_solo', P + 'coop_mem_census.py --minutes 20 --solo', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_tour_solo', P + 'coop_mem_census.py --minutes 20 --solo --tour host', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_guest', P + 'coop_mem_census.py --minutes 20 --tour guest', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_both', P + 'coop_mem_census.py --minutes 20 --tour host,guest', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_cell_crowd', P + 'coop_mem_census.py --fixture cell --crowd 1000 --minutes 8 --sample 2 --max-slope 3', ('extended',), minutes=15, fixture='cell')  # BUG-0621: a crowd of 1000 cells around the host's for 8 min: no game loses over 3 MB/min of address space (SPORE_FIX_OFF=cell.gfx_full,cell.spare fails: the host 8 MB/min)
+add('mem_census_tour_guest_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --tour guest', ('extended',), minutes=18, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_solo_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --solo --tour host', ('extended',), minutes=18, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_guest_places', P + 'coop_mem_census.py --minutes 24 --sample 4 --tour guest --places 12', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_respawn', P + 'coop_mem_census.py --minutes 10 --sample 2.5 --respawn --hop 10', ('extended',), minutes=18, fixture='creature')
+add('mem_census_civ', P + 'coop_mem_census.py --fixture civ_npc --idle --minutes 10 --sample 2', ('extended',), minutes=18, fixture='civ_npc')
+add('mem_census_civ_solo', P + 'coop_mem_census.py --fixture civ_npc --idle --solo --minutes 10 --sample 2', ('extended',), minutes=18, fixture='civ_npc')
+add('mem_census_tribe', P + 'coop_mem_census.py --fixture tribe --idle --minutes 10 --sample 2', ('extended',), minutes=18, fixture='tribe')
+add('mem_census_tribe_solo', P + 'coop_mem_census.py --fixture tribe --idle --solo --minutes 10 --sample 2', ('extended',), minutes=18, fixture='tribe')
+add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature', allow=[allow('mem-low', 'BUG-0631', 'the test fills the host\'s address space to 260 MB free on purpose (coop.diag fill)', who='host')])  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
+add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
+
 SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
 
 
