@@ -4777,7 +4777,9 @@ each game at its own moment, so a comparison that fell into a change found 80-55
 (`Cell:pos:cell`) with nothing to see. `coop.census all` now ends the Cell `me` line with the game's world scale
 (`me pos=(x y z) ok=1 wscale=<G+0x514C>`), and `worlddiff.diff` converts the guest's Cell positions (rows and `me`)
 into the host's scale (times guest scale / host scale, as the sync-check's `diag.cell_scale`, BUG-0606) before it
-compares. A real offset stays: a cell 10 m off in the host's scale is still a row. A dump without `wscale` (an older
-coop.dll) is compared raw. `SPORE_DETECTOR_CELL_SCALE=0`: raw positions (the old behaviour, to see the test fail).
-Cell sizes (`scale=` of the l rows) are not converted. Selftest: `tools_selftest.py worldstate` (BUG-0662 case;
+compares, and the cells' sizes (`scale=` of the l rows) with them: the rescale 0xE6DB70 divides pos `+0x4C` and size
+`+0x58` alike (docs/re/cell.md#cell-world-scale), so the same change also gave `Cell:scale:cell` rows (191 cells
+0.91 on the host, 0.80 on the guest, lab 20261107-141059 with positions only converted). A real offset stays: a cell
+10 m off, or of another size, in the host's scale is still a row. A dump without `wscale` (an older coop.dll) is
+compared raw. `SPORE_DETECTOR_CELL_SCALE=0`: raw positions and sizes (the old behaviour, to see the test fail). Selftest: `tools_selftest.py worldstate` (BUG-0662 case;
 `SELFTEST_WORLDDIFF=<old tools/tests>` fails it).

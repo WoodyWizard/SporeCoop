@@ -606,9 +606,11 @@ def _own_ship_scale(w, ufos):
 
 
 def _in_scale(w, k):
-    """a copy of World w with every position times k (BUG-0662: the guest's Cell world in the host's scale)"""
+    """a copy of World w with every position and every cell's size times k (BUG-0662: the guest's Cell world in the
+    host's scale; the rescale 0xE6DB70 divides cell pos +0x4C and size +0x58 alike, docs/re/cell.md#cell-world-scale)"""
     c = copy.copy(w)
-    c.rows = [dict(x, pos=tuple(v * k for v in x['pos'])) for x in w.rows]
+    c.rows = [dict(x, pos=tuple(v * k for v in x['pos']), scale=x['scale'] * k if x['kind'] == 'l' else x['scale'])
+              for x in w.rows]
     c.me = tuple(v * k for v in w.me) if w.me else w.me
     c.wscale = w.wscale / k if w.wscale else w.wscale
     return c
