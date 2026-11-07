@@ -1,19 +1,19 @@
 ---
 id: BUG-0645
 title: Tribe: the guest cannot have more than 6 members and its village shows 12/6
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-14
 role: guest
 versions: 0.7.8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-tribe-civ
+commits: 0f273391, 142b991e
+tests: tribe_level
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-level
 related: BUG-0422, BUG-0418
 ---
 
@@ -29,12 +29,17 @@ population cap (0xC8EC60).
 Inferred, not determinable from the logs: the guest's village shows the shared or mirrored member count (12) against
 its own village's cap (6), and its own spawn is refused at that cap. Class BUG-0422 (per-player state) or BUG-0418.
 
+Observed 2026-11-07 (Ghidra + lab): the population cap is the player tribe's level's (cTribe +0x38, cTribe_MaxPopulation 0xC8EC70: 6, 9, 12, 15, 30, 45, 60). Only the hut upgrade 0xCDA4F0 raises the level (from the goal progress) and writes the cap into the Tribe HUD (+0x10 of [0x169B41C]); it ran on the host only. The guest's tribe stayed at level 0, cap 6, with the host's members: "12/6", and the guest's game refused new members at its cap.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`wsync.tribe_level` (BUG-0645): a wsync row with the host's player tribe level; the guest stores it and the HUD cap of that level. Off: as 0.7.8.
 
 ## Verification
-<!-- Lab: tribe fixture, the guest buys members up to the cap; read the guest's tribe member count (+0x340 list), its
-     population cap and the HUD count against the host's. -->
+Test tribe_level (coop_tribe_level.py): the host's tribe at level 2 (the upgrade's two stores) with 10 members; the guest's game's own cap function and HUD cap.
+- FAIL (SPORE_FIX_OFF=wsync.tribe_level): out/lab/20261107-075004 (guest level 0, cap 6, HUD 6).
+- PASS: out/lab/20261107-074905, out/lab/20261107-080150.
+- Not verified: the hut's upgraded look on the guest. A member the guest buys never reaches the host: BUG-0671.
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07: fixed in fix/w46-tribe-civ (wsync.tribe_level); BUG-0671 opened for the guest's own purchase.

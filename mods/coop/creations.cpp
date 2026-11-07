@@ -40,7 +40,7 @@ static const KindInfo kInfo[kKinds] = {
     {"cell", 0x3D97A8E4, 0x40616200},     // cll
     {"ufo", 0x476A98C7, 0x40656200},      // ufo
 };
-constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
+constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A, kPng = 0x2F7D0004;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
 // BUG-0469 review: our copy of a model the game cannot build is registered under the model's OWN key,
@@ -52,6 +52,10 @@ constexpr int kPrioModel = 3000;
 // and a species of the host's world that is one of the host's own creations (owner 0, id = the crt
 // instance): the guest uses it under a key of its own (see creations.h)
 constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
+// BUG-0647: a design of the host's own My Creations (a civ vehicle): the guest asks (id = the instance,
+// total = the model kind), the host sends the records (kOwnDesign) or says it is not one of its own
+// (kDesignNotOwn: a premade, the same everywhere)
+constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
 static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
 COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
 
@@ -1811,6 +1815,9 @@ static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::v
 // The records of a creation from the package file the game reads it from (any registered package:
 // My Creations (DBPF), the Sporepedia cache Pollination.package (DBBF), one of ours). Read piece by
 // piece: Pollination grows to hundreds of MB and the game has little address space left.
+// BUG-0643: a creation's records go with its pictures (png); off: the model and the metadata only (0.7.8)
+static bool g_png_fix = true;
+COOP_FIX("creations.png", "BUG-0643", g_png_fix, "creations: the pictures of a creation go with it (the Tribe roster's member portraits on the guest)");
 static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
 {
     void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
@@ -1837,8 +1844,11 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     bool ok = read_at(0, 96, hdr) && dbpf::index_info(hdr.data(), hdr.size(), info) && info.size < (64u << 20) &&
               read_at(info.offset, info.size, idx) && dbpf::parse_index(idx.data(), idx.size(), info, all);
     for (auto& e : all) {
-        if (!ok || e.key.instance != k.instance || e.key.group != k.group ||
-            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type) || e.size > (4u << 20))
+        // BUG-0643: and its pictures (png in the model group and the thumbnail group +1): the Tribe roster's member
+        // portraits are the species' picture, a guest without them showed white squares
+        bool png = g_png_fix && e.key.type == kPng && (e.key.group == k.group || e.key.group == k.group + 1);
+        if (!ok || e.key.instance != k.instance || (e.key.group != k.group && !png) ||
+            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type && !png) || e.size > (4u << 20))
             continue;
         dbpf::Record r;
         r.key = e.key;
@@ -1848,7 +1858,7 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     CloseHandle(f);
     bool model = false;
     for (auto& r : out)
-        model |= r.key.type != kMeta;
+        model |= r.key.type != kMeta && r.key.type != kPng;
     return model;
 }
 
@@ -2038,6 +2048,148 @@ static void apply_own_species(const std::vector<uint8_t>& data)
             dbpf::metadata_names(r.data, author, name);
     H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here%s", b.key.instance,
            name.c_str(), ours, prof ? "" : " (no species profile yet)");
+}
+
+// ---- BUG-0647: the host's own designs (civ vehicles) on a guest ----
+// The host's civilization names its vehicle designs by the keys of the host's own editor saves (My
+// Creations, ids sequential per profile). A guest's copy of that civilization names the same keys, which
+// its game resolves to ITS OWN creation of that id (or to nothing: the game's generated design): the guest
+// saw "nightmarish monsters" where the host had its vehicles (player report 2026-11-06). The guest asks
+// the host for each design key a mirror needs; the host answers with the records when the key is one of
+// its own My Creations, else "not mine"; the guest registers the records under a key of its own (0x7D......
+// from the content, as the host's own species: the game caches baked models by key) and builds the
+// mirror from that key. Mirrors never go into a save (BUG-0470), so the key of ours never reaches one.
+static bool g_host_designs_fix = true;
+COOP_FIX("creations.host_designs", "BUG-0647", g_host_designs_fix, "civ: a guest's mirror vehicles are built from the host's own vehicle designs (sent by the host), not from the guest's creation of the same id");
+struct DesignState {
+    double asked = -100;    // the last request
+    double first = -1;      // the first request (an old host never answers: the key as it is)
+    bool not_own = false;   // the host said: not its own (a premade)
+    uint32_t ours = 0;      // the key of ours its records are registered under
+};
+static std::map<std::pair<uint8_t, uint32_t>, DesignState> g_designs; // guest: (model kind, instance)
+static std::map<uint8_t, std::set<std::pair<uint8_t, uint32_t>>> g_design_sent; // host: guest -> answered
+static unsigned g_design_asks, g_design_in, g_design_not_own, g_design_out, g_design_timeouts;
+
+Key host_design(const Key& k, ModelKind kind, bool* pending)
+{
+    if (pending)
+        *pending = false;
+    if (!g_host_designs_fix || !k.instance || kind >= kMkKinds || !C.sess || C.sess->role() != net::Role::Client ||
+        !C.sess->connected())
+        return k;
+    auto& d = g_designs[{(uint8_t)kind, k.instance}];
+    if (d.ours)
+        return {d.ours, k.type, k.group};
+    if (d.not_own)
+        return k;
+    double now = H->time_seconds();
+    if (d.first < 0)
+        d.first = now;
+    if (now - d.first > 20.0) { // no answer (a host of an older version): as before
+        g_design_timeouts++;
+        H->log(M, SK_WARN, "creations: the host did not answer for the %s design %08X: built as it is",
+               kModelInfo[kind].name, k.instance);
+        d.not_own = true;
+        return k;
+    }
+    if (now - d.asked >= 5.0) {
+        d.asked = now;
+        net::Writer w;
+        w.u8(C.sess->my_id());
+        w.u8(kAskDesign);
+        w.u32(k.instance);
+        w.u32((uint32_t)kind);
+        w.u32(0);
+        w.u16(0);
+        C.sess->send_reliable_to(0, net::MSG_CREATION, w);
+        g_design_asks++;
+        H->log(M, SK_INFO, "creations: asked the host for the %s design %08X", kModelInfo[kind].name, k.instance);
+    }
+    if (pending)
+        *pending = true;
+    return k;
+}
+
+// host: a guest asks for a design key its mirrors need
+static void serve_design(uint8_t guest, uint32_t inst, uint32_t kind)
+{
+    if (kind >= kMkKinds || !inst)
+        return;
+    Key k{inst, kModelInfo[kind].type, kModelInfo[kind].group};
+    g_design_sent[guest].insert({(uint8_t)kind, inst});
+    Bundle b;
+    b.key = k;
+    if (!in_my_creations(k) || !records_from_game(k, b.recs) || b.recs.empty()) {
+        net::Writer w;
+        w.u8(0);
+        w.u8(kDesignNotOwn);
+        w.u32(inst);
+        w.u32(kind);
+        w.u32(0);
+        w.u16(0);
+        C.sess->send_reliable_to(guest, net::MSG_CREATION, w);
+        return;
+    }
+    std::vector<uint8_t> data = pack(b);
+    send_bundle(guest, (uint8_t)kind, (Kind)kOwnDesign, inst, data);
+    g_design_out++;
+    H->log(M, SK_INFO, "creations: own %s design %08X (%u records, %u bytes) to player %u", kModelInfo[kind].name, inst,
+           (unsigned)b.recs.size(), (unsigned)data.size(), guest);
+}
+
+// guest: the records of a host's own design, registered under a key of ours
+static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (kind >= kMkKinds || !unpack(data, b) || b.recs.empty() || !find_paths())
+        return;
+    auto& d = g_designs[{kind, b.key.instance}];
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs)
+        if (r.key.instance == b.key.instance)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
+    uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
+    std::vector<dbpf::Record> recs;
+    for (auto& r : b.recs) {
+        if (r.key.instance != b.key.instance || r.key.group == kPartDescGroup)
+            continue; // (the part descriptions of a bundle are never registered)
+        recs.push_back(r);
+        recs.back().key.instance = ours;
+    }
+    std::wstring path = g_dir + L"\\own_design_" + std::to_wstring(ours) + L".package";
+    if (!package_for(path, recs, kPrioWorld)) {
+        g_last_error = "cannot write a design package";
+        d.not_own = true; // built as it is
+        return;
+    }
+    d.ours = ours;
+    g_design_in++;
+    H->log(M, SK_INFO, "creations: the host's own %s design %08X is %08X here (%u records)", kModelInfo[kind].name,
+           b.key.instance, ours, (unsigned)recs.size());
+}
+
+std::string design_status()
+{
+    char b[200];
+    unsigned have = 0;
+    for (auto& [k, d] : g_designs)
+        have += d.ours != 0;
+    snprintf(b, sizeof b, "designs fix=%d asks=%u in=%u not_own=%u out=%u timeouts=%u registered=%u\n",
+             (int)g_host_designs_fix, g_design_asks, g_design_in, g_design_not_own, g_design_out, g_design_timeouts, have);
+    return b;
+}
+
+// the hash of the model record (bem) the game answers for a key (tests, BUG-0647: which model a mirror shows)
+std::string model_hash(const Key& k)
+{
+    std::vector<dbpf::Record> recs;
+    if (!records_from_game(k, recs))
+        return "none";
+    for (auto& r : recs)
+        if (r.key.type == kBem)
+            return hex(fnv(r.data.data(), r.data.size()));
+    return "nobem";
 }
 
 Key local_species(const Key& k)
@@ -2563,9 +2715,22 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             serve_species(from, id);
         return;
     }
-    if ((kind == kWorldSpecies || kind == kOwnSpecies) && (is_host() || from != 0))
+    if (r.ok() && kind == kAskDesign) { // BUG-0647
+        if (is_host() && owner == from)
+            serve_design(from, id, total);
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies) || total > (8u << 20) ||
+    }
+    if (r.ok() && kind == kDesignNotOwn) {
+        if (!is_host() && from == 0 && total < kMkKinds) {
+            g_designs[{(uint8_t)total, id}].not_own = true;
+            g_design_not_own++;
+        }
+        return;
+    }
+    if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
+        return;
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
+        total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
@@ -2593,6 +2758,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             apply_own_species(data);
         return;
     }
+    if (kind == kOwnDesign) { // BUG-0647 (owner = the model kind)
+        apply_own_design(owner, data);
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -2607,6 +2776,7 @@ void on_player_join(uint8_t id)
     if (!is_host())
         return;
     g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
+    g_design_sent.erase(id);
     for (auto& [ok, data] : g_store)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
@@ -2651,6 +2821,8 @@ void on_session_end()
     g_world_missing.clear();
     g_own_sent.clear();
     g_remap.clear(); // (their packages stay registered: the same world may come back)
+    g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
+    g_design_sent.clear();
     g_unmap.clear();
     g_store.clear();
     g_rx.clear();
@@ -2843,6 +3015,51 @@ std::string debug(const std::vector<std::string>& a)
         g_world_drop = a[1] != "off";
         return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
                " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "fakepng") { // fakepng <hex inst> [<hex group>]: tests (BUG-0643), a broken png answers
+        // the creature's png key above every package (what a game without the creation's picture has)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        uint32_t grp = a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group;
+        if (!find_paths())
+            return "no folder";
+        dbpf::Record r;
+        r.key = {inst, kPng, grp};
+        r.data.assign(16, 0xAB);
+        std::wstring path = g_dir + L"\\fakepng_" + std::to_wstring(inst) + L"_" + std::to_wstring(grp) + L".package";
+        return package_for(path, {r}, kPrioModel) ? "fake png registered" : "cannot register";
+    }
+    if (a.size() >= 2 && a[0] == "sendown" && is_host()) { // sendown <hex crt inst>: tests (BUG-0643), the host's own
+        // creation to every guest as before an NPC of it (host_species_out)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        unsigned n = 0;
+        for (auto& p : C.sess->players())
+            if (p.id != 0) {
+                g_own_sent[p.id].erase(inst);
+                host_species_out(p.id, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+                n++;
+            }
+        return "sent to " + std::to_string(n) + " guest(s)\n";
+    }
+    if (a.size() >= 2 && a[0] == "local") { // local <hex crt inst>: the key the host's creation has here
+        Key k = local_species({(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group});
+        return "local " + hex(k.instance) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "png") { // png <hex inst> [<hex group>]: the picture this game answers for a creature key
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kPng,
+              a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+        bool known = rm && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) != nullptr;
+        return "png " + hex(k.instance) + " known=" + std::to_string((int)known) + "\n";
+    }
+    if (!a.empty() && a[0] == "designs") // BUG-0647: the host's own designs on this guest
+        return design_status();
+    if (a.size() >= 2 && a[0] == "modelhash") { // modelhash <hex inst> [<hex type> <hex group>]: which model answers
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16),
+              a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kModelInfo[kMkVehicle].type,
+              a.size() > 3 ? (uint32_t)strtoul(a[3].c_str(), nullptr, 16) : kModelInfo[kMkVehicle].group};
+        return "model " + hex(k.instance) + " " + model_hash(k) + "\n";
     }
     if (!a.empty() && a[0] == "content") { // BUG-0469: content [<kind> <hex instance>]: counters, or one model
         if (a.size() < 3)

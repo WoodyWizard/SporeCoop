@@ -1,19 +1,19 @@
 ---
 id: BUG-0644
 title: Tribe: the NPC villages the guest's game makes for the host's tribes have other colours than on the host
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-13, Sterben-07
 role: both
 versions: 0.7.8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-tribe-civ
+commits: 80846470
+tests: tribe_colors
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-id-colour
 related: BUG-0431
 ---
 
@@ -29,12 +29,17 @@ archetype and the species are copied; no colour (ID colour) is sent or set.
 Inferred: the guest's game picks its own colour for each tribe it makes. Class BUG-0431 (requests the mod builds
 incompletely). The colour field's offset is not known yet (RE needed).
 
+Observed 2026-11-07 (Ghidra + lab): a village's colour is cTribe +0x234 mIDColorID (identity colour block +0x230, cached RGB +0x254), the next colour id of the game's list for each new tribe (0x053DBCF1 player, F4, F5, ...). The guest made the host's villages itself (SpawnNpcTribe) and picked its own next colours.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`wsync.tribe_color` (BUG-0644): a wsync row of every village's colour id, matched by place; the guest stores it and clears the cached RGB. Off: as 0.7.8.
 
 ## Verification
-<!-- Lab: play_tribe until the host's game forms NPC tribes the guest makes; compare each tribe's colour on both games
-     (find the field: cTribe and its political id colour, docs/re/tribe.md). -->
+Test tribe_colors (coop_tribe_colors.py): the host forms a village, the guest's game gives it another colour id.
+- FAIL (SPORE_FIX_OFF=wsync.tribe_color): out/lab/20261107-081057 (still different after 15 s).
+- PASS: out/lab/20261107-080948.
+- Not verified: the redraw on the screen (the check reads the game's colour id field).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07: fixed in fix/w46-tribe-civ (wsync.tribe_color).

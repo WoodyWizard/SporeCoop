@@ -850,6 +850,96 @@ static std::string f_nest(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: the player tribe's level (BUG-0645, docs/re/tribe.md#tribe-level): cTribe +0x38, set by the hut upgrade
+// 0xCDA4F0 (the TRG_Upgrade cinematic) from the goal progress when it passes a threshold of prop 0x16D19C8A; the
+// population cap is the level's (cTribe_MaxPopulation 0xC8EC70: 6, 9, 12, 15, 30, 45, 60) and the upgrade copies
+// it into the Tribe HUD (+0x10 of [0x169B41C]). A guest gets the goal progress (tribe_goal) but its game never runs
+// the upgrade: its tribe stayed at level 0, cap 6, with the host's 12 members ("12/6", and no member could be added).
+static bool g_tribe_level_fix = true;
+COOP_FIX("wsync.tribe_level", "BUG-0645", g_tribe_level_fix, "wsync: a guest's player tribe has the host's level and population cap (the hut upgrades)");
+static bool r_tlevel(Table& out)
+{
+    void* t = player_tribe();
+    if (!t)
+        return false;
+    Entry e;
+    e.v[0] = F<uint32_t>(t, 0x38);
+    out.push_back(e);
+    return true;
+}
+static int s_tlevel(const Table& want, bool apply)
+{
+    void* t = player_tribe();
+    if (want.empty() || !t || want[0].v[0] >= 8)
+        return 0;
+    uint32_t w = want[0].v[0];
+    uintptr_t capf = S("SporeCoop::cTribe_MaxPopulation"), hudp = S("SporeCoop::TribeHud_ptr");
+    void* hud = hudp && R((void*)hudp, 4) ? *(void**)hudp : nullptr;
+    int cap = capf ? skg::thiscall<int>(capf, t) : -1;
+    bool hud_off = hud && R(hud, 0x14) && cap >= 0 && F<int>(hud, 0x10) != cap;
+    if (F<uint32_t>(t, 0x38) == w && !hud_off)
+        return 0;
+    if (apply) {
+        *(uint32_t*)((uint8_t*)t + 0x38) = w; // the game's own setter is this one store (0xFF0260)
+        if (hud && R(hud, 0x14) && capf)
+            *(int*)((uint8_t*)hud + 0x10) = skg::thiscall<int>(capf, t);
+    }
+    return 1;
+}
+static std::string f_tlevel(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "level=%u", e.v[0]);
+    return g_fmt;
+}
+
+// ---- row: every village's ID colour (BUG-0644, docs/re/tribe.md#tribe-id-colour): cTribe +0x230 is an identity colour
+// block (serializer 0x1320F20: +4 mIDColorID, a colour id 0x053DBCxx of the game's list 0x156B0BC; +0x24 mCachedColor,
+// RGB, 0 until drawn). A new tribe takes the next colour of the list, so a guest that made the host's villages in
+// another order, or had a village of its own, gave them other colours than the host's ("village color is desynced")
+static bool g_tribe_color_fix = true;
+COOP_FIX("wsync.tribe_color", "BUG-0644", g_tribe_color_fix, "wsync: a guest's villages have the host's colours");
+constexpr uintptr_t kTribeColorId = 0x234, kTribeCachedColor = 0x254;
+static bool r_tcolor(Table& out)
+{
+    if (!player_tribe())
+        return false;
+    for (auto& t : npc_tribes()) {
+        if (!R(t.t, kTribeCachedColor + 12))
+            continue;
+        Entry e;
+        e.key = t.pol;
+        e.v[0] = F<uint32_t>(t.t, kTribeColorId);
+        e.v[1] = fbits(t.x), e.v[2] = fbits(t.y), e.v[3] = fbits(t.z);
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_tcolor(const Table& want, bool apply)
+{
+    auto mine = npc_tribes();
+    int n = 0;
+    for (auto& w : want) {
+        const TribeRef* t = match(mine, w.key, bitsf(w.v[1]), bitsf(w.v[2]), bitsf(w.v[3]));
+        if (!t || !R(t->t, kTribeCachedColor + 12) || (w.v[0] >> 8) != 0x053DBC)
+            continue;
+        if (F<uint32_t>(t->t, kTribeColorId) == w.v[0])
+            continue;
+        n++;
+        if (!apply)
+            continue;
+        uint8_t* b = (uint8_t*)t->t;
+        *(uint32_t*)(b + kTribeColorId) = w.v[0];
+        memset(b + kTribeCachedColor, 0, 12); // the cached RGB is made again from the id
+    }
+    return n;
+}
+static std::string f_tcolor(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X color=%08X pos=(%.1f %.1f %.1f)", e.key, e.v[0], bitsf(e.v[1]),
+             bitsf(e.v[2]), bitsf(e.v[3]));
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -862,6 +952,8 @@ static const Row kRows[] = {
     {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
     {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
     {11, "creature_nest", 4, &g_nest_fix, creature_mode, r_nest, s_nest, false, f_nest},
+    {12, "tribe_level", 1, &g_tribe_level_fix, tribe_mode, r_tlevel, s_tlevel, false, f_tlevel},
+    {13, "tribe_color", 4, &g_tribe_color_fix, tribe_mode, r_tcolor, s_tcolor, false, f_tcolor},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 

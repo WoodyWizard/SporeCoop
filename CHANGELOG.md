@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
+  same number (BUG-0647).
+- Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members
+  as the host's tribe (BUG-0645).
+- Tribe: the member portraits on the right of the guest's screen show the host's evolved creature, no white squares
+  (BUG-0643).
+- Tribe: the other villages have the same colours for the guest as for the host (BUG-0644).
+
 ## [0.7.9] - 2026-11-07
 
 ### Changed

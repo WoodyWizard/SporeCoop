@@ -47,7 +47,7 @@ constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit t
 static uintptr_t a_TreeVt;    // Simulator::cTreeData::vftable (main vtable)
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
-    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe;
+    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe, a_MaxPop;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -1049,6 +1049,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CitizenVt = H->sym("Simulator::cCreatureCitizen::vftable");
     a_TreeVt = H->sym("Simulator::cTreeData::vftable");
     a_SpawnNpcTribe = H->sym("Simulator::SpawnNpcTribe"); // BUG-0381 (optional)
+    a_MaxPop = H->sym("SporeCoop::cTribe_MaxPopulation"); // BUG-0645 (optional)
     g_ok = a_GetPlayerTribe && a_DoAction && a_SetValueVector3 && a_BTTick && a_DoActionForObjects && a_WalkSelected &&
            a_SetSelected && a_CreateCitizen && a_AddMember && a_CitizenVt && a_TreeVt;
     if (!g_ok) {
@@ -4034,6 +4035,24 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 3, u.tool, (void*)nullptr);
         return "grab ordered (ret " + std::to_string(r) + ") " + g_last_cmd;
     }
+    if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
+        // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)
+        void* pt = player_tribe();
+        void* pit = nullptr;
+        if (pt)
+            for (void** it = F<void**>(pt, kToolsOff); it && it < F<void**>(pt, kToolsOff + 4); ++it)
+                if (*it && tool_type(*it) == 10)
+                    pit = *it;
+        if (!pit)
+            return "no fire pit";
+        std::vector<void*> sel;
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 12, pit, (void*)nullptr);
+        return "party ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));
         int action = atoi(a[1].c_str());
@@ -4099,6 +4118,45 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
         g_test_lift = (float)atof(a[1].c_str());
         return "members of the host taken " + a[1] + " m further from the planet's centre";
+    }
+    if (a.size() >= 3 && a[0] == "color") { // color <tribe index> <hex colour id>: tests (BUG-0644), this game's village colour
+        auto tribes = all_tribes();
+        size_t i = (size_t)atoi(a[1].c_str());
+        if (i >= tribes.size())
+            return "no such tribe";
+        F<uint32_t>(tribes[i], 0x234) = (uint32_t)strtoul(a[2].c_str(), nullptr, 16); // mIDColorID (+0x230 +4)
+        memset((uint8_t*)tribes[i] + 0x254, 0, 12);                                 // mCachedColor
+        return "color set";
+    }
+    if (a.size() >= 2 && a[0] == "setspecies") { // setspecies <hex crt inst>: tests (BUG-0643), this game's player tribe
+        // members get that species (cCreatureAnimal::SetSpecies, as the game does after an editor: 0xD5BFA0)
+        uintptr_t set = H->sym("Simulator::cCreatureAnimal::SetSpecies");
+        void* prof = game::species_by_key({(uint32_t)strtoul(a[1].c_str(), nullptr, 16), 0x2B978C46, 0x40626200});
+        void* pt = player_tribe();
+        if (!set || !prof || !pt)
+            return "no species / tribe";
+        int n = 0;
+        for (void* c : members(pt)) {
+            thiscall<bool>(set, c, prof, F<int>(c, kAgeOff), true);
+            n++;
+        }
+        // the tribe's own species key (mSpeciesKeys +0x1904: a vector whose first key sits at +0x1920 here, runtime
+        // 2026-11-07): the roster's portraits are of this species
+        if (F<uint32_t>(pt, 0x1924) == 0x2B978C46)
+            F<uint32_t>(pt, 0x1920) = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        return "species set on " + std::to_string(n);
+    }
+    if (a.size() >= 2 && a[0] == "level" && is_host()) { // level <0..7>: tests (BUG-0645), the stores of the hut upgrade
+        void* pt = player_tribe();
+        int lv = atoi(a[1].c_str());
+        if (!pt || lv < 0 || lv > 7)
+            return "no player tribe / level 0..7";
+        F<int>(pt, 0x38) = lv; // 0xFF0260, as the upgrade 0xCDA4F0 sets it
+        uintptr_t hudp = H->sym("SporeCoop::TribeHud_ptr");
+        void* hud = hudp && skg::readable((void*)hudp, 4) ? *(void**)hudp : nullptr;
+        if (hud && skg::readable(hud, 0x14) && a_MaxPop)
+            F<int>(hud, 0x10) = thiscall<int>(a_MaxPop, pt);
+        return "level " + std::to_string(lv);
     }
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
         void* pt = player_tribe();
@@ -4310,9 +4368,14 @@ std::string list()
         net::Vec3 p = tribe_pos(tribes[ti]);
         auto ms = members(tribes[ti]);
         TribeInfo ti_info = tribe_info(tribes[ti]); // the members' species (BUG-0381 tests)
-        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d\n", (unsigned)ti,
-                 tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
-                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]));
+        uintptr_t hudp = tribes[ti] == pt ? H->sym("SporeCoop::TribeHud_ptr") : 0; // BUG-0645: the HUD's cap
+        void* hud = hudp && skg::readable((void*)hudp, 4) ? *(void**)hudp : nullptr;
+        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d level=%d cap=%d "
+                 "hud_cap=%d obj=%p color=%08X\n",
+                 (unsigned)ti, tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
+                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]), F<int>(tribes[ti], 0x38),
+                 a_MaxPop ? thiscall<int>(a_MaxPop, tribes[ti]) : -1,
+                 hud && skg::readable(hud, 0x14) ? F<int>(hud, 0x10) : -1, tribes[ti], F<uint32_t>(tribes[ti], 0x234));
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);

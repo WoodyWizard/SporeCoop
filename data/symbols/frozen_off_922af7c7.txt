@@ -176,3 +176,5 @@ SporeCoop::cTribe_ReleaseSlot ; BUG-0667: the null-tribe guard of a layout spot 
 Simulator::cCreatureCitizen::SetTribe ; BUG-0667: the teardown tribe record is off (GOG 2024 only)
 SporeCoop::cCreatureCitizen_Teardown ; BUG-0667: a citizen torn down with no tribe is not repaired (GOG 2024 only)
 SporeCoop::Citizen_BTTerminate ; BUG-0667: a detached body's tree is not ended (GOG 2024 only)
+SporeCoop::TribeHud_ptr ; BUG-0645: the guest's Tribe HUD cap is not set to the host's level (GOG 2024 only)
+SporeCoop::cTribe_MaxPopulation ; BUG-0645: the guest's player tribe level row and its cap are off (GOG 2024 only)

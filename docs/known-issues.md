@@ -2159,3 +2159,34 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: docs/re/creature.md#creature-herd-evolution-desync. Not known: what advances the generation +0xF0, and what
   the guest's screen shows at such a nest (the creatures are the host's NPCs).
 * Ticket: BUG-0668
+
+## Tribe: the guest does not hear the music of the dance at the fire (2026-11-07, player report 2026-11-06)
+<a id="issue-tribe-dance-music"></a>
+
+* What happens: the host hears music while its members dance around the fire, the guest does not.
+* Reproduce: not reproduced in the lab (3 min idle with a 30 s day, a party order at the fire pit).
+* Known: no theme music played on the host in those runs; the guest's mirrors play the same animations
+  (docs/re/tribe.md#tribe-dance-music).
+* Not checked: the dance at night with a goal open (the report's moment).
+* Next steps: one host run with the dance, `coop.audio` on both games.
+* Ticket: BUG-0646
+
+## Tribe: the guest's mirrors make almost no footstep sounds (2026-11-07, fix/w46-tribe-civ)
+<a id="issue-tribe-mirror-footsteps"></a>
+
+* What happens: footstep sound 0x4A776923 436 times on the host, 36 on the guest in 3 min.
+* Known: FUN_009A6BD0 plays them while the animated creature's velocity (+0x1660) is above 0.1; mirrors have none.
+* Ticket: BUG-0669
+
+## Civ: the host's own building designs show as the guest's own creations (2026-11-07, fix/w46-tribe-civ)
+<a id="issue-civ-host-buildings"></a>
+
+* What happens (inferred): buildings of the host's own designs resolve to the guest's creation of the same id.
+* Known: SetBuildingModel 0xBDB940 reads the civ's design key itself; vehicles are fixed (BUG-0647).
+* Ticket: BUG-0670
+
+## Tribe: a member the guest buys never reaches the host (2026-11-07, fix/w46-tribe-civ)
+<a id="issue-tribe-guest-member"></a>
+
+* What happens: the guest's game makes the member, the mirror reconcile removes it, the host has none.
+* Ticket: BUG-0671

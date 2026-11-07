@@ -1293,3 +1293,43 @@ BUG-0602. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   whose game time runs slower (hitches) has the city seconds after the host (play_civ 20261106-105201: founded on
   both at 11:18:04-05, the host's city at 11:18:10, the guest's at 11:18:17). Not changed: the guest's new-city
   cinematic belongs to that path.
+
+## The host's own vehicle designs on a guest (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-host-designs"></a>
+
+BUG-0647. Lab lane 4.
+* ✔ (runtime, `coop.memfind`) a vehicle's model key is at **+0xC4** (instance, type 0x24682294, group 0x40646200: the model
+  object at +0x34, its +0x90; cVehicle::Load 0xCA67C0 sets it with vt 0x94 of +0x34, SetModelKey).
+* ✔ (runtime) The host's civilization names its vehicle designs by keys of the host's own My Creations; the guest's copy of
+  that civilization names the same keys (`coop.civ vdesign`). With another creation under the same id in the guest's My
+  Creations, the guest's mirror was built from the guest's own model (lab 20261107-074609: the mirror's bem 76023C9D, the
+  host's DD673F46): the player's "monsters" (two big creature-like models) at the host's vehicles.
+* Fix `creations.host_designs`: a guest asks the host for each vehicle design key a mirror needs (MSG_CREATION kind 6); the
+  host answers with the records when the key is one of its own My Creations (kind 7, a bundle) or "not mine" (kind 8); the
+  guest registers them under a key of its own (0x7D...... from the content) and creates the mirror from it, or re-keys a bound
+  vehicle of its loaded world (SetModelKey). No mirror is made while the answer is out (at most 20 s, then the key as it is).
+  Mirrors are kept out of saves (BUG-0470), so the key of ours never reaches one. Test civ_host_design (lab
+  20261107-074609 FAIL, 20261107-074448 and 20261107-074935 PASS). The buildings have the same collision: BUG-0670.
+
+## A guest's attack of an NPC city (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-guest-attack"></a>
+
+BUG-0648. Lab lane 4.
+* ✔ (runtime) A guest's real attack: a right-click on an NPC city opens its menu, the crosshair (926, 392 with the city at the
+  centre) makes the guest's game call SetOrder(vehicle, city, 2): civ.cpp sends kind 2 (the host's city index); the host's
+  vehicles took order 2, the city's hit points fell (5200 -> 3971) and its capture meter rose for the player civilization
+  (5/800021CA) on both games. `coop.civ tables` prints the guest's last order (`last_order=type/kind/index/noun`).
+* ~ The report (0.7.8) had the guest's vehicles up to 147 m from the host's (sync-check `v: 5 apart`) and NPC cities laid out
+  anew after a capture (BUG-0602, fixed in 0.7.9): the guest saw its vehicles at a city hall the host's vehicles had not
+  reached. Not reproduced on 0.7.10.
+
+## The partner's pointer tag in Civ (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-partner-tag"></a>
+
+BUG-0649.
+* ✔ (code, coop.cpp on_overlay) every remote player in Tribe and Civ is a Marker at the planet point under that player's mouse
+  (modes.cpp rts_fill); its name tag is drawn in green on every game the same way, while the local entity exists (rts_anchor:
+  the player tribe or the player civilization's first city).
+* ✔ (the report's own screenshot, guest s 5930) the host's green name tag is drawn on the guest's screen, at the host's
+  vehicles (where the host's mouse was), next to the blue owner tags of the vehicles with the same name. The tag is at the
+  partner's mouse, not at its camera; it jumps with the mouse (up to 154 m/s in the guest's log).
