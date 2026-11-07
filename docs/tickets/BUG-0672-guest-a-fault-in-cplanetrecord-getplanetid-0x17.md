@@ -40,6 +40,12 @@ Details: docs/re/tribe.md#tribe-stale-map-tool.
   WM_SK_PUMP_OUT at once, so App::Canvas::Tick's PeekMessage loop never ran dry and never returned to h_CanvasTick, where
   frameunwind clears the flag. Livelock in the message pump.
 
+* The stray third player (another agent's lane-5 guest on lane 9's host port, 2026-11-07 ~07:55): in run
+  20261107-073512 it is in mem_reserve.host.game.log only: player 2 'Bob 2' joined the lane-9 host at 07:55:19 (Creature,
+  world 68AC222A), got a share save and left at 07:55:49. tribe_play's host log (08:09 on) shows only Bob, players=2, and
+  the fault is on the guest, which the stray never reached; the cause (the stale mapping) reproduces with two players
+  only (20261107-094944). It does not matter for this ticket.
+
 ## Fix
 * `coop.fix tribe.world_map` (mods/coop/tribe.cpp): on_world_change clears the mapping; tribe_of_index returns an
   entry only while it is one of this world's tribes (else a warning, 8 times, and null).
