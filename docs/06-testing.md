@@ -4783,3 +4783,17 @@ compares, and the cells' sizes (`scale=` of the l rows) with them: the rescale 0
 10 m off, or of another size, in the host's scale is still a row. A dump without `wscale` (an older coop.dll) is
 compared raw. `SPORE_DETECTOR_CELL_SCALE=0`: raw positions and sizes (the old behaviour, to see the test fail). Selftest: `tools_selftest.py worldstate` (BUG-0662 case;
 `SELFTEST_WORLDDIFF=<old tools/tests>` fails it).
+
+## A guest's own Tribe game over, and campaign_tc2 (2026-11-07, fix/w46-tribe-leader)
+<a id="testing-guest-game-over"></a>
+
+BUG-0685. `tribe_leader_ko` (3 min, tribe fixture, warm): the host knocks out every member but the chief, then the
+guest's game hits its mirror of the chief (`coop.tribe hurt <id> <dmg>` on a guest: the citizen's TakeDamage in that
+game, a test hook); the guest must show no "Alas" caption and keep its input lock at 0 for 20 s.
+`SPORE_FIX_OFF=tribe.mirror_blow` fails it (the lock at once, the caption after 12-19 s). A blow of 1000 by
+`coop.tribe pincer` on a chief that still has members with health stops at 0.3 health: knock the others out first.
+`campaign_tc2` (about 40 min, lanes as a 4-player campaign): the campaign from the Tribe fixture to Civ, the 8 minutes
+of play and the raids of the whole campaign's Tribe stage without the 60 minutes before it. The guests' mirror log
+lines (`tribe: mirror #N goes: ... (BUG-0685)`) say when and why a member mirror went or was not made again. Not in
+any group (run it by name). First run (lab 20261107-163249, lane 4, the log lines without tribe.mirror_blow): no
+`t: missing`, its gate failed on known classes only (`t: 1 apart`, the BUG-0410/0674 class; an NPC proxy 3 m off).

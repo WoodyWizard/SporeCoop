@@ -2543,3 +2543,35 @@ load after a cold start; the "rejoin" of the ticket's title came minutes later, 
   out the game's way (vt 0x5C(0)); after it a +0xF8 / +0xFC that names no entry of the new vector (with a panel) is
   dropped, each with a log line. Off: the game's code. SporeKit `kit.fix faultstorm` (0.3.12: nothing): the same
   fault 300 times in 10 s logs `fault storm: ...` once per place and writes one report per run (mark "kept faulting").
+
+## A guest's own game over from a blow on its last mirror (2026-11-07, fix/w46-tribe-leader)
+<a id="tribe-guest-game-over"></a>
+
+BUG-0685. GOG 2024, lab lanes 4 and 5.
+* ✔ (lab, tribe_leader_ko) a guest's game runs its own game-over rule on its player tribe of mirrors: with the host's
+  tribe down to its chief (the others knocked out, bodies taken out of the list) a blow of the guest's game on the
+  chief's mirror (the citizen's TakeDamage 0xC26920, `coop.tribe hurt <id> 1000`: 168 -> 0) raised the guest's input
+  lock (cGameInputManager +0x110) within 0.1 s and the caption "Alas! Your population has fallen below the minimum ..."
+  about 12-19 s later, while the host's chief stood with full health. The mod's set_health put the mirror back to the
+  host's 168 at once (dead flag 0): the game over stays anyway. Its OK would reload the guest's own last save.
+* ✔ The same with `tribe.leader_sync` and `wsync.tribe_level` off (lab 20261107-164852): not a 0.7.10 change; the
+  damage hook and the BUG-0172/0288 guard are as in 0.7.9.
+* ✔ (lab) the mod's own death of a mirror (tribe.ko: set_health 0 + Die, the host's chief knocked out with no other
+  member alive) brings no game over to the guest (its lock stays 0, no caption: tribe_leader_ko exploration runs
+  20261107-162217 / -162222), as BUG-0288 saw. Only the game's own blow does.
+* ✔ (lab) a chief that still has other members with health is not knocked out by a blow of 1000 on the host: its
+  health stops at 0.3 and comes back at ~9 per second (the game's own rule, `coop.tribe pincer`); alone, the same
+  blow takes it to 0 (dead flag) and the host's game over follows.
+* ✔ (lab, campaign_tc2 with the new log lines) the host's chief knocked out during the raids and up again: every guest
+  logs `mirror #1 goes: dead here, back on its feet on the host (made again)` and then leader_sync's `(the leader
+  was none)`: the "leader was none" lines of the campaign are these replacements, not a leader the guest's game lost.
+* Inferred chain of the campaign (Carol, s 2950-3007): a blow of Carol's game on her last mirror with health (#4, the
+  chief) brought up her game over (`busy=input_lock,paused` from s 2960, only on her); the mirror then went (the KO
+  replacement or the game's own removal) and tribe.gameover's guard (a guest with its input lock up and no member with
+  health: "the player tribe is out") refused the new one while the host kept sending #4.
+* Fix `tribe.mirror_blow` (h_CitizenTD): on a guest (not while the host is away, local_play) a blow of its own game
+  never takes a member mirror below 0.3 health; the host's game decides when it falls. Off: the game's blow.
+* Diagnostics: a guest logs (60 lines at most) `tribe: mirror #N goes: ...` (gone from the host's snapshot, a body,
+  dead here and up on the host), `a member of this game the host has not goes`, `mirror #N: its object is gone`,
+  `mirror #N is not made: <why>` (no local tribe for its tribe, tribe.gameover's guard, the game made no citizen)
+  and `mirror #N is made again`; `coop.tribe` lifetime line `mirror_blows_kept=`.
