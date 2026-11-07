@@ -8,9 +8,9 @@ reported: 2026-11-07
 source: found in the lab, fix/w46-creature-p0 (BUG-0639 probe)
 role: both
 versions: 0.7.9
-fixed_in:
+fixed_in: unreleased
 branch: fix/w46-herd-evo
-commits:
+commits: 0ebcfb43, 64fe3af3, 4a07c2fc, ffce936a
 tests: nest_evolve (coop_nest_evolve.py), nest_evolve_probe (coop_nest_evolve_probe.py)
 signature:
 docs: docs/re/creature.md#creature-herd-evolution-desync, docs/re/creature.md#creature-herd-evolution-owner

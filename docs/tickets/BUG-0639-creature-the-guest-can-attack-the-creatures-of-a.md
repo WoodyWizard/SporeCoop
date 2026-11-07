@@ -11,7 +11,7 @@ versions: 0.7.8
 fixed_in:
 branch: fix/w46-creature-p0
 commits: 5a310d25, fc639e24, 3ce217e3
-tests: family_attack (coop_family_attack.py), nest_evolve_probe (coop_nest_evolve_probe.py)
+tests: family_attack (coop_family_attack.py), nest_evolve_probe (coop_nest_evolve_probe.py), nest_evolve (coop_nest_evolve.py)
 signature:
 docs:
 related: BUG-0464, BUG-0460, BUG-0418, BUG-0640, BUG-0668
