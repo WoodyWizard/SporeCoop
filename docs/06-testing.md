@@ -4698,3 +4698,14 @@ task for outside the frame queued just before). Turn the hold off at the end (`s
 session or world change. Frames are checked with the `frame` command 5 s and 15 s later. With `kit.outpump` off a caught
 fault inside a frame with an outside task pending freezes the mod (the game's message loop never returns): any test can
 show that, this one does on purpose.
+
+## The guest's cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
+<a id="testing-space-kept-hold"></a>
+
+* `coop_space_items_rejoin.py` (~1 min, `space` fixture, BUG-0678): makes the two holds differ (the guest: spice 0
+  x7, an Antimatter Bomb `144DF50A` at 9 charges, the interstellar drive; the host: spice 1 x5, the bomb at 3), then
+  the guest leaves and joins again; it reads the game's `cPlayerInventory` on both with `coop.space trade inv`
+  (`item type=.. key=.. count=.. ammo=..`). `coop.space trade kept` shows the host's kept holds and the guest's
+  restore. `SPORE_FIX_OFF=space.keep_items` fails: the rejoined guest has the host's spice and bomb charges and no drive.
+* The `space` fixture's ship has 8 tools (none with charges) and 10 cargo slots: add a charge tool first
+  (`coop.space tool add 0x144DF50A`).

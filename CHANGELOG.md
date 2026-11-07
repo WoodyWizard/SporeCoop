@@ -19,6 +19,8 @@
 - Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
 - Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
   (BUG-0671).
+- Space: a player who leaves and joins again gets its own cargo hold back (its tools and their charges, spice and
+  cargo), no longer the host's (BUG-0678).
 
 ## [0.7.9] - 2026-11-07
 

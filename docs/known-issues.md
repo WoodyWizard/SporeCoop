@@ -2196,3 +2196,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0671
 * Fixed (2026-11-07, fix/w46-herd-evo): the host owns the evolution (wsync.herd_evo, test nest_evolve);
   docs/re/creature.md#creature-herd-evolution-owner.
+
+## Space: what the kept guest cargo hold does not cover (2026-11-07, fix/w46-space-items)
+<a id="issue-space-kept-hold-limits"></a>
+
+* What happens: a guest's own hold comes back after a rejoin (BUG-0678), but not when the host restarted its game
+  meanwhile (memory only), not with changes made while the guest was not connected, cargo slots only grow, and a
+  non-spice cargo item the host's copy lacks cannot be made again.
+* Reproduce: `coop_space_items_rejoin.py` with the host restarted between the guest's leave and its join.
+* Known: docs/re/space.md#space-kept-hold.
+* Not checked: a guest that joins under another name (another player to the host).
+* Next steps: a side file on the host per Space save (as docs/11-rivals.md#rivals-guest-colonies designs for colonies).
+* Ticket: BUG-0679
