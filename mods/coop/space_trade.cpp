@@ -48,6 +48,10 @@ enum Kind : uint8_t {
     K_OFFER = 74,      // rivals: {to, id, planet, key[3], n, price, name}: an offer `to` may accept
     K_OFFER_ACK = 75,  // rivals: {to, id, accepted, reason}: accepted = paid and taken, 0 = declined
     K_OFFER_CANCEL = 76, // rivals: {to, id}: the seller withdraws (the receiver answers with a decline)
+    // BUG-0678: a guest's own inventory across a rejoin or a reload (see "own inventory" below)
+    K_INV = 77,        // guest -> host {to 0, serial, fresh u8, inventory}: what my cargo hold has now
+    K_INV_KEPT = 78,   // host -> guest {to, serial, inventory}: your own inventory, kept since you were here
+    K_INV_DONE = 79,   // guest -> host {to 0, serial, restored u16, failed u16}: applied (or not needed)
 };
 
 constexpr uint32_t kToolType = 0x707459F0; // cSpaceToolData::TYPE (Cast)
@@ -792,6 +796,7 @@ static void pay_owed()
     }
 }
 
+static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r);
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     uint8_t to = r.u8();
@@ -940,14 +945,387 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     case K_OFFER_CANCEL:
         answer_offer(id, false, origin);
         break;
+    case K_INV:
+    case K_INV_KEPT:
+    case K_INV_DONE:
+        inv_message(kind, origin, id, r);
+        break;
     default:
         break;
     }
 }
 
+// ---------------- own inventory across a rejoin or a reload (BUG-0678) ----------------
+// Every player flies in a copy of the host's save: the cargo hold (tools and their charges, spice,
+// other cargo, the cargo slots) is the game's cPlayerInventory (cSimulatorSpaceGame +0x40,
+// docs/re/space.md 7.7), saved with the world. A guest that leaves and joins again (or loads the
+// host's world again in a session) loads the host's share save, so its own hold was replaced by the
+// host's (Discord 2026-11-07: "their items disappear and the host's items appear").
+// The guest sends its hold to the host whenever it changes (K_INV; the first one of every Space world
+// it loaded from the host is marked fresh). The host keeps the last one per player name for the Space
+// world it plays (world_epoch, memory only, like the kept colonies of space_map.cpp, BUG-0195); a fresh
+// hold of a player it kept one for is the host's copy: the host sends the kept one back (K_INV_KEPT),
+// takes no hold of that player until the answer (K_INV_DONE, resent after 10 s), and the guest makes its
+// game's hold that one: the host's items it never had leave, its own come back (AddItemByKey for tools,
+// the tool's charges, CreateTradingObject for spice, the stack count of other cargo, AddCargoSlots).
+// A first join has nothing kept: the guest starts with the save's hold, as before.
+// `coop.fix space.keep_items off`: nothing comes back, the rejoined guest has the host's hold (0.7.9).
+static bool g_keep_items_fix = true;
+COOP_FIX("space.keep_items", "BUG-0678", g_keep_items_fix, "space: a guest's own cargo hold comes back when it rejoins or reloads (the host keeps it)");
+
+struct InvItem {
+    uint8_t type = 0; // cSpaceInventoryItem +0x14 (2 tool, 4 trading object / spice, 0/1/5/6 other cargo)
+    Key key;
+    int count = 0;    // +0x10
+    int ammo = -1;    // tools that use charges: cSpaceToolData +0x7C, else -1
+};
+struct Inv {
+    int slots = 0; // cargo slot items (type 3), vt+0x88
+    std::vector<InvItem> items;
+};
+
+static bool read_inv(Inv& out)
+{
+    void* inv = inventory();
+    if (!inv)
+        return false;
+    out = Inv{};
+    out.slots = vcall<int>(inv, 0x88 / 4);
+    int n = vcall<int>(inv, 0x5C / 4);
+    for (int i = 0; i < n && i < 256; i++) {
+        void* it = vcall<void*>(inv, 0x60 / 4, i);
+        if (!it || F<int>(it, 0x14) == 3)
+            continue;
+        InvItem x;
+        x.type = (uint8_t)F<int>(it, 0x14);
+        memcpy(x.key.v, vcall<const uint32_t*>(it, 0x18 / 4), 12);
+        x.count = F<int>(it, 0x10);
+        if (void* t = as_tool(it))
+            x.ammo = (F<uint32_t>(t, kFlags) & 0x20) ? F<int>(t, kAmmo) : -1;
+        out.items.push_back(x);
+    }
+    return true;
+}
+
+static void put_inv(net::Writer& w, const Inv& v)
+{
+    w.u16((uint16_t)std::clamp(v.slots, 0, 0xFFFF));
+    uint16_t n = (uint16_t)std::min<size_t>(v.items.size(), 250);
+    w.u16(n);
+    for (uint16_t i = 0; i < n; i++) {
+        const InvItem& x = v.items[i];
+        w.u8(x.type);
+        put_key(w, x.key);
+        w.u32((uint32_t)x.count);
+        w.u32((uint32_t)x.ammo);
+    }
+}
+
+static bool get_inv(net::Reader& r, Inv& v)
+{
+    v = Inv{};
+    v.slots = r.u16();
+    uint16_t n = r.u16();
+    if (!r.ok() || n > 250)
+        return false;
+    for (uint16_t i = 0; i < n && r.ok(); i++) {
+        InvItem x;
+        x.type = r.u8();
+        x.key = get_key(r);
+        x.count = (int)r.u32();
+        x.ammo = (int)r.u32();
+        if (x.count < 0 || x.count > 100000 || x.ammo < -1 || x.ammo > 100000)
+            return false;
+        v.items.push_back(x);
+    }
+    return r.ok();
+}
+
+static std::vector<uint8_t> inv_bytes(const Inv& v)
+{
+    net::Writer w;
+    put_inv(w, v);
+    return w.data;
+}
+
+static const InvItem* find_item(const Inv& v, uint8_t type, const Key& k)
+{
+    for (auto& x : v.items)
+        if (x.type == type && x.key == k)
+            return &x;
+    return nullptr;
+}
+
+// make the game's hold `want`; returns how many items could not be made as they were (logged)
+static uint32_t g_inv_restored, g_inv_failed, g_inv_removed;
+static int apply_inv(const Inv& want)
+{
+    void* inv = inventory();
+    if (!inv)
+        return -1;
+    int failed = 0, removed = 0;
+    // 1. what is not mine leaves (the host's items), what is more than mine shrinks: the game's TakeItem
+    for (int guard = 0; guard < 256; guard++) {
+        int n = vcall<int>(inv, 0x5C / 4), hit = -1, take = -1;
+        for (int i = 0; i < n && i < 256 && hit < 0; i++) {
+            void* it = vcall<void*>(inv, 0x60 / 4, i);
+            if (!it || F<int>(it, 0x14) == 3)
+                continue;
+            Key k;
+            memcpy(k.v, vcall<const uint32_t*>(it, 0x18 / 4), 12);
+            uint8_t type = (uint8_t)F<int>(it, 0x14);
+            const InvItem* w = find_item(want, type, k);
+            if (!w)
+                hit = i, take = -1; // the whole item
+            else if (type != 2 && F<int>(it, 0x10) > w->count && w->count > 0)
+                hit = i, take = F<int>(it, 0x10) - w->count;
+        }
+        if (hit < 0)
+            break;
+        void* out = nullptr;
+        if (!vcall<bool>(inv, 0x7C / 4, hit, &out, take)) { // TakeItem
+            failed++;
+            H->log(M, SK_WARN, "trade: own hold: item %d not taken out", hit);
+            break;
+        }
+        if (out)
+            vcall<void>(out, 0x08 / 4); // Release
+        removed++;
+    }
+    // 2. my cargo slots (bought upgrades): AddCargoSlots(n) vt+0x94 (0xFF39E0, ret 4); never fewer
+    int slots = vcall<int>(inv, 0x88 / 4);
+    if (want.slots > slots && want.slots - slots <= 64)
+        vcall<void>(inv, 0x94 / 4, want.slots - slots);
+    // 3. mine comes back: tools first (an upgrade needs its base tool: a few passes), then cargo
+    std::vector<const InvItem*> todo;
+    for (auto& x : want.items)
+        todo.push_back(&x);
+    for (int pass = 0; pass < 4 && !todo.empty(); pass++) {
+        std::vector<const InvItem*> again;
+        for (const InvItem* x : todo) {
+            int i = vcall<int>(inv, 0x64 / 4, (int)x->type, x->key.v); // FindItem
+            void* it = i >= 0 ? vcall<void*>(inv, 0x60 / 4, i) : nullptr;
+            if (x->type == 2) {
+                if (!it && a_AddItemByKey) {
+                    thiscall<void>(a_AddItemByKey, inv, x->key.v);
+                    i = vcall<int>(inv, 0x64 / 4, 2, x->key.v);
+                    it = i >= 0 ? vcall<void*>(inv, 0x60 / 4, i) : nullptr;
+                }
+                void* t = as_tool(it);
+                if (!t) {
+                    again.push_back(x);
+                    continue;
+                }
+                if (x->ammo >= 0 && (F<uint32_t>(t, kFlags) & 0x20))
+                    set_charges(t, x->ammo);
+                continue;
+            }
+            int have = it ? F<int>(it, 0x10) : 0;
+            if (have >= x->count)
+                continue;
+            if (it && x->type != 4) {
+                F<int>(it, 0x10) = x->count; // a stack of mine: its count (no new slot needed)
+                continue;
+            }
+            if (x->type == 4 && add_spice(x->key, x->count - have))
+                continue;
+            again.push_back(x);
+        }
+        todo = std::move(again);
+    }
+    for (const InvItem* x : todo) {
+        failed++;
+        H->log(M, SK_WARN, "trade: own hold: %08X (type %d x%d) could not come back", x->key.v[0], x->type, x->count);
+    }
+    refresh_palettes();
+    g_inv_removed += removed;
+    H->log(M, SK_INFO, "trade: own hold back: %u items, %d of the host's out, %d not restored (BUG-0678)",
+           (unsigned)want.items.size(), removed, failed);
+    return failed;
+}
+
+struct KeptInv {
+    Inv inv;
+    bool have = false;
+    uint8_t id = 0xFF;      // its session id now, 0xFF = not here
+    bool restoring = false; // sent back, no answer yet
+    uint32_t serial = 0;
+    double sent = 0;
+};
+static std::map<std::string, KeptInv> g_kept_inv; // host: player name -> its own hold
+static uint32_t g_kept_inv_epoch, g_inv_serial, g_inv_holds, g_inv_sent_back, g_inv_done;
+// guest
+static bool g_inv_join_seen;
+static uint32_t g_inv_join_epoch, g_inv_fresh_epoch, g_inv_applied_epoch, g_inv_sent;
+static std::vector<uint8_t> g_inv_last;
+static double g_inv_next;
+
+static void send_kept_inv(uint8_t id, KeptInv& k)
+{
+    net::Writer w;
+    w.u8(id);
+    w.u32(k.serial = ++g_inv_serial);
+    put_inv(w, k.inv);
+    spaceext::send(K_INV_KEPT, w);
+    k.restoring = true;
+    k.sent = H->time_seconds();
+    g_inv_sent_back++;
+    H->log(M, SK_INFO, "trade: the own hold of %s (%u items) sent back to it (BUG-0678)", spaceext::name_of(id).c_str(),
+           (unsigned)k.inv.items.size());
+}
+
+static void inv_tick(double now)
+{
+    if (!spaceext::connected())
+        return;
+    if (spaceext::is_host()) {
+        uint32_t e = spaceext::world_epoch();
+        if (e && e != g_kept_inv_epoch) { // another Space world: the holds kept were of the old one
+            g_kept_inv.clear();
+            g_kept_inv_epoch = e;
+        }
+        for (auto& [n, k] : g_kept_inv) {
+            if (k.id != 0xFF && !partner_here(k.id))
+                k.id = 0xFF, k.restoring = false; // left
+            else if (k.id != 0xFF && k.restoring && now - k.sent > 10.0)
+                send_kept_inv(k.id, k); // no answer (lost, the guest still loading)
+        }
+        return;
+    }
+    if (!g_inv_join_seen) {
+        g_inv_join_seen = true;
+        g_inv_join_epoch = spaceext::in_space() ? spaceext::world_epoch() : 0;
+    }
+    // only the hold of a world loaded from the host since the join (the first one may be the guest's own world)
+    uint32_t e = spaceext::world_epoch();
+    if (!spaceext::in_space() || !e || e == g_inv_join_epoch || now < g_inv_next)
+        return;
+    g_inv_next = now + 1.0;
+    Inv v;
+    if (!read_inv(v))
+        return;
+    bool fresh = e != g_inv_fresh_epoch;
+    std::vector<uint8_t> b = inv_bytes(v);
+    if (!fresh && b == g_inv_last)
+        return;
+    g_inv_last = std::move(b);
+    g_inv_fresh_epoch = e;
+    net::Writer w;
+    w.u8(0);
+    w.u32(++g_inv_sent);
+    w.u8(fresh ? 1 : 0);
+    put_inv(w, v);
+    spaceext::send(K_INV, w);
+}
+
+static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
+{
+    if (kind == K_INV || kind == K_INV_DONE) {
+        if (!spaceext::is_host())
+            return;
+        std::string name = spaceext::name_of(origin);
+        if (name.empty() || name == "?")
+            return;
+        KeptInv& k = g_kept_inv[name];
+        if (kind == K_INV_DONE) {
+            if (k.restoring && k.id == origin && id == k.serial) {
+                k.restoring = false;
+                g_inv_done++;
+            }
+            return;
+        }
+        bool fresh = r.u8() != 0;
+        Inv v;
+        if (!get_inv(r, v))
+            return;
+        if (k.id != origin) // its first hold since it joined
+            k.id = origin, k.restoring = false;
+        if (fresh && k.have && g_keep_items_fix) { // the host's copy: its own goes back
+            send_kept_inv(origin, k);
+            return;
+        }
+        if (k.restoring)
+            return; // the old copy, sent before it got its own back
+        k.inv = std::move(v);
+        k.have = true;
+        g_inv_holds++;
+        return;
+    }
+    // K_INV_KEPT, for me
+    if (spaceext::is_host())
+        return;
+    Inv v;
+    if (!get_inv(r, v))
+        return;
+    uint32_t e = spaceext::world_epoch();
+    int failed = 0;
+    if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
+        failed = apply_inv(v);
+        if (failed < 0)
+            return; // no hold now: the host sends it again
+        g_inv_applied_epoch = e;
+        g_inv_restored++;
+        g_inv_failed += (uint32_t)failed;
+        g_inv_last.clear(); // the hold now, at once
+        g_inv_next = 0;
+        spaceext::notice(spaceext::tr("Your cargo hold is back.", "Ваш трюм восстановлен."));
+    } else if (e != g_inv_applied_epoch && g_keep_items_fix)
+        return; // not in this world yet: the host sends it again
+    net::Writer w;
+    w.u8(0);
+    w.u32(id);
+    w.u16(0);
+    w.u16((uint16_t)failed);
+    spaceext::send(K_INV_DONE, w);
+    (void)origin;
+}
+
+static void inv_session_end()
+{
+    g_inv_join_seen = false;
+    g_inv_fresh_epoch = 0;
+    g_inv_last.clear();
+    g_inv_next = 0;
+    for (auto& [n, k] : g_kept_inv)
+        k.id = 0xFF, k.restoring = false;
+}
+
+static std::string inv_text(const Inv& v)
+{
+    std::string s;
+    char b[160];
+    snprintf(b, sizeof b, "slots %d items %u\n", v.slots, (unsigned)v.items.size());
+    s += b;
+    for (auto& x : v.items) {
+        snprintf(b, sizeof b, "item type=%d key=%08X %08X %08X count=%d ammo=%d\n", x.type, x.key.v[0], x.key.v[1],
+                 x.key.v[2], x.count, x.ammo);
+        s += b;
+    }
+    return s;
+}
+
+static std::string inv_status()
+{
+    std::string s;
+    char b[240];
+    snprintf(b, sizeof b,
+             "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
+             "applied_epoch=%u world=%u\n",
+             (int)g_keep_items_fix, (unsigned)g_kept_inv.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
+             g_inv_failed, g_inv_removed, g_inv_join_epoch, g_inv_applied_epoch, spaceext::world_epoch());
+    s += b;
+    for (auto& [n, k] : g_kept_inv) {
+        snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", n.c_str(), k.id == 0xFF ? -1 : k.id,
+                 (int)k.have, (int)k.restoring, (unsigned)k.inv.items.size(), k.inv.slots);
+        s += b;
+    }
+    return s;
+}
+
 // ---------------- frame ----------------
 static void tick(double now)
 {
+    inv_tick(now);
     if (g_refund_fix)
         pay_owed(); // also after the session ended
     if (!spaceext::connected())
@@ -1007,6 +1385,7 @@ static void on_session_end()
     }
     g_offers.clear();
     g_sel_to = 0xFF;
+    inv_session_end();
 }
 
 // ---------------- the Space page ----------------
@@ -1254,6 +1633,12 @@ static std::string debug(const std::vector<std::string>& a)
         (a[0] == "refundfix" ? g_refund_fix : g_away) = on;
         return a[0] + (on ? " 1\n" : " 0\n");
     }
+    if (a[0] == "inv") { // BUG-0678: the game's hold as the game holds it
+        Inv v;
+        return read_inv(v) ? inv_text(v) : "no inventory\n";
+    }
+    if (a[0] == "kept") // BUG-0678: the host's kept holds, the guest's restore
+        return inv_status();
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
         return b;

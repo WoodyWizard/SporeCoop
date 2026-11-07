@@ -455,6 +455,7 @@ add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
+add('space_items_rejoin', P + 'coop_space_items_rejoin.py', minutes=5, fixture='space')  # a guest's own cargo hold is its own again after it rejoins, never the host's (BUG-0678; SPORE_FIX_OFF=space.keep_items fails)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
 add('space_share_wait', P + 'coop_space_share_wait.py', minutes=5)  # a guest waiting for the world while the host is on a planet is told why; the host's trace says share_wait=planet (BUG-0382; SPORE_FIX_OFF=world.share_wait_notice fails)
