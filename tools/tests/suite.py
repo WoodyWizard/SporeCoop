@@ -348,6 +348,7 @@ add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minut
 add('tribe_act', P + 'coop_tribe_act.py', warm=True, minutes=4, fixture='tribe')  # the coop.tribe act test command does not fault the host (BUG-0260; --nofix fails)
 add('tribe_tools', P + 'coop_tribe_tools.py', warm=True, minutes=4, fixture='tribe')  # a weapon rack the host built is in the guest's game and a guest's member takes the weapon from it, held on both games (BUG-0514; SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold fails; fails in ~3 of 8 runs with the fix on: the host's member ignores the order, BUG-0505)
 add('tribe_leader_sync', P + 'coop_tribe_leader_sync.py', warm=True, minutes=3, fixture='tribe')  # the guest's game has the host's tribe leaders: a mirror made its tribe's leader there gives the lead back to the host's leader's mirror and takes its tool (BUG-0652; SPORE_FIX_OFF=tribe.leader_sync fails)
+add('tribe_leader_ko', P + 'coop_tribe_leader_ko.py', warm=True, minutes=3, fixture='tribe')  # BUG-0685: a blow of the guest's own game on its last mirror with health brings up no game over of its own there (SPORE_FIX_OFF=tribe.mirror_blow fails)
 add('tribe_tools_all', P + 'coop_tribe_tools_all.py', warm=True, minutes=4, fixture='tribe')  # an NPC tribe's tools (the host's rack, the guest's own) stand where the host's stand in the guest's game (BUG-0523; SPORE_FIX_OFF=wobj.tribe_tools_all fails)
 add('tribe_tool_buy', P + 'coop_tribe_tool_buy.py', warm=True, minutes=4, fixture='tribe')  # a rack a guest buys and places is in the host's game and the guest's member takes the weapon from it (BUG-0524; SPORE_FIX_OFF=wobj.tribe_tool_buy fails)
 add('tribe_gather_stall', P + 'coop_tribe_gather_stall.py', warm=True, minutes=4, fixture='tribe')  # a guest's member carrying gathered food home takes the guest's new walk order (BUG-0531 regression check: the stall was not reproduced, no fix)
@@ -610,6 +611,10 @@ add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-
 # A timing race: FAIL with SPORE_FIX_OFF=world.share_settle_reset in about 1 of 3 games (--repeat)
 add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=30, timeout=3600)
+# BUG-0685: the Tribe stage of the campaign with four players, its play and its raids up to Civ (the stage where a
+# guest's mirror of the host's tribe leader went missing in the whole campaign)
+add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', ('campaign', 'detector'),
+    minutes=45, timeout=3600)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran
