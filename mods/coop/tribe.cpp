@@ -193,6 +193,7 @@ constexpr double kBodyMax = 60.0;
 constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
 // guest: mirrors taken out of their tribe as bodies (destroyed on removal) -> the tribe they were taken out of
 static std::unordered_map<void*, void*> g_detached;
+static uintptr_t a_BTTerminate; // BUG-0667: SporeCoop::Citizen_BTTerminate (optional)
 static uint32_t g_bodies_detached;
 // BUG-0667 (docs/re/tribe.md#tribe-body-teardown): a detached body's mirror was destroyed (DestroyInstance) with its
 // +0x1014 cleared. The citizen's teardown (0xC1FFE0) shuts its behaviour tree down, and the exit of a node still active
@@ -228,6 +229,12 @@ static void detach_body(void* c)
         e = w;
     }
     F<uint8_t>(c, 0x12C) = 0; // (not selected)
+    // BUG-0667: the body's behaviour tree is ended while its tribe is still set (as the host's body ended its nodes
+    // by dying before its game took it out of the tribe): the exits of the nodes a mirror's skipped tree left active
+    // (eat, GrabTool, ...) release their spots now, and nothing is left for its teardown, which may come after the
+    // tribes are gone (the world's teardown at a menu exit: long_tribe_short 20261107-043030)
+    if (g_body_teardown_fix && a_BTTerminate)
+        skg::cdecl_call<void>(a_BTTerminate, c);
     F<void*>(c, 0x1014) = nullptr;
     g_detached[c] = t;
     g_bodies_detached++;
@@ -351,8 +358,22 @@ static void SK_THISCALL h_SetTribe(void* c, void* t)
 {
     if (g_body_teardown_fix && is_guest()) {
         void* old = F<void*>(c, 0x1014);
-        if (!t && old)
+        if (!t && old) {
             g_left_tribe[c] = old;
+            static uint32_t said;
+            if (said++ < 24) { // diagnostics (BUG-0667): who takes a citizen out of its tribe on a guest
+                char b[160] = "";
+                int n = 0;
+                const uint32_t* sp = (const uint32_t*)__builtin_frame_address(0);
+                for (int i = 0; i < 96 && n < 8; i++)
+                    if (sp[i] > 0x401000 && sp[i] < 0x1300000)
+                        n += snprintf(b + strlen(b), sizeof b - strlen(b), " %08X", sp[i]) > 0;
+                auto gi = g_gid_of.find(c);
+                H->log(M, SK_INFO, "tribe: SetTribe(null) on %p (mirror #%d, old tribe %p, dead %u, node %08X); stack:%s (BUG-0667)", c,
+                       gi == g_gid_of.end() ? -1 : (int)gi->second, old, F<uint8_t>(c, 0xB5E),
+                       F<uint8_t*>(c, 0xB4C) ? *(uint32_t*)(F<uint8_t*>(c, 0xB4C) + 0x1D8) : 0, b);
+            }
+        }
         else if (t)
             g_left_tribe.erase(c);
     }
@@ -378,11 +399,17 @@ static void SK_THISCALL h_CitizenTeardown(void* c)
             g_teardown_tribe_back++;
         } else {
             uint8_t* ai = F<uint8_t*>(c, 0xB4C);
-            if (ai && skg::readable(ai, 0x620) && *(int*)(ai + 0x1DC) > 0) {
-                if (g_teardown_bt_emptied++ < 8)
+            // the tree's terminate (0xC0D500 -> 0xBC8850) runs the exits unless the stack's first word (ai+0x1D0) is
+            // -1, its "no tree running" mark; it then fills the 0x418-byte stack with 0xFF itself
+            if (ai && skg::readable(ai, 0x620) && *(int*)(ai + 0x1D0) != -1) {
+                if (g_teardown_bt_emptied++ < 8) {
+                    auto lt = g_left_tribe.find(c);
                     H->log(M, SK_WARN, "tribe: citizen %p torn down with no tribe in node %08X (depth %d): its tree's exits "
-                           "skipped (BUG-0667)", c, *(uint32_t*)(ai + 0x1D8), *(int*)(ai + 0x1DC));
-                *(int*)(ai + 0x1DC) = 0;
+                           "skipped (BUG-0667; left tribe %p, detached %d, tribes listed %u)", c, *(uint32_t*)(ai + 0x1D8),
+                           *(int*)(ai + 0x1DC), lt == g_left_tribe.end() ? nullptr : lt->second, (int)g_detached.count(c),
+                           (unsigned)tribes.size());
+                }
+                memset(ai + 0x1D0, 0xFF, 0x418); // as 0xBC8850 leaves it (BUG-0667: depth 0 alone did not stop the exits)
             }
         }
     }
@@ -395,6 +422,10 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
+    if (g_body_teardown_fix && g_detached.count((void*)self)) { // BUG-0667: a detached body's tree stays ended
+        g_bt_skipped++;
+        return 0;
+    }
     if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe && !local_play() &&
         !g_bt_local.count((void*)self)) {
         g_bt_skipped++;
@@ -1032,6 +1063,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_TribeUI = H->sym("SporeCoop::TribeUI_ptr");
     if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
         H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
+    a_BTTerminate = H->sym("SporeCoop::Citizen_BTTerminate"); // BUG-0667 (optional)
     if (uintptr_t a = H->sym("SporeCoop::cTribe_ReleaseSlot")) // BUG-0667 (optional)
         H->hook_create(M, (void*)a, (void*)h_ReleaseSlot, (void**)&o_ReleaseSlot);
     if (uintptr_t a = H->sym("Simulator::cCreatureCitizen::SetTribe")) // BUG-0667 (optional)

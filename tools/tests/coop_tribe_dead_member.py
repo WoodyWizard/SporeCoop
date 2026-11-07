@@ -25,6 +25,10 @@ guest's own game (`coop.tribe localbt` + `coop.tribe eat`: its tree runs as whil
 editor visit), so the eat node 0x0461300F is active on the mirror when its body is destroyed. PASS: the body goes on the
 guest with no caught fault and the guest keeps drawing frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL (the fault
 at 0xAC9C7D, data 0x39C; long_tribe's guest froze after it).
+--eat --menu (BUG-0667, long_tribe_short 20261107-043030): as --eat, but once the guest has taken the body out of its
+tribe (bodies_detached), the guest leaves to the main menu through the pause menu (Exit to Main Menu, Don't Save x2)
+while the body still lies: the world's teardown destroys the tribes first and the body after them. PASS: no caught
+fault, the guest reaches the main menu and runs frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL.
 """
 import math
 import re
@@ -50,6 +54,7 @@ ALL = '--all' in sys.argv
 PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv
 REJOIN = '--rejoin' in sys.argv  # BUG-0664
 EAT = '--eat' in sys.argv  # BUG-0667
+MENU = '--menu' in sys.argv  # BUG-0667: the guest leaves to the main menu while the body lies
 if EAT:
     PLAYER = True
 EAT_NODE = 0x0461300F
@@ -63,6 +68,30 @@ def guest_node(con, i):
 def frame(con):
     m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
     return int(m.group(1)) if m else -1
+
+
+def menu_exit(guest, ck):
+    """the guest leaves its world to the main menu as a player does (coop_long_session's menu event)"""
+    import uifind
+    if 'open=1' in guest.call('coop.uistate').get('out', ''):
+        guest.call('key f9')
+    for _ in range(3):
+        guest.call('key esc')
+        time.sleep(1.2)
+        if uifind.shown(guest, 'Resume Game'):
+            break
+    ok = uifind.press(guest, 'Exit to Main Menu', 'Do you want to save your game?') \
+        and uifind.press(guest, "Don't Save", 'Are you sure?') and uifind.press(guest, "Don't Save")
+    ck(ok, 'the guest chose Exit to Main Menu, Don\'t Save')
+    t0, seen = time.time(), False
+    while ok and time.time() - t0 < 60 and not seen:
+        seen = 'GalaxyGameEntry' in guest.call('game.mode').get('out', '')
+        time.sleep(1)
+    ck(seen, f'the guest is in the main menu ({time.time() - t0:.1f} s)')
+    f0 = frame(guest)
+    time.sleep(5)
+    f1 = frame(guest)
+    ck(f1 > f0 + 30, f'the guest runs frames 5 s later (frame {f0} -> {f1})')
 
 
 def eat_then_die(host, guest, ck, victim, attacker):
@@ -89,6 +118,9 @@ def eat_then_die(host, guest, ck, victim, attacker):
         print(f'    {time.time() - t1:4.1f} s: guest has the mirror {in_g}, '
               f'{det.group(0) if det else ""} {" ".join(re.findall(r"(?:teardown_restored|slot_null_skipped)=\d+", st))}',
               flush=True)
+        if MENU and det and int(det.group(1)) > 0 and in_g:  # the body lies, out of its tribe: leave the world
+            print('  guest: the body is out of its tribe; to the main menu', flush=True)
+            return menu_exit(guest, ck)
         if not in_g and det and int(det.group(1)) > 0:
             gone = time.time() - t1
     ck(gone is not None, f'the body went on the guest ({gone and round(gone, 1)} s after the kill)')
