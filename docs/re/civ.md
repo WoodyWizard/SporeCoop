@@ -1356,3 +1356,23 @@ the glide) next to the drawn vehicle; tools: the decomposition in docs/06-testin
   the city every second): replayed on the host's own path, a straight extrapolation from the last two states is p90
   0.9 / 1.9 / 3.1 m off at 0.1 / 0.2 / 0.3 s, an arc (the yaw rate of the last three states) 0.8 / 1.7 / 2.9 m: no model
   of the path makes a 0.3 s old state good at 15-20 m/s. What is left of BUG-0438 at that load is the host's frame rate.
+
+## The host's own building designs on a guest (2026-11-07, fix/w46-misc)
+<a id="civ-host-buildings"></a>
+
+BUG-0670, the buildings of docs/re/civ.md#civ-host-designs. Lab lane 9 (`tools/tests/coop_civ_host_building.py`).
+* ✔ (Ghidra) `cCity::SetBuildingModel` 0xBDB940: the design id per building type (house 0xFF10521 -> 0x4E3F7777,
+  entertainment 0x1A55E4D -> 0x72C49181, factory 0xECADE42 -> 0x47C10953, **0x1007AE63 -> 0x99E92F05**, every other
+  type 0x4E3F7777), `GetDesignKey(civ +0x590, id)` (instance 0: FUN_00bf98c0 generates the design first), then the
+  building's model object (+0x34) vt 0x94 SetModelKey(key). The 0x1007AE63 case is missing in civ.cpp
+  `building_design_id` (BUG-0469's content check skips that type).
+* ✔ (runtime) A building's model key is at **+0x34 +0x90 = +0xC4** (type 0x2399BE55, group 0x40636200), as for
+  vehicles: the host's house of the test's design shows it (`coop.civ bmodels`).
+* ✔ (runtime, lab 20261107-120600) With another creation under the same id in the guest's My Creations, the guest's
+  copy of the host's house was the guest's model (bem 9A907DC4, the host's 0B25F69B), for a house built while both
+  played and for the house of the loaded world after a rejoin.
+* Fix `civ.host_buildings`: once a second a guest checks every building of every city; a key the host answers as its own
+  design (creations::host_design, MSG_CREATION kind 6/7/8) gets the host's records under a key of ours (0x7D......) and
+  the building SetModelKey with it. The building's own key is written back into +0xC4 while the game saves (savestrip
+  save hooks) and with SetModelKey when the session ends. Test civ_host_building (FAIL 20261107-120600, PASS
+  20261107-120446: the new house and the loaded one show the host's model; after `coop.leave` the guest's own again).

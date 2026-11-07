@@ -2484,3 +2484,29 @@ per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newes
   down (not seen as a problem; the members change tools, they do not drop them).
 * Test tribe_leader_sync (`coop.tribe chief <id>` on the guest: SetChieftain on a mirror, the state the lab saw):
   FAIL with the fix off 20261107-114534 (the guest's #5 kept leading 15 s), PASS 20261107-114426 (1.1 s).
+
+## The footsteps of a creature and the epic flag (2026-11-07, fix/w46-misc)
+<a id="tribe-epic-steps"></a>
+
+BUG-0669, GOG 2024, Ghidra and lab lane 9 (`tools/tests/coop_tribe_footsteps.py`).
+* ✔ (Ghidra) The animation update 0xA01000 (this = the animation's owner, its cid at +0xFBC) calls FUN_009A6BD0 (the
+  footsteps) when `+0xFAC` (a gait blend, set in 0xA01E80) or the cid's **epic flag +0x2D5** is set, and the cid's
+  +0x260 is set. FUN_009A6BD0 calls FUN_009A6910 per foot channel while the cid's velocity +0x1660..+0x1668 (squared
+  over 0.1) or turn +0x166C (over 0.2) moves; 0x9B7C70 writes that velocity per update from the model's own move
+  (+0x18 minus the last position +0x1644, in its local frame) or, with +0x263, from +0x264. FUN_009A6910 plays the
+  puff 0x2D4ADB36 (with the epic flag also 0xDCAE75D5) and 0x9A4FA0("foot_step"): an audio play with sound id 0, the
+  foot's sound type in parameter 0x39FA0AB (the part's +0x424: 0x4A776923, 0x76BDAADD, 0x5C0D552C, ...) and the epic
+  flag in 0x48DEF6D. The "sound 0x4A776923" counts of the ticket were that parameter, not a sound id.
+* ✔ (Ghidra) The cid is `AnimatedCreature +0x17C`; 0xA04C00 (`SporeCoop::AnimatedCreature_SetEpicFlag`) writes its
+  +0x2D5; the creature's model setup 0xC21D50 calls it with the tuning's isEpic (+0xE84 -> +0x388).
+* ✔ (runtime, tribe fixture) The host's tribe members have no tuning (+0xE84 = 0) and flag 0: their footsteps play
+  only while the gait blend runs (rarely: none to a few a minute on both games). The fixture's planet has an epic
+  (species 0654E5CB, tuning +0x388 = 1, flag 1) near the villages: every footstep the host's game played in a minute
+  (35-52) was the epic's. The guest's proxy of it had the host's tuning (BUG-0462, SetTuning 0xC0C2E0 after Create)
+  but flag 0 in 4 of 5 runs (made in a herd of ours, model setup without tuning): no footsteps. In one run the proxy
+  had the flag from the start (74 vs 42).
+* ✔ Fix `npc.epic_steps`: a proxy's flag follows its tuning's isEpic while the host's NPC walks (reported speed over
+  0.3 m/s). Without the walking rule a standing proxy, turned a little each frame by the mod's facing (+0x166C up to
+  1 rad/s), played 256 against the host's 38. Test tribe_footsteps (FAIL 20261107-120238, PASS 20261107-120034).
+* `coop.audio list` shows the float parameters too now (hook of AudioSystem vt 0x3C, `SporeCoop::AudioSystem_SetFloat`
+  0xA20A90): the position 0x3475391/95/98 of a play.

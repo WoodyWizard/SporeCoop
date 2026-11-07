@@ -7,6 +7,9 @@
   behind (found with BUG-0438).
 
 ### Fixed
+- Tribe and Creature: the guest hears the footsteps of the host's epic creatures (BUG-0669).
+- Civilization: the guest sees the host's own city buildings (city hall, houses, factories, entertainment) as the
+  host designed them, not some creation of its own with the same number (BUG-0670).
 - Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
   same number (BUG-0647).
 - Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members

@@ -4748,3 +4748,12 @@ From the S1 lab log sweep (703 runs, 2026-11-05/06) and the runs since:
   restore. `SPORE_FIX_OFF=space.keep_items` fails: the rejoined guest has the host's spice and bomb charges and no drive.
 * The `space` fixture's ship has 8 tools (none with charges) and 10 cargo slots: add a charge tool first
   (`coop.space tool add 0x144DF50A`).
+
+## A console NPC is no saved stray (2026-11-07, fix/w46-misc)
+<a id="testing-console-npc"></a>
+
+BUG-0673. `coop.npc spawn <hex>` makes its creature in a herd of its own (game::create_herd, no archetype): no tuning
+(+0xE84), the look of a saved partner's puppet. From 0.7.8 on `npc.stray_ids` (BUG-0385) gave such a creature no NPC
+id, so nest_species, creature_desync and old_species never saw it in the host's `coop.npc list` (nest_species failed
+4 of 4 on rel/0.7.10). The creatures of `coop.npc spawn` are exempt from both stray rules now (`tools.console_npc`;
+off: nest_species FAILs, 20261107-113816; on: PASS 20261107-113618). Tests no longer need `coop.npc strays off` for them.

@@ -2178,6 +2178,9 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 
 * What happens: footstep sound 0x4A776923 436 times on the host, 36 on the guest in 3 min.
 * Known: FUN_009A6BD0 plays them while the animated creature's velocity (+0x1660) is above 0.1; mirrors have none.
+* CORRECTION (2026-11-07, fix/w46-misc): 0x4A776923 is the foot's sound type, not a sound id; the host's footsteps were
+  its epic's (the animation's epic flag), the guest's proxy of the epic had no flag. The mirrors' velocity was not it.
+* Fixed unreleased (2026-11-07, fix/w46-misc): `npc.epic_steps`, docs/re/tribe.md#tribe-epic-steps.
 * Ticket: BUG-0669
 
 ## Civ: the host's own building designs show as the guest's own creations (2026-11-07, fix/w46-tribe-civ)
@@ -2185,6 +2188,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 
 * What happens (inferred): buildings of the host's own designs resolve to the guest's creation of the same id.
 * Known: SetBuildingModel 0xBDB940 reads the civ's design key itself; vehicles are fixed (BUG-0647).
+* Fixed unreleased (2026-11-07, fix/w46-misc): reproduced in the lab and fixed (`civ.host_buildings`,
+  docs/re/civ.md#civ-host-buildings).
 * Ticket: BUG-0670
 
 ## Tribe: a member the guest buys never reaches the host (2026-11-07, fix/w46-tribe-civ)
