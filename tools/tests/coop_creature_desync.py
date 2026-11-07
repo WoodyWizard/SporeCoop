@@ -177,6 +177,9 @@ def crash_and_reload(host, guest, planet):
     host.call('wait.frames 240 90000')
     slot, name = planet.split('/')
     host.call('coop.npc strays off')  # keep the test's companion (see main)
+    # BUG-0673: the restarted host's game loaded the companion from its save: no tuning, a herd of its own, the look
+    # of a saved partner's puppet (npc.stray_ids, BUG-0385, would give it no NPC id); the console mark is gone
+    host.call('coop.fix npc.stray_ids off')
     host.call(f'coop.load {slot} {name}')  # its own save: written by the share after the editor
     wait(lambda: host.call('coop.avatar')['ok'], 240, 2)
     time.sleep(4)

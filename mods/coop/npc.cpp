@@ -1259,7 +1259,8 @@ static bool own_kind_herd(void* h);
 // BUG-0673: `coop.npc spawn` (tests) builds its creature in a herd of its own (game::create_herd) without
 // an archetype, so it has no tuning (+0xE84) and looks like the saved puppet of BUG-0385: npc.stray_ids
 // gave it no NPC id (nest_species, creature_desync, old_species never saw it in the host's list) and the
-// stray pass removed it. A creature of the console is the test's NPC and is neither (cleared with the world).
+// stray pass removed it. A creature of the console is the test's NPC and is neither. The set is kept over world
+// changes (an editor round trip keeps the creature: creature_desync's companion); only tests fill it.
 // `coop.fix tools.console_npc off`: treated as a saved stray (0.7.9).
 static std::unordered_set<void*> g_console_npcs;
 static bool g_console_npc_fix = true;
@@ -2229,7 +2230,6 @@ void on_world_change()
     g_kill.clear();
     g_host_npcs.clear();
     g_host_by_id.clear();
-    g_console_npcs.clear();
     g_ai_target.clear();
     teamplay::reset();
     for (auto& [g, ks] : g_known)
