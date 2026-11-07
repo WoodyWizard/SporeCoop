@@ -2349,7 +2349,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!is_guest())
             return;
         uint8_t kind = r.u8();
-        if (kind >= 2 && kind <= 6) { // BUG-0569 / BUG-0568: the tribe members' animations, the theme music (tribe.cpp)
+        if (kind >= 2 && kind <= 8) { // BUG-0569 / BUG-0568 / BUG-0646: the tribe members' animations, the theme and party music (tribe.cpp)
             tribe::on_member_anims(kind, r);
             return;
         }

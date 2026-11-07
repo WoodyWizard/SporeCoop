@@ -245,6 +245,10 @@ static std::unordered_map<uint16_t, void*> g_hm_by_id;
 static uint16_t g_next_id = 1;
 static uint32_t g_player_members_seen = 0;
 static std::vector<uint8_t> g_split_for; // player ids the player tribe was split for
+// BUG-0671 (below, h_BabyBorn)
+using BabyBorn_t = void(SK_THISCALL*)(void*, float, float, float);
+static BabyBorn_t o_BabyBorn;
+static std::unordered_map<void*, uint8_t> g_born_for; // host: a new member made for a guest -> its owner
 static double g_last_send;
 static uint16_t g_cycle;
 static uint32_t g_cmds_done, g_cmds_rejected;
@@ -496,7 +500,7 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3 };
 
 static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
@@ -1020,6 +1024,9 @@ using Form_t = void*(SK_THISCALL*)(void*, int);
 static Form_t o_Form;
 static uintptr_t a_Form, a_NpcCtrl;
 static void theme_hooks_install(); // BUG-0568 (the Tribe theme music relay, below)
+static void party_hooks_install(); // BUG-0646 (the fire pit party music relay, below)
+static void party_forget();
+static void SK_THISCALL h_BabyBorn(void*, float, float, float); // BUG-0671 (below)
 static void save_start();
 static void save_end();
 
@@ -1076,6 +1083,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (a_Form)
         H->hook_create(M, (void*)a_Form, (void*)h_Form, (void**)&o_Form);
     theme_hooks_install(); // BUG-0568 (optional)
+    party_hooks_install(); // BUG-0646 (optional)
+    if (uintptr_t a = H->sym("SporeCoop::TribeStage_BabyBorn")) // BUG-0671 (optional)
+        H->hook_create(M, (void*)a, (void*)h_BabyBorn, (void**)&o_BabyBorn);
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
@@ -1341,6 +1351,126 @@ static void on_theme(uint8_t kind, net::Reader& r)
     g_theme_relaying = false;
 }
 
+// BUG-0646: "the guest does not hear the music of the dance around the fire". The fire pit party (CitizenAction 12 Party
+// on the own fire pit, the game behaviour cTribeGameBehaviorParty, vtable 0x147BEB0) plays its music straight through
+// Audio::PlayProceduralAudio(0x19DC06DF, a new track, the fire pit's position) from its tick 0xD793F0 once every
+// partying member stands at its slot, and stops it (Audio::StopAudio) in its exit 0xD78F80; not through the theme
+// manager, so the BUG-0568 relay never saw it. The behaviour runs on the host's game only (a guest's party order goes to
+// the host; its members are mirrors): lab 20261107-102952, the host's game played 0x19DC06DF (caller 0xD79E81), the
+// guest's none. The host relays the play and the stop (MSG_NPC_ANIM kind 7 {u32 host track, u32 sound, vec3}, kind 8
+// {u32 host track}, reliable); a guest plays the same sound on a track of its own (the game's call: its own volume and
+// settings) unless its own game plays the party music itself. Older guests ignore the kinds.
+// `coop.fix tribe.party_music off`: nothing sent or played.
+static bool g_party_fix = true;
+COOP_FIX("tribe.party_music", "BUG-0646", g_party_fix, "tribe: a guest hears the music of the dance at its tribe's fire pit as the host does");
+static constexpr uint32_t kPartyMusic = 0x19DC06DF;
+using PlayProc_t = void(SK_CDECL*)(uint32_t, uint32_t, float, float, float);
+using StopAudio_t = void(SK_CDECL*)(uint32_t, int);
+static PlayProc_t o_PlayProc;
+static StopAudio_t o_StopAudio;
+static uintptr_t a_AudioGet;
+static bool g_party_relaying;            // guest: our own call of the game's functions
+static uint32_t g_party_host_track;      // host: the party music's track now (0 none)
+static uint32_t g_party_rx_track, g_party_local; // guest: the host's track and this game's track for it
+static uint32_t g_party_own;             // guest: a party music track its own game plays
+static uint32_t g_party_sent, g_party_rx, g_party_played, g_party_stopped;
+
+static bool party_host() { return g_ok && g_party_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
+static void party_send(uint8_t kind, uint32_t track, uint32_t sound, float x, float y, float z)
+{
+    net::Writer w;
+    w.u8(kind); w.u32(track);
+    if (kind == 7) {
+        w.u32(sound); w.f32(x); w.f32(y); w.f32(z);
+    }
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+    g_party_sent++;
+}
+static void SK_CDECL h_PlayProc(uint32_t sound, uint32_t track, float x, float y, float z)
+{
+    o_PlayProc(sound, track, x, y, z);
+    if (sound != kPartyMusic || g_party_relaying || !g_ok)
+        return;
+    if (party_host()) {
+        g_party_host_track = track;
+        party_send(7, track, sound, x, y, z);
+    } else if (is_guest()) {
+        g_party_own = track;
+    }
+}
+static void SK_CDECL h_StopAudio(uint32_t track, int how)
+{
+    o_StopAudio(track, how);
+    if (!track || g_party_relaying || !g_ok)
+        return;
+    if (track == g_party_host_track) {
+        g_party_host_track = 0;
+        if (party_host())
+            party_send(8, track, 0, 0, 0, 0);
+    } else if (track == g_party_own) {
+        g_party_own = 0;
+    }
+}
+static void party_hooks_install()
+{
+    uintptr_t p = H->sym("Audio::PlayProceduralAudio"), s = H->sym("Audio::StopAudio");
+    a_AudioGet = H->sym("Audio::AudioSystem::Get");
+    if (!p || !s || !a_AudioGet)
+        return;
+    H->hook_create(M, (void*)p, (void*)h_PlayProc, (void**)&o_PlayProc);
+    H->hook_create(M, (void*)s, (void*)h_StopAudio, (void**)&o_StopAudio);
+}
+static void party_stop_local()
+{
+    if (g_party_local && o_StopAudio) {
+        g_party_relaying = true;
+        o_StopAudio(g_party_local, 0);
+        g_party_relaying = false;
+        g_party_stopped++;
+    }
+    g_party_local = g_party_rx_track = 0;
+}
+static void party_forget()
+{
+    party_stop_local(); // (the audio system outlives the world: a track left playing would play on)
+    g_party_host_track = g_party_own = 0;
+}
+static void on_party(uint8_t kind, net::Reader& r)
+{
+    uint32_t track = r.u32(), sound = 0;
+    float x = 0, y = 0, z = 0;
+    if (kind == 7) {
+        sound = r.u32(); x = r.f32(); y = r.f32(); z = r.f32();
+    }
+    if (!r.ok() || !track)
+        return;
+    g_party_rx++;
+    if (!g_party_fix || !o_PlayProc)
+        return;
+    if (kind == 8) {
+        if (track == g_party_rx_track)
+            party_stop_local();
+        return;
+    }
+    if (sound != kPartyMusic || g_party_own) // only the party music; its own game plays it already
+        return;
+    party_stop_local();
+    void* as = skg::cdecl_call<void*>(a_AudioGet);
+    if (!as)
+        return;
+    uint32_t mine = thiscall<uint32_t>(F<uintptr_t>(F<void*>(as, 0), 0x20), as); // a new track (AudioSystem vt 0x20)
+    if (!mine)
+        return;
+    g_party_relaying = true;
+    o_PlayProc(sound, mine, x, y, z);
+    g_party_relaying = false;
+    g_party_local = mine;
+    g_party_rx_track = track;
+    g_party_played++;
+}
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
@@ -1348,6 +1478,10 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         return;
     if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
         on_theme(kind, r);
+        return;
+    }
+    if (kind == 7 || kind == 8) { // BUG-0646: the fire pit party music
+        on_party(kind, r);
         return;
     }
     double now = H->time_seconds();
@@ -1427,6 +1561,12 @@ static void host_tick(double now)
             if (it == g_hm.end()) {
                 // the player tribe is split between the players in turns; others belong to nobody
                 uint8_t owner = player && !players.empty() ? players[g_player_members_seen++ % players.size()] : 0xFE;
+                auto bf = g_born_for.find(c); // BUG-0671: a member a guest bought is that guest's
+                if (bf != g_born_for.end()) {
+                    if (player && net::is_player(*C.sess, bf->second))
+                        owner = bf->second;
+                    g_born_for.erase(bf);
+                }
                 // BUG-0154: never a live id, never 0
                 it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 g_hm_by_id[it->second.id] = c;
@@ -1546,6 +1686,51 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
                  C.sess->name_of(to));
 }
 
+// BUG-0671: "a member the guest buys is made in the guest's game only and removed again". A click on the own hut
+// (food 10, the game's own price) makes a baby a few seconds later: the stage's message 0x63BBC42 (from data, no code
+// sends it) reaches SporeCoop::TribeStage_BabyBorn (0xCD74A0), which spawns the member (cTribe vt 0x98), plays its cry and
+// fills the HUD. On a guest the baby was a member of its own game that the host never had: the mirror reconcile removed it
+// (lab 20261107-103440 for the click, the ticket for the removal). With tribe.guest_baby a guest's game makes no baby
+// of its own: it sends the place (MSG_TRIBE_CMD kind CMD_BABY) and the host's game makes it by the same function, the
+// new member is the buyer's, and the guest gets its mirror. The food was paid in the guest's game (the shared food
+// sends it to the host). The stage's first entry (its +0x3A3 mating flag 0) is left alone. `coop.fix
+// tribe.guest_baby off`: the guest's game makes its own baby (0.7.9).
+static bool g_guest_baby_fix = true;
+COOP_FIX("tribe.guest_baby", "BUG-0671", g_guest_baby_fix, "tribe: a tribe member the guest buys at its hut is born in the host's game and is the guest's");
+static uint32_t g_babies_sent, g_babies_made;
+static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
+{
+    if (g_ok && g_guest_baby_fix && is_guest() && !local_play() && game::mode_id() == modes::kTribe && stage &&
+        F<uint8_t>(stage, 0x3A3)) {
+        net::Writer w;
+        w.u8(CMD_BABY); w.u8(0); w.u32(0);
+        write_target(w, Target{});
+        w.f32(x); w.f32(y); w.f32(z);
+        C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w);
+        g_babies_sent++;
+        g_cmds_sent++;
+        return;
+    }
+    o_BabyBorn(stage, x, y, z);
+}
+static void baby_on_host(uint8_t from, const net::Vec3& pos)
+{
+    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get");
+    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+    void* pt = player_tribe();
+    if (!o_BabyBorn || !stage || !pt || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+        g_cmds_rejected++;
+        return;
+    }
+    auto before = members(pt);
+    o_BabyBorn(stage, pos.x, pos.y, pos.z);
+    for (void* c : members(pt))
+        if (std::find(before.begin(), before.end(), c) == before.end()) {
+            g_born_for[c] = from;
+            g_babies_made++;
+        }
+}
+
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -1558,6 +1743,13 @@ static void host_command(uint8_t from, net::Reader& r)
     pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
     if (!r.ok())
         return;
+    if (kind == CMD_BABY) { // BUG-0671
+        if (g_guest_baby_fix && from != 0 && game::mode_id() == modes::kTribe)
+            baby_on_host(from, pos);
+        else
+            g_cmds_rejected++;
+        return;
+    }
     if (kind == CMD_GIVE) {
         if (action >= 0 && action <= 0xFF && net::is_player(*C.sess, (uint8_t)action))
             give_on_host(from, (uint8_t)action, ids);
@@ -3309,6 +3501,8 @@ void on_session_end()
     g_detached.clear();
     g_bt_local.clear(); // (g_left_tribe stays until the world goes: its citizens are torn down later)
     theme_forget(); // BUG-0568
+    party_forget(); // BUG-0646
+    g_born_for.clear(); // BUG-0671
     clear_coop_tables(true);
     g_split_for.clear();
     g_hm.clear();
@@ -3326,6 +3520,8 @@ void on_session_end()
 void on_world_change()
 {
     theme_forget(); // BUG-0568
+    party_forget(); // BUG-0646
+    g_born_for.clear(); // BUG-0671
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_detached.clear(); // (BUG-0667: freed with the world)
@@ -4233,7 +4429,10 @@ std::string debug(const std::vector<std::string>& a)
         return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
-               " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played);
+               " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
+               "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
+               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) +
+               "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made);
     }
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
