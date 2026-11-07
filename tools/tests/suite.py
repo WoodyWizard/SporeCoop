@@ -596,6 +596,9 @@ add('mem_census_tour_solo', P + 'coop_mem_census.py --minutes 20 --solo --tour h
 add('mem_census_tour_guest', P + 'coop_mem_census.py --minutes 20 --tour guest', ('extended',), minutes=30, timeout=2700, fixture='creature')
 add('mem_census_tour_both', P + 'coop_mem_census.py --minutes 20 --tour host,guest', ('extended',), minutes=30, timeout=2700, fixture='creature')
 add('mem_census_cell_crowd', P + 'coop_mem_census.py --fixture cell --crowd 1000 --minutes 8 --sample 2', ('extended',), minutes=15, fixture='cell')
+add('mem_census_tour_guest_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --tour guest', ('extended',), minutes=18, fixture='creature')
+add('mem_census_tour_solo_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --solo --tour host', ('extended',), minutes=18, fixture='creature')
+add('mem_census_tour_guest_places', P + 'coop_mem_census.py --minutes 20 --sample 2.5 --tour guest --places 3', ('extended',), minutes=30, timeout=2700, fixture='creature')
 add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
 
 SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')

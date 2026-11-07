@@ -20,6 +20,7 @@ import sys
 import time
 
 import lane
+import twoinst
 from twoinst import Checks, Monitor, start
 
 
@@ -61,6 +62,8 @@ def main():
     ap.add_argument('--tour', default='', help='host, guest or host,guest: that avatar goes to a new place of the '
                     'planet every --hop seconds (a fixed sequence: comparable runs), nobody else plays')
     ap.add_argument('--hop', type=float, default=20)
+    ap.add_argument('--places', type=int, default=0, help='the tour cycles over this many places (0: a new place '
+                    'every hop): a cache fills on the first round, a leak grows on every round')
     ap.add_argument('--crowd', type=int, default=0, help='Cell: the host puts this many of its cells around its own '
                     '(`coop.pool crowd N 8`, BUG-0355 / BUG-0621: over 256 cells in the active area) every --hop s')
     a = ap.parse_args()
@@ -72,9 +75,19 @@ def main():
     for who, con in games.items():
         print(f'  {who}:', con.call('coop.memcensus track on')['out'].strip(), flush=True)
     if a.solo:
-        print('  solo: the guest leaves:', guest.call('coop.leave')['out'].strip()[:80], flush=True)
+        # a single game: the guest's game is closed (coop.leave alone was not enough: the guest joined again,
+        # lab 20261106-202803 showed players=2/4 on the "solo" host 10 minutes later)
+        from coop_creature_desync import kill_game
+        for m in twoinst._monitors:
+            m.stop = True
+        guest.call('coop.leave')
+        time.sleep(2)
+        kill_game(lane.GUEST)
+        del games['guest']
         time.sleep(5)
-        print('  host:', host.call('coop.status')['out'].strip().splitlines()[0][:100], flush=True)
+        st = host.call('coop.status')['out'].strip().splitlines()[0][:100]
+        print('  solo: the guest\'s game closed; host:', st, flush=True)
+        ck('players=1/' in st, 'solo: the host plays alone')
     first = {w: census(c, a.depth) for w, c in games.items()}
     t0 = time.time()
     deadline = t0 + a.minutes * 60
@@ -86,14 +99,15 @@ def main():
         import play_creature as pc
         world, sh = pc.World(lane.HOST), pc.Shared()
         sh.exit_result = None
-        players = [pc.Player('host', lane.HOST, 1, world, sh, seed, deadline, None),
-                   pc.Player('guest', lane.GUEST, 0, world, sh, seed + 1, deadline, None)]
+        players = [pc.Player('host', lane.HOST, 1, world, sh, seed, deadline, None)]
+        if 'guest' in games:
+            players.append(pc.Player('guest', lane.GUEST, 0, world, sh, seed + 1, deadline, None))
         for p in players:
             p.start()
     series = {w: [(0.0, first[w]['free_mb'], first[w]['block_mb'])] for w in games}
     last = dict(first)
     next_at = t0 + a.sample * 60
-    nhops = 0
+    nhops = rounds = 0
     if a.crowd:
         host.call('coop.pool food 300')
     while time.time() < deadline and not Monitor.events:
@@ -107,13 +121,17 @@ def main():
                       flush=True)
         if tour and time.time() >= next_hop:
             next_hop += a.hop
+            if a.places and nhops >= a.places:
+                hops = random.Random(1)  # the same places again
+                nhops = 0
+                rounds += 1
             v = [hops.gauss(0, 1) for _ in range(3)]
             n = max(1e-6, sum(x * x for x in v) ** 0.5)
             d = [x / n * 1000 for x in v]
             nhops += 1
             for w in tour:
                 r = games[w].call('coop.abilities goto %.1f %.1f %.1f' % tuple(d))
-                if nhops <= 2 or not r.get('ok', True):
+                if (nhops <= 2 and not rounds) or not r.get('ok', True):
                     print(f'  hop {nhops} {w}: {r.get("out", "").strip()[:60]}', flush=True)
         if time.time() >= next_at or time.time() >= deadline:
             next_at += a.sample * 60
@@ -129,7 +147,8 @@ def main():
                 print(f'  {m:5.1f} min {w}: free {last[w]["free_mb"]} MB block {last[w]["block_mb"]} MB | '
                       + ', '.join(f'{r[3]} {r[0] / 1024:+.0f} MB' for r in top), flush=True)
     if tour:
-        print(f'  {nhops} hops of {",".join(tour)}', flush=True)
+        print(f'  {nhops} hops of {",".join(tour)}' + (f' ({rounds} rounds over {a.places} places)' if a.places else ''),
+              flush=True)
     for p in players:
         p.join(120)
         if p.error:
@@ -151,7 +170,7 @@ def main():
                 print(f'    who {r[3]:60s} res {r[0] / 1024:+8.1f} MB  com {r[1] / 1024:+8.1f} MB  n {r[2]:+5d}', flush=True)
         print('MEMCENSUS ' + json.dumps({'who': w, 'series': series[w], 'first': first[w], 'last': last[w]}), flush=True)
     ck(not Monitor.events, 'the games survived the session')
-    ck.faults(host=host, guest=guest)
+    ck.faults(**games)
     return ck.result()
 
 

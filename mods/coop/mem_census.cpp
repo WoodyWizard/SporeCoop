@@ -32,7 +32,7 @@ static const SkHost* H;
 static SkMod* M;
 
 // ---------------- the tracker ----------------
-constexpr int kCallers = 4;
+constexpr int kCallers = 6;
 struct Alloc {
     uintptr_t base;   // 0 = empty slot, 1 = deleted
     uint32_t size;
@@ -49,14 +49,14 @@ static std::atomic<uint32_t> g_dropped{0};
 struct Range {
     uintptr_t lo, hi;
 };
-static Range g_sys[16]; // system DLLs: skipped when looking for the caller
+static Range g_sys[24]; // system DLLs and the game's allocator: skipped when looking for the caller
 static int g_nsys;
 
 typedef LONG(NTAPI* NtAllocFn)(HANDLE, PVOID*, ULONG_PTR, PSIZE_T, ULONG, ULONG);
 typedef LONG(NTAPI* NtFreeFn)(HANDLE, PVOID*, PSIZE_T, ULONG);
 static NtAllocFn o_alloc;
 static NtFreeFn o_free;
-static void *g_alloc_target, *g_free_target;
+static void* g_alloc_target;
 
 static uint32_t slot_of(uintptr_t b) { return (uint32_t)((b >> 16) * 2654435761u) & (kSlots - 1); }
 
@@ -98,7 +98,7 @@ __attribute__((noinline)) static void callers(uint32_t* out)
     uintptr_t* sp = (uintptr_t*)__builtin_frame_address(0);
     uintptr_t self_ret = (uintptr_t)__builtin_return_address(0); // into h_alloc: not a caller
     MEMORY_BASIC_INFORMATION mbi;
-    uintptr_t top = (uintptr_t)sp + 4096;
+    uintptr_t top = (uintptr_t)sp + 16384;
     if (VirtualQuery(sp, &mbi, sizeof mbi))
         top = std::min<uintptr_t>(top, (uintptr_t)mbi.BaseAddress + mbi.RegionSize);
     int n = 0;
@@ -209,7 +209,7 @@ static LONG NTAPI h_free(HANDLE proc, PVOID* base, PSIZE_T size, ULONG type)
 static void add_sys(const char* name)
 {
     HMODULE m = GetModuleHandleA(name);
-    if (!m || g_nsys >= 16)
+    if (!m || g_nsys >= 24)
         return;
     auto* dos = (IMAGE_DOS_HEADER*)m;
     auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)m + dos->e_lfanew);
@@ -232,10 +232,23 @@ static std::string track(bool on)
         g_tab = (Alloc*)VirtualAlloc(nullptr, sizeof(Alloc) * kSlots, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!g_tab || g_tls == TLS_OUT_OF_INDEXES)
         return "tracker: no memory for its table\n";
-    if (!g_nsys)
+    static bool s_ranges;
+    if (!s_ranges) {
+        s_ranges = true;
         for (const char* n : {"ntdll.dll", "kernelbase.dll", "kernel32.dll", "ucrtbase.dll", "msvcrt.dll",
                               "api-ms-win-crt-heap-l1-1-0.dll", "msvcr90.dll", "msvcr80.dll"})
             add_sys(n);
+        // the game's allocator (GeneralAllocator: MallocInternal 0x927E70, MallocAlignedInternal 0x928570,
+        // MMapMalloc 0x9271A0, the free and chunk helpers around them; its operator new and malloc): the caller
+        // of interest is whoever asked it for memory
+        if (uintptr_t mi = H->sym("MallocInternal"))
+            if (g_nsys < 24)
+                g_sys[g_nsys++] = {mi - 0x3000, mi + 0x1400};
+        for (const char* n : {"GeneralAllocator::new_", "malloc", "_aligned_malloc", "malloc_aligned"})
+            if (uintptr_t f = H->sym(n))
+                if (g_nsys < 24)
+                    g_sys[g_nsys++] = {f, f + 0x60};
+    }
     if (!g_alloc_target) {
         HMODULE nt = GetModuleHandleA("ntdll.dll");
         void* a = nt ? (void*)GetProcAddress(nt, "NtAllocateVirtualMemory") : nullptr;
@@ -249,7 +262,6 @@ static std::string track(bool on)
             return "tracker: the NtFreeVirtualMemory hook failed\n";
         }
         g_alloc_target = a;
-        g_free_target = f;
     }
     g_on = true;
     return "tracker on\n";
@@ -402,7 +414,7 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     // coop.memcensus [depth 1..4] [grain bytes] [top N]
-    int depth = argc > 1 ? std::max(1, std::min(kCallers, atoi(argv[1]))) : 2;
+    int depth = argc > 1 ? std::max(1, std::min(kCallers, atoi(argv[1]))) : 3;
     uint32_t grain = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 0) : 1;
     int top = argc > 3 ? std::max(1, atoi(argv[3])) : 40;
     std::string s = census(depth, grain, top);
