@@ -170,3 +170,5 @@ Simulator::Cell::ContactSolve ; BUG-0307: cell.contact_finite, the unit contact 
 SporeCoop::AbilityBar_Status ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
 SporeCoop::Ability_RangeScale ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
 SporeCoop::Ability_TargetGap ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::CreatureGame_NestHerdFor ; BUG-0640: wsync.creature_nest, the guest's migration to the host's new nest (wsync.cpp), GOG 2024 only
+SporeCoop::Player_SetProperty ; BUG-0640: wsync.creature_nest, the guest's migration state (wsync.cpp), GOG 2024 only
