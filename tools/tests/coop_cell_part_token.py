@@ -88,8 +88,15 @@ def find_tokens(host, guest, tried):
     return []
 
 
+def locks(con):
+    m = re.search(r'own_locks=(\d+) anim=(-?\d+)', con.call('coop.pool tokens')['out'])
+    return f'{m.group(1)} anim {m.group(2)}' if m else '?'
+
+
 def touched(con, key):
     """<con> swims onto token <key>: True when its game collected it (the button shows, the token is gone)"""
+    tl = next((l for l in con.call('coop.pool tokens')['out'].splitlines() if l.startswith(f'token {key} ')), '-')
+    print(f'  locks (+0x112 +0x113 +0x178 +0x17F) {locks(con)}; {tl}', flush=True)
     print(f'  {con.name if hasattr(con, "name") else ""}swimto:', con.call(f'coop.pool swimto {key} tp')['out'].strip(), flush=True)
     return wait(lambda: button(con) == 1, 6)
 

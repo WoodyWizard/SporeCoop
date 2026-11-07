@@ -4680,11 +4680,13 @@ std::string debug(const std::vector<std::string>& a)
         for (size_t i = 0; i < v.size() && i < 20; i++) {
             auto it = g_host_of.find(F<uint32_t>(v[i].second, 0));
             uint32_t key = is_guest() && it != g_host_of.end() ? it->second : F<uint32_t>(v[i].second, 0);
-            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f level=%d\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
-                     v[i].first, F<float>(v[i].second, kSize), F<int>(v[i].second, kLevel));
+            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f level=%d lock17b=%d\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
+                     v[i].first, F<float>(v[i].second, kSize), F<int>(v[i].second, kLevel), F<uint8_t>(v[i].second, 0x17B));
             o += b;
         }
-        snprintf(b, sizeof b, "tokens=%u own_level=%d\n", (unsigned)v.size(), F<int>(av, kLevel));
+        // 0xE7B630 collects a token only while our cell's +0x112 / +0x113 / +0x178 / +0x17F and the token's +0x17B are 0
+        snprintf(b, sizeof b, "tokens=%u own_level=%d own_locks=%d%d%d%d anim=%d\n", (unsigned)v.size(), F<int>(av, kLevel), F<uint8_t>(av, 0x112),
+                 F<uint8_t>(av, 0x113), F<uint8_t>(av, 0x178), F<uint8_t>(av, 0x17F), F<int>(av, 0x18C));
         return o + b;
     }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
