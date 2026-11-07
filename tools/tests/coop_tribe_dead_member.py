@@ -19,6 +19,12 @@ SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 member is killed, so the guest loads a world where that member is a body out of its tribe's list on the host. The
 host's sync-check is asked again and again while the body lies there. PASS: no MISMATCH (long_tribe on rel/0.7.9:
 "t: 1 missing on the guest" twice, after the restart and after the rejoin). SPORE_FIX_OFF=tribe.sync_bodies must FAIL.
+
+--eat (BUG-0667): before the host's own member is killed, the guest's mirror of it starts eating at its food mat in the
+guest's own game (`coop.tribe localbt` + `coop.tribe eat`: its tree runs as while the host is away, long_tribe's
+editor visit), so the eat node 0x0461300F is active on the mirror when its body is destroyed. PASS: the body goes on the
+guest with no caught fault and the guest keeps drawing frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL (the fault
+at 0xAC9C7D, data 0x39C; long_tribe's guest froze after it).
 """
 import math
 import re
@@ -43,6 +49,53 @@ ALL = '--all' in sys.argv
 # tribe's member list while the game keeps its body (an NPC tribe's stays in its tribe, knocked out)
 PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv
 REJOIN = '--rejoin' in sys.argv  # BUG-0664
+EAT = '--eat' in sys.argv  # BUG-0667
+if EAT:
+    PLAYER = True
+EAT_NODE = 0x0461300F
+
+
+def guest_node(con, i):
+    m = re.search(r'node=([0-9A-Fa-f]{8})', con.call(f'coop.tribe ai {i}')['out'])
+    return int(m.group(1), 16) if m else None
+
+
+def frame(con):
+    m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
+    return int(m.group(1)) if m else -1
+
+
+def eat_then_die(host, guest, ck, victim, attacker):
+    """BUG-0667: the mirror's eat node is active when the guest destroys the body"""
+    print('  guest:', guest.call(f'coop.tribe localbt {victim} 1')['out'].strip(), flush=True)
+    node, t0 = None, time.time()
+    while time.time() - t0 < 30 and node != EAT_NODE:
+        if int(time.time() - t0) % 6 == 0:
+            print('  guest:', guest.call(f'coop.tribe eat {victim}')['out'].strip(), flush=True)
+        time.sleep(1)
+        node = guest_node(guest, victim)
+    print('  guest: ' + guest.call(f'coop.tribe localbt {victim} 0')['out'].strip() + f'; node {node and hex(node)} after '
+          f'{time.time() - t0:.1f} s: {guest.call(f"coop.tribe ai {victim}")["out"].strip()[:160]}', flush=True)
+    ck(node == EAT_NODE, f'the guest\'s mirror of #{victim} is in the eat node (node {node and hex(node)})')
+    if node != EAT_NODE:
+        return
+    print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
+    t1, gone = time.time(), None
+    while time.time() - t1 < 75 and gone is None:
+        time.sleep(3)
+        st = next((x for x in guest.call('coop.tribe')['out'].splitlines() if 'tribe(guest)' in x), '')
+        det = re.search(r'bodies_detached=(\d+)', st)
+        in_g = victim in members(guest) or guest_node(guest, victim) is not None
+        print(f'    {time.time() - t1:4.1f} s: guest has the mirror {in_g}, '
+              f'{det.group(0) if det else ""} {" ".join(re.findall(r"(?:teardown_restored|slot_null_skipped)=\d+", st))}',
+              flush=True)
+        if not in_g and det and int(det.group(1)) > 0:
+            gone = time.time() - t1
+    ck(gone is not None, f'the body went on the guest ({gone and round(gone, 1)} s after the kill)')
+    f0 = frame(guest)
+    time.sleep(5)
+    f1 = frame(guest)
+    ck(f1 > f0 + 30, f'the guest runs frames 5 s later (frame {f0} -> {f1})')
 
 
 TRIBE_MODE = 0x1654C02
@@ -136,6 +189,10 @@ def main():
         p0 = hm[victim][2]
         attacker = min(npc, key=lambda i: math.dist(npc[i][2], p0))
         npc = {**npc, victim: hm[victim]}
+    if EAT:
+        eat_then_die(host, guest, ck, victim, attacker)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     if REJOIN:
         rejoin_with_body(host, guest, ck, victim, attacker)
         ck.faults(host=host, guest=guest)

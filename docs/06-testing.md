@@ -4588,3 +4588,19 @@ host. For 24 s the host's `coop.tribe` bodies_sent tells whether the body is sti
 asked (`coop.diag sync now`) at each such sample. PASS: no MISMATCH. It is the short repro of long_tribe's "t: 1
 missing on the guest" after its restart and rejoin events (45 min -> 2 min). With `SPORE_FIX_OFF=tribe.sync_bodies`
 it fails 5-6 checks of 6 (BUG-0664, docs/re/tribe.md#tribe-sync-bodies).
+
+## A body's mirror torn down with an active eat node: tribe_body_teardown (2026-11-07, fix/w46-tribe-fault)
+<a id="testing-tribe-body-teardown"></a>
+
+`coop_tribe_dead_member.py --eat` (suite `tribe_body_teardown`, ~1.5 min cold): on the guest `coop.tribe localbt <id> 1`
+lets one mirror's behaviour tree run (as while the host is away), `coop.tribe eat <id>` orders its Eat at its tribe's
+food mat in the guest's game (node 0x0461300F within ~1 s, read by `coop.tribe ai`), then `localbt <id> 0`; the host
+kills that member of its own tribe (`coop.tribe pincer`), and the test waits until the guest's mirror of the body is
+gone (~33 s: the host's game keeps the body, tribe.member_body) and checks the guest still runs frames 5 s later and
+caught no fault. It is the short repro of long_tribe's guest fault at 0xAC9C7D and its "FROZE" (BUG-0667,
+docs/re/tribe.md#tribe-body-teardown). `SPORE_FIX_OFF=tribe.body_teardown`: the fault (FAIL); with
+`SPORE_FIX_OFF=tribe.body_teardown,kit.frameunwind` (or a SporeKit before it) also "FROZE": SporeKit's frame flag stayed
+set after the game's handler unwound the frame, so frames stopped while the game went on.
+* Pitfall: after a caught fault in a frame, a game's `frame` count standing still is not proof the game hangs: look at
+  the watchdog's main-thread stack (App::Canvas::Tick pumping messages = the game runs) and for SporeKit's "the frame
+  N was cut off by a fault" line.

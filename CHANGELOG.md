@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a guest's game no longer faults (and then stops running the mod) when the body of a member that died on the
+  host goes away while that member's copy was eating in the guest's game (after the host was away, e.g. in an editor);
+  SporeKit also keeps running its frames after a fault the game itself catches (BUG-0667).
 - Tribe: the sync-check no longer reports "t: 1 missing on the guest" after a guest joins or reloads the world while
   the body of a dead member still lies on the host (bodies are not compared; BUG-0664).
 
