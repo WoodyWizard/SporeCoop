@@ -4185,16 +4185,25 @@ std::string list()
     return out;
 }
 
+// BUG-0664 (docs/re/tribe.md#tribe-sync-bodies): the sync-check compares members, not bodies. tribe.member_body
+// (BUG-0620) keeps a dead member's body in g_hm while the host's game keeps it, but a guest spawns no mirror for a body
+// (it only lets a mirror it already has lie there): a guest that joined or loaded the world while a body lay on the
+// host had none, and the check said "t: 1 missing on the guest" (long_tribe on rel/0.7.9, after its restart and its
+// rejoin). With the fix both sides leave bodies out of the check; off: the host lists them (0.7.9 before the fix).
+static bool g_sync_bodies_fix = true;
+COOP_FIX("tribe.sync_bodies", "BUG-0664", g_sync_bodies_fix,
+         "tribe: the sync-check leaves the bodies of dead members out (a guest that joined meanwhile has no copy)");
+
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
     if (C.sess && C.sess->role() == net::Role::Host) {
         for (auto& [c, h] : g_hm)
-            if (game::object_alive(c))
+            if (game::object_alive(c) && !(g_sync_bodies_fix && h.body_since != 0))
                 v.push_back({"t" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, g] : g_gm)
-            if (g.c && game::object_alive(g.c))
+            if (g.c && game::object_alive(g.c) && !(g_sync_bodies_fix && g.body))
                 v.push_back({"t" + std::to_string(id), game::position(g.c), game::orientation(g.c)});
     }
     return v;

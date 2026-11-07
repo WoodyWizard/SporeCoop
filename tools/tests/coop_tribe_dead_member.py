@@ -13,15 +13,23 @@ PASS: whenever the host's game has a citizen there, the guest's has one within 1
 SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe] [--player: a member of
-  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL]
+  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL] [--rejoin: BUG-0664, below]
+
+--rejoin (BUG-0664): the guest leaves and joins again; once the host has saved the world for it, the host's own
+member is killed, so the guest loads a world where that member is a body out of its tribe's list on the host. The
+host's sync-check is asked again and again while the body lies there. PASS: no MISMATCH (long_tribe on rel/0.7.9:
+"t: 1 missing on the guest" twice, after the restart and after the rejoin). SPORE_FIX_OFF=tribe.sync_bodies must FAIL.
 """
 import math
+import re
 import sys
 import time
 
+import lane
+
 import worlddiff
 from coop_tribe import members
-from twoinst import Checks, start
+from twoinst import Checks, start, wait_guest_in
 
 
 def citizens_at(con, p, r=20.0):
@@ -33,7 +41,68 @@ def citizens_at(con, p, r=20.0):
 ALL = '--all' in sys.argv
 # BUG-0620: the victim is a member of the player tribe (the host's own): a player's member that dies leaves its
 # tribe's member list while the game keeps its body (an NPC tribe's stays in its tribe, knocked out)
-PLAYER = '--player' in sys.argv
+PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv
+REJOIN = '--rejoin' in sys.argv  # BUG-0664
+
+
+TRIBE_MODE = 0x1654C02
+
+
+def guest_mode(con):
+    try:
+        return int(con.call('game.mode')['out'].split()[0], 16)
+    except (OSError, ValueError, IndexError):
+        return -1
+
+
+def sync_counts(con):
+    m = re.search(r'checks (\d+) ok (\d+) differs (\d+) mismatch (\d+)', con.call('coop.diag sync')['out'])
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0, 0)
+
+
+def sync_keys(con):
+    return {ln.split()[0] for ln in con.call('coop.sync')['out'].splitlines() if ln.split() and ln.split()[0][:1] == 't'}
+
+
+def rejoin_with_body(host, guest, ck, victim, attacker):
+    """BUG-0664: the guest joins a world in which the host's member died (its body lies, out of the member list)"""
+    host.call('coop.diag sync 600')  # only the checks asked below
+    c0 = sync_counts(host)
+    guest.call('coop.leave')
+    time.sleep(3)
+    guest.call(lane.JOIN)
+    t0 = time.time()
+    # the host saves the world for the guest first (its frames stop under the saved box): kill after that, so the
+    # guest's world still has the member alive and only the host's snapshot names its body
+    while time.time() - t0 < 60 and guest_mode(guest) == TRIBE_MODE:
+        time.sleep(0.3)
+    print(f'  guest left its world after {time.time() - t0:.1f} s', flush=True)
+    print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
+    together = wait_guest_in(host, guest, 150)
+    ck(together, f'the guest is in the host\'s world again ({time.time() - t0:.1f} s)')
+    body_checks, missing = 0, []
+    t1 = time.time()
+    while time.time() - t1 < 24:
+        in_list = victim in members(host)
+        hk, gk = sync_keys(host), sync_keys(guest)
+        key = f't{victim}'
+        body = not in_list and key in hk
+        print(f'    {time.time() - t1:4.1f} s: victim in its tribe {in_list}, host lists {key} {key in hk}, guest '
+              f'{key in gk}; host t {len(hk)} guest t {len(gk)}', flush=True)
+        if body:
+            body_checks += 1
+            if key not in gk:
+                missing.append(round(time.time() - t1, 1))
+            host.call('coop.diag sync now')
+        time.sleep(4)
+    time.sleep(5)
+    c1 = sync_counts(host)
+    print(f'  host sync-checks: {c1[0] - c0[0]}, ok {c1[1] - c0[1]}, differs {c1[2] - c0[2]}, mismatch {c1[3] - c0[3]}; '
+          f'samples with the body: {body_checks}, guest without its key: {missing[:6]}', flush=True)
+    host.call('coop.diag sync on')
+    ck(body_checks > 0, f'the host\'s body lay out of its member list after the guest joined ({body_checks} samples)')
+    ck(c1[0] > c0[0], f'the host ran sync-checks ({c1[0] - c0[0]})')
+    ck(c1[3] == c0[3], f'no sync-check MISMATCH while the body lay there ({c1[3] - c0[3]})')
 
 
 def main():
@@ -59,6 +128,10 @@ def main():
         p0 = hm[victim][2]
         attacker = min(npc, key=lambda i: math.dist(npc[i][2], p0))
         npc = {**npc, victim: hm[victim]}
+    if REJOIN:
+        rejoin_with_body(host, guest, ck, victim, attacker)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     p = npc[victim][2]
     print(f'  victim #{victim} at {worlddiff._fmt(p)}; host citizens there {len(citizens_at(host, p))}, guest '
           f'{len(citizens_at(guest, p))}', flush=True)

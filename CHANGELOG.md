@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: the sync-check no longer reports "t: 1 missing on the guest" after a guest joins or reloads the world while
+  the body of a dead member still lies on the host (bodies are not compared; BUG-0664).
+
 ### Changed
 - A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
