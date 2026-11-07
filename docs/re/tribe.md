@@ -2177,3 +2177,21 @@ smooth_max > 0, over a link under drive.lead_smooth's 100 ms one-way rule). Meas
   on past it) and at members the host's own game put somewhere (rv 0): not walk starts; no drawn jump in those runs.
 * ~ under lab loads of 9-19 on 6 cores tribe_walk_player fails now and then for 0.7.8 too (windows 63-71 %, uneven
   11 %): judge it only A/B at the same time on the other lane pair.
+
+## Bodies and the sync-check after a join (2026-11-07, fix/w46-tribe-missing)
+<a id="tribe-sync-bodies"></a>
+
+BUG-0664. GOG 2024, lab lanes 4-5 (tribe_dead_rejoin), long_tribe out/lab/20261107-004042 of rel/0.7.9.
+* ✔ (logs) long_tribe on rel/0.7.9 failed the sync-check gate twice, 12 s after the guest's restart and 6 s after its
+  rejoin had loaded the host's world: "t: 1 missing on the guest (t10)" / "(t8)"; on the host, too, `t10 here: not
+  listed` (in no tribe's member list, `coop.tribe`), and the host's `bodies_sent` counter grew across both joins
+  (1778 -> 1903 -> 1979 around s 1850-1900, 1979 -> 2055 -> 2212 around s 2300-2330, 0 in between): the key was a body
+  sent by tribe.member_body (#tribe-member-body).
+* ✔ (code) the host's `sync_entries` listed every live object of `g_hm`, bodies included; a guest spawns no mirror for
+  a body entry (only lets a mirror it already had lie there), so a guest that joined or reloaded the world while a body
+  lay on the host had none. 0.7.8 dropped the body from `g_hm` at once: no such key, no mismatch (long_tribe on 0.7.8
+  and 0.7.7: 0 MISMATCH lines).
+* ✔ tribe.sync_bodies: both sides leave bodies (host: `body_since != 0`, guest: the entry's body bit) out of the
+  sync-check; the check compares members. `coop.fix tribe.sync_bodies off`: the host lists them again.
+* ? a guest that joins while a body lies on the host does not show that body (at most the 10-20 s the game keeps it);
+  not checked whether the shared save holds it.

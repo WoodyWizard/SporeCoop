@@ -2112,3 +2112,17 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 - Civ: the guest does not see the host's name at the host's camera (BUG-0649).
 - Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
   rebuilt again and again after captures (BUG-0602).
+
+## Tribe: a guest that joins while a member's body lies on the host shows no body (2026-11-07, fix/w46-tribe-missing)
+<a id="issue-tribe-join-body"></a>
+
+* What happens: tribe.member_body (BUG-0620) lets a mirror the guest already has lie where the host's body lies, but
+  a guest spawns no mirror for a body entry: a guest that joins or reloads the world while the body lies on the host
+  (10-20 s, at most 60 s) has none for it (the sync-check leaves bodies out since BUG-0664).
+* Reproduce: tribe_dead_rejoin (`coop_tribe_dead_member.py --rejoin`): the guest's `coop.sync` never lists the body's
+  key; watch the victim's place with `coop.census all` on both games.
+* Known: inferred from the code (tribe.cpp, "no new mirror for a body"); not checked whether the shared save (written
+  before the death in the test) or a later one holds the body as an object of the guest's own world.
+* Not checked: what the guest's screen shows at the body's place.
+* Next steps: 0.7.10.
+* Ticket: BUG-0665

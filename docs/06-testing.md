@@ -4577,3 +4577,14 @@ Evidence: v0.7.8 and 0.7.9 run side by side (`long_tribe_short`, lab 20261106-23
 fix/w46-tribe-fps) collapsed identically at the same moment. Before reading such a failure as a regression: check
 the Xwayland's CPU (`pgrep -x Xwayland`, its `/proc/<pid>/stat` ticks over 10 s; ~1000 ticks = one full core) and
 run the A/B at equal load, or rerun on a quiet machine (1-2 lanes).
+
+## A guest that joins while a member's body lies: tribe_dead_rejoin (2026-11-07, fix/w46-tribe-missing)
+<a id="testing-tribe-dead-rejoin"></a>
+
+`coop_tribe_dead_member.py --rejoin` (suite `tribe_dead_rejoin`, ~2 min cold, ~1.5 min warm): the guest leaves and
+joins again; once it has left its world (the host saved for it) the host kills one of its own members
+(`coop.tribe pincer ... 1000`), so the guest loads a world where that member is a body out of its tribe's list on the
+host. For 24 s the host's `coop.tribe` bodies_sent tells whether the body is still sent, and the host's sync-check is
+asked (`coop.diag sync now`) at each such sample. PASS: no MISMATCH. It is the short repro of long_tribe's "t: 1
+missing on the guest" after its restart and rejoin events (45 min -> 2 min). With `SPORE_FIX_OFF=tribe.sync_bodies`
+it fails 5-6 checks of 6 (BUG-0664, docs/re/tribe.md#tribe-sync-bodies).

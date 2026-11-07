@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: the sync-check no longer reports "t: 1 missing on the guest" after a guest joins or reloads the world while
+  the body of a dead member still lies on the host (bodies are not compared; BUG-0664).
+
 ### Changed
 - Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
   (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
