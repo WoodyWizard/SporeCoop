@@ -604,7 +604,7 @@ add('mem_census_civ', P + 'coop_mem_census.py --fixture civ_npc --idle --minutes
 add('mem_census_civ_solo', P + 'coop_mem_census.py --fixture civ_npc --idle --solo --minutes 10 --sample 2', ('extended',), minutes=18, fixture='civ_npc')
 add('mem_census_tribe', P + 'coop_mem_census.py --fixture tribe --idle --minutes 10 --sample 2', ('extended',), minutes=18, fixture='tribe')
 add('mem_census_tribe_solo', P + 'coop_mem_census.py --fixture tribe --idle --solo --minutes 10 --sample 2', ('extended',), minutes=18, fixture='tribe')
-add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature')  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
+add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature', allow=[allow('mem-low', 'BUG-0631', 'the test fills the host\'s address space to 260 MB free on purpose (coop.diag fill)', who='host')])  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
 add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
 
 SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')

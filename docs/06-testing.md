@@ -4550,3 +4550,10 @@ BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is 
 * Noise to expect in a census diff: `mapped:ge1M` -24 MB (mappings of the start released in the first minutes),
   `priv:untracked:ge16M` +-16 MB (one block of before the tracker freed or taken), the game heap growing in 16 MB
   segments (a step of 16 MB is one segment, not 16 MB of new objects).
+* Gate findings of the census tests: the tours (`--tour`) put the partner 12-36 m off its own game's ground for 2
+  monitor lines on some hops (`drawn` / `ground`, sync-check `p apart`): the teleports' own doing, BUG-0658; the tour
+  entries run with the sync-check and monitor gates off. `mem_census_cell_crowd` with BUG-0355's fixes off had one
+  sync-check `c: 11 missing on the guest` right after a `coop.pool crowd` moved ~300 cells at once (lab
+  20261106-210201); none in the other off run or the two on runs. Its FAIL run (fix off) also loses 8.3 MB/min: that
+  is the bug the test catches, and `mem_reserve`'s FAIL run (core.mem_reserve off) trips the mem-low gate on purpose
+  (260 MB free, largest block 16 MB, planted with `coop.diag fill`).
