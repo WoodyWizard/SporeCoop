@@ -136,6 +136,21 @@ constexpr size_t kJitterN = 64;      // states (3-6 s)
 constexpr double kJitterHigh = 0.10; // s: no lead over this one-way latency (measured: netem mobile 123-149 ms, player and local under 0.1)
 constexpr double kJitterLow = 0.085;
 constexpr double kSmoothVelTau = 0.1; // s
+// BUG-0650 (`coop.fix drive.lead_late`): a late state is brought in over time, not at once. The lead shows the
+// sender's body at the sender's time now (+ one-way); a state that arrives late (a walk that starts in a latency spike
+// of the player network, +250 ms: 0.3-0.4 s after it was sent) moved that target 3.6-3.8 m in one frame from where the
+// standing state had it, and catch_prop closed it in 0.87-0.95 m frames (tribe_walk_player). With the fix the shown
+// target has its own sender time (lt_t_): it goes on at the real time's rate and, when a new state arrives, may step
+// back to as early as the newest state + its usual lead (the median of the states' arrival age, kLateN, + the median
+// one-way latency): of that span the time whose target is nearest where the shown target was going (a state as
+// expected, a walk at the same velocity: the lead's own time, no change; the first state of a start known late: its
+// usual lead, a start step as on a calm link). Then it catches up with the lead at kLateRate x the real time (the
+// target runs at 1 + kLateRate x the body's speed for the time it was behind). Member mirrors only (smooth_max > 0).
+// Off: M1's lead (the target at the sender's time now at once).
+inline bool g_lead_late_fix = true;
+constexpr size_t kLateN = 64;
+constexpr double kLateRate = 0.5;
+constexpr int kLateSteps = 8; // candidate times between the earliest and the shown time's continuation
 
 class SnapshotBuffer {
 public:
@@ -163,6 +178,8 @@ public:
         clock_.clear();
         have_raw_ = false;
         sm_have_ = false;
+        lt_have_ = false;
+        age_n_ = 0;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -204,6 +221,16 @@ public:
                 jitter_ = d[n / 2];
                 jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
             }
+        }
+        // BUG-0650: the state's age when it arrived (on the sender's clock; the clock offset is the earliest
+        // arrival), median of the last kLateN
+        {
+            ages_[age_n_++ % kLateN] = (float)std::max(0.0, local_now - (st + offset_));
+            size_t n = std::min<size_t>(age_n_, kLateN);
+            std::array<float, kLateN> d = ages_;
+            std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+            age_med_ = d[n / 2];
+            lt_new_ = true;
         }
         snaps_.push_back({st, s});
         while (snaps_.size() > 64)
@@ -280,8 +307,10 @@ private:
         double t = local_now - offset_ - delay;
         last_extrap = 0;
         if (lead && g_lead_fix) {
-            const double tl = local_now - offset_ + g_one_way;
+            double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
+            if (g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && !jittery_)
+                tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
             // moves a state on by its age, and states 0-120 ms late (mobile: 60 ms jitter) made the lead target step
             // 1-4 m at every start, speed change and stop; closing that at any speed the mirror can show was the
@@ -371,7 +400,77 @@ private:
         return true;
     }
 
+    // BUG-0650: the raw lead's position at sender time `t` (the newest state moved on, or the interpolated path)
+    Vec3 lead_at(double t) const
+    {
+        const Snap& n = snaps_.back();
+        if (t >= n.t) {
+            double dt = std::min(t - n.t, kMaxLead);
+            Vec3 v = lead_velocity();
+            return {n.s.pos.x + v.x * (float)dt, n.s.pos.y + v.y * (float)dt, n.s.pos.z + v.z * (float)dt};
+        }
+        for (size_t i = snaps_.size() - 1; i > 0; i--) {
+            const Snap& a = snaps_[i - 1];
+            const Snap& b = snaps_[i];
+            if (t >= a.t) {
+                float f = (float)((t - a.t) / std::max(b.t - a.t, 1e-3));
+                return lerp(a.s.pos, b.s.pos, f);
+            }
+        }
+        return snaps_.front().s.pos;
+    }
+
+    // BUG-0650 (g_lead_late_fix): the sender time the lead shows now (see there); `tl` is M1's (the sender's now).
+    // Advanced once per local time; an earlier call (the path velocity's sample) gets the time it had then
+    double late_time(double local_now, double tl) const
+    {
+        if (!lt_have_ || local_now - lt_local_ > 0.5 || age_n_ < 16) {
+            lt_have_ = true;
+            lt_t_ = tl;
+            lt_local_ = local_now;
+            lt_pos_ = lead_at(tl);
+            lt_vel_ = {};
+            lt_new_ = false;
+            return tl;
+        }
+        if (local_now <= lt_local_)
+            return std::min(tl, lt_t_ - (lt_local_ - local_now));
+        const double adv = local_now - lt_local_;
+        double cont = std::min(tl, lt_t_ + adv);
+        double t = std::min(tl, lt_t_ + adv * (1.0 + kLateRate));
+        if (lt_new_) {
+            // a new state: of [the newest state + its usual lead, the continuation] the time nearest where the shown
+            // target was going
+            const double earliest = snaps_.back().t + age_med_ + jitter_;
+            if (cont > earliest + 1e-3) {
+                Vec3 want{lt_pos_.x + lt_vel_.x * (float)adv, lt_pos_.y + lt_vel_.y * (float)adv,
+                          lt_pos_.z + lt_vel_.z * (float)adv};
+                double best = cont;
+                float bd = dist(lead_at(cont), want);
+                for (int i = 0; i < kLateSteps; i++) {
+                    double c = earliest + (cont - earliest) * i / kLateSteps;
+                    float d = dist(lead_at(c), want);
+                    if (d < bd - 0.05f) {
+                        bd = d;
+                        best = c;
+                    }
+                }
+                t = best < cont ? best : t;
+            }
+            lt_new_ = false;
+        }
+        Vec3 p = lead_at(t);
+        lt_vel_ = {(p.x - lt_pos_.x) / (float)adv, (p.y - lt_pos_.y) / (float)adv, (p.z - lt_pos_.z) / (float)adv};
+        if (dist(Vec3{}, lt_vel_) > 15.f)
+            lt_vel_ = {};
+        lt_pos_ = p;
+        lt_t_ = t;
+        lt_local_ = local_now;
+        return t;
+    }
+
 public:
+    double late_behind(double local_now) const { return lt_have_ ? local_now - offset_ + g_one_way - lt_t_ : 0; }
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     double jitter() const { return jitter_; }
     bool jittery() const { return jittery_; }
@@ -477,6 +576,13 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
+    // BUG-0650
+    std::array<float, kLateN> ages_{};
+    size_t age_n_ = 0;
+    float age_med_ = 0;
+    mutable bool lt_have_ = false, lt_new_ = false;
+    mutable double lt_t_ = 0, lt_local_ = 0;
+    mutable Vec3 lt_pos_{}, lt_vel_{};
     mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false, sm_closing_ = false, sm_lead_out_ = false;
     double jitter_ = 0; // s (BUG-0619)
     std::array<float, kJitterN> devs_{};
