@@ -2264,3 +2264,64 @@ BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`,
   neither detached nor taken out by a SetTribe(null) of this game: the fallback ended their trees without exits. Inferred
   origin: bodies that came with the received world without a tribe (the only other writer of +0x1014 is the reader
   0xC03370 that copies +0x1010 / +0x1014 from a record); not checked. Whether 0x04861814's exit reads the tribe: not checked.
+
+## The player tribe's level and population cap on a guest (2026-11-07, fix/w46-tribe-civ)
+<a id="tribe-level"></a>
+
+BUG-0645. GOG 2024, Ghidra and lab lanes 4/5.
+* ✔ (asm) `SporeCoop::cTribe_MaxPopulation` 0xC8EC70 (thiscall, plain ret): an NPC archetype 1..31 (+0x550) reads a table
+  0x1695460; the player tribe (spatial +0x120 vt 0x58 true) returns `0xC00C10(tribe +0x38)`, a table 0x168D228 of 8 ints
+  (runtime: **6, 9, 12, 15, 30, 45, 60**, 0), 0 at level 8 or more. cTribe::SpawnMember 0xC983C0 refuses a member at this cap.
+* ✔ (Ghidra) +0x38 is the player tribe's **level**; its only setter is 0xFF0260 (`mov [ecx+0x38], arg`). The hut upgrade
+  `SporeCoop::TribeHut_Upgrade` 0xCDA4F0 computes it from the goal progress (cPlayer +0x10F0) against the int list property
+  0x16D19C8A of TribeProps_ptr, sets it, plays the cinematic "TRG_Upgrade" with the members near the hut and writes the new
+  cap into the Tribe HUD (`SporeCoop::TribeHud_ptr` 0x169B41C, +0x10: ~ the "members / cap" panel).
+* ✔ (runtime) A guest gets the host's goal progress (wsync.tribe_goal) but its game never runs the upgrade: the host at level
+  2 (cap 12) with 10 members, the guest at level 0, cap 6, HUD cap 6 (lab 20261107-075004). This is the player's "12/6".
+  Fix `wsync.tribe_level`: a wsync row with the host's player tribe level; the guest stores it (the game's own one store) and
+  the HUD cap of that level. ? The hut's model on the guest (the upgrade's look) was not compared.
+* ~ A new member the guest makes in its own game is removed by the mirror reconcile and never reaches the host (BUG-0671).
+
+## The roster portraits are the species' picture (2026-11-07, fix/w46-tribe-civ)
+<a id="tribe-portraits"></a>
+
+BUG-0643. Lab lane 5.
+* ✔ (runtime) The Tribe roster's member portraits (right side of the screen) are the png {0x2F7D0004, 0x40626200, species
+  instance} the game finds for the species: a broken png registered above every package before the guest's first load
+  (`coop.creations fakepng 067B3E4A`) gave the failed-image square (white with a red cross) in every member slot. The game
+  keeps a picture it drew for the whole process: registering the broken png after the first load changed nothing.
+* ✔ (code) The host's own creations went to the guests with their bem, metadata and creaturedata only (records_from_game
+  took no png): after the host's Creature -> Tribe editor (a new creation of the host's My Creations) the guest's game had no
+  picture for the tribe's species: white squares. Fix `creations.png`: a creation's records include its pngs (model group and
+  thumbnail group +1). Test tribe_portraits: the guest's game answers the png of the host's species (lab 20261107-081042 FAIL,
+  20261107-081214 PASS).
+* ? In the lab the roster kept the fixture species' portraits after the members' species and the tribe's first species key
+  (+0x1920, the inline first element of mSpeciesKeys +0x1904, runtime) were set to the host's creation before the world share:
+  which key the roster reads was not found, so the test checks the resource, not the screen.
+
+## A village's identity colour (2026-11-07, fix/w46-tribe-civ)
+<a id="tribe-id-colour"></a>
+
+BUG-0644. Ghidra and lab lane 4.
+* ✔ (Ghidra) serializer 0x1320F20 (class key 0x053DBCF2): `mIDColorID` at +4 and `mCachedColor` (RGB) at +0x24 of an identity
+  colour block. The colour list is a global list at 0x156B0BC of {id 0x053DBCxx at +0x10, RGB at +0x14}; 0xB6E4D0 finds the id
+  nearest an RGB (default 0x053DBCF3).
+* ✔ (runtime) cTribe **+0x230** is that block: **+0x234 mIDColorID**, +0x254 mCachedColor (0 for NPC tribes until drawn; the
+  player tribe's is set). Five tribes of a host game: 0x053DBCF1 (player), F4, F5, F6, F7 in forming order; the guest's copies
+  had the same ids in this run because it made them in the same order. A tribe takes the next colour, so a guest that made the
+  host's villages in another order, or had one of its own, had other colours (the player report).
+* Fix `wsync.tribe_color`: a wsync row of every village's colour id by place; the guest stores the id and clears the cached
+  RGB. Test tribe_colors (lab 20261107-081057 FAIL, 20261107-080948 PASS). ? Whether the village's look changes at once
+  (the hut and flags are drawn from the cached colour) was not checked on the screen.
+
+## The dance at the fire and the guest's sounds (2026-11-07, fix/w46-tribe-civ)
+<a id="tribe-dance-music"></a>
+
+BUG-0646, BUG-0669. Lab lane 4, `coop.audio`.
+* ✔ (runtime) 3 min of the tribe fixture with a 30 s day (SetDayDuration on the host), 9 host members at their village work
+  and at the fire (anims 0x2C39001 / 0x2C39003 on both games): no theme music play on the host at all (tribe.theme_music sent
+  0), so the BUG-0568 relay had nothing to send. The host-only sounds were footsteps: 0x4A776923 436 vs 36 (FUN_009A6BD0, a
+  sound per animation channel while the creature's velocity +0x1660 is above 0.1: BUG-0669).
+* ? The dance with music the host saw at night (report s 5218, a conquer goal open, an epic coming) was not seen in the lab;
+  its trigger and its sound path are not known (not the theme manager in these 3 min, not an animation of the members: the
+  guest's mirrors played the same animations).

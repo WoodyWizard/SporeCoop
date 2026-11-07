@@ -1110,6 +1110,13 @@ static void send_cmd(net::Writer& w)
 
 using SetOrder_t = int(SK_THISCALL*)(void*, void*, int, int);
 static SetOrder_t o_SetOrder;
+struct LastOrder {
+    int type = -1;
+    uint8_t kind = 0;
+    uint16_t id = 0;
+    uint32_t noun = 0;
+};
+static LastOrder g_last_order;
 static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
 {
     if (local_play() && !g_applying)
@@ -1128,7 +1135,9 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
             w.u16(it->second);
             w.u32((uint32_t)type);
             w.u32((uint32_t)flag);
-            write_target(w, encode_target(target));
+            Target et = encode_target(target);
+            g_last_order = {type, et.kind, et.id, et.noun}; // BUG-0648: what the guest's game ordered
+            write_target(w, et);
             send_cmd(w);
             return 0;
         }
@@ -4095,16 +4104,17 @@ std::string debug(const std::vector<std::string>& a)
         return out + b;
     }
     if (!a.empty() && a[0] == "tables") { // sizes of the pointer tables (tests: BUG-0040, BUG-0059)
-        char b[320];
+        char b[420];
         snprintf(b, sizeof b,
                  "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
                  "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u world_changes=%u "
-                 "mirror_designs=%u veh_fallback=%u build_skipped=%u bound_redesigned=%u\n",
+                 "mirror_designs=%u veh_fallback=%u build_skipped=%u bound_redesigned=%u last_order=%d/%u/%u/%08X\n",
                  (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
                  (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
                  (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
                  (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired, g_veh_design_checked,
-                 g_veh_design_fallback, g_build_skipped, g_bound_redesigned);
+                 g_veh_design_fallback, g_build_skipped, g_bound_redesigned, g_last_order.type, g_last_order.kind,
+                 g_last_order.id, g_last_order.noun);
         return b;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
@@ -4258,7 +4268,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "pushprobe" && is_guest()) // tests (BUG-0186): who moves a mirror
         return push_probe();
-    if (a.size() >= 3 && a[0] == "attack" && is_host()) {
+    if (a.size() >= 3 && a[0] == "attack" && (is_host() || is_guest())) { // on a guest: the game's call of the guest (BUG-0648)
         // attack <id> <host city index | v<vehicle id>> [type]: the game's own attack order (tests, BUG-0477):
         // type 2 the military attack of a city (default for a city), 1 a unit (default for a vehicle)
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));

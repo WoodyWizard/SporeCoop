@@ -270,6 +270,7 @@ add('civ_mirror_place', P + 'coop_civ_mirror_place.py', warm=True, minutes=3, fi
 add('civ_ruin_repair', P + 'coop_civ_ruin_repair.py', warm=True, minutes=3, fixture='civ_npc')  # a ruin the host rebuilt does not stay on the guest (BUG-0324; --nofix fails)
 add('civ_city_layout', P + 'coop_civ_city_layout.py', warm=True, minutes=3, fixture='civ_npc')  # the buildings of NPC cities founded in play stand where the host has them (BUG-0602; SPORE_FIX_OFF=civ.city_layout fails)
 add('civ_host_design', P + 'coop_civ_host_design.py', minutes=4)  # the guest's mirror of a host vehicle shows the host's own vehicle design, not the guest's creation of the same id (BUG-0647; --nofix / SPORE_FIX_OFF=creations.host_designs fails)
+add('civ_guest_attack', P + 'coop_civ_guest_attack.py', minutes=4, fixture='civ_npc')  # the guest's own attack (right-click, crosshair) of an NPC city with its military vehicles hurts and captures it on the host (BUG-0648; regression, no twin switch)
 add('civ_vehicle_scale', P + 'coop_civ_vehicle_scale.py', warm=True, minutes=3, fixture='civ_npc')  # a guest's mirror vehicle has the host vehicle's size (BUG-0549; --nofix fails)
 add('node_scale', P + 'coop_node_scale.py', warm=True, minutes=3, fixture='creature')  # a spice node has the host's size on the guest (BUG-0485; --nofix fails)
 add('civ_city_ground', P + 'coop_civ_city_ground.py', warm=True, minutes=5, fixture='civ_npc')  # the ground round the cities is the same on both games, loaded and after a live founding / capture (BUG-0332 class in Civ)
