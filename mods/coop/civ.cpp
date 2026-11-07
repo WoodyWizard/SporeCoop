@@ -4661,6 +4661,22 @@ std::string debug(const std::vector<std::string>& a)
            "build <city> <house|factory|fun> | slots <city>";
 }
 
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user)
+{
+    if (!active() || is_host())
+        return;
+    double now = H->time_seconds();
+    char k[8];
+    for (auto& [id, g] : g_gv) {
+        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
+            continue;
+        snprintf(k, sizeof k, "w%u", (unsigned)id);
+        fn(k, g.est.at(now, net::g_lead_fix ? net::g_one_way : 0.03), user);
+        snprintf(k, sizeof k, "e%u", (unsigned)id);
+        fn(k, net::Vec3{(float)(now - g.est.t), net::dist(net::Vec3{}, g.est.vel), g.err}, user);
+    }
+}
+
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;

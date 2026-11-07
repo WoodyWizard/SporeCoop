@@ -48,6 +48,10 @@ void world_check();
 bool world_epoch_fix();
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
+// diagnostics (coop.bodyrec start diag, K3): per vehicle mirror of a guest rows `w<id>` (where it is put: the estimate
+// moved on) and `e<id>` (x: the age of its last state on the sender's clock mapped, s; y: the estimate's speed, m/s;
+// z: the error before the glide, m)
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user);
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();

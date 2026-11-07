@@ -800,16 +800,17 @@ static void bodyrec_tick(double now)
         r.p = e.pos;
         g_bodyrec.push_back(r);
     }
-    if (g_bodyrec_diag) // (K3 diagnostics: the driving's own targets, `coop.bodyrec start diag`)
-        tribe::for_each_diag(
-            [](const char* key, const net::Vec3& p, void* u) {
-                BodyRow r{};
-                r.t = *(double*)u;
-                snprintf(r.key, sizeof r.key, "%s", key);
-                r.p = p;
-                g_bodyrec.push_back(r);
-            },
-            &now);
+    if (g_bodyrec_diag) { // (K3 diagnostics: the driving's own targets, `coop.bodyrec start diag`)
+        auto row = [](const char* key, const net::Vec3& p, void* u) {
+            BodyRow r{};
+            r.t = *(double*)u;
+            snprintf(r.key, sizeof r.key, "%s", key);
+            r.p = p;
+            g_bodyrec.push_back(r);
+        };
+        tribe::for_each_diag(row, &now);
+        civ::for_each_diag(row, &now);
+    }
     while (g_bodyrec.size() > kBodyRecMax)
         g_bodyrec.pop_front();
 }
