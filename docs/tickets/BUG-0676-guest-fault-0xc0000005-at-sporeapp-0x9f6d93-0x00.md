@@ -10,7 +10,7 @@ role: guest
 versions: unreleased (rel/0.7.10 + fix/w46-k3-bodies 1cbce569, with SPORE_FIX_OFF=tribe.mirror_keep,drive.lead_keep)
 fixed_in: unreleased
 branch: fix/w46-rejoin-crash
-commits:
+commits: d8c99613 0eb35cc6 77444e1a
 tests: menu_hover, chaos_tribe_awful
 signature: 0xC0000005 at 0x00DF6D93 SporeApp.exe+0x9F6D93 data=0x0000002C (main thread); calls 00927987 00F47234 00D486EB 00453A69 00927987 00DF7C2C 00DE825C 007D86D6 0081530F 007D8D6A
 docs: docs/re/tribe.md#tribe-menu-rollover, docs/06-testing.md#testing-menu-rollover
