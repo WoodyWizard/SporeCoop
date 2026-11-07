@@ -72,6 +72,6 @@ Earlier: no-fail-run: a flaky bot outcome, not reproduced in 3 runs on lane 3 (0
   the low landing rate of this ticket: the hits did not overlap within kHuntWindow (6 s). From 124 s to 248 s the host's
   count stood at 24 while the guest's went 1 -> 29 (the host bot lost its targets: hunts n92 "lead lost 20 s 4 hits",
   n95 "timeout 35 s", while the guest's bot killed n92 with 15 hits). The hit path (teamplay.cpp, hunt_hits.h, the
-  npc.cpp hit handling) and play_creature.py are unchanged since v0.7.9; the 30 play_creature runs since the fix
-  (2026-11-06 12:50 to 2026-11-07) gave +2..+14, rel/0.7.10 20261107-110531 +8. Verdict: a bot flake (the two bots'
+  npc.cpp hit handling) and play_creature.py are unchanged since v0.7.9; the 14 play_creature runs in the lab dirs since the fix
+  (2026-11-06 12:50 to 2026-11-07) gave +4..+14, rel/0.7.10 20261107-110531 +8. Verdict: a bot flake (the two bots'
   hunts did not overlap), not a regression; left fixed, reopen when it repeats.
