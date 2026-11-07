@@ -28,6 +28,7 @@ their own agent from the start instead of the end of a package.
 | **P0 Discord 2026-11-06** (first, wave 1) | The player reports of 2026-11-06 (0.7.8, two players Cell to Civ), by importance: the evolution bar lowered by a partner's editor spend (players: important), the guest's own creature from another world after the host's Cell -> Creature, the migration that never reaches the guest, the host's Civ crash with the address space full, then the Cell double events (a kill applied twice, a meal eaten twice), the Cell level-up churn, the part token, the attackable evolving nest, the Tribe roster portraits, village colours, member cap, dance music, the guest's Civ attacks, the host's name tag | BUG-0630, 0638, 0640, 0631, 0632, 0636, 0635, 0633, 0639, 0634, 0637, 0643, 0644, 0645, 0646, 0648, 0649, and the children of the class umbrellas from these reports: BUG-0641, 0642 (of 0418), BUG-0647 (of 0424) |
 | **M1 Address space** (dedicated, wave 1) | The game's 2 GB address space runs out in long sessions (host crash in Civ after 50 min of Creature, 740 MB gone; a Cell guest 3502 -> 1427 MB in 6 min): find what grows (a memory census per stage over a long-session bot), fix the leak; whether the large-address flag can be set safely | BUG-0631, 0621 |
 | **K3 Remote bodies, the rest** (after the 0.7.9 drive.lead merge) | Bodies placed behind or stepping on the other screen that 0.7.9 did not close: a guest's mirror held back by its own game, the player tribe's citizens p90 1.9-2.0 m, Civ vehicles under loss bursts, walked animal proxies stepping, a hit NPC's proxy held off its path, the chaos_tribe proxies gate | BUG-0386, 0410, 0438, 0445, 0409, 0440 |
+| **S1 Lab log sweep 2026-11-06** (wave 2) | Signals in the lab logs of passed and failed tests that no ticket named (read-only sweep of 703 runs): the guest's held tool of a Tribe member, Present lost after the saved box hitch, cinematics ended by force, a guest timeout with a live host, the skipped tribe camera set-up, recurring detector classes with no ticket | BUG-0652, 0653, 0654, 0655, 0656, 0657 |
 | **P0b Creature nest** | The guest gets no heal at its home nest (with BUG-0640: the guest's respawn nest does not follow the host's) | BUG-0496 |
 
 A class umbrella closes when its children are fixed or closed and the detector shows no row of the class on any stage;
@@ -42,4 +43,6 @@ what is left becomes a concrete ticket in the same package.
    dedicated agent at once.
 3. Integration run on rel/0.7.10 after every two merges.
 4. Final check on at most 4 lanes: smoke, every test added in 0.7.10, play_* of all stages, campaign_*,
-   detect_*, the long-session bot on Creature and Tribe. Then the release procedure.
+   detect_*, the long-session bot on Creature and Tribe. Then a read-only sweep of the release's lab logs (passed tests
+   too: crashes, faults, gate warnings, detector classes, repeated warnings) against the tickets; an unticketed signal
+   gets a ticket, a regression against the last release blocks it. Then the release procedure.
