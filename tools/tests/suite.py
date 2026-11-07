@@ -589,6 +589,11 @@ for _st in ('creature', 'tribe'):
     add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, timeout=4800, fixture=_st)
     add(f'long_{_st}_short', P + f'coop_long_session.py --stage {_st} --minutes 6', ('detector',), minutes=20, fixture=_st)
 
+# BUG-0631 / BUG-0621: the address space census over a played session (docs/06-testing.md#testing-mem-census)
+add('mem_census', P + 'coop_mem_census.py --minutes 20', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_solo', P + 'coop_mem_census.py --minutes 20 --solo', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
+
 SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
 
 

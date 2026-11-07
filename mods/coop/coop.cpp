@@ -5341,6 +5341,7 @@ void support_init()
         return std::string();
     };
     support::init(H, M, p);
+    memcensus::init(H, M); // BUG-0631: coop.memcensus (tests)
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
