@@ -733,6 +733,123 @@ static std::string f_city(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: the player species' home nest and its migration (BUG-0640, BUG-0496; docs/re/creature.md#creature-nest-follow)
+// The migration to a new nest is the game's own state on each machine: property 0x514A219 of cPlayer (1 pending, 2 the
+// goal "Migrate to a new nest", gone with the claim), set by CreatureGame_AfterEditor when the stage's DNA total crossed
+// a brain threshold since the last one (0x54FB6BF). A guest's game ran it only when it loaded a world saved after the
+// host's (BUG-0019); since the evolution in place (BUG-0508) no world goes and the guest's game never migrated: no
+// goal, no claim, no DNA, its respawn and heal stayed at the old nest. The row carries the host's state and the
+// position of the host's home nest (its avatar's herd's nest); a guest whose home nest is not the one the host is
+// migrating from or to starts the same migration in its own game (property 1 and the avatar herd's brain range
+// emptied, as AfterEditor does), when its own game has the same target nest: its own goal, claim cinematic, DNA,
+// respawn and heal follow. Off: the guest's nest follows only a reloaded world (0.7.9).
+static bool g_nest_fix = true;
+COOP_FIX("wsync.creature_nest", "BUG-0640", g_nest_fix,
+         "wsync: a guest's game migrates to the host's new nest (goal, claim, respawn, heal) without a world load");
+constexpr uint32_t kMigrationProp = 0x514A219;
+static unsigned g_mig_started;
+static bool creature_mode(uint32_t m) { return m == modes::kCreature; }
+static int migration_state(void* p)
+{
+    uintptr_t f = S("SporeCoop::Player_GetProperty");
+    return f && p ? skg::thiscall<int>(f, p, kMigrationProp) : -1;
+}
+static bool home_nest(net::Vec3& out)
+{
+    void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
+    return av && game::nest_position(av, out);
+}
+static bool target_nest(net::Vec3& out) // the game's next nest: CreatureGame_NestHerdFor(1)
+{
+    uintptr_t f = S("SporeCoop::CreatureGame_NestHerdFor"), np = S("SporeCoop::Herd_NestPosition");
+    void* h = f ? skg::cdecl_call<void*>(f, 1) : nullptr;
+    if (!np || !R(h, 0x164) || !game::herd_nest(h))
+        return false;
+    const float* q = skg::thiscall<const float*>(np, h);
+    if (!R((void*)q, 12))
+        return false;
+    out = {q[0], q[1], q[2]};
+    return true;
+}
+static float nest_dist(const net::Vec3& a, const net::Vec3& b)
+{
+    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
+}
+static bool r_nest(Table& out)
+{
+    void* p = cplayer();
+    net::Vec3 h;
+    if (!p || !home_nest(h))
+        return false;
+    Entry e;
+    int st = migration_state(p);
+    e.v[0] = (uint32_t)(st < 0 ? 0 : st);
+    e.v[1] = fbits(h.x), e.v[2] = fbits(h.y), e.v[3] = fbits(h.z);
+    out.push_back(e);
+    return true;
+}
+constexpr float kSameNest = 30.f; // m: one nest (nests lie hundreds of metres apart)
+static int s_nest(const Table& want, bool apply)
+{
+    void* p = cplayer();
+    void* av = game::avatar();
+    net::Vec3 mine, target;
+    if (want.empty() || !p || !av || !home_nest(mine))
+        return 0;
+    int st = migration_state(p);
+    net::Vec3 host{bitsf(want[0].v[1]), bitsf(want[0].v[2]), bitsf(want[0].v[3])};
+    uint32_t hst = want[0].v[0];
+    static double pending_since = -1;
+    if (st == 1 && hst != 1) {
+        // pending here while the host's goal is set (or claimed): a world saved during the host's CRG_SpeciesMigrate
+        // left this game's creature a hatchling (age 0) that never turns the pending migration into the goal
+        // (docs/re/creature.md 16): after 15 s the goal state, so the claim on arrival works
+        double now = H->time_seconds();
+        if (pending_since < 0)
+            pending_since = now;
+        if (now - pending_since < 15)
+            return 0;
+        if (apply) {
+            uintptr_t set = S("SporeCoop::Player_SetProperty");
+            if (set)
+                skg::thiscall<void>(set, p, kMigrationProp, 2u);
+            pending_since = -1;
+            g_mig_started++;
+            H->log(M, SK_INFO, "wsync: this game's migration stayed pending while the host's went on (state %u): goal state "
+                   "set (BUG-0640)", hst);
+        }
+        return 1;
+    }
+    pending_since = -1;
+    if (st != 0)
+        return 0; // this game migrates already (its own or started here): its NestTick goes on
+    bool same_home = nest_dist(mine, host) < kSameNest;
+    // the host migrates from the nest this game still lives in, or it lives in a nest this game never claimed
+    bool behind = hst != 0 ? same_home : !same_home;
+    if (!behind || !target_nest(target) || nest_dist(target, mine) < kSameNest)
+        return 0;
+    if (hst == 0 && nest_dist(target, host) >= kSameNest)
+        return 0; // this game's next nest is not the host's: nothing to follow
+    if (!apply)
+        return 1;
+    uintptr_t set = S("SporeCoop::Player_SetProperty");
+    void* herd = game::herd_of(av);
+    if (!set || !R(herd, 0x128))
+        return 1;
+    skg::thiscall<void>(set, p, kMigrationProp, 1u);
+    *(int32_t*)((uint8_t*)herd + 0x124) = -1; // as CreatureGame_AfterEditor: the avatar's herd is no nest to stay in
+    *(int32_t*)((uint8_t*)herd + 0x120) = 5;
+    g_mig_started++;
+    H->log(M, SK_INFO, "wsync: the host's species migrates (state %u, home nest (%.0f %.0f %.0f)): this game migrates to "
+           "(%.0f %.0f %.0f) too (BUG-0640)", hst, host.x, host.y, host.z, target.x, target.y, target.z);
+    return 1;
+}
+static std::string f_nest(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "migration=%u home=(%.1f %.1f %.1f)", e.v[0], bitsf(e.v[1]), bitsf(e.v[2]), bitsf(e.v[3]));
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -744,6 +861,7 @@ static const Row kRows[] = {
     {8, "civ_rel", 1, &g_civ_rel_fix, civ_mode, r_civ_rel, s_civ_rel, false, f_civ_rel},
     {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
     {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
+    {11, "creature_nest", 4, &g_nest_fix, creature_mode, r_nest, s_nest, false, f_nest},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -936,7 +1054,8 @@ std::string status()
                  g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
         out += b;
     }
-    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u\n", g_rel_stuck, g_tfood_adds, g_parts_fixed);
+    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u\n", g_rel_stuck, g_tfood_adds,
+             g_parts_fixed, g_mig_started);
     out += b;
     return out;
 }
