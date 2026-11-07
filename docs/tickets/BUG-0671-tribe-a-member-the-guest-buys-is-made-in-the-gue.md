@@ -8,9 +8,9 @@ reported: 2026-11-07
 source: found in fix/w46-tribe-civ (BUG-0645 analysis)
 role: guest
 versions: 0.7.9
-fixed_in:
+fixed_in: unreleased
 branch: fix/w46-tribe-dance
-commits:
+commits: 865501d9, 8e1f4c48
 tests: tribe_guest_baby, tribe_guest_baby_noeffects
 signature:
 docs: docs/re/tribe.md#tribe-guest-baby

@@ -8,9 +8,9 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-08
 role: guest
 versions: 0.7.8
-fixed_in:
+fixed_in: unreleased
 branch: fix/w46-tribe-dance
-commits: c9265c9a
+commits: c9265c9a, 865501d9, 8e1f4c48
 tests: tribe_party_music
 signature:
 docs: docs/re/tribe.md#tribe-party-music
