@@ -4687,3 +4687,14 @@ BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is 
   `coop.civ tables` prints `last_order=` of the guest.
 * `coop.audio` comparisons of an idle Tribe village (BUG-0646): footsteps (0x4A776923) are host-only (BUG-0669); a 30 s
   day (`call 0x00BC29A0 thiscall <cTimeOfDay::Get()> 0x41F00000`) did not bring the fire dance in 3 min.
+## A guest's tribe mapping held over a reload (2026-11-07, fix/w46-tribe-load)
+<a id="testing-tribe-world-map"></a>
+
+BUG-0672, `coop_tribe_world_map.py` (suite tribe_world_map, ~70 s on a cold lane). A rare race (the first tool
+snapshot of a new world before its first tribe state) is made certain with two guest test commands: `coop.tribe
+statehold 1` (the host's tribe states are ignored: the mapping host tribe index -> local tribe stays as it was) and
+`coop.tribe frametool <index> <type> [m]` (make_tool from the next frame's tick, as the wobj snapshot runs it, with a
+task for outside the frame queued just before). Turn the hold off at the end (`statehold 0`): it is not reset by a
+session or world change. Frames are checked with the `frame` command 5 s and 15 s later. With `kit.outpump` off a caught
+fault inside a frame with an outside task pending freezes the mod (the game's message loop never returns): any test can
+show that, this one does on purpose.

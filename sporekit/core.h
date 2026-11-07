@@ -100,6 +100,7 @@ void run_on_main_from(const void* code, std::function<void()> fn);
 void run_outside_frame_from(const void* code, std::function<void()> fn);
 size_t drop_tasks_in(uintptr_t lo, uintptr_t hi); // queued mod tasks whose code is in [lo, hi)
 void pump_outside_tasks();
+void outside_tasks_resume(); // BUG-0672: a frame ended (or was cut off): post the outside tasks it held back
 bool in_frame(); // inside the Present hook
 DWORD main_thread_id();
 void set_main_thread();
@@ -260,6 +261,7 @@ struct KitFix {
     const char* what;
     volatile LONG on;
 };
+extern KitFix g_fix_outpump;     // BUG-0672: outside tasks wait for the frame's end, no repost loop in the game's message pump
 extern KitFix g_fix_frameunwind; // BUG-0667: a frame cut off by a caught fault does not stop the later ones
 extern KitFix g_fix_longout;   // BUG-0388: a command's printf output is not cut at 8 KB
 extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format

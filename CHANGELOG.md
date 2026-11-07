@@ -13,6 +13,9 @@
 - Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
   host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
   guest's map (BUG-0668, likely the "nest evolving on the host" of BUG-0639).
+- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
+  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
+  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
 
 ## [0.7.9] - 2026-11-07
 
