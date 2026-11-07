@@ -163,9 +163,12 @@ def run(host, guest, ck):
     while time.time() - t0 < 45:
         g_av, h_pup = avatar(guest), puppet(host, 1)
         seen.append((round(time.time() - t0), g_av, h_pup))
-        if g_av != h_av or (time.time() - t0 > 10 and h_pup != h_av):
+        # (None: no avatar in that sample, a world load of the guest's game; not another creature)
+        if (g_av and g_av != h_av) or (time.time() - t0 > 10 and h_pup and h_pup != h_av):
             bad.append(seen[-1])
         time.sleep(3)
+    ck(seen[-1][1] == h_av and seen[-1][2] == h_av and sum(1 for s in seen if s[1]) >= 10,
+       f"the guest plays a creature for most of the 45 s and at the end ({sum(1 for s in seen if s[1])} samples with one)")
     print(f'  host avatar {h_av}, other world\'s choice {other}; samples (s, guest avatar, host shows the guest): {seen}',
           flush=True)
     print('  guest:', guest.call('coop.creations worlds')['out'].strip(), flush=True)

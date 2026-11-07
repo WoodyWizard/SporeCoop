@@ -138,7 +138,7 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
     g_hit_attacker = attacker;
     g_hit_idx = idx;
     bool r = hit_body(attacker, target, idx, a4);
-    if (r && target)
+    if (target) // (the game's spit rule in 0xC20390 runs before the damage, whatever the hit returns)
         spit_after_hit(attacker, (uint8_t*)target - game::kCombatOff, idx); // BUG-0641
     g_hit_attacker = was;
     g_hit_idx = was_idx;
@@ -181,7 +181,7 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
 // `coop.fix creature.spit_counter off`: a spit stops only a charge of the game's own creatures (0.7.9).
 static bool g_spit_fix = true;
 COOP_FIX("creature.spit_counter", "BUG-0641", g_spit_fix, "creature: a spit stops a charge of the partner's creature or of a host NPC");
-static uint32_t g_spit_sent, g_spit_got, g_spit_stopped;
+static uint32_t g_spit_seen, g_spit_sent, g_spit_got, g_spit_stopped;
 constexpr uint32_t kSpitType = 0x20, kChargeType = 0x1F;
 constexpr uintptr_t kCurAbility = 0xE8C; // creature: the ability running now (index, -1 none)
 static uint8_t* ability_of(void* c, int idx)
@@ -198,14 +198,47 @@ static bool charging(void* c)
     uint8_t* ab = ability_of(c, *(int*)((uint8_t*)c + kCurAbility));
     return ab && *(uint32_t*)(ab + 8) == kChargeType;
 }
+// The charge's own hit ends it (the charger reaches its target): a spit the partner's game landed on the mirror while
+// the charge ran there arrives here up to a round trip and the mirror's lag later. A charge that hit within
+// kSpitGraceMs counts as running for a spit from the partner's game (the charges' last hits, by creature).
+constexpr uint32_t kSpitGraceMs = 1000;
+struct ChargeHit {
+    void* c;
+    uint32_t ms;
+};
+static ChargeHit g_charge_hits[16];
+static uint32_t g_spit_late; // spits that stopped a charge that had just hit
+static void note_charge_hit(void* c)
+{
+    ChargeHit* slot = &g_charge_hits[0];
+    for (auto& h : g_charge_hits) {
+        if (h.c == c) {
+            slot = &h;
+            break;
+        }
+        if (h.ms < slot->ms)
+            slot = &h;
+    }
+    *slot = {c, GetTickCount()};
+}
+static bool charged_just_now(void* c)
+{
+    for (auto& h : g_charge_hits)
+        if (h.c == c && GetTickCount() - h.ms <= kSpitGraceMs)
+            return true;
+    return false;
+}
 // after the game's hit: a spit on the partner's creature or an NPC's mirror goes to the game that runs its charge
 static void spit_after_hit(void* attacker, void* victim, uint32_t idx)
 {
     if (!g_spit_fix || !attacker || !victim || !game::in_creature_stage())
         return;
     uint8_t* ab = ability_of(attacker, (int)idx);
+    if (ab && *(uint32_t*)(ab + 8) == kChargeType)
+        note_charge_hit(attacker);
     if (!ab || *(uint32_t*)(ab + 8) != kSpitType)
         return;
+    g_spit_seen++;
     float secs = *(float*)(ab + 0x80);
     if (!std::isfinite(secs) || secs <= 0 || secs > 30)
         return;
@@ -232,10 +265,17 @@ static void spit_after_hit(void* attacker, void* victim, uint32_t idx)
 static void spit_rx(void* c, float secs)
 {
     g_spit_got++;
-    if (!o_Stun || !c || game::is_dead(c) || !charging(c))
+    if (!o_Stun || !c || game::is_dead(c))
+        return;
+    bool now = charging(c), late = !now && charged_just_now(c);
+    if (g_spit_got <= 20)
+        H->log(M, SK_INFO, "rules: a spit from the partner's game on %p (%.1f s): charging now %d, its charge hit just before %d",
+               c, secs, (int)now, (int)late);
+    if (!now && !late)
         return;
     o_Stun(c, secs); // the game's own rule: the charge's creature is stunned
     g_spit_stopped++;
+    g_spit_late += late;
 }
 
 bool air_hit_now() { return g_air_hit; }
@@ -1034,8 +1074,8 @@ std::string status()
     snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u guest_dropped=%u hook=%d\n", (int)g_air_fix,
              g_air_dropped, g_air_passed, g_air_dropped_guest, (int)(o_AttackTarget != nullptr));
     out += b;
-    snprintf(b, sizeof b, "player_rules: spit fix=%d sent=%u got=%u stopped=%u\n", (int)g_spit_fix, g_spit_sent, g_spit_got,
-             g_spit_stopped);
+    snprintf(b, sizeof b, "player_rules: spit fix=%d seen=%u sent=%u got=%u stopped=%u late=%u\n", (int)g_spit_fix, g_spit_seen, g_spit_sent,
+             g_spit_got, g_spit_stopped, g_spit_late);
     out += b;
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));

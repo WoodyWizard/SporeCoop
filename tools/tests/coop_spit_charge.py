@@ -12,12 +12,14 @@ hits are the game's):
      creature spits at it (its mirror). PASS: the host's NPC holds the stun stimulus 0x1000 within 2 s.
   B. the guest's creature charges an NPC; while it charges in the guest's game, a host NPC with a spit spits at the
      guest's puppet. PASS: the guest's own creature holds the stun stimulus 0x1000 within 2 s.
-A side needs the creature with that ability; a side that has none is reported, not passed.
+A side needs the creature with that ability; the fixture's creature has neither, so the guest plays its own creature
+that has one (the co-op window's choice, put back at the end); a side that has none is reported, not passed.
 
   coop_spit_charge.py     (SPORE_FIX_OFF=creature.spit_counter: no stun in either game: FAILS)"""
 import re
 import time
 
+import creations_state
 from coop_creature_stun import avatar, stunned
 from twoinst import Checks, start
 
@@ -41,6 +43,27 @@ def npcs(host, guest, hsp):
     return out
 
 
+def avatar_key(con):
+    m = re.search(r'key=0x([0-9A-F]{8})', con.call('coop.avatar')['out'])
+    return m.group(1) if m else None
+
+
+def own_with_abilities(guest):
+    """the fixture's creature has neither a spit nor a charge: the guest plays its own creature (chosen in the co-op
+    window, the game swaps the avatar) that has one; returns its ability types ({} without one)"""
+    for key in creations_state.own_keys(guest):
+        guest.call(f'coop.creations choose creature {key}')
+        t0 = time.time()
+        while time.time() - t0 < 40 and avatar_key(guest) != key:
+            time.sleep(1)
+        time.sleep(2)
+        types = abil_types(guest, -1)
+        print(f'  guest own creature {key} (playing {avatar_key(guest)}): abilities {sorted(types)}', flush=True)
+        if avatar_key(guest) == key and ({'20', '1F'} & types):
+            return types
+    return set()
+
+
 def charging(con, who):
     return 'charging=1' in con.call(f'coop.rules charging {who}')['out']
 
@@ -53,6 +76,16 @@ def main():
     hsp = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
     hsp = hsp.group(1).zfill(8) if hsp else ''
     gtypes = abil_types(guest, -1)
+    st0 = creations_state.save(guest)
+    if not ({'20', '1F'} & gtypes):
+        gtypes = own_with_abilities(guest) or gtypes
+    try:
+        return run(host, guest, ck, hsp, gtypes)
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest, ck, hsp, gtypes):
     found = npcs(host, guest, hsp)
     print(f'  guest abilities {sorted(gtypes)}; NPCs: {[(n, sorted(t)) for n, _, _, t in found]}', flush=True)
     chargers = [n for n in found if '1F' in n[3]]
