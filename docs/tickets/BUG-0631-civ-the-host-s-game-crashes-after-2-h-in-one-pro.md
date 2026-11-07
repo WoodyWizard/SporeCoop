@@ -114,7 +114,13 @@ Test tools: `coop.memcensus` (the census and its tracker), `coop.diag fill <MB> 
 no free block over 16 MB (`coop.diag fill 260 16`); within 2.5 min the game's own space (a census of its process) has
 a free block of 100 MB or more and the host's screen shows the notice; 3 min of the play_creature bots after, no fault.
 * FAIL: 20261106-220852 (`SPORE_FIX_OFF=core.mem_reserve`: the largest block stayed 16 MB, no notice).
-* PASS: 20261106-220854 (a 127 MB block back after 80 s, the notice at 72 s; after 3 min of play 418 MB free).
+* PASS: 20261106-220854 (a 127 MB block back after 80 s, the notice at 72 s; after 3 min of play 418 MB free; the
+  lab's mem-low gate failed it on the planted low state, allowed since), 20261106-221554 (in the regression run, same
+  gate), 20261106-225320 (OK with the allow).
+* Regression (SPORE_DETECTOR=20, lanes 4 / 5): 20261106-221554 smoke + play_creature + play_tribe + mem_census_short:
+  all OK but cell_coop (BUG-0395's known flake, OK on rerun 20261106-225320), frames_loop (OK on rerun
+  20261106-225320) and unit (3 free-lane lock self-tests, the same 3 also fail on fix/w45-remote-bodies-2 and
+  fix/w45-last: the lab environment, not this branch).
 * Measurement runs (the cause, above): 20261106-200638, 20261106-202803, 20261106-204949, 20261106-204954,
   20261106-210804, 20261106-211958, 20261106-213314, 20261106-213316, 20261106-214428, 20261106-214428-2.
 * Not verified: Windows with the 2 GB space (no Windows lane); the crash itself (the lab has 4 GB).
