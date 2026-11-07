@@ -3459,6 +3459,8 @@ BUG-0668, BUG-0639, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2-3 (
   183 for one nest). A herd the host's avatar made extinct (+0x190 = 1) stays generation 0 with +0x85 = 0 on the host,
   and evolves to a new species on the guest (BUG-0668). The family's herds keep generation 0. The editors alone
   (migration_probe 20261107-081510) evolve no herd.
+* ✔ (runtime, nest_evolve_probe 20261107-082348) An evolving herd (generation 1 at the DNA) keeps its members with the
+  old species at first; the guest's hits on their mirrors land in the host's game (6.0 -> 3.0 -> 0.0): no shield.
 * ✔ (runtime, family_attack 20261107-081513) A guest, with the world's species and with its own creature, cannot hurt a
   family member: 15 bites with real input, the host's member keeps its health; vt 0xD4 answers 1 on both games.
 * ✔ (runtime, spit_charge) Across the games the spit reaches the charge's game after the charge's own hit: in every

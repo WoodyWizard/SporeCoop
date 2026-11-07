@@ -47,8 +47,10 @@ no-fail-run: not reproduced, after three attempts:
   fixed probe (out/lab/20261107-081734): +250 DNA evolves every NPC herd (generation +0xF0 0 -> 1, a new species) at
   once on the host and within 18 s on the guest, with other thresholds +0x94 in each game; a nest the host's avatar
   made extinct stays generation 0 on the host and evolves to a new species on the guest: a desync, opened as
-  BUG-0668. The guest's mirrors of the killed nest were the host's dead members (0 hp, dead); no live mirror of an
-  evolving member was hit, so the report's "can attack them" was not seen. migration_probe (out/lab/20261107-081510):
+  BUG-0668. The evolving members themselves (out/lab/20261107-082348): the guest waited at the next nest, the host's
+  herd there went to generation 1 at the DNA (its members keep the old species 065CB8BD for now); the guest hit their
+  mirrors at once and the host's game took every hit (#6 6.0 -> 3.0 -> 0.0, #7 7.5 -> 4.5): the host's game does not
+  shield an evolving nest's members, so "the guest can attack them" is the same in both games. migration_probe (out/lab/20261107-081510):
   no family herd evolution with the editors.
 * The report's logs: at the mark (s 1321) the host had just killed the 4th member of species 06539227 (its hunt card
   "The Squibble species is extinct!"); its log has no evolve line; members of that species were pooled by the host's
@@ -59,4 +61,4 @@ no-fail-run: not reproduced, after three attempts:
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
-- 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed not-reproduced: family_attack PASS 20261107-081513 (the guest cannot hurt the family, own creature too), nest_evolve_probe 20261107-081734: the NPC herds evolve in each game apart (new ticket BUG-0668), no shielded evolving member seen; likely causes BUG-0640 (fixed) and BUG-0668.
+- 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed not-reproduced: family_attack PASS 20261107-081513 (the guest cannot hurt the family, own creature too), nest_evolve_probe 20261107-081734: the NPC herds evolve in each game apart (new ticket BUG-0668), the members of an evolving herd take the guest's hits in the host's game (20261107-082348), no shield; likely causes BUG-0640 (fixed) and BUG-0668.
