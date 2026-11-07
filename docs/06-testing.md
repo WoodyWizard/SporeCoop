@@ -4737,3 +4737,14 @@ From the S1 lab log sweep (703 runs, 2026-11-05/06) and the runs since:
   the planet's cities, buildings, vehicles, herds) are a planet's surface loaded by a game whose camera is on it: not
   compared in the whole list in Space (worlddiff SPACE_PLANET_LOD); Space `default_beam_projectile` in the host's
   game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open).
+
+## The guest's cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
+<a id="testing-space-kept-hold"></a>
+
+* `coop_space_items_rejoin.py` (~1 min, `space` fixture, BUG-0678): makes the two holds differ (the guest: spice 0
+  x7, an Antimatter Bomb `144DF50A` at 9 charges, the interstellar drive; the host: spice 1 x5, the bomb at 3), then
+  the guest leaves and joins again; it reads the game's `cPlayerInventory` on both with `coop.space trade inv`
+  (`item type=.. key=.. count=.. ammo=..`). `coop.space trade kept` shows the host's kept holds and the guest's
+  restore. `SPORE_FIX_OFF=space.keep_items` fails: the rejoined guest has the host's spice and bomb charges and no drive.
+* The `space` fixture's ship has 8 tools (none with charges) and 10 cargo slots: add a charge tool first
+  (`coop.space tool add 0x144DF50A`).

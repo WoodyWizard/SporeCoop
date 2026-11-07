@@ -2283,3 +2283,30 @@ GOG 2024 addresses (dc04aee5). Kind `city_ornament` of mods/coop/worldobj.cpp (B
   without a partner is removed. PASS lab 20261106-050848 (3 landings: sets=2 removed=45 relocated=39, no fault), FAIL
   with the switch off lab 20261106-050420. ~ The model variant (group) stays the guest's own.
 * ~ Civ cities run 0xBE6A50 too; the kind is Space only (no Civ detector row, not tested there).
+
+## A guest's own cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
+<a id="space-kept-hold"></a>
+
+BUG-0678 (player report: "when players log back in, their items disappear and the host's items appear").
+GOG 2024 addresses (dc04aee5).
+* ✔ (code) The hold is the game's `cPlayerInventory` (`cSimulatorSpaceGame +0x40`, 7.7), saved with the world.
+  A joining guest always loads the host's share save (world.cpp `share_with`, one peer), so after a
+  rejoin (or any load of the host's world in a session) its hold is the host's: its own tools,
+  charges, spice and cargo are gone. Nothing in the mod synchronised or kept a hold before 0.7.10;
+  money is not affected (one shared budget, shared.cpp).
+* ✔ (objdump) GOG 2024 `cPlayerInventory` vtable is **0x1494D70** (ctor 0xFF5040; 7.7's 0x14958A0 is
+  GOG 2016). Slots: +0x5C 0xC873D0 count, +0x60 0xC873E0 GetItem, +0x64 0xC87400 FindItem, +0x7C
+  0xFF40B0 TakeItem, +0x80 0xFF4780 AddItem, **+0x88 0xC875B0 = number of type-3 items (all cargo
+  slots)**, +0x8C 0xC87560 free ones, **+0x94 0xFF39E0 AddCargoSlots(n)** `ret 4` (appends n new
+  type-3 items, posts 0x5E793B4), +0x98 0xC87630 IsSlotFree(slot) `ret 4`.
+* ✔ (objdump) Cargo slots are items of their own (type 3, +0x10 = 1); a cargo item's **+0x2C** points
+  at the slot item it fills (IsSlotFree compares it).
+* The fix (`space.keep_items`, space_trade.cpp K_INV 77 / K_INV_KEPT 78 / K_INV_DONE 79): the guest
+  sends its hold (type, key, count, charges; slot count) when it changes; the host keeps the last one
+  per player name for its Space world (memory only, like the kept colonies of
+  [space-kept-colonies](#space-kept-colonies)); the first hold of a world the guest loaded from the
+  host is the host's copy, so the host answers it with the kept one and the guest makes its hold that:
+  items it does not have leave (TakeItem whole or the surplus), slots it bought come back
+  (AddCargoSlots; never fewer), tools by AddItemByKey (a few passes: upgrades need their base tool)
+  with their charges (AddAmmo / ConsumeAmmo), spice by CreateTradingObject + AddItem, other cargo
+  stacks by their count +0x10. A first join keeps the save's hold, as before.

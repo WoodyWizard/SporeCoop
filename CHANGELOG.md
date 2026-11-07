@@ -22,6 +22,8 @@
   (BUG-0671).
 - Tribe: the other tribes have the same chief for the guest as for the host; the guest no longer sees a second chief
   with a staff in place of a musician (BUG-0652).
+- Space: a player who leaves and joins again gets its own cargo hold back (its tools and their charges, spice and
+  cargo), no longer the host's (BUG-0678).
 - Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
   creature it once chose in another world; a creature chosen in the co-op window now holds only in the world it was
   chosen (or played) in (BUG-0638).
