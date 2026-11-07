@@ -850,6 +850,161 @@ static std::string f_nest(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: the NPC nests' evolution (BUG-0668, BUG-0639; docs/re/creature.md#creature-herd-evolution-owner)
+// The game evolves every NPC herd in CreatureGame_Update 0xD45740: while the creature game's +0x48 is set (the pack's
+// DNA changed) and the tuning bool 0x1582DF4 (property 0x9040F372) is on, each herd with +0x85 mbShouldEvolve, a species
+// +0xA4 other than the player's and 0 < +0x94 mDNAEvolutionThreshold < the DNA total goes to generation +0xF0 + 1: its
+// species becomes cHerd_EvolvedSpecies(gen) (the key +0xA8[gen] of the save's chain), and cHerd_ApplyProfile 0xC6E3A0
+// draws a new threshold (random, FUN_004DF340 of the profile's range). Each game ran it on its own: other thresholds,
+// another moment, and a herd extinct on the host (+0x85 = 0 there) evolved on the guest. The row carries the host's
+// generation, species key, threshold, +0x85 and extinct bit per nest (matched by the herd's home +0x34, the save's);
+// the guest's own evolution step is off (0x1582DF4 = 0 while it is a guest in Creature) and its herds take the host's
+// values. Off: each game evolves its own nests (0.7.9).
+static bool g_herd_evo_fix = true;
+COOP_FIX("wsync.herd_evo", "BUG-0668", g_herd_evo_fix,
+         "wsync: the NPC nests evolve in the host's game only; a guest's nests show the host's species and generation");
+constexpr int kHerdEvoMax = 30; // entries of 28 bytes: the whole MSG_WSTATE stays within one packet
+static unsigned g_herd_evo_set;
+static bool herd_evo_saved = false;
+static uint8_t herd_evo_orig = 1;
+static uint32_t species_inst(void* sp) { return R(sp, 0x510) ? F<uint32_t>(sp, 0x504) : 0; }
+static uint32_t species_group(void* sp) { return R(sp, 0x510) ? F<uint32_t>(sp, 0x50C) : 0; }
+static void* player_species()
+{
+    uintptr_t g = S("Editors::cSpeciesManager::Get"), ps = S("SporeCoop::cSpeciesManager_PlayerSpecies");
+    void* m = g ? skg::cdecl_call<void*>(g) : nullptr;
+    return m && ps ? skg::thiscall<void*>(ps, m) : nullptr;
+}
+struct HerdRef {
+    void* h;
+    float x, y, z;
+};
+static std::vector<HerdRef> npc_herds()
+{
+    struct U {
+        std::vector<HerdRef> v;
+        void* ps;
+    } u{{}, player_species()};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* u = (U*)p;
+            if (noun != game::kHerdNoun || !game::object_alive(o) || !R(o, 0x220) || F<uint8_t>(o, 0x84))
+                return true;
+            void* sp = game::herd_species(o);
+            if (!R(game::herd_nest(o), 0x130) || !sp || sp == u->ps)
+                return true; // only nests of other species (the game never evolves the player's)
+            const float* hp = (const float*)((uint8_t*)o + 0x34);
+            u->v.push_back({o, hp[0], hp[1], hp[2]});
+            return true;
+        },
+        &u);
+    return u.v;
+}
+static bool r_herd_evo(Table& out)
+{
+    if (!game::avatar())
+        return false;
+    auto hs = npc_herds();
+    net::Vec3 a = game::position(game::avatar());
+    auto d2 = [&](const HerdRef& r) { return (r.x - a.x) * (r.x - a.x) + (r.y - a.y) * (r.y - a.y) + (r.z - a.z) * (r.z - a.z); };
+    std::sort(hs.begin(), hs.end(), [&](const HerdRef& p, const HerdRef& q) { return d2(p) < d2(q); });
+    if ((int)hs.size() > kHerdEvoMax)
+        hs.resize(kHerdEvoMax);
+    for (auto& r : hs) {
+        void* sp = game::herd_species(r.h);
+        Entry e;
+        e.key = species_inst(sp);
+        e.v[0] = fbits(r.x), e.v[1] = fbits(r.y), e.v[2] = fbits(r.z);
+        e.v[3] = (uint32_t)(F<int32_t>(r.h, 0xF0) & 0xFF) | (F<uint8_t>(r.h, 0x85) ? 0x100u : 0) | (F<uint8_t>(r.h, 0x190) ? 0x200u : 0);
+        e.v[4] = F<uint32_t>(r.h, 0x94);
+        e.v[5] = species_group(sp);
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_herd_evo(const Table& want, bool apply)
+{
+    if (want.empty())
+        return 0;
+    uintptr_t evolved = S("SporeCoop::cHerd_EvolvedSpecies");
+    auto mine = npc_herds();
+    int n = 0;
+    for (auto& w : want) {
+        float x = bitsf(w.v[0]), y = bitsf(w.v[1]), z = bitsf(w.v[2]);
+        void* h = nullptr;
+        for (auto& r : mine)
+            if ((r.x - x) * (r.x - x) + (r.y - y) * (r.y - y) + (r.z - z) * (r.z - z) < 4.f) {
+                h = r.h;
+                break;
+            }
+        if (!h)
+            continue;
+        int gen = (int)(w.v[3] & 0xFF);
+        uint8_t evolve = (w.v[3] & 0x100) ? 1 : 0;
+        void* sp = game::herd_species(h);
+        bool species_differs = F<int32_t>(h, 0xF0) != gen || species_inst(sp) != w.key;
+        bool rest_differs = F<uint32_t>(h, 0x94) != w.v[4] || F<uint8_t>(h, 0x85) != evolve;
+        if (!species_differs && !rest_differs)
+            continue;
+        n++;
+        if (!apply)
+            continue;
+        uint8_t* p = (uint8_t*)h;
+        if (species_differs && evolved) {
+            // as the game's evolution step does (0xD45E1C..0xD45E3A): the chain's key at gen, then gen and species
+            uint8_t* kb = F<uint8_t*>(h, 0xA8);
+            uint8_t* ke = F<uint8_t*>(h, 0xAC);
+            int nk = kb && ke >= kb ? (int)(ke - kb) / 12 : 0;
+            if (gen < nk && R(kb, (gen + 1) * 12)) {
+                uint32_t* k = (uint32_t*)(kb + gen * 12);
+                if (k[0] != w.key) {
+                    k[0] = w.key;
+                    k[2] = w.v[5];
+                }
+                void* ns = skg::thiscall<void*>(evolved, h, (uint32_t)gen);
+                if (ns && species_inst(ns) == w.key) {
+                    *(int32_t*)(p + 0xF0) = gen;
+                    *(void**)(p + 0xA4) = ns;
+                    g_herd_evo_set++;
+                    H->log(M, SK_INFO, "wsync: the nest at (%.0f %.0f %.0f) is the host's generation %d, species %08X (BUG-0668)",
+                           x, y, z, gen, w.key);
+                }
+            }
+        }
+        *(uint32_t*)(p + 0x94) = w.v[4];
+        p[0x85] = evolve;
+    }
+    return n;
+}
+static std::string f_herd_evo(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "home=(%.1f %.1f %.1f) gen=%u should_evolve=%u extinct=%u threshold=%.0f species=%08X",
+             bitsf(e.v[0]), bitsf(e.v[1]), bitsf(e.v[2]), e.v[3] & 0xFF, (e.v[3] >> 8) & 1, (e.v[3] >> 9) & 1, bitsf(e.v[4]), e.key);
+    return g_fmt;
+}
+// the guest's own evolution step: the tuning bool CreatureGame_HerdEvolveOn read by 0xD45A41 is 0 while this game is a
+// guest in Creature with the row on; the game's value comes back otherwise (it is written once by the tuning load 0xD3D979)
+static void herd_evo_guard()
+{
+    uintptr_t a = S("SporeCoop::CreatureGame_HerdEvolveOn");
+    if (!a)
+        return;
+    uint8_t* b = (uint8_t*)a;
+    bool off = g_herd_evo_fix && C.sess && C.sess->connected() && C.sess->role() == net::Role::Client &&
+               game::mode_id() == modes::kCreature;
+    if (off) {
+        if (!herd_evo_saved) {
+            herd_evo_orig = *b;
+            herd_evo_saved = true;
+        }
+        if (*b)
+            *b = 0;
+    } else if (herd_evo_saved) {
+        *b = herd_evo_orig;
+        herd_evo_saved = false;
+    }
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -862,6 +1017,7 @@ static const Row kRows[] = {
     {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
     {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
     {11, "creature_nest", 4, &g_nest_fix, creature_mode, r_nest, s_nest, false, f_nest},
+    {12, "herd_evo", 6, &g_herd_evo_fix, creature_mode, r_herd_evo, s_herd_evo, false, f_herd_evo},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -996,6 +1152,7 @@ static void guest_tick(double now)
 
 void tick(double now)
 {
+    herd_evo_guard();
     if (!C.sess || !C.sess->connected())
         return;
     if (C.sess->role() == net::Role::Host)
@@ -1054,8 +1211,8 @@ std::string status()
                  g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
         out += b;
     }
-    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u\n", g_rel_stuck, g_tfood_adds,
-             g_parts_fixed, g_mig_started);
+    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u herd_evo_set=%u\n", g_rel_stuck, g_tfood_adds,
+             g_parts_fixed, g_mig_started, g_herd_evo_set);
     out += b;
     return out;
 }
