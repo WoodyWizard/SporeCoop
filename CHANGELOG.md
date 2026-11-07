@@ -2,19 +2,14 @@
 
 ## [Unreleased]
 
-### Fixed
-- Tribe: a guest's game no longer faults (and then stops running the mod) when the body of a member that died on the
-  host goes away while that member's copy was eating in the guest's game (after the host was away, e.g. in an editor);
-  SporeKit also keeps running its frames after a fault the game itself catches (BUG-0667).
-- Tribe: the sync-check no longer reports "t: 1 missing on the guest" after a guest joins or reloads the world while
-  the body of a dead member still lies on the host (bodies are not compared; BUG-0664).
-
 ### Changed
 - Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
   (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
   on that continues (BUG-0410, BUG-0438).
 - A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+- SporeKit keeps running the mod after an error that the game itself catches; before, such an error could stop the mod
+  for the rest of the session while the game went on (found with BUG-0667).
 
 ### Fixed
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
