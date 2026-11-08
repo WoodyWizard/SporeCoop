@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: final check 0.7.9
 role: 
 versions: 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: a2800eae
 tests: long_tribe, long_tribe_short, tribe_play
@@ -65,3 +65,4 @@ same collapse at the same time; tribe_play 20261106-234818 in both trees passed.
 ## History
 - 2026-11-06: opened (fix/w46-tribe-fps): A/B 0.7.9 vs 0.7.8 at equal load, both collapse; shared Xwayland at 98 %.
 - 2026-11-08: fixed on fix/w46-k8-open: the lab marks failures on a saturated Xwayland as load; long_tribe_short passes at moderate load.
+- 2026-11-08: released in 0.7.11.

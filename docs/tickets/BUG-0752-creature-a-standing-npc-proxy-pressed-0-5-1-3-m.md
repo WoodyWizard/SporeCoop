@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: rel/0.7.11 fa4f5df3 labs 20261108-072547, 20261108-075905-4
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-ground
 commits: 6cd28ceb
 tests: campaign_ct
@@ -47,3 +47,4 @@ Off: Tribe only (0.7.10).
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k4-ground): cause found (the Tribe BUG-0399 case in Creature), fixed (npc.proxy_ground_creature).
+- 2026-11-08: released in 0.7.11.

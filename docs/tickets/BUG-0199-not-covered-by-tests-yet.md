@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4b-coverage
 commits: 3f55f0d2, bcbe471a
 tests: tribe_healer, space_store, civ_religious, civ_roads, party_civ_trade, space_armada_return, space_contracts
@@ -57,3 +57,4 @@ An umbrella of test gaps. State on 2026-11-08 (fix/w46-g4b-coverage), item by it
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests: not reached: every item needs a later fixture (a tribe with instruments and a healer tool, a live Space mission, raids, a civ with designs: BUG-0189, BUG-0181). Stays open.
 - 2026-11-08 (fix/w46-g4b-coverage): tests tribe_healer (found BUG-0745) and space_store (found BUG-0747); the rest split into BUG-0748..0751 after attempts with runs; closed as an umbrella.
+- 2026-11-08: released in 0.7.11.

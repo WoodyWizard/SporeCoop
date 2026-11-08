@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-n1-crashes (guard: d605e96)
 commits: d605e96, 3198f742
 tests: tribe_camera_null
@@ -78,3 +78,4 @@ log must show the setup meeting the null camera and its game must be in a playab
 - 2026-10-30 (fix/w13-tribe-civ): still not reproduced. All lab game logs of the main checkout (out/lab, 2026-10-22..30) searched for tribe-stage faults: none at this ticket's address in any tribe test; the only Tribe faults in campaigns are BUG-0285 / BUG-0310 (0xC0DB23, fixed by tribe.leave_walk). On this branch tribe_coop, tribe_play, tribe_far, chaos_tribe, menu_stale_player, campaign_tribe, tribe_leave_walk (3x) passed on lane 6 without a fault, freeze or crash (lab runs 20261030-141833, 20261030-140307). Status kept.
 - 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): reproduced with the join timing of BUG-0607 (the menu timer starts the intro in the first frames of Tribe); FAIL/PASS twin on tribe.camera_guard; status fixed (the guard was the fix, d605e96; the cause was found now).
 - 2026-11-08 (fix/w46-n1-camera-test): the race forced with coop.introstage (the join-time race depends on when the guest's console answers); FAIL/PASS again on the merged rel/0.7.11.
+- 2026-11-08: released in 0.7.11.

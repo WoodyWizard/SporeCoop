@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0423 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b
 commits: 1391b0ac 149ac2b6
 tests: space_reward_away
@@ -33,3 +33,4 @@ Code (K2a audit), confirmed in the lab: on_result spent the contract's id first;
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
+- 2026-11-08: released in 0.7.11.

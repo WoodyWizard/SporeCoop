@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: rel/0.7.11 out/lab/20261108-035548-2 unit#1
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 5ade0549 3497b1a3
 tests: unit (make test: lab_selftest interrupt_cases)
@@ -49,3 +49,4 @@ report's 20261108-035548-2).
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4-tests): found (SIGINT ignored in background labs) and fixed in the self-test.
 - 2026-11-08 (fix/w46-g4-tests): lab: unit 3 of 3 from a background queue (SIGINT ignored, the report's condition) while lanes 3, 6, 7 played: out/lab/20261108-072703, every interrupt case ok.
+- 2026-11-08: released in 0.7.11.

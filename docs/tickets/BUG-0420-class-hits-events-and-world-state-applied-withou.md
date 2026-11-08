@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: 6b49ee3d 8a54b2df
 tests: world_gate_vote, civ_siege_npc, space_friendly, space_own_save; validate_tests (message classes)
@@ -38,3 +38,4 @@ The children's twin runs (their tickets). Detector over the K2a final runs on th
 - 2026-11-01: opened.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): stun / hit rules now follow the creature they belong to (MSG_PLAYER_RULE, creature.stun_relay, creature.air_immune); the rest of the umbrella (Space, Civ siege, vote gate) not touched.
 - 2026-11-08 (fix/w46-k2a-state, K2a of 0.7.11): children BUG-0701..0705, BUG-0709 closed; umbrella closed.
+- 2026-11-08: released in 0.7.11.

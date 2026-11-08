@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0420 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: 8a54b2df
 tests: space_own_save (coop_space_own_save.py); validate_tests (host_world space_other)
@@ -34,3 +34,4 @@ coop_space_own_save.py (fixture space; the guest leaves, loads a Space save of i
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state): fixed, res.space_save.
+- 2026-11-08: released in 0.7.11.

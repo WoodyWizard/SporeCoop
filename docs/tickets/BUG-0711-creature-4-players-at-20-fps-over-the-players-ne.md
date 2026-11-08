@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-k7-findings lab 20261108-012301 multi4_creature_slow
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-bodies
 commits: cf460050
 tests: tools/tests/gates_selftest.py (f_drawn_stale, f_drawn_stale_off), multi4_creature_slow
@@ -46,3 +46,4 @@ trip (a dead or stalled link is the `link` / `puppet` invariants' and the "not r
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k4-bodies, K4): cause found (a 5.5 s dead link of the guest); the monitor rule fixed (drawn_age), kind test.
+- 2026-11-08: released in 0.7.11.

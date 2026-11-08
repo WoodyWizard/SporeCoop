@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-223718 vote_net_4p#2
 role: guest
 versions: fix/w37-vote-leaver 324752dc (main f0cefbaa + tests)
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 26750599
 tests: vote_net_4p, party_rejoin_net (species_view)
@@ -44,3 +44,4 @@ the puppets matched by player id).
 ## History
 - 2026-11-01: opened.
 - 2026-11-08 (fix/w46-g4-tests): the matcher takes the subject's puppet by player id (census owner=); vote_net_4p 3 of 3; fixed.
+- 2026-11-08: released in 0.7.11.

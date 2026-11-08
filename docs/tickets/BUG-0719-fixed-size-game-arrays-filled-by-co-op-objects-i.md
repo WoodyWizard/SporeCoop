@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0432 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content-a
 commits: ad15c36c
 tests: pool_stress_cell, pool_stress_creature, pool_stress_tribe, pool_stress_civ, pool_stress_space, cell_merge
@@ -32,3 +32,4 @@ no-fail-run: an inventory with a stress test per stage and no overrun to reprodu
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: inventory, coop.pools, the per-stage stress test; the merge guard is BUG-0718.
+- 2026-11-08: released in 0.7.11.

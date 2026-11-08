@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 048b69e8
 tests: tools_selftest (make test)
@@ -48,3 +48,4 @@ came from organic play, e.g. fix/w46-advance-reg out/lab/20261107-184159 campaig
 ## History
 - 2026-11-03: opened.
 - 2026-11-08 (fix/w46-g4-tests): what a gameplay marker is (Ghidra); per-game consumption; detector ignores it; selftest FAIL/PASS; fixed.
+- 2026-11-08: released in 0.7.11.

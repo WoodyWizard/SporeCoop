@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0428 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content-a
 commits: e81a56d9 aaadb06c
 tests: cell_guest_hit
@@ -37,3 +37,4 @@ Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the 
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: reproduced, fixed (cell.guest_hit_game), test cell_guest_hit; title corrected (the lethal bite of an invulnerable cell is the game's rule).
 - 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.
+- 2026-11-08: released in 0.7.11.

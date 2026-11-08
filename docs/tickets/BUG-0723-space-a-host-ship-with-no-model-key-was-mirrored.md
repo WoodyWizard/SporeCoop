@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0424 sibling list, K2b audit 2026-11-08
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content-b
 commits: 9e2dadf1, 8c11d8d4
 tests: space_zero_key, space_zero_key_slow (coop_space_zero_key.py), space_mirror_model
@@ -34,3 +34,4 @@ Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the 
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `fleet.zero_key`; FAIL and PASS runs above.
 - 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.
+- 2026-11-08: released in 0.7.11.

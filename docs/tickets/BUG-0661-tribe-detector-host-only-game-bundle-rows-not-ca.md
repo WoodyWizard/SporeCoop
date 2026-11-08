@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab log sweep follow-up 2026-11-06 (detector rows rel/0.7.8 vs rel/0.7.9)
 role: 
 versions: 0.7.8, rel/0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: 904d33e0, 0c50a7ad
 tests: host_bundle_drop, host_bundle, host_bundle_carry, play_tribe
@@ -49,3 +49,4 @@ within 3 m and no guest carried copy lacks a host one), lane 5:
 - 2026-11-08: fixed on fix/w46-k8-open (wobj.bundle_reclass); coordinated with K7 (fix/w46-k7-findings, BUG-0684 worldobj bundles: no commits on its branch at the time).
 - 2026-11-08 (detector, play_tribe SPORE_DETECTOR=20): K8 switches off out/lab/20261108-015133 `Tribe:host_only:game_bundle` 1 + `guest_only:game_bundle_carried` 1 in 30 samples; on (Tribe-only reclass) 20261108-022007 no `game_bundle` / `unmatched:game_bundle` row in 30 (left: `unmatched:game_bundle_held` 4, the food mats, BUG-0617's own group; `host_only:game_bundle_carried` 1).
 - 2026-11-08 (final run, out/lab/20261108-030826-2): play_tribe PASS, `unmatched:game_bundle` 1, no `host_only:game_bundle` in 30 samples; detect_tribe 1 row (`host_only:game_bundle_carried`).
+- 2026-11-08: released in 0.7.11.

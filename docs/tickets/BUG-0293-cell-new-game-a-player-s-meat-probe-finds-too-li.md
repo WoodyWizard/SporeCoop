@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w9-cell-food lab 20261030-023719, -030946
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 4c327f51
 tests: cell_new_game
@@ -62,3 +62,4 @@ same meat six times, never eaten: new ticket BUG-0589). The wait did not make th
 - 2026-10-30: opened.
 - 2026-11-04 (fix/w43-tests): probe tries wait for food on screen (left open: the 2/6 case).
 - 2026-11-08 (fix/w46-g4-tests): G4: the cause is the game's eat rule by scale difference (docs/re/cell.md#cell-eat-gate); the probe chooses edible food; 3 of 3 PASS (out/lab/20261108-075019); fixed.
+- 2026-11-08: released in 0.7.11.

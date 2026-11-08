@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-detector-scale lab 20261107-143741 cell_levelup_view#1
 role: both
 versions: 0.7.10-dev
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k7-findings
 commits: 839499be
 tests: cell_levelup_view, gates_selftest monitor (f_drawn_scale*)
@@ -39,3 +39,4 @@ The own trace line in Cell ends with the game's world scale (`wscale=` = cellsyn
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k7-findings): fixed: the own Cell trace line carries `wscale=`, the monitor's drawn rule compares in one scale.
 - 2026-11-08 (fix/w46-k7-findings): cell_levelup_view on the build with all K7 fixes, lane 9, lab 20261108-005631: OK.
+- 2026-11-08: released in 0.7.11.

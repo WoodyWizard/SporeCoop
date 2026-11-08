@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b, fix/w46-k2a-state
 commits: f1d45292 1391b0ac
 tests: res_away, res_away_tribe, civ_away_buy, space_reward_away, space_contract_clock, res_cause
@@ -38,3 +38,4 @@ Detector over the K2a final runs on the merged branch: detect_* of all five stag
 - 2026-11-01: opened.
 - 2026-11-07 (fix/w46-k2a-state-b, K2a of 0.7.11): the uncovered siblings became BUG-0691, BUG-0692, BUG-0693, BUG-0694, BUG-0695, BUG-0696 (owed shared credits, the sync state over an editor visit, held guest commands, owed Space rewards, the contract clock, the cause of a total); all fixed (unreleased) with FAIL / PASS runs. Umbrella left open for the orchestrator.
 - 2026-11-08 (fix/w46-k2a-state, K2a of 0.7.11): merged; children BUG-0691..0696 fixed; umbrella closed.
+- 2026-11-08: released in 0.7.11.

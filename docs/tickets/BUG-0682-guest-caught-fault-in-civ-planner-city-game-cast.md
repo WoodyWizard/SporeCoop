@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab 20261107-141346 campaign_space (rel/0.7.10 e7d1734c, lane 5)
 role: guest
 versions: 0.7.9+
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k7-findings
 commits: ac7d4c7c
 tests: planner_leave
@@ -60,3 +60,4 @@ and back):
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k7-findings): reproduced (planner_leave, 8 caught faults per run with the fix off) and fixed (civ.planner_stale).
 - 2026-11-08 (fix/w46-k7-findings): campaign_space on the final build, lane 10, lab 20261108-012301: OK, 0 caught faults on all four games.
+- 2026-11-08: released in 0.7.11.

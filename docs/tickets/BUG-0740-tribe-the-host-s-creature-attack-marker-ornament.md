@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0528 triage (fix/w46-n2-desyncs, lab 20261108-041234, 20261108-050749)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-attack-marker
 commits: 1a39ebc8 c9bb2c7a 42057a50 7b23db25 4aa8185c 227fdf51
 tests: tribe_attack_marker, tribe_attack_marker_rejoin; campaign_tribe (SPORE_DETECTOR=20, the row Tribe:unmatched:ornament)
@@ -72,3 +72,4 @@ start 7`: no new record in 151 s, lab 20261108-061613): see the root cause.
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-n2-desyncs): the object and its maker found (BUG-0528 triage); left open for a fix.
 - 2026-11-08 (fix/w46-attack-marker): the marker is per spot record; the wsync row tribe_marker gives the guests the host's records and markers; tests tribe_attack_marker(_rejoin).
+- 2026-11-08: released in 0.7.11.

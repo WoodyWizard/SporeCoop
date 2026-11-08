@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0419 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b
 commits: 1391b0ac
 tests: state_fields_check (make test)
@@ -33,3 +33,4 @@ no-fail-run: a unit check of the source (it failed with 20 problems before the t
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
 - 2026-11-07 (fix/w46-k2a-state): CORRECTION: NpcSpawn.max_health is needed (a baby's proxy had the adult max); applied by BUG-0710.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-e1-features (campaign_ct 20261108-040927)
 role: test
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-e1-features
 commits: 6627b5ba
 tests: campaign_ct (coop_campaign.py)
@@ -38,3 +38,4 @@ when the loop ran out of time.
 
 ## History
 - 2026-11-08: opened and fixed (fix/w46-e1-features).
+- 2026-11-08: released in 0.7.11.

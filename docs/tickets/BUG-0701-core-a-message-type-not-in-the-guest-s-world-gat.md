@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0420 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: 6b49ee3d 9792469d
 tests: validate_tests (make test: host_world msg_class); world_gate_vote
@@ -32,3 +32,4 @@ no-fail-run: a build-time rule; tests/validate_tests.cpp checks the classes, tha
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state): fixed, core.msg_classes.
+- 2026-11-08: released in 0.7.11.

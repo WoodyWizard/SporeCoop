@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-11-08
+
 ### Changed
 - Cell: the move to the Creature stage is a vote now. When the host clicks the check in History at the end of the
   Cell stage, everybody gets "wants to move on to the Creature stage: press I'm ready (F9)"; the stage changes when

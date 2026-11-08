@@ -8,7 +8,7 @@ reported: 2026-10-24
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 0929b2d8
 tests: creature_mating (tools/tests/coop_creature_mating.py)
@@ -51,3 +51,4 @@ PASS 4 of 4 on lanes 3 and 2: out/lab/20261108-054311 (lane 3), 20261108-065028 
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: how a player answers the Creature mating call (which object to click after Backspace) is unexplored reverse engineering. Left open.
 - 2026-11-08 (fix/w46-g4-tests): how a player answers the call (Ghidra), the test written; 4 of 4 PASS, the twin FAILS; fixed.
+- 2026-11-08: released in 0.7.11.

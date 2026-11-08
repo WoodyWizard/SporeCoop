@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-tribe-missing (BUG-0664 analysis)
 role: guest
 versions: 0.7.9-dev
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: 4278b714
 tests: tribe_join_body, tribe_dead_rejoin, tribe_dead_player, tribe_body_teardown, tribe_dead_member
@@ -48,3 +48,4 @@ guest's game has a citizen within 3 m of it), lanes 4 / 5:
 ## History
 - 2026-11-07: opened.
 - 2026-11-08: fixed on fix/w46-k8-open (tribe.join_body).
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0423 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b
 commits: f1d45292
 tests: res_away, res_away_tribe
@@ -33,3 +33,4 @@ Observed (lab): shared.cpp on_message returned before the ack (`if (!r.get(cur))
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
+- 2026-11-08: released in 0.7.11.

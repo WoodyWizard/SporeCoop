@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content
 commits: 9e2dadf1 8c11d8d4 a10f59bd dffd1a16
 tests: space_zero_key, space_host_ship_design, civ_design_content, content_own_cell, content_own_ufo, content_audit_tribe, content_audit_civ, content_audit_space, space_mirror_model
@@ -45,3 +45,4 @@ Detector over the K2b final run on the merged branch out/lab/20261108-054842 (de
   (`ensure_model` gets no description: the tables), cell and UFO parts not tested, an animation only the pack part has.
 - 2026-11-06: Discord report 2026-11-06 (0.7.8): children BUG-0647 (the host's vehicle designs shown as monsters on the guest), BUG-0643 (white roster portraits, or 0431).
 - 2026-11-08 (fix/w46-k2b-content, K2b of 0.7.11): every sibling item a closed child or covered; umbrella closed.
+- 2026-11-08: released in 0.7.11.

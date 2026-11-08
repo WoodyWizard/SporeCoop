@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-104149 campaign_space#1
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 0929b2d8
 tests: campaign_space
@@ -70,3 +70,4 @@ on demand; the instant path takes the box out of the shortcut's way, as a surren
 ## History
 - 2026-10-30: opened.
 - 2026-11-08 (fix/w46-g4-tests): G4: the cause (docs/re/civ.md#civ-stage-end), a CORRECTION of the first root cause, the shortcut's last capture instant; campaign_space PASS with the instant path (out/lab/20261108-081625 #1); fixed.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0422 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: 6b49ee3d
 tests: player_forget (coop_player_forget.py)
@@ -34,3 +34,4 @@ coop_player_forget.py (fixture space: the guest leaves and joins again):
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state): fixed, core.player_forget.
+- 2026-11-08: released in 0.7.11.

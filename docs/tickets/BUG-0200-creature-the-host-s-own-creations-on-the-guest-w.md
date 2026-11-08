@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-p4-creature
 commits: 412db52c 8b8a46d9
 tests: nest_species (tools/tests/coop_nest_species.py, extended: the species profile the guest's game gives for the host's key, and its own again after the session)
@@ -63,3 +63,4 @@ out/lab/20261107-210644 (also: after the guest left, its game gives its own crea
 - 2026-10-28: fix/w3-creature (wave 3): no change; still open. The remaining part (a card built from a nest names the guest's creation of the host's key) needs the nest's species to resolve to the guest's local key, and rewriting the save lost herds before (docs/re/creature.md 15): a redesign of how the host's creations are keyed on the guest, left for a dedicated task. The real-nest check needs a fixture planet with a host creation's nest.
 - 2026-10-30: fix/w13-creature: no change; still open. Both remaining parts need what wave 3 said: the nest card needs the nest species of a host creation to resolve to the guest's local key (the save rewrite lost herds before, docs/re/creature.md 15), and the real-nest check a fixture planet with a nest of a host creation. Not a patch-release change.
 - 2026-11-07: fix/w46-p4-creature: fixed (creations.host_key_alias): the guest's species manager answers for the host's keys with the host's creation; nest_species FAIL/PASS.
+- 2026-11-08: released in 0.7.11.

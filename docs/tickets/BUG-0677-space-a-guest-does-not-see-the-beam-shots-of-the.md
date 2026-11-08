@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab log sweep BUG-0657 (detector Space:noun_only_host / host_only:default_beam_projectile)
 role: 
 versions: 0.7.8, 0.7.9, rel/0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k56-space
 commits: 5eace570, d14618ed
 tests: space_shots
@@ -52,3 +52,4 @@ fired, 760 copied hits dropped, no fault) and lab 20261108-021358.
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k56-space): fixed with space.shots; test space_shots FAIL/PASS; play_space (lab 20261108-023555) has no host_only beam row any more, guest_only in 2 of 13 comparisons (relay lag).
+- 2026-11-08: released in 0.7.11.

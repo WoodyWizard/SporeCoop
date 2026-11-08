@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab log sweep follow-up 2026-11-06 (detector rows rel/0.7.8 vs rel/0.7.9)
 role: 
 versions: 0.7.8, rel/0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: a8b022d1
 tests: civ_tribe_left_fast, civ_tribe_left, play_civ
@@ -49,3 +49,4 @@ tribe count every 0.25 s; PASS when it catches up within 2.5 s), lane 4 / 5:
 - 2026-11-08: fixed on fix/w46-k8-open (civ.tribe_ruins_fast): the rows were the 5 s window after each raid.
 - 2026-11-08 (detector, play_civ SPORE_DETECTOR=20, lanes 4 / 5 at the same time): K8 switches off out/lab/20261108-015133 2 `planet:village` rows (+ hut, tool, mat) in 31 samples; on 20261108-015213 0 in 31 and 20261108-022007 1 in 30 (a raid inside the remaining ~1 s window).
 - 2026-11-08 (final run, out/lab/20261108-030826-2): play_civ PASS with no planet village row in 30 samples; detect_civ 1 (one sample) in 24.
+- 2026-11-08: released in 0.7.11.

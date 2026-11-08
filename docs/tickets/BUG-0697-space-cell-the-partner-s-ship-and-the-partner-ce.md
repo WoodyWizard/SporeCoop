@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0419 (0.7.11)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b
 commits: f1d45292
 tests: space_partner_hp
@@ -33,3 +33,4 @@ Observed (lab): space_drive wrote the puppet's max into its health every frame (
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
+- 2026-11-08: released in 0.7.11.

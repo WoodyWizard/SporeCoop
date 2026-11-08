@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-last play_creature out/lab/20261106-130130 #3
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-p4-creature
 commits: d62f210b
 tests: chat_held_send, chat_held_send_oldcheck (tools/tests/coop_chat_held_send.py), play_creature (play_creature.chat_reached)
@@ -49,3 +49,4 @@ play_creature with the new check out/lab/20261107-220935 #1, #2 (10/10 and 6/6 c
 ## History
 - 2026-11-06: opened.
 - 2026-11-07: fix/w46-p4-creature: explained (the click taken after held frames, the line on both games 0.4 s after the bot's single look); the bots' check waits for the frames; chat_held_send FAIL/PASS.
+- 2026-11-08: released in 0.7.11.

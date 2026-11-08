@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-p4-creature regression run 20261107-212113
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: e8ac2f75
 tests: creature_kills
@@ -57,3 +57,4 @@ PASS (the new hunt) 9 of 9 on lane 2: out/lab/20261108-052157 #1-#3 (own creatur
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-g4-tests): the prey runs 20-210 m before it stops; the hunt is a player's and lasts until the kill; 9 of 9 PASS; fixed.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: lab 20261108-114435 long_creature (rel/0.7.11 75365a87, lane 3)
 role: host
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-final11-1
 commits: 58c321d8
 tests: long_creature, long_creature_short (tools/tests/coop_long_session.py)
@@ -50,3 +50,4 @@ out/lab/20261108-114435 long_creature.
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fixed on fix/w46-final11-1 (test only; not a 0.7.11 regression for players).
+- 2026-11-08: released in 0.7.11.

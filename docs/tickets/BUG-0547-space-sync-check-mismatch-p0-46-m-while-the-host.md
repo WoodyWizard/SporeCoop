@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab 20261104-114611 space_rescue#3 (fix/w42-space-play, lane 2, GOG 2024)
 role: host
 versions: 0.7.7, 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-v2-civ-space
 commits: 977d6ee5, fcd9ff4e
 tests: space_fast_sync
@@ -55,3 +55,4 @@ stricter first version of the check); play_space in 20261107-220353 passed witho
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-tests): G1: from the host's log the host flew ~330 m in ~8 s with key pulses; the slack uses the speed at the read (drive::speed of the newest state), so a ship between two pulses may be read slower than the path the drawn copy trails. Not reproduced, no gate change (a change needs a run where the gate is wrong and one where it is right).
 - 2026-11-07 (fix/w46-v2-civ-space, 0.7.11 V2): reproduced (the copy on the ship's path, further back than its speed at the read allows), fixed (sync.own_path).
+- 2026-11-08: released in 0.7.11.

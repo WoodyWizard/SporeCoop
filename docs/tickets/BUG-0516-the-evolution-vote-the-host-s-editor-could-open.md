@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: fix/w40-no-reload (BUG-0508 question)
 role: all
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-e1-features
 commits: 3365fc83 ec5aa499
 tests: editor_now (coop_editor_now.py)
@@ -73,3 +73,4 @@ Until then "Start now" (the host's button during a vote; BUG-0597 keeps it enabl
 - 2026-11-03: opened.
 - 2026-11-05 (fix/w44-coop-window): read again; not small and safe: what it takes written under Decision.
 - 2026-11-08 (fix/w46-e1-features, E1 of 0.7.11): implemented as decided (the offer through the ready button), core.editor_now.
+- 2026-11-08: released in 0.7.11.

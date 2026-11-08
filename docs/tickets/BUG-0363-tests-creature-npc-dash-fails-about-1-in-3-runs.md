@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w29-puppet-move
 role: guest
 versions: 0.7.3.2
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-dash
 commits: a6573cb3, ba1ff91c, e5a1796b
 tests: creature_npc_dash, tribe_npc_dash, dash_selftest (make test)
@@ -93,3 +93,4 @@ n1/n2 run p90 0.5-0.6 m). PASS when the game agrees: 20261108-091147 #1/#2. The 
 - 2026-11-01: opened.
 - 2026-11-01: fix/w30-npc-walk: not the proxy driving (fails as often with npc.walk on and off); the failing samples have the proxy on its target.
 - 2026-11-08 (fix/w46-g4-tests): G4: the test measures the game now (same moment, both games' own positions); its failures are the real desync BUG-0753 (open) and the Tribe driving margin. The test part is fixed; the red runs belong to BUG-0753.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: 6b49ee3d
 tests: player_forget (coop_player_forget.py)
@@ -36,3 +36,4 @@ Through BUG-0706: coop_player_forget.py FAIL with `SPORE_FIX_OFF=core.player_for
 ## History
 - 2026-11-01: opened.
 - 2026-11-07 (fix/w46-k2a-state, K2a of 0.7.11): the shared registry; children BUG-0706 fixed, BUG-0707 wontfix, BUG-0708 not reproduced; umbrella closed.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content
 commits: e81a56d9 ad15c36c aaadb06c
 tests: cell_guest_hit, cell_electric, cell_poison, npc_hit_feedback, cell_guest_bite, cell_kill_once, cell_ko_bite
@@ -37,3 +37,4 @@ Detector over the K2b final run on the merged branch out/lab/20261108-054842 (de
 ## History
 - 2026-11-01: opened.
 - 2026-11-08 (fix/w46-k2b-content, K2b of 0.7.11): every sibling item a closed child or covered; umbrella closed.
+- 2026-11-08: released in 0.7.11.

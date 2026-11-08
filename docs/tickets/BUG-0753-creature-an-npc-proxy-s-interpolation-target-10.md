@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-g4-tests lab 20261108-082630
 role: guest
 versions: 0.7.11 (rel/0.7.11 + fix/w46-g4-tests)
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-proxy
 commits: 6b9d124f, 735cff8b
 tests: creature_npc_dash, tribe_npc_dash
@@ -61,3 +61,4 @@ game's own velocity after its update is its locomotion's: with it alone tribe_np
 - 2026-11-08: opened (fix/w46-g4-dash, static analysis of lab 20261108-082630).
 - 2026-11-08 (fix/w46-g4-tests): G4 diagnostic runs (lane 2, creature_npc_dash x3 each): out/lab/20261108-091147 (2/3), with SPORE_FIX_OFF=drive.lead_fall 20261108-091630 (2/3), DASH_FEED=0 20261108-092113 (2/3). Every failing run has n3 among the two dashing animals and n3 off by a constant 3.6-8.1 m for the whole run (raw lead = target = 3.6 / 8.1 m from the host's NPC, driving ~0.1 m); every run with the pair n1/n2 passes (p90 0.5-0.6 m). Not the smoothing (raw lead M1 is as far), not drive.lead_fall (the same with it off), not the test's coop.npc list probe (the same with DASH_FEED=0). Inferred: the host's states for that NPC id are not the host NPC's own position (a wrong object or offset behind the id), or the guest maps that id to another position; the earlier independent sync-check 'n3 10.9 apart' agrees. Needs a dedicated fix (K4 class: remote bodies).
 - 2026-11-08 (fix/w46-k4-proxy): cause found (the test's set_position before the state send, the mate not kept by the host's game); fixed in the test path (tools.dash_after_send).
+- 2026-11-08: released in 0.7.11.

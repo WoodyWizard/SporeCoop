@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b, fix/w46-k2a-state
 commits: f1d45292 1391b0ac 149ac2b6 d5873f5a
 tests: space_partner_hp, species_table, creature_stun_proxy, npc_max_hp, tribe_member_age; state_fields_check (make test)
@@ -39,3 +39,4 @@ Detector over the K2a final runs on the merged branch: detect_* of all five stag
 - 2026-11-03: fix/w40-scale: the replicated-field engine (mods/coop/fields.h, docs/sync-architecture-plan.md#sync-fields) with the first kinds: NPC proxies and tribe members (scale), BUG-0461 / BUG-0475; NpcSpawn.scale is applied now.
 - 2026-11-07 (fix/w46-k2a-state-b, K2a of 0.7.11): the uncovered siblings became BUG-0697, BUG-0698, BUG-0699, BUG-0700 (Space partner ship health, the state field table, the species table cadence, the NPC stun on proxies; member age not a bug); all fixed (unreleased) with FAIL / PASS runs. Umbrella left open for the orchestrator.
 - 2026-11-08 (fix/w46-k2a-state, K2a of 0.7.11): merged; children BUG-0697..0700 and BUG-0710 fixed; no species or max_hp row on the final runs; umbrella closed.
+- 2026-11-08: released in 0.7.11.

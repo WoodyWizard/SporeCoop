@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: detector, C2 regression run (fix/w45-cell out/lab/20261106-015141, civ_coop)
 role: host
 versions: 0.7.9, 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-v2-civ-space
 commits: dbc37d11
 tests: civ_money_short, civ_coop
@@ -52,3 +52,4 @@ built and paid once with 10000); civ_coop #1, #2 in the same run passed with no 
 ## History
 - 2026-11-06: opened.
 - 2026-11-07 (fix/w46-v2-civ-space, 0.7.11 V2): reproduced (the mod's paid build below 0), fixed (civ.build_money).
+- 2026-11-08: released in 0.7.11.

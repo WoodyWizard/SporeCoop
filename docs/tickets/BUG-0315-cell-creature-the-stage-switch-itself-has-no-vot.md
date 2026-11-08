@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: BUG-0178
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-e1-features
 commits: 3365fc83
 tests: switch_vote (coop_switch_vote.py)
@@ -49,3 +49,4 @@ another click.
 ## History
 - 2026-10-30: opened.
 - 2026-11-08 (fix/w46-e1-features, E1 of 0.7.11): implemented, core.switch_vote.
+- 2026-11-08: released in 0.7.11.

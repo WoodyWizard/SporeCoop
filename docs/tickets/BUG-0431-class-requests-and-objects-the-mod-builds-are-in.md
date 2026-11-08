@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content
 commits: e81a56d9 ad15c36c
 tests: editor_request, puppet_tuning
@@ -38,3 +38,4 @@ Detector over the K2b final run on the merged branch out/lab/20261108-054842 (de
 - 2026-11-01: opened.
 - 2026-11-06: Discord report 2026-11-06 (0.7.8): child BUG-0644 (NPC villages the guest makes get their own colours); related BUG-0648.
 - 2026-11-08 (fix/w46-k2b-content, K2b of 0.7.11): every sibling item a closed child or covered; umbrella closed.
+- 2026-11-08: released in 0.7.11.

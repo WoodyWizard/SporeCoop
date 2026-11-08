@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-k3-bodies labs 20261107-103414, 20261107-112617-2
 role: guest
 versions: 0.7.9 driving (NPC proxies unchanged in 0.7.10)
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-bodies
 commits: a25b8569, 1005b829, afc003d4
 tests: net_tests test_lead_fall (throw_stand, jitter_err), body_trail_hits (SPORE_FPS=30 SPORE_NET=player)
@@ -47,3 +47,4 @@ then goes on with the state's velocity (bounded by drive.lead_fall). Off: 0.7.10
 - 2026-11-07: opened (fix/w46-k3-bodies, K3, from the bad-network attempt on BUG-0409); not fixed there.
 - 2026-11-08 (fix/w46-k4-bodies, K4): fixed (drive.lead_throw).
 - 2026-11-08 (fix/w46-k4-bodies, 456ced2c, rel/0.7.11 merged in): final runs: out/lab/20261108-020506 (puppet_stops, body_trail_tribe, body_trail_tribe_player, body_trail_creature, body_trail_civ, body_trail_player OK; play_creature failed 'joint hunts' once, OK on rerun out/lab/20261108-023606), out/lab/20261108-020506-2 (play_civ, body_trail_tribe_hold, body_trail_civ_loss, body_trail_hits OK; play_tribe failed its order checks once (BUG-0397 / BUG-0531 class), OK on rerun out/lab/20261108-023535; puppet_stops failed only 'enough stops to judge' (6 of 8), 0 stops past), out/lab/20261108-023036 (puppet_stops 2 of 2): puppet_stops 4 runs, 0 of 53 stops over 0.3 m past.
+- 2026-11-08: released in 0.7.11.

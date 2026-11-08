@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: play_civ.py --seed 11, fix/w14-tribe-civ
 role: guest
 versions: fix/w14-tribe-civ (main b3101d2 + branch)
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-v2-civ-space
 commits: eb1abf07
 tests: play_civ
@@ -67,3 +67,4 @@ play_civ logs kept in the worktrees (0.7.4-0.7.8). Not new in 0.7.8.
 
 - 2026-11-07 (rel/0.7.10 integration): play_civ lane 4 (lab 20261107-124806): "did not happen: guest sees [1, 5, 6] owned by the partner and no longer selected"; still open, in plan-0.7.11 V2.
 - 2026-11-07 (fix/w46-v2-civ-space, 0.7.11 V2): the three signatures traced to the checks' timing (logs above); play_civ's gift and claim checks look in time, a rejected order names its target. Closed.
+- 2026-11-08: released in 0.7.11.

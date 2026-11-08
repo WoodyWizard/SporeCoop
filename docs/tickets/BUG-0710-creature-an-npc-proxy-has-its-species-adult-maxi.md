@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a detector run 20261107-231824 (Creature:max_hp, 20 of 23)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state
 commits: f62399a2 b0545744 6b4dec56 97392cd1
 tests: npc_max_hp (coop_npc_max_hp.py); state_fields_check (make test)
@@ -36,3 +36,4 @@ Detector: detect_creature on the first fix (spawn max only) out/lab/20261107-235
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state): found by the detector, fixed, npc.max_health.
+- 2026-11-08: released in 0.7.11.

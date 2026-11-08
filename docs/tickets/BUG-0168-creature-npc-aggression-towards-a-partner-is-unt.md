@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: acda7997
 tests: creature_aggression (tools/tests/coop_creature_aggression.py)
@@ -59,3 +59,4 @@ PASS 7 of 7 on lane 3: out/lab/20261108-052423, 20261108-053723-2 (#1-#4), and t
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached. Needs a save with an aggressive (red face) nest near the avatar; the creature fixture has none and making one means playing to it. Left open (a fixture task, not a test-only change).
 - 2026-11-08 (fix/w46-g4-tests): the end-to-end test written (the game's egg event makes a species hostile); 7 of 7 PASS, the twin FAILS; fixed.
+- 2026-11-08: released in 0.7.11.

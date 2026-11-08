@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-space-items (BUG-0678), 2026-11-07
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k56-space
 commits: ad4dfd39
 tests: space_items_limits, space_items_rejoin
@@ -59,3 +59,4 @@ Not covered by a test: animal and plant cargo (no species key in the fixture; th
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k56-space): fixed (space.keep_items_local / _slots / _cargo); test space_items_limits FAIL x3 / PASS x2.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab log sweep follow-up 2026-11-06 (detector rows rel/0.7.8 vs rel/0.7.9)
 role: 
 versions: 0.7.8, rel/0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: 61906153
 tests: creature_family_eggs, creature_family_eggs_die, nest_eggs, nest_eggs_air, play_creature
@@ -53,3 +53,4 @@ creature_family_eggs (`coop_creature_family_eggs.py`: the host's family herd lay
 - 2026-11-08: fixed on fix/w46-k8-open (nest.eggs_family).
 - 2026-11-08 (detector, play_creature SPORE_DETECTOR=20, lane 4): base rel/0.7.11 ef329e5c (a temporary worktree, run 20261108-022007 there, removed since) 16 egg rows in 27 samples (host_only 5, noun_only_host 9, guest_only 1, noun_only_guest 1); fix/w46-k8-open out/lab/20261108-023113 2 in 28 (`noun_only_host:egg` whole-list, no near row: an NPC nest's egg beyond nest.eggs' 110 m relevance, by design). That play_creature FAILED on `joint hunts happened (+0 joint hits)`, a bot outcome seen failing 7 times in other branches' runs (not K8).
 - 2026-11-08 (final run after merging rel/0.7.11 ccfb0ae4, out/lab/20261108-030826): play_creature PASS; egg rows 6 in 28 samples (base 16 in 27): `noun_only_host` whole-list 4 (eggs beyond the 110 m relevance), 1 `guest_only` + 1 `noun_only_guest` at the nest in one sample (the guest's own egg, transient). detect_creature 0 rows.
+- 2026-11-08: released in 0.7.11.

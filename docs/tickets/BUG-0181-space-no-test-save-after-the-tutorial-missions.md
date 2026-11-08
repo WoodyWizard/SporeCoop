@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4b-coverage
 commits: 67cc7dce
 tests: space_free
@@ -64,3 +64,4 @@ The guest's game has m201=1 too (its mission manager comes from the host's save)
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: a save played through the Space tutorial is a fixture task (hours of play by a bot or by hand). Left open.
 - 2026-11-08 (fix/w46-g4b-coverage): fixture space_free (spaceCreate ends the tutorial lock) and test space_free; twin space_empire fails (20261108-060412), 3 of 3 PASS (20261108-060655). Fixed.
+- 2026-11-08: released in 0.7.11.

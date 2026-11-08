@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-p4-creature regression run 20261107-212113
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 4d6dc86b
 tests: creature_brain_hp
@@ -50,3 +50,4 @@ Twin: SPORE_FIX_OFF=creature.own_brain_hp FAILS "the guest's own max health rose
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-g4-tests): the guest chooses its own creature first (creations_state); 5 of 5 PASS, the BUG-0375 twin FAILS; fixed.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0418 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content-b
 commits: e896b4a8
 tests: make test (tools/docs_lint.py checks the anchor)
@@ -32,3 +32,4 @@ no-fail-run: docs only (the classification); the fixes it led to have their own 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): the classification written; children fixed or closed.
+- 2026-11-08: released in 0.7.11.

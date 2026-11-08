@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-k4-ground lab 20261108-085348-2 #2
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-proxy
 commits: 4ecb0931
 tests: share_sync
@@ -45,3 +45,4 @@ for, the check takes that guest as in another place (kResOtherPlace: no MISMATCH
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k4-proxy): fixed (diag.share_quiet), test share_sync.
+- 2026-11-08: released in 0.7.11.

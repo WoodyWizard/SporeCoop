@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4b-coverage
 commits: 048f71e3
 tests: civ_planner_build
@@ -52,3 +52,4 @@ CMD_BUILD); off = the guest's placement stays in its own game.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: needs a civ fixture with building designs (or a bot that makes one in the building editor). A fixture task. Left open.
 - 2026-11-08 (fix/w46-g4b-coverage): the planner drag recipe found at runtime (a design is needed: CORRECTION in docs/re/civ.md), test civ_planner_build with the twin switch civ.planner_send; off FAILS (20261108-061749), 3 of 3 PASS (20261108-061925). Fixed.
+- 2026-11-08: released in 0.7.11.

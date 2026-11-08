@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: K2a audit of BUG-0419 (0.7.11), detector
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2a-state-b
 commits: 1391b0ac 149ac2b6
 tests: species_table
@@ -33,3 +33,4 @@ Observed (lab species_table): a change of the host's table reached the guest aft
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
+- 2026-11-08: released in 0.7.11.

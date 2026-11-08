@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0431 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content-a
 commits: ad15c36c 97e3c4d8
 tests: puppet_tuning
@@ -38,3 +38,4 @@ Second PASS with the new set-up: out/lab/20261108-071104.
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: reproduced the untuned puppet (a guest of its own species), fixed (npc.puppet_tuning), test puppet_tuning.
 - 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.
+- 2026-11-08: released in 0.7.11.

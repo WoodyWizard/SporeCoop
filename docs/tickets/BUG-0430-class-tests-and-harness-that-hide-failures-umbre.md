@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-0430
 commits: 5be1f0c3, bebe5304, 32285a2d, 7bf2df3e, 8972110d, f1bd2a8d, 7e34eb44, 17ac4d37, 35f71bc2, 9e8ac0dd, f41c071e, 2aa45910, 353eb128, 5cfbe0fb
 tests: make test (test_lint, re_lint, tickets twin), creature_desync, civ_role_damage, cinematic_puppet, nest_objects, cell_sync_check
@@ -79,3 +79,4 @@ G4 (fix/w46-g4-0430, merged into fix/w46-g4-tests), one mechanism per class:
   timing (a 52 s load is not reproducible on demand). G2's other cases: docs/06-testing.md#testing-harness-g2
   (BUG-0397, BUG-0437, BUG-0601, BUG-0589, BUG-0587, BUG-0440).
 - 2026-11-08 (fix/w46-g4-tests): G4: every item of the umbrella closed (fixed, already fixed, or a ticket of its own); the BUG-0363 dash measure now shows a real bug, BUG-0753 (open). Closed.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-g4b-coverage, coop_tribe_healer.py lane 3 2026-11-08
 role: host
 versions: 0.7.10 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4b-coverage
 commits: 3f55f0d2
 tests: tribe_healer
@@ -40,3 +40,4 @@ h_HealTick reads the maximum with game::max_health. Switch `tribe.heal_max` (off
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): found by tribe_healer, fixed (game::max_health), switch tribe.heal_max; off FAILS (20261108-063242), 3 of 3 PASS (20261108-063444).
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0429 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k2b-content
 commits: 3ff7a2da
 tests: window_input, window_input_lowfps
@@ -43,3 +43,4 @@ FAIL (SPORE_FIX_OFF=input.window): out/lab/20261108-030421 (host and guest: F9 i
 
 ## History
 - 2026-11-08: opened from the BUG-0429 audit (K2b of 0.7.11) and fixed on fix/w46-k2b-content.
+- 2026-11-08: released in 0.7.11.

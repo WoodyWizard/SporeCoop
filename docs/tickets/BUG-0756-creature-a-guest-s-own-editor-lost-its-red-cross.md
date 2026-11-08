@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: owner decision 2026-11-08 (after BUG-0720)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-editor-cancel
 commits: b745a1f4
 tests: own_editor_cancel (coop_own_editor_cancel.py), editor_request, legless_guest_*
@@ -47,3 +47,4 @@ click the cross again.
 
 ## History
 - 2026-11-08: opened and fixed (fix/w46-editor-cancel).
+- 2026-11-08: released in 0.7.11.

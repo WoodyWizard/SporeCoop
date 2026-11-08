@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-k56-space, lab 20261108-020511 detector
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k8-open
 commits: 5ca765b6
 tests: space_sky, wsync_transitions
@@ -46,3 +46,4 @@ in the last 15 s):
 - 2026-11-08: opened.
 - 2026-11-08: fixed on fix/w46-k8-open (wsync.space_tod).
 - 2026-11-08 (final run, out/lab/20261108-030826): play_space and detect_space PASS with no `All:state:time_of_day` row in 35 / 24 samples; wsync_transitions PASS.
+- 2026-11-08: released in 0.7.11.

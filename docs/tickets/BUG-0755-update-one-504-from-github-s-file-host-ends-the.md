@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: Discord 2026-11-08 (Sterben, update window screenshot)
 role: guest
 versions: 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-update-retry
 commits: d978f991
 tests: win_unit (test_retry, test_setup_retry), update_flaky (update_check.py --flaky)
@@ -60,3 +60,4 @@ Switch: `coop.fix update.retry off` (win_tests --old-retry, setup /oldretry).
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fixed on fix/w46-update-retry (retry with backoff for every release download).
+- 2026-11-08: released in 0.7.11.

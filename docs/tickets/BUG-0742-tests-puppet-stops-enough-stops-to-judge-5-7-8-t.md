@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: G4 analysis of 49 puppet_stops runs 2026-11-06..08
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-g4-tests
 commits: 2c4db665, d5af56db
 tests: puppet_stops
@@ -53,3 +53,4 @@ PASS 4 of 4 on lane 2: out/lab/20261108-081528 (stops 10-15 in every direction, 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4-tests): found and fixed (test only); 4 of 4 PASS.
+- 2026-11-08: released in 0.7.11.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-k4-proxy lab 20261108-102113
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.11
 branch: fix/w46-k4-frame
 commits: 23a83131, 79bdc8f9
 tests: tribe_npc_dash, creature_npc_dash
@@ -56,3 +56,4 @@ explained in coop_tribe_npc_dash.py), the Tribe mate 3 m beside (DASH_OFF). Off:
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k4-frame): fixed (npc.place_now) and the test's limit scaled with the dash speed (explained).
+- 2026-11-08: released in 0.7.11.
