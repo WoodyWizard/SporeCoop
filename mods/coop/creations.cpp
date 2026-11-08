@@ -3214,6 +3214,12 @@ std::string debug(const std::vector<std::string>& a)
                 net::Vec3 p;
                 if (!game::object_alive(o) || IsBadReadPtr(o, 0xD0) || !game::object_position(o, p) || m->size() > 400)
                     return true;
+                if (noun == 0x018C43E8 && !IsBadReadPtr(o, 0x528 + 0x24)) // a city: its 3 decoration keys (+0x528)
+                    for (int i = 0; i < 3; i++) {
+                        const uint32_t* d = (const uint32_t*)((uint8_t*)o + 0x528 + 0xC * i);
+                        if (d[0] && d[0] != 0xFFFFFFFFu)
+                            (*m)[{0xDEC00000u | (uint32_t)i, d[0], d[1], d[2]}]++;
+                    }
                 const uint32_t* k = (const uint32_t*)((uint8_t*)o + 0xC4);
                 if (!k[0] || k[0] == 0xFFFFFFFFu || !k[1])
                     return true;

@@ -171,9 +171,22 @@ def main():
            f'no fixed fallback part replaced it ({[f"{i:08X}" for i in set(parts) & FALLBACKS]})')
     ck(house is not None, f'the guest\'s city has the host\'s house of design {BX:08X} ({house})')
     if house is not None:
-        parts = [i for i, _ in mparts(guest, 'building', house[3])]
-        print(f'  guest house: model {house[3]:08X} parts {[f"{i:08X}" for i in parts]}', flush=True)
+        # first built from the guest's copy of the design (BUG-0726), then re-keyed to the host's own design with its
+        # part descriptions (BUG-0670 sweep, once a second): its lookalike shows then
+        parts, t0 = [], time.time()
+        while time.time() - t0 < 20:
+            hs = [b for b in buildings(guest) if b[1] == house[1]]
+            house = hs[0] if hs else house
+            parts = [i for i, _ in mparts(guest, 'building', house[3])]
+            if house[4] == BX and looks(guest).get(lb) in parts:
+                break
+            time.sleep(1)
+        sub = looks(guest).get(lb)
+        print(f'  guest house: model {house[3]:08X} (own {house[4]:08X}) parts {[f"{i:08X}" for i in parts]}, '
+              f'lookalike of {lb:08X}: {sub and f"{sub:08X}"}', flush=True)
         ck(parts and lb not in parts, f'the guest\'s house model names no part its game lacks ({lb:08X})')
+        ck(house[4] == BX and sub and sub in parts,
+           f'the house shows the host\'s design with the lookalike of {lb:08X} ({sub and f"{sub:08X}"})')
     guest.call('coop.creations lack clear')
     ck.faults(host=host, guest=guest)
     return ck.result()
