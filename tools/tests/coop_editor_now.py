@@ -11,7 +11,7 @@ since BUG-0508, so the host goes on at once and each guest gets an offer ("Evolv
      "Evolve now" (coop.uistate).
   3. The host leaves its editor (done): back in its Creature stage, while the guest has not evolved.
   4. The guest evolves later: a real click on "Evolve now" opens its own editor (game.mode Editor) while the host
-     plays; the guest leaves it with the red cross and plays its creature again.
+     plays; the guest leaves it with done and plays its creature again.
 
   coop_editor_now.py                                 (PASS)
   SPORE_FIX_OFF=core.editor_now coop_editor_now.py   (step 1 FAILS: the host's editor waits for the vote)
@@ -22,7 +22,7 @@ from coop_ui import Ui
 from twoinst import Checks, start
 
 DONE = (1416, 1062)    # the creature editors' green check (1440x1080 test window)
-CANCEL = (1383, 1062)  # the red cross
+SAVE_NEW = (926, 604)  # the own editor's exit dialog: "Save New"
 EVOLVE = ('Evolve now', 'Эволюция')
 
 
@@ -88,8 +88,13 @@ def main():
     ck(wait(lambda: in_editor(guest), 90), f"the guest's own editor opens on Evolve now ({mode(guest).strip()})")
     ck(not in_editor(host), f"the host plays on meanwhile ({mode(host).strip()})")
     if in_editor(guest):
+        # the own editor is built like the game's evolution request (creations.editor_request, BUG-0720): it has no
+        # red cross, the guest leaves it with done like the host (and Save New if its exit dialog asks)
         time.sleep(8)
-        guest.call('click %d %d' % CANCEL)
+        guest.call('click %d %d' % DONE)
+        time.sleep(4)
+        if in_editor(guest):
+            guest.call('click %d %d' % SAVE_NEW)
     ck(back(guest, m0), f"the guest leaves its editor and plays its creature again ({mode(guest).strip()})")
     print('  guest vote:', guest.call('coop.vote')['out'].splitlines()[-1], flush=True)
     ck.faults(host=host, guest=guest)

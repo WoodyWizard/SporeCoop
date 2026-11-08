@@ -5190,3 +5190,14 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 * `pool_stress_<stage>` (coop_pool_stress.py, 4 players, 3 in Civ, ~6 min): `coop.pools` prints the physics body and
   contact pools (count, high water, capacity) and the world's objects; the test fails at 75 % of a capacity or any
   caught fault. The class test of BUG-0432 per stage (docs/05-re-notes.md#re-notes-fixed-pools).
+
+## The guest's own editor has no red cross since creations.editor_request (2026-11-08, fix/w46-e1-merge)
+<a id="testing-own-editor-no-cross"></a>
+
+* ✔ (lab, lane 4) Since BUG-0720 (`creations.editor_request`) the guest's own editor is requested with the flags of the
+  game's evolution request (+0x39 / +0x3B = 0, +0x3C / +0x3D = 1): it shows only the green check at the bottom right,
+  no red cross; a click at the cross's place (1383, 1062) does nothing and the guest stays in the editor
+  (`editor_now` failed 0/4 on rel/0.7.11 fa4f5df3; with `SPORE_FIX_OFF=creations.editor_request` it passed,
+  out/lab/20261108-081407 vs 20261108-081404). Tests leave the own editor with done (1416, 1062), then Save New
+  (926, 604) if the exit dialog asks, as editor_sync_guest does. Tests that still click the cross on an own editor:
+  coop_evolve_in_place.py (`--case cell` and `creature`) and coop_legless_guest.py paths may need the same change.
