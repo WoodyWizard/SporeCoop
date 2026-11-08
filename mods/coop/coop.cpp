@@ -217,6 +217,7 @@ static void dna_notices_tick(double now)
 }
 
 bool guest_elsewhere();
+bool guest_space_other();
 // BUG-0510 (dna_pace.h): every gain entering the party's shared DNA / food is scaled by 1/N, N = the
 // players playing the host's world now, so a party evolves at the single-player pace. The host
 // decides (coop.ini [coop] dna_pace, 0 = the full sum) and announces the divisor with its totals
@@ -1078,6 +1079,21 @@ host_world::HostWorld host_world_now()
 // this guest plays another world of the host's stage (or cannot tell yet): nothing of the host's
 // world is applied here, nothing of this world goes to the host
 bool guest_elsewhere() { return host_world_now() == host_world::HostWorld::Other; }
+
+// BUG-0709: this guest plays another Space save than the host's (the host's save name from WELCOME); the shared
+// Space money is held. `coop.fix res.space_save off`: applied there (0.7.10).
+static bool g_space_save_fix = true;
+COOP_FIX("res.space_save", "BUG-0709", g_space_save_fix, "space: a guest in a Space save of its own keeps its own money");
+bool guest_space_other()
+{
+    if (!g_space_save_fix)
+        return false;
+    bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    auto it = g_remotes.find(0);
+    bool has = it != g_remotes.end() && !it->second.buf.empty();
+    return host_world::space_other(guest, g_mode, g_mode == modes::kSpace ? modes::current_world() : 0, has,
+                                   has ? it->second.buf.latest().mode : 0, g_sess.welcome_world());
+}
 
 // the module asking host_absent_for (npc runs in Creature and Tribe)
 enum class Absent { Npc, Tribe, Civ };
@@ -3141,7 +3157,7 @@ void on_frame(void*, int, void*)
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
     if (g_sess.role() == net::Role::Host)
-        g_sess.world = host_world::welcome_world(g_mode, g_world);
+        g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
     g_sess.update();
     lobby_tick(now);
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
@@ -3172,7 +3188,7 @@ void on_frame(void*, int, void*)
     social::tick(now);
     evo_key_tick(now);
     creature_hp::tick();
-    shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
+    shared::tick(g_sess, game::mode_id(), now, guest_elsewhere() || guest_space_other()); // BUG-0231, BUG-0709: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128

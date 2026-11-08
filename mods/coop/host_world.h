@@ -58,8 +58,25 @@ inline HostWorld classify(bool connected_guest, uint32_t my_mode, uint32_t my_wo
     return my_world != 0 && host == my_world ? HostWorld::Same : HostWorld::Other;
 }
 
-// the world id the host announces in WELCOME: its save in a gated stage, else 0 (unknown)
-inline uint32_t welcome_world(uint32_t host_mode, uint32_t host_world) { return gated(host_mode) ? host_world : 0; }
+constexpr uint32_t kSpace = 0x1654C05;
+
+// the world id the host announces in WELCOME: its save in a gated stage; in Space (BUG-0709) the CRC of its save name
+// (`space_save`: the place in Space is the star system, not the save); else 0 (unknown)
+inline uint32_t welcome_world(uint32_t host_mode, uint32_t host_world, uint32_t space_save = 0)
+{
+    return gated(host_mode) ? host_world : host_mode == kSpace ? space_save : 0;
+}
+
+// BUG-0709 (class BUG-0420): a guest in Space plays another Space save than the host's (its own empire, its own
+// money): the shared Space money must not be applied there. Only when both saves are known and the host's latest
+// state (if any) is in Space too; unknown counts as the same (the 0.7.10 behaviour, nothing held).
+inline bool space_other(bool connected_guest, uint32_t my_mode, uint32_t my_save, bool has_state, uint32_t st_mode,
+                        uint32_t host_save)
+{
+    if (!connected_guest || my_mode != kSpace || (has_state && st_mode != kSpace))
+        return false;
+    return my_save != 0 && host_save != 0 && my_save != host_save;
+}
 
 // BUG-0420 (class: world state applied without a world filter): every message type has one class here, so that
 // a new message is never open by default. The switch below has no default: GCC fails the build of coop.dll and of

@@ -365,6 +365,12 @@ static void test_host_world()
     CHECK(host_world::welcome_world(cr, 7) == 7 && host_world::welcome_world(space, 7) == 0);
     // BUG-0420: every message type has a class (an unlisted MsgType fails the build: -Werror=switch in host_world.h);
     // the host's world state is dropped while elsewhere, a type this build does not know too (default deny)
+    // BUG-0709: another Space save than the host's (both known); unknown or another mode: not held
+    CHECK(host_world::space_other(true, space, 5, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 5) && !host_world::space_other(true, space, 0, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 0) && !host_world::space_other(true, space, 5, true, cr, 6));
+    CHECK(!host_world::space_other(false, space, 5, true, space, 6) && !host_world::space_other(true, cr, 5, true, space, 6));
+    CHECK(host_world::welcome_world(space, 7, 9) == 9 && host_world::welcome_world(cr, 7, 9) == 7);
     using host_world::MsgClass;
     using host_world::msg_class;
     using host_world::world_state_msg;
