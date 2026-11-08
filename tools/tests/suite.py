@@ -72,6 +72,7 @@ add('civ', P + 'coop_mode.py --fixture civ', minutes=3)
 add('space', P + 'coop_mode.py --fixture space', minutes=3)
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
+add('menu_escape', P + 'coop_menu_escape.py', minutes=10)  # BUG-0184: Escape and Co-op clicks around the galaxy menu's own intro (also near its end) keep the frames going
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
 add('cell_effects', P + 'coop_cell_effects.py', warm=True, minutes=3, fixture='cell', monitor={'proxy_n': 1000})  # BUG-0451: a cell's world effects on the partner's cell; SPORE_FIX_OFF=creature.effects_relay fails
@@ -141,6 +142,8 @@ add('civ_other_world', P + 'coop_civ_other_world.py', minutes=5)  # a guest in a
 add('tribe_other_world', P + 'coop_tribe_other_world.py', minutes=5)  # a guest in another Tribe world walks its own members (BUG-0231; --nofix fails)
 add('share_retry', P + 'coop_share_retry.py', minutes=5)  # a world share that failed after the save is retried (BUG-0231; SPORE_FIX_OFF=core.share_retry fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
+add('exit_editor_held', P + 'coop_exit_editor_held.py', minutes=8, fixture='tribe')  # BUG-0578: the game's own exit (WM_CLOSE) while the City Hall editor waits (core.editor_own_pause off, the 0.7.3.6 state): no crash report
+add('exit_editor_open', P + 'coop_exit_editor_held.py --editor', minutes=8, fixture='tribe')  # BUG-0578: the same exit from inside the City Hall editor
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2, reports=True)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('adapters', P + 'coop_adapters.py', minutes=5, reports=True)  # BUG-0286: two games of one bottle look up their local addresses (GetAdaptersAddresses, crashed in Wine's nsi.dll) 900 times at the same moment, then the guest leaves and a lookup faults: both games keep running (SPORE_FIX_OFF=core.adapters fails)
 add('fix_registry', P + 'coop_fix_registry.py', minutes=2)  # coop.fix lists every fix switch, all off / on round-trips, the old commands share the bools (BUG-0116)
@@ -210,6 +213,8 @@ add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='c
 add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
+add('creature_death_coop', P + 'coop_creature_death.py --coop', minutes=6)  # BUG-0026: the same in a session, the host then the guest dies
+add('creature_death_coop_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_creature_death.py --coop', minutes=8)  # BUG-0026 at 20 fps over the player network
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('npc_lost_target', P + 'coop_npc_lost_target.py', minutes=5, allow=[allow('monitor', 'BUG-0453', 'the test takes the partner\'s puppet away for 3 s on purpose (coop.puppet respawn 3)', kind='puppet', match='hidden: not spawned')])  # NPCs fight the partner's puppet when it goes: no fault at 0xD65D23 in the attack node, no stimulus names the destroyed puppet (BUG-0453/0456; SPORE_FIX_OFF=npc.attack_lost_target,npc.stale_sender fails)
 add('puppet_freed', P + 'coop_puppet_freed.py', minutes=4)  # the game frees the partner's Creature puppet behind the mod's back (and two device Resets): a new live puppet at the partner (BUG-0507; SPORE_FIX_OFF=creature.puppet_alive fails)
@@ -257,6 +262,7 @@ add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts 
 add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3', minutes=10)  # two new players (empty profiles), a new Cell game from the stage wizard, the guest joins in the intro: both eat (BUG-0279)
 add('cell_far_guest', P + 'coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4', minutes=10)  # a guest far from the host finds food, eats it, the host counts it (BUG-0174, BUG-0279; SPORE_FIX_OFF=cell.partner_tiles fails)
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
+add('tribe_camera_null', P + 'coop_tribe_camera_null.py', minutes=9)  # BUG-0167: a guest's tribe setup under the menu intro (the BUG-0607 join timing) meets a null simulator camera, no fault (SPORE_FIX_OFF=tribe.camera_guard fails)
 add('tribe_intro_camera', P + 'coop_tribe_intro_camera.py', warm=True, minutes=3, fixture='tribe')  # the host's view follows its minimap after the menu intro would start in the stage (BUG-0626; cold: the start's own intro under the share's box; the by-hand intro does not reproduce the stuck view, so no switch-off claim)
 add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=False, minutes=3, fixture='creature')  # cold, the guest joins 12.5 s after its menu: its camera is at its creature although the menu intro came during its load (BUG-0607, ~1 in 3 starts hit the race; SPORE_FIX_OFF=world.intro_at_once goes to the guest before the join)
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
@@ -338,6 +344,8 @@ add('dna_away', P + 'coop_dna_away.py', warm=True, minutes=5, fixture='creature'
 add('away_editor', P + 'coop_away_editor.py', warm=True, minutes=6, fixture='creature')  # a guest's goal reward reaching the host in its editor is paid when it is back (BUG-0205; --nofix fails)
 add('away_stages', P + 'coop_away_stages.py', warm=True, minutes=3, fixture='space')  # a host editor counts as away only in Creature/Tribe/Civ, not in Space; the menu still does (BUG-0233; --nofix fails)
 add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes=3, fixture='tribe')  # a chief removed at once (BUG-0081; --nofix fails)
+add('tribe_epic_dying', P + 'coop_tribe_epic_dying.py', minutes=6, fixture='tribe')  # BUG-0171: blows on the co-op epic at and after its death keep both games drawing (SPORE_FIX_OFF=tribe.hit_dead: the old command)
+add('tribe_epic_dying_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_tribe_epic_dying.py', minutes=8)  # BUG-0171 at 20 fps over the player network
 add('tribe_epic', P + 'coop_tribe_epic.py', warm=True, minutes=4, fixture='tribe')  # epic hitters, herd, save, chiefs after the session (BUG-0146, BUG-0121, BUG-0067; --nofix fails)
 add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5, fixture='tribe')  # an editor visit keeps the co-op epic tracked, out of the share save (BUG-0217; --nofix fails)
 add('tribe_snapshot', P + 'coop_tribe_snapshot.py', minutes=12)  # after the live Creature -> Tribe change the host's place is its planet, not snapshot.spo: the guest is together with it (BUG-0258; --nofix fails)
@@ -345,6 +353,9 @@ add('tribe_village_ground', P + 'coop_tribe_village_ground.py', minutes=12)  # B
 add('tribe_form_ground', P + 'coop_tribe_form_ground.py', minutes=4, fixture='tribe')  # BUG-0332: the ground of an NPC village the host's game forms during play is the host's in the guest's game (coop.ground on rings to 50 m)
 add('tribe_village_cadian', P + 'coop_tribe_village_ground.py --fixture=creature_cadian --map --terrain', minutes=15)  # BUG-0332: the campaign's planet (Cadian): after the live Tribe change the game's own ground round every village and spawn marker and over the region is the host's in the guest's game (SPORE_FIX_OFF=tribe.host_reload fails)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
+add('tribe_gameover_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_tribe_gameover.py --count 6', minutes=6)  # BUG-0172 at 20 fps over the player network, 6 members
+add('tribe_gameover_reload', P + 'coop_tribe_gameover.py --after-ok 0.5', minutes=5)  # BUG-0172: the spawn during the bounce back's reload
+add('tribe_gameover_reload2', P + 'coop_tribe_gameover.py --after-ok 2.5 --count 4', minutes=5)  # BUG-0172: later in the reload
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)
 add('tribe_act', P + 'coop_tribe_act.py', warm=True, minutes=4, fixture='tribe')  # the coop.tribe act test command does not fault the host (BUG-0260; --nofix fails)
@@ -554,6 +565,11 @@ add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe
 add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.reload coop twice, joins again
 add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended', 'multi'), minutes=7)
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
+# BUG-0167 / BUG-0170 hunts (fix/w46-n1-crashes): the 4-player churns of the two reports, also at low fps over the players' networks
+add('multi4_tribe', P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=11)
+add('multi4_tribe_slow', 'SPORE_FPS=20 SPORE_NET=players ' + P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=12)
+add('multi4_creature_seed', P + 'coop_multi.py --fixture creature --players 4 --minutes 6 --seed 1035603402', ('extended',), minutes=11)
+add('multi4_creature_slow', 'SPORE_FPS=20 SPORE_NET=players ' + P + 'coop_multi.py --fixture creature --players 4 --minutes 6 --seed 1035603402', ('extended',), minutes=12)
 
 # 3-4 players per stage in minutes (BUG-0152, tools/tests/party.py, docs/06-testing.md#testing-party): joins of two
 # guests at once, each guest's game shows the others, shared totals, a vote with N, a leave and rejoin of the

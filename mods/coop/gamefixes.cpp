@@ -84,10 +84,15 @@ using CamUpdateFn = void(__thiscall*)(void*);
 static LookAtFn g_lookat_orig;
 static CamUpdateFn g_camupd_orig;
 static std::atomic<unsigned> g_cam_skipped{0};
+// BUG-0167 (0.7.11 N1): the guard as a lab switch; off calls the game's LookAt / 0xB13A60 on the null camera as before
+// d605e96 (an access violation in the tribe setup: only for the FAIL side of coop_tribe_camera_null.py)
+static bool g_cam_guard_fix = true;
+COOP_FIX_UNSAFE("tribe.camera_guard", "BUG-0167", g_cam_guard_fix,
+                "gamefixes: the tribe setup's LookAt / camera update are skipped while the simulator camera is null");
 
 static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int instant)
 {
-    if (!obj) {
+    if (!obj && g_cam_guard_fix) {
         // BUG-0656: the reason in the line: all 7 lab cases (2026-11-01..05) had the galaxy menu intro (8915F9BB)
         // playing into the stage (BUG-0607 / BUG-0626; none in 1905 Tribe loads since that fix)
         if (++g_cam_skipped <= 4)
@@ -95,12 +100,15 @@ static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int i
                    game::mode_id(), world::cinematic_id());
         return;
     }
+    if (!obj)
+        H->log(M, SK_WARN, "game fixes: tribe camera guard off: the tribe setup points a null simulator camera (mode %08X)",
+               game::mode_id());
     g_lookat_orig(obj, target, a, instant);
 }
 
 static void __fastcall camupd_guard(void* obj, void*)
 {
-    if (obj)
+    if (obj || !g_cam_guard_fix)
         g_camupd_orig(obj);
 }
 

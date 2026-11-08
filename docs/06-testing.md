@@ -4884,3 +4884,32 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   since BUG-0638 a fresh load gives it the host's species until it chooses.
 * In the galaxy menu, hosting with a guest joined, the lobby's hint line reads "Select your units to give them to a
   partner" (a hint for Tribe / Civilization shown in the menu).
+## Tests of the not-reproduced crashes and freezes (2026-11-07, fix/w46-n1-crashes)
+<a id="testing-n1-crashes"></a>
+
+0.7.11 N1 (BUG-0026, 0118, 0167, 0170, 0171, 0172, 0184, 0578). Each a one-lane test unless named.
+* `tribe_camera_null` (BUG-0167, cold, ~1 min a try): a guest joins 12.5 s after its galaxy menu came up
+  (`twoinst.start(join_at=)`) with `world.intro_at_once` off before the join: the menu's own timer starts the intro in
+  the first frames of its Tribe and the tribe setup meets the null simulator camera (4 of 4 on the first join).
+  SPORE_FIX_OFF=tribe.camera_guard fails with the report's fault. Intros started by hand (PlayCinematic at the load
+  request, in the Loading mode, on a host's reload) do not make the null camera: only the menu's own timer does.
+* `creature_death_coop` / `_slow` (BUG-0026): `coop_creature_death.py --coop`: the four skip variants (Esc during the
+  caption, clicks on the cutscene, Esc after OK, Enter spam) with the session kept, first the host dies, then the
+  guest; `_slow` at 20 fps over the player network.
+* `tribe_epic_dying` / `_slow` (BUG-0171): rounds of a new co-op epic, both members' blows until it is at 0, 20 more
+  blows at once; both games must keep drawing. SPORE_FIX_OFF=tribe.hit_dead lets the blows at hp 0 through
+  TakeDamage (the 2026-10-22 loop): no freeze either way on GOG 2024.
+* `tribe_gameover_reload` / `_reload2` / `_slow` (BUG-0172): `coop_tribe_gameover.py --after-ok S --count N`: the
+  member spawns come during the bounce back's reload, or 6 at once at 20 fps over the player network.
+* `menu_escape` (BUG-0184, one game, ~6 min): six starts of the game, each with the menu's own intro (once per start,
+  ~16 s after the menu came up), "Co-op" clicked 0-7 s into it or Escape at its start, then Escape with no intro; the
+  frames must go on and the co-op window open. Not models of the player's intro: the intro started by hand
+  (PlayCinematic) does not end on the mod's Escape, and a return to the menu (`coop.load`, `coop.menu`) does not start
+  it again.
+* `exit_editor_held` / `exit_editor_open` (BUG-0578, ~4 min): the game's own exit (`coop.close`: WM_CLOSE to the game
+  window, cSporeApp::Shutdown, the editors disposed) with the City Hall editor held (core.editor_own_pause off, the
+  0.7.3.6 state) or open; the test checks the process ends and writes no crash report. The lane's other game (same
+  bottle) ends with it, so the test checks the guest before the exit.
+* `multi4_tribe` / `multi4_tribe_slow` / `multi4_creature_seed` / `multi4_creature_slow` (BUG-0167, BUG-0170, ~7 min):
+  `coop_multi.py` with 4 players in one lane (instances 20+N / 30+N), 6 min of chaos-bot churn; the creature ones
+  replay seed 1035603402 of the BUG-0170 report; `_slow` at 20 fps over the players' networks.

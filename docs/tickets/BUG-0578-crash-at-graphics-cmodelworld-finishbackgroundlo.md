@@ -9,11 +9,11 @@ source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.3.6
 fixed_in:
-branch: fix/w43-transitions
+branch: fix/w43-transitions; tested on fix/w46-n1-crashes
 commits:
-tests:
+tests: exit_editor_held, exit_editor_open
 signature: 3010a413:SporeApp.exe Graphics::cModelWorld::FinishBackgroundLoad+0x2735 (GOG 2024 0x753D05)
-docs:
+docs: docs/re/tribe.md#tribe-exit-editor
 related: BUG-0576
 ---
 
@@ -45,11 +45,27 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
 None on its own: BUG-0576 (core.editor_own_pause) removes the state the player quit from.
 
 ## Verification
-no-fail-run: an exit crash of 0.7.3.6 at the end of BUG-0576's black screen; the quit from that state was not tried
-in the lab (the lab quits games with spore.sh kill, not through the game's Shutdown).
+no-fail-run: an exit crash of 0.7.3.6 at the end of BUG-0576's black screen, not reproduced on the current build.
+
+0.7.11 N1 (fix/w46-n1-crashes, GOG 2024): the quit from that state tried in the lab for the first time, through the
+game's own exit (`coop.close`: WM_CLOSE to the game window, cSporeApp::Shutdown, the game mode manager and its editor
+disposed), test coop_exit_editor_held.py:
+* exit_editor_held (core.editor_own_pause off: the City Hall editor waits, the game paused for its own request, as
+  0.7.3.6; the guest leaves, WM_CLOSE in that state): the game exits by itself (Shutdown, unload, ExitProcess 0), no
+  crash report: out/lab/20261107-231415 (20 s after the leave) and out/lab/20261107-233741 (40 s; "the editor still
+  waits at the exit (0x01654C02 Tribe)"). (out/lab/20261107-232504: the old gate had opened the editor after 60 s,
+  so that exit came from the editor.)
+* exit_editor_open (the fix on, WM_CLOSE inside the City Hall editor): clean, out/lab/20261107-231415,
+  out/lab/20261107-232504.
+(The FAIL lines of the 20261107-231415 runs are the test's own check of the guest after the exit: both games of a
+lane's bottle end together; fixed in the test.)
+Reasoning: on GOG 2024 under Wine the exit from the held state and from the editor frees nothing twice; the report's
+crash came on Windows (Steam) 57 ms after the mod unloaded, in the game's own model release. With BUG-0576 fixed the
+held state does not come in play any more (the editor opens at once), so a player has no reason to quit there.
 
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (T1), triaged from the dump.
 - 2026-11-04 (fix/w43-transitions, T1): the same session as BUG-0576 (the held City Hall editor, then the quit):
   not-reproduced, the state is gone with BUG-0576.
+- 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): the game's own exit (WM_CLOSE) tried with the editor held and open: clean, no crash report (lab 20261107-231415, 232504, 233741). Stays not-reproduced, closed with the runs.

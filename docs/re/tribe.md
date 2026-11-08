@@ -2575,3 +2575,36 @@ BUG-0685. GOG 2024, lab lanes 4 and 5.
   dead here and up on the host), `a member of this game the host has not goes`, `mirror #N: its object is gone`,
   `mirror #N is not made: <why>` (no local tribe for its tribe, tribe.gameover's guard, the game made no citizen)
   and `mirror #N is made again`; `coop.tribe` lifetime line `mirror_blows_kept=`.
+## The tribe setup without a simulator camera: reproduced (2026-11-07, fix/w46-n1-crashes)
+<a id="tribe-camera-null"></a>
+
+BUG-0167 (GOG 2024, lab lanes 9 / 10, test tribe_camera_null).
+* ✔ (runtime) The null simulator camera at TribeGame_Setup comes from the galaxy menu's own intro timer firing in the
+  first frames of the Tribe stage: a guest joins 12.5 s after its menu came up (twoinst.start(join_at=12.5), the
+  BUG-0607 timing), its load runs ~3-3.5 s later, the menu's timer (~15.85 s) starts "GGE_intro" in the mode
+  01654C02 (Tribe, "the galaxy menu intro starts (mode 01654C02)"), and 0.07 s later the setup's LookAt meets the null
+  camera object [0x167FAAC]. With `tribe.camera_guard` off: `0xC0000005 at 0x00B12D62 SporeCoop::SimCamera_LookAt+0x52
+  data=0x000002B4` (calls 0xCD7D22 = TribeGame_Setup), the report's fault (GOG 2016 0xB12D32, data 0x2B4); with the
+  guard: "skipped the tribe camera set-up", the guest plays on. Hit on the first join in 4 of 4 cold starts (lab
+  20261107-231113, 231118, 231252, 231257).
+* ✔ Only that order: the intro started by hand (PlayCinematic as the menu's handler calls it) right after the mod's
+  load request in the menu, in the first tick of the Loading mode 01654C08, or on a host reloading its own Tribe
+  played into the stage ("still playing in a stage: ended it") with the camera there (lab 20261107-225810 ..
+  230854, 15 loads). ~ Inferred: the camera object is made by the stage's own setup path a frame after the stage
+  begins, and the intro that starts in that frame takes the step that makes it.
+* Both layers hold on 0.7.9+: `world.intro_at_once` (BUG-0626) does not start the intro outside the menu (the test
+  switches it off to make the race; in the 4-player churns of lab 20261107-223550 the guests' logs show "would start
+  outside the menu (mode 01654C02): not started" 1-2 times each), and `tribe.camera_guard` (d605e96, a lab switch since
+  0.7.11, COOP_FIX_UNSAFE) skips LookAt / SimCamera_Update while the camera is null.
+## The game's own exit at the end of Tribe, the City Hall editor held or open (2026-11-07, fix/w46-n1-crashes)
+<a id="tribe-exit-editor"></a>
+
+BUG-0578 (GOG 2024, lab lanes 9 / 10, tests exit_editor_held / exit_editor_open; `coop.close` posts WM_CLOSE to the game
+window, the player's close button / Alt+F4; the lab's kill and `quit` end the process without the game's exit).
+* ✔ (runtime) WM_CLOSE runs the game's own exit: `App::cSporeApp::Shutdown`, the mod's summary and unload, then
+  "the game exits (ExitProcess 0)" 0.3-0.5 s later; no crash report.
+* ✔ With the City Hall editor request held (core.editor_own_pause off: "the editor waits", mode Tribe, busy
+  input_lock,paused, the 0.7.3.6 state of the report) the exit is clean too (lab 20261107-231415, 20261107-233741),
+  and from inside the City Hall editor (mode 00DBDBA1; lab 20261107-231415, 20261107-232504 x2).
+* ~ Not covered: Windows (the report's Steam build ran on Windows), a guest that timed out rather than left, and the
+  report's 81 s in the held state (today's old gate opens the editor ~60 s after the vote, so the test closes at 40 s).

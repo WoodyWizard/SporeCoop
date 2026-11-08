@@ -72,6 +72,10 @@ anchor so other docs can link to it:
 * 2026-10-27 (fix/w1-tribe-civ): closed as fixed by that guard (commit d605e96): the null object
   is the only cause seen, and the guard is on in every tribe run (`game fixes: tribe camera guard
   on`, GOG 2024). Not seen since in the lab (tribe_play, chaos_tribe, tribe tests).
+* FIXED, cause found (2026-11-07, fix/w46-n1-crashes): the galaxy menu's intro timer fires in the first frames of the
+  guest's Tribe stage (a join ~12.5 s after its menu came up) and nulls the camera before the setup's LookAt;
+  reproduced with the guard off (`tribe.camera_guard`, test tribe_camera_null), and the intro no longer starts
+  outside the menu since 0.7.9 (`world.intro_at_once`). docs/re/tribe.md#tribe-camera-null.
 * Ticket: BUG-0167.
 
 ## Creature: NPC aggression towards a partner is untested end to end
@@ -141,6 +145,9 @@ anchor so other docs can link to it:
   lanes and was not run. Two freed-pointer paths that fit "heap corruption from earlier" were fixed
   on the way: BUG-0091 (15 animations played on freed puppets in 6 rounds of a guest's world
   teardown) and BUG-0082 (the guest's kill list kept across the host's absence).
+* 2026-11-08 (fix/w46-n1-crashes, 0.7.11 N1): the 4-player replay of seed 1035603402 run 6 times on rel/0.7.11 (also
+  at 20 fps over the players' networks, and with `core.frame` / `npc.kill` off): no fault on any game. Closed as
+  not-reproduced (multi4_creature_seed, multi4_creature_slow).
 * Ticket: BUG-0170.
 
 ## Tribe: the host froze once while the epic creature was being killed
@@ -152,6 +159,9 @@ anchor so other docs can link to it:
   run 20261027-183142, GOG 2024). Hardened on the way: the epic is checked against the game's object
   list, `epic hit` stops at a dead victim, the epic state ends with the session and the world.
   If it comes back: the game logs are kept by lab.py now.
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): the candidate (the test loop's blows on the epic at hp 0) tried on
+  purpose with the old command (`tribe.hit_dead` off, tribe_epic_dying, also at 20 fps over the player network): no
+  freeze; the 2026-10-22 lane 2 was a GOG 2016 lane. Closed as not-reproduced.
 * Ticket: BUG-0171.
 
 ## Tribe: host fault and freeze when a member is added during the game-over caption
@@ -176,6 +186,10 @@ anchor so other docs can link to it:
   4 of 4 tries without a fault, the bounce back worked (`coop_tribe_gameover.py --nofix`). The
   2026-10-23 tries were probably on the GOG 2016 lanes. The mod now adds no member to a player tribe
   without health (`coop.tribe fix gameover 0`: the old way).
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): not reproduced on GOG 2024 with the guard off either (the caption, 6
+  members at 20 fps over the player network, spawns 0.5 s and 2.5 s into the bounce back's reload; lab
+  20261107-231709). 0xC0DAE3 is the GOG 2016 address of GOG 2024 0xC0DB23 (SetMoveScale+0x13, the BUG-0285 site);
+  no GOG 2024 lab log of 2026-11-04..07 has a fault there. Closed as not-reproduced.
 * Ticket: BUG-0172.
 
 ## Cell: a guest far from the host swims in an empty pool
@@ -333,6 +347,9 @@ anchor so other docs can link to it:
   during the menu intro".
 * 2026-10-28 (fix/w1-core, lane 2): 3 of 3 more runs passed with the click during the intro: not
   reproduced.
+* 2026-11-08 (fix/w46-n1-crashes, 0.7.11 N1): the Escape candidate is disproved (menu_escape: Escape with no intro and
+  at its start, "Co-op" clicked 0-7 s into the menu's own intro: the frames go on, the window opens); coop_ui.py 3 of
+  3 with the click during the intro. Closed as not-reproduced.
 * Ticket: BUG-0184.
 * 2026-10-30 (fix/w13-net, lane 10): 3 of 3 passed, but the intro was not playing at the click in
   any of them (path not exercised). Candidate (not verified): the posted Escape reaching the menu
@@ -601,6 +618,9 @@ anchor so other docs can link to it:
   Regression test: `tools/tests/coop_creature_death.py` (suite `creature_death`).
 * Next: the player's `mods\logs\sporekit.log` (a crash inside the mod is logged with its module and
   address; "exception ... calls:"), the game build (GOG / Steam) and Windows or Linux.
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): not reproduced on rel/0.7.11 either: alone (creature_death) and in a
+  session, host and guest dying, also at 20 fps over the player network (creature_death_coop, _slow): closed as
+  not-reproduced with the runs in the ticket.
 * Ticket: BUG-0026.
 
 ## Creature: "he is my species from my view", "I don't see his changes" (player report 2026-10-25)
@@ -1955,7 +1975,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0575: Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3)
 - BUG-0576: Tribe -> Civ: black screen after evolving from Tribe into the city stage
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
-- BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
+- BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) (not reproduced: the game's own exit with the editor held or open is clean, exit_editor_held, 2026-11-07)
 - BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
 - BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then)
 - BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin)

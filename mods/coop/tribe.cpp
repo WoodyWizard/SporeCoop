@@ -3987,13 +3987,18 @@ std::vector<net::Vec3> local_member_positions()
     return v;
 }
 
+// BUG-0171 (0.7.11 N1): the dead-victim stop of the test commands' hits as a lab switch; off: blows on a victim at
+// hp 0 or dead go through TakeDamage as before ba9dc46 (coop_tribe_epic_dying.py)
+static bool g_fix_hit_dead = true;
+COOP_FIX("tribe.hit_dead", "BUG-0171", g_fix_hit_dead, "tribe: the test commands' blows stop at a dead victim (no TakeDamage on hp 0)");
+
 std::string debug(const std::vector<std::string>& a)
 {
     // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe
     auto hit = [](void* victim, void* attacker, float dmg) {
         float before = F<float>(victim, 0x5E0);
         // a dead victim takes no more blows: the test loop went on hitting the dying epic (BUG-0171)
-        if (before <= 0 || game::is_dead(victim))
+        if (g_fix_hit_dead && (before <= 0 || game::is_dead(victim)))
             return std::string("hp 0.00 -> 0.00 (dead)");
         // the combatant's TakeDamage (vt 0x18): the same path as a real blow, with our hooks
         // (the push vector: (0,0,0) as the game's own bites and strikes, docs/re/creature.md 3)
