@@ -2899,6 +2899,16 @@ static std::string monitor_own_fields(bool have)
             out += b;
         }
     }
+    if (g_mode == modes::kCell) {
+        // BUG-0681: the game's world scale its Cell positions (own pos=, the partners' drawn=) are in: during a
+        // level change each game rescales at its own moment, the monitor's drawn rule compares in one scale
+        float k = cellsync::scale_now();
+        if (k > 0) {
+            char b[32];
+            snprintf(b, sizeof b, " wscale=%.6g", k);
+            out += b;
+        }
+    }
     out += npc::monitor_fields();
     return out;
 }
@@ -3230,6 +3240,7 @@ void on_frame(void*, int, void*)
         }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
+    civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
     squadron::tick(now);
     autoupdate::tick();
     spacecoop::tick(now);
@@ -5809,6 +5820,37 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                    n++;
                                }
                            SAY("%d puppet(s) destroyed by the game\n", n);
+                           return 0;
+                       }
+                       if (argc > 1 && (!strcmp(argv[1], "agl") || !strcmp(argv[1], "sink"))) {
+                           // tests (BUG-0683): agl: each Creature puppet's height over this game's terrain; sink <depth>
+                           // [side]: each is put <side> m sideways and <depth> m under its terrain there (teleport), as
+                           // the game's separation of creatures stacked on the nest pressed one in
+                           bool sink = !strcmp(argv[1], "sink") && argc > 2;
+                           float depth = sink ? (float)atof(argv[2]) : 0, side = sink && argc > 3 ? (float)atof(argv[3]) : 0;
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               net::Vec3 q = game::position(r.puppet);
+                               float rr = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                               if (sink && rr > 1.f) {
+                                   // a direction across the planet's normal
+                                   net::Vec3 n{q.x / rr, q.y / rr, q.z / rr}, ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+                                   net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+                                   float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+                                   net::Vec3 w{q.x + side * u.x / ul, q.y + side * u.y / ul, q.z + side * u.z / ul};
+                                   float wl = std::sqrt(w.x * w.x + w.y * w.y + w.z * w.z), g = game::ground_radius(w);
+                                   if (g > 0) {
+                                       float k = (g - depth) / wl;
+                                       game::teleport(r.puppet, {w.x * k, w.y * k, w.z * k}, game::orientation(r.puppet));
+                                   }
+                                   q = game::position(r.puppet);
+                                   rr = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                               }
+                               float g = rr > 1.f ? game::ground_radius(q) : 0.f;
+                               SAY("puppet %u agl=%.2f pos=(%.2f %.2f %.2f) ungrounded=%u\n", id, g > 0 ? rr - g : 0.f, q.x, q.y, q.z,
+                                   r.drv.ungrounded);
+                           }
                            return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "hold"))
