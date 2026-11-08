@@ -2814,3 +2814,17 @@ the member's behaviour-tree ticks so far on the host, `anim=`, `upd=` +0x135, `t
   `cCinematicManager_EndCinematic` (world::end_cinematic, outside the frame, as the OK does), with the notices
   "<host> watches a cinematic: the tribe waits for the OK (or 8 s)" and "the caption closed by itself", as
   civ.caption (BUG-0187) does for a city capture.
+
+## The guest's copy of a host-formed tribe uses up its spawn marker (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-copy-marker"></a>
+
+BUG-0741. GOG 2024, lane 7, `coop_tribe_copy_marker.py`.
+* ✔ (runtime) The tribe fixture has 4 tribe spawn markers (cGameplayMarker +0x108 == 0x57F09E5E, position +0x1A8) at
+  the same places in both games. With `tribe.form_pace` off, one `coop.tribe form` on the host formed **two** tribes
+  within a second (2 -> 3 -> 4 tribes: with 3-4 tribes the controller forms every second, #tribe-form-needs), each
+  exactly at a marker, and the host's markers went 4 -> 2.
+* ✔ The guest's copies (tribe.npc_tribes) are made ~1 s after the host's forming at the host's place (0.0 m from the
+  marker); without `tribe.copy_marker` the guest kept all 4 markers.
+* Fix `tribe.copy_marker`: the copy destroys the guest's marker nearest it within 30 m (cGameNounManager::DestroyInstance,
+  as FormTribe 0xCC6440 does). Not done: FormTribe's other steps after the spawn (the terraforming call 0xBBEDD0 on
+  marker +0x11C, the herds near the new village destroyed or moved) are not repeated on the guest.
