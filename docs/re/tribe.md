@@ -2877,3 +2877,19 @@ BUG-0748 (no test yet). GOG 2024, lane 7, out/b1tribe/exp_duet.py (not in git).
   table (0x15933EC); its chooser is BT data. ? what enters it (a step of the social mini-game's UI is likely).
 * Test commands: `coop.tribe duet` (performers: id, owner, the session's target, state, ui, progress `ui+0x68`;
   `ticks=`), `coop.tribe act_obj <action> <noun hex> <x y z>`, switch `coop.fix tribe.duet off`.
+
+## When a raided hut falls, and the conquest after it (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-hut-fall"></a>
+
+BUG-0761. GOG 2024, lane 7, `coop_tribe_conquer_orders.py`.
+* ✔ (Ghidra) cCombatant::TakeDamage 0xBFCF10 (a hut's combatant at hut +0x120): health +0x38 -= damage; under 1.5e-5
+  it sets health 0, **state +0x34 = 2** and posts the death message (0x1622184 block); +0x28 the last attacker. Damage
+  type 10 adds instead (repairs), type 0xB nothing.
+* ✔ (runtime) Raid blows on an NPC hut take 3.75-4.0, so from a written 40 the health can end at 0.25-0.5 with state 1:
+  the hut stands until one more blow; the conquest cinematic TRG_TotemPole_Conquer (0x5418B038) plays 0-4 s after
+  state 2 (4 runs). `coop.tribe huthp` prints `exact=` / `state=` / `last=`.
+* ✔ (runtime) The raiders (`coop.tribe order <id> 15 <hut>`) can leave a hut that still stands (26/400 for 60 s, no
+  raider within 14 m): the order again sends them back.
+* (Ghidra, not finished) The conquest's completion is cTribeToTribeMission vt 0x78 0xC2F7F0 (state 5, the goal,
+  the cinematic); a probe on it counted ~12 calls a second (it returns at once when the state is already 5), its
+  caller was not found.

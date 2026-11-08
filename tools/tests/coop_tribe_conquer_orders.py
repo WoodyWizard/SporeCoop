@@ -115,20 +115,36 @@ def main():
     for mid in raiders:
         print(f'  raid #{mid}: ' + host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % ((mid,) + hp + (HUT,)))['out'].strip(),
               flush=True)
-    # the raiders at the hut (the raid nodes), then its health cut: the next blows end the tribe
-    t0, cut, fell = time.time(), False, None
-    while time.time() - t0 < 90:
+    # the raiders at the hut (the raid nodes), then its health cut: the next blows end the tribe.
+    # BUG-0761: the hut has fallen when the game says so (cCombatant +0x34 state 2, set by TakeDamage when the health
+    # goes under 1.5e-5, or the hut gone), not when its health prints as 0: blows of 3.75-4 leave 0.25-0.5 (lab
+    # 20261108-153928: "health 0/400 exact=0.50000 state=1"); raiders that stop hitting a hut still standing are sent
+    # again
+    def hut_state(hs):
+        m = re.search(r'exact=([-\d.]+) state=(\d+)', hs)
+        return (float(m.group(1)), int(m.group(2))) if m else (None, None)
+
+    t0, cut, fell, last_hp, last_change = time.time(), False, None, None, time.time()
+    while time.time() - t0 < 120:
         time.sleep(2)
         hs = host.call('coop.tribe huthp %.2f %.2f %.2f -' % hp)['out'].strip()
         near = [mid for mid in raiders if (pos_of(host, mid) and dist(pos_of(host, mid), hp) < 14)]
         print(f'  {time.time() - t0:4.0f} s: {hs}; raiders near the hut {near}', flush=True)
-        if hs.startswith('no hut') or re.search(r'health 0/', hs):
+        h, state = hut_state(hs)
+        if hs.startswith('no hut') or state == 2:
             fell = time.time() - t0
             break
+        if h != last_hp:
+            last_hp, last_change = h, time.time()
+        elif cut and time.time() - last_change > 16:
+            for mid in raiders:  # the raid stalled with the hut still standing: the raid order again
+                print(f'  raid again #{mid}: ' + host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % (
+                    (mid,) + hp + (HUT,)))['out'].strip(), flush=True)
+            last_change = time.time()
         if not cut and len(near) >= max(1, len(raiders) // 2):
             print('  cut: ' + host.call('coop.tribe huthp %.2f %.2f %.2f %.0f' % (hp + (a.hp,)))['out'].strip(), flush=True)
             cut = True
-    ck(fell is not None, f'the raid ended the hut ({fell and round(fell)} s)')
+    ck(fell is not None, f'the raid ended the hut (its state 2 in the host\'s game, {fell and round(fell)} s)')
     for mid in raiders:
         out, _, _ = ai(host, mid)
         print(f'  after the fall #{mid}: {out[:480]}', flush=True)
@@ -138,14 +154,18 @@ def main():
         print(f'  {who}: {busy}; ' + con.call('coop.uistate')['out'].strip().splitlines()[0][:200], flush=True)
     # the conquest's cinematic and caption (TRG_TotemPole_Conquer) on the host: a player closes it, or with guests in
     # the session it closes itself (tribe.conquer_caption); the test presses nothing
-    # (it starts some seconds after the hut's last blow: lab 20261108-101717, 23 s after the health 0 was read)
-    t1, held, seen = time.time(), None, None
+    # (it starts some seconds after the hut's last blow: lab 20261108-101717, 23 s after the health 0 was read);
+    # BUG-0761: when the hut goes from the host's game is printed too
+    t1, held, seen, gone = time.time(), None, None, None
     while time.time() - t1 < 60:
         st = host.call('coop.status')['out']
         held = re.search(r'cinematic \S+ playing', st)
         if held and not seen:
             seen = held.group(0)
             print(f'  host after {time.time() - t1:.0f} s: {seen}', flush=True)
+        if gone is None and host.call('coop.tribe huthp %.2f %.2f %.2f -' % hp)['out'].strip().startswith('no hut'):
+            gone = time.time() - t1
+            print(f'  host after {gone:.0f} s: the hut is gone', flush=True)
         if seen and (not held or time.time() - t1 > 40):
             break
         time.sleep(1)

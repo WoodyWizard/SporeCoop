@@ -2389,3 +2389,5 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 
 * tribe_conquer_orders: 1 of 5 runs of 0.7.11 played no conquest cinematic in 60 s after the hut's health 0.
 * Ticket: BUG-0761.
+* 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
+  raid; docs/re/tribe.md#tribe-hut-fall).

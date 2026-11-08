@@ -4692,8 +4692,11 @@ std::string debug(const std::vector<std::string>& a)
         if (!h || !skg::readable(h, 0x160))
             return "no hut there";
         float& hp = F<float>(h, 0x120 + 0x38);
-        char b[96];
-        snprintf(b, sizeof b, "hut %p health %.0f/%.0f", h, hp, F<float>(h, 0x120 + 0x2C));
+        char b[200];
+        // BUG-0761: exact= the health unrounded; state= cCombatant +0x34 (2: dead, set by TakeDamage 0xBFCF10 when the
+        // health goes under 1.5e-5, which posts the death message); last= +0x28 the last attacker (a cCombatant owner)
+        snprintf(b, sizeof b, "hut %p health %.0f/%.0f exact=%.5f state=%d last=%p", h, hp, F<float>(h, 0x120 + 0x2C), hp,
+                 F<int>(h, 0x120 + 0x34), F<void*>(h, 0x120 + 0x28));
         if (a.size() >= 5 && a[4] != "-")
             hp = (float)atof(a[4].c_str());
         return std::string(b) + " -> " + std::to_string((int)hp);
