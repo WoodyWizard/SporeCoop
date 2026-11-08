@@ -4797,3 +4797,17 @@ of play and the raids of the whole campaign's Tribe stage without the 60 minutes
 lines (`tribe: mirror #N goes: ... (BUG-0685)`) say when and why a member mirror went or was not made again. Not in
 any group (run it by name). First run (lab 20261107-163249, lane 4, the log lines without tribe.mirror_blow): no
 `t: missing`, its gate failed on known classes only (`t: 1 apart`, the BUG-0410/0674 class; an NPC proxy 3 m off).
+
+## A Creature UFO visit without a ship model: creature_ufo_nomodel (2026-11-07, fix/w46-advance-reg)
+<a id="testing-creature-ufo-nomodel"></a>
+
+BUG-0686 (docs/re/space.md#space-ufo-gfx-null). `coop_creature_ufo_nomodel.py` (suite `creature_ufo_nomodel`, two
+games, the creature fixture) copies the BUG-0546 cache over the host's Pollination.package as space_npc_model does
+(`--cache lane` keeps the lane's own), starts the Drama Manager's UFO visit (`coop.drama start 2`) until one ship gfx
+is made without a model (up to 6 visits; the first did on lane 5), then lets it go on 40 s: no host fault. SKIPs when
+every visit's ship had a model. About 3 minutes. `SPORE_FIX_OFF=game.ufo_gfx` must FAIL (lane 5:
+out/lab/20261107-185421: 0xE99524 on visit 1).
+
+Lab note: lanes 2 and 3 have host caches of UFO summaries only (2026-11-07): a campaign whose Creature end brings a
+UFO visit faulted there at 0xE99524 (campaign_tribe "stopped in creature"), lanes 4 and 5 do not. A campaign_tribe
+A/B between builds must use the same lane.

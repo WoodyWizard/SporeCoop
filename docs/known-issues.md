@@ -2233,3 +2233,16 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Reproduce: `tools/lab.py run cell_levelup_view --repeat 4`.
 * Next steps: add the sender's scale to the partner line (or skip a pair whose scales differ) as worlddiff does.
 * Ticket: BUG-0681
+
+## Creature: the host freezes after a guest's rejoin while its share save is never written (2026-11-07, fix/w46-advance-reg)
+<a id="issue-creature-rejoin-share-freeze"></a>
+
+* What happens: 4 players in Creature, a guest leaves and joins again; the host sends no state from then on (the
+  guests hide its creature), its save for the rejoined guest's share writes no file ("no saved box and no file
+  written ... saving again (try 2)", "(try 3)"), and about 30 s later the host stops for good (FROZE).
+* Reproduce: seen once, campaign_tribe on lane 3 (lab 20261107-182231 #2, rel/0.7.10 4c1d891f);
+  `SPORE_LANE=3 python3 tools/tests/coop_campaign.py --from creature --to tribe --minutes 2.0 --seed 953406079`.
+* Known: the host's frames ran on between the rejoin and the last save post (DNA and save lines in its log).
+* Not checked: the cause; whether v0.7.9 does the same (inferred not a 0.7.10 regression: nothing merged after
+  e7d1734c touches the share path).
+* Ticket: BUG-0687

@@ -2310,3 +2310,35 @@ GOG 2024 addresses (dc04aee5).
   (AddCargoSlots; never fewer), tools by AddItemByKey (a few passes: upgrades need their base tool)
   with their charges (AddAmmo / ConsumeAmmo), spice by CreateTradingObject + AddItem, other cargo
   stacks by their count +0x10. A first join keeps the save's hold, as before.
+
+## The ship gfx factory and a ship without a model outside Space (2026-11-07, fix/w46-advance-reg)
+<a id="space-ufo-gfx-null"></a>
+
+BUG-0686, a follow-up of [the null model](#space-ufo-null-model) (BUG-0546). The campaign's Creature -> Tribe
+advance faulted the host at 0xE99524 (data 0x4) on lab lanes 2 and 3 (lab 20261107-171750, -175737-2).
+
+* ✔ 0xE99524 is in `SporeCoop::UfoGfx_Create` 0xE994D0 (93 bytes; slot 2 of the ship gfx vtable 0x1486F6C, entry
+  at .rdata 0x1486F74; thiscall(any, cUFO*) ret 4, ecx not used): `GeneralAllocator::new_(0xD8, "Simulator/cUFOGfx")`,
+  `UfoGfx_ctor` 0xE993A0 (thiscall(mem) -> this; vtables at +0 0x1486F6C, +0x34 0x1486F5C, +0x3C the message
+  listener 0x1486F4C), vt 0x24 (`UfoGfx_InitFromUfo` 0xE9B180) with the ship, then `if (GetCurrentGameMode() !=
+  0x1654C10) GetModel()->+4 |= 0x20`: no null check. Crash reports label it `UfoGfx_SetVisible+0x794`.
+* ✔ `UfoGfx_HandleMessage` 0xE9A7A0 (thiscall(listener = gfx + 0x3C, id, data) ret 8): message 0x604C6F4 writes
+  the ship's scale into GetModel()+0x18 without a check (the later fault 0xE9A908 data 0x18 of 20261107-175737-2,
+  86 s after the first, during the evolution cinematic); 0x6834927 plays an effect at the ship.
+* ✔ When a model is made: the model world (vt 0xC) makes one for a ship whose Pollination record is only a summary
+  (type 0x02D5C9AF) when GraphicsCache.package holds its bake (group 0x40656200, types 0xE6BCE5 / 0xB1B104 /
+  0x2F4E681C): no model and the fault when it has none. Lane 2's host profile on 2026-11-07: 123 UFO summaries,
+  no complete UFO, 20 baked; the two crash keys 290FD328 and 290F9F22 not baked, 290F6D76 (no fault in two other
+  runs) baked. Lanes 4 and 5 hold 32 / 34 complete UFOs (no "not in this game" line there: inferred, the visit
+  picks a complete one when the cache has any). Lane 3: 92 summaries, 0 complete, 2 baked.
+* ✔ game.ufo_model (BUG-0546) does not help here: it substitutes the default UFO (not in the GOG 2024 lab install)
+  or the last known ship key, and a Creature game has none ("none known, kept").
+* ✔ Reproduced: `coop.drama start 2` (the Creature Drama Manager's UFO visit) on a host with lane 5's BUG-0546
+  cache faults at 0xE99524 on the first visit with the campaign's call stack (lab 20261107-185421,
+  `SPORE_FIX_OFF=game.ufo_gfx`).
+* ~ The campaign's visits start a second after the evolution vote opens (4 of 4 campaign_tribe runs with a visit):
+  inferred, the stage's end (the brain bar full) is what starts it. The vote itself is not needed: the test starts
+  the visit with no vote.
+* Fix (gamefixes, `game.ufo_gfx`): the factory is done the game's way by the mod (new, ctor, InitFromUfo, the flag
+  only on a model); the listener skips 0x604C6F4 on a gfx without a model. Such a ship is not drawn. Counters in
+  `coop.status` ("ship gfx made without a model N (their messages skipped N)").
