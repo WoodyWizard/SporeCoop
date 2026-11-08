@@ -38,7 +38,7 @@ Two such guest paths were fixed in the same wave (BUG-0091: animations played on
   line in the 4 games' logs): the teardown order that freed puppets under the mod in 0.7.2.4 does not happen any more.
 * A bot replay is not deterministic (timing, 576-604 actions per run against the report's unknown count), so this
   does not prove the exact action order was replayed; the report's build was 0.7.2.4 main, since then the freed-object
-  class was worked through in several releases (BUG-0091, 0082, 0029, 0054, 0066 and the census of 0.7.4).
+  class was worked through in several releases (BUG-0091, 0082, 0029, 0054, 0066 among them).
 
 ## Fix
 No fix of its own. BUG-0091 and BUG-0082 (fix/w1-creature) remove two candidates.
