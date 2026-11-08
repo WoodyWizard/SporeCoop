@@ -2814,3 +2814,23 @@ the member's behaviour-tree ticks so far on the host, `anim=`, `upd=` +0x135, `t
   `cCinematicManager_EndCinematic` (world::end_cinematic, outside the frame, as the OK does), with the notices
   "<host> watches a cinematic: the tribe waits for the OK (or 8 s)" and "the caption closed by itself", as
   civ.caption (BUG-0187) does for a city capture.
+
+## The minimap: blips and the map transform (2026-11-08, feat/w46-partner-arrows)
+<a id="tribe-minimap"></a>
+
+F2. GOG 2024 (dc04aee5), Ghidra static only. The class and its API: [creature-minimap](creature.md#creature-minimap).
+
+* ✔ (Ghidra) The Tribe cMinimap is `TribeGameUI +0x70`; TribeGameUI = vt 0x6C of the object `cTribeUI_Get` 0xCD4230 returns
+  (`TribeStage_GetGameUI` 0x104BFF0: `[this+0x240]`). It is made by the Tribe UI load 0xCCDEF0 as a child of HUD window
+  0x190722E (as in Creature). TribeMarker_Place checks vt 0x6C for 0 before use; check +0x70 too.
+* ✔ `TribeGameUI_MinimapBlip` 0xCC98C0: thiscall(TribeGameUI*, u32 key, float x, float y, float z, int kind, bool show)
+  ret 0x18. show 0 removes the blip; else MoveBlip, and when the key is new AddBlip with kind 0 -> flags 0x10000
+  (icon 0x5E51BB6), 1 -> 0x8000 (0x5E51BC1, plants), other -> 0x4000 (0x5E51AD8) tinted 0xFFFFFF00. Callers:
+  TribeMarker_Place (kind 0, key = the ornament) and the rebuild.
+* ✔ `TribeGameUI_MinimapRebuild` 0xCCDA20 (fastcall) **clears every blip** (Minimap_ClearBlips), centres on the player
+  tribe, then re-adds plants, spot records, nests (0xCC97C0, flags 0x20) and tribes (0xCC95E0: flags 2, |0x100000,
+  tint = the tribe colour `GetCachedColorFromId(tribe +0x234)`). It runs at the Tribe UI load and from the stage
+  message handler 0xCD1D60: blips the mod adds must be re-added when `Minimap_FindBlip` says they are gone.
+* ✔ The own marker is the camera: 0xCCDDB0 (Tribe UI update) calls Minimap_SetAvatar with the camera's position /
+  direction (0xB10160 / 0xB13840). In Tribe, `Minimap_WorldToMap`'s caller 0xE0BF20 hides blips outside the map rect
+  instead of leaving them on the edge.

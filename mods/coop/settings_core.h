@@ -25,6 +25,7 @@ enum class Scope : uint8_t { Session, Live };
 enum Id : int {
     kCellRegen,      // Cell: regeneration near a partner ("shared healing", cellsync.cpp symbiosis_tick)
     kPartnerArrows,  // all stages: an arrow to every partner off screen (F2 draws it); off in Rivals mode
+    kPartnerMap,     // Creature, Tribe: the partners on the game's minimap as triangles in their colour (F2)
     kDnaPace,        // all stages: DNA / food at the single-player pace (BUG-0510, dna_pace.h)
     kNpcTargets,     // Creature: the host's NPC animals treat partners like the host's creature (npc.cpp)
     kPackRescue,     // Creature: a deadly hit near a partner leaves 40 % health (teamplay.cpp)
@@ -52,6 +53,9 @@ inline const Def kDefs[kCount] = {
     {"all.partner_arrows", "All stages", "Partner arrows",
      "on: an arrow at the screen edge points to every partner off screen (never in Rivals mode); off: no arrows",
      1, 0, 1, Scope::Live, nullptr, true},
+    {"all.partner_map", "All stages", "Partners on the minimap",
+     "on: every partner shows on the minimap (Creature, Tribe) as a triangle in its colour; off: not shown",
+     1, 0, 1, Scope::Live, nullptr, false},
     {"all.dna_pace", "All stages", "Progress at the single-player pace",
      "on: every gain of DNA / food counts 1/N for N players (a solo game's pace); off: every player's gain counts whole",
      1, 0, 1, Scope::Session, "dna_pace", false},

@@ -209,3 +209,8 @@ SporeCoop::Cell_PoisonCloud ; BUG-0716: test counter of a guest's poison clouds,
 SporeCoop::Cell_PoisonCull_ret ; BUG-0716: a guest's poison clouds are destroyed at once on GOG 2016 (cell.own_products)
 SporeCoop::Cell_CanPoison ; BUG-0716: test status only
 SporeCoop::Cell_PoisonStep ; BUG-0716: a guest's poison part makes no clouds in the host's game on GOG 2016 (cell.puppet_poison)
+SporeCoop::Minimap_AddBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_MoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_FindBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_RemoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::CreatureMinimap_Ptr ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)

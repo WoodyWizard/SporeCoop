@@ -10,6 +10,15 @@
   `coop.settings` (BUG-0762).
 - Cell: the regeneration near a partner ("shared healing") can be turned off by the host, also during play (setting
   `cell.regen`, on by default) (BUG-0762).
+- Find each other: every partner who is off screen gets an arrow at the edge of the screen, in the partner's colour,
+  with the name and the distance (Cell and Creature: the partner's creature, Tribe: its chief, Civilization: where the
+  partner plays, else its capital, Space: its ship). On screen the name tag stays. Host settings `all.partner_arrows`
+  (on; never in the Rivals mode) and `all.partner_map` (on), both changeable during play (BUG-0764).
+- Partners on the minimap: in Creature and Tribe every partner shows on the game's minimap as a mark in the
+  partner's colour (BUG-0764).
+- Player colours: every player gets one of four distinct colours (yellow, blue, pink, green), the same on every
+  game; a player can pick another free one (eight in all; console `coop.find color <name>`, the lobby). Name tags,
+  arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
 
 ## [0.7.11] - 2026-11-08
 

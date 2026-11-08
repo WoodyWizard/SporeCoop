@@ -69,6 +69,7 @@ struct Api {
     std::function<void(int)> civ_role_cycle;
     std::function<void(const std::string&)> say;
     std::function<std::vector<std::string>()> chat;
+    std::function<std::vector<uint32_t>()> chat_colors; // F2: per chat() line its writer's colour (0: the default)
     std::function<std::vector<LanGame>()> lan_games;
     std::function<void(bool)> lan_scan; // start/stop looking for games on the network
     std::function<std::vector<std::string>()> local_addresses;
