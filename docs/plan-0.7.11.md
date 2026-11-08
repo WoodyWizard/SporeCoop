@@ -26,7 +26,7 @@ closes in this release, fixed or with evidence after a serious dedicated attempt
 | **N1 Not reproduced, crashes and freezes** (dedicated) | One more serious attempt each on the current build (targeted tests, 4 players where the report had them, low fps / bad net): fix, or close with the runs as evidence | BUG-0026, 0118, 0167, 0170, 0171, 0172, 0184, 0578 |
 | **N2 Not reproduced, desyncs and bugs** | As N1 | BUG-0011, 0013, 0178, 0221, 0237, 0282, 0328, 0402, 0316, 0528, 0359 (if 0.7.9 leaves it) |
 | **E1 Features without Rivals** | The Cell -> Creature switch vote, the host's editor opening at once after the evolution vote | BUG-0315, 0516 |
-| **G4 Tests** | Flaky and missing tests: each test made reliable (the cause found, not a looser limit) or the missing test written; the harness that hides failures | BUG-0021, 0022, 0168, 0177, 0189, 0181, 0193, 0293, 0300, 0311, 0363, 0450, 0489, 0430, 0199, 0628 |
+| **G4 Tests** | Flaky and missing tests: each test made reliable (the cause found, not a looser limit) or the missing test written; the harness that hides failures | BUG-0021, 0022, 0168, 0177, 0189, 0181, 0193, 0293, 0300, 0311, 0363, 0450, 0489, 0430, 0199, 0628, 0689, 0690 |
 
 A class umbrella closes when its children are fixed or closed and the detector shows no row of the class on any stage;
 what is left becomes a concrete ticket in the same package.
