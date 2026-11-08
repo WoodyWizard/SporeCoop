@@ -187,7 +187,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | fixed | bug | Cell | 2026-10-23 | 0.7.3.2 | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | fixed | bug | All | 2026-10-24 | 0.7.3.2 | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
 | [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | fixed | test | Civ | 2026-10-23 | 0.7.3.0 | coop_civ_play: the guest's "I'm ready" click was lost twice |
-| [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
+| [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | fixed | test | Creature | 2026-10-24 | unreleased | Creature: the mating call did not lead to the editor in the bot |
 | [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | not-reproduced | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
 | [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | fixed | feature | Creature | 2026-10-23 | 0.7.5 | Creature (guest): the social game is simplified |
 | [BUG-0180](BUG-0180-creature-while-the-host-is-in-the-main-menu-the.md) | fixed | bug | Creature | 2026-10-27 | 0.7.3.2 | Creature: while the host is in the main menu the guest's planet fills up slowly |
