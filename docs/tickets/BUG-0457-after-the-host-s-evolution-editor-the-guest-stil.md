@@ -9,9 +9,9 @@ source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG ho
 role: guest
 versions: 
 fixed_in:
-branch: fix/w40-cell-evo
+branch: fix/w46-p4-creature
 commits:
-tests: editor_sync_host, editor_sync_host2 (coop_editor_sync.py --case host / host2)
+tests: editor_sync_host, editor_sync_host2, editor_sync_host_late (coop_editor_sync.py --case host / host2 / host_late)
 signature:
 docs: docs/re/creations.md#creations-host-evolution, docs/re/creations.md#creations-own-editor-dna
 related:
@@ -53,12 +53,27 @@ happen. Inferred, not verified: the report needs something the lab does not have
 the bundle unusable on the guest, a creature not in the host's My Creations sent key-only, a species changed
 under its own key).
 
+Update (fix/w46-p4-creature, 2026-11-07, rel/0.7.11), a dedicated attempt at the two paths the lab had not taken:
+* The guest still in its own editor while the host evolves (the report's players; every earlier run had the guest
+  press done first): `--case host_late`, the host leaves its editor first and plays its evolution's cinematic, the
+  guest stays 25 s longer in its own editor (the host's new bundle reached it there: "player 0 creature: 7C869222"
+  while it was in the editor), then presses done.
+* What the guest's game builds, not only the puppet's key: the model record (bem) the guest's game finds for the
+  puppet's species and the species profile it gives for that key, against the host's bem of its new species.
+In 4 runs (out/lab/20261107-211411: host_late #1, #2, host #1, #2) and out/lab/20261107-210859 (host_late, host) the
+guest's game built the host's puppet from the host's new creature (bem E287B042 on both, the profile's own key the
+bundle key) and its own avatar followed the host's new species where it plays the world's species. Not reproduced.
+Inferred, not verified, as before: the report needs something the lab has not (a host whose share save failed, a
+bundle the guest's game cannot use, another build's parts).
+
 ## Fix
-None: not reproduced on rel/0.7.4 (fix/w40-cell-evo). The reproducer now makes a real host evolution and is in
+None: not reproduced on rel/0.7.11 (fix/w46-p4-creature; before: rel/0.7.4 (fix/w40-cell-evo). The reproducer now makes a real host evolution and is in
 the suites (editor_sync_host, editor_sync_host2).
 
 ## Verification
-no-fail-run: not reproducible on rel/0.7.4: editor_sync_host PASS out/lab/20261103-160839 (and 20261103-160241:
+no-fail-run: not reproducible on rel/0.7.11: editor_sync_host_late PASS out/lab/20261107-211411 (#1, #2), editor_sync_host
+PASS out/lab/20261107-211411 (#1, #2), both with the guest's game's bem of the host's puppet = the host's new creature's.
+Before, on rel/0.7.4: editor_sync_host PASS out/lab/20261103-160839 (and 20261103-160241:
 checks passed except the old key expectation and the known cold-start caught fault 0x11ECE4F), editor_sync_host2
 PASS out/lab/20261103-161211.
 
@@ -67,3 +82,4 @@ PASS out/lab/20261103-161211.
 - 2026-11-03: looked at on fix/w40-scale: does not fit the float-field path (a species key and a model rebuild after the host's editor, the creations / world share lifecycle: steps 2 and 3 of docs/sync-architecture-plan.md, causes C and F); left open, no reproduction made (it needs a real edit in the host's editor, coop_editor_desync.py part 5 is the closest test).
 - 2026-11-03: fix/w40-editor: reproducer written, the test cannot make the host evolve yet; findings above, not fixed.
 - 2026-11-03: fix/w40-cell-evo: the host's evolution made to happen in the test; the guest follows it in 3 runs: not reproduced.
+- 2026-11-07: fix/w46-p4-creature: a dedicated attempt on rel/0.7.11 (the guest in its editor during the host's evolution, the game's model checked): not reproduced in 6 runs.

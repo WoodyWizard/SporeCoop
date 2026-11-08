@@ -1184,3 +1184,16 @@ BUG-0200. GOG 2024, Ghidra (out/ghidra-2024).
   the game makes from them, are the host's creation. The node's earlier value (the guest's own creation of
   the same id, or null) goes back at the session end. `coop.creations speciesof <hex>`: the profile the game
   gives for a key, its own key and the model (bem) the game finds for that.
+
+## The held Creature evolution request keeps the stage's budget (2026-11-07, fix/w46-p4-creature)
+<a id="creations-creature-held-budget"></a>
+
+BUG-0581, BUG-0457. GOG 2024, lanes 4 / 5 (`coop_editor_sync.py --case host|host_late`).
+
+* ✔ (runtime) While the host's evolution editor is open the game's DNA (GetEvolutionPoints) stays at the stage's
+  value (40 -> 40 with a mouth bought); back in the stage it is the result's remaining budget (0xD445AA): 40 - 25 =
+  15 with the request held by the vote, 6 of 6 runs. So the creature editor's budget does not depend on the
+  0x90A03FDF post the vote delays (unlike the Cell editor, docs/re/cell.md#cell-editor-budget).
+* ✔ (runtime) A guest that stays in its own editor while the host evolves gets the host's new bundle there; back in
+  the stage its game builds the host's puppet from the host's new creature (the model record the game finds for the
+  puppet's species = the host's, `coop.creations bem` / `speciesof`). BUG-0457 not reproduced that way either.
