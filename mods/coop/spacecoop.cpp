@@ -1034,6 +1034,18 @@ static void terra_tick(double now)
     g_terra_acc[0] = g_terra_acc[1] = g_terra_acc[2] = 0;
 }
 
+// BUG-0749: the planet's terrain data (planet +0x154) integrates the atmosphere / temperature deltas into the planet
+// record (+0xB0 / +0xB4) only while its terraforming flag +0x2030 is on (0xC83280 -> 0xC7FC50): the game sets it when
+// the player's own terraforming tool hits (0x1050BC0 -> 0xC7E490(data, 1)) and clears it when the change is done. A
+// partner's deltas came without it, so they waited in +0x1FD4 / +0x1FD8 and the planet never changed on the partner's
+// game (terra_got counted, the record stayed). Now the received deltas switch the flag on as a tool does.
+// Off: the deltas only (0.7.11).
+static bool g_terra_apply_fix = true;
+COOP_FIX("space.terra_apply", "BUG-0749", g_terra_apply_fix,
+         "space: a partner's terraforming switches the planet's terraforming on, so its deltas change the planet");
+static uintptr_t a_TerraSetActive;
+static uint32_t g_terra_enabled;
+
 static void apply_terra(uint32_t planet_place, const float d[3])
 {
     uint32_t mine = C.my_place ? C.my_place() : 0;
@@ -1047,6 +1059,13 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     for (int i = 0; i < 3; i++)
         if (d[i] != 0 && o_Terra[i])
             o_Terra[i](tm, p, d[i]);
+    if (g_terra_apply_fix && a_TerraSetActive && (d[0] != 0 || d[2] != 0)) { // BUG-0749
+        void* data = !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
+        if (data && !IsBadReadPtr(data, 0x2034) && !F<uint8_t>(data, 0x2030)) {
+            thiscall<void>(a_TerraSetActive, data, 1);
+            g_terra_enabled++;
+        }
+    }
     g_applying = false;
     g_terra_got++;
 }
@@ -1475,6 +1494,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_TerraW = S("Simulator::cTerraformingManager::AddWaterDelta");
     a_TerraT = S("Simulator::cTerraformingManager::AddTemperatureDelta");
     a_TerraMgr = S("Simulator::cTerraformingManager::Get");
+    a_TerraSetActive = S("SporeCoop::PlanetTerrain_SetTerraforming"); // BUG-0749
     a_SpaceGame = S("Simulator::cSimulatorSpaceGame::ptr");
     a_AddItemByKey = S("Simulator::cPlayerInventory::AddItemByKey");
     a_Trading = S("Simulator::cSpaceTrading::Get");
@@ -1606,10 +1626,10 @@ std::string status()
     char b[512];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
     return b + spaceext::status_all();
 }
