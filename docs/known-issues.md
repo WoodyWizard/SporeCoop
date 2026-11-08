@@ -2258,6 +2258,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   (the class of BUG-0662 / BUG-0606); the partner line carries no scale.
 * Reproduce: `tools/lab.py run cell_levelup_view --repeat 4`.
 * Next steps: add the sender's scale to the partner line (or skip a pair whose scales differ) as worlddiff does.
+* Fixed (unreleased, fix/w46-k7-findings): the own Cell trace line carries `wscale=` and the drawn rule compares in
+  one scale (docs/06-testing.md#testing-monitor-cell-scale).
 * Ticket: BUG-0681
 
 ## Creature: the host freezes after a guest's rejoin while its share save is never written (2026-11-07, fix/w46-advance-reg)

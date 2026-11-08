@@ -4913,3 +4913,14 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `multi4_tribe` / `multi4_tribe_slow` / `multi4_creature_seed` / `multi4_creature_slow` (BUG-0167, BUG-0170, ~7 min):
   `coop_multi.py` with 4 players in one lane (instances 20+N / 30+N), 6 min of chaos-bot churn; the creature ones
   replay seed 1035603402 of the BUG-0170 report; `_slow` at 20 fps over the players' networks.
+
+## The monitor's drawn rule in Cell level changes (2026-11-08, fix/w46-k7-findings)
+<a id="testing-monitor-cell-scale"></a>
+
+BUG-0681. In Cell the own trace line ends with `wscale=<k>`, the game's world scale (cellsync::scale_now, G+0x514C)
+its positions are in. During a level change each game rescales at its own moment (docs/re/cell.md#cell-world-scale),
+so for a trace line or two the viewer draws the partner in one scale and the partner's own `pos=` is in another (raw
+distances up to 20-32 m in cell_levelup_view). The drawn rule (tools/tests/monitor.py Drawn.in_scale) converts the
+partner's position into the viewer's scale (pos x own scale / viewer scale) when both own lines of the moment carry a
+scale; logs without it are compared raw. `SPORE_MONITOR='{"drawn_scale": 0}'`: raw (the rule before). Planted cases in
+gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
