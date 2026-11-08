@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-g4-tests
-commits:
+commits: 048b69e8
 tests: tools_selftest (make test)
 signature:
 docs: docs/re/creature.md#creature-gameplay-markers

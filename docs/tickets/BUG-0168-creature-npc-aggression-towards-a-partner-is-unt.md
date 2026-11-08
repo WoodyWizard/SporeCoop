@@ -10,7 +10,7 @@ role:
 versions: 0.7.2.4 (main) and earlier
 fixed_in: unreleased
 branch: fix/w46-g4-tests
-commits:
+commits: acda7997
 tests: creature_aggression (tools/tests/coop_creature_aggression.py)
 signature:
 docs: docs/re/creature.md#creature-npc-aggression

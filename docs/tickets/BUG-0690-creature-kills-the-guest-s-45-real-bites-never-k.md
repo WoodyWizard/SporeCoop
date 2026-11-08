@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-g4-tests
-commits:
+commits: e8ac2f75
 tests: creature_kills
 signature:
 docs: docs/06-testing.md#testing-g4-tests

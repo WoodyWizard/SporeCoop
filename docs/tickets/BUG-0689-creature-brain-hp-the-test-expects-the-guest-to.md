@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-g4-tests
-commits:
+commits: 4d6dc86b
 tests: creature_brain_hp
 signature:
 docs: docs/06-testing.md#testing-g4-tests
