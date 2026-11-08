@@ -4924,3 +4924,18 @@ distances up to 20-32 m in cell_levelup_view). The drawn rule (tools/tests/monit
 partner's position into the viewer's scale (pos x own scale / viewer scale) when both own lines of the moment carry a
 scale; logs without it are compared raw. `SPORE_MONITOR='{"drawn_scale": 0}'`: raw (the rule before). Planted cases in
 gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
+
+## Tests of the 0.7.10 final-check findings (2026-11-08, fix/w46-k7-findings)
+<a id="testing-k7-findings"></a>
+
+* `planner_leave` (BUG-0682, ~4 min, space fixture): the guest calls planner_city() every frame (`coop.civ planner_probe
+  on`) and quits to the galaxy menu 4 times (`coop.menu`); `stale_reads` must stay 0 and no game may fault.
+  SPORE_FIX_OFF=civ.planner_stale: 11-12 stale frames and 8 caught faults in game::cast per run.
+* `civ_village_bundle` (BUG-0684, ~2 min, civ_npc): the guest's pointer is moved over an old village both games have
+  (play_civ's Player.look_at + `move`); `coop.wobj bundle carry` on creatures of each game near it. Checks the game's
+  object lists: the guest's own carried food stays 10 s, the host's carried food is in no hand of the guest's own
+  creatures. Not every member is free: `carry` refuses a full hand; a member delivers its food to the mat by itself
+  (the bundle is freed: `bundle take` only on listed bundles).
+* `puppet_unground` (BUG-0683, ~2 min, creature fixture): `coop.puppet sink 0.69 0.7` puts the partner's puppet in the
+  ground on the host; `coop.puppet agl` samples it. SPORE_FIX_OFF=creature.puppet_unground: stays under for 4 s (the
+  game's own update put it back in 1 of 4 rounds).
