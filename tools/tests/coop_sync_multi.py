@@ -12,6 +12,7 @@ A measurement tool, no pass / fail of its own.
   --food N                  cell: the host's food progress set to N first (level-ups)
   --jsonl out.jsonl         every object's error, key and offset, one line per guest check
 """
+# suite: none (a measurement tool without a pass / fail of its own: per-player sync accuracy, BUG-0275)
 import argparse
 import json
 import os
