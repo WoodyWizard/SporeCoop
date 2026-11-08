@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+- Cell: the move to the Creature stage is a vote now. When the host clicks the check in History at the end of the
+  Cell stage, everybody gets "wants to move on to the Creature stage: press I'm ready (F9)"; the stage changes when
+  everybody is ready, after 60 s or with the host's "Start now". The first creature editor that follows no longer
+  asks again: a player who has arrived counts as ready. A guest's own click on the check is its "I'm ready" (BUG-0315).
+- Creature: the host's evolution (the mating call) no longer waits for the others: the host's editor opens at once,
+  and every guest gets "Evolve now" in the co-op window for 90 s, which opens its own editor whenever it wants (also
+  after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
+
 ### Fixed
 - Space: when both players are on the same planet, the guest now sees the same time of day (sky) as the host (BUG-0712).
 - Creature: the eggs your family lays in your own nest are now there for every player, not only for the host (BUG-0660).
@@ -63,15 +72,6 @@
 - Space: the partner's ship shows its real health on the other screen, not always full (BUG-0697).
 - Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within about a
   third of a second instead of up to one second (BUG-0699).
-
-### Changed
-- Cell: the move to the Creature stage is a vote now. When the host clicks the check in History at the end of the
-  Cell stage, everybody gets "wants to move on to the Creature stage: press I'm ready (F9)"; the stage changes when
-  everybody is ready, after 60 s or with the host's "Start now". The first creature editor that follows no longer
-  asks again: a player who has arrived counts as ready. A guest's own click on the check is its "I'm ready" (BUG-0315).
-- Creature: the host's evolution (the mating call) no longer waits for the others: the host's editor opens at once,
-  and every guest gets "Evolve now" in the co-op window for 90 s, which opens its own editor whenever it wants (also
-  after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ## [0.7.10.1] - 2026-11-07
 
