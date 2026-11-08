@@ -2156,7 +2156,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: inferred from the code (tribe.cpp, "no new mirror for a body"); not checked whether the shared save (written
   before the death in the test) or a later one holds the body as an object of the guest's own world.
 * Not checked: what the guest's screen shows at the body's place.
-* Next steps: 0.7.10.
+* Fixed (2026-11-08, fix/w46-k8-open): `tribe.join_body` makes the body's mirror on the joined guest (test
+  tribe_join_body).
 * Ticket: BUG-0665
 ## Cell: no part token can be collected after the Goldie's demise tutorial (2026-11-07, fix/w46-part-token)
 <a id="issue-cell-goldie-locks"></a>

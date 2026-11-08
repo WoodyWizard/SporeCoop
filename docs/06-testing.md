@@ -4939,3 +4939,11 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   (the host's real main menu and reload), `space_reward_away` / `space_contract_clock` (`coop.space away`,
   `coop.space contracts result`), `res_cause`, `space_partner_hp` (`coop.puppet hp`), `species_table`,
   `creature_stun_proxy`, `tribe_member_age` (BUG-0691..0700).
+## A guest joins while a body lies: tribe_join_body (2026-11-08, fix/w46-k8-open)
+<a id="testing-tribe-join-body"></a>
+
+* `coop_tribe_dead_member.py --join-body` (suite `tribe_join_body`, warm, ~1.6 min, tribe fixture): the --rejoin flow
+  (the guest leaves and joins again; the host's own member is killed once the host has saved the world for it), and
+  every 4 s while the host's body lies out of its tribe's list: each host citizen within 6 m of the victim's place
+  has a citizen within 3 m on the guest's game (`coop.census all`). BUG-0665; `SPORE_FIX_OFF=tribe.join_body` fails
+  (lab 20261108-003733: 0 of 6 samples), on passes (20261108-003738, 20261108-003944).

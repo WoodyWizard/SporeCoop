@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
+  ground now sees that body too (BUG-0665).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
   the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
   with the path the host's ship flew in the last second (BUG-0547).
