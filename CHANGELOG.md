@@ -10,6 +10,28 @@
   second instead of five (BUG-0659).
 - Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
   ground now sees that body too (BUG-0665).
+- Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer
+  run on the old way through a latency spike when they turn or stop meanwhile (members were shown up to 8-9 m off,
+  animals jumped, a ship's copy flew 11 m past where it had stopped) (BUG-0674).
+- Creature: the copy of an animal thrown by a hit flies with it over a bad network instead of standing and stepping
+  after it (BUG-0675).
+- Tribe: over a home connection with latency spikes, or on a busy PC, the host's tribe members are shown where the
+  host has them now again, not 0.2-0.4 s behind (BUG-0651).
+- Creature: the partner's creature no longer walks on past where the partner stopped during a latency spike
+  (BUG-0680).
+- Space: a guest now sees the ships the host's game runs (pirates, raiders, NPC empires) fire their beams and
+  projectiles; before, they fought without a shot on the guest's screen and only the damage came (BUG-0677).
+- Space: a guest's own cargo hold also comes back when the host restarted its game between the guest's leave and its
+  join, keeps what changed in it while the guest was away, keeps the guest's own number of cargo slots, and brings back
+  plant, animal and artifact cargo the host's copy did not have (BUG-0679).
+- Civilization: a guest's game could stall for a moment and log over a hundred caught errors next to an old tribe
+  village whose members carried food; the co-op no longer takes food from, or hands food to, the guest's own
+  creatures outside the Tribe stage (BUG-0684).
+- Creature: after the evolution, while the brain upgrade caption played at the nest, a partner's creature could stand
+  half in the ground on another player's screen until it walked; it is put back onto the ground now (BUG-0683).
+- Space: a guest's game could hit an error (caught, logged as "SporeCoop caught an error in its own code") right
+  after leaving a planet for the galaxy menu; the mod no longer reads the city planner the game has just freed
+  (BUG-0682).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
   the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
   with the path the host's ship flew in the last second (BUG-0547).

@@ -84,6 +84,7 @@ PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
 PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
 PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
 PTR_STILL = re.compile(r' ptr_still=([\d.]+)')
+WSCALE = re.compile(r' wscale=([-\d.e+naif]+)')
 DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
@@ -93,7 +94,8 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
-                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0)
+                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
+                drawn_scale=1, drawn_age=1.0)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -103,7 +105,8 @@ FIELDS = {
     'drawn': "partner line: `drawn=(x y z) drawn_v=<m/s>` = the puppet (Tribe / Civ: the pointer marker) read back "
              "from the game at the start of the frame that writes the line (before any driving), and the "
              "partner's speed as seen here; trace lines are written at the session clock's 10 s marks; Tribe / Civ "
-             "own line: `ptr_still=<s>` = how long the own pointer has stood still (BUG-0416)",
+             "own line: `ptr_still=<s>` = how long the own pointer has stood still (BUG-0416); Cell own line: `wscale=<k>` = "
+             "the game's world scale its positions are in (BUG-0681)",
     'ground': "own and partner lines in Creature / Tribe: `agl=<m>` = height over this game's terrain "
               "(cPlanetModel::GetHeightAt) of the avatar / puppet as drawn; Tribe: `agl=<lowest> agl_hi=<highest>` "
               "of the player's tribe members",
@@ -192,6 +195,11 @@ def monitor_fields(r):
     m = PTR_STILL.search(rest)
     if m:
         r['ptr_still'] = float(m.group(1))
+    m = WSCALE.search(rest)
+    if m:
+        k = num(m.group(1))
+        if k == k and k > 0:
+            r['wscale'] = k
     return r
 
 
@@ -544,6 +552,16 @@ class Hook(Invariant):
 class Drawn(Hook):
     name, field, needs = 'drawn', 'drawn=', FIELDS['drawn']
 
+    def in_scale(self, o, v):
+        """BUG-0681: the subject's own position in the viewer's world scale. In Cell each game rescales its world at its
+        own moment of a level change (~3 s apart, docs/re/cell.md#cell-world-scale): the viewer draws the puppet in its
+        scale, the subject's line has its own (pos x scale is the same through a change, as in worlddiff BUG-0662).
+        Lines without `wscale=` are compared raw (drawn_scale 0: always raw, the rule before it)"""
+        ko, kv = o.get('wscale'), v.get('wscale')
+        if not self.c['drawn_scale'] or o['stage'] != 'Cell' or not ko or not kv or abs(ko / kv - 1.0) < 1e-4:
+            return o['pos']
+        return tuple(x * ko / kv for x in o['pos'])
+
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
@@ -567,9 +585,16 @@ class Drawn(Hook):
                 if p['stage'] in ('Tribe', 'Civilization') and 'ptr_still' in o and self.c['drawn_still'] >= 0 and \
                         o['ptr_still'] < self.c['drawn_still'] + max(p['rtt'], 0) / 1000.0:
                     return False
+                # BUG-0711: a copy without news for over drawn_age s (the partner line's state_age) can not be where the
+                # partner is now: a guest's link dead for 5.5 s both ways (the host: "Bob is not responding" too) drew
+                # Carol 16.5 m off at state_age 3.6 s (multi4_creature_slow, lab 20261108-012301 of fix/w46-k7-findings);
+                # that is the link's (the `link` / `puppet` invariants), not the drawing's. (drawn_age < 0: the rule
+                # before it, SPORE_MONITOR='{"drawn_age": -1}')
+                if self.c['drawn_age'] >= 0 and p['age'] > self.c['drawn_age'] + max(p['rtt'], 0) / 1000.0:
+                    return False
                 lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
                                                                        + abs(o['t'] - p['t']))
-                d = dist(p['drawn'], o['pos'])
+                d = dist(p['drawn'], self.in_scale(o, v))
                 p['_drawn'] = (d, lim, subj)
                 return d > lim
             for a, b in self.runs(lst, bad, self.c['drawn_n'], None):

@@ -864,6 +864,26 @@ static int SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b
         H->log(M, SK_INFO, "world: the galaxy menu intro starts (mode %08X)", game::mode_id());
     return o_PlayCinematic(mgr, name, a, b, c, d, e);
 }
+// tests (BUG-0167, coop_tribe_camera_null.py): the menu intro's timer firing in the first frames of a stage, made on
+// purpose (`coop.introstage`): the natural race needs a join ~12.5 s after the guest's menu came up, which a slow lane
+// misses (its console answers later than that). Started as the menu's handler starts it, through the BUG-0626 hook
+// (world.intro_at_once on: not started), in the first tick the game is in a stage after the next load.
+static bool g_intro_in_stage;
+void arm_intro_in_stage() { g_intro_in_stage = true; }
+static void intro_in_stage_tick()
+{
+    if (!g_intro_in_stage || !in_stage(game::mode_id()))
+        return;
+    g_intro_in_stage = false;
+    uintptr_t get = H->sym("Simulator::cCinematicManager::Get");
+    void* cm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (cm && o_PlayCinematic) {
+        H->log(M, SK_INFO, "world: tests: the galaxy menu intro started in the first tick of the stage (mode %08X, BUG-0167)",
+               game::mode_id());
+        h_PlayCinematic(cm, "GGE_intro", 1, 0, 0, 0, 0);
+    }
+}
+
 static void install_intro_hook()
 {
     if (uintptr_t a = H->sym("Simulator::cCinematicManager::PlayCinematic"))
@@ -1076,6 +1096,7 @@ bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on
 
 void guest_tick()
 {
+    intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
     deferred_tick();
@@ -1084,6 +1105,7 @@ void guest_tick()
 
 void tick(net::Session& s)
 {
+    intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
     deferred_tick();

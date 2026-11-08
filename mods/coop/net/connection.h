@@ -79,6 +79,15 @@ public:
     // connection and late packets of the old one are told apart instead of corrupting the new one
     uint32_t conn_id = 0;
     float rtt_ms = 100.f;
+    // BUG-0651: the last kRttRing round-trip samples (ms) and their q-quantile (-1 under 16 samples). The mean
+    // above follows every latency spike and both games' frame times; a low quantile is the link's own latency
+    static constexpr size_t kRttRing = 128;
+    float rtt_ring[kRttRing] = {};
+    uint32_t rtt_ring_n = 0;
+    float rtt_quantile(float q) const;
+    // the time (ms) of this game's previous read of the socket (Session::update): a sample's ack came in between that
+    // read and this one, so half of that wait is taken off the ring's sample (a loaded game's own frame time)
+    uint32_t poll_prev_ms = 0;
     uint32_t last_recv_ms = 0;
     uint32_t created_ms = 0;
     ConnStats stats;

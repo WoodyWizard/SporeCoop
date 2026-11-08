@@ -260,6 +260,8 @@ add('npc_rejoin_paused', P + 'coop_npc_rejoin_paused.py', minutes=4)  # BUG-0125
 add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the world after an evolution that starts a migration waits for its cinematic: the guest grows up and migrates (--without-fix fails)
 add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
 add('anim_teardown', P + 'coop_anim_teardown.py', minutes=8)  # BUG-0091: no animation on a puppet freed by a world teardown
+add('planner_leave', P + 'coop_planner_leave.py', minutes=8)  # BUG-0682: the city planner's editor is not trusted after the Space leaving frame (SPORE_FIX_OFF=civ.planner_stale must FAIL)
+add('civ_village_bundle', P + 'coop_civ_village_bundle.py', minutes=6)  # BUG-0684: in Civ the mod takes no food from the guest's own creatures and hands them none (SPORE_FIX_OFF=wobj.bundle_civ_carried must FAIL)
 add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts a new game (typed planet name) next to an old one: the guest gets the new one
 add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3', minutes=10)  # two new players (empty profiles), a new Cell game from the stage wizard, the guest joins in the intro: both eat (BUG-0279)
 add('cell_far_guest', P + 'coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4', minutes=10)  # a guest far from the host finds food, eats it, the host counts it (BUG-0174, BUG-0279; SPORE_FIX_OFF=cell.partner_tiles fails)
@@ -270,6 +272,7 @@ add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=False, mi
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_siege_npc', P + 'coop_civ_siege_npc.py', warm=True, minutes=3, fixture='civ_npc')  # an NPC nation's army is no second player of a joint siege (BUG-0420; SPORE_FIX_OFF=civ.siege_players fails)
 add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixture='space')  # the host's escort's hits on a guest and the guest's on the escort are not relayed (BUG-0420; SPORE_FIX_OFF=space.friendly_hits fails)
+add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
 add('space_own_save', P + 'coop_space_own_save.py', minutes=6, fixture='space')  # a guest in a Space save of its own keeps its own money (BUG-0709; SPORE_FIX_OFF=res.space_save fails)
@@ -403,6 +406,8 @@ add('npc_walk_slow_creature', P + 'coop_npc_walk_slow.py --fixture creature', mi
 add('npc_walk_slow', P + 'coop_npc_walk_slow.py', minutes=3, fixture='tribe')  # BUG-0503: a Tribe animal's proxy keeps up on a 4 fps guest (SPORE_FIX_OFF=npc.proxy_slow_frames fails)
 add('npc_air', P + 'coop_npc_air.py', minutes=3, fixture='creature')  # BUG-0550: a host NPC held 4 m over its ground is drawn at that height on the guest, on its ground before and after (SPORE_FIX_OFF=npc.air fails)
 add('own_ground', P + 'coop_own_ground.py', minutes=3, fixture='creature')  # BUG-0592: the partner's creature put on the host's on a slope pushes it; neither own creature is left in the ground (SPORE_FIX_OFF=creature.own_ground fails)
+add('puppet_unground', P + 'coop_puppet_unground.py', minutes=3, fixture='creature')  # BUG-0683: a partner's standing puppet pressed into the ground is put back onto it (SPORE_FIX_OFF=creature.puppet_unground fails)
+add('keepalive_stall', P + 'coop_keepalive_stall.py', minutes=2, fixture='creature')  # BUG-0687 diagnostics: a stall of the host's frames while its main thread pumps names its call chain and windows
 add('puppet_slope', 'SPORE_NET=player ' + P + 'coop_puppet_walk.py --dir guest --guest-fps 30 --goto=-195,-465,-45 --secs 40 --ground', minutes=4, fixture='creature')  # BUG-0366: the guest at 30 fps over a home connection (spikes, loss bursts) walks on a slope of the fixture: its puppet on the host never starts to fall ("constantly jumping"; SPORE_FIX_OFF=creature.puppet_ground fails)
 add('puppet_under', 'PUPPET_WALK_CMDS="coop.track lift -1" ' + P + 'coop_puppet_walk.py --dir guest --secs 25 --stand 8 --ground', minutes=4, fixture='creature')  # BUG-0367: the guest's states 1 m under the host's ground (coop.track lift -1): its puppet is never drawn under the ground (SPORE_FIX_OFF=creature.puppet_ground fails)
 add('puppet_stops', 'SPORE_NET=player ' + P + 'coop_puppet_walk.py --dir both --guest-fps 30 --goto=-195,-465,-45 --stop-walk --secs 45', minutes=7, fixture='creature')  # BUG-0408: short walks with stops on a slope over the player network; the puppet against the walker's own creature at the same moment (coop.bodyrec): how far it slides past the stop
@@ -492,6 +497,7 @@ add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Spa
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
 add('space_items_rejoin', P + 'coop_space_items_rejoin.py', minutes=5, fixture='space')  # a guest's own cargo hold is its own again after it rejoins, never the host's (BUG-0678; SPORE_FIX_OFF=space.keep_items fails)
+add('space_items_limits', P + 'coop_space_items_limits.py', minutes=6, fixture='space')  # a guest's own hold survives a host restart, keeps what changed while away, its own slots and artifact cargo (BUG-0679; SPORE_FIX_OFF=space.keep_items_local / space.keep_items_slots / space.keep_items_cargo fail)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
 add('space_share_wait', P + 'coop_space_share_wait.py', minutes=5)  # a guest waiting for the world while the host is on a planet is told why; the host's trace says share_wait=planet (BUG-0382; SPORE_FIX_OFF=world.share_wait_notice fails)

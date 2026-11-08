@@ -249,6 +249,56 @@ constexpr double kStopHold = 0.5; // s
 constexpr float kStopNear = 1.5f; // m
 constexpr float kStopSpeed = 4.f;  // m/s: the hold's own approach
 
+// BUG-0683 / BUG-0504 for the partners' creatures: after the evolution editor all players come back on one point of the
+// nest; while the brain upgrade caption plays (busy=cinematic,input_lock) the game separates the creatures stacked there
+// sideways and pressed a standing puppet 0.55-0.74 m under its terrain (the monitor's ground rule in campaign_tribe,
+// rel/0.7.5 and rel/0.7.10). The partner stands, so the drive placed nothing and the puppet stayed in the ground until
+// the caption ended. creature.own_ground covers the own creature only. With creature.puppet_unground a puppet whose
+// partner stands (under 0.3 m/s, on its ground), that has been more than kPupUnder under this game's terrain
+// (GetHeightAt) for kPupUnderFor s, is put onto it where it stands (or at its target's height on a mound next to it).
+// `coop.fix creature.puppet_unground off`: 0.7.10.
+static bool g_puppet_unground_fix = true;
+COOP_FIX("creature.puppet_unground", "BUG-0683", g_puppet_unground_fix,
+         "creature: a partner's standing creature pushed into the ground (the nest after the evolution) is put back onto it");
+constexpr float kPupUnder = 0.25f;     // m under GetHeightAt
+constexpr double kPupUnderFor = 0.5;   // s
+uint32_t g_puppets_ungrounded = 0;     // tests (coop.puppet agl)
+
+static void puppet_unground(void* p, const net::PlayerState& s_in, const net::Vec3& target, bool air, drive::State& ds,
+                            double now)
+{
+    if (!game::in_creature_stage() || air || (s_in.flags & net::PF_DEAD) || drive::speed(s_in.vel) >= 0.3f) {
+        ds.under_since = -1;
+        return;
+    }
+    const net::Vec3 q = game::position(p);
+    const float r = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z), g = r > 1.f ? game::ground_radius(q) : 0.f;
+    if (!(g > 0 && r - g < -kPupUnder && r - g > -drive::kOutMax)) {
+        ds.under_since = -1;
+        return;
+    }
+    if (ds.under_since < 0)
+        ds.under_since = now;
+    if (now - ds.under_since < kPupUnderFor)
+        return;
+    static uint32_t said = 0;
+    if (said++ < 5 && g_host_for_modes)
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "creature: a partner's standing puppet stood %.2f m under this game's ground "
+                              "for %.1f s (%.1f m from its target)%s", g - r, now - ds.under_since, net::dist(q, target),
+                              g_puppet_unground_fix ? ": put onto it (creature.puppet_unground)" : "");
+    ds.under_since = -1;
+    if (!g_puppet_unground_fix)
+        return;
+    float want = g;
+    const float tr = std::sqrt(target.x * target.x + target.y * target.y + target.z * target.z);
+    if (net::dist(q, target) < 2.f && tr > want && tr - g < drive::kOverGround) // (a mound: as high as its partner stands)
+        want = tr;
+    const float k = want / r;
+    game::place(p, {q.x * k, q.y * k, q.z * k}, game::orientation(p));
+    ds.ungrounded++;
+    g_puppets_ungrounded++;
+}
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
@@ -269,6 +319,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
     }
     if (g_puppet_deep_fix && game::in_creature_stage())
         s.pos = drive::out_of_ground(s.pos, true); // BUG-0513: 3-15 m under this game's ground
+    puppet_unground(p, s_in, s.pos, air, ds, now); // BUG-0683
     const bool jumped = g_puppet_jump_fix && ds.jump_have && net::dist(s.pos, ds.jump_from) > kJumpM;
     ds.jump_from = s.pos;
     ds.jump_have = true;
@@ -506,6 +557,10 @@ COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: 
 COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
 COOP_FIX("drive.lead_smooth", "BUG-0619", net::g_lead_smooth_fix, "tribe, creature: a remote body's lead target goes on smoothly after a late state (Tribe members jumped ~1 m per frame over a jittery network)");
 COOP_FIX("drive.lead_keep", "BUG-0651", net::g_lead_keep_fix, "tribe: the members are shown where the host has them now over any link (the lead no longer goes off over 100 ms, a late state is caught up at up to twice the walk)");
+COOP_FIX("drive.lead_fall", "BUG-0674", net::g_lead_fall_fix, "every stage: a remote body is moved on past its last state at a falling speed through a latency spike or a loss burst (members 8-9 m off, NPCs teleported, ships past a stop)");
+COOP_FIX("drive.puppet_fall", "BUG-0680", net::g_puppet_fall_fix, "creature: the partner's creature stops where the partner stopped in a latency spike instead of walking on past it");
+COOP_FIX("drive.lead_throw", "BUG-0675", net::g_lead_throw_fix, "creature, tribe: the copy of a thrown NPC flies with it instead of waiting for each of its states");
+COOP_FIX("drive.lead_low", "BUG-0651", net::g_lead_low_fix, "tribe: the member lead stays on over a player network and on a loaded PC (the rule reads the link's own latency, not the mean round trip)");
 COOP_FIX("drive.lead_late", "BUG-0650", net::g_lead_late_fix, "tribe: a member's state that arrives late (a latency spike) is brought in over time, not at once (members jumped ~0.9 m per frame at a walk start in a spike)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");

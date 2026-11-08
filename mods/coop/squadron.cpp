@@ -138,6 +138,78 @@ static bool friendly(void* ship)
     return mine != 0xFFFFFFFFu && mine != 0 && F<uint32_t>(ship, kPol) == mine;
 }
 
+// ---------------- BUG-0677: the host's NPC ship shots on the guests ----------------
+// A guest's mirrors never fire (h_FireTool returns 0 for them: the host's game decides the fights and relays the hits), so
+// a guest saw the host's NPC ships fight without a beam (the detector: default_beam_projectile in the host's game only).
+// Now the host counts the shots its NPC ships make (FireTool returned true; the weapon's slot in the ship +0x790..+0x7A4,
+// its target: a ship of the host's list, a player's ship, or a noun near a place) and sends them in MSG_UFO_STATE with
+// chunk kShotChunk / chunks 0 (an older guest drops it: chunks 0 fails guest_state's check). The guest fires its mirror's
+// own weapon (the same slot) at the same target with the game's FireTool, so its game makes the projectile, the beam and
+// the explosion. Their hits do nothing there: a mirror's hit on the own ship, a puppet, a mirror, a posse ship or (civ.cpp
+// cosmetic_hit) a building is dropped; the host's MSG_UFO_DAMAGE brings the real damage. The pattern of civ.shots
+// (BUG-0477, BUG-0530, BUG-0534, BUG-0688). `coop.fix space.shots off`: mirrors never fire (0.7.10).
+static bool g_shots_fix = true;
+COOP_FIX("space.shots", "BUG-0677", g_shots_fix, "space: a guest sees the host's NPC ships fire (the copies hurt nothing there)");
+constexpr uint8_t kShotChunk = 0xFE;
+constexpr uintptr_t kWeapons = 0x790; // mpNPCWeapon and the ground / near / medium / far air / abduct tools: 6 slots
+constexpr double kShotSend = 0.2, kShotKeep = 1.0, kShotRetry = 0.1;
+struct ShipShot {
+    uint8_t count = 0;  // host: the shots that left (FireTool true), wrapping; guest: the host's count
+    uint8_t done = 0;   // guest: the host's shots this game fired
+    uint8_t slot = 0xFF; // the weapon's slot (0..5), 0xFF: the combatant's weapon (vt 0x14)
+    int32_t dp = -1, a5 = 0; // FireTool's damage point and arg 5, as the host's game passed them
+    net::Vec3 aim{};
+    uint8_t tkind = 0;  // 0 none, 1 a host NPC ship (tid), 2 a player's ship (tid = player), 3 tnoun near tpos, 4 not here
+    uint16_t tid = 0;
+    uint32_t tnoun = 0;
+    net::Vec3 tpos{};   // the target's place in the host's game
+    double seen = -100; // host: the last shot; guest: the last list that had it
+    double tried = -100; // guest: the last FireTool of the mirror
+};
+static std::unordered_map<uint16_t, ShipShot> g_ship_shots, g_ship_shots_in; // host / guest: ship id -> its shots
+static double g_shots_sent_at = -100;
+static bool g_shot_new;
+static double g_shot_at_me_until = -100; // guest: a copied shot was aimed at this game's own ship until then
+static uintptr_t a_ToolMgrGet, a_ToolMouseUp;
+static uint32_t g_shots_seen, g_shots_tx, g_shots_untracked, g_shots_rx, g_shots_fired, g_shots_refused, g_shots_nomirror,
+    g_shots_notool, g_shots_notarget, g_shots_released, g_shot_hits_dropped, g_shot_nullhits_dropped;
+
+static bool in_image(uintptr_t a)
+{
+    static uintptr_t lo, hi;
+    if (!hi)
+        if (HMODULE exe = GetModuleHandleW(nullptr)) {
+            auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+            lo = (uintptr_t)exe;
+            hi = lo + nt->OptionalHeader.SizeOfImage;
+        }
+    return a >= lo && a < hi;
+}
+// a game tool (cSpaceToolData) object: readable, its vtable in the game's image
+static bool tool_ok(void* t) { return t && !IsBadReadPtr(t, 0x1C0) && in_image(*(uintptr_t*)t); }
+
+static void* weapon_in(void* u, uint8_t slot)
+{
+    void* t = nullptr;
+    if (slot < 6)
+        t = F<void*>(u, kWeapons + 4u * slot);
+    else {
+        void* comb = (uint8_t*)u + kCombat;
+        uintptr_t vt = *(uintptr_t*)comb;
+        if (in_image(vt) && !IsBadReadPtr((void*)vt, 0x18) && in_image(((uintptr_t*)vt)[0x14 / 4]))
+            t = vcall<void*>(comb, 0x14 / 4); // the combatant's weapon, as cCombatSimulator::Update gets it
+    }
+    return tool_ok(t) ? t : nullptr;
+}
+
+bool shot_is_cosmetic(void* att)
+{
+    if (!g_shots_fix || !att || !is_guest() || !in_space() || !g_mirror_of.count((uint8_t*)att - kCombat))
+        return false;
+    g_shot_hits_dropped++;
+    return true;
+}
+
 // ---------------- hooks ----------------
 using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*, void*);
 static TakeDamage_t o_TakeDamage;
@@ -150,6 +222,10 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
     void* u = (uint8_t*)combat - kCombat;
     void* me = player_ufo();
     void* att = attacker ? (uint8_t*)attacker - kCombat : nullptr;
+    if (is_guest() && g_shots_fix && att && g_mirror_of.count(att) && !g_mirror_of.count(u) && u != me) {
+        g_shot_hits_dropped++; // BUG-0677: a mirror's copied shot hurts nothing here (before the rivalry relay)
+        return 0;
+    }
     if (rivalry::on_hit(u, att, dmg, type, dir))
         return 0; // our hit on the ship of a player at war with us: its owner takes it (space_rivalry.cpp)
     if (is_guest()) {
@@ -169,6 +245,14 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
         }
         if (u == me && att && g_mirror_of.count(att))
             return 0; // the host decides when its ships hit us (MSG_UFO_DAMAGE)
+        if (g_shots_fix && att && g_mirror_of.count(att)) { // BUG-0677: a copied shot hits a puppet or an escort
+            g_shot_hits_dropped++;
+            return 0;
+        }
+        if (g_shots_fix && u == me && !att && H->time_seconds() < g_shot_at_me_until) {
+            g_shot_nullhits_dropped++; // BUG-0677: a copied shot's hit without an attacker (an area's tick)
+            return 0;
+        }
     }
     if (is_host() && C.puppet_owner) {
         int owner = C.puppet_owner(u);
@@ -190,7 +274,53 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
     return o_TakeDamage(combat, dmg, pol, type, dir, attacker);
 }
 
-// mirrors never fire on their own (the host's ships shoot on the host)
+// BUG-0677 (host): a shot one of the listed NPC ships made
+static void ship_fired(void* tool, void* u, const float* aim, int dp, int a5, void* target)
+{
+    if (!g_shots_fix || !is_host() || !in_space() || !aim)
+        return;
+    auto it = g_hid.find(u);
+    if (it == g_hid.end()) {
+        g_shots_untracked++;
+        return;
+    }
+    ShipShot s;
+    s.aim = {aim[0], aim[1], aim[2]};
+    if (!std::isfinite(s.aim.x) || !std::isfinite(s.aim.y) || !std::isfinite(s.aim.z))
+        return;
+    for (uint8_t i = 0; i < 6; i++)
+        if (F<void*>(u, kWeapons + 4u * i) == tool)
+            s.slot = i;
+    s.dp = dp;
+    s.a5 = a5;
+    if (target) {
+        void* t = (uint8_t*)target - kLoco;
+        auto th = g_hid.find(t);
+        int owner = t == player_ufo() ? 0 : C.puppet_owner ? C.puppet_owner(t) : -1;
+        if (th != g_hid.end()) {
+            s.tkind = 1;
+            s.tid = th->second;
+            s.tpos = pos_of(t);
+        } else if (owner >= 0) {
+            s.tkind = 2;
+            s.tid = (uint16_t)owner;
+            s.tpos = pos_of(t);
+        } else if (!IsBadReadPtr(t, 0x40) && in_image(*(uintptr_t*)t) && game::object_alive(t) &&
+                   game::object_position(t, s.tpos)) {
+            s.tkind = 3;
+            s.tnoun = game::noun_id(t);
+        } else
+            s.tkind = 4; // a target the guest cannot find: it does not fire this one (a beam needs its target, BUG-0534)
+    }
+    s.seen = H->time_seconds();
+    auto& e = g_ship_shots[it->second];
+    s.count = (uint8_t)(e.count + 1);
+    e = s;
+    g_shot_new = true;
+    g_shots_seen++;
+}
+
+// mirrors never fire on their own (the host's ships shoot on the host); BUG-0677: the guest fires the host's shots
 using FireTool_t = int(SK_THISCALL*)(void*, void*, void*, const float*, int, int, void*, int);
 static FireTool_t o_FireTool;
 static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const float* aim, int dp, int a5, void* target,
@@ -209,6 +339,8 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
         return 0;
     }
     int r = o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
+    if ((r & 0xFF) && owner) // BUG-0677
+        ship_fired(tool, (uint8_t*)owner - kLoco, aim, dp, a5, target);
     // BUG-0477: the host's Civ shots go to the guests; BUG-0530: FireTool's al tells whether a shot left
     civ::fire_observed(tool, owner, aim, target, (r & 0xFF) != 0);
     civ::fire_local(owner, (uintptr_t)__builtin_return_address(0), (r & 0xFF) != 0);
@@ -354,6 +486,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SpawnUFO = H->sym("Simulator::SpawnUFO");
     a_PlayerUFOGet = H->sym("Simulator::cSimulatorPlayerUFO::Get");
     a_PlayerEmpireID = H->sym("Simulator::GetPlayerEmpireID");
+    a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");          // BUG-0677
+    a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp");
     g_ok = a_GetAllUFOs && a_TakeDamage && a_FireTool && a_SpawnUFO && a_PlayerUFOGet && a_PlayerEmpireID;
     if (!g_ok) {
         H->log(M, SK_WARN, "squadron: symbols missing, space co-op disabled");
@@ -431,6 +565,44 @@ static void host_tick(double now)
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
                 C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+    }
+}
+
+// BUG-0677: the shots of the last second, every 0.2 s, a new one at once (at most every 0.05 s)
+static void host_send_shots(double now)
+{
+    bool soon = g_shot_new && now - g_shots_sent_at >= 0.05;
+    if (!g_shots_fix || (now - g_shots_sent_at < kShotSend && !soon))
+        return;
+    g_shots_sent_at = now;
+    g_shot_new = false;
+    std::vector<std::pair<uint16_t, const ShipShot*>> list;
+    for (auto it = g_ship_shots.begin(); it != g_ship_shots.end();) {
+        if (now - it->second.seen > kShotKeep || !g_hid_rev.count(it->first)) {
+            it = g_ship_shots.erase(it);
+            continue;
+        }
+        list.emplace_back(it->first, &it->second);
+        ++it;
+    }
+    constexpr size_t kPerMsg = 24; // 43 bytes each: one message stays under kMaxPacket
+    for (size_t at = 0; at < list.size() && at < 4 * kPerMsg; at += kPerMsg) {
+        size_t n = std::min(kPerMsg, list.size() - at);
+        net::Writer w;
+        w.u16(0); w.u8(kShotChunk); w.u8(0);
+        w.u8((uint8_t)n);
+        for (size_t i = at; i < at + n; i++) {
+            const ShipShot& s = *list[i].second;
+            w.u16(list[i].first); w.u8(s.count); w.u8(s.slot);
+            w.u32((uint32_t)s.dp); w.u32((uint32_t)s.a5);
+            w.f32(s.aim.x); w.f32(s.aim.y); w.f32(s.aim.z);
+            w.u8(s.tkind); w.u16(s.tid); w.u32(s.tnoun);
+            w.f32(s.tpos.x); w.f32(s.tpos.y); w.f32(s.tpos.z);
+        }
+        for (auto& pl : C.sess->players())
+            if (pl.id != 0)
+                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        g_shots_tx++;
     }
 }
 
@@ -519,12 +691,153 @@ static void destroy_mirror(void* u, bool explode)
     g_applying = false;
 }
 
+static void guest_shots(net::Reader& r, uint8_t n)
+{
+    if (!g_shots_fix)
+        return;
+    double now = H->time_seconds();
+    for (int i = 0; i < n && r.ok(); i++) {
+        ShipShot s;
+        uint16_t id = r.u16();
+        s.count = r.u8(); s.slot = r.u8();
+        s.dp = (int32_t)r.u32(); s.a5 = (int32_t)r.u32();
+        s.aim.x = r.f32(); s.aim.y = r.f32(); s.aim.z = r.f32();
+        s.tkind = r.u8(); s.tid = r.u16(); s.tnoun = r.u32();
+        s.tpos.x = r.f32(); s.tpos.y = r.f32(); s.tpos.z = r.f32();
+        if (!r.ok() || !net::finite3(&s.aim.x) || !net::finite3(&s.tpos.x))
+            return;
+        auto f = g_ship_shots_in.find(id);
+        bool fresh = f == g_ship_shots_in.end();
+        auto& e = g_ship_shots_in[id];
+        uint8_t done = fresh ? (uint8_t)(s.count - 1) : e.done; // a new shooter: its latest shot, not the old ones
+        if ((uint8_t)(s.count - done) > 4)
+            done = (uint8_t)(s.count - 4); // a burst lost on the way: at most 4 behind
+        double tried = fresh ? -100 : e.tried;
+        e = s;
+        e.done = done;
+        e.tried = tried;
+        e.seen = now;
+        g_shots_rx++;
+    }
+}
+
+// BUG-0677: this game's copy of a ship's weapon stops when the host's list no longer has the ship (a beam or an area
+// left firing stays in this game otherwise, as BUG-0530's AoE did in Civ)
+static void release_shot(uint16_t id, const ShipShot& s)
+{
+    auto m = g_mirrors.find(id);
+    void* u = m == g_mirrors.end() ? nullptr : m->second.u;
+    if (!a_ToolMouseUp || !a_ToolMgrGet || !u || !live(u))
+        return;
+    void* tool = weapon_in(u, s.slot);
+    if (!tool || !F<uint8_t>(tool, 0x80)) // +0x80: firing (FireTool sets it, OnMouseUp clears it)
+        return;
+    if (void* mgr = skg::cdecl_call<void*>(a_ToolMgrGet)) {
+        thiscall<int>(a_ToolMouseUp, mgr, tool);
+        g_shots_released++;
+    }
+}
+
+static void* shot_target(const ShipShot& s)
+{
+    if (s.tkind == 1) {
+        auto m = g_mirrors.find(s.tid);
+        void* t = m == g_mirrors.end() ? nullptr : m->second.u;
+        return t && live(t) && F<int>(t, kState) != 2 ? t : nullptr;
+    }
+    if (s.tkind == 2) {
+        void* t = C.sess && s.tid == C.sess->my_id() ? player_ufo() : C.puppet_of ? C.puppet_of((uint8_t)s.tid) : nullptr;
+        return t && live(t) ? t : nullptr;
+    }
+    if (s.tkind == 3) {
+        struct Q {
+            uint32_t noun;
+            net::Vec3 at;
+            float best = 6.f;
+            void* found = nullptr;
+        } q{s.tnoun, s.tpos};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto& q = *(Q*)u;
+                net::Vec3 p;
+                if (n == q.noun && game::object_alive(o) && game::object_position(o, p) && net::dist(p, q.at) < q.best) {
+                    q.best = net::dist(p, q.at);
+                    q.found = o;
+                }
+                return true;
+            },
+            &q);
+        return q.found;
+    }
+    return nullptr;
+}
+
+static void guest_fire(double now)
+{
+    if (!g_shots_fix || !a_ToolMgrGet) {
+        g_ship_shots_in.clear();
+        return;
+    }
+    for (auto it = g_ship_shots_in.begin(); it != g_ship_shots_in.end();) {
+        ShipShot& s = it->second;
+        uint16_t id = it->first;
+        if (now - s.seen > kShotKeep + 0.3) {
+            release_shot(id, s);
+            it = g_ship_shots_in.erase(it);
+            continue;
+        }
+        ++it;
+        if (s.done == s.count || now - s.tried < kShotRetry)
+            continue;
+        s.tried = now;
+        auto m = g_mirrors.find(id);
+        void* u = m == g_mirrors.end() ? nullptr : m->second.u;
+        if (!u || !live(u) || F<int>(u, kState) == 2) {
+            g_shots_nomirror++;
+            continue;
+        }
+        void* tool = weapon_in(u, s.slot);
+        void* mgr = tool ? skg::cdecl_call<void*>(a_ToolMgrGet) : nullptr;
+        if (!mgr) {
+            g_shots_notool++;
+            continue;
+        }
+        void* t = shot_target(s);
+        if (s.tkind && !t) { // the game's weapon update reads a shot's target without a check (BUG-0534)
+            g_shots_notarget++;
+            continue;
+        }
+        net::Vec3 ap = s.aim;
+        if (t) { // the host aimed at its copy of the target: the same offset from this game's copy
+            net::Vec3 tp;
+            bool ship = s.tkind == 1 || s.tkind == 2;
+            if (ship)
+                tp = pos_of(t);
+            if (ship || game::object_position(t, tp))
+                ap = {s.aim.x + tp.x - s.tpos.x, s.aim.y + tp.y - s.tpos.y, s.aim.z + tp.z - s.tpos.z};
+            if (t == player_ufo())
+                g_shot_at_me_until = now + 1.5;
+        }
+        float aim[3] = {ap.x, ap.y, ap.z};
+        int fired = o_FireTool(mgr, tool, (uint8_t*)u + kLoco, aim, s.dp, s.a5, t ? (uint8_t*)t + kLoco : nullptr, 0);
+        if (fired & 0xFF) {
+            s.done++;
+            g_shots_fired++;
+        } else
+            g_shots_refused++;
+    }
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
     if (!r.ok() || !C.with_host || !C.with_host())
         return; // the host's ships are mirrored only where the host is
+    if (chunk == kShotChunk && chunks == 0) { // BUG-0677: a shot list
+        guest_shots(r, n);
+        return;
+    }
     if (g_chunk_fix) {
         if (!chunks || chunks > 31 || chunk >= chunks)
             return;
@@ -705,10 +1018,16 @@ void tick(double now)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
     g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
-    if (is_host())
+    if (is_host()) {
         host_tick(now);
-    else if (is_guest())
+        host_send_shots(now); // BUG-0677
+    } else if (is_guest()) {
         guest_tick(now);
+        if (C.with_host && C.with_host())
+            guest_fire(now); // BUG-0677
+        else
+            g_ship_shots_in.clear();
+    }
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -770,6 +1089,8 @@ void on_session_end()
     g_mirror_of.clear();
     g_hid.clear();
     g_hid_rev.clear();
+    g_ship_shots.clear();    // BUG-0677
+    g_ship_shots_in.clear();
     g_hold_mirror = 0xFFFF;
     g_stale_puppet = nullptr;
     modes::space_retired_clear("session end");
@@ -786,7 +1107,14 @@ std::string status()
     snprintf(sc, sizeof sc, "space puppet scale: fix=%d sized=%u replaced=%u game=%.3f own=%.3f from=%08X\n",
              g_puppet_scale_fix ? 1 : 0, g_scale_puppet_calls, g_scale_replaced, g_scale_game, g_scale_own,
              (unsigned)g_scale_caller);
-    return status_ships() + sc;
+    char sh[260];
+    snprintf(sh, sizeof sh,
+             "space shots: fix=%d seen=%u tx=%u untracked=%u rx=%u fired=%u refused=%u nomirror=%u notool=%u notarget=%u "
+             "released=%u hits_dropped=%u nullhits_dropped=%u\n",
+             g_shots_fix ? 1 : 0, g_shots_seen, g_shots_tx, g_shots_untracked, g_shots_rx, g_shots_fired, g_shots_refused,
+             g_shots_nomirror, g_shots_notool, g_shots_notarget, g_shots_released, g_shot_hits_dropped,
+             g_shot_nullhits_dropped);
+    return status_ships() + sc + sh;
 }
 
 static std::string status_ships()

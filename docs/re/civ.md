@@ -1423,3 +1423,17 @@ BUG-0659 (follow-up of [#civ-tribe-raids](#civ-tribe-raids)). GOG 2024, lanes 4 
   17 -> 4 over a 10 min play_civ from its vehicles' raids).
 * ✔ `civ.tribe_ruins_fast`: 3 lists 0.5 s apart after a raid: the guest removes it after 0.6-0.9 s.
 
+
+## The city planner's editor after the stage teardown (2026-11-08, fix/w46-k7-findings)
+<a id="civ-planner-stale-editor"></a>
+
+BUG-0682, GOG 2024, lab lane 10. Follow-up of [the planner's lifetime](#civ-planner-lifetime).
+* ✔ The editor update 0xD124E0 runs every frame in Space too (on a planet and in flight: `coop.civ planner_probe` saw
+  the editor on every Space frame of the space fixture, +0x40 = 0 while no planner is open).
+* ✔ The quit to the galaxy menu (`coop.menu`) frees the editor with the city input strategy while the stage leaves:
+  the memory stays readable and +0x40 holds garbage (0x4394C5EB, 0xC3BCCD6F). With the editor trusted for 3 frames
+  after its last update, planner_city() cast that garbage 2-3 times per quit (8 caught faults in 4 quits, game::cast
+  reading the "vtable", stack word 0xEE9B2232 = the cCity cast type: lab 20261108-003304); the campaign_space fault
+  (coop.dll+0x1071C8 from wsync's city row) was one of them.
+* Rule (`civ.planner_stale`): the editor is trusted only in the mode of its last update and not while the stage is
+  leaving (game::leaving_stage), and its +0x40 must be readable with a vtable in the game's image before the cast.

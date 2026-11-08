@@ -4741,7 +4741,8 @@ From the S1 lab log sweep (703 runs, 2026-11-05/06) and the runs since:
   with the guest's second dump (worlddiff, as species_only); `Space:noun_only_host:city_walls / city_territory` (and
   the planet's cities, buildings, vehicles, herds) are a planet's surface loaded by a game whose camera is on it: not
   compared in the whole list in Space (worlddiff SPACE_PLANET_LOD); Space `default_beam_projectile` in the host's
-  game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open).
+  game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open; fixed unreleased, see
+  [the Space shots test](#testing-space-ship-shots)).
 
 ## The guest's cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
 <a id="testing-space-kept-hold"></a>
@@ -4896,6 +4897,8 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `tribe_camera_null` (BUG-0167, cold, ~1 min a try): a guest joins 12.5 s after its galaxy menu came up
   (`twoinst.start(join_at=)`) with `world.intro_at_once` off before the join: the menu's own timer starts the intro in
   the first frames of its Tribe and the tribe setup meets the null simulator camera (4 of 4 on the first join).
+  Since 2026-11-08 the guest is also armed with `coop.introstage` (the intro in the first tick of its next stage): the
+  join time alone misses the race when the guest's console answers late (lanes 2 / 3, ~30 s).
   SPORE_FIX_OFF=tribe.camera_guard fails with the report's fault. Intros started by hand (PlayCinematic at the load
   request, in the Loading mode, on a host's reload) do not make the null camera: only the menu's own timer does.
 * `creature_death_coop` / `_slow` (BUG-0026): `coop_creature_death.py --coop`: the four skip variants (Esc during the
@@ -4994,3 +4997,85 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   monitor gate off) leaves the caption up as the tours do and fails at hop 2 by design (5.3 m, BUG-0658);
   `--approach` prints diagnostics (the guest walks, the host's avatar to the same place).
 
+
+## Remote bodies under spikes: what the K4 tests read (2026-11-08, fix/w46-k4-bodies)
+<a id="testing-lead-fall"></a>
+
+BUG-0674, BUG-0675, BUG-0651, BUG-0680 (docs/re/tribe.md#tribe-lead-fall).
+* `net_tests` test_lead_fall is the deterministic part: a member turning round / stopping / going straight on inside a
+  0.35 s spike, a 28 m/s ship stopping in a 0.4 s spike, an NPC proxy's walk known late, a thrown NPC with two of three
+  states lost, a member whose loaded sender stamps its states off its frames, the no-lead rule against a 140 ms mean
+  with a 45 ms link, and a Creature puppet whose partner stops in a spike. Each CHECK of the "0.7.10" side fails with the
+  fix on and the fix's side with it off.
+* The guest's game log now has `net: round trip p10 .. p25 .. p50 .. p90 .. ms, mean .. ms (BUG-0651)` every 10 s:
+  the samples the no-lead rule reads (p25 / 2 with drive.lead_low). The player network reads p25 80-152 ms at a lab
+  load of 25-35, the mean 115-462 ms.
+* The lab load decides much of body_trail_tribe_player: at a load of 30-35 on 6 cores both games run at 10-16 fps,
+  the members' lag p50 rises to 0.10-0.21 s and the test fails with any switch set (lab 20261108-010745 #1 off,
+  -010745-2 #1 on); compare fixes with an A/B on two lanes at the same time, never with runs of another hour.
+* npc_walk_tribe at `SPORE_FPS=30 SPORE_NET=player` counts the proxies' jumps (> 2.5 m in a frame): a walk that starts
+  in a spike is known 0.3-0.5 s late, the proxy's target jumped at the start (late_lead brings it in now).
+## The monitor's drawn rule in Cell level changes (2026-11-08, fix/w46-k7-findings)
+<a id="testing-monitor-cell-scale"></a>
+
+BUG-0681. In Cell the own trace line ends with `wscale=<k>`, the game's world scale (cellsync::scale_now, G+0x514C)
+its positions are in. During a level change each game rescales at its own moment (docs/re/cell.md#cell-world-scale),
+so for a trace line or two the viewer draws the partner in one scale and the partner's own `pos=` is in another (raw
+distances up to 20-32 m in cell_levelup_view). The drawn rule (tools/tests/monitor.py Drawn.in_scale) converts the
+partner's position into the viewer's scale (pos x own scale / viewer scale) when both own lines of the moment carry a
+scale; logs without it are compared raw. `SPORE_MONITOR='{"drawn_scale": 0}'`: raw (the rule before). Planted cases in
+gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
+
+## Tests of the 0.7.10 final-check findings (2026-11-08, fix/w46-k7-findings)
+<a id="testing-k7-findings"></a>
+
+* `planner_leave` (BUG-0682, ~4 min, space fixture): the guest calls planner_city() every frame (`coop.civ planner_probe
+  on`) and quits to the galaxy menu 4 times (`coop.menu`); `stale_reads` must stay 0 and no game may fault.
+  SPORE_FIX_OFF=civ.planner_stale: 11-12 stale frames and 8 caught faults in game::cast per run.
+* `civ_village_bundle` (BUG-0684, ~2 min, civ_npc): the guest's pointer is moved over an old village both games have
+  (play_civ's Player.look_at + `move`); `coop.wobj bundle carry` on creatures of each game near it. Checks the game's
+  object lists: the guest's own carried food stays 10 s, the host's carried food is in no hand of the guest's own
+  creatures. Not every member is free: `carry` refuses a full hand; a member delivers its food to the mat by itself
+  (the bundle is freed: `bundle take` only on listed bundles).
+* `puppet_unground` (BUG-0683, ~2 min, creature fixture): `coop.puppet sink 0.69 0.7` puts the partner's puppet in the
+  ground on the host; `coop.puppet agl` samples it. SPORE_FIX_OFF=creature.puppet_unground: stays under for 4 s (the
+  game's own update put it back in 1 of 4 rounds).
+* `keepalive_stall` (BUG-0687, ~1 min, creature fixture): `coop.stalltest 6` (an outside-frame command) makes the host's
+  main thread run a message loop of its own for 6 s: no frames, the keepalive runs. The host's log must have one
+  `keepalive: no frame for` line with return addresses into the game and one `keepalive: the main thread's windows`
+  line; frames go on afterwards. As a normal (between-frames) command the loop runs inside the frame and the
+  outside-frame tasks, the keepalive too, wait for its end: no line at all (the first try).
+* BUG-0711: the monitor's `drawn` invariant leaves out partner lines whose `state_age` is over `drawn_age` (1.0 s) +
+  the round trip: a copy without news can not be where the partner is now (multi4_creature_slow, lab 20261108-012301
+  of fix/w46-k7-findings: the guest's link dead 5.5 s both ways, Carol drawn 16.5 m off at state_age 3.6 s); the dead
+  link is the `link` / `puppet` invariants' (and "X is not responding"). `SPORE_MONITOR='{"drawn_age": -1}'` is the
+  rule before it (gates_selftest f_drawn_stale / f_drawn_stale_off).
+
+## The host's NPC ship shots on a guest (2026-11-08, fix/w46-k56-space)
+<a id="testing-space-ship-shots"></a>
+
+* `coop_space_shots.py` (~3 min, `space_empire` fixture, BUG-0677): both land on the colony planet 01460035 (in the
+  star system the spawned pirates never fired in 45 s: NPC ships fight on planets), the host spawns 2 ambush pirates
+  and 2 raiders and shoots each once (coop.fleet shoot: the game's TakeDamage, the pirates fight back on their own),
+  then counts the projectile objects (default_beam_projectile 0x24630D7, default_tool_projectile 0x24270C5) in each
+  game's noun list twice a second for 45 s (`coop.civ nouns <noun>` works in any stage). PASS 76 of 77 samples
+  (lab 20261108-020511); SPORE_FIX_OFF=space.shots: 0 of 78 (FAIL, lab 20261108-021047).
+* After the fix, play_space (lab 20261108-023555, 13 Space comparisons) had no `host_only:default_beam_projectile`;
+  `guest_only` / `noun_only_guest:default_beam_projectile` in 2 of 13 (the copy starts and ends up to 0.2 s after the
+  host's beam: relay lag, the class of the Civ shots in BUG-0657's notes). `All:state:time_of_day` on a Space planet in
+  6 of 13 is BUG-0712 (open).
+* Landing both takes 1-2 min on GOG 2024 lanes (play_space.Player.land_retry; the zoom does not land right after a
+  load).
+
+## The kept hold's limits (2026-11-08, fix/w46-k56-space)
+<a id="testing-space-kept-hold-limits"></a>
+
+* `coop_space_items_limits.py` (~5 min, `space` fixture, BUG-0679): the guest gets spice 0 x7 and an artifact
+  (`coop.space trade cargo 5 10D5D4D3`: the game's artifact factory), the host spice 1 x5 and 3 more slots (`trade
+  slots 3`); the guest leaves, gets 3 more spice while away, both games are started again (the host restart: one
+  bottle per lane, so both), the restarted host gets its spice and slots again (start's `before_join`, which also
+  switches SPORE_FIX_OFF off on the guest before it joins: a fix that acts during the join), the guest joins.
+  PASS: the guest has spice x10, the artifact, no host spice, its own 10 slots.
+* A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
+  (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
+  record of its own earlier session passes `start(..., keep_holds=True)`.

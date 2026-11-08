@@ -2241,6 +2241,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Reproduce: play_space with SPORE_DETECTOR=20; `tools/detector_report.py <run>` lists
   `Space:host_only:default_beam_projectile`.
 * Ticket: BUG-0677
+* Fixed (unreleased, fix/w46-k56-space): the host relays its NPC ships' shots and a guest's mirrors fire them
+  (`space.shots`, docs/re/space.md#space-ship-shots).
 ## Space: what the kept guest cargo hold does not cover (2026-11-07, fix/w46-space-items)
 <a id="issue-space-kept-hold-limits"></a>
 
@@ -2252,6 +2254,11 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Not checked: a guest that joins under another name (another player to the host).
 * Next steps: a side file on the host per Space save (as docs/11-rivals.md#rivals-guest-colonies designs for colonies).
 * Ticket: BUG-0679
+* Fixed (unreleased, fix/w46-k56-space): the guest keeps its own record per host world on its disk (host restarts,
+  changes while away), extra free slots go, plant / animal / artifact cargo is made by the game's factories
+  (`space.keep_items_local`, `space.keep_items_slots`, `space.keep_items_cargo`,
+  docs/re/space.md#space-kept-hold-limits). Still not covered: a guest that joins under another name or from another
+  PC's profile.
 
 ## Monitor: the Cell drawn invariant during a level change (2026-11-07, fix/w46-detector-scale)
 <a id="known-monitor-cell-drawn-scale"></a>
@@ -2262,6 +2269,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   (the class of BUG-0662 / BUG-0606); the partner line carries no scale.
 * Reproduce: `tools/lab.py run cell_levelup_view --repeat 4`.
 * Next steps: add the sender's scale to the partner line (or skip a pair whose scales differ) as worlddiff does.
+* Fixed (unreleased, fix/w46-k7-findings): the own Cell trace line carries `wscale=` and the drawn rule compares in
+  one scale (docs/06-testing.md#testing-monitor-cell-scale).
 * Ticket: BUG-0681
 
 ## Creature: the host freezes after a guest's rejoin while its share save is never written (2026-11-07, fix/w46-advance-reg)
@@ -2275,4 +2284,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: the host's frames ran on between the rejoin and the last save post (DNA and save lines in its log).
 * Not checked: the cause; whether v0.7.9 does the same (inferred not a 0.7.10 regression: nothing merged after
   e7d1734c touches the share path).
+* CORRECTION (2026-11-08, fix/w46-k7-findings): the host's frames did NOT run on. Its last state reached the guests at
+  s 86.3, 0.1 s after it handled Bob's leave, and its trace lines (end of on_frame) stop after s 80; every later line
+  (the rejoin, the share save and its retries, DNA from the guests' messages) comes from the keepalive
+  (coop.cpp keepalive_task: g_sess.update and world::tick from the window procedure when no frame came for 0.5 s).
+  Inferred: the main thread sat in a nested message loop that was neither App::Canvas::Tick (SporeKit's game-loop
+  fallback frame never started) nor Present; the share save needs the game's update, hence no file. The watchdog's
+  dump (30 s) never reached the log (inferred: its SuspendThread + VirtualQuery stack walk can hang under Wine).
+* Diagnostics since then: the keepalive logs, once per stall of 3 s, the main thread's call chain (return addresses
+  into the game, user32 frames) and its windows (`keepalive: no frame for ...`, `keepalive: the main thread's
+  windows ...`; test keepalive_stall). The next occurrence names the loop.
+* Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687

@@ -629,18 +629,36 @@ static void test_interp_gap()
     }
 }
 
+// K4 (BUG-0674, BUG-0675, BUG-0651, BUG-0680): SPORE_FIX_OFF=<switch>[,...] keeps that fix off on the fix's side of
+// test_lead_fall too, so the run FAILs (the twin-switch check of CLAUDE.md 3 for the unit test)
+static bool k4_on(const char* name)
+{
+    const char* e = std::getenv("SPORE_FIX_OFF");
+    if (!e)
+        return true;
+    std::string s = std::string(",") + e + ",";
+    return s.find(std::string(",") + name + ",") == std::string::npos;
+}
+
 // BUG-0650 (drive.lead_late): a Tribe member's walk that starts in a latency spike (its first walking state 0.35 s
 // late instead of 0.05 s) moved M1's lead target 3 m in one frame; with the fix the target steps no more than a walk
 // and is at the lead again within 1.5 s
-static float lead_late_max_step(bool fix, double spike_end, float* end_err)
+static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool proxy = false)
 {
-    const bool was = g_lead_late_fix;
+    const bool was = g_lead_late_fix, was_fall = g_lead_fall_fix;
     const double was_ow = g_one_way;
     g_lead_late_fix = fix;
     SnapshotBuffer b;
     b.delay = 0.2;
     b.lead = true;
     b.smooth_max = 6.f;
+    if (proxy) { // BUG-0674: an NPC proxy (no smoothing, late_lead under drive.lead_fall)
+        b.delay = 0.15;
+        b.smooth_max = 8.f;
+        b.late_lead = true;
+        g_lead_late_fix = true;
+        g_lead_fall_fix = fix && k4_on("drive.lead_fall");
+    }
     g_one_way = 0.05;
     // the sender sends every 1/30 s; the body stands until sender time 3.0, then walks at 9 m/s along x
     auto state = [](double st) {
@@ -683,6 +701,7 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err)
     // where the sender's body is now (+ one-way): sender time now - 10 + 0.05
     *end_err = std::fabs(o.pos.x - (float)((15.9 - 1.0 / 30 - 10.0 + 0.05 - 3.0) * 9.0));
     g_lead_late_fix = was;
+    g_lead_fall_fix = was_fall;
     g_one_way = was_ow;
     return max_step;
 }
@@ -854,6 +873,337 @@ static double lead_turn_over2(bool keep)
     g_lead_keep_fix = was;
     g_one_way = was_ow;
     return over;
+}
+
+
+// BUG-0674 (drive.lead_fall): a member walking +x at 9 m/s turns round (turn = true) or stops (false) at sender time 3.0;
+// the states of [2.95, 3.3) come 0.35 s late (a spike), the rest 0.05 s. Returns the worst distance of the shown target
+// from the sender's body (its now, where the lead shows it) over the whole run; *straight: the same for a walk that
+// goes straight on through the spike (the cost)
+static float lead_fall_err(bool fall, int kind)
+{
+    const bool was = g_lead_fall_fix;
+    const double was_ow = g_one_way;
+    g_lead_fall_fix = fall && k4_on("drive.lead_fall");
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    g_one_way = 0.05;
+    auto x_at = [kind](double st) {
+        if (st < 3.0 || kind == 2)
+            return (float)st * 9.f;
+        return kind == 0 ? (float)(6.0 - st) * 9.f : 27.f;
+    };
+    auto v_at = [kind](double st) { return st < 3.0 || kind == 2 ? 9.f : kind == 0 ? -9.f : 0.f; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 180; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD | (v_at(st) != 0 ? PF_MOVING : 0);
+        s.pos = {x_at(st), 0.f, 0.f};
+        s.vel = {v_at(st), 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.95 && st < 3.3 ? 0.35 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    float worst = 0;
+    for (double now = 10.0; now < 15.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o) || now < 12.0)
+            continue;
+        worst = std::max(worst, std::fabs(o.pos.x - x_at(now - 10.0)));
+    }
+    g_lead_fall_fix = was;
+    g_one_way = was_ow;
+    return worst;
+}
+
+// BUG-0674 (drive.lead_fall) on VelocityEstimate (a Space ship's copy, a Civ vehicle): a ship at 28 m/s, its states every
+// 0.1 s, 0.03 s late; it stops at sender time 5.0 while the states of [4.9, 5.4) come 0.4 s late. The worst distance of
+// at() from the ship (its sender time now) after the stop
+static double ship_fall_err(bool fall)
+{
+    const bool was = g_lead_fall_fix;
+    g_lead_fall_fix = fall && k4_on("drive.lead_fall");
+    VelocityEstimate e;
+    e.max_ahead = 0.4;
+    auto x_at = [](double st) { return st < 5.0 ? st * 28.0 : 140.0; };
+    std::vector<std::pair<double, double>> arr; // arrival, sender time
+    for (int i = 0; i < 90; i++) {
+        double st = i * 0.1;
+        arr.push_back({100.0 + st + 0.03 + (st >= 4.9 && st < 5.4 ? 0.4 : 0.0), st});
+    }
+    std::stable_sort(arr.begin(), arr.end());
+    size_t k = 0;
+    double worst = 0;
+    for (double now = 100.0; now < 108.5; now += 1 / 60.0) {
+        while (k < arr.size() && arr[k].first <= now) {
+            e.update({(float)x_at(arr[k].second), 0, 0}, arr[k].first, 2000 + arr[k].second);
+            k++;
+        }
+        if (now > 104.0)
+            worst = std::max(worst, std::fabs((double)e.at(now, 0.03).x - x_at(now - 100.0)));
+    }
+    g_lead_fall_fix = was;
+    return worst;
+}
+
+// BUG-0675 (drive.lead_throw): an NPC thrown at 20 m/s (its states every 1/30 s report that speed), the states over the
+// player network (45 ms, a loss burst: one state in three comes): the longest time (s) the shown target stands still while the NPC flies
+static double throw_stand(bool fix)
+{
+    const bool was = g_lead_throw_fix;
+    const double was_ow = g_one_way;
+    g_lead_throw_fix = fix && k4_on("drive.lead_throw");
+    g_one_way = 0.045;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    auto x_at = [](double st) { return st < 3.0 ? st * 4.0 : 12.0 + (st - 3.0) * 20.0; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 120; i++) {
+        double st = i / 30.0;
+        if (st > 3.0 && i % 3 != 0)
+            continue; // lost (a loss burst: one state in three comes)
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.pos = {(float)x_at(st), 0.f, 0.f};
+        s.vel = {st < 3.0 ? 4.f : 20.f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.045, s});
+    }
+    size_t k = 0;
+    PlayerState o;
+    double stand = 0, longest = 0;
+    float last = -1e9f;
+    for (double now = 10.0; now < 14.0; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o))
+            continue;
+        if (now > 13.1 && now < 13.9) {
+            stand = std::fabs(o.pos.x - last) < 0.05f ? stand + 1.0 / 30 : 0;
+            longest = std::max(longest, stand);
+        }
+        last = o.pos.x;
+    }
+    g_lead_throw_fix = was;
+    g_one_way = was_ow;
+    return longest;
+}
+
+// BUG-0651 (drive.lead_low): a member buffer whose mean one-way latency reads 140 ms (spikes, a loaded PC) while the
+// link's own latency (the round trip's lower quartile) is 45 ms keeps the lead; the mobile network (100 ms) does not
+static bool lead_off_with(bool low_fix, double mean_ow, double low_ow)
+{
+    const bool was = g_lead_low_fix;
+    const double was_ow = g_one_way, was_low = g_one_way_low;
+    g_lead_low_fix = low_fix && k4_on("drive.lead_low");
+    g_one_way = mean_ow;
+    g_one_way_low = low_ow;
+    SnapshotBuffer b;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    for (int i = 0; i < 100; i++) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + i * 33);
+        s.flags = PF_IN_WORLD;
+        b.push(s, 10.0 + i * 0.033 + mean_ow);
+    }
+    bool off = b.lead_off();
+    g_lead_low_fix = was;
+    g_one_way = was_ow;
+    g_one_way_low = was_low;
+    return off;
+}
+
+
+// BUG-0680 (drive.puppet_fall): a partner walking +x at 4.75 m/s stops at sender time 3.0; its states of [2.9, 3.3) come
+// 0.25 s late (a spike). The puppet's buffer (interpolated, delay 0.1): how far the shown target goes past the stop and
+// whether its velocity falls under 0.3 m/s meanwhile (creature.puppet_stop's hold)
+static float puppet_stop_past(bool fix, bool* slowed)
+{
+    const bool was = g_puppet_fall_fix;
+    const double was_ow = g_one_way;
+    g_puppet_fall_fix = fix && k4_on("drive.puppet_fall");
+    g_one_way = 0.05;
+    SnapshotBuffer b;
+    b.delay = 0.1;
+    b.interp_fall = true;
+    auto x_at = [](double st) { return st < 3.0 ? (float)st * 4.75f : 14.25f; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 150; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD;
+        s.pos = {x_at(st), 0.f, 0.f};
+        s.vel = {st < 3.0 ? 4.75f : 0.f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.9 && st < 3.3 ? 0.25 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    float past = 0;
+    *slowed = false;
+    for (double now = 10.0; now < 14.5; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o) || now < 12.0)
+            continue;
+        past = std::max(past, o.pos.x - 14.25f);
+        if (o.pos.x > 13.f && o.pos.x < 14.25f + 1.f && std::fabs(o.vel.x) < 0.3f && std::fabs(o.vel.x) > 0.f)
+            *slowed = true;
+    }
+    g_puppet_fall_fix = was;
+    g_one_way = was_ow;
+    return past;
+}
+
+
+// BUG-0675 / BUG-0651 (drive.lead_throw): a member walking at 9.5 m/s whose loaded sender stamps its states off its frames
+// (positions every 1/30 s, the times alternately 6 ms early and late: every other pair of states 21 ms apart in its time,
+// a 15 m/s path): the mean distance of the shown target from the member (its sender time now)
+static double jitter_err(bool fix)
+{
+    const bool was = g_lead_throw_fix;
+    const double was_ow = g_one_way;
+    g_lead_throw_fix = fix && k4_on("drive.lead_throw");
+    g_one_way = 0.045;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 150; i++) {
+        double st = i / 30.0, ts = st + (i % 2 ? 0.006 : -0.006);
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + ts * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = {(float)(st * 9.5), 0.f, 0.f};
+        s.vel = {9.5f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.045, s});
+    }
+    size_t k = 0;
+    PlayerState o;
+    int n = 0;
+    double sum = 0;
+    for (double now = 10.0; now < 14.8; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o) || now < 11.0)
+            continue;
+        n++;
+        sum += std::fabs(o.pos.x - (now - 10.0) * 9.5);
+    }
+    g_lead_throw_fix = was;
+    g_one_way = was_ow;
+    return n ? sum / n : 99.0;
+}
+
+
+// BUG-0674 (drive.lead_fall): an NPC proxy walking +x at 6 m/s turns 90 degrees at sender time 3.0 while the states of
+// [2.95, 3.3) come 0.35 s late: the largest step of the shown target in one 1/30 s frame (its driving teleports onto a
+// target that jumps over snap / 2)
+static float proxy_turn_step(bool fix)
+{
+    const bool was = g_lead_fall_fix;
+    const double was_ow = g_one_way;
+    g_lead_fall_fix = fix && k4_on("drive.lead_fall");
+    g_one_way = 0.05;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    b.late_lead = true;
+    b.smooth_max = 8.f;
+    auto p_at = [](double st) { return st < 3.0 ? Vec3{(float)st * 6.f, 0, 0} : Vec3{18.f, (float)(st - 3.0) * 6.f, 0}; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 180; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = p_at(st);
+        s.vel = st < 3.0 ? Vec3{6.f, 0, 0} : Vec3{0, 6.f, 0};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.95 && st < 3.3 ? 0.35 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    float mx = 0;
+    Vec3 last{};
+    bool have = false;
+    for (double now = 10.0; now < 15.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o))
+            continue;
+        if (have && now > 12.0)
+            mx = std::max(mx, dist(last, o.pos));
+        last = o.pos;
+        have = true;
+    }
+    g_lead_fall_fix = was;
+    g_one_way = was_ow;
+    return mx;
+}
+
+static void test_lead_fall()
+{
+    printf("remote bodies moved on through a latency spike (BUG-0674, BUG-0675, BUG-0651)\n");
+    const char* what[] = {"turn round", "stop", "straight on"};
+    for (int kind = 0; kind < 3; kind++) {
+        float on = lead_fall_err(true, kind), off = lead_fall_err(false, kind);
+        printf("  member %s in a 0.35 s spike: worst target error fall %.2f m, 0.7.10 %.2f m\n", what[kind], on, off);
+        if (kind == 0) {
+            CHECK(off > 5.5f); // ~2 x 9 m/s x the gap
+            CHECK(on < 4.5f);
+        } else if (kind == 1) {
+            CHECK(off > 2.5f); // 9 m/s x the gap
+            CHECK(on < 2.0f);
+        } else
+            CHECK(on < 2.0f); // the cost: behind for the rest of the gap, caught up
+    }
+    for (double spike_end : {3.3, 3.65}) {
+        float e_on = 0, e_off = 0;
+        float on = lead_late_max_step(true, spike_end, &e_on, true), off = lead_late_max_step(false, spike_end, &e_off, true);
+        printf("  an NPC proxy's walk known late (spike to %.2f s): max target step %.2f m (end error %.2f), 0.7.10 %.2f m\n",
+               spike_end, on, e_on, off);
+        CHECK(off > 2.f);
+        CHECK(on < 0.7f);
+        CHECK(e_on < 0.5f);
+    }
+    float pt_on = proxy_turn_step(true), pt_off = proxy_turn_step(false);
+    printf("  an NPC proxy turning inside a 0.35 s spike: max target step %.2f m per frame (0.7.10 %.2f m)\n", pt_on, pt_off);
+    CHECK(pt_off > 1.25f); // over snap / 2 of the proxies' driving (2.5 m)
+    CHECK(pt_on < 0.8f);
+    double s_on = ship_fall_err(true), s_off = ship_fall_err(false);
+    printf("  a 28 m/s ship that stops in a 0.4 s spike: worst copy error fall %.1f m, 0.7.10 %.1f m\n", s_on, s_off);
+    CHECK(s_off > 7.5);
+    CHECK(s_on < 6.0);
+    double t_on = throw_stand(true), t_off = throw_stand(false);
+    printf("  a thrown NPC (20 m/s, two of three states lost): the target stands up to %.2f s (0.7.10 %.2f s)\n", t_on, t_off);
+    CHECK(t_off >= 0.06);
+    CHECK(t_on < 0.04);
+    double j_on = jitter_err(true), j_off = jitter_err(false);
+    printf("  a 9.5 m/s member stamped 6 ms off its frames: mean target error %.2f m (0.7.10 %.2f m)\n", j_on, j_off);
+    CHECK(j_off > 0.18);
+    CHECK(j_on < 0.1);
+    CHECK(lead_off_with(false, 0.14, 0.045));  // 0.7.10: the mean reads the spikes and frame waits: no lead
+    CHECK(!lead_off_with(true, 0.14, 0.045));  // the player network under load keeps it
+    CHECK(lead_off_with(true, 0.14, 0.10));    // the mobile network does not
+    CHECK(!lead_off_with(true, 0.06, -1));     // no samples yet: the mean as before
+    bool sl_on = false, sl_off = false;
+    float p_on = puppet_stop_past(true, &sl_on), p_off = puppet_stop_past(false, &sl_off);
+    printf("  a puppet whose partner stops in a 0.25 s spike: target past the stop %.2f m (0.7.10 %.2f m), slowed %d\n", p_on,
+           p_off, (int)sl_on);
+    CHECK(p_off > 0.5f);
+    CHECK(p_on < 0.3f);
+    CHECK(sl_on && !sl_off);
 }
 
 static void test_lead_keep()
@@ -2060,7 +2410,11 @@ static double hitch_error(double ahead, bool hitch)
 static void test_velocity_hitch()
 {
     printf("vehicle position after a hitch of the sender (BUG-0186)\n");
-    double old_h = hitch_error(0.4, true), new_h = hitch_error(0.15, true);
+    const bool was_fall = g_lead_fall_fix;
+    g_lead_fall_fix = false; // (the bug as it was: BUG-0674's fall bounds it too)
+    double old_h = hitch_error(0.4, true);
+    g_lead_fall_fix = was_fall;
+    double new_h = hitch_error(0.15, true);
     double old_l = hitch_error(0.4, false), new_l = hitch_error(0.15, false);
     printf("  sender hitch 0.5 s: max error %.1f units with 0.4 s ahead, %.1f with 0.15 s; one packet 150 ms late: %.1f / %.1f\n",
            old_h, new_h, old_l, new_l);
@@ -2981,6 +3335,7 @@ int main(int argc, char** argv)
     test_interp_gap();
     test_lead_late();
     test_lead_keep();
+    test_lead_fall();
     test_discovery();
     test_lobby_roles();
     test_shared_ledger();

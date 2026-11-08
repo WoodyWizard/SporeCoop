@@ -261,6 +261,12 @@ def field_cases(tmp):
     check(got == {'drawn'}, f'monitor: drawn: the host draws the guest 8 m off its own position ({got})')
     got = scenario(tmp, 'f_drawn_fast', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=30.0'))
     check(not got, f'monitor: drawn: 8 m behind a partner running 30 m/s is the lag ({got})')
+    # BUG-0711: a copy without news for 3.6 s (a dead link) is not judged; drawn_age -1 (the rule before it) judges it
+    got = scenario(tmp, 'f_drawn_stale', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)))
+    check(not got, f'monitor: drawn: a copy whose state is 3.6 s old is the link\'s, not the drawing\'s ({got})')
+    got = scenario(tmp, 'f_drawn_stale_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)),
+                   dict(drawn_age=-1))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_age -1 judges a stale copy as before ({got})')
     got = scenario(tmp, 'f_drawn_space', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0',
                                                        h=dict(stage='Space'), g=dict(stage='Space')))
     check(not got, f'monitor: drawn: 8 m in Space is within its limit ({got})')
@@ -273,6 +279,20 @@ def field_cases(tmp):
     check(not got, f'monitor: drawn: a Tribe pointer that jumped 0.1 s before the mark, its copy not yet ({got})')
     got = scenario(tmp, 'f_drawn_old', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', **tr))
     check(got == {'drawn'}, f'monitor: drawn: a Tribe log without ptr_still= is judged as before ({got})')
+    # BUG-0681: Cell level change: the guest's own line in world scale 8, the host's in 1: the host draws the guest at its
+    # own pos x 8 (the same point in the host's scale); a log without wscale= and drawn_scale 0 compare raw
+    ce = dict(h=dict(stage='Cell'), g=dict(stage='Cell'), hs=dict(stage='Cell'))
+    got = scenario(tmp, 'f_drawn_scale', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                       guest_own=' wscale=8', **ce))
+    check(not got, f'monitor: drawn: Cell positions in two world scales are compared in one ({got})')
+    got = scenario(tmp, 'f_drawn_scale_off', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                           guest_own=' wscale=8', **ce), dict(drawn_scale=0))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_scale=0 (the rule before BUG-0681) compares raw ({got})')
+    got = scenario(tmp, 'f_drawn_scale_real', *aligned_pair(host_sees=' drawn=(16.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                            guest_own=' wscale=8', **ce))
+    check(got == {'drawn'}, f'monitor: drawn: a Cell puppet 8 m off in one scale is still a violation ({got})')
+    got = scenario(tmp, 'f_drawn_scale_old', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', **ce))
+    check(got == {'drawn'}, f'monitor: drawn: a Cell log without wscale= is compared raw ({got})')
     got = scenario(tmp, 'f_drawn_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', guest_own=' ptr_still=0.1', **tr),
                    dict(drawn_still=-1))
     check(got == {'drawn'}, f'monitor: drawn: drawn_still=-1 (the rule before BUG-0416) judges the jumped pointer ({got})')

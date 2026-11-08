@@ -299,6 +299,16 @@ def check_fixture(host, fixture):
     return not bad
 
 
+# BUG-0679: a guest keeps its own cargo hold per host world on its disk (<profile>/Spore/SporeCoop/holds); every test
+# starts without one unless it asks for the record of its own earlier session (start(..., keep_holds=True))
+KEEP_HOLDS = [False]
+
+
+def forget_holds():
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-rf', d + '/SporeCoop/holds'])
+
+
 def warm_reset(host, guest, fixture, planet):
     """the running games of the lane start the test again: the fixture goes into a fresh save
     slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
@@ -307,6 +317,10 @@ def warm_reset(host, guest, fixture, planet):
     slot = 10 + (st.get('slot', 9) - 9) % 10
     for c in (guest, host):
         c.call('coop.leave')
+    if not KEEP_HOLDS[0]:  # BUG-0679: no hold record of an earlier test (its file and its memory)
+        for c in (guest, host):
+            c.call('coop.space trade forget')
+        forget_holds()
     sh('fixture', 'slot', fixture, lane.HOST_PROFILE, str(slot))
     host.call(f'coop.load Game{slot} {planet.split("/")[1]}')
     phases = []
@@ -351,6 +365,7 @@ def start(*a, **kw):
     catches the bug. Fixes that act while the guest joins are on until then.
     Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
     cannot pass silently with the fix still on; an unsafe switch only gets a warning line."""
+    KEEP_HOLDS[0] = kw.pop('keep_holds', False)
     host, guest = _start(*a, **kw)
     names = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     if names:  # BUG-0312: these games keep the switches off; the next warm test must not reuse them
@@ -473,6 +488,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
     restore_creations(guest_creations)
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
+    if not KEEP_HOLDS[0]:
+        forget_holds()
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
     for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)

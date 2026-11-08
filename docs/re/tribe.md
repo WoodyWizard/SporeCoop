@@ -2624,3 +2624,75 @@ GOG 2024, lane 5.
   out of a member's hand faults its gather node (BUG-0684, 0xC23469); a play_civ with the reclass on in Civ had that
   fault storm on the guest (lab 20261108-015213; inferred to be the BUG-0684 class, not proven to be the reclass).
 
+## Remote bodies under latency spikes: the lead's fall, throws, the link's own latency (2026-11-08, fix/w46-k4-bodies)
+<a id="tribe-lead-fall"></a>
+
+BUG-0674, BUG-0675, BUG-0651, BUG-0680 (K4; net/interp.h, net/connection.cpp; switches `drive.lead_fall`,
+`drive.lead_throw`, `drive.lead_low`, `drive.puppet_fall`). One class: a remote body moved on past its newest state
+while no newer state comes, and the rules that decide how far and whether.
+* ✔ (bodyrec rows, lab 20261107-102038 / -110506, K3) A member that turns round or stops inside a latency spike of the
+  player network was moved on the old way for up to kMaxLead 0.6 s at its full speed: 2 x speed x gap off (8-9 m at
+  9-12 m/s). The same in a Creature puppet's interpolated extrapolation (max_extrap 0.25 s at the state's velocity):
+  puppet_stops' failing stop of lab 20261107-132459 #1 (the rel/0.7.9 track rows): the target walked on at 4.75 m/s
+  through the stop and stepped back 0.72 m when the stop's state came, the puppet 0.33 m (bodyrec) / 0.86 m (target)
+  past where the walker stopped. And a Space ship's VelocityEstimate::at (max_ahead 0.4 s): 11.4 m past a ship that
+  had stopped (space_fast_sync, lab 20261107-215251 #1, V2).
+* ✔ The rule now (`net::fall_time`): at the full speed up to the usual horizon (the median of how far past the newest
+  state the body was when the next state came, last 32 states) + kFallMargin 0.04 s, then falling exponentially
+  (kFallTau 0.12 s; the velocity handed to the driving falls with it). Puppets (Creature only): from kPuppetFallMargin
+  0.02 s past the render time's usual horizon, kPuppetFallTau 0.05 s, so the velocity falls under 0.3 m/s and
+  creature.puppet_stop holds the puppet where the target slows. Unit tests (net_tests test_lead_fall): a turn round
+  inside a 0.35 s spike 6.0 -> 4.5 m worst, a stop 3.0 -> 1.5 m, a straight walk 0 -> 1.7 m (the cost: behind for the
+  rest of the gap, caught up by drive.lead_late), a 28 m/s ship stopping in a 0.4 s spike 8.4 -> 5.1 m, a puppet's
+  target past a stop 0.71 -> 0.17 m.
+* ~ The cost is real in the lab: a gap of 0.5-0.7 s with no state at all (seen under a lab load of 30-35, all members
+  at once, body_trail_tribe_player lab 20261108-010745-2 #1, 6.5-7.2 s) stands the shown target after ~0.3 s while the
+  member walks straight on (8.6 m off before the news). The extrapolation can not know which way the body went; the
+  fall bounds the turn round and the stop, full extrapolation the straight walk.
+* ✔ (coop.npctrack rows of lab 20261107-103414 #2, n19 at 44.0 s) A pushed NPC thrown at ~20 m/s reports that speed in
+  its state (path 19.6-20.4 m/s, reported 19.4-20.4 m/s): lead_velocity took any path over 15 m/s for the body put
+  somewhere and returned 0, so the copy stood at each newest state (3-6 frames) and stepped 2 m when the next came.
+  Now (`drive.lead_throw`) the state's velocity within 35 % of the path and the same way is a throw; and a step under
+  1 m is never a put: under a lab load of ~30 the host's state times are off its positions by up to a frame and a 9-10
+  m/s member read 12-18 m/s, its lead stood 0.4 s (lab 20261108-005832, t3 at 3.2-3.6 s).
+* ✔ (guest log lines `net: round trip p10 .. p90`, new) The mean round trip (Connection::rtt_ms, ~10 samples) follows
+  every spike of the player network and both games' frames: 115-462 ms on the player network at a lab load of 25-35
+  (the no-lead rule then read 139 ms and turned the member lead off: body_trail_tribe_player lab 20261108-003907-2,
+  p90 2.11 m). The lower quartile of the last 128 samples: player network 84-151 ms (one-way 42-75), mobile 186-234
+  ms (93-117) (lab 20261108-005832, -005832-2); with half this game's own wait between two socket reads taken off each
+  sample (a loaded guest's frame, Connection::poll_prev_ms) the player network at a load of 25-35 reads 80-152 ms
+  (lab 20261108-010745 / -2). The rule (`drive.lead_low`) reads half of it, lines 80 / 70 ms: the mobile network still
+  goes off (tribe_walk_mobile OK, `lead off (one-way latency 101 ms)`), the player network under load keeps the lead.
+  ~ The margin at the top of the player network's range (76 ms against 80) is thin; a heavier load than the lab's 35
+  may still turn it off.
+* ✔ (npc_walk_tribe over the player network, lab 20261108-011449 / -012638-2) The walked NPC proxies' remaining jumps
+  were late news without drive.lead_late (a walk that started in a spike: the target jumped 2.6 m at the start) and a
+  turn known late (the target jumped 2.6-4 m and walk_place's snap teleported the proxy onto it). Now the proxies
+  have late_lead (late_time) and smooth_max 8 m (every lead jump up to 8 m through the smoothing offset); the members'
+  rules (the no-lead rule, the smoothing only after a switch) stay theirs.
+* ✔ (2026-11-08, fix/w46-n1-camera-test) The same null camera made on purpose: `coop.introstage` starts the intro (as
+  the menu's handler does, through the BUG-0626 hook) in the mod's first tick in the next stage; the tribe setup's
+  LookAt comes 0.10-0.15 s later and meets the null camera on every start (lab 20261108-013439, 20261108-013444). The
+  join-time race alone depends on the guest's console answering before ~12.5 s after its menu came up, which a slow
+  start misses (lab 20261108-012203: ~30 s).
+
+## Carried food bundles outside Tribe (2026-11-08, fix/w46-k7-findings)
+<a id="tribe-bundles-outside-tribe"></a>
+
+BUG-0684, GOG 2024. Follow-up of [the carried bundles](#tribe-carried-bundles).
+* ✔ In Civ the old tribe villages (and the cities' citizens, noun 0x18EB4B7) run their own behaviour in each game: in
+  `civ_village_bundle` a creature of the guest's game given food (`coop.wobj bundle carry`) still carried it 10 s later
+  with the bundle sync kept off its hand; the host's carriers' food was copied into the hands of 3 creatures of the
+  guest's own village within 1 s (the nearest empty hand within 8 m) and removed again 3 s later (lab 20261108-004130-2,
+  `wobj.bundle_civ_carried` off: `carried=3 removed=6`).
+* ~ The fault of play_civ (132 caught faults at 0xC23469, `SporeCoop::Citizen_HoldBundle` 0xC23460 with a null bundle,
+  from the gather node sub-state 0xD74D40) follows when such a bundle is removed from the container while the member's
+  gather node holds it: inferred from the disassembly and the play_civ log (the host's carried bundle made on the guest
+  6 s before, 25-35 m from the old village); the test shows the removal, not the fault (0 faults in its FAIL runs).
+* Rule (`wobj.bundle_civ_carried`): outside Tribe a carried bundle is left to the game that carries it: no copy of the
+  host's carried food is made on a guest, a guest's own carried bundle is kept (bundle_own), and a bound one whose host
+  bundle is gone is not removed. Ground bundles are synced as before.
+* ~ Tried and reverted (2026-11-08): moving the fall's knee on by half of a newest state's extra age (a spike whose states
+  flow late, so a straight walk is not shown behind): the proxies got worse (npc_walk_tribe 0 of 2 with 2 jumps each,
+  body_trail_hits 1 of 2 at 7.9 m after a push, lab 20261108-015610 / -2). The plain knee's cost stays: NPCs walking
+  straight on through a spike, body_trail_hits NPC p90 0.56-0.58 m against 0.33-0.37 m without the fall (limit 0.6).

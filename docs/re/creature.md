@@ -3562,3 +3562,14 @@ BUG-0658. GOG 2024, lane 5, puppet_far_jump.
   its avatar is not simulated and stays inside; Enter closes it, and the game then moves the avatar itself.
 * Tests that teleport far must close the guest's captions before judging where the other game draws it.
 
+## A partner's puppet pressed into the ground at the nest (2026-11-08, fix/w46-k7-findings)
+<a id="creature-puppet-unground"></a>
+
+BUG-0683 (the partners' side of BUG-0504 / BUG-0592), GOG 2024, lab lane 9.
+* ✔ A standing puppet put 0.69 m under this game's terrain (0.7 m to the side of its target, as the separation of the
+  creatures stacked on the nest left Bob's puppet in campaign_tribe) stays there for seconds: the mod's driving of a
+  standing partner places nothing (puppet_unground FAIL runs: 4 s at -0.6..-0.69 m); sometimes the game's own update
+  puts it back (round 2 of the first FAIL run).
+* Rule (`creature.puppet_unground`): a puppet whose partner stands, under 0.25 m below GetHeightAt for 0.5 s, is put
+  onto its ground where it stands (on a mound at its target's height); the own creature has the same rule
+  (creature.own_ground).

@@ -97,6 +97,14 @@ int c_menu(void*, int, const char* const*, SkOut* out)
 // tests (BUG-0578): the player's way out of the game: WM_CLOSE to the game window (the window's close button / Alt+F4),
 // so that the game runs its own exit (cSporeApp::Shutdown, the game mode manager and editors disposed); the lab's
 // kill and `quit` end the process without it
+// tests (BUG-0167): the galaxy menu intro starts in the first tick of the next stage (world::arm_intro_in_stage)
+int c_introstage(void*, int, const char* const*, SkOut* out)
+{
+    world::arm_intro_in_stage();
+    SAY("the menu intro starts in the first tick of the next stage");
+    return 0;
+}
+
 int c_close(void*, int, const char* const*, SkOut* out)
 {
     HWND w = (HWND)H->game_window();
@@ -700,6 +708,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
                       nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.introstage", "coop.introstage - the menu intro starts in the first tick of the next stage (tests, BUG-0167)",
+                      c_introstage, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.close", "coop.close - WM_CLOSE to the game window: the game's own exit (tests, BUG-0578)", c_close,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.deadmodal", "tests (BUG-0270): the window manager's modal window becomes a destroyed object",

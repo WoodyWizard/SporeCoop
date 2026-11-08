@@ -2371,3 +2371,61 @@ BUG-0547 (the sync-check's `p0 46.2` / `p0 50.0` MISMATCHes). Lab lane 9, `tools
   destroyed). `coop.fix drive.space_hp off`: full health. Lab: a 40 % hit on either ship shows 0.60 on the other game's
   puppet (`coop.puppet hp`), 1.00 with the switch off.
 * Contracts: see docs/re/host-centric.md#host-centric-away-credits (rewards owed outside Space, the contract clock).
+
+## The host's NPC ship shots on a guest (2026-11-08, fix/w46-k56-space)
+<a id="space-ship-shots"></a>
+
+BUG-0677 (detector: `Space:host_only:default_beam_projectile`). GOG 2024 addresses (dc04aee5).
+* ✔ (runtime, lab 20261108-020128) In a star system the host's ambush pirates (type 8) spawned next to the ships and
+  shot once by the host (coop.fleet shoot) made no FireTool call in 45 s: no fight there. On a planet (space_empire's
+  colony 01460035) the same pirates and raiders fought at once: the host's FireTool hook saw 770 shots that left in
+  45 s, from the ships the host lists (none untracked).
+* ✔ (code) A guest's mirrors never fired: h_FireTool returned 0 for every mirror owner (by design since 0.6: the host
+  decides the fights). Only the hits came over (MSG_UFO_DAMAGE).
+* ✔ (runtime) A mirror spawned with SpawnUFO has the NPC weapons of its type: the weapon the host's ship fired is found
+  by its slot (ufo +0x790 mpNPCWeapon .. +0x7A4 abduct, six pointers) in the mirror, and the game's FireTool (owner =
+  mirror +0x34, the target's +0x34) made the projectile in the guest's game: 761 of 770 shots fired, none refused.
+* ✔ (runtime) The copies' projectiles hit things in the guest's game (760 hits seen in 45 s, mostly the host's ship's
+  puppet, the pirates' target): the attacker the projectile passes to TakeDamage is the mirror's combatant (+0x508).
+* Fix (`space.shots`, squadron.cpp): the host counts its listed NPC ships' shots that left (FireTool true: weapon
+  slot, aim, target kind: a listed ship, a player's ship, a noun near a place, or one the guest cannot find) and sends
+  the last second's list every 0.2 s (at once after a new shot, at most every 0.05 s) in MSG_UFO_STATE with chunk 0xFE,
+  chunks 0 (an older guest drops it: chunks 0 fails the cycle check). The guest fires the mirror's own weapon of that
+  slot that many times, at the same target (aim moved by the target's offset in its game), never at a target it does
+  not have (BUG-0534: the weapon update reads a shot's target without a check), and stops the weapon (OnMouseUp) when
+  the list no longer has the ship. A mirror's hit on anything (the own ship, puppets, posse, mirrors; civ.cpp
+  cosmetic_hit: buildings) is dropped; a hit without an attacker on the own ship within 1.5 s of a copied shot at it is
+  dropped too (an area's tick). Counters: `coop.fleet list`, line `space shots:`.
+
+## The limits of the kept hold: local record, slots, plant / animal / artifact cargo (2026-11-08, fix/w46-k56-space)
+<a id="space-kept-hold-limits"></a>
+
+BUG-0679, after [the kept hold](#space-kept-hold). GOG 2024 addresses (dc04aee5), objdump.
+* ✔ `cSpaceInventoryItem` (0x7C bytes, ctor 0xC877F0, vtable 0x14734D8, "Simulator/cSpaceInventoryItem"): +0x10
+  count, +0x14 type (the ctor sets 2), +0x18 price, +0x2C the slot it fills, +0x30 its property list, +0x5C..+0x64 the
+  item key (vt+0x14 0xAC0A80 SetItemID copies 12 bytes there, vt+0x18 0xB1F900 returns &+0x5C), vt+0x24 Clone.
+  0xC87980 thiscall(item, props) ret 4 sets the property list and reads it.
+* ✔ CreateTradingObject 0x103A490: new item, the property list (instance, group 0x34D97FA) through the resource
+  manager 0x67DDF0 vt+0x2C, SetItemID, type 4, count, price, 0xC87980.
+* ✔ The mission reward code (0xC534E0..0xC53680, kinds 0x23DA98FF animals, 0x19EC2C8B artifacts, 0x69412983 /
+  0x3E994B2B animals of the other kind) shows the game's own factory per cargo type, each followed by
+  `cSimulatorSpaceGame::Get()` 0x1002A70 -> 0xA1ACE0 (the inventory) vt+0x80 AddItem(item, 0, 1) and Release:
+  * animals (type 1, or 6 with the flag): `AnimalCargo_Create` 0xAC0C00 thiscall(ecx unused, out, &species key,
+    count, flag) ret 0x10: cSpeciesManager (0x401090) GetSpeciesProfile 0x4DF5C0 (none: out untouched), a
+    cAnimalCargoInfo (0x80 bytes, vtable 0x1459C20, the profile at +0x7C), key = profile +0x504;
+  * plants (type 0): `PlantCargo_Template` 0xB90560 thiscall(cache 0xB3D520(), &species key) ret 4 returns a cached
+    cPlantCargoInfo (0xA4 bytes, vtable 0x1465728; built by 0xB901F0 from the species profile), then its Clone
+    (vt+0x24) ~ (the template's vt+0x24 not disassembled);
+  * artifacts (type 5): `ArtifactCargo_Create` 0xC87A60 cdecl(out, key by value): type 5, property list (instance,
+    group 0x37D494E; the game's packages hold 11 of them, e.g. 0x10D5D4D3).
+* ✔ `RemoveItem` 0xFF3FD0 (vt+0x78, thiscall(item) ret 4 -> bool): 0xC87F10 erases the item pointer from +0x34,
+  releases its +0x2C slot reference, clears the selection, posts 0x5E793AD / 0x57F3749. A free cargo slot (type 3, no
+  item points at it: IsSlotFree vt+0x98) goes with it as a plain erase.
+* Fixes: `space.keep_items_slots` (the free slots beyond the own count go), `space.keep_items_cargo` (the factories
+  above), `space.keep_items_local` (the guest's own record per host world: `<AppData>\Spore\SporeCoop\holds\<crc32 of
+  "host name|planet file">.txt`, written at most once a second when the hold of a world that is its own changes, also
+  after the session ended while that world is open; read 2 s after a world loaded from the host appears and applied
+  at once; the host's kept copy is then not used). Tests start without a record (twoinst forget_holds, `coop.space
+  trade forget`).
+* Not covered: a guest that joins under another name, or plays the same host world from another PC (the record is
+  per profile; the host's kept copy still helps while the host runs).
