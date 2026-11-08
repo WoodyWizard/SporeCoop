@@ -2452,3 +2452,6 @@ BUG-0723 / BUG-0724, children of the content class BUG-0424 (`squadron.cpp`, gue
   0xC bytes each"; `coop.creations objmodels` read city +0x528 + 0xC * i on the Civ fixture civ_npc (lab
   20261108-033541) and found pointer-like values (102F9F24/102F9F26/0, 41524103/C3815C41/0), no resource keys. Not
   checked on a Space colony city; not used by any code of this branch.
+* ✔ (runtime, lab 20261108-043549 / 044742 / 044523) A host ship whose model key the guest lacks and whose empire has no
+  ship on the guest (a pirate) had no mirror at all (BUG-0323's "no mirror yet"): the lab's sync-check gate found the
+  host's ship missing on the guest. It takes the raid model as its last fallback too (`fleet.zero_key`).
