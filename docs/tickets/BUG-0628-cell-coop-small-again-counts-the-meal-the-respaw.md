@@ -1,17 +1,17 @@
 ---
 id: BUG-0628
 title: cell_coop: 'small again' counts the meal the respawned cell ate before a slow first sample
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-06
 source: INT3 rerun lab 20261106-130235 cell_coop#2
 role: 
 versions: 0.7.9 828055b8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.9
+branch: fix/w45-int3
+commits: dfb57e4c
+tests: cell_coop
 signature:
 docs:
 related: BUG-0364, BUG-0356, BUG-0627
@@ -38,3 +38,4 @@ needed there: the case needs a meal inside the slow sample, seen once in 10 runs
 
 ## History
 - 2026-11-06: opened.
+- 2026-11-08 (fix/w46-g4-tests): G4: the test fix was in 0.7.9 but the ticket stayed open; cell_coop 3 of 3 again on lane 3 (out/lab/20261108-054541, 'small again' passed each time). Closed fixed.
