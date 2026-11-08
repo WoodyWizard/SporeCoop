@@ -328,3 +328,25 @@ is the PC's IPv4 addresses with their prefix lengths: `GetAdaptersAddresses(AF_I
   and no lookup runs again in that game). Other nsi users in the game are not covered: Wine's
   own ws2_32 (`gethostbyname` of the own host name, `SIO_ROUTING_INTERFACE_QUERY`), winhttp's
   proxy detection.
+
+## Per-player state registry (2026-11-07, fix/w46-k2a-state)
+<a id="netcode-player-life"></a>
+
+Player ids are reused within a session (net/session.cpp `alloc_id`: the lowest free id), so the next player to join
+gets a departed player's id (BUG-0422 class). Every module that keeps a map keyed by a player id registers it in
+`mods/coop/player_life.h` with `PLAYER_STATE("module", forget, held)` next to the map; coop.cpp calls
+`player_life::forget_all(id)` on every leave and every join (`core.player_forget`). `coop.players held <id>` lists what
+the modules still hold (tests: coop_player_forget). Registered in 0.7.11 (BUG-0706): spacecoop (last star, down
+timer: Jump-to went to the departed player's star), space_rivalry (budget, merge credit), space_map (rosters,
+"seen" players), space_finale, tribe (chief, pincer hits), civ (siege hits), fields (values last sent to a guest),
+creations (designs answered to a guest), realign, effects. Not registered on purpose: diag_sync's guest checks (its
+rejoin grace keeps them), player_rules' carried objects (released by their own rest rule).
+
+## World effects carry their height over the sender's ground (2026-11-07, fix/w46-k2a-state)
+<a id="netcode-effect-agl"></a>
+
+MSG_EFFECT pool 5 (a world effect: hit impacts, splashes, the sea monster) appends an f32 after the 0x44-byte
+transform: the effect's height over the sender's ground (cPlanetModel::GetHeightAt; kNoAgl when unknown or more than
+30 m off). The receiver (and the host's relay to guest 3+) puts the effect at that height over its own ground, the
+rule every remote body follows (BUG-0425); older SporeCoop stops reading before the trailer. `effects.ground`
+(BUG-0608). Test: coop_effect_ground (an effect sent as from a host whose ground lies 5 m higher).

@@ -200,3 +200,25 @@ file missing" is not retried (world.cpp saved 3 times already).
 Limits: two different planets saved under the same name count as one world (a protocol change would
 fix it). Rivals mode (docs/11-rivals.md 11.8, "Perspective" and "Per-player progress") builds on
 this rule: it answers "whose world is this machine in", the modules decide what to share.
+
+## Message classes and the world filter of events (2026-11-07, fix/w46-k2a-state)
+<a id="modes-message-classes"></a>
+
+BUG-0420 (class: hits, events and world state applied without a relation / world filter), 0.7.11:
+
+* Every `net::MsgType` has one class in `host_world.h` `msg_class()`: Session (applied wherever the guest plays: the
+  session, chat, a partner's own creature, a guest's report to the host, the vote, MSG_RES held in shared.cpp),
+  HostWorld (dropped at dispatch while the guest is elsewhere: the old hand list), Module (the module gates by place:
+  npc, wobj, tribe / civ host_away, Space with_host, effects C.here) and Unknown (a type this build does not know:
+  dropped while elsewhere, default deny, `core.msg_classes`). The switch has no default and
+  `#pragma GCC diagnostic error "-Wswitch"`: a new MsgType that is not classified fails the build of coop.dll and of
+  tests/validate_tests.cpp (BUG-0701).
+* MSG_VOTE stays session-wide; its handler takes no vote that starts while the guest is elsewhere and opens no
+  evolution editor at the end of one (`core.vote_world`, BUG-0702).
+* The species table: a guest elsewhere forgets the host's last table instead of writing it into its own world every
+  0.5 s (`social.world_gate`, BUG-0703).
+* Relation filters: an NPC nation's vehicle (owner 0xFE) is no player of a joint siege (`civ.siege_players`,
+  BUG-0704); Space hits between the players' empire and its own escorts are not relayed (`space.friendly_hits`,
+  BUG-0705: the game itself applies no damage between ships of one empire, lab 20261107-222158, so this one is
+  hygiene, not a visible fix).
+* Tests: coop_world_gate_vote, coop_civ_siege_npc, coop_space_friendly; validate_tests (the classes).
