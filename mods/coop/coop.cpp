@@ -3577,11 +3577,8 @@ void on_frame(void*, int, void*)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
-<<<<<<< HEAD
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
-=======
     sreport::tick();  // F4: the session report's round (host) and the guest's question / transfer
->>>>>>> feat/w46-session-report
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
@@ -4308,13 +4305,12 @@ void setup_callbacks()
             settings::on_message(type, from, r);
             return;
         }
-<<<<<<< HEAD
         if (type == net::MSG_COLORS) { // F2: the player colours (Session class)
             pfind::on_message(type, from, r);
-=======
+            return;
+        }
         if (type == net::MSG_REPORT) { // F4: the session report (BUG-0767)
             sreport::on_message(from, r);
->>>>>>> feat/w46-session-report
             return;
         }
         if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
@@ -6377,13 +6373,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         sc.feed = feed;
         settings::init(H, M, sc);
     }
-<<<<<<< HEAD
     { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap
         pfind::Ctx fc;
         fc.sess = &g_sess;
         fc.feed = feed;
         pfind::init(H, M, fc);
-=======
+    }
     { // F4 of 0.7.12 (BUG-0767): one report for the session
         sreport::Ctx rc;
         rc.sess = &g_sess;
@@ -6391,10 +6386,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         rc.shot = [] { return support::report_shot("report", "the host asked for the session report"); };
         rc.shot_state = [] { return support::report_shot_state(); };
         rc.feed = feed;
-        rc.chat_log = chat_log;
+        rc.chat_log = [](const std::string& s) { chat_log(s); }; // (F2 gave chat_log a colour argument)
         rc.open_window = [] { coop_ui::open_lobby(); };
         sreport::init(H, M, rc);
->>>>>>> feat/w46-session-report
     }
     social::Ctx sc;
     sc.sess = &g_sess;

@@ -491,7 +491,6 @@ static void test_settings()
     CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
 }
 
-<<<<<<< HEAD
 // F2 of 0.7.12 (BUG-0764): the player colours, the arrow at the screen edge
 static void test_find()
 {
@@ -544,7 +543,7 @@ static void test_find()
     CHECK(arrow_tris(a, 22, 0, v) == 2 && std::fabs(v[0] - a.x) < 1e-3f && std::fabs(v[1] - a.y) < 1e-3f);
     CHECK(dist_text(80.4f) == "80 m" && dist_text(1520) == "1.5 km");
     CHECK(angle_diff_deg(3.1f, -3.1f) < 5.f);
-=======
+}
 
 // BUG-0767 (F4 of 0.7.12): the session report: the content check of a received report, the host's round, the zip
 static std::vector<uint8_t> zip_of(const std::vector<std::pair<std::string, std::string>>& files)
@@ -706,7 +705,6 @@ static void test_sreport()
     rd2.u8();
     Piece q3;
     CHECK(!q3.read(rd2));
->>>>>>> feat/w46-session-report
 }
 
 int main(int argc, char** argv)
