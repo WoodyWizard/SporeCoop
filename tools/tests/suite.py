@@ -273,6 +273,13 @@ add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_siege_npc', P + 'coop_civ_siege_npc.py', warm=True, minutes=3, fixture='civ_npc')  # an NPC nation's army is no second player of a joint siege (BUG-0420; SPORE_FIX_OFF=civ.siege_players fails)
 add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixture='space')  # the host's escort's hits on a guest and the guest's on the escort are not relayed (BUG-0420; SPORE_FIX_OFF=space.friendly_hits fails)
 add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
+# K2b content (BUG-0424 children), sub-agent B
+add('space_zero_key', P + 'coop_space_zero_key.py', minutes=4, fixture='space')  # BUG-0723: a host ship with a model key of zeros makes no ship without a model on the guest (SPORE_FIX_OFF=fleet.zero_key fails)
+add('space_zero_key_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_zero_key.py', minutes=5, fixture='space')  # BUG-0723 at 20 fps over the player network
+add('civ_design_content', P + 'coop_civ_design_content.py', minutes=5)  # BUG-0725 / BUG-0726: a host's vehicle and house design with a part the guest lacks: the mirror shows the most similar part (the design's part descriptions), the house is built (SPORE_FIX_OFF=content.design_lookalike / content.building_copy fail)
+add('civ_design_content_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_civ_design_content.py', minutes=6)  # BUG-0725 / BUG-0726 at 20 fps over the player network
+add('space_host_ship_design', P + 'coop_space_host_ship_design.py', minutes=4, fixture='space')  # BUG-0724: the guest's mirrors of the host's empire's ships show the host's own ship design, not the guest's creation of the same id (SPORE_FIX_OFF=fleet.host_designs fails)
+add('space_host_ship_design_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_host_ship_design.py', minutes=5, fixture='space')  # BUG-0724 at 20 fps over the player network
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('window_input', P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713 (class BUG-0429): F9 pressed while another program has the focus does not toggle the co-op window on the host or the guest, F9 on the game window does (SPORE_FIX_OFF=input.window fails)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
