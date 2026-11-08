@@ -360,6 +360,7 @@ def analyse(obs_rows, walker_rows, label, air_exempt=False):
     own = [r for r in walker_rows if r['who'] == 255]
     top = pct([r['gv'] for r in own if r['gv'] > 0.3], 0.95) or 5.0  # the walker's own top speed
     pup = [r for r in obs_rows if r['who'] != 255]
+    own_tp = [b['t'] for a, b in zip(own, own[1:]) if math.dist(a['d'], b['d']) > 3.0]  # the walker teleported (gopos)
     frames, moving, anim_ok, walk_anim, gait, tps, steps, dts = 0, 0, 0, 0, 0, [], [], []
     anims_moving = {}
     prev_dt = 0
@@ -382,7 +383,11 @@ def analyse(obs_rows, walker_rows, label, air_exempt=False):
             k = pup.index(b)
             tj = [math.dist(pup[m]['tgt'], pup[m + 1]['tgt']) for m in range(max(0, k - 12), k)
                   if math.dist(pup[m]['tgt'], pup[m + 1]['tgt']) > max(0.3, 2.5 * top * max(0.001, pup[m + 1]['t'] - pup[m]['t']))]
-            if not (air_exempt and tj and (step <= sum(tj) + 0.3 or math.dist(b['d'], b['tgt']) < 0.3)):
+            # BUG-0742: walk()'s way back to the partner teleports the walker's own creature (gopos, 8-16 m in one
+            # frame of its own track): the puppet that follows it (and settles in the next 0.8 s) is no jump of the
+            # driving. Only the walker's own teleports count, read on the walker's own track (same clock, +-0.2 s)
+            walker_tp = any(-0.2 <= b['t'] - t <= 0.8 for t in own_tp)
+            if not walker_tp and not (air_exempt and tj and (step <= sum(tj) + 0.3 or math.dist(b['d'], b['tgt']) < 0.3)):
                 tps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
         if step >= 0.2 * b['rv'] * dt:
             moving += 1
