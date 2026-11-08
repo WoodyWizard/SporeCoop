@@ -156,6 +156,9 @@ anchor so other docs can link to it:
   run 20261027-183142, GOG 2024). Hardened on the way: the epic is checked against the game's object
   list, `epic hit` stops at a dead victim, the epic state ends with the session and the world.
   If it comes back: the game logs are kept by lab.py now.
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): the candidate (the test loop's blows on the epic at hp 0) tried on
+  purpose with the old command (`tribe.hit_dead` off, tribe_epic_dying, also at 20 fps over the player network): no
+  freeze; the 2026-10-22 lane 2 was a GOG 2016 lane. Closed as not-reproduced.
 * Ticket: BUG-0171.
 
 ## Tribe: host fault and freeze when a member is added during the game-over caption
