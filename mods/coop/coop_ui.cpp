@@ -1538,6 +1538,8 @@ static void refresh()
     // joined or hosted from the console while the window was closed
     if (int r = A.role())
         g_step = r == 2 ? kStepJoin : kStepHost;
+    if (!g_name_first_fix && g_step == kStepName) // (switched off after the start: the 0.7.11 window, no name step)
+        g_step = kStepChoose;
     ensure_menu_button();
     pause_menu_tick();
     if (g_want_open && !D.root)

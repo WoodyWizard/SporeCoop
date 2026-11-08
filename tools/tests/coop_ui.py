@@ -218,7 +218,10 @@ def run(restart):
         print(('  ok   ' if cond else '  FAIL ') + msg, flush=True)
         ok &= bool(cond)
 
+    fixes = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     for con in (hc, gc):
+        for name in fixes:  # the twin switches (core.ui_name_first, core.ui_pause_report: the 0.7.11 window)
+            print('  SPORE_FIX_OFF:', con.call(f'coop.fix {name} off')['out'].strip(), flush=True)
         for _ in range(180):
             if 'GalaxyGameEntry' in con.call('game.mode')['out']:
                 break

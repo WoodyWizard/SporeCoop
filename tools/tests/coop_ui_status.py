@@ -92,7 +92,10 @@ def main():
     guest.call('coop.uistate 1')
     print(' ', guest.call('coop.lanfake 6 120')['out'].strip())
     seen = set()
-    st = ui.wait(lambda s: sum(1 for i in range(3) if s.get(f'lan{i}', {}).get('vis')) == 3, 20, 'three LAN rows')
+    # (three rows and "More >": with six made-up games there are more than three; other lanes' hosts alone fill three
+    # rows before the made-up ones are listed, and the loop below stopped at once, lab 20261108-155445)
+    st = ui.wait(lambda s: sum(1 for i in range(3) if s.get(f'lan{i}', {}).get('vis')) == 3 and
+                 s.get('lanmore', {}).get('vis'), 20, 'three LAN rows and More')
     # Other lab lanes' hosts answer too (each twice on a machine with two network addresses), so the
     # list can hold 18 games and the made-up ones are on pages 4-6. The game drops clicks for a few
     # seconds after it reaches the menu (the guest just left a world): a click that did not turn the
