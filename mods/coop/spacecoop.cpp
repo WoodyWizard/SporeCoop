@@ -1976,7 +1976,7 @@ std::string debug(const std::vector<std::string>& a)
         g_jump_old = false;
         return e.empty() ? "jumping" : e;
     }
-    if (a[0] == "away" && u && a.size() > 3) { // tests (F2, BUG-0764): the own ship moved by dx dy dz (off a partner's view)
+    if (a[0] == "shipaway" && u && a.size() > 3) { // tests (F2, BUG-0764): the own ship moved by dx dy dz (off a partner's view)
         const float* p = (const float*)((uint8_t*)u + kPos);
         float q[3] = {p[0] + (float)atof(a[1].c_str()), p[1] + (float)atof(a[2].c_str()), p[2] + (float)atof(a[3].c_str())};
         memcpy((uint8_t*)u + kPos, q, 12);

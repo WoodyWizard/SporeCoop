@@ -250,6 +250,7 @@ def creature(ck, host, guest, stage):
     ck(1 in hb and map_off(hb[1][0], real_g) < 4 and hb[1][1] == colors(host)[1][1],
        "the host's minimap has the guest at its real position, in its colour")
     shot(guest, f'find_{stage}_map.png')
+    shot(host, f'find_{stage}_map_host.png')
     host.call('coop.settings set all.partner_map off')
     ck(wait(lambda: 0 not in blips(guest), 5), 'all.partner_map off: the host is no longer on the guest\'s minimap')
     host.call('coop.settings set all.partner_map on')
@@ -285,7 +286,7 @@ def other(ck, host, guest, stage):
                 out = host.call(cmd)['out'].strip()
                 if stage == 'space' and 'not on a planet' in out:  # in a star system: the ship moved in its plane
                     d = (400.0 * math.cos(math.radians(deg)), 400.0 * math.sin(math.radians(deg)), 0.0)
-                    out = host.call('coop.space away %.1f %.1f %.1f' % d)['out'].strip()
+                    out = host.call('coop.space shipaway %.1f %.1f %.1f' % d)['out'].strip()
                 print('  host:', out[:120], flush=True)
                 time.sleep(3)
                 r = row_of(guest, 0)
@@ -314,11 +315,22 @@ def other(ck, host, guest, stage):
         gb = blips(guest)
         print(f'  guest map: {gb}', flush=True)
         ck(0 in gb and me_h and map_off(gb[0][0], me_h) < 6, "tribe: the guest's minimap has the host's chief at its position")
+        if '--icons' in sys.argv:  # looks: the game's blip icons by flags (docs/re/creature.md#creature-minimap)
+            for f in ('2', '10', '40', '1', '10000', '0', '4', '20', '80', '100', '200', '400', '800', '1000'):
+                guest.call('coop.settings force all.partner_map off')
+                time.sleep(0.8)
+                guest.call('coop.find map ' + f)
+                guest.call('coop.settings force all.partner_map on')
+                time.sleep(1.2)
+                print('  icon', f, [l for l in guest.call('coop.find map')['out'].splitlines() if l.startswith('blip')], flush=True)
+                shot(guest, f'icon_tribe_{f}.png')
+            guest.call('coop.find map 2')
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='creature', choices=('creature', 'tribe', 'cell', 'civ', 'space'))
+    ap.add_argument('--icons', action='store_true')
     a = ap.parse_args()
     host, guest = start(a.stage)
     ck = Checks()
