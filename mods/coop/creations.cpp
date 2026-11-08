@@ -2791,8 +2791,8 @@ void tick(double now)
         g_last_check = now;
         share_own(now);
     }
+    alias_tick(); // BUG-0200 (first: a key the avatar is about to play loses its alias before SetSpecies)
     apply_own_avatar();
-    alias_tick(); // BUG-0200
     player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
 }
