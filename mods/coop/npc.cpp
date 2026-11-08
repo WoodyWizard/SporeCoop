@@ -785,6 +785,7 @@ std::string current_anims()
     return out;
 }
 
+static void dash_velocity(uint16_t id, const net::Vec3& pos, net::Vec3& vel); // BUG-0753 (tests)
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;
@@ -792,6 +793,10 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.pos = game::position(c);
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
+    // BUG-0753 (tools.dash_after_send): a dashing NPC moved by the test's write moves at the dash's velocity (the game's own
+    // velocity after its update is its locomotion's, not the written path's), when the game kept the write (the mate's
+    // is not kept: then its own)
+    dash_velocity(id, s.pos, s.vel);
     s.health = game::health(c);
     s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
@@ -897,6 +902,9 @@ struct Dash {
     double t0 = 0, until = 0;
     uint16_t mate = 0; // a second NPC on the same path, `off` m to the side (a herd that flees together)
     float off = 0;
+    // BUG-0753: what the last dash_tick wrote (index 0 the dasher, 1 the mate), for host_state's velocity
+    net::Vec3 w[2], v[2];
+    bool wrote[2] = {false, false};
 };
 static Dash g_dash;
 static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
@@ -912,6 +920,14 @@ static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
 // fix/w46-g4-tests). After the send the states are what the game has, as in play. Off: before the send (the test as it was).
 static bool g_dash_after_send = true;
 COOP_FIX("tools.dash_after_send", "BUG-0753", g_dash_after_send, "tests: coop.npc dash moves its NPCs after the states went out (the states are the game's own positions)");
+static void dash_velocity(uint16_t id, const net::Vec3& pos, net::Vec3& vel)
+{
+    if (g_dash_after_send && g_dash.id)
+        for (int m = 0; m < 2; m++)
+            if (g_dash.wrote[m] && id == (m ? g_dash.mate : g_dash.id) &&
+                net::dist(pos, g_dash.w[m]) < 0.5f + drive::speed(g_dash.v[m]) * 0.1f)
+                vel = g_dash.v[m];
+}
 static void dash_tick(double now)
 {
     if (!g_dash.id || now > g_dash.until) {
@@ -962,6 +978,9 @@ static void dash_tick(double now)
             w = {w.x / r * gr, w.y / r * gr, w.z / r * gr};
         game::set_position(c, w);
         *(net::Vec3*)((uint8_t*)c + game::kVelOff) = v;
+        g_dash.w[m] = w;
+        g_dash.v[m] = v;
+        g_dash.wrote[m] = true;
     }
 }
 // tests (BUG-0339): host NPC #id goes back to the game's creature pool, as the relevance pass does it
