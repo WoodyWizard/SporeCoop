@@ -19,6 +19,7 @@ deterministic).
 import argparse
 import math
 import random
+import os
 import re
 import sys
 import threading
@@ -50,6 +51,31 @@ def screen(con):
 def num(rx, text, default=None):
     m = re.search(rx, text)
     return float(m.group(1)) if m else default
+
+
+def chat_reached(con, other, msg, sent_at):
+    """a chat line sent at sent_at (the Send click) is in both games' chat: (ok, seconds when it came late or 0,
+    mine, theirs). BUG-0629: the click waits in the window's queue while the game holds its frames (a row of
+    0.4-1.1 s hitches: the line was sent and shown on both 0.4 s after the old check, out/lab/20261106-130130
+    #3); a line is lost only when both games have run 5 frames since the first look and it is not there (8 s
+    at most). SPORE_CHAT_WAIT=0: the old check, once 1.5 s after the click."""
+    time.sleep(max(0.0, sent_at + 1.5 - time.time()))
+    mine, theirs = con.call('coop.status').get('out', ''), other.call('coop.status').get('out', '')
+    ok = msg in mine and msg in theirs
+    if ok or os.environ.get('SPORE_CHAT_WAIT', '1') == '0':
+        return ok, 0, mine, theirs
+
+    def frames():
+        fr = [re.search(r'frame=(\d+)', c.call('frame').get('out', '')) for c in (con, other)]
+        return [int(m.group(1)) if m else 0 for m in fr]
+    f0 = frames()
+    while not ok and time.time() - sent_at < 8:
+        time.sleep(0.5)
+        mine, theirs = con.call('coop.status').get('out', ''), other.call('coop.status').get('out', '')
+        ok = msg in mine and msg in theirs
+        if not ok and all(b - a >= 5 for a, b in zip(f0, frames())):
+            break
+    return ok, (time.time() - sent_at if ok else 0), mine, theirs
 
 
 class World:
@@ -381,10 +407,13 @@ class Player(threading.Thread):
                             return
                         self.do(f'click {(int(m2.group(1)) + int(m2.group(3))) // 2} {(int(m2.group(2)) + int(m2.group(4))) // 2}')
                         self.add('chat_sent')
-                        self.sleep(1.5)
+                        sent_at = time.time()
                         other = Console(lane.GUEST if self.inst == lane.HOST else lane.HOST)
-                        mine, theirs = self.do('coop.status'), other.call('coop.status')['out']
-                        ok = msg in mine and msg in theirs
+                        ok, late, mine, theirs = chat_reached(self.con, other, msg, sent_at)
+                        if ok and late:
+                            self.add('chat_late')
+                            self.notes.append(f'{time.strftime("%H:%M:%S")} chat "{msg}" seen on both '
+                                              f'{late:.1f} s after the Send click (held frames)')
                         self.add('chat_seen' if ok else 'chat_missing')
                         if not ok:
                             last = lambda t: [x[6:] for x in t.splitlines() if x.startswith('chat: ')][-2:]  # noqa: E731

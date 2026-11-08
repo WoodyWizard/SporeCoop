@@ -219,6 +219,9 @@ struct Key {
 };
 Key species_key(void* c);
 void* species_by_key(const Key& k);
+// the cSpeciesManager's map slot that holds the profile of this key (its node value), or null: no node yet
+// (docs/re/creations.md#creations-species-map, BUG-0200)
+void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 void* herd_of(void* c);

@@ -4855,3 +4855,15 @@ sees with the host's owner of that moment: the partner's bot often gave a vehicl
 (`give_returned`). The spice claim check gives the guest 4 s after it first sees the host's claim (the host sends
 the node owners once a second, a guest in a city planner takes them on its return: `claim_seen_early`). A rejected
 guest order now names its target in the host's log ("target kind K id I ... not in the host's game").
+## A UI click waits for held frames: look again until the game ran (2026-11-07, fix/w46-p4-creature)
+<a id="testing-chat-held-send"></a>
+
+* A `click` (and `key`, `text`) goes into the game window's queue at once and returns; the game takes it on its next
+  frame. While the main thread holds its frames (a hitch, a save, `kit.test.hang`) the click waits: a check of what
+  it did, made a fixed time after it, can come before the game took it (BUG-0629: play_creature called a chat line
+  lost that both games showed 0.4 s after the bot's single look, after a row of 0.4-1.1 s hitches).
+* `frame` and `coop.status` are answered off the main thread, so they work during the hold: a check that fails
+  looks again until both games have run a few frames since (`play_creature.chat_reached`: 5 frames, 8 s at most).
+* `kit.test.hang <ms>` holds the main thread on its next frame (2.5 s passes the hitch gate in chat_pause and
+  chat_held_send); `tools/lab.py run chat_held_send,chat_held_send_oldcheck` shows the late click (the _oldcheck twin
+  with SPORE_CHAT_WAIT=0 must FAIL).

@@ -9,9 +9,9 @@ source: fix/w7-legless test run 20261029-143204
 role: guest
 versions: main after 0.7.3.0 (fix/w7-finale dcff1cf)
 fixed_in:
-branch: fix/w13-creature
+branch: fix/w46-p4-creature
 commits: 3922e14
-tests: tools/tests/coop_guest_editor_hold.py (suite guest_editor_hold, extended)
+tests: tools/tests/coop_guest_editor_hold.py (suite guest_editor_hold, extended; the guest editor's DNA checked since 0.7.11)
 signature:
 docs: docs/re/creations.md#creations-own-editor-save
 related: BUG-0278, BUG-0317, BUG-0318
@@ -47,13 +47,20 @@ With the test fixed (BUG-0317) the red cross leaves the unchanged editor without
 it a dialog, now it waits 12 s; with that, out/lab/20261030-142629 passes the check). 5 runs of `coop_guest_editor_hold.py` (3 on fix/w9-creature, 1
 here) never showed a change either.
 
+Again on rel/0.7.11 (fix/w46-p4-creature, 2026-11-07): coop_guest_editor_hold.py now also checks the report's DNA drop
+in numbers (the guest's game's DNA while its own editor is open, every 10 s for 40 s after the host's new body
+arrived): out/lab/20261107-210859 guest_editor_hold: 115 when the editor opened, [115, 115, 115, 115] after the
+host's body came, one click on the red cross left the editor.
+
 ## Fix
 None needed in the mod. The test: BUG-0317.
 
 ## Verification
-no-fail-run: not a bug (the test's own edit, see Root cause).
+no-fail-run: not a bug (the test's own edit, see Root cause); guest_editor_hold PASS on rel/0.7.11 out/lab/20261107-210859
+(the guest editor's DNA unchanged, one red cross click leaves it).
 
 ## History
 - 2026-10-29: opened (fix/w7-legless, while reproducing BUG-0278).
 - 2026-10-30: not reproduced on fix/w9-creature (3 runs, coop_guest_editor_hold.py, suite extended).
 - 2026-10-30: fix/w13-creature: explained: the test pressed add_legs + the dialog Cancel for --guest cancel (BUG-0317); not-reproduced.
+- 2026-11-07: fix/w46-p4-creature: guest_editor_hold extended with the guest editor's DNA; passes on rel/0.7.11; still not a bug.

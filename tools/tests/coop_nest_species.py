@@ -128,13 +128,16 @@ def restart_guest(host):
     guest = Console(lane.GUEST)
     wait(lambda: 'GalaxyGameEntry' in guest.call('game.mode')['out'], 120)
     guest.call('wait.frames 200 60000')
+    for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
+        # twoinst.start switched them off in the guest game this one replaces (BUG-0200's twin run)
+        print('  SPORE_FIX_OFF (restarted guest): ' + guest.call(f'coop.fix {name} off')['out'].strip(), flush=True)
     guest.call(lane.JOIN)
     ok = wait_in(host, guest)
     watch(lane.HOST, lane.GUEST)
     return guest, ok
 
 
-def checks(ck, host, guest, nid, host_bem, tag):
+def checks(ck, host, guest, nid, host_bem, tag, own_bem=None):
     # body: the proxy of the host's NPC is built from the host's creation
     def proxy():
         e = npcs(guest).get(nid)
@@ -146,6 +149,18 @@ def checks(ck, host, guest, nid, host_bem, tag):
         print(f'  {tag}: the guest\'s proxy has species {e[0]}, its body {got} (the host\'s {host_bem})')
         ck(got == host_bem, f'{tag}: the guest shows the host\'s creation, not its own of that key '
                             f'(species {e[0]}: bem {got}, the host\'s {host_bem})')
+    # BUG-0200: what the guest's game itself gives for the host's key (the save's herds and nests of the host's
+    # creature, and the cards it makes from them, look the species up by that key): the host's creation, not
+    # the guest's own creation of the same id
+    def prof():
+        m = re.search(r'profile \S+ key ([0-9A-F]{8}) bem ([0-9A-F]{8}) aliased (\d)',
+                      guest.call(f'coop.creations speciesof {HOST_ONLY:08X}')['out'])
+        return m.groups() if m and m.group(2) == host_bem else None
+    p = wait(prof, 10)
+    out = guest.call(f'coop.creations speciesof {HOST_ONLY:08X}')['out'].strip()
+    print(f'  {tag}: the guest\'s species profile of the host\'s key: {out}')
+    ck(p, f'{tag}: the guest\'s game gives the host\'s creation for the host\'s key, its herds and nests ({out}, '
+          f'the host\'s bem {host_bem}, the guest\'s own {own_bem})')
     # relation: the host's record of the species, on the guest under the guest's key for its NPCs and
     # under the host's key (the save's herds and nests of it)
     local = e[0] if e else None
@@ -184,7 +199,7 @@ def main():
     # the host's record of the species (impressed 2 of 3, as social games leave it): sent on change
     print(' ', host.call(f'coop.social record {HOST_ONLY:08X} 3 2')['out'].strip())
     time.sleep(3)
-    checks(ck, host, guest, nid, host_bem, 'spawned')
+    checks(ck, host, guest, nid, host_bem, 'spawned', own_bem)
     shot(guest, 'nest_species_guest.png')
     shot(host, 'nest_species_host.png')
 
@@ -212,9 +227,18 @@ def main():
     lst = guest.call('coop.npc list')['out']
     nests = dict(re.findall(r'nest ([0-9A-F]{8})/40626200 herd=(\S+)', lst))
     print(f'  the guest\'s herds learned from its world: {sorted(nests)}')
-    checks(ck, host, guest, nid, host_bem, 'after the world went again')
+    checks(ck, host, guest, nid, host_bem, 'after the world went again', own_bem)
     shot(guest, 'nest_species_guest_after.png')
 
+    # BUG-0200: after the session the guest's own games give its own creation for that key again
+    guest.call('coop.leave')
+    def own_back():
+        out = guest.call(f'coop.creations speciesof {HOST_ONLY:08X}')['out']
+        return out if f'bem {own_bem}' in out and 'aliased 0' in out else None
+    back = wait(own_back, 20)
+    out = guest.call(f'coop.creations speciesof {HOST_ONLY:08X}')['out'].strip()
+    print(f'  after the guest left: {out}', flush=True)
+    ck(back, f'after the session the guest\'s game gives its own creation for that key again ({out})')
     ck.faults(host=host, guest=guest)
     open(twoinst.STATE, 'w').write('{}')  # the guest's My Creations are not the fixture's any more
     return ck.result()

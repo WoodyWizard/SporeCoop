@@ -1161,3 +1161,39 @@ that creation; a choice is recorded for the world it is made in (as playing it r
 world the guest's default applies (this world's record, the host's evolved species, the world's species). "The
 world's own" still holds everywhere. Lab: the guest's swap to the old choice came 25 s after the load
 (20261106-230447), 3 s in the report.
+
+## The species manager's profile map, and the host's keys on a guest (2026-11-07, fix/w46-p4-creature)
+<a id="creations-species-map"></a>
+
+BUG-0200. GOG 2024, Ghidra (out/ghidra-2024).
+
+* ✔ (decompiled) `cSpeciesManager` +4 is a hash map ResourceKey -> `cSpeciesProfile*`: buckets at mgr +8,
+  bucket count at mgr +0xC, bucket index `(instance ^ group) % count`, node `{instance, type, group, value,
+  next}` (0x14 bytes; value at +0xC, next at +0x10). Find: 0x4E0FF0 thiscall(map, iterator* out, key*) ret 8;
+  operator[] (insert an empty node): 0x4E05D0 thiscall(map, key*) ret 4 -> &node->value; lookup with reload:
+  0x4DF740 (returns null for a node whose value is null; reloads a profile whose +0x53C version is 0 from its
+  +0x504 key through 0x4D4F70 / `cEditor::LoadCreatureData`).
+* ✔ `GetSpeciesProfile` 0x4DF5C0: key instance 0 and mgr +0xA4 zero -> null; else the map's value; none ->
+  (instance 0: the key at mgr +0xA4, the player species) a profile is made when 0x4DA400(key) says the key
+  exists: `new cSpeciesProfile` (0xA18 bytes, ctor 0x4D3E30(key, 0): +0x504 / +0x510 the key, +0x51C and
+  +0x52C two empty string16 {begin, end, capacity}) stored by operator[].
+* So the profile a key gets is whatever its node holds: nothing in the game checks that the profile's own key
+  (+0x504) is the key it is stored under. The co-op guest (`creations.host_key_alias`, creations.cpp
+  alias_tick) stores, for each host creation it registered under a content key of its own (0x7D......), that
+  key's profile in the node of the host's key: the save's herds and nests of the host's creature, and the cards
+  the game makes from them, are the host's creation. The node's earlier value (the guest's own creation of
+  the same id, or null) goes back at the session end. `coop.creations speciesof <hex>`: the profile the game
+  gives for a key, its own key and the model (bem) the game finds for that.
+
+## The held Creature evolution request keeps the stage's budget (2026-11-07, fix/w46-p4-creature)
+<a id="creations-creature-held-budget"></a>
+
+BUG-0581, BUG-0457. GOG 2024, lanes 4 / 5 (`coop_editor_sync.py --case host|host_late`).
+
+* ✔ (runtime) While the host's evolution editor is open the game's DNA (GetEvolutionPoints) stays at the stage's
+  value (40 -> 40 with a mouth bought); back in the stage it is the result's remaining budget (0xD445AA): 40 - 25 =
+  15 with the request held by the vote, 6 of 6 runs. So the creature editor's budget does not depend on the
+  0x90A03FDF post the vote delays (unlike the Cell editor, docs/re/cell.md#cell-editor-budget).
+* ✔ (runtime) A guest that stays in its own editor while the host evolves gets the host's new bundle there; back in
+  the stage its game builds the host's puppet from the host's new creature (the model record the game finds for the
+  puppet's species = the host's, `coop.creations bem` / `speciesof`). BUG-0457 not reproduced that way either.
