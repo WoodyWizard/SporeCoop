@@ -5345,3 +5345,11 @@ along and across the host's velocity):
   0.3 s of the dash speed (`P90_S`): Creature 4 m/s 1.2 m as before, Tribe 6.5 m/s 1.95 m. Tried and dropped (no
   effect in A/B runs): a new MoveTo at sharp corners after 0.1 s, the proxies' small lead jumps taken unsmoothed,
   `DASH_WALK_VARIANT=1/2` (place only / teleports).
+
+## The CI runs Python 3.10 (2026-11-08, main)
+<a id="testing-ci-python310"></a>
+GitHub Actions builds on ubuntu-22.04 with Python 3.10, and `make test` there parses every test script
+(test_lint). An f-string that reuses its own quote inside an expression or has a backslash inside `{...}`
+is fine on the lab's Python 3.12+ but a SyntaxError on 3.10: the v0.7.11 tag build failed on six such
+lines. Put the value in a variable first. Check locally: `uv run --no-project --python 3.10 python -c
+"import ast,glob; [ast.parse(open(f).read()) for f in glob.glob('tools/**/*.py', recursive=True)]"`.

@@ -12,6 +12,7 @@ import time
 
 from twoinst import Checks, shot, start
 from uifind import press, shown
+RE_REFUSED = r"refused=(\d+)"  # (a module constant: Python 3.10 f-strings take no backslash)
 
 KOOK = '065CB8AB'  # the fixture's Kook nest: a species that can be impressed (tuning: 1 round, 3 for an ally)
 
@@ -173,7 +174,7 @@ def main():
                 if num(r'impressed=(\d+)', social(host), 0) > i0:
                     break
                 print(f'  n{k}: no impression (attempt {attempt + 1}, refused {f0} -> '
-                      f'{num(r"refused=(\d+)", social(host), 0)}): played again')
+                      f'{num(RE_REFUSED, social(host), 0)}): played again')
         time.sleep(3)
         ht, gt = table(host), table(guest)
         dna_b = num(r'dna=([\d.]+)', host.call('coop.dna')['out'], 0)
