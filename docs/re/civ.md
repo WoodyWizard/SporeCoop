@@ -1488,3 +1488,29 @@ BUG-0189. GOG 2024, Ghidra (static only):
   (culture set entry, then every city's buildings of that design re-modelled through 0xBE3870).
 * ? This revises 9.1 ("a click on the tile opens the building editor"): the click opens the shopper / editor; the
   drag places. Runtime: see BUG-0189.
+
+## The planner palette at runtime: no design, no drag (2026-11-08, fix/w46-g4b-coverage)
+<a id="civ-planner-palette-runtime"></a>
+
+BUG-0189, lane 3 (GOG 2024), `civ_npc`, runtime of docs/re/civ.md#civ-planner-palette:
+* CORRECTION (2026-11-08, fix/w46-g4b-coverage): "a tile always has a design" does not hold for the player civ
+  of a new Civ game. ✔ `coop.civ design 0 house|factory|fun` prints key 00000000 for the player civilization
+  (800021CA) on both games while the NPC cities' buildings carry template models (`coop.civ bmodels`: house
+  067CEDDC, factory 067C7029, fun 067CEDE3, City Hall 067CEDE1). The planner then shows the house / factory /
+  fun tiles with a blue badge and the tooltip "Design a new house!"; a mouse-down + slow drag of such a tile onto
+  a plot does nothing (no building, no money taken): no generation by 0xBF9440 at planner setup was seen.
+  The static reading of the drag path may still be right for a tile with a design; the badge tile is another
+  state (? which window kind it is).
+* ✔ With a design key set (`coop.civ bdesign 800021CA house 067CEDDC`, the culture set entry the game's
+  GetDesignKey returns) the next planner shows the house model on the tile with its price ($1,600 in civ_npc),
+  and a hover, mouse-down on the tile (123, 385 of 1440x1080), 30 small moves and a mouse-up on a free plot's
+  screen point (`coop.civ slots <city>`, world_to_screen in the planner camera) place a house: the price is
+  taken at the drop (shared money 3000 -> 1400 on the guest at once), the building is snapped into a plot of
+  the planner's choice (here slot 3, not the plot under the cursor), and it shows in the city's building list
+  (`coop.civ buildings`, cCity +0x340) only after the planner is closed with the green check.
+* ✔ A guest's placement goes to the host through the AddBuilding return address 0xD1419C (civ.cpp h_AddBuilding,
+  CMD_BUILD): the host's game had the house at the same position 1 s after the planner closed, money equal on
+  both games (`civ_planner_build`). With the send off (`coop.fix civ.planner_send off`) the guest's house is
+  removed by the guest's reconcile within 2 s (the host does not have it) while the price stays paid.
+* Palette tiles of the Civ planner (1440x1080): City Hall (123, 215), house (123, 385), factory (123, 558),
+  entertainment (123, 730), turret (123, 905); the green check (1412, 1054).

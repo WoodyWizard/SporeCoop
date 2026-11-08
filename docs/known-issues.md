@@ -404,6 +404,9 @@ anchor so other docs can link to it:
   click on a tile opens the building editor (co-op vote). The bots only open and close the planner;
   guest buildings are tested through `coop.civ build` (coop_civ.py). A fixture with designs (or a
   bot that makes one in the editor) is needed.
+* 2026-11-08 (fix/w46-g4b-coverage): FIXED: `coop_civ_planner_build.py` (suite `civ_planner_build`) gives the
+  player civ the NPC cities' house design (`coop.civ bdesign`), then the guest drags the house tile onto a plot
+  with real mouse input; the host's game has the house, the money fell on both (docs/re/civ.md#civ-planner-palette-runtime).
 * Ticket: BUG-0189.
 
 ## coop_sync.py space: the ships' p90 sits near its 10 m limit
