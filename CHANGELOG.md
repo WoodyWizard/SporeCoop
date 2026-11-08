@@ -7,6 +7,8 @@
   respawn bigger than "small again" (BUG-0746).
 - Tribe: a guest's game uses up the spawn place of a village the host's game founded, as the host's does, so the
   same place is never used twice (BUG-0741).
+- Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
+  members gather from the nearest fruit tree there (BUG-0744).
 
 ## [0.7.11] - 2026-11-08
 

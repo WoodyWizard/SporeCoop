@@ -2828,3 +2828,15 @@ BUG-0741. GOG 2024, lane 7, `coop_tribe_copy_marker.py`.
 * Fix `tribe.copy_marker`: the copy destroys the guest's marker nearest it within 30 m (cGameNounManager::DestroyInstance,
   as FormTribe 0xCC6440 does). Not done: FormTribe's other steps after the spawn (the terraforming call 0xBBEDD0 on
   marker +0x11C, the herds near the new village destroyed or moved) are not repeated on the guest.
+
+## A guest's gather order on a fruit the host lacks (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-fruit-order"></a>
+
+BUG-0744. GOG 2024, lane 7, `coop_tribe_fruit_order.py`.
+* ✔ (runtime) A guest's right-click gather on a loose fruit sends CitizenAction 2 with target kind 2 (noun 0x2C9CC91
+  and the fruit's position); the host resolves it with find_object within 8 m. Destroying the host's fruit there
+  (`coop.tribe unfruit`) and ordering at once reproduces the reject of play_tribe ("no such target here").
+* ✔ A Gather (2) on a planet tree (cTreeData) with fruit left is accepted by DoAction on the host as on a fruit: the
+  member's order record shows rec=2 with the tree, and the member walks there (the guest's mirror follows).
+* Fix `tribe.fruit_order`: such an order takes the nearest tree with fruit left within 12 m, else the host's nearest
+  fruit within 15 m.
