@@ -84,7 +84,7 @@ def main():
             print(f'  {time.time() - t0:5.0f} s: host citizen ser={x["ser"]} at {worlddiff._fmt(x["pos"])} '
                   f'({math.dist(x["pos"], c):.0f} m from the guest): nearest guest citizen {d:.0f} m; mod id {tid} '
                   f'({td:.1f} m from it on the host); guest mirror {tid}: '
-                  f'{"none" if gm is None else worlddiff._fmt(gm[0]) + f" {math.dist(gm[0], x['pos']):.1f} m off"}',
+                  f'{"none" if gm is None else worlddiff._fmt(gm[0]) + " " + format(math.dist(gm[0], x["pos"]), ".1f") + " m off"}',
                   flush=True)
         cur = {s for _, s in lone}
         if cur & prev:

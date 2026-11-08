@@ -42,6 +42,7 @@ import lane
 import worlddiff
 from coop_tribe import members
 from twoinst import Checks, start, wait_guest_in
+RE_TEARDOWN = r"(?:teardown_restored|slot_null_skipped)=\d+"  # (Python 3.10 f-strings take no backslash)
 
 
 def citizens_at(con, p, r=20.0):
@@ -119,7 +120,7 @@ def eat_then_die(host, guest, ck, victim, attacker):
         det = re.search(r'bodies_detached=(\d+)', st)
         in_g = victim in members(guest) or guest_node(guest, victim) is not None
         print(f'    {time.time() - t1:4.1f} s: guest has the mirror {in_g}, '
-              f'{det.group(0) if det else ""} {" ".join(re.findall(r"(?:teardown_restored|slot_null_skipped)=\d+", st))}',
+              f'{det.group(0) if det else ""} {" ".join(re.findall(RE_TEARDOWN, st))}',
               flush=True)
         if MENU and det and int(det.group(1)) > 0 and in_g:  # the body lies, out of its tribe: leave the world
             print('  guest: the body is out of its tribe; to the main menu', flush=True)

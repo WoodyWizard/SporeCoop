@@ -672,8 +672,11 @@ def main():
     # where the guest's hits went (a joint hit needs one of the guest's and one of the host's on a target within 6 s):
     # landed on a proxy in the guest's game and sent (hits_sent), applied by the host (hits_applied); the host's own
     # and the partners' hits the joint table counted (coop.team "hits host / partners")
-    print(f'  hits: guest sent {num(r"hits_sent=(\d+)", gnpc, 0):.0f}, host applied {num(r"hits_applied=(\d+)", npc1, 0):.0f}; '
-          f'joint table: host {num(r"hits host (\d+)", team1, 0):.0f}, partners {num(r"partners (\d+)", team1, 0):.0f}',
+    # (values first: Python 3.10, the CI's, takes no backslash inside an f-string expression)
+    h_sent, h_applied = num(r"hits_sent=(\d+)", gnpc, 0), num(r"hits_applied=(\d+)", npc1, 0)
+    t_host, t_partners = num(r"hits host (\d+)", team1, 0), num(r"partners (\d+)", team1, 0)
+    print(f'  hits: guest sent {h_sent:.0f}, host applied {h_applied:.0f}; '
+          f'joint table: host {t_host:.0f}, partners {t_partners:.0f}',
           flush=True)
     joint = num(r'joint hits (\d+)', team1, 0) - num(r'joint hits (\d+)', team0, 0)
     rescues = num(r'rescues (\d+)', team1, 0) + num(r'rescues (\d+)', gteam, 0) - num(r'rescues (\d+)', team0, 0)

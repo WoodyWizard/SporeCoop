@@ -44,6 +44,12 @@ from coop_creature_kills import npcs, family
 from coop_multi import sample
 from twoinst import Checks, shot, start, wait_guest_in
 
+
+def _host_away(st):
+    m = re.search(r"host_away=(\d)", st)
+    return m.group(1) if m else "?"
+
+
 W, H = 1440, 1080
 DONE = (1416, 1062)  # the green "done" of the creature editor (1440x1080)
 NEAR_HOST = 4.0
@@ -268,7 +274,7 @@ def case_editor(host, guest, ck, a):
                   f'{len(proxies)} proxies; before its leave it showed {a.shown}', flush=True)
         st = guest.call('coop.status')['out']
         line = f'{time.time() - t_join:4.0f} s: guest {mode(guest).strip()}, avatar {guest.call("coop.avatar")["ok"]}, ' \
-               f'host_away={re.search(r"host_away=(\d)", st).group(1) if re.search(r"host_away=(\d)", st) else "?"}'
+               f'host_away={_host_away(st)}'
         if not seen or line.split(': ', 1)[1] != seen[-1].split(': ', 1)[1]:
             seen.append(line)
             print('   ', line, flush=True)
