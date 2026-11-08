@@ -1562,6 +1562,16 @@ void* collected_parts()
 static bool g_editor_request_fix = true;
 COOP_FIX("creations.editor_request", "BUG-0720", g_editor_request_fix, "creature: the editor requests the mod builds (a guest's own editor, the test commands) carry the fields of the game's own evolution request (flags, consequence traits)");
 enum class EditKind { Own, Edit, Evolve };
+// BUG-0756: the guest's own editor keeps the constructor's +0x39 = 1, +0x3B = 1, +0x3C = 0 (the edit-a-creation editor of
+// 0.7.10: its red cross and the Save New / Replace / Don't Save dialog); the game's evolution values (0, 0, 1) gave
+// it the evolution editor's UI, with no way to leave without the edit. cEditor::OnEnter (0x58FB8D..0x58FBEF) passes
+// +0x39 to 0x5DCDC0 (windows 0x682102A/B hidden when 1, 0x55FDCA8 / 0x47BC958 enabled) and +0x3B to 0x5DCC80
+// (window 0x90439D7C, the red cross, visible); +0x3C goes to 0x5BF1E0 with the species key. The rest of BUG-0720
+// (the other flags, the consequence traits, +0x94) stays the game's. `coop.fix creations.own_editor_cancel off`:
+// the evolution values (no cross). docs/re/creations.md#creations-own-editor-cancel
+static bool g_own_editor_cancel_fix = true;
+COOP_FIX("creations.own_editor_cancel", "BUG-0756", g_own_editor_cancel_fix, "creature: a guest's own editor has its red cross and the save dialog (the request's +0x39 / +0x3B / +0x3C as the constructor's)");
+static unsigned g_own_keep_ctor = 0; // tests (coop.editreq keep): own-editor bytes left at the constructor's value (1 +0x39, 2 +0x3B, 4 +0x3C, 16 vec70)
 static void* the_player()
 {
     uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
@@ -1602,7 +1612,13 @@ static void* build_editor_request(EditKind kind, uint32_t editor_id, const game:
             skg::field<uint8_t>(req, o) = 0;
         skg::field<uint8_t>(req, 0x3C) = 1;
         skg::field<uint8_t>(req, 0x3D) = 1;
-        for (int o = 0x10FC; pl && push && o <= 0x1108; o += 4) {
+        if (kind == EditKind::Own) {
+            unsigned keep = g_own_keep_ctor | (g_own_editor_cancel_fix ? 7u : 0u);
+            if (keep & 1) skg::field<uint8_t>(req, 0x39) = 1;
+            if (keep & 2) skg::field<uint8_t>(req, 0x3B) = 1;
+            if (keep & 4) skg::field<uint8_t>(req, 0x3C) = 0;
+        }
+        for (int o = 0x10FC; pl && push && o <= 0x1108 && !(kind == EditKind::Own && (g_own_keep_ctor & 16)); o += 4) {
             uint32_t v = skg::field<uint32_t>(pl, o);
             skg::thiscall<void*>(push, (char*)req + 0x70, &v);
         }
@@ -6556,6 +6572,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        void* av = game::avatar();
                        uintptr_t flag = H->sym("SporeCoop::CreatureEvolutionPending_flag");
+                       if (argc > 2 && !strcmp(argv[1], "keep")) { // exploration: which own-editor bytes give its cross
+                           g_own_keep_ctor = (unsigned)strtoul(argv[2], nullptr, 0);
+                           SAY("own editor keeps the constructor's bytes: mask %u\n", g_own_keep_ctor);
+                           return 0;
+                       }
                        if (argc < 2 || strcmp(argv[1], "diff") || game::mode_id() != modes::kCreature || !av || !g_creature_game ||
                            !o_CreatureGameMsg || !flag) {
                            SAY("not possible here (creature=%d creature_game=%p)\n", (int)(game::mode_id() == modes::kCreature), g_creature_game);
@@ -6594,7 +6615,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                if (skip(o) || ours.bytes[o] == g_editreq_game.bytes[o])
                                    continue;
                                int field = o & ~3;
-                               bool allow = kind == EditKind::Own && field == 0x90; // the own editor has no evolution tag (BUG-0466)
+                               // the own editor has no evolution tag (BUG-0466) and keeps the constructor's +0x39 / +0x3B / +0x3C
+                               // (its red cross and save dialog, BUG-0756)
+                               bool allow = kind == EditKind::Own && (field == 0x90 || o == 0x39 || o == 0x3B || o == 0x3C);
                                snprintf(b, sizeof b, " +0x%02X(%02X/%02X)", o, ours.bytes[o], g_editreq_game.bytes[o]);
                                (allow ? allowed : diff) += b;
                            }

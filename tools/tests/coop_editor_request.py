@@ -10,10 +10,12 @@ them come from one builder (build_editor_request).
 On each game (the host and the guest, Creature): `coop.editreq diff` runs the game's own builder (its message
 handler once, the Submit captured, nothing opened) and the mod's builder for the own editor and for the
 evolution, and compares them byte by byte (pointers, vtables and the strings' storage left out; the vector by its
-contents). Allowed: +0x90 (the evolution tag) for the own editor (BUG-0466 charges its price).
+contents). Allowed: +0x90 (the evolution tag) for the own editor (BUG-0466 charges its price), and for the own
+editor +0x39 / +0x3B / +0x3C, which keep the constructor's values (1, 1, 0): with the game's evolution values the own
+editor lost its red cross and its save dialog (BUG-0756, the owner: the 0.7.10 own editor stays).
 1. Both kinds: no other difference, on both games.
 The own editor itself (opened, priced, its palette) is checked by editor_sync_guest and guest_editor_locks.
-SPORE_FIX_OFF=creations.editor_request must FAIL at 1 (+0x39 / +0x3B / +0x3C and the vector differ).
+SPORE_FIX_OFF=creations.editor_request must FAIL at 1 (the own request has no consequence traits: vec70 0/4).
 """
 import re
 import time

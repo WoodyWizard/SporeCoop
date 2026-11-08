@@ -21,7 +21,7 @@ import sys
 import time
 
 import lane
-from coop_legless_guest import DONE, mode, wait
+from coop_legless_guest import CANCEL, QUIT, mode, wait
 from twoinst import Checks, shot, start
 
 
@@ -67,10 +67,10 @@ def main():
         drawn = b[-1] > 25 or b[-1] < 0
     print(f'  editor screen brightness: {b}', flush=True)
     ck(drawn, 'the editor draws (not a black screen)')
-    guest.call('click %d %d' % DONE)  # the own Creature editor has no red cross since BUG-0720: the check (docs/06-testing.md#testing-own-editor-no-cross)
+    guest.call('click %d %d' % CANCEL)
     out = wait(lambda: 'Creature' in mode(guest), 30, 1)
     if not out:
-        guest.call('click %d %d' % DONE)
+        guest.call('click %d %d' % QUIT)
         out = wait(lambda: 'Creature' in mode(guest), 20, 1)
     ck(out, 'the red cross brings the guest back to the Creature stage')
     print(' ', [l for l in guest.call('log 200')['out'].splitlines() if 'body is built' in l or 'own avatar is now' in l][-3:],
