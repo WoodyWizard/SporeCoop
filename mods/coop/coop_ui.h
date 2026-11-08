@@ -42,6 +42,9 @@ struct Api {
     std::function<void(bool)> set_ready;
     std::function<void()> share_world; // host (during a vote: start the evolution now)
     std::function<bool()> vote_active;
+    // BUG-0516 (guest): the host evolves without a vote and offers this guest its own editor: the seconds the
+    // offer still holds (0 = none). The ready button then reads "Evolve now" and set_ready(true) takes the offer.
+    std::function<int()> evolve_offer;
     // BUG-0597: what "Send my world" would do now: 0 send it, 1 no world loaded (a menu: the world goes
     // to everyone once the host plays), 2 nobody has joined
     std::function<int()> share_state;
