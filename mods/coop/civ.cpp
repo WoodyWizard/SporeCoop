@@ -375,6 +375,18 @@ COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's veh
 constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
 constexpr uint32_t kTurretNoun = 0x0436F342;
 constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
+// BUG-0688: a city turret is no building: its combatant is at +0x588 (vtable 0x1467758, the turret TakeDamage's
+// `this`); +0x120 of a turret holds no object. guest_fire took every turret's combatant at kBCombatant and
+// weapon_of called vt 0x14 of that word: the guest crashed (execute of 0xCCCCCCCC) at the first turret shot it
+// copied. Now a turret's combatant is taken at kTCombatant, and weapon_of calls vt 0x14 only of a combatant
+// whose vtable lies in the game's image and whose slot 0x14 points into the game's code (any shooter kind; a
+// wrong one is skipped and logged once). `coop.fix civ.turret_weapon off`: the old offset, no check (0.7.10).
+constexpr uintptr_t kTCombatant = 0x588;
+static bool g_fix_turret_weapon = true;
+COOP_FIX("civ.turret_weapon", "BUG-0688", g_fix_turret_weapon,
+         "civ: a guest copies a host turret's shot with the turret's own weapon (no call through a non-object)");
+static uint32_t g_turret_shots_seen, g_turret_fired, g_bad_comb; // host: turret shots noted; guest: copies fired, bad combatants
+static uintptr_t shooter_comb_off(uint8_t kind) { return kind == 1 ? kVCombatant : g_fix_turret_weapon ? kTCombatant : kBCombatant; }
 // BUG-0647: the vehicle's model key {instance, type, group} (its model object +0x34, +0x90: what cVehicle::Load
 // 0xCA67C0 sets through vt 0x94 of +0x34; runtime: +0xC4 holds the design instance, coop.memfind)
 constexpr uintptr_t kVModelKey = 0xC4;
@@ -459,6 +471,24 @@ static bool vtable_in_game(const void* obj)
     return vt >= lo && vt + 0x24 <= hi;
 }
 
+// BUG-0688: an address inside an executable section of the game's image (a virtual function of the game)
+static bool code_in_game(uintptr_t a)
+{
+    static uintptr_t lo, hi;
+    if (!hi)
+        if (HMODULE exe = GetModuleHandleW(nullptr)) {
+            auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+            auto* sec = IMAGE_FIRST_SECTION(nt);
+            for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; i++)
+                if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) {
+                    uintptr_t b = (uintptr_t)exe + sec[i].VirtualAddress, e = b + sec[i].Misc.VirtualSize;
+                    lo = lo && lo < b ? lo : b;
+                    hi = hi > e ? hi : e;
+                }
+        }
+    return a >= lo && a < hi;
+}
+
 // BUG-0530 (diagnostics): FireTool calls a guest's game makes itself in Civ (not guest_fire's copies), by caller
 static bool g_in_guest_fire;
 struct LocalFire {
@@ -522,6 +552,7 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         s.id = it->second.id;
     } else if (!IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
         s.kind = 3;
+        g_turret_shots_seen++;
     } else
         return;
     s.aim = {aim[0], aim[1], aim[2]};
@@ -801,6 +832,16 @@ static void* weapon_of(void* comb)
 {
     if (!comb || IsBadReadPtr(comb, 8) || IsBadReadPtr(*(void**)comb, 0x18))
         return nullptr;
+    if (g_fix_turret_weapon && !(vtable_in_game(comb) && code_in_game((*(uintptr_t**)comb)[0x14 / 4]))) {
+        // BUG-0688: no game combatant (a shooter read at the wrong offset): skipped, logged once per word
+        static std::unordered_set<uintptr_t> logged;
+        g_bad_comb++;
+        uintptr_t vt = *(uintptr_t*)comb;
+        if (logged.size() < 8 && logged.insert(vt).second)
+            H->log(M, SK_WARN, "civ: a shooter's combatant %p is no game object (vtable %08X): its shot is not copied (BUG-0688)",
+                   comb, (unsigned)vt);
+        return nullptr;
+    }
     void* t = vcall<void*>(comb, 0x14 / 4);
     return t && !IsBadReadPtr(t, 0x120) ? t : nullptr;
 }
@@ -908,7 +949,7 @@ static void guest_fire(double now)
             comb = o ? (uint8_t*)o + kVCombatant : nullptr;
         } else {
             o = want[2 * i].found;
-            comb = o ? (uint8_t*)o + kBCombatant : nullptr;
+            comb = o ? (uint8_t*)o + shooter_comb_off(3) : nullptr;
         }
         if (!o) {
             g_shots_nomirror++;
@@ -957,6 +998,7 @@ static void guest_fire(double now)
             note_tool(tool);
             s.done++;
             g_shots_fired++;
+            g_turret_fired += s.kind == 3;
         } else
             g_shots_refused++;
     }
@@ -981,7 +1023,7 @@ static bool cosmetic_hit(void* att)
         IsBadReadPtr(*(void**)att, 0x60))
         return false;
     void* v = vcall<void*>(att, 0x5C / 4, 0x137E8E0u); // the vehicle behind a combatant
-    bool ours = (v && g_gv_of.count(v)) || g_turret_shooters.count((uint8_t*)att - kBCombatant);
+    bool ours = (v && g_gv_of.count(v)) || g_turret_shooters.count((uint8_t*)att - shooter_comb_off(3));
     if (ours)
         g_hits_dropped++;
     return ours;
@@ -4050,7 +4092,10 @@ std::string status()
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
              g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
-    return std::string(b) + pl + sh + bh + tu + lf;
+    char ts[128];
+    snprintf(ts, sizeof ts, "turret_shots: fix=%d seen=%u fired=%u bad_combatant=%u\n", (int)g_fix_turret_weapon,
+             g_turret_shots_seen, g_turret_fired, g_bad_comb);
+    return std::string(b) + pl + sh + ts + bh + tu + lf;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
