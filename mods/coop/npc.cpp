@@ -130,6 +130,13 @@ static bool g_npc_novel = false;
 // new proxy is made on the ground (driver.h out_of_ground): no need for the game to ground them.
 // `coop.fix npc.proxy_ground off`: at its own height only (0.7.3.4).
 COOP_FIX("npc.proxy_ground", "BUG-0399", drive::g_out_of_ground_fix, "tribe: an animal's proxy is never left under this game's ground (made there, kept there standing)");
+// BUG-0752: the same for a standing proxy in the Creature stage. Two proxies of the host's world species made 0.5 m apart
+// after the host's evolution editor: the game separated them and pressed one 0.5-1.3 m into the terrain, and a standing
+// proxy is only nudged towards its target (drive::step without `ground`), so it stayed there for over a minute (the
+// monitor's proxies rule, campaign_ct lab 20261108-072547 / -075905-4 of rel/0.7.11). `coop.fix npc.proxy_ground_creature
+// off`: Tribe only (0.7.10).
+static bool g_proxy_ground_creature = true;
+COOP_FIX("npc.proxy_ground_creature", "BUG-0752", g_proxy_ground_creature, "creature: an animal's standing proxy pressed into the ground is put back onto it");
 // BUG-0406: placed exactly on the host's path, a proxy walking downhill is a few cm over the ground after the
 // game's next step and starts to fall (+0x137 = 0, the fall animation): 51 fall starts per 100 s of walking on
 // a slope of the creature fixture, the host's own NPCs 0.9 (npc_walk_slope). As the partner's puppet
@@ -1905,7 +1912,8 @@ static void guest_tick(double now)
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
             drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
-                        rts_stage() && drive::g_out_of_ground_fix); // and never under the ground (BUG-0399)
+                        (rts_stage() || (g_proxy_ground_creature && game::in_creature_stage())) &&
+                            drive::g_out_of_ground_fix); // and never under the ground (BUG-0399, BUG-0752)
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
                 H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
                        "over it: put onto it (npc.proxy_ground)", id, px.key.instance, -px.drv.grounded_from, now - px.made_at,
