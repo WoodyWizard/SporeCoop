@@ -194,11 +194,6 @@ constexpr float kLateLost = 1.5f;  // m
 inline bool g_lead_fall_fix = true;
 constexpr double kFallMargin = 0.04; // s past the usual horizon at the full speed
 constexpr double kFallTau = 0.12;    // s
-// a newest state that came this much later than usual (its age at arrival over the median, a latency spike whose states
-// flow late) moves the knee on by kFallSpike of it: falling from the usual horizon, an NPC walking straight on through
-// every 0.7 s spike was shown behind and the NPCs' p90 rose 0.33-0.37 -> 0.56-0.58 m (body_trail_hits over the player
-// network, A/B lab 20261108-014500 / -2); a gap with no state at all (the spike's onset, a loss burst) falls as before
-constexpr double kFallSpike = 0.5;
 // the time a body is moved on for after `dt` s past its newest state, with the usual horizon `knee` (s), falling with
 // `tau`; `on`: the rule's switch (drive.lead_fall, or drive.puppet_fall for the partners' puppets)
 inline double fall_time(double dt, double knee, double tau = kFallTau, bool on = g_lead_fall_fix)
@@ -301,8 +296,6 @@ public:
         lt_have_ = false;
         age_n_ = 0;
         hz_.clear();
-        ages_.clear();
-        last_age_ = 0;
         lt_excess_ = 0;
     }
 
@@ -359,8 +352,6 @@ public:
             hz_.add(h);
             lt_excess_ = std::max(0.0, h - (double)hz_.med);
         }
-        last_age_ = local_now - offset_ + g_one_way - st; // BUG-0674: this state's age when it came
-        ages_.add(last_age_);
         age_n_++; // BUG-0650: a new state for late_time
         lt_new_ = true;
         snaps_.push_back({st, s});
@@ -465,7 +456,7 @@ private:
                 double dt = tl - n.t;
                 last_extrap = dt;
                 // BUG-0674 (g_lead_fall_fix): past the usual horizon at a falling speed
-                const double knee = fall_knee();
+                const double knee = hz_.knee(kFallMargin);
                 const float fr = dt > kMaxLead ? 1.f : fall_rate(dt, knee);
                 dt = std::min(fall_time(dt, knee), kMaxLead);
                 Vec3 v = lead_velocity();
@@ -565,7 +556,7 @@ private:
     {
         const Snap& n = snaps_.back();
         if (t >= n.t) {
-            double dt = std::min(fall_time(t - n.t, fall_knee()), kMaxLead); // (BUG-0674)
+            double dt = std::min(fall_time(t - n.t, hz_.knee(kFallMargin)), kMaxLead); // (BUG-0674)
             Vec3 v = lead_velocity();
             return {n.s.pos.x + v.x * (float)dt, n.s.pos.y + v.y * (float)dt, n.s.pos.z + v.z * (float)dt};
         }
@@ -767,16 +758,6 @@ private:
     size_t age_n_ = 0; // states since clear()
     // BUG-0410: the lead horizons at the last kHorizonN states and the newest one's excess over their median (s)
     HorizonMedian<kHorizonN> hz_;
-    // BUG-0674: the states' ages when they came (s) and the newest one's
-    HorizonMedian<kHorizonN> ages_;
-    double last_age_ = 0;
-    double fall_knee() const
-    {
-        double k = hz_.knee(kFallMargin);
-        if (ages_.n >= 8)
-            k += kFallSpike * std::max(0.0, last_age_ - (double)ages_.med);
-        return k;
-    }
     double lt_excess_ = 0;
     mutable bool lt_have_ = false, lt_new_ = false;
     mutable float lt_rate_ = 1.f; // the shown sender time's rate this frame (catching up: 1 + kLateRate)
@@ -886,7 +867,7 @@ struct VelocityEstimate {
     {
         double a0 = std::max(now - t + latency, 0.0);
         if (sender >= 0)
-            a0 = fall_time(a0, hz.knee(kFallMargin) + latency); // (no kFallSpike: a ship that stops mid-spike flew on 8 m)
+            a0 = fall_time(a0, hz.knee(kFallMargin) + latency);
         float a = (float)std::min(a0, max_ahead);
         return {pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a};
     }
