@@ -59,7 +59,7 @@ released (SpotRecord_Release). A joining guest gets the row at once. `coop.fix w
 it makes a record (121 m away, a shore cell), then the guest's game must have the cell's record with the marker at the
 same place and an ornament there. FAIL with `SPORE_FIX_OFF=wsync.tribe_marker`: out/lab/20261108-061201 (the guest has
 no record after 20 s, no ornament). PASS: out/lab/20261108-061051, 20261108-061349. `tribe_attack_marker_rejoin`
-(the guest rejoins after the marker is made): PASS out/lab/20261108-062026. play_tribe PASS 20261108-062153,
+(the guest rejoins after the marker is made): PASS out/lab/20261108-062026, also with the switch off (20261108-063825: the host's share save carries the records; only a record made after a guest's load is missed). play_tribe PASS 20261108-062153,
 detect_tribe PASS 20261108-063308.
 Not reproduced through the game's own attack on the fixture (`coop.tribe form` with the pace rule off + `coop.drama
 start 7`: no new record in 151 s, lab 20261108-061613): see the root cause.

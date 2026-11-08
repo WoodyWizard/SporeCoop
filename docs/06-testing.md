@@ -5137,3 +5137,5 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   `SPORE_FIX_OFF=wsync.tribe_marker` fails. The game's own attack (`coop.drama start 7`, also after `coop.tribe form`)
   makes no marker on the fixture: it hits a village whose record exists, and a newly formed village lies inland where
   no record can be made (docs/re/tribe.md#tribe-spot-markers).
+* `--rejoin` passes with the switch off too (lab 20261108-063825): the host's share save carries its spot records, so
+  a guest that loads the host's world after the record was made has it; it checks the row does no harm there.
