@@ -51,4 +51,4 @@ fired, 760 copied hits dropped, no fault) and lab 20261108-021358.
 
 ## History
 - 2026-11-07: opened.
-- 2026-11-08 (fix/w46-k56-space): fixed with space.shots; test space_shots FAIL/PASS.
+- 2026-11-08 (fix/w46-k56-space): fixed with space.shots; test space_shots FAIL/PASS; play_space (lab 20261108-023555) has no host_only beam row any more, guest_only in 2 of 13 comparisons (relay lag).

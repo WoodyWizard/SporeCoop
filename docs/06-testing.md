@@ -4982,6 +4982,10 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   then counts the projectile objects (default_beam_projectile 0x24630D7, default_tool_projectile 0x24270C5) in each
   game's noun list twice a second for 45 s (`coop.civ nouns <noun>` works in any stage). PASS 76 of 77 samples
   (lab 20261108-020511); SPORE_FIX_OFF=space.shots: 0 of 78 (FAIL, lab 20261108-021047).
+* After the fix, play_space (lab 20261108-023555, 13 Space comparisons) had no `host_only:default_beam_projectile`;
+  `guest_only` / `noun_only_guest:default_beam_projectile` in 2 of 13 (the copy starts and ends up to 0.2 s after the
+  host's beam: relay lag, the class of the Civ shots in BUG-0657's notes). `All:state:time_of_day` on a Space planet in
+  6 of 13 is BUG-0712 (open).
 * Landing both takes 1-2 min on GOG 2024 lanes (play_space.Player.land_retry; the zoom does not land right after a
   load).
 
