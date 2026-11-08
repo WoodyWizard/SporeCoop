@@ -1,7 +1,7 @@
 ---
 id: BUG-0531
 title: Tribe: a member stalled in the gather node (0x0569236E, state 1, walk goal an old tree 100 m off) does not act on a new order
-status: not-reproduced
+status: open
 kind: bug
 stage: Tribe
 reported: 2026-11-04
@@ -90,3 +90,4 @@ stays as a regression check (suite tribe_gather_stall).
   matched that state either. Next: catch it in play_tribe with `coop.tribe ai` of the stuck member (its r and walk
   flags) before choosing a fix. Stays open.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): two play_tribe runs with the new diagnostics and a hut-obstacle probe: no stall; the idle orders are the game's fight node; closed not-reproduced.
+- 2026-11-08 (fix/w46-g4-tests): G4 (2026-11-08) judging the play_tribe 'orders' flakes: seen again in fix/w46-k4-bodies out/lab/20261108-020506-2 play_tribe ('guest: the members act on the orders {ok 14, lost 0, idle 8}'): three of the guest's four members stood (speed 0, walk mode 1) with new order records (rec=9/20/10/2): #2 in the gather node 0x0569236E state 1, carry=4.0, walk goal an old tree 58 m off (this ticket's signature); #1 and #9 in node 0x0462854E then the food delivery node 0x04623E0C (goal r=10): the same class in another node. Only this run of 62 play_tribe runs of 2026-11-06..08 has it. Reopened: needs the dedicated fix (on the host, a member standing in a node foreign to a new order for 3 s gets the walk action first, the class fix tried in fix/w42), not part of G4's test work. The run's other failure (a fruit rejected) is BUG-0744.
