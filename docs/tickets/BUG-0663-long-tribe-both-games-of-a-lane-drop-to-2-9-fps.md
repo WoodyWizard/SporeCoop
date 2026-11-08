@@ -1,16 +1,16 @@
 ---
 id: BUG-0663
 title: long_tribe: both games of a lane drop to 2-9 fps in Tribe under a full lab load (shared headless Xwayland saturated), not a 0.7.9 regression
-status: open
+status: fixed
 kind: test
 stage: tribe
 reported: 2026-11-06
 source: final check 0.7.9
 role: 
 versions: 0.7.9
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w46-k8-open
+commits: a2800eae
 tests: long_tribe, long_tribe_short, tribe_play
 signature: perf: fps avg 2-9, 130-200 hitches of 300-600 ms per minute in Tribe on both games of one lane, games at 5-7 % CPU
 docs: docs/06-testing.md#testing-xwayland-saturation
@@ -47,13 +47,21 @@ Not a 0.7.9 regression: the lab machine's shared headless display.
   inferred to be load too (other agents' lanes at 20:03), not proven.
 
 ## Fix
+2026-11-08 (fix/w46-k8-open), the lab gate this ticket asked for: tools/lab.py samples the headless shell's Xwayland
+(the one whose auth file is under sporecoop-headless) every 10 s per test; results.json keeps `xwayland: {avg, peak}`
+(share of one core), and a FAILED test whose busiest 10 s reached 90 % gets `LOAD lab: ...` and `(load)` in the
+summary (docs/06-testing.md#testing-xwayland-saturation). `SPORE_LAB_XWAYLAND=0`: no sampling. Earlier text:
 None in the mod. Lab: run long_tribe on a quiet machine (1-2 lanes, or after the final check), or restart the headless
 shell (tools/headless.sh, owner's call: it ends every lane's games) before a 40-min test; a lab gate on the Xwayland's
 CPU (over ~90 % of a core = the run's fps numbers are not the mod's) would mark such failures as load.
 
 ## Verification
+- 2026-11-08: long_tribe_short PASS on the current build at moderate load (lanes 2-7, 9, 10 busy with other agents'
+  runs; the Xwayland at 24 % on average, 32 % in the busiest 10 s): out/lab/20261108-013911-2. The sampler read
+  0.28 / 0.31 of a core in a manual check (pid of `:2`).
 no-fail-run: not a mod bug; A/B lab 20261106-235016 in fix/w46-tribe-fps (0.7.9, FAIL) and rel/0.7.8 (0.7.8, FAIL),
 same collapse at the same time; tribe_play 20261106-234818 in both trees passed.
 
 ## History
 - 2026-11-06: opened (fix/w46-tribe-fps): A/B 0.7.9 vs 0.7.8 at equal load, both collapse; shared Xwayland at 98 %.
+- 2026-11-08: fixed on fix/w46-k8-open: the lab marks failures on a saturated Xwayland as load; long_tribe_short passes at moderate load.
