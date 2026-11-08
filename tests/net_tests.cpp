@@ -2693,6 +2693,18 @@ static void test_diag_compare()
         g5.entries[0].x = 60; // far beyond its lag: still a difference
         CHECK(dg::compare(h5, g5, fast).issues.size() == 1);
     }
+    {   // BUG-0547: the host's own path: a ship that flew 200 m/s and stopped 0.2 s ago
+        std::deque<dg::PathPoint> path;
+        for (int i = 0; i <= 60; i++) // 1 s at 60 fps: 0.8 s at 200 m/s along x, then standing at x = 160
+            path.push_back({i / 60.0, (float)std::min(i / 60.0 * 200.0, 160.0), 0, 700});
+        dg::PathHit h = dg::path_distance(path, 110, 3, 700, 0.0); // the copy 50 m behind, 3 m to the side
+        CHECK(std::fabs(h.d - 3) < 0.01f && std::fabs(h.lag - (1.0f - 0.55f)) < 0.02f);
+        h = dg::path_distance(path, 110, 3, 700, 0.9); // only the last 0.1 s (standing): 50 m off
+        CHECK(h.d > 49 && h.d < 51);
+        h = dg::path_distance(path, 160, 40, 700, 0.0); // beside the path: still far
+        CHECK(h.d > 39);
+        CHECK(dg::path_distance({}, 0, 0, 0, 0).d > 1e20f);
+    }
     // another stage: nothing compared
     g2.mode = 0x1654C00;
     c = dg::compare(h, g2);

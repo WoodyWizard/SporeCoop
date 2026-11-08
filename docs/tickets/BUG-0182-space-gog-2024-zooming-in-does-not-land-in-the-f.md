@@ -49,10 +49,9 @@ Inferred, not proven: the 2026-10-23 delay may have been that or code of that da
 None needed now. `coop.space landcheck` and `coop_space_land_early.py` stay to catch it.
 
 ## Verification
-`tools/tests/coop_space_land_early.py` (suite `space_land_early`): both players click the home
-planet and zoom in at once after the load; must be on it within 40 s. 3 direct runs on lane 9
+`tools/tests/coop_space_land_early.py` (suite `space_land_early`): both players click the home planet and zoom in at once after the load; must be on it within 40 s. 3 direct runs on lane 9
 (landed at 10-16 s; scratch logs not kept) and lab run 20261030-141123 (lane 8, 2 runs: host 15/14 s,
-guest 13/13 s) and lab run 20261030-142729 (lane 9). no-fail-run: not reproduced, no fix to switch off.
+guest 13/13 s) and lab run 20261030-142729 (lane 9); 2026-11-07 lab 20261107-204707 (lanes 9 and 10, 2 runs: 16 s each, both players). no-fail-run: not reproduced, no fix to switch off.
 
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
@@ -61,3 +60,4 @@ guest 13/13 s) and lab run 20261030-142729 (lane 9). no-fail-run: not reproduced
 - 2026-10-28 (fix/w4-census): not reached (time spent on the fuzz test, BUG-0208, BUG-0205 and the census). Nothing new; the wave 3 note (`coop.space land` lands on the first try 20-30 s after start) is still the workaround for tests.
 - 2026-10-28 (fix/rel-finale): the space_finale_alone failure "zoomed into the core's system" before 0.7.3.0 is not this bug: it is the galaxy -> core system zoom-in, which needs ~10 wheels of 3 notches while the test stopped at 10 (BUG-0213). Nothing new on the planet landing delay.
 - 2026-10-30 (fix/w13-space): landing conditions reversed and printed (`coop.space landcheck`); not reproduced in 5 runs on lanes 8/9 (landed 7-16 s after the load); status not-reproduced.
+- 2026-11-07 (fix/w46-v2-civ-space, 0.7.11 V2): one more attempt on the current build (rel/0.7.11 2577101f, GOG 2024): space_land_early 2 runs on lanes 9 and 10 (lab 20261107-204707): host and guest landed by the wheel 16 s after the load in both runs (limit 40 s). The landing after a load is not late; status stays not-reproduced, the test keeps watching it.

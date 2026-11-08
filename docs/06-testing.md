@@ -4824,3 +4824,34 @@ A/B between builds must use the same lane.
   guest, BUG-0688; FAIL lab 20261107-204522). The first civ_npc test with a turret that fires: the fixture's NPC
   cities have none near a fight, so add them with `addturret` when a test needs turret fire.
 
+## Civ: a paid build the money does not cover (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-civ-money-short"></a>
+
+BUG-0613 (docs/re/civ.md#civ-spend-below-zero). `coop_civ_money_short.py` (suite `civ_money_short`, warm, the `civ`
+fixture) sets the shared money to 500 (`coop.res add money`), then the host builds a factory (1200) and the guest a
+house (1600) with `coop.civ build`: neither is built, each game's own money is the same and not below 0; with 10000
+the host's factory is built on both and paid once. About 1 minute warm. `SPORE_FIX_OFF=civ.build_money` must FAIL
+(host -660, guest 0). civ_coop gives the host 5000 before its factory: the fixture's 3000 is spent by then.
+
+## Space: the sync-check and a fast ship that brakes and turns (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-space-fast-sync"></a>
+
+BUG-0547 (docs/re/space.md#space-copy-on-path). `coop_space_fast_sync.py` (suite `space_fast_sync`, cold, the `space`
+fixture, ~5 minutes) sets `SPORE_NET` itself when the lab gives none (delay 40, jitter 20, a 300 ms spike every ~10 s
+for 6 s): on a local lane no flight pattern made the sync-check's copy differ at all (W pulses, braking, zooms, a
+disabled guest; ~600 checks), the copy only falls behind its speed allowance when its speed changes within the moment
+(the rescue flight) or a state comes late. Checks: moments with the copy within 10 m of the host's path happened, the
+sync-check took none of those for a difference, no MISMATCH, and `coop.diag sync force shift` is still one. A copy off
+the path (lab 20261107-215251 #1: 11.4 m past a ship that had stopped, a latency spike's extrapolation, BUG-0674) stays
+a first-look difference that its recheck clears. `SPORE_FIX_OFF=sync.own_path` must FAIL (every moment is a difference). The forced MISMATCH is inside
+`LAB-MARK sync-force` lines (the lab's gate leaves it out).
+
+## play_civ: the gift and claim checks look in time (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-play-civ-checks"></a>
+
+BUG-0325. play_civ's pending checks (`Game.expect`) are looked at only in the audits (every 8 s plus the audit's
+time). The gift check therefore polls the giver right after its click (4 s, every 0.2 s) and compares what the giver
+sees with the host's owner of that moment: the partner's bot often gave a vehicle back 1.4-7 s after the gift
+(`give_returned`). The spice claim check gives the guest 4 s after it first sees the host's claim (the host sends
+the node owners once a second, a guest in a city planner takes them on its return: `claim_seen_early`). A rejected
+guest order now names its target in the host's log ("target kind K id I ... not in the host's game").

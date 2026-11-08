@@ -479,6 +479,8 @@ class Bot(Player):
         self.g.bump('spice_sent')
         g = self
 
+        seen = {}
+
         def claimed(c):
             hn = {p: pol for p, pol in nodes(c['host'])}
             gn = {p: pol for p, pol in nodes(c['guest'])}
@@ -486,6 +488,13 @@ class Bot(Player):
             near = [pol for p, pol in gn.items() if dist(p, node) < 3]
             if hp and hp != 'FFFFFFFF':
                 if near and near[0] != hp:
+                    # BUG-0325: the host sends the node owners once a second (and the guest takes them only while
+                    # it plays Civ, not in a city planner): a claim the check sees on the host in that second is
+                    # not on the guest yet. A problem when the guest still differs at the next look 4 s or more later
+                    seen.setdefault('first', time.time())
+                    if time.time() - seen['first'] < 4:
+                        g.g.bump('claim_seen_early')
+                        return False
                     g.g.problem(f'spice node {node}: host owner {hp}, guest sees {near[0]}')
                 return True
             return False
@@ -580,10 +589,26 @@ class Bot(Player):
         if offered and not given:
             self.g.problem(f'{self.name} gave {offered} in the co-op window, the host still has owners '
                            f'{[hv.get(i, {}).get("owner") for i in offered]}')
-        me = self.name
-        self.g.expect(4, f'{self.name} sees {given} owned by the partner and no longer selected',
-                      lambda c: all(civ_state(c[me])[1].get(i, {}).get('owner', self.partner) == self.partner and
-                                    not civ_state(c[me])[1].get(i, {}).get('sel', 0) for i in given))
+        # BUG-0325: the giver's game shows the gift within a snapshot (0.1 s). Polled here for 4 s, not at the next
+        # audit (8 s and more later): by then the partner's bot had often given the vehicle back (the host logged
+        # "Alice gave 1 vehicle to Bob" 1.4-7 s after the gift: lab 20261107-124806, -083217, 20261104-075207) and
+        # the giver rightly owned it again. What the giver sees is compared with the host's owner of that moment
+        t0, ok, last, hv2 = time.time(), not given, None, {}
+        while not ok and time.time() - t0 < 4:
+            _, mine, _ = civ_state(self.c)
+            _, hv2, _ = civ_state(self.hc)
+            last = {i: (mine.get(i, {}).get('owner'), hv2.get(i, {}).get('owner'), mine.get(i, {}).get('sel', 0)) for i in given}
+            ok = all(i not in hv2 or i not in mine or (mo == ho and not (ho == self.partner and sl))
+                     for i, (mo, ho, sl) in last.items())
+            if not ok:
+                time.sleep(0.2)
+        if ok:
+            self.g.bump('checks_ok')
+            if any(hv2.get(i, {}).get('owner') == self.id for i in given):
+                self.g.bump('give_returned')
+        else:
+            self.g.problem(f'{self.name} does not see its gift {given} like the host (own owner, host owner, '
+                           f'selected: {last})')
         return f'gave {given} of {offered}'
 
     def a_planner(self):

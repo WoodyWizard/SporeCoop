@@ -376,6 +376,53 @@ inline std::vector<Issue> persistent(const std::vector<Issue>& first, const std:
     return out;
 }
 
+// BUG-0547: a point of a body's own path (the host's ship, sampled every frame on the host)
+struct PathPoint {
+    double t;
+    float x, y, z;
+};
+struct PathHit {
+    float d = 1e30f; // the distance of the point from the path
+    float lag = 0;   // how long ago (s) the path passed nearest to it
+};
+// how far `p` is from the polyline of `path` (oldest first) over its points newer than `since`, and
+// when the path was nearest. A copy drawn on another game a moment late lies on this path (behind
+// the newest point), whatever the body's speed did in that moment: a ship that slowed down or
+// turned is far from where its speed at the read says, but near its path.
+inline PathHit path_distance(const std::deque<PathPoint>& path, float px, float py, float pz, double since)
+{
+    PathHit h;
+    if (path.empty())
+        return h;
+    double now = path.back().t;
+    auto at = [&](const PathPoint& a, const PathPoint& b) {
+        float vx = b.x - a.x, vy = b.y - a.y, vz = b.z - a.z;
+        float wx = px - a.x, wy = py - a.y, wz = pz - a.z;
+        float ll = vx * vx + vy * vy + vz * vz;
+        float u = ll > 1e-9f ? std::max(0.f, std::min(1.f, (wx * vx + wy * vy + wz * vz) / ll)) : 0.f;
+        float dx = wx - u * vx, dy = wy - u * vy, dz = wz - u * vz;
+        float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < h.d) {
+            h.d = d;
+            h.lag = (float)(now - (a.t + u * (b.t - a.t)));
+        }
+    };
+    size_t i = path.size();
+    while (i > 0 && path[i - 1].t >= since)
+        i--;
+    if (i == path.size()) { // no point in the window: the newest one
+        at(path.back(), path.back());
+        return h;
+    }
+    if (i > 0)
+        i--; // the segment into the window
+    for (size_t k = i; k + 1 < path.size(); k++)
+        at(path[k], path[k + 1]);
+    if (path.size() - i == 1)
+        at(path.back(), path.back());
+    return h;
+}
+
 // one line: "c: 3 missing on the guest (c12 c40 c41), n: 1 extra on the guest (n7), p1 23.5 apart, dna: host 120.0, guest 95.0"
 inline std::string describe(const std::vector<Issue>& v, size_t max_keys = 6)
 {

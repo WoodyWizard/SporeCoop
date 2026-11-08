@@ -89,6 +89,10 @@ def main():
     ck(hc[city]['buildings'] == b0h + 1, f'host city got the guest building ({b0h} -> {hc[city]["buildings"]})')
     ck(gc[city]['buildings'] == b0g + 1, f'no duplicate on the guest ({b0g} -> {gc[city]["buildings"]})')
     b1g = gc[city]['buildings']
+    # the fixture's 3000 went to the vehicle and the house: a paid build needs the money (BUG-0613: the mod's build
+    # took the money below 0, and the detector found the host at -800 and the guest at 0)
+    host.call('coop.res add money 5000')
+    time.sleep(1)
     print(' ', host.call(f'coop.civ build {city} factory')['out'])
     time.sleep(2)
     gc, _ = civ(guest)

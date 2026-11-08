@@ -87,6 +87,7 @@ add('effects_live', P + 'coop_effects_live.py', warm=True, minutes=2, fixture='c
 add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review item 7: 60 s at the rate limit, the relay releases the effect reference (off: the game's private commit grows)
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
+add('civ_money_short', P + 'coop_civ_money_short.py', warm=True, minutes=3, fixture='civ')  # a paid build the money does not cover is not built, the shared money the same on both and never below 0 (BUG-0613; SPORE_FIX_OFF=civ.build_money fails)
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
 add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell')  # creatures face as on the host on the guest; guest bites kill
@@ -480,6 +481,7 @@ add('space_map_input', P + 'coop_space_map_input.py', minutes=7, fixture='space'
 add('space_seed_thread', P + 'coop_space_seed_thread.py', warm=True, minutes=5, fixture='space')  # another thread does not switch the planet seeding off (BUG-0123; --without-fix fails)
 add('space_seed_profile', P + 'coop_space_seed_profile.py', minutes=4, fixture='space')  # an unvisited NPC star's planets do not depend on its species profile being loaded (BUG-0185; --without-fix fails)
 add('space_land_early', P + 'coop_space_land_early.py', minutes=3, fixture='space')  # the wheel lands on the home planet right after a load (BUG-0182)
+add('space_fast_sync', P + 'coop_space_fast_sync.py', minutes=9, fixture='space')  # the sync-check keeps the copy of a fast host ship that brakes and turns (the rescue flight, latency spikes; it sets its own SPORE_NET) in sync: compared with the host's path (BUG-0547; SPORE_FIX_OFF=sync.own_path fails)
 add('space_defenders', P + 'coop_space_defenders.py', warm=True, minutes=3, fixture='space')  # the game's Defenders are not partner puppets (BUG-0111; --without-fix fails)
 add('space_mirror_model', P + 'coop_space_mirror_model.py', warm=True, minutes=3, fixture='space')  # a host ship whose model the guest lacks does not fault the guest (BUG-0323; --without-fix fails)
 add('space_armada_return', P + 'coop_space_armada_return.py', minutes=8, fixture='space')  # an armada wave resumes its raid after the host's return (BUG-0046; --without-fix fails); a resumed wave's ships are tough, a raid without ships is not a won wave (BUG-0227; SPORE_FIX_OFF=contracts.wave_resume fails)

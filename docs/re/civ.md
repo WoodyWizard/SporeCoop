@@ -1396,3 +1396,19 @@ BUG-0688 (GitHub #198), GOG 2024 addresses. Lab lane 2 (`tools/tests/coop_civ_tu
   vtable lies in SporeApp.exe's image and its slot 0x14 in an executable section of it (every shooter kind; a wrong
   one is skipped, counted as `bad_combatant` in the `turret_shots:` line of `coop.civ` and logged once per vtable).
   With it the guest fired 264 copies of 264 host turret shots, no fault.
+## SpendMoney goes below 0; the mod's paid build checks the money (2026-11-07, fix/w46-v2-civ-space)
+<a id="civ-spend-below-zero"></a>
+
+BUG-0613. Lab lanes 9/10 (`tools/tests/coop_civ_money_short.py`).
+* ✔ (runtime, lab 20261107-205315 with `civ.build_money` off) `cCivilization::SpendMoney` 0xBEF860 subtracts from
+  mWealth (+0x98) without a floor: a factory (1200) built by `coop.civ build` with ~500 (+ the city income) left the host's game at -660.
+  The game's own planner only offers what the money covers, `host_buy` checks GetMoney first; the mod's paid build
+  (`build_in_city(.., pay)`, the console's `coop.civ build` on either game) did not.
+* ✔ A negative host total is broadcast as it is (MSG_RES) and every guest floors it at 0 (shared.cpp `money_clamp`,
+  BUG-0106): host -800, guest 0 was the detector's `Civilization:state:money` row in every civ_coop run (the fixture's
+  3000 went to a vehicle 1000 and the guest's house 1600, then the host's factory 1200).
+* A building's cost is its vt 0x5C (float) once SetBuildingModel gave it its type; the fix reads it before the slot and
+  destroys the instance (cGameNounManager::DestroyInstance) when GetMoney is below it: "not enough money".
+* Not this cause: the campaign's `Civilization:state:money` rows (host 3530, guest 3000) in civ/advance, where every
+  guest's game reloads the Civ world every ~22 s (mode 01654C08) and shows the save's money for a moment (BUG-0311 run
+  20261107-141346 of rel/0.7.10).

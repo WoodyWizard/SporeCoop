@@ -33,6 +33,8 @@ struct Probe {
     // BUG-0378: the speed (m/s) of each player's ship / creature as this game knows it (its own, the
     // partners' last states): the sync-check's lag allowance
     std::function<std::vector<std::pair<uint8_t, float>>()> player_speeds;
+    // BUG-0547: this game's own ship / creature position (false: none): the host keeps its path of the last second
+    std::function<bool(net::Vec3&)> own_position;
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)

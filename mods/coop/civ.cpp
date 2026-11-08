@@ -2764,9 +2764,19 @@ static bool g_fix_build_orphan = true;
 COOP_FIX("civ.build_orphan", "BUG-0491", g_fix_build_orphan,
          "civ: a building the mod makes for a full city is destroyed, not left in the world outside every slot");
 static uint32_t g_build_orphans;
+// BUG-0613: a building the mod pays for (`coop.civ build`, the tests' build on either game) was paid with
+// cCivilization::SpendMoney, which takes the money below 0 (the game's planner only offers what the money
+// covers): the host's game showed -800 while every guest floors the shared total at 0 (shared.cpp), so the
+// divergence detector's `Civilization:state:money` row came in every civ_coop run. On: a paid build the money
+// does not cover is not built ("not enough money"), as the planner and a purchase (host_buy) do. Off: built and paid.
+static bool g_fix_build_money = true;
+COOP_FIX("civ.build_money", "BUG-0613", g_fix_build_money,
+         "civ: a building the mod pays for is not built when the money does not cover it (money never below 0)");
+static const char* g_build_fail = "";
 // build `noun` in `city` at the free slot nearest to `pos` (the game's planner sequence)
 static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
 {
+    g_build_fail = "no free slot";
     uint32_t type = type_for_noun(noun);
     if (!type || !city)
         return nullptr;
@@ -2777,6 +2787,15 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
     if (!b)
         return nullptr;
     thiscall<void>(a_SetBuildingModel, city, b, type);
+    if (pay && g_fix_build_money) { // BUG-0613
+        void* civ = player_civ();
+        if (civ && thiscall<float>(a_GetMoney, civ) < vcall<float>(b, 0x5C / 4)) {
+            g_build_fail = "not enough money";
+            if (a_DestroyInstance)
+                thiscall<void>(a_DestroyInstance, nm(), o);
+            return nullptr;
+        }
+    }
     vcall<void>(b, 0x54 / 4, city); // SetOwnerCity
     float p[3] = {pos.x, pos.y, pos.z};
     vcall<void>((uint8_t*)b + 0x34, 0x38 / 4, (const float*)p);
@@ -2815,7 +2834,7 @@ static void host_command(uint8_t from, net::Reader& r)
 
     // BUG-0325 diagnostics: why a vehicle of a command is not the sender's (gone from the host's game, dead,
     // or another owner: a gift or a capture in between), logged with the rejection
-    char why[80] = "";
+    char why[160] = "";
     auto own_vehicle = [&](uint16_t id) -> void* {
         auto it = g_hv_by_id.find(id);
         if (it == g_hv_by_id.end()) {
@@ -2878,6 +2897,9 @@ static void host_command(uint8_t from, net::Reader& r)
         Target t = read_target(r);
         void* v = own_vehicle(id);
         void* target = resolve_target(t);
+        if (v && t.kind && !target) // BUG-0325 diagnostics: the order's target is not in the host's game
+            snprintf(why, sizeof why, " (vehicle %u: target kind %u id %u noun %08X at (%.0f %.0f %.0f) not in the host's game)",
+                     (unsigned)id, (unsigned)t.kind, (unsigned)t.id, t.noun, t.pos.x, t.pos.y, t.pos.z);
         if (!r.ok() || !v || (t.kind && !target))
             return reject();
         o_SetOrder(v, target, type, flag);
@@ -4601,18 +4623,24 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t noun = a[2] == "factory" ? 0x18EA2CC : a[2] == "fun" ? 0x1A56ABA : 0x18EB106;
         net::Vec3 p = city_pos(city);
         if (is_guest()) {
-            net::Writer w;
-            w.u8(CMD_BUILD);
-            w.u8((uint8_t)ci);
-            w.u32(noun);
-            w.f32(p.x); w.f32(p.y); w.f32(p.z);
-            send_cmd(w);
+            auto send = [&] {
+                net::Writer w;
+                w.u8(CMD_BUILD);
+                w.u8((uint8_t)ci);
+                w.u32(noun);
+                w.f32(p.x); w.f32(p.y); w.f32(p.z);
+                send_cmd(w);
+            };
+            if (!g_fix_build_money) // BUG-0613 off: sent before the guest knows it can pay
+                send();
             g_applying = true; // the guest's own copy, as its planner would place it
             void* b = build_in_city(city, noun, p, true);
             g_applying = false;
-            return b ? "built locally, sent to the host" : "no free slot";
+            if (g_fix_build_money && b)
+                send(); // only what the guest could build and pay for
+            return b ? "built locally, sent to the host" : g_build_fail;
         }
-        return build_in_city(city, noun, p, a.size() < 4 || a[3] != "nopay") ? "built" : "no free slot"; // nopay: tests
+        return build_in_city(city, noun, p, a.size() < 4 || a[3] != "nopay") ? "built" : g_build_fail; // nopay: tests
     }
     if (!a.empty() && a[0] == "roads") { // roads [a b [type]]: every city's trade routes; host (tests): AddTradeRoute a b
         std::string out;
