@@ -1,16 +1,16 @@
 ---
 id: BUG-0764
 title: Find each other: arrows to partners off screen, partners on the minimap, player colours
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-08
 source: Discord suggestions 2026-10-31..11-04 (Sterben, M0ng0r: arrows to partners, partners on the map), docs/plan-0.7.12.md F2
 role: all
 versions: 0.7.11
-fixed_in:
+fixed_in: unreleased
 branch: feat/w46-partner-arrows
-commits:
+commits: 7b08921b, 7995da26, 76477f2c, a0457e7c, 11d74ec1, e7411236, 9f1f1759, eb8aaaa9, 44a73ce2, 6dda6833
 tests: find_partners, find_partners_tribe, find_partners_cell, find_partners_civ, find_partners_space
 signature:
 docs: docs/08-ui.md#ui-find-each-other, docs/re/creature.md#creature-minimap, docs/re/tribe.md#tribe-minimap
@@ -41,8 +41,14 @@ arrow), the minimap showed no partner, and players had no colour (name tags gree
   `find.colors`, `find.map` (off = the 0.7.11 behaviour).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* PASS: lab 20261108-161238 (find_partners, find_partners_tribe, _cell, _civ, _space; lanes 9/10), also
+  20261108-155841 and 20261108-160151.
+* FAIL with the switches off (find_partners, lane 9): `SPORE_FIX_OFF=find.arrows` lab 20261108-160354 (no arrow pixels),
+  `find.colors` lab 20261108-160500 (the games show different colours), `find.map` lab 20261108-160615 (no blip on
+  either minimap).
+* Looks: `find_icons` lab 20261108-161041 (the blip icons by flags; 0x4 chosen). Screenshots of each stage for the
+  owner's review in the branch's worktree out/f2-shots/.
 
 ## History
 - 2026-11-08: opened.
+- 2026-11-08: implemented on feat/w46-partner-arrows (F2 of 0.7.12).

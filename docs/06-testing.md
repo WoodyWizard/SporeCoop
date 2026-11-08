@@ -5353,3 +5353,21 @@ GitHub Actions builds on ubuntu-22.04 with Python 3.10, and `make test` there pa
 is fine on the lab's Python 3.12+ but a SyntaxError on 3.10: the v0.7.11 tag build failed on six such
 lines. Put the value in a variable first. Check locally: `uv run --no-project --python 3.10 python -c
 "import ast,glob; [ast.parse(open(f).read()) for f in glob.glob('tools/**/*.py', recursive=True)]"`.
+
+## Find each other: arrows, minimap, colours (2026-11-08, feat/w46-partner-arrows)
+<a id="testing-find-partners"></a>
+
+`tools/tests/coop_find_partners.py` (BUG-0764; suite entries `find_partners` ~1 min after the games are up,
+`find_partners_tribe|cell|civ|space` ~20 s, `find_icons` (extended: the minimap icon looks)). The arrow is the mod's
+own overlay drawing, so the test checks what the guest's screen shows: the arrow's direction against the host's real
+position (the host game's own creature, projected by the guest's game, `coop.find project`) and the screenshot's
+pixels in the arrow's body in the host's colour (0 pixels with the setting off or in Rivals). The minimap: the game's
+own blip list read back (`coop.find map`, a unit direction: compare directions times the radius).
+* Pitfalls: a `coop.abilities goto` into the sea leaves the creature camera looking at the water and the HUD hidden
+  (the test skips a place where the guest is not ~80 m away and takes the on-screen case from the search); the Tribe
+  camera sees 200 m and more (the chief is put 150 m away in four directions until it is off the view); in the Space
+  fixture (a star system) the ships stay together (`coop.space shipaway` is reverted by the game: Space gets tag rows,
+  no arrow shot). `coop.space away` is another test switch (act as outside Space), not a move.
+* Twins: `SPORE_FIX_OFF=find.arrows` / `find.colors` / `find.map` fail (lab 20261108-160354 / -160500 / -160615).
+* Two lab runs started on overlapping lanes (`--lanes 10 --skip 1..8` while a `--lane 9` run played) took the busy
+  lane 9 and killed its games: run the tests of one branch in one lab command.
