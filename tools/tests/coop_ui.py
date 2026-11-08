@@ -433,6 +433,7 @@ def run(restart):
         below = all(b['rect'][3] <= r[1] for b in others)
         check(not hit and below and len(others) >= 4, f'the item is the menu\'s last button, over no other ({hit}, '
               f'{len(others)} buttons)')
+        hc.call('wait.frames 30 5000')  # (the menu is drawn a few frames after its flag)
         shot(hc, 'ui_pause_report.png')
         hc.call(f'move {(r[0] + r[2]) // 2} {(r[1] + r[3]) // 2}')
         time.sleep(0.3)
