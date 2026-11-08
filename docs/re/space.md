@@ -2524,3 +2524,44 @@ BUG-0199, lane 3 (GOG 2024), `space_empire` (contact with 80001FCC, home star 00
   flags 88) with "Tell me more..." (720, 725) / "I'm not interested right now" (720, 756). In the run of
   2026-11-08 the offer was a Galactic Adventures mission ("Beam Down?" after "Tell me more"); declining it removed
   the mission noun, and asking again gave "Check us later" (no new offer for a while).
+
+## The NPC store's random wants and prices, seeded per planet (2026-11-08, fix/w46-b1-space)
+<a id="space-npc-store-seed"></a>
+
+BUG-0747, Ghidra on GOG 2024 (both functions at the same addresses as GOG 2016):
+* ✔ `cSpaceTrading::GenerateNPCStore` 0x103E8F0 (thiscall, ret 8) keeps the stores in a vector at trading +0x48 (at most
+  5: the oldest is dropped), one per planet (store +0xC = the PlanetID); a store older than 1,800,000 ms of game time
+  (0xBC3300) is dropped and made again. A new cNPCStore (0xC0 bytes, ctor 0x103CF30) gets +0x9C of the trading object =
+  its index, then `SporeCoop::cSpaceTrading_FillNPCStore` 0x103CD10 (thiscall(trading, own spice key) ret 4).
+* ✔ The fill: `BuildSpiceCommodities` 0x103C950 (fills the spice list +0x20 only when it is empty), a Fisher-Yates
+  shuffle 0x103B3F0 of that list **in place** with RandomInt on the global generator 0x1601760 (so the order depends
+  on every store made before), then the first 3 spices that are not the planet's own go to store +0x60 (keys) with
+  price store +0x9C = value x difficulty x {0.6 .. 3.0}[RandomInt(10)]. Only caller: GenerateNPCStore at 0x103EB08.
+* ✔ So two games made different stores for the same empire. The mod (`space.store_seed`, spacecoop.cpp h_StoreFill)
+  sorts the spice list by key and runs the fill on the private generator of the planet seeding (BUG-0123) seeded from
+  the PlanetID, in a session only; log line `space: the NPC store of planet <id> seeded (<seed>, <n> draws): wants
+  <key> <price>, ...`, counter `stores_seeded=` in `coop.space`.
+* ~ Limit: a store made again after 30 min of game time is the same store (the seed is only the planet); a store the
+  host's game made before the session (a load does not keep the stores: not checked) is not the guests'.
+
+## A guest's own ship on the host: no lag on its path in two-player runs (2026-11-08, fix/w46-b1-space)
+<a id="space-guest-ship-path"></a>
+
+BUG-0758, lane 6 (GOG 2024), `coop_space_fast_sync_guest.py` on `space` (the guest flies, the host checks):
+* ✔ The host's copy of a guest's own ship (key p<guest>) and the guest's digest travel the same link: the host
+  compares its copy when the guest's digest arrives, and the states that put the copy there came over the same
+  connection at the same time. So the copy is only the interpolation delay (0.1 s) and a send interval behind, unlike
+  the guest's copy of the host's ship (a round trip more: BUG-0547, docs/re/space.md#space-copy-on-path).
+* ✔ Measured: 0 differences of p1 in 79 + 104 + 93 + 246 checks (lab 20261108-142942, -143539, -144036, -144435):
+  pulses at 350-840 m/s drawn speed, full reversals with a check asked for at 0.05-0.6 s into the turn, a 300 ms
+  latency spike pattern on the guest's link, the host at 12 fps (SPORE_FPS host:12), the guest's ship disabled at
+  full speed with checks right after. The forced 100 m shift on the guest's digest is still a MISMATCH every time.
+* ~ So the campaign's `p1 79.8` / `p3 30.2` (4 players, 0.7.11 final check) are not this lag: both persisted over the
+  recheck 3 s later, the second with the guest's ship at 1.5 m/s; both came while the host waited to share its world
+  with a player who had just joined (`share_wait=planet`). Not explained.
+* `sync.own_path_guests` (diag_sync.cpp guest_path_check): the host keeps each partner's path from the states it
+  received (every new state by sender time, the last 2.5 s) and takes a p<guest> difference back only when its copy
+  lies within the player limit of that path's last 1 s + rtt and the guest's own position within the limit plus its
+  speed slack. It logs a detail line for every p<guest> difference: `sync-check: p<id> <d> m from the guest's ship,
+  the host's copy <d> m from its path of the last <s> s (nearest <s> s ago), the ship <d> m from it, slack <d> m:
+  on its path, no difference (BUG-0758) | off its path`; counter `guest_path_saved=` in `coop.diag sync`.

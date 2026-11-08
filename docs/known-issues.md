@@ -2366,6 +2366,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Two players at the same NPC empire see different stores: each game generates its own (wanted spices and price
   factor at random). `coop_space_store.py`: the guest sold a Red Spice for 281, the host for 4,779 to the same empire.
   Both earnings go into the shared money, so nothing is lost, but the trade screens disagree.
+* Fixed (unreleased, fix/w46-b1-space, `space.store_seed`): the store's fill is seeded from its planet in a session
+  (docs/re/space.md#space-npc-store-seed). Left: a store the host's game made before the session started.
 * Ticket: BUG-0747.
 ## Space: the host's copy of a guest's ship fails the sync-check while it flies key pulses (2026-11-08, fix/w46-final11-triage)
 <a id="issue-space-guest-ship-path"></a>
@@ -2373,6 +2375,12 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * `sync-check: MISMATCH ... p: 1 apart (pN 30-80 m)` with N a guest's own id: the host's puppet of that guest's ship is
   a state behind on its path while the ship brakes or turns; `sync.own_path` (BUG-0547) takes back only the host's
   own ship (p0). Seen in campaign / campaign_space / play_space since 0.7.3. Nothing wrong to see in the game.
+* Update (2026-11-08, fix/w46-b1-space): not reproduced in two-player runs (about 520 checks of a guest flying pulses,
+  reversals, a disabled ship, spikes, a 12 fps host: 0 differences, docs/re/space.md#space-guest-ship-path); the lag
+  explanation does not hold for a guest's own key (copy and digest share the link). The campaign cases persisted over
+  the recheck and came while the host waited to share its world with a newcomer. `sync.own_path_guests` now logs a
+  detail line for each p<guest> difference (copy and ship against the guest's received path): the next sighting says
+  whether the copy was on the path. Ticket closed not reproduced; reopen with that line.
 * Ticket: BUG-0758.
 ## Tribe: the host's chief jumps (~120 m/s) and a guest's mirror stays 10-12 m off (2026-11-08, fix/w46-final11-triage)
 <a id="issue-tribe-chief-jump"></a>

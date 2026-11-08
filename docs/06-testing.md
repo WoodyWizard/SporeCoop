@@ -5345,3 +5345,19 @@ along and across the host's velocity):
   0.3 s of the dash speed (`P90_S`): Creature 4 m/s 1.2 m as before, Tribe 6.5 m/s 1.95 m. Tried and dropped (no
   effect in A/B runs): a new MoveTo at sharp corners after 0.1 s, the proxies' small lead jumps taken unsmoothed,
   `DASH_WALK_VARIANT=1/2` (place only / teleports).
+
+## Space: a guest's ship against its path, the NPC store compared (2026-11-08, fix/w46-b1-space)
+<a id="testing-space-guest-path-store"></a>
+
+* `coop_space_fast_sync_guest.py` (suite `space_fast_sync_guest`, cold, `space`, ~6 min, BUG-0758): the mirror of
+  space_fast_sync for a guest's own ship: SPORE_NET with spikes and SPORE_FPS host:12 unless set, the GUEST flies
+  full-speed pulses that turn back at once while the host asks for a check (`coop.diag sync now`) in the turn, then
+  its ship is disabled at full speed with checks right after. Checks: no p1 MISMATCH; any p1 difference that lies on
+  the guest's received path is none (`sync.own_path_guests`); the forced shift on the guest's digest is a MISMATCH.
+  In 4 runs no p1 difference came at all (docs/re/space.md#space-guest-ship-path): the test is a guard that the path
+  check never hides a real offset, not a reproduction.
+* Pitfall: a second disable within the 60 s cooldown destroys the ship (hp 0, the death cinematic) instead.
+* `coop_space_store.py` (suite `space_store`) also compares the NPC stores (BUG-0747): `coop.space stores` lists this
+  game's stores (`store planet <PlanetID> wants <key> <price> x3`); every store both games made must want the same
+  spices at the same prices. The two "the store paid" prices alone are weak: an unwanted spice is 5% of the value in
+  every store (both 281 with the fix off in lab 20261108-145056).

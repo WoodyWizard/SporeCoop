@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
+  made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
+
 ## [0.7.11] - 2026-11-08
 
 ### Changed
