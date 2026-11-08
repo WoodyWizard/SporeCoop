@@ -3548,4 +3548,17 @@ BUG-0660, follow-up of [#creature-nest-eggs](#creature-nest-eggs). GOG 2024, lan
   stood 6.4 m from the host's, 6.5 m over its ground, for minutes (BUG-0443's hanging egg class, inferred).
 * ✔ `nest.eggs_family`: the host sends them (state | 0x80); the guest binds its own family egg within 4 m and puts it
   at the host's place, or mirrors the host's into its own family herd (lab 20261108-011630).
+## A far teleport into a collision over the height field (2026-11-08, fix/w46-k8-open)
+<a id="creature-far-goto"></a>
+
+BUG-0658. GOG 2024, lane 5, puppet_far_jump.
+
+* ✔ (runtime) at some places the game's collision lies metres over cPlanetModel::GetHeightAt (5.3 m at
+  hop 2 of the tours' seed 388177865, direction (rnd gauss)·1000); cPlanetModel_SurfacePoint gives GetHeightAt there
+  too (no collision object of the census within 12 m). A creature teleported to GetHeightAt + 0.05 is put on top of it
+  by the next frame whenever its game simulates it (the host's own avatar, the guest's puppet: SetPosition every frame
+  does not hold it under).
+* ✔ After a far `coop.abilities goto` the guest's lab game shows a caption (input_lock=1 modal=1, game time paused):
+  its avatar is not simulated and stays inside; Enter closes it, and the game then moves the avatar itself.
+* Tests that teleport far must close the guest's captions before judging where the other game draws it.
 

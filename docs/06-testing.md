@@ -4984,4 +4984,13 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   lays an egg; 8 s later (it rolls), for 60 s every 6 s: the eggs within 70 m of the nest on both games pair one to
   one within 2 m. `--die` (suite `creature_family_eggs_die`): the host's avatar dies and respawns instead. BUG-0660;
   `SPORE_FIX_OFF=nest.eggs_family` fails (lab 20261108-013018), on passes (20261108-011630).
+## Far jumps and the drawn puppet: puppet_far_jump (2026-11-08, fix/w46-k8-open)
+<a id="testing-puppet-far-jump"></a>
+
+* `coop_puppet_far_jump.py` (suite `puppet_far_jump`, warm, ~4 min, creature fixture): the guest's avatar goes to 8
+  places 500-1000 m away (`coop.abilities goto`, the tours' seed), 16 s each, its captions closed (Enter while
+  `coop.uistate` says input_lock=1 / modal=1); the host records its puppet (`coop.track`): within 1 m of its ground and
+  3 m of the guest's own position in the last 6 s. `--keep-caption` (suite `puppet_far_jump_caption`, extended,
+  monitor gate off) leaves the caption up as the tours do and fails at hop 2 by design (5.3 m, BUG-0658);
+  `--approach` prints diagnostics (the guest walks, the host's avatar to the same place).
 
