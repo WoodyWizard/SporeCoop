@@ -93,6 +93,9 @@ _orig_restore = twoinst.restore_creations
 
 def cell_case(host, guest, ck):
     """the guest's own cell (one the host does not have) reaches the host with a part the host lacks"""
+    if mine(guest, 'cell') == CX:  # an earlier run's choice in this world (worlds.ini): back to the world's cell first
+        print('  guest:', guest.call('coop.creations choose cell none')['out'].strip(), flush=True)
+        time.sleep(6)
     cur = mine(guest, 'cell')
     theirs = set(options(host, 'cell'))
     cands = [int(o, 16) for o in options(guest, 'cell') if o not in theirs and int(o, 16) != cur]
@@ -173,6 +176,9 @@ def main():
     ck(sub, f'the receiving game chose a lookalike for {lack:08X} from the sender\'s description ({sub})')
     ck(sub and sub in parts, f'the {kind} shows that lookalike in the receiving game')
     who.call('coop.creations lack clear')
+    if kind == 'cell':  # the lane's guest profile back to the world's own cell (worlds.ini)
+        guest.call('coop.creations choose cell none')
+        guest.call('coop.creations worlds forget')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

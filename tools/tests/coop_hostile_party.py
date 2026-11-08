@@ -48,7 +48,11 @@ def main():
     time.sleep(4)
     # the guest attacks one animal: its species' relation to the players becomes "attacked" (2, ApplyEvent 2 in the
     # host's TakeDamage), the relation node 0x04A1A1E6 reads
-    ns = sorted(((v[2], k, v) for k, v in npcs(host).items() if not v[3]), key=lambda x: x[0])
+    m = re.search(r'world player species ([0-9A-F]{8})', host.call('coop.creations')['out'])
+    own = m.group(1) if m else ''
+    # an animal of another species than the host's (its family is the host's party)
+    ns = sorted(((v[2], k, v) for k, v in npcs(host).items() if not v[3] and v[1] != own), key=lambda x: x[0])
+    print(f'  host species {own}', flush=True)
     ck(ns, 'the host has animals near the players')
     if not ns:
         ck.faults(host=host, guest=guest)
