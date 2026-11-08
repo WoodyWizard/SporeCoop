@@ -7,6 +7,9 @@
   behind (found with BUG-0438).
 
 ### Fixed
+- Creature: the host's game could crash when the UFO visit (the abduction event) came with a ship whose model its
+  game did not have, as with a Sporepedia cache of ship summaries only; seen at the end of the Creature stage. Such a
+  ship is now just not drawn (BUG-0686).
 - Tribe: when the host's tribe was down to its chief, a hit in a guest's own game on that chief could end the guest's
   game on its own ("Alas! Your population has fallen below the minimum ...", its OK reloads the guest's own save), and
   the guest then no longer saw the host's chief; only the host's game decides now when a member falls (BUG-0685).

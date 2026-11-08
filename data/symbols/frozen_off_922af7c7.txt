@@ -186,3 +186,6 @@ SporeCoop::AudioSystem_SetFloat ; BUG-0669: coop.audio lists no float parameters
 SporeCoop::GGE_RebuildPlanets ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
 SporeCoop::GalaxyGameEntry_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
 SporeCoop::GGE_PlanetSet_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::UfoGfx_Create ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016
+SporeCoop::UfoGfx_HandleMessage ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016
+SporeCoop::UfoGfx_ctor ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016

@@ -131,6 +131,13 @@ int c_spotcut(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0686): game.ufo_model forgets the last known ship model
+int c_ufoforget(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::ufo_forget().c_str());
+    return 0;
+}
+
 // tests (BUG-0329): coop.ground <x> <y> <z> - the terrain radius in that direction (GetHeightAt) and
 // the point's own radius: how high a position is over this game's ground
 int c_ground(void*, int argc, const char* const* argv, SkOut* out)
@@ -688,6 +695,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.spotcut", "tests (BUG-0582): the next attacker of a creature attack finds no spot record (a cell without one)",
                       c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.ufoforget", "tests (BUG-0686): the ship model guard forgets the last known ship model (as a Creature game that has none)",
+                      c_ufoforget, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar] - shared DNA debug (bar: also the evolution bar, cPlayer +0x10F0)", c_dna, nullptr, SK_CMD_MAIN_THREAD);

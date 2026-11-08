@@ -25,6 +25,9 @@ std::string arm_physics_orphan();
 std::string arm_attack_cut();
 // tests (BUG-0582): the next spot lookup of a creature attack's attacker gets no record (as for a cell without one)
 std::string arm_spot_cut();
+// tests (BUG-0686): game.ufo_model forgets the last known ship model (a session whose first ship is unknown: a
+// Creature game has no own ship); also with no known default
+std::string ufo_forget();
 // BUG-0512: clears the stimuli of creature c whose sender is `sender` (or a sub-object of it), as the game's
 // clear 0xBC9A60 does (masks, value, the sender released); returns how many
 unsigned clear_stimuli_from(void* c, void* sender);

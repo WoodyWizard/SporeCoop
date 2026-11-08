@@ -725,6 +725,14 @@ static uint8_t __fastcall ufo_gfx_msg_guard(void* listener, void*, uint32_t id, 
     return g_ufo_msg_orig(listener, id, data);
 }
 
+std::string ufo_forget()
+{
+    char b[96];
+    snprintf(b, sizeof b, "forgot the last known ship model %08X/%08X/%08X\n", g_ufo_good[0], g_ufo_good[1], g_ufo_good[2]);
+    memset(g_ufo_good, 0, sizeof g_ufo_good);
+    return b;
+}
+
 std::string arm_attack_cut()
 {
     if (!g_attack_orig)
