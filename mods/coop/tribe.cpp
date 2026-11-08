@@ -19,6 +19,7 @@
 #include "savestrip.h"
 #include "space_ext.h"
 #include "stage_epoch.h"
+#include "world.h"
 #include "net/held_cmds.h"
 #include "net/ids.h"
 #include "net/interp.h"
@@ -182,6 +183,7 @@ struct HMember {
     uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
     void* tribe = nullptr; // BUG-0620: the tribe whose member list held it last
     double body_since = 0; // BUG-0620: when it left that list dead (its body), 0: in a list
+    uint32_t bt_ticks = 0; // BUG-0531 (diagnostics, `coop.tribe ai`): its behaviour tree's ticks in the host's game
 };
 // BUG-0620 (docs/re/tribe.md#tribe-member-body): a member that dies for good leaves its tribe's member list
 // (+0x1014 = 0) while the game keeps its body (the dead flag +0xB5E, in the object list) for 10-20 s more; the host's
@@ -480,6 +482,9 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
         g_bt_skipped++;
         return 0;
     }
+    if (!is_guest()) // BUG-0531 (diagnostics): does a host member's tree run
+        if (auto it = g_hm.find((void*)self); it != g_hm.end())
+            it->second.bt_ticks++;
     return o_BTTick(a0, a1, a2, a3, self, a5, a6, a7, a8);
 }
 
@@ -1081,6 +1086,16 @@ static std::string ai_line(void* c)
     char e[200];
     snprintf(e, sizeof e, " carry=%.1f tool=%d", carried(c), F<int>(c, kHeldToolOff));
     std::string out = std::string(b) + e;
+    { // BUG-0531 (diagnostics): the walk's waypoints left, the tree's ticks so far (host), the animation playing
+        auto hm = g_hm.find(c);
+        uint32_t an = 0;
+        game::drawn_state(c, nullptr, &an);
+        // (cCreatureCitizen::Update 0xC24A30 ticks the tree only with +0x135 set, the tree *ai set and no city +0x1010)
+        snprintf(e, sizeof e, " path=%d bt=%u anim=%08X upd=%u tree=%d city=%d", lb && le >= lb ? (int)((le - lb) / 0x3C) : -1,
+                 hm == g_hm.end() ? 0u : hm->second.bt_ticks, an, F<uint8_t>(c, 0x135), *(void**)ai != nullptr,
+                 F<void*>(c, 0x1010) != nullptr);
+        out += e;
+    }
     // BUG-0531: the order's target object: alive in the object list, its noun and place, its distance
     if (void* t = rec ? *(void**)(rec + 0x28) : nullptr) {
         struct Q {
@@ -3619,10 +3634,67 @@ static void grab_spot_tick(double now)
         it = seen.count(it->first) ? std::next(it) : g_grab_watch.erase(it);
 }
 
+// BUG-0531 (docs/re/tribe.md#tribe-conquer-caption): a village the player tribe conquers (its hut down to health 0) or
+// allies plays TRG_TotemPole_Conquer / TRG_TotemPole_Social on the host, then TRG_Upgrade (the tribe's new level), and
+// their captions wait for the host's OK with the game time standing (input lock, paused): every member, the guests' too, stands and takes no order (a guest's
+// order changes the order record only) until the host clicks it away. A host who looks elsewhere or is away stops
+// everybody's tribe for good (play_tribe: minutes). With guests in the session the caption closes itself after
+// kVillageCaptionWait s (the game's EndCinematic, as the OK / Enter does) and everybody is told, as civ.caption
+// does for a capture (BUG-0187). `coop.fix tribe.conquer_caption off`: the wait for the host's OK (0.7.10).
+static bool g_conquer_caption_fix = true;
+COOP_FIX("tribe.conquer_caption", "BUG-0531", g_conquer_caption_fix,
+         "tribe: the host's caption of a conquered or allied village closes itself after 8 s when guests wait");
+// the registry ids (FNV-1 of the lower-case names): TRG_TotemPole_Conquer, TRG_TotemPole_Social, TRG_Upgrade
+constexpr uint32_t kVillageCines[] = {0x5418B038, 0x6A4BB900, 0x94D17D9F};
+static bool village_cine(uint32_t id)
+{
+    return std::find(std::begin(kVillageCines), std::end(kVillageCines), id) != std::end(kVillageCines);
+}
+constexpr double kVillageCaptionWait = 8.0;
+static uint32_t g_village_cine, g_village_captions_closed;
+static double g_village_cine_since;
+static bool g_village_cine_ending;
+static void village_caption_tick(double now)
+{
+    uint32_t id = world::cinematic_id();
+    bool village = village_cine(id);
+    bool guests = C.sess->players().size() >= 2;
+    if (!village) {
+        g_village_cine = 0;
+        g_village_cine_ending = false;
+        return;
+    }
+    if (id != g_village_cine) {
+        bool chained = g_village_cine != 0; // TRG_Upgrade right after the conquest: told once
+        g_village_cine = id;
+        g_village_cine_since = now;
+        g_village_cine_ending = false;
+        H->log(M, SK_INFO, "tribe: the village cinematic %08X plays on the host (BUG-0531)", id);
+        if (guests && C.notice && !chained)
+            C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the tribe waits for the OK" +
+                     (g_conquer_caption_fix ? " (or " + std::to_string((int)kVillageCaptionWait) + " s)" : ""));
+    }
+    if (!g_conquer_caption_fix || !guests || g_village_cine_ending || now - g_village_cine_since < kVillageCaptionWait)
+        return;
+    g_village_cine_ending = true;
+    H->run_outside_frame(
+        [](void*) {
+            uint32_t now_id = world::cinematic_id();
+            if (!village_cine(now_id) || game::mode_id() != modes::kTribe ||
+                !world::end_cinematic("in Tribe after 8 s with guests waiting (BUG-0531)"))
+                return;
+            g_village_captions_closed++;
+            if (C.notice)
+                C.notice("the caption closed by itself: the tribe goes on");
+        },
+        nullptr);
+}
+
 static void coop_tick(double now)
 {
     chiefs_tick();
     if (is_host()) {
+        village_caption_tick(now);
         grab_spot_tick(now);
         spread_chiefs(now);
         place_chiefs(now);
@@ -3964,8 +4036,8 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
@@ -4474,11 +4546,27 @@ std::string debug(const std::vector<std::string>& a)
                 thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)&p);
             return "walk ordered";
         }
-        void* tgt = action == 2 ? find_tree(p, 3.f) : nullptr;
+        // [noun hex]: the object of that kind within 8 m of the point (a raid's hut 0x1E4DAAE, a village 0x18C6D19)
+        uint32_t noun = a.size() >= 7 ? (uint32_t)strtoul(a[6].c_str(), nullptr, 16) : 0;
+        void* tgt = noun ? game::find_object(noun, p, 8.f) : action == 2 ? find_tree(p, 3.f) : nullptr;
         if (!tgt)
             return "no target there";
         thiscall<void*>(a_DoAction, c, action, tgt, (void*)nullptr);
         return "ordered " + std::to_string(action);
+    }
+    // huthp <x> <y> <z> <hp>: tests (BUG-0531, host), the health of the hut within 10 m of the point (cCombatant at
+    // +0x120, docs/re/tribe.md): a raid then ends in a few blows
+    if (a.size() >= 5 && a[0] == "huthp" && is_host()) {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        void* h = game::find_object(0x01E4DAAE, p, 10.f);
+        if (!h || !skg::readable(h, 0x160))
+            return "no hut there";
+        float& hp = F<float>(h, 0x120 + 0x38);
+        char b[96];
+        snprintf(b, sizeof b, "hut %p health %.0f/%.0f", h, hp, F<float>(h, 0x120 + 0x2C));
+        if (a.size() >= 5 && a[4] != "-")
+            hp = (float)atof(a[4].c_str());
+        return std::string(b) + " -> " + std::to_string((int)hp);
     }
     if (a.size() >= 2 && a[0] == "who") { // who <citizen pointer>: BUG-0620, what a citizen of the object list is
         void* c = (void*)(uintptr_t)strtoul(a[1].c_str(), nullptr, 16);
