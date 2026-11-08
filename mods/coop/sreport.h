@@ -40,6 +40,7 @@ bool round_running();
 // the host's lobby line about the round ("" = none) and the guest's question: 1 = asked now (line: the question),
 // 0 = not (line: what happened to its report, "" = nothing)
 std::string host_line();
+std::string host_ui_line(); // its short form (one line of the co-op window; the chat has the list)
 int guest_prompt(std::string& line);
 void answer(bool send); // the guest's click
 

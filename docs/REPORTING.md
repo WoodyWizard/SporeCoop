@@ -422,8 +422,10 @@ panel says the same. A guest that clicks Send makes the same zip its own "Report
 first), and it goes to the host over the session connection; the guest's line then reads "Your report went to the host
 (N KB)", "You did not send your report" or "The host refused your report (too big | not a SporeCoop report | broken
 transfer)". A guest can still make its own report any time. The host's status line counts the answers ("Reports: 2 of 3
-- Bob: sent (1234 KB), Carol: not sent, Dave: sending 40%") and at the end says "Session report saved:
-SporeCoop-session-report-<time>.zip - ..." (a panel and a chat line too).
+answered, 1 arrived") and at the end says "Session report saved: SporeCoop-session-report-<time>.zip"; the list of
+who sent, did not, timed out or was refused goes into a panel and the lobby's chat ("* Session report saved: ... - Bob:
+sent (882 KB), Carol: not sent, Dave: refused (too big)"; one status line holds only the file name: the long line
+wrapped over the chat, seen in the first shot).
 
 **The file.** `mods\logs\SporeCoop-session-report-<time>.zip` (stored entries): `Host-<name>.zip` (the host's own
 report, when the round came from its Report a problem), `Guest-<name>.zip` per guest that sent (names reduced to

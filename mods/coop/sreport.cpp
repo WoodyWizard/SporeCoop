@@ -80,7 +80,8 @@ static std::string file_of(const std::string& p) { return p.substr(p.find_last_o
 static std::unique_ptr<Round> g_round;    // the round being asked (nullptr = none)
 static std::string g_host_zip;            // the host's own report of this round ("" = without it)
 static std::string g_host_name;
-static std::string g_line;                // the host's lobby line
+static std::string g_line;                // the host's line about the last round (all guests)
+static std::string g_ui_line;             // its short form for the lobby's status line (one line of the window)
 static std::string g_last_zip;            // the last session zip written (tests)
 static std::vector<std::string> g_last_entries;
 static bool g_writing;                    // the session zip is being written outside the frame
@@ -146,6 +147,7 @@ static void write_session(void*)
     std::string line;
     if (entries.empty()) {
         line = "No report came: " + summary_line(*r);
+        g_ui_line = "No report came (see the chat)";
         LOG("session report: round %u: nothing to write (%s)", r->id, summary_line(*r).c_str());
     } else {
         std::string dir = logs_dir(), base = "SporeCoop-session-report-" + stamp(), name = base + ".zip";
@@ -173,11 +175,13 @@ static void write_session(void*)
             g_last_zip = path;
             g_last_entries = names;
             line = "Session report saved: " + name + " - " + summary_line(*r);
+            g_ui_line = "Session report saved: " + name;
             LOG("session report: round %u: %s (%u entries, %u KB): %s", r->id, path.c_str(), z.entries(), z.bytes() >> 10,
                 summary_line(*r).c_str());
         } else {
             DeleteFileW(widen(part).c_str()); // no partial file
             line = "The session report could not be written (" + summary_line(*r) + ")";
+            g_ui_line = "The session report could not be written (see the chat)";
             H->log(M, SK_ERROR, "session report: cannot write %s", path.c_str());
         }
     }
@@ -232,6 +236,7 @@ std::string ask(const std::string& host_zip)
     g_round = std::move(r);
     g_rounds++;
     g_line = "Asking " + std::to_string(g_round->guests.size()) + " player(s) for their reports...";
+    g_ui_line = g_line;
     LOG("session report: round %u: asking %u guests (%s the host's report)", g_round->id, (unsigned)g_round->guests.size(),
         host_zip.empty() ? "without" : "with");
     trace::line("report", "round %u asks %u guests", g_round->id, (unsigned)g_round->guests.size());
@@ -239,6 +244,20 @@ std::string ask(const std::string& host_zip)
 }
 
 bool round_running() { return g_round != nullptr || g_writing; }
+
+std::string host_ui_line()
+{
+    if (g_round && !g_writing) {
+        int done = 0, sent = 0;
+        for (auto& g : g_round->guests) {
+            done += final_state(g.st);
+            sent += g.st == State::Sent;
+        }
+        return "Reports: " + std::to_string(done) + " of " + std::to_string(g_round->guests.size()) + " answered, " +
+               std::to_string(sent) + " arrived";
+    }
+    return g_ui_line;
+}
 
 std::string host_line()
 {

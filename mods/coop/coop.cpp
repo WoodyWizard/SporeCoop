@@ -5656,7 +5656,7 @@ void init_ui()
         return p;
     };
     a.report_round = [] { return g_sess.role() == net::Role::Host && sreport::round_running(); };
-    a.report_line = sreport::host_line;
+    a.report_line = sreport::host_ui_line;
     a.report_prompt = sreport::guest_prompt;
     a.report_answer = sreport::answer;
     a.report_shot = [] { return support::report_shot("report", "\"Report a problem\" in the co-op window"); };

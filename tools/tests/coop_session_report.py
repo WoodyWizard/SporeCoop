@@ -119,6 +119,8 @@ def run_round(ck, party, label, how, answers, hooks, expect_names, expect_states
     if not ck(zpath is not None, f'[{label}] the host wrote a SporeCoop-session-report-*.zip'):
         return
     ck(os.path.basename(zpath) in line, f'[{label}] the host\'s line names the file {os.path.basename(zpath)}')
+    hst = Ui(host.con, host.name).wait(lambda s: os.path.basename(zpath) in s.get('world', ''), 8, 'the result line')
+    ck(hst is not None, f'[{label}] the host\'s own window says "{(hst or {}).get("world", "")}"')
     with zipfile.ZipFile(zpath) as z:
         names = sorted(z.namelist())
         ck(names == sorted(expect_names), f'[{label}] the session zip holds exactly {sorted(expect_names)} ({names})')
