@@ -2642,7 +2642,15 @@ while no newer state comes, and the rules that decide how far and whether.
 * ✔ (guest log lines `net: round trip p10 .. p90`, new) The mean round trip (Connection::rtt_ms, ~10 samples) follows
   every spike of the player network and both games' frames: 115-462 ms on the player network at a lab load of 25-35
   (the no-lead rule then read 139 ms and turned the member lead off: body_trail_tribe_player lab 20261108-003907-2,
-  p90 2.11 m). The lower quartile of the last 128 samples, each without half this game's own wait between two socket
-  reads: player network 84-151 ms (one-way 42-75), mobile 186-234 ms (93-117) (lab 20261108-005832, -005832-2). The
-  rule (`drive.lead_low`) reads half of it, lines 80 / 70 ms: the mobile network still goes off (tribe_walk_mobile
-  OK, `lead off (one-way latency 101 ms)`), the player network under load keeps the lead.
+  p90 2.11 m). The lower quartile of the last 128 samples: player network 84-151 ms (one-way 42-75), mobile 186-234
+  ms (93-117) (lab 20261108-005832, -005832-2); with half this game's own wait between two socket reads taken off each
+  sample (a loaded guest's frame, Connection::poll_prev_ms) the player network at a load of 25-35 reads 80-152 ms
+  (lab 20261108-010745 / -2). The rule (`drive.lead_low`) reads half of it, lines 80 / 70 ms: the mobile network still
+  goes off (tribe_walk_mobile OK, `lead off (one-way latency 101 ms)`), the player network under load keeps the lead.
+  ~ The margin at the top of the player network's range (76 ms against 80) is thin; a heavier load than the lab's 35
+  may still turn it off.
+* ✔ (npc_walk_tribe over the player network, lab 20261108-011449 / -012638-2) The walked NPC proxies' remaining jumps
+  were late news without drive.lead_late (a walk that started in a spike: the target jumped 2.6 m at the start) and a
+  turn known late (the target jumped 2.6-4 m and walk_place's snap teleported the proxy onto it). Now the proxies
+  have late_lead (late_time) and smooth_max 8 m (every lead jump up to 8 m through the smoothing offset); the members'
+  rules (the no-lead rule, the smoothing only after a switch) stay theirs.
