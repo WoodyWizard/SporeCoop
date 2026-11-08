@@ -80,6 +80,10 @@ The original plan:
 Run it on a lane with Wine's heap checking (`WINEDEBUG=warn+heap`) so that a write into freed memory is reported. The test should fail on main under heap checking if the pointer is stale, and pass with the fix. If it passes on main as well, record that negative result in docs/re/space.md (the pointer is cleared) and close this issue.
 
 ### Related
+- BUG-0228 rewrote the same `clear_down_invincible` path behind `space.down_clear` / `space.down_world`;
+  its test coop_space_down_away checks the game's state ("the ship is no longer invincible"): FAIL
+  out/lab/20261028-225138, PASS out/lab/20261028-224335. The write into freed memory itself stays
+  invisible without a heap checker.
 - docs/re/space.md 7.2 (rescue), 9.4 (freed UFOs).
 - CLAUDE.md section 2 (object lifetime).
 
@@ -88,3 +92,4 @@ Run it on a lane with Wine's heap checking (`WINEDEBUG=warn+heap`) so that a wri
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-space (wave 1, Space).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-11-08 (fix/w46-g4-0430, BUG-0430): pointer to BUG-0228, whose test fails without its switches on the same path.

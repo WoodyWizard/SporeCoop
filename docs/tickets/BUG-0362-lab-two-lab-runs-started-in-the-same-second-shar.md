@@ -1,7 +1,7 @@
 ---
 id: BUG-0362
 title: lab: two lab runs started in the same second share one run directory (summary.md overwritten)
-status: fixed
+status: duplicate
 kind: tooling
 stage: All
 reported: 2026-11-01
@@ -14,7 +14,7 @@ commits: a04e284f
 tests: tools/tests/lab_selftest.py same_second (make test)
 signature:
 docs: docs/06-testing.md
-related: BUG-0360
+related: BUG-0353, BUG-0360
 ---
 
 ## Report
@@ -30,6 +30,8 @@ How to reproduce: start two lab runs of the same branch in one second (`cmd1 & c
 and does not check whether the directory exists. Observed 2026-11-01.
 
 ## Fix
+Duplicate of BUG-0353 (the same report, the same fix a04e284f and test).
+
 `tools/lab.py` `new_run_dir()`: the run id is still the start time to the second (and the branch), but the directory is taken with `os.mkdir` (fails when it exists), and a run that finds it taken uses the next suffix (`<time>-2`, `-3`, ...; with a branch `<time>-2-<branch>`). Two processes racing for one name never both get it. `out/lab/flaky.json` (shared by all runs of a checkout) is read, updated and replaced under an flock (`flaky.json.lock`), written through a temporary file. Switch for the self-test: `SPORE_LAB_SHARED_RUNDIR=1` keeps the old shared directory.
 
 ## Verification
@@ -39,3 +41,4 @@ tools/tests/lab_selftest.py `same_second` (make test): two stubbed lab processes
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w42-infra (a04e284f): exclusive run directory with a suffix, flaky.json under a lock.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-08 (fix/w46-g4-0430, BUG-0430): closed as a duplicate of BUG-0353 (same report, same fix and test).
