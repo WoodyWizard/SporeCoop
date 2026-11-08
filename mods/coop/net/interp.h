@@ -182,6 +182,75 @@ constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's on
 constexpr size_t kHorizonN = 32;
 constexpr double kLateNews = 0.05; // s
 constexpr float kLateLost = 1.5f;  // m
+// BUG-0674 (K4, `coop.fix drive.lead_fall`): a body is moved on past its newest state at its velocity only as far as
+// its states usually come (the median lead horizon at the last kHorizonN arrivals, + kFallMargin); further (a latency
+// spike, a loss burst, no state for 0.2-0.6 s) the extrapolation slows down exponentially (kFallTau: at most kFallTau x
+// the speed more). Moved on at the full speed for up to kMaxLead s, a body that turned round or stopped in the gap was
+// shown going on the old way: 2 x speed x gap off (Tribe members 8-9 m at 9-12 m/s, lab 20261107-102038; walked NPC
+// proxies teleported 2.5-5.6 m, npc_walk_tribe 20261107-112016; a Space ship copy 11.4 m past a ship that braked,
+// space_fast_sync). The cost: a straight walk in a spike is shown up to (gap - horizon - kFallTau) x speed behind and
+// caught up when the states come (drive.lead_late). One rule for every remote body that is moved on: the lead of the
+// snapshot buffers (fall_time) and VelocityEstimate::at (Civ vehicles, Space ships). Off: 0.7.10.
+inline bool g_lead_fall_fix = true;
+constexpr double kFallMargin = 0.04; // s past the usual horizon at the full speed
+constexpr double kFallTau = 0.12;    // s
+// the time a body is moved on for after `dt` s past its newest state, with the usual horizon `knee` (s), falling with
+// `tau`; `on`: the rule's switch (drive.lead_fall, or drive.puppet_fall for the partners' puppets)
+inline double fall_time(double dt, double knee, double tau = kFallTau, bool on = g_lead_fall_fix)
+{
+    if (!on || dt <= knee)
+        return dt;
+    return knee + tau * (1.0 - std::exp(-(dt - knee) / tau));
+}
+// its rate (d fall_time / d dt): the share of the velocity the moved-on body still has
+inline float fall_rate(double dt, double knee, double tau = kFallTau, bool on = g_lead_fall_fix)
+{
+    if (!on || dt <= knee)
+        return 1.f;
+    return (float)std::exp(-(dt - knee) / tau);
+}
+// BUG-0680 (K4, `coop.fix drive.puppet_fall`): the same for a buffer shown interpolated (the partners' puppets, delay
+// 0.1 s): past its newest state (a state later than the delay: a spike) it was moved on at the state's velocity for up to
+// max_extrap 0.25 s, and a partner that stopped in a spike was shown walking on: the target stepped back 0.72 m at the
+// stop's news and the puppet stood 0.33-0.86 m past where the partner stopped (puppet_stops, lab 20261107-132459 #1,
+// 1 stop in 10-14). With the fix it is moved on at the full speed for kPuppetFallMargin s only, then falling with
+// kPuppetFallTau, its velocity too (creature.puppet_stop then holds it where the target slows down). Off: 0.7.10.
+inline bool g_puppet_fall_fix = true;
+constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
+// the median of the last N horizons (how far past the newest state a body was moved on when the next state came)
+template <size_t N> struct HorizonMedian {
+    std::array<float, N> h{};
+    size_t n = 0;
+    float med = 0;
+    void clear() { n = 0; med = 0; }
+    void add(double v)
+    {
+        h[n++ % N] = (float)v;
+        const size_t k = std::min(n, N);
+        std::array<float, N> d = h;
+        std::nth_element(d.begin(), d.begin() + k / 2, d.begin() + k);
+        med = d[k / 2];
+    }
+    // the knee for fall_time: `extra` s over the median (never under 0); none (1e9) before 8 horizons
+    double knee(double extra) const { return n >= 8 ? std::max(0.0, (double)med) + extra : 1e9; }
+};
+// BUG-0675 (K4, `coop.fix drive.lead_throw`): a path between the two newest states faster than 15 m/s is a real move,
+// not the body put somewhere, when the state's own velocity says the same (kThrowAgree): a pushed NPC thrown at 13-31 m/s
+// reports that speed (the host's coop.npctrack rows: path 19.6-20.4 m/s, reported 19.4-20.4). Taken as put somewhere,
+// the lead stood at each newest state and the copy stood 3-6 frames, then stepped 2 m (body_trail_hits over the player
+// network: over 2 m 0.88-0.96 s, max 6-7.4 m). Off: 0.7.10 (no lead over a 15 m/s path).
+inline bool g_lead_throw_fix = true;
+constexpr float kThrowAgree = 0.35f; // the state's speed within this share of the path's, the directions within ~20 deg
+// BUG-0651 (K4, `coop.fix drive.lead_low`): the no-lead rule reads the link's own latency, not the mean round trip. The
+// mean (Connection::rtt_ms, an average of the last ~10 samples) follows every latency spike of the player network for
+// 0.5-1 s and both games' frame times (a sample waits for the host's frame that reads it and the guest's that reads the
+// ack): the player network read 139 ms at a lab load of ~27 and the members were shown 0.2 s + latency late for the rest
+// of the run (body_trail_tribe_player p90 2.11 m, lab 20261108-003907-2). With the fix the rule reads g_one_way_low:
+// half of the lower quartile of the last 128 round-trip samples, which spikes (10 % of the time) and frame waits (their
+// lower part) leave out; the mobile network's 120 ms each way stays in it. Its own line kLowHigh / kLowLow. Off: 0.7.10.
+inline bool g_lead_low_fix = true;
+inline double g_one_way_low = -1; // s, -1 = no samples yet (set by the session every frame)
+constexpr double kLowHigh = 0.08, kLowLow = 0.07; // s
 
 class SnapshotBuffer {
 public:
@@ -194,6 +263,8 @@ public:
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
     // Blended, the puppet's target slid the whole way in 0.1 s and the puppet walked after it (0 = off)
     float jump_speed = 0;
+    // BUG-0680: the extrapolation past the newest state falls off (g_puppet_fall_fix); the partners' puppets
+    bool interp_fall = false;
     // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
     static inline bool scale_lerp = true;
     // diagnostics (BUG-0388): how far past its newest snapshot the last sample() ran (s, before the
@@ -211,7 +282,7 @@ public:
         sm_have_ = false;
         lt_have_ = false;
         age_n_ = 0;
-        hz_n_ = 0;
+        hz_.clear();
         lt_excess_ = 0;
     }
 
@@ -246,7 +317,9 @@ public:
         // (player 150 ms, mobile 156-193 ms) and IQR (local at lab load 10-15: 34-106 ms, mobile 45-103 ms; the
         // guest's own frame times dominate it) (lab 20261106-164638, -165647, -170617)
         {
-            devs_[dev_n_++ % kJitterN] = (float)g_one_way;
+            // BUG-0651 (g_lead_low_fix): the link's own latency (the round trip's lower quartile)
+            const bool low = g_lead_low_fix && g_one_way_low >= 0;
+            devs_[dev_n_++ % kJitterN] = (float)(low ? g_one_way_low : g_one_way);
             if (dev_n_ >= 32) {
                 size_t n = std::min<size_t>(dev_n_, kJitterN);
                 std::array<float, kJitterN> d = devs_;
@@ -254,18 +327,17 @@ public:
                 jitter_ = d[n / 2];
                 // BUG-0651 (g_lead_keep_fix): the rule's line moved over what the player network and a moderately loaded
                 // guest read (80-115 ms); the mobile network (110-150 ms) stays under it
-                const double hi = g_lead_keep_fix ? kKeepHigh : kJitterHigh, lo = g_lead_keep_fix ? kKeepLow : kJitterLow;
+                double hi = g_lead_keep_fix ? kKeepHigh : kJitterHigh, lo = g_lead_keep_fix ? kKeepLow : kJitterLow;
+                if (low)
+                    hi = kLowHigh, lo = kLowLow;
                 jittery_ = jitter_ > hi || (jittery_ && jitter_ > lo);
             }
         }
         // BUG-0410 (g_lead_keep_fix): how much further than usual the lead had to go past the state before this one
         if (!snaps_.empty()) {
             const double h = local_now - offset_ + g_one_way - snaps_.back().t;
-            hz_[hz_n_++ % kHorizonN] = (float)h;
-            const size_t n = std::min<size_t>(hz_n_, kHorizonN);
-            std::array<float, kHorizonN> d = hz_;
-            std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
-            lt_excess_ = std::max(0.0, h - (double)d[n / 2]);
+            hz_.add(h);
+            lt_excess_ = std::max(0.0, h - (double)hz_.med);
         }
         age_n_++; // BUG-0650: a new state for late_time
         lt_new_ = true;
@@ -305,7 +377,13 @@ public:
                 float k = (float)(1.0 / dt);
                 pv = {(n.s.pos.x - pr->s.pos.x) * k, (n.s.pos.y - pr->s.pos.y) * k, (n.s.pos.z - pr->s.pos.z) * k};
                 ps = len(pv);
-                if (ps > 15.f || (jump_speed > 0 && ps > jump_speed))
+                // BUG-0675 (g_lead_throw_fix): unless its own velocity says it moves that fast that way (a throw)
+                bool put = ps > 15.f || (jump_speed > 0 && ps > jump_speed);
+                if (put && g_lead_throw_fix && !(jump_speed > 0 && ps > jump_speed) && sn > 15.f &&
+                    std::fabs(sn - ps) <= kThrowAgree * ps &&
+                    pv.x * n.s.vel.x + pv.y * n.s.vel.y + pv.z * n.s.vel.z >= 0.94f * ps * sn)
+                    put = false;
+                if (put)
                     return {}; // the sender's body was put somewhere: no walk to go on with
             }
         }
@@ -360,12 +438,16 @@ private:
             if (use && tl >= n.t) {
                 double dt = tl - n.t;
                 last_extrap = dt;
-                dt = std::min(dt, kMaxLead);
+                // BUG-0674 (g_lead_fall_fix): past the usual horizon at a falling speed
+                const double knee = hz_.knee(kFallMargin);
+                const float fr = dt > kMaxLead ? 1.f : fall_rate(dt, knee);
+                dt = std::min(fall_time(dt, knee), kMaxLead);
                 Vec3 v = lead_velocity();
                 out = n.s;
                 out.pos.x += v.x * (float)dt;
                 out.pos.y += v.y * (float)dt;
                 out.pos.z += v.z * (float)dt;
+                v = {v.x * fr, v.y * fr, v.z * fr};
                 out.vel = v;
                 if (late && lt_rate_ > 1.f) // BUG-0650: catching up: the target runs at that rate x the body's speed
                     out.vel = {v.x * lt_rate_, v.y * lt_rate_, v.z * lt_rate_};
@@ -431,12 +513,22 @@ private:
         const auto& n = snaps_.back();
         double dt = t - n.t;
         last_extrap = dt;
+        // BUG-0680 (g_puppet_fall_fix, interp_fall): past the usual horizon (in render time) at a falling speed
+        float fr = 1.f;
+        if (interp_fall && !(lead && g_lead_fix)) {
+            const double knee = hz_.n >= 8 ? std::max(0.0, (double)hz_.med - g_one_way - delay) + kPuppetFallMargin
+                                           : kPuppetFallMargin;
+            fr = dt > max_extrap ? 0.f : fall_rate(dt, knee, kPuppetFallTau, g_puppet_fall_fix);
+            dt = fall_time(dt, knee, kPuppetFallTau, g_puppet_fall_fix);
+        }
         if (dt > max_extrap)
             dt = max_extrap;
         out = n.s;
         out.pos.x += n.s.vel.x * (float)dt;
         out.pos.y += n.s.vel.y * (float)dt;
         out.pos.z += n.s.vel.z * (float)dt;
+        if (fr < 1.f)
+            out.vel = {n.s.vel.x * fr, n.s.vel.y * fr, n.s.vel.z * fr};
         return true;
     }
 
@@ -445,7 +537,7 @@ private:
     {
         const Snap& n = snaps_.back();
         if (t >= n.t) {
-            double dt = std::min(t - n.t, kMaxLead);
+            double dt = std::min(fall_time(t - n.t, hz_.knee(kFallMargin)), kMaxLead); // (BUG-0674)
             Vec3 v = lead_velocity();
             return {n.s.pos.x + v.x * (float)dt, n.s.pos.y + v.y * (float)dt, n.s.pos.z + v.z * (float)dt};
         }
@@ -646,8 +738,7 @@ private:
     // BUG-0650
     size_t age_n_ = 0; // states since clear()
     // BUG-0410: the lead horizons at the last kHorizonN states and the newest one's excess over their median (s)
-    std::array<float, kHorizonN> hz_{};
-    size_t hz_n_ = 0;
+    HorizonMedian<kHorizonN> hz_;
     double lt_excess_ = 0;
     mutable bool lt_have_ = false, lt_new_ = false;
     mutable float lt_rate_ = 1.f; // the shown sender time's rate this frame (catching up: 1 + kLateRate)
@@ -731,6 +822,8 @@ struct VelocityEstimate {
                     vel = {};
             } else
                 vel = {};
+            if (sender >= 0 && sender_s > sender)
+                hz.add(now - t); // BUG-0674: how far past the previous one it was moved on (less the latency)
             clock.add(now - sender_s, now);
             pos = p;
             sender = sender_s;
@@ -749,9 +842,14 @@ struct VelocityEstimate {
         t = now;
     }
     // latency: the one-way delay before the snapshot arrived
+    // BUG-0674 (g_lead_fall_fix): past the usual horizon (with sender times) at a falling speed
+    HorizonMedian<32> hz;
     Vec3 at(double now, double latency = 0.03) const
     {
-        float a = (float)std::min(std::max(now - t + latency, 0.0), max_ahead);
+        double a0 = std::max(now - t + latency, 0.0);
+        if (sender >= 0)
+            a0 = fall_time(a0, hz.knee(kFallMargin) + latency);
+        float a = (float)std::min(a0, max_ahead);
         return {pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a};
     }
 };

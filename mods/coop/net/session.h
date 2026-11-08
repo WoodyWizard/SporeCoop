@@ -95,6 +95,8 @@ public:
     uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
+    // BUG-0651: the q-quantile of the last round-trip samples to that peer (ms), -1 = none (yet)
+    float rtt_quantile_of(uint8_t id, float q) const;
     // the link to a player (host: any guest, guest: the host) for the support trace: no address
     struct Link {
         int rtt_ms = -1;

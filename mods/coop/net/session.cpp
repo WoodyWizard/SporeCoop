@@ -271,6 +271,14 @@ int Session::rtt_of(uint8_t id) const
     return -1;
 }
 
+float Session::rtt_quantile_of(uint8_t id, float q) const
+{
+    for (auto& p : peers_)
+        if (p->id == id && (p->accepted || role_ == Role::Client))
+            return p->conn.rtt_quantile(q);
+    return -1.f;
+}
+
 bool Session::link_of(uint8_t id, Link& out) const
 {
     for (auto& p : peers_)

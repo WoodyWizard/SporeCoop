@@ -506,6 +506,10 @@ COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: 
 COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
 COOP_FIX("drive.lead_smooth", "BUG-0619", net::g_lead_smooth_fix, "tribe, creature: a remote body's lead target goes on smoothly after a late state (Tribe members jumped ~1 m per frame over a jittery network)");
 COOP_FIX("drive.lead_keep", "BUG-0651", net::g_lead_keep_fix, "tribe: the members are shown where the host has them now over any link (the lead no longer goes off over 100 ms, a late state is caught up at up to twice the walk)");
+COOP_FIX("drive.lead_fall", "BUG-0674", net::g_lead_fall_fix, "every stage: a remote body is moved on past its last state at a falling speed through a latency spike or a loss burst (members 8-9 m off, NPCs teleported, ships past a stop)");
+COOP_FIX("drive.puppet_fall", "BUG-0680", net::g_puppet_fall_fix, "creature: the partner's creature stops where the partner stopped in a latency spike instead of walking on past it");
+COOP_FIX("drive.lead_throw", "BUG-0675", net::g_lead_throw_fix, "creature, tribe: the copy of a thrown NPC flies with it instead of waiting for each of its states");
+COOP_FIX("drive.lead_low", "BUG-0651", net::g_lead_low_fix, "tribe: the member lead stays on over a player network and on a loaded PC (the rule reads the link's own latency, not the mean round trip)");
 COOP_FIX("drive.lead_late", "BUG-0650", net::g_lead_late_fix, "tribe: a member's state that arrives late (a latency spike) is brought in over time, not at once (members jumped ~0.9 m per frame at a walk start in a spike)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");

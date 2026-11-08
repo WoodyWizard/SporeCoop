@@ -240,6 +240,7 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
     }
     float sample = (float)(now - p.time);
     rtt_ms = rtt_ms * 0.9f + sample * 0.1f;
+    rtt_ring[rtt_ring_n++ % kRttRing] = sample; // BUG-0651
     if (!stats.rtt_n || sample < stats.rtt_min)
         stats.rtt_min = sample;
     if (sample > stats.rtt_max)
@@ -252,6 +253,18 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
         if (it != rel_out_.end())
             rel_out_.erase(it);
     }
+}
+
+float Connection::rtt_quantile(float q) const
+{
+    const size_t n = std::min<size_t>(rtt_ring_n, kRttRing);
+    if (n < 16)
+        return -1.f;
+    float d[kRttRing];
+    std::copy(rtt_ring, rtt_ring + n, d);
+    size_t k = std::min(n - 1, (size_t)(q * (float)n));
+    std::nth_element(d, d + k, d + n);
+    return d[k];
 }
 
 bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver)

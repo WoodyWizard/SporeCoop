@@ -889,6 +889,7 @@ void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
     r.buf.jump_speed = g_mode == modes::kCreature ? modes::puppet_jump_speed() : 0.f; // BUG-0499
+    r.buf.interp_fall = g_mode == modes::kCreature; // BUG-0680 (drive.puppet_fall: the Creature puppets' stops)
     if (!r.buf.sample(now, s))
         return;
     silent_tick(r, now);
@@ -3164,7 +3165,17 @@ void on_frame(void*, int, void*)
         int rtt = g_sess.rtt_of(0);
         if (rtt >= 0)
             net::g_one_way = std::min(std::max(rtt / 2000.0, 0.0), 0.15);
-    }
+        // BUG-0651 (drive.lead_low): the link's own latency, half the round trip's lower quartile
+        const float q = g_sess.rtt_quantile_of(0, 0.25f);
+        net::g_one_way_low = q >= 0 ? std::min(std::max(q / 2000.0, 0.0), 0.3) : -1.0;
+        static double s_rtt_log = 0;
+        if (q >= 0 && now - s_rtt_log >= 10.0) { // (tests, support: what the no-lead rule reads)
+            s_rtt_log = now;
+            LOG("net: round trip p10 %.0f p25 %.0f p50 %.0f p90 %.0f ms, mean %d ms (BUG-0651)", g_sess.rtt_quantile_of(0, 0.1f),
+                q, g_sess.rtt_quantile_of(0, 0.5f), g_sess.rtt_quantile_of(0, 0.9f), rtt);
+        }
+    } else
+        net::g_one_way_low = -1;
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
