@@ -5,6 +5,7 @@
 #endif
 
 #include <winsock2.h>
+#include "player_life.h"
 #include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -1044,6 +1045,15 @@ bool host_elsewhere(bool unknown = false)
 // locally while the guest is elsewhere. Off: as in 0.7.3.0.
 bool g_world_gate_fix = true;
 COOP_FIX("core.world_gate", "BUG-0231", g_world_gate_fix, "core: a guest in another world applies no Civ state and plays its tribe / civ itself");
+// BUG-0420: the host's evolution vote reached a guest that plays another world (MSG_VOTE was not world-gated): its vote
+// screen opened and, at the end, the evolution editor of the guest's own creature in its own world. Off: as 0.7.10.
+static bool g_vote_world_fix = true;
+COOP_FIX("core.vote_world", "BUG-0420", g_vote_world_fix, "core: a guest in another world gets no vote screen and no editor from the host's vote");
+static uint32_t g_vote_elsewhere;
+// BUG-0422: on a leave and a join every module registered in player_life.h forgets the id (ids are reused). Off: the
+// five modules of 0.7.10 only.
+static bool g_player_forget_fix = true;
+COOP_FIX("core.player_forget", "BUG-0422", g_player_forget_fix, "core: a player who joins under a departed player's id gets nothing of that player's state");
 
 // "Is the host's world the one I play?" (BUG-0231, GitHub #165; host_world.h has the rule and its
 // semantics). Recomputed on every call from this machine's g_mode / g_world, the host's latest
@@ -1084,16 +1094,14 @@ bool host_absent_for(Absent who)
 }
 
 // a message of the host's world state a guest elsewhere must not apply (MSG_RES is held inside
-// shared.cpp instead: res.elsewhere)
+// shared.cpp instead: res.elsewhere). BUG-0420: one class per message type (host_world.h msg_class, a
+// build error on an unlisted MsgType); a type this build does not know is dropped too (default deny).
+// `coop.fix core.msg_classes off`: unknown types pass as in 0.7.10.
+static bool g_msg_classes_fix = true;
+COOP_FIX("core.msg_classes", "BUG-0420", g_msg_classes_fix, "core: a guest elsewhere drops every host message of an unknown type (default deny)");
 static bool world_state_msg(uint8_t type)
 {
-    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM))
-        return true;
-    return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
-           (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
-           type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
-           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS ||
-           type == net::MSG_FIELDS || type == net::MSG_WSTATE || type == net::MSG_PLAYER_RULE || type == net::MSG_MIRROR_FX;
+    return host_world::world_state_msg(type, g_msg_classes_fix, g_world_gate_fix);
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -3782,6 +3790,8 @@ void setup_callbacks()
         wsync::on_player_join();
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
+        if (g_player_forget_fix && p.id != g_sess.my_id())
+            player_life::forget_all(p.id); // BUG-0422: nothing of an earlier player of this id
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto old = g_remotes.find(p.id);
         if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
@@ -3931,11 +3941,19 @@ void setup_callbacks()
                 return;
             bool has_editor = r.left() >= 4;
             uint32_t editor = has_editor ? r.u32() : 0;
+            // BUG-0420: a guest that plays another world of the host's stage takes no part in the host's vote
+            // (no vote screen, no evolution editor of the host's world); a vote it saw start here still ends
+            if (g_vote_world_fix && !g_vote.active && guest_elsewhere()) {
+                g_vote_elsewhere++;
+                if (on)
+                    trace::line("vote", "by the host: '%s' not taken, this guest plays another world", text.c_str());
+                return;
+            }
             bool started = on && !g_vote.active, ended = !on && g_vote.active;
             if (on || (g_vote_drop_editor_fix && ended && has_editor))
                 g_vote.editor = editor; // a cancelled vote ends with 0 (BUG-0234)
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
-            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
+            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local && !(g_vote_world_fix && guest_elsewhere())) {
                 g_own_editor_due = g_vote.editor;
                 g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
             }
@@ -4105,6 +4123,8 @@ void setup_callbacks()
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
         views::forget(id);              // BUG-0280
+        if (g_player_forget_fix)
+            player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
@@ -4787,6 +4807,18 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1)
         npc::set_enabled(strcmp(argv[1], "off") != 0);
     SAY("npc sync %s\n%s", npc::enabled() ? "on" : "off", npc::status().c_str());
+    return 0;
+}
+
+// BUG-0422: coop.players held <id>: the per-player state the modules still keep for a player id (player_life.h)
+static int c_players(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 2 && !strcmp(argv[1], "held")) {
+        std::string h = player_life::held((uint8_t)atoi(argv[2]));
+        SAY("%s", h.empty() ? "nothing held\n" : h.c_str());
+        return 0;
+    }
+    SAY("modules with per-player state: %zu\n", player_life::table().size());
     return 0;
 }
 
@@ -5764,6 +5796,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     sc.pace = dna_pace_gain; // BUG-0510
+    sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     support_init();
@@ -5863,7 +5896,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        if (argc > 1 && !strcmp(argv[1], "inject")) {
                            // tests: a crafted MSG_EFFECT as if peer `from` sent it (validation)
                            if (argc < 8) {
-                               SAY("inject <from> <player> <stop> <pool> <id hex> <key> [x y z]");
+                               SAY("inject <from> <player> <stop> <pool> <id hex> <key> [x y z [agl]]");
                                return 1;
                            }
                            net::Vec3 p{};
@@ -5874,7 +5907,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            }
                            effects::inject((uint8_t)strtoul(argv[2], nullptr, 0), (uint8_t)strtoul(argv[3], nullptr, 0),
                                            (uint8_t)strtoul(argv[4], nullptr, 0), (uint8_t)strtoul(argv[5], nullptr, 0),
-                                           (uint32_t)strtoul(argv[6], nullptr, 16), (uint32_t)strtoul(argv[7], nullptr, 0), p);
+                                           (uint32_t)strtoul(argv[6], nullptr, 16), (uint32_t)strtoul(argv[7], nullptr, 0), p,
+                                           argc > 11 ? (float)atof(argv[11]) : net::kNoAgl); // BUG-0608: agl
                            SAY("%s", effects::status().c_str());
                            return 0;
                        }
@@ -5920,6 +5954,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.avatar", "print local avatar state (planet stages: ground = terrain radius under it, above = height over it)", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
+    H->command_add(M, "coop.players", "coop.players [held <id>] - the per-player state modules keep (BUG-0422)", c_players, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
@@ -6150,13 +6185,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
                            "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
                            "editor held now %d, actions waited %u, action due %d\n"
-                           "editor under the game's own pause %u (own busy %s, editor pause count %d)",
+                           "editor under the game's own pause %u (own busy %s, editor pause count %d)\n"
+                           "votes of the host not taken elsewhere %u",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
                            g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
-                           editor_pause_count());
+                           editor_pause_count(), g_vote_elsewhere);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

@@ -20,6 +20,8 @@
 
 #include <cstdint>
 
+#include "net/protocol.h"
+
 namespace host_world {
 
 // the game mode ids (modes.h; static_assert there keeps them equal)
@@ -58,5 +60,61 @@ inline HostWorld classify(bool connected_guest, uint32_t my_mode, uint32_t my_wo
 
 // the world id the host announces in WELCOME: its save in a gated stage, else 0 (unknown)
 inline uint32_t welcome_world(uint32_t host_mode, uint32_t host_world) { return gated(host_mode) ? host_world : 0; }
+
+// BUG-0420 (class: world state applied without a world filter): every message type has one class here, so that
+// a new message is never open by default. The switch below has no default: GCC fails the build of coop.dll and of
+// tests/validate_tests.cpp on a MsgType that is not listed (-Werror=switch), which is the "every MSG_ classified"
+// check of docs/generalisation-plan.md G3. A value that is not a MsgType at all (a newer peer) is Unknown.
+enum class MsgClass {
+    Session,   // the session itself or a player's own data (join, chat, ready, a creation, a guest's report to
+               // the host): applied wherever the guest plays
+    HostWorld, // the host's world state: a guest elsewhere drops it at dispatch (coop.cpp gate_drops)
+    Module,    // the host's world, gated by its module per place (npc: same_place / host_absent_for; wobj, tribe,
+               // civ: host_away; Space: squadron / spacecoop with_host, my_place; effects: C.here)
+    Unknown,   // not a message type of this build: a guest elsewhere drops it (default deny)
+};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic error "-Wswitch"
+inline MsgClass msg_class(uint8_t type)
+{
+    switch (static_cast<net::MsgType>(type)) {
+    case net::MSG_HELLO: case net::MSG_WELCOME: case net::MSG_REJECT: case net::MSG_PLAYER_JOIN:
+    case net::MSG_PLAYER_LEAVE: case net::MSG_PLAYER_STATE: case net::MSG_CHAT: case net::MSG_PING: case net::MSG_PONG:
+    case net::MSG_BYE: case net::MSG_WORLD_OFFER: case net::MSG_WORLD_FILE: case net::MSG_WORLD_CHUNK:
+    case net::MSG_WORLD_DONE: case net::MSG_DNA_ADD: case net::MSG_RES_ADD: case net::MSG_PING_MARK: case net::MSG_READY:
+    case net::MSG_LOBBY: case net::MSG_NOTICE: case net::MSG_ROLE: case net::MSG_CREATION: case net::MSG_DIAG:
+    case net::MSG_ABILITY: case net::MSG_ANIM: case net::MSG_DAMAGE: // a partner's own creature (its puppet)
+        return MsgClass::Session;
+    case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
+    case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch
+        return MsgClass::Session;
+    case net::MSG_DNA: case net::MSG_WORLD_TIME: case net::MSG_CELL_STATE: case net::MSG_CELL_HIT:
+    case net::MSG_CELL_EAT: case net::MSG_CELL_FOOD: case net::MSG_CELL_KO: case net::MSG_CELL_BITTEN:
+    case net::MSG_TRIBE_STATE: case net::MSG_TRIBE_CMD: case net::MSG_SPECIES: case net::MSG_SOCIAL: case net::MSG_NEST:
+    case net::MSG_PARTS: case net::MSG_FIELDS: case net::MSG_WSTATE: case net::MSG_PLAYER_RULE: case net::MSG_MIRROR_FX:
+    case net::MSG_CIV_STATE: case net::MSG_CIV_BUILD: case net::MSG_CIV_ALARM:
+        return MsgClass::HostWorld;
+    case net::MSG_NPC_STATE: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
+    case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM: case net::MSG_NPC_MEAT: case net::MSG_WOBJ: case net::MSG_EFFECT:
+    case net::MSG_CIV_CMD: case net::MSG_UFO_STATE: case net::MSG_UFO_HIT: case net::MSG_UFO_DAMAGE: case net::MSG_SPACE:
+        return MsgClass::Module;
+    }
+    return MsgClass::Unknown;
+}
+#pragma GCC diagnostic pop
+
+// does a guest elsewhere drop the host's message at dispatch? `classes` off (core.msg_classes): the hand list of
+// 0.7.10 (the HostWorld rows; the Civ rows only with `civ_rows`, core.world_gate)
+inline bool world_state_msg(uint8_t type, bool classes, bool civ_rows)
+{
+    MsgClass c = msg_class(type);
+    bool civ = type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM;
+    if (civ && !civ_rows)
+        return false;
+    if (c == MsgClass::HostWorld)
+        return true;
+    return classes && c == MsgClass::Unknown;
+}
 
 } // namespace host_world

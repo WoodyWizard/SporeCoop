@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "player_life.h"
 #include "census.h"
 
 #include <algorithm>
@@ -1616,8 +1617,18 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
 constexpr double kJointWindow = 10.0;
 static uint8_t g_hit_by = 0xFF;                         // the player whose vehicle is hitting right now
 static std::unordered_map<void*, std::unordered_map<uint8_t, double>> g_siege; // city -> player -> last hit
+PLAYER_STATE("civ.siege", [](uint8_t id) { for (auto& [c, m] : g_siege) m.erase(id); }, // BUG-0422
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& [c, m] : g_siege)
+                     n += m.count(id);
+                 return n;
+             });
 static std::unordered_set<void*> g_joint_told;
 static uint32_t g_joint_hits, g_military_hits, g_religious_boosts, g_alarms, g_votes;
+static bool g_siege_players_fix = true;
+COOP_FIX("civ.siege_players", "BUG-0420", g_siege_players_fix, "civ: an NPC nation's army attacking the same city is not a second player of a joint siege");
+static uint32_t g_siege_npc;
 
 static uint8_t player_of_combatant(void* att)
 {
@@ -1667,7 +1678,12 @@ using AddCapture_t = void(SK_CDECL*)(void*, void*, void*, uint32_t, float, uint3
 static AddCapture_t o_AddCapture;
 static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, float dmg, uint32_t att, bool f)
 {
-    if (is_host() && active() && city && g_hit_by != 0xFF) {
+    // BUG-0420: the owner of an NPC nation's vehicle is 0xFE: it counted as a second player (one guest and an NPC
+    // army gave the joint-siege bonus). Only a player's vehicles count now; `coop.fix civ.siege_players off`: 0.7.10.
+    bool player = g_hit_by != 0xFF && (!g_siege_players_fix || g_hit_by < net::kMaxPlayers);
+    if (!player && g_hit_by != 0xFF)
+        g_siege_npc++;
+    if (is_host() && active() && city && player) {
         double now = H->time_seconds();
         auto& hits = g_siege[city];
         hits[g_hit_by] = now;
@@ -4048,11 +4064,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
                  "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u "
-                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u\n",
+                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
                  g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
-                 g_max_chunk);
+                 g_max_chunk, g_siege_npc);
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "

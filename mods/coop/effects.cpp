@@ -1,4 +1,5 @@
 #include "effects.h"
+#include "player_life.h"
 
 #include <atomic>
 #include <cmath>
@@ -163,6 +164,8 @@ struct Last {
 static Last g_last_tx;
 static std::map<uint8_t, Last> g_last_rx;
 static std::map<uint8_t, Last> g_last_rx_start; // the last start per player (a stop may follow)
+PLAYER_STATE("effects", [](uint8_t id) { g_last_rx.erase(id); g_last_rx_start.erase(id); }, // BUG-0422
+             [](uint8_t id) -> size_t { return g_last_rx.count(id) + g_last_rx_start.count(id); });
 // the pool keys we sent a start for: a stop is sent once, not on every frame the game stops a key.
 // A fixed array: this is filled from inside the game's effect creation (no allocation there).
 static uint32_t g_sent_keys[64];
@@ -253,6 +256,44 @@ static void make_transform(uint8_t* xf, const net::Vec3& p)
     f[10] = 0.0f;
     f[11] = 0.0f;
     f[12] = 1.0f;
+}
+
+// BUG-0608 (a relayed effect at the sender's ground height): a world effect (a hit impact, a splash) carries the
+// sender's absolute position; where the two games' grounds differ (Tribe villages made live, BUG-0332; any terrain
+// the games do not share) it was played metres under or over the receiver's ground. The sender now appends the
+// effect's height over its own ground (an f32 after the transform: older SporeCoop stops reading before it, as the
+// NPC states' agl trailer, BUG-0425) and the receiver puts the effect at that height over ITS ground, as every
+// remote body. `coop.fix effects.ground off`: the sender's absolute position (0.7.10).
+static bool g_ground_fix = true;
+COOP_FIX("effects.ground", "BUG-0608", g_ground_fix, "effects: an effect in the world is played on the receiver's own ground (impacts, splashes)");
+constexpr float kGroundAglMax = 30.f; // m: farther off the ground (a sky effect) the absolute position is kept
+static uint32_t g_ground_moved;
+static float sender_agl(const net::Vec3& p)
+{
+    float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    float g = r > 1.f ? game::ground_radius(p) : 0.f;
+    if (g <= 0 || std::fabs(r - g) > kGroundAglMax)
+        return net::kNoAgl;
+    return r - g;
+}
+// the transform's position (xf + 4) at `agl` over this game's ground; false: left as sent
+static bool onto_own_ground(uint8_t* xf, float agl)
+{
+    if (!g_ground_fix || !net::agl_known(agl))
+        return false;
+    float* f = (float*)(xf + 4);
+    float r = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (!(r > 1.f))
+        return false;
+    net::Vec3 p{f[0], f[1], f[2]};
+    float g = game::ground_radius(p);
+    if (g <= 0 || std::fabs(g + agl - r) > kGroundAglMax)
+        return false;
+    float k = (g + agl) / r;
+    f[0] *= k;
+    f[1] *= k;
+    f[2] *= k;
+    return true;
 }
 
 // BUG-0465: a world effect was sent with its position only (identity rotation, scale 1, transform flags 0, which also
@@ -431,6 +472,7 @@ static void process_hit(uint32_t id, const net::Vec3& p)
     w.u32(id);
     w.u32(0);
     w.raw(xf, 0x44);
+    w.f32(sender_agl(p)); // BUG-0608: its height over this game's ground
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
@@ -576,6 +618,7 @@ static void process_world(void* fx, uint32_t id)
     w.u32(id);
     w.u32(0);
     w.raw(xf, 0x44);
+    w.f32(sender_agl(p)); // BUG-0608: its height over this game's ground
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
@@ -784,12 +827,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint8_t player = r.u8(), stop = r.u8(), pool = r.u8();
     uint32_t id = r.u32(), key = r.u32();
     uint8_t xf[0x44];
+    float agl = net::kNoAgl;
     if (r.ok() && pool == 5) {
         if (r.left() < sizeof xf) {
             g_bad_short++;
             return;
         }
         r.raw(xf, sizeof xf);
+        if (r.ok() && r.left() >= 4) { // BUG-0608 (an older sender has none)
+            agl = r.f32();
+            if (!std::isfinite(agl) || std::fabs(agl) > kGroundAglMax)
+                agl = net::kNoAgl;
+        }
     }
     if (!r.ok()) {
         g_bad_short++;
@@ -818,8 +867,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         w.u8(pool);
         w.u32(id);
         w.u32(key);
-        if (pool == 5)
+        if (pool == 5) {
             w.raw(xf, sizeof xf); // the world effect's transform, or guest 3+ never gets the position
+            w.f32(agl);           // BUG-0608
+        }
         C.sess->broadcast_reliable(net::MSG_EFFECT, w, from);
     }
     g_rx++;
@@ -860,6 +911,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_failed++; // the partner's game had no such effect (yet): nothing to stop
         }
     } else {
+        if (pool == 5 && onto_own_ground(xf, agl))
+            g_ground_moved++;
         void* fx = pool == 5 ? game::create_world_effect(id, xf)
                   : pool == 3 ? game::create_creature_effect(puppet, (int)key, id)
                               : game::start_effect(puppet, ev);
@@ -873,7 +926,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     g_watch_rx = fx;
                     g_watch_rx_at = now();
                 }
-                const float* p = (const float*)(xf + 4);
+                // where the game put it (its transform at effect +0x9C, BUG-0608), else what was sent
+                const float* p = skg::readable((uint8_t*)fx + 0xA0, 12) ? (const float*)((uint8_t*)fx + 0xA0)
+                                                                         : (const float*)(xf + 4);
                 last.has_pos = true;
                 last.x = p[0];
                 last.y = p[1];
@@ -905,7 +960,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 }
 
 void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
-            const net::Vec3& pos)
+            const net::Vec3& pos, float agl)
 {
     net::Writer w;
     w.u8(player);
@@ -917,6 +972,8 @@ void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
         uint8_t xf[0x44];
         make_transform(xf, pos);
         w.raw(xf, sizeof xf);
+        if (net::agl_known(agl))
+            w.f32(agl);
     }
     net::Reader r(w.data.data(), w.size());
     on_message(net::MSG_EFFECT, from, r);
@@ -1133,6 +1190,8 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
+    s += b;
+    snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
     s += b;
     snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u\n",
              g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped);

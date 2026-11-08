@@ -1,5 +1,6 @@
 // Replicated state fields of mirrored objects (fields.h, docs/sync-architecture-plan.md#sync-fields).
 #include "fields.h"
+#include "player_life.h"
 
 #include <windows.h>
 
@@ -38,6 +39,9 @@ struct Sent {
 };
 // host: guest -> (kind << 24 | field << 16 | id) -> last sent
 static std::map<uint8_t, std::map<uint32_t, Sent>> g_sent;
+// BUG-0422: the values last sent to a departed guest: a newcomer under its id got only the ones that changed since
+PLAYER_STATE("fields", [](uint8_t id) { g_sent.erase(id); g_stats.erase(id); },
+             [](uint8_t id) -> size_t { auto it = g_sent.find(id); return (it == g_sent.end() ? 0 : it->second.size()) + g_stats.count(id); });
 static double g_sent_at = 0;
 
 struct Want {

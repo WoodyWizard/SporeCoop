@@ -1,4 +1,5 @@
 #include "spacecoop.h"
+#include "player_life.h"
 
 #include <algorithm>
 #include <cmath>
@@ -84,6 +85,10 @@ static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_m
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
+// BUG-0422: a newcomer under a departed player's id: Jump-to went to the departed player's star, a down timer
+// of the departed player kept the newcomer out of rescues
+PLAYER_STATE("spacecoop", [](uint8_t id) { g_partner_down.erase(id); g_last_star.erase(id); },
+             [](uint8_t id) -> size_t { return g_partner_down.count(id) + g_last_star.count(id); });
 static bool g_applying;
 static float g_terra_acc[3];
 static uint32_t g_terra_planet;

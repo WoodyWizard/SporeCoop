@@ -1,4 +1,5 @@
 #include "tribe.h"
+#include "player_life.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2794,6 +2795,14 @@ static std::unordered_map<void*, std::unordered_map<uint8_t, double>> g_pincer; 
 static std::unordered_map<void*, double> g_pincer_told;
 static std::unordered_map<uint8_t, void*> g_chief;                              // owner -> chief citizen
 static std::unordered_map<void*, float> g_chief_scale;                          // chief -> its own scale
+// BUG-0422: the departed player's chief (a pointer into this game) and its pincer hits stayed under its id
+PLAYER_STATE("tribe", [](uint8_t id) { g_chief.erase(id); for (auto& [t, m] : g_pincer) m.erase(id); },
+             [](uint8_t id) -> size_t {
+                 size_t n = g_chief.count(id);
+                 for (auto& [t, m] : g_pincer)
+                     n += m.count(id);
+                 return n;
+             });
 static std::unordered_map<void*, double> g_chief_saved;                         // chief -> last rescue
 static uint32_t g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills;
 static void* g_epic;

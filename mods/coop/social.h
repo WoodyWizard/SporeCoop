@@ -26,6 +26,7 @@ struct Ctx {
     std::function<void*(uint8_t id)> puppet_of;        // host: the creature of player `id`
     std::function<bool()> blocked;                     // a menu / the co-op window takes the keys
     std::function<float(float)> pace;                  // host: a gain's share of the party total (BUG-0510)
+    std::function<bool()> elsewhere;                   // guest: plays another world of the host's stage (BUG-0420)
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
