@@ -1,17 +1,17 @@
 ---
 id: BUG-0739
 title: campaign: a stage change seen in the loop counted as not reached when the host's own reload after Creature -> Tribe was in the galaxy menu at the second check
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-08
 source: fix/w46-e1-features (campaign_ct 20261108-040927)
-role: 
+role: test
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-e1-features
+commits: 6627b5ba
+tests: campaign_ct (coop_campaign.py)
 signature:
 docs:
 related: BUG-0332, BUG-0315
@@ -33,8 +33,8 @@ tools/tests/coop_campaign.py advance(): the stage seen in the loop counts (`reac
 when the loop ran out of time.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL before the change: out/lab/20261108-040927 (campaign_ct, the host in Tribe at 04:19:12, reported stuck at 04:19:20).
+* PASS after it: out/lab/20261108-044346 (campaign_ct, lane 4).
 
 ## History
-- 2026-11-08: opened.
+- 2026-11-08: opened and fixed (fix/w46-e1-features).
