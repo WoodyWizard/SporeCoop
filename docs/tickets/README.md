@@ -203,7 +203,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | not-reproduced | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |
 | [BUG-0192](BUG-0192-space-rivals-mode-limits-space-rivalry-cpp-2026.md) | open | feature | Space | 2026-10-23 |  | Space rivals mode: limits (space_rivalry.cpp, 2026-10-23) |
-| [BUG-0193](BUG-0193-space-tests-on-the-new-space-fixture-madas-two-f.md) | open | test | Space | 2026-10-23 |  | Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23) |
+| [BUG-0193](BUG-0193-space-tests-on-the-new-space-fixture-madas-two-f.md) | fixed | test | Space | 2026-10-23 | 0.7.6 | Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23) |
 | [BUG-0194](BUG-0194-space-diplomacy-what-is-not-shared-or-may-drift.md) | open | feature | Space | 2026-10-27 |  | Space diplomacy: what is not shared or may drift (space_diplomacy.cpp) |
 | [BUG-0195](BUG-0195-space-map-a-guest-s-colonies-last-only-until-it.md) | fixed | feature | Space | 2026-10-27 | 0.7.6 | Space map: a guest's colonies last only until it rejoins |
 | [BUG-0196](BUG-0196-space-trade-open-ends-space-trade-cpp-2026-10-23.md) | open | feature | Space | 2026-10-23 |  | Space trade: open ends (space_trade.cpp, 2026-10-23) |
