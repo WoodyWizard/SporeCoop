@@ -3563,7 +3563,7 @@ should get the player rule), **keep** (the world's species is right on every gam
 |---|---|---|---|
 | vt 0x80 0xC04B50 (calls 0xC04C5B, vt 0xD0 ret 0xC04B6F) | creature size: normalizing scale + brain factor for the player species | own | `creature.own_scale` (BUG-0732) |
 | vt 0x7C 0xC04170 | base max hp with the brain level | own | `creature.own_brain_hp` (BUG-0375) |
-| 0xD7D9F0 (call 0xD7DA43, ret 0xD7DA48, a direct compare) | BT node 0x04A1A1E6: hostile species (relation 2 / 5) attack player-species adults | party (host) | `creature.hostile_party` (BUG-0734) |
+| 0xD7D9F0 (call 0xD7DA43, ret 0xD7DA48, a direct compare) | BT node 0x04A1A1E6: hostile species (relation 2 / 5) attack player-species adults | party (host) in theory; the node never ran in the lab | BUG-0734 not reproduced (npc.partners) |
 | 0xC04440 (call 0xC046A8) | AI flags [+0xB4C] +0x5FC: 0x1000 player species, 0x200 brain > 4 | party (host), no visible effect found | BUG-0737 |
 | 0xC0A100 (0xC0A8AD, 0xC0AC6E) | herd spawn: brain factor for PS herds, strength +0x2E2 relative to PS | keep | |
 | 0xC6D0B0 (0xC6D227) | an egg / newborn of a PS herd: brain factor x normalizing | keep (a guest has no family; its NPCs are the host's) | |
@@ -3600,8 +3600,13 @@ should get the player rule), **keep** (the world's species is right on every gam
   global `g_AvatarNormalizingScale` 0x169E374 the call recomputed is put back (the world species' creatures keep it).
 * Fix BUG-0733 (`creature.puppet_scale`): PlayerState carries the sender's own creature's size (`body`, appended
   after agl), the puppet is set to body x 1.15 (the spawn's factor, kept) when it differs by more than 1 %.
-* ✔ (Ghidra) 0xD7D9F0 (`BT_HostileSpeciesTarget`): see the .sym entry. Fix BUG-0734 (`creature.hostile_party`): when it
-  says no on the host, it is asked again with PlayerSpecies answering each partner's species.
+* ✔ (Ghidra) 0xD7D9F0 (`BT_HostileSpeciesTarget`): see the .sym entry. ✔ (runtime, lab 20261108-042844) BUG-0734 not
+  reproduced: with a species made hostile (its record relation 2, `coop.social record`) and the guest next to four of
+  its adults, the condition was called 0 times in 40 s (a counting hook) and all four took the guest's puppet as their
+  target anyway: the npc.partners AI swap (BUG-0016) drives that. The party-answer hook was taken out again.
+* ✔ (runtime, lab 20261108-034334) GetRelationship(animal, puppet) on a puppet of the partner's own creature (no
+  archetype tuning, +0xE84 null) outside the AI swap faults in the diet rule (IsHerbivore 0xC0B8E8 data 0x608): a caller
+  of the mod lends the avatar's tuning first (`coop.hp hostiles`).
 * ✔ (Ghidra) Pack defence: TakeDamage 0xC075E0 on the avatar posts 0x400 and calls `cPosseSimulator_Relay` 0xD52E40
   (0x400, 0): each member that `PosseMemberCanDefend` 0xD7D0E0 and is not allied (0xC0EA30(x, 6)) gets
   `CreatureCommandStimulus` 0xC0C070(0x10, 0, 0x20030030, 0x40040000, FLT_MAX, 0x100000, 0, 0, 0, attacker, 0): the

@@ -12,8 +12,7 @@
   the guest's city (BUG-0726).
 - Creature: a guest playing its own creature now grows with its brain upgrades like the host's creature (BUG-0732), and
   every player sees the other players' creatures at their real size after a brain upgrade (BUG-0733).
-- Creature: animals hostile to the players' species now attack a guest playing its own creature too (BUG-0734), and the
-  host's pack (with the creatures a guest recruited) defends a guest that an animal attacks (BUG-0735).
+- Creature: the host's pack (with the creatures a guest recruited) defends a guest that an animal attacks (BUG-0735).
 - Creature: a guest's Summon Flock is made in the shared world next to the guest's creature (both players see it, it
   joins the party's pack); before, it was made in the guest's own game only (BUG-0736).
 - Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer

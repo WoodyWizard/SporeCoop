@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""BUG-0734 (class BUG-0418): animals hostile to the players' species go for a guest playing its own creature.
+"""BUG-0734 (class BUG-0418, not reproduced): animals hostile to the players' species go for a guest playing its own
+creature.
 
 The behaviour tree's node 0x04A1A1E6 (its condition 0xD7D9F0) makes an animal attack an adult of the world's
 player species that it is hostile to (relation 2 or 5): `candidate +0xB20 == PlayerSpecies()`, a direct compare.
@@ -14,8 +15,10 @@ past the guest (the npc.partners AI swap covers the avatar-oriented nodes, not t
 3. For 40 s the host's game is read: which animals target the guest's puppet (+0xE7C, the creature or its combatant),
    without any command telling them to; the animal that was hit is left out (it fights back by itself).
 
-PASS: another animal of the hostile species targets the guest's creature, and the node's party answer picked it.
-FAIL (SPORE_FIX_OFF=creature.hostile_party): the node never picks the guest.
+PASS: an animal of the hostile species targets the guest's creature (lab 20261108-042844: all four).
+FAIL (SPORE_FIX_OFF=npc.partners, BUG-0016's AI swap): none does. The node 0x04A1A1E6 itself never ran on the fixture
+(0 calls of its condition in 40 s, a counting hook of fix/w46-k2b-content-b, taken out): the swap is what makes the
+hostile species go for a guest (BUG-0734 not reproduced).
 
   SPORE_LANE=7 python3 tools/tests/coop_hostile_party.py
 """
@@ -75,12 +78,11 @@ def main():
         (n, tg, pk), rows2, who = hostiles(host)
         others = who
         best = max(best, (len(others), pk, n))
-        if others and pk > 0:
+        if others:
             break
     print(f'  host: other animals targeting the guest {best[0]}, party picks {best[1]}, hostiles {best[2]}', flush=True)
     print('  host:', [ln for ln in host.call('coop.hp')['out'].splitlines() if ln.startswith(('party', 'relations'))],
           flush=True)
-    ck(best[1] > 0, f'the hostile-species node picked the guest\'s creature (party picks {best[1]})')
     ck(best[0] > 0, f'an animal of the hostile species targets the guest ({best[0]})')
     back_to_world(guest)
     ck.faults(host=host, guest=guest)

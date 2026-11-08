@@ -304,18 +304,11 @@ void pack_defend(void* puppet, void* attacker)
     }
 }
 
-// ---------------------------------------------------------------- BUG-0734 (class BUG-0418)
-// The behaviour tree's condition of node 0x04A1A1E6 (0xD7D9F0, cdecl, 8 arguments, the result in st0) takes the
-// creature its senses picked and makes it the target when it is of the world's player species (`+0xB20 ==
-// PlayerSpecies()`, the call 0xD7DA43), adult and of relation 2 or 5 to the NPC: the animals hostile to the players'
-// species attack them. A guest playing its own creature is another species in the host's game: its puppet was never
-// picked. Now, when the condition says no, it is asked again with PlayerSpecies answering each partner's species
-// (the party of creature.relations). `coop.fix creature.hostile_party off`: the world's species only (0.7.10).
-static bool g_hostile_party = true;
-COOP_FIX("creature.hostile_party", "BUG-0734", g_hostile_party, "creature: animals hostile to the players' species attack a partner playing its own creature as they attack the host");
-typedef float(__cdecl* HostileCond_t)(void*, void*, void*, void*, void*, void*, void*, void*);
-static HostileCond_t o_HostileCond;
-static uint32_t g_hostile_party_picks, g_hostile_calls, g_hostile_world_picks;
+// ---------------------------------------------------------------- BUG-0734 (class BUG-0418), not reproduced
+// The behaviour tree's condition 0xD7D9F0 (node 0x04A1A1E6) compares a candidate's species with PlayerSpecies directly;
+// a hook answering for the party was written and taken out again: in the lab the node never ran (0 calls in 40 s
+// next to four animals of a species hostile to the players), and those animals went for the guest anyway, through the
+// npc.partners AI swap (docs/re/creature.md#creature-player-species-callers). `coop.hp hostiles <player>` stays (tests).
 // a puppet of the partner's own creature has no archetype tuning (+0xE84): GetRelationship's diet rule then read a
 // null (IsHerbivore 0xC0B8E8, data 0x608, lab 20261108-034334). While the game is asked about the party, each such
 // puppet borrows the avatar's tuning, as in the NPC AI swap (game.cpp h_NPCTickAI).
@@ -343,26 +336,6 @@ static void give_back(const Lent& l)
         if (skg::field<void*>(l.p[i], 0xE84) == tun)
             skg::field<void*>(l.p[i], 0xE84) = nullptr;
 }
-static float __cdecl h_HostileCond(void* a1, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
-{
-    float r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
-    g_hostile_calls++;
-    g_hostile_world_picks += r != 0.f;
-    if (r != 0.f || !g_hostile_party || !g_party_n || g_ps_override || !game::in_creature_stage() ||
-        !(C.is_host && C.is_host()))
-        return r;
-    Lent l = lend_tuning();
-    for (int i = 0; i < g_party_n && r == 0.f; i++) {
-        g_ps_override = g_party_species[i];
-        r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
-        g_ps_override = nullptr;
-        if (r != 0.f)
-            g_hostile_party_picks++;
-    }
-    give_back(l);
-    return r;
-}
-
 bool drop_partner_hit(void* npc)
 {
     if (!g_party_peace || !host_party(npc))
@@ -427,9 +400,8 @@ std::string status()
              (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
              (int)g_own_scale, g_own_scales);
     out += b;
-    snprintf(b, sizeof b, "party rules: hostile_party=%d picks=%u (node calls %u, world species picks %u) pack_defends=%d "
-             "defends=%u posts=%u\n", (int)g_hostile_party, g_hostile_party_picks, g_hostile_calls, g_hostile_world_picks,
-             (int)g_pack_defends, g_defends, g_defend_posts);
+    snprintf(b, sizeof b, "party rules: pack_defends=%d defends=%u posts=%u\n", (int)g_pack_defends, g_defends,
+             g_defend_posts);
     out += b;
     return out;
 }
@@ -545,9 +517,9 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         give_back(l);
         std::sort(q.v.begin(), q.v.end());
         char b[160];
-        snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u relations 0..6,other: %d %d %d %d %d %d %d %d\n",
-                 (unsigned)q.v.size(), q.targeting, g_hostile_party_picks, q.rel[0], q.rel[1], q.rel[2], q.rel[3], q.rel[4],
-                 q.rel[5], q.rel[6], q.rel[7]);
+        snprintf(b, sizeof b, "hostiles %u targeting=%d picks=0 relations 0..6,other: %d %d %d %d %d %d %d %d\n",
+                 (unsigned)q.v.size(), q.targeting, q.rel[0], q.rel[1], q.rel[2], q.rel[3], q.rel[4], q.rel[5], q.rel[6],
+                 q.rel[7]);
         std::string s = b;
         for (void* w : q.who) {
             snprintf(b, sizeof b, "  targeting %p\n", w);
@@ -676,8 +648,6 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (a_scale && a_PlayerSpecies && g_norm_global &&
         H->hook_create(M, (void*)a_PlayerSpecies, (void*)h_PlayerSpecies, (void**)&o_PlayerSpecies) == 0) {
         H->hook_create(M, (void*)a_scale, (void*)h_Scale, (void**)&o_Scale);
-        if (uintptr_t a = H->sym("SporeCoop::BT_HostileSpeciesTarget")) // BUG-0734
-            H->hook_create(M, (void*)a, (void*)h_HostileCond, (void**)&o_HostileCond);
     }
     a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-0735
     a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");

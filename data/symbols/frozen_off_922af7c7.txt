@@ -196,7 +196,6 @@ SporeCoop::PlantCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a k
 SporeCoop::PlantCargo_Template ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
 SporeCoop::cCreatureAnimal_ComputeScale ; BUG-0732: the own creature of another species does not grow with its brain upgrades
 SporeCoop::g_AvatarNormalizingScale ; BUG-0732: (with cCreatureAnimal_ComputeScale)
-SporeCoop::BT_HostileSpeciesTarget ; BUG-0734: hostile species do not attack a guest playing its own creature
 SporeCoop::CreatureCommandStimulus ; BUG-0735: the host's pack does not defend a guest
 SporeCoop::PosseMemberCanDefend ; BUG-0735: (with CreatureCommandStimulus)
 SporeCoop::SummonEvent_Update ; BUG-0736: a guest's Summon Flock is made next to the guest but follows the host's creature at once

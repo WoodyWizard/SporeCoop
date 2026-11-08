@@ -282,7 +282,7 @@ add('space_host_ship_design', P + 'coop_space_host_ship_design.py', minutes=4, f
 add('space_host_ship_design_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_host_ship_design.py', minutes=5, fixture='space')  # BUG-0724 at 20 fps over the player network
 add('creature_grow', P + 'coop_creature_grow.py', minutes=5, fixture='creature')  # BUG-0732 / BUG-0733: a guest's own creature grows with its brain upgrade, each game shows the partner at its size (SPORE_FIX_OFF=creature.own_scale / creature.puppet_scale fail)
 add('creature_grow_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_creature_grow.py', minutes=6, fixture='creature')  # BUG-0732 / BUG-0733 at 20 fps over the player network
-add('hostile_party', P + 'coop_hostile_party.py', minutes=5, fixture='creature')  # BUG-0734: animals hostile to the players' species target a guest playing its own creature (SPORE_FIX_OFF=creature.hostile_party fails)
+add('hostile_party', P + 'coop_hostile_party.py', minutes=5, fixture='creature')  # BUG-0734 (not reproduced): animals of a species hostile to the players target a guest playing its own creature (SPORE_FIX_OFF=npc.partners fails)
 add('hostile_party_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_hostile_party.py', minutes=6, fixture='creature')  # BUG-0734 at 20 fps over the player network
 add('pack_defends_partner', P + 'coop_party_defence.py', minutes=4, fixture='creature')  # BUG-0735: the host's pack goes for an animal that hit the guest (SPORE_FIX_OFF=npc.pack_defends_partner fails)
 add('pack_defends_partner_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_party_defence.py', minutes=5, fixture='creature')  # BUG-0735 at 20 fps over the player network
