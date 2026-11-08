@@ -3511,3 +3511,17 @@ section creature-herd-evolution-desync (what advances +0xF0).
   and the family is friendly (CreatureFriendly 0xC0C3B0 via IsPlayerSpecies, family_attack). With the fix the guest's
   nests are the host's (generation, species, extinct), so its game uses the host's nest for every rule that reads the
   herd (minimap 0xD425A0, the friendly-nest test 0xC6ABF0).
+
+## The species table's cadence, an NPC's stun on the guests (2026-11-07, fix/w46-k2a-state-b)
+<a id="creature-table-cadence-stun"></a>
+
+* ✔ BUG-0699 (class BUG-0419): the host looked at its species relationship table once a second (social.cpp tick):
+  a change (`coop.social record`) reached the guest after 0.13-0.95 s (lab species_table). Every 0.25 s now
+  (`social.table_fast`): 0.07-0.31 s. The detector's species_only rows came from samples during a guest's rejoin; rows
+  that stay over its 1.5 s bracket in 4-player campaigns are not explained yet: the guest logs each record it takes
+  from the host's table with the table's age (`social: species ... from the host's table (N s old)`).
+* ✔ BUG-0700: a host NPC's stun (CreatureStun vt 0x94, stimulus 0x1000) stayed in the host's game: h_Stun on a guest
+  returns for a proxy (no AI). Now the host sends K_STUN_PROXY (MSG_PLAYER_RULE kind 9) and each guest calls the
+  game's CreatureStun on its proxy (`creature.stun_proxy`).
+* ✔ (runtime, tribe_member_age) A baby of the player tribe (SpawnMember(0)) grows up after ~57 s; the guest's mirror
+  grows up in the same second by its own game: the age needs no sync while both spawned together.
