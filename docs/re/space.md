@@ -2448,3 +2448,7 @@ BUG-0723 / BUG-0724, children of the content class BUG-0424 (`squadron.cpp`, gue
   waits for the answer, `design_waits=`), "not mine" for a premade or Sporepedia key. Mirrors never reach a save
   (#space-save-strip, BUG-0522).
 * Test hooks: `coop.fleet fakemodel zero` (the host sends keys of zeros), `fakemodel 2 <inst>` (one instance for all).
+* CORRECTION? (2026-11-08, fix/w46-k2b-content-b, to check): #space-city-ornaments reads "the 3 keys at city +0x528,
+  0xC bytes each"; `coop.creations objmodels` read city +0x528 + 0xC * i on the Civ fixture civ_npc (lab
+  20261108-033541) and found pointer-like values (102F9F24/102F9F26/0, 41524103/C3815C41/0), no resource keys. Not
+  checked on a Space colony city; not used by any code of this branch.

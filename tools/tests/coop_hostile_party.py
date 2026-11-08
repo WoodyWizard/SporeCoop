@@ -7,12 +7,13 @@ A guest's own creature is another species in the host's game: its puppet was nev
 past the guest (the npc.partners AI swap covers the avatar-oriented nodes, not this one).
 
 1. Two games on the creature fixture; the guest plays its own creature.
-2. The host's game lists the adult animals hostile to the guest's creature (`coop.hp hostiles 1`: the game's own
-   GetRelationship(animal, puppet)); the guest goes next to the nearest one (`coop.npc gopos`) and stands still.
-3. For 40 s the host's game is read: how many animals target the guest's puppet (+0xE7C, the target the attack
-   node takes), without any command telling them to.
+2. The guest hits the nearest animal three times (`coop.npc hit`: its own hit, applied in the host's game): the
+   species' relation becomes "attacked" (2). The host's game lists the adult animals hostile to the guest's creature
+   (`coop.hp hostiles 1`: the game's own GetRelationship(animal, puppet)).
+3. For 40 s the host's game is read: which animals target the guest's puppet (+0xE7C, the creature or its combatant),
+   without any command telling them to; the animal the guest hit is left out (it fights back by itself).
 
-PASS: an animal of the host's game targets the guest's creature, and the node's party answer picked it.
+PASS: another animal of the hostile species targets the guest's creature, and the node's party answer picked it.
 FAIL (SPORE_FIX_OFF=creature.hostile_party): the node never picks the guest.
 
   SPORE_LANE=7 python3 tools/tests/coop_hostile_party.py
@@ -28,7 +29,15 @@ def hostiles(host):
     out = host.call('coop.hp hostiles 1')['out']
     m = re.search(r'hostiles (\d+) targeting=(\d+) picks=(\d+)', out)
     rows = re.findall(r'hostile (\S+) d=([\d.]+) at=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out)
-    return (tuple(int(x) for x in m.groups()) if m else (0, 0, 0)), rows
+    who = re.findall(r'targeting (\S+)', out)
+    return (tuple(int(x) for x in m.groups()) if m else (0, 0, 0)), rows, who
+
+
+def npcs(con):
+    """host: {id: (ptr, species, dist, dead)}"""
+    return {int(m.group(1)): (m.group(2), m.group(3), float(m.group(5)), bool(m.group(6)))
+            for m in re.finditer(r'#(\d+) ([0-9A-F]{8}) species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)( DEAD)?',
+                                 con.call('coop.npc list')['out'])}
 
 
 def main():
@@ -37,27 +46,34 @@ def main():
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
     ck(play_own(guest), 'the guest plays one of its own creatures (not the world\'s species)')
     time.sleep(4)
-    (n, tg, pk), rows = hostiles(host)
-    print(f'  host: {n} hostile adults to the guest, {tg} targeting it, picks {pk}; nearest {rows[:3]}', flush=True)
-    ck(rows, 'the host\'s world has animals hostile to the guest\'s creature')
-    if not rows:
+    # the guest attacks one animal: its species' relation to the players becomes "attacked" (2, ApplyEvent 2 in the
+    # host's TakeDamage), the relation node 0x04A1A1E6 reads
+    ns = sorted(((v[2], k, v) for k, v in npcs(host).items() if not v[3]), key=lambda x: x[0])
+    ck(ns, 'the host has animals near the players')
+    if not ns:
         ck.faults(host=host, guest=guest)
         return ck.result()
-    _, d, x, y, z = rows[0]
-    print('  guest:', guest.call(f'coop.npc gopos {x} {y} {z}')['out'].strip()[:100], flush=True)
-    best = (0, 0, 0)
+    _, nid, (ptr, species, _, _) = ns[0]
+    for _ in range(3):
+        print('  guest:', guest.call(f'coop.npc hit {nid} 0.5')['out'].strip(), flush=True)
+        time.sleep(1)
+    (n, tg, pk), rows, who = hostiles(host)
+    print(f'  host: the guest hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
+    ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature after its attack')
+    best, others = (0, 0, 0), []
     t0 = time.time()
-    while time.time() - t0 < 40:
+    while rows and time.time() - t0 < 40:
         time.sleep(2)
-        (n, tg, pk), rows = hostiles(host)
-        best = max(best, (tg, pk, n))
-        if tg > 0 and pk > 0:
+        (n, tg, pk), rows2, who = hostiles(host)
+        others = [w for w in who if w != ptr]  # (the attacked animal fights back by itself: TakeDamage)
+        best = max(best, (len(others), pk, n))
+        if others and pk > 0:
             break
-    print(f'  host: targeting {best[0]}, party picks {best[1]}, hostiles {best[2]}', flush=True)
+    print(f'  host: other animals targeting the guest {best[0]}, party picks {best[1]}, hostiles {best[2]}', flush=True)
     print('  host:', [ln for ln in host.call('coop.hp')['out'].splitlines() if ln.startswith(('party', 'relations'))],
           flush=True)
     ck(best[1] > 0, f'the hostile-species node picked the guest\'s creature (party picks {best[1]})')
-    ck(best[0] > 0, f'an animal of the host\'s game targets the guest\'s creature ({best[0]})')
+    ck(best[0] > 0, f'an animal of the hostile species that the guest did not hit targets the guest ({best[0]})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

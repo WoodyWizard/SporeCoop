@@ -261,12 +261,12 @@ bool host_party(void* c)
 // command stimulus 0x10 aimed at it (0xC0C070: clear 0x20030030 / 0x40040000, post 0x10, FLT_MAX, sender the
 // attacker; docs/re/creature.md#creature-player-species-callers). A partner's puppet is no avatar: the host's pack (and
 // the creatures a guest recruited, who are host pack members) stood by while an NPC fought the guest. Now an NPC's
-// hit on a puppet gives the host's pack members within kDefendRange of it the same stimulus.
+// hit on a puppet gives the host's pack members (within kDefendRange of it) the same call.
 // `coop.fix npc.pack_defends_partner off`: nobody defends the guest (0.7.10).
 static bool g_pack_defends = true;
 COOP_FIX("npc.pack_defends_partner", "BUG-0735", g_pack_defends, "creature: the host's pack goes for an animal that attacks a partner, as it does for the host's own creature");
 static uintptr_t a_CmdStim, a_CanDefend;
-static constexpr float kDefendRange = 40.f;
+static constexpr float kDefendRange = 80.f; // (the game's relay has no range; PosseMemberCanDefend decides)
 static uint32_t g_defends, g_defend_posts;
 static std::unordered_map<void*, double> g_defend_at; // attacker -> the last time the pack was sent at it
 
@@ -517,7 +517,7 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
             say("no puppet or relationship manager\n");
             return 1;
         }
-        struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; } q{p, rm, {}, 0};
+        struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; std::vector<void*> who; } q{p, rm, {}, 0, {}};
         Lent l = lend_tuning();
         game::for_each_object(
             [](void* o, uint32_t noun, void* u) {
@@ -525,8 +525,11 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
                 if (noun != 0x018EB45E || o == q->p || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
                     game::is_puppet(o) || game::is_dead(o) || o == game::avatar())
                     return true;
-                if (skg::field<void*>(o, 0xE7C) == q->p)
+                void* t = skg::field<void*>(o, 0xE7C);
+                if (t == q->p || t == (uint8_t*)q->p + 0x5A8) { // the creature or its combatant
                     q->targeting++;
+                    q->who.push_back(o);
+                }
                 if (!skg::field<void*>(o, 0xE84))
                     return true; // (no tuning: not an animal of the world)
                 int rel = skg::thiscall<int>(g_rel_lo, q->rm, (uint8_t*)o + 0xB28, o, q->p);
@@ -540,6 +543,10 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         char b[160];
         snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u\n", (unsigned)q.v.size(), q.targeting, g_hostile_party_picks);
         std::string s = b;
+        for (void* w : q.who) {
+            snprintf(b, sizeof b, "  targeting %p\n", w);
+            s += b;
+        }
         for (size_t i = 0; i < q.v.size() && i < 8; i++) {
             net::Vec3 at = game::position(q.v[i].second);
             snprintf(b, sizeof b, "  hostile %p d=%.1f at=(%.1f %.1f %.1f)\n", q.v[i].second, q.v[i].first, at.x, at.y, at.z);

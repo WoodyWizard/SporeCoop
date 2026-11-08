@@ -92,7 +92,13 @@ def main():
             time.sleep(1)
             members = [m for m in pack(host) if not m['dead']]
         ck(members, f"the host's game has a pack ({len(members)} members)")
-        time.sleep(6)  # the flock comes to the avatar (and the guest next to it)
+        t0 = time.time()  # the flock comes to the avatar (and the guest next to it) from 70 m
+        while time.time() - t0 < 40:
+            members = [m for m in pack(host) if not m['dead']]
+            if members and sum(1 for m in members if 0 <= m['dp'] < 20) * 2 >= len(members):
+                break
+            time.sleep(1)
+        print('  host pack before the hit:', [(m['dav'], m['dp']) for m in members], flush=True)
         r = host.call('coop.hp npchit 1 0.5')['out'].strip()
         print('  host:', r, flush=True)
         m = re.search(r'animal (\S+)', r)

@@ -5,13 +5,14 @@ creature parts).
 
 One lane has one install for both games, so the host is made to lack a part (`coop.creations lack <id>`: the mod's
 checks, substitutes and lookalike search treat that part as one the host's game does not have).
-1. Two games on the cell fixture (`cell`) or the space fixture (`ufo`).
-2. The guest's own creation of that kind (`coop.creations` mine ...) and its parts (`mparts`); the host lacks the
-   first part that is not one of the fixed fallbacks of that kind.
-3. The guest leaves and joins again: its creation's bundle (with the descriptions of its parts) reaches the host again.
+`cell`: two games on the cell fixture; the guest chooses one of its own cells the host does not have; the host lacks
+its first part that is not a fixed fallback; the guest's bundle (with its parts' descriptions) reaches the host.
+`ufo`: two games on the space fixture; the host's My Creations hold a ship design X (space_host_ship_design's
+set-up), the guest lacks its first part, the host's ships fly X: the guest builds its mirrors from the host's design
+(BUG-0724) with the design's part descriptions (BUG-0725).
 
-PASS: the model the host's game reads for the guest's creation names no lacked part, and in its place the part the
-host's lookalike chose from the guest's description (`coop.creations looks`), not a fixed fallback.
+PASS: the model the receiving game reads names no lacked part, and in its place the part its lookalike chose from the
+sender's description (`coop.creations looks`), not a fixed fallback.
 FAIL (SPORE_FIX_OFF=content.lookalike): a fixed fallback part.
 
   SPORE_LANE=7 python3 tools/tests/coop_content_own_lookalike.py cell|ufo
@@ -53,41 +54,89 @@ def applied(con, player, kind):
     return int(m.group(1), 16) if m else 0
 
 
+def options(con, kind):
+    return re.findall(rf'^{kind} ([0-9A-F]{{8}}) ', con.call('coop.creations list')['out'], re.M)
+
+
+def cell_case(host, guest, ck):
+    """the guest's own cell (one the host does not have) reaches the host with a part the host lacks"""
+    cur = mine(guest, 'cell')
+    theirs = set(options(host, 'cell'))
+    cands = [int(o, 16) for o in options(guest, 'cell') if o not in theirs and int(o, 16) != cur]
+    print(f'  guest cells {options(guest, "cell")}, host cells {sorted(theirs)}, mine {cur:08X}', flush=True)
+    ck(cands, 'the guest has a cell of its own the host does not have')
+    for c2 in cands:
+        parts = mparts(guest, 'cell', c2)
+        lack = next((p for p in parts if p not in FALLBACKS['cell']), None)
+        if lack is not None:
+            break
+    else:
+        return None, []
+    print(f'  guest cell {c2:08X}: parts {[f"{p:08X}" for p in parts]}', flush=True)
+    print('  host:', host.call(f'coop.creations lack {lack:08X}')['out'].strip(), flush=True)
+    print('  guest:', guest.call(f'coop.creations choose cell {c2:08X}')['out'].strip(), flush=True)
+    hp, key = [], 0
+    t0 = time.time()
+    while time.time() - t0 < 40:
+        key = applied(host, 1, 'cell')
+        hp = mparts(host, 'cell', key) if key else []
+        if key and hp and lack not in hp:
+            break
+        time.sleep(1)
+    print(f'  host: player 1 cell {key:08X} parts {[f"{p:08X}" for p in hp]}', flush=True)
+    return lack, hp
+
+
+def ufo_case(host, guest, ck):
+    """a host's own ship design (BUG-0724) with a part the guest lacks reaches the guest's mirrors"""
+    import coop_space_host_ship_design as sd
+    X = sd.X
+    parts = mparts(host, 'ufo', X)
+    lack = next((p for p in parts if p not in FALLBACKS['ufo']), None)
+    print(f'  host ship design {X:08X}: parts {[f"{p:08X}" for p in parts]}', flush=True)
+    if lack is None:
+        return None, []
+    print('  guest:', guest.call(f'coop.creations lack {lack:08X}')['out'].strip(), flush=True)
+    print(' ', host.call(f'coop.fleet fakemodel 2 {X:08X}')['out'].strip(), flush=True)
+    for args in ('3 own', '2'):
+        print('  host:', host.call(f'coop.fleet spawn {args}')['out'].strip(), flush=True)
+        time.sleep(4)
+    gp, mk = [], 0
+    t0 = time.time()
+    while time.time() - t0 < 30:
+        ms = sd.mirrors(guest)
+        if ms:
+            mk = ms[0][3]
+            gp = mparts(guest, 'ufo', mk)
+            if gp and lack not in gp:
+                break
+        time.sleep(1)
+    host.call('coop.fleet fakemodel 0')
+    print(f'  guest mirror model {mk:08X} parts {[f"{p:08X}" for p in gp]}', flush=True)
+    return lack, gp
+
+
 def main():
     kind = sys.argv[1] if len(sys.argv) > 1 else 'cell'
+    if kind == 'ufo':
+        import coop_space_host_ship_design as sd
+        sd.MODELS[:] = sd.two_ufo_models()
+        twoinst.restore_creations = sd.restore_with_ship
     host, guest = start(FIXTURE[kind])
     ck = Checks()
     time.sleep(3)
-    own = mine(guest, kind)
-    parts = mparts(guest, kind, own) if own else []
-    print(f'  guest own {kind} {own:08X}: parts {[f"{p:08X}" for p in parts]}', flush=True)
-    lack = next((p for p in parts if p not in FALLBACKS[kind]), None)
-    ck(lack is not None, f'the guest\'s own {kind} names a part to lack ({lack and f"{lack:08X}"})')
+    lack, parts = (cell_case if kind == 'cell' else ufo_case)(host, guest, ck)
+    ck(lack is not None, f'a part to lack ({lack and f"{lack:08X}"})')
     if lack is None:
         ck.faults(host=host, guest=guest)
         return ck.result()
-    guest.call('coop.leave')
-    time.sleep(3)
-    print('  host:', host.call(f'coop.creations lack {lack:08X}')['out'].strip(), flush=True)
-    guest.call(lane.JOIN)
-    ck(twoinst.wait_guest_in(host, guest, 180), 'the guest is back in the host\'s world')
-    key, hp = 0, []
-    t0 = time.time()
-    while time.time() - t0 < 40:
-        key = applied(host, 1, kind)
-        hp = mparts(host, kind, key) if key else []
-        if hp and lack not in hp:
-            break
-        time.sleep(1)
-    lk = looks(host)
-    sub = lk.get(lack)
-    print(f'  host: player 1 {kind} {key:08X} parts {[f"{p:08X}" for p in hp]}; lookalike of {lack:08X}: '
-          f'{sub and f"{sub:08X}"}', flush=True)
-    print('  host:', host.call('coop.creations content')['out'].strip().replace('\n', ' | '), flush=True)
-    ck(hp and lack not in hp, f'the host\'s model of the guest\'s {kind} names no part the host lacks ({lack:08X})')
-    ck(sub, f'the host chose a lookalike for {lack:08X} from the guest\'s description ({sub})')
-    ck(sub and sub in hp, f'the guest\'s {kind} shows that lookalike in the host\'s game')
-    host.call('coop.creations lack clear')
+    who = host if kind == 'cell' else guest
+    sub = looks(who).get(lack)
+    print(f'  lookalike of {lack:08X}: {sub and f"{sub:08X}"};', who.call('coop.creations content')['out'].strip().replace('\n', ' | '), flush=True)
+    ck(parts and lack not in parts, f'the receiving game\'s model names no part it lacks ({lack:08X})')
+    ck(sub, f'the receiving game chose a lookalike for {lack:08X} from the sender\'s description ({sub})')
+    ck(sub and sub in parts, f'the {kind} shows that lookalike in the receiving game')
+    who.call('coop.creations lack clear')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
