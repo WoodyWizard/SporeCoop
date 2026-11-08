@@ -605,6 +605,9 @@ anchor so other docs can link to it:
   Regression test: `tools/tests/coop_creature_death.py` (suite `creature_death`).
 * Next: the player's `mods\logs\sporekit.log` (a crash inside the mod is logged with its module and
   address; "exception ... calls:"), the game build (GOG / Steam) and Windows or Linux.
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): not reproduced on rel/0.7.11 either: alone (creature_death) and in a
+  session, host and guest dying, also at 20 fps over the player network (creature_death_coop, _slow): closed as
+  not-reproduced with the runs in the ticket.
 * Ticket: BUG-0026.
 
 ## Creature: "he is my species from my view", "I don't see his changes" (player report 2026-10-25)

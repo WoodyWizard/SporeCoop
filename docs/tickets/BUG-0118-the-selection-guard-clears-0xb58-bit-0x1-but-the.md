@@ -9,9 +9,9 @@ source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#97
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: 
-branch: fix/w1-creature
+branch: fix/w1-creature; checked again on fix/w46-n1-crashes
 commits: b4dc4dd
-tests: select
+tests: select, select_players
 signature:
 docs: docs/re/creature.md#creature-selection-gate
 related: #97
@@ -83,8 +83,19 @@ Static only (the disassembly above). The existing `select` test (it clicks the p
 with mask 0x1 set and +0xE84 null and checks that the guard ran) passed in the smoke run on lane 4 (out/lab/20261027-190036).
 No new test: there is no failing case to reproduce.
 
+0.7.11 N1 (fix/w46-n1-crashes, 2026-11-07):
+* objdump of the GOG 2024 exe (dc04aee5) again: 0xB6C9C3 `mov eax,[esi+0xb58]`, `test al,0x2; jne 0xb6ca37`,
+  `test al,0x1; je 0xb6ca37`, then vt 0xD0 / 0xD4, `call 0xc0c300` at 0xB6CA0C and the read `[eax+0x32c]` at 0xB6CA11;
+  the only read of +0xE84 in 0xB6C970..0xB6CB0E (its `ret`). The gate is mask 0x1 set and 0x2 clear, the guard hides
+  0x1: no gap.
+* select and select_players (the partner clicked on both games, also over the players' networks): OK, 0 faults,
+  out/lab/20261107-231415 (lane 9). On this build the puppets have +0xE84 set (`e84=0CD8ACFC`) and +0xB58 = 0, so the
+  game skips the read by itself ("this partner has pack data, nothing to guard"): the state of the report is not
+  reachable through the puppets any more; the guard still covers a puppet or proxy without it.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #97.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: checked on fix/w1-creature: 0x2 is the early-out, 0x1 the gate; the guard is right. Docs and `.sym` corrected; closed as not-reproduced.
 - 2026-10-30: fix/w13-creature: settled again statically on the GOG 2024 exe (objdump 0xB6C9C3..0xB6CA11: `test al,2; jne skip; test al,1; je skip` before `call 0xC0C300` / `[eax+0x32C]`), and the guard in coop.cpp `h_SelectUI` still hides mask 0x1 when +0xE84 is null. No contradiction left; stays not-reproduced (docs/re/creature.md#creature-proxy-guest-side).
+- 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): static check repeated on GOG 2024, select / select_players OK; puppets now carry +0xE84; stays not-reproduced.

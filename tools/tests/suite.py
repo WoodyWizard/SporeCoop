@@ -72,7 +72,7 @@ add('civ', P + 'coop_mode.py --fixture civ', minutes=3)
 add('space', P + 'coop_mode.py --fixture space', minutes=3)
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
-add('menu_escape', P + 'coop_menu_escape.py', minutes=6)  # BUG-0184: Escape and Co-op clicks around the galaxy menu intro (by hand and the menu's own) keep the frames going
+add('menu_escape', P + 'coop_menu_escape.py', minutes=10)  # BUG-0184: Escape and Co-op clicks around the galaxy menu's own intro (also near its end) keep the frames going
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
 add('cell_effects', P + 'coop_cell_effects.py', warm=True, minutes=3, fixture='cell', monitor={'proxy_n': 1000})  # BUG-0451: a cell's world effects on the partner's cell; SPORE_FIX_OFF=creature.effects_relay fails

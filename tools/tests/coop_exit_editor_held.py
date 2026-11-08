@@ -9,7 +9,7 @@ The lab never ran the game's own exit (spore.sh kill, `quit`: TerminateProcess).
 
 tribe fixture, the way of coop_tribe_civ.py up to the end of the vote, then:
   --held (default): core.editor_own_pause off on the host, so the editor waits as in 0.7.3.6; the guest leaves;
-                    20 s later the host's window gets WM_CLOSE (coop.close: the close button / Alt+F4)
+                    80 s later (the report's 81 s) the host's window gets WM_CLOSE (coop.close: the close button / Alt+F4)
   --editor:         the fix on: the City Hall editor opens; the guest leaves; WM_CLOSE in the editor
 Checked: the host's game ends by itself within 90 s and writes no crash report (crash-*.txt) on the way out.
 
@@ -74,8 +74,9 @@ def main():
         print('  ' + ' | '.join(ln.strip() for ln in st.splitlines() if 'editor' in ln.lower())[:300], flush=True)
     shot(host, 'exit_editor_before.png')
     print(' ', guest.call('coop.leave')['out'].strip()[:120], flush=True)
-    time.sleep(20)
+    time.sleep(20 if a.editor else 80)  # the report: 81 s between the held editor and the player's quit
     ck('total faults: 0' in host.call('exc')['out'], 'host: no fault before the exit')
+    ck('total faults: 0' in guest.call('exc')['out'], 'guest: no fault (its game ends with the host\'s: one bottle)')
     for m in twoinst._monitors:  # the host is about to end on purpose: no "froze / crashed" from the watchers
         m.stop = True
     before = crashes(lane.HOST)
@@ -96,8 +97,7 @@ def main():
         print('  host log end:\n    ' + '\n    '.join(t[:160] for t in tail), flush=True)
     except OSError:
         pass
-    ck.faults(guest=guest)
-    return ck.result()
+    return ck.result()  # (no ck.faults: both games of the lane's bottle end with the host's exit)
 
 
 if __name__ == '__main__':

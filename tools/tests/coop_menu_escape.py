@@ -7,10 +7,10 @@ handles it a frame or more later. Candidate (BUG-0184, 2026-10-30): an Escape th
 intro (or before it starts) opens something modal that stops the frames. One game, alone, in the galaxy menu:
 
   A  Escape with no intro playing, 3 times: frames go on, the console answers, no window of the game stays up
-  B  the intro started as the menu's handler starts it (PlayCinematic "GGE_intro"), then "Co-op" clicked at
-     0 / 0.05 / 0.2 / 0.5 / 1 / 3 s after its start, and Escape at its first frame / after its end (the mod's
-     own skip, the late Escape of the candidate): every round the frames go on, the intro ends and the co-op
-     window opens after a click; the window is closed for the next round
+  B  the menu's own intro again (it starts each time the menu comes back: a load, then the quit to the menu), then
+     "Co-op" clicked 0 / 0.3 / 1 / 3 / 6 / 8.5 s into it (the mod's Escape skip, also near the intro's end, the late
+     Escape of the candidate), or Escape at its start and 9.5 s into it: every round the frames go on, the co-op
+     window opens after a click and the intro is over; the window is closed for the next round
   C  the menu's own intro (the first of the session) with a click at its first frames
 
   SPORE_LANE=9 python3 tools/tests/coop_menu_escape.py
@@ -19,6 +19,7 @@ import re
 import sys
 import time
 
+import fixtures
 import lane
 from coop_ui import Ui, wait_up
 from sporectl import Console
@@ -97,35 +98,34 @@ def main():
     st = ui.state()
     check(st.get('open') == '0', 'A: the co-op window is not open')
 
-    m = re.search(r'eax=(0x[0-9A-Fa-f]+)', con.call('call Simulator::cCinematicManager::Get cdecl')['out'])
-    check(m, 'the cinematic manager')
-    if not m:
-        print('RESULT:', 'OK' if ok else 'FAIL')
-        return 0 if ok else 1
-    play = f'call Simulator::cCinematicManager::PlayCinematic thiscall {m.group(1)} s:GGE_intro 1 0 0 0 0'
-    rounds = [('click', d) for d in (0.0, 0.05, 0.2, 0.5, 1.0, 3.0)] + [('esc', 0.0), ('esc_after', None)]
+    # B: the menu's own intro again: it starts each time the menu comes back (a load, then the quit to the menu); the
+    # click on "Co-op" at an offset into it, or Escape at its start (the by-hand PlayCinematic intro is no model: it
+    # does not end on the mod's Escape, lab 20261107-231415)
+    slot, planet = fixtures.planet_of('creature').split('/')
+    rounds = [('click', d) for d in (0.0, 0.3, 1.0, 3.0, 6.0, 8.5)] + [('esc', 0.0), ('esc', 9.5)]
     for kind, delay in rounds:
-        name = f'B {kind} {delay if delay is not None else "end"}'
-        con.call(play)
-        started = wait(lambda: intro(con), 3)
-        if kind == 'esc_after':
-            wait(lambda: not intro(con), 20)
+        name = f'B {kind} {delay:.1f} s into the intro'
+        con.call(f'coop.load {slot} {planet}')
+        wait(lambda: con.call('coop.avatar')['ok'], 120)
+        time.sleep(3)
+        con.call('coop.menu')
+        wait(lambda: MENU in con.call('game.mode')['out'], 60)
+        started = wait(lambda: intro(con), 30)
+        time.sleep(delay)
+        if kind == 'esc':
             con.call('key esc')
-            check(answers(con, name), f'{name}: the game answers after an Escape just after the intro')
         else:
-            time.sleep(delay)
-            if kind == 'esc':
-                con.call('key esc')
-            else:
-                ui.click('menu')
-            check(answers(con, name), f'{name}: the game answers (intro started: {started})')
+            ui.click('menu')
+        check(answers(con, name), f'{name}: the game answers (intro playing at the start: {started})')
+        if kind == 'click':
+            st = ui.wait(lambda s: s['open'] == '1', 25, 'co-op window')
+            check(st is not None, f'{name}: the co-op window opens')
+            check(not intro(con), f'{name}: no intro plays any more')
+            ui.click('close')
+            ui.wait(lambda s: s['open'] == '0', 10, 'closed')
+        else:
             check(wait(lambda: not intro(con), 20), f'{name}: the intro is over')
-            if kind == 'click':
-                st = ui.wait(lambda s: s['open'] == '1', 25, 'co-op window')
-                check(st is not None, f'{name}: the co-op window opens')
-                ui.click('close')
-                ui.wait(lambda s: s['open'] == '0', 10, 'closed')
-        time.sleep(4)  # the game drops clicks for ~2-3 s after an intro
+        check(answers(con, name + ', later'), f'{name}: the game still answers')
         check(MENU in con.call('game.mode')['out'], f'{name}: still in the galaxy menu')
     m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
     check(m and m.group(1) == '0', f'no caught fault ({m.group(0) if m else "no answer"})')
