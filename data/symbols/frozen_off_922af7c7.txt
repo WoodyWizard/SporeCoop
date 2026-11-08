@@ -194,3 +194,4 @@ SporeCoop::AnimalCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a 
 SporeCoop::ArtifactCargo_Create ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
 SporeCoop::PlantCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
 SporeCoop::PlantCargo_Template ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::Cell_ElectricAttack ; BUG-0715: a guest's electric part does not reach the host's creatures on GOG 2016 (cell.electric)

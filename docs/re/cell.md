@@ -1839,3 +1839,39 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
 * ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
   off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
   20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.
+
+## The broadphase merge above 4096 endpoints: a heap queue (2026-11-08, fix/w46-k2b-content-a)
+<a id="cell-sap-merge"></a>
+
+BUG-0718 (class BUG-0432). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`), lane 6
+(`tools/tests/coop_cell_merge.py`, suite `cell_merge`). Completes #cell-broadphase-cap.
+
+* ✔ (decompile) `SweepPrune::MergeAxis` 0xBBAF10 cdecl `int(SAP* s, Endpoint* sorted, int count, Endpoint* added,
+  size_t nAdded, int axis)`, returns the new count in EAX (0xBBB104: the output index): `qsort(added, nAdded, 8,
+  0xBBAE50)` (the comparator: -1 when a.value < b.value, else 1: never "equal"), then an in-place merge into `sorted`:
+  the write position runs behind the read position; an old entry that the write would overwrite is parked in a
+  linear queue on the stack (`local_8000`, 0x8000 bytes = 4096 endpoints; push count local_8010, pop count
+  local_8004), entries of type -2 (removed) are dropped on both inputs, and every endpoint written to a new position
+  gets its object record's index (`objs + 16 * id`, +8 / +0xA the min per axis, +0xC / +0xE the max) written back
+  (bit 15, "pending", cleared that way). Ties: an added entry goes before a queued old one of the same value, after
+  an old one read in place. Only old entries are ever parked, so `count` <= 4096 cannot overrun the queue.
+* ✔ Only caller: `SweepPrune::UpdatePairs` 0xBBB450 (+0x31, once per axis); its only caller the thunk 0xBBBF60 from
+  `Simulator::Cell::SimUpdate`; the constructor 0xBBB570 and AddObject 0xBBB290 are reached only through their
+  thunks 0xBBBF70 / 0xBBBF40 (cell code). The sweep-and-prune is the Cell stage's only one.
+* ✔ (runtime, lab 20261108-031215, budget off) four players, the host's pool at 4096 cells: the first fault is
+  `0xC0000005 at 0x00BBB07B SweepPrune::MergeAxis+0x16B` (EAX = 0x10D2, the merge index), then 2393 faults and a
+  host whose cell no longer moves: BUG-0295's signature, reached by any count over ~2048 that the soft budgets do
+  not see.
+* The hard guard `cell.sap_merge` (cellsync.cpp `merge_axis`, called from `h_UpdatePairs` when the sorted array holds
+  over 4096 entries): the same merge with the queue on the heap (old entries filtered, the added ones stable-sorted by
+  value, merged with an equal value after the old entry, every written endpoint's index written to its record), at
+  most 2 x the object capacity entries (the array's size; `merge_clipped=` counts what would not fit). At or below
+  4096 entries the game's MergeAxis runs as before. `coop.pool sap` prints `merges_ours= merge_peak= merge_clipped=
+  merge_fix=`. `coop.pool budget <pop> <screen>` (tests) moves the host's two population caps of `cell.budget`.
+* ✔ (runtime, lab 20261108-031701, budget off, the fix on) with the pool at its 4096 slots the merge held (50 merges
+  of ours, peak 8192 entries, no fault at 0xBBB07B), but the full pool broke the game elsewhere: faults at
+  0x00E86C1C / 0x00E86874 (vector writes through a null result in 0xE86B60 / 0xE86830) and in the model data builder
+  0xE83E30 (+0x98), the host's avatar gone ("no own avatar here"), `merge_clipped=4`. The same faults followed the
+  MergeAxis fault in the budget-off run without the fix. So the cell object pool (4096, `G+0x1C+0x18`) is a second
+  fixed pool; it is reached only with `cell.budget` off (the budget keeps the host near 1300-1800,
+  #cell-broadphase-cap); the merge guard is tested with the caps raised instead (`cell_merge`, over 2300 cells).
