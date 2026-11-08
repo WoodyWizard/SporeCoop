@@ -2502,13 +2502,14 @@ static void stall_note(double since)
     volatile uint32_t marker = 0;
     HMODULE exe = GetModuleHandleW(nullptr);
     auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
-    uintptr_t lo = (uintptr_t)exe, top = lo + nt->OptionalHeader.SizeOfImage;
+    uintptr_t lo = (uintptr_t)exe + nt->OptionalHeader.BaseOfCode, top = lo + nt->OptionalHeader.SizeOfCode; // (code only: no text)
     HMODULE u32 = GetModuleHandleW(L"user32.dll");
     int n = 0, nu = 0;
     for (uint32_t* p = (uint32_t*)&marker; p < hi && n < 40; p++) {
         uint32_t v = *p;
         char b[24];
-        if (v > lo && v < top) {
+        const uint8_t* c = (const uint8_t*)(uintptr_t)v;
+        if (v > lo + 6 && v < top && (c[-5] == 0xE8 || c[-6] == 0xFF || c[-3] == 0xFF || c[-2] == 0xFF)) { // a return address
             snprintf(b, sizeof b, " %08X", v);
             chain += b;
             n++;
@@ -5909,6 +5910,21 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.stalltest", "coop.stalltest <s> - tests (BUG-0687): the main thread runs a message loop of its own for s seconds (max 20): no frames, the keepalive runs",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       double secs = std::min(argc > 1 ? atof(argv[1]) : 5.0, 20.0), t0 = H->time_seconds();
+                       MSG m;
+                       while (H->time_seconds() - t0 < secs) {
+                           while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+                               TranslateMessage(&m);
+                               DispatchMessageW(&m);
+                           }
+                           Sleep(10);
+                       }
+                       SAY("stalled %.1f s\n", H->time_seconds() - t0);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME); // (inside a frame the outside-frame tasks, the keepalive too, wait for its end)
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",
