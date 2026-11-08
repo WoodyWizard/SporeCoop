@@ -24,7 +24,7 @@ import time
 from play_civ import civ_state
 from twoinst import Checks, start
 
-TURRET_COMBATANT_VT = 0x01467758  # the turret TakeDamage's vtable (docs/re/civ.md, `this` = turret + 0x588)
+TURRET_COMBATANT_VT = 0x01466C28  # a turret combatant's vtable, GOG 2024 (0x1467758 in GOG 2016; seen at turret + 0x588)
 
 
 def turrets(con, ci):

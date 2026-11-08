@@ -375,7 +375,7 @@ COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's veh
 constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
 constexpr uint32_t kTurretNoun = 0x0436F342;
 constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
-// BUG-0688: a city turret is no building: its combatant is at +0x588 (vtable 0x1467758, the turret TakeDamage's
+// BUG-0688: a city turret is no building: its combatant is at +0x588 (vtable 0x1466C28 GOG 2024, the turret TakeDamage's
 // `this`); +0x120 of a turret holds no object. guest_fire took every turret's combatant at kBCombatant and
 // weapon_of called vt 0x14 of that word: the guest crashed (execute of 0xCCCCCCCC) at the first turret shot it
 // copied. Now a turret's combatant is taken at kTCombatant, and weapon_of calls vt 0x14 only of a combatant
