@@ -2332,7 +2332,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         px.buf.delay = 0.15;
         px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
         px.buf.late_lead = true; // BUG-0674 (drive.lead_fall): a late state brought in over time, its jumps smoothed
-        px.buf.smooth_max = 4.f;
+        px.buf.smooth_max = 8.f; // (a turn known late: 3.8-4 m, lab 20261108-013741 #2, proxy 22 at 23.2 s)
         px.buf.push(s, now);
         px.last_rx = now;
         break;

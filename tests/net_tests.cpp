@@ -654,7 +654,7 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool
     b.smooth_max = 6.f;
     if (proxy) { // BUG-0674: an NPC proxy (no smoothing, late_lead under drive.lead_fall)
         b.delay = 0.15;
-        b.smooth_max = 4.f;
+        b.smooth_max = 8.f;
         b.late_lead = true;
         g_lead_late_fix = true;
         g_lead_fall_fix = fix && k4_on("drive.lead_fall");
@@ -1119,7 +1119,7 @@ static float proxy_turn_step(bool fix)
     b.delay = 0.15;
     b.lead = true;
     b.late_lead = true;
-    b.smooth_max = 4.f;
+    b.smooth_max = 8.f;
     auto p_at = [](double st) { return st < 3.0 ? Vec3{(float)st * 6.f, 0, 0} : Vec3{18.f, (float)(st - 3.0) * 6.f, 0}; };
     std::vector<std::pair<double, PlayerState>> arr;
     for (int i = 0; i < 180; i++) {
