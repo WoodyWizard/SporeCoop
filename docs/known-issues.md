@@ -2165,7 +2165,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * What happens: in the lab, after the shared food passes 120-150 (the game's one-time tutorial goldies_demise), both
   avatars keep +0x178 (and +0x16C, +0x17B, +0x17C) set and neither game collects a part token.
 * Reproduce: Cell fixture, `coop.pool food 50` four times, `coop.pool tokens` shows `own_locks=0010`.
-* Known: docs/re/cell.md#cell-goldie. Not known: whether a player's game clears them (input, the cinematic's end).
+* Known: docs/re/cell.md#cell-goldie.
+* Closed (2026-11-08, fix/w46-k8-open): not a mod bug. The cinematic waits for its button; the player's click or Esc
+  ends it and frees the avatar, in a session too (cell_goldie, docs/re/cell.md#cell-goldie-button). Tests that pump
+  food across 120-150 must press Esc or mark the tutorial played (`coop.pool mate nogoldie`).
 * Ticket: BUG-0666
 ## Tests: the detector compares Cell positions across two world scales in a level change (2026-11-06, fix/w46-cell-p0)
 <a id="issue-detector-cell-scale"></a>

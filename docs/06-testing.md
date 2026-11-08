@@ -4577,6 +4577,11 @@ Evidence: v0.7.8 and 0.7.9 run side by side (`long_tribe_short`, lab 20261106-23
 fix/w46-tribe-fps) collapsed identically at the same moment. Before reading such a failure as a regression: check
 the Xwayland's CPU (`pgrep -x Xwayland`, its `/proc/<pid>/stat` ticks over 10 s; ~1000 ticks = one full core) and
 run the A/B at equal load, or rerun on a quiet machine (1-2 lanes).
+* The lab does this itself since 2026-11-08 (fix/w46-k8-open, BUG-0663): every test samples the headless Xwayland
+  (the one whose auth file is under `sporecoop-headless`) every 10 s; `results.json` keeps `xwayland: {avg, peak}`
+  (share of one core) per test, and a FAILED test whose busiest 10 s reached 90 % gets a `LOAD lab: ...` line and
+  `(load)` in the summary. Still a failure: rerun it on a quiet machine before reading it as the mod's.
+  `SPORE_LAB_XWAYLAND=0`: no sampling.
 
 ## A guest that joins while a member's body lies: tribe_dead_rejoin (2026-11-07, fix/w46-tribe-missing)
 <a id="testing-tribe-dead-rejoin"></a>
@@ -4954,4 +4959,13 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   (`coop.civ razetribe 0`, 9 s apart), the tribe counts of both games every 0.25 s: PASS when the guest has no more
   tribes than the host within 2.5 s of each raid. BUG-0659; `SPORE_FIX_OFF=civ.tribe_ruins_fast` fails (5.1-5.3 s,
   lab 20261108-004412), on 0.6-0.9 s (20261108-004941-2).
+## Goldie's demise in a session: cell_goldie (2026-11-08, fix/w46-k8-open)
+<a id="testing-cell-goldie"></a>
+
+* `coop_cell_goldie.py` (suite `cell_goldie`, warm, ~1.5 min, cell fixture): `coop.pool food 50` on the host until
+  both games played the tutorial (`coop.pool mate` goldie_done=1), 14 s later both avatars hold +0x178
+  (`coop.pool tokens` own_locks), then each player presses Esc in its own game (`key esc`), the guest first: its own
+  avatar is free within 6 s, the other's still locked. BUG-0666 (not a mod bug: lab 20261108-010939 passes).
+* Pitfall: a test that adds food across 120-150 (the tutorial's window) leaves the avatars locked until someone presses
+  the cinematic's button or Esc (docs/re/cell.md#cell-goldie-button); press Esc or `coop.pool mate nogoldie` first.
 

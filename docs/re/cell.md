@@ -1839,3 +1839,32 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
 * ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
   off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
   20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.
+## Goldie's demise: the locks are per frame, the cinematic waits for its button (2026-11-08, fix/w46-k8-open)
+<a id="cell-goldie-button"></a>
+
+BUG-0666, follow-up of [#cell-goldie](#cell-goldie). GOG 2024, Ghidra (q.sh, objdump) and lane 4.
+
+* ✔ (Ghidra) **0xE59E80** runs every frame from SimUpdate 0xE7F3A0 right before the event pass 0xE7E7A0: for every
+  pool cell `memset(cell + 0x16C, 0, 0x44)` (+0x16C..+0x1AF, so +0x170 and +0x18C too). No byte write of 0 to +0x178
+  exists because the reset is this memset; active events set the locks again in the same frame.
+* ✔ (Ghidra) the event pass 0xE7E7A0 -> 0xE7E6C0 -> 0xE7BA30 (switch on type - 1). Type 0x24 (case 0x23):
+  **0xE5F160(ev+0x28 Goldie, ev+0x2C eater)**: avatar +0x170 = Goldie, +0x178, +0x17C, +0x17B, +0x16C, +0x4 = 1,
+  returns 1. 0xE7E6C0 (0xE7E750..0xE7E776) applies an event while ev+0x1C > 0 **or** G+0x5198 == the event: Goldie's
+  event (set at G+0x5198 / G+0x5194 by 0xE79720) never times out.
+* ✔ (Ghidra + the package) the cinematic goldies_demise: states goldies_demise (letterbox, 1 s), _2 (6 s, text), _3
+  (1 s), _4 (2 s, text), then `cell_button: wait -forButton` (the wait command 0xADA1D0; cell_ending ends the same way).
+  The button (the cinematic manager's UI winproc 0xAD94A0, control 0x287259F6, events 0x445C99D / 0x62EF353) posts
+  message 0x445F729; Cell init 0xE819B0 registers **0xE7F960** for it (removed by 0xE81BA0): G+0x5198 = 0, then
+  0xE7E130(dt 0, skipped 0) ends the event: 0xE794F0 (cinematic exit, Goldie destroyed with its loot, +0x170). Esc
+  (key 0x1B in 0xE7F630) -> 0xE7F5A0 ends the event at G+0x5194 as skipped. 0xE806B0 ends it too when G+0x51D8 /
+  G+0x51D9 are set (respawn / level rebuild paths 0xE50920, 0xE72200, 0xE7B410; likely).
+* CORRECTION (2026-11-08, fix/w46-k8-open) of [#cell-goldie](#cell-goldie) "Event 0x24 ... -> 0xE794F0" after 15 s:
+  only the event's timer runs out; 0xE794F0 runs at the button or Esc. Goldie may vanish earlier by its eater.
+* ✔ (runtime, cell_goldie, lab 20261108-010939) in a session both games play the tutorial (the shared food crosses
+  the window on both); 14 s later both avatars hold the locks; each player's own Esc frees its own avatar within 6 s
+  and not the other's. So the lab's "locks for good" was its tests never pressing the button.
+* Other lock writers (event actions): 0xE569B0 (types 0x30, 0x31, all locks), 0xE75C30 (mating, type 0x2D, the mate
+  too), 0xE53C50 (type 0x2F, cell_ending; its event is made at 0xE6E8C0, which sets G+0x5198 too: the same button wait).
+* A mod that had to end it (not needed): post 0x445F729 (MessagePost, vt+0x18), never MessageSend from the frame hook
+  (the DXVK deadlock of world.cpp); stuck = S+0x68 == 1, the event at G+0x5198 of type 0x24 with ev+0x1C <= 0.
+
