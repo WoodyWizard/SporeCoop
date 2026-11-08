@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: a guest's game could hit an error (caught, logged as "SporeCoop caught an error in its own code") right
+  after leaving a planet for the galaxy menu; the mod no longer reads the city planner the game has just freed
+  (BUG-0682).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
   the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
   with the path the host's ship flew in the last second (BUG-0547).
