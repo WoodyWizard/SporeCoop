@@ -2237,6 +2237,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Reproduce: play_space with SPORE_DETECTOR=20; `tools/detector_report.py <run>` lists
   `Space:host_only:default_beam_projectile`.
 * Ticket: BUG-0677
+* Fixed (unreleased, fix/w46-k56-space): the host relays its NPC ships' shots and a guest's mirrors fire them
+  (`space.shots`, docs/re/space.md#space-ship-shots).
 ## Space: what the kept guest cargo hold does not cover (2026-11-07, fix/w46-space-items)
 <a id="issue-space-kept-hold-limits"></a>
 
@@ -2248,6 +2250,11 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Not checked: a guest that joins under another name (another player to the host).
 * Next steps: a side file on the host per Space save (as docs/11-rivals.md#rivals-guest-colonies designs for colonies).
 * Ticket: BUG-0679
+* Fixed (unreleased, fix/w46-k56-space): the guest keeps its own record per host world on its disk (host restarts,
+  changes while away), extra free slots go, plant / animal / artifact cargo is made by the game's factories
+  (`space.keep_items_local`, `space.keep_items_slots`, `space.keep_items_cargo`,
+  docs/re/space.md#space-kept-hold-limits). Still not covered: a guest that joins under another name or from another
+  PC's profile.
 
 ## Monitor: the Cell drawn invariant during a level change (2026-11-07, fix/w46-detector-scale)
 <a id="known-monitor-cell-drawn-scale"></a>
