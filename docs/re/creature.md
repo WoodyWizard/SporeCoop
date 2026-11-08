@@ -3714,6 +3714,8 @@ BUG-0489. GOG 2024, Ghidra only (no runtime run). Noun 0x36BE27E, `cGameplayMark
 * Detector: `gameplay_marker` is in worlddiff.IGNORE (the spawned objects are compared themselves). The guest keeping
   a tribe spawn marker the host's controller used is harmless while the guest's controller is blocked
   (`tribe.guest_tribes`, BUG-0587): BUG-0741 records it.
+  ✔ (2026-11-08, fix/w46-b1-tribe) observed at runtime and fixed (`tribe.copy_marker`, [tribe.md](tribe.md#tribe-copy-marker)):
+  the guest's copy now uses up its marker too.
 * ? Not looked up: the 0xD14690 / 0xD14A60 readers (vtables 0x1479900 / 0x14799BC, a marker from a property
   definition) and the dev marker editor 0xD197A0 / 0xD1AFE0 ("LevelEditor", creates 0xC012AE1F chains).
 

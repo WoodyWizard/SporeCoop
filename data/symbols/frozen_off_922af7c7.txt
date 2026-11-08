@@ -211,3 +211,4 @@ SporeCoop::Cell_CanPoison ; BUG-0716: test status only
 SporeCoop::Cell_PoisonStep ; BUG-0716: a guest's poison part makes no clouds in the host's game on GOG 2016 (cell.puppet_poison)
 SporeCoop::PlanetTerrain_SetTerraforming ; BUG-0749: a partner's terraforming does not switch the planet's terraforming on (the deltas wait, the planet does not change)
 SporeCoop::cSpaceTrading_FillNPCStore ; BUG-0747: NPC stores are not seeded from their planet (each game its own store)
+Simulator::Cell::ExecuteInteraction ; BUG-0746: a knocked-out cell may still swallow meat whole on GOG 2016 (cell.ko_no_swallow not hooked there)

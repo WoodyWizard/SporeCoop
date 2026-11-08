@@ -203,6 +203,13 @@ static bool g_fix_ko_no_bite = true;
 COOP_FIX("cell.ko_no_bite", "BUG-0509", g_fix_ko_no_bite, "cell: a knocked-out cell cannot bite, spike or poison anybody until it is revived or respawns");
 static uint32_t g_ko_bites_blocked = 0, g_ko_hits_refused = 0;
 static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
+// BUG-0746: the swallow of interaction kinds 9 / 10 (meat or a plant swallowed whole, StartEatSwallow 0xE7E020 ->
+// event type 1 -> SwallowWhole 0xE7D880 -> FinishEatEvent 0xE7D800 -> OnEat -> AvatarEat) is not EatFood: a
+// knocked-out carnivore still swallowed meat that touched its mouth. With the fix the executor 0xE7E7F0 runs such a
+// pair of our knocked-out avatar as a plain contact (kind 1, the push the game uses when the swallow refuses).
+static bool g_fix_ko_no_swallow = true;
+COOP_FIX("cell.ko_no_swallow", "BUG-0746", g_fix_ko_no_swallow, "cell: a knocked-out cell does not swallow meat or a plant whole (interaction kinds 9 / 10), so it does not eat while it is down");
+static uint32_t g_ko_swallows_blocked;
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static double g_statehold_until; // tests (`coop.pool statehold <s>`): MSG_CELL_STATE dropped until then (a dead link, BUG-0480)
 static uint32_t g_statehold_dropped;
@@ -1203,6 +1210,25 @@ static void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float d
         return;
     }
     o_EatFood(eater, food, ref, dt);
+}
+
+// BUG-0746: Simulator::Cell::ExecuteInteraction 0xE7E7F0, cdecl void(interaction*, float dt): +0 eater idx (A),
+// +4 the other (B), +8 kind. Kinds 9 / 10 of our knocked-out avatar as the eater become kind 1 (contact push only).
+using ExecInter_t = void(SK_CDECL*)(uint32_t*, float);
+static ExecInter_t o_ExecInter;
+static uintptr_t a_ExecInter;
+static void SK_CDECL h_ExecInter(uint32_t* in, float dt)
+{
+    if (g_fix_ko_no_swallow && g_downed && in && (in[2] == 9 || in[2] == 10) && in_cell() && avatar() &&
+        in[0] == avatar_idx()) {
+        g_ko_swallows_blocked++;
+        uint32_t k = in[2];
+        in[2] = 1;
+        o_ExecInter(in, dt);
+        in[2] = k;
+        return;
+    }
+    o_ExecInter(in, dt);
 }
 
 using AddFood_t = void(SK_CDECL*)(int, bool);
@@ -3120,6 +3146,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_UpdatePairs, (void*)h_UpdatePairs, (void**)&o_UpdatePairs);
     if (a_EatFood) // BUG-0364
         H->hook_create(M, (void*)a_EatFood, (void*)h_EatFood, (void**)&o_EatFood);
+    a_ExecInter = H->sym("Simulator::Cell::ExecuteInteraction");
+    if (a_ExecInter) // BUG-0746 (GOG 2024)
+        H->hook_create(M, (void*)a_ExecInter, (void*)h_ExecInter, (void**)&o_ExecInter);
     if (a_ChunkA && a_ChunkB) {
         H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
         H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
@@ -5092,6 +5121,32 @@ std::string debug(const std::vector<std::string>& a)
         skg::cdecl_call<void>(a_EatFood, avatar_idx(), F<uint32_t>(c, 0), F<void*>(c, kRes), 1.f / 30.f);
         return "ate " + a[1] + " points=" + std::to_string(g_own_food - before);
     }
+    if (a.size() >= 2 && a[0] == "swallow") { // BUG-0746: our avatar's mouth touches a cell by its sync key and the
+        // game's executor 0xE7E7F0 runs interaction kind 10 (meat swallowed whole, as a carnivore mouth at d 0/1) or
+        // `swallow <key> 9` (a plant swallowed whole); the meal comes ~1 s later (event type 1 -> OnEat)
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint8_t* c = nullptr;
+        if (is_guest()) {
+            auto it = g_mirrors.find(key);
+            c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+        } else
+            c = modes::cell_at(key);
+        if (!c || !a_ExecInter)
+            return "no such cell";
+        g_touched[F<uint32_t>(c, 0)] = H->time_seconds();
+        uint32_t in[24] = {};
+        in[0] = avatar_idx();
+        in[1] = F<uint32_t>(c, 0);
+        in[2] = a.size() > 2 ? (uint32_t)atoi(a[2].c_str()) : 10;
+        net::Vec3 p = pos_of(c), me = pos_of(av);
+        float dx = p.x - me.x, dy = p.y - me.y, l = std::max(0.01f, std::sqrt(dx * dx + dy * dy));
+        float* f = (float*)in;
+        f[6] = p.x; f[7] = p.y; f[8] = 0; // the contact point
+        f[9] = dx / l; f[10] = dy / l; f[11] = 0; // the normal
+        uint32_t before = g_ko_swallows_blocked;
+        skg::cdecl_call<void>(a_ExecInter, in, 1.f / 30.f);
+        return "swallow " + a[1] + " kind " + std::to_string(in[2]) + (g_ko_swallows_blocked != before ? " blocked" : " run");
+    }
     if (!a.empty() && a[0] == "kill") {
         // one bite of our avatar (DamageCell, hooked: a guest's goes to the host) on the NPC creature
         // with sync key a[1], or on the nearest one. A bitten cell is not hurt again for a moment
@@ -6004,9 +6059,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b,
              "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
-             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u ko_bites_blocked=%u ko_hits_refused=%u\n",
+             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u ko_bites_blocked=%u ko_hits_refused=%u ko_swallows_blocked=%u\n",
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused);
+             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused, g_ko_swallows_blocked);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the part states S+0x34 (13 ints, 0 locked; until BUG-0467 this read 13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;

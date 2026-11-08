@@ -1627,8 +1627,29 @@ void on_member_anims(uint8_t kind, net::Reader& r)
     }
 }
 
+// tests (BUG-0759): `coop.tribe setvel <id> <vx> <vy> <vz> <s>` holds a host member's velocity field (cLocomotiveObject
+// mVelocity) at that value for s seconds, as the game left the chief's in campaign_tc2 (119.7 m/s while it slept)
+struct TestVel {
+    net::Vec3 v;
+    double until;
+};
+static std::unordered_map<void*, TestVel> g_test_vel;
+static void test_vel_tick(double now)
+{
+    for (auto it = g_test_vel.begin(); it != g_test_vel.end();) {
+        if (now > it->second.until || !game::object_alive(it->first)) {
+            it = g_test_vel.erase(it);
+            continue;
+        }
+        auto& f = F<float[3]>(it->first, 0xC0 + 0x1C8);
+        f[0] = it->second.v.x; f[1] = it->second.v.y; f[2] = it->second.v.z;
+        ++it;
+    }
+}
+
 static void host_tick(double now)
 {
+    test_vel_tick(now);
     if (now - g_last_send < 0.12)
         return;
     g_last_send = now;
@@ -1757,6 +1778,30 @@ static void host_tick(double now)
             }
     }
     send_member_anims(now); // BUG-0569
+}
+
+// BUG-0744: a guest's gather order on a loose fruit (cFruit, noun 0x2C9CC91) its game has and the host's has not within
+// 8 m (each game's fruit roll and are recycled their own way, BUG-0472 / BUG-0497) was rejected: the guest's members
+// stood. With the fix the host takes the nearest tree with fruit left (cTreeData +0x48 != 0) within 12 m (the
+// usual gather target, CitizenAction 2), else its own nearest fruit within 15 m, so the order is a gather on both games.
+// `coop.fix tribe.fruit_order off`: rejected (0.7.11).
+static bool g_fruit_order_fix = true;
+COOP_FIX("tribe.fruit_order", "BUG-0744", g_fruit_order_fix,
+         "tribe: a guest's gather order on a fruit the host's game does not have there gathers the host's nearest fruit or fruit tree");
+static uint32_t g_fruit_orders_moved;
+static constexpr uint32_t kFruitNoun = 0x2C9CC91;
+static void* fruit_instead(const net::Vec3& pos)
+{
+    void* best = nullptr;
+    float bd = 12.f;
+    for_each_tree([&](void* t, const net::Vec3& p) {
+        float d = net::dist(p, pos);
+        if (d < bd && F<uint64_t>(t, 0x48) != 0) {
+            bd = d;
+            best = t;
+        }
+    });
+    return best ? best : game::find_object(kFruitNoun, pos, 15.f);
 }
 
 static void* resolve_target(const Target& t)
@@ -1963,6 +2008,13 @@ static void host_command(uint8_t from, net::Reader& r)
     snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
              (unsigned)ids.size(), action, tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z, target);
     g_last_cmd = b;
+    if (kind == CMD_ACTION && !target && g_fruit_order_fix && tgt.kind == 2 && tgt.noun == kFruitNoun && action == 2 &&
+        (target = fruit_instead(tgt.pos))) { // BUG-0744
+        g_fruit_orders_moved++;
+        char m[96];
+        snprintf(m, sizeof m, " (no such fruit here: %s %p instead)", is_tree(target) ? "tree" : "fruit", target);
+        g_last_cmd += m;
+    }
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
         g_cmds_rejected++;
         g_last_cmd += " rejected: no such target here";
@@ -2204,6 +2256,51 @@ static bool save_filter(void* o, uint32_t noun)
     return true;
 }
 
+// BUG-0741: the host's NPC tribe controller (FormTribe 0xCC6440) destroys the tribe spawn marker (cGameplayMarker noun
+// 0x36BE27E, +0x108 == 0x57F09E5E) it formed a tribe at (cGameNounManager::DestroyInstance); a guest's copy of that
+// tribe (make_npc_tribes) never goes through FormTribe, so the guest kept the marker (the detector's unpaired
+// gameplay marker): a guest controller that ever formed tribes (tribe.guest_tribes off, a host handover) could form
+// one on a site already used. With the fix the guest destroys its marker nearest the copy, within 30 m.
+static bool g_marker_fix = true;
+COOP_FIX("tribe.copy_marker", "BUG-0741", g_marker_fix,
+         "tribe: a guest's copy of the host's new NPC tribe uses up the tribe spawn marker there, as the host's controller did");
+static uint32_t g_markers_used;
+static net::Vec3 marker_pos(void* o)
+{
+    const float* q = (const float*)((uint8_t*)o + 0x1A8); // mNounPosition (docs/re/creature.md#creature-gameplay-markers)
+    return {q[0], q[1], q[2]};
+}
+static void use_marker_at(const net::Vec3& at)
+{
+    if (!g_marker_fix)
+        return;
+    struct Best {
+        net::Vec3 at;
+        void* o = nullptr;
+        float d = 30.f;
+    } best{at};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* b = (Best*)u;
+            if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E) {
+                float d = net::dist(marker_pos(o), b->at);
+                if (d < b->d) {
+                    b->d = d;
+                    b->o = o;
+                }
+            }
+            return true;
+        },
+        &best);
+    if (!best.o)
+        return;
+    net::Vec3 mp = marker_pos(best.o);
+    game::destroy_instance(best.o);
+    g_markers_used++;
+    H->log(M, SK_INFO, "tribe: the copy of the host's NPC tribe used up the tribe spawn marker at (%.0f %.0f %.0f), %.1f m off",
+           mp.x, mp.y, mp.z, best.d);
+}
+
 // BUG-0381 (tribe.npc_tribes): a guest makes each host NPC tribe that has no tribe of this game
 // within the mapping's 40 m (guest_state). `p`: the tribe table after the trailer (tag, count,
 // count x kTribeInfo). One try per host tribe every 5 s (an unknown species is asked for first).
@@ -2262,6 +2359,7 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         g_local_tribe_of[i] = t;
         note_ours(g_ours_t, t); // BUG-0495
         g_npc_tribe_made[cell] = t;
+        use_marker_at(hp); // BUG-0741
         net::Vec3 lp = tribe_pos(t);
         H->log(M, SK_INFO,
                "tribe: the host's NPC tribe %u at (%.0f %.0f %.0f) is not in this game: made it (species %08X, archetype %d) at "
@@ -3122,9 +3220,41 @@ static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void
 }
 
 // duet: performances (BT node 0xB46E8803) of both players for the same tribe
+// BUG-0748 (the duet's test): `coop.fix tribe.duet off` leaves the performances to the game alone (the test's twin)
+static bool g_duet_fix = true;
+COOP_FIX("tribe.duet", "BUG-0748", g_duet_fix, "tribe: performances of two players' members for the same village fill its social mini-game faster (the duet)");
+struct Performer {
+    uint16_t id;
+    uint8_t owner;
+    void* target;
+    void* ui;
+    int state;
+};
+static std::vector<Performer> performers()
+{
+    std::vector<Performer> v;
+    void* pt = player_tribe();
+    if (!pt || !a_SessionGet)
+        return v;
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        uint8_t* ai = o < 0xFE ? F<uint8_t*>(c, 0xB4C) : nullptr;
+        if (!ai || IsBadReadPtr(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
+            continue;
+        uint8_t* blk = F<uint8_t*>(ai, 0x600);
+        if (!blk || IsBadReadPtr(blk, 0x1AC))
+            continue;
+        uint8_t* ss = skg::cdecl_call<uint8_t*>(a_SessionGet, F<int>(blk, 0x1A8));
+        if (!ss || IsBadReadPtr(ss, 0xF0))
+            continue;
+        auto h = g_hm.find(c);
+        v.push_back({h == g_hm.end() ? (uint16_t)0 : h->second.id, o, F<void*>(ss, 0xC), F<void*>(ss, 0xE8), F<int>(ss, 4)});
+    }
+    return v;
+}
 static void duet_tick(double now)
 {
-    if (now - g_last_duet < 0.5 || !a_SessionGet)
+    if (!g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet)
         return;
     g_last_duet = now;
     void* pt = player_tribe();
@@ -4562,8 +4692,11 @@ std::string debug(const std::vector<std::string>& a)
         if (!h || !skg::readable(h, 0x160))
             return "no hut there";
         float& hp = F<float>(h, 0x120 + 0x38);
-        char b[96];
-        snprintf(b, sizeof b, "hut %p health %.0f/%.0f", h, hp, F<float>(h, 0x120 + 0x2C));
+        char b[200];
+        // BUG-0761: exact= the health unrounded; state= cCombatant +0x34 (2: dead, set by TakeDamage 0xBFCF10 when the
+        // health goes under 1.5e-5, which posts the death message); last= +0x28 the last attacker (a cCombatant owner)
+        snprintf(b, sizeof b, "hut %p health %.0f/%.0f exact=%.5f state=%d last=%p", h, hp, F<float>(h, 0x120 + 0x2C), hp,
+                 F<int>(h, 0x120 + 0x34), F<void*>(h, 0x120 + 0x28));
         if (a.size() >= 5 && a[4] != "-")
             hp = (float)atof(a[4].c_str());
         return std::string(b) + " -> " + std::to_string((int)hp);
@@ -4672,6 +4805,21 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<void>(a_SetChieftain, tribe, c);
         return "leader=" + std::to_string((int)is_leader(c)) + " tool " + std::to_string(F<int>(c, kHeldToolOff));
     }
+    if (a.size() >= 6 && a[0] == "setvel" && is_host()) { // setvel <id> <vx> <vy> <vz> <s>: tests (BUG-0759), above
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        g_test_vel[c] = {{(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())},
+                         H->time_seconds() + atof(a[5].c_str())};
+        return "velocity held";
+    }
+    if (a.size() >= 3 && a[0] == "sethp" && is_host()) { // sethp <member id> <hp>: tests (BUG-0759), the member's health
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        game::set_health(c, (float)atof(a[2].c_str()));
+        return "hp " + std::to_string(game::health(c));
+    }
     if (a.size() >= 3 && a[0] == "settool" && is_host()) { // settool <member id> <type>: tests (BUG-0583), the game's
         // SetSpecializedTool on the host's member (any tribe's), as when it takes a rack's weapon
         void* c = nullptr;
@@ -4704,6 +4852,83 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel, sel + 1, sel + 1};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 3, u.tool, (void*)nullptr);
         return "grab ordered (ret " + std::to_string(r) + ") " + g_last_cmd;
+    }
+    // fruit <x> <y> <z>: tests (BUG-0744), the selected members' Gather (2) on this game's cFruit nearest the point
+    // (within 3 m), as a right-click on it gives (DoActionForObjects; a guest sends it to the host)
+    if (a.size() >= 4 && a[0] == "fruit") {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        void* f = game::find_object(kFruitNoun, p, 3.f);
+        if (!f)
+            return "no fruit there";
+        std::vector<void*> sel;
+        for (auto& [id, g] : g_gm)
+            if (g.c && F<uint8_t>(g.c, kSelectedOff))
+                sel.push_back((uint8_t*)g.c + 0xC0);
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 2, f, (void*)nullptr);
+        return "gather ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
+    }
+    // unfruit <x> <y> <z> <r>: tests (BUG-0744, host), this game's cFruit within r m of the point destroyed (a fruit
+    // the guest's game still shows there is then on the guest only)
+    if (a.size() >= 5 && a[0] == "unfruit" && is_host()) {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        float r = (float)atof(a[4].c_str());
+        struct Q {
+            net::Vec3 p;
+            float r;
+            std::vector<void*> v;
+        } q{p, r, {}};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 op;
+                if (noun == kFruitNoun && game::object_position(o, op) && net::dist(op, q->p) <= q->r)
+                    q->v.push_back(o);
+                return true;
+            },
+            &q);
+        for (void* f : q.v)
+            game::destroy_instance(f);
+        size_t n = q.v.size();
+        return "destroyed " + std::to_string(n) + " fruit; tribe.fruit_order moved " + std::to_string(g_fruit_orders_moved);
+    }
+    // duet: tests (BUG-0748), the player tribe's members in the social performance node 0xB46E8803 (host): id, owner, the
+    // session's target tribe, its state, the mini-game's progress (ui +0x68)
+    if (!a.empty() && a[0] == "duet") {
+        std::string o;
+        char b[160];
+        for (auto& p : performers()) {
+            float pr = p.ui && !IsBadReadPtr(p.ui, 0x6C) ? F<float>(p.ui, 0x68) : -1.f;
+            snprintf(b, sizeof b, "performer #%u owner=%u target=%p state=%d ui=%p progress=%.3f\n", p.id, p.owner, p.target,
+                     p.state, p.ui, pr);
+            o += b;
+        }
+        return o + "duet fix=" + std::to_string((int)g_duet_fix) + " ticks=" + std::to_string(g_duet_ticks) + "\n";
+    }
+    // act_obj <action> <noun hex> <x> <y> <z>: tests (BUG-0748), the selected members' order on this game's object of
+    // that noun nearest the point (8 m), through DoActionForObjects as a click gives (a guest sends it to the host)
+    if (a.size() >= 6 && a[0] == "act_obj") {
+        int action = atoi(a[1].c_str());
+        uint32_t noun = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        net::Vec3 p{(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
+        void* t = game::find_object(noun, p, 8.f);
+        if (!t)
+            return "no such object there";
+        if (g_fix_act_check && act_needs_object(action) && is_citizen(t))
+            return "action needs a tool or a hut";
+        std::vector<void*> sel;
+        for (auto& [id, g] : g_gm)
+            if (g.c && F<uint8_t>(g.c, kSelectedOff))
+                sel.push_back((uint8_t*)g.c + 0xC0);
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
+        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
     }
     if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
         // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)
@@ -4982,7 +5207,7 @@ std::string debug(const std::vector<std::string>& a)
                 return true;
             },
             &out);
-        return out.empty() ? "no markers" : out;
+        return (out.empty() ? "no markers\n" : out) + "markers_used=" + std::to_string(g_markers_used) + "\n";
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

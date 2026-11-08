@@ -2078,3 +2078,20 @@ the Bite of §3 runs from event type 10, which interaction kind 8 posts.
   own_locks, third digit = `+0x178`).
 * BUG-0589's one guest miss (meat "the same level 3"): if that was d 2, a mouth could only have broken it, never eaten
   it (inferred).
+
+## A knocked-out cell swallowed meat whole (2026-11-08, fix/w46-b1-tribe)
+<a id="cell-ko-swallow"></a>
+
+BUG-0746 (from the static [eat gate](#cell-eat-gate)). GOG 2024, lane 7, `coop_cell_ko_food.py`.
+* ✔ observed (lab 20261108-142803, `coop.fix cell.ko_no_swallow off`): the knockout (`go_down` / `downed_tick`) does
+  not set the avatar's `+0x178` lock, so StartEatSwallow 0xE7E020 accepts interaction kind 10 (meat) of the
+  knocked-out avatar: SwallowWhole 0xE7D880 and FinishEatEvent 0xE7D800 -> OnEat -> AvatarEat run and the meal is
+  counted (+12 on both games for two meat cells). The event takes about a second (the swallow animation 0xC, the
+  callback at a third of it).
+* ✔ The executor 0xE7E7F0 (cdecl void(interaction*, float dt); +0 the eater's pool index, +4 the other's, +8 the kind,
+  +0xC the eater's part, +0x18 the contact point, +0x24 the normal) can be called from the console between steps
+  with a made-up interaction (`coop.pool swallow <key> [kind]`, kind 10 by default): the event is posted and runs in
+  the next steps as from a real contact.
+* Fix `cell.ko_no_swallow`: the executor is hooked; kinds 9 and 10 with our knocked-out avatar as the eater run as
+  kind 1 (the executor's plain contact push, what it does when a swallow refuses). Counted as `ko_swallows_blocked=`
+  in `coop.pool`. A partner's cell and the NPCs swallow as before.
