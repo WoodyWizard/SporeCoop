@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in:
 branch: fix/w46-p4-creature
-commits:
+commits: 53dcb7af
 tests: guest_spot, guest_spot_swap (tools/tests/coop_guest_spot.py)
 signature:
 docs: docs/known-issues.md (Creature: the guest's avatar ~14 m from where it joined)

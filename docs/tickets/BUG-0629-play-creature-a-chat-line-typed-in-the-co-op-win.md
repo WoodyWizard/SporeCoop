@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-p4-creature
-commits:
+commits: d62f210b
 tests: chat_held_send, chat_held_send_oldcheck (tools/tests/coop_chat_held_send.py), play_creature (play_creature.chat_reached)
 signature:
 docs: docs/06-testing.md#testing-chat-held-send
