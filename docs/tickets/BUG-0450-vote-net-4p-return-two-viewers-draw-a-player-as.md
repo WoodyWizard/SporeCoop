@@ -1,16 +1,16 @@
 ---
 id: BUG-0450
 title: vote_net_4p [return]: two viewers draw a player as the species of another player standing next to it
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-01
 source: lab 20261101-223718 vote_net_4p#2
 role: guest
 versions: fix/w37-vote-leaver 324752dc (main f0cefbaa + tests)
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w46-g4-tests
+commits: 26750599
 tests: vote_net_4p, party_rejoin_net (species_view)
 signature:
 docs:
@@ -26,19 +26,21 @@ passed the check. The host's trace has every partner 1-3 m from the host at that
 Similar earlier: feat/w33-tests-session 20261101-153001 party_rejoin_net `[both] Carol draws Dave as 7CF261BB`.
 
 ## Root cause
-Not analysed (outside fix/w37-vote-leaver). Observed: in both wrong pairs the species drawn is the species of
-another player of the party (a swap, not an unknown key). Inferred, not proved: species_view
-(tools/tests/coop_party_rejoin_net.py) takes the puppet NEAREST to where the viewer's sync shows the subject;
-with four players spawned within 1-3 m of each other after the rejoin, the nearest puppet can be another
-player's (a matcher ambiguity), or a puppet was really built with the wrong body. Next step: log each
-puppet's distance to the sample and the second nearest, or match by the puppet's player id (census row).
+Observed (code, G4): species_view took the puppet NEAREST to where the viewer's sync shows the subject; after the
+rejoin the four players stood 1-3 m apart (the host's trace d=1..3) with NEAR 6 m, so the nearest puppet could be
+another player's: both wrong pairs of the report were a swap between players of the party, never an unknown key.
+Inferred: no puppet was built with a wrong body (the matcher's ambiguity); the new matcher would show a wrong body.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The census prints a puppet's player id (census.cpp, `owner=` of a puppet row, via the remote that holds it); species_view
+takes the subject's own puppet by that id and still checks it is drawn within NEAR of where the viewer shows the
+subject (the nearest puppet only for an old build without owner ids). Test change, plus a read-only census field.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the nearest matcher): lab 20261101-223718 vote_net_4p#2 (the report), feat/w33-tests-session 20261101-153001
+party_rejoin_net. PASS 3 of 3 on lane 3: out/lab/20261108-091929 (every viewer draws every other player as its species,
+the puppets matched by player id).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-08 (fix/w46-g4-tests): the matcher takes the subject's puppet by player id (census owner=); vote_net_4p 3 of 3; fixed.
