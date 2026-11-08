@@ -42,6 +42,7 @@ FIXTURE = {'creature': 'creature', 'tribe': 'tribe'}
 STAGE_MODE = {'creature': 'Creature', 'tribe': 'Tribe'}
 EVENTS = ['death', 'editor', 'menu', 'restart', 'rejoin']
 CANCEL = (1380, 1062)  # the red X of the editor (1440x1080 test window), coop_tribe_editor_world.py
+DONE = (1416, 1062)    # the check: Creature editors built like the game's evolution request have no red X (BUG-0720)
 
 
 def mode(con):
@@ -186,6 +187,9 @@ class Session:
                 c.call('move %d %d' % CANCEL)
                 time.sleep(0.5)
                 c.call('click %d %d' % CANCEL)
+                time.sleep(3)
+                if 'Editor' in mode(c):
+                    c.call('click %d %d' % DONE)
             left = True
             time.sleep(10)
         if left:
@@ -229,6 +233,9 @@ class Session:
         self.host.call('move %d %d' % CANCEL)
         time.sleep(0.5)
         self.host.call('click %d %d' % CANCEL)
+        time.sleep(3)
+        if 'Editor' in mode(self.host):
+            self.host.call('click %d %d' % DONE)
         # the host back in the stage, then its world shared again: the guest loads it (BUG-0517 path)
         t0 = time.time()
         while time.time() - t0 < 90 and not self.in_stage(self.host):

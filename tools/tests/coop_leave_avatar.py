@@ -94,7 +94,7 @@ def cell_to_creature(ck, host, guest):
     host.call('click %d %d' % DONE)
     if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote opened it)
         time.sleep(4)
-        guest.call('click %d %d' % CANCEL)
+        guest.call('click %d %d' % DONE)  # the own Creature editor has no red cross since BUG-0720: the check (docs/06-testing.md#testing-own-editor-no-cross)
     ck(wait(lambda: 'Creature' in mode(host), 40), 'the host is back in the Creature stage')
     # the host shares its evolved world a few seconds later: the guest leaves its stage for it
     ck(wait(lambda: stats(guest).get('windows', 0) > s0.get('windows', 0), 90), 'the guest leaves its stage for '
