@@ -12,6 +12,8 @@
   after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ### Fixed
+- The co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) while the host
+  sends its world to a partner (BUG-0754).
 - Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
   (BUG-0752).
 - Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to
