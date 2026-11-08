@@ -4824,3 +4824,19 @@ A/B between builds must use the same lane.
   guest, BUG-0688; FAIL lab 20261107-204522). The first civ_npc test with a turret that fires: the fixture's NPC
   cities have none near a fight, so add them with `addturret` when a test needs turret fire.
 
+
+## State classes: world filter, ids, effect height (2026-11-07, fix/w46-k2a-state)
+<a id="testing-k2a-state"></a>
+
+* `world_gate_vote` (coop_world_gate_vote.py, 6 min, cold): the guest loads a copy of the creature fixture planet
+  under another name WHILE it stays in the session (`coop.worldfix autoload 0`, `coop.load Game9 Otherworld`), sets
+  a species relation of its own (`coop.social record`), the host runs a vote (`coop.vote editor`, `coop.vote go`).
+  Twins: `social.world_gate`, `core.vote_world` (BUG-0703, BUG-0702).
+* `civ_siege_npc` (fixture civ_npc): the game's capture meter through `coop.civ siege <city> <player>`; player 254 is
+  an NPC nation's vehicle (BUG-0704, `civ.siege_players`).
+* `space_friendly` (fixture space): `coop.fleet spawn 2 own` is an escort of the host's empire; the games' hp show
+  the game ignores damage within one empire with or without the filter (BUG-0705).
+* `player_forget` (fixture space, cold): `coop.players held <id>` lists the per-player state the modules keep
+  (player_life.h); nothing after a leave (BUG-0706, `core.player_forget`).
+* `effect_ground` (fixture creature, warm): `coop.effects inject 0 0 0 5 <id> 0 x y z <agl>` feeds a world effect as
+  the host would send it; the 11th argument is the height over the sender's ground (BUG-0608, `effects.ground`).

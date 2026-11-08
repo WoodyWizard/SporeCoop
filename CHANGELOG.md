@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- A guest that plays another world of the host's stage while it stays in the session no longer gets the host's
+  evolution vote screen and editor, and keeps its own species relations (BUG-0702, BUG-0703).
+- Civilization: an NPC nation's army attacking the same city no longer counts as a second player of a joint siege
+  (BUG-0704).
+- A player who joins after another left no longer inherits the departed player's Space star (Jump-to), roster and
+  budget, or the values and designs the host last sent to it (BUG-0706).
+- Hit impacts and other world effects of a partner are played on your own ground where the two games' grounds differ
+  (BUG-0608).
+
 ## [0.7.10.1] - 2026-11-07
 
 ### Fixed
