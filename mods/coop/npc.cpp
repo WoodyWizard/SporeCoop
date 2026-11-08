@@ -1927,8 +1927,10 @@ static void guest_tick(double now)
             // partner's puppet gets the partner's (creature_hp GetMaxHp hook)
             if (g_max_hp_fix && px.max_health > 0 && creature_hp::drive_puppet(px.c, s.health, px.max_health))
                 g_max_hp_applied++;
-            else
+            else {
+                creature_hp::forget_puppet(px.c); // (switched off in a session: the game's own max again)
                 game::set_health(px.c, s.health);
+            }
         }
         if (g_meat_fix && px.killed) { // BUG-0557: what this game's creature ate of the body goes to the host
             float m = body_meat(px.c);
