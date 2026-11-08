@@ -19,6 +19,9 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+// host (BUG-0754): seconds since a world share to this guest was asked for (the save, the transfer and the guest's load
+// follow), a large number when none
+double since_share(uint8_t peer);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
 extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set

@@ -251,6 +251,14 @@ COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's t
 // does not compare while the host's stage ends. Off: compared (0.7.7).
 static bool g_stage_end_fix = true;
 COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
+// BUG-0754: a guest the host shares its world with is not compared for kShareQuiet s after the share was asked for: the
+// host saves (a 0.8 s hitch), the transfer runs and the guest loads the received world. In campaign_ct (lab
+// 20261108-085348-2 #2 of fix/w46-k4-ground) a check of that moment took the host's family members (moved with the
+// host through its save) for 4 NPCs 21-28 m apart, a MISMATCH on both games, and the guest replaced its world 1.3 s
+// later. Off: compared (0.7.10).
+static bool g_share_quiet_fix = true;
+COOP_FIX("diag.share_quiet", "BUG-0754", g_share_quiet_fix, "sync-check: a guest is not compared while the host shares its world with it (the save, the transfer, its load)");
+constexpr double kShareQuiet = 20.0;
 // BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
 // late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
 // matched while the host had left it over 1 s before asking, or over 5 % of the guest's sent band of cells missing that
@@ -535,6 +543,8 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     }
     if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
+    if (g_share_quiet_fix && g_P.since_share && g_P.since_share(from) < kShareQuiet)
+        c.other_place = true; // BUG-0754
     if (!c.other_place && dg::late_streak(g.late_run, c) && g_fix_late_streak) {
         char lb[160];
         snprintf(lb, sizeof lb, "late: %d checks in a row matched only through the late windows (totals %d, cells %d of %d)",
