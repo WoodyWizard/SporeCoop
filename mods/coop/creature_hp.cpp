@@ -517,7 +517,7 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
             say("no puppet or relationship manager\n");
             return 1;
         }
-        struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; std::vector<void*> who; } q{p, rm, {}, 0, {}};
+        struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; std::vector<void*> who; int rel[8]; } q{p, rm, {}, 0, {}, {}};
         Lent l = lend_tuning();
         game::for_each_object(
             [](void* o, uint32_t noun, void* u) {
@@ -533,6 +533,7 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
                 if (!skg::field<void*>(o, 0xE84))
                     return true; // (no tuning: not an animal of the world)
                 int rel = skg::thiscall<int>(g_rel_lo, q->rm, (uint8_t*)o + 0xB28, o, q->p);
+                q->rel[rel >= 0 && rel < 7 ? rel : 7]++;
                 if ((rel == 2 || rel == 5) && skg::field<int>(o, 0xB34) == 1)
                     q->v.push_back({net::dist(game::position(o), game::position(q->p)), o});
                 return true;
@@ -541,7 +542,9 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         give_back(l);
         std::sort(q.v.begin(), q.v.end());
         char b[160];
-        snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u\n", (unsigned)q.v.size(), q.targeting, g_hostile_party_picks);
+        snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u relations 0..6,other: %d %d %d %d %d %d %d %d\n",
+                 (unsigned)q.v.size(), q.targeting, g_hostile_party_picks, q.rel[0], q.rel[1], q.rel[2], q.rel[3], q.rel[4],
+                 q.rel[5], q.rel[6], q.rel[7]);
         std::string s = b;
         for (void* w : q.who) {
             snprintf(b, sizeof b, "  targeting %p\n", w);

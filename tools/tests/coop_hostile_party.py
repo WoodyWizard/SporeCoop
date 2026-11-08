@@ -58,6 +58,7 @@ def main():
         print('  guest:', guest.call(f'coop.npc hit {nid} 0.5')['out'].strip(), flush=True)
         time.sleep(1)
     (n, tg, pk), rows, who = hostiles(host)
+    print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
     print(f'  host: the guest hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
     ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature after its attack')
     best, others = (0, 0, 0), []

@@ -58,6 +58,39 @@ def options(con, kind):
     return re.findall(rf'^{kind} ([0-9A-F]{{8}}) ', con.call('coop.creations list')['out'], re.M)
 
 
+CX = 0x2903A65A  # the test's own cell in the guest's My Creations (a base game cell model)
+
+
+def cell_model():
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import part_substitutes as ps
+    path = os.path.join(lane.game_dir(lane.LANE), 'Data', 'Spore_Content.package')
+    best = None
+    for e in ps.entries(path):
+        if e['type'] == 0x1A99B06B and e['group'] == 0x40616200:
+            d = ps.read(path, e)
+            if best is None or len(d) > len(best):
+                best = d
+    assert best, 'no cell model in Spore_Content.package'
+    return best
+
+
+def restore_with_cell(guest=True):
+    import os
+    from coop_nest_species import fixtures_dir, read_pkg, write_pkg
+    _orig_restore(guest)
+    p = os.path.join(lane.GUEST_DIR, 'EditorSaves.package')
+    base = os.path.join(fixtures_dir(), 'creations-guest.package')
+    recs = [r for r in read_pkg(p if os.path.exists(p) else base) if r[2] != CX]
+    recs.append((0x1A99B06B, 0x40616200, CX, CELL[0]))
+    write_pkg(p, recs)
+
+
+CELL = []
+_orig_restore = twoinst.restore_creations
+
+
 def cell_case(host, guest, ck):
     """the guest's own cell (one the host does not have) reaches the host with a part the host lacks"""
     cur = mine(guest, 'cell')
@@ -118,6 +151,9 @@ def ufo_case(host, guest, ck):
 
 def main():
     kind = sys.argv[1] if len(sys.argv) > 1 else 'cell'
+    if kind == 'cell':
+        CELL[:] = [cell_model()]
+        twoinst.restore_creations = restore_with_cell
     if kind == 'ufo':
         import coop_space_host_ship_design as sd
         sd.MODELS[:] = sd.two_ufo_models()
