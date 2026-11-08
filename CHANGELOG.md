@@ -12,6 +12,8 @@
   after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ### Fixed
+- Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
+  (BUG-0752).
 - Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to
   every player, also to one who joins later (BUG-0740).
 - Space: when both players are on the same planet, the guest now sees the same time of day (sky) as the host (BUG-0712).

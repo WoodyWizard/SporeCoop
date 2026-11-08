@@ -3794,3 +3794,26 @@ BUG-0168. GOG 2024, Ghidra static; checked at runtime by `coop_creature_aggressi
   Before the event the same NPC leaves the guest alone. Its +0xE7C names the puppet before and after (the NPC watches
   the creature next to it): not a sign of the attack by itself.
 * ? Which archetypes' trees hold 0x04A1A1E6 / 0x12E0ECAC (tree data), what sets AI +0x5FC bits 0x408.
+
+## Standing NPC proxies left under the ground after the host's editor (2026-11-08, fix/w46-k4-ground)
+<a id="creature-proxy-ground"></a>
+
+BUG-0752 (campaign_ct on rel/0.7.11 fa4f5df3, the monitor's `proxies` rule, labs 20261108-072547 lane 4 and
+20261108-075905-4 lane 6; passed 20261108-075905 lane 7).
+* ✔ (game logs) Both failures came right after the host's evolution editor (s ~420): the host's world had no NPCs for a
+  moment ("0 in all"), every guest made its proxies again, and 1-2 s later new proxies of a wild herd's species stood
+  0.5-1.3 m under the guest's terrain (`made 1.4-1.7 s ago at 0.00 m over the ground`, "driven": standing), two of them
+  0.5 m apart; one stayed 0.52-0.55 m under for over 70 s (proxy 51 of 072547 on extra2, proxy 56 of 075905-4 on the
+  guest). No partner's puppet near them and no creature.puppet_unground line: not BUG-0683's stacked nest.
+* ✔ The Tribe case of [tribe-proxy-ground](tribe.md#tribe-proxy-ground) (BUG-0399) in the Creature stage: made on the
+  ground, under it seconds later, standing; drive::step's `ground` rule (a standing proxy over 0.25 m under put onto
+  it) was Tribe only.
+* ✔ Not a K4 / K2b / K7 switch: campaign_ct on fa4f5df3 passed 3 of 3 with `SPORE_FIX_OFF=drive.lead_fall` and 3 of 3
+  with every switch on at the same time (lab 20261108-081330-2 lane 7, -081330 lane 6); the proxy smoothing and the
+  late lead do not move a standing proxy (its lead velocity is 0), npc.puppet_tuning / creature.puppet_unground /
+  creature.puppet_scale act on partners' puppets only. ~ Why it showed on rel/0.7.11 and not on rel/0.7.10 is not
+  known (the event needs the herd's two proxies made 0.5 m apart, 2 of 3 runs on lanes 4 / 6, 0 of 6 on 6 / 7).
+* ✔ Negative result: a standing Creature proxy put 0.69 m under without the teleport mark (`coop.npc sink <id> 0.69`) is
+  back on the ground in the next sample (0.25 s), fix on or off (lab 20261108-085102 / -2): the sink does not reproduce
+  it, as in Tribe.
+* Fix `npc.proxy_ground_creature` (npc.cpp): drive::step's `ground` for standing proxies in Creature too.
