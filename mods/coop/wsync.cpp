@@ -1140,7 +1140,7 @@ static void herd_evo_guard()
 // creature attack's start (0xD73930) runs only in the host's game: the record (and marker) it makes at an attacked
 // place far from a village was the host's only. The table is emptied only by the stage modes' enter / exit.
 // Row: key = cell id, v = the record's position and the position the game asked SpotRecord_CellId for (the hook
-// below remembers it; the guest's game asked the same makes the same cell). The guest's apply asks its own game
+// below remembers it; the guest's game asked the same makes the same cell); only records made since the host's load. The guest's apply asks its own game
 // the same (outside the frame: the minimap), or places the marker on a record it has without one, and takes back
 // the markers it made when the host's record is gone (SpotRecord_Release, as the table's clear does).
 static bool g_marker_fix = true;
@@ -1199,19 +1199,22 @@ static uint32_t __cdecl cellid_hook(const float* pos, uint32_t make)
     }
     return id;
 }
+constexpr size_t kMarkerRows = 12;
 static void* spot_marker(uint8_t* rec) { return R(rec, 0x2C) ? F<void*>(rec, 0x28) : nullptr; }
 static bool r_marker(Table& out)
 {
     if (!S("SporeCoop::SpotRecord_Table"))
         return false;
+    // only the records this game made since its load (a guest's load of the host's world carries the older ones: the
+    // share save has them, lab 20261108-063825), at most kMarkerRows: MSG_WSTATE is one unreliable packet for all rows
     for (auto& s : spot_table()) {
-        if (!spot_marker(s.rec) || out.size() >= kMaxN)
+        auto it = g_spot_asked.find(s.id);
+        if (!spot_marker(s.rec) || it == g_spot_asked.end() || out.size() >= kMarkerRows)
             continue;
         Entry e;
         e.key = s.id;
         const float* rp = (const float*)s.rec;
-        auto it = g_spot_asked.find(s.id);
-        Vec3f a = it != g_spot_asked.end() ? it->second : Vec3f{rp[0], rp[1], rp[2]};
+        Vec3f a = it->second;
         e.v[0] = fbits(rp[0]), e.v[1] = fbits(rp[1]), e.v[2] = fbits(rp[2]);
         e.v[3] = fbits(a.x), e.v[4] = fbits(a.y), e.v[5] = fbits(a.z);
         out.push_back(e);
@@ -1305,7 +1308,7 @@ static int s_marker(const Table& want, bool apply)
             queued = true;
         }
     }
-    for (auto it = g_marker_mine.begin(); it != g_marker_mine.end(); ++it) {
+    for (auto it = g_marker_mine.begin(); it != g_marker_mine.end() && want.size() < kMarkerRows; ++it) {
         bool wanted = false;
         for (auto& w : want)
             wanted |= w.key == it->first;
