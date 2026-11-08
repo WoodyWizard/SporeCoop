@@ -315,7 +315,7 @@ static bool g_hostile_party = true;
 COOP_FIX("creature.hostile_party", "BUG-0734", g_hostile_party, "creature: animals hostile to the players' species attack a partner playing its own creature as they attack the host");
 typedef float(__cdecl* HostileCond_t)(void*, void*, void*, void*, void*, void*, void*, void*);
 static HostileCond_t o_HostileCond;
-static uint32_t g_hostile_party_picks;
+static uint32_t g_hostile_party_picks, g_hostile_calls, g_hostile_world_picks;
 // a puppet of the partner's own creature has no archetype tuning (+0xE84): GetRelationship's diet rule then read a
 // null (IsHerbivore 0xC0B8E8, data 0x608, lab 20261108-034334). While the game is asked about the party, each such
 // puppet borrows the avatar's tuning, as in the NPC AI swap (game.cpp h_NPCTickAI).
@@ -346,6 +346,8 @@ static void give_back(const Lent& l)
 static float __cdecl h_HostileCond(void* a1, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
 {
     float r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
+    g_hostile_calls++;
+    g_hostile_world_picks += r != 0.f;
     if (r != 0.f || !g_hostile_party || !g_party_n || g_ps_override || !game::in_creature_stage() ||
         !(C.is_host && C.is_host()))
         return r;
@@ -425,8 +427,9 @@ std::string status()
              (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
              (int)g_own_scale, g_own_scales);
     out += b;
-    snprintf(b, sizeof b, "party rules: hostile_party=%d picks=%u pack_defends=%d defends=%u posts=%u\n", (int)g_hostile_party,
-             g_hostile_party_picks, (int)g_pack_defends, g_defends, g_defend_posts);
+    snprintf(b, sizeof b, "party rules: hostile_party=%d picks=%u (node calls %u, world species picks %u) pack_defends=%d "
+             "defends=%u posts=%u\n", (int)g_hostile_party, g_hostile_party_picks, g_hostile_calls, g_hostile_world_picks,
+             (int)g_pack_defends, g_defends, g_defend_posts);
     out += b;
     return out;
 }

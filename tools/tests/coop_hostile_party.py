@@ -65,6 +65,9 @@ def main():
     print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
     print(f'  host: species of #{nid} {ptr} ({species}) hostile; {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
     ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature (relation 2)')
+    if rows:  # the guest goes next to the nearest one (its senses: tens of metres) and stands
+        _, d, x, y, z = rows[0]
+        print('  guest:', guest.call(f'coop.npc gopos {x} {y} {z}')['out'].strip()[:100], flush=True)
     best, others = (0, 0, 0), []
     t0 = time.time()
     while rows and time.time() - t0 < 40:
