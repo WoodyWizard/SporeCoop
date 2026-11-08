@@ -171,6 +171,7 @@ def creature(ck, host, guest, stage):
     th = check_colors(ck, host, guest)
     # 1. a pick in the lobby's API
     print('  host pink:', host.call('coop.find color pink')['out'].strip(), flush=True)
+    wait(lambda: colors(guest).get(0, (None,))[0] == PALETTE['pink'], 8)
     r = guest.call('coop.find color pink')['out'].strip()
     print('  guest pink:', r, flush=True)
     ck(r.startswith('refused'), "a guest cannot take the host's colour")
@@ -191,9 +192,12 @@ def creature(ck, host, guest, stage):
         time.sleep(2.0)
         r = row_of(guest, 0)
         print(f'  dir {k}: {r and (r["kind"], r["filled"], r["x"], r["y"], r["dist"])}', flush=True)
-        if r and r['kind'] == 'tag' and tag_dir is None:
+        if not r or not 65 < float(r['dist']) < 100:  # the goto found no ground there: not 80 m away
+            continue
+        if r['kind'] == 'tag' and tag_dir is None:  # 3. the host on the guest's screen: the name tag, no arrow
             tag_dir = a
-        if r and r['kind'] == 'arrow' and r['filled'] == '1' and r['walked'] == '0':
+            shot(guest, f'find_{stage}_onscreen.png')
+        if r['kind'] == 'arrow' and r['filled'] == '1' and r['walked'] == '0':
             found = a
             if tag_dir is not None:
                 break
@@ -250,19 +254,7 @@ def creature(ck, host, guest, stage):
     ck(wait(lambda: 0 not in blips(guest), 5), 'all.partner_map off: the host is no longer on the guest\'s minimap')
     host.call('coop.settings set all.partner_map on')
     ck(wait(lambda: 0 in blips(guest), 5), 'all.partner_map on: back')
-    # 3. the host on the guest's screen (a place of the search where it was): a name tag, no arrow
-    hp = avatar(host)
-    tag = None
-    for a in ([tag_dir] if tag_dir is not None else []) + [k * math.pi / 4 for k in range(8)]:
-        guest.call('coop.abilities goto %.3f %.3f %.3f' % at(hp, u, v, a, 40.0 if a != tag_dir else 80.0))
-        time.sleep(2.0)
-        r = row_of(guest, 0)
-        print(f'  on screen try: {r and (r["kind"], r["x"], r["y"], r["dist"])}', flush=True)
-        if r and r['kind'] == 'tag':
-            tag = r
-            break
-    ck(tag is not None, 'the host on the guest\'s screen: no arrow (its name tag shows)')
-    shot(guest, f'find_{stage}_onscreen.png')
+    ck(tag_dir is not None, 'the host on the guest\'s screen 80 m away: no arrow (its name tag shows)')
 
 
 def other(ck, host, guest, stage):
@@ -272,9 +264,13 @@ def other(ck, host, guest, stage):
         guest.call('coop.pool tp 40 0')
         time.sleep(2)
     if stage == 'tribe':
-        # the host's chief 200 m from its village, away from the guest's view
-        print('  host:', host.call('coop.tribe chief_away 200')['out'].strip(), flush=True)
-        time.sleep(3)
+        # the host's chief 150 m from where it stands, in turn in four directions until it is off the guest's view
+        for deg in (0, 90, 180, 270):
+            print('  host:', host.call(f'coop.tribe chief_away 150 {deg}')['out'].strip(), flush=True)
+            time.sleep(3)
+            r = row_of(guest, 0)
+            if r and r['kind'] == 'arrow':
+                break
     time.sleep(2)
     r = row_of(guest, 0)
     me_h = me_of(host)
