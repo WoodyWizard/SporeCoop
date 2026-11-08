@@ -279,6 +279,12 @@ capacity and the world's objects). A "bound" is what keeps co-op counts below th
 | Space | cargo slots | per ship | kept holds, trade | `space.keep_items_slots` (BUG-0679) | none |
 | all | world-effect relay | the mod's 64 live, 40/s | relayed effects | effects.cpp kLiveMax | none |
 
+* ✔ Measured (lane 6, `pool_stress_<stage>`, four players, three in Civ, a rejoin, the guests paused; labs
+  20261108-050903 / -051355 / -051700 / -052001 / -052247): the physics world's pools are used **in Tribe only**
+  (bodies: host 113, guests 644-672 of 4096, 16 %; contacts at most 15 of 2048); in Creature, Civ and Space their count
+  stayed 0 (the physics manager's mode +0x20 is 1 in Tribe, docs/re/tribe.md#tribe-physics-orphan). Cell pools: at
+  most 1137 of 4096 cells (budgets on). World objects at most: Cell 251, Creature 4006 (125 creatures), Tribe 3262
+  (129), Civ 2065 (60), Space 240 (60). No caught fault in any game.
 * Objects made while a guest's simulation stands (its pause menu, an editor, a load): only Cell creates its objects
   in a fixed array that the simulation empties (the broadphase's pending list, BUG-0348). In the other stages the
   mod's objects go into the game's vectors and pools above, which do not wait for a simulation step; the stress
