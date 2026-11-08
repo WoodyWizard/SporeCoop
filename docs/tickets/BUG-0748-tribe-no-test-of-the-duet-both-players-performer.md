@@ -1,20 +1,21 @@
 ---
 id: BUG-0748
 title: Tribe: no test of the duet (both players' performers on one NPC tribe)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in:
+fixed_in: unreleased
 branch: fix/w46-b1-tribe
 commits:
-tests:
+tests: tribe_duet
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-duet-test
 related: BUG-0199
+switch: tribe.duet
 ---
 
 ## Report
@@ -39,34 +40,38 @@ the NPC tribe's relationship (CalculateRelationship(npc, player)) reaching the f
 performer; on the guest the same tribe's state (alliance) from the host. Twin: a switch around duet_tick.
 
 ## Root cause
-A test gap. Attempts on fix/w46-b1-tribe (lane 7, the `tribe` fixture, out/b1tribe/exp_duet.py, 2026-11-08):
-* ✔ The guest member's instrument (blocker 1 of the first attempt) is solved by buying the instruments the game's way:
-  `coop.tribe buy 4 9 60` + `buy_end`, `buy 5 9 300` + `buy_end` on the host, then `coop.tribe grab <id> <tool index>`
-  on the host for the host's and the guest's member: both held their instrument (4 / 5) within 4 s (lab
-  20261108-151615 vs -153517). Tools from `coop.tribe build` or `settool` (the held type only) are not taken.
-* ✘ The social order: CitizenAction 9 (what a social click on another tribe's hut gives, DoActionGeneric 0xCD0C20 case
-  0xE: TribeMission_SetTargetTribe, then DoActionForAllSelected(9, the tribe)) on the NPC tribe, from the host (`order`,
-  and selected + `act_obj`) and from the guest (`act_obj`: its own DoActionForObjects, sent to the host, which takes
-  it: rec=9 with the tribe), with and without the chief, gives the gift group node 0x0462855E (tick 0xDBB7D0: walk to
-  the group spot, carry food bundles, ApplyRelationship 0x530CF06) for ~15 s and then idle nodes; no member ever
-  entered the performance 0xB46E8803 (`coop.tribe duet`: no performer), so duet_tick never had both owners on one
-  target. Labs 20261108-151207, -151615, -152143, -153107, -153517.
-* ✔ (Ghidra) The performance's session is made in the enter of BT node 0xF473F46A (0xDA59A0, the "Social" group of
-  0x18EB4B7, session index into ai+0x600 +0x1A8, then stimulus 0x200000 and, for the members in cTribeUI +0x94..+0x98,
-  stimuli 0x100000 / 0x10000); 0xF473F46A appears only in the BT action table (0x15933EC), its chooser is in the BT
-  data. Which order or UI step enters it was not found.
+A test gap. Found (fix/w46-b1-tribe, lane 7):
+* ✔ The performance is not the social click on a hut (CitizenAction 9 there gives the gift node 0x0462855E, labs
+  20261108-151207 .. -153517) but, in social mode with instrument holders selected, a right-click on a **member** of
+  the village ("Right click on a tribe member to perform for them", the game's hint): **CitizenAction 26** on that
+  member (lab 20261108-161904: `action=26 n=2 obj=... noun=18EB4B7`), and the members go into node 0xB46E8803 within
+  2 s with a session on the village (`coop.tribe duet`), the host's HUD shows the social meter and "Instruments allow
+  you to respond to crowd requests by pressing the matching buttons".
+* ✔ Instruments for both players' members: bought the game's way (`coop.tribe buy` + `buy_end`) and taken by a host
+  GrabTool order (`coop.tribe grab`), also for the guest's member.
+* ✔ A guest's member ordered with 26 (its DoActionForObjects, sent to the host) performs in the host's game for the
+  same session; with the host's performers both owners are on one target and duet_tick adds 0.04 every 0.5 s.
+* ~ The host's right-clicks gave an order only with its chief in the box (161904, 163102); with the instrument member
+  alone they gave none. The guest's right-clicks on the village's members gave walks (its pick hit the ground).
 
 ## Fix
-Not done (no test yet). On the way (fix/w46-b1-tribe): the twin switch `coop.fix tribe.duet off` (duet_tick does
-nothing), `coop.tribe duet` (the performers, their session target, state and the mini-game's progress, ticks=) and
-`coop.tribe act_obj <action> <noun> <x y z>` (the selected members' order on an object, as a click gives).
+The test tribe_duet (coop_tribe_duet.py). Tools on the way: the twin switch `coop.fix tribe.duet off` (duet_tick does
+nothing), `coop.tribe duet` (performers, session target, state, the mini-game's progress, ticks), `coop.tribe act_obj`.
+The duet itself was not changed.
 
 ## Verification
-Open: no test. Next: find what enters node 0xF473F46A (a social click in social mode with the instruments' members
-selected in the host's own UI, by real clicks: play_tribe's Game.social, the HUD's instrument buttons), then the test
-of the recipe with `coop.tribe duet` progress, twin `SPORE_FIX_OFF=tribe.duet`.
+Test tribe_duet (coop_tribe_duet.py, new, cold, ~2 min): instruments bought and grabbed by the host's and the guest's
+member, each player boxes its member (the host's with its chief), social mode, right-click on a member of the NPC
+village (a player whose clicks give no order: its game's DoActionForObjects with 26, printed); in the host's game both
+owners perform for the same village and the mini-game's progress rises over 20 % with nobody playing.
+* FAIL (SPORE_FIX_OFF=tribe.duet): out/lab/20261108-163102-fix-w46-b1-tribe (lane 7): the host's real right-click gave
+  26, #1 / #3 (host) and #2 (guest) perform for the same village, progress 0.00 for 25 s, duet ticks 0.
+* PASS: out/lab/20261108-163746-fix-w46-b1-tribe #1, #2 (lane 7): progress 0.08 a second (0.56 after 7 s), ticks 14.
+  In both the host's box missed its chief and its clicks gave no order: the orders came through DoActionForObjects.
+  Also 20261108-163314 #2 PASS (#1 failed in the test's selection, fixed by box retries / SetSelected).
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-tribe): instruments taken by both players' members (buy + grab); the social order (CitizenAction 9) gives the gift node, never the performance: no test yet; tribe.duet switch, coop.tribe duet / act_obj added.
+- 2026-11-08 (fix/w46-b1-tribe): the performance starts with CitizenAction 26 on a village member (social-mode right-click); test tribe_duet written, FAIL with tribe.duet off, 2 PASS.

@@ -10,6 +10,9 @@
 - Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
   members gather from the nearest fruit tree there (BUG-0744).
 
+### Tests
+- Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
+
 ## [0.7.11] - 2026-11-08
 
 ### Changed

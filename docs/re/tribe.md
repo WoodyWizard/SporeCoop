@@ -2893,3 +2893,10 @@ BUG-0761. GOG 2024, lane 7, `coop_tribe_conquer_orders.py`.
 * (Ghidra, not finished) The conquest's completion is cTribeToTribeMission vt 0x78 0xC2F7F0 (state 5, the goal,
   the cinematic); a probe on it counted ~12 calls a second (it returns at once when the state is already 5), its
   caller was not found.
+* ✔ CORRECTION (2026-11-08, fix/w46-b1-tribe): what starts the performance is found. In social mode with instrument
+  holders selected, a right-click on a **member** of the other village (the game's hint "Right click on a tribe member
+  to perform for them") gives **CitizenAction 26** on that member; the members enter 0xB46E8803 within 2 s, with a
+  session on the village (state 0 -> 1 -> 3/5, without notes it ends at 6 after ~20 s) and the host's HUD shows the
+  social meter. A guest's member ordered with 26 (sent to the host) joins the same session; duet_tick then fills the
+  progress 0.08 a second (labs 20261108-161904, -163746). The host's right-clicks gave the order only with the chief in
+  the selection (2 runs). The "? what enters it" above is answered by this; 26 was listed as "Recruit (social)" in §2.

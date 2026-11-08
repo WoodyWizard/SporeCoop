@@ -5369,7 +5369,7 @@ along and across the host's velocity):
   `state=`, `last=`), not at a printed 0 (0.25-0.5 left stood); stalled raiders get the raid order again. Pitfall: do not
   add a wait between the fall and the cinematic wait, the cinematic (8 s, closed by tribe.conquer_caption) plays 0-4 s
   after the fall.
-* Duet (BUG-0748, no test yet): `coop.tribe duet` (the performers in node 0xB46E8803), `coop.tribe act_obj <action>
+* `tribe_duet` (coop_tribe_duet.py, BUG-0748, cold, ~2 min): social mode, instrument holders, a right-click on a member of the NPC village (CitizenAction 26); `SPORE_FIX_OFF=tribe.duet` fails. Tools: `coop.tribe duet` (the performers in node 0xB46E8803), `coop.tribe act_obj <action>
   <noun> <x y z>`, `coop.fix tribe.duet off`; instruments for both players' members: `coop.tribe buy <type> 9 <deg>` +
   `buy_end` and `grab` on the host (docs/re/tribe.md#tribe-duet-test).
 * Cell: `coop.pool swallow <key> [kind]` (BUG-0746, cell_ko_food).
