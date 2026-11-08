@@ -3863,3 +3863,11 @@ F2 "Find each other" (partners on the game's minimap). GOG 2024 (dc04aee5), Ghid
   v *= height +0x240, x = 0xE0AA60(width +0x23C * u, v) with the row inset table +0x280 (the rounded map). The centre
   is not the avatar every frame: it jumps to the avatar on a recentre (`Minimap_SetCentre` 0xE0C1D0).
 * ✔ Cell has no minimap: no Cell code constructs a cMinimap (the five Minimap_ctor callers above).
+* ✔ (runtime 2026-11-08, feat/w46-partner-arrows, lanes 9/10, lab 20261108-155841 / 20261108-161041) Our blips (key =
+  a static's address in coop.dll) work in Creature and Tribe: `Minimap_FindBlip` reads them back with the tint and the
+  flags we gave; the stored position is the **unit direction** from the planet's centre (MoveBlip / AddBlip normalise
+  it), so a check against a world position compares directions times the radius. In Tribe the blip of a walking chief
+  lags by the 0.25 s update only. The Creature HUD (and its minimap) is hidden while the avatar is in deep water.
+* ✔ (runtime, looks of `find_icons`, the Tribe minimap) icons by flags: 0x2 a small hut (the tribe icon), 0x10 a small
+  arrow-like mark, 0x40 / 0x1 / 0x10000 round dots, 0 a low mound, **0x4 a small pointed (triangle-like) mark**, 0x20 /
+  0x80 a nest / hut, 0x1000 a star-like mark; every one takes the tint. SporeCoop's partner blips use 0x4.

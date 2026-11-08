@@ -36,7 +36,7 @@ arrow), the minimap showed no partner, and players had no colour (name tags gree
   `pfind::draw_arrows` from coop.cpp `find_targets` (Cell / Creature / Space the puppet, Tribe the chief, Civ the
   pointer else the first city); behind the camera the direction comes from the farthest point in front on the way.
 * Minimap: the game's cMinimap blips (RE docs/re/creature.md#creature-minimap), MoveBlip / AddBlip / RemoveBlip every
-  0.25 s outside the frame, the colour as the blip's tint (icon flags 0x2).
+  0.25 s outside the frame, the colour as the blip's tint (icon flags 0x4, a small pointed mark).
 * Settings `all.partner_arrows` (live, off in Rivals) and `all.partner_map` (live). Switches: `find.arrows`,
   `find.colors`, `find.map` (off = the 0.7.11 behaviour).
 

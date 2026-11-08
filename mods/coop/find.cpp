@@ -340,7 +340,7 @@ static std::vector<Target> g_map_targets;
 static uint32_t g_map_mode = 0;
 static void* g_map = nullptr;     // the minimap our blips are on
 static bool g_map_has[256];
-static uint32_t g_map_flags = 0x2; // the icon (the tribe icon, the game tints it)
+static uint32_t g_map_flags = 0x4; // the icon: a small pointed mark the game tints (looks of find_icons, 2026-11-08)
 static double g_map_next = 0;
 static bool g_map_queued = false;
 static uint32_t g_map_adds, g_map_moves, g_map_removes;
