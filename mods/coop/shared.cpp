@@ -185,6 +185,9 @@ static double g_away_change;
 static bool g_away_due;
 static uint32_t g_owed_paid; // tests: owed changes paid into the host's game
 static bool get_now(Res& r, double& v, double now) { return now >= g_block_until && r.get(v); }
+// a guest's own changes go to the host as MSG_RES_ADD; off: kept back (tests only, BUG-0199)
+static bool g_guest_send = true;
+COOP_FIX("res.guest_send", "BUG-0199", g_guest_send, "shared: a guest's own earnings and spendings go to the host");
 // BUG-0696: the shared total (MSG_RES) carried no cause: a guest's money or food jumped and nobody said whose purchase
 // or earning it was. On: the host appends each player's change since its last total (u8 n, {u8 player, f64 change},
 // after the ack list; older guests stop reading before it) and every game shows a notice for another player's change
@@ -362,7 +365,9 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
             continue;
         }
         // guest: whatever changed locally since the last host total is our own earning/spending
-        if (!r.have)
+        // (`coop.fix res.guest_send off`: nothing is sent, the host's next total undoes it: the twin of the
+        // tests of a guest's earning in its own game, e.g. space_store, BUG-0199)
+        if (!r.have || !g_guest_send)
             continue; // wait for the first total from the host
         double d = v - r.synced;
         if (std::fabs(d) > 1e-3) {

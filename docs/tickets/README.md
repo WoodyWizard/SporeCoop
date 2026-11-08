@@ -191,7 +191,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | not-reproduced | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
 | [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | fixed | feature | Creature | 2026-10-23 | 0.7.5 | Creature (guest): the social game is simplified |
 | [BUG-0180](BUG-0180-creature-while-the-host-is-in-the-main-menu-the.md) | fixed | bug | Creature | 2026-10-27 | 0.7.3.2 | Creature: while the host is in the main menu the guest's planet fills up slowly |
-| [BUG-0181](BUG-0181-space-no-test-save-after-the-tutorial-missions.md) | open | test | Space | 2026-10-27 |  | Space: no test save after the tutorial missions |
+| [BUG-0181](BUG-0181-space-no-test-save-after-the-tutorial-missions.md) | fixed | test | Space | 2026-10-27 | unreleased | Space: no test save after the tutorial missions |
 | [BUG-0182](BUG-0182-space-gog-2024-zooming-in-does-not-land-in-the-f.md) | not-reproduced | bug | Space | 2026-10-27 |  | Space (GOG 2024): zooming in does not land in the first minute after a load |
 | [BUG-0183](BUG-0183-co-op-window-only-three-games-on-the-network-are.md) | fixed | bug | Menu | 2026-10-24 | 0.7.3.0 | Co-op window: only three games on the network are listed |
 | [BUG-0184](BUG-0184-galaxy-menu-a-host-that-stopped-answering-right.md) | not-reproduced | freeze | Menu | 2026-10-24 |  | Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once) |
@@ -199,7 +199,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.2 | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | fixed | bug | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the host's capture caption stops everybody's game |
 | [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the NPC AI still spawns vehicles on guests |
-| [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
+| [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | fixed | test | Civ | 2026-10-27 | unreleased | Civilization: no building placement through the city planner in tests |
 | [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | not-reproduced | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |
 | [BUG-0192](BUG-0192-space-rivals-mode-limits-space-rivalry-cpp-2026.md) | open | feature | Space | 2026-10-23 |  | Space rivals mode: limits (space_rivalry.cpp, 2026-10-23) |
@@ -209,7 +209,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0196](BUG-0196-space-trade-open-ends-space-trade-cpp-2026-10-23.md) | open | feature | Space | 2026-10-23 |  | Space trade: open ends (space_trade.cpp, 2026-10-23) |
 | [BUG-0197](BUG-0197-space-allies-what-the-mirror-of-a-partner-s-colo.md) | open | feature | Space | 2026-10-27 |  | Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp) |
 | [BUG-0198](BUG-0198-space-the-galactic-core-finale-open-ends-space-f.md) | open | feature | Space | 2026-10-27 |  | Space: the galactic core finale, open ends (space_finale.cpp) |
-| [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | open | test | All | 2026-10-23 |  | Not covered by tests yet |
+| [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | fixed | test | All | 2026-10-23 | unreleased | Not covered by tests yet |
 | [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
 | [BUG-0202](BUG-0202-making-a-hook-while-another-thread-runs-the-firs.md) | fixed | crash | All | 2026-10-27 | 0.7.3.0 | making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt) |
 | [BUG-0203](BUG-0203-twoinst-monitor-game-log-points-to-a-wrong-folde.md) | duplicate | tooling | All | 2026-10-27 |  | twoinst Monitor.game_log points to a wrong folder when a test runs from a git worktree |
@@ -727,3 +727,9 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0743](BUG-0743-tests-lab-selftest-interrupt-exclusive-free-lane.md) | fixed | test | Tests | 2026-11-08 | unreleased | tests: lab_selftest interrupt_exclusive / free_lane_locked / interrupt_retry fail when the lab runs with SIGINT ignored (a lab started in the background) |
 | [BUG-0744](BUG-0744-tribe-a-guest-s-gather-order-on-a-fruit-cfruit-0.md) | open | desync | Tribe | 2026-11-08 |  | Tribe: a guest's gather order on a fruit (cFruit 0x2C9CC91) the host's game no longer has within 8 m is rejected (a fruit on the guest only, after BUG-0472/0497) |
 | [BUG-0746](BUG-0746-cell-a-knocked-out-carnivore-may-still-swallow-m.md) | open | bug | Cell | 2026-11-08 |  | Cell: a knocked-out carnivore may still swallow meat (cell.ko_no_eat blocks EatFood and chunks, not the meat swallow of interaction kind 10) |
+| [BUG-0745](BUG-0745-tribe-the-healer-bonus-never-fires-the-heal-hook.md) | fixed | bug | Tribe | 2026-11-08 | unreleased | Tribe: the healer bonus never fires, the heal hook reads the maximum health at +0x5D4 (1.0) |
+| [BUG-0747](BUG-0747-space-an-npc-empire-s-store-pays-a-different-pri.md) | open | desync | Space | 2026-11-08 |  | Space: an NPC empire's store pays a different price for the same spice in each game |
+| [BUG-0748](BUG-0748-tribe-no-test-of-the-duet-both-players-performer.md) | open | test | Tribe | 2026-11-08 |  | Tribe: no test of the duet (both players' performers on one NPC tribe) |
+| [BUG-0749](BUG-0749-space-no-test-of-terraforming-with-a-real-tool.md) | open | test | Space | 2026-11-08 |  | Space: no test of terraforming with a real tool |
+| [BUG-0750](BUG-0750-space-no-test-of-an-npc-empire-s-mission-and-its.md) | open | test | Space | 2026-11-08 |  | Space: no test of an NPC empire's mission and its reward on the partner's game |
+| [BUG-0751](BUG-0751-space-no-test-of-a-guest-s-building-bought-in-a.md) | open | test | Space | 2026-11-08 |  | Space: no test of a guest's building bought in a colony's city planner |
