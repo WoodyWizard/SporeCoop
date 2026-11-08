@@ -283,6 +283,7 @@ struct Dialog {
     Win session = nullptr, address = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, ask_btn = nullptr, settings_btn = nullptr;
     Win rask = nullptr, rsend = nullptr, rnosend = nullptr; // a guest asked for its report (F4, BUG-0767)
+    Win rline = nullptr;                                     // the host: the answers while a round runs
     Win row_name[4] = {}, row_color[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
@@ -1007,6 +1008,8 @@ static void build_dialog()
     // sent in the status line
     D.rask = add_label(L, {40, 562, 400, 590}, "", kGold);
     g_named["rask"] = D.rask;
+    D.rline = add_label(L, {450, 562, 720, 590}, "", kYellow);
+    g_named["rline"] = D.rline;
     D.rsend = add_button(L, "rsend", {410, 558, 560, 592}, T("Send", "Отправить"), [] {
         if (A.report_answer)
             A.report_answer(true);
@@ -1298,12 +1301,16 @@ static void refresh_lobby()
     show(D.rnosend, asked);
     if (asked)
         text(D.rask, rq);
-    enable(D.ask_btn, !(A.report_round && A.report_round()));
+    bool round = host && A.report_round && A.report_round();
+    enable(D.ask_btn, !round);
+    show(D.rline, round); // the answers while the round runs ("Reports: 1 of 3 answered"); the status keeps "Report saved"
     std::string rl = host ? (A.report_line ? A.report_line() : "")
                    : asked ? T("Sent: logs, a game summary, screenshots, crash files (paths masked)",
                                "Отправится: логи, сводка, снимки, сбои (пути скрыты)")
                            : rq;
-    if (rl != g_report_seen) {
+    if (round)
+        text(D.rline, rl);
+    else if (rl != g_report_seen) {
         g_report_seen = rl;
         if (!rl.empty())
             set_status(rl, asked ? kWhite : rl.find("refused") != std::string::npos ? kRed : kGreen, asked ? 0 : 60);

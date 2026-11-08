@@ -236,7 +236,6 @@ std::string ask(const std::string& host_zip)
     g_round = std::move(r);
     g_rounds++;
     g_line = "Asking " + std::to_string(g_round->guests.size()) + " player(s) for their reports...";
-    g_ui_line = g_line;
     LOG("session report: round %u: asking %u guests (%s the host's report)", g_round->id, (unsigned)g_round->guests.size(),
         host_zip.empty() ? "without" : "with");
     trace::line("report", "round %u asks %u guests", g_round->id, (unsigned)g_round->guests.size());
@@ -248,13 +247,10 @@ bool round_running() { return g_round != nullptr || g_writing; }
 std::string host_ui_line()
 {
     if (g_round && !g_writing) {
-        int done = 0, sent = 0;
-        for (auto& g : g_round->guests) {
+        int done = 0;
+        for (auto& g : g_round->guests)
             done += final_state(g.st);
-            sent += g.st == State::Sent;
-        }
-        return "Reports: " + std::to_string(done) + " of " + std::to_string(g_round->guests.size()) + " answered, " +
-               std::to_string(sent) + " arrived";
+        return "Reports: " + std::to_string(done) + " of " + std::to_string(g_round->guests.size()) + " answered";
     }
     return g_ui_line;
 }
