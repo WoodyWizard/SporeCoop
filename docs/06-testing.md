@@ -5086,3 +5086,36 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   then each game's own sky (`coop.wsync sky`) every 3 s for 30 s: within 0.1 rad in the last 15 s. BUG-0712;
   `SPORE_FIX_OFF=wsync.space_tod` fails (166.5 deg, lab 20261108-030244), on passes (20261108-030244-2).
 
+## Tests of G4: flaky tests made reliable, missing tests written (2026-11-08, fix/w46-g4-tests)
+<a id="testing-g4-tests"></a>
+
+* creature_brain_hp (BUG-0689): since BUG-0345 a guest plays the world's species in a world it never played its own in;
+  a test that needs the guest's own creature chooses it first (`creations_state.choose_own`, restore at the end), as
+  coop_creations.py does.
+* creature_kills (BUG-0690): the hunted herbivore runs 20-210 m off before it stops; a bot hunts like a player (one
+  click on the animal, then the combat key: the game's walk-and-use, docs/re/creature.md#creature-attack-reach) and
+  until the animal is dead, not for a fixed number of keys. A click before every key cancels the game's walk.
+  KILLS_OLD_HUNT=1 keeps the old loop. The test prints the NPC's hp@distance trail.
+* creature_aggression (BUG-0168): a species is made hostile the way a player does it, by the game's own egg event
+  (`coop.social event <species> 7`, ApplyEvent as the egg node calls it); its adult then bites the guest standing next
+  to it by itself. AGGR_EVENT=none fails. +0xE7C names the creature an NPC watches, not one it attacks.
+* creature_mating (BUG-0177): the mate is the one the drama manager marked (`coop.drama mate`, +0xB58 & 0x10), not any
+  hearted family member; a left click on it starts the mating, the game's editor request goes to the vote about 60 s
+  later (the CRG_LaidEgg cinematic). MATING_CLICK=other fails.
+* The detector ignores gameplay markers (BUG-0489, docs/re/creature.md#creature-gameplay-markers); tools_selftest has
+  the case.
+* The census prints a puppet's player id (`owner=`) and species_view (party_rejoin_net, vote_net_4p) matches a player's
+  puppet by it (BUG-0450), not by the nearest puppet.
+* lab_selftest (BUG-0743): a process started in the background has SIGINT ignored, and so has everything it starts; a
+  self-test that sends Ctrl+C to a child sets the default handler there first. (A lab started that way cannot be
+  stopped with Ctrl+C: use SIGTERM, which the lab handles the same way.) The same holds for any scratch runner: `kill
+  -INT` does nothing to a lab started by a queue script, `kill -TERM` stops it cleanly.
+* puppet_stops (BUG-0742): a stop walk that gets no closer to the partner goes there by gopos, and the walk goes on
+  until it made the stops the check needs (at most WALK_MORE more walks).
+* play_creature (BUG-0618): the pack's bites overlap on purpose (the leader holds its first bite up to 8 s until the
+  partner hunts the same animal and is near); the hunt log names each player's own bites. Keep the last but one word of
+  a hunt_log entry the hit count (main() sums it).
+* play_tribe (BUG-0397, BUG-0531): the host's reject count is read before an order's click; no raid or epic with fewer
+  than 4 own members.
+* campaign_space (BUG-0311, docs/re/civ.md#civ-stage-end): the shortcut takes the last city with Capture's instant
+  flag, as a surrender does; by the cinematic path the end of Civ waits for that city's specialty box.
