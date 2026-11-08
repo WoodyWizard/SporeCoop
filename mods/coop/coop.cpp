@@ -5794,6 +5794,13 @@ void support_init()
         v = local_state().pos;
         return true;
     };
+    p.partner_states = [] { // BUG-0758
+        std::vector<support::Probe::StatePos> v;
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo && !r.buf.empty())
+                v.push_back({id, r.buf.latest().time_ms, r.buf.latest().pos});
+        return v;
+    };
     p.mode = [] { return g_mode; };
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };
