@@ -4840,3 +4840,13 @@ A/B between builds must use the same lane.
   (player_life.h); nothing after a leave (BUG-0706, `core.player_forget`).
 * `effect_ground` (fixture creature, warm): `coop.effects inject 0 0 0 5 <id> 0 x y z <agl>` feeds a world effect as
   the host would send it; the 11th argument is the height over the sender's ground (BUG-0608, `effects.ground`).
+* `space_own_save` (fixture space, cold): the guest leaves, loads a copy of the fixture slot under another planet name
+  (Otherspace) and joins again; `coop.res add money` on both sides (BUG-0709, `res.space_save`).
+* `npc_max_hp` (fixture creature): four worlddiff comparisons, no `max_hp` row (BUG-0710, `npc.max_health`). The
+  switch must be off from the start of a run's first states: drive_puppet's stored max stays until the entry is
+  forgotten (the off side forgets it at the next state).
+* Part B of K2a (fix/w46-k2a-state-b): `res_away` / `res_away_tribe` (`coop.res block <s>`: the host's resource reads
+  as unavailable; `coop.res away <s> <res> <delta>`: the guest's tick sees an editor's mode, then buys), `civ_away_buy`
+  (the host's real main menu and reload), `space_reward_away` / `space_contract_clock` (`coop.space away`,
+  `coop.space contracts result`), `res_cause`, `space_partner_hp` (`coop.puppet hp`), `species_table`,
+  `creature_stun_proxy`, `tribe_member_age` (BUG-0691..0700).
