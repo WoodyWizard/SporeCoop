@@ -19,6 +19,7 @@
 #include "savestrip.h"
 #include "space_ext.h"
 #include "stage_epoch.h"
+#include "net/held_cmds.h"
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
@@ -3677,12 +3678,38 @@ static void frame_tool_run()
     H->log(M, SK_INFO, "tribe: tests: frametool made %p", tool);
 }
 
+// BUG-0693: a guest's command (an order, a baby bought, a gift) that reaches a host out of the Tribe mode (an editor, a
+// menu, a load) is held and run when the host is back in the same Tribe world (net/held_cmds.h). Off: dropped (0.7.10).
+static bool g_cmd_hold_fix = true;
+COOP_FIX("tribe.cmd_hold", "BUG-0693", g_cmd_hold_fix,
+         "tribe: a guest's command made while the host is in an editor or a menu runs when the host is back");
+static net::HeldCommands g_cmd_held;
+PLAYER_STATE("tribe.held_cmds", [](uint8_t id) { g_cmd_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& c : g_cmd_held.q)
+                     n += c.from == id;
+                 return n;
+             });
+static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
+
 void tick(double now)
 {
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
     if (!active())
         return;
+    g_cmd_world = modes::current_world();
+    static double active_at, active_since;
+    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
+        active_since = now;
+    active_at = now;
+    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle && game::mode_id() == modes::kTribe) // BUG-0693
+        g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
+            net::Reader r(c.bytes.data(), c.bytes.size());
+            H->log(M, SK_INFO, "tribe: a command of player %u held while away runs now", c.from);
+            host_command(c.from, r);
+        });
     drop_foreign_selection();
     if (is_host())
         host_tick(now);
@@ -3706,6 +3733,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         guest_state(r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && game::mode_id() == modes::kTribe)
         host_command(from, r);
+    else if (type == net::MSG_TRIBE_CMD && is_host() && g_cmd_hold_fix && r.left()) { // BUG-0693: run when back
+        g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
+        H->log(M, SK_INFO, "tribe: a command of player %u held: this game is not in Tribe (mode %08X)", from, game::mode_id());
+    }
 }
 
 // BUG-0217: forget the co-op mechanics' pointers of a world that is gone (no game call: the
@@ -3766,6 +3797,7 @@ void before_save()
 
 void on_session_end()
 {
+    g_cmd_held.clear(); // BUG-0693
     for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
         if (game::object_alive(c))
             restore_body_tribe(c, t);
@@ -4694,11 +4726,11 @@ std::string debug(const std::vector<std::string>& a)
             F<int>(hud, 0x10) = thiscall<int>(a_MaxPop, pt);
         return "level " + std::to_string(lv);
     }
-    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
+    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n> [age]: test setup, n more adults (age 0: babies)
         void* pt = player_tribe();
-        int n = 0;
+        int n = 0, age = a.size() >= 3 ? atoi(a[2].c_str()) : 1; // BUG-0700: babies grow up in the host's game
         for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 40; i++) {
-            void* c = spawn_member(pt, 1);
+            void* c = spawn_member(pt, age);
             if (!c)
                 break;
             n++;

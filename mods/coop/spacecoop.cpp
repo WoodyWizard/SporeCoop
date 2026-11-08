@@ -1182,12 +1182,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
         void* inv = inventory();
-        int got = 0;
+        int got = 0, owed = 0;
         for (int i = 0; i < n && r.ok(); i++) {
             Key k;
             for (auto& v : k.v)
                 v = r.u32();
-            if (!inv || !a_AddItemByKey || !r.ok())
+            if (!r.ok())
+                continue;
+            if ((!inv || !in_space()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) { // BUG-0694
+                owed++;
+                continue;
+            }
+            if (!inv || !a_AddItemByKey)
                 continue;
             if (vcall<bool>(inv, 0x74 / 4, k.v)) // HasTool: no second copy
                 continue;
@@ -1197,7 +1203,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_tools_got += got;
         if (C.notice)
             C.notice(name(origin) + " completed a mission" +
-                     (got ? ": you get its reward tools too (" + std::to_string(got) + ")" : ""));
+                     (got ? ": you get its reward tools too (" + std::to_string(got) + ")" : "") +
+                     (owed ? ": its reward tools (" + std::to_string(owed) + ") are yours when you are back in space" : ""));
         break;
     }
     case K_TERRA: {

@@ -37,3 +37,4 @@ Source: docs/generalisation-plan.md G2.
 ## History
 - 2026-11-01: opened.
 - 2026-11-03: fix/w40-scale: the replicated-field engine (mods/coop/fields.h, docs/sync-architecture-plan.md#sync-fields) with the first kinds: NPC proxies and tribe members (scale), BUG-0461 / BUG-0475; NpcSpawn.scale is applied now.
+- 2026-11-07 (fix/w46-k2a-state-b, K2a of 0.7.11): the uncovered siblings became BUG-0697, BUG-0698, BUG-0699, BUG-0700 (Space partner ship health, the state field table, the species table cadence, the NPC stun on proxies; member age not a bug); all fixed (unreleased) with FAIL / PASS runs. Umbrella left open for the orchestrator.

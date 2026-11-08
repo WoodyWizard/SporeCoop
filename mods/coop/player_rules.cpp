@@ -31,6 +31,7 @@ enum Kind : uint8_t {
     K_PUT = 6,         // any -> host -> others {u8 player, u32 noun, vec3 pos}: where it came to rest in the thrower's game
     K_SPIT_PLAYER = 7, // host -> guest {u8 player, f32 seconds}: an NPC's spit hit the guest's puppet (BUG-0641)
     K_SPIT_NPC = 8,    // guest -> host {u16 npc id, f32 seconds}: the guest's spit hit a host NPC's mirror (BUG-0641)
+    K_STUN_PROXY = 9,  // host -> guests {u16 npc id, f32 seconds}: the host's game stunned its NPC (BUG-0700)
 };
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -54,6 +55,12 @@ typedef void(SK_THISCALL* Stun_t)(void*, float);
 static Stun_t o_Stun;
 static uint32_t g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad;
 static float g_stun_last;
+// BUG-0700 (class BUG-0419): a host NPC's stun (a charge's, anybody's) stayed in the host's game: the guests' proxies of
+// it showed no stun (the stimulus 0x1000 and its stars). On: the host sends it, each guest's game stuns its proxy with
+// the game's own CreatureStun. Off: not sent (0.7.10).
+static bool g_stun_proxy_fix = true;
+COOP_FIX("creature.stun_proxy", "BUG-0700", g_stun_proxy_fix, "creature: an NPC stunned in the host's game is stunned on the guests' screens too");
+static uint32_t g_stun_sent_proxy, g_stun_got_proxy;
 
 static uint8_t puppet_player(void* c)
 {
@@ -81,6 +88,15 @@ static void SK_THISCALL h_Stun(void* c, float secs)
                 g_stun_sent_player++;
                 g_stun_last = secs;
                 return;
+            }
+            int nid = g_stun_proxy_fix ? npc::host_id(c) : -1;
+            if (nid >= 0) { // BUG-0700: the guests' proxies of this NPC show it too
+                net::Writer w;
+                w.u8(K_STUN_PROXY);
+                w.u16((uint16_t)nid);
+                w.f32(secs);
+                C.sess->broadcast_reliable(net::MSG_PLAYER_RULE, w);
+                g_stun_sent_proxy++;
             }
         } else if (is_guest()) {
             uint16_t id = npc::is_proxy(c) ? npc::id_of(c) : 0xFFFF;
@@ -1024,6 +1040,28 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         o_Stun(c, secs);
         g_stun_got_npc++;
         g_stun_last = secs;
+        if (g_stun_proxy_fix) { // BUG-0700: every guest's proxy of it, the stunning guest's too
+            net::Writer w;
+            w.u8(K_STUN_PROXY);
+            w.u16(id);
+            w.f32(secs);
+            C.sess->broadcast_reliable(net::MSG_PLAYER_RULE, w);
+            g_stun_sent_proxy++;
+        }
+    } else if (kind == K_STUN_PROXY) { // BUG-0700
+        uint16_t id = r.u16();
+        float secs = r.f32();
+        if (!r.ok() || from != 0 || !is_guest())
+            return;
+        if (!std::isfinite(secs) || secs <= 0 || secs > 30) {
+            g_stun_bad++;
+            return;
+        }
+        void* c = npc::proxy(id);
+        if (!o_Stun || !c || !game::in_creature_stage() || game::is_dead(c))
+            return;
+        o_Stun(c, secs); // the game's own stun (not the hook: nothing goes back to the host)
+        g_stun_got_proxy++;
     } else if (kind == K_SPIT_PLAYER || kind == K_SPIT_NPC) { // BUG-0641
         bool to_player = kind == K_SPIT_PLAYER;
         uint8_t p = to_player ? r.u8() : 0;
@@ -1067,9 +1105,10 @@ std::string status()
 {
     char b[256];
     snprintf(b, sizeof b,
-             "player_rules: stun fix=%d sent_player=%u sent_npc=%u got_player=%u got_npc=%u bad=%u last=%.2f hook=%d\n",
+             "player_rules: stun fix=%d sent_player=%u sent_npc=%u got_player=%u got_npc=%u bad=%u last=%.2f hook=%d "
+             "sent_proxy=%u got_proxy=%u\n",
              (int)g_stun_fix, g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad,
-             g_stun_last, (int)(o_Stun != nullptr));
+             g_stun_last, (int)(o_Stun != nullptr), g_stun_sent_proxy, g_stun_got_proxy);
     std::string out = b;
     snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u guest_dropped=%u hook=%d\n", (int)g_air_fix,
              g_air_dropped, g_air_passed, g_air_dropped_guest, (int)(o_AttackTarget != nullptr));

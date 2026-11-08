@@ -52,6 +52,7 @@ struct Row {
     uint32_t noun = 0;
     uint32_t serial = 0;
     float scale = -1;
+    float max_hp = -1; // BUG-0698: creatures' max health (the detector's max_hp row); -1 none
 };
 
 struct Ctx {

@@ -103,7 +103,14 @@ static uint32_t g_table_rx = 0, g_table_fixed = 0, g_table_tx = 0;
 static bool g_world_fix = true;
 COOP_FIX("social.world_gate", "BUG-0420", g_world_fix, "creature: a guest in another world keeps its own species relations");
 static uint32_t g_table_forgot = 0;
+static double g_table_rx_at = 0; // BUG-0699 diagnostics: when the host's last table came
 
+// BUG-0699: the host looked at its species table once a second: a kill, an impression or an alliance reached the
+// guests 1-1.5 s later (the detector's species_relation / species_killed rows, found again 1.5 s after its first look).
+// On: every 0.25 s (the table is sent only when it changed). Off: once a second (0.7.10).
+static bool g_table_fast_fix = true;
+COOP_FIX("social.table_fast", "BUG-0699", g_table_fast_fix,
+         "creature: a change of the species relations (a kill, an alliance) reaches the guests within a third of a second");
 static void send_table(const std::vector<SpeciesRec>& t, int to)
 {
     net::Writer w;
@@ -203,6 +210,10 @@ static void enforce_table()
         if (!rec)
             continue;
         if ((int32_t)rec[0] != r.relation || rec[1] != r.x || rec[2] != r.impressed || rec[3] != r.killed) {
+            if (g_table_fixed < 400) // BUG-0699 diagnostics: when a guest's record took the host's values
+                H->log(M, SK_INFO, "social: species %08X: relation %d -> %d, impressed %u -> %u, killed %u -> %u from the "
+                       "host's table (%.1f s old)", r.key[0], (int32_t)rec[0], r.relation, rec[2], r.impressed, rec[3],
+                       r.killed, H->time_seconds() - g_table_rx_at);
             rec[0] = (uint32_t)r.relation;
             rec[1] = r.x;
             rec[2] = r.impressed;
@@ -1012,7 +1023,7 @@ void tick(double now)
         host_prompt_tick(now);
     if (is_host()) {
         static double last = 0;
-        if (now - last < 1.0)
+        if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
         auto t = read_table();
@@ -1073,6 +1084,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_host_table = std::move(t);
         g_have_table = true;
         g_table_rx++;
+        g_table_rx_at = H->time_seconds();
         if (game::in_creature_stage() && game::avatar()) {
             enforce_table();
             herds_follow_table();

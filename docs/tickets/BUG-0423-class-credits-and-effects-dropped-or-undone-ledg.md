@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G6.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-07 (fix/w46-k2a-state-b, K2a of 0.7.11): the uncovered siblings became BUG-0691, BUG-0692, BUG-0693, BUG-0694, BUG-0695, BUG-0696 (owed shared credits, the sync state over an editor visit, held guest commands, owed Space rewards, the contract clock, the cause of a total); all fixed (unreleased) with FAIL / PASS runs. Umbrella left open for the orchestrator.
