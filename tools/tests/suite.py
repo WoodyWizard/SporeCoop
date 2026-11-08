@@ -275,6 +275,7 @@ add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixtur
 add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('window_input', P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713 (class BUG-0429): F9 pressed while another program has the focus does not toggle the co-op window on the host or the guest, F9 on the game window does (SPORE_FIX_OFF=input.window fails)
+add('window_input_lowfps', 'SPORE_FPS=8 ' + P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713: window_input with both games at 8 fps (a tap shorter than a frame is still one press)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
 add('space_own_save', P + 'coop_space_own_save.py', minutes=6, fixture='space')  # a guest in a Space save of its own keeps its own money (BUG-0709; SPORE_FIX_OFF=res.space_save fails)
 add('effect_ground', P + 'coop_effect_ground.py', warm=True, minutes=3, fixture='creature')  # a relayed world effect at its height over the receiver's ground (BUG-0608; SPORE_FIX_OFF=effects.ground fails)

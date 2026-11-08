@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- All stages: F9 pressed in another program (a browser, a chat client) no longer shows or hides the co-op window;
+  the social digits and the marker that shows partners where you point read only the game window too (BUG-0713).
 - Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer
   run on the old way through a latency spike when they turn or stop meanwhile (members were shown up to 8-9 m off,
   animals jumped, a ship's copy flew 11 m past where it had stopped) (BUG-0674).

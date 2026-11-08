@@ -5024,3 +5024,11 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
   (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
   record of its own earlier session passes `start(..., keep_holds=True)`.
+
+## A key pressed in another program (2026-11-08, fix/w46-k2b-content)
+<a id="testing-key-elsewhere"></a>
+
+SporeKit `key <vk|name> elsewhere` holds the physical key state (GetAsyncKeyState / GetKeyState) down for 3 frames and
+posts nothing to the game window: what the game sees while another program has the focus. Test `window_input`
+(BUG-0713, docs/08-ui.md#ui-window-input). Background mode hooks GetForegroundWindow to the game window, so a test can
+not take the focus away for real.
