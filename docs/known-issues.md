@@ -344,6 +344,9 @@ anchor so other docs can link to it:
   during the menu intro".
 * 2026-10-28 (fix/w1-core, lane 2): 3 of 3 more runs passed with the click during the intro: not
   reproduced.
+* 2026-11-08 (fix/w46-n1-crashes, 0.7.11 N1): the Escape candidate is disproved (menu_escape: Escape with no intro and
+  at its start, "Co-op" clicked 0-7 s into the menu's own intro: the frames go on, the window opens); coop_ui.py 3 of
+  3 with the click during the intro. Closed as not-reproduced.
 * Ticket: BUG-0184.
 * 2026-10-30 (fix/w13-net, lane 10): 3 of 3 passed, but the intro was not playing at the click in
   any of them (path not exercised). Candidate (not verified): the posted Escape reaching the menu
