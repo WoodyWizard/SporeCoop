@@ -95,6 +95,13 @@ def blips(con):
     return t
 
 
+def map_off(b, real):
+    """metres between a blip (the game's map stores a unit direction from the planet's centre) and a real position"""
+    r = math.sqrt(sum(x * x for x in real))
+    bl = math.sqrt(sum(x * x for x in b)) or 1.0
+    return math.dist(tuple(x / bl for x in b), tuple(x / r for x in real)) * r
+
+
 def avatar(con):
     m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
     return tuple(float(m.group(i)) for i in (1, 2, 3)) if m else None
@@ -231,9 +238,9 @@ def creature(ck, host, guest, stage):
     real_h, real_g = avatar(host), avatar(guest)
     print(f'  guest map: {gb}  host real {real_h}', flush=True)
     print(f'  host map: {hb}  guest real {real_g}', flush=True)
-    ck(0 in gb and math.dist(gb[0][0], real_h) < 4 and gb[0][1] == colors(guest)[0][1],
+    ck(0 in gb and map_off(gb[0][0], real_h) < 4 and gb[0][1] == colors(guest)[0][1],
        "the guest's minimap has the host at its real position, in its colour")
-    ck(1 in hb and math.dist(hb[1][0], real_g) < 4 and hb[1][1] == colors(host)[1][1],
+    ck(1 in hb and map_off(hb[1][0], real_g) < 4 and hb[1][1] == colors(host)[1][1],
        "the host's minimap has the guest at its real position, in its colour")
     shot(guest, f'find_{stage}_map.png')
     host.call('coop.settings set all.partner_map off')
@@ -261,8 +268,8 @@ def other(ck, host, guest, stage):
         guest.call('coop.pool tp 40 0')
         time.sleep(2)
     if stage == 'tribe':
-        # the host's chief 70 m from its village, away from the guest's view
-        print('  host:', host.call('coop.tribe chief_away 70')['out'].strip(), flush=True)
+        # the host's chief 200 m from its village, away from the guest's view
+        print('  host:', host.call('coop.tribe chief_away 200')['out'].strip(), flush=True)
         time.sleep(3)
     time.sleep(2)
     r = row_of(guest, 0)
@@ -286,7 +293,7 @@ def other(ck, host, guest, stage):
         time.sleep(1.0)
         gb = blips(guest)
         print(f'  guest map: {gb}', flush=True)
-        ck(0 in gb and me_h and math.dist(gb[0][0], me_h) < 6, "tribe: the guest's minimap has the host's chief at its position")
+        ck(0 in gb and me_h and map_off(gb[0][0], me_h) < 6, "tribe: the guest's minimap has the host's chief at its position")
 
 
 def main():
