@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: when both players are on the same planet, the guest now sees the same time of day (sky) as the host (BUG-0712).
 - Creature: the eggs your family lays in your own nest are now there for every player, not only for the host (BUG-0660).
 - Tribe: food a tribe member was carrying when it died now lies on the ground for every player, instead of
   staying in the hand of that member's copy on the other players' screens (BUG-0661).

@@ -5079,3 +5079,10 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
   (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
   record of its own earlier session passes `start(..., keep_holds=True)`.
+## The sky on a Space planet: space_sky (2026-11-08, fix/w46-k8-open)
+<a id="testing-space-sky"></a>
+
+* `coop_space_sky.py` (suite `space_sky`, ~2.5 min, space_empire): both players land on the colony planet 01460035,
+  then each game's own sky (`coop.wsync sky`) every 3 s for 30 s: within 0.1 rad in the last 15 s. BUG-0712;
+  `SPORE_FIX_OFF=wsync.space_tod` fails (166.5 deg, lab 20261108-030244), on passes (20261108-030244-2).
+

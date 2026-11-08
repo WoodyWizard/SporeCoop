@@ -2429,3 +2429,13 @@ BUG-0679, after [the kept hold](#space-kept-hold). GOG 2024 addresses (dc04aee5)
   trade forget`).
 * Not covered: a guest that joins under another name, or plays the same host world from another PC (the record is
   per profile; the host's kept copy still helps while the host runs).
+## The sky of a planet between the players (2026-11-08, fix/w46-k8-open)
+<a id="space-planet-sky"></a>
+
+BUG-0712. GOG 2024, lanes 4 / 5.
+
+* ✔ (runtime) on a Space planet each game has its own time of day object (TimeOfDay_GetObject, the orientation at
+  +0x10, as in the other stages); on space_empire's colony planet the two games' skies stood 166.5 deg apart and did
+  not move in 30 s. wsync's sky row (SetOrientation + TimeOfDay_Apply) applied on a guest in Space brings it to the
+  host's within a second (`wsync.space_tod`, only while both are on that planet).
+
