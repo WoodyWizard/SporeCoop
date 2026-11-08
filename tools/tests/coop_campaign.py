@@ -866,6 +866,7 @@ class Campaign:
         kicks = {'cell': self.kick_cell, 'creature': self.kick_creature, 'tribe': self.kick_tribe,
                  'civ': self.kick_civ}[stage]
         state = {'n': 0, 'last': 0.0}
+        reached = False  # BUG-0739: the host's own reload after Creature -> Tribe (BUG-0332) passes the menu a few s later
         log0 = self.log_size(self.host.inst)
         services = [Service(self, p) for p in self.P]
         for s in services:
@@ -874,6 +875,7 @@ class Campaign:
             while time.time() - t0 < timeout and not self.dead:
                 hst = cl.stage_of(self.host.call('game.mode'))
                 if hst == nxt:
+                    reached = True
                     break
                 busy = 'movie=1' in self.host.call('coop.status') or self.vote_open() or hst is None
                 if not busy and time.time() - state['last'] > 25:
@@ -890,7 +892,7 @@ class Campaign:
             for s in services:
                 s.join(30)
         took = time.time() - t0
-        if cl.stage_of(self.host.call('game.mode')) != nxt:
+        if not reached and cl.stage_of(self.host.call('game.mode')) != nxt:
             self.note(f'the host did not reach {nxt} in {took / 60:.1f} min')
             self.vote_check(log0, t0)
             return False
