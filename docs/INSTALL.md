@@ -18,14 +18,15 @@ others; your saves and creations are not touched.
 
 | | |
 |---|---|
-| Game | **Spore + Galactic Adventures**; tested with the **SPORE Collection from GOG** (2016 and 2024 builds, see section 2). The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
+| Game | **Spore + Galactic Adventures**; the current **GOG** download (2024 update) or **Steam**, see section 2. The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
 | System | Windows 10/11, or Linux with Wine 9+ (Bottles, Lutris, plain Wine; Proton works if the game runs from a GOG install). |
 | Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
 | Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
 
-The mod is tested with the GOG builds (2016 on Linux, 2024 on Windows 11): the full list is in
-[section 2](#where-sporecoop-has-been-tested). Other builds (Steam, EA app, disc) have not been
-tested yet; if you try one, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
+Supported: the current GOG build (the 2024 update) and Steam, on Windows and Linux; the GOG 2016
+build is no longer supported since 0.7.8, the EA app and disc versions are not supported. Details:
+[compatibility details](#compatibility-details), every test: [section 2](#where-sporecoop-has-been-tested).
+If you try another build, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
 result and `mods\logs\sporekit.log` helps.
 
 ## 2. Check your game build
@@ -60,6 +61,39 @@ Since 0.6.2 an exe that differs from one of these only in the PE header, the res
 signature (the same code and data at the same addresses: the same `code_sha256`, see
 `tools/exe_info.py`) uses that build's addresses, and counts as that build for joining. The log
 then says "its code is the same as build ...".
+
+### Compatibility details
+
+SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where it has been tested:
+
+| Game version | `SporeApp.exe` | Windows 11 | Linux (Wine / Proton) |
+|---|---|---|---|
+| **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
+| **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
+| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❌ no longer supported since 0.7.8 ² | ❌ no longer supported since 0.7.8 ² |
+| EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
+
+¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
+[issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
+frames from the game loop; tested by simulating that case, not yet with the real overlay.
+² **GOG 2016 is no longer supported since 0.7.8** (2026-11-05): update the game through GOG (the current
+download is the 2024 build; Steam is the same game). The mod still starts on GOG 2016, but it is not
+tested there any more and its bugs are not fixed. Since 0.7.2.2 new fixes get game addresses for
+the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
+up after a death, the pack, Cell bites, meat and spin, NPC nations' vehicles on a guest's game, our
+creatures kept out of saves); the other fixes work there too. The full list, checked by the build:
+[data/symbols/frozen_off_922af7c7.txt](../data/symbols/frozen_off_922af7c7.txt).
+
+**Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
+2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
+needs the same SporeCoop protocol: every 0.7 version plays with every other, 0.6.x cannot join 0.7.
+With an older 0.7 version (0.7.2.x, 0.7.3.0) on one side, chat lines above about 1160 bytes arrive
+cut and the Creature species table of a planet with 42 or more species does not reach that player;
+the game names that player in a notification. Update everybody to the latest version.
+
+**Not tested yet:** two PCs over the internet with Windows on 0.7 (the network code is the same
+as on Linux, where it was tested), the EA app and disc versions. Tried another version? Please
+tell us in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with `mods\logs\sporekit.log`.
 
 ### Where SporeCoop has been tested
 

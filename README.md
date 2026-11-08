@@ -2,39 +2,70 @@
   <img src="docs/media/banner.svg" alt="SporeCoop - play every stage of Spore together" width="100%">
 </p>
 
+<p align="center"><b>Play every stage of Spore together: two to four friends, one world, from the tide pool to the galaxy.</b></p>
+
 <p align="center">
-  <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?label=download&color=8ea6ff" alt="Latest release"></a>
+  <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?style=for-the-badge&label=Download%20SporeCoop&color=2fd6b5&labelColor=1a1240&logo=github&logoColor=white" alt="Download SporeCoop (latest release)" height="40"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml"><img src="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-74c867" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/game-Spore%20GA%20(GOG%20%7C%20Steam)-f0b44a" alt="Spore Galactic Adventures (GOG | Steam)">
-  <img src="https://img.shields.io/badge/OS-Windows%20%7C%20Linux-5aa9e6" alt="Windows | Linux">
-  <img src="https://img.shields.io/badge/players-2%E2%80%934-ff7a5f" alt="2–4 players">
-  <a href="https://discord.gg/7Yre7u4b8x"><img src="https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2fd6b5?labelColor=1a1240" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/game-Spore%20GA%20(GOG%20%7C%20Steam)-ff9a3c?labelColor=1a1240" alt="Spore Galactic Adventures (GOG | Steam)">
+  <img src="https://img.shields.io/badge/OS-Windows%20%7C%20Linux-8f7bff?labelColor=1a1240" alt="Windows | Linux">
+  <img src="https://img.shields.io/badge/players-2--4-ff9a3c?labelColor=1a1240" alt="2-4 players">
+  <a href="https://discord.gg/7Yre7u4b8x"><img src="https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white&labelColor=1a1240" alt="Discord"></a>
 </p>
 
 <!-- support:top:start -->
 <p align="center">
   <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-chamomilewoods-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 </p>
-<p align="center"><b>☕ Like this project? <a href="https://buymeacoffee.com/chamomilewoods">Support the author on Buy Me a Coffee</a></b></p>
 <!-- support:top:end -->
+
+<p align="center">
+  <img src="docs/media/coop_creature.gif" alt="Creature stage: Alice and Bob walk side by side across the meadow, each with their own creature" width="100%">
+  <br><sub>Two players in the Creature stage, recorded in the current build: Alice (red, the host) and Bob (his own creature from <i>My Creations</i>).</sub>
+</p>
+
+## Quick start
+
+1. **Download** `SporeCoopSetup.exe` from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) and run it
+   (on Linux: inside the game's Wine prefix, e.g. Bottles *Run Executable...*).
+2. **Install**: the setup finds Spore + Galactic Adventures (GOG or Steam), downloads the newest SporeCoop and checks it.
+   Every player installs the same version.
+3. **Play**: start Spore, galaxy menu → **Co-op**. One player clicks **Host**, the others pick the game under
+   *Games on your network* (or type the host's address) and **Join**. The host's world loads for everybody.
+   Over the internet: a virtual LAN such as Tailscale, or UDP port 47810 forwarded ([how](docs/INSTALL.md#7-playing-over-the-internet)).
+
+More: [Install](#install) · [How to play](#how-to-play) · [Compatibility](#compatibility) · [FAQ](#faq)
+
+## What's new
+
+**0.7.10 / 0.7.10.1** (2026-11-07):
+
+- **Civilization:** guests see the host's own city buildings and vehicles as the host designed them, the host's
+  vehicles move without lag, and a guest crash in fights near defence turrets is fixed.
+- **Tribe:** the guest's village grows with the host's hut upgrades; portraits, colours, chiefs and the dance music
+  match the host's game.
+- **Creature:** the guest follows the species to a new nest, spits stop charges between players, and a crash at the
+  UFO visit is fixed. **Space:** after a rejoin you get your own cargo hold back.
+- **Long sessions:** when the 32-bit game runs low on memory you are told to save and restart instead of crashing.
+
+Every change: [CHANGELOG.md](CHANGELOG.md) · downloads and release notes: [Releases](https://github.com/WoodyWizard/SporeCoop/releases).
+
+## Contents
+
+- [Quick start](#quick-start) · [What's new](#whats-new) · [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
+  [Compatibility](#compatibility) · [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
+  [Community](#community) · [Building from source](#building-from-source) · [Credits](#credits)
+
+## Features
 
 **SporeCoop** is a multiplayer mod for Spore. Two to four friends evolve **in one world**, from the
 tide pool to the galaxy: everybody plays their own creature, the host's world is shared with the
 guests, and every stage has mechanics that only work together - revive a knocked-out cell, hunt as
 a pack, besiege a city from two sides, repair your partner's ship before it explodes.
-
-<p align="center">
-  <img src="docs/media/tribe_host.jpg" alt="Tribe stage: Alice's and Bob's chiefs, a pincer attack notification" width="80%">
-</p>
-
-## Contents
-
-- [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
-  [Compatibility](#compatibility) · [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
-  [Community](#community) · [Building from source](#building-from-source) · [Credits](#credits)
-
-## Features
 
 - **Co-op from the main menu.** A *Co-op* item in Spore's own galaxy menu: host a game, find
   friends on your network or type an address, chat and get ready in the lobby. **F9** opens it in game.
@@ -71,20 +102,24 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/cell_host.jpg" alt="Cell stage: Bob's cell is knocked out, translucent, with a KO countdown; Alice is next to him"></td>
-    <td width="50%"><img src="docs/media/creature_host.jpg" alt="Creature stage: Alice and Bob's creatures in one pack"></td>
+    <td width="50%"><img src="docs/media/cell_host.jpg" alt="Cell stage: Bob's cell is knocked out, with a notification telling Alice to swim next to him within 10 s"></td>
+    <td width="50%"><img src="docs/media/creature_host.jpg" alt="Creature stage: Bob's own creature next to Alice's species at the nest"></td>
   </tr>
   <tr>
     <td><b>Cell.</b> Bob is knocked out: Alice has 10 s to swim right next to him and revive him.</td>
-    <td><b>Creature.</b> Two players' own creatures in one pack, names above them.</td>
+    <td><b>Creature.</b> Bob plays his own creature from <i>My Creations</i> in Alice's world, one pack.</td>
   </tr>
   <tr>
+    <td><img src="docs/media/tribe_host.jpg" alt="Tribe stage: Alice's and Bob's chiefs at the village, a pincer attack notification"></td>
     <td><img src="docs/media/civ_host.jpg" alt="Civilization stage: the capital is under attack, everybody is told"></td>
-    <td><img src="docs/media/space_host.jpg" alt="Space stage: Bob's ship is disabled, a REPAIR beacon shows where it is"></td>
   </tr>
   <tr>
+    <td><b>Tribe.</b> Two chiefs, one village: attack from two sides for a <i>pincer</i> bonus.</td>
     <td><b>Civilization.</b> A city is under attack: every player gets the alarm and a beacon.</td>
-    <td><b>Space.</b> Bob's ship is disabled - a <i>REPAIR</i> beacon and a 20 s countdown.</td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/media/space_host.jpg" alt="Space stage: Bob's ship is disabled, a REPAIR beacon shows where it is" width="50%"><br>
+    <b>Space.</b> Bob's ship is disabled: a <i>REPAIR</i> beacon and a 20 s countdown.</td>
   </tr>
 </table>
 
@@ -115,38 +150,18 @@ uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ## Compatibility
 
-SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where it has been tested:
+You need **Spore with Galactic Adventures**. SporeCoop runs its game, `SporebinEP1\SporeApp.exe`.
 
-| Game version | `SporeApp.exe` | Windows 11 | Linux (Wine / Proton) |
-|---|---|---|---|
-| **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
-| **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
-| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❌ no longer supported since 0.7.8 ² | ❌ no longer supported since 0.7.8 ² |
-| EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
+| Game version | Windows | Linux (Wine / Proton) |
+|---|:---:|:---:|
+| **GOG**, the current download (2024 update) | ✅ | ✅ |
+| **Steam**, Spore + Galactic Adventures | ✅ | ✅ |
 
-¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
-[issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
-frames from the game loop; tested by simulating that case, not yet with the real overlay.
-² **GOG 2016 is no longer supported since 0.7.8** (2026-11-05): update the game through GOG (the current
-download is the 2024 build; Steam is the same game). The mod still starts on GOG 2016, but it is not
-tested there any more and its bugs are not fixed. Since 0.7.2.2 new fixes get game addresses for
-the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
-up after a death, the pack, Cell bites, meat and spin, NPC nations' vehicles on a guest's game, our
-creatures kept out of saves); the other fixes work there too. The full list, checked by the build:
-[data/symbols/frozen_off_922af7c7.txt](data/symbols/frozen_off_922af7c7.txt).
-
-**Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
-2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
-needs the same SporeCoop protocol: every 0.7 version plays with every other, 0.6.x cannot join 0.7.
-With an older 0.7 version (0.7.2.x, 0.7.3.0) on one side, chat lines above about 1160 bytes arrive
-cut and the Creature species table of a planet with 42 or more species does not reach that player;
-the game names that player in a notification. Update everybody to the latest version.
-
-**Not tested yet:** two PCs over the internet with Windows on 0.7 (the network code is the same
-as on Linux, where it was tested), the EA app and disc versions. Which build you have:
-`SporeCoopSetup.exe` shows it, or see [INSTALL.md, section 2](docs/INSTALL.md#2-check-your-game-build).
-Tried another version? Please tell us in an [issue](https://github.com/WoodyWizard/SporeCoop/issues)
-with `mods\logs\sporekit.log`.
+GOG and Steam players can play together; every player needs the same SporeCoop 0.7 version.
+The **EA app / Origin** and **disc** versions are not supported (co-op stays off), and the older
+**GOG 2016** build is no longer supported since 0.7.8: update the game through GOG.
+Which build you have, file sizes and hashes, the Steam overlay, mixing versions and every test:
+[INSTALL.md, compatibility details](docs/INSTALL.md#compatibility-details).
 
 ## How to play
 
@@ -220,12 +235,13 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.7 (the newest release is on the [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) page): co-op in every stage for up to 4 players, and a Space stage built for playing
+Version 0.7.10.1 (the newest release is on the [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) page): co-op in every stage for up to 4 players, and a Space stage built for playing
 together (the F9 window's **Space** page: partners on the map, allied colonies, trade, contracts,
 shared diplomacy, the galactic core together, rivals mode). Tested automatically on real game
-instances: 50+ scenario tests with real clicks, bots that play every stage through real input for
+instances: 600+ scenario tests with real clicks, bots that play every stage through real input for
 hours, 4-player sessions with rejoins, a chaos bot and simulated bad networks
-([stability report](docs/stability-report.md)).
+([stability report](docs/stability-report.md)). 568 reported bugs are fixed so far, each with its
+own ticket and a test ([docs/tickets](docs/tickets/README.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md). Found a problem? Type `/bug <what you
 see>` in the co-op chat when it happens (it marks that moment in every player's log), then see
 [how to report it](docs/REPORTING.md).
@@ -240,6 +256,8 @@ Next:
   ([design](docs/11-rivals.md))
 
 ## Community
+
+<img src="docs/media/icon.svg" alt="SporeCoop icon" width="72" align="right">
 
 Join the **[SporeCoop Discord](https://discord.gg/7Yre7u4b8x)**: find players to evolve with, ask for help with the setup,
 share your worlds and creatures, report problems and suggest ideas. Bug reports with files are
@@ -287,7 +305,6 @@ Licensed under the [MIT license](LICENSE).
 ## ☕ Support the author
 
 If this project is useful to you, you can support the author - it really helps to keep working on it:
-
 **https://buymeacoffee.com/chamomilewoods**
 
 <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="50"></a>
