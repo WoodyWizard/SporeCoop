@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not
+  respawn bigger than "small again" (BUG-0746).
+
 ## [0.7.11] - 2026-11-08
 
 ### Changed

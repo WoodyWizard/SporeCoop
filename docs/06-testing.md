@@ -3002,6 +3002,9 @@ nearest plants on its screen (`coop.pool eat <key>`, EatFood); the food totals o
 not grow by them. `SPORE_FIX_OFF=cell.ko_no_eat` fails (+12 per plant on both games). Pitfalls: a
 `coop.pool tp` right after the start is undone by the hatch (the test moves again until 15 m away);
 the plants it touched drift off the screen or are eaten by the pool (printed only).
+BUG-0746 (fix/w46-b1-tribe): while out it also swallows the two nearest meat cells whole (`coop.pool swallow <key>
+[kind]`: the game's interaction executor 0xE7E7F0 with kind 10, or 9 on plants when no meat is on its screen; the meal
+comes ~1 s later); `SPORE_FIX_OFF=cell.ko_no_swallow` fails (+12 on both games, docs/re/cell.md#cell-ko-swallow).
 
 cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respawns=` counters of
 `coop.pool` belong to the game process and survive the warm reset, so the test compares them with
