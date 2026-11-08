@@ -13,6 +13,8 @@ position), not the mod's bookkeeping:
                     the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
                     layouts differed in 2 of 3 loads). SPORE_FIX_OFF=wobj.city_ornament fails.
 
+  --case bundle_drop (BUG-0661, tribe) a host member carrying food dies: the food lies on the ground at the host's place
+                    in the guest's game too, no copy is still carried (SPORE_FIX_OFF=wobj.bundle_reclass fails)
   --case bundle_civ (BUG-0548, civ) food on the ground by the host's city (as a fight's loot): the host's lies at
                     its place in the guest's game, one only the guest's game dropped is gone from it.
                     SPORE_FIX_OFF=wobj.bundle fails.
@@ -201,6 +203,64 @@ def bundle_carry(host, guest, ck):
     ck(not left, f'no member carries food on the guest\'s screen that the host\'s member put down ({len(left)} left)')
 
 
+def bundle_drop(host, guest, ck):
+    """BUG-0661: a host member carrying food dies (`coop.tribe pincer`, the game's damage path): its food falls to the
+    ground in the host's game. The guest's game must have a ground bundle within 3 m of the host's and no carried copy
+    of it left (0.7.10: the guest's copy stayed bound as a carried one; the detector's `Tribe:host_only:game_bundle`)"""
+    import re
+    from coop_tribe import members
+    hm = members(host)
+    ids = {}
+    for line in host.call('coop.tribe')['out'].splitlines():
+        m = re.match(r'\s+#(\d+) ([0-9A-Fa-f]{8}) owner=', line)
+        if m:
+            ids[m.group(2).upper()] = int(m.group(1))
+    rows = re.findall(r'([0-9A-F]{8}) alive=1 pos=\((\S+) (\S+) (\S+)\) dist=(\S+)', host.call('coop.tribe objs 18EB4B7')['out'])
+    rows = sorted([r for r in rows if r[0] in ids and ids[r[0]] in hm], key=lambda r: float(r[4]))
+    print(f'  host: {len(rows)} members ({len(hm)} in coop.tribe)', flush=True)
+    done, bad = 0, []
+    for p, x, y, z, d in rows[:12]:
+        if done >= 2:
+            break
+        victim = ids[p]
+        att = next((i for i, m in hm.items() if m[3] != hm[victim][3]), None)
+        if att is None:
+            continue
+        out = host.call(f'coop.wobj bundle carry {p} 5')['out'].strip()
+        if out.startswith('bundle 0') or 'bundle 00000000' in out:
+            continue
+        bp = re.search(r'bundle ([0-9A-F]{8})', out).group(1)
+        time.sleep(3)
+        hb = [b for b in bundles(host, 300) if b['p'] == bp]
+        gb = [b for b in bundles(guest, 30, hb[0]['pos']) if b['cls'] & 0x100] if hb else []
+        print(f'  host: member #{victim} carries food ({out}); host {hb[:1]}, guest carried copies '
+              f'{[(round(math.dist(b["pos"], hb[0]["pos"]), 1), b["bound"]) for b in gb]}', flush=True)
+        if not hb or not (hb[0]['cls'] & 0x100) or not gb:
+            continue
+        print('  host:', host.call(f'coop.tribe pincer {victim} {att} 1000')['out'].strip(), flush=True)
+        time.sleep(2)
+        hb2 = [b for b in bundles(host, 300) if b['p'] == bp]
+        hg = [b for b in bundles(host, 30, hb[0]['pos']) if not b['cls'] & 0x100]
+        print(f'    host after the death: the bundle {hb2[:1]}; ground bundles within 30 m {[b["pos"] for b in hg]}', flush=True)
+        if not hg:
+            print('    (no food fell on the ground in the host\'s game)', flush=True)
+            continue
+        done += 1
+        time.sleep(6)
+        hg = [b for b in bundles(host, 30, hb[0]['pos']) if not b['cls'] & 0x100]
+        gg = [b for b in bundles(guest, 30, hb[0]['pos']) if not b['cls'] & 0x100]
+        gc = [b for b in bundles(guest, 30, hb[0]['pos']) if b['cls'] & 0x100]
+        hc = [b for b in bundles(host, 30, hb[0]['pos']) if b['cls'] & 0x100]
+        lone = [h['pos'] for h in hg if not any(math.dist(h['pos'], g['pos']) <= 3 for g in gg)]
+        extra = [g['pos'] for g in gc if not any(math.dist(g['pos'], h['pos']) <= 8 for h in hc)]
+        print(f'    6 s later within 30 m: host ground {len(hg)} carried {len(hc)}, guest ground {len(gg)} carried {len(gc)}; '
+              f'host ground without a guest one within 3 m {lone}, guest carried without a host one {extra}', flush=True)
+        if lone or extra:
+            bad.append((lone, extra))
+    ck(done > 0, f'food a host member carried fell on the ground when it died ({done} times)')
+    ck(not bad, f'the guest\'s game has that food on the ground at the host\'s place, not carried ({len(bad)} of {done} not)')
+
+
 def bundle_civ(host, guest, ck):
     import re
     from play_civ import civ_state
@@ -343,12 +403,12 @@ def ornament(host, guest, ck, rounds=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_carry', 'bundle_civ', 'cultural', 'ornament'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_carry', 'bundle_drop', 'bundle_civ', 'cultural', 'ornament'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_carry': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_carry': 'tribe', 'bundle_drop': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle, 'bundle_carry': bundle_carry, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'bundle_carry': bundle_carry, 'bundle_drop': bundle_drop, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)

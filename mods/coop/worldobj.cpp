@@ -103,6 +103,10 @@ struct Kind {
     int (*make_aux)(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux) = nullptr;
     // BUG-0617: the bind distance of a class (nullptr: tol for all)
     float (*tol_for)(uint32_t cls) = nullptr;
+    // BUG-0661: a kind with `classes` whose host object can change its class (a carried bundle put on the ground):
+    // a bound copy of another class than the host's object is removed (apply kGone) and the bind dropped, so the next
+    // snapshot makes or binds one of the right class. The switch (nullptr: never)
+    bool* reclass = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -653,6 +657,14 @@ static bool g_bundle_carried_fix = true;
 COOP_FIX("wobj.bundle_carried", "BUG-0617", g_bundle_carried_fix,
          "tribe: the food a member carries on a guest's screen is the food the host's member carries");
 constexpr float kCarriedTol = 8.f;
+// BUG-0661 (docs/re/tribe.md#tribe-bundle-reclass): the host's game moves a carried bundle into its ground container (the
+// carrier died, or put it down) as the same object: the guest's copy stayed bound and carried by the copy of the member
+// (or lay on, carried on, by another), so the host's ground food was missing on the guest (the detector's
+// `Tribe:host_only:game_bundle` with a `guest_only:game_bundle_carried` next to it). With wobj.bundle_reclass a bound copy
+// whose host bundle changed between ground and carried is removed and made again in the right container. Off: 0.7.10.
+static bool g_bundle_reclass_fix = true;
+COOP_FIX("wobj.bundle_reclass", "BUG-0661", g_bundle_reclass_fix,
+         "tribe / civ: food a host member drops lies on the ground in every game, not carried on by the member's copy");
 static bool bundle_own(const Item& l, double) { return !g_bundle_carried_fix && (l.cls & kBundleCarried) != 0; }
 static float bundle_tol(uint32_t cls) { return g_bundle_carried_fix && (cls & kBundleCarried) ? kCarriedTol : 3.f; }
 static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
@@ -1043,7 +1055,7 @@ static Kind g_kinds[] = {
     // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
     {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
      .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
-     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol},
+     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol, .reclass = &g_bundle_reclass_fix},
     // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
     {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
@@ -1121,7 +1133,7 @@ static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
 static double g_last_tx[16], g_last_guest = 0;
 struct Stat {
-    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0, placed = 0, relocated = 0;
+    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0, placed = 0, relocated = 0, reclassed = 0;
 };
 static Stat g_st[kKinds];
 
@@ -1320,6 +1332,18 @@ static void reconcile(int k, double now, bool fresh)
             }
             update(id, ps, bind(id, *best));
             continue;
+        }
+        if (K.classes && K.reclass && *K.reclass) { // BUG-0661: the host's object changed its class
+            auto f = by_key.find({bi->second.p, bi->second.serial});
+            if (f != by_key.end() && f->second->cls != ps.cls) {
+                used.insert({f->second->p, f->second->id}); // (not dropped again as an own copy below)
+                if (K.behind(f->second->st, kGone))
+                    K.apply(*f->second, kGone);
+                g_st[k].reclassed++;
+                G.binds.erase(bi);
+                unbound.push_back(id);
+                continue;
+            }
         }
         update(id, ps, bi->second);
     }
@@ -1536,9 +1560,9 @@ std::string status()
     char b[420];
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
-        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u\n",
+        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u reclassed=%u\n",
                  g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
-                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated);
+                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated, t.reclassed);
         s += b;
     }
     snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u; city decorations sets=%u removed=%u\n",
