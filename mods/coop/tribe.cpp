@@ -2204,6 +2204,51 @@ static bool save_filter(void* o, uint32_t noun)
     return true;
 }
 
+// BUG-0741: the host's NPC tribe controller (FormTribe 0xCC6440) destroys the tribe spawn marker (cGameplayMarker noun
+// 0x36BE27E, +0x108 == 0x57F09E5E) it formed a tribe at (cGameNounManager::DestroyInstance); a guest's copy of that
+// tribe (make_npc_tribes) never goes through FormTribe, so the guest kept the marker (the detector's unpaired
+// gameplay marker): a guest controller that ever formed tribes (tribe.guest_tribes off, a host handover) could form
+// one on a site already used. With the fix the guest destroys its marker nearest the copy, within 30 m.
+static bool g_marker_fix = true;
+COOP_FIX("tribe.copy_marker", "BUG-0741", g_marker_fix,
+         "tribe: a guest's copy of the host's new NPC tribe uses up the tribe spawn marker there, as the host's controller did");
+static uint32_t g_markers_used;
+static net::Vec3 marker_pos(void* o)
+{
+    const float* q = (const float*)((uint8_t*)o + 0x1A8); // mNounPosition (docs/re/creature.md#creature-gameplay-markers)
+    return {q[0], q[1], q[2]};
+}
+static void use_marker_at(const net::Vec3& at)
+{
+    if (!g_marker_fix)
+        return;
+    struct Best {
+        net::Vec3 at;
+        void* o = nullptr;
+        float d = 30.f;
+    } best{at};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* b = (Best*)u;
+            if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E) {
+                float d = net::dist(marker_pos(o), b->at);
+                if (d < b->d) {
+                    b->d = d;
+                    b->o = o;
+                }
+            }
+            return true;
+        },
+        &best);
+    if (!best.o)
+        return;
+    net::Vec3 mp = marker_pos(best.o);
+    game::destroy_instance(best.o);
+    g_markers_used++;
+    H->log(M, SK_INFO, "tribe: the copy of the host's NPC tribe used up the tribe spawn marker at (%.0f %.0f %.0f), %.1f m off",
+           mp.x, mp.y, mp.z, best.d);
+}
+
 // BUG-0381 (tribe.npc_tribes): a guest makes each host NPC tribe that has no tribe of this game
 // within the mapping's 40 m (guest_state). `p`: the tribe table after the trailer (tag, count,
 // count x kTribeInfo). One try per host tribe every 5 s (an unknown species is asked for first).
@@ -2262,6 +2307,7 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         g_local_tribe_of[i] = t;
         note_ours(g_ours_t, t); // BUG-0495
         g_npc_tribe_made[cell] = t;
+        use_marker_at(hp); // BUG-0741
         net::Vec3 lp = tribe_pos(t);
         H->log(M, SK_INFO,
                "tribe: the host's NPC tribe %u at (%.0f %.0f %.0f) is not in this game: made it (species %08X, archetype %d) at "
@@ -4982,7 +5028,7 @@ std::string debug(const std::vector<std::string>& a)
                 return true;
             },
             &out);
-        return out.empty() ? "no markers" : out;
+        return (out.empty() ? "no markers\n" : out) + "markers_used=" + std::to_string(g_markers_used) + "\n";
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;
