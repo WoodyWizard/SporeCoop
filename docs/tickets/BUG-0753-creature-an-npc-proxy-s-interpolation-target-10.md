@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.11 (rel/0.7.11 + fix/w46-g4-tests)
 fixed_in: unreleased
 branch: fix/w46-k4-proxy
-commits: 6b9d124f
+commits: 6b9d124f, 735cff8b
 tests: creature_npc_dash, tribe_npc_dash
 signature:
 docs: docs/06-testing.md#testing-dash-order
@@ -45,12 +45,17 @@ the states. G4's three inferred candidates (smoothing, drive.lead_fall, the list
 
 ## Fix
 `coop.fix tools.dash_after_send` (npc.cpp, tests only): dash_tick runs after the states went out, so the states are the
-game's own positions as in play. Off: before the send (the test as it was).
+game's own positions as in play, and a dashing NPC whose written position the game kept carries the dash's velocity (the
+game's own velocity after its update is its locomotion's: with it alone tribe_npc_dash got 3.6-3.9 m, lab
+20261108-101527-2). Off: before the send (the test as it was).
 
 ## Verification
 - FAIL: out/lab/20261108-095739 (SPORE_FIX_OFF=tools.dash_after_send, creature_npc_dash 1 of 3 FAIL: 90 % within 9.54 m, limit
   1.2 m); G4's 20261108-091147 / -091630 / -092113 before (2 of 3 each).
-- PASS: out/lab/20261108-095739-2 (3 of 3, the same time on lane 6); final runs in History.
+- PASS: creature_npc_dash out/lab/20261108-095739-2 (3 of 3, the same time on lane 6) and out/lab/20261108-102113-2 (3 of 3, the
+  final build).
+- tribe_npc_dash (out/lab/20261108-102113): 1 of 3; its target is right now (p90 0.55-0.63 m, before 1.0-3.2 m), the rest is
+  the driving one guest frame behind its target at 15 fps, a separate ticket: BUG-0757.
 
 ## History
 - 2026-11-08: opened (fix/w46-g4-dash, static analysis of lab 20261108-082630).
