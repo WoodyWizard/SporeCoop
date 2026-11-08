@@ -36,6 +36,17 @@ static void* g_last_event[9];
 
 static bool is_guest() { return S && S->role() == net::Role::Client && S->connected(); }
 
+// BUG-0736 (class BUG-0418): a guest's Summon Flock (ability 0x33 -> DramaManager_StartKind(8), cSummonCreatureEvent
+// start 0xD50EA0: a herd of the event's species 70 m from the avatar, its members into the local pack, then made to
+// follow the avatar) was made in the guest's own game only: creatures the host's world never had (the host never saw
+// them; on the guest they were AI-less creatures of its own game). Now the guest's game does not start the event; it
+// asks the host (player_rules K_FLOCK), whose game starts the same event with the guest's puppet as the avatar
+// (cGameNounManager +0x54, as the AI swap): the flock comes to the guest's creature and joins the party's pack (the
+// host's: what the guests show as NF_PACK allies). `coop.fix creature.flock_relay off`: the guest's own event (0.7.10).
+bool g_flock_relay = true;
+COOP_FIX("creature.flock_relay", "BUG-0736", g_flock_relay, "creature: a guest's Summon Flock is made by the host's game next to the guest's creature (both games show it)");
+static unsigned g_flock_relayed, g_flock_refused;
+
 // W2 (BUG-0564): in Tribe a guest's own game started a creature attack on a village (kind 7) of its own world:
 // once the whole-planet re-alignment had removed villages the host's world has not, the event's start faulted
 // on a null (0xD521BA, data 0x120, lab 20261104-211318). The host's world has its own attacks (its members and
@@ -55,6 +66,10 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     if (kind < 9)
         g_last_event[kind] = ev;
     bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
+    if (g_flock_relay && kind == 8 && is_guest() && game::in_creature_stage()) {
+        g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability)
+        return;
+    }
     if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) {
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "
@@ -84,6 +99,33 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
         H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
 }
 
+bool summon_for(void* puppet)
+{
+    void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+    void* nm = game::noun_manager();
+    if (!mgr || !a_StartKind || !nm || !puppet || !game::is_puppet(puppet) || is_guest())
+        return false;
+    void*& av = skg::field<void*>(nm, game::kNounAvatarOff);
+    void* real = av;
+    if (!real)
+        return false;
+    // (a puppet of the partner's own creature has no archetype tuning: it borrows the avatar's, as in the AI swap)
+    void*& tun = skg::field<void*>(puppet, 0xE84);
+    void* lent = !tun ? skg::field<void*>(real, 0xE84) : nullptr;
+    if (lent)
+        tun = lent;
+    unsigned before = g_started[8];
+    av = puppet;
+    skg::thiscall<void>(a_StartKind, mgr, 8, 0);
+    av = real;
+    if (lent && tun == lent)
+        tun = nullptr;
+    bool ok = g_started[8] != before;
+    g_flock_relayed += ok;
+    H->log(M, SK_INFO, "drama: summon event for a partner's creature: %s", ok ? "started" : "none idle");
+    return ok;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     char b[256];
@@ -98,8 +140,9 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
-    snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X\n", (int)g_guest_events_fix, g_mask, (int)is_guest(),
-             game::mode_id());
+    snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u\n",
+             (int)g_guest_events_fix, g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed,
+             g_flock_refused);
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];

@@ -280,6 +280,17 @@ add('civ_design_content', P + 'coop_civ_design_content.py', minutes=5)  # BUG-07
 add('civ_design_content_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_civ_design_content.py', minutes=6)  # BUG-0725 / BUG-0726 at 20 fps over the player network
 add('space_host_ship_design', P + 'coop_space_host_ship_design.py', minutes=4, fixture='space')  # BUG-0724: the guest's mirrors of the host's empire's ships show the host's own ship design, not the guest's creation of the same id (SPORE_FIX_OFF=fleet.host_designs fails)
 add('space_host_ship_design_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_host_ship_design.py', minutes=5, fixture='space')  # BUG-0724 at 20 fps over the player network
+add('creature_grow', P + 'coop_creature_grow.py', minutes=5, fixture='creature')  # BUG-0732 / BUG-0733: a guest's own creature grows with its brain upgrade, each game shows the partner at its size (SPORE_FIX_OFF=creature.own_scale / creature.puppet_scale fail)
+add('creature_grow_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_creature_grow.py', minutes=6, fixture='creature')  # BUG-0732 / BUG-0733 at 20 fps over the player network
+add('hostile_party', P + 'coop_hostile_party.py', minutes=5, fixture='creature')  # BUG-0734: animals hostile to the players' species target a guest playing its own creature (SPORE_FIX_OFF=creature.hostile_party fails)
+add('hostile_party_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_hostile_party.py', minutes=6, fixture='creature')  # BUG-0734 at 20 fps over the player network
+add('pack_defends_partner', P + 'coop_party_defence.py', minutes=4, fixture='creature')  # BUG-0735: the host's pack goes for an animal that hit the guest (SPORE_FIX_OFF=npc.pack_defends_partner fails)
+add('pack_defends_partner_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_party_defence.py', minutes=5, fixture='creature')  # BUG-0735 at 20 fps over the player network
+add('flock_relay', P + 'coop_party_defence.py --flock', minutes=4, fixture='creature')  # BUG-0736: a guest's Summon Flock is made by the host's game (SPORE_FIX_OFF=creature.flock_relay fails)
+add('flock_relay_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_party_defence.py --flock', minutes=5, fixture='creature')  # BUG-0736 at 20 fps over the player network
+add('content_audit_tribe', P + 'coop_content_audit.py tribe', minutes=4, fixture='tribe')  # BUG-0730: the models of every placed Tribe object (tools, huts) are the game's own and in the guest's game
+add('content_audit_civ', P + 'coop_content_audit.py civ_npc', minutes=4)  # BUG-0731: the models of every placed Civ object (buildings, vehicles, city decorations) are in the guest's game
+add('content_audit_space', P + 'coop_content_audit.py space', minutes=4, fixture='space')  # BUG-0731: the same in Space (colony cities)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('window_input', P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713 (class BUG-0429): F9 pressed while another program has the focus does not toggle the co-op window on the host or the guest, F9 on the game window does (SPORE_FIX_OFF=input.window fails)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)

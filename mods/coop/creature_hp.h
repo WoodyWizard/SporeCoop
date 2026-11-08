@@ -30,6 +30,8 @@ bool host_party(void* c);
 bool drop_partner_hit(void* npc);
 // host, a hit on a partner's puppet: true = not forwarded (the attacker is the host's party)
 bool drop_party_hit(void* attacker);
+// BUG-0735 (host): an NPC's hit on a partner's puppet: the host's pack goes for the attacker as it does for the avatar
+void pack_defend(void* puppet, void* attacker);
 
 std::string status();
 void tick(); // every frame: the players' species that count as the player species (BUG-0462)

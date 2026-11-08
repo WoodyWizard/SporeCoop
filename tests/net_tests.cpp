@@ -73,7 +73,7 @@ static void test_buffer()
     Reader r4(w4.data.data(), w4.size());
     PlayerState t4;
     CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
-    Reader r5(w4.data.data(), w4.size() - 8);
+    Reader r5(w4.data.data(), w4.size() - 12); // (BUG-0733: the body after the agl)
     PlayerState t5;
     CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021 && !agl_known(t5.agl));
     // BUG-0425: the sender's agl after the scale; a 0.7.7 sender's state (scale, no agl) reads as kNoAgl
@@ -83,9 +83,19 @@ static void test_buffer()
     Reader r6(w6.data.data(), w6.size());
     PlayerState t6;
     CHECK(t6.read(r6) && t6.agl == 2.5f && t6.scale == 1.5f && r6.left() == 0);
-    Reader r7(w6.data.data(), w6.size() - 4);
+    Reader r7(w6.data.data(), w6.size() - 8);
     PlayerState t7;
     CHECK(t7.read(r7) && t7.scale == 1.5f && !agl_known(t7.agl));
+    // BUG-0733: the sender's creature size after the agl; an older sender's state reads as 0
+    s.body = 1.21f;
+    Writer w8;
+    s.write(w8);
+    Reader r8(w8.data.data(), w8.size());
+    PlayerState t8;
+    CHECK(t8.read(r8) && t8.body == 1.21f && t8.agl == 2.5f && r8.left() == 0);
+    Reader r9(w8.data.data(), w8.size() - 4);
+    PlayerState t9;
+    CHECK(t9.read(r9) && t9.body == 0.f && t9.agl == 2.5f);
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);

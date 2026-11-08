@@ -2622,6 +2622,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
                 log_hit(p.id, attacker, damage, "forwarded");
+                creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
             }
         }
         return false; // puppets mirror the guest's own health

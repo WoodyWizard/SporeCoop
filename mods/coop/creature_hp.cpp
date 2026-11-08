@@ -8,9 +8,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <unordered_map>
+#include <vector>
 
 #include "fixes.h"
 #include "game.h"
+#include "net/interp.h"
 #include "sporekit_game.hpp"
 
 namespace creature_hp {
@@ -92,6 +94,52 @@ static float SK_THISCALL h_BaseMaxHp(void* c)
     if (own_base(c, v))
         return v;
     return o_BaseMaxHp(c);
+}
+
+// ---------------------------------------------------------------- BUG-0732 (class BUG-0418)
+// A creature's size is creature vt 0x80 (0xC04B50, thiscall(creature, bool) -> float, applied with SetScale by the
+// callers: the brain upgrade 0xD3FCA0 gives the avatar SetScale(vt 0x80(0))): the avatar normalizing scale
+// (0xD2E800 / 0xD2E720 from cSpeciesManager PlayerSpecies +0x55C) and the brain factor (0xC0B5A0: 1.0 .. 1.5 by level)
+// only for a creature of the world's player species (PlayerSpecies 0x4DF490). A guest playing its own creature is
+// another species in its own game: it never grew with its brain upgrades (docs/re/creature.md#creature-player-species-callers).
+// Now vt 0x80 of the own avatar of another species runs with PlayerSpecies answering the avatar's own species (the
+// game's rule with its own species), and the normalizing global the call recomputed is put back (the world's species
+// keep theirs). `coop.fix creature.own_scale off`: the size of a stranger (0.7.10).
+static bool g_own_scale = true;
+COOP_FIX("creature.own_scale", "BUG-0732", g_own_scale, "creature: an own creature of another species grows with its brain upgrades as the world's species does");
+typedef float(SK_THISCALL* Scale_t)(void*, uint32_t);
+typedef void*(SK_THISCALL* PlayerSpecies_t)(void*);
+static Scale_t o_Scale;
+static PlayerSpecies_t o_PlayerSpecies;
+static void* g_ps_override; // (main thread: vt 0x80 of the own avatar is running)
+static float* g_norm_global;
+static uint32_t g_own_scales;
+
+static void* SK_THISCALL h_PlayerSpecies(void* mgr)
+{
+    if (g_ps_override)
+        return g_ps_override;
+    return o_PlayerSpecies(mgr);
+}
+
+static float SK_THISCALL h_Scale(void* c, uint32_t arg)
+{
+    if (!g_own_scale || !o_PlayerSpecies || g_ps_override || !c || !game::in_creature_stage() ||
+        !(skg::field<uint32_t>(c, game::kFlagsOff) & kAvatarBit))
+        return o_Scale(c, arg);
+    void* sp = skg::field<void*>(c, game::kSpeciesOff);
+    void* mgr = a_SpeciesMgrGet ? skg::cdecl_call<void*>(a_SpeciesMgrGet) : nullptr;
+    void* ps = mgr ? o_PlayerSpecies(mgr) : nullptr;
+    if (!sp || !ps || sp == ps)
+        return o_Scale(c, arg);
+    float keep = g_norm_global ? *g_norm_global : 0.f;
+    g_ps_override = sp;
+    float r = o_Scale(c, arg);
+    g_ps_override = nullptr;
+    if (g_norm_global)
+        *g_norm_global = keep;
+    g_own_scales++;
+    return r;
 }
 
 static float SK_THISCALL h_GetMaxHp(void* combatant)
@@ -207,6 +255,82 @@ bool host_party(void* c)
     return herd && herd == game::avatar_herd();
 }
 
+// ---------------------------------------------------------------- BUG-0735 (class BUG-0418)
+// The pack defends the avatar in TakeDamage 0xC075E0: a hit on the avatar (+0xB58 & 0x200) posts 0x400 {attacker} on it
+// and cPosseSimulator 0xD52E40(0x400, 0) gives every pack member that is not allied with the attacker the attack
+// command stimulus 0x10 aimed at it (0xC0C070: clear 0x20030030 / 0x40040000, post 0x10, FLT_MAX, sender the
+// attacker; docs/re/creature.md#creature-player-species-callers). A partner's puppet is no avatar: the host's pack (and
+// the creatures a guest recruited, who are host pack members) stood by while an NPC fought the guest. Now an NPC's
+// hit on a puppet gives the host's pack members within kDefendRange of it the same stimulus.
+// `coop.fix npc.pack_defends_partner off`: nobody defends the guest (0.7.10).
+static bool g_pack_defends = true;
+COOP_FIX("npc.pack_defends_partner", "BUG-0735", g_pack_defends, "creature: the host's pack goes for an animal that attacks a partner, as it does for the host's own creature");
+static uintptr_t a_PostStim, a_StimClear;
+static constexpr float kDefendRange = 40.f;
+static uint32_t g_defends, g_defend_posts;
+static std::unordered_map<void*, double> g_defend_at; // attacker -> the last time the pack was sent at it
+
+void pack_defend(void* puppet, void* attacker)
+{
+    if (!g_pack_defends || !a_PostStim || !a_StimClear || !puppet || !attacker || attacker == game::avatar() ||
+        game::is_puppet(attacker) || host_party(attacker) || !game::in_creature_stage())
+        return;
+    double now = H->time_seconds();
+    auto it = g_defend_at.find(attacker);
+    if (it != g_defend_at.end() && now - it->second < 1.5)
+        return;
+    if (g_defend_at.size() > 64)
+        g_defend_at.clear();
+    g_defend_at[attacker] = now;
+    void* nm = game::noun_manager();
+    net::Vec3 at = game::position(puppet);
+    unsigned n = 0;
+    for (void** m = nm ? skg::field<void**>(nm, 0x5C) : nullptr, **e = nm ? skg::field<void**>(nm, 0x60) : nullptr;
+         m && m < e && m - skg::field<void**>(nm, 0x5C) < 32; ++m) {
+        void* c = *m;
+        if (!c || c == attacker || IsBadReadPtr(c, 0x1680) || game::is_dead(c) || net::dist(game::position(c), at) > kDefendRange)
+            continue;
+        uint8_t* ai = skg::field<uint8_t*>(c, 0xB4C);
+        if (!ai || IsBadReadPtr(ai, 0x200))
+            continue;
+        skg::thiscall<void>(a_StimClear, ai + 8, 0x20030030u, 0x40040000u);
+        skg::thiscall<void>(a_PostStim, ai + 8, 0x10u, 0u, 3.4028235e38f, attacker);
+        n++;
+    }
+    if (n) {
+        g_defends++;
+        g_defend_posts += n;
+    }
+}
+
+// ---------------------------------------------------------------- BUG-0734 (class BUG-0418)
+// The behaviour tree's condition of node 0x04A1A1E6 (0xD7D9F0, cdecl, 8 arguments, the result in st0) takes the
+// creature its senses picked and makes it the target when it is of the world's player species (`+0xB20 ==
+// PlayerSpecies()`, the call 0xD7DA43), adult and of relation 2 or 5 to the NPC: the animals hostile to the players'
+// species attack them. A guest playing its own creature is another species in the host's game: its puppet was never
+// picked. Now, when the condition says no, it is asked again with PlayerSpecies answering each partner's species
+// (the party of creature.relations). `coop.fix creature.hostile_party off`: the world's species only (0.7.10).
+static bool g_hostile_party = true;
+COOP_FIX("creature.hostile_party", "BUG-0734", g_hostile_party, "creature: animals hostile to the players' species attack a partner playing its own creature as they attack the host");
+typedef float(__cdecl* HostileCond_t)(void*, void*, void*, void*, void*, void*, void*, void*);
+static HostileCond_t o_HostileCond;
+static uint32_t g_hostile_party_picks;
+static float __cdecl h_HostileCond(void* a1, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
+{
+    float r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
+    if (r != 0.f || !g_hostile_party || !g_party_n || g_ps_override || !game::in_creature_stage() ||
+        !(C.is_host && C.is_host()))
+        return r;
+    for (int i = 0; i < g_party_n && r == 0.f; i++) {
+        g_ps_override = g_party_species[i];
+        r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
+        g_ps_override = nullptr;
+        if (r != 0.f)
+            g_hostile_party_picks++;
+    }
+    return r;
+}
+
 bool drop_partner_hit(void* npc)
 {
     if (!g_party_peace || !host_party(npc))
@@ -248,8 +372,9 @@ std::string status()
         void* sp = skg::field<void*>(av, game::kSpeciesOff);
         void* ps = player_species();
         float base = o_BaseMaxHp ? o_BaseMaxHp(av) : -1.f;
-        snprintf(b, sizeof b, "own: hp=%.2f/%.2f level=%d species=%p player_species=%p %s base_game=%.2f\n", game::health(av),
-                 game::max_health(av), brain_level(av), sp, ps, sp == ps ? "same" : "other", base);
+        snprintf(b, sizeof b, "own: hp=%.2f/%.2f level=%d species=%p player_species=%p %s base_game=%.2f scale=%.3f\n",
+                 game::health(av), game::max_health(av), brain_level(av), sp, ps, sp == ps ? "same" : "other", base,
+                 game::scale(av));
         out += b;
     }
     if (C.puppet_of)
@@ -258,15 +383,20 @@ std::string status()
             if (!p || !game::is_puppet(p))
                 continue;
             auto it = g_puppets.find(p);
-            snprintf(b, sizeof b, "puppet %u: hp=%.2f/%.2f reported=%.2f/%.2f\n", id, game::health(p), game::max_health(p),
-                     it != g_puppets.end() ? it->second.hp : -1.f, it != g_puppets.end() ? it->second.max : -1.f);
+            snprintf(b, sizeof b, "puppet %u: hp=%.2f/%.2f reported=%.2f/%.2f scale=%.3f\n", id, game::health(p),
+                     game::max_health(p), it != g_puppets.end() ? it->second.hp : -1.f,
+                     it != g_puppets.end() ? it->second.max : -1.f, game::scale(p));
             out += b;
         }
     snprintf(b, sizeof b, "relations: fix=%d party_species=%d answers=%u other_callers=%u\n", (int)g_relations_fix, g_party_n,
              g_party_answers, g_party_other_callers);
     out += b;
-    snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d own_brain_hp=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u\n",
-             (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped);
+    snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d own_brain_hp=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u own_scale=%d own_scales=%u\n",
+             (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
+             (int)g_own_scale, g_own_scales);
+    out += b;
+    snprintf(b, sizeof b, "party rules: hostile_party=%d picks=%u pack_defends=%d defends=%u posts=%u\n", (int)g_hostile_party,
+             g_hostile_party_picks, (int)g_pack_defends, g_defends, g_defend_posts);
     out += b;
     return out;
 }
@@ -291,7 +421,8 @@ static std::string pack()
             for (uint8_t id = 1; id < 8; id++)
                 if (void* p = C.puppet_of(id))
                     from += stimuli_from(c, p);
-        snprintf(line, sizeof line, "pack %p hp=%.2f from_partner=%d dead=%d\n", c, game::health(c), from, (int)game::is_dead(c));
+        snprintf(line, sizeof line, "pack %p hp=%.2f from_partner=%d dead=%d target=%p\n", c, game::health(c), from,
+                 (int)game::is_dead(c), skg::field<void*>(c, 0xE7C));
         out += line;
     }
     return out.empty() ? "pack empty\n" : out;
@@ -338,6 +469,69 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 1 && !strcmp(argv[1], "dmglog")) { // RE / tests: the last hits through the game's TakeDamage
         say(game::damage_log(argc > 2 && !strcmp(argv[2], "clear")));
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "hostiles")) { // host (tests, BUG-0734): the adult animals hostile to a puppet
+        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;  // (relation 2 / 5), nearest first, and
+        static uintptr_t rget = H->sym("Simulator::cSpeciesRelationshipManager::Get"); // how many creatures target it
+        void* rm = rget ? skg::cdecl_call<void*>(rget) : nullptr;
+        if (!p || !rm || !g_rel_lo) {
+            say("no puppet or relationship manager\n");
+            return 1;
+        }
+        struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; } q{p, rm, {}, 0};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* q = (Q*)u;
+                if (noun != 0x018EB45E || o == q->p || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
+                    game::is_puppet(o) || game::is_dead(o) || o == game::avatar())
+                    return true;
+                if (skg::field<void*>(o, 0xE7C) == q->p)
+                    q->targeting++;
+                int rel = skg::thiscall<int>(g_rel_lo, q->rm, (uint8_t*)o + 0xB28, o, q->p);
+                if ((rel == 2 || rel == 5) && skg::field<int>(o, 0xB34) == 1)
+                    q->v.push_back({net::dist(game::position(o), game::position(q->p)), o});
+                return true;
+            },
+            &q);
+        std::sort(q.v.begin(), q.v.end());
+        char b[160];
+        snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u\n", (unsigned)q.v.size(), q.targeting, g_hostile_party_picks);
+        std::string s = b;
+        for (size_t i = 0; i < q.v.size() && i < 8; i++) {
+            net::Vec3 at = game::position(q.v[i].second);
+            snprintf(b, sizeof b, "  hostile %p d=%.1f at=(%.1f %.1f %.1f)\n", q.v[i].second, q.v[i].first, at.x, at.y, at.z);
+            s += b;
+        }
+        say(s);
+        return 0;
+    }
+    if (argc > 3 && !strcmp(argv[1], "npchit")) { // host (tests, BUG-0735): the nearest wild animal hits a puppet
+        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
+        struct Q { void* p; void* best; float d; } q{p, nullptr, 60.f};
+        if (p)
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* u) {
+                    auto* q = (Q*)u;
+                    if (noun != 0x018EB45E || o == q->p || o == game::avatar() || !game::object_alive(o) ||
+                        IsBadReadPtr(o, 0x1680) || game::is_puppet(o) || game::is_dead(o) || host_party(o))
+                        return true;
+                    float d = net::dist(game::position(o), game::position(q->p));
+                    if (d < q->d) {
+                        q->d = d;
+                        q->best = o;
+                    }
+                    return true;
+                },
+                &q);
+        if (!q.best) {
+            say("no puppet or no animal near it\n");
+            return 1;
+        }
+        game::hit(p, (float)atof(argv[3]), 0, q.best); // through the damage filter (npc::damage_filter)
+        char b[96];
+        snprintf(b, sizeof b, "animal %p (%.1f m) hit the puppet\n", q.best, q.d);
+        say(b);
         return 0;
     }
     if (argc > 3 && !strcmp(argv[1], "packhit")) { // host (tests, the monitor's posse_damage): a pack member hits a puppet
@@ -415,6 +609,17 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_IsPlayerSpecies, (void**)&o_IsPlayerSpecies);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
+    // BUG-0732: the size rule of the own avatar (PlayerSpecies is hooked with it: it answers the override only inside)
+    g_norm_global = (float*)H->sym("SporeCoop::g_AvatarNormalizingScale");
+    uintptr_t a_scale = H->sym("SporeCoop::cCreatureAnimal_ComputeScale");
+    if (a_scale && a_PlayerSpecies && g_norm_global &&
+        H->hook_create(M, (void*)a_PlayerSpecies, (void*)h_PlayerSpecies, (void**)&o_PlayerSpecies) == 0) {
+        H->hook_create(M, (void*)a_scale, (void*)h_Scale, (void**)&o_Scale);
+        if (uintptr_t a = H->sym("SporeCoop::BT_HostileSpeciesTarget")) // BUG-0734
+            H->hook_create(M, (void*)a, (void*)h_HostileCond, (void**)&o_HostileCond);
+    }
+    a_PostStim = H->sym("SporeCoop::BT_PostStimulus"); // BUG-0735
+    a_StimClear = H->sym("SporeCoop::BT_ClearStimulus");
     H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
