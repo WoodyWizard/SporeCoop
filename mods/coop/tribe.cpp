@@ -3220,9 +3220,41 @@ static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void
 }
 
 // duet: performances (BT node 0xB46E8803) of both players for the same tribe
+// BUG-0748 (the duet's test): `coop.fix tribe.duet off` leaves the performances to the game alone (the test's twin)
+static bool g_duet_fix = true;
+COOP_FIX("tribe.duet", "BUG-0748", g_duet_fix, "tribe: performances of two players' members for the same village fill its social mini-game faster (the duet)");
+struct Performer {
+    uint16_t id;
+    uint8_t owner;
+    void* target;
+    void* ui;
+    int state;
+};
+static std::vector<Performer> performers()
+{
+    std::vector<Performer> v;
+    void* pt = player_tribe();
+    if (!pt || !a_SessionGet)
+        return v;
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        uint8_t* ai = o < 0xFE ? F<uint8_t*>(c, 0xB4C) : nullptr;
+        if (!ai || IsBadReadPtr(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
+            continue;
+        uint8_t* blk = F<uint8_t*>(ai, 0x600);
+        if (!blk || IsBadReadPtr(blk, 0x1AC))
+            continue;
+        uint8_t* ss = skg::cdecl_call<uint8_t*>(a_SessionGet, F<int>(blk, 0x1A8));
+        if (!ss || IsBadReadPtr(ss, 0xF0))
+            continue;
+        auto h = g_hm.find(c);
+        v.push_back({h == g_hm.end() ? (uint16_t)0 : h->second.id, o, F<void*>(ss, 0xC), F<void*>(ss, 0xE8), F<int>(ss, 4)});
+    }
+    return v;
+}
 static void duet_tick(double now)
 {
-    if (now - g_last_duet < 0.5 || !a_SessionGet)
+    if (!g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet)
         return;
     g_last_duet = now;
     void* pt = player_tribe();
@@ -4859,6 +4891,41 @@ std::string debug(const std::vector<std::string>& a)
             game::destroy_instance(f);
         size_t n = q.v.size();
         return "destroyed " + std::to_string(n) + " fruit; tribe.fruit_order moved " + std::to_string(g_fruit_orders_moved);
+    }
+    // duet: tests (BUG-0748), the player tribe's members in the social performance node 0xB46E8803 (host): id, owner, the
+    // session's target tribe, its state, the mini-game's progress (ui +0x68)
+    if (!a.empty() && a[0] == "duet") {
+        std::string o;
+        char b[160];
+        for (auto& p : performers()) {
+            float pr = p.ui && !IsBadReadPtr(p.ui, 0x6C) ? F<float>(p.ui, 0x68) : -1.f;
+            snprintf(b, sizeof b, "performer #%u owner=%u target=%p state=%d ui=%p progress=%.3f\n", p.id, p.owner, p.target,
+                     p.state, p.ui, pr);
+            o += b;
+        }
+        return o + "duet fix=" + std::to_string((int)g_duet_fix) + " ticks=" + std::to_string(g_duet_ticks) + "\n";
+    }
+    // act_obj <action> <noun hex> <x> <y> <z>: tests (BUG-0748), the selected members' order on this game's object of
+    // that noun nearest the point (8 m), through DoActionForObjects as a click gives (a guest sends it to the host)
+    if (a.size() >= 6 && a[0] == "act_obj") {
+        int action = atoi(a[1].c_str());
+        uint32_t noun = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        net::Vec3 p{(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
+        void* t = game::find_object(noun, p, 8.f);
+        if (!t)
+            return "no such object there";
+        if (g_fix_act_check && act_needs_object(action) && is_citizen(t))
+            return "action needs a tool or a hut";
+        std::vector<void*> sel;
+        for (auto& [id, g] : g_gm)
+            if (g.c && F<uint8_t>(g.c, kSelectedOff))
+                sel.push_back((uint8_t*)g.c + 0xC0);
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
+        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
     }
     if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
         // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)

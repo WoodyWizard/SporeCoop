@@ -2856,3 +2856,24 @@ BUG-0759 (not reproduced). GOG 2024, lane 7.
   member (`coop.tribe setvel`): the game does not move it (once 3 m, the frame the hold started on a member that had
   just stood); the guest's mirror stays at its place (0.0-0.7 m, also over a 100 ms link): the lead does not carry it
   ahead.
+
+## The duet's preconditions: instruments, the social order, the performance node (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-duet-test"></a>
+
+BUG-0748 (no test yet). GOG 2024, lane 7, out/b1tribe/exp_duet.py (not in git).
+* ✔ (runtime) Instruments bought the game's way (`coop.tribe buy <type> <m> <deg>` + `buy_end`) are taken by any
+  member the host orders to grab them (`coop.tribe grab <id> <tool index>` on the host, also a guest's member): held
+  4 s later. A tool from `coop.tribe build` (make_player_tool) was not taken in 45 s; `settool` changes the held type
+  only.
+* ✔ (Ghidra) A social click on another tribe's hut (DoActionGeneric 0xCD0C20, InputAction 0xE) costs food (property
+  0xFD444753, default 10) unless a selected member's first tool has +0x12C == 5; it sets the mission card
+  (0xCD3D70) and orders CitizenAction **9** on the tribe (0xF only shows hint 0x30D20036).
+* ✔ (runtime) CitizenAction 9 on an NPC tribe with instrument holders, from the host or from the guest (taken by the
+  host: rec=9 with the tribe), gives node **0x0462855E** (enter 0xDB00C0, tick 0xDBB7D0, exit 0xDB0950: the group walk
+  and the food-bundle gift, ApplyRelationship 0x530CF06) for ~15 s, then idle nodes; never the performance 0xB46E8803.
+* ✔ (Ghidra) The performance's session is made by the enter of node **0xF473F46A** (0xDA59A0): a "Social" group
+  (0x18EB4B7) whose index goes to ai+0x600 +0x1A8 (what SocialSession_Get reads), stimulus 0x200000 to the member and
+  0x100000 / 0x10000 to the members in cTribeUI +0x94..+0x98 (the UI's list). The node id is only in the BT action
+  table (0x15933EC); its chooser is BT data. ? what enters it (a step of the social mini-game's UI is likely).
+* Test commands: `coop.tribe duet` (performers: id, owner, the session's target, state, ui, progress `ui+0x68`;
+  `ticks=`), `coop.tribe act_obj <action> <noun hex> <x y z>`, switch `coop.fix tribe.duet off`.
