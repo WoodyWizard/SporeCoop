@@ -51,3 +51,4 @@ creature_family_eggs (`coop_creature_family_eggs.py`: the host's family herd lay
 ## History
 - 2026-11-06: opened from the lab log sweep follow-up; planned for 0.7.10.
 - 2026-11-08: fixed on fix/w46-k8-open (nest.eggs_family).
+- 2026-11-08 (detector, play_creature SPORE_DETECTOR=20, lane 4): base rel/0.7.11 ef329e5c (a temporary worktree, run 20261108-022007 there, removed since) 16 egg rows in 27 samples (host_only 5, noun_only_host 9, guest_only 1, noun_only_guest 1); fix/w46-k8-open out/lab/20261108-023113 2 in 28 (`noun_only_host:egg` whole-list, no near row: an NPC nest's egg beyond nest.eggs' 110 m relevance, by design). That play_creature FAILED on `joint hunts happened (+0 joint hits)`, a bot outcome seen failing 7 times in other branches' runs (not K8).
