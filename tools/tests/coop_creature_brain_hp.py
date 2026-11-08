@@ -6,8 +6,10 @@ he has only 14", later "44 / 14". The game adds the brain level's health (10 15 
 only to the world's player species (docs/re/creature.md#creature-max-hit-points); a guest's own
 creature is another species in its own game and kept level 0's.
 
-1. Two games on the creature fixture; the guest plays its own creature (another species than the
-   host's world species, checked).
+1. Two games on the creature fixture; the guest chooses its newest own creature (since BUG-0345 a guest
+   plays the world's species in a world it never played its own in: BUG-0689) and plays it (another
+   species than the host's world species, checked). The guest's choice and world record are put back
+   at the end (creations_state).
 2. The host gains 250 DNA (AddEvolutionPoints; the co-op DNA sync gives the guest the same total):
    both games reach brain level 1 and play CRG_BrainUpgrade1 (Enter closes the caption).
 3. Read in each game: the brain level, the own avatar's max health (GetMaxHitPoints). The guest's own
@@ -18,6 +20,7 @@ creature is another species in its own game and kept level 0's.
 import re
 import time
 
+import creations_state
 from twoinst import Checks, start
 
 
@@ -34,8 +37,26 @@ def puppet_max(con, pid):
 
 def main():
     host, guest = start('creature')
+    st0 = creations_state.save(guest)
+    try:
+        return run(host, guest)
+    finally:
+        creations_state.restore(guest, st0)  # the profile as it was (BUG-0345)
+
+
+def run(host, guest):
     ck = Checks()
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
+    own = creations_state.choose_own(guest)
+    g = None
+    t0 = time.time()
+    while own and time.time() - t0 < 30:  # the swap to the chosen creature rebuilds the avatar
+        g = hp_info(guest)
+        if g and not g['same'] and puppet_max(host, 1) is not None:
+            break
+        time.sleep(1)
+    print(f'  the guest chose its own creature {own}', flush=True)
+    time.sleep(2)
     h0, g0 = hp_info(host), hp_info(guest)
     print(f'  before: host {h0}, guest {g0}', flush=True)
     ck(h0 and g0 and h0['level'] == 0 and g0['level'] == 0, 'both at brain level 0')
