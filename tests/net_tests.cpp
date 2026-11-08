@@ -632,15 +632,22 @@ static void test_interp_gap()
 // BUG-0650 (drive.lead_late): a Tribe member's walk that starts in a latency spike (its first walking state 0.35 s
 // late instead of 0.05 s) moved M1's lead target 3 m in one frame; with the fix the target steps no more than a walk
 // and is at the lead again within 1.5 s
-static float lead_late_max_step(bool fix, double spike_end, float* end_err)
+static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool proxy = false)
 {
-    const bool was = g_lead_late_fix;
+    const bool was = g_lead_late_fix, was_fall = g_lead_fall_fix;
     const double was_ow = g_one_way;
     g_lead_late_fix = fix;
     SnapshotBuffer b;
     b.delay = 0.2;
     b.lead = true;
     b.smooth_max = 6.f;
+    if (proxy) { // BUG-0674: an NPC proxy (no smoothing, late_lead under drive.lead_fall)
+        b.delay = 0.15;
+        b.smooth_max = 0;
+        b.late_lead = true;
+        g_lead_late_fix = true;
+        g_lead_fall_fix = fix;
+    }
     g_one_way = 0.05;
     // the sender sends every 1/30 s; the body stands until sender time 3.0, then walks at 9 m/s along x
     auto state = [](double st) {
@@ -683,6 +690,7 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err)
     // where the sender's body is now (+ one-way): sender time now - 10 + 0.05
     *end_err = std::fabs(o.pos.x - (float)((15.9 - 1.0 / 30 - 10.0 + 0.05 - 3.0) * 9.0));
     g_lead_late_fix = was;
+    g_lead_fall_fix = was_fall;
     g_one_way = was_ow;
     return max_step;
 }
@@ -1101,6 +1109,15 @@ static void test_lead_fall()
             CHECK(on < 2.0f);
         } else
             CHECK(on < 2.0f); // the cost: behind for the rest of the gap, caught up
+    }
+    for (double spike_end : {3.3, 3.65}) {
+        float e_on = 0, e_off = 0;
+        float on = lead_late_max_step(true, spike_end, &e_on, true), off = lead_late_max_step(false, spike_end, &e_off, true);
+        printf("  an NPC proxy's walk known late (spike to %.2f s): max target step %.2f m (end error %.2f), 0.7.10 %.2f m\n",
+               spike_end, on, e_on, off);
+        CHECK(off > 2.f);
+        CHECK(on < 0.7f);
+        CHECK(e_on < 0.5f);
     }
     double s_on = ship_fall_err(true), s_off = ship_fall_err(false);
     printf("  a 28 m/s ship that stops in a 0.4 s spike: worst copy error fall %.1f m, 0.7.10 %.1f m\n", s_on, s_off);

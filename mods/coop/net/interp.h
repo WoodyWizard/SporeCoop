@@ -270,6 +270,10 @@ public:
     float jump_speed = 0;
     // BUG-0680: the extrapolation past the newest state falls off (g_puppet_fall_fix); the partners' puppets
     bool interp_fall = false;
+    // BUG-0674: a late state is brought in over time (drive.lead_late's late_time) without smooth_max: the NPC proxies.
+    // A walk that started in a spike was known 0.3-0.5 s late and the proxy jumped 2.5-6 m in one frame
+    // (npc_walk_tribe over the player network, lab 20261108-011449 #2: proxy 19 at 36.9 s, 2.95 m)
+    bool late_lead = false;
     // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
     static inline bool scale_lerp = true;
     // diagnostics (BUG-0388): how far past its newest snapshot the last sample() ran (s, before the
@@ -432,7 +436,8 @@ private:
         if (lead && g_lead_fix) {
             double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && !jittery_;
+            // BUG-0674 (g_lead_fall_fix): the walked NPC proxies' late states are brought in over time too (late_lead)
+            const bool late = g_lead_late_fix && ((g_lead_smooth_fix && smooth_max > 0 && !jittery_) || (late_lead && g_lead_fall_fix));
             if (late)
                 tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead

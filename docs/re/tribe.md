@@ -2608,3 +2608,41 @@ window, the player's close button / Alt+F4; the lab's kill and `quit` end the pr
   and from inside the City Hall editor (mode 00DBDBA1; lab 20261107-231415, 20261107-232504 x2).
 * ~ Not covered: Windows (the report's Steam build ran on Windows), a guest that timed out rather than left, and the
   report's 81 s in the held state (today's old gate opens the editor ~60 s after the vote, so the test closes at 40 s).
+## Remote bodies under latency spikes: the lead's fall, throws, the link's own latency (2026-11-08, fix/w46-k4-bodies)
+<a id="tribe-lead-fall"></a>
+
+BUG-0674, BUG-0675, BUG-0651, BUG-0680 (K4; net/interp.h, net/connection.cpp; switches `drive.lead_fall`,
+`drive.lead_throw`, `drive.lead_low`, `drive.puppet_fall`). One class: a remote body moved on past its newest state
+while no newer state comes, and the rules that decide how far and whether.
+* ✔ (bodyrec rows, lab 20261107-102038 / -110506, K3) A member that turns round or stops inside a latency spike of the
+  player network was moved on the old way for up to kMaxLead 0.6 s at its full speed: 2 x speed x gap off (8-9 m at
+  9-12 m/s). The same in a Creature puppet's interpolated extrapolation (max_extrap 0.25 s at the state's velocity):
+  puppet_stops' failing stop of lab 20261107-132459 #1 (the rel/0.7.9 track rows): the target walked on at 4.75 m/s
+  through the stop and stepped back 0.72 m when the stop's state came, the puppet 0.33 m (bodyrec) / 0.86 m (target)
+  past where the walker stopped. And a Space ship's VelocityEstimate::at (max_ahead 0.4 s): 11.4 m past a ship that
+  had stopped (space_fast_sync, lab 20261107-215251 #1, V2).
+* ✔ The rule now (`net::fall_time`): at the full speed up to the usual horizon (the median of how far past the newest
+  state the body was when the next state came, last 32 states) + kFallMargin 0.04 s, then falling exponentially
+  (kFallTau 0.12 s; the velocity handed to the driving falls with it). Puppets (Creature only): from kPuppetFallMargin
+  0.02 s past the render time's usual horizon, kPuppetFallTau 0.05 s, so the velocity falls under 0.3 m/s and
+  creature.puppet_stop holds the puppet where the target slows. Unit tests (net_tests test_lead_fall): a turn round
+  inside a 0.35 s spike 6.0 -> 4.5 m worst, a stop 3.0 -> 1.5 m, a straight walk 0 -> 1.7 m (the cost: behind for the
+  rest of the gap, caught up by drive.lead_late), a 28 m/s ship stopping in a 0.4 s spike 8.4 -> 5.1 m, a puppet's
+  target past a stop 0.71 -> 0.17 m.
+* ~ The cost is real in the lab: a gap of 0.5-0.7 s with no state at all (seen under a lab load of 30-35, all members
+  at once, body_trail_tribe_player lab 20261108-010745-2 #1, 6.5-7.2 s) stands the shown target after ~0.3 s while the
+  member walks straight on (8.6 m off before the news). The extrapolation can not know which way the body went; the
+  fall bounds the turn round and the stop, full extrapolation the straight walk.
+* ✔ (coop.npctrack rows of lab 20261107-103414 #2, n19 at 44.0 s) A pushed NPC thrown at ~20 m/s reports that speed in
+  its state (path 19.6-20.4 m/s, reported 19.4-20.4 m/s): lead_velocity took any path over 15 m/s for the body put
+  somewhere and returned 0, so the copy stood at each newest state (3-6 frames) and stepped 2 m when the next came.
+  Now (`drive.lead_throw`) the state's velocity within 35 % of the path and the same way is a throw; and a step under
+  1 m is never a put: under a lab load of ~30 the host's state times are off its positions by up to a frame and a 9-10
+  m/s member read 12-18 m/s, its lead stood 0.4 s (lab 20261108-005832, t3 at 3.2-3.6 s).
+* ✔ (guest log lines `net: round trip p10 .. p90`, new) The mean round trip (Connection::rtt_ms, ~10 samples) follows
+  every spike of the player network and both games' frames: 115-462 ms on the player network at a lab load of 25-35
+  (the no-lead rule then read 139 ms and turned the member lead off: body_trail_tribe_player lab 20261108-003907-2,
+  p90 2.11 m). The lower quartile of the last 128 samples, each without half this game's own wait between two socket
+  reads: player network 84-151 ms (one-way 42-75), mobile 186-234 ms (93-117) (lab 20261108-005832, -005832-2). The
+  rule (`drive.lead_low`) reads half of it, lines 80 / 70 ms: the mobile network still goes off (tribe_walk_mobile
+  OK, `lead off (one-way latency 101 ms)`), the player network under load keeps the lead.

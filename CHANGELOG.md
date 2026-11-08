@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer
+  run on the old way through a latency spike when they turn or stop meanwhile (members were shown up to 8-9 m off,
+  animals jumped, a ship's copy flew 11 m past where it had stopped) (BUG-0674).
+- Creature: the copy of an animal thrown by a hit flies with it over a bad network instead of standing and stepping
+  after it (BUG-0675).
+- Tribe: over a home connection with latency spikes, or on a busy PC, the host's tribe members are shown where the
+  host has them now again, not 0.2-0.4 s behind (BUG-0651).
+- Creature: the partner's creature no longer walks on past where the partner stopped during a latency spike
+  (BUG-0680).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
   the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
   with the path the host's ship flew in the last second (BUG-0547).
