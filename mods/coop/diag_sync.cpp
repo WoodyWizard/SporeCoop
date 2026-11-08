@@ -298,6 +298,73 @@ static void add_speed_slack(dg::Limits& l, uint32_t mode, uint8_t guest)
     }
 }
 
+// BUG-0547: a guest's copy of the host's ship is drawn where the host's ship was a moment before (the interpolation
+// delay, the trip of the state, the frames of both games): the speed slack above takes the ship's speed at the read
+// times that moment, but a ship that flies key pulses (a rescue, play_space) slows down, stops and turns within it.
+// Then its copy is still on the path it flew at full speed, 46-50 m behind (MISMATCH p0 46.2 in space_rescue, p0 50.0
+// in play_space of the 0.7.10 final check) while the speed at the read allows 10-30 m. The host keeps its own ship's
+// path of the last seconds (every frame) and a copy within the player limit of that path's last kPathWindow s (plus the
+// guest's round trip) is no difference. Seen in coop_space_fast_sync.py: copies 35-270 m from the ship lay 0.0-9.9 m
+// from its path, 0.17-0.81 s back (the longer ones with latency spikes of 300 ms), with a slack of 15-190 m. Off: the
+// speed slack only (0.7.10).
+static bool g_own_path_fix = true;
+COOP_FIX("sync.own_path", "BUG-0547", g_own_path_fix,
+         "sync-check: in Space a guest's copy of the host's ship is compared with the host's path of the last second");
+constexpr double kPathWindow = 1.0;
+static std::deque<dg::PathPoint> g_own_path;
+static uint32_t g_own_path_saved; // differences the path took back (coop.diag sync)
+
+static void record_own_path(double now)
+{
+    net::Vec3 p;
+    if (!g_P.own_position || !g_P.mode || g_P.mode() != modes::kSpace || !g_P.own_position(p)) {
+        g_own_path.clear();
+        return;
+    }
+    if (!g_own_path.empty() && now <= g_own_path.back().t)
+        return;
+    g_own_path.push_back({now, p.x, p.y, p.z});
+    while (g_own_path.size() > 2 && g_own_path.front().t < now - 2.5)
+        g_own_path.pop_front();
+}
+
+// the host's own player key in `c`: a pos issue of a copy that lies on the host's path is taken back
+static void own_path_check(const dg::Digest& hd, const dg::Digest& gd, const dg::Limits& lim, dg::Compared& c, double now,
+                           double rtt)
+{
+    if (hd.mode != modes::kSpace || g_own_path.empty())
+        return;
+    uint32_t k = dg::make_key('p', hd.self);
+    std::string id = "pos:" + dg::key_text(k);
+    auto is = std::find_if(c.issues.begin(), c.issues.end(), [&](const dg::Issue& i) { return i.id == id; });
+    if (is == c.issues.end())
+        return;
+    const dg::Entry *he = nullptr, *ge = nullptr;
+    for (auto& e : hd.entries)
+        if (e.key == k)
+            he = &e;
+    for (auto& e : gd.entries)
+        if (e.key == k)
+            ge = &e;
+    if (!he || !ge)
+        return;
+    // the path moved to the digest's own position (the same point unless a test shifts it: coop.diag sync force shift)
+    const dg::PathPoint& last = g_own_path.back();
+    float ox = he->x - last.x, oy = he->y - last.y, oz = he->z - last.z;
+    double window = kPathWindow + std::min(rtt, 1.0);
+    dg::PathHit h = dg::path_distance(g_own_path, ge->x - ox, ge->y - oy, ge->z - oz, now - window);
+    bool back = g_own_path_fix && h.d <= lim.pos('p');
+    if (g_detail >= 1)
+        SLOG("sync-check: %s %.1f m from the host's ship, %.1f m from its path of the last %.1f s (nearest %.2f s ago), "
+             "slack %.1f m%s",
+             dg::key_text(k).c_str(), is->value, h.d, window, h.lag, lim.slack_of(k),
+             back ? ": on its path, no difference (BUG-0547)" : g_own_path_fix ? ": off its path" : " (sync.own_path off)");
+    if (back) {
+        g_own_path_saved++;
+        c.issues.erase(is);
+    }
+}
+
 // BUG-0379: in a crowded pool the host's choice of a guest's 900 nearest cells (around its view
 // centre, a state late) and the compare's (around the guest's own position) differ near rank 900
 static bool g_fix_cell_margin = true;
@@ -440,6 +507,10 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Digest gconv = gd;
     to_host_scale(hd, gconv); // BUG-0606
     dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr);
+    {
+        net::Session::Link lk; // BUG-0547: the guest's round trip widens the window
+        own_path_check(hd, gconv, lim, c, now, g_P.sess->link_of(from, lk) && lk.rtt_ms >= 0 ? lk.rtt_ms / 1000.0 : 0.1);
+    }
     if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
     double ms = (g_H->time_seconds() - t0) * 1000;
@@ -562,8 +633,10 @@ void sync_tick(double now)
     if (!in_session() || g_P.sess->role() != net::Role::Host || g_sync_interval <= 0) {
         if (!in_session())
             g_guests.clear();
+        g_own_path.clear();
         return;
     }
+    record_own_path(now); // BUG-0547
     // BUG-0380: a player who left kept its entry, so the same id joining again was checked on the old
     // schedule (6 s after its world load in civ_city_join: the catch-up's city was still on its way)
     // instead of 10 s after the join like a newcomer. Off: the entry stays (0.7.3.3).
@@ -714,18 +787,18 @@ void sync_session_start()
 
 std::string sync_status()
 {
-    char b[400];
+    char b[480];
     bool ok = false;
     double t = session_time(&ok);
     snprintf(b, sizeof b,
              "clock: %s session time %.3f (%s, %d samples, best round trip %.1f ms)\n"
              "sync-check: every %.0f s%s, checks %d ok %d differs %d mismatch %d; host build+compare avg %.3f ms max %.3f ms (%d); "
-             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests\n",
+             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u\n",
              ok ? "on," : "off,", t, g_P.sess && g_P.sess->role() == net::Role::Host ? "host" : "guest", (int)g_clock.samples(),
              g_clock.rtt() * 1000, g_sync_interval, g_force.empty() ? "" : (" (forced: " + g_force + ")").c_str(), g_c.sync_checks,
              g_c.sync_ok, g_c.sync_differs, g_c.sync_mismatch, g_c.sync_ms_n ? g_c.sync_ms_sum / g_c.sync_ms_n : 0.0, g_c.sync_ms_max,
              g_c.sync_ms_n, g_c.sync_guest_ms_n ? g_c.sync_guest_ms_sum / g_c.sync_guest_ms_n : 0.0, g_c.sync_guest_ms_max,
-             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes);
+             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved);
     return b;
 }
 

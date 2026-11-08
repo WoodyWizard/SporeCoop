@@ -5369,6 +5369,12 @@ void support_init()
                 v.push_back({id, drive::speed(r.buf.latest().vel)});
         return v;
     };
+    p.own_position = [](net::Vec3& v) {
+        if (!local_now())
+            return false;
+        v = local_state().pos;
+        return true;
+    };
     p.mode = [] { return g_mode; };
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };

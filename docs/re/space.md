@@ -2342,3 +2342,22 @@ advance faulted the host at 0xE99524 (data 0x4) on lab lanes 2 and 3 (lab 202611
 * Fix (gamefixes, `game.ufo_gfx`): the factory is done the game's way by the mod (new, ctor, InitFromUfo, the flag
   only on a model); the listener skips 0x604C6F4 on a gfx without a model. Such a ship is not drawn. Counters in
   `coop.status` ("ship gfx made without a model N (their messages skipped N)").
+
+## A ship's copy lies on its path, not where its speed at the read puts it (2026-11-07, fix/w46-v2-civ-space)
+<a id="space-copy-on-path"></a>
+
+BUG-0547 (the sync-check's `p0 46.2` / `p0 50.0` MISMATCHes). Lab lane 9, `tools/tests/coop_space_fast_sync.py`.
+* ✔ (runtime) The ship's velocity the state carries is the locomotive's +0x1C8 (modes.cpp space_fill). On the home
+  planet of the `space` fixture W pulses with turns reach 300-340 m/s (`drawn_v` of the guest's trace).
+* ✔ (runtime, lab 20261107-205734, -210209, -211254, -212524) On a local lane (rtt ~25 ms) long full-thrust pulses,
+  S braking, zooms (the ship's height, 7.10 above) and a disabled guest gave no difference at all in ~600 checks at
+  1 s: at a steady speed the copy is where `speed x (0.2 s + rtt)` puts it (BUG-0378's slack holds).
+* ✔ (runtime) The copy was off that place only while the ship's speed changed within the moment, or the state came
+  late: during play_space's rescue flight (`Player.rescue`, lab 20261107-211833: 35.5 m from the ship, 0.0 m from
+  its path 0.29 s back, slack 15.5 m) and over a player's network with latency spikes (lab 20261107-213732,
+  -214244: 49-270 m from the ship, 0.0-9.9 m from its path 0.41-0.81 s back, slack 24-191 m). In every case the
+  copy lay on the path the ship flew: what the guest saw was the host's flight a moment late, not a desync.
+* The sync-check now keeps the host's own path (every frame, 2.5 s) and takes a p0 difference back when the guest's
+  copy is within the player limit (10 m) of the path's last 1 s plus the guest's round trip (`sync.own_path`). The
+  guests' own keys keep the speed slack: the host's copy of a guest is older than the guest's own position, the
+  host has no path of where the guest is now.

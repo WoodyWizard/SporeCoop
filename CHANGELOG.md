@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
+  the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
+  with the path the host's ship flew in the last second (BUG-0547).
+
 ## [0.7.10] - 2026-11-07
 
 ### Changed

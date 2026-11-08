@@ -4811,3 +4811,24 @@ out/lab/20261107-185421: 0xE99524 on visit 1).
 Lab note: lanes 2 and 3 have host caches of UFO summaries only (2026-11-07): a campaign whose Creature end brings a
 UFO visit faulted there at 0xE99524 (campaign_tribe "stopped in creature"), lanes 4 and 5 do not. A campaign_tribe
 A/B between builds must use the same lane.
+
+## Civ: a paid build the money does not cover (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-civ-money-short"></a>
+
+BUG-0613 (docs/re/civ.md#civ-spend-below-zero). `coop_civ_money_short.py` (suite `civ_money_short`, warm, the `civ`
+fixture) sets the shared money to 500 (`coop.res add money`), then the host builds a factory (1200) and the guest a
+house (1600) with `coop.civ build`: neither is built, each game's own money is the same and not below 0; with 10000
+the host's factory is built on both and paid once. About 1 minute warm. `SPORE_FIX_OFF=civ.build_money` must FAIL
+(host -660, guest 0). civ_coop gives the host 5000 before its factory: the fixture's 3000 is spent by then.
+
+## Space: the sync-check and a fast ship that brakes and turns (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-space-fast-sync"></a>
+
+BUG-0547 (docs/re/space.md#space-copy-on-path). `coop_space_fast_sync.py` (suite `space_fast_sync`, cold, the `space`
+fixture, ~5 minutes) sets `SPORE_NET` itself when the lab gives none (delay 40, jitter 20, a 300 ms spike every ~10 s
+for 6 s): on a local lane no flight pattern made the sync-check's copy differ at all (W pulses, braking, zooms, a
+disabled guest; ~600 checks), the copy only falls behind its speed allowance when its speed changes within the moment
+(the rescue flight) or a state comes late. Checks: such moments happened, the guest drew the ship within 10 m of the
+host's path each time, the sync-check took none for a difference, no MISMATCH, and `coop.diag sync force shift` is
+still one. `SPORE_FIX_OFF=sync.own_path` must FAIL (every moment is a difference). The forced MISMATCH is inside
+`LAB-MARK sync-force` lines (the lab's gate leaves it out).
