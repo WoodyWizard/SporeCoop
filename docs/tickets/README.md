@@ -439,7 +439,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0427](BUG-0427-class-world-identity-and-transitions-umbrella.md) | open | bug | All | 2026-11-01 |  | class: world identity and transitions (umbrella) |
 | [BUG-0428](BUG-0428-class-game-rules-copied-by-hand-instead-of-calli.md) | open | bug | Cell | 2026-11-01 |  | class: game rules copied by hand instead of calling the game (umbrella) |
 | [BUG-0429](BUG-0429-class-mod-input-read-globally-instead-of-from-th.md) | open | bug | All | 2026-11-01 |  | class: mod input read globally instead of from the game window (umbrella) |
-| [BUG-0430](BUG-0430-class-tests-and-harness-that-hide-failures-umbre.md) | open | bug | Tests | 2026-11-01 |  | class: tests and harness that hide failures (umbrella) |
+| [BUG-0430](BUG-0430-class-tests-and-harness-that-hide-failures-umbre.md) | fixed | bug | Tests | 2026-11-01 | unreleased | class: tests and harness that hide failures (umbrella) |
 | [BUG-0431](BUG-0431-class-requests-and-objects-the-mod-builds-are-in.md) | open | bug | Creature | 2026-11-01 |  | class: requests and objects the mod builds are incomplete vs the game's own (umbrella) |
 | [BUG-0432](BUG-0432-class-fixed-size-game-pools-overrun-by-co-op-obj.md) | open | bug | All | 2026-11-01 |  | class: fixed-size game pools overrun by co-op object counts (umbrella) |
 | [BUG-0433](BUG-0433-crash-hosting-before-the-game-reaches-its-main-m.md) | fixed | crash | All | 2026-11-01 | 0.7.3.4 | crash: hosting before the game reaches its main menu faults in the time-of-day sync (TimeOfDay_Unavailable 0x01020F35, GOG 2024) |
