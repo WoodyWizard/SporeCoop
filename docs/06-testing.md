@@ -5151,3 +5151,15 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   `SPORE_FIX_OFF=res.guest_send` (a new switch: a guest's own money and food changes are not sent; only the guest's
   sale fails). The empire's ship model may be missing in the guest's game (no mirror, sync-check `s missing`):
   allowed for this test with BUG-0424.
+
+## The dash tests judged at the same moment (2026-11-08, fix/w46-g4-dash)
+<a id="testing-dash-same-moment"></a>
+
+* `coop_tribe_npc_dash.py` (tribe_npc_dash, creature_npc_dash, BUG-0363): PASS is the p90 of the guest's drawn
+  proxies against the host's NPCs at the same moment (`coop.bodyrec`, body_trail.same_moment) within 1.2 m. The old
+  window measure (coop_multi.measure) is printed for comparison only: it forgives a copy that is late on the host's
+  path (0.25 s late: p90 0.06 m against 1.62 m at the same moment, tools/tests/dash_selftest.py, in make test), so
+  it only sees copies off the path.
+* The guest records with `coop.bodyrec start diag`: rows `q<id>` are the NPC proxies' interpolation targets of the
+  frame before (the frame's drawn proxy is that driving plus the game's update). Lines `split:` (target vs driving)
+  and `window ... same moment ...` (each failing window sample at its real frame times) tell where an error comes from.

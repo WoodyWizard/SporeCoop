@@ -810,6 +810,7 @@ static void bodyrec_tick(double now)
             r.p = p;
             g_bodyrec.push_back(r);
         };
+        npc::for_each_diag(row, &now); // q<id>: the NPC proxies' targets (BUG-0363)
         tribe::for_each_diag(row, &now);
         civ::for_each_diag(row, &now);
     }
