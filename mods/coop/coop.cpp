@@ -5409,6 +5409,7 @@ std::vector<coop_ui::PlayerRow> ui_players()
         r.host = p.id == 0;
         r.me = p.id == g_sess.my_id();
         r.ready = g_ready.count(p.id) && g_ready[p.id];
+        r.color = pfind::color_index(p.id) >= 0 ? pfind::color_of(p.id) : 0; // F2
         if (r.me)
             r.stage = modes::mode_name(g_mode);
         else {
@@ -5786,6 +5787,25 @@ void init_ui()
         creations::cycle(k, dir);
     };
     a.players = ui_players;
+    a.color_next = [](std::string& line) { // F2: the lobby's ">": the next colour of the palette after the last one tried
+        static int s_try = -1;
+        int cur = pfind::color_index(g_sess.my_id());
+        int idx = ((s_try >= 0 ? s_try : cur >= 0 ? cur : 0) + 1) % findx::kColors;
+        if (idx == cur)
+            idx = (idx + 1) % findx::kColors;
+        s_try = idx;
+        bool ru = coop_ui::russian();
+        const auto& c = findx::kPalette[idx];
+        std::string why;
+        if (!pfind::request_color(idx, &why)) {
+            line = std::string(ru ? c.ru : c.en) + (ru ? ": этот цвет у другого игрока" : ": another player has this colour");
+            return false;
+        }
+        s_try = -1;
+        line = g_sess.role() == net::Role::Client ? std::string(ru ? "Цвет запрошен у хоста: " : "Asked the host for ") + (ru ? c.ru : c.en)
+                                                  : std::string(ru ? "Ваш цвет: " : "Your colour: ") + (ru ? c.ru : c.en);
+        return true;
+    };
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
     a.set_ready = set_ready;

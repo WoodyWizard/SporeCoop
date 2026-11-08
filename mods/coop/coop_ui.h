@@ -40,6 +40,9 @@ struct Api {
     std::function<bool()> connected;
     std::function<std::string()> session_line;
     std::function<std::vector<PlayerRow>()> players;
+    // F2: the own colour's ">" in the lobby: the next palette colour (pfind::request_color); false and the reason in line
+    // when it is refused (another player has it), else what happened ("Your colour: Blue", "Asked the host for Blue")
+    std::function<bool(std::string& line)> color_next;
     std::function<std::string()> world_line; // transfer progress / hints, "" if nothing
     std::function<bool()> ready;
     std::function<void(bool)> set_ready;

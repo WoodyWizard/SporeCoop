@@ -283,6 +283,7 @@ struct Dialog {
     Win session = nullptr, address = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, ask_btn = nullptr, settings_btn = nullptr;
     Win row_name[4] = {}, row_color[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
+    Win color_btn = nullptr; // F2: ">" next to the own colour: the next colour
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
@@ -918,11 +919,16 @@ static void build_dialog()
     for (int i = 0; i < 4; i++) {
         float y = 166.f + i * 28;
         D.row_name[i] = add_label(L, {40, y, 280, y + 26}, "", kWhite);
-        D.row_color[i] = add_label(L, {280, y, 345, y + 26}, "", kDim);
+        D.row_color[i] = add_label(L, {280, y, 318, y + 26}, "", kDim); // (the own row: ">" at 318..346)
         D.row_stage[i] = add_label(L, {345, y, 540, y + 26}, "", kWhite);
         D.row_ping[i] = add_label(L, {540, y, 620, y + 26}, "", kWhite);
         D.row_ready[i] = add_label(L, {620, y, 720, y + 26}, "", kWhite);
     }
+    D.color_btn = add_button(L, "colour", {318, 167, 346, 191}, ">", [] { // F2: moved onto the own row by refresh_lobby
+        std::string line;
+        bool ok = A.color_next && A.color_next(line);
+        set_status(line, ok ? kGreen : kRed, 6);
+    });
     D.address = add_label(L, {40, 282, 720, 306}, "", kDim);
     D.world = add_label(L, {40, 308, 720, 334}, "", kYellow);
     for (int i = 0; i < 4; i++)
@@ -1152,8 +1158,11 @@ static void refresh_lobby()
 {
     text(D.session, A.session_line());
     auto rows = A.players();
+    int own_row = -1;
     for (int i = 0; i < 4; i++) {
         bool have = i < (int)rows.size();
+        if (have && rows[i].me)
+            own_row = i;
         show(D.row_name[i], have);
         show(D.row_color[i], have);
         show(D.row_stage[i], have);
@@ -1173,11 +1182,20 @@ static void refresh_lobby()
         uint32_t pc = p.color ? p.color : g_test_color ? g_test_color : 0;
         text(D.row_color[i], pc ? "\xE2\x96\xA0\xE2\x96\xA0\xE2\x96\xA0" : "-");
         color(D.row_color[i], pc ? (pc | 0xFF000000u) : kDim);
+        if (p.me && D.color_btn) { // F2: the own colour's ">" on the own row
+            float y = 166.f + i * 28;
+            static float s_y = -1;
+            if (s_y != y) {
+                sui::set_area(D.color_btn, {318, y + 1, 346, y + 25});
+                s_y = y;
+            }
+        }
         text(D.row_stage[i], p.stage);
         text(D.row_ping[i], p.me ? "" : (p.ping_ms >= 0 ? std::to_string(p.ping_ms) + T(" ms", " мс") : "?"));
         text(D.row_ready[i], p.ready ? T("ready", "готов") : "-");
         color(D.row_ready[i], p.ready ? kGreen : kDim);
     }
+    show(D.color_btn, own_row >= 0 && A.color_next);
     std::string wl = A.world_line ? A.world_line() : "";
     int share_why = share_blocked();
     if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
@@ -1820,6 +1838,14 @@ std::string debug_state()
             s += "row " + std::to_string(i) + " '" + sui::caption(D.row_name[i]) + "' '" + sui::caption(D.row_color[i]) +
                  "' '" + sui::caption(D.row_stage[i]) +
                  "' '" + sui::caption(D.row_ping[i]) + "' '" + sui::caption(D.row_ready[i]) + "'\n";
+    { // F2: the colour of each row's swatch (ARGB; tests)
+        auto rows = A.players ? A.players() : std::vector<PlayerRow>{};
+        for (size_t i = 0; i < rows.size() && i < 4; i++) {
+            char cb[96];
+            snprintf(cb, sizeof cb, "rowcolor %u id=%u argb=%08X\n", (unsigned)i, (unsigned)rows[i].id, rows[i].color);
+            s += cb;
+        }
+    }
     for (int i = 0; i < 5; i++)
         if (D.chat_lines[i] && !sui::caption(D.chat_lines[i]).empty())
             s += "chat '" + sui::caption(D.chat_lines[i]) + "'\n";

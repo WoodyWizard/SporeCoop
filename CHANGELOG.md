@@ -26,7 +26,8 @@
 - Partners on the minimap: in Creature and Tribe every partner shows on the game's minimap as a mark in the
   partner's colour (BUG-0764).
 - Player colours: every player gets one of four distinct colours (yellow, blue, pink, green), the same on every
-  game; a player can pick another free one (eight in all; console `coop.find color <name>`, the lobby). Name tags,
+  game; a player can pick another free one (eight in all): the ">" next to the own colour in the lobby, or the
+  console `coop.find color <name>`. Name tags,
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
 
 ## [0.7.11] - 2026-11-08

@@ -11,6 +11,9 @@ host (instance 1, profile test, creature save) and guest (instance 2, empty prof
     by a click; closes the window and loads the saved game
  4. guest: Join a game, the host appears under "Games on your network", a click joins; it gets and loads the world
  5. in game, F9 opens the lobby on both: two players, colour column, stage, ping, the host's address line
+ 5b. colours (F2, BUG-0764): every row's swatch has the player's colour, the same on both games; the host holds pink
+    (console); the guest's ">" next to its own colour (a real click) asks for pink: refused, the reason in the status
+    line; a second click takes green: both games' colour column show the guest in green
  6. guest presses "I'm ready" -> the host sees it; chat line from the guest -> host
  7. settings in play: the session setting set in the menu reached the guest and is locked on both; the host's
     live change reaches the guest's page and its game; the guest's settings buttons change nothing
@@ -96,6 +99,10 @@ class Ui:
                     st.setdefault('pausebtns', []).append(w)
             elif key == 'chat':
                 st['chat'].append(rest.strip("'"))
+            elif key == 'rowcolor':  # rowcolor <row> id=<id> argb=<ARGB>
+                m = re.search(r'id=(\d+) argb=([0-9A-F]+)', rest)
+                if m:
+                    st.setdefault('colors', {})[int(m.group(1))] = m.group(2)
             elif key in ('session', 'lan', 'status', 'world', 'creation', 'hostaddr', 'setline', 'joinline'):
                 st[key] = rest.strip("'")
             else:
@@ -363,6 +370,28 @@ def run(restart):
     check(f':{lane.PORT}' in st.get('hostaddr', ''), f'guest: the host\'s address line ({st.get("hostaddr")!r})')
     check(not st['askreports']['vis'], 'guest: no "Ask the players for their reports" (host only)')
 
+    # ---- 5b. colours (F2): the column, a refused pick and a taken one by real clicks ----
+    PINK, GREEN = 'FFFF5FC8', 'FF5CE05C'
+    hs = host.wait(lambda s: len(s.get('colors', {})) == 2 and all(v != '00000000' for v in s['colors'].values()), 10,
+                   'host colours')
+    gs = guest.state()
+    check(hs and hs.get('colors') == gs.get('colors') and len(set(hs['colors'].values())) == 2,
+          f"the colour column: distinct, the same on both games ({hs and hs.get('colors')} / {gs.get('colors')})")
+    print('  host:', hc.call('coop.find color pink')['out'].strip(), flush=True)
+    st = guest.wait(lambda s: s.get('colors', {}).get(0) == PINK, 10, 'the host in pink on the guest')
+    check(st is not None, "the guest's colour column shows the host's new colour (pink)")
+    guest.click('colour')
+    st = guest.wait(lambda s: 'another player' in s.get('status', ''), 5, 'the refusal')
+    check(st is not None and st.get('colors', {}).get(1) != PINK,
+          f"the guest's click on pink (the host's) is refused, the reason in the status line ({st and st.get('status')!r})")
+    guest.click('colour')
+    gs = guest.wait(lambda s: s.get('colors', {}).get(1) == GREEN, 10, 'the guest in green')
+    hs = host.wait(lambda s: s.get('colors', {}).get(1) == GREEN, 10, 'the guest in green on the host')
+    check(gs is not None and hs is not None,
+          f"the guest's second click: green, in both games' colour column ({gs and gs.get('status')!r})")
+    shot(gc, 'ui_guest_colours.png')
+    shot(hc, 'ui_host_colours.png')
+
     # ---- 6. ready, chat ----
     guest.click('ready')
     st = host.wait(lambda s: any('Bob' in r[0] and r[4] == 'ready' for r in s['rows']), 10, 'ready')
@@ -371,9 +400,7 @@ def run(restart):
     gc.call(f'key {VK_RETURN}')
     st = host.wait(lambda s: any('hello from Bob' in c for c in s['chat']), 10, 'chat')
     check(st is not None, 'host: chat line from the guest')
-    hc.call('coop.uistate color FF4FA3FF')  # (the layout shot: a colour in the colour column until F2 assigns them)
     shot(hc, 'ui_host_ingame.png')
-    hc.call('coop.uistate color 0')
     shot(gc, 'ui_guest_ingame.png')
 
     # ---- 7. settings in play ----
