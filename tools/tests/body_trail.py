@@ -147,7 +147,8 @@ def same_moment(host_rows, guest_rows, keys, t0, t1):
     """BUG-0363: every guest frame in [t0, t1] of the bodies `keys` (n<id>) against the host's body at the same time:
     [dict(t, key, d, sp, tgt, drv)]: d the drawn copy from the host's body (m), sp the host's speed (m/s), tgt the
     guest's interpolation target (row q<id>, the frame before's driving, so at the frame before's time) from the host's
-    body then, drv the drawn copy from the target it was driven to (None without q rows)"""
+    body then, drv the drawn copy from the target it was driven to (None without q rows), raw M1's raw lead target
+    (row u<id>, no late time, no smoothing) from the host's body at the same time"""
     hb, gb = _by_key(host_rows), _by_key(guest_rows)
     frames = sorted({t for t, _, _ in guest_rows})
     out = []
@@ -157,6 +158,7 @@ def same_moment(host_rows, guest_rows, keys, t0, t1):
             continue
         ht = [x[0] for x in hv]
         q = dict(gb.get('q' + key[1:], []))
+        u = dict(gb.get('u' + key[1:], []))
         for t, gp in gv:
             if t < t0 or t > t1:
                 continue
@@ -167,7 +169,9 @@ def same_moment(host_rows, guest_rows, keys, t0, t1):
             j0, j1 = max(0, i - 3), min(len(hv) - 1, i + 2)
             dt = hv[j1][0] - hv[j0][0]
             sp = math.dist(hv[j1][1], hv[j0][1]) / dt if dt > 0.02 else 0.0
-            r = dict(t=t, key=key, d=math.dist(gp, _at_radius(h, gp)), sp=sp, tgt=None, drv=None)
+            r = dict(t=t, key=key, d=math.dist(gp, _at_radius(h, gp)), sp=sp, tgt=None, drv=None, raw=None)
+            if t in u:  # u<id>: M1's raw lead target at this frame's time
+                r['raw'] = math.dist(u[t], _at_radius(h, u[t]))
             w = q.get(t)
             if w is not None:
                 r['drv'] = math.dist(gp, _at_radius(w, gp))
