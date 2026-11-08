@@ -29,7 +29,7 @@ Observed: civ.cpp `player_of_combatant` returns the `g_hv` owner, 0xFE for NPC v
 ## Verification
 coop_civ_siege_npc.py (the game's capture meter through its own AddCapture, fixture civ_npc):
 * FAIL with `SPORE_FIX_OFF=civ.siege_players`: out/lab/20261107-222158 (capture +1.5 for the guest's hit after the NPC army's).
-* PASS: out/lab/20261107-222015 (+1.0; the host's hit after the guest's +1.5, the joint siege still works).
+* PASS: out/lab/20261107-222015, out/lab/20261107-223602 (+1.0; the host's hit after the guest's +1.5, the joint siege still works).
 
 ## History
 - 2026-11-07: opened.
