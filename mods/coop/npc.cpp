@@ -157,6 +157,11 @@ COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
 // `coop.fix npc.air off`: no NF_AIR sent, the proxy walked and driven (0.7.7).
 static bool g_air_fix = true;
 COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the air on the host (flying, jumping, thrown) is in the air on the guest too");
+// BUG-0710 (class BUG-0419): NpcSpawn.max_health was sent and never applied: a proxy had its species' adult max on the
+// guest (a baby NPC: max 5 on the host, 10 on the guest; detector Creature:max_hp, 20 of 23 comparisons). Off: 0.7.10.
+static bool g_max_hp_fix = true;
+COOP_FIX("npc.max_health", "BUG-0710", g_max_hp_fix, "creature: an animal's maximum health on the guest is the host's (babies, elders)");
+static uint32_t g_max_hp_applied;
 // tests (BUG-0550): `coop.npc lift <id> <m>`: the host's NPC <m> over its ground, every frame for <s> s
 static uint16_t g_lift_id = 0;
 static float g_lift_m = 0;
@@ -1620,6 +1625,7 @@ static void destroy_proxy(uint16_t id)
         if (game::is_destroyed(it->second.c)) // the game removed it already: only forget it
             game::puppet_unregister(it->second.c);
         else
+            creature_hp::forget_puppet(it->second.c);
             game::destroy_creature(it->second.c);
     }
     g_proxies.erase(it);
@@ -1674,6 +1680,7 @@ static void guest_tick(double now)
     g_kill.erase(std::unique(g_kill.begin(), g_kill.end()), g_kill.end());
     for (void* c : g_kill)
         if (c != av && !game::is_puppet(c) && !game::is_destroyed(c) && !game::destroy_pending(c)) {
+            creature_hp::forget_puppet(c);
             game::destroy_creature(c);
             g_removed_local++;
         }
@@ -1915,8 +1922,14 @@ static void guest_tick(double now)
                 game::play_death(px.c);
                 g_deaths_played++;
             }
-        } else if (!px.killed && s.health > 0)
-            game::set_health(px.c, s.health);
+        } else if (!px.killed && s.health > 0) {
+            // BUG-0710: the host's max health of the NPC (a baby has less than an adult of its species), as the
+            // partner's puppet gets the partner's (creature_hp GetMaxHp hook)
+            if (g_max_hp_fix && px.max_health > 0 && creature_hp::drive_puppet(px.c, s.health, px.max_health))
+                g_max_hp_applied++;
+            else
+                game::set_health(px.c, s.health);
+        }
         if (g_meat_fix && px.killed) { // BUG-0557: what this game's creature ate of the body goes to the host
             float m = body_meat(px.c);
             if (px.meat_seen > -1e8f && m < px.meat_seen - 0.001f)
@@ -1994,6 +2007,7 @@ static void remove_saved_strays(double now)
     for (void* c : a.v) {
         H->log(M, SK_INFO, "removed a creature of species %08X without tuning in a herd like ours (from a save made "
                "while a partner's puppet existed)", game::species_key(c).instance);
+        creature_hp::forget_puppet(c);
         game::destroy_creature(c);
         g_strays_removed++;
     }
@@ -2660,11 +2674,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets);
+                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied);
     }
     return b + meat_status() + game::destroy_deferred_status() + "\n";
 }

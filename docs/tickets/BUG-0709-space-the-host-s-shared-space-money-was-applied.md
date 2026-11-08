@@ -29,7 +29,7 @@ The host names its Space save (the CRC of its save name) in WELCOME too (`welcom
 ## Verification
 coop_space_own_save.py (fixture space; the guest leaves, loads a Space save of its own, joins again):
 * FAIL with `SPORE_FIX_OFF=res.space_save`: out/lab/20261107-231604.
-* PASS: out/lab/20261107-231435, PASS2.
+* PASS: out/lab/20261107-231435, out/lab/20261107-231824.
 
 ## History
 - 2026-11-07: opened.

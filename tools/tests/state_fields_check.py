@@ -41,9 +41,7 @@ FIELDS = {
         'pos': (A, 'npc.cpp', r'sp\.pos'),
         'rot': (A, 'npc.cpp', r'sp\.rot'),
         'health': (A, 'npc.cpp', r'sp\.health'),
-        'max_health': (N, 'the proxy is a creature of the same species at the same age (scale, BUG-0461): the game gives '
-                          'it the host\'s max by its own rules; the detector compares the game\'s max of every matched '
-                          'creature (worlddiff max_hp, BUG-0698)'),
+        'max_health': (A, 'npc.cpp', r'drive_puppet\(px\.c, s\.health, px\.max_health'),  # BUG-0710
     },
     'NpcState': {
         'net_id': (A, 'npc.cpp', r's\.net_id'),
