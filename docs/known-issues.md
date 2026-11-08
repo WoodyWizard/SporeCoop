@@ -145,6 +145,9 @@ anchor so other docs can link to it:
   lanes and was not run. Two freed-pointer paths that fit "heap corruption from earlier" were fixed
   on the way: BUG-0091 (15 animations played on freed puppets in 6 rounds of a guest's world
   teardown) and BUG-0082 (the guest's kill list kept across the host's absence).
+* 2026-11-08 (fix/w46-n1-crashes, 0.7.11 N1): the 4-player replay of seed 1035603402 run 6 times on rel/0.7.11 (also
+  at 20 fps over the players' networks, and with `core.frame` / `npc.kill` off): no fault on any game. Closed as
+  not-reproduced (multi4_creature_seed, multi4_creature_slow).
 * Ticket: BUG-0170.
 
 ## Tribe: the host froze once while the epic creature was being killed
