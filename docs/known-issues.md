@@ -72,6 +72,10 @@ anchor so other docs can link to it:
 * 2026-10-27 (fix/w1-tribe-civ): closed as fixed by that guard (commit d605e96): the null object
   is the only cause seen, and the guard is on in every tribe run (`game fixes: tribe camera guard
   on`, GOG 2024). Not seen since in the lab (tribe_play, chaos_tribe, tribe tests).
+* FIXED, cause found (2026-11-07, fix/w46-n1-crashes): the galaxy menu's intro timer fires in the first frames of the
+  guest's Tribe stage (a join ~12.5 s after its menu came up) and nulls the camera before the setup's LookAt;
+  reproduced with the guard off (`tribe.camera_guard`, test tribe_camera_null), and the intro no longer starts
+  outside the menu since 0.7.9 (`world.intro_at_once`). docs/re/tribe.md#tribe-camera-null.
 * Ticket: BUG-0167.
 
 ## Creature: NPC aggression towards a partner is untested end to end

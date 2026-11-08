@@ -8,12 +8,17 @@ cases of the same null camera (BUG-0656, GOG 2024) all had the galaxy menu's int
 it owns the camera while the setup runs (BUG-0607 / BUG-0626). The guard of d605e96 (tribe.camera_guard) skips
 both calls while the camera is null.
 
-The race made by hand, on one game alone in Tribe: world.intro_at_once off (so the intro may start outside the
-menu, as it did before 0.7.9), then a load of the tribe planet (coop.load) and the intro started as the menu's
-handler starts it as soon as the game is in the Loading mode, so that it plays while the setup runs. Several
-delays are tried until the game's log shows the setup meeting the null camera (with the guard: "skipped the tribe
-camera set-up", without it: "tribe camera guard off"). The game must come back to a playable Tribe with no fault.
-SPORE_FIX_OFF=tribe.camera_guard fails (the setup calls LookAt on the null camera).
+The race the players' way (a guest of the churn joining soon after its galaxy menu came up): before its join
+world.intro_at_once off (the intro may start outside the menu, as before 0.7.9), then the join join_at s after the
+guest's menu came up (twoinst.start(join_at=), the BUG-0607 timing), so that the menu's own timer (~15.85 s) starts
+the intro in the first frames of the guest's Tribe, right before its tribe setup. Cold starts with the join times of
+JOIN_AT until the guest's log shows the setup meeting the null camera (with the guard: "skipped the tribe camera
+set-up", without it: "tribe camera guard off"); the guest's game must then be in a playable Tribe with no fault.
+SPORE_FIX_OFF=tribe.camera_guard fails: the setup calls LookAt on the null camera, an access violation at
+SimCamera_LookAt+0x52 reading 0x2B4 (the report's fault; lab 20261107-231118, at the first join, 12.5 s).
+Not reproduced this way (lab 20261107-225810 .. 230854): the intro started by hand (PlayCinematic) in the menu right
+after the load request, in the Loading mode, or on a host reloading its Tribe: the intro played into the stage, the
+camera was there.
 
   SPORE_LANE=9 python3 tools/tests/coop_tribe_camera_null.py
 """
@@ -22,9 +27,11 @@ import re
 import time
 
 import lane
+import twoinst
 from twoinst import Checks, start
 
 TRIBE = 0x1654C02
+JOIN_AT = (12.5, 12.2, 12.8, 12.4, 12.6, 12.0)
 HIT = ('skipped the tribe camera set-up', 'tribe camera guard off')
 
 
@@ -57,49 +64,39 @@ def faults(con):
 
 
 def main():
-    host, guest = start('tribe')
     ck = Checks()
-    guest.call('coop.leave')
-    time.sleep(1)
-    host.call('coop.leave')  # alone: the load is the host's own, nobody follows it
-    time.sleep(2)
-    print('  ' + host.call('coop.fix world.intro_at_once off')['out'].strip(), flush=True)
-    m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCinematicManager::Get cdecl')['out'])
-    ck(m, 'host: the cinematic manager')
-    if not m:
-        return ck.result()
-    mgr = m.group(1)
     hit = False
-    for i, delay in enumerate((0.0, 0.5, 1.5, 3.0, 0.2)):
-        off = log_size(lane.HOST)
-        host.call('coop.load Game0 Zorispe')
-        t0 = time.time()
-        while time.time() - t0 < 30 and mode(host) == TRIBE:
-            time.sleep(0.05)
-        t_load = time.time() - t0
-        time.sleep(delay)
-        out = host.call(f'call Simulator::cCinematicManager::PlayCinematic thiscall {mgr} s:GGE_intro 1 0 0 0 0')['out']
-        print(f'  #{i + 1}: Loading after {t_load:.2f} s, intro started {delay:.1f} s later (mode '
-              f'{mode(host) or 0:08X}): {out.strip()[:60]}', flush=True)
-        t0 = time.time()
-        while time.time() - t0 < 120 and not (mode(host) == TRIBE and host.call('coop.avatar')['ok']):
-            time.sleep(0.5)
+
+    def prep(guest):
+        # the intro may start outside the menu (0.7.8); SPORE_FIX_OFF goes to the guest before the join (twoinst)
+        for name in ['world.intro_at_once']:
+            print('  guest before the join: ' + guest.call(f'coop.fix {name} off')['out'].strip()[:100], flush=True)
+
+    host = guest = None
+    for i, join_at in enumerate(JOIN_AT):
+        off = 0  # a cold start: the guest's log is the new process's
+        # the BUG-0607 race: the guest joins join_at s after its menu came up, its load request comes ~3.0-3.5 s later,
+        # just before the menu's own timer starts the intro (~15.85 s): the intro starts in the Loading mode
+        print(f'  #{i + 1}: the guest joins {join_at:.2f} s after its galaxy menu came up', flush=True)
+        host, guest = start('tribe', join_at=join_at, before_join=prep)
         time.sleep(4)
-        lines = [ln for ln in log_since(lane.HOST, off) if any(h in ln for h in HIT)]
-        for ln in lines[:2]:
-            print('    ' + ln.strip()[:200], flush=True)
-        playable = mode(host) == TRIBE and host.call('coop.avatar')['ok']
-        print(f'  #{i + 1}: back in Tribe: {playable}, faults {faults(host)}', flush=True)
+        new = log_since(lane.GUEST, off)
+        for ln in new:
+            if 'intro' in ln or any(h in ln for h in HIT):
+                print('    ' + ln.strip()[:200], flush=True)
+        lines = [ln for ln in new if any(h in ln for h in HIT)]
+        playable = twoinst.alive(lane.GUEST) and mode(guest) == TRIBE and guest.call('coop.avatar')['ok']
+        print(f'  #{i + 1}: guest in a playable Tribe: {playable}, faults {faults(guest) if playable else "?"}', flush=True)
         if lines:
             hit = True
-            ck(playable, f'#{i + 1}: the tribe setup met the null camera and the game is in a playable Tribe')
+            ck(playable, f'#{i + 1}: the guest\'s tribe setup met the null camera and its game is in a playable Tribe')
             break
         if not playable:
-            ck(False, f'#{i + 1}: the game is back in a playable Tribe')
+            ck(False, f'#{i + 1}: the guest\'s game is in a playable Tribe')
             break
     ck(hit, 'the race was made: the tribe setup ran without a simulator camera')
-    ck(faults(host) == 0, 'host: no fault')
-    ck.faults(host=host)
+    ck(twoinst.alive(lane.GUEST) and faults(guest) == 0, 'guest: no fault')
+    ck.faults(host=host, guest=guest)
     return ck.result()
 
 
