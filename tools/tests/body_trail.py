@@ -28,7 +28,8 @@ HITCH = 0.1
 
 
 def record(con, on):
-    # SPORE_BODYREC_DIAG=1: the guest's driving targets too (rows a/r/l<id>, K3 diagnostics; analyse() skips them)
+    # SPORE_BODYREC_DIAG=1: the guest's driving targets too (rows a/r/l<id> of Tribe members, K3 diagnostics, q<id> of
+    # NPC proxies, BUG-0363; analyse() skips them)
     diag = ' diag' if os.environ.get('SPORE_BODYREC_DIAG') == '1' else ''
     con.call('coop.bodyrec start' + diag if on else 'coop.bodyrec stop')
 
@@ -124,6 +125,89 @@ def analyse(host_rows, guest_rows, kinds='ntvp', skip_t=None):
                 run0 = None
         r['worst'] = sorted(r['worst'], reverse=True)[:6]
     return out
+
+
+def host_at(hv, ht, t):
+    """the host's body at time t interpolated between its rows (None: outside them or across a gap over GAP)"""
+    i = bisect.bisect_left(ht, t)
+    if i <= 0 or i >= len(hv) or hv[i][0] - hv[i - 1][0] > GAP:
+        return None
+    (ta, a), (tb, b) = hv[i - 1], hv[i]
+    f = (t - ta) / (tb - ta) if tb > ta else 0.0
+    return tuple(a[j] + (b[j] - a[j]) * f for j in range(3))
+
+
+def _at_radius(p, q):
+    """p put at q's distance from the planet's centre (each game grounds its bodies on its own terrain)"""
+    rp, rq = _norm(p), _norm(q)
+    return tuple(x * rq / rp for x in p) if rp > 1 and rq > 1 else p
+
+
+def same_moment(host_rows, guest_rows, keys, t0, t1):
+    """BUG-0363: every guest frame in [t0, t1] of the bodies `keys` (n<id>) against the host's body at the same time:
+    [dict(t, key, d, sp, tgt, drv)]: d the drawn copy from the host's body (m), sp the host's speed (m/s), tgt the
+    guest's interpolation target (row q<id>, the frame before's driving, so at the frame before's time) from the host's
+    body then, drv the drawn copy from the target it was driven to (None without q rows), raw M1's raw lead target
+    (row u<id>, no late time, no smoothing) from the host's body at the same time"""
+    hb, gb = _by_key(host_rows), _by_key(guest_rows)
+    frames = sorted({t for t, _, _ in guest_rows})
+    out = []
+    for key in keys:
+        hv, gv = hb.get(key, []), gb.get(key, [])
+        if not hv or not gv:
+            continue
+        ht = [x[0] for x in hv]
+        q = dict(gb.get('q' + key[1:], []))
+        u = dict(gb.get('u' + key[1:], []))
+        for t, gp in gv:
+            if t < t0 or t > t1:
+                continue
+            h = host_at(hv, ht, t)
+            if h is None:
+                continue
+            i = bisect.bisect_left(ht, t)
+            j0, j1 = max(0, i - 3), min(len(hv) - 1, i + 2)
+            dt = hv[j1][0] - hv[j0][0]
+            sp = math.dist(hv[j1][1], hv[j0][1]) / dt if dt > 0.02 else 0.0
+            r = dict(t=t, key=key, d=math.dist(gp, _at_radius(h, gp)), sp=sp, tgt=None, drv=None, raw=None)
+            if t in u:  # u<id>: M1's raw lead target at this frame's time
+                r['raw'] = math.dist(u[t], _at_radius(h, u[t]))
+            w = q.get(t)
+            if w is not None:
+                r['drv'] = math.dist(gp, _at_radius(w, gp))
+                k = bisect.bisect_left(frames, t)
+                hp = host_at(hv, ht, frames[k - 1]) if k > 0 else None
+                if hp is not None:
+                    r['tgt'] = math.dist(w, _at_radius(hp, w))
+            out.append(r)
+    return out
+
+
+def locate(rows_by_key, key, pos, t_est, win=0.4):
+    """the time of the row of `key` within win s of t_est nearest to pos (a console reading of the body's position):
+    (t, residual m) or (None, None)"""
+    best = (None, None)
+    for t, p in rows_by_key.get(key, []):
+        if abs(t - t_est) <= win:
+            d = math.dist(p, pos)
+            if best[1] is None or d < best[1]:
+                best = (t, d)
+    return best
+
+
+def path_time(hv, pos, t_c, win=0.6, step=0.005):
+    """the time in t_c +- win at which the host's body (rows hv) came nearest to pos: (t, m) or (None, None)"""
+    ht = [x[0] for x in hv]
+    best = (None, None)
+    t = t_c - win
+    while t <= t_c + win:
+        h = host_at(hv, ht, t)
+        if h is not None:
+            d = math.dist(_at_radius(h, pos), pos)
+            if best[1] is None or d < best[1]:
+                best = (t, d)
+        t += step
+    return best
 
 
 def summary(res, t0=0.0):

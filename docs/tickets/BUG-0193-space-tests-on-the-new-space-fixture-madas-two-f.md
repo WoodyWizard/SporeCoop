@@ -1,17 +1,17 @@
 ---
 id: BUG-0193
 title: Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23)
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.6
+branch: fix/w42-space-play
+commits: f8e809cb
+tests: space_rescue, space_death
 signature:
 docs:
 related:
@@ -35,6 +35,13 @@ See the report (observed vs inferred as marked there).
 Not fixed yet.
 
 ## Verification
+space_rescue: FAIL lane 6 2026-10-23 (the report: a 2.5 s W flight of ~550 m); fixed by the 0.3 s pulses to 120 m
+(fix/w42-space-play f8e809cb, in 0.7.6): PASS 3 of 3 out/lab/20261104-114611, 3 of 3 20261104-123228, 6 of 7 in G1's
+look (the one failure BUG-0547's gate), and 3 of 3 again on lane 2: out/lab/20261108-070137.
+space_death: the 47 s dead ship of the report was never seen again: 3 of 3 20261104-114611, 4 of 4 in G1's look,
+3 of 3 out/lab/20261108-070137. no-fail-run: the death case did not repeat in 13 runs over two weeks of code changes;
+cause not found (the guard "respawn caption without a planet" did not fire in the report, so the caption had ended
+another way).
 
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
@@ -48,3 +55,4 @@ Not fixed yet.
   cause not found. Left open for BUG-0547 and the death case.
 - 2026-11-04 (fix/w42-space-play): space_rescue --repeat 3 again: 3/3 (lab 20261104-123228).
 - 2026-11-04 (fix/w43-tests): G1 looked at the labs since 2026-11-03: space_death 4 of 4 and space_rescue 6 of 7 ok (the one failure is BUG-0547's gate); the 47 s dead ship not seen again. Left open, not changed.
+- 2026-11-08 (fix/w46-g4-tests): G4: closed: the rescue flake was fixed by the pulse flight (0.7.6), 3 of 3 again (out/lab/20261108-070137); the death case not seen in 13 runs since the report (3 of 3 again in the same lab run).

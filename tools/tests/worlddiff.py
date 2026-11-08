@@ -136,7 +136,12 @@ IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal
           # BUG-0473 / BUG-0498 (coop_world_lod.py, lab 20261103-161705): each game makes these around its own
           # player's camera (28 rocks on the walking guest only, 30-75 m ahead of it, never on the host that
           # stood 1 m from it at the start; 1-2 plants 8-14 m from the own player only): not a desync
-          'rock', 'game_plant'}
+          'rock', 'game_plant',
+          # BUG-0489 (docs/re/creature.md#creature-gameplay-markers): cGameplayMarker spawn points are invisible
+          # bookkeeping; the herds, nests, tribes and ornaments they spawn are compared themselves. Each game consumes
+          # markers by its own logic (the host's NPC tribe controller destroys a tribe spawn marker, 0xCC6440; the
+          # part-level cleanup of the local avatar's collection, 0xD408E0): a one-off count difference is not a desync
+          'gameplay_marker'}
 # BUG-0657: in Space the objects of a planet's surface are loaded only by a game whose camera is on that planet
 SPACE_PLANET_LOD = {'city', 'city_walls', 'city_territory', 'civilization', 'vehicle', 'herd', 'ornament', 'turret',
                     'building_city_hall', 'building_industry', 'building_house', 'building_entertainment',

@@ -13,6 +13,7 @@
 //   end objects=<n>
 // kind: c creature, v vehicle; id: the net id (-1 none: the avatar, a local object).
 // own (creatures): avatar, npc (host), proxy (guest), puppet (a player's), local (no net id).
+// owner (creatures): the player id of a puppet (BUG-0450: tests match a player's puppet by it, not by distance).
 //
 // `coop.census all [r]` (the divergence detector, docs/sync-architecture-plan.md, tools/tests/worlddiff.py)
 // adds, after the v1 rows:
@@ -59,6 +60,7 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(uint32_t& mode, uint32_t& world)> place; // g_mode, g_world
     std::function<bool(net::Vec3& pos)> self_pos;               // the own player (false: none)
+    std::function<int(void* c)> puppet_owner;                   // BUG-0450: the player whose puppet c is (-1 none)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census and coop.wstate

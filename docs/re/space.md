@@ -2465,3 +2465,62 @@ BUG-0723 / BUG-0724, children of the content class BUG-0424 (`squadron.cpp`, gue
 * ✔ (runtime, lab 20261108-043549 / 044742 / 044523) A host ship whose model key the guest lacks and whose empire has no
   ship on the guest (a pirate) had no mirror at all (BUG-0323's "no mirror yet"): the lab's sync-check gate found the
   host's ship missing on the guest. It takes the raid model as its last fallback too (`fleet.zero_key`).
+## The tutorial lock and how it ends (2026-11-08, fix/w46-g4-tests)
+<a id="space-tutorial-lock"></a>
+
+BUG-0181. GOG 2024, Ghidra:
+* ✔ cMissionManager (Get 0xFEB880 = [0x16DAC64]) serializer table 0x1396A80: +0x16 mbFirstCommunication,
+  +0x17 mbFlightSchoolFinished (get 0xFEB900, set 0xFEB8F0), **+0x18 mbMission201Finished** (get 0xFEB920, set
+  0xFEB910; the getter is code-folded, ~90 callers of other classes), +0x5C mTutorialMissionStates,
+  +0x80 mTutorialTargetPlanetKeys, +0x94 mTutorialSpeciesIDs, +0xA8 mTrackedMissions, +0xC8 mRecentNPCMissions,
+  +0xD4 mRecentColonyMissions.
+* ~ The galaxy travel check 0xFFC780 (thiscall(player UFO, star) ret 4 -> bool): while +0x18 is 0 only the home
+  star and the target star of mission 0x7BDBB97D (Story201, Cast 0x422227E) pass, so the red "Distance" refusal
+  of space_empire (docs/06-testing.md 6.15) is this lock, not the drive range; afterwards the range (0xFFC6A0).
+* ~ The Story201 mission class (vtable 0x146FDE0, ctor 0xC5F340): OnCompleted (vt +0x94) 0xC5F780 clears star
+  flag 0x40000, calls 0xBB9DA0 and sets +0x18 = 1. The galaxy-entry handler 0xFDABE0 plays SPG_EnteredGalaxy_201
+  while +0x18 is 0.
+* ~ The release cheat `spaceCreate` ("unlocks and recharges creation tools while playing in space",
+  App/cToolChargeCommand, ParseLine 0xB5FF40, registered at 0xB63115 next to moreMoney): needs the
+  interplanetary drive 0x4133FE05 ("Advance further in the game..." otherwise), clears
+  [cAppModeSpace+0x188]+0x48/+0x49 (?), sets +0x17 and +0x18 to 1, adds or recharges (AddAmmo 5) the tools
+  of prop 0x68C20E1 (prop file 0x30608F0B / 0x59252EE9). The `tool` developer cheat (0x10234D0) also sets +0x18.
+
+## The tutorial lock at runtime: spaceCreate and galaxy clicks (2026-11-08, fix/w46-g4b-coverage)
+<a id="space-tutorial-lock-runtime"></a>
+
+BUG-0181, lane 3 (GOG 2024), runtime of docs/re/space.md#space-tutorial-lock:
+* ✔ `coop.space tutorial` on `space_empire`: `first_comm=0 flight_school=1 m201=0`, the Story201 mission object
+  (GetMissionByID 0x7BDBB97D) found, state 3 (active). The guest's game (it loads the host's save) has the same.
+* ✔ The release cheat `cheat spaceCreate` sets m201=1 at once (flight_school stays 1); the Story201 mission object
+  keeps state 3 (the game never completes it). m201=1 survives a save and a load (fixture `space_free`).
+* ✔ `spaceCreate` **removes the interstellar drive** (tool 2569FAE8) from the inventory while it adds or recharges
+  the other tools (37 tools afterwards, the drive upgrade 4, energy upgrade 5 and the colony tool stay):
+  `coop.space empire` says `drive=0`. The galaxy view and galaxy flights to nearby stars still work without it.
+  `space_free` adds the drive back (`coop.space tool add interstellardrive`).
+* ✔ With m201=1 a real galaxy click on an unowned star 0.7-1.2 units away flies the ship there (galaxy position
+  at the star within ~10 s, both host and guest); with m201=0 (`space_empire`) the same click leaves the ship at
+  home (the red "Distance" refusal), on the host and on the guest: each game checks its own mission manager.
+  So the refusal of docs/06-testing.md 6.15 is the tutorial lock, not the drive range (`space_free`, lab
+  20261108-060412 locked, 20261108-060655 free).
+
+## Selling spice to an NPC store at runtime (2026-11-08, fix/w46-g4b-coverage)
+<a id="space-npc-store-runtime"></a>
+
+BUG-0199, lane 3 (GOG 2024), `space_empire` (contact with 80001FCC, home star 0046102D):
+* ✔ Recipe by clicks (1440x1080) in the empire's system (`coop.space jumpto 0x0046102D`): the comm tab above the
+  empire's card (288, 914) opens its greeting; the first answer (720, 725, "Salutations! There is something I'd like
+  to discuss...") opens the menu Trade (420, 744) / Repair / Recharge / Missions (838, 754) / Diplomacy (838, 814);
+  Trade shows the store's items on top and the cargo below (first cargo slot 327, 760 with count and the store's
+  price); a click on the cargo slot selects it (amount 1/20, price), Sell Item (1063, 884) sells one unit; Goodbye
+  (424, 882).
+* ✔ The sale is the game's own: the seller's cargo count falls by one and its money rises by the price at once; the
+  other game's shared money follows within a second (shared.cpp; a guest's earning through MSG_RES_ADD).
+* ✔ Each game has its own store for the same empire: the guest's paid 281 and the host's 4,779 for one Red Spice in
+  the same session (another session: 6,747 on the host). BUG-0747.
+* ✔ Missions by clicks: in the same menu, Missions (838, 754) answers "You want to work for us?" with one answer
+  ("I yearn to feel the solar wind at my back. Any missions?", 720, 725); the empire then offers one mission (a
+  mission noun of state 0 appears at once: `coop.space allies missions`, e.g. id 2AB57FAC giver 80001FCC reward 0
+  flags 88) with "Tell me more..." (720, 725) / "I'm not interested right now" (720, 756). In the run of
+  2026-11-08 the offer was a Galactic Adventures mission ("Beam Down?" after "Tell me more"); declining it removed
+  the mission noun, and asking again gave "Check us later" (no new offer for a while).

@@ -59,6 +59,10 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
 static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
 COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
+// BUG-0010 (twin added for BUG-0430): off = a guest never asks the host for a species it does not have (0.7.2.2: the
+// NPC stays "unknown species", never built)
+static bool g_ask_species_fix = true;
+COOP_FIX("creations.ask_species", "BUG-0010", g_ask_species_fix, "creations: a guest asks the host for a species of its world it does not have (an NPC of a species only the host's profile has)");
 
 // BUG-0278: a guest's own editor (the vote's, docs/re/creations.md#creations-own-editor-save) saves
 // its creature into My Creations but leaves the avatar on the world's species: the host's creature
@@ -1953,7 +1957,7 @@ static void apply_species(const std::vector<uint8_t>& data)
 
 void want_species(const Key& k)
 {
-    if (!C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
+    if (!g_ask_species_fix || !C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
         k.type != kInfo[kCreature].type || k.group != kInfo[kCreature].group || g_species_db.count(k.instance))
         return;
     double now = H->time_seconds();

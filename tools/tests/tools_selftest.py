@@ -16,14 +16,17 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             survives the worktree's removal (BUG-0062)
   tickets_check  tickets.py check: a new fix names its commits (in history, not all released
             before), an existing test, FAIL and PASS lab run ids or `no-fail-run:`, no path outside the
-            repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214)
+            repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214); a fixed
+            bug names its twin switch or the reason it has none (BUG-0430)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
-            .sym has the same name (BUG-0086)
+            .sym has the same name (BUG-0086); a name a test tool calls missing from the .sym files, a
+            float result of an entry without its `returns:` note, an integer result of one that has it (BUG-0430)
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
             place: exit-time, log and short crash files, crash line first (BUG-0247)
   mergelogs tools/merge_logs.py orders two players' lines by the session clock, picks the last session,
             places lines without a clock with --all, and lists the sessions (docs/REPORTING.md#reporting-support)
   campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
+  testlint  tools/tests/test_lint.py: a game test in no suite, a check on a mod counter without a reason (BUG-0430)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
@@ -290,7 +293,7 @@ def test_tickets_check():
     new = g('rev-parse', '--short', 'HEAD').strip()
     path = os.path.join(repo, 'docs', 'tickets', 'BUG-0001-t.md')
     good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='',
-                verif='FAIL with the fix off: out/lab/20261028-101010. PASS: 20261028-111111.')
+                verif='FAIL with SPORE_FIX_OFF=pool.purge: out/lab/20261028-101010. PASS: 20261028-111111.')
 
     def check(cwd=repo, **kw):
         open(os.path.join(cwd, 'docs', 'tickets', 'BUG-0001-t.md'), 'w').write(TICKET.format(**{**good, **kw}))
@@ -309,6 +312,10 @@ def test_tickets_check():
         (dict(tests='no_such_test'), 'names no lab suite', 'a test name that resolves nowhere: fails'),
         (dict(verif='/tmp/x/run.log ' + good['verif']), 'outside the repository', 'a path outside the repository: fails'),
         (dict(extra='switch: session_end\n'), 'unknown coop.fix name', 'an unknown switch: name fails (BUG-0214)'),
+        (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.'), 'names no twin switch',
+         'a fixed bug that names no twin switch and no reason: fails (BUG-0430)'),
+        (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.', extra='switch: none\n'),
+         'names no twin switch', 'a bare `switch: none` without a reason: fails (BUG-0430)'),
     ]
     for kw, want, what in cases:
         rc, out = check(**kw)
@@ -317,6 +324,8 @@ def test_tickets_check():
     globals()['check'](rc == 0, 'the same with `no-fail-run: docs only` passes')
     rc, out = check(extra='switch: pool.purge\n')
     globals()['check'](rc == 0, 'a known switch: name passes')
+    rc, out = check(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.', extra='switch: none (a check only)\n')
+    globals()['check'](rc == 0, f'`switch: none (<reason>)` passes (BUG-0430) {out.strip().splitlines()[:1]}')
     rc, out = check(fixed_in='0.7.2', commits='')
     globals()['check'](rc == 0, 'an old fix (released up to 0.7.3.0) is not failed retroactively')
     check(commits=old)
@@ -381,6 +390,30 @@ def test_relint():
     os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
     r = lint()
     check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
+    # BUG-0430: a test tool's `call <Name>` needs the name too; a float result needs the entry's `returns:` note
+    os.remove(fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'frozen_off_922af7c7.txt'), fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
+    os.makedirs(os.path.join(tree, 'tools', 'tests'), exist_ok=True)
+    tool = os.path.join(tree, 'tools', 'tests', 'coop_zz.py')
+    open(tool, 'w').write("con.call('call Simulator::ToolOnlyName cdecl')\n")
+    r = lint()
+    check(r.returncode == 1 and 'missing symbol Simulator::ToolOnlyName (used at tools/tests/coop_zz.py:1)' in r.stdout,
+          'a symbol a test tool calls by name must be in the .sym files (BUG-0430)')
+    os.remove(tool)
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::ZzFloat=0x00401000 ; verified thiscall(x) ret 4\n'
+                'Simulator::ZzSaysFloat=0x00401010 ; verified thiscall(x) ret 4; returns: float (ST0)\n')
+    open(os.path.join(tree, 'mods', 'coop', 'zz_ret.cpp'), 'w').write(
+        'static uintptr_t a_Zz, a_Says;\n'
+        'float f(void* x) { return thiscall<float>(a_Zz, x) + (float)thiscall<int>(a_Says, x); }\n'
+        'void init() { a_Zz = S("Simulator::ZzFloat"); a_Says = S("Simulator::ZzSaysFloat"); }\n')
+    r = lint()
+    check(r.returncode == 1 and 'Simulator::ZzFloat: called with a float result at mods/coop/zz_ret.cpp:2' in r.stdout,
+          'a float result of an entry without its `returns:` note is flagged (BUG-0430)')
+    check('Simulator::ZzSaysFloat is called with a int result' in r.stdout,
+          'an integer result of an entry that returns a float in ST0 is flagged (BUG-0430)')
+    os.remove(os.path.join(tree, 'mods', 'coop', 'zz_ret.cpp'))
 
 
 # ---------------------------------------------------------------- release
@@ -712,6 +745,14 @@ def test_worldstate():
     out = sorted(f['sig'] for f in worlddiff.diff(h, g))
     check(out == ['Tribe:guest_only:game_bundle_held', 'Tribe:host_only:game_bundle_carried', 'Tribe:unmatched:game_bundle'],
           f'carried on one game only, ground food 4.5 m off, food in another container: their own rows ({out})')
+    # BUG-0489: one gameplay marker more on the host (an invisible spawn point a game's own logic consumes,
+    # docs/re/creature.md#creature-gameplay-markers): no row
+    mk = 'obj g{} key=00000000 alive=1 hp=-1.0 ai=-1 own= owner=-1 pos=({} 2.0 3.0) noun=036BE27E ser={} scale=1.00'
+    hc = 'census v1 role={} me={} mode=Creature modeid=01654C01 world=A3930F03 t=1.0\nme pos=(1.0 2.0 3.0) ok=1'
+    h = worlddiff.World('\n'.join([hc.format('host', 0), mk.format(1, 10.0, 1), mk.format(2, 40.0, 2), 'end objects=2']))
+    g = worlddiff.World('\n'.join([hc.format('guest', 1), mk.format(1, 10.0, 5), 'end objects=1']))
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(not [x for x in out if 'gameplay_marker' in x], f'a gameplay marker on the host only: no row ({out})')
     # BUG-0596: a game that lists no object (it loads its world) is not compared
     obj = 'obj c{} key=2915F01F alive=1 hp=10.0 ai=1 own=npc owner=0 pos=(1.0 2.0 3.0)'
     h = worlddiff.World('\n'.join(['census v1 role=host me=0 mode=Creature modeid=01654C01 world=A3930F03 t=1.0',
@@ -782,10 +823,41 @@ def test_worldstate():
     check(out == ['Tribe:state:food'], f'diff() without a centre gives the state rows ({out})')
 
 
+# ---------------------------------------------------------------- test_lint (BUG-0430)
+def test_testlint():
+    print('testlint: a game test in no suite, a check on a mod counter')
+    root = os.path.join(TMP, 'tl')
+    for d in ('tools/tests', 'mods/coop'):
+        os.makedirs(os.path.join(root, d))
+    shutil.copy(os.path.join(ROOT, 'tools', 'tests', 'test_lint.py'), os.path.join(root, 'tools', 'tests', 'test_lint.py'))
+    t = lambda *a: os.path.join(root, 'tools', 'tests', *a)
+    open(t('suite.py'), 'w').write("T = [dict(cmd='python3 tools/tests/coop_a.py')]\n")
+    open(os.path.join(root, 'mods', 'coop', 'x.cpp'), 'w').write(
+        'void f(char* b) { snprintf(b, 99, "zz_sent=%u zz_hp=%.1f", g_zz_sent, F<float>(p, 4)); }\n')
+    open(t('coop_a.py'), 'w').write("import coop_lib\ndef main():\n    ck(hp(c) > 1, 'the game hp')\n")
+    open(t('coop_lib.py'), 'w').write('x = 1\n')
+    open(t('coop_b.py'), 'w').write("# suite: none (a probe)\ndef main():\n"
+                                     "    n = num(r'zz_sent=(\\d+)', c.call('coop.x')['out'])\n"
+                                     "    ck(n > 0, 'sent')\n    ck(num(r'zz_hp=(\\d+)', s) > 0, 'hp')\n")
+    open(t('coop_c.py'), 'w').write('x = 1\n')
+    run = lambda: subprocess.run([sys.executable, '-I', t('test_lint.py'), '--root', root], capture_output=True, text=True)
+    r = run()
+    check('coop_c.py: in no lab suite' in r.stdout, 'a game test in no suite and imported by none is flagged')
+    check('coop_a.py: in no' not in r.stdout and 'coop_lib.py' not in r.stdout and 'coop_b.py: in no' not in r.stdout,
+          'a suite test, its library and a `# suite: none (<reason>)` probe pass')
+    check('coop_b.py:4: the check rests on the mod\'s counter(s) zz_sent' in r.stdout and 'coop_b.py:5' not in r.stdout,
+          f'a check on a mod counter is flagged, one on a value the mod reads from the game is not ({r.stdout[-300:]})')
+    src = open(t('coop_b.py')).read().replace("'sent')", "'sent')  # counter: the message is the point")
+    open(t('coop_b.py'), 'w').write(src)
+    os.remove(t('coop_c.py'))
+    r = run()
+    check(r.returncode == 0, f'with `# counter: <reason>` it passes ({r.stdout.strip().splitlines()[-1:]})')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
-          'worldstate': test_worldstate}
+          'worldstate': test_worldstate, 'testlint': test_testlint}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

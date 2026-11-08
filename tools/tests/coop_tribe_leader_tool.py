@@ -23,6 +23,7 @@ staff back at once). A probe for the next try.
 
   SPORE_LANE=2 python3 tools/tests/coop_tribe_leader_tool.py [--rejoin] [--direct]
 """
+# suite: none (a probe of BUG-0583: the natural case did not happen in 3 runs and --direct passes with the fix off)
 import re
 import sys
 import time

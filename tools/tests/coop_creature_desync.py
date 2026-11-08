@@ -20,6 +20,8 @@ and after the reload:
 
   coop_creature_desync.py [--no-crash] [--seed-nodeath]
 
+  SPORE_FIX_OFF=creations.ask_species,creations.own_species: the guest never gets the host-only species
+                  (BUG-0010, BUG-0017): the companion checks must FAIL
   --seed-nodeath  the guest's mirrors do not play the game's death (`coop.npc deathfix off`, the
                   bug BUG-0015 fixed): the kill check must FAIL
 """
@@ -78,6 +80,17 @@ def game_dead(con, ptr, species):
     return None
 
 
+def built_in_game(con, ptr, species):
+    """the game's own object of the mirror: a creature of that species with a species profile and a body"""
+    if not ptr:
+        return False
+    for line in con.call(f'coop.npc creatures {species}')['out'].splitlines():
+        m = re.search(r'creature (\S+) species=([0-9A-F]{8}) prof=(\S+) .*? body=([0-9A-F]{8})', line)
+        if m and int(m.group(1), 16) == ptr:
+            return m.group(2) == species and int(m.group(3), 16) != 0 and m.group(4) != '00000000'
+    return False
+
+
 def drag(con, x1, y1, x2, y2):
     """a slow drag the editor takes as moving a part"""
     con.call(f'move {x1} {y1}')
@@ -105,6 +118,16 @@ def checks(ck, host, guest, tag, edited=True):
     seen = wait(lambda: [i for i in pack if npcs(guest).get(i, ('', ''))[1] == 'spawned'], 30)
     ck(seen, f'{tag}: the guest sees the host\'s companion ({pack} -> '
               f'{[npcs(guest).get(i) for i in pack]}; {guest.call("coop.creations")["out"].splitlines()[0]})')
+    # BUG-0430: "spawned" is the mod's state of the mirror; the game must have built a creature of that species
+    # (its object list, `coop.npc creatures`: a species profile and a body; FAIL with
+    # SPORE_FIX_OFF=creations.ask_species,creations.own_species)
+    # The guest's game knows the host's creation under its own instance key (lab 20261108-073449: "the host's own
+    # creation 29020CC4 'Judge' of its world is 7DBEADED here"): the species of the mirror as the guest lists it
+    sp_here = lambda i: npcs(guest).get(i, (HOST_ONLY,))[0]
+    built = wait(lambda: [i for i in (seen or []) if built_in_game(guest, mirror_ptr(guest, i), sp_here(i))], 10)
+    sp = sp_here(seen[0]) if seen else HOST_ONLY
+    ck(built, f'{tag}: the guest\'s game built the companion of the host-only species ({built}; {HOST_ONLY} is {sp} '
+              f'there; {guest.call(f"coop.npc creatures {sp}")["out"].splitlines()[0]})')
 
     # ghosts: two samples 3 s apart (a despawn on its way is not a ghost)
     def ghosts():

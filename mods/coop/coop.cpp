@@ -810,6 +810,7 @@ static void bodyrec_tick(double now)
             r.p = p;
             g_bodyrec.push_back(r);
         };
+        npc::for_each_diag(row, &now); // q<id>: the NPC proxies' targets (BUG-0363)
         tribe::for_each_diag(row, &now);
         civ::for_each_diag(row, &now);
     }
@@ -5226,6 +5227,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "record set" : "no relationship manager");
         return ok ? 0 : 1;
     }
+    if (argc > 3 && !strcmp(argv[1], "event")) { // tests (BUG-0168): event <hex crt> <n>, the game's ApplyEvent
+        bool ok = social::debug_event(strtoul(argv[2], nullptr, 16), atoi(argv[3]));
+        SAY(ok ? "event applied" : "no relationship manager or event out of 0..7");
+        return ok ? 0 : 1;
+    }
     if (argc > 2 && !strcmp(argv[1], "goto")) {
         bool ok = social::debug_goto((uint16_t)atoi(argv[2]));
         SAY(ok ? "next to it" : "no such spawned proxy");
@@ -6820,6 +6826,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return false;
         p = local_state().pos;
         return true;
+    };
+    csc.puppet_owner = [](void* c) -> int {
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet == c && !r.echo)
+                return id;
+        return -1;
     };
     census::init(H, M, std::move(csc));
     squadron::Ctx sqc;

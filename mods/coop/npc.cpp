@@ -227,6 +227,8 @@ struct Proxy {
     net::SnapshotBuffer buf;
     drive::State drv;
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
+    net::Vec3 diag_want{};  // BUG-0363 (coop.bodyrec diag): the target of the last driving
+    bool diag_have = false;
     bool ever = false;      // BUG-0383: an object was made for it once (a body the guest's game removed stays gone)
     double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
     float made_agl = 0;     // position's height over this game's ground then (m)
@@ -1743,6 +1745,8 @@ static void guest_tick(double now)
         net::PlayerState s;
         if (!px.buf.sample(now, s))
             continue;
+        px.diag_want = s.pos; // (read only by coop.bodyrec diag rows: no driving reads it)
+        px.diag_have = true;
         const float rv_rep = drive::speed(s.vel); // (coop.npctrack: the speed the host reported)
         if (g_npc_novel)
             s.vel = {0, 0, 0};
@@ -3139,6 +3143,23 @@ bool debug_hurt(uint8_t player, uint16_t id, float damage)
     game::hit(pup, damage, 0, it->second);
     return true;
 }
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user)
+{
+    if (!is_guest())
+        return;
+    char k[8];
+    const double now = H->time_seconds();
+    for (auto& [id, px] : g_proxies)
+        if (px.c && px.diag_have && game::object_alive(px.c) && !px.killed) {
+            snprintf(k, sizeof k, "q%u", (unsigned)id);
+            fn(k, px.diag_want, user);
+            if (!px.buf.empty()) { // u<id>: M1's raw lead now (const: no late_time, no smoothing; changes no state)
+                snprintf(k, sizeof k, "u%u", (unsigned)id);
+                fn(k, px.buf.raw_lead(now), user);
+            }
+        }
+}
+
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;

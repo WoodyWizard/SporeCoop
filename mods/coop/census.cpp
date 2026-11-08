@@ -58,8 +58,11 @@ static void creature_rows(std::vector<Row>& rows)
             } else if (hid >= 0) {
                 r.own = "npc";
                 r.id = hid;
-            } else
+            } else {
                 r.own = r.ai ? "local" : "puppet";
+                if (!r.ai && C.puppet_owner)
+                    r.owner = C.puppet_owner(o);
+            }
             u->rows->push_back(r);
             return true;
         },

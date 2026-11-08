@@ -5210,3 +5210,88 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
   click on the check (BUG-0283's point: no "changes will be lost" for changes nobody made); coop_guest_editor_hold,
   coop_editor_after_swap and coop_leave_avatar leave with the check, coop_long_session tries the cross and then the
   check (lab 20261108-084617: the three PASS). The Cell editors keep their cross.
+## Tests of G4: flaky tests made reliable, missing tests written (2026-11-08, fix/w46-g4-tests)
+<a id="testing-g4-tests"></a>
+
+* creature_brain_hp (BUG-0689): since BUG-0345 a guest plays the world's species in a world it never played its own in;
+  a test that needs the guest's own creature chooses it first (`creations_state.choose_own`, restore at the end), as
+  coop_creations.py does.
+* creature_kills (BUG-0690): the hunted herbivore runs 20-210 m off before it stops; a bot hunts like a player (one
+  click on the animal, then the combat key: the game's walk-and-use, docs/re/creature.md#creature-attack-reach) and
+  until the animal is dead, not for a fixed number of keys. A click before every key cancels the game's walk.
+  KILLS_OLD_HUNT=1 keeps the old loop. The test prints the NPC's hp@distance trail.
+* creature_aggression (BUG-0168): a species is made hostile the way a player does it, by the game's own egg event
+  (`coop.social event <species> 7`, ApplyEvent as the egg node calls it); its adult then bites the guest standing next
+  to it by itself. AGGR_EVENT=none fails. +0xE7C names the creature an NPC watches, not one it attacks.
+* creature_mating (BUG-0177): the mate is the one the drama manager marked (`coop.drama mate`, +0xB58 & 0x10), not any
+  hearted family member; a left click on it starts the mating, the game's editor request goes to the vote about 60 s
+  later (the CRG_LaidEgg cinematic). MATING_CLICK=other fails.
+* The detector ignores gameplay markers (BUG-0489, docs/re/creature.md#creature-gameplay-markers); tools_selftest has
+  the case.
+* The census prints a puppet's player id (`owner=`) and species_view (party_rejoin_net, vote_net_4p) matches a player's
+  puppet by it (BUG-0450), not by the nearest puppet.
+* lab_selftest (BUG-0743): a process started in the background has SIGINT ignored, and so has everything it starts; a
+  self-test that sends Ctrl+C to a child sets the default handler there first. (A lab started that way cannot be
+  stopped with Ctrl+C: use SIGTERM, which the lab handles the same way.) The same holds for any scratch runner: `kill
+  -INT` does nothing to a lab started by a queue script, `kill -TERM` stops it cleanly.
+* puppet_stops (BUG-0742): a stop walk that gets no closer to the partner goes there by gopos, and the walk goes on
+  until it made the stops the check needs (at most WALK_MORE more walks).
+* play_creature (BUG-0618): the pack's bites overlap on purpose (the leader holds its first bite up to 8 s until the
+  partner hunts the same animal and is near); the hunt log names each player's own bites. Keep the last but one word of
+  a hunt_log entry the hit count (main() sums it).
+* play_tribe (BUG-0397, BUG-0531): the host's reject count is read before an order's click; no raid or epic with fewer
+  than 4 own members.
+* campaign_space (BUG-0311, docs/re/civ.md#civ-stage-end): the shortcut takes the last city with Capture's instant
+  flag, as a surrender does; by the cinematic path the end of Civ waits for that city's specialty box.
+
+## Coverage tests of G4b (2026-11-08, fix/w46-g4b-coverage)
+<a id="testing-g4b-coverage"></a>
+
+* **Fixture `space_free`** (BUG-0181): `space_empire` + the release cheat `cheat spaceCreate` (the tutorial lock
+  cMissionManager +0x18 mbMission201Finished = 1) + the interstellar drive again (`spaceCreate` removes it from the
+  inventory) + drive upgrade 4, energy 5, the colony tool. The recipe is in BUG-0181; facts in fixtures.py
+  (`coop.space tutorial` m201=1). Everything else is `space_empire`'s (6.15): the Story201 mission object stays in
+  state 3. `coop.space tutorial [done]` prints the lock (`done`: the Story201 mission completed with SetState(5)).
+* `coop_space_free.py` (suite `space_free`, ~55 s): both games zoom out to the galaxy view (the tutorial's galaxy
+  caption is confirmed first, `coop_space_jump.settle`), the host clicks the nearest unowned star on its screen
+  (`coop.space map project <star>`), its ship's galaxy position reaches the star (`coop.space map roster 0`), the
+  guest's game draws the host's tag at the star's point; the guest does the same with another star. Each game checks
+  its own mission manager: `FIXTURE=space_empire` fails both travels (the red "Distance", the ships stay home).
+* `coop_civ_planner_build.py` (suite `civ_planner_build`, ~65 s, BUG-0189): the player civ of a new Civ game has no
+  building designs (the planner tile says "Design a new house!" and does not drag): the test gives both games the
+  house design the NPC cities use (`coop.civ bdesign <pol> house <key>`). The guest opens its planner by clicks
+  (play_civ.Player), hovers, holds the house tile (123, 385), moves in 30 steps onto a free plot (`coop.civ slots`),
+  lets go, closes with the green check. The building shows in the city's list only after the planner closes; the
+  planner snaps it into a plot of its choice. Twin `SPORE_FIX_OFF=civ.planner_send`.
+* `coop_tribe_healer.py` (suite `tribe_healer`, ~2 min, BUG-0199, found BUG-0745): the host buys the heal tool
+  (`coop.tribe buy 9 9 200` + `buy_end`), a non-chief member takes it (`coop.tribe grab`), a guest's member is hurt
+  in the host's game (`coop.tribe pincer <id> <id> 56`; `coop.tribe hurt` on the guest only hits the guest's mirror),
+  the heal order (`coop.tribe select`, `coop.tribe act 5 <patient>`); ~55 s to full health, then +5 shared food on
+  both games. Twin `SPORE_FIX_OFF=tribe.heal_max`.
+* `coop_space_store.py` (suite `space_store`, ~2 min, BUG-0199): the guest, then the host, jumps into the system of
+  the contacted empire 80001FCC (`space_empire`) and sells one spice by clicks (comm tab 288,914; first answer
+  720,725; Trade 420,744; cargo slot 327,760; Sell Item 1063,884; docs/re/space.md#space-npc-store-runtime). The
+  other game's shared money rises by the price. Each game has its own store (prices differ, BUG-0747). Twin
+  `SPORE_FIX_OFF=res.guest_send` (a new switch: a guest's own money and food changes are not sent; only the guest's
+  sale fails). The empire's ship model may be missing in the guest's game (no mirror, sync-check `s missing`):
+  allowed for this test with BUG-0424.
+
+## The dash tests judged at the same moment (2026-11-08, fix/w46-g4-dash)
+<a id="testing-dash-same-moment"></a>
+
+* `coop_tribe_npc_dash.py` (tribe_npc_dash, creature_npc_dash, BUG-0363): PASS is the p90 of the guest's drawn
+  proxies against the host's NPCs at the same moment (`coop.bodyrec`, body_trail.same_moment) within 1.2 m. The old
+  window measure (coop_multi.measure) is printed for comparison only: it forgives a copy that is late on the host's
+  path (0.25 s late: p90 0.06 m against 1.62 m at the same moment, tools/tests/dash_selftest.py, in make test), so
+  it only sees copies off the path.
+* The guest records with `coop.bodyrec start diag`: rows `q<id>` are the NPC proxies' interpolation targets of the
+  frame before (the frame's drawn proxy is that driving plus the game's update). Lines `split:` (target vs driving)
+  and `window ... same moment ...` (each failing window sample at its real frame times) tell where an error comes from.
+* cell_new_game (BUG-0293, docs/re/cell.md#cell-eat-gate): a cell eats by the scale difference, not by size: meat at
+  0 / 1, plants at 1 (`coop.pool see`'s last column); a probe only swims to food its cell can eat.
+* The sync-check's `late` issue (BUG-0379): `coop.diag` shows `sync_late=`; a total is late only when the guest misses
+  a host value that stood for over 1 s, a band cell only when it was in the band at the previous check too;
+  `coop.fix diag.late_streak off` gives the 0.7.10 compare back.
+* creature_npc_dash / tribe_npc_dash (BUG-0363) are judged at the same moment on both games' own positions
+  (docs/06-testing.md#testing-dash-same-moment); a window measure forgives a copy at any lag. Their red runs are
+  BUG-0753 (one NPC id's states 3-12 m off) until it is fixed.

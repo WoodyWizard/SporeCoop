@@ -3673,3 +3673,124 @@ BUG-0722 (class BUG-0431). Lane 6, `tools/tests/coop_puppet_tuning.py` (suite `p
   puppet without a tuning gets the avatar's (the player archetype: Create's choice for a creature of the player's
   herd) through `SporeCoop::cCreatureBase_SetTuning`. `coop.npc` prints `puppets_set=` on the `npc tuning:` line. The
   guards for SelectUI, the stage event handler and the AI tick's loan stay (a proxy or a creature of a save).
+## Gameplay markers (2026-11-08, fix/w46-g4-tests)
+<a id="creature-gameplay-markers"></a>
+
+BUG-0489. GOG 2024, Ghidra only (no runtime run). Noun 0x36BE27E, `cGameplayMarker` (RegisterNounType(0x36BE27E,
+0x36BE278, "cGameplayMarker") in 0xB24720), vtable 0x146C400 (the one the detector printed).
+
+* ✔ A gameplay marker is an invisible spawn point: it names the object it spawns and remembers where that object
+  was. Layout (ctor 0xC3F110 zeroes these; Write 0xC3EE80 / Read 0xC3EF80; the serializer field names after the
+  vtable, .rdata 0x146C474..): +0x34 the spatial part (vt 0x2C position, 0x30 orientation, 0x38 / 0x3C set them),
+  +0x108 mDefinitionId (the marker kind), +0x10C the type of the noun it spawns, +0x110 that noun's id (a species,
+  an ornament or a level key), +0x114 a 0x88-byte block of kind-specific values (saved raw), +0x19C mpNextMarker,
+  +0x1A0 mpHeadMarker (chains), +0x1A4 mpAssociatedNoun (the spawned object, released by the dtor 0xC3EDA0),
+  +0x1A8 mNounPosition, +0x1B4 mNounOrientation (where the object was when it went away), +0x1C4 mbNounRemoved.
+* ✔ Kinds (+0x108) seen in the code: 0x91FE517B herd spawn (+0x10C = herd 0x1BE418E; +0x110 0xD8C67022 /
+  0xAED08DD4 are kept through a repopulation with +0x1C4 = 1, and the Creature start 0xD43DE0 puts the player at
+  a random 0x91FE517B / 0xD8C67022 marker, 0xB99050); 0x57F09E5E tribe spawn ([tribe.md](tribe.md#tribe-form-needs));
+  0xD18D25CD city site (the Civ populate step 0xB9FB90 from "num_cities", via 0xB941E0); 0xC012AE1F a chain of path
+  points (+0x124 == 4, +0x11C index, +0x120 speed, linked by +0x19C; the Creature populate step reads them into
+  cCreatureModeStrategy +0x50); markers whose noun is an interactive ornament (+0x10C 0x3A2511E, +0x110 a part level
+  key 0x57F31D0E / 0D / 0C / 0B).
+* ✔ The markers are made by the planet populate step of a stage start, `0xBA1DB0(mode)`: Creature 0xBA16E0
+  (herd markers in the avatar's region, 0xB9AB60 / 0xB94090, and prop lists around the avatar, 0xB9B1E0 /
+  0xB9C980), Tribe 0xB9CBF0, Civ 0xB9D970; Tribe and Civ first clear the old ones (0xB99410). A marker file can be
+  loaded too (0xD1C610, from the Creature start with the planet property 0x64C82C8C). They are saved, so a guest
+  gets the host's markers with the world: they are shared world content, not made per player.
+* ✔ Spawning (`0xB93310(marker, type, id)`, cdecl): makes the noun at +0x1A8 / +0x1B4 and holds it in +0x1A4.
+  `Relevance_Update` 0xACE4E0 ([the relevance pass](#creature-view-centres)) spawns a marker's object inside a
+  sphere's enter radius and destroys it outside every leave radius (writing its last place back into the marker).
+  Markers themselves are not made or destroyed there.
+* ✔ Markers consumed by one game's own logic: the NPC tribe controller (0xCC6440) destroys the tribe spawn marker
+  it formed a tribe at (the host only; a guest's copy of that tribe keeps the marker: the Tribe detector's 1 guest /
+  0 host unpaired marker). `0xD408E0`, called from `Simulator::CreatureStageEventHandler` 0xD47FC0 after the
+  events of the local avatar (part unlocks), destroys, when the part level counter cCreatureModeStrategy +0xE0
+  (1..4) is complete for this game's collection, the interactive ornaments of that level (+0x110 == 2, +0x28 ==
+  the level key) and their markers, then counts up: per player.
+* ~ The Creature detector's one extra marker on the host (21 / 20, 1 host / 0 guest unpaired, 14% of comparisons)
+  is not placed yet: the unmatched rows print no position and no census dump with markers is saved. Likely the
+  part-level cleanup above (the guest's own collection) or the host's populate step around its own avatar.
+* Detector: `gameplay_marker` is in worlddiff.IGNORE (the spawned objects are compared themselves). The guest keeping
+  a tribe spawn marker the host's controller used is harmless while the guest's controller is blocked
+  (`tribe.guest_tribes`, BUG-0587): BUG-0741 records it.
+* ? Not looked up: the 0xD14690 / 0xD14A60 readers (vtables 0x1479900 / 0x14799BC, a marker from a property
+  definition) and the dev marker editor 0xD197A0 / 0xD1AFE0 ("LevelEditor", creates 0xC012AE1F chains).
+
+## Creature mating call (2026-11-08, fix/w46-g4-tests)
+<a id="creature-mating-call"></a>
+
+BUG-0177. GOG 2024, Ghidra (out/ghidra-2024), static; the test `coop_creature_mating.py` runs the recipe. Answers
+section 5's open question (how a player answers the call).
+
+* ✔ The mate is chosen by `cDramaManager` (0x169E43C), not by the call. Its update 0xD52270 (Creature): avatar adult and
+  alive, its herd has a nest (+0x160), no cinematic, no active drama event of kind 3, avatar +0x1678 (eggs to lay) <= 0;
+  every 5 s (0x1582F88) the herd of `NestHerdFor(1)`: when its nest is within 100 m of [0x167EA30], the first member
+  (+0x40) within 15 m (0x1582F8C) of the nest that passes 0xD4B2A0 (alive, +0x135, +0xB5E clear, adult, the avatar's
+  species, spatial vt 0x58 false, not mgr +0x14 mpBabyTeacher, no goal slot (3,1)), else a new creature
+  (cCreatureAnimal::Create at the nest, that herd). Marked: **mgr +0x38 mpMate**, **mate +0xB58 |= 0x10**,
+  brain +0x5FC |= 0x4000; +0x3C mCheckForMateTimer. 0xD4B180 drops it (both bits, timer = 5 s). `coop.drama mate`
+  prints it (and the avatar's behaviour tree node, brain +0xB4C, +0x1D8).
+* ✔ The mating call (Backspace) is BT node 0x02D852ED (row 0x158B238: enter 0xD8F8A0, tick 0xD8ECB0, exit 0xD8FA90):
+  animations 0x265D18B / 0x265D18C, hearts 0xE1B24DDB on the caller, stimulus 0x800 to creatures it sees, at the nest
+  effect 0x2F5E1DB4 (0xD39F70, the bubble over the nest) and `vsoc_matecall_2_loop`. Answerers run node 0x02E16F49
+  (row 0x1586E58: enter 0xD8FB50, tick 0xD812C0, exit 0xD8F0E0) with hearts 0x4EC6CD85 on the "mout" bone: up to 3
+  of the same species (tuning 0x2A829109) and always the mate. Several family members may show hearts; only the
+  one with +0xB58 & 0x10 is the mate (why the old bot's clicks on hearted members opened nothing).
+* ✔ The cursor choice 0xD2FFD0 gives kind 9 for a creature with +0xB58 & 0x10 (after the armed-ability check, before
+  stance and relation). `CreatureClickObject` 0xD32FD0 case 9 (0xD331A3): avatar vt 0x84(mate+0x5A8), 0xC032F0(8, 0,
+  FLT_MAX, 0, 0, mate, 0) (player command, stimulus 8), click marker 0xD2F940, `BT_PostStimulus(mate +0xB4C +8, 8, 0,
+  5.0, avatar)`.
+* ✔ The avatar runs node 0x02D852F0 (row 0x1583FE8: enter 0xD6D360, tick 0xD6D560, exit 0xD6CBD0), the mate 0x91BFFC22
+  (row 0x1583FF8: 0xD6CC40 / 0xD6CCA0 / 0xD6CC70). 0xD6D560: waits for the mate's node, both WalkTo face to face, then
+  JoinNestHerd, PlayCinematic CRG_LaidEgg (B6A1DBE1), one of 4 mating animations, ExecuteAction 0xD335362F x2,
+  avatar +0xB58 |= 0x40; at the animation's end avatar +0x1678 = pack count + 1 (0xC02D80), ExecuteAction 0xD3353630 x2.
+* ~ Message 0x4D9686F is posted by no code (only .rdata lists): from the cinematic's data (inferred).
+  ✔ `CreatureGame_HandleMessage` 0xD42E50 handles it with 0xD3C650(1): ends the active drama events, 0xC6EFE0 at the
+  nest, starts the clock at creature game +0x28. `CreatureGame_Update` 0xD45740 (unpaused) calls 0xD3C650(0) once
+  the clock reads > 1 and stops it: one request per mating.
+* ✔ 0xD3C650(0) (thiscall(creature game, bool) ret 4): `EditorRequest` with editor id by avatar vt 0xD8 (0 0x312E9D6A,
+  1 0x281F5960, 2 0x290ADACE, else 0x465C50BA), species +0x10..+0x18, **tag +0x90 = 0x12191CA**, +0x94 cPlayer+0x10E8,
+  +0x70 cPlayer+0x10FC..+0x1108, Submit, message 0x5D02A72. In co-op `h_Submit` takes it: host with partners votes
+  ("wants to evolve (Creature)"), a guest opens its own editor.
+* CORRECTION (2026-11-08, fix/w46-g4-tests): docs/re/creations.md (own editor items) called 0x6455B55 "the mating-call
+  command" and 0xE45E0F "the end of the mating scene": the Timeline UI and ~ the stage-end evolve button (details
+  there). The mating editor is 0xD3C650 (tag 0x12191CA).
+* Recipe (bot, host): near the nest, wait 6 s; `coop.drama mate` -> the mate (+0xB58 & 0x10); its NPC id from
+  `coop.npc list`, `coop.npc gonpc <id> 5`, its point from `coop.targets all` (`obj n<id>`); no armed ability; Backspace
+  (optional, hearts); left click; avatar node 02D852F0; then the vote / the editor.
+* ? Not checked at runtime by the static pass: the timings, whether CRG_LaidEgg waits for Enter, the guest's own mate
+  (a created creature can meet the stray purge, like the Cell mate did). The test's runs are in BUG-0177.
+
+## NPC aggression on sight (2026-11-08, fix/w46-g4-tests)
+<a id="creature-npc-aggression"></a>
+
+BUG-0168. GOG 2024, Ghidra static; checked at runtime by `coop_creature_aggression.py` (lab runs in BUG-0168).
+
+* ✔ (static) The behaviour tree's aggression conditions read `GetRelationship` 0xBA40E0 (record, else tuning +0x390):
+  node 0x04A1A1E6 (eval 0xD7D9F0, table 0x1585B70) takes a remembered creature (AI +0x1D0, slot node +0x2D) as its
+  target (+0x5A8 into the node data, +0x18 = 1) when its `+0xB20` is cSpeciesManager PlayerSpecies (a direct compare
+  at 0xD7DA48, not vt 0xD0), the NPC's `+0xB34 == 1` (0xC0B8D0) and the relation is 2 or 5. Other conditions:
+  0xD817A0 (0xD2E0ED01) relation 1, 0xD81830 (0x32E0ED05) 2 / 5, 0xD81680 3 (not for herd personality +0x15C 10 / 1),
+  0xD815F0 / 0xD6E730 4 / 6. Helpers: 0xC0BA00 relation == 1, 0xC0B9C0 2 / 5, 0xC0B970 2..5.
+* ✔ (static) Node 0x12E0ECAC (eval 0xD8CB20, tables 0x1586540 / 0x1588A88 / 0x158E538): when the NPC noticed the
+  avatar (+0x101C == 1, set by NPCTickAI) and the tick flags have 0x408 (from AI +0x5FC, ? source), the target is
+  `cGameNounManager+0x54` + 0x5A8 with no species check (relation 3 skipped for personality 10 / 1).
+* ✔ (static) ApplyEvent 0xBA4A00 transitions in the Creature stage: 0 adult killed (kills >= tuning +0x3FC) -> 1, or
+  5 when record +4 > 1; 5 young killed (TakeDamage 0xC07C59, victim +0xB34 != 1) -> 5; 1 (0xC07C7D) -> 2 / 5;
+  2 (a hit by the avatar) 4 / 6 -> 3; **6 -> 2 unless 5** (the avatar walks to an egg, 0xD71AB8 in the egg node
+  0xD716F0); **7 -> 5** (the avatar eats the egg, 0xD71C61). The egg node passes (event, egg herd +0x98, null).
+  So a player makes a species hostile by eating its egg (5), going for it (2) or killing its young (5).
+  `coop.social event <species> <n>` (host, tests) calls ApplyEvent the egg node's way.
+* ~ Inferred: relation 2 / 5 = aggressive (red face), 1 = scared, 3 neutral, 4 / 6 friendly / allied; +0xB34 = age
+  (1 adult; written by 0xC22370 and set to 1 at 0xC223C6 / 0xC1FAFC).
+* ✔ (static) `cCreatureAnimal::Create` 0xC09B40 takes the tuning from the species profile (+0x58C archetype, +0x5F4
+  variant), not from the herd's +0x88: `coop.npc epic` with a species of the fixture makes a creature with that
+  species' tuning, not epic (IsEpic 0xC0C240 = tuning +0x388), and with that species' relation record.
+* ✔ (runtime, lab 20261108-052423 / -052925 / -052641) After event 7 an adult of species 065CB8AB (relation 5 on both
+  games) bites the guest standing next to it, far from the host: also when the guest plays its own creature (another
+  species than the host's; the static "+0xB20 != PlayerSpecies never picks it" worry did not show), and also with
+  `coop.npc partners off` (the NPC still attacks the partner's puppet: the attack does not need the mod's AI swap).
+  Before the event the same NPC leaves the guest alone. Its +0xE7C names the puppet before and after (the NPC watches
+  the creature next to it): not a sign of the attack by itself.
+* ? Which archetypes' trees hold 0x04A1A1E6 / 0x12E0ECAC (tree data), what sets AI +0x5FC bits 0x408.

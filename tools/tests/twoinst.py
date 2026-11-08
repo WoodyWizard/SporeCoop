@@ -309,6 +309,71 @@ def forget_holds():
         subprocess.run(['rm', '-rf', d + '/SporeCoop/holds'])
 
 
+# BUG-0430: switches and knobs live in the game process: coop.leave and a load keep them. A test that sets one
+# (`coop.fix x off`, `coop.worldfix retry 0`, `frame.limit 50`, `coop.diag sync force shift`, ...) and fails or
+# ends before it sets it back (or never does) left them changed for the next test of the lane, which then ran
+# warm on games that were not at their start. Every console call that sets one is noted in the lane state
+# ('knobs'); a warm start refuses such games (a cold start sets everything back). Each pattern needs a value
+# argument: a bare query (`coop.fix list`, `coop.worldfix`) changes nothing. One-shot actions that change no
+# setting (`coop.diag sync now`, `frame.limit auto`) are not knobs. start_state() is the second line of defence:
+# the game's own report of its switches, compared with the cold start's.
+KNOBS = re.compile(r'\s*(?:'
+                   r'(?:coop|kit)\.fix\s+\S+\s+\S+'  # coop.fix <name> on|off, coop.fix all off, kit.fix <name> 0
+                   r'|coop\.\w+fix\s+\S+'  # coop.worldfix retry 0, coop.corefix <name> 0, coop.sessionfix 0, coop.framefix 0
+                   r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
+                   r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
+                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+lang\s+\S+|coop\.lanfake\b'
+                   r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
+                   r'|frame\.limit\s+(?!auto\b)\S+|frames\.source\s+(?!auto\b)\S+'
+                   r')')
+_knob_lock = threading.Lock()
+
+
+def note_knob(_con, line):
+    """sporectl.Console.on_call: a call that sets a switch or knob goes into the lane state (BUG-0430)"""
+    if not KNOBS.match(line):
+        return
+    with _knob_lock:
+        st = lane_state()
+        knobs = st.get('knobs', [])
+        if line.strip() not in knobs:
+            lane_state(**{**st, 'knobs': knobs + [line.strip()]})
+
+
+Console.on_call = note_knob
+
+
+def start_state(con):
+    """the game's own report of its switches and settings (BUG-0430): coop.diag's `settings:` line (coop.ini values
+    that differ from the defaults and every coop.fix switch that is off) and SporeKit's kit.fix list"""
+    try:
+        diag = con.call('coop.diag').get('out') or ''
+        kit = con.call('kit.fix').get('out') or ''
+    except (OSError, ValueError):
+        return None
+    lines = [ln for ln in diag.splitlines() if ln.startswith('settings:')]
+    return '\n'.join(lines + kit.strip().splitlines())
+
+
+def warm_refusal(st, host=None, guest=None):
+    """why these games may not run the next test warm (BUG-0312, BUG-0430), '' when they may"""
+    if st.get('fix_off'):
+        return f'SPORE_FIX_OFF {st["fix_off"]} left switches off'
+    if st.get('fps'):
+        return f'SPORE_FPS {st["fps"]} left a frame cap'
+    if st.get('knobs'):
+        return 'an earlier test set ' + ', '.join(f'`{k}`' for k in st['knobs'][:4]) + \
+            (f' and {len(st["knobs"]) - 4} more' if len(st['knobs']) > 4 else '')
+    want = st.get('start_state') or {}
+    for who, con in (('host', host), ('guest', guest)):
+        if con is not None and want.get(who) is not None:
+            now = start_state(con)
+            if now != want[who]:
+                diff = sorted(set((now or '').splitlines()) ^ set(want[who].splitlines()))
+                return f'the {who}\'s switches differ from its cold start ({"; ".join(diff)[:200]})'
+    return ''
+
+
 def warm_reset(host, guest, fixture, planet):
     """the running games of the lane start the test again: the fixture goes into a fresh save
     slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
@@ -467,11 +532,14 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and join_at is None and before_join is None \
             and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
-            and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
-            and alive(lane.HOST) and alive(lane.GUEST):
+            and not PRESET_CHOICES and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
+        why = ''
         try:
-            if warm_reset(host, guest, fixture, planet):
+            why = warm_refusal(st, host, guest)
+            if why:
+                print(f'  (no warm reuse: {why}; cold start)', flush=True)
+            elif warm_reset(host, guest, fixture, planet):
                 watch(lane.HOST, lane.GUEST)
                 if check_fixture(host, fixture):
                     return host, guest
@@ -480,7 +548,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
                 print('  (warm reset: the fixture lacks its facts)', flush=True)
         except (OSError, ValueError) as e:
             print('  (warm reset failed:', e, ')', flush=True)
-        print('  (warm reset failed: cold start)', flush=True)
+        if not why:
+            print('  (warm reset failed: cold start)', flush=True)
     lane_state()  # (the state is rewritten below once the games run)
     sh('kill')
     time.sleep(2)
@@ -584,7 +653,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     time.sleep(4)
     print(f'  (both games ready in {time.time() - t_start:.0f} s: '
           + ', '.join(f'{n} {t:.0f}' for n, t in phases) + ')', flush=True)
-    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations)
+    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations,
+               start_state={'host': start_state(host), 'guest': start_state(guest)})
     watch(lane.HOST, lane.GUEST)
     check_fixture(host, fixture)
     return host, guest

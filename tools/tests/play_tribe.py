@@ -300,7 +300,9 @@ class Game:
             kind = plan if plan in ORDER_KINDS else 'gather'
         if behind and kind == pl.last_nothing:
             kind = 'hunt' if kind != 'hunt' else 'gather'
-        if kind in ('raid', 'epic') and (len(alive) < 4 or len(idle) < 2):
+        # BUG-0397 (G4): the bot's OWN living members count (alive counted both tribes: with 5-6 own members left after
+        # the raids and the epic its fights took the rest, k8-open out/lab/20261108-015213 gave 8 orders in 10 min)
+        if kind in ('raid', 'epic') and (len(alive) < 4 or len(mine) < 4 or len(idle) < 2):
             kind = 'gather'  # too few to fight: friends gather first
         if hurt and rng.random() < 0.7 and not (behind and pl.last_nothing == 'heal'):
             kind, idle = 'heal', hurt
@@ -476,6 +478,9 @@ class Game:
         """right-click the target; a click that misses the target's model hits the ground (a walk):
         a player then clicks a bit higher (on the trunk, the body)"""
         last, n, act = '', None, None
+        # the host's reject count before the click (G4: taken after the click and 0.8 s, a reject that came in that
+        # time was counted as an idle order, not a lost one: w46-k4-bodies out/lab/20261108-020506-2)
+        rej0 = counter(status(self.host), 'rejected')
         for dy in ((0,) if kind == 'walk' else (0, -10, -20, -35)):
             before = pl.last_order()
             # hover first: the game picks the object under the cursor per frame, a click right
@@ -507,7 +512,7 @@ class Game:
         hs = tribe_state(self.host)
         hp = self.target_hp(tgt[0]) if tgt[0][0] in 'tn' and tgt[0][1:].isdigit() else None
         pl.pending.append(dict(due=time.time() + 8, kind=kind, sel=sel, tgt=tgt[0], last=last, hp=hp,
-                               rej=counter(status(self.host), 'rejected'),
+                               rej=rej0,
                                pos={i: hs[i]['pos'] for i in sel if i in hs}))
         return True
 

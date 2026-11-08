@@ -105,6 +105,7 @@ class Shared:
         self.lock = threading.Lock()
         self.c = {}
         self.target = None  # (key, hunter)
+        self.hunting = {}   # BUG-0618: key -> the players whose hunt of it runs now
         self.killed = {}    # key -> set of players that hunted it when it died
 
     def add(self, key, n=1):
@@ -203,16 +204,30 @@ class Player(threading.Thread):
     def hunt(self, key, why):
         t0 = time.time()
         d0 = self.objs().get(key, (-1,))[0]
-        r, hits = self._hunt(key)
+        with self.sh.lock:
+            self.sh.hunting.setdefault(key, set()).add(self.name)
+        self.bites, self.first_reach, self.held = 0, None, 0
+        try:
+            r, hits = self._hunt(key, why)
+        finally:
+            with self.sh.lock:
+                self.sh.hunting.get(key, set()).discard(self.name)
         self.add(f'hunt_{r}')
-        self.hunt_log.append(f'{key} {why} {d0:.0f} m: {r} {time.time() - t0:.0f} s {hits} hits')
+        fr = f'{self.first_reach - t0:.0f}' if self.first_reach else '-'
+        # (the hit count stays the last but one word: main() sums it)
+        self.hunt_log.append(f'{key} {why} {d0:.0f} m: {r} {time.time() - t0:.0f} s (own bites {self.bites}, in reach '
+                             f'at {fr} s, first bite held {self.held}x) {hits} hits')
         return r
 
-    def _hunt(self, key):
+    def partner_hunts(self, key):
+        with self.sh.lock:
+            return bool(self.sh.hunting.get(key, set()) - {self.name})
+
+    def _hunt(self, key, why='lead'):
         """walk to the animal (a click on it) and use the combat abilities until it is dead"""
         self.stance('combat')
         t0, last_hp, hits = time.time(), None, 0
-        target, walk_at, walk_gap = None, 0, 1e9  # BUG-0618: the game's target, the last walk-and-use start
+        target, walk_at, walk_gap = None, 0.0, None  # BUG-0618: the game's target, the last walk-and-use start
         while time.time() - t0 < 35 and time.time() < self.deadline:
             info = self.world.npcs().get(key)
             if info is None:
@@ -249,6 +264,12 @@ class Player(threading.Thread):
             # reach a key works when the ability is ready (status 0; 8 = recharging). Keys 1..5 use the bar's
             # combat row (the fixture creature has one combat ability, key 1, reach 1 m).
             r = self.reach()
+            if r['target'] is None and walk_gap is not None and time.time() - walk_at < 1.5:
+                # BUG-0618 (G4): the game clears the target for a moment during its walk-and-use; a click now would
+                # cancel the walk (retarget_none 60-360 times a run): it gets a moment to set it back
+                self.add('retarget_wait')
+                self.sleep(0.3)
+                continue
             if r['target'] is None or r['dead'] or r['target'] != target:
                 self.add('retarget_' + ('none' if r['target'] is None else 'dead' if r['dead'] else
                                         'first' if target is None else 'changed'))
@@ -257,7 +278,7 @@ class Player(threading.Thread):
                     self.add('target_click')
                     r = self.reach()
                     target = r['target']
-                    walk_at, walk_gap = 0, 1e9
+                    walk_at, walk_gap = 0.0, None  # (the old 1e9 sentinel kept the first walk key back)
                 self.sleep(0.2, 0.4)
                 if r['target'] is None:
                     continue
@@ -269,14 +290,25 @@ class Player(threading.Thread):
             k = self.rng.choice(keys)
             reach, st = r['keys'][k]
             if r['gap'] <= reach:
+                if self.first_reach is None:
+                    self.first_reach = time.time()
+                # BUG-0618 (G4): the pack bites together: the leader holds its first bite (at most 8 s) until the
+                # partner hunts this animal too and is near (a Kook dies ~10 s after the leader reaches it: the
+                # joiner came too late and the joint table stayed at +0 though both hunted the same animals)
+                if why == 'lead' and not self.bites and time.time() - self.first_reach < 8 and \
+                        not (self.partner_hunts(key) and (self.partner_dist() or 99) < 10):
+                    self.held += 1
+                    self.sleep(0.3)
+                    continue
                 if st == 0:
                     self.reach_note(k, r)
                     self.do('key ' + k)
                     self.add('attacks')
+                    self.bites += 1
                 else:
                     self.add('wait_recharge')
                 self.sleep(0.25, 0.45)
-            elif time.time() - walk_at > 2.5 and r['gap'] > walk_gap - 1.0:
+            elif walk_gap is None or (time.time() - walk_at > 2.5 and r['gap'] > walk_gap - 1.0):
                 # not walking to it (yet, or stopped): the key starts the game's walk-and-use
                 self.reach_note(k, r)
                 self.do('key ' + k)
@@ -509,8 +541,12 @@ class Player(threading.Thread):
             elif kind == 'hunt':
                 self.sh.target = (key, self.name)
                 self.hunt(key, 'lead')
-                if self.sh.target and self.sh.target[0] == key:
-                    self.sh.target = None
+                with self.sh.lock:
+                    if self.sh.target and self.sh.target[0] == key:
+                        # BUG-0618 (G4): the partner still hunts it: the pack follows the partner's hunt now (the
+                        # leader that lost it or timed out rejoins it instead of picking new prey)
+                        left = self.sh.hunting.get(key, set()) - {self.name}
+                        self.sh.target = (key, sorted(left)[0]) if left else None
                 return
             else:
                 self.socialize(key)

@@ -1151,10 +1151,16 @@ class Campaign:
             return
         pol = mine.group(2)
         took = 0
+        left = [o for o in others if o[1] != pol]
         for ptr, opol in others:
             if opol == pol:
                 continue
-            h.call(f'call Simulator::cCity::Capture thiscall {ptr if ptr.startswith("0x") else "0x" + ptr} 0x{pol} 0 0 0 0')
+            # Capture(newPol, type, instant, nuked caption, a5) (docs/re/civ.md#civ-stage-end). The last city instant, as
+            # a nation's surrender takes it: the game checks the end of Civ inside the call. By the cinematic path the
+            # check waits for that city's specialty box, which a talk or the bot's Esc left unanswered: every city owned,
+            # no end of Civ (BUG-0311, lab 20261030-104149 #1, 20261103-012624 #3)
+            inst = 1 if len(left) == 1 else 0
+            h.call(f'call Simulator::cCity::Capture thiscall {ptr if ptr.startswith("0x") else "0x" + ptr} 0x{pol} 0 {inst} 0 0')
             took += 1
             time.sleep(3)
             break  # one city per kick: its capture cinematic plays first

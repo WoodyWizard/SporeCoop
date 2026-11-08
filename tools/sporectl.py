@@ -31,7 +31,12 @@ class Console:
         self.sock = socket.create_connection(('127.0.0.1', self.port), timeout=3)
         self.sock.settimeout(self.timeout)
 
+    # BUG-0430: called with (console, line) before each call; twoinst notes the switches and knobs a test sets
+    on_call = None
+
     def call(self, line):
+        if Console.on_call is not None:
+            Console.on_call(self, line)
         if self.sock is None:
             self.connect()
         self.sock.sendall(line.encode('utf-8') + b'\n')

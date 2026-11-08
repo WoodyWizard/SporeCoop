@@ -4356,7 +4356,9 @@ static const char* kind_of(uint8_t* c)
     }
 }
 
-// on-screen gameplay cells: key kind size_ratio hp distance screen_x screen_y (the nearest first)
+// on-screen gameplay cells: key kind size_ratio hp distance screen_x screen_y scale_diff (the nearest first);
+// scale_diff = GetScaleDifference(avatar, cell) (2 = the same level; the game's mouth eats meat at 0 / 1 and plants at 1,
+// docs/re/cell.md#cell-eat-gate, BUG-0293)
 static std::string see(int max)
 {
     uint8_t* av = avatar();
@@ -4368,7 +4370,7 @@ static std::string see(int max)
         uint32_t key;
         const char* kind;
         float ratio, d;
-        int hp, x, y;
+        int hp, x, y, sd;
     };
     std::vector<Seen> v;
     for_each_cell([&](uint8_t* c, uint32_t idx) {
@@ -4385,7 +4387,8 @@ static std::string see(int max)
         float w[3] = {p.x, p.y, p.z}, sc[2];
         if (!H->world_to_screen(w, sc) || sc[0] < 0 || sc[1] < 0 || sc[0] >= sw || sc[1] >= sh)
             return;
-        v.push_back({key, kind_of(c), F<float>(c, kSize) / my, net::dist(p, me), F<int>(c, kHp), (int)sc[0], (int)sc[1]});
+        int sd = a_ScaleDiff ? skg::cdecl_call<int>(a_ScaleDiff, av, c) : -1;
+        v.push_back({key, kind_of(c), F<float>(c, kSize) / my, net::dist(p, me), F<int>(c, kHp), (int)sc[0], (int)sc[1], sd});
     });
     std::sort(v.begin(), v.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });
     std::string out;
@@ -4395,8 +4398,8 @@ static std::string see(int max)
     snprintf(b, sizeof b, "me %d %d hp=%d screen=%dx%d\n", (int)sc[0], (int)sc[1], F<int>(av, kHp), sw, sh);
     out += b;
     for (size_t i = 0; i < v.size() && (int)i < max; i++) {
-        snprintf(b, sizeof b, "see c%u %s %.2f %d %.1f %d %d\n", v[i].key, v[i].kind, v[i].ratio, v[i].hp, v[i].d, v[i].x,
-                 v[i].y);
+        snprintf(b, sizeof b, "see c%u %s %.2f %d %.1f %d %d %d\n", v[i].key, v[i].kind, v[i].ratio, v[i].hp, v[i].d, v[i].x,
+                 v[i].y, v[i].sd);
         out += b;
     }
     return out;

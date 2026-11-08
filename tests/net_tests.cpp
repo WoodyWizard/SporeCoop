@@ -3001,6 +3001,55 @@ static void test_diag_compare()
             dna |= i.id == "total:1";
         CHECK(dna);
     }
+    {   // BUG-0430: what the windows let through is late only when the host left that value a while ago, or the
+        // missing cells stood in the band at the check before; the normal lag of a changing value is not
+        dg::Digest gl = g;
+        gl.entries.erase(std::remove_if(gl.entries.begin(), gl.entries.end(),
+                                        [](const dg::Entry& e) { return e.key == dg::make_key('n', 9); }),
+                         gl.entries.end());
+        // a steadily rising total (host 100, guest 80 = one update back, still among the last moment's values)
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDna, 70}, {dg::kTotalDna, 80}, {dg::kTotalDna, 90}};
+        std::vector<std::pair<uint8_t, float>> fresh = {{dg::kTotalDna, 80}, {dg::kTotalDna, 90}};
+        auto no_total = [](const dg::Compared& x) {
+            return std::none_of(x.issues.begin(), x.issues.end(), [](const dg::Issue& i) { return i.cat == "total"; });
+        };
+        dg::Compared rising = dg::compare(h, gl, {}, &recent, {&fresh, nullptr});
+        CHECK(no_total(rising) && rising.late_totals == 0 && !rising.late());
+        // the host went 80 -> 100 2 s ago and stood still; the guest still shows 80: late
+        std::vector<std::pair<uint8_t, float>> stood = {{dg::kTotalDna, 100}};
+        dg::Compared lc = dg::compare(h, gl, {}, &recent, {&stood, nullptr});
+        CHECK(no_total(lc) && lc.late_totals == 1 && lc.late());
+        CHECK(dg::compare(h, gl, {}, &recent).late_totals == 0); // no Late: never late (the switch off)
+        dg::Compared on_time = dg::compare(h, h);
+        CHECK(on_time.late_totals == 0 && !on_time.late());
+        int run = 0;
+        CHECK(!dg::late_streak(run, lc) && !dg::late_streak(run, lc) && dg::late_streak(run, lc) && run == 3);
+        CHECK(!dg::late_streak(run, on_time) && run == 0); // one check in time ends the streak
+        CHECK(!dg::late_streak(run, lc) && run == 1);
+        // cells: the band between the sure 80 % and the sent part
+        dg::Digest hc, gc;
+        hc.mode = gc.mode = 0x1654C00;
+        hc.world = gc.world = 7;
+        gc.self = 1;
+        hc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        gc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        for (uint32_t i = 0; i < 1000; i++)
+            hc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        auto band = [&](uint32_t lacking, const std::set<uint32_t>* steady) {
+            dg::Digest gx = gc;
+            for (uint32_t i = 0; i < 900 - lacking; i++)
+                gx.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+            return dg::compare(hc, gx, {}, nullptr, {nullptr, steady});
+        };
+        dg::Compared first = band(40, nullptr); // the first check: nothing to compare the band with
+        CHECK(first.late_band == 180 && first.band.size() == 180 && first.late_cells == 0 && !first.late() && first.issues.empty());
+        std::set<uint32_t> changed; // the host's set changed: none of the missing ones stood in the band
+        dg::Compared moving = band(40, &changed);
+        CHECK(moving.late_cells == 0 && !moving.late());
+        dg::Compared few = band(3, &first.band), many = band(40, &first.band);
+        CHECK(few.late_cells == 3 && !few.late() && few.issues.empty());
+        CHECK(many.late_cells == 40 && many.late() && many.issues.empty());
+    }
     std::string t = dg::describe(c.issues);
     printf("  %s\n", t.c_str());
     CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);

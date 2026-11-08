@@ -61,6 +61,10 @@ std::string trace_line(const net::Vec3& me, float radius); // support trace: NPC
 void monitor_tick(double now);
 std::string monitor_fields();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
+// diagnostics (coop.bodyrec start diag, BUG-0363), guest: per NPC proxy a row `q<id>`, the interpolation target the
+// driving of the frame before used (the drawn proxy of this frame is that frame's driving plus the game's update)
+// and `u<id>`, M1's raw lead target now (no drive.lead_late time, no smoothing: what the target is without them)
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user);
 std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)
 std::string herds(bool all = false);                 // debug: herd objects

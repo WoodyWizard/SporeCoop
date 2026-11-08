@@ -1418,6 +1418,12 @@ static void broadcast_building(void* city, uint32_t noun, const net::Vec3& pos)
     g_builds_sent++;
 }
 
+// BUG-0189: `coop.fix civ.planner_send off` keeps a guest's planner placement in the guest's own game (the twin
+// of civ_planner_build: the host never gets the building)
+static bool g_fix_planner_send = true;
+COOP_FIX("civ.planner_send", "BUG-0189", g_fix_planner_send,
+         "civ: a building a guest places in its city planner is built in the host's game too");
+
 using AddBuilding_t = int(SK_THISCALL*)(void*, void*, int);
 static AddBuilding_t o_AddBuilding;
 static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
@@ -1431,7 +1437,7 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
     uint32_t noun = game::noun_id(b);
     if (is_host()) {
         broadcast_building(city, noun, pos); // every building the host gets appears on the guests
-    } else if (is_guest() && (uintptr_t)ret == a_PlannerAddBuildingRet) {
+    } else if (is_guest() && (uintptr_t)ret == a_PlannerAddBuildingRet && g_fix_planner_send) {
         // the guest placed a building in its city planner: the host builds the same one
         int ci = host_index_of_city(city);
         if (ci >= 0) {

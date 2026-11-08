@@ -2048,6 +2048,20 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "spice slot %d count %d key %08X %08X %08X", i, c, k.v[0], k.v[1], k.v[2]);
         return b;
     }
+    if (a[0] == "tutorial") { // tests (BUG-0181, docs/re/space.md#space-tutorial-lock): the tutorial lock of galaxy travel
+        uintptr_t get = H->sym("Simulator::cMissionManager::Get"), by_id = H->sym("Simulator::cMissionManager::GetMissionByID"),
+                  set_state = H->sym("Simulator::cMission::SetState");
+        uint8_t* mm = get ? cdecl_call<uint8_t*>(get) : nullptr;
+        if (!mm || !skg::readable(mm, 0x20))
+            return "no mission manager";
+        // GetMissionByID: stack purge 4, ecx unused (thiscall-safe); the Story201 mission 0x7BDBB97D
+        void* m201 = by_id ? skg::thiscall<void*>(by_id, mm, 0x7BDBB97Du) : nullptr;
+        if (a.size() > 1 && a[1] == "done" && m201 && set_state)
+            skg::thiscall<void>(set_state, m201, 5); // completed: the mission's own OnCompleted ends the lock
+        snprintf(b, sizeof b, "tutorial first_comm=%d flight_school=%d m201=%d mission201=%p state=%d", mm[0x16], mm[0x17],
+                 mm[0x18], m201, m201 && skg::readable((uint8_t*)m201 + 0x84, 4) ? *(int*)((uint8_t*)m201 + 0x84) : -1);
+        return b;
+    }
     if (a[0] == "terra" && a.size() > 3) { // as if the own tool changed the planet
         void* tm = a_TerraMgr ? cdecl_call<void*>(a_TerraMgr) : nullptr;
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;

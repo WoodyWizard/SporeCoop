@@ -17,6 +17,8 @@ Cases (ticket):
   timeout       a test past the timeout leaves no process behind (BUG-0052)
   worktree      --branch fix/a never picks the worktree of fix/a-b (BUG-0048)
   game_log      twoinst.Monitor reads the lane's game log from a worktree too (BUG-0068)
+  knobs         a switch or knob set by any console call (`coop.fix x off`, `coop.worldfix retry 0`), set back or
+                not, and a switch the game itself reports changed since its cold start refuse a warm reuse (BUG-0430)
   fixture       a fixture that lacks its facts fails Checks.faults() (BUG-0124)
   free_lane_*   a uses_free_lane test is watched on the free lane from its LAB-WATCH line: a crash or
                 hang report there fails it, an older report does not (BUG-0249)
@@ -323,6 +325,36 @@ def game_log_case(tree, tmp):
                        capture_output=True, text=True)
     check('checks failed' in r.stdout, 'fixture: a fixture that lacks its facts fails Checks.faults() (BUG-0124): '
           + (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:]])[-1])
+    # BUG-0430: a switch or knob set through any console (also a test's own) keeps these games from a warm reuse,
+    # whether or not the test set it back; a query does not; the game's own switch report differing from the cold
+    # start's refuses them too
+    code = ('import sys; sys.path.insert(0, "tools/tests"); import twoinst, sporectl\n'
+            'class Sock:\n'
+            '    def sendall(self, b): pass\n'
+            '    def recv(self, n): return b\'{"ok": true, "out": ""}\\n\'\n'
+            'c = sporectl.Console(2); c.sock = Sock()\n'
+            'twoinst.lane_state(build="b", fixture="tribe")\n'
+            'c.call("coop.fix list"); c.call("coop.worldfix"); c.call("coop.diag sync now")\n'
+            'print("query:", repr(twoinst.warm_refusal(twoinst.lane_state())))\n'
+            'c.call("coop.worldfix retry 0"); c.call("coop.worldfix retry 2000")\n'
+            'print("knob:", repr(twoinst.warm_refusal(twoinst.lane_state())))\n'
+            'class G:\n'
+            '    def __init__(self, off): self.off = off\n'
+            '    def call(self, line):\n'
+            '        return {"ok": True, "out": "settings: all default; coop.fix off: " + self.off if line == "coop.diag" '
+            'else "present    1  x"}\n'
+            'twoinst.lane_state(build="b", start_state={"host": twoinst.start_state(G("none")), "guest": None})\n'
+            'print("same:", repr(twoinst.warm_refusal(twoinst.lane_state(), G("none"), G("x"))))\n'
+            'print("game:", repr(twoinst.warm_refusal(twoinst.lane_state(), G("civ.ruin_repair"), None)))\n')
+    r = subprocess.run([sys.executable, '-c', code], cwd=wt, env=dict(os.environ, SPORE_LANE='2'),
+                       capture_output=True, text=True)
+    got = dict(ln.split(': ', 1) for ln in r.stdout.splitlines() if ': ' in ln)
+    check(got.get('query') == "''", f'knobs: queries leave the games warm-capable (BUG-0430): {got.get("query") or r.stderr[-200:]}')
+    check('coop.worldfix retry 0' in got.get('knob', ''),
+          f'knobs: `coop.worldfix retry 0`, also set back later, refuses a warm reuse (BUG-0430): {got.get("knob")}')
+    check(got.get('same') == "''", f'knobs: the game reports the switches of its cold start: warm (BUG-0430): {got.get("same")}')
+    check('civ.ruin_repair' in got.get('game', ''),
+          f'knobs: a switch the game reports off since its cold start refuses a warm reuse (BUG-0430): {got.get("game")}')
 
 
 def watch_cases(tree, tmp):
@@ -375,6 +407,11 @@ def watch_cases(tree, tmp):
 
 INTERRUPT = r"""
 import os, subprocess, sys, signal
+# BUG-0743: Ctrl+C as in a terminal. A lab started in the background (`... &`, nohup, an agent's shell) has SIGINT
+# ignored, and that is inherited by make test and by this child: the interrupt did nothing, the test ran its 30 s,
+# was retried, and the free lane was never cleaned (interrupt_exclusive / free_lane_locked / interrupt_retry failing
+# inside the lab's 'unit' test, rel/0.7.11 out/lab/20261108-035548-2)
+signal.signal(signal.SIGINT, signal.default_int_handler)
 tree, tmp, mode, rec = sys.argv[1:5]
 sys.path.insert(0, os.path.join(tree, 'tools'))
 import lab, suite, argparse
@@ -426,7 +463,12 @@ def interrupt_cases(tree, tmp):
             fcntl.flock(holder, fcntl.LOCK_EX)
         child = subprocess.Popen([sys.executable, script, tree, tmp, mode, rec], env=dict(os.environ, MARK=mark),
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        time.sleep(8 if mode != 'retry' else 7)  # the lab waits 5 s after starting a lane's worker
+        # the signal must come while the test runs: wait for its process (the marker on its command line), not a
+        # fixed 8 s (a slow start under a loaded lab would send it before the exclusive phase, which takes no free lane)
+        t_end = time.time() + 90
+        while not leftovers(mark) and time.time() < t_end and child.poll() is None:
+            time.sleep(0.2)
+        time.sleep(1)  # the lab's run_one holds the process now
         child.send_signal(sig)
         try:
             out, _ = child.communicate(timeout=60)
@@ -465,7 +507,10 @@ def interrupt_cases(tree, tmp):
     mark = f'labselftest_int_nohup_{os.getpid()}'
     child = subprocess.Popen([sys.executable, script, tree, tmp, 'nohup', os.path.join(tmp, 'rec_nohup.txt')],
                              env=dict(os.environ, MARK=mark), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(8)
+    t_end = time.time() + 90
+    while not leftovers(mark) and time.time() < t_end and child.poll() is None:
+        time.sleep(0.2)
+    time.sleep(1)
     child.send_signal(signal.SIGHUP)
     time.sleep(1)
     alive = child.poll() is None

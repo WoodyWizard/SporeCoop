@@ -73,3 +73,4 @@ the worktrees' out/lab (0.7.4-0.7.8, e.g. rel/0.7.7 20261104-220200 with 8): the
 fault. For G2 (0.7.8 plan): make the guest bot give a fixed minimum of orders, or scale the floor with its actions.
 - 2026-11-05 (fix/w44-tests, G2): the order floor failures were the bots' pace; the bots keep one order per 30 s.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-08 (fix/w46-g4-tests): G4 (2026-11-08): 'gave orders through real clicks (8)' (fix/w46-k8-open out/lab/20261108-015213) and '(9)' (fix/w46-tribe-civ 20261107-094633): late in the game the bot had 5-6 own members left and its raids / epic fights kept them busy (the raid gate counted both tribes' living members). play_tribe now needs 4 own living members for a raid or an epic; the reject count is read before the click (an early reject counted as idle). Runs: play_tribe in the G4 History of BUG-0618's batch (fix/w46-g4-tests).

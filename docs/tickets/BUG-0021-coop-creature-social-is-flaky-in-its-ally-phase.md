@@ -1,16 +1,16 @@
 ---
 id: BUG-0021
 title: coop_creature_social is flaky in its ally phase
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-10-25
 source: test runs
 role: both
 versions: 0.7.2.2+
-fixed_in: 
-branch: fix/w4-tests
-commits: 5a72494
+fixed_in: 0.7.3.4
+branch: feat/w33-tests-creature
+commits: 5a724940, de258df8, f427736b
 tests: tools/tests/coop_creature_social_ally.py (suite creature_social_ally, creature_social_ally_player)
 signature: 
 docs: docs/06-testing.md#testing-w4-tests
@@ -93,3 +93,4 @@ range: host_act refuses acts from more than kActRange + 4 m) instead of moving o
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: fix/w4-tests: refused games are played again; still 1 of 4 OK (Kooks die during the ally phase); not in the suite; left open.
 - 2026-11-01: feat/w33-tests-creature: creature_social_ally (stance from the game); the record fell (4, 2) -> (3, 1) with no kill in 1 of 2 runs; diagnostics added.
+- 2026-11-08 (fix/w46-g4-tests): G4: the status was stale (BUG-0430's audit): fixed by social.no_bite (released 0.7.3.4; FAIL SPORE_FIX_OFF=social.no_bite 3 of 3 in 20261101-152905, PASS 20261101-153820 / -154734, about 20 passing runs 2026-11-01..07). 3 of 3 again on lane 2 (out/lab/20261108-074443, the ally (6, 3, 0) on both games each time). Closed fixed.

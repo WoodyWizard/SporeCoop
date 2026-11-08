@@ -98,6 +98,7 @@ endif
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
+	python3 tools/tests/dash_selftest.py
 ifneq ($(SKIP_SANITIZERS),1)
 	$(MAKE) --no-print-directory test-asan
 	$(MAKE) --no-print-directory test-tsan
@@ -126,6 +127,7 @@ endif
 	python3 tools/tickets.py check
 	python3 tools/tests/tools_selftest.py
 	python3 tools/tests/state_fields_check.py
+	python3 tools/tests/test_lint.py
 ifeq ($(SKIP_SANITIZERS),1)
 	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
 endif

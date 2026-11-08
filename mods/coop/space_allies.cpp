@@ -1409,6 +1409,27 @@ static std::string debug(const std::vector<std::string>& a)
             }
         return "hit " + std::to_string(n) + " raid ships\n";
     }
+    if (a[0] == "missions") { // tests (BUG-0199): every mission noun of this game; "missions done <ptr>": SetState(5)
+        if (a.size() > 2 && a[1] == "done" && a_SetState) {
+            void* want = (void*)(uintptr_t)strtoul(a[2].c_str(), nullptr, 16);
+            for (void* m : missions())
+                if (m == want) {
+                    thiscall<void>(a_SetState, m, 5); // completed: the mission's own OnCompleted pays (docs/re/space.md 7.5)
+                    return "mission " + hex((uint32_t)(uintptr_t)m) + " state " + std::to_string(F<int>(m, 0x84)) + "\n";
+                }
+            return "no such mission\n";
+        }
+        std::string o;
+        char b[200];
+        for (void* m : missions())
+            if (readable(m, 0x134)) {
+                snprintf(b, sizeof b, "mission %08X id %08X state %d giver %08X reward %.0f flags %X\n",
+                         (uint32_t)(uintptr_t)m, F<uint32_t>(m, 0x78), F<int>(m, 0x84), F<uint32_t>(m, 0x8C),
+                         F<float>(m, 0xA0), F<uint32_t>(m, 0x130));
+                o += b;
+            }
+        return o.empty() ? "no missions\n" : o;
+    }
     if (a[0] == "raids") {
         std::string o;
         auto ships = raid_ships();

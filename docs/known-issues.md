@@ -312,6 +312,9 @@ anchor so other docs can link to it:
   with test commands; it is still inside the tutorial (travel to stars that are not own stars is
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
+* 2026-11-08 (fix/w46-g4b-coverage): FIXED as a fixture: `space_free` = `space_empire` + `cheat spaceCreate`
+  (the tutorial lock mbMission201Finished = 1, docs/re/space.md#space-tutorial-lock-runtime) + the interstellar
+  drive again; `coop_space_free.py` (suite `space_free`): galaxy clicks on unowned stars fly both ships there.
 * Ticket: BUG-0181.
 
 ## Space (GOG 2024): zooming in does not land in the first minute after a load
@@ -402,6 +405,9 @@ anchor so other docs can link to it:
   click on a tile opens the building editor (co-op vote). The bots only open and close the planner;
   guest buildings are tested through `coop.civ build` (coop_civ.py). A fixture with designs (or a
   bot that makes one in the editor) is needed.
+* 2026-11-08 (fix/w46-g4b-coverage): FIXED: `coop_civ_planner_build.py` (suite `civ_planner_build`) gives the
+  player civ the NPC cities' house design (`coop.civ bdesign`), then the guest drags the house tile onto a plot
+  with real mouse input; the host's game has the house, the money fell on both (docs/re/civ.md#civ-planner-palette-runtime).
 * Ticket: BUG-0189.
 
 ## coop_sync.py space: the ships' p90 sits near its 10 m limit
@@ -606,6 +612,10 @@ anchor so other docs can link to it:
   by real vehicles are covered). Space: raids and missions (no live mission in
   the fixture), spice trading with NPC stores (selling to a partner colony is covered by coop_space_trade.py), terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).
+* 2026-11-08 (fix/w46-g4b-coverage): healer bonus `tribe_healer` (found and fixed BUG-0745), NPC spice store
+  `space_store` (BUG-0747 open: each game its own store), Civ planner buy `civ_planner_build` (BUG-0189); the rest are
+  concrete tickets: duet BUG-0748, terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
+  BUG-0751.
 * Ticket: BUG-0199.
 
 ## Creature stage: a crash after dying and skipping the cutscene (player report, not reproduced)
@@ -2347,3 +2357,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   the host: `puppet_clouds=`), the creature's health in the host's game (`coop.pool cell c<key>`).
 * Known: docs/re/cell.md#cell-electric-attack (the poison step, the clouds, what the graft sets).
 * Ticket: BUG-0716 (the clouds fixed; the damage not verified).
+## Space: an NPC empire's store pays a different price in each game (2026-11-08, fix/w46-g4b-coverage)
+<a id="issue-space-npc-store-prices"></a>
+
+* Two players at the same NPC empire see different stores: each game generates its own (wanted spices and price
+  factor at random). `coop_space_store.py`: the guest sold a Red Spice for 281, the host for 4,779 to the same empire.
+  Both earnings go into the shared money, so nothing is lost, but the trade screens disagree.
+* Ticket: BUG-0747.
