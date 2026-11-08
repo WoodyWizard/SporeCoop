@@ -5100,3 +5100,28 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * Tests that drive the Creature evolution vote with `coop.vote evolve` and the guest's `ready` click (editor_sync_*,
   evo_bar, evolve_in_place_creature) work with both sides: the same `ready` widget reads "Evolve now" with the switch
   on. The `coop.vote` output has `switch votes ...` and `evolve offers sent / got / taken / expired`.
+
+## N2 of 0.7.11: re-checks of not-reproduced desyncs (2026-11-08, fix/w46-n2-desyncs)
+<a id="testing-n2-recheck"></a>
+
+* `coop_npc_resync.py --fixture tribe` (suite `npc_resync_tribe`, ~1 min): the Tribe twin of npc_resync (BUG-0328,
+  BUG-0487). The census lists Tribe animals as plain `g` rows without net ids, so the ids come from the guest's
+  `coop.npc list` (spawned, living proxies, nearest first) and the check is `coop.sync` coverage (each game's own
+  objects): the three forgotten ids must be in the guest's game again within 8 m of the host's NPC.
+  `SPORE_FIX_OFF=npc.resync` fails (out/lab/20261108-032117), with the fix it passes (20261108-032237 x2).
+
+* `coop_cell_editor_timed.py --vote [--revive]` (suites `cell_editor_vote`, `cell_editor_vote_revive`, ~1.5 min):
+  BUG-0237 through the host's evolution vote: the host is knocked out while its vote is open and the guest clicks
+  "I'm ready" the moment the knockout ends, so the host's cell editor opens 0.3 s later (inside the 2-3 s window the
+  mate path never reaches). The bite check is `coop.pool selfhit 1` on the host: the host refuses a guest's
+  `coop.pool hurt 0 1` on a player's cell (no PvP), which once looked like an invulnerable host (lab 20261108-034839).
+* `CAMPAIGN_SHARE_SPAM=1` (coop_campaign.py; suite `campaign_tribe_share`, ~9 min, 4 players): from the Creature advance
+  until 4 s into Tribe the host posts its world share to the last guest every ~1.5 s, so a share save is being written
+  while the game enters Tribe (BUG-0359's path, "went from Creature to Tribe during the save"). Reached in 4 of 10 runs
+  (lab 20261108-040233, -044415): the shares go out with an already written save in the others. Works with any campaign
+  that advances from Creature (campaign_ct with the env set).
+* `CAMPAIGN_HOST_CMDS_<STAGE>=<cmd>[;<cmd>]` and `CAMPAIGN_HOST_CMDS_PLAYED_<STAGE>` (coop_campaign.py, the second at the
+  end of the stage's play, its answer printed): console commands for the host once every guest is in
+  that stage (triage: `probe 0x00C911C0`). `SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]` (monitor.py): the
+  SPORE_DETECTOR_DIAG commands also run for a finding whose sig contains one of them (e.g. `:ornament` with
+  `coop.wobj raw 18C88E4 3000 576`, BUG-0528).

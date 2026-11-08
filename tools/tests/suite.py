@@ -117,7 +117,9 @@ add('report_shot', P + 'coop_report_shot.py', warm=True, minutes=3, fixture='cre
 add('cell_camera', P + 'coop_cell_camera.py', warm=True, minutes=3, fixture='cell')  # the view is centred on the own cell after the co-op respawn and the join move (BUG-0343; SPORE_FIX_OFF=cell.camera_snap fails)
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
 add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
-add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
+add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive by the guest (BUG-0237)
+add('cell_editor_vote', P + 'coop_cell_editor_timed.py --vote', minutes=6)  # BUG-0237: the host knocked out while its evolution vote is open, the guest's "I'm ready" the moment the host's respawn ends: the host's editor inside the 3 s window, vulnerable after it
+add('cell_editor_vote_revive', P + 'coop_cell_editor_timed.py --vote --revive', minutes=6)  # the same within the 2 s after a revive by the guest (BUG-0237)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
 add('cell_editor_budget', P + 'coop_cell_editor_budget.py', minutes=5)  # BUG-0560: the host's Cell editor after the vote gets the stage's DNA budget, the guest has the host's spent DNA (SPORE_FIX_OFF=cell.editor_budget,wsync.cell_spent fails)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
@@ -436,6 +438,7 @@ add('mirror_scale_npc', P + 'coop_mirror_scale.py --kind npc', warm=True, minute
 add('mirror_scale_tribe', P + 'coop_mirror_scale.py --kind tribe_member', warm=True, minutes=3, fixture='tribe')  # BUG-0475: every tribe member mirror has the host member's size (SPORE_FIX_OFF=tribe.scale fails)
 add('mirror_scale_space', P + 'coop_mirror_scale.py --kind ufo', warm=True, minutes=3, fixture='space')  # BUG-0479: each player's ship is drawn on the other game at the size its own game gives it (SPORE_FIX_OFF=space.puppet_scale fails)
 add('npc_resync', P + 'coop_npc_resync.py', warm=True, minutes=3, fixture='creature')  # BUG-0487: a guest that has no proxy of an NPC it gets states of asks for its spawn again (SPORE_FIX_OFF=npc.resync fails)
+add('npc_resync_tribe', P + 'coop_npc_resync.py --fixture tribe', warm=True, minutes=3, fixture='tribe')  # BUG-0328 / BUG-0487 in Tribe: a guest without the proxy of an NPC it gets states of has it again (SPORE_FIX_OFF=npc.resync fails)
 add('npc_anims', P + 'coop_npc_anims.py', warm=True, minutes=3, fixture='creature')  # BUG-0464: the guest's NPC proxies play the animations the host's NPCs' behaviour trees start (look around, eat, social, fights) within 1 s (GetCurrentAnimation on both games; SPORE_FIX_OFF=npc.anims fails)
 add('wobj_ornament', P + 'coop_world_objects.py --kind ornament', warm=True, minutes=3, fixture='creature')  # BUG-0459 / BUG-0473: a bone the guest used is used up in the host's game, the host's use gives no second part (SPORE_FIX_OFF=wobj.ornament fails)
 add('world_lod', P + 'coop_world_lod.py', warm=True, minutes=4, fixture='creature')  # BUG-0473 / BUG-0498: plants and rocks one game has and the other has not lie around that game's own player (each game streams them by its camera)
@@ -674,6 +677,10 @@ add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --
 # in the same process first): Cell -> Creature -> Tribe with four players, the stress of that path
 add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=45, timeout=3600)
+# BUG-0359 (N2 of 0.7.11): the reported path forced: the host's world share posted again every ~1.5 s through the
+# Creature -> Tribe change (CAMPAIGN_SHARE_SPAM=1), so a share save is being written while the game enters Tribe
+add('campaign_tribe_share', 'CAMPAIGN_SHARE_SPAM=1 ' + P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', (),
+    minutes=30, timeout=3600)
 
 
 # the divergence detector (docs/sync-architecture-plan.md L0): a quiet session per stage, then the play bots

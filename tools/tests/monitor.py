@@ -859,8 +859,12 @@ class Watch(threading.Thread):
                 self.out('DETECTOR ' + json.dumps(dict(guest=who, stage=f['stage'], sig=f['sig'], n=f['n'], text=f['text'])))
             # SPORE_DETECTOR_DIAG=<cmd>[;<cmd>]: with any state finding, both games' answers to these console
             # commands (e.g. `coop.wsync;coop.wsync dump tribe_rel;coop.wsync want tribe_rel`), for triage
+            # SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]: also with a finding whose sig contains one of them (e.g. `:ornament`
+            # with `coop.wobj raw 18C88E4 3000 576`, BUG-0528)
             diag = os.environ.get('SPORE_DETECTOR_DIAG', '')
-            if diag and any(':state:' in f['sig'] or ':planet_owner:' in f['sig'] for f in real):
+            on = [x for x in os.environ.get('SPORE_DETECTOR_DIAG_ON', '').split(',') if x]
+            if diag and any(':state:' in f['sig'] or ':planet_owner:' in f['sig'] or any(x in f['sig'] for x in on)
+                            for f in real):
                 for cmd in [c.strip() for c in diag.split(';') if c.strip()]:
                     for side, i in (('host', host[0]), (who, inst)):
                         try:

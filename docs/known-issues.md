@@ -1169,6 +1169,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: not reproduced (3 replays of seed 612535391, `coop_tribe_rejoin_npcs.py`).
 * Known: suspected window while the guest loads the host's world (docs/tickets BUG-0328). Not reproduced in 9 rejoins
   (2026-11-06, fix/w45-tribe): ticket status not-reproduced.
+* Fixed (2026-11-08, fix/w46-n2-desyncs): the state it shows (a guest without proxies of NPCs the host counts as
+  known) is what npc.resync (BUG-0487, 0.7.4) repairs; shown in Tribe by npc_resync_tribe (SPORE_FIX_OFF=npc.resync
+  fails). Ticket status fixed (0.7.4).
 * Ticket: BUG-0328
 
 ## Tribe: in a long campaign every guest shows tribe members 4-6 m off (2026-10-30, fix/w16-tribe)
@@ -1315,6 +1318,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-11-05 (fix/w45-crashes): not reproduced in 5 more Creature -> Tribe changes (2 x campaign_tribe, 3 x
   campaign_ct, SPORE_DETECTOR=20; none took the original path, a share save during the change); the signature is in no other lab log; the grid's slot layout is
   in docs/re/tribe.md#tribe-flora-grid-slots.
+* 2026-11-08 (fix/w46-n2-desyncs): the original path forced (`CAMPAIGN_SHARE_SPAM=1`, suite campaign_tribe_share: the
+  host's share posted every ~1.5 s through the change) and reached 4 times in 12 four-player Creature -> Tribe changes
+  (2 with Cell first, 4 over SPORE_NET=players): 0 faults. Ticket closed as not-reproduced; the tripwire idea stays.
 * Ticket: BUG-0359
 
 ## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)
@@ -2297,3 +2303,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   windows ...`; test keepalive_stall). The next occurrence names the loop.
 * Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687
+
+## Tribe: the host's creature attack marker is not on the guests' maps (2026-11-08, fix/w46-n2-desyncs)
+<a id="issue-tribe-attack-marker"></a>
+
+* What happens: when the host's game runs a creature attack on the village (the Drama Manager's kind 7), its marker (an
+  ornament of model 0x356EB8A) and minimap blip are only in the host's game; the guests see the attacking animals but not
+  the marker. The detector reports it as `Tribe:unmatched:ornament` / `host_only:ornament`.
+* Reproduce: campaign_tribe with SPORE_DETECTOR=20 (3 of 16 four-player campaigns on 2026-11-08); not yet on the fixture.
+* Known: docs/re/tribe.md#tribe-attack-marker (the maker 0xD73930 -> 0xC9B140 -> 0xC911C0).
+* Not checked: how the game removes the marker; why `coop.drama start 7` on the tribe fixture made none.
+* Ticket: BUG-0740 (from BUG-0528)
+

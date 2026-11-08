@@ -1888,3 +1888,18 @@ BUG-0315. GOG 2024, Ghidra (out/ghidra-2024) and lane 4 (`tools/tests/coop_switc
   both games reached Creature and the first Creature editor (FD4902BD) was requested 1.3 s later.
 * `core.switch_vote` (coop.cpp h_CellToCreature): the host's call in a session waits for an action vote; a guest's own
   call in the host's Cell world is its I'm ready (or nothing). `coop.vote` prints `switch votes`.
+
+## The cell editor through the host's vote: no mating cinematic in between (2026-11-08, fix/w46-n2-desyncs)
+<a id="cell-editor-vote-timing"></a>
+
+* ✔ runtime (lane 9/10, GOG 2024, `coop_cell_editor_timed.py --vote`): the host's evolution vote does not open a
+  guest's own cell editor: the guest that clicks "I'm ready" stays in Cell (`0x01654C00 Cell` while the host is in
+  `Editor`, lab 20261108-034621). The vote moves only the host (docs/re/cell.md 12, 9.3).
+* ✔ runtime: the host's own editor after its vote opens 0.28-0.37 s after the guest's "I'm ready", with no cinematic
+  in between (the mating cinematic ran before the vote). So a host knocked out while its vote is open, whose
+  knockout ends and whose partner clicks "I'm ready" at once, enters its cell editor inside the 2 s (revive) / 3 s
+  (respawn) invulnerability (`av_invuln=1` on the last read in Cell after a revive). This is the BUG-0237 timing
+  that the mate path (~10 s, the cinematic) never reaches.
+* ✔ runtime: even then nothing is left: the editor's return rebuilds the pool and the avatar comes back as a new
+  object (new index and pointer, e.g. 7F010000 -> 844C02A7) with +0x111 = 0, and a bite of 1 takes 6 -> 5 hp (4 runs,
+  lab 20261108-035038). The flag lived in the old avatar object only.
