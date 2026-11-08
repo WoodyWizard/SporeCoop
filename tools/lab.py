@@ -243,6 +243,70 @@ def fault_count(line):
     return int(m.group(1)) if m else 0
 
 
+# BUG-0663 (docs/06-testing.md#testing-xwayland-saturation): every lane's games draw through the one Xwayland of the
+# headless shell; over ~90 % of a core it is saturated and the games of the heaviest stage starve (2-9 fps, "the
+# console stopped answering"), whatever the mod does. Each test samples that Xwayland's CPU every 10 s; a failed test
+# whose busiest window reached XW_LOAD is marked "(load)" in the summary with the numbers (still a failure: rerun it on
+# a quiet machine before reading it as the mod's). SPORE_LAB_XWAYLAND=0: no sampling.
+XW_LOAD = 0.9
+XW_STEP = 10.0
+
+
+def headless_xwayland():
+    """pid of the Xwayland that serves the headless shell (its auth file is under sporecoop-headless), or None"""
+    try:
+        out = subprocess.run(['pgrep', '-x', 'Xwayland'], capture_output=True, text=True).stdout.split()
+    except OSError:
+        return None
+    for pid in out:
+        try:
+            if b'sporecoop-headless' in open(f'/proc/{pid}/cmdline', 'rb').read():
+                return int(pid)
+        except OSError:
+            pass
+    return None
+
+
+def proc_ticks(pid):
+    try:
+        f = open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()
+        return int(f[11]) + int(f[12])  # utime + stime
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+class XwSampler(threading.Thread):
+    """the headless Xwayland's share of one core: the whole test and its busiest XW_STEP window"""
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.pid = headless_xwayland() if os.environ.get('SPORE_LAB_XWAYLAND', '1') != '0' else None
+        self.hz = os.sysconf('SC_CLK_TCK')
+        self.stop_ev = threading.Event()
+        self.first = self.last = None
+        self.peak = 0.0
+
+    def run(self):
+        if not self.pid:
+            return
+        t, k = time.time(), proc_ticks(self.pid)
+        self.first = (t, k)
+        while k is not None and not self.stop_ev.wait(XW_STEP):
+            t2, k2 = time.time(), proc_ticks(self.pid)
+            if k2 is None:
+                break
+            self.peak = max(self.peak, (k2 - k) / self.hz / max(t2 - t, 1e-3))
+            t, k = t2, k2
+            self.last = (t, k)
+
+    def result(self):
+        self.stop_ev.set()
+        self.join(2)
+        if not self.first or not self.last or self.first[1] is None:
+            return None
+        avg = (self.last[1] - self.first[1]) / self.hz / max(self.last[0] - self.first[0], 1e-3)
+        return {'avg': round(avg, 2), 'peak': round(self.peak, 2)}
+
+
 def run_one(t, lane, tree, logdir, warm, suffix=''):
     preflight()
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1')
@@ -252,10 +316,13 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     t0 = time.time()
     reports0 = report_files(lane)
     marks0 = {who: loggates.log_marks(p) for who, p in game_logs(lane).items()}  # where the test's lines begin
+    xw = XwSampler()
+    xw.start()
     with open(log, 'w') as f:
         f.write(f'# {t["cmd"]}  (lane {lane}, {"warm" if warm else "cold"})\n')
         f.flush()
         rc = run_cmd(t['cmd'], tree, env, f, t.get('timeout') or TIMEOUT)
+    xwl = xw.result()
     # a crash after the checks is still a crash (CLAUDE.md 3, BUG-0036): a game that answered at the
     # end must still answer a few seconds later, and no new crash / hang report may appear
     alive0 = lane_alive(lane)
@@ -312,7 +379,11 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     # the machine, not the mod: the game did not even start
     env = not ok and ('did not start' in text or "bwrap: Can't find" in text)
     m = re.search(r'\((both games ready|warm reset) in (\d+) s', text)
-    return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok,
+    load = bool(not ok and xwl and xwl['peak'] >= XW_LOAD)  # BUG-0663
+    if load:
+        lab_fails.append(f'LOAD lab: the headless Xwayland used {xwl["peak"]:.0%} of a core in the busiest {XW_STEP:.0f} s '
+                         f'({xwl["avg"]:.0%} on average): saturated, the fps of this run are the machine\'s (BUG-0663)')
+    return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok, xwayland=xwl, load=load,
                 harness=(not has_result or 'Traceback' in text) and not lab_fails,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
                 fails=(lab_fails + [l.strip() for l in text.splitlines() if l.strip().startswith('FAIL')])[:8],
@@ -570,7 +641,7 @@ def cmd_run(a):
              f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '', '| test | result | lane | s | start |', '|---|---|---|---|---|']
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
         res = 'skip' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
-        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""} | {r["lane"]} '
+        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""}{" (load)" if r.get("load") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
     gated = [r for r in results if r.get('gates')]
     if gated:  # docs/06-testing.md#testing-log-gates: what the games' logs said, failed or allowed
