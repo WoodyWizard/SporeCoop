@@ -43,7 +43,8 @@ hold, the line must be on both games (and in the guest's game as the host's line
 
 ## Verification
 FAIL (the old check, SPORE_CHAT_WAIT=0): out/lab/20261107-210110 chat_held_send_oldcheck#1, #2 (both lines "on both
-False" at 1.5 s). PASS: out/lab/20261107-210110 chat_held_send#1, #2 (both lines on both games 2.8 s after the click).
+False" at 1.5 s). PASS: out/lab/20261107-210110 chat_held_send#1, #2 (both lines on both games 2.8 s after the click);
+play_creature with the new check out/lab/20261107-220935 #1, #2 (10/10 and 6/6 chat lines).
 
 ## History
 - 2026-11-06: opened.
