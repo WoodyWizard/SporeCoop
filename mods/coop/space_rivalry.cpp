@@ -23,6 +23,7 @@
 //   the game's TakeDamage (the same hook: the rescue filter, then the native death and respawn).
 //   The rescue never helps a player at war with the ship (spacecoop.cpp partners_here).
 #include "space_rivalry.h"
+#include "player_life.h"
 
 #include <algorithm>
 #include <cmath>
@@ -92,6 +93,10 @@ static uint16_t g_split_seq, g_merge_seq;
 static int g_split_total, g_split_share;
 static std::map<uint8_t, int> g_merge_credit_of; // the budgets the last merge counted
 static std::map<std::string, int> g_budget_name;  // player name -> its last reported budget (rejoins)
+// BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
+// g_budget_name keeps a rejoiner's own)
+PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
+             [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id); });
 static std::vector<std::pair<uint8_t, std::string>> g_roster;
 static double g_last_state;
 

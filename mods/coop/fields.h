@@ -27,6 +27,7 @@ enum FieldId : uint8_t {
     F_SCALE = 1, // cSpatialObject GetScale (vt 0x34) / SetScale (vt 0x40)
     F_TOOL = 2,  // cCreatureCitizen +0x102C mSpecializedTool / SetSpecializedTool (tribe.cpp, BUG-0514)
     F_LEADER = 3, // 2 = the member leads its tribe (cCommunity +0x11C), 1 = not; cTribe::SetChieftain (tribe.cpp, BUG-0652)
+    F_MAX_HP = 4, // cCombatant vt 0x58 the maximum health; on a proxy through creature_hp's GetMaxHp hook (npc.cpp, BUG-0710)
 };
 
 struct Field {

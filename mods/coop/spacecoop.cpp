@@ -1,4 +1,5 @@
 #include "spacecoop.h"
+#include "player_life.h"
 
 #include <algorithm>
 #include <cmath>
@@ -84,6 +85,10 @@ static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_m
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
+// BUG-0422: a newcomer under a departed player's id: Jump-to went to the departed player's star, a down timer
+// of the departed player kept the newcomer out of rescues
+PLAYER_STATE("spacecoop", [](uint8_t id) { g_partner_down.erase(id); g_last_star.erase(id); },
+             [](uint8_t id) -> size_t { return g_partner_down.count(id) + g_last_star.count(id); });
 static bool g_applying;
 static float g_terra_acc[3];
 static uint32_t g_terra_planet;
@@ -1177,12 +1182,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
         void* inv = inventory();
-        int got = 0;
+        int got = 0, owed = 0;
         for (int i = 0; i < n && r.ok(); i++) {
             Key k;
             for (auto& v : k.v)
                 v = r.u32();
-            if (!inv || !a_AddItemByKey || !r.ok())
+            if (!r.ok())
+                continue;
+            if ((!inv || !in_space()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) { // BUG-0694
+                owed++;
+                continue;
+            }
+            if (!inv || !a_AddItemByKey)
                 continue;
             if (vcall<bool>(inv, 0x74 / 4, k.v)) // HasTool: no second copy
                 continue;
@@ -1192,7 +1203,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_tools_got += got;
         if (C.notice)
             C.notice(name(origin) + " completed a mission" +
-                     (got ? ": you get its reward tools too (" + std::to_string(got) + ")" : ""));
+                     (got ? ": you get its reward tools too (" + std::to_string(got) + ")" : "") +
+                     (owed ? ": its reward tools (" + std::to_string(owed) + ") are yours when you are back in space" : ""));
         break;
     }
     case K_TERRA: {

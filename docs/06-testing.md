@@ -4913,3 +4913,29 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `multi4_tribe` / `multi4_tribe_slow` / `multi4_creature_seed` / `multi4_creature_slow` (BUG-0167, BUG-0170, ~7 min):
   `coop_multi.py` with 4 players in one lane (instances 20+N / 30+N), 6 min of chaos-bot churn; the creature ones
   replay seed 1035603402 of the BUG-0170 report; `_slow` at 20 fps over the players' networks.
+
+## State classes: world filter, ids, effect height (2026-11-07, fix/w46-k2a-state)
+<a id="testing-k2a-state"></a>
+
+* `world_gate_vote` (coop_world_gate_vote.py, 6 min, cold): the guest loads a copy of the creature fixture planet
+  under another name WHILE it stays in the session (`coop.worldfix autoload 0`, `coop.load Game9 Otherworld`), sets
+  a species relation of its own (`coop.social record`), the host runs a vote (`coop.vote editor`, `coop.vote go`).
+  Twins: `social.world_gate`, `core.vote_world` (BUG-0703, BUG-0702).
+* `civ_siege_npc` (fixture civ_npc): the game's capture meter through `coop.civ siege <city> <player>`; player 254 is
+  an NPC nation's vehicle (BUG-0704, `civ.siege_players`).
+* `space_friendly` (fixture space): `coop.fleet spawn 2 own` is an escort of the host's empire; the games' hp show
+  the game ignores damage within one empire with or without the filter (BUG-0705).
+* `player_forget` (fixture space, cold): `coop.players held <id>` lists the per-player state the modules keep
+  (player_life.h); nothing after a leave (BUG-0706, `core.player_forget`).
+* `effect_ground` (fixture creature, warm): `coop.effects inject 0 0 0 5 <id> 0 x y z <agl>` feeds a world effect as
+  the host would send it; the 11th argument is the height over the sender's ground (BUG-0608, `effects.ground`).
+* `space_own_save` (fixture space, cold): the guest leaves, loads a copy of the fixture slot under another planet name
+  (Otherspace) and joins again; `coop.res add money` on both sides (BUG-0709, `res.space_save`).
+* `npc_max_hp` (fixture creature): four worlddiff comparisons, no `max_hp` row (BUG-0710, `npc.max_health`). The
+  switch must be off from the start of a run's first states: drive_puppet's stored max stays until the entry is
+  forgotten (the off side forgets it at the next state).
+* Part B of K2a (fix/w46-k2a-state-b): `res_away` / `res_away_tribe` (`coop.res block <s>`: the host's resource reads
+  as unavailable; `coop.res away <s> <res> <delta>`: the guest's tick sees an editor's mode, then buys), `civ_away_buy`
+  (the host's real main menu and reload), `space_reward_away` / `space_contract_clock` (`coop.space away`,
+  `coop.space contracts result`), `res_cause`, `space_partner_hp` (`coop.puppet hp`), `species_table`,
+  `creature_stun_proxy`, `tribe_member_age` (BUG-0691..0700).

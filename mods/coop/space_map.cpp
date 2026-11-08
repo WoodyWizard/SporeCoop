@@ -1,6 +1,7 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
 #include "space_map.h"
+#include "player_life.h"
 
 #include "net/utf8.h"
 
@@ -725,6 +726,10 @@ static bool g_covered, g_lmb, g_drawn; // g_drawn: the overlay drew the map sinc
 static double g_cover_checked;
 static uint32_t g_tag_clicks, g_trips, g_trip_cost, g_frames_drawn, g_frames_covered;
 static std::map<uint8_t, size_t> g_col_pick; // the Space page: which colony of a partner is shown
+// BUG-0422: the departed player's roster and colonies were shown for a newcomer under its id, and the newcomer
+// (already "seen") was not sent everybody's rosters
+PLAYER_STATE("space_map", [](uint8_t id) { g_rosters.erase(id); g_pending.erase(id); g_players.erase(id); g_col_pick.erase(id); },
+             [](uint8_t id) -> size_t { return g_rosters.count(id) + g_pending.count(id) + g_players.count(id) + g_col_pick.count(id); });
 
 static int context() { return a_Context ? cdecl_call<int>(a_Context) : -1; }
 

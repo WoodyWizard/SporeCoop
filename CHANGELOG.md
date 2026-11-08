@@ -9,6 +9,30 @@
 - Creature: when the host's planet has creatures the host made, and the guest has made other creatures with the same
   numbers, the guest's game showed its own creature for the host's nests and their cards ("The ... are your
   allies!"); it shows the host's creature now (BUG-0200).
+- A guest that plays another world of the host's stage while it stays in the session no longer gets the host's
+  evolution vote screen and editor, and keeps its own species relations (BUG-0702, BUG-0703).
+- Civilization: an NPC nation's army attacking the same city no longer counts as a second player of a joint siege
+  (BUG-0704).
+- A player who joins after another left no longer inherits the departed player's Space star (Jump-to), roster and
+  budget, or the values and designs the host last sent to it (BUG-0706).
+- Creature: a baby animal's health bar on the guest showed the adult maximum of its species (BUG-0710).
+- Space: the host's shared money no longer goes into a guest that plays a Space save of its own (BUG-0709).
+- Hit impacts and other world effects of a partner are played on your own ground where the two games' grounds differ
+  (BUG-0608).
+- Tribe and Civilization: food or money a guest earned while the host was loading or in the menu now reaches the
+  host's game when it is back; before, the two games' totals stayed apart from then on (BUG-0691).
+- Tribe and Civilization: a guest's purchase right after leaving an editor is no longer undone by the host's next
+  total (the purchase made and the food or money back) (BUG-0692).
+- Civilization and Tribe: a guest's purchase, planner building, gift or superweapon request made while the host is
+  in an editor or the menu is made when the host is back, and the guest is told that it waits; before, it was dropped
+  without a word (BUG-0693).
+- Space: a contract or mission reward tool that arrives while the player is in an editor or an adventure is given
+  when the player is back in space; before, it was lost (BUG-0694).
+- Space: a contract's time no longer runs out while the host's game is paused or outside Space (BUG-0695).
+- Shared food and money: a notice now says which player's purchase or earning changed the shared total (BUG-0696).
+- Space: the partner's ship shows its real health on the other screen, not always full (BUG-0697).
+- Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within about a
+  third of a second instead of up to one second (BUG-0699).
 
 ## [0.7.10.1] - 2026-11-07
 

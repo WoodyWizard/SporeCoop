@@ -56,6 +56,6 @@ std::string map_dump(); // tests: the effect pool maps of the avatar and the pup
 // tests: feed a crafted MSG_EFFECT through on_message as if it came from peer `from` (spoofing and
 // validation checks: the transport cannot make a guest claim another player)
 void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
-            const net::Vec3& pos);
+            const net::Vec3& pos, float agl = net::kNoAgl);
 
 } // namespace effects

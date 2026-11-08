@@ -125,6 +125,7 @@ endif
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
 	python3 tools/tests/tools_selftest.py
+	python3 tools/tests/state_fields_check.py
 ifeq ($(SKIP_SANITIZERS),1)
 	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
 endif

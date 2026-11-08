@@ -1,20 +1,20 @@
 ---
 id: BUG-0422
 title: class: per-player state under a reused id, and state that existed before a proxy (umbrella)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-k2a-state
+commits: 6b49ee3d
+tests: player_forget (coop_player_forget.py)
 signature:
-docs:
-related:
+docs: docs/04-netcode.md#netcode-player-life
+related: BUG-0706, BUG-0707, BUG-0708, BUG-0487, BUG-0125, BUG-0328
 ---
 
 ## Report
@@ -25,14 +25,14 @@ Source: docs/generalisation-plan.md G5.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+K2a audit (0.7.11) of the sibling list against rel/0.7.11: player ids are reused within a session (net/session.cpp alloc_id: the lowest free id); per-player maps were forgotten by five modules called by hand on a leave.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+One registry (mods/coop/player_life.h, `core.player_forget`): every module with a map keyed by player id registers its forget / held functions next to the map; coop.cpp calls forget_all on every leave and join. Children: BUG-0706 (fixed: spacecoop, space_rivalry, space_map, space_finale, tribe, civ, fields, creations, realign, effects); BUG-0707 (wontfix: the regen throttle and the Space down cooldown are by design, the latter scoped to the world epoch); BUG-0708 (not reproduced: no once-per-save flag of the host applies to a newcomer); item 4 (unknown NPC ids) fixed earlier by BUG-0487 (npc.resync); item 7 (species profile cache) not applicable: the game's profiles are process-wide, the mod's maps are cleared (creations g_design_sent now in the registry). BUG-0328 (a rejoining Tribe guest's NPC coverage) is in N2.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Through BUG-0706: coop_player_forget.py FAIL with `SPORE_FIX_OFF=core.player_forget` out/lab/20261107-223012, PASS out/lab/20261107-222542, out/lab/20261107-223602. Detector: no signature of this class (tools/detector_report.py KNOWN has none; 400 runs of 2026-11-06/07 across the worktrees, 6324 comparisons).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-07 (fix/w46-k2a-state, K2a of 0.7.11): the shared registry; children BUG-0706 fixed, BUG-0707 wontfix, BUG-0708 not reproduced; umbrella closed.

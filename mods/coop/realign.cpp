@@ -1,5 +1,6 @@
 // Whole-planet re-alignment after transitions (realign.h, realign_rule.h, docs/re/tribe.md#tribe-realign).
 #include "realign.h"
+#include "player_life.h"
 
 #include <windows.h>
 
@@ -138,6 +139,7 @@ static uint16_t g_cycle;
 static double g_sent_at = -100;
 static uint32_t g_host_epoch;
 static std::set<uint8_t> g_in_place;
+PLAYER_STATE("realign", [](uint8_t id) { g_in_place.erase(id); }, [](uint8_t id) -> size_t { return g_in_place.count(id); }); // BUG-0422
 static uint32_t g_tx, g_tx_soon;
 static bool g_soon;
 

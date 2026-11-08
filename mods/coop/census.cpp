@@ -48,6 +48,7 @@ static void creature_rows(std::vector<Row>& rows)
             r.noun = noun;
             r.serial = game::object_serial(o);
             r.scale = game::scale(o);
+            r.max_hp = game::max_health(o);
             int pid = npc::proxy_id(o), hid = npc::host_id(o);
             if (o == u->av)
                 r.own = "avatar";
@@ -162,7 +163,8 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         int n = snprintf(b, sizeof b, "obj %c%d key=%08X alive=%d hp=%.1f ai=%d own=%s owner=%d pos=(%.1f %.1f %.1f)", r.kind,
                          r.id, r.key, r.alive, r.hp, r.ai, r.own, r.owner, r.pos.x, r.pos.y, r.pos.z);
         if (all && n > 0 && n < (int)sizeof b - 64)
-            snprintf(b + n, sizeof b - n, " noun=%08X ser=%u scale=%.3f\n", r.noun, r.serial, r.scale);
+            snprintf(b + n, sizeof b - n, r.max_hp >= 0 ? " noun=%08X ser=%u scale=%.3f max=%.1f\n" : " noun=%08X ser=%u scale=%.3f\n",
+                     r.noun, r.serial, r.scale, r.max_hp);
         else if (n > 0 && n < (int)sizeof b - 2)
             strcat(b, "\n");
         if (buf.size() + strlen(b) > 7000) {

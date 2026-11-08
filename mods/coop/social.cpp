@@ -98,7 +98,19 @@ static double g_table_sent = 0;
 static std::vector<SpeciesRec> g_host_table; // guest: the host's table
 static bool g_have_table = false;
 static uint32_t g_table_rx = 0, g_table_fixed = 0, g_table_tx = 0;
+// BUG-0420: the host's species table was written into a guest's own world every 0.5 s once the guest played another
+// world of the host's stage (only new tables were gated): its own relations were reset to the host's. Off: as 0.7.10.
+static bool g_world_fix = true;
+COOP_FIX("social.world_gate", "BUG-0420", g_world_fix, "creature: a guest in another world keeps its own species relations");
+static uint32_t g_table_forgot = 0;
+static double g_table_rx_at = 0; // BUG-0699 diagnostics: when the host's last table came
 
+// BUG-0699: the host looked at its species table once a second: a kill, an impression or an alliance reached the
+// guests 1-1.5 s later (the detector's species_relation / species_killed rows, found again 1.5 s after its first look).
+// On: every 0.25 s (the table is sent only when it changed). Off: once a second (0.7.10).
+static bool g_table_fast_fix = true;
+COOP_FIX("social.table_fast", "BUG-0699", g_table_fast_fix,
+         "creature: a change of the species relations (a kill, an alliance) reaches the guests within a third of a second");
 static void send_table(const std::vector<SpeciesRec>& t, int to)
 {
     net::Writer w;
@@ -198,6 +210,10 @@ static void enforce_table()
         if (!rec)
             continue;
         if ((int32_t)rec[0] != r.relation || rec[1] != r.x || rec[2] != r.impressed || rec[3] != r.killed) {
+            if (g_table_fixed < 400) // BUG-0699 diagnostics: when a guest's record took the host's values
+                H->log(M, SK_INFO, "social: species %08X: relation %d -> %d, impressed %u -> %u, killed %u -> %u from the "
+                       "host's table (%.1f s old)", r.key[0], (int32_t)rec[0], r.relation, rec[2], r.impressed, rec[3],
+                       r.killed, H->time_seconds() - g_table_rx_at);
             rec[0] = (uint32_t)r.relation;
             rec[1] = r.x;
             rec[2] = r.impressed;
@@ -1007,7 +1023,7 @@ void tick(double now)
         host_prompt_tick(now);
     if (is_host()) {
         static double last = 0;
-        if (now - last < 1.0)
+        if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
         auto t = read_table();
@@ -1027,8 +1043,17 @@ void tick(double now)
         static double last = 0;
         if (now - last >= 0.5) {
             last = now;
-            enforce_table();
-            herds_follow_table();
+            // BUG-0420: a guest that plays another world keeps its own species table: the host's last table
+            // is forgotten (a new one comes with the host's world, MSG_SPECIES is gated while elsewhere)
+            if (g_world_fix && C.elsewhere && C.elsewhere()) {
+                if (g_have_table)
+                    g_table_forgot++;
+                g_have_table = false;
+                g_host_table.clear();
+            } else {
+                enforce_table();
+                herds_follow_table();
+            }
         }
     }
 }
@@ -1059,6 +1084,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_host_table = std::move(t);
         g_have_table = true;
         g_table_rx++;
+        g_table_rx_at = H->time_seconds();
         if (game::in_creature_stage() && game::avatar()) {
             enforce_table();
             herds_follow_table();
@@ -1183,10 +1209,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
                  "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u "
-                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f\n",
+                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f table_forgot=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
                  g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed, g_prompts_in,
-                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at);
+                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot);
     return b;
 }
 

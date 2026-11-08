@@ -123,6 +123,21 @@ static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checke
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
 
+// BUG-0420 (class: hits without a relation filter): a hit between the players' empire and a ship of that same empire
+// (an escort of the host's, a Defender of its system) was relayed like an enemy's: the host's escort's stray shot on a
+// guest's puppet hurt the guest's own ship, a guest's shot at the host's escort mirror hurt the escort. The game does
+// not apply friendly fire to the player's own ship; now neither does the relay. Off: as 0.7.10.
+static bool g_friendly_fix = true;
+COOP_FIX("space.friendly_hits", "BUG-0420", g_friendly_fix, "space: shots between the players' empire and its own escorts are not relayed as hits");
+static uint32_t g_friendly_dropped;
+static bool friendly(void* ship)
+{
+    if (!g_friendly_fix || !ship)
+        return false;
+    uint32_t mine = a_PlayerEmpireID ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
+    return mine != 0xFFFFFFFFu && mine != 0 && F<uint32_t>(ship, kPol) == mine;
+}
+
 // ---------------- hooks ----------------
 using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*, void*);
 static TakeDamage_t o_TakeDamage;
@@ -157,7 +172,10 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
     }
     if (is_host() && C.puppet_owner) {
         int owner = C.puppet_owner(u);
-        if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me) {
+        bool own = owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att);
+        if (own)
+            g_friendly_dropped++;
+        if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && !own) {
             // an NPC ship hit a guest's ship: the guest takes it on its own ship
             net::Writer w;
             w.f32(dmg);
@@ -707,6 +725,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_hid_rev.find(id);
         if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
+        if (friendly(it->second)) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
+            g_friendly_dropped++;
+            return;
+        }
         dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
         if (!net::finite3(dir))
             dir[0] = dir[1] = dir[2] = 0;
@@ -773,9 +795,9 @@ static std::string status_ships()
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
-                 "att_dropped=%u att_freed=%u controller_skips=%u save_stripped=%u/%u\n",
+                 "att_dropped=%u att_freed=%u controller_skips=%u save_stripped=%u/%u friendly_dropped=%u\n",
                  (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots, g_att_dropped,
-                 g_att_freed, g_ctl_skipped, g_ufo_stripped, g_ufo_strip_saves);
+                 g_att_freed, g_ctl_skipped, g_ufo_stripped, g_ufo_strip_saves, g_friendly_dropped);
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "

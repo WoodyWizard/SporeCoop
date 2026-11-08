@@ -16,6 +16,7 @@
 //    collectible, the event log line) and the achievement "42"; a partner who joins later learns
 //    that the core was reached and gets the gift too; nobody gets it twice (the game's own flag)
 #include <algorithm>
+#include "player_life.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -71,6 +72,8 @@ struct Peer {
 
 static std::map<uint8_t, Peer> g_peer;
 static std::map<uint8_t, std::string> g_reached_by; // who entered the core in this session
+PLAYER_STATE("space_finale", [](uint8_t id) { g_peer.erase(id); g_reached_by.erase(id); }, // BUG-0422
+             [](uint8_t id) -> size_t { return g_peer.count(id) + g_reached_by.count(id); });
 static uint32_t g_core;                              // StarID of the core (0 = not found yet)
 static double g_core_scan;
 static uint8_t g_zone, g_flags, g_sent_zone = 0xFF, g_sent_flags = 0xFF;

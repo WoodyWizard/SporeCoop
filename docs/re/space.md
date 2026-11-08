@@ -2361,3 +2361,13 @@ BUG-0547 (the sync-check's `p0 46.2` / `p0 50.0` MISMATCHes). Lab lane 9, `tools
   copy is within the player limit (10 m) of the path's last 1 s plus the guest's round trip (`sync.own_path`). The
   guests' own keys keep the speed slack: the host's copy of a guest is older than the guest's own position, the
   host has no path of where the guest is now.
+## The partner's ship health on the other game (2026-11-07, fix/w46-k2a-state-b)
+<a id="space-partner-ship-health"></a>
+
+* ✔ BUG-0697 (class BUG-0419): space_fill sends the ship's cCombatant health (+0x540 = combatant +0x38) and max
+  (+0x534 = combatant +0x2C); space_drive wrote the puppet's own max into its health every frame, so the partner's ship
+  was always drawn at full health. Now the partner's share of its max on the puppet's max (another design: another
+  max), at least 2 %: this game never kills the puppet, the partner's game decides its ship's fate (disabled, rescued,
+  destroyed). `coop.fix drive.space_hp off`: full health. Lab: a 40 % hit on either ship shows 0.60 on the other game's
+  puppet (`coop.puppet hp`), 1.00 with the switch off.
+* Contracts: see docs/re/host-centric.md#host-centric-away-credits (rewards owed outside Space, the contract clock).

@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "player_life.h"
 #include "census.h"
 
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include "shared.h"
 #include "stage_epoch.h"
 #include "modes.h"
+#include "net/held_cmds.h"
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
@@ -1153,8 +1155,12 @@ static Target read_target(net::Reader& r)
 
 enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4 };
 
+static void say_host_away(const char* what); // BUG-0693
+static bool local_play();
 static void send_cmd(net::Writer& w)
 {
+    if (local_play())
+        say_host_away("your command");
     C.sess->send_reliable_to(0, net::MSG_CIV_CMD, w);
     g_cmds_sent++;
 }
@@ -1221,8 +1227,34 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
     return o_SetMoveOrder(v, x, y, z, flag);
 }
 
+// BUG-0693: a guest's command that reaches a host whose Civ is not running (an editor, a menu, a load) is held and run
+// when the host is back in the same Civ world (net/held_cmds.h); the guest is told that it waits. Off: dropped (0.7.10).
+static bool g_fix_cmd_hold = true;
+COOP_FIX("civ.cmd_hold", "BUG-0693", g_fix_cmd_hold,
+         "civ: a guest's purchase, planner building, gift or superweapon request made while the host is away runs when it is back");
+static net::HeldCommands g_cmd_held;
+PLAYER_STATE("civ.held_cmds", [](uint8_t id) { g_cmd_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& c : g_cmd_held.q)
+                     n += c.from == id;
+                 return n;
+             });
+static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
+static double g_away_said = -100;
+static void say_host_away(const char* what)
+{
+    double t = H ? H->time_seconds() : 0;
+    if (!g_fix_cmd_hold || !C.feed || t - g_away_said < 5)
+        return;
+    g_away_said = t;
+    C.feed(std::string(what) + " waits: " + C.sess->name_of(0) + " (host) is away, it is done when the host is back");
+}
+
 static void request_buy(void* city, int loco)
 {
+    if (local_play())
+        say_host_away("your purchase");
     net::Writer w;
     w.u8(CMD_BUY);
     w.u8((uint8_t)host_index_of_city(city));
@@ -1616,8 +1648,18 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
 constexpr double kJointWindow = 10.0;
 static uint8_t g_hit_by = 0xFF;                         // the player whose vehicle is hitting right now
 static std::unordered_map<void*, std::unordered_map<uint8_t, double>> g_siege; // city -> player -> last hit
+PLAYER_STATE("civ.siege", [](uint8_t id) { for (auto& [c, m] : g_siege) m.erase(id); }, // BUG-0422
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& [c, m] : g_siege)
+                     n += m.count(id);
+                 return n;
+             });
 static std::unordered_set<void*> g_joint_told;
 static uint32_t g_joint_hits, g_military_hits, g_religious_boosts, g_alarms, g_votes;
+static bool g_siege_players_fix = true;
+COOP_FIX("civ.siege_players", "BUG-0420", g_siege_players_fix, "civ: an NPC nation's army attacking the same city is not a second player of a joint siege");
+static uint32_t g_siege_npc;
 
 static uint8_t player_of_combatant(void* att)
 {
@@ -1667,7 +1709,12 @@ using AddCapture_t = void(SK_CDECL*)(void*, void*, void*, uint32_t, float, uint3
 static AddCapture_t o_AddCapture;
 static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, float dmg, uint32_t att, bool f)
 {
-    if (is_host() && active() && city && g_hit_by != 0xFF) {
+    // BUG-0420: the owner of an NPC nation's vehicle is 0xFE: it counted as a second player (one guest and an NPC
+    // army gave the joint-siege bonus). Only a player's vehicles count now; `coop.fix civ.siege_players off`: 0.7.10.
+    bool player = g_hit_by != 0xFF && (!g_siege_players_fix || g_hit_by < net::kMaxPlayers);
+    if (!player && g_hit_by != 0xFF)
+        g_siege_npc++;
+    if (is_host() && active() && city && player) {
         double now = H->time_seconds();
         auto& hits = g_siege[city];
         hits[g_hit_by] = now;
@@ -3869,6 +3916,17 @@ void tick(double now)
     if (!active())
         return;
     prune_gone();
+    g_cmd_world = modes::current_world();
+    static double active_at, active_since;
+    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
+        active_since = now;
+    active_at = now;
+    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle) // BUG-0693: the commands that came while this game was away
+        g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
+            net::Reader r(c.bytes.data(), c.bytes.size());
+            H->log(M, SK_INFO, "civ: a command of player %u held while away runs now", c.from);
+            host_command(c.from, r);
+        });
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -3879,6 +3937,10 @@ static uint32_t g_founds_outside; // BUG-0319 diagnostics: city foundings receiv
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (!active()) {
+        if (type == net::MSG_CIV_CMD && g_fix_cmd_hold && g_ok && is_host() && r.left()) { // BUG-0693
+            g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
+            H->log(M, SK_INFO, "civ: a command of player %u held: this game is not in Civ (mode %08X)", from, game::mode_id());
+        }
         if (type == net::MSG_CIV_BUILD && g_ok && is_guest()) {
             net::Reader peek = r;
             uint8_t ci = peek.u8();
@@ -3947,6 +4009,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    g_cmd_held.clear(); // BUG-0693
     host_buildings_session_end(); // BUG-0670
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
@@ -4070,11 +4133,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
                  "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u "
-                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u\n",
+                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
                  g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
-                 g_max_chunk);
+                 g_max_chunk, g_siege_npc);
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "

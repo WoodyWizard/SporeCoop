@@ -14,6 +14,7 @@
 #include "dna_pace.h"
 #include "host_world.h"
 #include "net/shared_ledger.h"
+#include "net/held_cmds.h"
 #include <string>
 
 using namespace net;
@@ -34,6 +35,29 @@ static Chunk add(ChunkRx& rx, uint32_t id, uint32_t total, uint32_t off, size_t 
     for (size_t i = 0; i < n; i++)
         p[i] = (uint8_t)(fill + i);
     return chunk_add(rx, id, total, off, p.get(), n, chunk, 8u << 20);
+}
+
+// BUG-0693: a guest's command held while the host's stage is away runs once, in order, in the same world only
+static void test_held_cmds()
+{
+    HeldCommands h;
+    const uint8_t a[] = {2, 7}, b[] = {3, 9, 9};
+    h.push(1, a, sizeof a, 5, 10.0);
+    h.push(2, b, sizeof b, 5, 11.0);
+    std::vector<uint8_t> ran;
+    h.drain(5, 20.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.bytes[0]); });
+    CHECK(ran.size() == 2 && ran[0] == 2 && ran[1] == 3 && h.q.empty() && h.run == 2);
+    h.push(1, a, sizeof a, 5, 0.0);   // another world when back: dropped
+    h.push(1, a, sizeof a, 6, 0.0);   // too old: dropped
+    h.push(3, b, sizeof b, 6, 100.0); // the same world, in time: runs
+    ran.clear();
+    h.drain(6, 150.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.from); });
+    CHECK(ran.size() == 1 && ran[0] == 3 && h.dropped == 2);
+    for (int i = 0; i < 40; i++)
+        h.push(1, a, sizeof a, 1, 0.0);
+    CHECK(h.q.size() == HeldCommands::kMax && h.dropped == 2 + 8);
+    h.forget(1);
+    CHECK(h.q.empty());
 }
 
 static void test_chunks()
@@ -339,6 +363,32 @@ static void test_host_world()
     CHECK(classify(true, cr, 0, false, 0, 0, 0) == HostWorld::Other);
     // the host names its world in WELCOME only in a gated stage
     CHECK(host_world::welcome_world(cr, 7) == 7 && host_world::welcome_world(space, 7) == 0);
+    // BUG-0420: every message type has a class (an unlisted MsgType fails the build: -Werror=switch in host_world.h);
+    // the host's world state is dropped while elsewhere, a type this build does not know too (default deny)
+    // BUG-0709: another Space save than the host's (both known); unknown or another mode: not held
+    CHECK(host_world::space_other(true, space, 5, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 5) && !host_world::space_other(true, space, 0, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 0) && !host_world::space_other(true, space, 5, true, cr, 6));
+    CHECK(!host_world::space_other(false, space, 5, true, space, 6) && !host_world::space_other(true, cr, 5, true, space, 6));
+    CHECK(host_world::welcome_world(space, 7, 9) == 9 && host_world::welcome_world(cr, 7, 9) == 7);
+    using host_world::MsgClass;
+    using host_world::msg_class;
+    using host_world::world_state_msg;
+    CHECK(msg_class(net::MSG_CHAT) == MsgClass::Session && msg_class(net::MSG_VOTE) == MsgClass::Session);
+    CHECK(msg_class(net::MSG_SPECIES) == MsgClass::HostWorld && msg_class(net::MSG_WSTATE) == MsgClass::HostWorld);
+    CHECK(msg_class(net::MSG_NPC_STATE) == MsgClass::Module && msg_class(net::MSG_UFO_HIT) == MsgClass::Module);
+    CHECK(msg_class(0) == MsgClass::Unknown && msg_class(200) == MsgClass::Unknown && msg_class(44 + 100) == MsgClass::Unknown);
+    CHECK(world_state_msg(net::MSG_DNA, true, true) && world_state_msg(net::MSG_DNA, false, false));
+    CHECK(world_state_msg(net::MSG_CIV_STATE, true, true) && !world_state_msg(net::MSG_CIV_STATE, true, false));
+    CHECK(world_state_msg(250, true, true) && !world_state_msg(250, false, true)); // unknown: default deny when on
+    CHECK(!world_state_msg(net::MSG_VOTE, true, true) && !world_state_msg(net::MSG_NPC_STATE, true, true));
+    for (int t = 0; t < 256; t++) { // the old hand list of 0.7.10 is a subset of HostWorld
+        bool old = t == net::MSG_DNA || t == net::MSG_WORLD_TIME || (t >= net::MSG_CELL_STATE && t <= net::MSG_CELL_FOOD) ||
+                   t == net::MSG_CELL_KO || t == net::MSG_CELL_BITTEN || t == net::MSG_TRIBE_STATE || t == net::MSG_TRIBE_CMD ||
+                   t == net::MSG_SPECIES || t == net::MSG_SOCIAL || t == net::MSG_NEST || t == net::MSG_PARTS ||
+                   t == net::MSG_FIELDS || t == net::MSG_WSTATE || t == net::MSG_PLAYER_RULE || t == net::MSG_MIRROR_FX;
+        CHECK(!old || msg_class((uint8_t)t) == MsgClass::HostWorld);
+    }
 
     using namespace dna_route;
     CHECK(guest_gain(false, true, true, true) == Gain::Local);  // 1
@@ -372,6 +422,7 @@ int main(int argc, char** argv)
     test_dna_pace();
     test_dna_ledger();
     test_host_world();
+    test_held_cmds();
     test_chunks();
     test_cycle();
     test_space_origin();

@@ -3511,3 +3511,27 @@ section creature-herd-evolution-desync (what advances +0xF0).
   and the family is friendly (CreatureFriendly 0xC0C3B0 via IsPlayerSpecies, family_attack). With the fix the guest's
   nests are the host's (generation, species, extinct), so its game uses the host's nest for every rule that reads the
   herd (minimap 0xD425A0, the friendly-nest test 0xC6ABF0).
+
+## The species table's cadence, an NPC's stun on the guests (2026-11-07, fix/w46-k2a-state-b)
+<a id="creature-table-cadence-stun"></a>
+
+* ✔ BUG-0699 (class BUG-0419): the host looked at its species relationship table once a second (social.cpp tick):
+  a change (`coop.social record`) reached the guest after 0.13-0.95 s (lab species_table). Every 0.25 s now
+  (`social.table_fast`): 0.07-0.31 s. The detector's species_only rows came from samples during a guest's rejoin; rows
+  that stay over its 1.5 s bracket in 4-player campaigns are not explained yet: the guest logs each record it takes
+  from the host's table with the table's age (`social: species ... from the host's table (N s old)`).
+* ✔ BUG-0700: a host NPC's stun (CreatureStun vt 0x94, stimulus 0x1000) stayed in the host's game: h_Stun on a guest
+  returns for a proxy (no AI). Now the host sends K_STUN_PROXY (MSG_PLAYER_RULE kind 9) and each guest calls the
+  game's CreatureStun on its proxy (`creature.stun_proxy`).
+* ✔ (runtime, tribe_member_age) A baby of the player tribe (SpawnMember(0)) grows up after ~57 s; the guest's mirror
+  grows up in the same second by its own game: the age needs no sync while both spawned together.
+
+## An NPC proxy's maximum health (2026-11-07, fix/w46-k2a-state)
+<a id="creature-proxy-max-health"></a>
+
+* ✔ A proxy (a creature of the NPC's species made by the mod) gets the species' adult maximum health from the game
+  (cCombatant vt 0x58), not the host NPC's: a baby of the creature fixture had max 5 on the host and 10 on its proxy
+  (lab 20261107-231824). CORRECTION (2026-11-07, fix/w46-k2a-state): BUG-0698's note "the game gives the proxy the
+  host's max by its own rules" is disproved by that run.
+* ✔ creature_hp's GetMaxHp hook answers a stored maximum for the mod's creatures (`game::is_puppet`: puppets and
+  proxies); `npc.max_health` (BUG-0710) stores NpcSpawn.max_health there.

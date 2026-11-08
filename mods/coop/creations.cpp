@@ -1,4 +1,5 @@
 #include "creations.h"
+#include "player_life.h"
 
 #include <windows.h>
 
@@ -2162,6 +2163,9 @@ struct DesignState {
 };
 static std::map<std::pair<uint8_t, uint32_t>, DesignState> g_designs; // guest: (model kind, instance)
 static std::map<uint8_t, std::set<std::pair<uint8_t, uint32_t>>> g_design_sent; // host: guest -> answered
+// BUG-0422: designs answered to a departed guest were not sent again to a newcomer under its id
+PLAYER_STATE("creations.designs", [](uint8_t id) { g_design_sent.erase(id); },
+             [](uint8_t id) -> size_t { auto it = g_design_sent.find(id); return it == g_design_sent.end() ? 0 : it->second.size(); });
 static unsigned g_design_asks, g_design_in, g_design_not_own, g_design_out, g_design_timeouts;
 
 Key host_design(const Key& k, ModelKind kind, bool* pending)
