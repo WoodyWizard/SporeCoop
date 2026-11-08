@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-g4-tests
-commits:
+commits: 5ade0549 3497b1a3
 tests: unit (make test: lab_selftest interrupt_cases)
 signature:
 docs: docs/06-testing.md#testing-g4-tests
