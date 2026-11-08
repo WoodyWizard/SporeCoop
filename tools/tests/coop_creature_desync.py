@@ -121,9 +121,13 @@ def checks(ck, host, guest, tag, edited=True):
     # BUG-0430: "spawned" is the mod's state of the mirror; the game must have built a creature of that species
     # (its object list, `coop.npc creatures`: a species profile and a body; FAIL with
     # SPORE_FIX_OFF=creations.ask_species,creations.own_species)
-    built = wait(lambda: [i for i in (seen or []) if built_in_game(guest, mirror_ptr(guest, i), HOST_ONLY)], 10)
-    ck(built, f'{tag}: the guest\'s game built the companion of the host-only species ({built}; '
-              f'{guest.call(f"coop.npc creatures {HOST_ONLY}")["out"].splitlines()[0]})')
+    # The guest's game knows the host's creation under its own instance key (lab 20261108-073449: "the host's own
+    # creation 29020CC4 'Judge' of its world is 7DBEADED here"): the species of the mirror as the guest lists it
+    sp_here = lambda i: npcs(guest).get(i, (HOST_ONLY,))[0]
+    built = wait(lambda: [i for i in (seen or []) if built_in_game(guest, mirror_ptr(guest, i), sp_here(i))], 10)
+    sp = sp_here(seen[0]) if seen else HOST_ONLY
+    ck(built, f'{tag}: the guest\'s game built the companion of the host-only species ({built}; {HOST_ONLY} is {sp} '
+              f'there; {guest.call(f"coop.npc creatures {sp}")["out"].splitlines()[0]})')
 
     # ghosts: two samples 3 s apart (a despawn on its way is not a ghost)
     def ghosts():
