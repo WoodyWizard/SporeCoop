@@ -2460,3 +2460,21 @@ BUG-0181. GOG 2024, Ghidra:
   interplanetary drive 0x4133FE05 ("Advance further in the game..." otherwise), clears
   [cAppModeSpace+0x188]+0x48/+0x49 (?), sets +0x17 and +0x18 to 1, adds or recharges (AddAmmo 5) the tools
   of prop 0x68C20E1 (prop file 0x30608F0B / 0x59252EE9). The `tool` developer cheat (0x10234D0) also sets +0x18.
+
+## The tutorial lock at runtime: spaceCreate and galaxy clicks (2026-11-08, fix/w46-g4b-coverage)
+<a id="space-tutorial-lock-runtime"></a>
+
+BUG-0181, lane 3 (GOG 2024), runtime of docs/re/space.md#space-tutorial-lock:
+* ✔ `coop.space tutorial` on `space_empire`: `first_comm=0 flight_school=1 m201=0`, the Story201 mission object
+  (GetMissionByID 0x7BDBB97D) found, state 3 (active). The guest's game (it loads the host's save) has the same.
+* ✔ The release cheat `cheat spaceCreate` sets m201=1 at once (flight_school stays 1); the Story201 mission object
+  keeps state 3 (the game never completes it). m201=1 survives a save and a load (fixture `space_free`).
+* ✔ `spaceCreate` **removes the interstellar drive** (tool 2569FAE8) from the inventory while it adds or recharges
+  the other tools (37 tools afterwards, the drive upgrade 4, energy upgrade 5 and the colony tool stay):
+  `coop.space empire` says `drive=0`. The galaxy view and galaxy flights to nearby stars still work without it.
+  `space_free` adds the drive back (`coop.space tool add interstellardrive`).
+* ✔ With m201=1 a real galaxy click on an unowned star 0.7-1.2 units away flies the ship there (galaxy position
+  at the star within ~10 s, both host and guest); with m201=0 (`space_empire`) the same click leaves the ship at
+  home (the red "Distance" refusal), on the host and on the guest: each game checks its own mission manager.
+  So the refusal of docs/06-testing.md 6.15 is the tutorial lock, not the drive range (`space_free`, lab
+  20261108-060412 locked, 20261108-060655 free).

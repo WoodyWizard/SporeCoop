@@ -311,6 +311,9 @@ anchor so other docs can link to it:
   with test commands; it is still inside the tutorial (travel to stars that are not own stars is
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
+* 2026-11-08 (fix/w46-g4b-coverage): FIXED as a fixture: `space_free` = `space_empire` + `cheat spaceCreate`
+  (the tutorial lock mbMission201Finished = 1, docs/re/space.md#space-tutorial-lock-runtime) + the interstellar
+  drive again; `coop_space_free.py` (suite `space_free`): galaxy clicks on unowned stars fly both ships there.
 * Ticket: BUG-0181.
 
 ## Space (GOG 2024): zooming in does not land in the first minute after a load
