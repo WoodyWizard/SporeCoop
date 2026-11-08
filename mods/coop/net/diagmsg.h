@@ -271,7 +271,19 @@ struct Compared {
     bool other_place = false; // host and guest play different stages / worlds: nothing compared
     int objects = 0;          // objects compared by position
     std::vector<Issue> issues;
+    // BUG-0430: what the BUG-0379 windows let through: totals that matched only a value the host had in the seconds
+    // before (late), cells missing between the sure part and the sent part of the guest's nearest ones
+    int late_totals = 0, late_cells = 0, late_band = 0;
+    bool late() const { return late_totals > 0 || (late_band > 0 && late_cells * 20 > late_band); } // > 5 % of the band
 };
+
+// BUG-0430: a guest that is late for good passes every single check through the windows of BUG-0379; `run` counts the
+// checks in a row that needed them, true from the `limit`th on (one late check is a moment, three in a row ~9 s are not)
+inline bool late_streak(int& run, const Compared& c, int limit = 3)
+{
+    run = c.late() ? run + 1 : 0;
+    return run >= limit;
+}
 
 inline float dist(const Entry& a, const Entry& b)
 {
@@ -302,10 +314,13 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     }
     for (auto& [id, hv] : host.totals)
         for (auto& [gid, gv] : guest.totals)
-            if (gid == id && std::fabs(hv - gv) > lim.total &&
-                !(recent && std::any_of(recent->begin(), recent->end(), [&, id = id, gv = gv](const std::pair<uint8_t, float>& r) {
-                      return r.first == id && std::fabs(r.second - gv) <= lim.total;
-                  }))) {
+            if (gid == id && std::fabs(hv - gv) > lim.total) {
+                if (recent && std::any_of(recent->begin(), recent->end(), [&, id = id, gv = gv](const std::pair<uint8_t, float>& r) {
+                        return r.first == id && std::fabs(r.second - gv) <= lim.total;
+                    })) {
+                    c.late_totals++; // the host had it a moment ago: no difference, but late (BUG-0430)
+                    continue;
+                }
                 snprintf(b, sizeof b, "%s: host %.1f, guest %.1f", total_name(id), hv, gv);
                 c.issues.push_back({"total:" + std::to_string(id), "total", total_name(id), std::fabs(hv - gv), b});
             }
@@ -327,7 +342,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
         me = it->second;
     // the host cells a guest is sent at most: the nearest lim.cell_sent to it (BUG-0295)
-    std::set<uint32_t> far_cells;
+    std::set<uint32_t> far_cells, band_cells; // band: past the sure part, within the sent part (BUG-0430)
     if (me) {
         std::vector<std::pair<float, uint32_t>> cd;
         for (auto& [k, he] : h)
@@ -336,9 +351,14 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         std::size_t sure = cd.size() > lim.cell_sent ? (std::size_t)((float)lim.cell_sent * std::min(1.f, std::max(0.f, lim.cell_sure)))
                                                      : cd.size();
         if (cd.size() > sure) {
-            std::nth_element(cd.begin(), cd.begin() + sure, cd.end());
-            for (std::size_t i = sure; i < cd.size(); i++)
+            std::sort(cd.begin(), cd.end());
+            std::size_t sent = std::min(cd.size(), (std::size_t)lim.cell_sent);
+            for (std::size_t i = sure; i < cd.size(); i++) {
                 far_cells.insert(cd[i].second);
+                if (i < sent)
+                    band_cells.insert(cd[i].second);
+            }
+            c.late_band = (int)band_cells.size();
         }
     }
     for (auto& [k, he] : h) {
@@ -347,8 +367,11 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         if (it == g.end()) {
             if (kind == 'n' && (!lim.npc_missing || !me || dist(*he, *me) > lim.npc_near))
                 continue; // out of the guest's range: never sent to it
-            if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k)))
+            if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k))) {
+                if (dist(*he, *me) <= lim.cell_near && band_cells.count(k))
+                    c.late_cells++; // sent, missing: the windows of BUG-0379 let it through (BUG-0430)
                 continue; // around another player or past the nearest 900: not sent to this guest (BUG-0298)
+            }
             c.issues.push_back({"missing:" + key_text(k), "missing", key_text(k), 0, ""});
             continue;
         }

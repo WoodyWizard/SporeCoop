@@ -235,6 +235,7 @@ struct GuestCheck {
     int ok_window = 0;          // OKs since the last OK summary
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
+    int late_run = 0;           // checks in a row that passed only through the BUG-0379 windows (BUG-0430)
 };
 // BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
 // the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
@@ -249,6 +250,13 @@ COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's t
 // does not compare while the host's stage ends. Off: compared (0.7.7).
 static bool g_stage_end_fix = true;
 COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
+// BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
+// late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
+// matched, or over 5 % of the guest's sent band of cells missing) are a `late` issue (it goes through the recheck as
+// any other). Off: never (0.7.10). The count: sync_late= in coop.diag.
+static bool g_fix_late_streak = true;
+COOP_FIX("diag.late_streak", "BUG-0379 BUG-0430", g_fix_late_streak, "sync-check: a guest that passes 3 checks in a row only through the late windows is reported late");
+static unsigned g_sync_late = 0;
 constexpr double kTotalLag = 3.0;
 struct TotalAt {
     double t;
@@ -513,6 +521,13 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     }
     if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
+    if (!c.other_place && dg::late_streak(g.late_run, c) && g_fix_late_streak) {
+        char lb[160];
+        snprintf(lb, sizeof lb, "late: %d checks in a row matched only through the late windows (totals %d, cells %d of %d)",
+                 g.late_run, c.late_totals, c.late_cells, c.late_band);
+        c.issues.push_back({"late", "late", "", (float)g.late_run, lb});
+        g_sync_late++;
+    }
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;
@@ -787,18 +802,18 @@ void sync_session_start()
 
 std::string sync_status()
 {
-    char b[480];
+    char b[560];
     bool ok = false;
     double t = session_time(&ok);
     snprintf(b, sizeof b,
              "clock: %s session time %.3f (%s, %d samples, best round trip %.1f ms)\n"
              "sync-check: every %.0f s%s, checks %d ok %d differs %d mismatch %d; host build+compare avg %.3f ms max %.3f ms (%d); "
-             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u\n",
+             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u sync_late=%u\n",
              ok ? "on," : "off,", t, g_P.sess && g_P.sess->role() == net::Role::Host ? "host" : "guest", (int)g_clock.samples(),
              g_clock.rtt() * 1000, g_sync_interval, g_force.empty() ? "" : (" (forced: " + g_force + ")").c_str(), g_c.sync_checks,
              g_c.sync_ok, g_c.sync_differs, g_c.sync_mismatch, g_c.sync_ms_n ? g_c.sync_ms_sum / g_c.sync_ms_n : 0.0, g_c.sync_ms_max,
              g_c.sync_ms_n, g_c.sync_guest_ms_n ? g_c.sync_guest_ms_sum / g_c.sync_guest_ms_n : 0.0, g_c.sync_guest_ms_max,
-             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved);
+             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved, g_sync_late);
     return b;
 }
 

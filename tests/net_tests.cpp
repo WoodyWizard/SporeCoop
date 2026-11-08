@@ -2991,6 +2991,40 @@ static void test_diag_compare()
             dna |= i.id == "total:1";
         CHECK(dna);
     }
+    {   // BUG-0430: the windows let a late guest through: counted, and three late checks in a row are a streak
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDna, 80}};
+        dg::Digest gl = g;
+        gl.entries.erase(std::remove_if(gl.entries.begin(), gl.entries.end(),
+                                        [](const dg::Entry& e) { return e.key == dg::make_key('n', 9); }),
+                         gl.entries.end());
+        dg::Compared lc = dg::compare(h, gl, {}, &recent);
+        CHECK(lc.late_totals == 1 && lc.late());
+        dg::Compared on_time = dg::compare(h, h);
+        CHECK(on_time.late_totals == 0 && !on_time.late());
+        int run = 0;
+        CHECK(!dg::late_streak(run, lc) && !dg::late_streak(run, lc) && dg::late_streak(run, lc) && run == 3);
+        CHECK(!dg::late_streak(run, on_time) && run == 0); // one check in time ends the streak
+        CHECK(!dg::late_streak(run, lc) && run == 1);
+        // cells: the band between the sure 80 % and the sent part; a few missing are a moment, many are late
+        dg::Digest hc, gc;
+        hc.mode = gc.mode = 0x1654C00;
+        hc.world = gc.world = 7;
+        gc.self = 1;
+        hc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        gc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        for (uint32_t i = 0; i < 1000; i++)
+            hc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        auto band = [&](uint32_t lacking) {
+            dg::Digest gx = gc;
+            for (uint32_t i = 0; i < 900; i++)
+                if (i < 900 - lacking)
+                    gx.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+            return dg::compare(hc, gx);
+        };
+        dg::Compared few = band(3), many = band(40);
+        CHECK(few.late_band == 180 && few.late_cells == 3 && !few.late() && few.issues.empty());
+        CHECK(many.late_cells == 40 && many.late() && many.issues.empty());
+    }
     std::string t = dg::describe(c.issues);
     printf("  %s\n", t.c_str());
     CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);
