@@ -59,3 +59,4 @@ and back):
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k7-findings): reproduced (planner_leave, 8 caught faults per run with the fix off) and fixed (civ.planner_stale).
+- 2026-11-08 (fix/w46-k7-findings): campaign_space on the final build, lane 10, lab 20261108-012301: OK, 0 caught faults on all four games.

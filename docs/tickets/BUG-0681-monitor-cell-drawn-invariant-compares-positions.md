@@ -38,3 +38,4 @@ The own trace line in Cell ends with the game's world scale (`wscale=` = cellsyn
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k7-findings): fixed: the own Cell trace line carries `wscale=`, the monitor's drawn rule compares in one scale.
+- 2026-11-08 (fix/w46-k7-findings): cell_levelup_view on the build with all K7 fixes, lane 9, lab 20261108-005631: OK.
