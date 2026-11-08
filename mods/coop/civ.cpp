@@ -15,6 +15,7 @@
 #include "shared.h"
 #include "stage_epoch.h"
 #include "modes.h"
+#include "net/held_cmds.h"
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
@@ -1153,8 +1154,12 @@ static Target read_target(net::Reader& r)
 
 enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4 };
 
+static void say_host_away(const char* what); // BUG-0693
+static bool local_play();
 static void send_cmd(net::Writer& w)
 {
+    if (local_play())
+        say_host_away("your command");
     C.sess->send_reliable_to(0, net::MSG_CIV_CMD, w);
     g_cmds_sent++;
 }
@@ -1221,8 +1226,27 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
     return o_SetMoveOrder(v, x, y, z, flag);
 }
 
+// BUG-0693: a guest's command that reaches a host whose Civ is not running (an editor, a menu, a load) is held and run
+// when the host is back in the same Civ world (net/held_cmds.h); the guest is told that it waits. Off: dropped (0.7.10).
+static bool g_fix_cmd_hold = true;
+COOP_FIX("civ.cmd_hold", "BUG-0693", g_fix_cmd_hold,
+         "civ: a guest's purchase, planner building, gift or superweapon request made while the host is away runs when it is back");
+static net::HeldCommands g_cmd_held;
+static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
+static double g_away_said = -100;
+static void say_host_away(const char* what)
+{
+    double t = H ? H->time_seconds() : 0;
+    if (!g_fix_cmd_hold || !C.feed || t - g_away_said < 5)
+        return;
+    g_away_said = t;
+    C.feed(std::string(what) + " waits: " + C.sess->name_of(0) + " (host) is away, it is done when the host is back");
+}
+
 static void request_buy(void* city, int loco)
 {
+    if (local_play())
+        say_host_away("your purchase");
     net::Writer w;
     w.u8(CMD_BUY);
     w.u8((uint8_t)host_index_of_city(city));
@@ -3847,6 +3871,13 @@ void tick(double now)
     if (!active())
         return;
     prune_gone();
+    g_cmd_world = modes::current_world();
+    if (is_host() && !g_cmd_held.q.empty()) // BUG-0693: the commands that came while this game was away
+        g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
+            net::Reader r(c.bytes.data(), c.bytes.size());
+            H->log(M, SK_INFO, "civ: a command of player %u held while away runs now", c.from);
+            host_command(c.from, r);
+        });
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -3857,6 +3888,10 @@ static uint32_t g_founds_outside; // BUG-0319 diagnostics: city foundings receiv
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (!active()) {
+        if (type == net::MSG_CIV_CMD && g_fix_cmd_hold && g_ok && is_host() && r.left()) { // BUG-0693
+            g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
+            H->log(M, SK_INFO, "civ: a command of player %u held: this game is not in Civ (mode %08X)", from, game::mode_id());
+        }
         if (type == net::MSG_CIV_BUILD && g_ok && is_guest()) {
             net::Reader peek = r;
             uint8_t ci = peek.u8();
@@ -3925,6 +3960,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    g_cmd_held.clear(); // BUG-0693
     host_buildings_session_end(); // BUG-0670
     caption_disarm(); // BUG-0224
     if (g_fix_boost)

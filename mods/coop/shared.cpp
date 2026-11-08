@@ -138,6 +138,8 @@ struct Res {
     double gained = 0, spent = 0; // host: sum of the guests' positive / negative changes
     std::map<uint8_t, uint32_t> acked; // host: last change counted per guest (echoed in MSG_RES)
     bool ack_dirty = false;            // host: a change was counted, send the total with its ack
+    double owed = 0;                   // host (BUG-0691): guests' changes acked while the game could not hold them
+    uint32_t epoch = 0;                // guest (BUG-0692): game::stage_epoch(mode) of the world the sync state is of
 };
 
 // Switches for tests (`coop.res fix <name> 0|1`); 0 = the code before the fix:
@@ -156,6 +158,30 @@ COOP_FIX("res.join_keep", "BUG-0220", g_join_keep_fix, "shared: a guest's spend 
 // (SharedLedger::pause: the sync state waits, nothing is lost). Off: totals applied while elsewhere.
 static bool g_elsewhere_fix = true;
 COOP_FIX("res.elsewhere", "BUG-0231", g_elsewhere_fix, "shared: a guest in another world keeps its own money and food");
+// BUG-0691: the host returned before the ack when its game could not read the resource (a load, the galaxy menu, no
+// player tribe / civilization): a guest's credit sent then was never counted and never acked (the guest showed it
+// in flight for good, the host never had it). On: the host always acks and keeps the change as owed, paid into its
+// game's value in the first tick the resource is readable again in its mode. Off: dropped (0.7.10).
+static bool g_owed_fix = true;
+COOP_FIX("res.owed", "BUG-0691", g_owed_fix,
+         "shared: a guest's money / food credit reaching the host while it loads or is in a menu is counted when it is back");
+// BUG-0692: a guest's tick dropped its sync state (have = false) in every frame out of the resource's mode, an editor
+// visit included; back in the stage, a spend before the host's next total was not folded and that total undid it
+// (the purchase made, the money back) and the host never counted it. On: out of the mode, the guest keeps the sync
+// state while the stage's world stays the same (game::stage_epoch: an editor visit keeps it, a load or another
+// world raises it). Off: dropped on every mode switch (0.7.10).
+static bool g_mode_keep_fix = true;
+COOP_FIX("res.mode_keep", "BUG-0692", g_mode_keep_fix,
+         "shared: a guest's purchase right after an editor visit is not undone by the host's money / food total");
+// tests (coop_res_away.py): `coop.res block <s>`: the resources read as unavailable for <s> s (the host in a load or
+// the menu, BUG-0691); `coop.res away <s> <name> <change>`: the tick sees an editor's mode for <s> s, then the change
+// is made in the first frame back, before the tick samples (a purchase right after an editor, BUG-0692)
+static double g_block_until, g_away_until;
+static std::string g_away_name;
+static double g_away_change;
+static bool g_away_due;
+static uint32_t g_owed_paid; // tests: owed changes paid into the host's game
+static bool get_now(Res& r, double& v, double now) { return now >= g_block_until && r.get(v); }
 static bool g_hold;          // the last tick: the guest is elsewhere and the totals are held
 static uint32_t g_held_totals; // tests: host totals ignored while held
 
@@ -210,6 +236,7 @@ void on_session_end()
         r.led.reset();
         r.acked.clear();
         r.ack_dirty = false;
+        r.owed = 0;
     }
 }
 
@@ -221,6 +248,9 @@ void on_player_leave(uint8_t id)
 
 void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
 {
+    const uint32_t real_mode = mode;
+    if (now < g_away_until)
+        mode = modes::kEditor; // tests: an editor visit as the tick sees it
     g_mode = mode;
     g_hold = g_elsewhere_fix && elsewhere && s.role() == net::Role::Client;
     if (s.role() == net::Role::None) {
@@ -233,14 +263,33 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
     }
     for (auto& r : g_res) {
         double v;
+        if (g_away_due && now >= g_away_until && r.name == g_away_name && r.mode == real_mode && r.get(v)) {
+            g_away_due = false; // tests: the purchase in the first frame back from the editor
+            r.set(v + g_away_change);
+            H->log(M, SK_INFO, "shared %s: the test's purchase %+.1f in the first frame back (synced=%d)", r.name, g_away_change,
+                   (int)r.have);
+        }
         if (own_budget(r)) { // paused: unsent changes stay with the player (space_rivalry.cpp splits)
             r.have = false;
             r.led.reset();
             continue;
         }
-        if (r.mode != mode || !r.get(v)) {
-            r.have = false;
+        if (r.mode != mode || !get_now(r, v, now)) {
+            // BUG-0692: a guest out of the mode (an editor) keeps its sync state while the stage's world is the same
+            if (!(g_mode_keep_fix && s.role() == net::Role::Client && r.have && r.mode != mode &&
+                  game::stage_epoch(r.mode) == r.epoch))
+                r.have = false;
             continue;
+        }
+        if (g_mode_keep_fix && s.role() == net::Role::Client && r.have && game::stage_epoch(r.mode) != r.epoch)
+            r.have = false; // another world of the stage: wait for the host's total
+        if (s.role() == net::Role::Host && r.owed != 0 && !g_hold) { // BUG-0691: pay what was acked while away
+            r.set(net::shared_add(v, r.owed, g_floor_fix));
+            H->log(M, SK_INFO, "shared %s %+.1f owed to the guests paid", r.name, r.owed);
+            r.owed = 0;
+            g_owed_paid++;
+            if (!r.get(v))
+                continue;
         }
         if (g_hold) { // BUG-0231: another world: its value is not the pack's; the ledger waits
             r.have = false;
@@ -303,8 +352,24 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
         if (own_budget(r))
             return; // a total or a change sent before the switch to rivals mode: not shared any more
         double cur;
-        if (!r.get(cur))
+        const double t = H ? H->time_seconds() : 0;
+        if (!get_now(r, cur, t)) {
+            if (!(g_owed_fix && type == net::MSG_RES_ADD && s.role() == net::Role::Host))
+                return;
+            // BUG-0691: the host's game cannot hold the change now (a load, the menu): ack it, pay it when back
+            if (rd.left() >= 4) {
+                uint32_t seq = rd.u32();
+                if (rd.ok()) {
+                    r.acked[from] = seq;
+                    r.ack_dirty = true;
+                }
+            }
+            if (std::fabs(v) < 1e7)
+                r.owed += v;
+            (v > 0 ? r.gained : r.spent) += v;
+            H->log(M, SK_INFO, "shared %s %+.1f from player %u owed (the game cannot hold it now)", r.name, v, from);
             return;
+        }
         if (type == net::MSG_RES && s.role() == net::Role::Client) {
             if (!r.led.take_total(g_hold)) {
                 g_held_totals++;
@@ -344,6 +409,7 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             // what the game holds now: a floored food bundle or money is not an earning next tick
             r.synced = r.get(got) ? got : shown;
             r.have = true;
+            r.epoch = game::stage_epoch(r.mode); // BUG-0692: the world this sync state is of
         } else if (type == net::MSG_RES_ADD && s.role() == net::Role::Host) {
             if (rd.left() >= 4) {
                 uint32_t seq = rd.u32();
@@ -388,8 +454,9 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u\n",
-                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created);
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u\n",
+                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created,
+                 r.owed, g_owed_paid);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
@@ -403,6 +470,23 @@ std::string fix(const std::string& name, int on)
     if (on >= 0)
         *f = on != 0;
     return "shared fix " + name + " " + (*f ? "on" : "off") + "\n";
+}
+
+std::string test_knob(const std::string& what, double secs, const std::string& name, double change)
+{
+    double t = H ? H->time_seconds() : 0;
+    if (what == "block") {
+        g_block_until = t + secs;
+        return "shared: resources unreadable for " + std::to_string(secs) + " s\n";
+    }
+    if (what == "away") {
+        g_away_until = t + secs;
+        g_away_name = name;
+        g_away_change = change;
+        g_away_due = !name.empty();
+        return "shared: an editor's mode for " + std::to_string(secs) + " s, then " + name + " " + std::to_string(change) + "\n";
+    }
+    return "usage: coop.res block <s> | coop.res away <s> [<name> <change>]\n";
 }
 
 bool debug_add(const std::string& name, double v, std::string& err)

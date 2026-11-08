@@ -103,6 +103,9 @@ const CellGoneStats& cell_gone_stats();
 // game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
 extern bool ufo_ident_fix;
 bool space_puppet_ok(void* u); // listed, alive and still our puppet
+// BUG-0697: the health a partner's ship puppet shows: the partner's share of its max on the puppet's max (fix off: max)
+float space_puppet_health(float puppet_max, float health, float max_health, bool fix);
+std::string space_puppet_hp(void* u); // tests: "hp <h> max <m>" of a ship puppet
 // BUG-0378: pin a puppet / mirror UFO so the game's controller update draws it at p (its own offset
 // taken out, mNextPosition / mDestination / mZoomAltitude, marked for squadron's controller hook);
 // fix false: p itself (the old pin)

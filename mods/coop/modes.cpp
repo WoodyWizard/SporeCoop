@@ -609,6 +609,11 @@ bool space_drive_note(void* u, float p[3], float& extrap)
     return true;
 }
 
+// BUG-0697: the partner's ship was drawn at full health on the other game: space_drive wrote the puppet's own max into
+// its health every frame, the sent health (space_fill) was never read. On: the partner's share of its max, at least 2 %
+// (the puppet never dies by this game's hand). Off: full health (0.7.10).
+static bool g_space_hp_fix = true;
+COOP_FIX("drive.space_hp", "BUG-0697", g_space_hp_fix, "space: the partner's ship shows its real health on the other game");
 static void space_drive(void* u, const net::PlayerState& s, drive::State&, double)
 {
     if (g_drive_notes.size() > 64)
@@ -628,7 +633,27 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
     skg::field<uint8_t>(u, 0x74C) = 1;         // mbAtDestination
     float mh = skg::field<float>(u, kUfoCombat + 0x2C);
     if (mh > 0)
-        skg::field<float>(u, kUfoCombat + 0x38) = mh;
+        skg::field<float>(u, kUfoCombat + 0x38) = space_puppet_health(mh, s.health, s.max_health, g_space_hp_fix);
+}
+
+float space_puppet_health(float puppet_max, float health, float max_health, bool fix)
+{
+    if (!fix || !(max_health > 0) || !std::isfinite(health))
+        return puppet_max;
+    // the partner's share of its own max, on this game's puppet's max (another design: another max); never 0 here:
+    // the partner's game decides its own ship's fate (disabled, rescued, destroyed), this game must not
+    float f = health / max_health;
+    f = f < 0.02f ? 0.02f : f > 1.f ? 1.f : f;
+    return puppet_max * f;
+}
+
+std::string space_puppet_hp(void* u)
+{
+    char b[96];
+    if (!u || !space_puppet_ok(u))
+        return "no puppet";
+    snprintf(b, sizeof b, "hp %.1f max %.1f", skg::field<float>(u, kUfoCombat + 0x38), skg::field<float>(u, kUfoCombat + 0x2C));
+    return b;
 }
 
 // DestroyInstance works for any cGameData; a puppet the game freed already (leaving a planet or a

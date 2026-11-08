@@ -197,6 +197,7 @@ add('save_hygiene', P + 'coop_save_hygiene.py', minutes=5)  # a save made with t
 add('save_hygiene_leave', P + 'coop_save_hygiene.py --leave', minutes=5)  # the partner left before the save: its empty herd is not saved either (BUG-0255; SPORE_FIX_OFF=savestrip.empty_herds fails)
 add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+Enter in co-op: no fault at 0x7777BE (device recreation), on the ground
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
+add('species_table', P + 'coop_species_table.py', warm=True, minutes=3, fixture='creature')  # BUG-0699: the guest's species table is the host's after the host's changes and after its own game's (detector species_relation / species_killed / species_only)
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
 add('migration_heal', P + 'coop_migration.py --heal', minutes=6)  # BUG-0496: after the migration both players heal at the new home nest (the game's own health)
 add('nest_follow', P + 'coop_nest_follow.py', minutes=8)  # BUG-0640, BUG-0496: the host's species migrates, the guest's own game claims the same new nest (cinematic, herd = respawn, heal) without a forced world (SPORE_FIX_OFF=wsync.creature_nest fails)
@@ -270,6 +271,8 @@ add('tribe_mirror_ground', P + 'coop_tribe_mirror_ground.py', warm=True, minutes
 add('physics_orphan', P + 'coop_physics_orphan.py', warm=True, minutes=3, fixture='tribe')  # a physics body without an owner on the guest in Tribe: the physics update does not fault in every frame (BUG-0449; SPORE_FIX_OFF=game.physics_owner fails)
 add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixture='civ')  # a frame without the city anchor keeps vehicles and owners (BUG-0223; --nofix fails)
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
+add('res_away', P + 'coop_res_away.py', warm=True, minutes=3, fixture='civ')  # a guest's credit while the host cannot hold it, a purchase right after an editor visit, Civ money (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1; step 2 shows BUG-0692 only on Tribe food: res_away_tribe)
+add('res_away_tribe', P + 'coop_res_away.py --tribe', warm=True, minutes=3, fixture='tribe')  # the same with the Tribe food (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1, SPORE_FIX_OFF=res.mode_keep fails step 2)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
 add('civ_city_burst', P + 'coop_civ_city_burst.py', warm=True, minutes=3, fixture='civ_npc')  # three NPC cities the guest missed reach it at once with their vehicles (BUG-0380; SPORE_FIX_OFF=civ.city_burst fails)
 add('civ_cursor', P + 'coop_civ_cursor.py', warm=True, minutes=3, fixture='civ')  # the sync-check leaves out a moving Civ pointer, a resting one is where the guest shows it (BUG-0380; SPORE_FIX_OFF=diag.rts_cursor fails)
@@ -332,6 +335,7 @@ add('civ_sw_vote', P + 'coop_civ_sw_vote.py', warm=True, minutes=3, fixture='civ
 add('wsync_civ', P + 'coop_wsync_civ.py', warm=True, minutes=3, fixture='civ_npc')  # BUG-0593: a captured city's buildings, the nations' relations and money are the host's in the guest's game (SPORE_FIX_OFF=wsync.city_owner,wsync.civ_rel,wsync.civ_money fails)
 add('civ_caption', P + 'coop_civ_caption.py', warm=True, minutes=3, fixture='civ_npc')  # the host's capture caption closes by itself with guests (BUG-0187; --nofix fails)
 add('civ_away', P + 'coop_civ_away.py', warm=True, minutes=5, fixture='civ')  # the guest's vehicles drive while the host is in the menu (BUG-0151; --nofix fails)
+add('civ_away_buy', P + 'coop_civ_away_buy.py', warm=True, minutes=5, fixture='civ')  # a guest's purchase while the host is in the menu is made when the host is back (BUG-0693; SPORE_FIX_OFF=civ.cmd_hold fails)
 add('tribe_away', P + 'coop_tribe_away.py', warm=True, minutes=5, fixture='tribe')  # the guest's members walk while the host is in the menu (BUG-0151; --nofix fails)
 add('dna_away', P + 'coop_dna_away.py', warm=True, minutes=5, fixture='creature')  # guest DNA while the host has no creature reaches the pack (BUG-0151; --nofix fails)
 add('away_editor', P + 'coop_away_editor.py', warm=True, minutes=6, fixture='creature')  # a guest's goal reward reaching the host in its editor is paid when it is back (BUG-0205; --nofix fails)
@@ -472,6 +476,7 @@ add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
+add('space_partner_hp', P + 'coop_space_partner_hp.py', minutes=3)  # the partner's ship shows its real health on the other game, both ways (BUG-0697; SPORE_FIX_OFF=drive.space_hp fails)
 add('space_helper', P + 'coop_space_helper.py', warm=True, minutes=3, fixture='space')  # a disabled partner rescues nobody (BUG-0131; SPORE_SPACE_FIX=0 fails)
 add('space_down_reload', P + 'coop_space_down_reload.py', warm=True, minutes=4, fixture='space')  # a load starts the disable rule anew (BUG-0257; SPORE_FIX_OFF=space.down_epoch fails)
 add('space_stale', P + 'coop_space_stale.py', warm=True, minutes=5, fixture='space')  # hits about freed mirrors / puppets, star ids past the table, the second repair's first step (BUG-0054, BUG-0092, BUG-0147)

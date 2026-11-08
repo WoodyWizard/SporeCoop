@@ -14,6 +14,7 @@
 #include "dna_pace.h"
 #include "host_world.h"
 #include "net/shared_ledger.h"
+#include "net/held_cmds.h"
 #include <string>
 
 using namespace net;
@@ -34,6 +35,29 @@ static Chunk add(ChunkRx& rx, uint32_t id, uint32_t total, uint32_t off, size_t 
     for (size_t i = 0; i < n; i++)
         p[i] = (uint8_t)(fill + i);
     return chunk_add(rx, id, total, off, p.get(), n, chunk, 8u << 20);
+}
+
+// BUG-0693: a guest's command held while the host's stage is away runs once, in order, in the same world only
+static void test_held_cmds()
+{
+    HeldCommands h;
+    const uint8_t a[] = {2, 7}, b[] = {3, 9, 9};
+    h.push(1, a, sizeof a, 5, 10.0);
+    h.push(2, b, sizeof b, 5, 11.0);
+    std::vector<uint8_t> ran;
+    h.drain(5, 20.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.bytes[0]); });
+    CHECK(ran.size() == 2 && ran[0] == 2 && ran[1] == 3 && h.q.empty() && h.run == 2);
+    h.push(1, a, sizeof a, 5, 0.0);   // another world when back: dropped
+    h.push(1, a, sizeof a, 6, 0.0);   // too old: dropped
+    h.push(3, b, sizeof b, 6, 100.0); // the same world, in time: runs
+    ran.clear();
+    h.drain(6, 150.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.from); });
+    CHECK(ran.size() == 1 && ran[0] == 3 && h.dropped == 2);
+    for (int i = 0; i < 40; i++)
+        h.push(1, a, sizeof a, 1, 0.0);
+    CHECK(h.q.size() == HeldCommands::kMax && h.dropped == 2 + 8);
+    h.forget(1);
+    CHECK(h.q.empty());
 }
 
 static void test_chunks()
@@ -372,6 +396,7 @@ int main(int argc, char** argv)
     test_dna_pace();
     test_dna_ledger();
     test_host_world();
+    test_held_cmds();
     test_chunks();
     test_cycle();
     test_space_origin();

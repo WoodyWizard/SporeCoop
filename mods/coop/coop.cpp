@@ -4444,6 +4444,10 @@ int c_res(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", shared::fix(argv[2], argc >= 4 ? atoi(argv[3]) : -1).c_str());
         return 0;
     }
+    if (argc >= 3 && (!strcmp(argv[1], "block") || !strcmp(argv[1], "away"))) { // tests: BUG-0691 / BUG-0692
+        SAY("%s", shared::test_knob(argv[1], atof(argv[2]), argc >= 5 ? argv[3] : "", argc >= 5 ? atof(argv[4]) : 0).c_str());
+        return 0;
+    }
     // joinsim (tests, BUG-0220): what a join of another player runs, then the change, in one step
     bool joinsim = argc >= 5 && !strcmp(argv[1], "joinsim");
     if (joinsim)
@@ -5784,6 +5788,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "hp")) { // tests (BUG-0697): the game's health of each ship puppet
+                           for (auto& [id, r] : g_remotes)
+                               SAY("puppet %u %s\n", id, modes::space_puppet_hp(r.puppet).c_str());
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "respawn")) { // tests (BUG-0453): every partner's puppet
                            int n = 0; // goes now (as on a death or a hide) and is shown again next frame or in <s> s
                            g_puppet_hide_until = argc > 2 ? H->time_seconds() + atof(argv[2]) : 0;

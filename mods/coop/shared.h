@@ -24,6 +24,8 @@ void on_player_leave(uint8_t id);
 std::string fix(const std::string& name, int on); // coop.res fix reset|floor [0|1] (tests)
 std::string status();
 std::string brief(); // "food=12 money=300" of this mode (support trace)
+// tests (coop_res_away.py, BUG-0691 / BUG-0692): block <s> | away <s> [<name> <change>]
+std::string test_knob(const std::string& what, double secs, const std::string& name, double change);
 bool debug_add(const std::string& name, double v, std::string& err); // local change, as if earned
 
 } // namespace shared
