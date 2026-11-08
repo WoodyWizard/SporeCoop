@@ -2302,3 +2302,11 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   windows ...`; test keepalive_stall). The next occurrence names the loop.
 * Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687
+
+## Space: an NPC empire's store pays a different price in each game (2026-11-08, fix/w46-g4b-coverage)
+<a id="issue-space-npc-store-prices"></a>
+
+* Two players at the same NPC empire see different stores: each game generates its own (wanted spices and price
+  factor at random). `coop_space_store.py`: the guest sold a Red Spice for 281, the host for 4,779 to the same empire.
+  Both earnings go into the shared money, so nothing is lost, but the trade screens disagree.
+* Ticket: BUG-0747.

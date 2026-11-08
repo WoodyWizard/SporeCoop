@@ -2478,3 +2478,24 @@ BUG-0181, lane 3 (GOG 2024), runtime of docs/re/space.md#space-tutorial-lock:
   home (the red "Distance" refusal), on the host and on the guest: each game checks its own mission manager.
   So the refusal of docs/06-testing.md 6.15 is the tutorial lock, not the drive range (`space_free`, lab
   20261108-060412 locked, 20261108-060655 free).
+
+## Selling spice to an NPC store at runtime (2026-11-08, fix/w46-g4b-coverage)
+<a id="space-npc-store-runtime"></a>
+
+BUG-0199, lane 3 (GOG 2024), `space_empire` (contact with 80001FCC, home star 0046102D):
+* ✔ Recipe by clicks (1440x1080) in the empire's system (`coop.space jumpto 0x0046102D`): the comm tab above the
+  empire's card (288, 914) opens its greeting; the first answer (720, 725, "Salutations! There is something I'd like
+  to discuss...") opens the menu Trade (420, 744) / Repair / Recharge / Missions (838, 754) / Diplomacy (838, 814);
+  Trade shows the store's items on top and the cargo below (first cargo slot 327, 760 with count and the store's
+  price); a click on the cargo slot selects it (amount 1/20, price), Sell Item (1063, 884) sells one unit; Goodbye
+  (424, 882).
+* ✔ The sale is the game's own: the seller's cargo count falls by one and its money rises by the price at once; the
+  other game's shared money follows within a second (shared.cpp; a guest's earning through MSG_RES_ADD).
+* ✔ Each game has its own store for the same empire: the guest's paid 281 and the host's 4,779 for one Red Spice in
+  the same session (another session: 6,747 on the host). BUG-0747.
+* ✔ Missions by clicks: in the same menu, Missions (838, 754) answers "You want to work for us?" with one answer
+  ("I yearn to feel the solar wind at my back. Any missions?", 720, 725); the empire then offers one mission (a
+  mission noun of state 0 appears at once: `coop.space allies missions`, e.g. id 2AB57FAC giver 80001FCC reward 0
+  flags 88) with "Tell me more..." (720, 725) / "I'm not interested right now" (720, 756). In the run of
+  2026-11-08 the offer was a Galactic Adventures mission ("Beam Down?" after "Tell me more"); declining it removed
+  the mission noun, and asking again gave "Check us later" (no new offer for a while).
