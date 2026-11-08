@@ -282,7 +282,11 @@ def other(ck, host, guest, stage):
                 rq, rm = math.sqrt(sum(x * x for x in q)), math.sqrt(sum(x * x for x in me))
                 q = tuple(x * rm / rq for x in q)
                 cmd = ('coop.npc marker %.1f %.1f %.1f' if stage == 'civ' else 'coop.space over %.1f %.1f %.1f') % q
-                print('  host:', host.call(cmd)['out'].strip()[:120], flush=True)
+                out = host.call(cmd)['out'].strip()
+                if stage == 'space' and 'not on a planet' in out:  # in a star system: the ship moved in its plane
+                    d = (400.0 * math.cos(math.radians(deg)), 400.0 * math.sin(math.radians(deg)), 0.0)
+                    out = host.call('coop.space away %.1f %.1f %.1f' % d)['out'].strip()
+                print('  host:', out[:120], flush=True)
                 time.sleep(3)
                 r = row_of(guest, 0)
                 if r and r['kind'] == 'arrow':

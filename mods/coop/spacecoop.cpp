@@ -1976,6 +1976,15 @@ std::string debug(const std::vector<std::string>& a)
         g_jump_old = false;
         return e.empty() ? "jumping" : e;
     }
+    if (a[0] == "away" && u && a.size() > 3) { // tests (F2, BUG-0764): the own ship moved by dx dy dz (off a partner's view)
+        const float* p = (const float*)((uint8_t*)u + kPos);
+        float q[3] = {p[0] + (float)atof(a[1].c_str()), p[1] + (float)atof(a[2].c_str()), p[2] + (float)atof(a[3].c_str())};
+        memcpy((uint8_t*)u + kPos, q, 12);
+        memcpy((uint8_t*)u + 0x718, q, 12); // next position
+        memcpy((uint8_t*)u + 0x750, q, 12); // destination
+        snprintf(b, sizeof b, "moved to (%.0f %.0f %.0f)", q[0], q[1], q[2]);
+        return b;
+    }
     if (a[0] == "goto" && u) { // put the own ship next to a partner (tests of the repair)
         for (auto& p : C.partners ? C.partners() : std::vector<Partner>{})
             if (C.my_place && p.place == C.my_place()) {

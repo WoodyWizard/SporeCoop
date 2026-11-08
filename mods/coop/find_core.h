@@ -193,7 +193,8 @@ inline int arrow_tris(const Arrow& a, float size, float grow, float* out /* >= 1
 inline void label_at(const Arrow& a, float size, int text_w, int sw, int sh, int& x, int& y)
 {
     float c = std::cos(a.ang), s = std::sin(a.ang);
-    float bx = a.x - c * (size * 1.6f + 14.f), by = a.y - s * (size * 1.6f + 10.f);
+    // the label's centre behind the arrow's tail: half its width further along x, its height along y
+    float bx = a.x - c * (size + 12.f + text_w / 2.f), by = a.y - s * (size + 18.f);
     x = (int)std::clamp(bx - text_w / 2.f, 4.f, (float)std::max(4, sw - text_w - 4));
     y = (int)std::clamp(by - 10.f, 4.f, (float)std::max(4, sh - 24));
 }
