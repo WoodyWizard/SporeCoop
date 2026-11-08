@@ -478,6 +478,10 @@ Read back with CalculateRelationship to cap at the threshold. Optional hook inst
 `hp0 = pat[+0x5E0]`, `max = pat[+0x5D4]`. After: if `hp0 < max && pat[+0x5E0] >= max` (a full
 heal just finished) and both are player-tribe citizens with different coop owners → food bonus
 (section F).
+~ superseded (2026-11-08): `max = pat[+0x5D4]` is wrong, see docs/re/tribe.md#tribe-healer-runtime.
+CORRECTION (2026-11-08, fix/w46-g4b-coverage): pat+0x5D4 (combatant +0x2C) reads 1.0 on a tribe member whose
+maximum is 112 (mem.read, lane 3); the maximum is the combatant's vt 0x58 (game::max_health). With +0x5D4 the
+bonus never fired (BUG-0745).
 
 ### D. Chieftain (goal: chief / marker)
 
@@ -2696,3 +2700,20 @@ BUG-0684, GOG 2024. Follow-up of [the carried bundles](#tribe-carried-bundles).
   flow late, so a straight walk is not shown behind): the proxies got worse (npc_walk_tribe 0 of 2 with 2 jumps each,
   body_trail_hits 1 of 2 at 7.9 m after a push, lab 20261108-015610 / -2). The plain knee's cost stays: NPCs walking
   straight on through a spike, body_trail_hits NPC p90 0.56-0.58 m against 0.33-0.37 m without the fall (limit 0.6).
+
+## The healer bonus at runtime (2026-11-08, fix/w46-g4b-coverage)
+<a id="tribe-healer-runtime"></a>
+
+BUG-0199 / BUG-0745, lane 3 (GOG 2024), `tribe` fixture (`coop_tribe_healer.py`):
+* ✔ The heal tool (type 9) through the palette's placement on the host (`coop.tribe buy 9 9 200` + `buy_end`), a
+  non-chief member's GrabTool order (`coop.tribe grab`): the member holds tool 9 within a few seconds. The chief (tool
+  11) does not take it (three orders, no change).
+* ✔ A blow on a guest's member in the host's game (`coop.tribe pincer <id> <id> 56`: the citizen's TakeDamage)
+  shows on the guest's mirror at once. `coop.tribe hurt` on the guest only hits the guest's own mirror (the host's
+  member keeps its health, the next snapshot restores the mirror): it is no way to hurt a member in co-op.
+* ✔ The heal order `coop.tribe act 5 <patient>` with only the healer selected (DoActionForObjects, action 5): the
+  patient goes 56 -> 112 in ~55 s (the heal tick 0xDB9AC0 in GOG 2024), the guest's mirror follows.
+* ✔ The member's maximum health is not at +0x5D4 (1.0 there); with game::max_health the hook sees the full heal and the
+  shared food rises by 5 on both games within a second of the patient reaching its maximum (15 -> 20; the test's
+  1 s poll read 111.5 just before).
+

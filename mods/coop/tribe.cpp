@@ -3076,6 +3076,10 @@ static void bonus_food(int n)
 }
 
 // heal tick 0xDB9B20 (cdecl: arg1 healer, *arg6 patient): a full heal of a partner's member
+// BUG-0745: the patient's maximum is cCombatant::GetMaxHitPoints (game::max_health); the field +0x5D4
+// (combatant +0x2C) holds 1.0, so the bonus never fired. `coop.fix tribe.heal_max off`: that field (tests)
+static bool g_fix_heal_max = true;
+COOP_FIX("tribe.heal_max", "BUG-0745", g_fix_heal_max, "tribe: the healer bonus compares the patient's health with its real maximum");
 using HealTick_t = bool(SK_CDECL*)(void*, void*, void*, void*, void*, void**, void*, float, void*, void*, void*, void*);
 static HealTick_t o_HealTick;
 static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void* a5, void** target, void* a7, float a8,
@@ -3087,7 +3091,7 @@ static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void
         pat = skg::cdecl_call<void*>(a_PatientOf, *target);
         if (pat) {
             hp0 = F<float>(pat, 0x5E0);
-            mx = F<float>(pat, 0x5D4);
+            mx = g_fix_heal_max ? game::max_health(pat) : F<float>(pat, 0x5D4);
         }
     }
     bool r = o_HealTick(healer, a2, a3, a4, a5, target, a7, a8, a9, a10, a11, a12);
