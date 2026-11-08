@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#3b2a7a"/>
+      <stop offset="0.55" stop-color="#1a1240"/>
+      <stop offset="1" stop-color="#07061a"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff6d8" stop-opacity="0.95"/>
+      <stop offset="0.35" stop-color="#ffb86b" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ff7ab0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="teal" cx="38%" cy="32%" r="75%">
+      <stop offset="0" stop-color="#b8fff0"/>
+      <stop offset="0.45" stop-color="#2fd6b5"/>
+      <stop offset="1" stop-color="#0b7f82"/>
+    </radialGradient>
+    <radialGradient id="orange" cx="38%" cy="32%" r="75%">
+      <stop offset="0" stop-color="#fff0b8"/>
+      <stop offset="0.45" stop-color="#ff9a3c"/>
+      <stop offset="1" stop-color="#c2410c"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- galaxy arms -->
+  <g fill="none" stroke-linecap="round" opacity="0.55">
+    <path d="M512 512 C 640 420, 820 470, 860 640" stroke="#8f7bff" stroke-width="34" opacity="0.35"/>
+    <path d="M512 512 C 384 604, 204 554, 164 384" stroke="#8f7bff" stroke-width="34" opacity="0.35"/>
+    <path d="M512 512 C 640 420, 820 470, 860 640" stroke="#d6ccff" stroke-width="8"/>
+    <path d="M512 512 C 384 604, 204 554, 164 384" stroke="#d6ccff" stroke-width="8"/>
+  </g>
+  <circle cx="512" cy="512" r="330" fill="url(#core)"/>
+  <circle cx="512" cy="512" r="292" fill="none" stroke="#ffd59a" stroke-opacity="0.25" stroke-width="6"/>
+  <!-- stars -->
+  <g fill="#ffffff">
+    <circle cx="190" cy="220" r="5"/><circle cx="820" cy="210" r="6"/><circle cx="880" cy="420" r="3"/>
+    <circle cx="150" cy="640" r="4"/><circle cx="300" cy="860" r="5"/><circle cx="760" cy="850" r="4"/>
+    <circle cx="640" cy="150" r="3"/><circle cx="420" cy="130" r="4"/><circle cx="900" cy="760" r="3"/>
+    <circle cx="110" cy="460" r="3"/>
+  </g>
+  <g fill="#ffe9a8">
+    <path d="M820 300 l8 22 22 8 -22 8 -8 22 -8 -22 -22 -8 22 -8z"/>
+    <path d="M230 760 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6z"/>
+  </g>
+  <!-- two creatures forming a pair (yin-yang shapes) -->
+  <g transform="rotate(-20 512 512)">
+    <path d="M512 252 A260 260 0 0 0 512 772 A130 130 0 0 0 512 512 A130 130 0 0 1 512 252 Z" fill="url(#orange)" stroke="#5a1d06" stroke-width="10"/>
+    <path d="M512 772 A260 260 0 0 0 512 252 A130 130 0 0 0 512 512 A130 130 0 0 1 512 772 Z" fill="url(#teal)" stroke="#06343a" stroke-width="10"/>
+    <!-- teal creature eyes (upper-left blob head near y=382) -->
+    <g>
+      <ellipse cx="430" cy="360" rx="46" ry="54" fill="#fff"/>
+      <circle cx="440" cy="368" r="24" fill="#10213a"/><circle cx="448" cy="358" r="8" fill="#fff"/>
+      <ellipse cx="520" cy="330" rx="30" ry="36" fill="#fff"/>
+      <circle cx="526" cy="336" r="16" fill="#10213a"/><circle cx="531" cy="329" r="5" fill="#fff"/>
+    </g>
+    <!-- orange creature eyes -->
+    <g>
+      <ellipse cx="594" cy="664" rx="46" ry="54" fill="#fff"/>
+      <circle cx="584" cy="656" r="24" fill="#2a1206"/><circle cx="592" cy="646" r="8" fill="#fff"/>
+      <ellipse cx="504" cy="694" rx="30" ry="36" fill="#fff"/>
+      <circle cx="498" cy="688" r="16" fill="#2a1206"/><circle cx="503" cy="681" r="5" fill="#fff"/>
+    </g>
+    <!-- smiles -->
+    <path d="M470 430 q40 34 84 6" fill="none" stroke="#06343a" stroke-width="11" stroke-linecap="round"/>
+    <path d="M470 600 q40 34 84 6" fill="none" stroke="#5a1d06" stroke-width="11" stroke-linecap="round"/>
+    <!-- little antennae/spikes -->
+    <path d="M512 252 q-40 -60 -10 -110" fill="none" stroke="#2fd6b5" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="502" cy="138" r="16" fill="#b8fff0"/>
+    <path d="M512 772 q40 60 10 110" fill="none" stroke="#ff9a3c" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="522" cy="886" r="16" fill="#fff0b8"/>
+  </g>
+</svg>

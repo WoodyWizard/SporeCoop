@@ -4867,3 +4867,20 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `kit.test.hang <ms>` holds the main thread on its next frame (2.5 s passes the hitch gate in chat_pause and
   chat_held_send); `tools/lab.py run chat_held_send,chat_held_send_oldcheck` shows the late click (the _oldcheck twin
   with SPORE_CHAT_WAIT=0 must FAIL).
+
+## README media (2026-11-07, docs/readme-2)
+<a id="testing-readme-media"></a>
+
+* `SPORE_LANE=3 python3 tools/tests/readme_shots.py [cell creature tribe civ space gif menu]` makes every
+  picture of the README (docs/media/, 1280x960 JPEG under 195 KB) and `coop_creature.gif` (~7 MB); ~6 min for all.
+* `shot <path>` takes ~45 ms at 1440x1080, so a frame sequence at 10 fps works (the GIF: 100 shots in 10 s).
+* `coop.overlay off` hides the status block and the players' name tags too: the README pictures keep the overlay on.
+* Two players walk side by side by real input: right after a load both cameras face the same way, so W held on
+  both games at once moves them in parallel; the guest is first put 2-3 m to the side with `coop.npc gopos`
+  along the host camera's first matrix row (`coop.cam` m[0]). Click-to-follow (the guest clicking the host's tag)
+  left the follower behind the host's camera or turned it into a social target (green circle, no walk).
+* `key esc` with nothing selected opens the game's pause menu; clicks meant for the ground then land in it.
+* The guest plays its own creature with `coop.creations choose creature <instance>` (`coop.creations list creature`);
+  since BUG-0638 a fresh load gives it the host's species until it chooses.
+* In the galaxy menu, hosting with a guest joined, the lobby's hint line reads "Select your units to give them to a
+  partner" (a hint for Tribe / Civilization shown in the menu).
