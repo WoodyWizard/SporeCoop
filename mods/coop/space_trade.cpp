@@ -16,6 +16,9 @@
 // page. The receiver of a gift, a sale or an offer decides (adds it or not, pays or not) and
 // answers; the sender keeps what is on its way and gives it back on a "no" or when the partner
 // leaves before answering.
+#include <windows.h>
+#include <shlobj.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -27,6 +30,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/protocol.h"
 #include "net/validate.h"
 #include "space_ext.h"
 #include "space_map.h"
@@ -1057,6 +1061,64 @@ static const InvItem* find_item(const Inv& v, uint8_t type, const Key& k)
     return nullptr;
 }
 
+// BUG-0679 (docs/re/space.md#space-kept-hold-limits): the limits of space.keep_items.
+// * space.keep_items_slots: a hold with fewer cargo slots than the host's copy had kept the host's extra (empty) slots;
+//   now the free ones beyond the own count go (the game's RemoveItem, vt+0x78: a free slot item points at nothing).
+// * space.keep_items_cargo: plant, animal and artifact cargo (types 0, 1/6, 5) the host's copy lacked could not be made
+//   again; now the game's own factories make it (the ones its mission rewards use, 0xC53500 GOG 2024): animals
+//   0xAC0C00 (by species key, type 6 with the flag), plants the plant cargo cache 0xB90560 + the template's Clone (vt
+//   +0x24), artifacts 0xC87A60 (by key), then AddItem like spice.
+// * space.keep_items_local: the kept hold lived in the host's memory only (a host restart, or another world loaded,
+//   lost it) and what changed in the guest's hold while it was away never reached it. Now the guest also keeps its
+//   own hold on its disk per host world (host name + planet file: <AppData>\Spore\SporeCoop\holds\<crc>.txt), written
+//   whenever it changes in a world whose hold is its own (also after the session ended, as long as that world is
+//   open), and a world loaded from the host again gets that hold at once (the host's kept one is then not needed).
+static bool g_keep_slots_fix = true, g_keep_cargo_fix = true, g_keep_local_fix = true;
+COOP_FIX("space.keep_items_slots", "BUG-0679", g_keep_slots_fix,
+         "space: a guest's kept hold has its own number of cargo slots again, not the host's extra ones");
+COOP_FIX("space.keep_items_cargo", "BUG-0679", g_keep_cargo_fix,
+         "space: a guest's kept plant, animal and artifact cargo comes back too (the game's own factories)");
+COOP_FIX("space.keep_items_local", "BUG-0679", g_keep_local_fix,
+         "space: a guest keeps its own hold on its disk per host world (host restarts, changes while away)");
+static uintptr_t a_AnimalCargo, a_AnimalMgr, a_PlantMgr, a_PlantFind, a_ArtifactCargo;
+static uint32_t g_inv_slots_removed, g_inv_cargo_made;
+
+// a plant / animal / artifact cargo item made by the game's factory (nullptr: no factory, no such species)
+static void* make_cargo(uint8_t type, const Key& k, int n)
+{
+    void* out = nullptr;
+    if ((type == 1 || type == 6) && a_AnimalCargo && a_AnimalMgr) {
+        void* mgr = cdecl_call<void*>(a_AnimalMgr);
+        thiscall<void>(a_AnimalCargo, mgr, &out, k.v, n, type == 6);
+    } else if (type == 0 && a_PlantMgr && a_PlantFind) {
+        void* mgr = cdecl_call<void*>(a_PlantMgr);
+        void* tpl = mgr ? thiscall<void*>(a_PlantFind, mgr, k.v) : nullptr;
+        if (tpl)
+            vcall<void>(tpl, 0x24 / 4, &out); // Clone
+    } else if (type == 5 && a_ArtifactCargo)
+        cdecl_call<void>(a_ArtifactCargo, &out, k.v[0], k.v[1], k.v[2]);
+    if (out && (F<int>(out, 0x14) != type || IsBadReadPtr(out, 0x7C))) {
+        H->log(M, SK_WARN, "trade: own hold: the factory made type %d for a type %d cargo", F<int>(out, 0x14), type);
+        vcall<void>(out, 0x08 / 4);
+        return nullptr;
+    }
+    if (out)
+        F<int>(out, 0x10) = n;
+    return out;
+}
+
+static bool add_cargo(uint8_t type, const Key& k, int n)
+{
+    void* inv = inventory();
+    void* it = inv && n > 0 ? make_cargo(type, k, n) : nullptr;
+    if (!it)
+        return false;
+    bool ok = vcall<bool>(inv, 0x80 / 4, it, (void*)nullptr, true); // AddItem
+    vcall<void>(it, 0x08 / 4);                                       // Release
+    g_inv_cargo_made += ok;
+    return ok;
+}
+
 // make the game's hold `want`; returns how many items could not be made as they were (logged)
 static uint32_t g_inv_restored, g_inv_failed, g_inv_removed;
 static int apply_inv(const Inv& want)
@@ -1097,6 +1159,19 @@ static int apply_inv(const Inv& want)
     int slots = vcall<int>(inv, 0x88 / 4);
     if (want.slots > slots && want.slots - slots <= 64)
         vcall<void>(inv, 0x94 / 4, want.slots - slots);
+    // BUG-0679: fewer: the free slots beyond mine go (the host's items left in step 1, so theirs are free)
+    for (int guard = 0; g_keep_slots_fix && want.slots >= 0 && guard < 64 && vcall<int>(inv, 0x88 / 4) > want.slots; guard++) {
+        void* free_slot = nullptr;
+        int n = vcall<int>(inv, 0x5C / 4);
+        for (int i = n - 1; i >= 0 && !free_slot; i--) {
+            void* it = vcall<void*>(inv, 0x60 / 4, i);
+            if (it && F<int>(it, 0x14) == 3 && vcall<bool>(inv, 0x98 / 4, it)) // IsSlotFree
+                free_slot = it;
+        }
+        if (!free_slot || !vcall<bool>(inv, 0x78 / 4, free_slot)) // RemoveItem
+            break;
+        g_inv_slots_removed++;
+    }
     // 3. mine comes back: tools first (an upgrade needs its base tool: a few passes), then cargo
     std::vector<const InvItem*> todo;
     for (auto& x : want.items)
@@ -1130,6 +1205,8 @@ static int apply_inv(const Inv& want)
             }
             if (x->type == 4 && add_spice(x->key, x->count - have))
                 continue;
+            if (x->type != 4 && g_keep_cargo_fix && add_cargo(x->type, x->key, x->count - have)) // BUG-0679
+                continue;
             again.push_back(x);
         }
         todo = std::move(again);
@@ -1161,6 +1238,119 @@ static uint32_t g_inv_join_epoch, g_inv_fresh_epoch, g_inv_applied_epoch, g_inv_
 static std::vector<uint8_t> g_inv_last;
 static double g_inv_next, g_inv_fresh_t;
 
+// ---- BUG-0679: the guest's own record of its hold, per host world, on its disk ----
+static std::string g_rec_key;        // the host world (host name + planet file) of the record below
+static uint32_t g_rec_epoch;         // the Space world whose hold is this player's own (written to the record)
+static std::vector<uint8_t> g_rec_last;
+static double g_rec_next, g_inv_epoch_t;
+static uint32_t g_inv_epoch_seen, g_rec_written, g_rec_used;
+
+static std::wstring rec_dir()
+{
+    wchar_t p[MAX_PATH];
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, p))) // profile-aware (hooked)
+        return L"";
+    std::wstring d = std::wstring(p) + L"\\Spore\\SporeCoop";
+    CreateDirectoryW(d.c_str(), nullptr);
+    d += L"\\holds";
+    CreateDirectoryW(d.c_str(), nullptr);
+    return d;
+}
+
+// the host world this guest plays now: the host's name and the planet file (the same on every machine: the share
+// keeps the file name, slotfs.cpp's marker); "" when unknown
+static std::string rec_key_now()
+{
+    std::string host = spaceext::name_of(0), planet = modes::current_world_name();
+    if (host.empty() || host == "?" || planet.size() < 5 || planet.compare(planet.size() - 4, 4, ".spo") != 0)
+        return "";
+    for (auto& c : planet)
+        c = (char)tolower((unsigned char)c);
+    return host + "|" + planet;
+}
+
+static std::wstring rec_file(const std::string& key)
+{
+    std::wstring d = rec_dir();
+    if (d.empty() || key.empty())
+        return L"";
+    char n[16];
+    snprintf(n, sizeof n, "%08X", net::crc32_update(0, (const uint8_t*)key.data(), key.size()));
+    return d + L"\\" + std::wstring(n, n + strlen(n)) + L".txt";
+}
+
+static void rec_write(const std::string& key, const Inv& v)
+{
+    std::wstring f = rec_file(key);
+    FILE* fp = f.empty() ? nullptr : _wfopen(f.c_str(), L"w");
+    if (!fp)
+        return;
+    fprintf(fp, "world %s\nslots %d\n", key.c_str(), v.slots);
+    for (auto& x : v.items)
+        fprintf(fp, "item %d %08X %08X %08X %d %d\n", x.type, x.key.v[0], x.key.v[1], x.key.v[2], x.count, x.ammo);
+    fclose(fp);
+    g_rec_written++;
+}
+
+static bool rec_read(const std::string& key, Inv& v)
+{
+    std::wstring f = rec_file(key);
+    FILE* fp = f.empty() ? nullptr : _wfopen(f.c_str(), L"r");
+    if (!fp)
+        return false;
+    v = Inv{};
+    v.slots = -1;
+    bool same = false;
+    char line[512];
+    while (fgets(line, sizeof line, fp)) {
+        std::string l(line);
+        while (!l.empty() && (l.back() == '\n' || l.back() == '\r'))
+            l.pop_back();
+        InvItem x;
+        int type = 0;
+        if (l.rfind("world ", 0) == 0)
+            same = l.substr(6) == key; // (a crc collision of two worlds is no record)
+        else if (sscanf(l.c_str(), "slots %d", &v.slots) == 1) {
+        } else if (sscanf(l.c_str(), "item %d %x %x %x %d %d", &type, &x.key.v[0], &x.key.v[1], &x.key.v[2], &x.count,
+                          &x.ammo) == 6 && type >= 0 && type < 16 && x.count >= 0 && x.count <= 100000 && v.items.size() < 250) {
+            x.type = (uint8_t)type;
+            v.items.push_back(x);
+        }
+    }
+    fclose(fp);
+    return same && v.slots >= 0;
+}
+
+// the hold of a world whose hold is this player's own goes to the record when it changes (at most once a second;
+// also while not connected, as long as that world is open: a refund paid at the session end, items picked up after)
+static void rec_tick(double now)
+{
+    if (!g_keep_local_fix || !g_keep_items_fix || g_rec_key.empty() || !spaceext::in_space() ||
+        spaceext::world_epoch() != g_rec_epoch || now < g_rec_next)
+        return;
+    g_rec_next = now + 1.0;
+    Inv v;
+    if (!read_inv(v))
+        return;
+    std::vector<uint8_t> b = inv_bytes(v);
+    if (b == g_rec_last)
+        return;
+    g_rec_last = std::move(b);
+    rec_write(g_rec_key, v);
+}
+
+// this world's hold is mine from now on (restored, or nothing was kept: the save's)
+static void rec_own(uint32_t e)
+{
+    std::string k = rec_key_now();
+    if (k.empty())
+        return;
+    g_rec_key = k;
+    g_rec_epoch = e;
+    g_rec_last.clear();
+    g_rec_next = 0;
+}
+
 // guest: a world loaded from the host whose hold may still be replaced by the kept one (no answer yet to its
 // fresh hold); at most 20 s after it went (a host without the fix never answers)
 static bool inv_restore_pending()
@@ -1190,8 +1380,10 @@ static void send_kept_inv(uint8_t id, KeptInv& k)
 
 static void inv_tick(double now)
 {
-    if (!spaceext::connected())
+    if (!spaceext::connected()) {
+        rec_tick(now); // BUG-0679: the own hold while away
         return;
+    }
     if (spaceext::is_host()) {
         uint32_t e = spaceext::world_epoch();
         if (e && e != g_kept_inv_epoch) { // another Space world: the holds kept were of the old one
@@ -1219,6 +1411,33 @@ static void inv_tick(double now)
     if (!read_inv(v))
         return;
     bool fresh = e != g_inv_fresh_epoch;
+    if (e != g_inv_epoch_seen)
+        g_inv_epoch_seen = e, g_inv_epoch_t = now;
+    if (fresh && g_keep_local_fix && g_keep_items_fix && e != g_inv_applied_epoch) {
+        // BUG-0679: this player's own record of the host world: its hold at once (after 2 s of the world, so the
+        // game's load has settled), the host's kept one is not needed; the hold goes to the host as not fresh
+        std::string key = rec_key_now();
+        Inv own;
+        if (!key.empty() && rec_read(key, own)) {
+            if (now - g_inv_epoch_t < 2.0)
+                return;
+            int failed = apply_inv(own);
+            if (failed >= 0) {
+                g_inv_applied_epoch = e;
+                g_inv_restored++;
+                g_rec_used++;
+                g_inv_failed += (uint32_t)failed;
+                g_inv_fresh_epoch = e;
+                rec_own(e);
+                spaceext::notice(spaceext::tr("Your cargo hold is back.", "Ваш трюм восстановлен."));
+                H->log(M, SK_INFO, "trade: own hold from this game's record of %s (BUG-0679)", key.c_str());
+                if (!read_inv(v))
+                    return;
+                fresh = false;
+            }
+        }
+    }
+    rec_tick(now);
     std::vector<uint8_t> b = inv_bytes(v);
     if (!fresh && b == g_inv_last)
         return;
@@ -1279,8 +1498,11 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
         return;
     uint32_t e = spaceext::world_epoch();
     if (!r.u8()) { // nothing kept for me: the hold of this world is mine
-        if (r.ok() && e == g_inv_fresh_epoch)
+        if (r.ok() && e == g_inv_fresh_epoch) {
             g_inv_none_epoch = e;
+            if (e != g_inv_applied_epoch)
+                rec_own(e); // BUG-0679
+        }
         return;
     }
     Inv v;
@@ -1294,6 +1516,7 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
         g_inv_applied_epoch = e;
         g_inv_restored++;
         g_inv_failed += (uint32_t)failed;
+        rec_own(e); // BUG-0679
         g_inv_last.clear(); // the hold now, at once
         g_inv_next = 0;
         spaceext::notice(spaceext::tr("Your cargo hold is back.", "Ваш трюм восстановлен."));
@@ -1336,12 +1559,13 @@ static std::string inv_text(const Inv& v)
 static std::string inv_status()
 {
     std::string s;
-    char b[240];
+    char b[400];
     snprintf(b, sizeof b,
              "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
-             "applied_epoch=%u world=%u\n",
+             "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u\n",
              (int)g_keep_items_fix, (unsigned)g_kept_inv.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
-             g_inv_failed, g_inv_removed, g_inv_join_epoch, g_inv_applied_epoch, spaceext::world_epoch());
+             g_inv_failed, g_inv_removed, g_inv_join_epoch, g_inv_applied_epoch, spaceext::world_epoch(), g_inv_slots_removed,
+             g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch);
     s += b;
     for (auto& [n, k] : g_kept_inv) {
         snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", n.c_str(), k.id == 0xFF ? -1 : k.id,
@@ -1668,13 +1892,47 @@ static std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "kept") // BUG-0678: the host's kept holds, the guest's restore
         return inv_status();
+    if (a[0] == "cargo" && a.size() >= 3) { // tests (BUG-0679): cargo <type 0|1|5|6> <hex instance> [n]: the game's factory
+        Key k;
+        k.v[0] = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        int n = a.size() > 3 ? atoi(a[3].c_str()) : 1;
+        bool ok = add_cargo((uint8_t)atoi(a[1].c_str()), k, n);
+        snprintf(b, sizeof b, "cargo %s %08X x%d: %s\n", a[1].c_str(), k.v[0], n, ok ? "added" : "not made");
+        return b;
+    }
+    if (a[0] == "forget") { // tests (BUG-0679): this game's hold records go (memory and disk)
+        g_rec_key.clear();
+        g_rec_epoch = 0;
+        g_rec_last.clear();
+        std::wstring d = rec_dir();
+        WIN32_FIND_DATAW fd;
+        int n = 0;
+        HANDLE h = d.empty() ? INVALID_HANDLE_VALUE : FindFirstFileW((d + L"\\*.txt").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do
+                n += DeleteFileW((d + L"\\" + fd.cFileName).c_str()) ? 1 : 0;
+            while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        snprintf(b, sizeof b, "forgot %d hold records\n", n);
+        return b;
+    }
+    if (a[0] == "slots" && a.size() >= 2) { // tests (BUG-0679): slots <n>: AddCargoSlots(n)
+        void* inv = inventory();
+        int n = atoi(a[1].c_str());
+        if (!inv || n <= 0 || n > 64)
+            return "no inventory or bad n\n";
+        vcall<void>(inv, 0x94 / 4, n);
+        snprintf(b, sizeof b, "slots %d\n", vcall<int>(inv, 0x88 / 4));
+        return b;
+    }
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
         return b;
     }
     return "usage: coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> | "
            "take <inst> <n> | deal | sell [n] | offers | accept <id> | decline <id> | money | refundfix 0|1 | "
-           "away 0|1 | hold 0|1|2]\n";
+           "away 0|1 | hold 0|1|2 | kept | cargo <type> <inst> [n] | slots <n>]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)
@@ -1694,6 +1952,11 @@ static bool init(const SkHost* h, SkMod* m)
     a_GetFloat = S("App::Property::GetFloat");
     a_Tune = S("SporeCoop::DifficultyTuning_GetFloat");
     a_MessageMgr = S("App::IMessageManager::Get");
+    a_AnimalCargo = S("SporeCoop::AnimalCargo_Create");     // BUG-0679
+    a_AnimalMgr = S("SporeCoop::AnimalCargo_Manager");
+    a_PlantMgr = S("SporeCoop::PlantCargo_Manager");
+    a_PlantFind = S("SporeCoop::PlantCargo_Template");
+    a_ArtifactCargo = S("SporeCoop::ArtifactCargo_Create");
     bool ok = a_SpaceGame && a_AddItemByKey && a_AddAmmo && a_ConsumeAmmo && a_Trading && a_CreateTrading && a_AddMoney &&
               a_PlayerEmpire;
     H->log(M, ok ? SK_INFO : SK_WARN, "space trade: gifts %s, spice prices %s", ok ? "on" : "off",
