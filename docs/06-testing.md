@@ -4891,6 +4891,8 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `tribe_camera_null` (BUG-0167, cold, ~1 min a try): a guest joins 12.5 s after its galaxy menu came up
   (`twoinst.start(join_at=)`) with `world.intro_at_once` off before the join: the menu's own timer starts the intro in
   the first frames of its Tribe and the tribe setup meets the null simulator camera (4 of 4 on the first join).
+  Since 2026-11-08 the guest is also armed with `coop.introstage` (the intro in the first tick of its next stage): the
+  join time alone misses the race when the guest's console answers late (lanes 2 / 3, ~30 s).
   SPORE_FIX_OFF=tribe.camera_guard fails with the report's fault. Intros started by hand (PlayCinematic at the load
   request, in the Loading mode, on a host's reload) do not make the null camera: only the menu's own timer does.
 * `creature_death_coop` / `_slow` (BUG-0026): `coop_creature_death.py --coop`: the four skip variants (Esc during the

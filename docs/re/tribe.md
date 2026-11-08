@@ -2608,3 +2608,8 @@ window, the player's close button / Alt+F4; the lab's kill and `quit` end the pr
   and from inside the City Hall editor (mode 00DBDBA1; lab 20261107-231415, 20261107-232504 x2).
 * ~ Not covered: Windows (the report's Steam build ran on Windows), a guest that timed out rather than left, and the
   report's 81 s in the held state (today's old gate opens the editor ~60 s after the vote, so the test closes at 40 s).
+* ✔ (2026-11-08, fix/w46-n1-camera-test) The same null camera made on purpose: `coop.introstage` starts the intro (as
+  the menu's handler does, through the BUG-0626 hook) in the mod's first tick in the next stage; the tribe setup's
+  LookAt comes 0.10-0.15 s later and meets the null camera on every start (lab 20261108-013439, 20261108-013444). The
+  join-time race alone depends on the guest's console answering before ~12.5 s after its menu came up, which a slow
+  start misses (lab 20261108-012203: ~30 s).

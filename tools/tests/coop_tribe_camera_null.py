@@ -19,6 +19,11 @@ SimCamera_LookAt+0x52 reading 0x2B4 (the report's fault; lab 20261107-231118, at
 Not reproduced this way (lab 20261107-225810 .. 230854): the intro started by hand (PlayCinematic) in the menu right
 after the load request, in the Loading mode, or on a host reloading its Tribe: the intro played into the stage, the
 camera was there.
+The join time depends on the guest's console: on a slow start (lanes 2 / 3 of the merged rel/0.7.11, lab
+20261108-012203) it answered only ~30 s after the menu came up, the menu's intro had played in the menu already
+(ended at the load, BUG-0654) and the race was never made. So the guest is also armed with `coop.introstage`: the
+intro starts in the first tick of its next stage, as the menu's timer starts it there in the natural race; this makes
+the race on every start, whatever the join time.
 
   SPORE_LANE=9 python3 tools/tests/coop_tribe_camera_null.py
 """
@@ -71,6 +76,7 @@ def main():
         # the intro may start outside the menu (0.7.8); SPORE_FIX_OFF goes to the guest before the join (twoinst)
         for name in ['world.intro_at_once']:
             print('  guest before the join: ' + guest.call(f'coop.fix {name} off')['out'].strip()[:100], flush=True)
+        print('  guest: ' + guest.call('coop.introstage')['out'].strip(), flush=True)
 
     host = guest = None
     for i, join_at in enumerate(JOIN_AT):
