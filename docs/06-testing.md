@@ -5319,3 +5319,19 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 * BUG-0754, suite `share_sync` (~1.5 min, creature fixture): `coop.diag sync now` also drops a pending recheck, so a test
   that polls it every second never sees a MISMATCH (it needs 2 checks 3 s apart); ask once and let the interval
   (`coop.diag sync 2`) run. `coop.share due` takes the evolution path (the save first), `coop.share <id>` sends at once.
+
+## tribe_npc_dash: the frame lag, the corners and the limit (2026-11-08, fix/w46-k4-frame)
+<a id="testing-dash-frame"></a>
+
+BUG-0757. What the guest's driving error of the dash is made of (the saved rows, `out/lane<N>/dash/*.json`, decomposed
+along and across the host's velocity):
+* A guest frame behind: a walked proxy placed on its target this frame is drawn there and read back next frame, so the
+  copy's median time offset along the host's path was -0.045 .. -0.074 s at 15 fps (one frame ~0.065 s). `npc.place_now`
+  aims it one frame ahead along its velocity: -0.035 .. +0.009 s. The test judges it (`ALONG_MIN` -0.043 s: a thin margin, on reached -0.041 and off -0.045 once each).
+* Two proxies of a big species 1.2 m apart are pushed apart by the guest's own game (Tribe fixture 06808ACA: the
+  guest's pair 2.6-3.8 m against the host's 1.3-2.8 m): a sideways error of the game's separation, so Tribe's mate runs
+  3 m beside (`DASH_OFF`).
+* What stays is the zigzag's corners and reversals known a latency and a frame late, an error of time: the limit is
+  0.3 s of the dash speed (`P90_S`): Creature 4 m/s 1.2 m as before, Tribe 6.5 m/s 1.95 m. Tried and dropped (no
+  effect in A/B runs): a new MoveTo at sharp corners after 0.1 s, the proxies' small lead jumps taken unsmoothed,
+  `DASH_WALK_VARIANT=1/2` (place only / teleports).

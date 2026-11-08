@@ -60,7 +60,7 @@ from twoinst import Checks, start
 
 LIMIT = 1.5     # m (printed: samples farther than this)
 P90_S = 0.3     # s x the dash speed: the 90th percentile of the errors (BUG-0757; see P90 below)
-ALONG_MIN = -0.04  # s: BUG-0757, the copy's median time offset along the host's path (one guest frame behind: -0.04 .. -0.08)
+ALONG_MIN = -0.043  # s: BUG-0757, the copy's median offset along the host's path (on -0.041 .. +0.009, off -0.045 .. -0.074)
 # DASH_FEED=0: no `coop.npc list` on the guest during the dash (it samples every proxy's buffer at the console's own time,
 # which moves drive.lead_late's / the smoothing's state between two frames; BUG-0363 check) and no fresh-state check
 FEED = os.environ.get('DASH_FEED', '1') != '0'
