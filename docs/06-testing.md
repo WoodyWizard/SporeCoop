@@ -4989,3 +4989,8 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   `keepalive: no frame for` line with return addresses into the game and one `keepalive: the main thread's windows`
   line; frames go on afterwards. As a normal (between-frames) command the loop runs inside the frame and the
   outside-frame tasks, the keepalive too, wait for its end: no line at all (the first try).
+* BUG-0711: the monitor's `drawn` invariant leaves out partner lines whose `state_age` is over `drawn_age` (1.0 s) +
+  the round trip: a copy without news can not be where the partner is now (multi4_creature_slow, lab 20261108-012301
+  of fix/w46-k7-findings: the guest's link dead 5.5 s both ways, Carol drawn 16.5 m off at state_age 3.6 s); the dead
+  link is the `link` / `puppet` invariants' (and "X is not responding"). `SPORE_MONITOR='{"drawn_age": -1}'` is the
+  rule before it (gates_selftest f_drawn_stale / f_drawn_stale_off).

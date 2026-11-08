@@ -95,7 +95,7 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
                 php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
-                drawn_scale=1)
+                drawn_scale=1, drawn_age=1.0)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -584,6 +584,13 @@ class Drawn(Hook):
                 # (drawn_still < 0: the rule before it, SPORE_MONITOR='{"drawn_still": -1}')
                 if p['stage'] in ('Tribe', 'Civilization') and 'ptr_still' in o and self.c['drawn_still'] >= 0 and \
                         o['ptr_still'] < self.c['drawn_still'] + max(p['rtt'], 0) / 1000.0:
+                    return False
+                # BUG-0711: a copy without news for over drawn_age s (the partner line's state_age) can not be where the
+                # partner is now: a guest's link dead for 5.5 s both ways (the host: "Bob is not responding" too) drew
+                # Carol 16.5 m off at state_age 3.6 s (multi4_creature_slow, lab 20261108-012301 of fix/w46-k7-findings);
+                # that is the link's (the `link` / `puppet` invariants), not the drawing's. (drawn_age < 0: the rule
+                # before it, SPORE_MONITOR='{"drawn_age": -1}')
+                if self.c['drawn_age'] >= 0 and p['age'] > self.c['drawn_age'] + max(p['rtt'], 0) / 1000.0:
                     return False
                 lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
                                                                        + abs(o['t'] - p['t']))

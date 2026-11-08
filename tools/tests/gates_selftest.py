@@ -261,6 +261,12 @@ def field_cases(tmp):
     check(got == {'drawn'}, f'monitor: drawn: the host draws the guest 8 m off its own position ({got})')
     got = scenario(tmp, 'f_drawn_fast', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=30.0'))
     check(not got, f'monitor: drawn: 8 m behind a partner running 30 m/s is the lag ({got})')
+    # BUG-0711: a copy without news for 3.6 s (a dead link) is not judged; drawn_age -1 (the rule before it) judges it
+    got = scenario(tmp, 'f_drawn_stale', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)))
+    check(not got, f'monitor: drawn: a copy whose state is 3.6 s old is the link\'s, not the drawing\'s ({got})')
+    got = scenario(tmp, 'f_drawn_stale_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)),
+                   dict(drawn_age=-1))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_age -1 judges a stale copy as before ({got})')
     got = scenario(tmp, 'f_drawn_space', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0',
                                                        h=dict(stage='Space'), g=dict(stage='Space')))
     check(not got, f'monitor: drawn: 8 m in Space is within its limit ({got})')
