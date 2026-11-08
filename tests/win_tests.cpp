@@ -1180,6 +1180,11 @@ struct FakeGithub {
     std::vector<uint8_t> pack;     // served as SporeCoop-<tag without v>.pack
     std::string sums;              // SHA256SUMS.txt
     int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
+    // BUG-0755: the next fail_left requests of a path ending in fail_path fail: fail_status 0 = the
+    // connection is closed without an answer, -1 = the body breaks off halfway, else that status
+    // (with Retry-After: retry_after when >= 0)
+    std::string fail_path;
+    int fail_left = 0, fail_status = 504, retry_after = -1, fail_hits = 0;
 };
 static FakeGithub g_gh;
 static std::mutex g_gh_mu;
@@ -1203,6 +1208,23 @@ static void gh_answer(SOCKET c)
     std::string ver = g_gh.tag.substr(1);
     std::string status = "404 Not Found", extra, body;
     std::vector<uint8_t> bin;
+    bool truncate = false;
+    if (g_gh.fail_left > 0 && !g_gh.fail_path.empty() && path.size() >= g_gh.fail_path.size() &&
+        path.compare(path.size() - g_gh.fail_path.size(), g_gh.fail_path.size(), g_gh.fail_path) == 0) {
+        g_gh.fail_left--;
+        g_gh.fail_hits++;
+        if (g_gh.fail_status == 0)
+            return; // the connection is closed without an answer
+        if (g_gh.fail_status == -1)
+            truncate = true;
+        else {
+            std::string head = "HTTP/1.1 " + std::to_string(g_gh.fail_status) + " Gateway Timeout\r\n" +
+                               (g_gh.retry_after >= 0 ? "Retry-After: " + std::to_string(g_gh.retry_after) + "\r\n" : "") +
+                               "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            send(c, head.data(), (int)head.size(), 0);
+            return;
+        }
+    }
     if (path == "/repos" + repo + "/latest") {
         g_gh.api_hits++;
         if (g_gh.api_status == 200) {
@@ -1240,6 +1262,8 @@ static void gh_answer(SOCKET c)
     std::string head = "HTTP/1.1 " + status + "\r\n" + extra + "Content-Length: " + std::to_string(bin.size()) +
                        "\r\nConnection: close\r\n\r\n";
     send(c, head.data(), (int)head.size(), 0);
+    if (truncate)
+        bin.resize(bin.size() / 2); // Content-Length says the whole, half of it comes
     for (size_t at = 0; at < bin.size();) {
         int n = send(c, (const char*)bin.data() + at, (int)std::min<size_t>(bin.size() - at, 65536), 0);
         if (n <= 0)
@@ -1291,6 +1315,20 @@ static void gh_release(const std::string& version, const std::string& pack_versi
     g_gh.web_status = 302;
     g_gh.relative = false;
     g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = 0;
+    g_gh.fail_path.clear();
+    g_gh.fail_left = g_gh.fail_hits = 0;
+    g_gh.fail_status = 504;
+    g_gh.retry_after = -1;
+}
+
+static void gh_fail(const std::string& path_end, int times, int status, int retry_after = -1)
+{
+    std::lock_guard<std::mutex> l(g_gh_mu);
+    g_gh.fail_path = path_end;
+    g_gh.fail_left = times;
+    g_gh.fail_status = status;
+    g_gh.retry_after = retry_after;
+    g_gh.fail_hits = 0;
 }
 
 static std::string gh_api() { return "http://127.0.0.1:" + std::to_string(g_gh_port) + "/repos/WoodyWizard/SporeCoop/releases/latest"; }
@@ -1394,6 +1432,112 @@ static void test_setup_api403()
     printf("  requests: api %d, release page %d, assets %d\n", g_gh.api_hits, g_gh.web_hits, g_gh.asset_hits);
 }
 
+// ---------------- BUG-0755: a 504 / a dropped connection from GitHub's file host ----------------
+
+static void test_retry()
+{
+    printf("updater: transient download failures are retried (BUG-0755)%s\n", upd::g_retry_fix ? "" : " [update.retry off]");
+    if (g_gh_port == 0 && !gh_start()) {
+        printf("  FAIL no local server\n");
+        g_fail++;
+        return;
+    }
+    upd::Release r;
+    upd::Pack p;
+    std::string err;
+    auto pack_case = [&](const char* what, const std::string& path_end, int times, int status) {
+        gh_release("0.14.0", "0.14.0");
+        g_gh.api_status = 200;
+        gh_fail(path_end, times, status);
+        bool ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+        printf("  %s: %s (failed answers %d)\n", what, ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+        return ok && p.version == "0.14.0";
+    };
+    // 1. the report: SHA256SUMS.txt answers 504 (twice), the third try works
+    CHECK(pack_case("SHA256SUMS.txt 504 x2", "/SHA256SUMS.txt", 2, 504));
+    // 2. the pack's connection is closed without an answer, twice
+    CHECK(pack_case("pack: connection closed x2", ".pack", 2, 0));
+    // 3. the pack's body breaks off halfway once (Content-Length not reached)
+    CHECK(pack_case("pack: body broken off x1", ".pack", 1, -1));
+    // 4. a 500 / 502 / 503 too
+    CHECK(pack_case("pack: 503 x1", ".pack", 1, 503));
+    // 5. the API answers 502 once: the API's answer, not the release page
+    gh_release("0.14.1", "0.14.1");
+    g_gh.api_status = 200;
+    gh_fail("/releases/latest", 1, 502);
+    bool ok = upd::latest_release(gh_api(), r, err);
+    printf("  API 502 x1: %s%s\n", ok ? r.version.c_str() : err.c_str(), ok && r.from_web ? " (from the release page)" : "");
+    CHECK(ok && r.version == "0.14.1" && !r.from_web);
+    // 6. 429 with a short Retry-After: waited for; a long one (an hour): not waited for, the
+    // release page answers at once (BUG-0392 stays)
+    gh_release("0.14.2", "0.14.2");
+    g_gh.api_status = 200;
+    gh_fail("/repos/WoodyWizard/SporeCoop/releases/latest", 1, 429, 1);
+    ok = upd::latest_release(gh_api(), r, err);
+    CHECK(ok && !r.from_web && g_gh.api_hits == 1 && g_gh.fail_hits == 1);
+    gh_release("0.14.3", "0.14.3");
+    g_gh.api_status = 200;
+    gh_fail("/repos/WoodyWizard/SporeCoop/releases/latest", 5, 429, 3600);
+    DWORD t0 = GetTickCount();
+    ok = upd::latest_release(gh_api(), r, err);
+    printf("  API 429 Retry-After 3600: %s, %d API answers, %lu ms\n", ok ? (r.from_web ? "release page" : "API") : err.c_str(),
+           g_gh.fail_hits, GetTickCount() - t0);
+    CHECK(g_gh.fail_hits == 1 && (ok || !upd::g_web_fallback_fix));
+    // 7. final answers are not retried: a 404 asked once, its error as before
+    gh_release("0.14.4", "0.14.4");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 3, 404);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  SHA256SUMS.txt 404: %s (asked %d times)\n", ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+    CHECK(!ok && g_gh.fail_hits == 1 && err.find("404") != std::string::npos && err.find("attempts") == std::string::npos);
+    // 8. it stays broken: 3 attempts, then the last error and the count
+    gh_release("0.14.5", "0.14.5");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 9, 504);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  SHA256SUMS.txt 504 x9: %s (asked %d times)\n", ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+    CHECK(!ok && g_gh.fail_hits == 3 && err.find("504") != std::string::npos && err.find("after 3 attempts") != std::string::npos);
+    // 9. the checksum check stays: a retried pack that does not match SHA256SUMS.txt is refused
+    gh_release("0.14.6", "0.14.6", false);
+    g_gh.api_status = 200;
+    gh_fail(".pack", 1, 504);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    CHECK(!ok && err.find("checksum") != std::string::npos);
+}
+
+// the real setup (silent mode) while SHA256SUMS.txt answers 504 twice (its own retry, its log)
+static void test_setup_retry()
+{
+    printf("setup /S: SHA256SUMS.txt answers 504 twice (BUG-0755)\n");
+    if (!exists(setup_exe()) || (g_gh_port == 0 && !gh_start())) {
+        printf("  FAIL no setup or no local server\n");
+        g_fail++;
+        return;
+    }
+    gh_release("0.15.0", "0.15.0");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 2, 504);
+    std::wstring g = fake_game(L"retry_setup");
+    std::wstring log = g + L"\\setup.log";
+    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
+                       L"\"" + (upd::g_retry_fix ? L"" : L" /oldretry");
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    DWORD code = 99;
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        if (WaitForSingleObject(pi.hProcess, 60000) != WAIT_OBJECT_0)
+            TerminateProcess(pi.hProcess, 1);
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    std::string l = get(log);
+    printf("  exit %lu, log: %s", code, l.c_str());
+    CHECK(code == 0);
+    CHECK(all_of_version(g, "0.15.0"));
+    CHECK(l.find("attempt 2 of 3") != std::string::npos);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -1419,6 +1563,8 @@ int main(int argc, char** argv)
             g_steam = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--old-web")) // BUG-0392 (update.web_fallback)
             upd::g_web_fallback_fix = false;
+        else if (!strcmp(argv[i], "--old-retry")) // BUG-0755 (update.retry)
+            upd::g_retry_fix = false;
         else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
             g_setup = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
@@ -1438,7 +1584,10 @@ int main(int argc, char** argv)
         upd::g_lock_fix = false;
         inst::g_ga_fix = inst::g_ga_dir_fix = false;
         upd::g_web_fallback_fix = false;
+        upd::g_retry_fix = false;
     }
+    upd::g_retry_unit_ms = 50; // the in-process retries wait 50 / 150 ms (the setup's real 1 s / 3 s)
+    upd::g_log = [](const std::string& s) { printf("    log: %s\n", s.c_str()); };
     wchar_t t[MAX_PATH];
     GetTempPathW(MAX_PATH, t);
     g_tmp = std::wstring(t) + L"sporecoop-win-tests";
@@ -1466,6 +1615,8 @@ int main(int argc, char** argv)
     test_real_steam();
     test_web_fallback();
     test_setup_api403();
+    test_retry();
+    test_setup_retry();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

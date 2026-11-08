@@ -529,6 +529,8 @@ void parse_args()
             inst::g_ga_dir_fix = false;
         else if (s == L"/oldweb") // tests: the API only, before BUG-0392
             upd::g_web_fallback_fix = false;
+        else if (s == L"/oldretry") // tests: one download attempt, before BUG-0755
+            upd::g_retry_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
             upd::g_release_merge_fix = false;
         else if (!val(L"/pack:").empty())
@@ -546,6 +548,7 @@ void parse_args()
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
 {
     parse_args();
+    upd::g_log = log; // the download retries (BUG-0755) go to the /log: file
     g_libs = steam_libraries();
     g_opt.inst.pack_dir = self_dir();
     wchar_t delay[16] = {};

@@ -18,6 +18,10 @@ lab a lane that is neither in the run nor skipped):
 the game must find the release through the release page's redirect (github.com/<o>/<r>/releases/latest
 -> .../releases/tag/v<new>) and download it from .../releases/download/v<new>/. With
 SPORE_FIX_OFF=update.web_fallback (only the API) it must FAIL.
+
+--flaky (BUG-0755): the server answers SHA256SUMS.txt with 504 twice and closes the pack's first
+connection without an answer (GitHub's file host now and then); the in-game update must still
+install, sporekit.log names the retries. With SPORE_FIX_OFF=update.retry (one attempt) it must FAIL.
 """
 import argparse
 import fcntl
@@ -82,9 +86,13 @@ def build_new(dist):
 REPO = '/WoodyWizard/SporeCoop/releases'
 
 
-def serve(pack, api403=False):
+def serve(pack, api403=False, flaky=None):
     """a local stand-in for the GitHub API and its downloads; api403: the API path refuses, the
-    release page redirects to the tag (BUG-0392)"""
+    release page redirects to the tag (BUG-0392); flaky: {path end: [answers]} the first requests
+    of a path get, in order: a status (e.g. 504) or 0 = the connection closed without an answer
+    (BUG-0755)"""
+    flaky = {k: list(v) for k, v in (flaky or {}).items()}
+    flaky_lock = threading.Lock()
     files = {f'/download/{os.path.basename(pack)}': open(pack, 'rb').read()}
     files['/download/SHA256SUMS.txt'] = (hashlib.sha256(files[f'/download/{os.path.basename(pack)}']).hexdigest()
                                          + f'  {os.path.basename(pack)}\n').encode()
@@ -105,6 +113,18 @@ def serve(pack, api403=False):
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            with flaky_lock:
+                fail = next((v.pop(0) for k, v in flaky.items() if self.path.endswith(k) and v), None)
+            if fail is not None:
+                print(f'  server: {self.path} -> {fail or "connection closed"}', flush=True)
+                if fail == 0:
+                    self.close_connection = True
+                    self.connection.shutdown(2)
+                    return
+                self.send_response(fail)
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
             if self.path in refused or self.path in redirect:
                 self.send_response(403 if self.path in refused else 302)
                 if self.path in redirect:
@@ -147,6 +167,7 @@ def main():
     free = os.environ.get('SPORE_FREE_LANE')
     ap.add_argument('--lane', type=int, default=int(free) if free else 6)
     ap.add_argument('--api403', action='store_true', help='the API answers 403: the release page (BUG-0392)')
+    ap.add_argument('--flaky', action='store_true', help='504 / dropped connections before the assets (BUG-0755)')
     a = ap.parse_args()
     if free == '' and '--lane' not in sys.argv:
         print('RESULT: SKIP (no lane outside this lab run is free: this test wipes the mod from its lane)')
@@ -190,7 +211,7 @@ def main():
     cur_pack = os.path.join(dist, f'SporeCoop-{ver}.pack')
     setup = os.path.join(dist, 'SporeCoopSetup.exe')
     new_pack = build_new(dist)
-    api = serve(new_pack, a.api403)
+    api = serve(new_pack, a.api403, {'/SHA256SUMS.txt': [504, 504], '.pack': [0]} if a.flaky else None)
     log = os.path.join(game, 'setup-test.log')  # inside the bottle's view (Flatpak has its own /tmp)
     if os.path.exists(log):
         os.remove(log)
@@ -257,6 +278,8 @@ def main():
     ck(re.search(r"^update .* 1 'Update'$", ui, re.M), 'the co-op window shows an Update button')
     c.call('shot ' + os.path.join(ROOT, 'out', 'shots', 'update_window.png'))
     time.sleep(1)
+    if a.flaky and 'update.retry' in os.environ.get('SPORE_FIX_OFF', ''):
+        print('  SPORE_FIX_OFF: ' + c.call('coop.fix update.retry off')['out'].strip(), flush=True)
     print(' ', c.call('coop.update apply')['out'].strip())
     for _ in range(60):
         st = c.call('coop.update')['out']
@@ -266,6 +289,14 @@ def main():
     print(' ', st.strip())
     ck('ready' in st, 'the update is downloaded, checked and installed')
     ck(open(os.path.join(b, 'mods', 'sporecoop.version')).read().strip() == NEW, f'the version file says {NEW}')
+    if a.flaky:
+        logf = os.path.join(b, 'mods', 'logs', f'sporekit.{inst}.log' if inst > 1 else 'sporekit.log')
+        tries = [l.strip() for l in open(logf, errors='replace') if 'attempt ' in l and ' of 3' in l] \
+            if os.path.exists(logf) else []
+        for t in tries:
+            print('  log:', t[-160:])
+        ck(len(tries) >= 3, 'sporekit.log names the retries (504 x2, the closed connection)')
+        ck('error=' not in st, 'the status carries no error of an earlier attempt')
     spore('kill')
     time.sleep(3)
     # 4. after a restart the new mod runs, the replaced files are cleaned up

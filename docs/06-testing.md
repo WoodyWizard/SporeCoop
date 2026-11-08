@@ -2851,7 +2851,19 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
     asked while the API works, `do_install` installs, and with both refusing the message names
     `install.bat`.
   * `test_setup_api403` (BUG-0392): the real setup in silent mode (`/S /api:<fake API>`) installs.
-* Switches: `win_unit.py --old-ga` (setup-only `inst::g_ga_fix`, the setup's `/oldga`) and
+  * `test_retry` (BUG-0755): the same server fails the next N requests of one path (`gh_fail`):
+    504 / 502 / 503, a closed connection without an answer, a body cut off halfway (Content-Length
+    not reached), 429 with `Retry-After`. Checked: SHA256SUMS.txt answering 504 twice, the pack's
+    connection closed twice, its body broken off once and the API answering 502 once all download;
+    a 429 with `Retry-After: 1` is waited for, one with an hour is not (the release page answers
+    at once); a 404 is asked once; a path that keeps answering 504 is asked 3 times and the error
+    says `504 ... (after 3 attempts)`; a retried pack that does not match `SHA256SUMS.txt` is still
+    refused. The waits are 50 / 150 ms (`upd::g_retry_unit_ms`).
+  * `test_setup_retry` (BUG-0755): the real setup (`/S`) while SHA256SUMS.txt answers 504 twice
+    installs, and its `/log:` has `attempt 2 of 3`.
+* Switches: `win_unit.py --old-ga` (setup-only `inst::g_ga_fix`, the setup's `/oldga`),
+  `--old-retry` (`update.retry`, the setup's `/oldretry`: one attempt; `test_retry` and
+  `test_setup_retry` must FAIL) and
   `--old-web` (`update.web_fallback`, the setup's `/oldweb`); in the lab `SPORE_FIX_OFF=update.web_fallback`
   and `SPORE_WIN_UNIT_ARGS=--old-ga` do the same. `win_unit.py --setup <exe>` runs the setup tests
   against another `SporeCoopSetup.exe` (under the repository, e.g. `build/main-setup/`: one built

@@ -150,10 +150,18 @@ static DWORD WINAPI apply_thread(void* self)
     end_thread(self);
 }
 
+// BUG-0755: each retry of a download or of the release check goes to sporekit.log
+static void log_retry(const std::string& s)
+{
+    if (!g_unloaded && H)
+        H->log(M, SK_INFO, "%s", s.c_str());
+}
+
 void init(const SkHost* host, SkMod* mod, const char* version)
 {
     H = host;
     M = mod;
+    upd::g_log = log_retry;
     g_version = version;
     g_enabled = H->config_int(M, "update", "check", 1) != 0;
     char b[512];

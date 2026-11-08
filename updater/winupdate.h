@@ -24,6 +24,13 @@ using Progress = std::function<void(uint64_t got, uint64_t total)>;
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress = {},
               uint32_t max_bytes = 96u << 20);
 
+// http_get and http_location retry transient failures (BUG-0755: HTTP 5xx, 429, a dropped or timed
+// out connection, a broken-off body) up to 3 attempts, 1 s and 3 s apart; err then names the last
+// error and the attempt count. Each retry is reported through g_log when it is set.
+extern bool g_retry_fix;  // update.retry, BUG-0755: false = one attempt (win_tests --old-retry, setup /oldretry)
+extern int g_retry_unit_ms; // tests: the backoff unit (1000)
+extern void (*g_log)(const std::string&); // coop.dll: sporekit.log; the setup: its /log: file
+
 // the target of url's redirect (not followed); false when it answers neither a redirect nor a 200
 bool http_location(const std::string& url, std::string& location, std::string& err);
 

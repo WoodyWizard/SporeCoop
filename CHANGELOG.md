@@ -12,6 +12,9 @@
   after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ### Fixed
+- Update: a short hiccup of GitHub's download server (an answer like 504, a dropped connection, a download that
+  breaks off) no longer ends the update at once. The in-game update and SporeCoopSetup.exe try again up to 3 times,
+  1 and 3 seconds apart; if it still fails, the message says how many tries were made (BUG-0755).
 - Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
   (BUG-0752).
 - Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to

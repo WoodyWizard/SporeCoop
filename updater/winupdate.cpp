@@ -64,11 +64,41 @@ std::string narrow(const std::wstring& w)
     return s;
 }
 
+FIX_SWITCH(g_retry_fix); // update.retry, BUG-0755: transient failures (5xx, 429, broken connections) are retried
+int g_retry_unit_ms = 1000; // not a lab switch: test hook (BUG-0755), the backoff unit (waits 1 and 3 units)
+void (*g_log)(const std::string&) = nullptr;
+
+namespace {
+// what one attempt tells the retry loop (BUG-0755)
+struct Attempt {
+    bool transient = false; // worth another try: 5xx, 429, no connection, a timeout, a broken-off body
+    int retry_after_s = -1; // a 429's / 503's Retry-After in seconds, -1 = none
+};
+
+// WinHTTP errors of a connection that may work a moment later; a bad address, a certificate problem
+// or a refused redirect will not
+bool transient_error(DWORD e)
+{
+    switch (e) {
+    case ERROR_WINHTTP_TIMEOUT:
+    case ERROR_WINHTTP_CANNOT_CONNECT:
+    case ERROR_WINHTTP_CONNECTION_ERROR:
+    case ERROR_WINHTTP_NAME_NOT_RESOLVED:
+    case ERROR_WINHTTP_INVALID_SERVER_RESPONSE:
+    case ERROR_WINHTTP_RESEND_REQUEST:
+        return true;
+    default:
+        return false;
+    }
+}
+} // namespace
+
 // one GET. follow = false: a redirect is not followed, its target goes to *location (the release
 // page's redirect, BUG-0392); a 200 then also tells the address it ended at
-static bool request(const std::string& url, bool follow, std::vector<uint8_t>* out, std::string* location,
-                    std::string& err, const Progress& progress, uint32_t max_bytes)
+static bool request_once(const std::string& url, bool follow, std::vector<uint8_t>* out, std::string* location,
+                         std::string& err, const Progress& progress, uint32_t max_bytes, Attempt& at_)
 {
+    at_ = Attempt{};
     if (out)
         out->clear();
     std::wstring wurl = widen(url);
@@ -112,6 +142,14 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
             DWORD status = 0, len = sizeof status;
             WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
                                 &status, &len, WINHTTP_NO_HEADER_INDEX);
+            if (status >= 500 || status == 429) {
+                at_.transient = true;
+                DWORD ra = 0;
+                len = sizeof ra;
+                if (WinHttpQueryHeaders(r, WINHTTP_QUERY_RETRY_AFTER | WINHTTP_QUERY_FLAG_NUMBER,
+                                        WINHTTP_HEADER_NAME_BY_INDEX, &ra, &len, WINHTTP_NO_HEADER_INDEX))
+                    at_.retry_after_s = (int)std::min<DWORD>(ra, 1u << 20);
+            }
             DWORD total = 0;
             len = sizeof total;
             WinHttpQueryHeaders(r, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
@@ -141,11 +179,20 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                     DWORD avail = 0;
                     if (!WinHttpQueryDataAvailable(r, &avail)) {
                         ok = false;
-                        err = "the download broke off";
+                        err = "the download broke off (error " + std::to_string(GetLastError()) + ")";
+                        at_.transient = true;
                         break;
                     }
-                    if (avail == 0)
+                    if (avail == 0) {
+                        // the server closed the connection before Content-Length bytes (BUG-0755)
+                        if (g_retry_fix && total && out->size() < total) {
+                            ok = false;
+                            err = "the download broke off (" + std::to_string(out->size()) + " of " +
+                                  std::to_string(total) + " bytes)";
+                            at_.transient = true;
+                        }
                         break;
+                    }
                     size_t at = out->size();
                     if (at + avail > max_bytes) {
                         ok = false;
@@ -156,7 +203,8 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                     DWORD got = 0;
                     if (!WinHttpReadData(r, out->data() + at, avail, &got)) {
                         ok = false;
-                        err = "the download broke off";
+                        err = "the download broke off (error " + std::to_string(GetLastError()) + ")";
+                        at_.transient = true;
                         break;
                     }
                     out->resize(at + got);
@@ -164,8 +212,11 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                         progress(out->size(), total);
                 }
             }
-        } else
-            err = "cannot reach " + narrow(host) + " (error " + std::to_string(GetLastError()) + ")";
+        } else {
+            DWORD e = GetLastError();
+            err = "cannot reach " + narrow(host) + " (error " + std::to_string(e) + ")";
+            at_.transient = transient_error(e);
+        }
         WinHttpCloseHandle(r);
     } else
         err = "cannot reach " + narrow(host);
@@ -173,6 +224,45 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
         WinHttpCloseHandle(c);
     WinHttpCloseHandle(s);
     return ok;
+}
+
+// BUG-0755: GitHub's file host answers a 504 now and then (or drops the connection); one attempt
+// made the whole update fail. Transient failures are tried again after 1 and 3 units (1 s): at
+// most kAttempts attempts, a 429 / 503 Retry-After is waited for when it is at most kMaxRetryAfterS,
+// and no new attempt starts later than kMaxTotalMs after the first. A 4xx other than 429 is final.
+// Off (update.retry off): one attempt, as before.
+static bool request(const std::string& url, bool follow, std::vector<uint8_t>* out, std::string* location,
+                    std::string& err, const Progress& progress, uint32_t max_bytes)
+{
+    constexpr int kAttempts = 3;
+    constexpr int kMaxRetryAfterS = 10;
+    constexpr DWORD kMaxTotalMs = 60000;
+    static const int kBackoff[kAttempts - 1] = {1, 3};
+    DWORD start = GetTickCount();
+    for (int n = 1;; n++) {
+        Attempt a;
+        if (request_once(url, follow, out, location, err, progress, max_bytes, a)) {
+            err.clear(); // an earlier attempt's error is not the answer
+            return true;
+        }
+        if (!g_retry_fix || !a.transient)
+            return false;
+        int wait_ms = n < kAttempts ? kBackoff[n - 1] * g_retry_unit_ms : 0;
+        bool too_late = a.retry_after_s > kMaxRetryAfterS;
+        if (a.retry_after_s >= 0 && !too_late)
+            wait_ms = std::max(wait_ms, a.retry_after_s * (g_retry_unit_ms < 1000 ? g_retry_unit_ms : 1000));
+        if (n >= kAttempts || too_late || GetTickCount() - start + (DWORD)wait_ms > kMaxTotalMs) {
+            if (n > 1)
+                err += " (after " + std::to_string(n) + " attempts)";
+            else if (too_late)
+                err += " (it asks to wait " + std::to_string(a.retry_after_s) + " s: not retried)";
+            return false;
+        }
+        if (g_log)
+            g_log("update: " + err + "; attempt " + std::to_string(n + 1) + " of " + std::to_string(kAttempts) +
+                  " in " + std::to_string(wait_ms) + " ms");
+        Sleep((DWORD)wait_ms);
+    }
 }
 
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress,

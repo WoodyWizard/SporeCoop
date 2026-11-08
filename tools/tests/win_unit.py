@@ -7,7 +7,7 @@ the real Win32 file API under Wine in the lane's bottle. No game is started; the
 %TEMP%\\sporecoop-win-tests of the bottle.
 
   SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep | --old-iniencode | --old-inilock | --old-paths | --old-lock
-                                                | --old-ga | --old-gadir | --old-web] [--setup <SporeCoopSetup.exe>]
+                                                | --old-ga | --old-gadir | --old-web | --old-retry] [--setup <SporeCoopSetup.exe>]
 
 --old switches the fixes off: the run must then FAIL (a test you never saw fail proves nothing).
 --old-suffix / --old-keep switch off only update.old_suffix (BUG-0114) / update.keep_failed (BUG-0150).
@@ -65,7 +65,8 @@ def main():
     # the lab's way to switch one fix off (SPORE_FIX_OFF=update.web_fallback) and to pass the setup-only
     # switches (SPORE_WIN_UNIT_ARGS=--old-ga): a FAIL run with a lab run id
     fix_off = {'update.old_suffix': '--old-suffix', 'update.keep_failed': '--old-keep', 'update.paths': '--old-paths',
-               'update.lock': '--old-lock', 'update.web_fallback': '--old-web'}
+               'update.lock': '--old-lock', 'update.web_fallback': '--old-web',
+               'update.retry': '--old-retry'}
     for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
         if name not in fix_off:
             print(f'RESULT: FAIL (SPORE_FIX_OFF: win_unit has no switch {name})')
