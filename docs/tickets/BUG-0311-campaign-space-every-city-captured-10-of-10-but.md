@@ -1,16 +1,16 @@
 ---
 id: BUG-0311
 title: campaign_space: every city captured (10 of 10) but the end of Civ (spaceship editor vote) never came
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-10-30
 source: lab 20261030-104149 campaign_space#1
 role: host
 versions: 0.7.3.1
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w46-g4-tests
+commits: 0929b2d8
 tests: campaign_space
 signature:
 docs: docs/re/civ.md#civ-stage-end
@@ -61,7 +61,12 @@ instant flag (`Capture(newPol, 0, 1, 0, 0)`), as a surrender does: ChangeOwner a
 call, no caption, no specialty box. The other cities still go by the cinematic path.
 
 ## Verification
-Not reproduced (1 of 3 runs in that lab, campaign_space passed 2 of 4 runs that day).
+FAIL (before, the cinematic path for the last city): lab 20261030-104149 campaign_space#1, SporeCoop out/lab/20261103-012624 #3.
+PASS: out/lab/20261108-081625 #1 (lane 3): the last city taken instantly ("Capture of 1 city ... (1 of other nations
+listed)" 08:25:08, no specialty box), the players' vote 53 s later, the editors, Space after 408 s; out/lab/20261108-072213
+(the last city by a talk, the end as before). no-fail-run: the failing timing (a box left unanswered) is not reproducible
+on demand; the instant path takes the box out of the shortcut's way, as a surrender does.
 
 ## History
 - 2026-10-30: opened.
+- 2026-11-08 (fix/w46-g4-tests): G4: the cause (docs/re/civ.md#civ-stage-end), a CORRECTION of the first root cause, the shortcut's last capture instant; campaign_space PASS with the instant path (out/lab/20261108-081625 #1); fixed.
