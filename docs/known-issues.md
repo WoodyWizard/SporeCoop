@@ -1943,6 +1943,9 @@ Found by fix/w40-play (2026-11-03), not fixed:
   (tribe_chiefs_apart check 5). Both tests are regression checks; next step a 4-player campaign
   (`coop_campaign.py --from creature --to tribe --players 4`) and play_tribe's idle order lines (`coop.tribe ai`).
 * Ticket: BUG-0531, BUG-0340
+* Update (2026-11-08, fix/w46-member-stall): BUG-0531 fixed. The standing members were the host's conquest caption
+  (TRG_TotemPole_Conquer) waiting for the host's OK with the game time standing; it now closes itself after 8 s with
+  guests in the session (tribe.conquer_caption, docs/re/tribe.md#tribe-conquer-caption). BUG-0340 stays as above.
 
 ## Space: ornaments by a colony city in one game only (2026-11-04, fix/w42-space-planets)
 <a id="issue-space-ornaments"></a>

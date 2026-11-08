@@ -5295,3 +5295,9 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 * creature_npc_dash / tribe_npc_dash (BUG-0363) are judged at the same moment on both games' own positions
   (docs/06-testing.md#testing-dash-same-moment); a window measure forgives a copy at any lag. Their red runs are
   BUG-0753 (one NPC id's states 3-12 m off) until it is fixed.
+* `coop_tribe_conquer_orders.py` (suite `tribe_conquer_orders`, BUG-0531, ~2 min, fixture tribe): the host forms an
+  NPC tribe 45 m off (`coop.tribe npc_tribe 3 45`), a guest's member and one of the host's raid its hut
+  (`coop.tribe order <id> 15 <x y z> 1E4DAAE`), the hut's health is cut to 40 once they hit it (`coop.tribe huthp`),
+  the test presses nothing on the conquest caption, then each raider gets two walk orders: it must walk 3 m in 10 s
+  on both games. SPORE_FIX_OFF=tribe.conquer_caption fails (the caption holds the host's game: `bt=` stands).
+  Pitfall: play bots never press a caption's OK; a check on the members after a conquest measures the caption.
