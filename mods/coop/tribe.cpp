@@ -1759,6 +1759,30 @@ static void host_tick(double now)
     send_member_anims(now); // BUG-0569
 }
 
+// BUG-0744: a guest's gather order on a loose fruit (cFruit, noun 0x2C9CC91) its game has and the host's has not within
+// 8 m (each game's fruit roll and are recycled their own way, BUG-0472 / BUG-0497) was rejected: the guest's members
+// stood. With the fix the host takes the nearest tree with fruit left (cTreeData +0x48 != 0) within 12 m (the
+// usual gather target, CitizenAction 2), else its own nearest fruit within 15 m, so the order is a gather on both games.
+// `coop.fix tribe.fruit_order off`: rejected (0.7.11).
+static bool g_fruit_order_fix = true;
+COOP_FIX("tribe.fruit_order", "BUG-0744", g_fruit_order_fix,
+         "tribe: a guest's gather order on a fruit the host's game does not have there gathers the host's nearest fruit or fruit tree");
+static uint32_t g_fruit_orders_moved;
+static constexpr uint32_t kFruitNoun = 0x2C9CC91;
+static void* fruit_instead(const net::Vec3& pos)
+{
+    void* best = nullptr;
+    float bd = 12.f;
+    for_each_tree([&](void* t, const net::Vec3& p) {
+        float d = net::dist(p, pos);
+        if (d < bd && F<uint64_t>(t, 0x48) != 0) {
+            bd = d;
+            best = t;
+        }
+    });
+    return best ? best : game::find_object(kFruitNoun, pos, 15.f);
+}
+
 static void* resolve_target(const Target& t)
 {
     if (t.kind == 1) {
@@ -1963,6 +1987,13 @@ static void host_command(uint8_t from, net::Reader& r)
     snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
              (unsigned)ids.size(), action, tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z, target);
     g_last_cmd = b;
+    if (kind == CMD_ACTION && !target && g_fruit_order_fix && tgt.kind == 2 && tgt.noun == kFruitNoun && action == 2 &&
+        (target = fruit_instead(tgt.pos))) { // BUG-0744
+        g_fruit_orders_moved++;
+        char m[96];
+        snprintf(m, sizeof m, " (no such fruit here: %s %p instead)", is_tree(target) ? "tree" : "fruit", target);
+        g_last_cmd += m;
+    }
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
         g_cmds_rejected++;
         g_last_cmd += " rejected: no such target here";
@@ -4750,6 +4781,48 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel, sel + 1, sel + 1};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 3, u.tool, (void*)nullptr);
         return "grab ordered (ret " + std::to_string(r) + ") " + g_last_cmd;
+    }
+    // fruit <x> <y> <z>: tests (BUG-0744), the selected members' Gather (2) on this game's cFruit nearest the point
+    // (within 3 m), as a right-click on it gives (DoActionForObjects; a guest sends it to the host)
+    if (a.size() >= 4 && a[0] == "fruit") {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        void* f = game::find_object(kFruitNoun, p, 3.f);
+        if (!f)
+            return "no fruit there";
+        std::vector<void*> sel;
+        for (auto& [id, g] : g_gm)
+            if (g.c && F<uint8_t>(g.c, kSelectedOff))
+                sel.push_back((uint8_t*)g.c + 0xC0);
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 2, f, (void*)nullptr);
+        return "gather ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
+    }
+    // unfruit <x> <y> <z> <r>: tests (BUG-0744, host), this game's cFruit within r m of the point destroyed (a fruit
+    // the guest's game still shows there is then on the guest only)
+    if (a.size() >= 5 && a[0] == "unfruit" && is_host()) {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        float r = (float)atof(a[4].c_str());
+        struct Q {
+            net::Vec3 p;
+            float r;
+            std::vector<void*> v;
+        } q{p, r, {}};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 op;
+                if (noun == kFruitNoun && game::object_position(o, op) && net::dist(op, q->p) <= q->r)
+                    q->v.push_back(o);
+                return true;
+            },
+            &q);
+        for (void* f : q.v)
+            game::destroy_instance(f);
+        size_t n = q.v.size();
+        return "destroyed " + std::to_string(n) + " fruit; tribe.fruit_order moved " + std::to_string(g_fruit_orders_moved);
     }
     if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
         // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)
