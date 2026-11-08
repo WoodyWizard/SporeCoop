@@ -2783,3 +2783,34 @@ BUG-0199 / BUG-0745, lane 3 (GOG 2024), `tribe` fixture (`coop_tribe_healer.py`)
   shared food rises by 5 on both games within a second of the patient reaching its maximum (15 -> 20; the test's
   1 s poll read 111.5 just before).
 
+
+## The conquered village's caption holds every member (2026-11-08, fix/w46-member-stall)
+<a id="tribe-conquer-caption"></a>
+
+BUG-0531 (members standing in a gather or delivery node, new orders change only their order record). GOG 2024,
+lane 9, `tools/tests/coop_tribe_conquer_orders.py` (`coop.tribe npc_tribe`, a raid by `coop.tribe order <id> 15 <hut>
+1E4DAAE`, `coop.tribe huthp` to shorten it; `coop.tribe ai` now also prints `path=` the walk's waypoints left, `bt=`
+the member's behaviour-tree ticks so far on the host, `anim=`, `upd=` +0x135, `tree=` *ai set, `city=` +0x1010).
+* ✔ `cCreatureCitizen::Update` 0xC24A30 returns at once when +0x135 is 0 or vt 0x2C says so, and ticks the tree
+  (`BehaviorTreeTick`) only when `*ai` (c+0xB4C) is set and the city c+0x1010 is null.
+* ✔ A raid that takes an NPC tribe's hut to health 0 plays **TRG_TotemPole_Conquer (0x5418B038)** on the host
+  (`coop.status`: "cinematic 5418B038 playing", `busy: cinematic,input_lock`, then `,paused`, `coop.uistate`
+  modal=1): its caption waits for the player's OK with the game time standing. Every member's tree stops ticking
+  (`bt=` unchanged for minutes, the guest's raider and the host's alike), so a new order (DoAction) changes the order
+  record (rec=4) but no node, no walk: the members stand in whatever node they were (the blow reaction 0x05F79546,
+  the gather node 0x0569236E state 1, 0x04623E0C). The guest's own game runs on (busy -), so to the guest its
+  members simply ignore its orders. Fix off: lab 20261108-100229 and -100728 (both raiders, 0.0 m in 2 x 10 s).
+* ✔ The play_tribe stalls of BUG-0531 were this: lab 20261108-020506-2 (fix/w46-k4-bodies) host `input_lock=1` from
+  s 320 (the raided tribe's tools at health 0 at s 318) to the end; 20261105-115848 (fix/w44-tribe-guest) host
+  `busy=cinematic,input_lock,paused` from s ~370 with the host's view at that village. The play bot never presses
+  the caption's OK; a host player away from the keyboard does the same to every guest.
+* ✔ Right after it the game plays **TRG_Upgrade (0x94D17D9F)** (the tribe's new level), whose caption holds the game
+  the same way (lab 20261108-101943: still up 40 s after the conquest). The names are the game's strings (Ghidra
+  `str TRG_`: TRG_Begin, TRG_FirstBaby, TRG_PRE_FirstTribeAppears, TRG_PRE_HutDestroyed, TRG_PRE_PopDestroyed,
+  TRG_TotemPole, TRG_TotemPole_Conquer, TRG_TotemPole_Social, TRG_Upgrade); the ids are their FNV-1 hashes of the
+  lower-case name (the registry id cCinematicManager +0x148 shows).
+* ~ TRG_TotemPole_Social (0x6A4BB900, an alliance) is expected to hold the game the same way (not run in the lab).
+* Fix `tribe.conquer_caption` (host, 2 or more players): each of these three cinematics playing 8 s is ended through
+  `cCinematicManager_EndCinematic` (world::end_cinematic, outside the frame, as the OK does), with the notices
+  "<host> watches a cinematic: the tribe waits for the OK (or 8 s)" and "the caption closed by itself", as
+  civ.caption (BUG-0187) does for a city capture.

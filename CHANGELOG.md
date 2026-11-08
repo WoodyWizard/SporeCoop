@@ -17,6 +17,9 @@
   1 and 3 seconds apart; if it still fails, the message says how many tries were made (BUG-0755).
 - The co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) while the host
   sends its world to a partner (BUG-0754).
+- Tribe: after the host's tribe conquered or allied a village, the host's game showed the village's caption and every
+  tribe member stood still (a guest's orders did nothing) until the host clicked it away. With guests in the session
+  the caption now closes by itself after 8 s, and everybody is told why the tribe waits (BUG-0531).
 - Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
   (BUG-0752).
 - Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to

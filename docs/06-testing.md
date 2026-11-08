@@ -5319,3 +5319,9 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 * BUG-0754, suite `share_sync` (~1.5 min, creature fixture): `coop.diag sync now` also drops a pending recheck, so a test
   that polls it every second never sees a MISMATCH (it needs 2 checks 3 s apart); ask once and let the interval
   (`coop.diag sync 2`) run. `coop.share due` takes the evolution path (the save first), `coop.share <id>` sends at once.
+* `coop_tribe_conquer_orders.py` (suite `tribe_conquer_orders`, BUG-0531, ~2 min, fixture tribe): the host forms an
+  NPC tribe 45 m off (`coop.tribe npc_tribe 3 45`), a guest's member and one of the host's raid its hut
+  (`coop.tribe order <id> 15 <x y z> 1E4DAAE`), the hut's health is cut to 40 once they hit it (`coop.tribe huthp`),
+  the test presses nothing on the conquest caption, then each raider gets two walk orders: it must walk 3 m in 10 s
+  on both games. SPORE_FIX_OFF=tribe.conquer_caption fails (the caption holds the host's game: `bt=` stands).
+  Pitfall: play bots never press a caption's OK; a check on the members after a conquest measures the caption.
