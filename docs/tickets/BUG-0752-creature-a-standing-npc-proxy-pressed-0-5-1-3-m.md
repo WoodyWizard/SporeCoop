@@ -1,19 +1,19 @@
 ---
 id: BUG-0752
 title: Creature: a standing NPC proxy pressed 0.5-1.3 m into the ground after the host's evolution editor stays there for over a minute (campaign_ct monitor gate proxies)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-08
 source: rel/0.7.11 fa4f5df3 labs 20261108-072547, 20261108-075905-4
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w46-k4-ground
+commits: 6cd28ceb
+tests: campaign_ct
+signature: npc: proxy N (species ...) 0.5-1.3 m under this game's ground ... (driven), made 1-2 s ago at 0.00 m over the ground
+docs: docs/re/creature.md#creature-proxy-ground
 related:
 ---
 
@@ -35,8 +35,15 @@ than 0.25 m under this game's terrain: put onto it, the target never under it), 
 Off: Tribe only (0.7.10).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL: out/lab/20261108-072547 and 20261108-075905-4 of the rel/0.7.11 worktree (fa4f5df3, the code without the fix: the
+  switch's off side) failed the monitor's proxies gate. The same build passed 6 of 6 on lanes 6 / 7 (lab 20261108-081330 / -2):
+  the event is rare there; `coop.npc sink` does not reproduce it (back on the ground in 0.25 s, fix on or off,
+  out/lab/20261108-085102 / -2).
+- PASS: out/lab/20261108-085348 (campaign_ct 3 of 3, lane 7) and -085348-2 (lane 6: #1, #3 OK; #2 failed only the sync-check
+  gate at the host's share save, BUG-0754, its proxies gate clean). The fix acted in both labs: `npc: proxy N ... was
+  0.25-0.30 m under this game's ground, made 0.2-0.5 s ago: put onto it (npc.proxy_ground)` on three games of -085348-2 #2
+  right after the host's editor, and in -085348 #1; no `proxies` violation in 6 runs.
 
 ## History
 - 2026-11-08: opened.
+- 2026-11-08 (fix/w46-k4-ground): cause found (the Tribe BUG-0399 case in Creature), fixed (npc.proxy_ground_creature).
