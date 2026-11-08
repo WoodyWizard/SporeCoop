@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w46-attack-marker
-commits: 1a39ebc8 c9bb2c7a
+commits: 1a39ebc8 c9bb2c7a 42057a50 7b23db25 4aa8185c 227fdf51
 tests: tribe_attack_marker, tribe_attack_marker_rejoin; campaign_tribe (SPORE_DETECTOR=20, the row Tribe:unmatched:ornament)
 signature:
 docs: docs/re/tribe.md#tribe-attack-marker, docs/re/tribe.md#tribe-spot-markers, docs/06-testing.md#testing-attack-marker
@@ -61,6 +61,9 @@ same place and an ornament there. FAIL with `SPORE_FIX_OFF=wsync.tribe_marker`: 
 no record after 20 s, no ornament). PASS: out/lab/20261108-061051, 20261108-061349. `tribe_attack_marker_rejoin`
 (the guest rejoins after the marker is made): PASS out/lab/20261108-062026, also with the switch off (20261108-063825: the host's share save carries the records; only a record made after a guest's load is missed). play_tribe PASS 20261108-062153,
 detect_tribe PASS 20261108-063308.
+On the final build (the row limited to records made since the host's load, 12 at most): PASS 20261108-065354,
+20261108-065504, FAIL with the switch off 20261108-065607, rejoin PASS 20261108-065734, campaign_tribe PASS
+20261108-065857 (the attack's record A0540026 placed on all three guests within 0.6 s).
 The game's own attack in a campaign (campaign_tribe, 4 players, out/lab/20261108-063947): the host's attack start made the record of cell A0540026 at the ticket's place (-177.4 -445.2 -142.6); every guest's game made the same record and marker within 0.7 s, no Tribe ornament detector row.
 Not reproduced through the game's own attack on the fixture (`coop.tribe form` with the pace rule off + `coop.drama
 start 7`: no new record in 151 s, lab 20261108-061613): see the root cause.
