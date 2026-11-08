@@ -1510,29 +1510,77 @@ void* collected_parts()
     return skg::field<void*>(pl, 0x10E8);
 }
 
-// the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
-bool open_own_editor(uint32_t editor_id)
+// BUG-0720 (class BUG-0431): every EditorRequest the mod builds comes from build_editor_request(), the
+// fields the creature stage's own evolution request sets (CreatureGame_HandleMessage 0xD42E50, message
+// 0x4471C60, docs/re/creations.md#creations-editor-request-builder): +0xC the editor, +0x10..+0x18 the
+// species, +0x94 the collected parts (BUG-0368), the flags +0x34/+0x36/+0x37/+0x38/+0x39/+0x3B = 0 and
+// +0x3C/+0x3D = 1 (the constructor 0x5A9140 leaves +0x39, +0x3B at 1 and +0x3C at 0), +0x70 the four
+// consequence traits cPlayer +0x10FC..+0x1108, and +0x90 the evolution tag only for kEvolve. What the game
+// does and the mod leaves out on purpose (the allow-list of the test, coop.editreq diff): +0x90 for the
+// own editor (its price is charged by BUG-0466; with the tag the creature game applies an evolution of the
+// world's species), the message 0x5D02A72 after Submit and the byte 0x1686AF0. Before (the switch off):
+// open_own_editor and coop.vote editor set only +0xC, the key and +0x94.
+static bool g_editor_request_fix = true;
+COOP_FIX("creations.editor_request", "BUG-0720", g_editor_request_fix, "creature: the editor requests the mod builds (a guest's own editor, the test commands) carry the fields of the game's own evolution request (flags, consequence traits)");
+enum class EditKind { Own, Edit, Evolve };
+static void* the_player()
 {
-    uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
-    void* av = game::avatar();
-    if (!ctor || !submit || !av)
-        return false;
-    // the game's operator new (GeneralAllocator::new_: size, name, 0, 0, 0, 0), as at 0xD42F1E (GOG 2016)
-    void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
+    void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
+    void* pl = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
+    return pl && skg::readable((char*)pl + 0x10E8, 0x24) ? pl : nullptr;
+}
+// a new request (one reference held by the caller, as the game's new + ctor give it), or null
+static void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k)
+{
+    uintptr_t ctor = H->sym("EditorRequest_ctor"), alloc = H->sym("GeneralAllocator::new_");
+    if (!ctor || !alloc)
+        return nullptr;
+    // the game's operator new (GeneralAllocator::new_: size, name, 0, 0, 0, 0), as at 0xD42F1E
+    void* req = skg::cdecl_call<void*>(alloc, (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    if (!req)
+        return nullptr;
     skg::thiscall<void*>(ctor, req);
     skg::field<uint32_t>(req, 0xC) = editor_id ? editor_id : 0x465C50BAu; // CreatureEditorExtraLarge
-    game::Key k = game::species_key(av);
     skg::field<uint32_t>(req, 0x10) = k.instance;
     skg::field<uint32_t>(req, 0x14) = k.type;
     skg::field<uint32_t>(req, 0x18) = k.group;
-    if (g_own_editor_items_fix && game::mode_id() == modes::kCreature) {
+    bool creature = game::mode_id() == modes::kCreature;
+    uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign"), push = H->sym("SporeCoop::VectorU32_PushBack");
+    void* pl = the_player();
+    if (creature && (kind == EditKind::Evolve || (kind == EditKind::Own && g_own_editor_items_fix))) {
         // the native request's intrusive pointer assignment (AddRef the new, Release the old)
-        uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign");
         if (void* items = collected_parts(); items && assign) {
             skg::thiscall<void*>(assign, (char*)req + 0x94, items);
-            g_own_editor_items_set++;
+            if (kind == EditKind::Own)
+                g_own_editor_items_set++;
         }
     }
+    if (kind == EditKind::Evolve)
+        skg::field<uint32_t>(req, 0x90) = 0x64AA168u;
+    if (creature && (g_editor_request_fix || kind == EditKind::Evolve)) {
+        for (int o : {0x34, 0x36, 0x37, 0x38, 0x39, 0x3B})
+            skg::field<uint8_t>(req, o) = 0;
+        skg::field<uint8_t>(req, 0x3C) = 1;
+        skg::field<uint8_t>(req, 0x3D) = 1;
+        for (int o = 0x10FC; pl && push && o <= 0x1108; o += 4) {
+            uint32_t v = skg::field<uint32_t>(pl, o);
+            skg::thiscall<void*>(push, (char*)req + 0x70, &v);
+        }
+    }
+    return req;
+}
+
+// the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
+bool open_own_editor(uint32_t editor_id)
+{
+    uintptr_t submit = H->sym("Editors::EditorRequest::Submit");
+    void* av = game::avatar();
+    if (!submit || !av)
+        return false;
+    void* req = build_editor_request(EditKind::Own, editor_id, game::species_key(av));
+    if (!req)
+        return false;
     g_vote_bypass = true;
     g_own_editor = true; // the editor loads the creature after Submit, on a later frame
     g_own_editor_charge_due = true; // BUG-0466: its result charges the price
@@ -1813,8 +1861,10 @@ COOP_FIX("creations.own_editor_dna", "BUG-0466", g_own_editor_dna_fix, "creature
 static unsigned g_own_editor_charged = 0;
 typedef bool(SK_THISCALL* CreatureGameMsg_t)(void*, uint32_t, void*);
 CreatureGameMsg_t o_CreatureGameMsg;
+static void* g_creature_game; // BUG-0720 tests: the creature game whose handler builds the evolution request
 bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
 {
+    g_creature_game = self;
     if (id == 0x30C11C7u && g_own_editor_charge_due && data && skg::readable(data, 0x48)) {
         uint32_t tag = skg::field<uint32_t>(data, 0xC);
         int left = skg::field<int32_t>(data, 0x34);
@@ -1841,8 +1891,34 @@ static bool tribe_civ_editor(uint32_t id)
 {
     return id == 0x99E92F05u || id == 0xF670AA43u || id == 0x9AD7D4AAu || id == 0x7CB21BADu;
 }
+// BUG-0720 tests (coop.editreq): a request captured at Submit instead of being submitted
+struct ReqImage {
+    bool have = false;
+    uint8_t bytes[0x9C] = {};
+    std::vector<uint32_t> vec70; // the +0x70 vector's contents
+};
+static bool g_editreq_capture;
+static ReqImage g_editreq_game;
+static ReqImage req_image(void* req)
+{
+    ReqImage im;
+    if (!req || !skg::readable(req, 0x9C))
+        return im;
+    im.have = true;
+    memcpy(im.bytes, req, 0x9C);
+    uint32_t* b = skg::field<uint32_t*>(req, 0x70);
+    uint32_t* e = skg::field<uint32_t*>(req, 0x74);
+    for (uint32_t* q = b; b && e && e - b <= 64 && q < e; q++)
+        im.vec70.push_back(*q);
+    return im;
+}
 bool SK_CDECL h_Submit(void* req)
 {
+    if (g_editreq_capture) { // tests: the game's own request, kept and not submitted
+        g_editreq_game = req_image(req);
+        g_editreq_capture = false;
+        return false;
+    }
     uint32_t mode = game::mode_id();
     if (req && skg::readable(req, 0x10))
         g_last_editor_req = skg::field<uint32_t>(req, 0xC);
@@ -6265,6 +6341,65 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME); // find shows the game's goal card
+    H->command_add(M, "coop.editreq", "coop.editreq diff - tests (BUG-0720): the creature stage's own evolution request (its handler run once, nothing submitted) against the ones the mod builds",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       void* av = game::avatar();
+                       uintptr_t flag = H->sym("SporeCoop::CreatureEvolutionPending_flag");
+                       if (argc < 2 || strcmp(argv[1], "diff") || game::mode_id() != modes::kCreature || !av || !g_creature_game ||
+                           !o_CreatureGameMsg || !flag) {
+                           SAY("not possible here (creature=%d creature_game=%p)\n", (int)(game::mode_id() == modes::kCreature), g_creature_game);
+                           return 1;
+                       }
+                       // the game's builder: message 0x4471C60 with +0xDA set (the avatar met its mate), Submit captured
+                       uint8_t& da = skg::field<uint8_t>(g_creature_game, 0xDA);
+                       uint8_t da0 = da, f0 = *(uint8_t*)flag;
+                       da = 1;
+                       g_editreq_game = {};
+                       g_editreq_capture = true;
+                       o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
+                       g_editreq_capture = false;
+                       da = da0;
+                       *(uint8_t*)flag = f0; // its "evolution pending" byte back (nothing was submitted)
+                       if (!g_editreq_game.have) {
+                           SAY("the game built no request\n");
+                           return 1;
+                       }
+                       // fields that differ by nature: vtables +0/+4, refcount +8, the strings' pointers +0x40..+0x5C,
+                       // the vector's pointers and allocator +0x70..+0x83 (its contents are compared), and the bytes
+                       // the constructor never writes (padding after its byte fields: +0x21..+0x23, +0x3E/+0x3F, +0x67;
+                       // the allocator's leftovers, seen different in the lab 20261108-035619)
+                       auto skip = [](int o) {
+                           return o < 0xC || (o >= 0x21 && o <= 0x23) || o == 0x3E || o == 0x3F || (o >= 0x40 && o < 0x60) || o == 0x67 ||
+                                  (o >= 0x70 && o < 0x84);
+                       };
+                       for (EditKind kind : {EditKind::Own, EditKind::Evolve}) {
+                           void* req = build_editor_request(kind, 0, game::species_key(av));
+                           ReqImage ours = req_image(req);
+                           if (req) // the caller's reference: freed
+                               skg::thiscall<void>(skg::field<uintptr_t>(skg::field<void*>(req, 0), 8), req);
+                           std::string diff, allowed;
+                           char b[64];
+                           for (int o = 0; o < 0x9C && ours.have; o++) {
+                               if (skip(o) || ours.bytes[o] == g_editreq_game.bytes[o])
+                                   continue;
+                               int field = o & ~3;
+                               bool allow = kind == EditKind::Own && field == 0x90; // the own editor has no evolution tag (BUG-0466)
+                               snprintf(b, sizeof b, " +0x%02X(%02X/%02X)", o, ours.bytes[o], g_editreq_game.bytes[o]);
+                               (allow ? allowed : diff) += b;
+                           }
+                           if (ours.vec70 != g_editreq_game.vec70) {
+                               snprintf(b, sizeof b, " vec70(%u/%u)", (unsigned)ours.vec70.size(), (unsigned)g_editreq_game.vec70.size());
+                               diff += b;
+                           }
+                           SAY("editreq %s: diff=%s allowed=%s (vec70 %u, items %08X/%08X)\n", kind == EditKind::Own ? "own" : "evolve",
+                               diff.empty() ? " none" : diff.c_str(), allowed.empty() ? " none" : allowed.c_str(),
+                               (unsigned)g_editreq_game.vec70.size(), *(uint32_t*)(ours.bytes + 0x94), *(uint32_t*)(g_editreq_game.bytes + 0x94));
+                       }
+                       SAY("editreq fix=%d; the game's: post 0x5D02A72 and byte 0x1686AF0 (allowed: the evolution flow's, not the own editor's)\n",
+                           (int)g_editor_request_fix);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
@@ -6279,14 +6414,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                SAY("not possible here");
                                return 1;
                            }
-                           void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
-                           skg::thiscall<void*>(ctor, req);
-                           skg::field<uint32_t>(req, 0xC) = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0x465C50BAu;
-                           game::Key k = game::species_key(av);
-                           skg::field<uint32_t>(req, 0x10) = k.instance;
-                           skg::field<uint32_t>(req, 0x14) = k.type;
-                           skg::field<uint32_t>(req, 0x18) = k.group;
-                           bool r = skg::cdecl_call<bool>(submit, req);
+                           void* req = build_editor_request(EditKind::Edit, argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0,
+                                                            game::species_key(av)); // BUG-0720
+                           bool r = req && skg::cdecl_call<bool>(submit, req);
                            SAY("editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "evolve") && game::mode_id() == modes::kCreature) {
                            // tests (BUG-0457): the creature stage's own evolution request, as its message handler
@@ -6303,23 +6433,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                SAY("not possible here");
                                return 1;
                            }
-                           void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
-                           skg::thiscall<void*>(ctor, req);
-                           skg::field<uint32_t>(req, 0xC) = 0x465C50BAu;
-                           game::Key k = game::species_key(av);
-                           skg::field<uint32_t>(req, 0x10) = k.instance;
-                           skg::field<uint32_t>(req, 0x14) = k.type;
-                           skg::field<uint32_t>(req, 0x18) = k.group;
-                           skg::field<uint32_t>(req, 0x90) = 0x64AA168u;
-                           if (void* items = skg::field<void*>(pl, 0x10E8))
-                               skg::thiscall<void*>(assign, (char*)req + 0x94, items);
-                           for (int o : {0x34, 0x36, 0x37, 0x38, 0x39, 0x3B})
-                               skg::field<uint8_t>(req, o) = 0;
-                           skg::field<uint8_t>(req, 0x3C) = 1;
-                           skg::field<uint8_t>(req, 0x3D) = 1;
-                           for (int o = 0x10FC; o <= 0x1108; o += 4) {
-                               uint32_t v = skg::field<uint32_t>(pl, o);
-                               skg::thiscall<void*>(push, (char*)req + 0x70, &v);
+                           void* req = build_editor_request(EditKind::Evolve, 0, game::species_key(av)); // BUG-0720: the shared builder
+                           if (!req) {
+                               SAY("not possible here");
+                               return 1;
                            }
                            bool r = skg::cdecl_call<bool>(submit, req);
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069

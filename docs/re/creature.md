@@ -3620,3 +3620,29 @@ should get the player rule), **keep** (the world's species is right on every gam
   type 0x33) sends K_FLOCK; the host starts the event with the guest's puppet as cGameNounManager +0x54 (start and
   update), so the herd is made 70 m from the guest's creature and joins the party's pack (the host's: one posse per
   world, which follows the host's creature afterwards; the guests show its members as NF_PACK allies).
+## What a guest's game shows of its own hit on an animal (2026-11-08, fix/w46-k2b-content-a)
+<a id="creature-guest-hit-feedback"></a>
+
+BUG-0717 (class BUG-0428). Lane 6, `tools/tests/coop_npc_hit_feedback.py` (suite `npc_hit_feedback`).
+
+* ✔ (runtime, lab 20261108-040716) A guest's hit on a proxy (the game's TakeDamage call with the guest's avatar as the
+  attacker, filtered by npc::damage_filter and sent to the host): the proxy's health in the guest's game drops 0.07 to
+  0.28 s later (the host's NPC state), the proxy plays the host NPC's animation in most samples of the next 4 s (the
+  behaviour animations relay, #creature-bt-anims), and `coop.hp dmglog` shows the guest's TakeDamage `filtered` (no second
+  health change, no second throw, no stimulus on a proxy without AI). Nothing of TakeDamage's own work is missing on
+  the guest: it is the host's, and its results arrive (health, death, throw by position, the reaction animation).
+
+## Every partner's puppet carries an archetype tuning (2026-11-08, fix/w46-k2b-content-a)
+<a id="creature-puppet-tuning"></a>
+
+BUG-0722 (class BUG-0431). Lane 6, `tools/tests/coop_puppet_tuning.py` (suite `puppet_tuning`, four players).
+
+* ✔ (runtime, lab 20261108-040137) With four players (Bob with his own profile, Carol and Dave of the host's world), the
+  puppet of Bob's own species (7CB508F6, a herd without an archetype) had **+0xE84 = 0 on the three other games** for
+  the whole run; the other puppets and every proxy had one (`coop.npc untuned`). Bob's and Carol's hunt and their
+  social acts with it ran without a fault: the readers named in BUG-0431 (0xC0C300's callers, 0xC115E0) were not
+  reached with that puppet in this run, but the state was there.
+* Fix `npc.puppet_tuning` (npc.cpp `puppet_tuning_tick`, five times a second in the Creature stage, both roles): a
+  puppet without a tuning gets the avatar's (the player archetype: Create's choice for a creature of the player's
+  herd) through `SporeCoop::cCreatureBase_SetTuning`. `coop.npc` prints `puppets_set=` on the `npc tuning:` line. The
+  guards for SelectUI, the stage event handler and the AI tick's loan stay (a proxy or a creature of a save).

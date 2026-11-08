@@ -20,6 +20,7 @@ bool leave_walk_tick(void* citizen);
 bool leave_walk_armed(); // the stand-in is armed (the frame loop asks before walking the members)
 // tests (BUG-0449): the next physics update gets a live body of kind 0 that no owner refers to and without an owner
 std::string arm_physics_orphan();
+std::string pools_report(); // tests (BUG-0719): the game's fixed pools' fill and the world's objects
 // tests (BUG-0453): the next NPC whose attack animation plays has its target cleared (SetTarget(null), as the
 // game does to every NPC aimed at a creature it destroys) right before its attack node ticks
 std::string arm_attack_cut();

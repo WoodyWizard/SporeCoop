@@ -562,6 +562,12 @@ for verification and its limits.
   correction above shows unlocked, moving cells after leave, but does not identify the writer.
 - `DamageCell` arg3 (float*, negated "dir") and arg5 meaning; damage type numbers beyond 3 (periodic
   poison/electric), 4 (bite), 5 (0xE7B280), 6 (eat chunk).
+  CORRECTION (2026-11-08, fix/w46-k2b-content-a): the electric part does not go through DamageCell at all: its
+  chain attack 0xE71520 writes the hp itself and plays animation 0xE (DamageCell's for type 1); poison is a cloud
+  cell the poison step 0xE76880 makes (#cell-electric-attack). The "AoE damage 0xE71520 asks IsDamageable first"
+  of section 9 can only be its target search 0xE69000 (? not read), never DamageCell.
+- `+0x110` (2026-11-08): the game sets it on the poison clouds the avatar makes (0xE76660); DamageCell counts a
+  hit of an attacker with it as the player's (ring, byPlayer). Used by `cell.own_products` (#cell-electric-attack).
 - Effects of `+0x110` beyond kill credit; meaning of `G+0x5169`, state `G+0x5158`.
 - Whether RandomCreature models must be preloaded on the guest (cCellGFX::PreloadCreature 0xE64990)
   before CreateCellObject with a forced model key.
@@ -1839,3 +1845,117 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
 * ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
   off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
   20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.
+
+## The broadphase merge above 4096 endpoints: a heap queue (2026-11-08, fix/w46-k2b-content-a)
+<a id="cell-sap-merge"></a>
+
+BUG-0718 (class BUG-0432). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`), lane 6
+(`tools/tests/coop_cell_merge.py`, suite `cell_merge`). Completes #cell-broadphase-cap.
+
+* ✔ (decompile) `SweepPrune::MergeAxis` 0xBBAF10 cdecl `int(SAP* s, Endpoint* sorted, int count, Endpoint* added,
+  size_t nAdded, int axis)`, returns the new count in EAX (0xBBB104: the output index): `qsort(added, nAdded, 8,
+  0xBBAE50)` (the comparator: -1 when a.value < b.value, else 1: never "equal"), then an in-place merge into `sorted`:
+  the write position runs behind the read position; an old entry that the write would overwrite is parked in a
+  linear queue on the stack (`local_8000`, 0x8000 bytes = 4096 endpoints; push count local_8010, pop count
+  local_8004), entries of type -2 (removed) are dropped on both inputs, and every endpoint written to a new position
+  gets its object record's index (`objs + 16 * id`, +8 / +0xA the min per axis, +0xC / +0xE the max) written back
+  (bit 15, "pending", cleared that way). Ties: an added entry goes before a queued old one of the same value, after
+  an old one read in place. Only old entries are ever parked, so `count` <= 4096 cannot overrun the queue.
+* ✔ Only caller: `SweepPrune::UpdatePairs` 0xBBB450 (+0x31, once per axis); its only caller the thunk 0xBBBF60 from
+  `Simulator::Cell::SimUpdate`; the constructor 0xBBB570 and AddObject 0xBBB290 are reached only through their
+  thunks 0xBBBF70 / 0xBBBF40 (cell code). The sweep-and-prune is the Cell stage's only one.
+* ✔ (runtime, lab 20261108-031215, budget off) four players, the host's pool at 4096 cells: the first fault is
+  `0xC0000005 at 0x00BBB07B SweepPrune::MergeAxis+0x16B` (EAX = 0x10D2, the merge index), then 2393 faults and a
+  host whose cell no longer moves: BUG-0295's signature, reached by any count over ~2048 that the soft budgets do
+  not see.
+* The hard guard `cell.sap_merge` (cellsync.cpp `merge_axis`, called from `h_UpdatePairs` when the sorted array holds
+  over 4096 entries): the same merge with the queue on the heap (old entries filtered, the added ones stable-sorted by
+  value, merged with an equal value after the old entry, every written endpoint's index written to its record), at
+  most 2 x the object capacity entries (the array's size; `merge_clipped=` counts what would not fit). At or below
+  4096 entries the game's MergeAxis runs as before. `coop.pool sap` prints `merges_ours= merge_peak= merge_clipped=
+  merge_fix=`. `coop.pool budget <pop> <screen>` (tests) moves the host's two population caps of `cell.budget`.
+* ✔ (runtime, lab 20261108-031701, budget off, the fix on) with the pool at its 4096 slots the merge held (50 merges
+  of ours, peak 8192 entries, no fault at 0xBBB07B), but the full pool broke the game elsewhere: faults at
+  0x00E86C1C / 0x00E86874 (vector writes through a null result in 0xE86B60 / 0xE86830) and in the model data builder
+  0xE83E30 (+0x98), the host's avatar gone ("no own avatar here"), `merge_clipped=4`. The same faults followed the
+  MergeAxis fault in the budget-off run without the fix. So the cell object pool (4096, `G+0x1C+0x18`) is a second
+  fixed pool; it is reached only with `cell.budget` off (the budget keeps the host near 1300-1800,
+  #cell-broadphase-cap); the merge guard is tested with the caps raised instead (`cell_merge`, over 2300 cells).
+
+## A guest's attacks through the game's own functions on the host (2026-11-08, fix/w46-k2b-content-a)
+<a id="cell-guest-hit-game"></a>
+
+BUG-0714 (class BUG-0428). GOG 2024, Ghidra; lane 6 (`tools/tests/coop_cell_guest_hit.py`, suite `cell_guest_hit`).
+Extends #cell-damage-gate and #cell-guest-bite-ring.
+
+* ✔ (decompile) **Bite** 0xE7B0A0 cdecl `bool(u32 attacker, u32 victim, float* at, u32* dir, int, float dt)`: both by
+  `GetIfNotDeleted`, `+0x178 = 1` on both; GetScaleDifferenceWithPlayer(victim) < 3: when IsDamageable(victim) and
+  `GetDamageAmount(attacker, victim) < hp` DamageCell(victim, attacker, -dir, **4**, x, dt), **else BreakOrSwallow**
+  (also for a cell IsDamageable refuses: meat, plants are swallowed); a much smaller victim (>= 3): DamageCell and
+  0xE76AF0(victim, at, ...). No ShouldNotAttack, no +0x111 check on the lethal branch: **an invulnerable (+0x111)
+  cell dies of a lethal bite in the game too**; BreakOrSwallow itself refuses only `+0x17C` and the states 7 / 8 / 9
+  (+0x18C).
+* ✔ (decompile) DamageCell 0xE7A7C0 after the gate: AlertSpeciesOfAttack, `GetDamageAmount(attacker, victim)`,
+  the ring when the avatar is either side or `attacker+0x110` is set, hp clamped at 0, 0xE57910 (ESI = victim) and
+  0xE576F0(attacker index); hp 0: KillCell(victim, attacker, attacker res, byPlayer = attacker is the avatar or
+  `+0x110`, type, dt); else PlayAnimation (0xE type 1, 0xF type 3, 0x11 type 5, else **0x10**) and event 2 with its
+  length (0xE51EC0, the after-hurt reaction; KillIfDead 0xE7A770 at once for a zero length) and 0xE59010.
+* ✔ (runtime) Before the fix a guest's bite on the host's creature changed its hp in the host's game but its
+  animation (+0x1B0) never became 0x10 (3 of 3 bites, lab 20261108-034206), and a lethal bite of a knocked-out guest
+  (sent anyway: `coop.pool sendact c<key> break`) broke it.
+* Fix `cell.guest_hit_game` (cellsync.cpp `guest_attack`): the host calls DamageCell for a MSG_CELL_HIT (what the
+  guest's DamageCell decided: a bite's non-lethal part, spikes, electric, poison) and Bite for the lethal bite
+  (ACT_BREAK), with the guest's puppet as the attacker (a first version sent type-4 hits through Bite too: Bite breaks
+  a cell IsDamageable refuses, so a guest's hit on a rock or meat broke it, cell_guest_bite lab 20261108-042210); `GetDamageAmount` (0xE58980, hooked now:
+  `h_GetDamage`) returns the guest's damage for exactly that attacker / victim pair (the puppet's own NPC table value
+  is not the guest's); a KillCell inside counts as the player's kill (byPlayer). The lethal bite is replayed with
+  the damage raised to the victim's hp, so Bite breaks it as the guest's game did, through the game's gates. A
+  mouth's chunk (type 6) keeps the old path (EatChunk itself writes the hp). The knockout gate of BUG-0509 covers
+  ACT_BREAK / ACT_KILL too. Seen after it: the hurt animation 0x10 in the host's game after each guest bite, the
+  knocked-out guest's bite refused, a later lethal bite breaks it (lab 20261108-034328).
+
+## A guest's electric part and poison clouds (2026-11-08, fix/w46-k2b-content-a)
+<a id="cell-electric-attack"></a>
+
+BUG-0715, BUG-0716 (class BUG-0428). GOG 2024, Ghidra; lane 6 (`tools/tests/coop_cell_parts_attack.py`, suites
+`cell_electric`, `cell_poison`). Answers the "? damage type numbers" of section 6 for electric.
+
+* ✔ (decompile) The cell step's timers 0xE76A80 (EAX = cell, stack dt) run the electric step 0xE71980
+  (`SporeCoop::Cell_ElectricStep`, ESI = cell) and then the poison step 0xE76880 (`SporeCoop::Cell_PoisonStep`).
+  Electric: model data (GetCellModelData 0xE679E0 of +0xFC) +0x1260 the period (-1: no electric part), +0x125C the
+  cooldown after a near target, +0x1264 the charge time, +0x1268 the range (avatar / AI type 0x1001; else the AI block
+  +0x54 / +0x58), +0x126C the most targets; the part records at model data +8 (count +0, 0x48 bytes each, +0 the part
+  type, **6 = electric**). 0xE69190 finds the nearest target near any type-6 part; then
+  **`SporeCoop::Cell_ElectricAttack` 0xE71520** cdecl `void(cell* attacker, int, u32* firstTarget)` chains (0xE693F0,
+  up to 32) and for each target plays animation 0xE (0x3C for one species), schedules event 2, shows the ring when
+  the avatar is either side and writes **hp -= GetDamageAmount(attacker, target)** itself: no DamageCell, no message.
+* ✔ (decompile) Poison: 0xE68630 (GFX, model key, alive, state not 0x2B / 0x2C, scale difference > 1, model data
+  +0x1270 != 0) sets +0x1AC; with +0x374 grown past 1 (by (2 x speed + 1) x dt) it makes model data +0x1274 clouds,
+  one per part position (0xE68000), each a new cell (0xE76480, collision group -5, resource 0xE4CC90(3) for the
+  avatar, (4) for an NPC) with **+0x110 = 1 when the maker is the avatar**, and an event 0x1A of 3 / 5 / 7 s.
+* ✔ (runtime) On a guest an avatar with an electric part (`coop.pool borrow electric graft`: the fixture's level-1
+  pool has no such model, so the avatar's own model data gets a type-6 part and the timings) zapped 12 times next to
+  a host creature with hp 60: the mirrors lost hp locally, the host's creature kept 60 (lab 20261108-035148).
+* ✔ (runtime) A guest's poison cloud never reached a host creature: the guest's own visibility step 0xE78C00
+  destroys it in the frame it is made (return address 0xE78C37, `SporeCoop::Cell_PoisonCull_ret`: a poison cell
+  outside the active area, and a guest has no active tiles of its own; 101 of 101 clouds, lab 20261108-042625).
+  Kept alive by the mod for a test, the clouds still met no mirror in 2 minutes (no collision pair, no DamageCell
+  with a cloud as the attacker; lab 20261108-043126): ? whether the passive mirrors (+0x16C) take part in such pairs.
+  The host's picture of the guest (its puppet, no AI) ran no poison step either, so a guest's poison part did
+  nothing anywhere.
+* Fixes: `cell.electric` (h_Zap on Cell_ElectricAttack, guest, the avatar attacking): the mirrors' hp before the
+  chain is put back after it and each loss goes to the host as MSG_CELL_HIT type 1 (DamageCell's animation for type
+  1 is the chain's 0xE), applied there through DamageCell (#cell-guest-hit-game); a knocked-out avatar zaps nobody.
+  `cell.puppet_poison` (cellsync.cpp `puppet_poison`, host, once per cell step from the world scale step's hook):
+  the game's own poison step for every partner's puppet (ESI = the puppet, the step's dt) with the puppet lent the
+  avatar index for the call (as the NoAttack hook does: the cloud gets the avatar's resource and +0x110), so the
+  guest's clouds are made by the host's game from the partner's creation, hurt the host's creatures there and come
+  to the guests as mirrors. `coop.pool` (guest) prints `zaps= zap_hits= foreign_hits=<mirror>/<puppet>/<other>`
+  ? The poison's damage: with the poison values written into a model's data (+0x1270 = 1.0, +0x1274 = 1, +0x1278 = part
+  0) the host's game made 70 clouds of the guest's puppet and 151 of its own avatar (sharing the model) next to a
+  creature with hp 57 in 90 s, and it lost nothing (lab 20261108-044202): what else a real poison part brings (the
+  cloud resource's damage, the part record's type) is not read. Without +0x1278 (an index list of the parts the
+  clouds start at) the step made no cloud at all.
+  (a mirror's other attackers: another mirror, whose pair the host simulates; a partner's puppet, whose owner sends
+  its own hits); `coop.pool borrow status [x p<id>]` (tests) the poison step's state, `clouds_made=` (the avatar's),
+  `puppet_clouds=` (host: the partners'), `puppet_poison_steps=` and who destroyed the avatar's clouds.
