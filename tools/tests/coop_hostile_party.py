@@ -7,11 +7,11 @@ A guest's own creature is another species in the host's game: its puppet was nev
 past the guest (the npc.partners AI swap covers the avatar-oriented nodes, not this one).
 
 1. Two games on the creature fixture; the guest plays its own creature.
-2. The guest hits the nearest animal three times (`coop.npc hit`: its own hit, applied in the host's game): the
-   species' relation becomes "attacked" (2). The host's game lists the adult animals hostile to the guest's creature
+2. The host hits the nearest animal three times (`coop.npc hosthit`): the species' relation to the players becomes
+   "attacked" (2; the guest's game follows the host's table). The host's game lists the adult animals hostile to the guest's creature
    (`coop.hp hostiles 1`: the game's own GetRelationship(animal, puppet)).
 3. For 40 s the host's game is read: which animals target the guest's puppet (+0xE7C, the creature or its combatant),
-   without any command telling them to; the animal the guest hit is left out (it fights back by itself).
+   without any command telling them to; the animal that was hit is left out (it fights back by itself).
 
 PASS: another animal of the hostile species targets the guest's creature, and the node's party answer picked it.
 FAIL (SPORE_FIX_OFF=creature.hostile_party): the node never picks the guest.
@@ -54,12 +54,12 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     _, nid, (ptr, species, _, _) = ns[0]
-    for _ in range(3):
-        print('  guest:', guest.call(f'coop.npc hit {nid} 0.5')['out'].strip(), flush=True)
+    for _ in range(3):  # (a guest's hit lands as the puppet's: the record is the host avatar's attack, BUG-0462 table)
+        print('  host:', host.call(f'coop.npc hosthit {nid} 0.5')['out'].strip(), flush=True)
         time.sleep(1)
     (n, tg, pk), rows, who = hostiles(host)
     print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
-    print(f'  host: the guest hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
+    print(f'  host: hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
     ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature after its attack')
     best, others = (0, 0, 0), []
     t0 = time.time()
