@@ -1839,3 +1839,23 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
 * ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
   off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
   20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.
+
+## The switch to the Creature stage, and its vote (2026-11-08, fix/w46-e1-features)
+<a id="cell-switch-to-creature"></a>
+
+BUG-0315. GOG 2024, Ghidra (out/ghidra-2024) and lane 4 (`tools/tests/coop_switch_vote.py`).
+
+* ✔ (Ghidra) `SporeCoop::CellStage_ToCreature` 0xE62440, cdecl void(void): `cCinematicManager::Get(0)` + 0xAD7DC0, then
+  0xE61140 (CreatureStart_FromCell 0xE83910 with `cCellGame+0x5190`+0x10, the food bonus and `+0x5164`; then 0xE828C0 =
+  `cGameModeManager::Get` -> 0xB1E350 thiscall(mgr, 0x1654C01) ret 4, the mode switch; `cCellGame+0x5168` = 1), the
+  cell effect 0xA1B0293D, byte `[0x16B3C0C]+0x936` = 1. 0xB1E350 does nothing for the active mode, else sets the
+  state manager's switch and `mgr+0x28` = 1 (the switch is pending).
+* ✔ Callers: `App::cCellModeStrategy::HandleMessage` 0xE62700 on message 0x47C1D19 (registered in its Initialize at
+  0xE81E79) and the cell event dispatcher 0xE7E130 case 0x1F (0xE7E369; the event object is deleted after it). The
+  debug key handler 0xE81120 calls 0xE61140 directly (0xE814E6).
+* ✔ (runtime, lab 20261108-035847) History's check reaches it through the event path: the return address was
+  0x00E7E36E (case 0x1F), no cinematic playing. Held (not called) the game stays in Cell with History closed and plays
+  on; called 26 s later from outside the frame (the vote's action, vote_action_tick) the switch ran as the game's own:
+  both games reached Creature and the first Creature editor (FD4902BD) was requested 1.3 s later.
+* `core.switch_vote` (coop.cpp h_CellToCreature): the host's call in a session waits for an action vote; a guest's own
+  call in the host's Cell world is its I'm ready (or nothing). `coop.vote` prints `switch votes`.

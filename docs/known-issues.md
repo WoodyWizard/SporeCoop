@@ -257,6 +257,7 @@ anchor so other docs can link to it:
 * The Cell -> Creature switch itself has no vote (9.3 wants one): the host's click on the history's
   check starts the Creature stage at once and the guests follow; only the first creature editor waits
   for the vote.
+  Done (2026-11-08, fix/w46-e1-features, BUG-0315): the check starts a vote now (`core.switch_vote`).
 * A guest without own creations gets its own editor on the host's creature as it was before the
   host's editor (the legless one at the start of the Creature stage). If it saves an edit, that
   edited creature becomes its own while the host plays the legged one: by design (everybody evolves

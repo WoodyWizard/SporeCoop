@@ -1,20 +1,21 @@
 ---
 id: BUG-0516
 title: the evolution vote: the host's editor could open at once now that no reload follows it (relax the guest's ready, design)
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-03
 source: fix/w40-no-reload (BUG-0508 question)
 role: all
 versions: 
-fixed_in:
-branch: fix/w40-no-reload
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-e1-features
+commits: 3365fc83
+tests: editor_now (coop_editor_now.py)
 signature:
-docs: docs/re/creations.md#creations-evolve-in-place
-related: BUG-0508, BUG-0205, BUG-0318
+docs: docs/re/creations.md#creations-evolve-in-place, docs/09-coop-design.md, docs/06-testing.md#testing-switch-vote-editor-now
+related: BUG-0508, BUG-0205, BUG-0318, BUG-0315
+switch: core.editor_now
 ---
 
 ## Report
@@ -30,11 +31,23 @@ swap), the own editor scheduling (own_editor_tick) and the DNA of the guest's ed
 clearly safe without its own tests.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`core.editor_now` (coop.cpp h_Submit, MSG_VOTE flags): the host's request in the Creature stage with the evolution tag
+(+0x90 0x64AA168, the mating call's request) goes to the game at once (only the existing save / new-body holds), no
+vote. Every guest gets an offer (MSG_VOTE with active 0 and flags 1: older guests ignore it): a notice and the co-op
+window, whose ready button reads "Evolve now" for 90 s; the click sets the guest's own editor due, and
+own_editor_tick opens it as after a vote (settled stage, busy gate, BUG-0318 new body, BUG-0466 DNA charge; all are
+checked when it opens, not at the vote's moment). A guest that does not take it plays on: the host in its editor
+counts as away (BUG-0205, its NPCs simulated by the guest's game), and the guest can evolve at its nest later. The
+first Creature editor, Creature -> Tribe, the Cell stage and the design stages keep the vote. Off: the vote as in
+0.7.10. Kept behind the switch so it can become a session setting (docs/plan-0.7.12.md F3).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`editor_now` (coop_editor_now.py, lane 5): the host's editor 1 s after `coop.vote evolve`, the guest's window shows
+Evolve now while its game stays in Creature, the host is done first, the guest's click opens its own editor while the
+host plays, the guest leaves it.
+* PASS: out/lab/20261108-035852.
+* FAIL with `SPORE_FIX_OFF=core.editor_now`: out/lab/20261108-040059 (the host still in Creature 16 s after the
+  request, the guest's window showed I'm ready).
 
 ## Decision (2026-11-05, fix/w44-coop-window, U1 of 0.7.8)
 Read again (coop.cpp start_vote / finish_vote / submit_tick / own_editor_tick, docs/re/creations.md#creations-evolve-in-place):
@@ -55,3 +68,4 @@ Until then "Start now" (the host's button during a vote; BUG-0597 keeps it enabl
 ## History
 - 2026-11-03: opened.
 - 2026-11-05 (fix/w44-coop-window): read again; not small and safe: what it takes written under Decision.
+- 2026-11-08 (fix/w46-e1-features, E1 of 0.7.11): implemented as decided (the offer through the ready button), core.editor_now.

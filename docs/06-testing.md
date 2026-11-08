@@ -5024,3 +5024,17 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
   (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
   record of its own earlier session passes `start(..., keep_holds=True)`.
+
+## The switch vote and the host's editor at once (2026-11-08, fix/w46-e1-features)
+<a id="testing-switch-vote-editor-now"></a>
+
+* `switch_vote` (`coop_switch_vote.py`, cell fixture, ~3 min): the end of Cell the players' way; after the host's
+  check both games stay in Cell and the guest's window shows I'm ready, the guest's own check keeps it there, its I'm
+  ready click moves both to Creature, the first Creature editor opens on both without another click (BUG-0315).
+  `SPORE_FIX_OFF=core.switch_vote` fails (the host enters Creature at once).
+* `editor_now` (`coop_editor_now.py`, creature fixture, ~1.5 min): `coop.vote evolve`, the host's editor within 15 s,
+  the guest's window offers "Evolve now" while its game stays in Creature, the host is done first, the guest's click
+  opens its own editor later (BUG-0516). `SPORE_FIX_OFF=core.editor_now` fails (the host's editor waits for the vote).
+* Tests that drive the Creature evolution vote with `coop.vote evolve` and the guest's `ready` click (editor_sync_*,
+  evo_bar, evolve_in_place_creature) work with both sides: the same `ready` widget reads "Evolve now" with the switch
+  on. The `coop.vote` output has `switch votes ...` and `evolve offers sent / got / taken / expired`.
