@@ -316,12 +316,40 @@ COOP_FIX("creature.hostile_party", "BUG-0734", g_hostile_party, "creature: anima
 typedef float(__cdecl* HostileCond_t)(void*, void*, void*, void*, void*, void*, void*, void*);
 static HostileCond_t o_HostileCond;
 static uint32_t g_hostile_party_picks;
+// a puppet of the partner's own creature has no archetype tuning (+0xE84): GetRelationship's diet rule then read a
+// null (IsHerbivore 0xC0B8E8, data 0x608, lab 20261108-034334). While the game is asked about the party, each such
+// puppet borrows the avatar's tuning, as in the NPC AI swap (game.cpp h_NPCTickAI).
+struct Lent { void* p[8]; int n = 0; };
+static Lent lend_tuning()
+{
+    Lent l;
+    void* av = game::avatar();
+    void* tun = av ? skg::field<void*>(av, 0xE84) : nullptr;
+    if (!tun || !C.puppet_of)
+        return l;
+    for (uint8_t id = 1; id < 8 && l.n < 8; id++)
+        if (void* p = C.puppet_of(id))
+            if (game::is_puppet(p) && !skg::field<void*>(p, 0xE84)) {
+                skg::field<void*>(p, 0xE84) = tun;
+                l.p[l.n++] = p;
+            }
+    return l;
+}
+static void give_back(const Lent& l)
+{
+    void* av = game::avatar();
+    void* tun = av ? skg::field<void*>(av, 0xE84) : nullptr;
+    for (int i = 0; i < l.n; i++)
+        if (skg::field<void*>(l.p[i], 0xE84) == tun)
+            skg::field<void*>(l.p[i], 0xE84) = nullptr;
+}
 static float __cdecl h_HostileCond(void* a1, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
 {
     float r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
     if (r != 0.f || !g_hostile_party || !g_party_n || g_ps_override || !game::in_creature_stage() ||
         !(C.is_host && C.is_host()))
         return r;
+    Lent l = lend_tuning();
     for (int i = 0; i < g_party_n && r == 0.f; i++) {
         g_ps_override = g_party_species[i];
         r = o_HostileCond(a1, a2, a3, a4, a5, a6, a7, a8);
@@ -329,6 +357,7 @@ static float __cdecl h_HostileCond(void* a1, void* a2, void* a3, void* a4, void*
         if (r != 0.f)
             g_hostile_party_picks++;
     }
+    give_back(l);
     return r;
 }
 
@@ -489,6 +518,7 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
             return 1;
         }
         struct Q { void* p; void* rm; std::vector<std::pair<float, void*>> v; int targeting; } q{p, rm, {}, 0};
+        Lent l = lend_tuning();
         game::for_each_object(
             [](void* o, uint32_t noun, void* u) {
                 auto* q = (Q*)u;
@@ -497,12 +527,15 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
                     return true;
                 if (skg::field<void*>(o, 0xE7C) == q->p)
                     q->targeting++;
+                if (!skg::field<void*>(o, 0xE84))
+                    return true; // (no tuning: not an animal of the world)
                 int rel = skg::thiscall<int>(g_rel_lo, q->rm, (uint8_t*)o + 0xB28, o, q->p);
                 if ((rel == 2 || rel == 5) && skg::field<int>(o, 0xB34) == 1)
                     q->v.push_back({net::dist(game::position(o), game::position(q->p)), o});
                 return true;
             },
             &q);
+        give_back(l);
         std::sort(q.v.begin(), q.v.end());
         char b[160];
         snprintf(b, sizeof b, "hostiles %u targeting=%d picks=%u\n", (unsigned)q.v.size(), q.targeting, g_hostile_party_picks);

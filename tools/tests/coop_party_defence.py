@@ -103,7 +103,7 @@ def main():
         while attacker and time.time() - t0 < 8:
             time.sleep(0.5)
             ms = pack(host)
-            hit = [x for x in ms if x['target'] == attacker]
+            hit = [x for x in ms if x['target'] in (attacker, f'{int(attacker, 16) + 0x5A8:08X}')]  # it or its combatant
             if hit:
                 break
         print('  host pack:', pack(host), flush=True)
