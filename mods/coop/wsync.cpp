@@ -1131,6 +1131,207 @@ static void herd_evo_guard()
     }
 }
 
+// ---- row: Tribe, the spot records' markers (BUG-0740, docs/re/tribe.md#tribe-attack-marker)
+// The game keeps a sorted table of planet cells with a "spot record" (the fixed vector SpotRecord_Table: 0x60-byte
+// entries, +0 the cell id, the record at +8: +0 its surface position, +0x24 a noun 0x2E72CAE object, +0x28 its
+// marker, an ornament of model 0x356EB8A with a minimap blip). SpotRecord_CellId (cdecl(const Vector3* pos, bool))
+// finds the record nearest pos in a window of cells or makes one at the first land cell of the window, and a new
+// record gets its marker (TribeMarker_Place). Both games make the records of their villages themselves, but the
+// creature attack's start (0xD73930) runs only in the host's game: the record (and marker) it makes at an attacked
+// place far from a village was the host's only. The table is emptied only by the stage modes' enter / exit.
+// Row: key = cell id, v = the record's position and the position the game asked SpotRecord_CellId for (the hook
+// below remembers it; the guest's game asked the same makes the same cell). The guest's apply asks its own game
+// the same (outside the frame: the minimap), or places the marker on a record it has without one, and takes back
+// the markers it made when the host's record is gone (SpotRecord_Release, as the table's clear does).
+static bool g_marker_fix = true;
+COOP_FIX("wsync.tribe_marker", "BUG-0740", g_marker_fix,
+         "wsync: a guest's game shows the host's creature attack markers (the spot records' ornaments, minimap blips)");
+using CellIdFn = uint32_t(__cdecl*)(const float*, uint32_t);
+static CellIdFn g_cellid_orig;
+struct Vec3f {
+    float x, y, z;
+};
+static std::map<uint32_t, Vec3f> g_spot_asked; // cell id -> the position the game asked for when the record was made
+static unsigned g_spot_made = 0;
+struct SpotRec {
+    uint32_t id;
+    uint8_t* rec;
+};
+static std::vector<SpotRec> spot_table()
+{
+    std::vector<SpotRec> v;
+    uintptr_t a = S("SporeCoop::SpotRecord_Table");
+    if (!a || !R((void*)a, 8))
+        return v;
+    uint8_t* b = *(uint8_t**)a;
+    uint8_t* e = *(uint8_t**)(a + 4);
+    if (!b || e < b || (e - b) % 0x60 || (e - b) / 0x60 > 256 || !R(b, e - b))
+        return v;
+    for (uint8_t* p = b; p < e; p += 0x60)
+        v.push_back({F<uint32_t>(p, 0), p + 8});
+    return v;
+}
+static size_t spot_count()
+{
+    uintptr_t a = S("SporeCoop::SpotRecord_Table");
+    if (!a || !R((void*)a, 8))
+        return 0;
+    uint8_t* b = *(uint8_t**)a;
+    uint8_t* e = *(uint8_t**)(a + 4);
+    return b && e >= b ? (size_t)(e - b) / 0x60 : 0;
+}
+static uint32_t __cdecl cellid_hook(const float* pos, uint32_t make)
+{
+    size_t before = spot_count();
+    float p[3] = {0, 0, 0};
+    bool ok = pos && R((void*)pos, 12);
+    if (ok)
+        memcpy(p, pos, 12);
+    uint32_t id = g_cellid_orig(pos, make);
+    if (ok && spot_count() > before && id != 0xFFFFFFFFu) {
+        if (spot_count() == 1)
+            g_spot_asked.clear(); // a new table (the stage mode's enter emptied it)
+        if (g_spot_asked.size() < 512)
+            g_spot_asked[id] = {p[0], p[1], p[2]};
+        if (g_spot_made++ < 40)
+            H->log(M, SK_INFO, "wsync: the game made the spot record of cell %08X for (%.1f %.1f %.1f) (from %p, BUG-0740)", id,
+                   p[0], p[1], p[2], __builtin_return_address(0));
+    }
+    return id;
+}
+static void* spot_marker(uint8_t* rec) { return R(rec, 0x2C) ? F<void*>(rec, 0x28) : nullptr; }
+static bool r_marker(Table& out)
+{
+    if (!S("SporeCoop::SpotRecord_Table"))
+        return false;
+    for (auto& s : spot_table()) {
+        if (!spot_marker(s.rec) || out.size() >= kMaxN)
+            continue;
+        Entry e;
+        e.key = s.id;
+        const float* rp = (const float*)s.rec;
+        auto it = g_spot_asked.find(s.id);
+        Vec3f a = it != g_spot_asked.end() ? it->second : Vec3f{rp[0], rp[1], rp[2]};
+        e.v[0] = fbits(rp[0]), e.v[1] = fbits(rp[1]), e.v[2] = fbits(rp[2]);
+        e.v[3] = fbits(a.x), e.v[4] = fbits(a.y), e.v[5] = fbits(a.z);
+        out.push_back(e);
+    }
+    return true;
+}
+// guest: what the apply asked for, run outside the frame (TribeMarker_Place adds a minimap blip)
+struct MarkerJob {
+    uint32_t key;
+    bool release;
+    float pos[3], asked[3];
+};
+static std::vector<MarkerJob> g_marker_jobs;
+static std::map<uint32_t, int> g_marker_tries; // cell id -> places asked (at most 2 each, per table)
+static std::map<uint32_t, bool> g_marker_mine;  // the markers this game made for the host's records
+static unsigned g_marker_placed = 0, g_marker_released = 0, g_marker_missed = 0;
+static size_t g_marker_tab_was = 0;
+static uint8_t* spot_find(uint32_t id)
+{
+    for (auto& s : spot_table())
+        if (s.id == id)
+            return s.rec;
+    return nullptr;
+}
+static void marker_task(void*)
+{
+    std::vector<MarkerJob> jobs;
+    jobs.swap(g_marker_jobs);
+    if (game::mode_id() != modes::kTribe)
+        return;
+    uintptr_t place = S("SporeCoop::TribeMarker_Place"), rel = S("SporeCoop::SpotRecord_Release");
+    for (auto& j : jobs) {
+        uint8_t* rec = spot_find(j.key);
+        if (j.release) {
+            if (rec && spot_marker(rec) && rel) {
+                skg::thiscall<void>(rel, rec); // fastcall(record): its +0x24 / +0x28 objects destroyed, +0x3C effect
+                g_marker_released++;
+                H->log(M, SK_INFO, "wsync: the host's spot record of cell %08X is gone: its marker taken back (BUG-0740)", j.key);
+            }
+            g_marker_mine.erase(j.key);
+            continue;
+        }
+        if (rec && spot_marker(rec))
+            continue;
+        if (rec && place)
+            skg::thiscall<void>(place, rec, (const float*)j.pos, 10.0f);
+        else if (!rec && S("SporeCoop::SpotRecord_CellId")) {
+            uint32_t id = skg::cdecl_call<uint32_t>(S("SporeCoop::SpotRecord_CellId"), (const float*)j.asked, 0u);
+            if (id != j.key) {
+                g_marker_missed++;
+                H->log(M, SK_WARN, "wsync: this game's spot record for (%.1f %.1f %.1f) is cell %08X, the host's %08X (BUG-0740)",
+                       j.asked[0], j.asked[1], j.asked[2], id, j.key);
+            }
+        }
+        rec = spot_find(j.key);
+        if (rec && spot_marker(rec)) {
+            g_marker_placed++;
+            g_marker_mine[j.key] = true;
+            H->log(M, SK_INFO, "wsync: the host's marker of cell %08X placed at (%.1f %.1f %.1f) (BUG-0740)", j.key, j.pos[0],
+                   j.pos[1], j.pos[2]);
+        }
+    }
+}
+static int s_marker(const Table& want, bool apply)
+{
+    if (!S("SporeCoop::SpotRecord_Table"))
+        return 0;
+    auto mine = spot_table();
+    if (mine.size() < g_marker_tab_was || mine.empty()) { // the table was emptied (a mode's enter / exit): a new one
+        g_marker_tries.clear();
+        g_marker_mine.clear();
+    }
+    g_marker_tab_was = mine.size();
+    auto has = [&](uint32_t id) -> uint8_t* {
+        for (auto& s : mine)
+            if (s.id == id)
+                return s.rec;
+        return nullptr;
+    };
+    int n = 0;
+    bool queued = false;
+    for (auto& w : want) {
+        uint8_t* rec = has(w.key);
+        if (rec && spot_marker(rec))
+            continue;
+        n++;
+        if (apply && g_marker_tries[w.key] < 2 && g_marker_jobs.size() < 64) {
+            g_marker_tries[w.key]++;
+            MarkerJob j{w.key, false, {bitsf(w.v[0]), bitsf(w.v[1]), bitsf(w.v[2])}, {bitsf(w.v[3]), bitsf(w.v[4]), bitsf(w.v[5])}};
+            g_marker_jobs.push_back(j);
+            queued = true;
+        }
+    }
+    for (auto it = g_marker_mine.begin(); it != g_marker_mine.end(); ++it) {
+        bool wanted = false;
+        for (auto& w : want)
+            wanted |= w.key == it->first;
+        uint8_t* rec = has(it->first);
+        if (wanted || !rec || !spot_marker(rec))
+            continue;
+        n++;
+        if (apply && g_marker_jobs.size() < 64) {
+            g_marker_jobs.push_back(MarkerJob{it->first, true, {}, {}});
+            queued = true;
+        }
+    }
+    if (queued)
+        H->run_outside_frame(marker_task, nullptr);
+    return n;
+}
+static std::string f_marker(const Entry& e)
+{
+    uint8_t* rec = spot_find(e.key);
+    void* o = rec ? spot_marker(rec) : nullptr;
+    uint32_t model = o && R(o, 0x230) ? F<uint32_t>(o, 0x228) : 0;
+    snprintf(g_fmt, sizeof g_fmt, "cell=%08X pos=(%.1f %.1f %.1f) asked=(%.1f %.1f %.1f) marker=%p model=%08X", e.key, bitsf(e.v[0]),
+             bitsf(e.v[1]), bitsf(e.v[2]), bitsf(e.v[3]), bitsf(e.v[4]), bitsf(e.v[5]), o, model);
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky_day, r_day, s_day, false, f_day},
@@ -1146,6 +1347,7 @@ static const Row kRows[] = {
     {12, "tribe_level", 1, &g_tribe_level_fix, tribe_mode, r_tlevel, s_tlevel, false, f_tlevel},
     {13, "tribe_color", 4, &g_tribe_color_fix, tribe_mode, r_tcolor, s_tcolor, false, f_tcolor},
     {14, "herd_evo", 6, &g_herd_evo_fix, creature_mode, r_herd_evo, s_herd_evo, false, f_herd_evo},
+    {15, "tribe_marker", 6, &g_marker_fix, tribe_mode, r_marker, s_marker, false, f_marker},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -1355,6 +1557,9 @@ std::string status()
     snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u herd_evo_set=%u\n", g_rel_stuck, g_tfood_adds,
              g_parts_fixed, g_mig_started, g_herd_evo_set);
     out += b;
+    snprintf(b, sizeof b, "spot records %u made, markers placed %u released %u missed %u (BUG-0740)\n", (unsigned)g_spot_made,
+             g_marker_placed, g_marker_released, g_marker_missed);
+    out += b;
     return out;
 }
 
@@ -1440,6 +1645,32 @@ static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "stage %d trait %08X\n", i, F<uint32_t>(p, 0x10FC + 4 * i));
         return 0;
     }
+    if (argc >= 5 && !strcmp(argv[1], "spot")) { // tests (BUG-0740): this game's SpotRecord_CellId for a position
+        static float p[3];
+        p[0] = (float)atof(argv[2]), p[1] = (float)atof(argv[3]), p[2] = (float)atof(argv[4]);
+        H->run_outside_frame(
+            [](void*) {
+                uintptr_t f = S("SporeCoop::SpotRecord_CellId");
+                if (f && game::mode_id() == modes::kTribe) {
+                    uint32_t id = skg::cdecl_call<uint32_t>(f, (const float*)p, 0u);
+                    H->log(M, SK_INFO, "wsync: tests: SpotRecord_CellId(%.1f %.1f %.1f) = %08X, %u records", p[0], p[1], p[2], id,
+                           (unsigned)spot_count());
+                }
+            },
+            nullptr);
+        H->out_printf(out, "spot asked for (%.1f %.1f %.1f)\n", p[0], p[1], p[2]);
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "spots")) { // tests (BUG-0740): this game's spot record table
+        for (auto& s : spot_table()) {
+            const float* rp = (const float*)s.rec;
+            void* o = spot_marker(s.rec);
+            uint32_t model = o && R(o, 0x230) ? F<uint32_t>(o, 0x228) : 0;
+            H->out_printf(out, "spot cell=%08X pos=(%.1f %.1f %.1f) marker=%p model=%08X\n", s.id, rp[0], rp[1], rp[2], o, model);
+        }
+        H->out_printf(out, "end spots\n");
+        return 0;
+    }
     if (argc >= 3 && !strcmp(argv[1], "goal")) { // tests: the host's goal card on the village of this pol
         uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
         for (auto& t : npc_tribes())
@@ -1465,6 +1696,12 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
                    "coop.wsync [dump [row]|want <row>|rel <pol> <delta>|goal <pol>] - host-owned world state (time of day, "
                    "stages done, village relations, the Tribe goal): rows, this game's values",
                    c_wsync, nullptr, SK_CMD_MAIN_THREAD);
+    // BUG-0740: the position each new spot record was asked for (the host's row sends it)
+    uintptr_t ci = S("SporeCoop::SpotRecord_CellId");
+    bool spot = ci && H->hook_create(M, (void*)ci, (void*)&cellid_hook, (void**)&g_cellid_orig) == 0;
+    if (!spot)
+        g_cellid_orig = nullptr;
+    H->log(M, SK_INFO, "wsync: spot record hook %s", spot ? "on" : "off");
 }
 
 } // namespace wsync

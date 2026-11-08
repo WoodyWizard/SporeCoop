@@ -195,3 +195,7 @@ SporeCoop::ArtifactCargo_Create ; BUG-0679: plant / animal / artifact cargo of a
 SporeCoop::PlantCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
 SporeCoop::PlantCargo_Template ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
 SporeCoop::CellStage_ToCreature ; BUG-0315: the Cell -> Creature switch has no vote on GOG 2016 (core.switch_vote)
+SporeCoop::SpotRecord_Release ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::SpotRecord_Table ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::TribeMarker_Place ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::SpotRecord_CellId ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
