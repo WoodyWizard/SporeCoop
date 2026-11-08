@@ -214,6 +214,8 @@ add('family_attack', P + 'coop_family_attack.py', ('extended',), minutes=5, fixt
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
+add('creature_aggression', P + 'coop_creature_aggression.py', minutes=3, fixture='creature')  # BUG-0168: an NPC of a species made hostile by the game's own egg event attacks the partner by itself: the puppet is its target, the guest's own health falls (AGGR_EVENT=none fails)
+add('creature_mating', P + 'coop_creature_mating.py', minutes=5, fixture='creature')  # BUG-0177: Backspace and a left click on the mate the game picked near the nest: the avatar goes to mate, the game's mating editor request goes to the vote, both editors open and close (MATING_CLICK=other fails)
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_death_coop', P + 'coop_creature_death.py --coop', minutes=6)  # BUG-0026: the same in a session, the host then the guest dies
 add('creature_death_coop_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_creature_death.py --coop', minutes=8)  # BUG-0026 at 20 fps over the player network

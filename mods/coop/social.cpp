@@ -1293,6 +1293,19 @@ bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
     return true;
 }
 
+bool debug_event(uint32_t inst, int event)
+{
+    // BUG-0168: the game's own relationship event, as the avatar's egg node calls it (0xD716F0: event 6 when it walks
+    // to an egg, 7 when it eats it; creature null, docs/re/creature.md#creature-npc-aggression). Event 7 makes the
+    // species hostile (relation 5) through the game's own transition, as eating its egg does.
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelEvent || event < 0 || event > 7)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    thiscall<void>(a_RelEvent, mgr, event, &k, (void*)nullptr);
+    return true;
+}
+
 std::string debug_objects(uint32_t lo, uint32_t hi)
 {
     struct U {
