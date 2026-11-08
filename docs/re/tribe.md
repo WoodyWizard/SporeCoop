@@ -2620,4 +2620,7 @@ GOG 2024, lane 5.
   in the hand of the member's copy.
 * ✔ `wobj.bundle_reclass`: a bound copy of another class than its host object is removed and made again in the
   right container in the same snapshot (lab 20261108-011630-2: the ground copy within 3 m 6 s after each drop).
+* Tribe only (`Kind::reclass_stages`): in Civ the old villages' members run their own behaviour and a bundle taken
+  out of a member's hand faults its gather node (BUG-0684, 0xC23469); a play_civ with the reclass on in Civ had that
+  fault storm on the guest (lab 20261108-015213; inferred to be the BUG-0684 class, not proven to be the reclass).
 

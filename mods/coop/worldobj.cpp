@@ -107,6 +107,7 @@ struct Kind {
     // a bound copy of another class than the host's object is removed (apply kGone) and the bind dropped, so the next
     // snapshot makes or binds one of the right class. The switch (nullptr: never)
     bool* reclass = nullptr;
+    uint8_t reclass_stages = 0; // the stages it acts in
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -661,7 +662,9 @@ constexpr float kCarriedTol = 8.f;
 // carrier died, or put it down) as the same object: the guest's copy stayed bound and carried by the copy of the member
 // (or lay on, carried on, by another), so the host's ground food was missing on the guest (the detector's
 // `Tribe:host_only:game_bundle` with a `guest_only:game_bundle_carried` next to it). With wobj.bundle_reclass a bound copy
-// whose host bundle changed between ground and carried is removed and made again in the right container. Off: 0.7.10.
+// whose host bundle changed between ground and carried is removed and made again in the right container. Tribe only:
+// in Civ the old villages' members run their own behaviour and a bundle taken from a member's hand faults its gather
+// node (BUG-0684, K7's). Off: 0.7.10.
 static bool g_bundle_reclass_fix = true;
 COOP_FIX("wobj.bundle_reclass", "BUG-0661", g_bundle_reclass_fix,
          "tribe / civ: food a host member drops lies on the ground in every game, not carried on by the member's copy");
@@ -1055,7 +1058,8 @@ static Kind g_kinds[] = {
     // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
     {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
      .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
-     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol, .reclass = &g_bundle_reclass_fix},
+     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol, .reclass = &g_bundle_reclass_fix,
+     .reclass_stages = kStTribe},
     // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
     {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
@@ -1333,7 +1337,7 @@ static void reconcile(int k, double now, bool fresh)
             update(id, ps, bind(id, *best));
             continue;
         }
-        if (K.classes && K.reclass && *K.reclass) { // BUG-0661: the host's object changed its class
+        if (K.classes && K.reclass && *K.reclass && (K.reclass_stages & stage_bit())) { // BUG-0661: the host's object changed its class
             auto f = by_key.find({bi->second.p, bi->second.serial});
             if (f != by_key.end() && f->second->cls != ps.cls) {
                 used.insert({f->second->p, f->second->id}); // (not dropped again as an own copy below)
