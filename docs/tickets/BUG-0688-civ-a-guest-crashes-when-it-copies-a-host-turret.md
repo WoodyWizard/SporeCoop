@@ -58,6 +58,8 @@ army attacks it, the turrets fire for 60 s.
 - FAIL: out/lab/20261107-204522 (SPORE_FIX_OFF=civ.turret_weapon): guest 284 faults (execute 0x8080FF00 on the main
   thread), 0 copies fired of 252 host turret shots.
 - PASS: out/lab/20261107-204738 (2 runs): 208 / 210 and 451 / 451 copies fired, bad_combatant 0, no fault.
+- Regression (lane 3): out/lab/20261107-204750, play_civ, civ_shots, civ_religious, civ_aoe, civ_turrets,
+  body_trail_civ, civ_coop: 7/7 OK.
 
 ## History
 - 2026-11-07: opened.
