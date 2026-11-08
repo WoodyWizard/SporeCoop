@@ -4947,3 +4947,11 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   every 4 s while the host's body lies out of its tribe's list: each host citizen within 6 m of the victim's place
   has a citizen within 3 m on the guest's game (`coop.census all`). BUG-0665; `SPORE_FIX_OFF=tribe.join_body` fails
   (lab 20261108-003733: 0 of 6 samples), on passes (20261108-003738, 20261108-003944).
+## A raided village on the guest: civ_tribe_left_fast (2026-11-08, fix/w46-k8-open)
+<a id="testing-civ-tribe-left-fast"></a>
+
+* `coop_civ_tribe_left.py --fast` (suite `civ_tribe_left_fast`, warm, ~1 min, civ_npc): 3 raids by the host's game
+  (`coop.civ razetribe 0`, 9 s apart), the tribe counts of both games every 0.25 s: PASS when the guest has no more
+  tribes than the host within 2.5 s of each raid. BUG-0659; `SPORE_FIX_OFF=civ.tribe_ruins_fast` fails (5.1-5.3 s,
+  lab 20261108-004412), on 0.6-0.9 s (20261108-004941-2).
+

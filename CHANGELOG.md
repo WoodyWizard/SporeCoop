@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: an old tribe village the host's vehicles raid now disappears for the other players within about a
+  second instead of five (BUG-0659).
 - Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
   ground now sees that body too (BUG-0665).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when

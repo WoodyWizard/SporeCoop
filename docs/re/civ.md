@@ -1412,3 +1412,14 @@ BUG-0613. Lab lanes 9/10 (`tools/tests/coop_civ_money_short.py`).
 * Not this cause: the campaign's `Civilization:state:money` rows (host 3530, guest 3000) in civ/advance, where every
   guest's game reloads the Civ world every ~22 s (mode 01654C08) and shows the save's money for a moment (BUG-0311 run
   20261107-141346 of rel/0.7.10).
+## A raided old village on the guests within a second (2026-11-08, fix/w46-k8-open)
+<a id="civ-tribe-ruins-fast"></a>
+
+BUG-0659 (follow-up of [#civ-tribe-raids](#civ-tribe-raids)). GOG 2024, lanes 4 / 5.
+
+* ✔ (runtime) With civ.tribe_ruins a guest removes a village 5.1-5.3 s after the host's game raided it (the second look
+  came with the next 5 s list); the detector's one-sample `Civilization:planet:village` / `tribe_hut` / `tribe_tool` /
+  `tribe_food_mat` rows of play_civ were that window (the next sample always had equal counts; the host's count falls
+  17 -> 4 over a 10 min play_civ from its vehicles' raids).
+* ✔ `civ.tribe_ruins_fast`: 3 lists 0.5 s apart after a raid: the guest removes it after 0.6-0.9 s.
+
