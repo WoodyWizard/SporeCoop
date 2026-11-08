@@ -1,34 +1,36 @@
 ---
 id: BUG-0714
-title: Cell: the host applies a guest's bites by hand: a lethal bite skips the game's gate (an invulnerable or spared creature dies), a bite plays no hurt animation
-status: open
+title: Cell: the host applies a guest's bites by hand: no hurt animation, a knocked-out guest's lethal bite still kills, the lethal rule is not the game's
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-08
 source: BUG-0428 sibling list, K2b audit 2026-11-08
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-k2b-content-a
+commits: e81a56d9
+tests: cell_guest_hit
 signature:
-docs:
-related:
+docs: docs/re/cell.md#cell-guest-hit-game
+related: BUG-0428, BUG-0078, BUG-0240, BUG-0509, BUG-0632, BUG-0350
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+From the BUG-0428 audit (K2b, 2026-11-08): the host applied a guest's bite (MSG_CELL_HIT) with a hand-made copy of DamageCell's gate and `hp -= dmg`, and a guest's lethal bite (MSG_CELL_EAT ACT_BREAK) with `hp = 0` and BreakOrSwallow, without the knockout gate of BUG-0509. The audit's claim "an invulnerable or spared creature dies" is the game's own rule (below), not a co-op bug.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (runtime, lane 6, lab 20261108-034206 with the fix off): after a guest's bite the host's creature lost hp but played no hurt animation in the host's game (+0x1B0 never 0x10, while the host's own bite plays it); a lethal bite sent by a knocked-out guest (`coop.pool sendact`, an old guest's or one in flight) killed the creature. Static (Ghidra, GOG 2024): DamageCell 0xE7A7C0 after the hp plays PlayAnimation (0x10 for a bite) and schedules event 2 (the after-hurt reaction), runs 0xE57910 / 0xE576F0; Bite 0xE7B0A0 sets +0x178 on both cells and breaks the victim (BreakOrSwallow) whenever the damage reaches its hp or IsDamageable fails, with no ShouldNotAttack and no +0x111 check: an invulnerable cell dies of a lethal bite in the game too (BreakOrSwallow checks only +0x17C and the states 7-9). None of that ran for a guest's bite.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`cell.guest_hit_game` (cellsync.cpp `guest_attack`, the one host path for MSG_CELL_HIT and ACT_BREAK): the host replays the guest's attack through the game's own function with the guest's puppet as the attacker: a bite (type 4, and the lethal one) through Bite, any other hit through DamageCell; GetDamageAmount (hooked) answers the guest's damage for that pair, KillCell inside counts it as the player's kill. A mouth's chunk (type 6) stays EatChunk's own rule. A knocked-out guest's lethal bite or kill is refused like its MSG_CELL_HIT (`guest_knocked_out`). `coop.pool` (host) prints `guest_attacks= guest_attacks_spared= guest_attack_kills= guest_attack_types=`; `coop.pool sendact c<key> break|kill` (tests, guest). Off: the hand-made path.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_guest_hit` (tools/tests/coop_cell_guest_hit.py: control host bite, three guest bites with the hurt animation read in the host's game, a knocked-out guest's lethal bite refused, a later one kills).
+* FAIL with `SPORE_FIX_OFF=cell.guest_hit_game`: out/lab/20261108-034206 (no hurt animation after any of the 3 bites, the knocked-out guest's bite killed it)
+* PASS: out/lab/20261108-034328 (hurt animation after each bite, guest_attack_types 4 bites, the knocked-out bite refused, the later one killed)
 
 ## History
 - 2026-11-08: opened.
+- 2026-11-08: fix/w46-k2b-content-a: reproduced, fixed (cell.guest_hit_game), test cell_guest_hit; title corrected (the lethal bite of an invulnerable cell is the game's rule).

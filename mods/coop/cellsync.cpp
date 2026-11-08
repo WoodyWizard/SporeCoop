@@ -673,17 +673,22 @@ static void send_hit(uint32_t hidx, int dmg, int type)
 // BUG-0716 (class BUG-0428): on a guest a hit on a mirror counted only when our avatar was the attacker
 // (h_DamageCell). The other attackers there: another mirror (the host simulates the same pair itself), a
 // partner's puppet (its owner's game sends its own hits) and the cells our own game makes for our avatar
-// (its poison clouds, cell type 5, made by the avatar's poison part 0xE76880 and simulated here only): their
-// hits on the host's creatures were lost. Now a hit from a cell of our pool that is neither a mirror, a
-// puppet nor the avatar goes to the host like the avatar's (MSG_CELL_HIT with its type); `coop.pool` counts
-// the dropped ones by attacker kind (`foreign_hits=`). Old (`coop.fix cell.own_products off`): avatar only.
+// (its poison clouds, made by the avatar's poison part 0xE76880 / 0xE76660 with +0x110 set and simulated here
+// only) never reached the host's creatures three times over: the guest's purge of stray cells removed them at
+// the next state round, the guest's collision step ran no pair without the avatar (h_Pair), and their hits
+// on a mirror were dropped. Now such a cell (+0x110 set, not a mirror, a puppet or the avatar) is kept, its
+// pairs with mirrors run, and its hits go to the host like the avatar's (MSG_CELL_HIT with their type);
+// `coop.pool` counts the dropped hits by attacker kind (`foreign_hits=`). Old (`coop.fix cell.own_products
+// off`): all three as before.
 static bool g_fix_own_products = true;
 COOP_FIX("cell.own_products", "BUG-0716", g_fix_own_products, "cell: a guest's poison clouds (cells its game made for its avatar) hurt the host's creatures, not only its avatar's bites");
-static uint32_t g_product_hits, g_foreign_mirror, g_foreign_puppet, g_foreign_other; // tests
+static uint32_t g_product_hits, g_foreign_mirror, g_foreign_puppet, g_foreign_other, g_product_pairs, g_products_live; // tests
 static bool own_product(uint8_t* att)
 {
-    return g_fix_own_products && att && att != avatar() && !g_host_of.count(F<uint32_t>(att, 0)) && !modes::cell_is_puppet(att) &&
-           !F<uint8_t>(att, kDead);
+    // +0x110: the game marks the cells it makes for the avatar so (the poison cloud, 0xE76660), and DamageCell
+    // counts a hit of such a cell as the player's (its health ring and byPlayer, docs/re/cell.md#cell-electric-attack)
+    return g_fix_own_products && att && att != avatar() && F<uint8_t>(att, 0x110) && !g_host_of.count(F<uint32_t>(att, 0)) &&
+           !modes::cell_is_puppet(att) && !F<uint8_t>(att, kDead);
 }
 static void note_foreign_hit(uint8_t* att)
 {
@@ -695,6 +700,20 @@ static void note_foreign_hit(uint8_t* att)
         g_foreign_puppet++;
     else
         g_foreign_other++;
+}
+
+// tests (BUG-0716): the poison clouds our avatar's poison part makes (0xE76660, cdecl void(cell* maker, int size, ...))
+using Cloud_t = void(SK_CDECL*)(uint8_t*, int, void*);
+static Cloud_t o_Cloud;
+static uint32_t g_clouds_made, g_cloud_last = 0xFFFFFFFF;
+static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
+{
+    uint32_t live0 = G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0;
+    o_Cloud(maker, size, at);
+    if (in_cell() && maker && maker == avatar()) {
+        g_clouds_made++;
+        g_cloud_last = (G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0) - live0; // cells added by it
+    }
 }
 
 // BUG-0715 (class BUG-0428): the electric attack 0xE71520 (cdecl void(cell* attacker, int, u32* first target),
@@ -713,6 +732,8 @@ static uintptr_t a_Zap;
 static uint32_t g_zaps, g_zap_hits; // tests
 static void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
 {
+    if (in_cell() && att && att == avatar())
+        g_zaps++; // our avatar's electric attacks, with the fix or without
     if (!g_fix_electric || !in_cell() || !is_guest() || !att || att != avatar() || (g_fix_ko_no_bite && g_downed)) {
         if (in_cell() && g_fix_ko_no_bite && g_downed && att && att == avatar()) {
             g_ko_bites_blocked++; // BUG-0509: a knocked-out cell zaps nobody
@@ -730,7 +751,6 @@ static void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
             around.push_back({c, F<int>(c, kHp)});
     }
     o_Zap(att, a2, first);
-    g_zaps++;
     for (auto& [c, hp] : around) {
         int lost = hp - F<int>(c, kHp);
         if (lost <= 0)
@@ -1471,11 +1491,13 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     }
     if (is_guest() && in_cell() && !g_solo) { // BUG-0205: our own pool while the host is away: every pair
         uint8_t* av = avatar();
-        if (a != av && b != av) {
+        bool product_pair = (own_product(a) && g_host_of.count(F<uint32_t>(b, 0))) || (own_product(b) && g_host_of.count(F<uint32_t>(a, 0)));
+        g_product_pairs += product_pair;
+        if (a != av && b != av && !product_pair) { // BUG-0716: our poison cloud touching a mirror hurts it (h_DamageCell sends it)
             g_pairs_skipped++;
             return;
         }
-        uint8_t* other = a == av ? b : a;
+        uint8_t* other = a == av ? b : b == av ? a : nullptr; // (a cloud's touch is not our avatar's)
         if (other) {
             double now = H->time_seconds();
             g_touched[F<uint32_t>(other, 0)] = now;
@@ -2995,6 +3017,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         return false;
     }
     H->hook_create(M, (void*)a_DamageCell, (void*)h_DamageCell, (void**)&o_DamageCell);
+    if (uintptr_t cl = H->sym("SporeCoop::Cell_PoisonCloud")) // tests (BUG-0716)
+        H->hook_create(M, (void*)cl, (void*)h_Cloud, (void**)&o_Cloud);
     a_Zap = H->sym("SporeCoop::Cell_ElectricAttack"); // BUG-0715
     if (a_Zap)
         H->hook_create(M, (void*)a_Zap, (void*)h_Zap, (void**)&o_Zap);
@@ -3344,8 +3368,11 @@ static void guest_state(net::Reader& r)
     // within a second, so a guest could never reach it and open its own editor.
     std::vector<uint32_t> stray;
     uint32_t mate = mate_idx();
+    g_products_live = 0;
     for_each_cell([&](uint8_t* c, uint32_t idx) {
-        if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && idx != mate)
+        if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && F<uint8_t>(c, 0x110))
+            g_products_live++; // tests (BUG-0716): our poison clouds and the like
+        if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && idx != mate && !own_product(c)) // BUG-0716: our poison clouds stay
             stray.push_back(idx);
     });
     for (uint32_t idx : stray) {
@@ -5774,16 +5801,31 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "budget: populate below %u, a partner's screen below %u\n", kPopCap, kPopCapScreen);
         return b;
     }
-    if (a.size() >= 2 && a[0] == "borrow") { // tests (BUG-0715 / 0716): `borrow electric|poison|off`: our avatar uses the
+    if (a.size() >= 2 && a[0] == "borrow") { // tests (BUG-0715 / 0716): `borrow electric|poison|off [graft]`: our avatar uses the
         // model of a cell here whose parts have an electric part (part type 6) / a poison part (model +0x1270, +0x1274),
         // so the game's own electric attack 0xE71520 / poison 0xE76880 runs for it; off: our own model again
         static uint32_t saved[3];
         static bool have;
+        static uint8_t backup[0x48 + 0x20];
+        static uint8_t* grafted;
         auto* k = (uint32_t*)(av + kModelKey);
+        if (a[1] == "status") { // what the poison step 0xE68630 asks of our avatar, and what it left
+            uint8_t* md = a_ModelData && k[0] ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+            char b[240];
+            snprintf(b, sizeof b, "borrow status: gfx=%08X model=%08X dead=%d state=%X poisoning=%d accum=%.2f md=%p poison=%.2f/%d electric_period=%.2f clouds_made=%u cloud_cells=%d\n",
+                     F<uint32_t>(av, 0x248), k[0], F<uint8_t>(av, 0x112), F<uint32_t>(av, 0x18C), F<uint8_t>(av, 0x1AC), F<float>(av, 0x374), md,
+                     md ? F<float>(md, 0x1270) : 0.f, md ? F<int>(md, 0x1274) : 0, md ? F<float>(md, 0x1260) : 0.f, g_clouds_made, (int)g_cloud_last);
+            return b;
+        }
         if (a[1] == "off") {
             if (have)
                 memcpy(k, saved, sizeof saved);
             have = false;
+            if (grafted && skg::readable(grafted, 0x1280)) {
+                memcpy(grafted + 8, backup, 0x48);
+                memcpy(grafted + 0x125C, backup + 0x48, 0x20);
+            }
+            grafted = nullptr;
             return "own model\n";
         }
         bool electric = a[1] == "electric";
@@ -5806,6 +5848,33 @@ std::string debug(const std::vector<std::string>& a)
             if (ok)
                 memcpy(found, ck, sizeof found);
         });
+        if (!found[0] && a.size() > 2 && a[2] == "graft" && a_ModelData && k[0]) {
+            // no cell of that kind in this pool (the fixture's level-1 creatures have none): our own model data
+            // gets the part, as a creation with it has (its first part record becomes an electric part, type 6,
+            // with the electric timings; or the poison values), so the game's own step runs for our avatar
+            uint8_t* md = skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]);
+            if (!md || !skg::readable(md, 0x1280) || F<int>(md, 0) < 1)
+                return "none here (no model data to graft)\n";
+            if (!grafted) {
+                memcpy(backup, md + 8, 0x48);
+                memcpy(backup + 0x48, md + 0x125C, 0x20);
+                grafted = md;
+            }
+            if (electric) {
+                F<int>(md, 8) = 6;
+                F<float>(md, 0x125C) = 1.0f;  // the cooldown after a near target
+                F<float>(md, 0x1260) = 1.5f;  // the period
+                F<float>(md, 0x1264) = 0.5f;  // the charge
+                F<float>(md, 0x1268) = 6.0f;  // the range
+                F<int>(md, 0x126C) = 4;       // targets of the chain
+            } else {
+                F<float>(md, 0x1270) = 1.0f;
+                F<int>(md, 0x1274) = 1;
+            }
+            char b[160];
+            snprintf(b, sizeof b, "borrowed model %08X %s (grafted into our own model data, part 0 type %d)\n", k[0], a[1].c_str(), F<int>(md, 8));
+            return b;
+        }
         if (!found[0])
             return "none here\n";
         if (!have)
@@ -5959,12 +6028,12 @@ std::string status()
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
                  "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u soft_turns=%u chunks_sent=%u chunks_taken=%u breaks_sent=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
                  "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u "
-                 "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u zaps=%u zap_hits=%u product_hits=%u foreign_hits=%u/%u/%u\n",
+                 "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u zaps=%u zap_hits=%u product_hits=%u product_pairs=%u products=%u foreign_hits=%u/%u/%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size(), g_zaps, g_zap_hits,
-                 g_product_hits, g_foreign_mirror, g_foreign_puppet, g_foreign_other);
+                 g_product_hits, g_product_pairs, g_products_live, g_foreign_mirror, g_foreign_puppet, g_foreign_other);
     char t[640];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)

@@ -140,6 +140,13 @@ int c_physorphan(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0719): the game's fixed pools' fill
+int c_pools(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::pools_report().c_str());
+    return 0;
+}
+
 // tests (BUG-0453): the next NPC in its attack animation loses its target (as when the target is destroyed)
 int c_attackcut(void*, int, const char* const*, SkOut* out)
 {
@@ -718,6 +725,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.pools", "tests (BUG-0719): the fill of the game's fixed object pools (physics bodies, contacts) and the world's objects",
+                      c_pools, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.attackcut", "tests (BUG-0453): the next NPC in its attack animation loses its target (cleared as on the target's destroy)",
                       c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.spotcut", "tests (BUG-0582): the next attacker of a creature attack finds no spot record (a cell without one)",

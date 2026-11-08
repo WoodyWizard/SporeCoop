@@ -250,3 +250,40 @@ fields: FormatParser* +4, refcount +8, data +0xC.
 * For "who calls X and with what result" a counter keyed by `__builtin_return_address(0)` in the
   hook is quicker than the sampler (BUG-0355: DestroyCell by caller, ParticleAlloc by call site);
   `coop_module_of()` (debug.cpp) prints module+offset for addresses outside the exe.
+
+## Fixed-size game pools that co-op objects fill, per stage (2026-11-08, fix/w46-k2b-content-a)
+<a id="re-notes-fixed-pools"></a>
+
+BUG-0719, BUG-0718 (class BUG-0432). An inventory from the docs, the tickets and the code; the measured fill per
+stage is the stress test `tools/tests/coop_pool_stress.py` (suites `pool_stress_<stage>`: four players, three in
+Civ, a rejoin, the guests in their pause menus; `coop.pools` prints the physics pools' count / high water /
+capacity and the world's objects). A "bound" is what keeps co-op counts below the capacity.
+
+| stage | container | capacity | co-op objects in it | bound | overrun seen |
+|---|---|---|---|---|---|
+| Cell | cell pool `G+0x1C` | 4096 | mirrors, puppets, partner tiles | `cell.budget` (host 1100 / 1300, send 900, mirrors 1500) | budget off: full, faults (lab 20261030-052851, 20261108-031701) |
+| Cell | broadphase merge queue (MergeAxis stack) | 4096 endpoints | every cell | **hard guard `cell.sap_merge`** (BUG-0718, docs/re/cell.md#cell-sap-merge) | 0xBBB07B (BUG-0295, lab 20261108-033717) |
+| Cell | broadphase sweep open list | int[1024] | every cell | hard guard `cell.sap_sweep` (BUG-0337) | BUG-0337 |
+| Cell | broadphase pending arrays | 2 x 4096 per axis | mirrors made while the simulation stands | hard guard `cell.sap_pending` (BUG-0348) | BUG-0348 |
+| Cell | soft-body particles | 1500 | every cell's body | `cell.particles`, `cell.spare` (BUG-0338, BUG-0355) | BUG-0338 |
+| Cell | cell graphics pool `cCellGFX+0x168` | 256 | drawn cells | `cell.gfx_full` (BUG-0355) | BUG-0355 |
+| Cell | tile pool `G+0x38` | 512 | partner passes | room for 4 x 0x40 tiles before a pass (BUG-0174) | none |
+| all 3D stages | physics bodies (`SporeCoop::PhysicsWorld_ptr` +0x3C, cObjectPool_) | 4096 | puppets, proxies, mirrors (bodies like any creature's) | the game's own relevance (NPCs alive near the players) | none (measured: the stress runs' high water) |
+| all 3D stages | physics contacts (+0x08) | 2048 | contacts of those bodies | as above | none |
+| Creature | herds / spawn points per relevance pass | 10 per pass (docs/re/creature.md, host-centric.md) | partners' view centres (`npc.view_centres`, at most 8 partners, 16 spheres) | the game's 10 per pass | none |
+| Creature | BT stimulus slots / goal slots | 8 x 0x38 / 8 x 0x44 per NPC | stimuli and goals the mod posts | the game's slot search (an occupied slot is reused) | none |
+| Tribe | tribe population (cTribe_MaxPopulation 0xC8EC70) | 6 ... 60 by level | a guest's mirrors of the host's members (CreateCitizen + AddMember past SpawnMember's refusal, tribe.cpp) | the host's own count (a mirror per host member) | none: a count, the members are a vector |
+| Civ | vehicles `civ+0xB0`, selectable `civ+0xD4` | vectors (36 is the game's buy rule, VehicleSlotsLeft 0xBF2220) | mirrored vehicles | the owner's own count (each player buys under the rule) | none: vectors grow |
+| Civ | city building slots (cCommunityLayout +0x43C) | 12-14 | a guest's buildings built in a host city (`build_in_city`) | the layout's own free-slot search | none (BUG-0491, BUG-0602 are slot-index bugs, not overruns) |
+| Space | UFO list (`GetData<cGameDataUFO>`) | a vector | partner ship puppets, mirrored NPC ships | none needed | none |
+| Space | cargo slots | per ship | kept holds, trade | `space.keep_items_slots` (BUG-0679) | none |
+| all | world-effect relay | the mod's 64 live, 40/s | relayed effects | effects.cpp kLiveMax | none |
+
+* Objects made while a guest's simulation stands (its pause menu, an editor, a load): only Cell creates its objects
+  in a fixed array that the simulation empties (the broadphase's pending list, BUG-0348). In the other stages the
+  mod's objects go into the game's vectors and pools above, which do not wait for a simulation step; the stress
+  test pauses the guests for its third phase.
+* ? Not documented: the capacity of the game's creature object / noun pools and of the effect pools 1-3 / 5; the
+  stress runs show the world's object counts (`objects: all= creatures=`) for a later comparison.
+* The "same caught EIP every frame" signal BUG-0432 asks for exists in SporeKit (exceptions.cpp `storm_check`,
+  BUG-0676); every caught fault fails a lab test (`p.faults`, the lab's log check).

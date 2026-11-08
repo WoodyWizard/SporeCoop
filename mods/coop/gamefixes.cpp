@@ -408,6 +408,39 @@ static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
     game::after_physics(); // BUG-0434 (creature.culled_ground)
 }
 
+// BUG-0719 (class BUG-0432, tests): the fill of the game's fixed object pools every stage uses (the physics
+// world's body pool +0x3C, 0x1000 slots, and contact pool +0x08, 0x800; docs/re/tribe.md#tribe-physics-orphan) and the
+// world's objects by kind (game::for_each_object), so a stress run can show how far co-op object counts take them
+std::string pools_report()
+{
+    std::string out;
+    char b[200];
+    uint8_t* w = g_phys_world && readable((void*)g_phys_world, 4) ? *(uint8_t**)g_phys_world : nullptr;
+    if (w && readable(w, 0xBC)) {
+        for (int off : {0x3C, 0x08}) {
+            uint8_t* p = w + off;
+            snprintf(b, sizeof b, "pool %s: count=%u high=%u cap=%u\n", off == 0x3C ? "physics_bodies" : "physics_contacts",
+                     *(uint32_t*)(p + 0xC), *(uint32_t*)(p + 0x10), *(uint32_t*)(p + 0x18));
+            out += b;
+        }
+    } else
+        out += "pool physics_bodies: none\n";
+    struct Acc {
+        uint32_t creatures = 0, all = 0;
+    } a;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* a = (Acc*)u;
+            (void)o;
+            a->all++;
+            a->creatures += noun == 0x18EB45Eu;
+            return true;
+        },
+        &a);
+    snprintf(b, sizeof b, "objects: all=%u creatures=%u\n", a.all, a.creatures);
+    return out + b;
+}
+
 std::string arm_physics_orphan()
 {
     if (!g_phys_orig)

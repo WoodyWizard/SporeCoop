@@ -5024,3 +5024,29 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
   (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
   record of its own earlier session passes `start(..., keep_holds=True)`.
+
+## K2b content-a: game rules, editor requests, fixed pools (2026-11-08, fix/w46-k2b-content-a)
+<a id="testing-k2b-content-a"></a>
+
+Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All on one lane each.
+
+* `cell_merge` (coop_cell_merge.py, 4 players, ~2 min): `coop.pool budget 2600 2800` raises the host's population caps
+  over what the broadphase merge holds (the soft budget missed, as the game's loot does) and the guests go far apart;
+  the host passes 2300 cells within seconds. Do not test the merge with `cell.budget off`: the host's pool then fills
+  all 4096 slots and the full pool faults elsewhere (lab 20261108-031701), which hides the merge.
+  `coop.pool budget` alone puts the caps back.
+* `cell_guest_hit` (~1.5 min): reads the creature's animation (+0x1B0, `coop.pool cell c<key>` `anim=`) in the host's
+  game every 50 ms for 1.2 s after a guest's bite: 0x10 is DamageCell's bite animation. `coop.pool sendact c<key>
+  break|kill` (guest) sends a lethal bite whatever the guest's own state (an old guest's, one in flight). BUG-0632's
+  kill_once holds a refused kill for 10 s: the test waits out the knockout before the last bite.
+* `cell_electric` / `cell_poison` (coop_cell_parts_attack.py, ~1.5 min): the fixture's level-1 pool has no cell with an
+  electric or poison part; `coop.pool borrow electric|poison graft` writes the part into the guest avatar's own model
+  data (a type-6 part record and the timings; the poison values) so the game's own steps run, `borrow off` puts it
+  back. The guest's `zaps=` counts the avatar's electric attacks with the fix on or off.
+* `editor_request` (~1 min): `coop.editreq diff` on each game. The bytes the request's constructor never writes
+  (+0x21..+0x23, +0x3E/+0x3F, +0x67, +0x7C..+0x83) hold allocator leftovers and are left out of the diff.
+* `puppet_tuning` (4 players, ~8 min) and `npc_hit_feedback` (~3 min): evidence runs without a switch (BUG-0722,
+  BUG-0717).
+* `pool_stress_<stage>` (coop_pool_stress.py, 4 players, 3 in Civ, ~6 min): `coop.pools` prints the physics body and
+  contact pools (count, high water, capacity) and the world's objects; the test fails at 75 % of a capacity or any
+  caught fault. The class test of BUG-0432 per stage (docs/05-re-notes.md#re-notes-fixed-pools).

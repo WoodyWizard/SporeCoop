@@ -7,7 +7,8 @@ host's creatures took nothing. A poison cloud is a cell the guest's own game mak
 hits on a mirror (DamageCell with the cloud as the attacker) were dropped: only the avatar's counted.
 
 The guest's avatar borrows the model of a cell in the pool with that part (`coop.pool borrow electric|poison`:
-the game's own electric step 0xE71980 / poison step 0xE76880 then run for it), next to a host creature
+the game's own electric step 0xE71980 / poison step 0xE76880 then run for it; none in the pool: `... graft`, the
+part written into the avatar's own model data as a creation with it has), next to a host creature
 given hp 60 (`coop.pool npcflag`).
 1. --part electric: within --seconds the host's game applies type-1 hits of the guest (`guest_attack_types=`
    of the host's `coop.pool`, the damage type of the electric animation) and the creature's hp drops in
@@ -45,7 +46,7 @@ def main():
     time.sleep(3)
     got = ''
     for _ in range(20):  # a cell of the pool with that part (mirrors come in as the guest looks around)
-        got = guest.call(f'coop.pool borrow {a.part}')['out'].strip()
+        got = guest.call(f'coop.pool borrow {a.part}' + (' graft' if _ >= 6 else ''))['out'].strip()
         if got.startswith('borrowed'):
             break
         guest.call(f'coop.pool tp {(_ % 4 - 1.5) * 40:.0f} {(_ % 3 - 1) * 40:.0f} 0')
@@ -83,9 +84,10 @@ def main():
         if 'no such cell' in st or 'dying=1' in st or (low is not None and hp0 is not None and low <= hp0 - 6):
             break
     t1_types, g1 = types(host), guest.call('coop.pool')['out']
+    print('  guest: ' + guest.call('coop.pool borrow status')['out'].strip(), flush=True)
     dt = [b - x for b, x in zip(t1_types, t0_types)]
     print(f'  host: hp {hp0} -> {low}, guest attack types +{dt}', flush=True)
-    for k in ('zaps', 'zap_hits', 'product_hits', 'hits_sent'):
+    for k in ('zaps', 'zap_hits', 'product_hits', 'product_pairs', 'products', 'hits_sent'):
         print(f'  guest {k}: {num(g0, k)} -> {num(g1, k)}', flush=True)
     m = re.search(r'foreign_hits=([\d/]+)', g1)
     print(f'  guest foreign_hits (mirror/puppet/other): {m.group(1) if m else "?"}', flush=True)

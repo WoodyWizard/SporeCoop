@@ -6365,8 +6365,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            return 1;
                        }
                        // fields that differ by nature: vtables +0/+4, refcount +8, the strings' pointers +0x40..+0x5C,
-                       // the vector's pointers +0x70..+0x7B (its contents are compared), +0x80/+0x84 (allocator)
-                       auto skip = [](int o) { return o < 0xC || (o >= 0x40 && o < 0x60) || (o >= 0x70 && o < 0x88); };
+                       // the vector's pointers and allocator +0x70..+0x83 (its contents are compared), and the bytes
+                       // the constructor never writes (padding after its byte fields: +0x21..+0x23, +0x3E/+0x3F, +0x67;
+                       // the allocator's leftovers, seen different in the lab 20261108-035619)
+                       auto skip = [](int o) {
+                           return o < 0xC || (o >= 0x21 && o <= 0x23) || o == 0x3E || o == 0x3F || (o >= 0x40 && o < 0x60) || o == 0x67 ||
+                                  (o >= 0x70 && o < 0x84);
+                       };
                        for (EditKind kind : {EditKind::Own, EditKind::Evolve}) {
                            void* req = build_editor_request(kind, 0, game::species_key(av));
                            ReqImage ours = req_image(req);
