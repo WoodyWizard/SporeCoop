@@ -32,7 +32,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0019](BUG-0019-creature-a-guest-that-gets-the-world-right-after.md) | fixed | bug | Creature | 2026-10-25 | 0.7.3.0 | Creature: a guest that gets the world right after the host's editor stays a hatchling |
 | [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | fixed | bug | Creature | 2026-10-25 | 0.7.3.0 | Our objects (puppets, proxies, their herds) are written into saves |
 | [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
-| [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
+| [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | fixed | test | Creature | 2026-10-25 | 0.7.3.0 | editor_strays fails once under a full lab load |
 | [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | fixed | bug | Creature | 2026-10-25 | 0.7.3.0 | NPC net ids can repeat after about 65k allocations in one world |
 | [BUG-0024](BUG-0024-tools-fakepeer-py-speaks-protocol-6-the-mod-7.md) | fixed | tooling | All | 2026-10-25 | 0.7.3.0 | tools/fakepeer.py speaks protocol 6, the mod 7 |
 | [BUG-0025](BUG-0025-spore-sh-kill-on-lane-1-could-kill-a-spore-the-o.md) | fixed | tooling | All | 2026-10-25 | 0.7.3.0 | spore.sh kill on lane 1 could kill a Spore the owner started |
