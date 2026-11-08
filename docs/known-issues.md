@@ -2367,3 +2367,21 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   factor at random). `coop_space_store.py`: the guest sold a Red Spice for 281, the host for 4,779 to the same empire.
   Both earnings go into the shared money, so nothing is lost, but the trade screens disagree.
 * Ticket: BUG-0747.
+## Space: the host's copy of a guest's ship fails the sync-check while it flies key pulses (2026-11-08, fix/w46-final11-triage)
+<a id="issue-space-guest-ship-path"></a>
+
+* `sync-check: MISMATCH ... p: 1 apart (pN 30-80 m)` with N a guest's own id: the host's puppet of that guest's ship is
+  a state behind on its path while the ship brakes or turns; `sync.own_path` (BUG-0547) takes back only the host's
+  own ship (p0). Seen in campaign / campaign_space / play_space since 0.7.3. Nothing wrong to see in the game.
+* Ticket: BUG-0758.
+## Tribe: the host's chief jumps (~120 m/s) and a guest's mirror stays 10-12 m off (2026-11-08, fix/w46-final11-triage)
+<a id="issue-tribe-chief-jump"></a>
+
+* campaign_tc2, 4 players: `t: 1 apart (t4 11.5)`, the host's leader at 119.7 m/s, the guest's mirror at 0; once per
+  run at most (0.7.10 and 0.7.11).
+* Ticket: BUG-0759.
+## Tribe: a raid takes the NPC hut to health 0 and no conquest follows (2026-11-08, fix/w46-final11-triage)
+<a id="issue-tribe-conquest-missing"></a>
+
+* tribe_conquer_orders: 1 of 5 runs of 0.7.11 played no conquest cinematic in 60 s after the hut's health 0.
+* Ticket: BUG-0761.
