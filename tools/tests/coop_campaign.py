@@ -772,6 +772,10 @@ class Campaign:
             if h.error:
                 self.finding('info', f'bot:{stage}:{h.name}', f'{stage} bot of {h.name} stopped: {h.error}')
         self.note('played: ' + '; '.join(f'{h.name} {h.summary()}' for h in hands))
+        # CAMPAIGN_HOST_CMDS_PLAYED_<STAGE>=<cmd>[;<cmd>]: the host's answers at the end of the stage's play (triage)
+        for cmd in [c.strip() for c in os.environ.get(f'CAMPAIGN_HOST_CMDS_PLAYED_{stage.upper()}', '').split(';') if c.strip()]:
+            for ln in self.host.call(cmd).splitlines()[:300]:
+                print(f'  host {cmd}: {ln}', flush=True)
         self.check()
 
     def bots(self, stage, end):

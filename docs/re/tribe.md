@@ -2680,3 +2680,24 @@ BUG-0684, GOG 2024. Follow-up of [the carried bundles](#tribe-carried-bundles).
   flow late, so a straight walk is not shown behind): the proxies got worse (npc_walk_tribe 0 of 2 with 2 jumps each,
   body_trail_hits 1 of 2 at 7.9 m after a push, lab 20261108-015610 / -2). The plain knee's cost stays: NPCs walking
   straight on through a spike, body_trail_hits NPC p90 0.56-0.58 m against 0.33-0.37 m without the fall (limit 0.6).
+## The creature attack's marker: an ornament of model 0x356EB8A (2026-11-08, fix/w46-n2-desyncs)
+<a id="tribe-attack-marker"></a>
+
+BUG-0528, BUG-0740. GOG 2024 (dc04aee5), Ghidra and lab lanes 9/10.
+
+* ✔ (Ghidra) 0xC911C0 (thiscall(this, const Vector3* pos, float 10.0) ret 8) runs only in Tribe (mode 0x1654C02): it makes
+  once (this+0x28) an ornament of noun 0x18C88E4 and sets its model 0x356EB8A (0xC6F910), puts it at pos, makes once
+  (this+0x24) a noun 0x2E72CAE object, and adds a minimap blip through cTribeUI vt 0x6C and 0xCC98C0 (flags 0x10000 /
+  0x8000 / 0x4000). Its only caller is `SporeCoop::SpotRecord_CellId` 0xC9B140 (+0x66F, return 0xC9B7AF).
+* ✔ (runtime, `probe 0x00C911C0`, lab 20261108-050749 campaign_tribe#3) the call during Tribe play came from the creature
+  attack behaviour's start 0xD73930 (make = 0, return 0xD739E0), with this = the global 0x157ADB0: one marker for the
+  attack, made at its first attack and reused. The detector then sees it as a host-only ornament (`Tribe:*:ornament`,
+  mapped to BUG-0740 in tools/detector_report.py): the attack runs only in the host's game.
+* ✔ (runtime) the tribe fixture's three ornaments of model 0x356EB8A are the same in both games; a share save, a guest's
+  rejoin (2 players) and three extra guests' rejoins (4 players) made none (lane 9, 2026-11-08).
+* ~ `SpotRecord_CellId` 0xC9B140 also arms a game timer (0x1695368 = now + 240 s); its periodic caller 0xC9B8D0 (from
+  0xCDF080 / 0xCFE2C0) makes a record for each cTribe's cached spot (tribe +0x300 flag, +0x304 position from 0xC8FFB0),
+  0xCDDE70 (the Tribe entry state machine 0xCDE7E0) for the spawn markers (noun 0x36BE27E, +0x108 == 0x57F09E5E).
+* ? Why `coop.drama start 7` on the fixture (lab 20261108-052511, -052727: the attack started and ended within 150 s)
+  made no marker: not known (no formed tribe, the pace rule held `coop.tribe form`; or the attack never reached its
+  start behaviour).

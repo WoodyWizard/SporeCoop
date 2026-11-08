@@ -5044,7 +5044,8 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   while the game enters Tribe (BUG-0359's path, "went from Creature to Tribe during the save"). Reached in 4 of 10 runs
   (lab 20261108-040233, -044415): the shares go out with an already written save in the others. Works with any campaign
   that advances from Creature (campaign_ct with the env set).
-* `CAMPAIGN_HOST_CMDS_<STAGE>=<cmd>[;<cmd>]` (coop_campaign.py): console commands for the host once every guest is in
+* `CAMPAIGN_HOST_CMDS_<STAGE>=<cmd>[;<cmd>]` and `CAMPAIGN_HOST_CMDS_PLAYED_<STAGE>` (coop_campaign.py, the second at the
+  end of the stage's play, its answer printed): console commands for the host once every guest is in
   that stage (triage: `probe 0x00C911C0`). `SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]` (monitor.py): the
   SPORE_DETECTOR_DIAG commands also run for a finding whose sig contains one of them (e.g. `:ornament` with
   `coop.wobj raw 18C88E4 3000 576`, BUG-0528).

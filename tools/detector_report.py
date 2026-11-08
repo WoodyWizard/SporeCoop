@@ -66,7 +66,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Creature:host_local:creature': 'BUG-0487', 'Creature:guest_only:creature': 'BUG-0487',
     'Tribe:unmatched:tribe_tool': 'BUG-0488', 'Tribe:unmatched:citizen': 'BUG-0488', 'Tribe:*:nest': 'BUG-0488',
     'Tribe:*:interactive_ornament': 'BUG-0488',
-    'Tribe:*:ornament': 'BUG-0528',
+    'Tribe:*:ornament': 'BUG-0740',  # the host's creature attack marker (BUG-0528 triage)
     '*:*:gameplay_marker': 'BUG-0489',
     'Space:*:citizen': 'BUG-0490', 'Space:*:vehicle': 'BUG-0490',
     'Space:*:ornament': 'BUG-0541',

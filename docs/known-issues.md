@@ -2298,3 +2298,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   windows ...`; test keepalive_stall). The next occurrence names the loop.
 * Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687
+
+## Tribe: the host's creature attack marker is not on the guests' maps (2026-11-08, fix/w46-n2-desyncs)
+<a id="issue-tribe-attack-marker"></a>
+
+* What happens: when the host's game runs a creature attack on the village (the Drama Manager's kind 7), its marker (an
+  ornament of model 0x356EB8A) and minimap blip are only in the host's game; the guests see the attacking animals but not
+  the marker. The detector reports it as `Tribe:unmatched:ornament` / `host_only:ornament`.
+* Reproduce: campaign_tribe with SPORE_DETECTOR=20 (3 of 16 four-player campaigns on 2026-11-08); not yet on the fixture.
+* Known: docs/re/tribe.md#tribe-attack-marker (the maker 0xD73930 -> 0xC9B140 -> 0xC911C0).
+* Not checked: how the game removes the marker; why `coop.drama start 7` on the tribe fixture made none.
+* Ticket: BUG-0740 (from BUG-0528)
+
