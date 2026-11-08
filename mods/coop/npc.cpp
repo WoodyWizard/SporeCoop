@@ -429,7 +429,21 @@ static void* ai_target(void* c)
 // `coop.fix npc.scale off`: proxies keep their own size (0.7.3.6).
 static bool g_scale_fix = true;
 COOP_FIX("npc.scale", "BUG-0461", g_scale_fix, "creature: NPC proxies get the host NPC's size (young ones small)");
-static const fields::Field kNpcFields[] = {fields::kScale};
+// BUG-0710: the host NPC's maximum health follows it after the spawn (a baby that grows up: 5 -> 10)
+static float read_max_hp(void* c) { return game::max_health(c); }
+static void apply_max_hp(void* c, float v)
+{
+    if (!g_max_hp_fix || !(v > 0) || !std::isfinite(v))
+        return;
+    for (auto& [id, px] : g_proxies)
+        if (px.c == c) {
+            px.max_health = v;
+            if (!px.killed && creature_hp::drive_puppet(c, game::health(c), v))
+                g_max_hp_applied++;
+            return;
+        }
+}
+static const fields::Field kNpcFields[] = {fields::kScale, {fields::F_MAX_HP, "max_hp", read_max_hp, apply_max_hp, 0.01f}};
 
 static void npc_each(void (*cb)(uint16_t, void*, void*), void* u)
 {
@@ -521,7 +535,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
-    fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
+    fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
