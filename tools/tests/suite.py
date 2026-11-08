@@ -87,6 +87,7 @@ add('effects_live', P + 'coop_effects_live.py', warm=True, minutes=2, fixture='c
 add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review item 7: 60 s at the rate limit, the relay releases the effect reference (off: the game's private commit grows)
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
+add('civ_money_short', P + 'coop_civ_money_short.py', warm=True, minutes=3, fixture='civ')  # a paid build the money does not cover is not built, the shared money the same on both and never below 0 (BUG-0613; SPORE_FIX_OFF=civ.build_money fails)
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
 add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell')  # creatures face as on the host on the guest; guest bites kill
