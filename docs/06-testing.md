@@ -4833,3 +4833,13 @@ sync-check took none of those for a difference, no MISMATCH, and `coop.diag sync
 the path (lab 20261107-215251 #1: 11.4 m past a ship that had stopped, a latency spike's extrapolation, BUG-0674) stays
 a first-look difference that its recheck clears. `SPORE_FIX_OFF=sync.own_path` must FAIL (every moment is a difference). The forced MISMATCH is inside
 `LAB-MARK sync-force` lines (the lab's gate leaves it out).
+
+## play_civ: the gift and claim checks look in time (2026-11-07, fix/w46-v2-civ-space)
+<a id="testing-play-civ-checks"></a>
+
+BUG-0325. play_civ's pending checks (`Game.expect`) are looked at only in the audits (every 8 s plus the audit's
+time). The gift check therefore polls the giver right after its click (4 s, every 0.2 s) and compares what the giver
+sees with the host's owner of that moment: the partner's bot often gave a vehicle back 1.4-7 s after the gift
+(`give_returned`). The spice claim check gives the guest 4 s after it first sees the host's claim (the host sends
+the node owners once a second, a guest in a city planner takes them on its return: `claim_seen_early`). A rejected
+guest order now names its target in the host's log ("target kind K id I ... not in the host's game").

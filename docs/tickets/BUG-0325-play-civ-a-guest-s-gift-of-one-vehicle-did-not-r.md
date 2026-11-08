@@ -1,19 +1,19 @@
 ---
 id: BUG-0325
 title: play_civ: a guest's gift of one vehicle did not reach the host, and one guest command was rejected (seed 11)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-10-30
 source: play_civ.py --seed 11, fix/w14-tribe-civ
 role: guest
 versions: fix/w14-tribe-civ (main b3101d2 + branch)
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w46-v2-civ-space
+commits: eb1abf07
+tests: play_civ
+signature: play_civ "did not happen: <who> sees [ids] owned by the partner"; "spice node ... guest sees FFFFFFFF"; "guest commands: ... rejected 1"
+docs: docs/06-testing.md#testing-play-civ-checks
 related: BUG-0206
 ---
 
@@ -27,17 +27,32 @@ the run was good (p90 0.22 m, max 1.52 m). Seen once (the same seed's run before
 neither).
 
 ## Root cause
-Not analysed. Code reading: the host counts a rejection for a malformed gift (bad `to`) or a
-command for a vehicle / city the sender does not own; a gift of a vehicle the sender does not own
-on the host is skipped silently (not counted). Candidates (inferred): the vehicle changed owner or
-died on the host between the guest's selection and the gift, or a command raced a capture.
+Three signatures of play_civ's "no problems", each read from the logs (observed), none a desync a player sees:
+* "did not happen: <giver> sees [ids] owned by the partner and no longer selected": the gift arrived on the host every
+  time ("Bob gave 3 vehicles to Alice" at 12:50:51.93, rel/0.7.10 lab 20261107-124806); the check was looked at only
+  at the next audit (every 8 s plus the audit's own time), and by then the partner's bot had given a vehicle back
+  ("Alice gave 1 vehicle to Bob" 12:50:58.99; the same in fix/w46-tribe-civ 20261107-083217 1.4 s after the gift and
+  rel/0.7.5 20261104-075207 2.7 s after): the giver rightly owned it again.
+* "spice node (x, y, z): host owner P, guest sees FFFFFFFF" (the 0.7.10 final check, rel/0.7.10 lab 20261107-141346, and
+  2 more runs): the claim check compared the guest at once when it first saw the host's claim; the host sends the node
+  owners once a second (every 10th snapshot, civ.cpp host_tick) and a guest in a city planner takes them only back in
+  Civ. The audit's own node compare (3 s second look) never found a lasting difference in these runs.
+* "guest commands: sent N, the host executed N-1 and rejected 1": every logged rejection was `kind 0` (an order) with
+  no reason in the log, i.e. not own_vehicle() (that one names it since fix/w41-civ-citizens): the order's target did
+  not resolve on the host (resolve_target: a vehicle id the host no longer has, or an object not within 10 m), a target
+  that died on the host while the guest's copy was still there (inferred: the log did not name the target).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test (play_civ.py): the giver polls its gift for 4 s at once (0.2 s) and compares what it sees with the host's owner of
+that moment (a vehicle given back is no problem: `give_returned`); the claim check looks again 4 s or more after it first
+saw the host's claim (`claim_seen_early`) before it calls a difference a problem. Diagnostics (civ.cpp host_command): a
+rejected order names its target ("target kind K id I noun N at (x y z) not in the host's game"), so the next rejection
+says which target it was. No mod behaviour changed, no switch.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test harness timing (the checks' look, not the game): the causes are in the logs above; play_civ with the
+new checks: out/lab/20261107-220353 (lane 10, 10.3 min: no problems, 247 checks, 19 gifts, guest commands 80 sent, 80
+executed, 0 rejected).
 
 ## History
 - 2026-10-30: opened.
@@ -51,3 +66,4 @@ executed 67 and rejected 1" ("rejected command kind 0 from player 1" at s 254); 
 play_civ logs kept in the worktrees (0.7.4-0.7.8). Not new in 0.7.8.
 
 - 2026-11-07 (rel/0.7.10 integration): play_civ lane 4 (lab 20261107-124806): "did not happen: guest sees [1, 5, 6] owned by the partner and no longer selected"; still open, in plan-0.7.11 V2.
+- 2026-11-07 (fix/w46-v2-civ-space, 0.7.11 V2): the three signatures traced to the checks' timing (logs above); play_civ's gift and claim checks look in time, a rejected order names its target. Closed.
