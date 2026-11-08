@@ -4976,4 +4976,12 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   then die (`coop.tribe pincer <victim> <attacker> 1000`); 6 s later every host ground bundle within 30 m has a guest
   ground bundle within 3 m and no guest carried bundle is without a host one within 8 m. BUG-0661;
   `SPORE_FIX_OFF=wobj.bundle_reclass` fails (lab 20261108-010006), on passes (20261108-011630-2).
+## The players' nest eggs: creature_family_eggs (2026-11-08, fix/w46-k8-open)
+<a id="testing-creature-family-eggs"></a>
+
+* `coop_creature_family_eggs.py` (suite `creature_family_eggs`, warm, ~2 min, creature fixture): the host's family herd
+  (`coop.nest herds`, avatar=1) is made to miss a member (`coop.nest target <h> <n+2>`, `respawn <h> 2000`), a member
+  lays an egg; 8 s later (it rolls), for 60 s every 6 s: the eggs within 70 m of the nest on both games pair one to
+  one within 2 m. `--die` (suite `creature_family_eggs_die`): the host's avatar dies and respawns instead. BUG-0660;
+  `SPORE_FIX_OFF=nest.eggs_family` fails (lab 20261108-013018), on passes (20261108-011630).
 

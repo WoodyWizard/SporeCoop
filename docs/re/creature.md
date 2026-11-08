@@ -3535,3 +3535,17 @@ section creature-herd-evolution-desync (what advances +0xF0).
   host's max by its own rules" is disproved by that run.
 * ✔ creature_hp's GetMaxHp hook answers a stored maximum for the mod's creatures (`game::is_puppet`: puppets and
   proxies); `npc.max_health` (BUG-0710) stores NpcSpawn.max_health there.
+## The eggs of the players' own nest (2026-11-08, fix/w46-k8-open)
+<a id="creature-family-eggs"></a>
+
+BUG-0660, follow-up of [#creature-nest-eggs](#creature-nest-eggs). GOG 2024, lane 4.
+
+* ✔ (runtime) the players' nest has the avatar family's herd (cHerd +0x84 mOwnedByAvatar set; on the creature fixture
+  target 6, 5 members, respawn 5000 ms, one egg of the save in state 6). Its members are NPCs: on a guest they are the
+  host's mirrored ones (no AI), so only the host's family lays (`coop.nest target <h> 7` + `respawn <h> 2000`: an egg
+  12-18 s later). A death and hatch of either player (`coop.team die`) adds no egg on either game.
+* ✔ A laid family egg falls and rolls for a few seconds (one went 3.4 m down the slope); a guest's own save egg once
+  stood 6.4 m from the host's, 6.5 m over its ground, for minutes (BUG-0443's hanging egg class, inferred).
+* ✔ `nest.eggs_family`: the host sends them (state | 0x80); the guest binds its own family egg within 4 m and puts it
+  at the host's place, or mirrors the host's into its own family herd (lab 20261108-011630).
+
