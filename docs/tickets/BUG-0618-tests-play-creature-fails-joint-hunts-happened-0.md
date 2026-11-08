@@ -8,9 +8,9 @@ reported: 2026-11-06
 source: rel/0.7.9 integration run out/lab/20261106-040221 (fix/w45-int2)
 role: 
 versions: 
-fixed_in: 0.7.9
-branch: fix/w45-last
-commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711
+fixed_in: unreleased
+branch: fix/w46-g4-tests
+commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711, e6158137
 tests: play_creature
 signature:
 docs: docs/re/creature.md#creature-attack-reach, docs/06-testing.md#testing-w45-last
@@ -75,3 +75,4 @@ Earlier: no-fail-run: a flaky bot outcome, not reproduced in 3 runs on lane 3 (0
   npc.cpp hit handling) and play_creature.py are unchanged since v0.7.9; the 14 play_creature runs in the lab dirs since the fix
   (2026-11-06 12:50 to 2026-11-07) gave +4..+14, rel/0.7.10 20261107-110531 +8. Verdict: a bot flake (the two bots'
   hunts did not overlap), not a regression; left fixed, reopen when it repeats.
+- 2026-11-08 (fix/w46-g4-tests): G4 reopened and fixed again: the +0 joint runs repeated (fix/w46-p4-creature 20261107-212113, fix/w46-k2a-state 20261107-232019, fix/w46-k4-bodies 20261108-020506, fix/w46-k8-open 20261108-023113; 5 of ~33 played runs since the 0.7.9 fix, joint hits median ~6 of ~80 hits). Cause (G4 analysis of 52 runs, out/g4/joint in the fix/w46-g4-tests worktree): both bots hunted the same animals, the joiner started 1-3 s after the leader, but only the leader bit: a Kook dies ~10 s after the leader reaches it; the bot's walk-and-use key waited behind a 1e9 gap sentinel after every click, a moment's lost target (retarget_none 60-360 times a run) made a new click that cancelled the walk, and a leader that lost its prey left the pack apart. Fix (e6158137, bot only, the check unchanged): no sentinel, a short wait instead of a click when the game drops the target during its walk, the leader holds its first bite at most 8 s until the partner hunts the same animal and is near, a pack hunt passes to the partner when the leader's ends; the hunt log names each bot's own bites. PASS 4 of 4: out/lab/20261108-060716 (+27, +1, +32, +34 joint hits). The +1 run: the joiners often arrive after the 8 s hold (own bites 0 in most pack hunts), a thinner tail, no failure. FAIL (the old bot): the four runs above; --old-attack keeps the 0.7.8 loop.
