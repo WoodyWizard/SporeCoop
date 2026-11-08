@@ -130,17 +130,60 @@ static bool g_fix_planner_hold = true;
 COOP_FIX("civ.planner_hold", "BUG-0493", g_fix_planner_hold,
          "civ: the mod changes no building, owner or mirror the open city planner holds until it closes");
 static uint32_t g_planner_held, g_planner_kills_held, g_planner_picks_refused;
+// BUG-0682: the editor of the last update is freed with the city input strategy by the stage teardown (the quit to
+// the galaxy menu, a load): its memory stays readable, +0x40 garbage, and the next planner_city() within 3 frames
+// cast it (a guest's caught fault in game::cast from wsync's city row, campaign_space). Now the editor is trusted
+// only in the mode of its update and not while the stage is leaving, and +0x40 must be an object of the game's.
+static bool g_fix_planner_stale = true;
+COOP_FIX("civ.planner_stale", "BUG-0682", g_fix_planner_stale,
+         "civ: the city planner's editor is forgotten at the quit / a mode change; its city must have a game vtable");
+static uint32_t g_editor_mode;     // the mode of the last update
+static bool g_planner_read;        // planner_city() read the editor's +0x40 (BUG-0682 probe)
+static uint32_t g_planner_stale_refused;
+static bool vtable_in_game(const void* obj);
 
 // the city the local planner edits now, or null (the update runs every frame while it is open)
 static void* planner_city()
 {
     if (!g_editor || H->frame_index() - g_editor_frame > 3 || !skg::readable(g_editor, kEdMovedSize + 4))
         return nullptr;
+    if (g_fix_planner_stale && (game::leaving_stage() || game::mode_id() != g_editor_mode)) {
+        g_editor = nullptr; // (the update sets it again while the planner lives)
+        g_planner_stale_refused++;
+        return nullptr;
+    }
+    g_planner_read = true;
     void* o = F<void*>(g_editor, kEdCity);
+    if (g_fix_planner_stale && o && (!skg::readable(o, 0x10) || !vtable_in_game(o))) {
+        g_planner_stale_refused++;
+        return nullptr;
+    }
     return o ? game::cast(o, kCityType) : nullptr;
 }
 static bool planner_holds(void* city) { return g_fix_planner_hold && city && city == planner_city(); }
 bool planner_holds_city(void* city) { return planner_holds(city); }
+
+// BUG-0682 test probe (`coop.civ planner_probe on|off`): planner_city() once a frame in every mode, as wsync's city rows
+// and the guest's messages call it; counts the frames in which it read the editor of an update of another mode or
+// while the stage was leaving (the freed editor of the teardown) and the cities it returned then
+static bool g_planner_probe;
+static uint32_t g_probe_frames, g_probe_stale_reads, g_probe_stale_cities, g_probe_seen;
+void planner_probe_tick()
+{
+    if (!g_planner_probe || !g_ok)
+        return;
+    g_probe_frames++;
+    bool stale = g_editor && (game::leaving_stage() || game::mode_id() != g_editor_mode);
+    if (g_editor)
+        g_probe_seen++;
+    g_planner_read = false;
+    void* c = planner_city();
+    if (stale && g_planner_read) {
+        g_probe_stale_reads++;
+        if (c)
+            g_probe_stale_cities++;
+    }
+}
 // the spatial objects in the planner's moved-objects map (an eastl rbtree: anchor right +0, left +4,
 // root +8; node value at +0x10 = the object's spatial interface, then its target position)
 static void planner_moved(std::vector<void*>& out)
@@ -238,6 +281,7 @@ static int SK_THISCALL h_EditorUpdate(void* ed, int x)
 {
     g_editor = ed;
     g_editor_frame = H->frame_index();
+    g_editor_mode = game::mode_id();
     return o_EditorUpdate(ed, x);
 }
 static uint32_t pol_of(void* o) { return F<uint32_t>(o, kPol); }
@@ -4807,6 +4851,15 @@ std::string debug(const std::vector<std::string>& a)
             return "no such vehicle";
         thiscall<void>(a_Die, v, 1, 0xFFFFFFFFu);
         return "died";
+    }
+    if (!a.empty() && a[0] == "planner_probe") {
+        if (a.size() > 1)
+            g_planner_probe = a[1] == "on" || a[1] == "1";
+        char line[200];
+        snprintf(line, sizeof line, "planner_probe %s frames=%u editor_seen=%u stale_reads=%u stale_cities=%u refused=%u fix=%d\n",
+                 g_planner_probe ? "on" : "off", g_probe_frames, g_probe_seen, g_probe_stale_reads, g_probe_stale_cities,
+                 g_planner_stale_refused, g_fix_planner_stale ? 1 : 0);
+        return line;
     }
     if (!a.empty() && a[0] == "planner") {
         // planner [pick <obj>]: the open city planner (BUG-0491/0493 tests): its city, the objects it moves,
