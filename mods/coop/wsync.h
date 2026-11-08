@@ -32,6 +32,9 @@ namespace wsync {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<bool()> playing; // the local player has its entity in the world (not loading, not an editor)
+    // BUG-0712: Space, the sky row is in play: host on a planet; guest on a planet and the host's latest state at the
+    // same place (that planet)
+    std::function<bool()> space_sky;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

@@ -154,7 +154,20 @@ static bool planet(uint32_t m)
 {
     return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv || m == modes::kSpace;
 }
-static bool sky(uint32_t m) { return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv; }
+// BUG-0712: on a Space planet the two games' skies stood 160-172 deg apart (the detector's All:state:time_of_day): the sky
+// row was in play in Creature, Tribe and Civ only, each game ran the planet's day from its own load. With
+// wsync.space_tod the row is in play in Space too while the players are on the same planet (Ctx::space_sky; the day's
+// length row stays as before). Off: 0.7.10.
+static bool g_space_tod_fix = true;
+COOP_FIX("wsync.space_tod", "BUG-0712", g_space_tod_fix,
+         "wsync: on a Space planet a guest's sky follows the host's while both are on that planet");
+static bool sky(uint32_t m)
+{
+    if (m == modes::kSpace)
+        return g_tod_fix && g_space_tod_fix && C.space_sky && C.space_sky();
+    return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv;
+}
+static bool sky_day(uint32_t m) { return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv; }
 static bool tribe_mode(uint32_t m) { return m == modes::kTribe; }
 
 static char g_fmt[160];
@@ -1120,7 +1133,7 @@ static void herd_evo_guard()
 
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
-    {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
+    {2, "day", 1, &g_tod_fix, sky_day, r_day, s_day, false, f_day},
     {3, "stages", 5, &g_stages_fix, planet, r_stages, s_stages, false, f_stages},
     {4, "tribe_rel", 4, &g_rel_fix, tribe_mode, r_rel, s_rel, false, f_rel},
     {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
@@ -1351,6 +1364,14 @@ std::string status()
 static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string o;
+    if (argc >= 2 && !strcmp(argv[1], "sky")) { // tests (BUG-0712): this game's sky, whatever the stage
+        net::Quat q;
+        if (game::time_of_day(q))
+            H->out_printf(out, "sky %.4f %.4f %.4f %.4f\n", q.x, q.y, q.z, q.w);
+        else
+            H->out_printf(out, "no sky\n");
+        return 0;
+    }
     if (argc >= 2 && (!strcmp(argv[1], "dump") || !strcmp(argv[1], "want"))) {
         bool want = !strcmp(argv[1], "want");
         for (int i = 0; i < kNRows; i++) {

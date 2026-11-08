@@ -5840,6 +5840,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             const modes::Adapter* a = modes::for_mode(game::mode_id());
             return a && a->local() != nullptr;
         };
+        wc.space_sky = [] { // BUG-0712
+            if (g_mode != modes::kSpace || !(g_world & 0x40000000u))
+                return false;
+            if (g_sess.role() != net::Role::Client)
+                return true;
+            auto it = g_remotes.find(0);
+            return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+        };
         wsync::init(H, M, wc);
     }
     { // BUG-0472, BUG-0459: world objects owned by the host

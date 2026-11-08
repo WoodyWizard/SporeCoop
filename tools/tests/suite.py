@@ -272,6 +272,7 @@ add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=False, mi
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_siege_npc', P + 'coop_civ_siege_npc.py', warm=True, minutes=3, fixture='civ_npc')  # an NPC nation's army is no second player of a joint siege (BUG-0420; SPORE_FIX_OFF=civ.siege_players fails)
 add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixture='space')  # the host's escort's hits on a guest and the guest's on the escort are not relayed (BUG-0420; SPORE_FIX_OFF=space.friendly_hits fails)
+add('space_sky', P + 'coop_space_sky.py', minutes=5, fixture='space_empire')  # BUG-0712: on a Space planet both games show the same sky (SPORE_FIX_OFF=wsync.space_tod fails)
 add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
