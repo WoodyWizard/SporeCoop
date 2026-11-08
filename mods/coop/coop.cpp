@@ -2476,11 +2476,61 @@ COOP_FIX_UNSAFE("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: th
 std::thread* g_keepalive = nullptr;
 std::thread g_keepalive_old; // the old way, only with the fix off
 
+// BUG-0687 diagnostics: the host's frames stopped for good right after a guest left while this task still ran (the
+// main thread sat in a nested message loop that was not the game's: no Canvas::Tick, no Present) and the watchdog's
+// dump 30 s later never reached the log. Once per stall, 3 s in, the main thread's own call chain (read on the main
+// thread itself, as SporeKit's stack.here: no suspend) and its windows (a #32770 is a dialog) go to the log.
+static double g_stall_logged_for = -1;
+static BOOL CALLBACK stall_window(HWND w, LPARAM l)
+{
+    auto* out = (std::string*)l;
+    char cls[64] = "", title[64] = "";
+    GetClassNameA(w, cls, sizeof cls);
+    GetWindowTextA(w, title, sizeof title);
+    if (out->size() < 400)
+        *out += std::string(" [") + cls + " '" + title + "' visible=" + (IsWindowVisible(w) ? "1" : "0") + "]";
+    return TRUE;
+}
+static void stall_note(double since)
+{
+    if (g_stall_logged_for == since)
+        return;
+    g_stall_logged_for = since;
+    std::string chain;
+    uint8_t* teb = (uint8_t*)NtCurrentTeb();
+    uint32_t* hi = *(uint32_t**)(teb + 4);
+    volatile uint32_t marker = 0;
+    HMODULE exe = GetModuleHandleW(nullptr);
+    auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+    uintptr_t lo = (uintptr_t)exe, top = lo + nt->OptionalHeader.SizeOfImage;
+    HMODULE u32 = GetModuleHandleW(L"user32.dll");
+    int n = 0, nu = 0;
+    for (uint32_t* p = (uint32_t*)&marker; p < hi && n < 40; p++) {
+        uint32_t v = *p;
+        char b[24];
+        if (v > lo && v < top) {
+            snprintf(b, sizeof b, " %08X", v);
+            chain += b;
+            n++;
+        } else if (u32 && nu < 4 && v > (uintptr_t)u32 && v < (uintptr_t)u32 + 0x200000) {
+            snprintf(b, sizeof b, " user32+%X", (unsigned)(v - (uintptr_t)u32));
+            chain += b;
+            nu++;
+        }
+    }
+    std::string wins;
+    EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s; user32 %s; windows%s",
+        H->time_seconds() - since, chain.c_str(), nu ? "in the chain" : "not in the chain", wins.c_str());
+}
+
 void keepalive_task(void*)
 {
     g_keepalive_queued = false;
     if (H->time_seconds() - g_last_frame < 0.5 || g_sess.role() == net::Role::None)
         return;
+    if (H->time_seconds() - g_last_frame > 3.0)
+        stall_note(g_last_frame);
     g_sess.update();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
