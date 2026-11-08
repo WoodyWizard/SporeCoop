@@ -5201,3 +5201,12 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
   out/lab/20261108-081407 vs 20261108-081404). Tests leave the own editor with done (1416, 1062), then Save New
   (926, 604) if the exit dialog asks, as editor_sync_guest does. Tests that still click the cross on an own editor:
   coop_evolve_in_place.py (`--case cell` and `creature`) and coop_legless_guest.py paths may need the same change.
+* ✔ (lane 4, 2026-11-08) That editor has no game way to leave without its result either: Esc opens its Options menu
+  (Resume Editing, Spore Guide, Settings; Exit to Main Menu and Quit Spore greyed out), no exit item; done after an
+  edit closes it at once, without the save dialog (Save New / Replace / Don't Save) of the edit-a-creation editor, and
+  the edit is kept (legless_guest `--guest new` passes: the guest plays its new creature). So legless_guest
+  `--guest replace` and `--guest dontsave` no longer reach their dialogs. Changed (fix/w46-e1-merge): evolve_in_place
+  `--case creature` and editor_now leave with done; legless_guest `--guest cancel` leaves the unchanged editor with one
+  click on the check (BUG-0283's point: no "changes will be lost" for changes nobody made). Other tests that click
+  the cross on an own Creature editor (coop_guest_editor_hold, coop_editor_after_swap, coop_leave_avatar,
+  coop_long_session) were not changed or run here; the Cell editors keep their cross.
