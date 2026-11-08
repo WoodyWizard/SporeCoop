@@ -683,6 +683,10 @@ for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc'
 # BUG-0295 / BUG-0298: four players in Cell far apart and close together: every game's cell pool stays under what
 # the game's broadphase holds, each guest has the host's cells around it; SPORE_FIX_OFF=cell.budget fails
 add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
+# F4 of 0.7.12 (BUG-0767): one report for the session, four players: every guest sends / says no / a too big and a malformed
+# report are refused, the host's zip holds exactly the expected entries, the host's report alone; it makes reports on
+# purpose (checks crashes itself); SPORE_FIX_OFF=core.session_report fails
+add('session_report', P + 'coop_session_report.py', ('multi', 'extended'), minutes=8, reports=True)
 add('cell_nan', P + 'coop_cell_nan.py', minutes=3)  # a guest's own cell NaN is put back, no tiles from NaN boxes, a level-up after it (BUG-0299; SPORE_FIX_OFF=cell.nan_guard fails)
 add('cell_stale', P + 'coop_cell_stale.py', minutes=2)  # a group member drops a dead chase target copied from its leader: no fault per frame on the host (BUG-0306; SPORE_FIX_OFF=cell.pick_guard fails)
 add('cell_nan_all', P + 'coop_cell_nan.py --all', minutes=3)  # the own cell NaN in every field: healed once, not NaN again (BUG-0307; SPORE_FIX_OFF=cell.nan_heal_all fails)

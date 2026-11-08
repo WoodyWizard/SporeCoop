@@ -5454,3 +5454,18 @@ own blip list read back (`coop.find map`, a unit direction: compare directions t
   <noun> <x y z>`, `coop.fix tribe.duet off`; instruments for both players' members: `coop.tribe buy <type> 9 <deg>` +
   `buy_end` and `grab` on the host (docs/re/tribe.md#tribe-duet-test).
 * Cell: `coop.pool swallow <key> [kind]` (BUG-0746, cell_ko_food).
+
+## The session report test (2026-11-08, feat/w46-session-report)
+<a id="testing-session-report"></a>
+
+`tools/tests/coop_session_report.py` (suite `session_report`, multi / extended, ~8 min, one lane: four games through
+party.py) checks 0.7.12 F4 (BUG-0767, docs/REPORTING.md#reporting-session) by real clicks: the host clicks
+`askreports` or `report` in its window, each guest's game opens its own window with the question (`rask`, `rsend`,
+`rnosend` in `coop.uistate`) and the test clicks Send or Don't send. Rounds: A every guest sends; B (the host's Report a
+problem) Bob says no, Carol `coop.sreport test big`, Dave `test badname`; C Bob `test junk`, Carol `test overrun`, Dave
+sends; D the guests leave and the host's report alone. It reads the host's `mods\logs\SporeCoop-session-report-*.zip`
+from the lane's game folder with Python's zipfile: exactly the expected entries, no CRC error, every `Guest-*.zip` /
+`Host-*.zip` byte for byte the zip that player's game wrote (`SporeCoop-report-*-i<instance>.zip`; the four games of a
+lane share one `mods\logs`, the instance suffix tells them apart), SESSION.txt with each guest's state and no address,
+no `*.part` left. The test makes `report-*.txt` files on purpose (`reports=True`): it checks itself that no `crash-*`
+file appeared and every game still answers. `SPORE_FIX_OFF=core.session_report` fails (no guest is asked).

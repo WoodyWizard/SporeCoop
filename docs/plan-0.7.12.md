@@ -72,8 +72,9 @@ The host's PC receives files made by other people's PCs. Rules:
 * Consent: a guest sends only after it clicks "send"; the host sees who sent and who did not.
 * Size: at most 25 MB per player (a report is 1-5 MB); the transfer stops at the limit.
 * Content: the guest's report is the same zip its own "Report a problem" makes; the host checks that it is a zip
-  with only the known file names (logs, summary, screenshot, crash text and dump) and plain names (no folders, no
-  `..`, no drive letters), never unpacks it and never runs anything from it; it is stored inside the session zip
+  with only the known file names (logs, summary, screenshot, crash text and dump) and plain names (no `..`, no
+  drive letters, no other folders than the six the report has always had, one level: logs/, previous/, crashes/,
+  reports/, shots/, settings/; decided 2026-11-08, docs/REPORTING.md#reporting-session), never unpacks it and never runs anything from it; it is stored inside the session zip
   as received.
 * Privacy: the reports already mask the Windows user name and paths (log.cpp mask_paths); the guest's IP address
   is not written into the host's file. The guest's dialog says what is sent.

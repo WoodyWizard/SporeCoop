@@ -81,6 +81,7 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "settings.h"
+#include "sreport.h"
 #include "space_ext.h"
 #include "host_world.h"
 #include "diag_coop.h"
@@ -3576,7 +3577,11 @@ void on_frame(void*, int, void*)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
+<<<<<<< HEAD
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
+=======
+    sreport::tick();  // F4: the session report's round (host) and the guest's question / transfer
+>>>>>>> feat/w46-session-report
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
@@ -4217,6 +4222,7 @@ void setup_callbacks()
         support::on_disconnected(why);
         rejoin::clear(); // the session ended (BUG-0235)
         settings::on_disconnect();
+        sreport::on_disconnect();
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
@@ -4302,8 +4308,13 @@ void setup_callbacks()
             settings::on_message(type, from, r);
             return;
         }
+<<<<<<< HEAD
         if (type == net::MSG_COLORS) { // F2: the player colours (Session class)
             pfind::on_message(type, from, r);
+=======
+        if (type == net::MSG_REPORT) { // F4: the session report (BUG-0767)
+            sreport::on_message(from, r);
+>>>>>>> feat/w46-session-report
             return;
         }
         if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
@@ -4587,6 +4598,7 @@ void setup_callbacks()
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
                     reason == 1 ? "timed out (no packets)" : "left or replaced by its rejoin");
         support::on_player_leave(id, reason); // its link statistics (diag_stats.cpp)
+        sreport::on_player_leave(id);         // BUG-0767: its report will not come
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
@@ -5682,17 +5694,15 @@ std::string targets(int all)
     return out;
 }
 
-// The host's "Ask the players for their reports" (lobby and F9, any time; owner 2026-11-08). F4 of 0.7.12
-// (docs/plan-0.7.12.md F4) fills this in: every guest is asked "send / don't send", the reports come to the host
-// over the session and go into one SporeCoop-session-report-<time>.zip. Until then the click is logged and says so.
-// Returns the line the co-op window shows.
+// The host's "Ask the players for their reports" (lobby and F9, any time; owner 2026-11-08): F4 of 0.7.12
+// (BUG-0767, sreport.h) asks every guest "send / don't send" without making the host's own report; the reports come
+// over the session and go into one SporeCoop-session-report-<time>.zip. Returns the line the co-op window shows.
 std::string ask_players_for_reports()
 {
     if (g_sess.role() != net::Role::Host)
         return "Only the host can ask for the reports";
     LOG("ui: the host asks the players for their reports (%d players)", (int)g_sess.players().size());
-    trace::line("report", "ask players (stub until F4)");
-    return "Asking the players for their reports is not available in this version yet";
+    return sreport::ask("");
 }
 
 void init_ui()
@@ -5736,7 +5746,17 @@ void init_ui()
             s += std::string("  -  ") + H->build_name();
         return s;
     };
-    a.report = [] { return make_report("from the co-op window"); };
+    a.report = [] {
+        std::string p = make_report("from the co-op window");
+        // F4 (BUG-0767): the host's report asks every guest for its report too (one session zip)
+        if (!p.empty() && g_sess.role() == net::Role::Host && g_sess.players().size() > 1)
+            sreport::ask(p);
+        return p;
+    };
+    a.report_round = [] { return g_sess.role() == net::Role::Host && sreport::round_running(); };
+    a.report_line = sreport::host_ui_line;
+    a.report_prompt = sreport::guest_prompt;
+    a.report_answer = sreport::answer;
     a.report_shot = [] { return support::report_shot("report", "\"Report a problem\" in the co-op window"); };
     a.report_shot_state = [] { return support::report_shot_state(); };
     a.update_do = autoupdate::start_update;
@@ -6357,11 +6377,24 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         sc.feed = feed;
         settings::init(H, M, sc);
     }
+<<<<<<< HEAD
     { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap
         pfind::Ctx fc;
         fc.sess = &g_sess;
         fc.feed = feed;
         pfind::init(H, M, fc);
+=======
+    { // F4 of 0.7.12 (BUG-0767): one report for the session
+        sreport::Ctx rc;
+        rc.sess = &g_sess;
+        rc.make_report = [](const char* why) { return make_report(why); };
+        rc.shot = [] { return support::report_shot("report", "the host asked for the session report"); };
+        rc.shot_state = [] { return support::report_shot_state(); };
+        rc.feed = feed;
+        rc.chat_log = chat_log;
+        rc.open_window = [] { coop_ui::open_lobby(); };
+        sreport::init(H, M, rc);
+>>>>>>> feat/w46-session-report
     }
     social::Ctx sc;
     sc.sess = &g_sess;
@@ -6390,6 +6423,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.sreport", "coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk - the session report (F4, BUG-0767): the host asks every guest for its report",
+                   sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",

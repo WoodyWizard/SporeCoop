@@ -776,3 +776,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0764](BUG-0764-find-each-other-arrows-to-partners-off-screen-pa.md) | fixed | feature | All | 2026-11-08 | unreleased | Find each other: arrows to partners off screen, partners on the minimap, player colours |
 | [BUG-0765](BUG-0765-co-op-window-2-0-the-window-in-steps-name-host-j.md) | fixed | feature | All | 2026-11-08 | unreleased | Co-op window 2.0: the window in steps (name, Host / Join, lobby with the session settings), Report a problem in the pause menu |
 | [BUG-0766](BUG-0766-space-a-guest-s-colony-planner-building-is-lost.md) | open | desync | Space | 2026-11-08 |  | Space: a guest's colony planner building is lost when the host's ship is on another planet |
+| [BUG-0767](BUG-0767-one-report-for-the-session-the-host-asks-every-g.md) | fixed | feature | All | 2026-11-08 | unreleased | One report for the session: the host asks every guest for its report, one session zip |
