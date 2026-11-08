@@ -1,20 +1,21 @@
 ---
 id: BUG-0328
 title: Tribe: a guest that rejoins never gets the host NPCs it was sent while it still played its old copy (coverage 75%)
-status: not-reproduced
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-10-30
 source: lab 20261030-175722 campaign_tribe#1 (lane 7)
 role: guest
 versions: main de87f05
-fixed_in:
-branch: fix/w45-tribe
-commits:
-tests: tribe_rejoin_npcs (coop_tribe_rejoin_npcs.py, a scenario)
+fixed_in: 0.7.4
+branch: fix/w40-scale (the fix, BUG-0487); fix/w46-n2-desyncs (the Tribe twin)
+commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
+tests: npc_resync_tribe (coop_npc_resync.py --fixture tribe, the twin), tribe_rejoin_npcs (coop_tribe_rejoin_npcs.py, a scenario)
 signature:
 docs:
 related: BUG-0288, BUG-0291, BUG-0125, BUG-0487
+switch: npc.resync
 ---
 
 ## Report
@@ -46,11 +47,26 @@ all of kind `g`, while `coop.npc` listed 29 proxies; out/lab/20261103-235641), s
 variant was dropped. Next: pick the ids from `coop.npc` instead of the census.
 2026-11-04 (fix/w43-realign): realign_tribe_rejoin (coop_realign_planet.py --fixture tribe --case rejoin) compares the whole planet after a guest's leave and rejoin in Tribe: villages, huts, food mats, nests the same (lab 20261104-212408, 20261104-212748); tools of far villages differed (8 missing) until wobj.tools_planet (BUG-0488). The NPC coverage of this ticket is not what that test measures.
 
+2026-11-08 (fix/w46-n2-desyncs, N2 of 0.7.11): the state the report shows, shown in Tribe. What the 2026-10-30 guest
+had is a guest without the proxies of host NPCs the host counts as known for it (the host sends a known NPC's spawn
+once, then only its states; the rejoin's world load on the guest took the proxies made while it still counted as
+in place). Observed on the tribe fixture: the guest destroys three of its proxies without telling the host
+(`coop.npc forget <id>`, what that load leaves); with `SPORE_FIX_OFF=npc.resync` (the 0.7.3 code path: states of
+unknown ids dropped) the three stay missing in the guest's game for good (coverage of `coop.sync`, the game's own
+objects); with npc.resync (BUG-0487, released in 0.7.4) the guest asks for their spawns and its game has them again at
+the host's places within 10 s. Inferred, not shown: that the 2026-10-30 rejoin lost them this way (the rejoin itself
+did not lose NPCs again in 13 rejoins, the last two on this build: tribe_rejoin_npcs out/lab/20261108-030127).
+
 ## Fix
-None. The scenario test `coop_tribe_rejoin_npcs.py` (suite `tribe_rejoin_npcs`) stays: a guest
+npc.resync (BUG-0487, 0.7.4, commits above): a guest that gets states of an NPC it has no proxy of asks the host for
+its spawn again; the Tribe receive path is the same (npc_stage covers Tribe). Before: the scenario test `coop_tribe_rejoin_npcs.py` (suite `tribe_rejoin_npcs`) stays: a guest
 rejoins twice in Tribe and must have the host's NPCs again (it passes on main).
 
 ## Verification
+* FAIL with `SPORE_FIX_OFF=npc.resync`: out/lab/20261108-032117 npc_resync_tribe (lane 9: back [], missing [3, 6, 27]).
+* PASS with the fix: out/lab/20261108-032237 npc_resync_tribe #1 #2 (lane 9: all 3 forgotten NPCs back each time,
+  `asked=3` / `asked=6`).
+* The rejoin scenario: tribe_rejoin_npcs OK out/lab/20261108-030127 (2 rounds, coverage 100 %).
 Not reproduced; see the root cause. Logs of the replays: out/w16/replay_off*.txt of the fix/w16-tribe
 worktree (not in git).
 
@@ -72,3 +88,4 @@ worktree (not in git).
   above (2 x 2 rounds) and the earlier replays: the loss of the one 2026-10-30 run (main de87f05, before npc.resync of
   0.7.4, which re-asks for NPCs a guest gets states of and has no proxy of) was not seen again in 9 rejoins.
   Status not-reproduced; tribe_rejoin_npcs stays as the regression scenario.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): the class shown in Tribe with a FAIL/PASS twin (npc_resync_tribe, SPORE_FIX_OFF=npc.resync fails); closed as fixed by npc.resync of 0.7.4 (BUG-0487); the rejoin itself still did not lose NPCs (tribe_rejoin_npcs OK).

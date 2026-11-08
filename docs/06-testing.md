@@ -5024,3 +5024,13 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
   (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
   record of its own earlier session passes `start(..., keep_holds=True)`.
+
+## N2 of 0.7.11: re-checks of not-reproduced desyncs (2026-11-08, fix/w46-n2-desyncs)
+<a id="testing-n2-recheck"></a>
+
+* `coop_npc_resync.py --fixture tribe` (suite `npc_resync_tribe`, ~1 min): the Tribe twin of npc_resync (BUG-0328,
+  BUG-0487). The census lists Tribe animals as plain `g` rows without net ids, so the ids come from the guest's
+  `coop.npc list` (spawned, living proxies, nearest first) and the check is `coop.sync` coverage (each game's own
+  objects): the three forgotten ids must be in the guest's game again within 8 m of the host's NPC.
+  `SPORE_FIX_OFF=npc.resync` fails (out/lab/20261108-032117), with the fix it passes (20261108-032237 x2).
+

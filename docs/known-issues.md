@@ -1168,6 +1168,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: not reproduced (3 replays of seed 612535391, `coop_tribe_rejoin_npcs.py`).
 * Known: suspected window while the guest loads the host's world (docs/tickets BUG-0328). Not reproduced in 9 rejoins
   (2026-11-06, fix/w45-tribe): ticket status not-reproduced.
+* Fixed (2026-11-08, fix/w46-n2-desyncs): the state it shows (a guest without proxies of NPCs the host counts as
+  known) is what npc.resync (BUG-0487, 0.7.4) repairs; shown in Tribe by npc_resync_tribe (SPORE_FIX_OFF=npc.resync
+  fails). Ticket status fixed (0.7.4).
 * Ticket: BUG-0328
 
 ## Tribe: in a long campaign every guest shows tribe members 4-6 m off (2026-10-30, fix/w16-tribe)
