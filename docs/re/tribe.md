@@ -2676,3 +2676,7 @@ BUG-0684, GOG 2024. Follow-up of [the carried bundles](#tribe-carried-bundles).
 * Rule (`wobj.bundle_civ_carried`): outside Tribe a carried bundle is left to the game that carries it: no copy of the
   host's carried food is made on a guest, a guest's own carried bundle is kept (bundle_own), and a bound one whose host
   bundle is gone is not removed. Ground bundles are synced as before.
+* ~ Tried and reverted (2026-11-08): moving the fall's knee on by half of a newest state's extra age (a spike whose states
+  flow late, so a straight walk is not shown behind): the proxies got worse (npc_walk_tribe 0 of 2 with 2 jumps each,
+  body_trail_hits 1 of 2 at 7.9 m after a push, lab 20261108-015610 / -2). The plain knee's cost stays: NPCs walking
+  straight on through a spike, body_trail_hits NPC p90 0.56-0.58 m against 0.33-0.37 m without the fall (limit 0.6).
