@@ -6844,6 +6844,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
+    cvc.space_place = [] { return g_mode == modes::kSpace ? g_world : 0u; }; // BUG-0751
     cvc.host_away = [] { return host_absent_for(Absent::Civ); }; // BUG-0151, BUG-0231
     civ::init(H, M, std::move(cvc));
     census::Ctx csc;

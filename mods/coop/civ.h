@@ -30,6 +30,7 @@ struct Ctx {
     std::function<bool(const std::string& text, const std::string& done, std::function<void()> action)> vote;
     // a world beacon (label + edge arrow) on this machine
     std::function<void(const net::Vec3& pos, const std::string& text, double seconds, uint32_t argb)> beacon;
+    std::function<uint32_t()> space_place; // BUG-0751: in Space the place (PlanetID | 0x40000000 on a planet), else 0
 };
 // own vehicles selected now, else 1 if an own city's menu was opened last (the "give" button)
 int own_selected(bool* city = nullptr);

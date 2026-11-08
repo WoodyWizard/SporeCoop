@@ -1214,7 +1214,7 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4 };
+enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4, CMD_SPACE_BUILD = 5 };
 
 static void say_host_away(const char* what); // BUG-0693
 static bool local_play();
@@ -1424,12 +1424,26 @@ static bool g_fix_planner_send = true;
 COOP_FIX("civ.planner_send", "BUG-0189", g_fix_planner_send,
          "civ: a building a guest places in its city planner is built in the host's game too");
 
+// BUG-0751: in Space a colony's city planner is the same cCommunityEditor, but the civ module is off there (active()
+// is Civ only, Space cities have no host index), so a building a guest bought in its colony's planner stayed in the
+// guest's game. The guest now sends it with its planet (CMD_SPACE_BUILD); the host builds it in its city next to that
+// spot when its own ship is on the same planet (the cities of a planet exist only while it is the active planet).
+// Off: the guest's own game only (0.7.11).
+static bool g_fix_space_planner_send = true;
+COOP_FIX("civ.space_planner_send", "BUG-0751", g_fix_space_planner_send,
+         "civ: a building a guest buys in a Space colony's city planner is built in the host's game too (same planet)");
+static uint32_t g_space_builds_sent, g_space_builds_in, g_space_builds_away, g_space_builds_failed;
+static void send_space_build(void* city, void* b);
+
 using AddBuilding_t = int(SK_THISCALL*)(void*, void*, int);
 static AddBuilding_t o_AddBuilding;
 static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
 {
     void* ret = __builtin_return_address(0);
     int r = o_AddBuilding(city, b, x);
+    if (!active() && !g_applying && b && is_guest() && game::mode_id() == modes::kSpace &&
+        (uintptr_t)ret == a_PlannerAddBuildingRet && g_fix_space_planner_send)
+        send_space_build(city, b); // BUG-0751
     if (!active() || g_applying || !b)
         return r;
     net::Vec3 pos;
@@ -4001,8 +4015,68 @@ void tick(double now)
 }
 
 static uint32_t g_founds_outside; // BUG-0319 diagnostics: city foundings received outside the Civ mode
+// BUG-0751: guest, Space: a building bought in a colony's planner goes to the host with the planet it is on
+static void send_space_build(void* city, void* b)
+{
+    uint32_t place = C.space_place ? C.space_place() : 0;
+    if (!(place & 0x40000000u))
+        return;
+    // the building is not placed yet when the planner adds it (its position reads (0 0 0)): the city's position finds
+    // the city on the host, its free slot takes the building there as here
+    net::Vec3 pos, cp = city_pos(city);
+    game::object_position(b, pos);
+    net::Writer w;
+    w.u8(CMD_SPACE_BUILD);
+    w.u32(place);
+    w.u32(game::noun_id(b));
+    w.f32(cp.x); w.f32(cp.y); w.f32(cp.z);
+    w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
+    C.sess->send_reliable_to(0, net::MSG_CIV_CMD, w);
+    g_space_builds_sent++;
+    H->log(M, SK_INFO, "civ: space planner: a building %08X in the city at (%.0f %.0f %.0f) on %08X sent to the host (BUG-0751)",
+           game::noun_id(b), cp.x, cp.y, cp.z, place);
+}
+
+static void* local_city_near(const net::Vec3& p);
+
+// host, Space: a guest's colony planner building
+static void host_space_build(uint8_t from, net::Reader& r)
+{
+    r.u8(); // CMD_SPACE_BUILD
+    uint32_t place = r.u32(), noun = r.u32();
+    net::Vec3 cp, p;
+    cp.x = r.f32(); cp.y = r.f32(); cp.z = r.f32();
+    p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+    if (!r.ok())
+        return;
+    uint32_t mine = C.space_place ? C.space_place() : 0;
+    if (mine != place) {
+        g_space_builds_away++;
+        H->log(M, SK_INFO, "civ: space planner: %s's building %08X on %08X not built: this game is at %08X (BUG-0751)",
+               C.sess->name_of(from).c_str(), noun, place, mine);
+        return;
+    }
+    void* city = local_city_near(cp);
+    g_build_from = from; // the guest already has it (and paid in its planner)
+    void* b = city ? build_in_city(city, noun, p, false) : nullptr;
+    g_build_from = -1;
+    if (b)
+        g_space_builds_in++;
+    else
+        g_space_builds_failed++;
+    H->log(M, b ? SK_INFO : SK_WARN, "civ: space planner: %s's building %08X in the city at (%.0f %.0f %.0f) %s (BUG-0751)",
+           C.sess->name_of(from).c_str(), noun, cp.x, cp.y, cp.z, b ? "built" : city ? g_build_fail : "no city near it");
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
+    if (!active() && type == net::MSG_CIV_CMD && g_ok && is_host() && game::mode_id() == modes::kSpace && r.left()) {
+        net::Reader peek = r;
+        if (peek.u8() == CMD_SPACE_BUILD) {
+            host_space_build(from, r); // BUG-0751
+            return;
+        }
+    }
     if (!active()) {
         if (type == net::MSG_CIV_CMD && g_fix_cmd_hold && g_ok && is_host() && r.left()) { // BUG-0693
             g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
@@ -4221,6 +4295,9 @@ std::string status()
     snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u stops=%u released=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
              g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused, g_shot_stops_seen, g_shot_released);
+    char spb[120]; // BUG-0751
+    snprintf(spb, sizeof spb, "space_planner: sent=%u built=%u away=%u failed=%u\n", g_space_builds_sent, g_space_builds_in,
+             g_space_builds_away, g_space_builds_failed);
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
@@ -4247,7 +4324,7 @@ std::string status()
     char ts[128];
     snprintf(ts, sizeof ts, "turret_shots: fix=%d seen=%u fired=%u bad_combatant=%u\n", (int)g_fix_turret_weapon,
              g_turret_shots_seen, g_turret_fired, g_bad_comb);
-    return std::string(b) + pl + sh + ts + bh + tu + lf;
+    return std::string(b) + pl + sh + ts + bh + tu + lf + spb;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
@@ -4861,9 +4938,11 @@ std::string debug(const std::vector<std::string>& a)
             }
         return "no building to ruin";
     }
-    if (a.size() >= 2 && a[0] == "buildings") { // buildings <host city index>: object, noun, state, hp, position
-        int ci = atoi(a[1].c_str());
-        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+    if (a.size() >= 2 && a[0] == "buildings") { // buildings <host city index | s<i>: Space, all cities>: object, noun, state, hp, position
+        int ci = atoi(a[1].c_str() + (a[1][0] == 's'));
+        std::vector<void*> sc = a[1][0] == 's' ? all_cities() : std::vector<void*>();
+        void* city = a[1][0] == 's' ? (ci >= 0 && ci < (int)sc.size() ? sc[ci] : nullptr)
+                                    : ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
         if (!city)
             return "no such city";
         std::string out;
@@ -5002,6 +5081,35 @@ std::string debug(const std::vector<std::string>& a)
         }
         return out;
     }
+    if (!a.empty() && a[0] == "scities") { // tests (BUG-0751): every city of this game (Space: s<i>), position, buildings
+        std::string out;
+        auto sc = all_cities();
+        for (size_t i = 0; i < sc.size(); i++) {
+            net::Vec3 p = city_pos(sc[i]);
+            char line[128];
+            snprintf(line, sizeof line, "s%u pos=(%.0f %.0f %.0f) buildings=%u\n", (unsigned)i, p.x, p.y, p.z,
+                     (unsigned)vec_of((uint8_t*)sc[i] + kCityBuildings).size());
+            out += line;
+        }
+        return out.empty() ? "no cities\n" : out;
+    }
+    if (a.size() >= 3 && a[0] == "unbuild" && a[1][0] == 's') {
+        // unbuild s<i> <k> (tests, BUG-0751): the game's DestroyBuilding of building k of city s<i> (a free plot)
+        auto sc = all_cities();
+        int ci = atoi(a[1].c_str() + 1);
+        void* city = ci >= 0 && ci < (int)sc.size() ? sc[ci] : nullptr;
+        if (!city || !a_DestroyBuilding)
+            return "no such city";
+        auto bl = vec_of((uint8_t*)city + kCityBuildings);
+        size_t k = (size_t)atoi(a[2].c_str());
+        if (k >= bl.size())
+            return "no such building";
+        uint32_t noun = game::noun_id(bl[k]);
+        thiscall<void>(a_DestroyBuilding, city, bl[k]);
+        char l[96];
+        snprintf(l, sizeof l, "destroyed building %u (%08X) of s%d", (unsigned)k, noun, ci);
+        return l;
+    }
     if (a.size() >= 3 && a[0] == "unslot") {
         // unslot <host city index> <k> (tests, BUG-0491): the state an orphan has: building k of the city
         // leaves its layout slot (cLayoutSlot::RemoveObject) and stays in the world
@@ -5080,9 +5188,11 @@ std::string debug(const std::vector<std::string>& a)
         }
         return out;
     }
-    if (a.size() >= 2 && a[0] == "slots") { // slots <host city index>: building plots, where they are on screen
-        int ci = atoi(a[1].c_str());
-        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+    if (a.size() >= 2 && a[0] == "slots") { // slots <host city index | s<i>: Space>: building plots, where they are on screen
+        int ci = atoi(a[1].c_str() + (a[1][0] == 's'));
+        std::vector<void*> sc = a[1][0] == 's' ? all_cities() : std::vector<void*>();
+        void* city = a[1][0] == 's' ? (ci >= 0 && ci < (int)sc.size() ? sc[ci] : nullptr)
+                                    : ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
         if (!city)
             return "no such city";
         std::string out;
