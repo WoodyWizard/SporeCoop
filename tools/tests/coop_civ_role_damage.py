@@ -44,11 +44,19 @@ def building_hp(con, ci):
 
 
 def give(host, guest, ids):
+    """the owners of the vehicles in the host's game, where the damage is decided (after a rejoin the guest's own
+    list took longer than 3 s to show them again: lab 20261108-074515); the guest's view is waited for and printed"""
     for i in ids:
         host.call(f'coop.civ select {i} 1')
     print('  host:', host.call('coop.give 1')['out'].strip(), flush=True)
-    time.sleep(3)
-    return owners(guest, ids)
+    t0 = time.time()
+    while time.time() - t0 < 20:
+        time.sleep(1)
+        h, g = owners(host, ids), owners(guest, ids)
+        if all(h.get(i) == 1 for i in ids) and all(g.get(i) == 1 for i in ids):
+            break
+    print(f'  owners: host {h}, guest {g} ({time.time() - t0:.0f} s)', flush=True)
+    return h
 
 
 def phase(host, ids, tgt, name):
