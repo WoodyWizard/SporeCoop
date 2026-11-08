@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: a guest now sees the ships the host's game runs (pirates, raiders, NPC empires) fire their beams and
+  projectiles; before, they fought without a shot on the guest's screen and only the damage came (BUG-0677).
+- Space: a guest's own cargo hold also comes back when the host restarted its game between the guest's leave and its
+  join, keeps what changed in it while the guest was away, keeps the guest's own number of cargo slots, and brings back
+  plant, animal and artifact cargo the host's copy did not have (BUG-0679).
 - Civilization: a guest's game could stall for a moment and log over a hundred caught errors next to an old tribe
   village whose members carried food; the co-op no longer takes food from, or hands food to, the guest's own
   creatures outside the Tribe stage (BUG-0684).
