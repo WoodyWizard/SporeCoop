@@ -2505,7 +2505,7 @@ static void stall_note(double since)
     uintptr_t lo = (uintptr_t)exe + nt->OptionalHeader.BaseOfCode, top = lo + nt->OptionalHeader.SizeOfCode; // (code only: no text)
     HMODULE u32 = GetModuleHandleW(L"user32.dll");
     int n = 0, nu = 0;
-    for (uint32_t* p = (uint32_t*)&marker; p < hi && n < 40; p++) {
+    for (uint32_t* p = (uint32_t*)&marker; p < hi && n < 24; p++) {
         uint32_t v = *p;
         char b[24];
         const uint8_t* c = (const uint8_t*)(uintptr_t)v;
@@ -2521,8 +2521,9 @@ static void stall_note(double since)
     }
     std::string wins;
     EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
-    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s; user32 %s; windows%s",
-        H->time_seconds() - since, chain.c_str(), nu ? "in the chain" : "not in the chain", wins.c_str());
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s", H->time_seconds() - since,
+        chain.c_str());
+    LOG("keepalive: the main thread's windows%s", wins.c_str());
 }
 
 void keepalive_task(void*)

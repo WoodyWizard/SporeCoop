@@ -48,7 +48,10 @@ def main():
     for l in lines:
         print('  ' + l[:400], flush=True)
     ck(len(lines) == 1, f'one stall line in the host\'s log ({len(lines)})')
-    ck(lines and len(re.findall(r' [0-9A-F]{8}\b', lines[0].split('; user32')[0])) >= 3 and 'windows [' in lines[0],
+    wins = [l for l in new.splitlines() if 'keepalive: the main thread\'s windows' in l]
+    for l in wins:
+        print('  ' + l[:300], flush=True)
+    ck(lines and len(re.findall(r' [0-9A-F]{8}\b', lines[0])) >= 3 and wins and ' [' in wins[0],
        'it names the call chain into the game and the main thread\'s windows')
     f0 = host.call('frame')['out']
     time.sleep(1)
