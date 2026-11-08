@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- Session settings: the host's co-op settings now reach every player when they join and whenever the host changes
+  one, and they are kept with the host's world, so the next session in that world plays with the same choices. The
+  `coop.ini` lines `dna_pace`, `npcs_target_partners` and `teamplay` are now the defaults for a new world. Some
+  settings can only be changed before the start (no world loaded), others ("live") also during play. Console:
+  `coop.settings` (BUG-0762).
+- Cell: the regeneration near a partner ("shared healing") can be turned off by the host, also during play (setting
+  `cell.regen`, on by default) (BUG-0762).
+
 ## [0.7.11] - 2026-11-08
 
 ### Changed
