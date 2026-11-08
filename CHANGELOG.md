@@ -31,6 +31,10 @@
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
 
 ## [0.7.11] - 2026-11-08
+## [0.7.11.1] - 2026-11-08
+
+0.7.11 was tagged but never published (its release build failed on a test script); 0.7.11.1 is 0.7.11 with that
+build fixed. Everything below is new since 0.7.10.1.
 
 ### Changed
 - Cell: the move to the Creature stage is a vote now. When the host clicks the check in History at the end of the
