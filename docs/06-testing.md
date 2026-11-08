@@ -4968,4 +4968,12 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   avatar is free within 6 s, the other's still locked. BUG-0666 (not a mod bug: lab 20261108-010939 passes).
 * Pitfall: a test that adds food across 120-150 (the tutorial's window) leaves the avatars locked until someone presses
   the cinematic's button or Esc (docs/re/cell.md#cell-goldie-button); press Esc or `coop.pool mate nogoldie` first.
+## Food a dying member carried: host_bundle_drop (2026-11-08, fix/w46-k8-open)
+<a id="testing-host-bundle-drop"></a>
+
+* `coop_world_host.py --case bundle_drop` (suite `host_bundle_drop`, warm, ~1 min, tribe fixture): up to two members of
+  the host's tribe get food in hand (`coop.wobj bundle carry <creature> 5`), wait until the guest's copy carries it,
+  then die (`coop.tribe pincer <victim> <attacker> 1000`); 6 s later every host ground bundle within 30 m has a guest
+  ground bundle within 3 m and no guest carried bundle is without a host one within 8 m. BUG-0661;
+  `SPORE_FIX_OFF=wobj.bundle_reclass` fails (lab 20261108-010006), on passes (20261108-011630-2).
 

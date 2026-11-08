@@ -2608,3 +2608,16 @@ window, the player's close button / Alt+F4; the lab's kill and `quit` end the pr
   and from inside the City Hall editor (mode 00DBDBA1; lab 20261107-231415, 20261107-232504 x2).
 * ~ Not covered: Windows (the report's Steam build ran on Windows), a guest that timed out rather than left, and the
   report's 81 s in the held state (today's old gate opens the editor ~60 s after the vote, so the test closes at 40 s).
+## A carried bundle put on the ground is the same object (2026-11-08, fix/w46-k8-open)
+<a id="tribe-bundle-reclass"></a>
+
+BUG-0661, follow-up of [#tribe-host-bundles](#tribe-host-bundles) and [#tribe-carried-bundles](#tribe-carried-bundles).
+GOG 2024, lane 5.
+
+* ✔ (runtime, host_bundle_drop) when a member carrying food dies, its game moves the same cGameBundle (same pointer,
+  same census id) from the member's container (+0x34) into the ground container (bundle manager +0x1C): the object's
+  holder +0x128 changes, nothing is made or destroyed. A copy bound on the guest kept its class (carried) and stayed
+  in the hand of the member's copy.
+* ✔ `wobj.bundle_reclass`: a bound copy of another class than its host object is removed and made again in the
+  right container in the same snapshot (lab 20261108-011630-2: the ground copy within 3 m 6 s after each drop).
+

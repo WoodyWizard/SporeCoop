@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: food a tribe member was carrying when it died now lies on the ground for every player, instead of
+  staying in the hand of that member's copy on the other players' screens (BUG-0661).
 - Civilization: an old tribe village the host's vehicles raid now disappears for the other players within about a
   second instead of five (BUG-0659).
 - Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
