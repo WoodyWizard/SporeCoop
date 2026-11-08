@@ -431,7 +431,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0419](BUG-0419-class-state-sent-but-not-applied-on-the-receiver.md) | open | bug | All | 2026-11-01 |  | class: state sent but not applied on the receiver (umbrella) |
 | [BUG-0420](BUG-0420-class-hits-events-and-world-state-applied-withou.md) | open | bug | All | 2026-11-01 |  | class: hits, events and world state applied without a relation / partner / world filter (umbrella) |
 | [BUG-0421](BUG-0421-class-guest-local-game-objects-removed-or-never.md) | open | bug | All | 2026-11-01 |  | class: guest-local game objects removed or never created (umbrella) |
-| [BUG-0422](BUG-0422-class-per-player-state-under-a-reused-id-and-sta.md) | open | bug | All | 2026-11-01 |  | class: per-player state under a reused id, and state that existed before a proxy (umbrella) |
+| [BUG-0422](BUG-0422-class-per-player-state-under-a-reused-id-and-sta.md) | fixed | bug | All | 2026-11-01 | unreleased | class: per-player state under a reused id, and state that existed before a proxy (umbrella) |
 | [BUG-0423](BUG-0423-class-credits-and-effects-dropped-or-undone-ledg.md) | open | bug | All | 2026-11-01 |  | class: credits and effects dropped or undone (ledger, ack, owed effects) (umbrella) |
 | [BUG-0424](BUG-0424-class-content-parts-paints-designs-the-other-gam.md) | open | bug | All | 2026-11-01 |  | class: content (parts, paints, designs) the other game lacks (umbrella) |
 | [BUG-0425](BUG-0425-class-remote-body-placement-catch-up-and-snapsho.md) | fixed | bug | All | 2026-11-01 | 0.7.9 | class: remote body placement, catch-up and snapshot timing (umbrella) |
