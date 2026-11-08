@@ -231,13 +231,7 @@ def run_cmd(cmd, tree, env, f, timeout):
         return -9
     except KeyboardInterrupt:  # Ctrl+C / SIGTERM while this thread waits (the exclusive phase, BUG-0250)
         kill_group(p)
-        # BUG-0743: not a plain p.wait(): an interrupt that lands inside Popen.wait(timeout)'s own poll, after it took
-        # its _waitpid_lock and before its try, leaves that lock held, and a wait without a timeout then blocks on it
-        # for good (the lab hung after Ctrl+C, its free lane never cleaned: lab_selftest interrupt_exclusive under load)
-        try:
-            p.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass
+        p.wait()
         raise
     finally:
         with _procs_lock:

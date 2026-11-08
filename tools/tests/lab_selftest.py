@@ -407,6 +407,11 @@ def watch_cases(tree, tmp):
 
 INTERRUPT = r"""
 import os, subprocess, sys, signal
+# BUG-0743: Ctrl+C as in a terminal. A lab started in the background (`... &`, nohup, an agent's shell) has SIGINT
+# ignored, and that is inherited by make test and by this child: the interrupt did nothing, the test ran its 30 s,
+# was retried, and the free lane was never cleaned (interrupt_exclusive / free_lane_locked / interrupt_retry failing
+# inside the lab's 'unit' test, rel/0.7.11 out/lab/20261108-035548-2)
+signal.signal(signal.SIGINT, signal.default_int_handler)
 tree, tmp, mode, rec = sys.argv[1:5]
 sys.path.insert(0, os.path.join(tree, 'tools'))
 import lab, suite, argparse
@@ -459,8 +464,7 @@ def interrupt_cases(tree, tmp):
         child = subprocess.Popen([sys.executable, script, tree, tmp, mode, rec], env=dict(os.environ, MARK=mark),
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # the signal must come while the test runs: wait for its process (the marker on its command line), not a
-        # fixed 8 s: under a loaded lab the child's start (imports, git, the 5 s pause after a lane's worker) took
-        # longer, the signal came before the exclusive phase and the free lane was never taken (lab unit 20261108-035548-2)
+        # fixed 8 s (a slow start under a loaded lab would send it before the exclusive phase, which takes no free lane)
         t_end = time.time() + 90
         while not leftovers(mark) and time.time() < t_end and child.poll() is None:
             time.sleep(0.2)
