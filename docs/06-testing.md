@@ -5348,3 +5348,28 @@ along and across the host's velocity):
   0.3 s of the dash speed (`P90_S`): Creature 4 m/s 1.2 m as before, Tribe 6.5 m/s 1.95 m. Tried and dropped (no
   effect in A/B runs): a new MoveTo at sharp corners after 0.1 s, the proxies' small lead jumps taken unsmoothed,
   `DASH_WALK_VARIANT=1/2` (place only / teleports).
+
+## Tribe tests of B1 (2026-11-08, fix/w46-b1-tribe)
+<a id="testing-tribe-b1"></a>
+
+* `tribe_copy_marker` (coop_tribe_copy_marker.py, BUG-0741, cold, ~1 min): both games' tribe spawn markers
+  (`coop.tribe markers`, now with `markers_used=`), the host's controller forms its next tribes (`coop.tribe form` with
+  `coop.fix tribe.form_pace off` on the host: the party's food holds it otherwise; one call can form two tribes in a
+  second); the guest must have a copy of each and no marker where the host used one. `SPORE_FIX_OFF=tribe.copy_marker`
+  fails.
+* `tribe_fruit_order` (coop_tribe_fruit_order.py, BUG-0744, cold, ~1 min): the guest selects its member and orders a
+  gather on its own fruit (`coop.tribe fruit <x y z>`, the DoActionForObjects of a right-click) right after the host's
+  game lost every fruit there (`coop.tribe unfruit <x y z> <r>`); the host must take it (a tree instead) and the guest
+  see its member walk there. `SPORE_FIX_OFF=tribe.fruit_order` fails.
+* `tribe_mirror_jump` (coop_tribe_mirror_jump.py, BUG-0759, warm, ~1 min): a host member put 11.5 m away with its
+  velocity field held at 120 m/s (`coop.tribe setvel <id> <vx vy vz> <s>`, host); the guest's mirror must stay within
+  3 m. A regression test without a twin (BUG-0759 was not reproduced). `coop.tribe sethp <id> <hp>` (host) hurts a
+  member (a member at full health leaves the sleep node at once).
+* `tribe_conquer_orders` (BUG-0761): the hut has fallen at the game's state 2 (`coop.tribe huthp` prints `exact=`,
+  `state=`, `last=`), not at a printed 0 (0.25-0.5 left stood); stalled raiders get the raid order again. Pitfall: do not
+  add a wait between the fall and the cinematic wait, the cinematic (8 s, closed by tribe.conquer_caption) plays 0-4 s
+  after the fall.
+* Duet (BUG-0748, no test yet): `coop.tribe duet` (the performers in node 0xB46E8803), `coop.tribe act_obj <action>
+  <noun> <x y z>`, `coop.fix tribe.duet off`; instruments for both players' members: `coop.tribe buy <type> 9 <deg>` +
+  `buy_end` and `grab` on the host (docs/re/tribe.md#tribe-duet-test).
+* Cell: `coop.pool swallow <key> [kind]` (BUG-0746, cell_ko_food).

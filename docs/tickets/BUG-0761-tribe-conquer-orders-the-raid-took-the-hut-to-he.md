@@ -10,7 +10,7 @@ role: host
 versions: 0.7.11
 fixed_in: unreleased
 branch: fix/w46-b1-tribe
-commits:
+commits: 555c2ae4
 tests: tribe_conquer_orders
 signature: tribe_conquer_orders: `ok the raid ended the hut (29 s)` then `FAIL the host's game played the conquest cinematic (None)`; host log without `tribe: the village cinematic 5418B038 plays on the host`
 docs: docs/re/tribe.md#tribe-hut-fall

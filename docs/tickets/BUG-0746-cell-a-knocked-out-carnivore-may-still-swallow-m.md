@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-b1-tribe
-commits: 7773ebff
+commits: 7773ebff, 9ff02322
 tests: cell_ko_food
 signature:
 docs: docs/re/cell.md#cell-eat-gate, docs/re/cell.md#cell-ko-swallow
