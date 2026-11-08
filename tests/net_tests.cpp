@@ -643,7 +643,7 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool
     b.smooth_max = 6.f;
     if (proxy) { // BUG-0674: an NPC proxy (no smoothing, late_lead under drive.lead_fall)
         b.delay = 0.15;
-        b.smooth_max = 0;
+        b.smooth_max = 4.f;
         b.late_lead = true;
         g_lead_late_fix = true;
         g_lead_fall_fix = fix;
@@ -1094,6 +1094,53 @@ static double jitter_err(bool fix)
     return n ? sum / n : 99.0;
 }
 
+
+// BUG-0674 (drive.lead_fall): an NPC proxy walking +x at 6 m/s turns 90 degrees at sender time 3.0 while the states of
+// [2.95, 3.3) come 0.35 s late: the largest step of the shown target in one 1/30 s frame (its driving teleports onto a
+// target that jumps over snap / 2)
+static float proxy_turn_step(bool fix)
+{
+    const bool was = g_lead_fall_fix;
+    const double was_ow = g_one_way;
+    g_lead_fall_fix = fix;
+    g_one_way = 0.05;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    b.late_lead = true;
+    b.smooth_max = 4.f;
+    auto p_at = [](double st) { return st < 3.0 ? Vec3{(float)st * 6.f, 0, 0} : Vec3{18.f, (float)(st - 3.0) * 6.f, 0}; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 180; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = p_at(st);
+        s.vel = st < 3.0 ? Vec3{6.f, 0, 0} : Vec3{0, 6.f, 0};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.95 && st < 3.3 ? 0.35 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    float mx = 0;
+    Vec3 last{};
+    bool have = false;
+    for (double now = 10.0; now < 15.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o))
+            continue;
+        if (have && now > 12.0)
+            mx = std::max(mx, dist(last, o.pos));
+        last = o.pos;
+        have = true;
+    }
+    g_lead_fall_fix = was;
+    g_one_way = was_ow;
+    return mx;
+}
+
 static void test_lead_fall()
 {
     printf("remote bodies moved on through a latency spike (BUG-0674, BUG-0675, BUG-0651)\n");
@@ -1119,6 +1166,10 @@ static void test_lead_fall()
         CHECK(on < 0.7f);
         CHECK(e_on < 0.5f);
     }
+    float pt_on = proxy_turn_step(true), pt_off = proxy_turn_step(false);
+    printf("  an NPC proxy turning inside a 0.35 s spike: max target step %.2f m per frame (0.7.10 %.2f m)\n", pt_on, pt_off);
+    CHECK(pt_off > 1.25f); // over snap / 2 of the proxies' driving (2.5 m)
+    CHECK(pt_on < 0.8f);
     double s_on = ship_fall_err(true), s_off = ship_fall_err(false);
     printf("  a 28 m/s ship that stops in a 0.4 s spike: worst copy error fall %.1f m, 0.7.10 %.1f m\n", s_on, s_off);
     CHECK(s_off > 7.5);

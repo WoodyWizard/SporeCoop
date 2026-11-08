@@ -274,6 +274,10 @@ public:
     // A walk that started in a spike was known 0.3-0.5 s late and the proxy jumped 2.5-6 m in one frame
     // (npc_walk_tribe over the player network, lab 20261108-011449 #2: proxy 19 at 36.9 s, 2.95 m)
     bool late_lead = false;
+    // BUG-0674: the Tribe member mirrors' rules (the no-lead rule, the smoothing after a switch); a proxy (late_lead)
+    // with smooth_max > 0 has every lead jump up to smooth_max smoothed instead (g_lead_fall_fix)
+    bool member_rules() const { return smooth_max > 0 && !late_lead; }
+    bool proxy_smooth() const { return late_lead && g_lead_fall_fix && smooth_max > 0; }
     // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
     static inline bool scale_lerp = true;
     // diagnostics (BUG-0388): how far past its newest snapshot the last sample() ran (s, before the
@@ -421,7 +425,7 @@ public:
         // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
         // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
         // two is a jump of the raw target that the offset takes
-        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
+        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && (member_rules() || proxy_smooth()))
             smooth(local_now, out, out.vel, false);
         return ok;
     }
@@ -437,7 +441,7 @@ private:
             double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
             // BUG-0674 (g_lead_fall_fix): the walked NPC proxies' late states are brought in over time too (late_lead)
-            const bool late = g_lead_late_fix && ((g_lead_smooth_fix && smooth_max > 0 && !jittery_) || (late_lead && g_lead_fall_fix));
+            const bool late = g_lead_late_fix && ((g_lead_smooth_fix && member_rules() && !jittery_) || (late_lead && g_lead_fall_fix));
             if (late)
                 tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
@@ -446,7 +450,7 @@ private:
             // stop-and-go the test sees (uneven 11-22 %; 0.7.8 2-5 %). There it is shown as 0.7.8 (interpolated,
             // smooth, ~0.2 s late); the switch goes through the smoothing
             bool use = true;
-            if (g_lead_smooth_fix && smooth_max > 0)
+            if (g_lead_smooth_fix && member_rules())
                 use = !jittery_;
             if (use && tl >= n.t) {
                 double dt = tl - n.t;
@@ -465,13 +469,15 @@ private:
                 if (late && lt_rate_ > 1.f) // BUG-0650: catching up: the target runs at that rate x the body's speed
                     out.vel = {v.x * lt_rate_, v.y * lt_rate_, v.z * lt_rate_};
                 sm_lead_out_ = true;
-                if (g_lead_smooth_fix && smooth_max > 0) {
+                if (g_lead_smooth_fix && (member_rules() || proxy_smooth())) {
                     // the lead's own new states as M1's (raw, closed by walk_place's catch_prop: over a link under
                     // kJitterHigh its start step is 1-1.5 m, under a jump); smoothed only after a switch from the
                     // interpolated state until that offset is closed. Smoothed always, the members trailed more over
                     // the player network (body_trail_tribe_player p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1's
                     // 1.14-1.27 m, lab 20261106-172428 / -172431, -184547 / -184550)
-                    if (!sm_last_lead_ || sm_closing_) {
+                    // BUG-0674: an NPC proxy's always (its driving teleports onto a target that jumps over snap / 2: a
+                    // turn known late jumped the target 2.6-3 m and the proxy with it, npc_walk_tribe 20261108-012638-2)
+                    if (!sm_last_lead_ || sm_closing_ || proxy_smooth()) {
                         sm_closing_ = true;
                         smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
                         if (dist(Vec3{}, sm_off_) < 0.05f)

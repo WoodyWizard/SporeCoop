@@ -4939,3 +4939,21 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   (the host's real main menu and reload), `space_reward_away` / `space_contract_clock` (`coop.space away`,
   `coop.space contracts result`), `res_cause`, `space_partner_hp` (`coop.puppet hp`), `species_table`,
   `creature_stun_proxy`, `tribe_member_age` (BUG-0691..0700).
+
+## Remote bodies under spikes: what the K4 tests read (2026-11-08, fix/w46-k4-bodies)
+<a id="testing-lead-fall"></a>
+
+BUG-0674, BUG-0675, BUG-0651, BUG-0680 (docs/re/tribe.md#tribe-lead-fall).
+* `net_tests` test_lead_fall is the deterministic part: a member turning round / stopping / going straight on inside a
+  0.35 s spike, a 28 m/s ship stopping in a 0.4 s spike, an NPC proxy's walk known late, a thrown NPC with two of three
+  states lost, a member whose loaded sender stamps its states off its frames, the no-lead rule against a 140 ms mean
+  with a 45 ms link, and a Creature puppet whose partner stops in a spike. Each CHECK of the "0.7.10" side fails with the
+  fix on and the fix's side with it off.
+* The guest's game log now has `net: round trip p10 .. p25 .. p50 .. p90 .. ms, mean .. ms (BUG-0651)` every 10 s:
+  the samples the no-lead rule reads (p25 / 2 with drive.lead_low). The player network reads p25 80-152 ms at a lab
+  load of 25-35, the mean 115-462 ms.
+* The lab load decides much of body_trail_tribe_player: at a load of 30-35 on 6 cores both games run at 10-16 fps,
+  the members' lag p50 rises to 0.10-0.21 s and the test fails with any switch set (lab 20261108-010745 #1 off,
+  -010745-2 #1 on); compare fixes with an A/B on two lanes at the same time, never with runs of another hour.
+* npc_walk_tribe at `SPORE_FPS=30 SPORE_NET=player` counts the proxies' jumps (> 2.5 m in a frame): a walk that starts
+  in a spike is known 0.3-0.5 s late, the proxy's target jumped at the start (late_lead brings it in now).
