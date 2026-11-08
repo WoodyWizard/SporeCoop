@@ -2292,3 +2292,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   windows ...`; test keepalive_stall). The next occurrence names the loop.
 * Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687
+
+## Cell: whether a guest's poison clouds hurt the host's creatures is not shown in the lab (2026-11-08, fix/w46-k2b-content-a)
+<a id="issue-cell-guest-poison-damage"></a>
+
+* What happens: since BUG-0716 the host's game makes a guest's poison clouds (from the guest's creation, through the
+  game's own poison step). Whether they hurt a creature as the host's own clouds do is not seen: the lab fixture has no
+  creation with a poison part, and the part written into a model's data (`coop.pool borrow poison graft`) makes clouds
+  that hurt nothing even for the host's own avatar.
+* Reproduce: a guest whose own cell has a poison part, next to a host creature (`coop.pool borrow status x p<id>` on
+  the host: `puppet_clouds=`), the creature's health in the host's game (`coop.pool cell c<key>`).
+* Known: docs/re/cell.md#cell-electric-attack (the poison step, the clouds, what the graft sets).
+* Ticket: BUG-0716 (the clouds fixed; the damage not verified).

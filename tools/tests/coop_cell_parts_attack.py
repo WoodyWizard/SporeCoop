@@ -13,9 +13,11 @@ given hp 60 (`coop.pool npcflag`).
 1. --part electric: within --seconds the host's game applies type-1 hits of the guest (`guest_attack_types=`
    of the host's `coop.pool`, the damage type of the electric animation) and the creature's hp drops in
    the HOST's game; the guest's game zapped (`zaps=`).
-2. --part poison: hits of the guest's poison clouds reach the host (`product_hits=` on the guest, the host's
-   guest_attacks grow) and the creature's hp drops in the host's game.
-SPORE_FIX_OFF=cell.electric (--part electric) / cell.own_products (--part poison) must FAIL.
+2. --part poison: the guest's creation has the poison part in the host's game (`borrow poison graft p<id>` on the
+   host: the puppet's model data), the guest stays next to the creature: the host's game makes the guest's clouds
+   (`puppet_clouds=`). (Its damage is the game's: with the grafted values even the host's own avatar's clouds hurt
+   nothing, lab 20261108-044202, so the creature's hp is only printed.)
+SPORE_FIX_OFF=cell.electric (--part electric) / cell.puppet_poison (--part poison) must FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_cell_parts_attack.py --part electric|poison [--seconds 40]
 """
@@ -45,13 +47,19 @@ def main():
     ck = Checks()
     time.sleep(3)
     got = ''
+    gm = re.search(r'client id=(\d+)', guest.call('coop.status')['out'])
+    gid = gm.group(1) if gm else '1'
     for _ in range(20):  # a cell of the pool with that part (mirrors come in as the guest looks around)
-        got = guest.call(f'coop.pool borrow {a.part}' + (' graft' if _ >= 6 else ''))['out'].strip()
+        if a.part == 'poison':  # the host makes a guest's clouds: the guest's creation as the host's game has it
+            got = host.call(f'coop.pool borrow poison graft p{gid}')['out'].strip()
+        else:
+            got = guest.call(f'coop.pool borrow {a.part}' + (' graft' if _ >= 6 else ''))['out'].strip()
         if got.startswith('borrowed'):
             break
-        guest.call(f'coop.pool tp {(_ % 4 - 1.5) * 40:.0f} {(_ % 3 - 1) * 40:.0f} 0')
+        if a.part != 'poison':
+            guest.call(f'coop.pool tp {(_ % 4 - 1.5) * 40:.0f} {(_ % 3 - 1) * 40:.0f} 0')
         time.sleep(2)
-    print('  guest: ' + got, flush=True)
+    print(('  host: ' if a.part == 'poison' else '  guest: ') + got, flush=True)
     ck(got.startswith('borrowed'), f'the guest\'s avatar has the game\'s {a.part} part ({got})')
     if not got.startswith('borrowed'):
         return ck.result()
@@ -70,12 +78,12 @@ def main():
     time.sleep(2.5)
     t0_types, g0 = types(host), guest.call('coop.pool')['out']
     hp0 = num(host.call(f'coop.pool cell {key}')['out'], 'hp')
-    low, t0 = hp0, time.time()
+    low, t0, k0 = hp0, time.time(), 0
     while time.time() - t0 < a.seconds:
         guest.call(f'coop.pool swimto {key} tp')  # stays next to it (the electric step needs a target near its parts)
-        if a.part == 'poison':
-            time.sleep(0.3)
-            guest.call('coop.pool goto 6 0')  # moving makes the clouds (the step grows with the speed)
+        if a.part == 'poison' and k0 % 4 == 0:  # the host's game draws the guest's cell (the poison step needs its GFX)
+            host.call(f'coop.pool swimto {key} tp')
+        k0 += 1
         time.sleep(1.5)
         st = host.call(f'coop.pool cell {key}')['out']
         hp = num(st, 'hp')
@@ -85,6 +93,8 @@ def main():
             break
     t1_types, g1 = types(host), guest.call('coop.pool')['out']
     print('  guest: ' + guest.call('coop.pool borrow status')['out'].strip(), flush=True)
+    hs = host.call(f'coop.pool borrow status x p{gid}')['out'].strip()
+    print('  host: ' + hs, flush=True)
     dt = [b - x for b, x in zip(t1_types, t0_types)]
     print(f'  host: hp {hp0} -> {low}, guest attack types +{dt}', flush=True)
     for k in ('zaps', 'zap_hits', 'product_hits', 'product_pairs', 'products', 'hits_sent'):
@@ -95,10 +105,13 @@ def main():
         ck((num(g1, 'zaps') or 0) > (num(g0, 'zaps') or 0), '1. the guest\'s game ran its electric attack')
         ck(dt[1] > 0, f'1. the host\'s game applied the guest\'s electric hits (type 1: +{dt[1]})')
     else:
-        ck((num(g1, 'product_hits') or 0) > (num(g0, 'product_hits') or 0), '2. the guest\'s poison clouds hit a creature')
-        ck(sum(dt) - dt[4] > 0, f'2. the host\'s game applied hits of the guest\'s poison, not bites ({dt})')
-    ck(hp0 is not None and low is not None and low < hp0, f'the creature lost health in the host\'s game ({hp0} -> {low})')
+        ck((num(hs, 'puppet_clouds') or 0) > 0, f'2. the host\'s game made the guest\'s poison clouds ({num(hs, "puppet_clouds")})')
+    if a.part == 'electric':
+        ck(hp0 is not None and low is not None and low < hp0, f'the creature lost health in the host\'s game ({hp0} -> {low})')
+    else:  # (the graft makes clouds but not the game's poison damage: the host's own avatar with it hurt nothing either)
+        print(f'  creature hp in the host\'s game {hp0} -> {low}; the host avatar\'s own clouds {num(hs, "clouds_made")}', flush=True)
     guest.call('coop.pool borrow off')
+    host.call(f'coop.pool borrow off x p{gid}')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

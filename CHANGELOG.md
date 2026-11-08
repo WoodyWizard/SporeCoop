@@ -7,6 +7,8 @@
   host's own bite does, and a lethal bite sent by a guest who was just knocked out no longer kills (BUG-0714).
 - Cell: a guest's electric part now hurts the host's creatures; before, its zaps showed only on the guest's screen and
   the creature's health came back (BUG-0715).
+- Cell: a guest's poison part now makes its poison clouds in the host's game, where the host's creatures meet them;
+  before, the guest's own game removed each cloud at once and the host's made none (BUG-0716).
 - Cell: a game with very many cells around (over about 2000, e.g. four players at a high level) no longer crashes in
   the game's collision step: the hard limit of the game's merge buffer is guarded now, not only the co-op budgets
   (BUG-0718).

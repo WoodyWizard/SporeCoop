@@ -1903,8 +1903,10 @@ Extends #cell-damage-gate and #cell-guest-bite-ring.
 * ✔ (runtime) Before the fix a guest's bite on the host's creature changed its hp in the host's game but its
   animation (+0x1B0) never became 0x10 (3 of 3 bites, lab 20261108-034206), and a lethal bite of a knocked-out guest
   (sent anyway: `coop.pool sendact c<key> break`) broke it.
-* Fix `cell.guest_hit_game` (cellsync.cpp `guest_attack`): the host calls Bite (a bite, type 4, and the lethal one)
-  or DamageCell (any other hit) with the guest's puppet as the attacker; `GetDamageAmount` (0xE58980, hooked now:
+* Fix `cell.guest_hit_game` (cellsync.cpp `guest_attack`): the host calls DamageCell for a MSG_CELL_HIT (what the
+  guest's DamageCell decided: a bite's non-lethal part, spikes, electric, poison) and Bite for the lethal bite
+  (ACT_BREAK), with the guest's puppet as the attacker (a first version sent type-4 hits through Bite too: Bite breaks
+  a cell IsDamageable refuses, so a guest's hit on a rock or meat broke it, cell_guest_bite lab 20261108-042210); `GetDamageAmount` (0xE58980, hooked now:
   `h_GetDamage`) returns the guest's damage for exactly that attacker / victim pair (the puppet's own NPC table value
   is not the guest's); a KillCell inside counts as the player's kill (byPlayer). The lethal bite is replayed with
   the damage raised to the victim's hp, so Bite breaks it as the guest's game did, through the game's gates. A
@@ -1934,12 +1936,26 @@ BUG-0715, BUG-0716 (class BUG-0428). GOG 2024, Ghidra; lane 6 (`tools/tests/coop
 * ✔ (runtime) On a guest an avatar with an electric part (`coop.pool borrow electric graft`: the fixture's level-1
   pool has no such model, so the avatar's own model data gets a type-6 part and the timings) zapped 12 times next to
   a host creature with hp 60: the mirrors lost hp locally, the host's creature kept 60 (lab 20261108-035148).
-* ✔ (code) A guest's poison cloud never reached a host creature three times over: the guest's stray purge removed
-  every local cell that is not a mirror, a puppet or the mate at each state round; the guest's collision step
-  (h_Pair) ran no pair without the avatar; and h_DamageCell sent a hit on a mirror only for the avatar as attacker.
+* ✔ (runtime) A guest's poison cloud never reached a host creature: the guest's own visibility step 0xE78C00
+  destroys it in the frame it is made (return address 0xE78C37, `SporeCoop::Cell_PoisonCull_ret`: a poison cell
+  outside the active area, and a guest has no active tiles of its own; 101 of 101 clouds, lab 20261108-042625).
+  Kept alive by the mod for a test, the clouds still met no mirror in 2 minutes (no collision pair, no DamageCell
+  with a cloud as the attacker; lab 20261108-043126): ? whether the passive mirrors (+0x16C) take part in such pairs.
+  The host's picture of the guest (its puppet, no AI) ran no poison step either, so a guest's poison part did
+  nothing anywhere.
 * Fixes: `cell.electric` (h_Zap on Cell_ElectricAttack, guest, the avatar attacking): the mirrors' hp before the
   chain is put back after it and each loss goes to the host as MSG_CELL_HIT type 1 (DamageCell's animation for type
   1 is the chain's 0xE), applied there through DamageCell (#cell-guest-hit-game); a knocked-out avatar zaps nobody.
-  `cell.own_products`: a cell with +0x110 set that is not a mirror, a puppet or the avatar (`own_product`) is kept by
-  the purge, its pairs with mirrors run, and its hits on a mirror go to the host like the avatar's. `coop.pool`
-  (guest) prints `zaps= zap_hits= product_hits= product_pairs= products= foreign_hits=<mirror>/<puppet>/<other>`.
+  `cell.puppet_poison` (cellsync.cpp `puppet_poison`, host, once per cell step from the world scale step's hook):
+  the game's own poison step for every partner's puppet (ESI = the puppet, the step's dt) with the puppet lent the
+  avatar index for the call (as the NoAttack hook does: the cloud gets the avatar's resource and +0x110), so the
+  guest's clouds are made by the host's game from the partner's creation, hurt the host's creatures there and come
+  to the guests as mirrors. `coop.pool` (guest) prints `zaps= zap_hits= foreign_hits=<mirror>/<puppet>/<other>`
+  ? The poison's damage: with the poison values written into a model's data (+0x1270 = 1.0, +0x1274 = 1, +0x1278 = part
+  0) the host's game made 70 clouds of the guest's puppet and 151 of its own avatar (sharing the model) next to a
+  creature with hp 57 in 90 s, and it lost nothing (lab 20261108-044202): what else a real poison part brings (the
+  cloud resource's damage, the part record's type) is not read. Without +0x1278 (an index list of the parts the
+  clouds start at) the step made no cloud at all.
+  (a mirror's other attackers: another mirror, whose pair the host simulates; a partner's puppet, whose owner sends
+  its own hits); `coop.pool borrow status [x p<id>]` (tests) the poison step's state, `clouds_made=` (the avatar's),
+  `puppet_clouds=` (host: the partners'), `puppet_poison_steps=` and who destroyed the avatar's clouds.
