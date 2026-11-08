@@ -35,6 +35,14 @@ struct Probe {
     std::function<std::vector<std::pair<uint8_t, float>>()> player_speeds;
     // BUG-0547: this game's own ship / creature position (false: none): the host keeps its path of the last second
     std::function<bool(net::Vec3&)> own_position;
+    // BUG-0758: the newest state this game received of each partner's ship / creature (id, the sender's time, position):
+    // the host keeps each guest's path of the last seconds from them
+    struct StatePos {
+        uint8_t id;
+        uint32_t time_ms;
+        net::Vec3 pos;
+    };
+    std::function<std::vector<StatePos>()> partner_states;
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)

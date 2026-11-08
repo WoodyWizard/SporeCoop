@@ -778,6 +778,63 @@ static void* SK_THISCALL h_SpeciesProfile(void* star)
     return r;
 }
 
+// BUG-0747: an NPC empire's store (cNPCStore, made by GenerateNPCStore 0x103E8F0 the first time a game needs it, one
+// per planet, +0xC its PlanetID) picks the 3 spices it wants and their price factors in 0x103CD10: a shuffle of the
+// trading manager's spice list (+0x20, in place: its order is what the shuffles before left) and RandomInt(10) per
+// spice, from the game's global generator. Each game made its own store, so the same empire paid 281 in one game and
+// 4,779 in the other for one Red Spice (coop_space_store.py). In a session the fill now draws from the private
+// generator seeded from the PlanetID (the same in every game) and the spice list is sorted by key first, so every
+// game makes the same store. Off: each game's own random store (0.7.11). docs/re/space.md#space-npc-store-seed
+using StoreFill_t = void(SK_THISCALL*)(void*, void*);
+static StoreFill_t o_StoreFill;
+static bool g_store_seed_fix = true;
+COOP_FIX("space.store_seed", "BUG-0747", g_store_seed_fix,
+         "space: an NPC store's wanted spices and prices are drawn from a generator seeded from its planet in a session");
+static uint32_t g_stores_seeded;
+
+static void SK_THISCALL h_StoreFill(void* trading, void* own_spice)
+{
+    GenState& g = gen();
+    void* store = nullptr;
+    if (g_store_seed_fix && connected() && !g.generating && trading && !IsBadReadPtr(trading, 0xA0)) {
+        void** sb = F<void**>(trading, 0x48);
+        void** se = F<void**>(trading, 0x4C);
+        uint32_t idx = F<uint32_t>(trading, 0x9C);
+        if (sb && se > sb && idx < (uint32_t)(se - sb) && !IsBadReadPtr(sb, (se - sb) * 4) && sb[idx] &&
+            !IsBadReadPtr(sb[idx], 0xA0))
+            store = sb[idx];
+    }
+    if (!store) {
+        o_StoreFill(trading, own_spice);
+        return;
+    }
+    struct Key {
+        uint32_t i, t, g;
+    };
+    Key* kb = F<Key*>(trading, 0x20);
+    Key* ke = F<Key*>(trading, 0x24);
+    if (kb && ke > kb && ke - kb <= 64 && !IsBadWritePtr(kb, (ke - kb) * sizeof(Key)))
+        std::sort(kb, ke, [](const Key& a, const Key& b) {
+            return a.i != b.i ? a.i < b.i : a.t != b.t ? a.t < b.t : a.g < b.g;
+        });
+    uint32_t planet = F<uint32_t>(store, 0xC);
+    g.rng = (planet * 0x9E3779B1u ^ 0x570AE5EDu) | 1u;
+    uint32_t seed = g.rng;
+    g_gen_thread_shared = GetCurrentThreadId();
+    g.draws = g.hash = g.other = 0;
+    g.generating = true;
+    o_StoreFill(trading, own_spice);
+    g.generating = false;
+    g_stores_seeded++;
+    char wants[160] = "";
+    Key* wk = F<Key*>(store, 0x60);
+    float* wp = F<float*>(store, 0x9C);
+    if (wk && wp && !IsBadReadPtr(wk, 3 * sizeof(Key)) && !IsBadReadPtr(wp, 12))
+        snprintf(wants, sizeof wants, "%08X %.0f, %08X %.0f, %08X %.0f", wk[0].i, wp[0], wk[1].i, wp[1], wk[2].i, wp[2]);
+    H->log(M, SK_INFO, "space: the NPC store of planet %08X seeded (%08X, %u draws): wants %s (BUG-0747)", planet, seed,
+           g.draws, wants);
+}
+
 static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
     off_main(g_gen_off_main, "RequirePlanetsForStar");
@@ -977,6 +1034,18 @@ static void terra_tick(double now)
     g_terra_acc[0] = g_terra_acc[1] = g_terra_acc[2] = 0;
 }
 
+// BUG-0749: the planet's terrain data (planet +0x154) integrates the atmosphere / temperature deltas into the planet
+// record (+0xB0 / +0xB4) only while its terraforming flag +0x2030 is on (0xC83280 -> 0xC7FC50): the game sets it when
+// the player's own terraforming tool hits (0x1050BC0 -> 0xC7E490(data, 1)) and clears it when the change is done. A
+// partner's deltas came without it, so they waited in +0x1FD4 / +0x1FD8 and the planet never changed on the partner's
+// game (terra_got counted, the record stayed). Now the received deltas switch the flag on as a tool does.
+// Off: the deltas only (0.7.11).
+static bool g_terra_apply_fix = true;
+COOP_FIX("space.terra_apply", "BUG-0749", g_terra_apply_fix,
+         "space: a partner's terraforming switches the planet's terraforming on, so its deltas change the planet");
+static uintptr_t a_TerraSetActive;
+static uint32_t g_terra_enabled;
+
 static void apply_terra(uint32_t planet_place, const float d[3])
 {
     uint32_t mine = C.my_place ? C.my_place() : 0;
@@ -990,6 +1059,13 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     for (int i = 0; i < 3; i++)
         if (d[i] != 0 && o_Terra[i])
             o_Terra[i](tm, p, d[i]);
+    if (g_terra_apply_fix && a_TerraSetActive && (d[0] != 0 || d[2] != 0)) { // BUG-0749
+        void* data = !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
+        if (data && !IsBadReadPtr(data, 0x2034) && !F<uint8_t>(data, 0x2030)) {
+            thiscall<void>(a_TerraSetActive, data, 1);
+            g_terra_enabled++;
+        }
+    }
     g_applying = false;
     g_terra_got++;
 }
@@ -1418,6 +1494,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_TerraW = S("Simulator::cTerraformingManager::AddWaterDelta");
     a_TerraT = S("Simulator::cTerraformingManager::AddTemperatureDelta");
     a_TerraMgr = S("Simulator::cTerraformingManager::Get");
+    a_TerraSetActive = S("SporeCoop::PlanetTerrain_SetTerraforming"); // BUG-0749
     a_SpaceGame = S("Simulator::cSimulatorSpaceGame::ptr");
     a_AddItemByKey = S("Simulator::cPlayerInventory::AddItemByKey");
     a_Trading = S("Simulator::cSpaceTrading::Get");
@@ -1440,6 +1517,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)rf, (void*)h_RandomFloat, (void**)&o_RandomFloat) == 0 &&
         H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName) == 0)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
+    if (uintptr_t sf = S("SporeCoop::cSpaceTrading_FillNPCStore"); sf && o_RandomInt) // BUG-0747
+        H->hook_create(M, (void*)sf, (void*)h_StoreFill, (void**)&o_StoreFill);
     if (uintptr_t prof = S("cStarRecord_GetSpeciesProfile"))
         H->hook_create(M, (void*)prof, (void*)h_SpeciesProfile, (void**)&o_SpeciesProfile);
     if (a_TerraA && a_TerraW && a_TerraT) {
@@ -1544,13 +1623,13 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[400];
+    char b[512];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
     return b + spaceext::status_all();
 }
@@ -2116,6 +2195,27 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "empire")
         return empire_cmd(a);
+    if (a[0] == "stores") { // tests (BUG-0747): this game's NPC stores: planet, the wanted spices and their prices
+        void* tr = a_Trading ? cdecl_call<void*>(a_Trading) : nullptr;
+        if (!tr || IsBadReadPtr(tr, 0xA0))
+            return "no trading";
+        void** sb = F<void**>(tr, 0x48);
+        void** se = F<void**>(tr, 0x4C);
+        std::string o;
+        for (void** q = sb; sb && q < se && q - sb < 16; q++) {
+            void* st = *q;
+            if (!st || IsBadReadPtr(st, 0xA0))
+                continue;
+            const uint32_t* wk = F<const uint32_t*>(st, 0x60);
+            const float* wp = F<const float*>(st, 0x9C);
+            if (!wk || !wp || IsBadReadPtr(wk, 36) || IsBadReadPtr(wp, 12))
+                continue;
+            snprintf(b, sizeof b, "store planet %08X wants %08X %.0f %08X %.0f %08X %.0f\n", F<uint32_t>(st, 0xC), wk[0],
+                     wp[0], wk[3], wp[1], wk[6], wp[2]);
+            o += b;
+        }
+        return o.empty() ? "no stores\n" : o;
+    }
     if (a[0] == "planet") {
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* rec = p ? F<void*>(p, 0x13C) : nullptr;

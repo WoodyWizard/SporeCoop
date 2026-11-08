@@ -2524,3 +2524,104 @@ BUG-0199, lane 3 (GOG 2024), `space_empire` (contact with 80001FCC, home star 00
   flags 88) with "Tell me more..." (720, 725) / "I'm not interested right now" (720, 756). In the run of
   2026-11-08 the offer was a Galactic Adventures mission ("Beam Down?" after "Tell me more"); declining it removed
   the mission noun, and asking again gave "Check us later" (no new offer for a while).
+
+## The NPC store's random wants and prices, seeded per planet (2026-11-08, fix/w46-b1-space)
+<a id="space-npc-store-seed"></a>
+
+BUG-0747, Ghidra on GOG 2024 (both functions at the same addresses as GOG 2016):
+* ✔ `cSpaceTrading::GenerateNPCStore` 0x103E8F0 (thiscall, ret 8) keeps the stores in a vector at trading +0x48 (at most
+  5: the oldest is dropped), one per planet (store +0xC = the PlanetID); a store older than 1,800,000 ms of game time
+  (0xBC3300) is dropped and made again. A new cNPCStore (0xC0 bytes, ctor 0x103CF30) gets +0x9C of the trading object =
+  its index, then `SporeCoop::cSpaceTrading_FillNPCStore` 0x103CD10 (thiscall(trading, own spice key) ret 4).
+* ✔ The fill: `BuildSpiceCommodities` 0x103C950 (fills the spice list +0x20 only when it is empty), a Fisher-Yates
+  shuffle 0x103B3F0 of that list **in place** with RandomInt on the global generator 0x1601760 (so the order depends
+  on every store made before), then the first 3 spices that are not the planet's own go to store +0x60 (keys) with
+  price store +0x9C = value x difficulty x {0.6 .. 3.0}[RandomInt(10)]. Only caller: GenerateNPCStore at 0x103EB08.
+* ✔ So two games made different stores for the same empire. The mod (`space.store_seed`, spacecoop.cpp h_StoreFill)
+  sorts the spice list by key and runs the fill on the private generator of the planet seeding (BUG-0123) seeded from
+  the PlanetID, in a session only; log line `space: the NPC store of planet <id> seeded (<seed>, <n> draws): wants
+  <key> <price>, ...`, counter `stores_seeded=` in `coop.space`.
+* ~ Limit: a store made again after 30 min of game time is the same store (the seed is only the planet); a store the
+  host's game made before the session (a load does not keep the stores: not checked) is not the guests'.
+
+## A guest's own ship on the host: no lag on its path in two-player runs (2026-11-08, fix/w46-b1-space)
+<a id="space-guest-ship-path"></a>
+
+BUG-0758, lane 6 (GOG 2024), `coop_space_fast_sync_guest.py` on `space` (the guest flies, the host checks):
+* ✔ The host's copy of a guest's own ship (key p<guest>) and the guest's digest travel the same link: the host
+  compares its copy when the guest's digest arrives, and the states that put the copy there came over the same
+  connection at the same time. So the copy is only the interpolation delay (0.1 s) and a send interval behind, unlike
+  the guest's copy of the host's ship (a round trip more: BUG-0547, docs/re/space.md#space-copy-on-path).
+* ✔ Measured: 0 differences of p1 in 79 + 104 + 93 + 246 checks (lab 20261108-142942, -143539, -144036, -144435):
+  pulses at 350-840 m/s drawn speed, full reversals with a check asked for at 0.05-0.6 s into the turn, a 300 ms
+  latency spike pattern on the guest's link, the host at 12 fps (SPORE_FPS host:12), the guest's ship disabled at
+  full speed with checks right after. The forced 100 m shift on the guest's digest is still a MISMATCH every time.
+* ~ So the campaign's `p1 79.8` / `p3 30.2` (4 players, 0.7.11 final check) are not this lag: both persisted over the
+  recheck 3 s later, the second with the guest's ship at 1.5 m/s; both came while the host waited to share its world
+  with a player who had just joined (`share_wait=planet`). Not explained.
+* `sync.own_path_guests` (diag_sync.cpp guest_path_check): the host keeps each partner's path from the states it
+  received (every new state by sender time, the last 2.5 s) and takes a p<guest> difference back only when its copy
+  lies within the player limit of that path's last 1 s + rtt and the guest's own position within the limit plus its
+  speed slack. It logs a detail line for every p<guest> difference: `sync-check: p<id> <d> m from the guest's ship,
+  the host's copy <d> m from its path of the last <s> s (nearest <s> s ago), the ship <d> m from it, slack <d> m:
+  on its path, no difference (BUG-0758) | off its path`; counter `guest_path_saved=` in `coop.diag sync`.
+
+## Terraforming deltas need the planet's terraforming flag (2026-11-08, fix/w46-b1-space)
+<a id="space-terraform-flag"></a>
+
+BUG-0749, Ghidra GOG 2024 + runtime lane 6 (`space_free`, planet 01460035):
+* ✔ `cTerraformingManager::AddAtmosphereDelta` 0xBBC4B0 (thiscall, ecx unused, args planet, float; ret 8) adds to
+  `[planet +0x154] +0x1FD4` (the planet's terrain data; temperature pending +0x1FD8). Its only caller is
+  `cToolStrategy::OnHit` 0x10593B0 (0x1059586, then AddWaterDelta and AddTemperatureDelta).
+* ✔ The terrain tick 0xC83280 integrates the pending deltas into the planet record (0xC7FC50: record +0xB0 atmosphere,
+  +0xB4, and +0xB8 follows) only while the data's flag **+0x2030** is on, in Space; when the change is done
+  (0xC7EFF0) it clears the flag and the pending deltas. `SporeCoop::PlanetTerrain_SetTerraforming` 0xC7E490(data, on)
+  sets it; the tool path 0x1050BC0 (at 0x1051035) switches it on for the active planet.
+* ✔ So a partner's relayed deltas (spacecoop.cpp apply_terra) waited in +0x1FD4 and the partner's planet never
+  changed: with `space.terra_apply` off, the host's Atmosphere Generator moved its record b0 0 -> 0.103 while the
+  guest stayed at 0.000 with terra_got=1 (lab 20261108-151748). The mod now switches the flag on with the received
+  deltas (`terra_enabled=` in `coop.space`); the guest then follows the host within a few hundredths (0.040 / 0.042
+  after 8 s, lab 20261108-152042). The same for `coop.space terra` on the guest itself: a delta without the flag
+  does nothing.
+* ✔ Tools: `space_free`'s inventory (`spaceCreate`) has no atmosphere tool (the atmosphere tab W-266 is empty);
+  `coop.space tool add 0x931426A0` (Atmosphere Generator) / `0xA1C9D86E` (Ice Comet) add one charge each, shown after
+  another tab is opened. Palette open: tabs at y = H-151 (main W-426 ... atmosphere W-266, sculpting W-226, colouring
+  W-186, cargo W-146); the added tools sit in the second row (first slot 1014, 1011). Sculpting (9 tools) and
+  colouring (8 + reset) are not relayed at all: BUG-0763.
+
+## A colony's city planner in Space, by a guest (2026-11-08, fix/w46-b1-space)
+<a id="space-colony-planner"></a>
+
+BUG-0751, lane 6 (GOG 2024), `space_empire`, home planet 00460035 (9 cities of the player's empire, 12 plots each, all
+taken):
+* ✔ The planner opens by a click on a city once the ship is over it (`coop.space allies cities` dist under ~300 m,
+  the city's screen point): the same cCommunityEditor as in Civ (`coop.civ planner`: editor and city set). The palette
+  is the Civ one: the house tile at (123, 385), the green check at (1412, 1054); the camera is at ground level.
+* ✔ A house dragged onto a free plot (screen point from `coop.civ slots s<i>`) is built and paid at once: the shared
+  money fell by $1,600 on both games (shared.cpp). AddBuilding is called from the planner's return address
+  `SporeCoop::CityPlanner_AddBuilding_Ret` as in Civ, but **the new building's position reads (0 0 0) at that call**
+  (the slot places it afterwards).
+* ✔ Before BUG-0751 nothing reached the host: civ.cpp is off outside Civ (`active()`) and a Space city has no host
+  index. Now (`civ.space_planner_send`) the guest sends `CMD_SPACE_BUILD {place, noun, city position, position}` in
+  MSG_CIV_CMD; the host, on the same planet, finds its city within 60 m of that position and builds the same noun into
+  a free slot (`build_in_city`, not paid again). Another planet on the host: logged and counted (`space_planner:
+  away=` in `coop.civ`), not built (the planet's cities exist only while it is the active planet).
+* Test commands: `coop.civ scities` (every city of this game as s<i> with its position and building count; the order
+  matched between host and guest on 00460035), `coop.civ buildings s<i>`, `coop.civ slots s<i>`, `coop.civ unbuild
+  s<i> <k>` (cCity::DestroyBuilding 0xBE3530: a free plot for tests).
+
+## NPC missions by the comm screen: the Galactic Adventures intro first (2026-11-08, fix/w46-b1-space)
+<a id="space-npc-mission-offer"></a>
+
+BUG-0750, Ghidra GOG 2024 + runtime lane 6 (`space_empire`, `space_free`):
+* ✔ `cMissionManager::ChooseMission` 0xFEEBC0 (thiscall(mgr, cEmpire* giver, cPlanetRecord*) ret 8): for an NPC
+  empire it first offers the Galactic Adventures intro mission **0x2AB57FAC** ("Tell me more..." -> "Beam Down?",
+  reward 0, flags 0x88) while that mission's entry in the manager's map is not in state 2/3, then a weighted pick of
+  the NPC mission table (mgr +0x34, 0x38-byte rows, first dword the mission id); mgr +0x1C overrides the pick.
+  `HasMissionsAvailable` 0xFEE260 gates it: fewer missions than mgr +0xE0, the planet not in the cooldown list
+  mgr +0xC8 (0xFEC730: "Check us later"), the relationship over a threshold. Declining an offer puts that planet on
+  cooldown and does not end the intro: every empire offers 2AB57FAC again.
+* ✔ The intro completed by its own SetState(5) (`coop.space allies missions done <ptr>`) ends it: the next empire
+  asked (80001F53 at 00460038 on `space_free`) offered a regular mission (id 478C8F3D, reward 30,000, flags 0x80).
+  Its answers by clicks: "Tell me more..." (720, 725), then the accept answer (720, 725): state 3. Completed by
+  SetState(5): the guest's money +30,000 and the host's shared money +30,000 (shared.cpp).

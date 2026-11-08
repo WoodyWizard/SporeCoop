@@ -1,19 +1,19 @@
 ---
 id: BUG-0750
 title: Space: no test of an NPC empire's mission and its reward on the partner's game
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-b1-space
+commits: 879f3063
+tests: space_npc_mission
 signature:
-docs:
+docs: docs/re/space.md#space-npc-mission-offer
 related: BUG-0199
 ---
 
@@ -34,15 +34,23 @@ assert the reward +0xA0 arrives in the taker's money and the partner's game shar
 `SPORE_FIX_OFF=res.guest_send` for a guest's mission.
 
 ## Root cause
-A test gap. Blocker: the offered mission type is random (here an adventure mission).
+A test gap. The blocker was not randomness: every NPC empire offers the Galactic Adventures intro (2AB57FAC) first
+until it is done (ChooseMission 0xFEEBC0; declining only puts the planet on cooldown). Observed on lane 6:
+docs/re/space.md#space-npc-mission-offer. No co-op defect found: the reward reaches the partner through the shared
+money.
 
 ## Fix
-Not done yet.
+No mod change (a test gap). New test `coop_space_npc_mission.py` (suite `space_npc_mission`): the guest asks the
+first empire, the intro is completed by `coop.space allies missions done` (test setup), the second empire offers a
+regular mission (reward 30,000) which the guest accepts by clicks and completes; the host's shared money must rise
+by the reward. Switch for the broken variant: `res.guest_send` (BUG-0199's twin).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL with `SPORE_FIX_OFF=res.guest_send` (the broken variant: a guest's earning stays in its game): lab 20261108-160114 (the guest +30,000, the host unchanged).
+* PASS: lab 20261108-160317 and 20261108-160505 (fix/w46-b1-space, lane 6). Direct run before (SPORE_LANE=6): OK, guest and host
+  1,100,000 -> 1,130,000.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
+- 2026-11-08 (fix/w46-b1-space): the intro-mission blocker understood; test written (no mod change).

@@ -1,19 +1,19 @@
 ---
 id: BUG-0749
 title: Space: no test of terraforming with a real tool
-status: open
-kind: test
+status: fixed
+kind: desync
 stage: Space
 reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-b1-space
+commits: 6eba333b
+tests: space_terra_tool
 signature:
-docs:
+docs: docs/re/space.md#space-terraform-flag
 related: BUG-0199
 ---
 
@@ -37,15 +37,25 @@ terrain update integrates the deltas over time) changes and the guest's record f
 Twin: a switch around terra_tick's send.
 
 ## Root cause
-A test gap. Blocker: which tab / tool is a terraforming tool in `space_free` (above).
+A test gap, and the test found a real co-op gap. Observed (fix/w46-b1-space, lane 6): `space_free` has no atmosphere
+tool (the atmosphere tab is empty); with an Atmosphere Generator added the host's tool hit the planet, its deltas went
+to the guest (terra_sent=1, terra_got=1), the host's planet record rose (b0 0 -> 0.103) and the guest's stayed at 0.
+Observed (Ghidra GOG 2024): the terrain tick 0xC83280 integrates the pending deltas into the record only while the
+planet terrain data's flag +0x2030 is on; the game sets it from the tool path (0x1050BC0 -> 0xC7E490(data, 1)), the
+relayed deltas came without it. docs/re/space.md#space-terraform-flag.
 
 ## Fix
-Not done yet.
+spacecoop.cpp apply_terra (switch `space.terra_apply`): with received atmosphere / temperature deltas the guest's
+game switches the planet's terraforming flag on (`SporeCoop::PlanetTerrain_SetTerraforming` 0xC7E490), as its own
+tool would; counter `terra_enabled=`. New test `coop_space_terra_tool.py` with the real tool by clicks.
+Seen on the way: sculpting and colouring tools are not relayed at all (BUG-0763).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_terra_tool.py` (suite `space_terra_tool`):
+* FAIL with `SPORE_FIX_OFF=space.terra_apply`: lab 20261108-151748 (host 0.103, guest 0.0).
+* PASS: lab 20261108-152042 (host 0.042, guest 0.040 after 8 s) and 20261108-152230.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
+- 2026-11-08 (fix/w46-b1-space): test written with the real tool; it found the guest's planet never changed (the terraforming flag); fixed behind space.terra_apply.
