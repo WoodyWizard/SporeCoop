@@ -180,6 +180,10 @@ anchor so other docs can link to it:
   4 of 4 tries without a fault, the bounce back worked (`coop_tribe_gameover.py --nofix`). The
   2026-10-23 tries were probably on the GOG 2016 lanes. The mod now adds no member to a player tribe
   without health (`coop.tribe fix gameover 0`: the old way).
+* 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): not reproduced on GOG 2024 with the guard off either (the caption, 6
+  members at 20 fps over the player network, spawns 0.5 s and 2.5 s into the bounce back's reload; lab
+  20261107-231709). 0xC0DAE3 is the GOG 2016 address of GOG 2024 0xC0DB23 (SetMoveScale+0x13, the BUG-0285 site);
+  no GOG 2024 lab log of 2026-11-04..07 has a fault there. Closed as not-reproduced.
 * Ticket: BUG-0172.
 
 ## Cell: a guest far from the host swims in an empty pool

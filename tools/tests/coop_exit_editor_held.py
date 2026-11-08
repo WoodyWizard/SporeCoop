@@ -9,7 +9,7 @@ The lab never ran the game's own exit (spore.sh kill, `quit`: TerminateProcess).
 
 tribe fixture, the way of coop_tribe_civ.py up to the end of the vote, then:
   --held (default): core.editor_own_pause off on the host, so the editor waits as in 0.7.3.6; the guest leaves;
-                    80 s later (the report's 81 s) the host's window gets WM_CLOSE (coop.close: the close button / Alt+F4)
+                    40 s later (before the old gate's ~60 s) the host's window gets WM_CLOSE (coop.close: the close button / Alt+F4)
   --editor:         the fix on: the City Hall editor opens; the guest leaves; WM_CLOSE in the editor
 Checked: the host's game ends by itself within 90 s and writes no crash report (crash-*.txt) on the way out.
 
@@ -74,7 +74,11 @@ def main():
         print('  ' + ' | '.join(ln.strip() for ln in st.splitlines() if 'editor' in ln.lower())[:300], flush=True)
     shot(host, 'exit_editor_before.png')
     print(' ', guest.call('coop.leave')['out'].strip()[:120], flush=True)
-    time.sleep(20 if a.editor else 80)  # the report: 81 s between the held editor and the player's quit
+    # the report: 81 s between the held editor and the player's quit; the old gate of today's code (core.editor_own_pause
+    # off) opens the editor ~60 s after the vote (BUG-0576), so 40 s to close in the held state
+    time.sleep(20 if a.editor else 40)
+    if not a.editor:
+        ck('Editor' not in mode(host), f'the editor still waits at the exit ({mode(host).strip()[:40]})')
     ck('total faults: 0' in host.call('exc')['out'], 'host: no fault before the exit')
     ck('total faults: 0' in guest.call('exc')['out'], 'guest: no fault (its game ends with the host\'s: one bottle)')
     for m in twoinst._monitors:  # the host is about to end on purpose: no "froze / crashed" from the watchers
