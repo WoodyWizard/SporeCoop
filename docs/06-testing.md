@@ -5207,6 +5207,6 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
   the edit is kept (legless_guest `--guest new` passes: the guest plays its new creature). So legless_guest
   `--guest replace` and `--guest dontsave` no longer reach their dialogs. Changed (fix/w46-e1-merge): evolve_in_place
   `--case creature` and editor_now leave with done; legless_guest `--guest cancel` leaves the unchanged editor with one
-  click on the check (BUG-0283's point: no "changes will be lost" for changes nobody made). Other tests that click
-  the cross on an own Creature editor (coop_guest_editor_hold, coop_editor_after_swap, coop_leave_avatar,
-  coop_long_session) were not changed or run here; the Cell editors keep their cross.
+  click on the check (BUG-0283's point: no "changes will be lost" for changes nobody made); coop_guest_editor_hold,
+  coop_editor_after_swap and coop_leave_avatar leave with the check, coop_long_session tries the cross and then the
+  check (lab 20261108-084617: the three PASS). The Cell editors keep their cross.
