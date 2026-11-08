@@ -4811,3 +4811,16 @@ out/lab/20261107-185421: 0xE99524 on visit 1).
 Lab note: lanes 2 and 3 have host caches of UFO summaries only (2026-11-07): a campaign whose Creature end brings a
 UFO visit faulted there at 0xE99524 (campaign_tribe "stopped in creature"), lanes 4 and 5 do not. A campaign_tribe
 A/B between builds must use the same lane.
+
+## A UI click waits for held frames: look again until the game ran (2026-11-07, fix/w46-p4-creature)
+<a id="testing-chat-held-send"></a>
+
+* A `click` (and `key`, `text`) goes into the game window's queue at once and returns; the game takes it on its next
+  frame. While the main thread holds its frames (a hitch, a save, `kit.test.hang`) the click waits: a check of what
+  it did, made a fixed time after it, can come before the game took it (BUG-0629: play_creature called a chat line
+  lost that both games showed 0.4 s after the bot's single look, after a row of 0.4-1.1 s hitches).
+* `frame` and `coop.status` are answered off the main thread, so they work during the hold: a check that fails
+  looks again until both games have run a few frames since (`play_creature.chat_reached`: 5 frames, 8 s at most).
+* `kit.test.hang <ms>` holds the main thread on its next frame (2.5 s passes the hitch gate in chat_pause and
+  chat_held_send); `tools/lab.py run chat_held_send,chat_held_send_oldcheck` shows the late click (the _oldcheck twin
+  with SPORE_CHAT_WAIT=0 must FAIL).
