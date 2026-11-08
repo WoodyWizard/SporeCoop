@@ -1985,6 +1985,99 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
 // answer: the game's creaturedata and baked models are cached by key, ✔ 2026-10-25). The world's
 // save keeps the host's key: a save rewritten to ours lost those herds and creatures at the load
 // and the pack panel faulted on a pack member of them (docs/re/creature.md 15)
+// BUG-0200: the save names the host's own creations by the host's keys, and a guest whose own My Creations
+// hold another creation under such a key (ids are per profile and sequential) got ITS creation from its
+// game's species manager for that key: the save's herds and nests of the host's creature, and the cards the
+// game makes from them (the nest's "The <name> are your allies!"), were the guest's creation (its name, its
+// look). The species manager keeps one profile per key for the whole process (docs/re/creature.md 15), so
+// the guest's manager answers for the host's key with the profile of the key of ours the host's records are
+// registered under: everything of the game that looks the species up by the host's key gets the host's
+// creation. The profile it had before goes back at the session end (the guest's own creation, in its own
+// games). The guest's own creation never plays under such a key in the host's world (own_key_here remaps a
+// colliding own creation); a guest playing the world's species of a host creation gets the host's creation too.
+// `coop.fix creations.host_key_alias off`: the guest's own creation of that key (0.7.10).
+static bool g_host_alias_fix = true;
+COOP_FIX("creations.host_key_alias", "BUG-0200", g_host_alias_fix,
+         "creature: a guest's game gives the host's creation (not the guest's own of the same id) for the species keys of the host's world: its nests and their cards");
+struct Alias {
+    uint32_t ours = 0;
+    void* orig = nullptr;  // the slot's profile before (restored at the session end)
+    void* prof = nullptr;  // ours
+};
+static std::map<uint32_t, Alias> g_alias; // host's instance -> alias
+static unsigned g_alias_set, g_alias_restored;
+
+static Key own_key_here(Kind kind);
+static Key avatar_species_key();
+static void alias_undo(uint32_t hi, Alias& a)
+{
+    void** slot = a.prof ? game::species_slot({hi, kInfo[kCreature].type, kInfo[kCreature].group}) : nullptr;
+    if (slot && *slot == a.prof) {
+        *slot = a.orig; // (null: the game builds the guest's own profile again on the next lookup)
+        g_alias_restored++;
+    }
+    a = Alias{};
+}
+
+// the keys a player plays (the guest's avatar, the world's player species, the host's creature): not aliased.
+// SetSpecies with an aliased profile writes the profile's own key (+0x504, ours) into the avatar (+0xB28), and a
+// key of ours must never reach a save (BUG-0469 review); the players' bodies follow the bundles as before
+static bool alias_skip(uint32_t hi)
+{
+    if (avatar_species_key().instance == hi || (game::mode_id() == modes::kCreature && own_key_here(kCreature).instance == hi))
+        return true;
+    auto h = g_applied.find({0, (uint8_t)kCreature});
+    if (h != g_applied.end() && (h->second.orig.instance == hi || h->second.key.instance == hi))
+        return true;
+    if (a_SpeciesMgr) {
+        auto* mgr = cdecl_call<uint8_t*>(a_SpeciesMgr);
+        if (mgr && skg::readable(mgr + 0xA4, 12) && skg::field<uint32_t>(mgr, 0xA4) == hi)
+            return true; // the world's player species
+    }
+    return false;
+}
+
+static void alias_tick()
+{
+    if (!g_host_alias_fix || !C.sess || C.sess->my_id() == 0)
+        return;
+    for (auto& [hi, ours] : g_remap) {
+        Alias& a = g_alias[hi];
+        if (alias_skip(hi)) {
+            if (a.prof)
+                alias_undo(hi, a);
+            continue;
+        }
+        if (a.ours == ours && a.prof)
+            continue;
+        Key hk{hi, kInfo[kCreature].type, kInfo[kCreature].group};
+        void* prof = game::species_by_key({ours, hk.type, hk.group});
+        if (!prof)
+            continue; // (not built yet: next time)
+        game::Key gk{hk.instance, hk.type, hk.group};
+        if (!game::species_slot(gk))
+            (void)game::species_by_key(gk); // the node of the host's key (the game makes it on the first lookup)
+        void** slot = game::species_slot(gk);
+        if (!slot)
+            continue;
+        if (!a.prof)
+            a.orig = *slot;
+        *slot = prof;
+        a.ours = ours;
+        a.prof = prof;
+        g_alias_set++;
+        H->log(M, SK_INFO, "creations: species %08X here is the host's creation (the profile of %08X; was %p)", hi, ours,
+               a.orig);
+    }
+}
+
+static void alias_restore()
+{
+    for (auto& [hi, a] : g_alias)
+        alias_undo(hi, a);
+    g_alias.clear();
+}
+
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
@@ -2699,6 +2792,7 @@ void tick(double now)
         share_own(now);
     }
     apply_own_avatar();
+    alias_tick(); // BUG-0200
     player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
 }
@@ -2820,6 +2914,7 @@ void on_session_end()
     g_asked.clear(); // (registered species packages stay: the same world may come back)
     g_world_missing.clear();
     g_own_sent.clear();
+    alias_restore(); // BUG-0200 (before the remap goes)
     g_remap.clear(); // (their packages stay registered: the same world may come back)
     g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
     g_design_sent.clear();
@@ -3170,6 +3265,24 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u\n", cc, unknown, (int)have_creepy_cute(),
                  g_paints_substituted);
         return out + b;
+    }
+    if (a.size() >= 2 && a[0] == "speciesof") { // speciesof <hex crt instance>: the species profile the game gives for that key (tests, BUG-0200)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        void* p = game::species_by_key({k.instance, k.type, k.group});
+        if (!p || !skg::readable(p, 0x510))
+            return "profile " + hex(k.instance) + " none\n";
+        Key pk{skg::field<uint32_t>(p, 0x504), skg::field<uint32_t>(p, 0x508), skg::field<uint32_t>(p, 0x50C)};
+        std::vector<dbpf::Record> recs;
+        uint32_t h = 0;
+        if (records_from_game(pk, recs))
+            for (auto& r : recs)
+                if (r.key.type == kBem)
+                    h = fnv(r.data.data(), r.data.size());
+        auto alias = g_alias.find(k.instance);
+        char b[200];
+        snprintf(b, sizeof b, "profile %08X key %08X bem %08X aliased %d (set %u restored %u)\n", k.instance, pk.instance, h,
+                 alias != g_alias.end() && alias->second.prof == p ? 1 : 0, g_alias_set, g_alias_restored);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};

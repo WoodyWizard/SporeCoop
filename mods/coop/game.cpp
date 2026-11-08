@@ -1873,6 +1873,31 @@ void* species_by_key(const Key& k)
     return mgr ? thiscall<void*>(a_GetSpecies, mgr, &rk) : nullptr;
 }
 
+// BUG-0200: cSpeciesManager +4 is a hash map ResourceKey -> cSpeciesProfile* (Ghidra GOG 2024: GetSpeciesProfile
+// 0x4DF5C0 -> find 0x4DF740 -> 0x4E0FF0): buckets at mgr +8, bucket count at mgr +0xC, bucket (instance ^ group) %
+// count; a node is {instance, type, group, value, next}
+void** species_slot(const Key& k)
+{
+    if (!a_SpeciesMgrGet)
+        return nullptr;
+    auto* mgr = cdecl_call<uint8_t*>(a_SpeciesMgrGet);
+    if (!mgr || !readable(mgr + 8, 8))
+        return nullptr;
+    auto* buckets = field<uint32_t**>(mgr, 8);
+    uint32_t n = field<uint32_t>(mgr, 0xC);
+    if (!buckets || !n || n > (1u << 20) || !readable(buckets, n * 4))
+        return nullptr;
+    uint32_t* node = buckets[(k.instance ^ k.group) % n];
+    for (int guard = 0; node && guard < 4096; guard++) {
+        if (!readable(node, 0x14))
+            return nullptr;
+        if (node[0] == k.instance && node[1] == k.type && node[2] == k.group)
+            return (void**)&node[3];
+        node = (uint32_t*)node[4];
+    }
+    return nullptr;
+}
+
 void* create_herd(const net::Vec3& pos, void* species)
 {
     if (!a_CreateHerd || !species)

@@ -649,6 +649,9 @@ anchor so other docs can link to it:
 * Not checked: a real nest (with an archetype) of a host creation on the guest (the fixture planet
   has Maxis species only).
 * Ticket: BUG-0200.
+* FIXED (2026-11-07, fix/w46-p4-creature, unreleased): the guest's species manager answers for the host's keys with
+  the host's creation (`creations.host_key_alias`, docs/re/creations.md#creations-species-map); nests and their cards
+  of the host's creations show the host's creature. `tools/lab.py run nest_species`.
 
 ## All stages: 138 bugs from the code review of main 563f72d (2026-10-27, claude/clever-fermi-h57l81)
 <a id="issue-code-review-2026-10-27"></a>

@@ -1161,3 +1161,26 @@ that creation; a choice is recorded for the world it is made in (as playing it r
 world the guest's default applies (this world's record, the host's evolved species, the world's species). "The
 world's own" still holds everywhere. Lab: the guest's swap to the old choice came 25 s after the load
 (20261106-230447), 3 s in the report.
+
+## The species manager's profile map, and the host's keys on a guest (2026-11-07, fix/w46-p4-creature)
+<a id="creations-species-map"></a>
+
+BUG-0200. GOG 2024, Ghidra (out/ghidra-2024).
+
+* ✔ (decompiled) `cSpeciesManager` +4 is a hash map ResourceKey -> `cSpeciesProfile*`: buckets at mgr +8,
+  bucket count at mgr +0xC, bucket index `(instance ^ group) % count`, node `{instance, type, group, value,
+  next}` (0x14 bytes; value at +0xC, next at +0x10). Find: 0x4E0FF0 thiscall(map, iterator* out, key*) ret 8;
+  operator[] (insert an empty node): 0x4E05D0 thiscall(map, key*) ret 4 -> &node->value; lookup with reload:
+  0x4DF740 (returns null for a node whose value is null; reloads a profile whose +0x53C version is 0 from its
+  +0x504 key through 0x4D4F70 / `cEditor::LoadCreatureData`).
+* ✔ `GetSpeciesProfile` 0x4DF5C0: key instance 0 and mgr +0xA4 zero -> null; else the map's value; none ->
+  (instance 0: the key at mgr +0xA4, the player species) a profile is made when 0x4DA400(key) says the key
+  exists: `new cSpeciesProfile` (0xA18 bytes, ctor 0x4D3E30(key, 0): +0x504 / +0x510 the key, +0x51C and
+  +0x52C two empty string16 {begin, end, capacity}) stored by operator[].
+* So the profile a key gets is whatever its node holds: nothing in the game checks that the profile's own key
+  (+0x504) is the key it is stored under. The co-op guest (`creations.host_key_alias`, creations.cpp
+  alias_tick) stores, for each host creation it registered under a content key of its own (0x7D......), that
+  key's profile in the node of the host's key: the save's herds and nests of the host's creature, and the cards
+  the game makes from them, are the host's creation. The node's earlier value (the guest's own creation of
+  the same id, or null) goes back at the session end. `coop.creations speciesof <hex>`: the profile the game
+  gives for a key, its own key and the model (bem) the game finds for that.

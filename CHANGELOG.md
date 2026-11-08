@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: when the host's planet has creatures the host made, and the guest has made other creatures with the same
+  numbers, the guest's game showed its own creature for the host's nests and their cards ("The ... are your
+  allies!"); it shows the host's creature now (BUG-0200).
+
 ## [0.7.10] - 2026-11-07
 
 ### Changed
