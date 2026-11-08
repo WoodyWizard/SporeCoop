@@ -420,11 +420,39 @@ def rule_paths(t, ctx):
 
 
 def rule_switch(t, ctx):
-    """BUG-0214: `switch:` (when present) names coop.fix registry names (or kit.* SporeKit switches)"""
+    """BUG-0214: `switch:` (when present) names coop.fix registry names (or kit.* SporeKit switches);
+    `none (<reason>)` names none"""
+    if re.match(r'\s*none\b', t.get('switch', '')):
+        return []
     names = [n for n in re.split(r'[,\s]+', t.get('switch', '')) if n]
     unknown = [n for n in names if n not in ctx.fix_names and not n.startswith('kit.') and n != 'none']
     return [f'switch: unknown coop.fix name(s) {", ".join(unknown)} (coop.fix list; names are <area>.<switch>)'] \
         if unknown and ctx.fix_names else []
+
+
+# BUG-0430: how a code fix's test is seen to FAIL without it: a coop.fix / kit.fix switch (also a registry name
+# alone), an environment twin (SPORE_FIX_OFF=, SPORE_DETECTOR_BRACKET=0, CAMPAIGN_FINALE_OLD=1), a --nofix /
+# --without-fix / --old flag, or the reason there is none (`no-fail-run:`, `switch: none (<reason>)`, "no switch
+# (<reason>)", "no mod change": a test-only fix)
+TWIN = re.compile(r'\bcoop\.fix\s+[a-z]\w*\.\w+|\bkit\.fix\s+\w+|SPORE_FIX_OFF=|\b[A-Z][A-Z0-9_]+=\d|--nofix|'
+                  r'--without-fix|--old\b|--old-\w+|^\s*[-*]?\s*no-fail-run:\s*\S|\bno switch\b|\bno mod change\b',
+                  re.M | re.I)
+CODE_KINDS = ('crash', 'freeze', 'desync', 'bug')
+
+
+def rule_twin(t, ctx):
+    """BUG-0430: a fixed crash / freeze / desync / bug names its twin switch (`switch:` or in Fix / Verification)
+    or the reason it has none, so a later run can show that its test still catches the bug"""
+    if not in_scope(t, ctx) or t.get('kind') not in CODE_KINDS:
+        return []
+    sw = t.get('switch', '').strip()
+    if sw and not re.fullmatch(r'none', sw):
+        return []
+    text = section(t['_text'], 'Fix') + '\n' + section(t['_text'], 'Verification')
+    if TWIN.search(text) or set(re.findall(r'\b[a-z]\w*\.[a-z]\w*\b', text)) & ctx.fix_names:
+        return []
+    return ['a fixed ' + t.get('kind') + ' names no twin switch: `switch: <coop.fix name>` (or `coop.fix <name> off` / '
+            'SPORE_FIX_OFF= in ## Fix), or `switch: none (<reason>)` / `no-fail-run: <reason>`']
 
 
 def rule_commits(t, ctx):
@@ -491,8 +519,8 @@ def rule_verification(t, ctx):
     return p
 
 
-CHECKS = [('fields', rule_fields), ('paths', rule_paths), ('switch', rule_switch), ('commits', rule_commits),
-          ('tests', rule_tests), ('verification', rule_verification)]
+CHECKS = [('fields', rule_fields), ('paths', rule_paths), ('switch', rule_switch), ('twin', rule_twin),
+          ('commits', rule_commits), ('tests', rule_tests), ('verification', rule_verification)]
 
 
 def run_checks(tickets, ctx):
