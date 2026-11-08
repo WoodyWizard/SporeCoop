@@ -2613,3 +2613,20 @@ window, the player's close button / Alt+F4; the lab's kill and `quit` end the pr
   LookAt comes 0.10-0.15 s later and meets the null camera on every start (lab 20261108-013439, 20261108-013444). The
   join-time race alone depends on the guest's console answering before ~12.5 s after its menu came up, which a slow
   start misses (lab 20261108-012203: ~30 s).
+
+## Carried food bundles outside Tribe (2026-11-08, fix/w46-k7-findings)
+<a id="tribe-bundles-outside-tribe"></a>
+
+BUG-0684, GOG 2024. Follow-up of [the carried bundles](#tribe-carried-bundles).
+* ✔ In Civ the old tribe villages (and the cities' citizens, noun 0x18EB4B7) run their own behaviour in each game: in
+  `civ_village_bundle` a creature of the guest's game given food (`coop.wobj bundle carry`) still carried it 10 s later
+  with the bundle sync kept off its hand; the host's carriers' food was copied into the hands of 3 creatures of the
+  guest's own village within 1 s (the nearest empty hand within 8 m) and removed again 3 s later (lab 20261108-004130-2,
+  `wobj.bundle_civ_carried` off: `carried=3 removed=6`).
+* ~ The fault of play_civ (132 caught faults at 0xC23469, `SporeCoop::Citizen_HoldBundle` 0xC23460 with a null bundle,
+  from the gather node sub-state 0xD74D40) follows when such a bundle is removed from the container while the member's
+  gather node holds it: inferred from the disassembly and the play_civ log (the host's carried bundle made on the guest
+  6 s before, 25-35 m from the old village); the test shows the removal, not the fault (0 faults in its FAIL runs).
+* Rule (`wobj.bundle_civ_carried`): outside Tribe a carried bundle is left to the game that carries it: no copy of the
+  host's carried food is made on a guest, a guest's own carried bundle is kept (bundle_own), and a bound one whose host
+  bundle is gone is not removed. Ground bundles are synced as before.

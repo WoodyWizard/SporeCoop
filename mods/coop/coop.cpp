@@ -2500,11 +2500,63 @@ COOP_FIX_UNSAFE("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: th
 std::thread* g_keepalive = nullptr;
 std::thread g_keepalive_old; // the old way, only with the fix off
 
+// BUG-0687 diagnostics: the host's frames stopped for good right after a guest left while this task still ran (the
+// main thread sat in a nested message loop that was not the game's: no Canvas::Tick, no Present) and the watchdog's
+// dump 30 s later never reached the log. Once per stall, 3 s in, the main thread's own call chain (read on the main
+// thread itself, as SporeKit's stack.here: no suspend) and its windows (a #32770 is a dialog) go to the log.
+static double g_stall_logged_for = -1;
+static BOOL CALLBACK stall_window(HWND w, LPARAM l)
+{
+    auto* out = (std::string*)l;
+    char cls[64] = "", title[64] = "";
+    GetClassNameA(w, cls, sizeof cls);
+    GetWindowTextA(w, title, sizeof title);
+    if (out->size() < 400)
+        *out += std::string(" [") + cls + " '" + title + "' visible=" + (IsWindowVisible(w) ? "1" : "0") + "]";
+    return TRUE;
+}
+static void stall_note(double since)
+{
+    if (g_stall_logged_for == since)
+        return;
+    g_stall_logged_for = since;
+    std::string chain;
+    uint8_t* teb = (uint8_t*)NtCurrentTeb();
+    uint32_t* hi = *(uint32_t**)(teb + 4);
+    volatile uint32_t marker = 0;
+    HMODULE exe = GetModuleHandleW(nullptr);
+    auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+    uintptr_t lo = (uintptr_t)exe + nt->OptionalHeader.BaseOfCode, top = lo + nt->OptionalHeader.SizeOfCode; // (code only: no text)
+    HMODULE u32 = GetModuleHandleW(L"user32.dll");
+    int n = 0, nu = 0;
+    for (uint32_t* p = (uint32_t*)&marker; p < hi && n < 24; p++) {
+        uint32_t v = *p;
+        char b[24];
+        const uint8_t* c = (const uint8_t*)(uintptr_t)v;
+        if (v > lo + 6 && v < top && (c[-5] == 0xE8 || c[-6] == 0xFF || c[-3] == 0xFF || c[-2] == 0xFF)) { // a return address
+            snprintf(b, sizeof b, " %08X", v);
+            chain += b;
+            n++;
+        } else if (u32 && nu < 4 && v > (uintptr_t)u32 && v < (uintptr_t)u32 + 0x200000) {
+            snprintf(b, sizeof b, " user32+%X", (unsigned)(v - (uintptr_t)u32));
+            chain += b;
+            nu++;
+        }
+    }
+    std::string wins;
+    EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s", H->time_seconds() - since,
+        chain.c_str());
+    LOG("keepalive: the main thread's windows%s", wins.c_str());
+}
+
 void keepalive_task(void*)
 {
     g_keepalive_queued = false;
     if (H->time_seconds() - g_last_frame < 0.5 || g_sess.role() == net::Role::None)
         return;
+    if (H->time_seconds() - g_last_frame > 3.0)
+        stall_note(g_last_frame);
     g_sess.update();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
@@ -2923,6 +2975,16 @@ static std::string monitor_own_fields(bool have)
             out += b;
         }
     }
+    if (g_mode == modes::kCell) {
+        // BUG-0681: the game's world scale its Cell positions (own pos=, the partners' drawn=) are in: during a
+        // level change each game rescales at its own moment, the monitor's drawn rule compares in one scale
+        float k = cellsync::scale_now();
+        if (k > 0) {
+            char b[32];
+            snprintf(b, sizeof b, " wscale=%.6g", k);
+            out += b;
+        }
+    }
     out += npc::monitor_fields();
     return out;
 }
@@ -3254,6 +3316,7 @@ void on_frame(void*, int, void*)
         }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
+    civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
     squadron::tick(now);
     autoupdate::tick();
     spacecoop::tick(now);
@@ -5870,12 +5933,58 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("%d puppet(s) destroyed by the game\n", n);
                            return 0;
                        }
+                       if (argc > 1 && (!strcmp(argv[1], "agl") || !strcmp(argv[1], "sink"))) {
+                           // tests (BUG-0683): agl: each Creature puppet's height over this game's terrain; sink <depth>
+                           // [side]: each is put <side> m sideways and <depth> m under its terrain there (teleport), as
+                           // the game's separation of creatures stacked on the nest pressed one in
+                           bool sink = !strcmp(argv[1], "sink") && argc > 2;
+                           float depth = sink ? (float)atof(argv[2]) : 0, side = sink && argc > 3 ? (float)atof(argv[3]) : 0;
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               net::Vec3 q = game::position(r.puppet);
+                               float rr = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                               if (sink && rr > 1.f) {
+                                   // a direction across the planet's normal
+                                   net::Vec3 n{q.x / rr, q.y / rr, q.z / rr}, ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+                                   net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+                                   float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+                                   net::Vec3 w{q.x + side * u.x / ul, q.y + side * u.y / ul, q.z + side * u.z / ul};
+                                   float wl = std::sqrt(w.x * w.x + w.y * w.y + w.z * w.z), g = game::ground_radius(w);
+                                   if (g > 0) {
+                                       float k = (g - depth) / wl;
+                                       game::teleport(r.puppet, {w.x * k, w.y * k, w.z * k}, game::orientation(r.puppet));
+                                   }
+                                   q = game::position(r.puppet);
+                                   rr = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                               }
+                               float g = rr > 1.f ? game::ground_radius(q) : 0.f;
+                               SAY("puppet %u agl=%.2f pos=(%.2f %.2f %.2f) ungrounded=%u\n", id, g > 0 ? rr - g : 0.f, q.x, q.y, q.z,
+                                   r.drv.ungrounded);
+                           }
+                           return 0;
+                       }
                        if (argc > 2 && !strcmp(argv[1], "hold"))
                            g_puppet_hold = !strcmp(argv[2], "on") || !strcmp(argv[2], "1");
                        SAY("puppet hold %s\n", g_puppet_hold ? "on" : "off");
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.stalltest", "coop.stalltest <s> - tests (BUG-0687): the main thread runs a message loop of its own for s seconds (max 20): no frames, the keepalive runs",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       double secs = std::min(argc > 1 ? atof(argv[1]) : 5.0, 20.0), t0 = H->time_seconds();
+                       MSG m;
+                       while (H->time_seconds() - t0 < secs) {
+                           while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+                               TranslateMessage(&m);
+                               DispatchMessageW(&m);
+                           }
+                           Sleep(10);
+                       }
+                       SAY("stalled %.1f s\n", H->time_seconds() - t0);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME); // (inside a frame the outside-frame tasks, the keepalive too, wait for its end)
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",

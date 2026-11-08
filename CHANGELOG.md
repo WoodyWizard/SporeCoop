@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: a guest's game could stall for a moment and log over a hundred caught errors next to an old tribe
+  village whose members carried food; the co-op no longer takes food from, or hands food to, the guest's own
+  creatures outside the Tribe stage (BUG-0684).
+- Creature: after the evolution, while the brain upgrade caption played at the nest, a partner's creature could stand
+  half in the ground on another player's screen until it walked; it is put back onto the ground now (BUG-0683).
+- Space: a guest's game could hit an error (caught, logged as "SporeCoop caught an error in its own code") right
+  after leaving a planet for the galaxy menu; the mod no longer reads the city planner the game has just freed
+  (BUG-0682).
 - Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
   the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
   with the path the host's ship flew in the last second (BUG-0547).
