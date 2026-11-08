@@ -556,8 +556,15 @@ static bool is_cc_part(uint32_t id)
 }
 
 // whether this game has the part (cached: key_exists is an RM lookup)
+// tests (K2b, BUG-0725 / BUG-0726 / BUG-0728): `coop.creations lack <hex id>` makes the mod treat a part this game has
+// as one it lacks (the checks, the substitutes and the lookalike search), so one lab lane can play a guest without a
+// pack: both games of a lane share one install. Never set outside the tests.
+static std::set<uint32_t> g_lacked;
+static bool g_objmodels_scan; // tests: objmodels scan
 static bool part_known(uint32_t id, uint32_t group)
 {
+    if (!g_lacked.empty() && g_lacked.count(id))
+        return false;
     auto k = std::make_pair(id, group);
     auto it = g_key_cache.find(k);
     if (it != g_key_cache.end())
@@ -590,6 +597,23 @@ static bool g_lookalike_fix = true;
 COOP_FIX("content.lookalike", "BUG-0559", g_lookalike_fix, "creations: a part or paint this game lacks is shown as the most similar one it has (the same role, abilities and size), chosen from the parts this game has installed; a paint this game has is never replaced");
 constexpr uint32_t kPartDescGroup = 0x7C0DE5C1; // a part's description in a bundle (never registered)
 constexpr size_t kMaxDescBytes = 256u << 10;      // per bundle
+// BUG-0725 (class BUG-0424): the lookalike above ran only for the bundles of a player's creature, cell and UFO: the
+// host's vehicle, building and ship designs (BUG-0647 / BUG-0670 / BUG-0724) went out without the descriptions of
+// their parts (add_part_descs knew the three creation types only), the guest dropped what came (apply_own_design),
+// and ensure_model substituted without any: a part the guest lacked became one fixed base game part of that kind
+// (kBasePartFallbacks), whatever it was. Now every bundle carries its parts' descriptions, every received
+// description is kept for the session (g_rx_descs, by part id) and ensure_model, the one check of every model the
+// mod makes this game build, picks the most similar part from them. `coop.fix content.design_lookalike off`: the
+// fixed fallback for the designs (0.7.10).
+static bool g_design_descs_fix = true;
+COOP_FIX("content.design_lookalike", "BUG-0725", g_design_descs_fix, "creations: a part a host's vehicle, building or ship design names and this game lacks is shown as the most similar part this game has (the design's part descriptions go with it), not as one fixed part");
+static std::map<uint32_t, std::vector<uint8_t>> g_rx_descs; // part id -> its sender's description (this session)
+// BUG-0726: a model with a part this game lacks was refused for a caller that cannot pass another key to the game
+// (a building: cCity::SetBuildingModel reads the civ's design key itself) and the host's building was left out of
+// the guest's city. Since content.model_key the copy with the substitutes answers the model's OWN key (above every
+// package of the game), so such a caller builds the copy too. `coop.fix content.building_copy off`: refused (0.7.10).
+static bool g_building_copy_fix = true;
+COOP_FIX("content.building_copy", "BUG-0726", g_building_copy_fix, "creations: a building whose design names a part this game lacks is built from the copy with substitutes (under the design's own key), not left out");
 
 // the part prop entries (type kPartProp, the 4 part groups) of one package file of this game, read once
 struct PartFile {
@@ -736,6 +760,10 @@ static void add_part_descs(const Key& key, std::vector<dbpf::Record>& recs)
     uint32_t group = key.type == kInfo[kCell].type ? kCellPartGroup : key.type == kInfo[kUfo].type ? kUfoPartGroup
                      : key.type == kInfo[kCreature].type                                          ? kPartGroup
                                                                                                   : 0;
+    if (!group && g_design_descs_fix) // BUG-0725: the designs (vehicle, building) too
+        for (auto& mi : kModelInfo)
+            if (mi.type == key.type)
+                group = mi.parts;
     if (!group)
         return;
     std::set<uint32_t> ids;
@@ -772,6 +800,8 @@ static std::map<uint32_t, std::vector<uint8_t>> take_part_descs(std::vector<dbpf
     std::map<uint32_t, std::vector<uint8_t>> out;
     for (auto it = recs.begin(); it != recs.end();) {
         if (it->key.group == kPartDescGroup) {
+            if (it->key.type == kPartProp && g_rx_descs.size() < 4096)
+                g_rx_descs[it->key.instance] = it->data; // BUG-0725: for every model of the session
             if (it->key.type == kPartProp && out.size() < 512)
                 out[it->key.instance] = std::move(it->data);
             g_desc_in++;
@@ -790,7 +820,15 @@ static uint32_t lookalike_of(uint32_t id, uint32_t group, const std::vector<uint
     if (it != g_lookalike.end())
         return it->second;
     partprops::Part want;
-    uint32_t sub = partprops::parse(desc.data(), desc.size(), id, want) ? partprops::nearest(want, catalogue(group)) : 0;
+    const std::vector<partprops::Part>* cat = &catalogue(group);
+    std::vector<partprops::Part> kept; // tests: without the parts `lack` names
+    if (!g_lacked.empty()) {
+        for (auto& c : *cat)
+            if (!g_lacked.count(c.id))
+                kept.push_back(c);
+        cat = &kept;
+    }
+    uint32_t sub = partprops::parse(desc.data(), desc.size(), id, want) ? partprops::nearest(want, *cat) : 0;
     g_lookalike[k] = sub;
     H->log(M, SK_INFO, "creations: content: part %08X (%s, %u abilities) is shown as %08X, the most similar part this game has",
            id, want.detail() ? "detail" : "role part", (unsigned)want.abil.size(), sub);
@@ -1633,13 +1671,13 @@ Model ensure_model(const Key& model, ModelKind kind, bool allow_copy)
         g_models_same++;
         return remember(m);
     }
-    if (!allow_copy) { // the caller cannot pass another key to the game (a building)
+    if (!allow_copy && !(g_building_copy_fix && g_model_key_fix)) { // the caller cannot pass another key to the game (a building)
         H->log(M, SK_INFO, "creations: content: %s model %08X has %u id(s) this game does not have: not built here",
                name, model.instance, (unsigned)(bad.size() + bad_paints.size()));
         return refuse();
     }
     std::string whose = std::string("model ") + hex(model.instance);
-    unsigned n = substitute_parts(recs, kind, whose);
+    unsigned n = substitute_parts(recs, kind, whose, g_design_descs_fix ? &g_rx_descs : nullptr);
     if (kind_paints(kind))
         n += substitute_paints(recs, whose);
     std::vector<uint32_t> left = unknown_part_ids(recs, kind);
@@ -1946,7 +1984,9 @@ void host_species_out(uint8_t peer, const Key& k)
     auto& sent = g_own_sent[peer];
     if (!sent.insert(k.instance).second)
         return; // checked (and sent if ours) already
-    if (!in_my_creations(k)) // a premade or a Sporepedia download: the same creation everywhere
+    // a premade or a Sporepedia download: the same creation wherever a game has that key (BUG-0724: not in every game,
+    // a Sporepedia cache is per profile; a guest without it asks for it, want_species / serve_species)
+    if (!in_my_creations(k))
         return;
     Bundle b;
     b.key = k;
@@ -2242,6 +2282,8 @@ static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
     if (kind >= kMkKinds || !unpack(data, b) || b.recs.empty() || !find_paths())
         return;
     auto& d = g_designs[{kind, b.key.instance}];
+    if (g_design_descs_fix)
+        take_part_descs(b.recs); // BUG-0725: the descriptions of the design's parts, kept for ensure_model
     uint32_t h = 0x811C9DC5;
     for (auto& r : b.recs)
         if (r.key.instance == b.key.instance)
@@ -3154,6 +3196,107 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "designs") // BUG-0647: the host's own designs on this guest
         return design_status();
+    if (a.size() >= 2 && a[0] == "lack") { // lack <hex part id> | clear: tests (BUG-0725): treat a part as one this game lacks
+        if (a[1] == "clear")
+            g_lacked.clear();
+        else
+            g_lacked.insert((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        g_key_cache.clear();
+        g_model_use.clear(); // the verdicts are made again
+        return "lacked parts " + std::to_string(g_lacked.size()) + ", descriptions received " +
+               std::to_string(g_rx_descs.size()) + "\n";
+    }
+    if (!a.empty() && a[0] == "objmodels") { // tests (BUG-0730 / BUG-0731): the model keys of every placed object
+        g_objmodels_scan = a.size() > 1 && a[1] == "scan";
+        // (cSpatialObject model key at object +0xC4, as vehicles and buildings), per noun: which package answers each
+        // key here and how many part ids of its model this game lacks
+        struct Row { unsigned n = 0; };
+        std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, unsigned> rows; // (noun, inst, type, group) -> count
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* m = (std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, unsigned>*)u;
+                net::Vec3 p;
+                if (!game::object_alive(o) || IsBadReadPtr(o, 0xD0) || !game::object_position(o, p) || m->size() > 400)
+                    return true;
+                if (noun == 0x018C43E8 && !IsBadReadPtr(o, 0x528 + 0x24)) // a city: its 3 decoration keys (+0x528)
+                    for (int i = 0; i < 3; i++) {
+                        const uint32_t* d = (const uint32_t*)((uint8_t*)o + 0x528 + 0xC * i);
+                        if (d[0] && d[0] != 0xFFFFFFFFu)
+                            (*m)[{0xDEC00000u | (uint32_t)i, d[0], d[1], d[2]}]++;
+                    }
+                const uint32_t* k = (const uint32_t*)((uint8_t*)o + 0xC4);
+                if (k[0] && k[0] != 0xFFFFFFFFu && k[1])
+                    (*m)[{noun, k[0], k[1], k[2]}]++;
+                // every key-like triple in the object's first 0x600 bytes whose type is a model kind's (a model key
+                // kept elsewhere than +0xC4: a hut, an ornament), noun | 0x80000000 + its offset in the 'n' column
+                if (g_objmodels_scan && noun != 0x018EB45E && noun != 0x018EB4B7 && !IsBadReadPtr(o, 0x600))
+                    for (int off = 0; off + 12 <= 0x600; off += 4) {
+                        const uint32_t* t = (const uint32_t*)((uint8_t*)o + off);
+                        bool model = false;
+                        for (auto& mi : kModelInfo)
+                            model |= t[1] == mi.type && t[2] == mi.group;
+                        model |= t[1] == kPartProp && t[2] && t[2] != 0xFFFFFFFFu; // a noun's property file (tools)
+                        if (model && t[0] && t[0] != 0xFFFFFFFFu)
+                            (*m)[{noun | 0x80000000u, t[0], t[1], t[2]}] = (unsigned)off;
+                    }
+                return true;
+            },
+            &rows);
+        std::string out = "objmodels " + std::to_string(rows.size()) + "\n";
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        for (auto& [k, n] : rows) {
+            auto [noun, inst, type, group] = k;
+            uint32_t key[3] = {inst, type, group}, real[3] = {};
+            void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr;
+            std::wstring loc;
+            std::string where = !db ? "none" : !file_location(db, loc) ? "folder" : "";
+            if (where.empty()) {
+                size_t sl = loc.find_last_of(L"\\/");
+                std::wstring base = sl == std::wstring::npos ? loc : loc.substr(sl + 1);
+                where = std::string(base.begin(), base.end());
+            }
+            int kind = -1;
+            for (auto& mi : kModelInfo)
+                if (mi.type == type)
+                    kind = mi.kind;
+            std::string parts = "-";
+            if (kind >= 0) {
+                std::vector<dbpf::Record> recs;
+                if (records_from_game({inst, type, group}, recs))
+                    parts = std::to_string(unknown_part_ids(recs, (ModelKind)kind).size());
+                else
+                    parts = "unreadable";
+            }
+            char b[200];
+            snprintf(b, sizeof b, "  obj noun=%08X n=%u key=%08X/%08X/%08X from=%s unknown_parts=%s\n", noun, n, inst, type,
+                     group, where.c_str(), parts.c_str());
+            out += b;
+        }
+        return out;
+    }
+    if (!a.empty() && a[0] == "looks") { // tests (BUG-0725): the lookalike choices of this session (group/id=chosen)
+        std::string out = "looks";
+        for (auto& [k, v] : g_lookalike)
+            out += " " + hex(k.first) + "/" + hex(k.second) + "=" + hex(v);
+        return out + "\n";
+    }
+    if (a.size() >= 3 && a[0] == "mparts") { // mparts <kind> <hex instance>: the part ids of the model the game reads (tests)
+        int kind = a[1] == "cell" ? kMkCell : a[1] == "ufo" ? kMkUfo : a[1] == "vehicle" ? kMkVehicle
+                   : a[1] == "building" ? kMkBuilding : kMkCreature;
+        Key k{(uint32_t)strtoul(a[2].c_str(), nullptr, 16), kModelInfo[kind].type, kModelInfo[kind].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "mparts " + hex(k.instance) + " none\n";
+        std::string out = "mparts " + hex(k.instance);
+        std::set<uint32_t> seen;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                for (auto& ref : model_part_refs(r.data, part_group((ModelKind)kind)))
+                    if (seen.insert(ref.id).second)
+                        out += " " + hex(ref.id) + (part_known(ref.id, part_group((ModelKind)kind)) ? "" : "!") +
+                               (g_rx_descs.count(ref.id) ? "+d" : "");
+        return out + "\n";
+    }
     if (a.size() >= 2 && a[0] == "modelhash") { // modelhash <hex inst> [<hex type> <hex group>]: which model answers
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16),
               a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kModelInfo[kMkVehicle].type,

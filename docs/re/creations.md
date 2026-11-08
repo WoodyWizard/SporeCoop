@@ -1197,3 +1197,27 @@ BUG-0581, BUG-0457. GOG 2024, lanes 4 / 5 (`coop_editor_sync.py --case host|host
 * ✔ (runtime) A guest that stays in its own editor while the host evolves gets the host's new bundle there; back in
   the stage its game builds the host's puppet from the host's new creature (the model record the game finds for the
   puppet's species = the host's, `coop.creations bem` / `speciesof`). BUG-0457 not reproduced that way either.
+
+## Content of the host's designs: descriptions, buildings, the model audit (2026-11-08, fix/w46-k2b-content-b)
+<a id="creations-k2b-design-content"></a>
+
+BUG-0725 / BUG-0726 / BUG-0727 / BUG-0728 / BUG-0730 / BUG-0731, children of the content class BUG-0424. The class's one
+method stays `creations::ensure_model` (every model the mod makes the game build).
+
+* ✔ (code) Before: `add_part_descs` added descriptions for creature, cell and UFO bundles only (the key's type), the
+  host's design answers (BUG-0647 vehicles, BUG-0670 buildings, BUG-0724 ships) went without them, `apply_own_design`
+  dropped what came and `ensure_model` substituted without descriptions: a lacking part became the fixed fallback of its
+  kind (kBasePartFallbacks; vehicle 00046BAE in lab 20261108-032319). Now every bundle carries the descriptions of the
+  part group of its model kind (vehicle and UFO parts share 0x40646000, buildings 0x40636000), every received description
+  is kept for the session by part id (`g_rx_descs`, at most 4096) and ensure_model's substitution uses them
+  (`content.design_lookalike`). Order in Civ: a building is first built from the guest's copy of the design (no
+  description yet: the fixed fallback for a second), then the BUG-0670 sweep re-keys it to the host's design with the
+  lookalike.
+* ✔ (code, runtime lab 20261108-032432) `allow_copy = false` (buildings: SetBuildingModel reads the design key itself)
+  refused any model with a lacking part, a rule of the first BUG-0469 version (a copy under a key of ours). With
+  `content.model_key` the copy answers the model's own key, so such a caller builds it too (`content.building_copy`).
+* Test hooks: `coop.creations lack <id> | clear` (the mod's checks, substitutes and lookalike search treat a part this
+  game has as lacking: one lab lane has one install for both games; the game itself still has it, so no bake fault can
+  show), `mparts <kind> <inst>` (the part ids of the model the game reads; `!` lacking, `+d` described), `looks` (the
+  lookalike choices), `objmodels` (every placed object's model key at object +0xC4 and a city's three decoration keys
+  at +0x528, the package that answers each and its lacking part ids: the audit test content_audit_<stage>).

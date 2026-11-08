@@ -273,6 +273,26 @@ add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_siege_npc', P + 'coop_civ_siege_npc.py', warm=True, minutes=3, fixture='civ_npc')  # an NPC nation's army is no second player of a joint siege (BUG-0420; SPORE_FIX_OFF=civ.siege_players fails)
 add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixture='space')  # the host's escort's hits on a guest and the guest's on the escort are not relayed (BUG-0420; SPORE_FIX_OFF=space.friendly_hits fails)
 add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
+# K2b content (BUG-0424 children), sub-agent B
+add('space_zero_key', P + 'coop_space_zero_key.py', minutes=4, fixture='space')  # BUG-0723: a host ship with a model key of zeros makes no ship without a model on the guest (SPORE_FIX_OFF=fleet.zero_key fails)
+add('space_zero_key_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_zero_key.py', minutes=5, fixture='space')  # BUG-0723 at 20 fps over the player network
+add('civ_design_content', P + 'coop_civ_design_content.py', minutes=5)  # BUG-0725 / BUG-0726: a host's vehicle and house design with a part the guest lacks: the mirror shows the most similar part (the design's part descriptions), the house is built (SPORE_FIX_OFF=content.design_lookalike / content.building_copy fail)
+add('civ_design_content_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_civ_design_content.py', minutes=6)  # BUG-0725 / BUG-0726 at 20 fps over the player network
+add('space_host_ship_design', P + 'coop_space_host_ship_design.py', minutes=4, fixture='space')  # BUG-0724: the guest's mirrors of the host's empire's ships show the host's own ship design, not the guest's creation of the same id (SPORE_FIX_OFF=fleet.host_designs fails)
+add('space_host_ship_design_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_space_host_ship_design.py', minutes=5, fixture='space')  # BUG-0724 at 20 fps over the player network
+add('creature_grow', P + 'coop_creature_grow.py', minutes=5, fixture='creature')  # BUG-0732 / BUG-0733: a guest's own creature grows with its brain upgrade, each game shows the partner at its size (SPORE_FIX_OFF=creature.own_scale / creature.puppet_scale fail)
+add('creature_grow_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_creature_grow.py', minutes=6, fixture='creature')  # BUG-0732 / BUG-0733 at 20 fps over the player network
+add('hostile_party', P + 'coop_hostile_party.py', minutes=5, fixture='creature')  # BUG-0734 (not reproduced): animals of a species hostile to the players target a guest playing its own creature (SPORE_FIX_OFF=npc.partners fails)
+add('hostile_party_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_hostile_party.py', minutes=6, fixture='creature')  # BUG-0734 at 20 fps over the player network
+add('pack_defends_partner', P + 'coop_party_defence.py', minutes=4, fixture='creature')  # BUG-0735: the host's pack goes for an animal that hit the guest (SPORE_FIX_OFF=npc.pack_defends_partner fails)
+add('pack_defends_partner_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_party_defence.py', minutes=5, fixture='creature')  # BUG-0735 at 20 fps over the player network
+add('flock_relay', P + 'coop_party_defence.py --flock', minutes=4, fixture='creature')  # BUG-0736: a guest's Summon Flock is made by the host's game (SPORE_FIX_OFF=creature.flock_relay fails)
+add('flock_relay_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_party_defence.py --flock', minutes=5, fixture='creature')  # BUG-0736 at 20 fps over the player network
+add('content_audit_tribe', P + 'coop_content_audit.py tribe', minutes=4, fixture='tribe')  # BUG-0730: the models of every placed Tribe object (tools, huts) are the game's own and in the guest's game
+add('content_audit_civ', P + 'coop_content_audit.py civ_npc', minutes=4)  # BUG-0731: the models of every placed Civ object (buildings, vehicles, city decorations) are in the guest's game
+add('content_audit_space', P + 'coop_content_audit.py space', minutes=4, fixture='space')  # BUG-0731: the same in Space (colony cities)
+add('content_own_cell', P + 'coop_content_own_lookalike.py cell', minutes=5, fixture='cell')  # BUG-0728: a guest's own cell with a part the host lacks shows the lookalike from the guest's description (SPORE_FIX_OFF=content.lookalike fails)
+add('content_own_ufo', P + 'coop_content_own_lookalike.py ufo', minutes=5, fixture='space')  # BUG-0728: a host's ship design with a part the guest lacks shows the lookalike on the guest's mirrors (SPORE_FIX_OFF=content.lookalike fails)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('window_input', P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713 (class BUG-0429): F9 pressed while another program has the focus does not toggle the co-op window on the host or the guest, F9 on the game window does (SPORE_FIX_OFF=input.window fails)
 add('window_input_lowfps', 'SPORE_FPS=8 ' + P + 'coop_window_input.py', minutes=4, fixture='creature')  # BUG-0713: window_input with both games at 8 fps (a tap shorter than a frame is still one press)

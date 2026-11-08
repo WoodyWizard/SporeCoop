@@ -5032,3 +5032,21 @@ SporeKit `key <vk|name> elsewhere` holds the physical key state (GetAsyncKeyStat
 posts nothing to the game window: what the game sees while another program has the focus. Test `window_input`
 (BUG-0713, docs/08-ui.md#ui-window-input). Background mode hooks GetForegroundWindow to the game window, so a test can
 not take the focus away for real.
+## One lane, a part the game "lacks": the content tests of K2b (2026-11-08, fix/w46-k2b-content-b)
+<a id="testing-k2b-content"></a>
+
+* Both games of one lane share one install, so a lane cannot have a guest without a pack (the pack-moving tests
+  content_civ / content_lookalike / content_space / unknown_parts need a second, free lane). `coop.creations lack <id>`
+  (and `lack clear`) makes the mod's checks, substitutes and lookalike search treat a part this game has as lacking:
+  the mod's whole path (descriptions, lookalike, copies, refusals) runs on one lane; the game itself still has the
+  part, so a bake fault of a really missing part cannot show (the pack-moving tests keep that). The verdicts of
+  ensure_model are made again after `lack` (its cache is cleared).
+* `coop.creations mparts <kind> <inst>` (the part ids of the model the game reads, `!` lacking, `+d` described),
+  `looks` (the lookalike choices), `objmodels [scan]` (every placed object's model key and its package; `scan` also
+  key-like triples of model types in an object's first 0x600 bytes).
+* A guest playing its own creature: since BUG-0345 a guest plays the world's species unless it chose another
+  creation in that world; tools/tests/own_creature.py `play_own(guest)` chooses one live (creature_brain_hp's own check
+  "the guest plays its own creature" fails without it on the current build: lab 20261107-215918 of fix/w46-p4-creature).
+* Tests: space_zero_key, space_host_ship_design, civ_design_content, content_own_cell / content_own_ufo,
+  content_audit_tribe / civ / space, creature_grow, hostile_party, pack_defends_partner, flock_relay (each with a
+  `_slow` twin at 20 fps over the player network where the timing matters); ~1 min each on a warm lane.

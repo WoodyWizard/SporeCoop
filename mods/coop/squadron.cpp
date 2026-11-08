@@ -118,6 +118,26 @@ COOP_FIX("fleet.model_check", "BUG-0323", g_model_fix, "space: a host ship whose
 static uint32_t g_unknown_models;
 static bool g_fake_model; // tests: the host sends made-up model instances
 static uint32_t g_fake_inst; // tests (BUG-0469): the host sends this model instance instead
+static bool g_fake_zero;      // tests (BUG-0723): the host sends a model key of zeros
+// BUG-0723: a host ship whose model key is all zeros was mirrored with SpawnUFO(type, &pol, {0}): SpawnUFO then takes
+// its own default key (0xCB89C3D6, docs/re/space.md#space-npc-model) and the gfx the default UFO 0x9D5DB21A, neither
+// of which the GOG 2024 install has: a mirror without a model (the BUG-0546 / BUG-0686 guards only keep it from
+// faulting), and that guard then drew it with the last ship model it had (lab 20261108-031320: two pirates as the
+// guest's own ship). A zero key is now a model this game does not have: the model of a ship of that empire this game
+// made itself, else the model the game gives a raid without an empire (cPlayer +0x1280), else no mirror. A key this game
+// does not have (BUG-0323) takes the same last fallback: before, such a ship had no mirror at all when no ship of its
+// empire was here (a pirate), and the guest did not see a ship the host had (sync-check "s missing", lab
+// 20261108-043549).
+// `coop.fix fleet.zero_key off`: SpawnUFO with the zeros (0.7.10).
+static bool g_zero_key_fix = true;
+COOP_FIX("fleet.zero_key", "BUG-0723", g_zero_key_fix, "space: a host ship with no model key or one this game lacks is mirrored with a local ship model of its empire or the game's raid model, never with SpawnUFO's default and never left out");
+// BUG-0724: the host's empire's own ships (escorts, colony defenders) carry the keys of the host's own ship creations
+// (My Creations, ids sequential per profile); the guest's game resolved such a key to ITS OWN creation of that id. Each
+// key goes through creations::host_design (the BUG-0647 path of civ vehicles): the host's records under a key of ours.
+// `coop.fix fleet.host_designs off`: the key as the host sent it (0.7.10).
+static bool g_ship_designs_fix = true;
+COOP_FIX("fleet.host_designs", "BUG-0724", g_ship_designs_fix, "space: a guest's mirrors of the host's empire's ships show the host's own ship designs, not the guest's creation of the same id");
+static uint32_t g_zero_keys, g_design_waits, g_designs_used;
 static std::unordered_set<uint32_t> g_unknown_logged;
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checked;
 static bool g_applying;
@@ -551,7 +571,11 @@ static void host_tick(double now)
             w.u32(F<uint32_t>(u, kPol));
             // tests (BUG-0323): `coop.fleet fakemodel 1` sends a model instance the guest has not got,
             // as a host whose Sporepedia cache holds other creations does
-            w.u32(g_fake_inst ? g_fake_inst : g_fake_model ? key[0] ^ 0x5A5A5A5Au : key[0]); w.u32(key[1]); w.u32(key[2]);
+            if (g_fake_zero) { // tests (BUG-0723): a ship without a model key
+                w.u32(0); w.u32(0); w.u32(0);
+            } else {
+                w.u32(g_fake_inst ? g_fake_inst : g_fake_model ? key[0] ^ 0x5A5A5A5Au : key[0]); w.u32(key[1]); w.u32(key[2]);
+            }
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(q[0]); w.f32(q[1]); w.f32(q[2]); w.f32(q[3]);
             w.f32(F<float>(u, kHp));
@@ -674,6 +698,25 @@ static bool local_model(uint32_t pol, int type, uint32_t* key)
     }
     memcpy(key, &F<uint32_t>(best, kModel), 12);
     memcpy(seen[pol].data(), key, 12);
+    return true;
+}
+
+// BUG-0723: the model the game itself gives a ship without an empire's design: a raid without an attacker empire copies
+// its UFO key from cPlayer +0x1280 (cGameNounManager +0x74; 0xC5C8F3, docs/re/space.md#space-npc-model), a model this
+// game has. false: none known here.
+static bool pirate_model(uint32_t* key)
+{
+    static uintptr_t a_nm = H->sym("Simulator::cGameNounManager::Get");
+    void* nm = a_nm ? skg::cdecl_call<void*>(a_nm) : nullptr;
+    void* pl = nm && skg::readable(nm, 0x78) ? F<void*>(nm, 0x74) : nullptr;
+    if (!pl || !skg::readable(pl, 0x128C))
+        return false;
+    const uint32_t* k = &F<uint32_t>(pl, 0x1280);
+    if (!(k[0] | k[2]) || !creations::key_known({k[0], k[1] ? k[1] : 0x476A98C7u, k[2]}))
+        return false;
+    key[0] = k[0];
+    key[1] = k[1] ? k[1] : 0x476A98C7u;
+    key[2] = k[2];
     return true;
 }
 
@@ -894,7 +937,21 @@ static void guest_state(net::Reader& r)
             // (SpawnUFO with no key faulted the same way: the default model was missing too.) The
             // model of a ship of the same empire that this game made itself is taken instead; with
             // none the mirror waits (no ship rather than a broken one).
-            bool have_key = !(key[0] | key[1] | key[2]) || creations::key_known({key[0], key[1], key[2]});
+            bool zero = !(key[0] | key[1] | key[2]);
+            if (zero)
+                g_zero_keys++;
+            if (!zero && g_ship_designs_fix) { // BUG-0724: the host's own ship design, under a key of ours
+                bool pending = false;
+                creations::Key hk = creations::host_design({key[0], key[1], key[2]}, creations::kMkUfo, &pending);
+                if (pending) {
+                    g_design_waits++;
+                    continue; // asked the host: the mirror comes with its answer (a later cycle)
+                }
+                if (hk.instance != key[0])
+                    g_designs_used++;
+                key[0] = hk.instance; key[1] = hk.type; key[2] = hk.group;
+            }
+            bool have_key = zero ? !g_zero_key_fix : creations::key_known({key[0], key[1], key[2]});
             bool known = have_key;
             // BUG-0469: the model's key alone does not say whether this game can build the model: its
             // parts and paints (a ship design of another player's Sporepedia or of a pack) are checked
@@ -915,9 +972,12 @@ static void guest_state(net::Reader& r)
                 bool sub = false;
                 if (g_model_fix)
                     sub = local_model(pol, type, key);
+                if (!sub && g_zero_key_fix) // (an unknown key too: a ship rather than none, lab 20261108-043549)
+                    sub = pirate_model(key);
                 if (g_unknown_logged.insert(key[0]).second)
                     H->log(M, SK_INFO, "space: host ship model %08X %s%s", key[0],
-                           have_key ? "has parts or paints this game does not have" : "is not in this game",
+                           have_key ? "has parts or paints this game does not have"
+                           : zero   ? "is none (a key of zeros, BUG-0723)" : "is not in this game",
                            !g_model_fix ? "" : sub ? ": the mirror takes a local ship's model" : ": no mirror yet");
                 if (g_model_fix && !sub)
                     continue;
@@ -1119,7 +1179,7 @@ std::string status()
 
 static std::string status_ships()
 {
-    char b[560];
+    char b[680];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
@@ -1135,6 +1195,13 @@ static std::string status_ships()
                  game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
                  g_partial_cycles, g_posse_kept, g_unknown_models, g_content_checked, g_ctl_skipped, g_ufo_stripped,
                  g_ufo_strip_saves);
+    if (!(C.sess && C.sess->role() == net::Role::Host)) { // BUG-0723 / BUG-0724
+        size_t n = strlen(b);
+        if (n && b[n - 1] == '\n')
+            b[--n] = 0;
+        snprintf(b + n, sizeof b - n, " zero_keys=%u design_waits=%u designs_used=%u\n", g_zero_keys, g_design_waits,
+                 g_designs_used);
+    }
     return b;
 }
 
@@ -1289,6 +1356,9 @@ std::string debug(const std::vector<std::string>& a)
         return "hit sent";
     }
     if (a.size() >= 2 && a[0] == "fakemodel") { // tests (BUG-0323): 1 = send made-up model instances
+        g_fake_zero = a[1] == "zero";              // zero (BUG-0723): send keys of zeros
+        if (g_fake_zero)
+            return "fakemodel zero";
         g_fake_model = a[1] != "0";                // 2 <hex instance> (BUG-0469): send that model instance
         g_fake_inst = a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
         char b[96] = {};
