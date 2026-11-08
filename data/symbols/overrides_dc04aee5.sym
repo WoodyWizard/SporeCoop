@@ -165,7 +165,7 @@ SporeCoop::BT_ValidTarget=0x00D993D0 ; verified port from GOG 2016 0x00D99440: c
 SporeCoop::CityPlanner_AddBuilding_Ret=0x00D1419C ; verified port from GOG 2016 0x00D1419C: unchanged (delta 0 here): call AddBuilding 0xBE2040 at 0xD14197 (push 0; push ebp=b; ecx=city) inside cCommunityEditor HandleMessage 0xD130D0 (same as old 0xD130D0); return address 0xD1419C
 SporeCoop::CivGrowth_Budget_Ret=0x00BE5BD3 ; verified port from GOG 2016 0x00BE5BB3: call CreateBuilding 0xBE5500 at 0xBE5BCE in growth func 0xBE5890 (old call 0xBE5BAE in 0xBE5870, +0x20); same noun-select code before it (0x18EB106/0x18EA2CC/0x1A56ABA)
 SporeCoop::CivGrowth_New_Ret=0x00BE618E ; verified port from GOG 2016 0x00BE616E: call CreateBuilding 0xBE5500 at 0xBE6189 in growth func 0xBE5F20 (old call 0xBE6169, +0x20); preceded by push ecx(type); push eax(noun); mov ecx,esi
-SporeCoop::CreatureDnaWorth=0x00C042A0 ; verified port from GOG 2016 0x00C04260: thiscall ret 4, tuning +0x324 / +0x320 by bool; callers TakeDamage C075E0 and CreatureSocialSuccess D9BBD0 (old D9BC40)
+SporeCoop::CreatureDnaWorth=0x00C042A0 ; verified port from GOG 2016 0x00C04260: thiscall ret 4, tuning +0x324 / +0x320 by bool; callers TakeDamage C075E0 and CreatureSocialSuccess D9BBD0 (old D9BC40); returns: float (ST0) (objdump 2026-11-08, BUG-0430: flds [eax] at 0xC0436C, ret 4)
 SporeCoop::CreatureGoalUI_Get=0x00D37CB0 ; verified port from GOG 2016 0x00D37CB0 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::CreaturePlayAnim=0x00C122F0 ; verified port from GOG 2016 0x00C122B0: thiscall ret 0xC; called at DA4A0E (old DA4A7E) with (anim from D9BBD0, 1, -1) in social tick DA4950 ; the behaviour tree nodes start their animations with it (0xD8DC30: B31EB92C / 731EA3EA ..., ~150 callers, BUG-0464), returns the animation handle (0: not played)
 SporeCoop::CreatureSocialMode=0x00C0E800 ; verified port from GOG 2016 0x00C0E7C0: thiscall no args, plain ret; returns 0..4: species relation via cSpeciesRelationshipManager::Get B3D5C0 + BA40E0 jump table (1/2/3), 4 via +0xB58 and herd counts; citizen path via GetPlayerTribe/relationship
@@ -206,8 +206,8 @@ UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x008308F0 ; verifi
 UTFWin::UILayout::UILayout=0x008100A0 ; verified port from GOG 2016 0x00810050 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::GetActivePlanetRecord=0x01021150 ; verified port from GOG 2016 0x01021150 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns [planet+0x13C] or 0
 Simulator::cRelationshipManager::Get=0x00B3D3C0 ; verified port from GOG 2016 0x00B3D390 (2026-10-23, space_diplomacy): same mode switch (0x1654C05 -> 0xC4F120 on [0x167EAE4]), call 0xB5B910
-Simulator::cRelationshipManager::ApplyRelationship=0x00D06280 ; verified port from GOG 2016 0x00D06280: delta 0, same body (calls 0xD01AF0 then 0xD05DD0), ret 0x10
-Simulator::cRelationshipManager::CalculateRelationship=0x00D00950 ; verified port from GOG 2016 0x00D00940: same body (calls 0xD05A60, clamps), ret 0xC
+Simulator::cRelationshipManager::ApplyRelationship=0x00D06280 ; verified port from GOG 2016 0x00D06280: delta 0, same body (calls 0xD01AF0 then 0xD05DD0), ret 0x10; returns: float (ST0) (objdump 2026-11-08, BUG-0430: the ST0 of 0xD05DD0 (cRelationshipManager_ApplyEvent) right before ret 0x10)
+Simulator::cRelationshipManager::CalculateRelationship=0x00D00950 ; verified port from GOG 2016 0x00D00940: same body (calls 0xD05A60, clamps), ret 0xC; returns: float (ST0) (objdump 2026-11-08, BUG-0430: flds [esp] at 0xD0099C, ret 0xC)
 Simulator::cRelationshipManager::DeclareWar=0x00D065E0 ; verified port from GOG 2016 0x00D065E0: delta 0, identical except call targets (IsAtWar 0xD01F90, 0xD01AF0, 0xD01570), ret 8
 Simulator::cRelationshipManager::DeclareAlliance=0x00D06960 ; verified port from GOG 2016 0x00D06960: delta 0, identical except call targets (0xD01AF0, 0xD01570, AddAlly 0xC347E0), ret 8
 Simulator::cRelationshipManager::DeclarePeace=0x00D03920 ; verified port from GOG 2016 0x00D03920: delta 0, same shape, ret 8
@@ -220,7 +220,7 @@ SporeCoop::cEmpire_MakeContact=0x00C32450 ; verified port from GOG 2016 0x00C324
 # space_trade.cpp (tool gifts and spice trade, docs/re/space.md 14)
 App::IPropManager::Get=0x0067DDF0 ; verified port from GOG 2016 0x0067DDF0 (same addr): mov eax,[0x15FD8A8]; ret
 App::Property::GetFloat=0x0040CF10 ; verified port from GOG 2016 0x0040CF10 (same addr, same bytes: vt+0x24, type 0xD check)
-SporeCoop::DifficultyTuning_GetFloat=0x00C75DD0 ; likely port from GOG 2016 0x00C75DB0: +0x20; called at 0x103CE9B after push 0x1C2E590D / cGameNounManager::Get 0xB3D400 / mov eax,[ecx+0x74] 0xF67D40, reads +0x11F4 and +0x1248, GetArrayFloat 0x6A08B0
+SporeCoop::DifficultyTuning_GetFloat=0x00C75DD0 ; likely port from GOG 2016 0x00C75DB0: +0x20; called at 0x103CE9B after push 0x1C2E590D / cGameNounManager::Get 0xB3D400 / mov eax,[ecx+0x74] 0xF67D40, reads +0x11F4 and +0x1248, GetArrayFloat 0x6A08B0; returns: float (ST0) (objdump 2026-11-08, BUG-0430: flds / fld1 before each ret 4)
 Simulator::cSpaceToolData::AddAmmo=0x0104CBE0 ; verified port from GOG 2016 0x0104CBE0 (same addr, same bytes: +0x7C clamped to +0x1A0, ret 4)
 Simulator::cSpaceToolData::ConsumeAmmo=0x0104CC10 ; verified port from GOG 2016 0x0104CC10 (same addr, same bytes: -1 -> +0x19C, sub [ecx+0x7C], ret 4)
 Simulator::cCommManager::Get=0x00B3D5A0 ; verified port from GOG 2016 0x00B3D570: cdecl() -> [0x167EB44], three getters before cCinematicManager::Get 0xB3D5D0 -> [0x167EB50] as in GOG 2016
@@ -262,7 +262,7 @@ SporeCoop::cPlanetRecord_AddCivData=0x00B8F010 ; verified asm: the AddCivData ca
 Simulator::cStarRecord::GetPlanetRecords=0x00BBA900 ; verified port from GOG 2016 0x00BBA8D0 (ModAPI March2017 address of the same name)
 Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
 Simulator::cPlanetModel::Get=0x00B3D450 ; verified port from GOG 2016 0x00B3D420: cdecl() -> [0x167EAF8] (ModAPI March2017 address)
-Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x00B7F040: identical code (cmp [esi+0x20],0; [esi+0x24] vt+0xC; 0xF92760), ret 4
+Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x00B7F040: identical code (cmp [esi+0x20],0; [esi+0x24] vt+0xC; 0xF92760), ret 4; returns: float (ST0) (objdump 2026-11-08, BUG-0430: flds [esp+8] before each ret 4, the terrain path returns 0xF92760's ST0)
 SporeCoop::cGameNounManager_GetPlayer=0x00F67D40 ; verified port from GOG 2016 0x00F67D40: unique byte-pattern match (mov eax,[ecx+0x74]; ret)
 SporeCoop::VectorMapUint_At=0x00F41940 ; verified asm: the call target in the contact setter 0xC7BD20 (|= 2) of this build (GOG 2016 0xC7BD00 -> 0xF41940)
 # space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
@@ -774,3 +774,4 @@ SporeCoop::MissionManager_IsMission201Finished=0x00FEB920 ; verified (Ghidra 202
 SporeCoop::PlayerUFO_CanTravelToStar=0x00FFC780 ; likely (Ghidra 2026-11-08, BUG-0181) thiscall bool(cSimulatorPlayerUFO*, star) ret 4: tutorial (+0x18 of the mission manager 0): home star or mission 0x7BDBB97D's target only; else range 0xFFC6A0
 SporeCoop::Story201Mission_OnCompleted=0x00C5F780 ; likely (Ghidra 2026-11-08, BUG-0181) vtable 0x146FDE0 slot 0x94 (class Cast 0x422227E, mission id 0x7BDBB97D): star flag 0x40000 cleared, 0xBB9DA0, SetMission201Finished(1)
 SporeCoop::Cheat_SpaceCreate=0x00B5FF40 ; verified (string refs 2026-11-08, BUG-0181) the release cheat spaceCreate's ParseLine (App/cToolChargeCommand vtable 0x1462BCC): needs tool 0x4133FE05; sets mission manager +0x17/+0x18 = 1; adds/recharges the tools of prop 0x68C20E1
+Graphics::IRenderer::Get=0x0067DD10 ; verified (objdump 2026-11-08, BUG-0430) cdecl, no args: mov eax,[0x15FD8C0]; ret: returns the renderer (fullscreen flag at +0x6C, Renderer_SetVideoMode; tests: coop_alt_enter.py)
