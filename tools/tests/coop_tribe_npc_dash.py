@@ -19,8 +19,10 @@ every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tr
    instead of 10 (`age=` up to 0.5 s, `rx=`): the guest showed the animal where the host had it
    that long ago, 2 m back at 6.5 m/s, with the proxy right on its target. Those samples measure
    the machine, not the driving: the p90 is taken over the samples whose state was fresh (age at
-   most 0.25 s and at least 7 states a second); with fewer than 40 such samples the run is
-   inconclusive (RESULT: SKIP). The p90 of all samples is printed too.
+   most 0.25 s and at least 7 states a second). BUG-0430: with fewer than 40 such samples the run is
+   inconclusive (RESULT: SKIP) only when the host itself runs under 25 fps; otherwise at least 60 % of the
+   samples must have a fresh state and the p90 of all samples must stay within 2 x 1.2 m (late states are
+   a finding, not a pass).
 
 Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 
@@ -45,6 +47,8 @@ from twoinst import Checks, start
 
 LIMIT = 1.5     # m (printed: samples farther than this)
 P90 = 1.2       # m: the 90th percentile of the errors (fix off: 1.5-2.8 m, on: 0.7-0.95 m)
+SLOW_HOST = 25   # fps: a host under this makes its states late itself: too few fresh samples are inconclusive (BUG-0321)
+FRESH_SHARE = 0.6  # of the samples with a fresh state when the host is not slow (BUG-0430: late states fail)
 FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
 OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs this far beside the first
@@ -149,14 +153,25 @@ def main():
         print(f'  frame rates (median of {len(fps_g)}): guest {med(fps_g):.1f}, host {med(fps_h):.1f}; '
               f'all samples p90 {s[int(0.9 * len(s))]:.2f} m', flush=True)
         f = sorted(fresh)
-        if len(f) < 40:
-            print(f'  only {len(f)} of {len(errs)} samples with a fresh state (the machine is too loaded to measure)')
-            print('RESULT: SKIP (inconclusive: the host\'s states reached the guest late, BUG-0321)')
+        p_all = s[int(0.9 * len(s))]
+        # BUG-0430: late states are a finding, not a reason to pass. Only a host that is itself slow (its frame rate
+        # under SLOW_HOST: the machine, not the mod, makes the states late) ends the run inconclusive; otherwise the
+        # guest must get fresh states for most samples and the p90 over all samples has a looser bound too (the
+        # guest is capped at 15 fps on purpose, so its rate says nothing about the load)
+        if len(f) < 40 and 0 <= med(fps_h) < SLOW_HOST:
+            print(f'  only {len(f)} of {len(errs)} samples with a fresh state and the host at {med(fps_h):.1f} fps '
+                  f'(the machine is too loaded to measure)')
+            print('RESULT: SKIP (inconclusive: a slow host, BUG-0321)')
             return 0
-        p90 = f[int(0.9 * len(f))]
-        print(f'  fresh-state samples: {len(f)} of {len(errs)}, p90 {p90:.2f} m', flush=True)
-        ck(p90 <= P90, f'the guest shows the running animals where the host has them '
-           f'(90 % of {len(f)} samples with a fresh state within {p90:.2f} m, limit {P90} m)')
+        ck(len(f) >= FRESH_SHARE * len(errs), f'the guest gets the host\'s states in time ({len(f)} of {len(errs)} samples '
+           f'with a state at most 0.25 s old and 7 a second, at least {FRESH_SHARE:.0%})')
+        if f:
+            p90 = f[int(0.9 * len(f))]
+            print(f'  fresh-state samples: {len(f)} of {len(errs)}, p90 {p90:.2f} m', flush=True)
+            ck(p90 <= P90, f'the guest shows the running animals where the host has them '
+               f'(90 % of {len(f)} samples with a fresh state within {p90:.2f} m, limit {P90} m)')
+        ck(p_all <= 2 * P90, f'with the late states too the animals stay near the host\'s place '
+           f'(p90 of all {len(errs)} samples {p_all:.2f} m, limit {2 * P90} m)')
     return ck.result()
 
 
