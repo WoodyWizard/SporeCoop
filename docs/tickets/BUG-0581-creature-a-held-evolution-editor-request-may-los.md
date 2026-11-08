@@ -10,7 +10,7 @@ role: host
 versions: 0.7.6
 fixed_in:
 branch: fix/w46-p4-creature
-commits:
+commits: 05adb50c
 tests: editor_sync_host, editor_sync_host_late (coop_editor_sync.py: the BUG-0581 check)
 signature:
 docs: docs/re/creations.md#creations-creature-editor-budget

@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.2.4 (main) and earlier
 fixed_in: unreleased
 branch: fix/w46-p4-creature
-commits: 412db52c
+commits: 412db52c 8b8a46d9
 tests: nest_species (tools/tests/coop_nest_species.py, extended: the species profile the guest's game gives for the host's key, and its own again after the session)
 signature:
 docs: docs/re/creations.md#creations-species-map, docs/known-issues.md (Creature: the host's own creations on the guest)

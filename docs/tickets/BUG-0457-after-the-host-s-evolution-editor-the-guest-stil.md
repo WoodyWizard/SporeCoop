@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in:
 branch: fix/w46-p4-creature
-commits:
+commits: 05adb50c
 tests: editor_sync_host, editor_sync_host2, editor_sync_host_late (coop_editor_sync.py --case host / host2 / host_late)
 signature:
 docs: docs/re/creations.md#creations-host-evolution, docs/re/creations.md#creations-own-editor-dna
