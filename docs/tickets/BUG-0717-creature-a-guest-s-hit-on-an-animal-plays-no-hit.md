@@ -28,6 +28,7 @@ None: the guest's game shows the host's result of its hit; the test stays as a g
 
 ## Verification
 no-fail-run: nothing is lost to reproduce; the evidence run: out/lab/20261108-040716 (npc_hit_feedback: health drop on the guest after 0.07-0.28 s, the host's animation on the proxy, the hit filtered once).
+Re-run on the merged branch (the sub-worktree run dirs were removed): npc_hit_feedback PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.

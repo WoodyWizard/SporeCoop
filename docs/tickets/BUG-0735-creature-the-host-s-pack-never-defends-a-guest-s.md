@@ -28,7 +28,9 @@ creature_hp::pack_defend, called where the host forwards an NPC's hit on a puppe
 
 ## Verification
 FAIL: out/lab/20261108-040752. PASS: out/lab/20261108-035853 (all 5 members target the attacker's combatant +0x5A8 within 8 s), out/lab/20261108-041412 (the _slow twin at 20 fps over the player network).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-070043, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `npc.pack_defends_partner`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

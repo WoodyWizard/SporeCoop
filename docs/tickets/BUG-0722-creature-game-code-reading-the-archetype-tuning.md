@@ -31,7 +31,10 @@ Test `puppet_tuning` (tools/tests/coop_puppet_tuning.py: four players, a hunt, s
 * FAIL with `SPORE_FIX_OFF=npc.puppet_tuning`: out/lab/20261108-041250 (Bob's puppet untuned on Carol and Dave)
 * PASS: out/lab/20261108-041635, out/lab/20261108-052622 (none untuned on any game, all 23 + 23 + 23 + 3 of ours tuned, no fault)
 * Also out/lab/20261108-040137 (the first run, before the fix: untuned on the host, Carol and Dave).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-070731, PASS out/lab/20261108-054842 and out/lab/20261108-070731-2 (the test now makes the first guest play a creature of its own: the 4-player run without it passed with the switch off, 20261108-070003, as since BUG-0345 a guest plays the world's species).
+Second PASS with the new set-up: out/lab/20261108-071104.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: reproduced the untuned puppet (a guest of its own species), fixed (npc.puppet_tuning), test puppet_tuning.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

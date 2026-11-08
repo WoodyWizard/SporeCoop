@@ -31,7 +31,9 @@ Test `editor_request` (tools/tests/coop_editor_request.py: the game's request ag
 * FAIL with `SPORE_FIX_OFF=creations.editor_request`: out/lab/20261108-035759 (own request: +0x39, +0x3B, +0x3C and the vector differ on both games)
 * PASS: out/lab/20261108-035848, out/lab/20261108-052538 (no difference but the allowed +0x90, both games)
 * Related PASS: editor_sync_guest out/lab/20261108-045207, guest_editor_locks out/lab/20261108-045521, party_creature4 out/lab/20261108-050537
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065917, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: the shared builder and the byte diff test (editor_request).
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

@@ -31,7 +31,9 @@ Test `cell_guest_hit` (tools/tests/coop_cell_guest_hit.py: control host bite, th
 * FAIL with `SPORE_FIX_OFF=cell.guest_hit_game`: out/lab/20261108-043313 (the final code; no hurt animation after any of the 3 bites, the knocked-out guest's bite killed it), also out/lab/20261108-034206 (the first version)
 * PASS: out/lab/20261108-044040, out/lab/20261108-050744 (the final code: hurt animation after each bite, the knocked-out bite refused, the later one killed); out/lab/20261108-034328 (the first version, type-4 hits through Bite)
 * Related, the final code: cell_guest_bite out/lab/20261108-042814 (the BUG-0078 / BUG-0240 gate: spared species, +0x111, rock and meat take nothing) PASS; the first version failed it at the rock and meat (out/lab/20261108-042210): Bite breaks a cell IsDamageable refuses, so hits go through DamageCell now.
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065254-2, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: reproduced, fixed (cell.guest_hit_game), test cell_guest_hit; title corrected (the lethal bite of an invulnerable cell is the game's rule).
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

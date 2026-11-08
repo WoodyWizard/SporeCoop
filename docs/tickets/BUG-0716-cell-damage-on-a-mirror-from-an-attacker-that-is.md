@@ -31,7 +31,9 @@ Test `cell_poison` (tools/tests/coop_cell_parts_attack.py --part poison: the gue
 * FAIL with `SPORE_FIX_OFF=cell.puppet_poison`: out/lab/20261108-044437 (the host's game made no cloud of the guest, puppet_clouds=0)
 * PASS: out/lab/20261108-044613 (67 clouds of the guest), out/lab/20261108-044751 (72)
 * Not verified: the clouds' damage. With the values written into the model's data the creature next to them lost 2 hp in one run and none in the other; the host's own avatar with the same model data made 90-162 clouds and hurt nothing either: what a real poison part carries besides model data +0x1270 / +0x1274 / +0x1278 is not read (docs/re/cell.md#cell-electric-attack). The damage itself is the host's game's own.
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065555, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: the guest's clouds traced (destroyed at once on the guest, none on the host), fixed host-side (cell.puppet_poison), test cell_poison; the damage of the grafted part not reproduced.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

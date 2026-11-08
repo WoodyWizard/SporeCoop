@@ -28,7 +28,9 @@ squadron.cpp: every non-zero model key of a host ship goes through creations::ho
 
 ## Verification
 FAIL: out/lab/20261108-032213 (`SPORE_FIX_OFF=fleet.host_designs`: mirrors 8F63EDA2, the guest's own). PASS: out/lab/20261108-031859 (space_host_ship_design: both mirrors 5DC76FCE, the host's design), out/lab/20261108-032608 (space_host_ship_design_slow, 20 fps over the player network).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065254, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `fleet.host_designs`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

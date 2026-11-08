@@ -28,7 +28,9 @@ A key of zeros is a model this game does not have (`fleet.zero_key`): the mirror
 
 ## Verification
 FAIL: out/lab/20261108-031320 (`SPORE_FIX_OFF=fleet.zero_key`: the guest's guard counter `ship models defaulted` 0 -> 2, both mirrors with key 00000000). PASS: out/lab/20261108-031552 (space_zero_key and space_zero_key_slow at 20 fps over the player network: both mirrors with the game's raid model 067256EA, no guard counter moved, no fault), out/lab/20261108-044523 (space_zero_key and space_mirror_model after the unknown-key fallback). The unknown key: FAIL out/lab/20261108-044742 (space_mirror_model, `SPORE_FIX_OFF=fleet.zero_key`: sync-check "s: 1 missing on the guest"), PASS out/lab/20261108-044523. Detector (SPORE_DETECTOR=20): no row of the class in these runs.
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-070313, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `fleet.zero_key`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

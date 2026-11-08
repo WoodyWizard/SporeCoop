@@ -30,7 +30,9 @@ Static (Ghidra, GOG 2024): 0xE71520 (SporeCoop::Cell_ElectricAttack, called only
 Test `cell_electric` (tools/tests/coop_cell_parts_attack.py --part electric).
 * FAIL with `SPORE_FIX_OFF=cell.electric`: out/lab/20261108-035148 (12 zaps on the guest, no type-1 hit on the host, the creature kept hp 60)
 * PASS: out/lab/20261108-034904 (4 type-1 hits applied, hp 57 -> 51), out/lab/20261108-035327 (3 type-1 hits, 57 -> 51), out/lab/20261108-052922 (the final code)
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065413, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: the runtime check (bug confirmed), fixed (cell.electric), test cell_electric.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

@@ -28,7 +28,9 @@ Tests: `content_own_cell` (the guest chooses a cell of its own the host does not
 
 ## Verification
 FAIL: out/lab/20261108-041301 (content_own_ufo, `SPORE_FIX_OFF=content.lookalike`: no lookalike, a fallback), out/lab/20261108-042148 (content_own_cell, the same switch: no lookalike). PASS: out/lab/20261108-040336 (content_own_cell: C15CFA84 shown as 2921A7A3), out/lab/20261108-042248 (content_own_cell again), out/lab/20261108-035853 (content_own_ufo: 8D53A9D9 shown as 553886FC).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065638, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): tests written; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

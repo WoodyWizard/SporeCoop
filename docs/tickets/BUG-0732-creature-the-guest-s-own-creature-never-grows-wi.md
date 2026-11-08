@@ -28,7 +28,9 @@ creature_hp.cpp (`creature.own_scale`, the BUG-0375 pattern of the own avatar): 
 
 ## Verification
 FAIL: out/lab/20261108-040526 (`SPORE_FIX_OFF=creature.own_scale`: the guest x1.000, the host x1.150). PASS: out/lab/20261108-034334 (creature_grow: the guest x1.150 like the host), out/lab/20261108-041412 (the _slow twin at 20 fps over the player network).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065817, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `creature.own_scale`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

@@ -23,6 +23,7 @@ import time
 
 from coop_creature_kills import family
 from coop_party_creature import hunt, impress
+from own_creature import back_to_world, play_own
 from party import Party
 from twoinst import Checks
 
@@ -67,6 +68,10 @@ def main():
         for x in p.all:
             x.call('coop.team hp 1000')  # nests attack now and then: nobody dies by accident
         p.ids()
+        # the case of the bug: a guest playing a creature of its own (not the world's species: since BUG-0345 a guest
+        # plays the world's species unless it chooses another, so the test chooses one, as the creations menu does)
+        own = p.guests[0]
+        ck(play_own(own.con), f'{own.name} plays a creature of its own, not the world\'s species')
         time.sleep(3)
         worst = {}
         sample(p, 'start', worst)
@@ -99,6 +104,10 @@ def main():
         p.faults(ck)
         return ck.result()
     finally:
+        try:
+            back_to_world(p.guests[0].con)
+        except Exception:
+            pass
         p.stop()
 
 

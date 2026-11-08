@@ -28,6 +28,7 @@ None needed: no city content outside the design keys already checked. The audit 
 
 ## Verification
 no-fail-run: nothing to fix; evidence out/lab/20261108-033541, out/lab/20261108-034334 (content_audit_civ, content_audit_space OK).
+Re-run on the merged branch (the sub-worktree run dirs were removed): content_audit_civ / space PASS out/lab/20261108-071104.
 
 ## History
 - 2026-11-08: opened.

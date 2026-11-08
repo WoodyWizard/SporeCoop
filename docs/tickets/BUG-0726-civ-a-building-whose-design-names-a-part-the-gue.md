@@ -28,7 +28,9 @@ ensure_model builds the substituted copy for a caller that cannot pass another k
 
 ## Verification
 FAIL: out/lab/20261108-032432 (`SPORE_FIX_OFF=content.building_copy`: no house on the guest). PASS: out/lab/20261108-032608 (civ_design_content and civ_design_content_slow: the house is built at once from the copy, then shows the host's design).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065507, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `content.building_copy`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

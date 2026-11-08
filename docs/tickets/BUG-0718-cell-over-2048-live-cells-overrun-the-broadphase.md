@@ -32,7 +32,9 @@ Test `cell_merge` (tools/tests/coop_cell_merge.py: four players, the host's caps
 * PASS: out/lab/20261108-033944 (peak 2830 cells, 244 merges of ours, merge peak 5588 entries, nothing clipped, no fault), out/lab/20261108-040824
 * Related PASS on the final code: cell_4p out/lab/20261108-045828 (four players, the budgets on)
 * Also seen: with the budgets off and the fix on the merge held at 4096 cells (50 merges, no fault at 0xBBB07B) but the full cell pool broke the game elsewhere (lab 20261108-031701: 0xE86C1C, 0xE83E30): the pool's 4096 slots are a second fixed pool, bounded by cell.budget (docs/re/cell.md#cell-sap-merge).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065723, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: fix/w46-k2b-content-a: reproduced at 2854 cells, fixed with the heap merge (cell.sap_merge), test cell_merge.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

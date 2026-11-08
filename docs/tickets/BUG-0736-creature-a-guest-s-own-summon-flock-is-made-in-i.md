@@ -28,7 +28,9 @@ Observed (lab 20261108-040900, `SPORE_FIX_OFF=creature.flock_relay`): the guest'
 
 ## Verification
 FAIL: out/lab/20261108-040900. PASS: out/lab/20261108-034334 (flock_relay: the host's pack 0 -> 3, the new members 66-84 m from the guest's creature and 211-228 m from the host's, the guest's own event refused), out/lab/20261108-041412 (the _slow twin at 20 fps over the player network).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-070150, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `creature.flock_relay`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.

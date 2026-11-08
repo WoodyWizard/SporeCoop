@@ -28,6 +28,7 @@ None needed. The audit stays as a test (content_audit_tribe) and command (`coop.
 
 ## Verification
 no-fail-run: nothing to fix; evidence out/lab/20261108-033541, out/lab/20261108-034334 (content_audit_tribe OK, the rows in the logs).
+Re-run on the merged branch (the sub-worktree run dirs were removed): content_audit_tribe / civ / space PASS out/lab/20261108-071104.
 
 ## History
 - 2026-11-08: opened.

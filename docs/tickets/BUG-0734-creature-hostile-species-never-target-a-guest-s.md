@@ -28,6 +28,7 @@ None needed (the hostile animals go for the guest through the AI swap). The test
 
 ## Verification
 no-fail-run: not reproduced (the node never ran). The guard test: PASS out/lab/20261108-042844, out/lab/20261108-043118 (hostile_party and hostile_party_slow, the code without the hook); with the swap off (SPORE_FIX_OFF=npc.partners) it fails: out/lab/20261108-043319 (no animal targets the guest).
+Re-run on the merged branch (the sub-worktree run dirs were removed): hostile_party PASS out/lab/20261108-054842, with SPORE_FIX_OFF=npc.partners FAIL out/lab/20261108-071637.
 
 ## History
 - 2026-11-08: opened.

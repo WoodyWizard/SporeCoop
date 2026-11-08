@@ -28,7 +28,9 @@ Observed (lab 20261108-040640, `SPORE_FIX_OFF=creature.puppet_scale`): after bra
 
 ## Verification
 FAIL: out/lab/20261108-040640 (`SPORE_FIX_OFF=creature.puppet_scale`: puppets 1.15 / 1.15, the partners 1.15 x 1.15). PASS: out/lab/20261108-034334 (creature_grow: 1.32 / 1.316 for 1.3225), out/lab/20261108-041412 (the _slow twin at 20 fps over the player network).
+Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the sub-worktrees fix/w46-k2b-content-a / -b, removed 2026-11-08; their ids stay as the record): FAIL out/lab/20261108-065929, PASS out/lab/20261108-054842.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): fixed, `creature.puppet_scale`; FAIL and PASS runs above.
+- 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.
