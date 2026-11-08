@@ -79,10 +79,80 @@ void overlay_text(int x, int y, uint32_t argb, const char* utf8)
     draw(g_font, nullptr, w.c_str(), -1, &r, DT_NOCLIP, argb);
 }
 
+// ---- overlay shapes (since 0.3.15): filled triangles in screen pixels, drawn in the overlay pass ----
+// The game's render states are saved in a state block (made once, released before a Reset) and put back
+// after each call, so the game's next frame and the D3DX font see the states they had.
+static int g_bb_w, g_bb_h;
+static IDirect3DStateBlock9* g_tri_sb;
+static bool g_tri_failed;
+
+static void tri_release()
+{
+    if (g_tri_sb) {
+        g_tri_sb->Release();
+        g_tri_sb = nullptr;
+    }
+}
+
+void overlay_tris(const float* xy, int n, uint32_t argb)
+{
+    if (!g_overlay_active || !g_dev || !xy || n <= 0 || g_tri_failed)
+        return;
+    if (n > 256)
+        n = 256;
+    if (!g_tri_sb && FAILED(g_dev->CreateStateBlock(D3DSBT_ALL, &g_tri_sb))) {
+        g_tri_sb = nullptr;
+        g_tri_failed = true;
+        SKLOG(SK_WARN, "overlay: CreateStateBlock failed, no overlay shapes");
+        return;
+    }
+    struct V {
+        float x, y, z, rhw;
+        DWORD c;
+    };
+    V v[256 * 3];
+    for (int i = 0; i < n * 3; i++) {
+        float x = xy[i * 2], y = xy[i * 2 + 1];
+        if (!std::isfinite(x) || !std::isfinite(y))
+            return;
+        v[i] = {x - 0.5f, y - 0.5f, 0.f, 1.f, (DWORD)argb};
+    }
+    g_tri_sb->Capture();
+    D3DVIEWPORT9 vp = {0, 0, (DWORD)(g_bb_w > 0 ? g_bb_w : 1), (DWORD)(g_bb_h > 0 ? g_bb_h : 1), 0.f, 1.f};
+    g_dev->SetViewport(&vp);
+    g_dev->SetVertexShader(nullptr);
+    g_dev->SetPixelShader(nullptr);
+    g_dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    g_dev->SetTexture(0, nullptr);
+    g_dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    g_dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    g_dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_dev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    g_dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    g_dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    g_dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    g_dev->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    g_dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    g_dev->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+    g_dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    g_dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    g_dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    g_dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    g_dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    g_dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    g_dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)n, v, sizeof(V));
+    g_tri_sb->Apply();
+}
+
 int world_to_screen_game(const float* w, float* out);
 int world_to_screen(const float* w, float* out) { return world_to_screen_game(w, out); }
 
-static int g_bb_w, g_bb_h;
 void screen_size(int* w, int* h)
 {
     if (w) *w = g_bb_w;
@@ -368,6 +438,7 @@ static HRESULT WINAPI h_SwapPresent(IDirect3DSwapChain9* sc, const RECT* a, cons
 static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
 {
     fire(SK_EV_DEVICE_LOST, dev);
+    tri_release(); // a state block holds no D3DPOOL_DEFAULT resource, but is made anew after a Reset anyway
     if (g_font)
         ((HRESULT(WINAPI*)(void*))vt(g_font)[16])(g_font); // OnLostDevice
     HRESULT hr = o_Reset(dev, pp);

@@ -4742,6 +4742,30 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
+    if (a.size() >= 2 && a[0] == "chief_away" && is_host()) { // chief_away <m> [deg]: tests (F2, BUG-0764), the host's own
+        // chief put <m> metres from where it stands, on the ground (off the partners' view)
+        auto it = g_chief.find(0);
+        if (it == g_chief.end() || !it->second)
+            return "no host chief";
+        void* c = it->second;
+        net::Vec3 p0 = game::position(c);
+        float l = std::sqrt(p0.x * p0.x + p0.y * p0.y + p0.z * p0.z), d = (float)atof(a[1].c_str());
+        if (l < 1.f)
+            return "no position";
+        net::Vec3 n{p0.x / l, p0.y / l, p0.z / l};
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+        u = {u.x / ul, u.y / ul, u.z / ul};
+        net::Vec3 v{n.y * u.z - n.z * u.y, n.z * u.x - n.x * u.z, n.x * u.y - n.y * u.x}; // [angle]: degrees from u
+        float an = a.size() >= 3 ? (float)atof(a[2].c_str()) * 0.0174533f : 0.f, ca = std::cos(an), sa = std::sin(an);
+        net::Vec3 p{p0.x + (u.x * ca + v.x * sa) * d, p0.y + (u.y * ca + v.y * sa) * d, p0.z + (u.z * ca + v.z * sa) * d};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        game::teleport(c, p, game::orientation(c));
+        return "chief put " + std::to_string((int)d) + " m away";
+    }
     if (a.size() >= 2 && a[0] == "near" && is_host()) { // near <ratio>: tests (BUG-0340), the later chief put that
         // part of the sum of the two chiefs' bounding radii from the first one, standing (no order)
         if (g_chief.size() < 2)

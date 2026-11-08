@@ -60,6 +60,7 @@
 #include "busy.h"
 #include "social.h"
 #include "world.h"
+#include "find.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/give_target.h"
@@ -347,6 +348,7 @@ void feed(const std::string& s) { feed_kind(s, nullptr); }
 
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
+std::deque<uint32_t> g_chat_col; // F2: the colour of each line (its writer's; 0 = the window's own)
 std::map<uint8_t, bool> g_ready;   // by player id (the host keeps the truth)
 std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host keeps the truth)
 // roles end with their player and session, the lobby table keeps them with their ids (BUG-0064,
@@ -361,11 +363,14 @@ bool g_disc_on = false;
 int g_lan_fake_n = 0;           // coop.lanfake: games on the network that answer (tests, BUG-0183)
 uint32_t g_lan_fake_until = 0;
 
-void chat_log(const std::string& s)
+void chat_log(const std::string& s, uint32_t argb = 0)
 {
     g_chat.push_back(s);
+    g_chat_col.push_back(argb);
     while (g_chat.size() > 50)
         g_chat.pop_front();
+    while (g_chat_col.size() > g_chat.size())
+        g_chat_col.pop_front();
 }
 
 // an event everybody sees (feed + lobby chat): guests send it to the host, the host relays it
@@ -3571,6 +3576,7 @@ void on_frame(void*, int, void*)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
+    pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
@@ -3724,8 +3730,7 @@ void draw_owner_tags()
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
             if (tribe::is_chief(c))
                 n = "\u2605 " + n + "'s chief";
-            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
-                            owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
+            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
         },
         nullptr);
 }
@@ -3743,8 +3748,7 @@ void draw_civ_tags()
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
             if (city)
                 n = "[" + n + "]";
-            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
-                            owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
+            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
         },
         nullptr);
 }
@@ -3820,6 +3824,77 @@ bool g_status_block_fix = true;   // BUG-0155
 COOP_FIX("core.status_block", "BUG-0155", g_status_block_fix, "ui: the status text and notifications start below the co-op window");
 std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
 
+// F2 (BUG-0764): where every partner is in this stage, for the arrows and the minimap. Cell, Creature, Space: its
+// creature / cell / ship (the puppet); Tribe: its chief (else its pointer); Civ: where it plays now (its pointer
+// marker, the camera's focus) else its first city. me: the own avatar (Tribe: the own chief).
+static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
+{
+    std::vector<pfind::Target> v;
+    has_me = false;
+    if (!g_local || !g_sess.connected() || !stage_mode(g_mode))
+        return v;
+    net::Vec3 mp = modes::entity_pos(g_adapter, g_local);
+    me[0] = mp.x, me[1] = mp.y, me[2] = mp.z;
+    has_me = std::isfinite(mp.x) && std::isfinite(mp.y) && std::isfinite(mp.z);
+    struct Pick {
+        std::map<uint8_t, net::Vec3> chief, city;
+        bool own_chief = false;
+        net::Vec3 own{};
+    } pk;
+    if (g_mode == modes::kTribe)
+        tribe::for_each_owned(
+            [](void* c, uint8_t owner, void* u) {
+                auto* q = (Pick*)u;
+                if (!tribe::is_chief(c))
+                    return;
+                if (owner == g_sess.my_id()) {
+                    q->own_chief = true;
+                    q->own = game::position(c);
+                } else
+                    q->chief[owner] = game::position(c);
+            },
+            &pk);
+    if (g_mode == modes::kCiv)
+        civ::for_each_owned(
+            [](void*, const net::Vec3& p, uint8_t owner, bool city, void* u) {
+                auto* q = (Pick*)u;
+                if (city && !q->city.count(owner))
+                    q->city[owner] = p;
+            },
+            &pk);
+    if (pk.own_chief) {
+        me[0] = pk.own.x, me[1] = pk.own.y, me[2] = pk.own.z;
+        has_me = true;
+    }
+    for (auto& [id, r] : g_remotes) {
+        if (id == g_sess.my_id() || r.echo)
+            continue;
+        pfind::Target t{};
+        t.id = id;
+        t.name = r.name;
+        net::Vec3 p{};
+        bool have = false;
+        if (g_mode == modes::kTribe && pk.chief.count(id)) {
+            p = pk.chief[id];
+            have = true;
+            t.what = coop_ui::russian() ? "вождь" : "chief";
+        } else if (r.puppet && r.puppet_adapter) {
+            p = modes::entity_pos(r.puppet_adapter, r.puppet);
+            have = true;
+            t.flat = r.puppet_adapter->flat;
+        } else if (g_mode == modes::kCiv && pk.city.count(id)) {
+            p = pk.city[id];
+            have = true;
+            t.what = coop_ui::russian() ? "столица" : "capital";
+        }
+        if (!have || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            continue;
+        t.pos[0] = p.x, t.pos[1] = p.y, t.pos[2] = p.z;
+        v.push_back(t);
+    }
+    return v;
+}
+
 void on_overlay(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271
@@ -3837,6 +3912,14 @@ void on_overlay(void*, int, void*)
         spacecoop::draw_overlay();
         draw_owner_tags();
         draw_civ_tags();
+    }
+    { // F2: arrows to the partners off screen; the minimap takes the same positions (outside the frame)
+        float me[3] = {0, 0, 0};
+        bool has_me = false;
+        std::vector<pfind::Target> ts = find_targets(me, has_me);
+        if (labels)
+            pfind::draw_arrows(ts, has_me ? me : nullptr);
+        pfind::set_map_targets(ts, g_mode);
     }
     // name tags above remote players
     void* av = labels ? g_local : nullptr;
@@ -3864,7 +3947,7 @@ void on_overlay(void*, int, void*)
         }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
-            H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, 0xFF80FF80, tag.c_str());
+            H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, pfind::color_of(id), tag.c_str()); // F2
         }
     }
     std::string head;
@@ -3991,6 +4074,7 @@ enum class EndPath { Leave, Unload, Restart, Disconnect };
 
 void end_session(EndPath path, bool cell)
 {
+    pfind::on_session_end(); // F2: the colour table was the session's
     support::on_session_end(path == EndPath::Leave ? "left" : path == EndPath::Unload ? "mod unload"
                             : path == EndPath::Restart ? "a new session" : "disconnected");
     if (g_session_end_fix || path == EndPath::Disconnect) {
@@ -4125,6 +4209,7 @@ void setup_callbacks()
     g_sess.cb.connected = [] {
         support::on_session_start();
         support::on_connected();
+        pfind::on_connected(); // F2: the colour this player picked goes to the host
         feed("connected to host");
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
     };
@@ -4142,6 +4227,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         support::on_player_join(p);
         settings::on_player_join(p.id); // F3: the host's session settings first
+        pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
         wsync::on_player_join();
         creations::on_player_join(p.id);
@@ -4214,6 +4300,10 @@ void setup_callbacks()
         }
         if (type == net::MSG_SETTINGS) { // F3: the host's session settings (Session class: wherever we play)
             settings::on_message(type, from, r);
+            return;
+        }
+        if (type == net::MSG_COLORS) { // F2: the player colours (Session class)
+            pfind::on_message(type, from, r);
             return;
         }
         if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
@@ -4503,6 +4593,7 @@ void setup_callbacks()
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
         views::forget(id);              // BUG-0280
+        pfind::on_player_leave(id);     // F2: its colour is free again
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
@@ -4528,7 +4619,7 @@ void setup_callbacks()
     };
     g_sess.cb.chat = [](uint8_t id, const std::string& t) {
         feed_kind("<" + g_sess.name_of(id) + "> " + t, "chat"); // never guessed from the words (BUG-0129)
-        chat_log(g_sess.name_of(id) + ": " + t);
+        chat_log(g_sess.name_of(id) + ": " + t, pfind::color_of(id)); // F2: in the writer's colour
     };
 }
 
@@ -4542,6 +4633,7 @@ void reset_lobby()
     g_ready.clear();
     g_lobby_rtt.clear();
     g_chat.clear();
+    g_chat_col.clear();
 }
 
 // a host/join while a session is open: Session::host/join close the old one without cleanup
@@ -4561,6 +4653,7 @@ bool do_host(uint16_t port, std::string& err)
     if (!g_sess.host(port, g_name, err))
         return false;
     support::on_session_start();
+    pfind::on_session_start(); // F2: the host takes its colour
     feed("hosting on port " + std::to_string(g_sess.port()));
     chat_log("* hosting on UDP port " + std::to_string(g_sess.port()));
     g_lobby_dirty = true;
@@ -5714,6 +5807,7 @@ void init_ui()
             g_sess.send_chat(t);
     };
     a.chat = [] { return std::vector<std::string>(g_chat.begin(), g_chat.end()); };
+    a.chat_colors = [] { return std::vector<uint32_t>(g_chat_col.begin(), g_chat_col.end()); };
     a.lan_games = [] {
         std::vector<coop_ui::LanGame> v;
         for (auto& g : g_disc.games(net::now_ms()))
@@ -5796,7 +5890,7 @@ void support_init()
     support::Probe p;
     p.sess = &g_sess;
     p.feed = feed;
-    p.chat_log = chat_log;
+    p.chat_log = [](const std::string& t) { chat_log(t); };
     p.my_name = [] { return g_name; };
     p.entries = sync_all;
     p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
@@ -6232,9 +6326,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         sc.sess = &g_sess;
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
-        sc.rivals = [] { return spaceext::rivals(); };
+        sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
         sc.feed = feed;
         settings::init(H, M, sc);
+    }
+    { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap
+        pfind::Ctx fc;
+        fc.sess = &g_sess;
+        fc.feed = feed;
+        pfind::init(H, M, fc);
     }
     social::Ctx sc;
     sc.sess = &g_sess;
@@ -6265,6 +6365,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
+    H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
+                   pfind::command, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",

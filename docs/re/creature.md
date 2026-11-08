@@ -3817,3 +3817,57 @@ BUG-0752 (campaign_ct on rel/0.7.11 fa4f5df3, the monitor's `proxies` rule, labs
   back on the ground in the next sample (0.25 s), fix on or off (lab 20261108-085102 / -2): the sink does not reproduce
   it, as in Tribe.
 * Fix `npc.proxy_ground_creature` (npc.cpp): drive::step's `ground` for standing proxies in Creature too.
+
+## The minimap: blips and the map transform (2026-11-08, feat/w46-partner-arrows)
+<a id="creature-minimap"></a>
+
+F2 "Find each other" (partners on the game's minimap). GOG 2024 (dc04aee5), Ghidra static only; the names are in
+`overrides_dc04aee5.sym` (`Minimap_*`, `CreatureMinimap_*`). Tribe side: [tribe-minimap](tribe.md#tribe-minimap).
+
+* ✔ (Ghidra) One class `cMinimap` (ctor `Minimap_ctor` 0xE0FC70, 0x9A8 bytes, IWindow at +4) serves Creature, Tribe,
+  Civ, Adventure and Space. The Creature one is the intrusive global `CreatureMinimap_Ptr` 0x169E3E4, made by the
+  Creature UI load 0xD3C3E0 as a child of HUD window **0x190722E** (sized to it) with pole (0,1,0) and centre (0,0,-1).
+* ✔ Blips live in a std::map at +0x320 (count +0x330), key = any u32 (the game uses object pointers), value = a copy
+  of `BlipDesc` (0x24 bytes): +0 ARGB (0xAARRGGBB, `0x67AC40(a,r,g,b)` packs it; 0 = white), +4 Vector3 world
+  position, +0x10 flags, +0x14 intrusive object (AddRef'd, may be 0), +0x18..+0x20 (an image id at +0x20, Adventure only).
+  Each blip is a UTFWin window whose control id is the key (key+1 and key+3 are removed with it).
+* ✔ API (all thiscall on the cMinimap*):
+  `Minimap_AddBlip` 0xE10560 (key, desc*, parentKey 0, bool edgeArrow 0) ret 0x10;
+  `Minimap_MoveBlip` 0xE0DF50 (key, const Vector3* pos, 0) ret 0xC, false when the key has no blip;
+  `Minimap_FindBlip` 0xE0DF10 (key) ret 4; `Minimap_RemoveBlip` 0xE0F9A0 (key, 1, 0) ret 0xC;
+  `Minimap_ClearBlips` 0xE0FB30 (fastcall); `Minimap_ClearBlipsByFlag` 0xE0FB70 (mask) ret 4.
+  AddBlip does not check for an existing key: every game caller does MoveBlip first and AddBlip only when it fails.
+  AddBlip makes windows (UTFWinObject::new_), so it must run outside Present.
+* ✔ Colour: AddBlip calls the window's vt 0x5C with desc+0 (0 -> 0xFFFFFFFF), i.e. a shade colour multiplied into the
+  icon; the game tints its own-species nest with the avatar's colour (creature +0xB20 +0x4EC RGB) and Tribe's tribe
+  blips with the tribe colour. ~ inferred: a light icon shows the colour best.
+* ✔ Icon = image id from flags (first match wins), loaded from the layout at +0x258 (0x8062B0 finds the window of that
+  id in the "MinimapIcons" layout and takes its image): 0x1 -> 0x5E51B58 (|8 0x5E51B64); 0x2 -> 0x5E51B25 (|0x100000
+  0x5E51B2F, |8 0x5E51B4C); 0x1000 -> 0x5E51B2F; 0x10 -> 0x5E51AEF (|8 0x5E51AFA); 0x40000 -> 0x5E51B03; 0x20 (nest):
+  |8 0x5E51BD7, 0x80000 0xCCD1F01E, 0x100000 0x71ABD9CA, 0x200000 0xB39AF63E, else 0x5E51BCE; 0x40 -> 0x5E51B19;
+  0x80 -> 0x5E51B25; 0x100 -> 0x5E51AEF; 0x2000 -> 0x5E51B19; 0x4000 -> 0x5E51AD8; 0x10000 -> 0x5E51BB6;
+  0x8000 -> 0x5E51BC1; 0x20000 -> 0x5E51BFA; none -> 0x5E51AD8. Flag 8 is also set by AddBlip when desc+0x14 has
+  interface 0x1186577 whose vt 0x58 is true. ? What each image looks like (needs a runtime look).
+* ✔ No per-blip rotation: blip windows are only placed (vt 0x64) and shown / hidden (vt 0x7C). The one rotated window
+  is +0x98C, the off-map arrow towards the blip added with edgeArrow = 1 (the home nest). The own avatar marker comes
+  from `Minimap_SetAvatar` 0xE0C470 (pos, heading) and is drawn by the minimap itself. A heading triangle per partner
+  is therefore not possible through the blip API (negative result).
+* ✔ Who clears: `CreatureMinimap_Update` 0xD425A0 (cdecl(dt), every frame from 0xD45740) re-adds only nest keys every
+  2.5 s, and on a recentre (every 5 s check: the avatar left the tuning 0xF7DC67F7 radius) removes the 0x8000 (plant)
+  blips; `CreatureMinimap_Reset` 0xD3C360 clears all at the UI load / unload. Blips with other keys and without 0x8000
+  survive the rebuild.
+* ✔ Transform: `Minimap_WorldToMap` 0xE0BC90 (const Vector3* unitDir, Vector2* outPx, float* edgeAngle or 0) ret 0xC
+  gives pixels inside the minimap window: a lat/long-like projection about the centre +0x338 with the pole +0x344
+  (planet +Y: **north-up**, not camera-relative), half-extent +0x350 = (1 - zoom) * pi rad (`Minimap_SetZoom`
+  0xE0C280; Creature zoom = tuning 0xDE67264F, default 0.99), u, v clamped to 0..1 (off-map blips sit on the edge),
+  v *= height +0x240, x = 0xE0AA60(width +0x23C * u, v) with the row inset table +0x280 (the rounded map). The centre
+  is not the avatar every frame: it jumps to the avatar on a recentre (`Minimap_SetCentre` 0xE0C1D0).
+* ✔ Cell has no minimap: no Cell code constructs a cMinimap (the five Minimap_ctor callers above).
+* ✔ (runtime 2026-11-08, feat/w46-partner-arrows, lanes 9/10, lab 20261108-155841 / 20261108-161041) Our blips (key =
+  a static's address in coop.dll) work in Creature and Tribe: `Minimap_FindBlip` reads them back with the tint and the
+  flags we gave; the stored position is the **unit direction** from the planet's centre (MoveBlip / AddBlip normalise
+  it), so a check against a world position compares directions times the radius. In Tribe the blip of a walking chief
+  lags by the 0.25 s update only. The Creature HUD (and its minimap) is hidden while the avatar is in deep water.
+* ✔ (runtime, looks of `find_icons`, the Tribe minimap) icons by flags: 0x2 a small hut (the tribe icon), 0x10 a small
+  arrow-like mark, 0x40 / 0x1 / 0x10000 round dots, 0 a low mound, **0x4 a small pointed (triangle-like) mark**, 0x20 /
+  0x80 a nest / hut, 0x1000 a star-like mark; every one takes the tint. SporeCoop's partner blips use 0x4.

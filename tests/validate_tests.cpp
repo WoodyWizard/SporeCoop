@@ -14,6 +14,7 @@
 #include "dna_pace.h"
 #include "host_world.h"
 #include "settings_core.h"
+#include "find_core.h"
 #include "net/shared_ledger.h"
 #include "net/held_cmds.h"
 #include <string>
@@ -489,6 +490,60 @@ static void test_settings()
     CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
 }
 
+// F2 of 0.7.12 (BUG-0764): the player colours, the arrow at the screen edge
+static void test_find()
+{
+    using namespace findx;
+    CHECK(host_world::msg_class(net::MSG_COLORS) == host_world::MsgClass::Session);
+    CHECK(settings::kDefs[settings::kPartnerMap].scope == settings::Scope::Live && settings::kDefs[settings::kPartnerMap].def == 1);
+    // the palette: distinct colours, names found
+    for (int i = 0; i < kColors; i++) {
+        CHECK(color_find(kPalette[i].key) == i);
+        for (int j = 0; j < i; j++)
+            CHECK(kPalette[i].argb != kPalette[j].argb);
+    }
+    CHECK(color_find("3") == 3 && color_find("8") == -1 && color_find("x") == -1);
+    // four players get the first four colours, distinct; a leaver's colour goes to the next newcomer
+    Colors t;
+    CHECK(auto_pick(t, 0) == 0 && auto_pick(t, 1) == 1 && auto_pick(t, 2) == 2 && auto_pick(t, 3) == 3);
+    CHECK(auto_pick(t, 1) == 1); // keeps its own
+    t.c[2] = -1;
+    CHECK(auto_pick(t, 5) == 2);
+    // a pick: not another player's
+    CHECK(can_take(t, 0, 1) == Refused::Taken && can_take(t, 0, 0) == Refused::None && can_take(t, 0, 6) == Refused::None);
+    CHECK(can_take(t, 0, 8) == Refused::Range && can_take(t, 0, -1) == Refused::Range);
+    // the wire: the table round trips; a cut one changes nothing
+    net::Writer w;
+    write_table(w, t);
+    {
+        net::Reader r(w.data.data(), w.size());
+        Colors got;
+        CHECK(r.u8() == 0 && read_table(r, got) && got == t);
+    }
+    {
+        net::Reader r(w.data.data(), w.size() - 1);
+        Colors got;
+        got.c[9] = 4;
+        r.u8();
+        CHECK(!read_table(r, got) && got.c[9] == 4);
+    }
+    // the arrow: a partner to the right, outside the view: on the right edge, pointing right
+    Arrow a;
+    CHECK(arrow_place(true, false, 3000, 540, 1920, 1080, 46, 46, a) && !a.on_screen);
+    CHECK(std::fabs(a.x - (1920 - 46)) < 0.5f && std::fabs(a.y - 540) < 0.5f && std::fabs(a.ang) < 1e-4f);
+    // up-left: on the ray from the centre
+    CHECK(arrow_place(true, false, -1000, -2000, 1920, 1080, 46, 46, a) && !a.on_screen);
+    CHECK(angle_diff_deg(a.ang, std::atan2(-2000.f - 540, -1000.f - 960)) < 0.1f && std::fabs(a.y - 46) < 0.5f);
+    // in the view: no arrow; behind with no direction: at the bottom
+    CHECK(arrow_place(true, true, 500, 500, 1920, 1080, 46, 46, a) && a.on_screen);
+    CHECK(arrow_place(false, false, 0, 0, 1920, 1080, 46, 46, a) && !a.on_screen && std::fabs(a.y - (1080 - 46)) < 0.5f);
+    CHECK(!arrow_place(true, false, NAN, 1, 1920, 1080, 46, 46, a));
+    float v[12];
+    CHECK(arrow_tris(a, 22, 0, v) == 2 && std::fabs(v[0] - a.x) < 1e-3f && std::fabs(v[1] - a.y) < 1e-3f);
+    CHECK(dist_text(80.4f) == "80 m" && dist_text(1520) == "1.5 km");
+    CHECK(angle_diff_deg(3.1f, -3.1f) < 5.f);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -498,6 +553,7 @@ int main(int argc, char** argv)
     test_dna_ledger();
     test_host_world();
     test_settings();
+    test_find();
     test_held_cmds();
     test_chunks();
     test_cycle();

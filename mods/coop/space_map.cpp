@@ -22,6 +22,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "cell_logic.h"
+#include "find.h"
 #include "fixes.h"
 
 using skg::cdecl_call;
@@ -693,6 +694,8 @@ static int color_dist(uint32_t a, uint32_t b)
 
 uint32_t player_color(uint8_t id)
 {
+    if (pfind::g_colors_fix && pfind::color_index(id) >= 0)
+        return pfind::color_of(id); // F2: the session's player colour, the same in every stage and on every game
     static const uint32_t pal[] = {0xFFFFD040, 0xFF60C8FF, 0xFFFF70D0, 0xFF80FF80, 0xFFFF9040};
     const Roster* r = roster_of(id);
     const Roster* me = roster_of(spaceext::my_id());
@@ -921,6 +924,8 @@ static void draw_map()
                 }
             }
         }
+        if (!pfind::arrows_on()) // F2: the edge arrows follow all.partner_arrows (never in Rivals mode)
+            continue;
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
         float fx, fy;

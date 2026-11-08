@@ -1190,13 +1190,29 @@ static void refresh_lobby()
     text(D.world, wl.empty() ? g_status : wl);
     // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
     std::vector<std::string> chat;
-    for (auto& l : A.chat ? A.chat() : std::vector<std::string>{})
-        for (auto& w : notify_text::wrap(l, kChatCols))
-            chat.push_back(w);
+    std::vector<uint32_t> chat_col; // F2: the writer's colour of each wrapped line
+    {
+        std::vector<std::string> lines = A.chat ? A.chat() : std::vector<std::string>{};
+        std::vector<uint32_t> cols = A.chat_colors ? A.chat_colors() : std::vector<uint32_t>{};
+        for (size_t i = 0; i < lines.size(); i++)
+            for (auto& w : notify_text::wrap(lines[i], kChatCols)) {
+                chat.push_back(w);
+                chat_col.push_back(i < cols.size() && cols[i] ? cols[i] : kWhite);
+            }
+    }
     g_chat_scroll = std::max(0, std::min(g_chat_scroll, (int)chat.size() - 4));
     size_t first = chat.size() > 4 ? chat.size() - 4 - (size_t)g_chat_scroll : 0;
-    for (int i = 0; i < 4; i++)
+    static uint32_t s_chat_col[4] = {kWhite, kWhite, kWhite, kWhite};
+    static Win s_chat_w[4] = {};
+    for (int i = 0; i < 4; i++) {
         text(D.chat_lines[i], first + i < chat.size() ? chat[first + i] : "");
+        uint32_t c = first + i < chat.size() ? chat_col[first + i] : kWhite;
+        if (D.chat_lines[i] && (c != s_chat_col[i] || D.chat_lines[i] != s_chat_w[i])) {
+            sui::set_label_color(D.chat_lines[i], c);
+            s_chat_col[i] = c;
+            s_chat_w[i] = D.chat_lines[i];
+        }
+    }
     show(D.chat_up, first > 0);
     show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;

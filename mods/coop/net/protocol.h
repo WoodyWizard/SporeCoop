@@ -120,6 +120,9 @@ enum MsgType : uint8_t {
     MSG_SETTINGS = 66,    // host -> guests (reliable): the session settings (settings_core.h, F3 of 0.7.12): u8 kind 0,
                           // u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}; on a join and on
                           // every change. Older SporeCoop ignores it (an unknown type).
+    MSG_COLORS = 67,      // the player colours (find_core.h, F2 of 0.7.12): u8 kind; 0 host -> guests (reliable) the table
+                          // u8 n, n x {u8 id, u8 colour}; 1 guest -> host u8 colour (the guest asks for it). Older
+                          // SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

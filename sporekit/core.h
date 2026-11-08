@@ -143,6 +143,7 @@ void report_shot_boot();
 std::vector<std::pair<std::wstring, std::string>> report_shot_files(); // full path, name in the archive
 std::string report_shots_text(bool crash);                             // the report's "== Screenshots"
 void overlay_text(int x, int y, uint32_t argb, const char* utf8);
+void overlay_tris(const float* xy, int n, uint32_t argb); // since 0.3.15: n filled triangles (6 floats each)
 int world_to_screen(const float* w, float* out);
 void screen_size(int* w, int* h);
 

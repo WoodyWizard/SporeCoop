@@ -105,6 +105,8 @@ inline MsgClass msg_class(uint8_t type)
         return MsgClass::Session;
     case net::MSG_SETTINGS: // the host's session settings: the session's rules wherever the guest plays
         return MsgClass::Session;
+    case net::MSG_COLORS: // the player colours (F2): the session's, wherever the guest plays
+        return MsgClass::Session;
     case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
     case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch
         return MsgClass::Session;
