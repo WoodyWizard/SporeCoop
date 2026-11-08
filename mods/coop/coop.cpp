@@ -5588,6 +5588,19 @@ std::string targets(int all)
     return out;
 }
 
+// The host's "Ask the players for their reports" (lobby and F9, any time; owner 2026-11-08). F4 of 0.7.12
+// (docs/plan-0.7.12.md F4) fills this in: every guest is asked "send / don't send", the reports come to the host
+// over the session and go into one SporeCoop-session-report-<time>.zip. Until then the click is logged and says so.
+// Returns the line the co-op window shows.
+std::string ask_players_for_reports()
+{
+    if (g_sess.role() != net::Role::Host)
+        return "Only the host can ask for the reports";
+    LOG("ui: the host asks the players for their reports (%d players)", (int)g_sess.players().size());
+    trace::line("report", "ask players (stub until F4)");
+    return "Asking the players for their reports is not available in this version yet";
+}
+
 void init_ui()
 {
     coop_ui::Api a;
@@ -5633,6 +5646,19 @@ void init_ui()
     a.report_shot = [] { return support::report_shot("report", "\"Report a problem\" in the co-op window"); };
     a.report_shot_state = [] { return support::report_shot_state(); };
     a.update_do = autoupdate::start_update;
+    a.ask_reports = ask_players_for_reports;
+    a.host_address = [] {
+        if (g_sess.role() == net::Role::Client)
+            return g_sess.host_address();
+        if (g_sess.role() != net::Role::Host)
+            return std::string();
+        std::string s;
+        int n = 0;
+        for (auto& l : local_addresses())
+            if (n++ < 2) // (two fit the lobby's line)
+                s += (s.empty() ? "" : ",  ") + l.ip + ":" + std::to_string(g_sess.port());
+        return s;
+    };
     a.jump_do = [] {
         H->run_outside_frame(
             [](void*) {
@@ -5716,6 +5742,16 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "lang")) { // tests: the layout of the texts that change in Russian
         coop_ui::set_russian(!strcmp(argv[2], "ru"));
         SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "first")) { // tests: the window as at the first start (the name step)
+        coop_ui::first_start();
+        SAY("ui: back to the first start (the name step)");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "color")) { // tests / layout shots: a colour for players without one
+        coop_ui::set_test_color((uint32_t)strtoul(argv[2], nullptr, 16));
+        SAY("ui: test colour %s", argv[2]);
         return 0;
     }
     if (argc > 1)
@@ -6979,7 +7015,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru] - co-op window state (open/close it; lang: tests)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>] - co-op window state (open/close it; lang, first, color: tests)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");

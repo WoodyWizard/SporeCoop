@@ -1,7 +1,9 @@
-// Co-op user interface built from Spore's own UI: a "Co-op" item in the main menu and a
-// game dialog with three pages, "connect" (name, address, games on the network, hosting),
-// "lobby" (players, stage, ping, ready, chat, world transfer) and, in the Space stage, "space"
-// (the rows of the space features, space_ext.h). docs/08-ui.md.
+// Co-op user interface built from Spore's own UI: a "Co-op" item in the main menu, a "Report a problem" item
+// in the game's pause menu and a game dialog in steps (0.7.12 F1, docs/08-ui.md#ui-window-steps): the
+// connect steps (first start: the name; Host or Join; Host: the port; Join: the games on the network and an
+// address or host name), the lobby (players, colour, stage, ping, ready, chat, world transfer, the host's
+// address), the session settings page (settings_core.h rows by group) and, in the Space stage, "space" (the
+// rows of the space features, space_ext.h). docs/08-ui.md.
 #pragma once
 
 #include <cstdint>
@@ -19,6 +21,7 @@ struct PlayerRow {
     std::string stage; // "Creature", "Space, other world", ...
     bool host = false, me = false, ready = false;
     int ping_ms = -1;
+    uint32_t color = 0; // the player's colour (ARGB, F2 of 0.7.12 fills it); 0 = none yet (the lobby shows "-")
 };
 
 struct LanGame {
@@ -78,6 +81,11 @@ struct Api {
     // a screenshot for the report first: 1 requested, 0 not possible, -1 switched off (coop.ini)
     std::function<int()> report_shot;
     std::function<int()> report_shot_state;    // 1 being taken, 0 written, -1 failed
+    // host: "Ask the players for their reports" (lobby and F9, any time; F4 of 0.7.12 does the asking). Returns
+    // the line the window shows ("" = nothing to say); unset = the button says it is not available yet
+    std::function<std::string()> ask_reports;
+    // the lobby's address line: the host's "ip:port, ..." to give to friends, a guest's the host it joined
+    std::function<std::string()> host_address;
     uint16_t default_port = 0;
 };
 
@@ -98,6 +106,10 @@ extern bool g_status_fix; // tests: `coop.corefix ui_status 0` keeps the status 
 void session_event(bool connected, const std::string& why);
 extern bool g_recenter_fix;  // tests: `coop.corefix window_recenter 0` keeps the first position (BUG-0113)
 extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu item pointer after the menu (BUG-0163)
+// tests: the window goes back to its first start (the name step), as with no name chosen yet
+void first_start();
+// tests / layout shots (coop.uistate color <argb>): the lobby's colour of players without one (0 = "-")
+void set_test_color(uint32_t argb);
 
 // the dialog text font (0 until the co-op window was built once)
 uint32_t text_font();
