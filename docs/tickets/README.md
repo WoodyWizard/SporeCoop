@@ -209,7 +209,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0196](BUG-0196-space-trade-open-ends-space-trade-cpp-2026-10-23.md) | open | feature | Space | 2026-10-23 |  | Space trade: open ends (space_trade.cpp, 2026-10-23) |
 | [BUG-0197](BUG-0197-space-allies-what-the-mirror-of-a-partner-s-colo.md) | open | feature | Space | 2026-10-27 |  | Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp) |
 | [BUG-0198](BUG-0198-space-the-galactic-core-finale-open-ends-space-f.md) | open | feature | Space | 2026-10-27 |  | Space: the galactic core finale, open ends (space_finale.cpp) |
-| [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | open | test | All | 2026-10-23 |  | Not covered by tests yet |
+| [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | fixed | test | All | 2026-10-23 | unreleased | Not covered by tests yet |
 | [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
 | [BUG-0202](BUG-0202-making-a-hook-while-another-thread-runs-the-firs.md) | fixed | crash | All | 2026-10-27 | 0.7.3.0 | making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt) |
 | [BUG-0203](BUG-0203-twoinst-monitor-game-log-points-to-a-wrong-folde.md) | duplicate | tooling | All | 2026-10-27 |  | twoinst Monitor.game_log points to a wrong folder when a test runs from a git worktree |
@@ -726,3 +726,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0742](BUG-0742-tests-puppet-stops-enough-stops-to-judge-5-7-8-t.md) | open | test | Creature | 2026-11-08 |  | tests: puppet_stops 'enough stops to judge (5-7 >= 8)': the stop walker stuck 12-19 m off on the slope (back_to_partner found the tag but did not bring it closer) and the walk ended by time |
 | [BUG-0745](BUG-0745-tribe-the-healer-bonus-never-fires-the-heal-hook.md) | fixed | bug | Tribe | 2026-11-08 | unreleased | Tribe: the healer bonus never fires, the heal hook reads the maximum health at +0x5D4 (1.0) |
 | [BUG-0747](BUG-0747-space-an-npc-empire-s-store-pays-a-different-pri.md) | open | desync | Space | 2026-11-08 |  | Space: an NPC empire's store pays a different price for the same spice in each game |
+| [BUG-0748](BUG-0748-tribe-no-test-of-the-duet-both-players-performer.md) | open | test | Tribe | 2026-11-08 |  | Tribe: no test of the duet (both players' performers on one NPC tribe) |
+| [BUG-0749](BUG-0749-space-no-test-of-terraforming-with-a-real-tool.md) | open | test | Space | 2026-11-08 |  | Space: no test of terraforming with a real tool |
+| [BUG-0750](BUG-0750-space-no-test-of-an-npc-empire-s-mission-and-its.md) | open | test | Space | 2026-11-08 |  | Space: no test of an NPC empire's mission and its reward on the partner's game |
+| [BUG-0751](BUG-0751-space-no-test-of-a-guest-s-building-bought-in-a.md) | open | test | Space | 2026-11-08 |  | Space: no test of a guest's building bought in a colony's city planner |

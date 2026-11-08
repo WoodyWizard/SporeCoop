@@ -5086,3 +5086,35 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   then each game's own sky (`coop.wsync sky`) every 3 s for 30 s: within 0.1 rad in the last 15 s. BUG-0712;
   `SPORE_FIX_OFF=wsync.space_tod` fails (166.5 deg, lab 20261108-030244), on passes (20261108-030244-2).
 
+
+## Coverage tests of G4b (2026-11-08, fix/w46-g4b-coverage)
+<a id="testing-g4b-coverage"></a>
+
+* **Fixture `space_free`** (BUG-0181): `space_empire` + the release cheat `cheat spaceCreate` (the tutorial lock
+  cMissionManager +0x18 mbMission201Finished = 1) + the interstellar drive again (`spaceCreate` removes it from the
+  inventory) + drive upgrade 4, energy 5, the colony tool. The recipe is in BUG-0181; facts in fixtures.py
+  (`coop.space tutorial` m201=1). Everything else is `space_empire`'s (6.15): the Story201 mission object stays in
+  state 3. `coop.space tutorial [done]` prints the lock (`done`: the Story201 mission completed with SetState(5)).
+* `coop_space_free.py` (suite `space_free`, ~55 s): both games zoom out to the galaxy view (the tutorial's galaxy
+  caption is confirmed first, `coop_space_jump.settle`), the host clicks the nearest unowned star on its screen
+  (`coop.space map project <star>`), its ship's galaxy position reaches the star (`coop.space map roster 0`), the
+  guest's game draws the host's tag at the star's point; the guest does the same with another star. Each game checks
+  its own mission manager: `FIXTURE=space_empire` fails both travels (the red "Distance", the ships stay home).
+* `coop_civ_planner_build.py` (suite `civ_planner_build`, ~65 s, BUG-0189): the player civ of a new Civ game has no
+  building designs (the planner tile says "Design a new house!" and does not drag): the test gives both games the
+  house design the NPC cities use (`coop.civ bdesign <pol> house <key>`). The guest opens its planner by clicks
+  (play_civ.Player), hovers, holds the house tile (123, 385), moves in 30 steps onto a free plot (`coop.civ slots`),
+  lets go, closes with the green check. The building shows in the city's list only after the planner closes; the
+  planner snaps it into a plot of its choice. Twin `SPORE_FIX_OFF=civ.planner_send`.
+* `coop_tribe_healer.py` (suite `tribe_healer`, ~2 min, BUG-0199, found BUG-0745): the host buys the heal tool
+  (`coop.tribe buy 9 9 200` + `buy_end`), a non-chief member takes it (`coop.tribe grab`), a guest's member is hurt
+  in the host's game (`coop.tribe pincer <id> <id> 56`; `coop.tribe hurt` on the guest only hits the guest's mirror),
+  the heal order (`coop.tribe select`, `coop.tribe act 5 <patient>`); ~55 s to full health, then +5 shared food on
+  both games. Twin `SPORE_FIX_OFF=tribe.heal_max`.
+* `coop_space_store.py` (suite `space_store`, ~2 min, BUG-0199): the guest, then the host, jumps into the system of
+  the contacted empire 80001FCC (`space_empire`) and sells one spice by clicks (comm tab 288,914; first answer
+  720,725; Trade 420,744; cargo slot 327,760; Sell Item 1063,884; docs/re/space.md#space-npc-store-runtime). The
+  other game's shared money rises by the price. Each game has its own store (prices differ, BUG-0747). Twin
+  `SPORE_FIX_OFF=res.guest_send` (a new switch: a guest's own money and food changes are not sent; only the guest's
+  sale fails). The empire's ship model may be missing in the guest's game (no mirror, sync-check `s missing`):
+  allowed for this test with BUG-0424.

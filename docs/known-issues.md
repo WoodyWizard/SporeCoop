@@ -611,6 +611,10 @@ anchor so other docs can link to it:
   by real vehicles are covered). Space: raids and missions (no live mission in
   the fixture), spice trading with NPC stores (selling to a partner colony is covered by coop_space_trade.py), terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).
+* 2026-11-08 (fix/w46-g4b-coverage): healer bonus `tribe_healer` (found and fixed BUG-0745), NPC spice store
+  `space_store` (BUG-0747 open: each game its own store), Civ planner buy `civ_planner_build` (BUG-0189); the rest are
+  concrete tickets: duet BUG-0748, terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
+  BUG-0751.
 * Ticket: BUG-0199.
 
 ## Creature stage: a crash after dying and skipping the cutscene (player report, not reproduced)
