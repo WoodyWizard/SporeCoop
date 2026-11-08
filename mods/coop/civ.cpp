@@ -2792,7 +2792,7 @@ static void host_command(uint8_t from, net::Reader& r)
 
     // BUG-0325 diagnostics: why a vehicle of a command is not the sender's (gone from the host's game, dead,
     // or another owner: a gift or a capture in between), logged with the rejection
-    char why[80] = "";
+    char why[160] = "";
     auto own_vehicle = [&](uint16_t id) -> void* {
         auto it = g_hv_by_id.find(id);
         if (it == g_hv_by_id.end()) {
@@ -2855,6 +2855,9 @@ static void host_command(uint8_t from, net::Reader& r)
         Target t = read_target(r);
         void* v = own_vehicle(id);
         void* target = resolve_target(t);
+        if (v && t.kind && !target) // BUG-0325 diagnostics: the order's target is not in the host's game
+            snprintf(why, sizeof why, " (vehicle %u: target kind %u id %u noun %08X at (%.0f %.0f %.0f) not in the host's game)",
+                     (unsigned)id, (unsigned)t.kind, (unsigned)t.id, t.noun, t.pos.x, t.pos.y, t.pos.z);
         if (!r.ok() || !v || (t.kind && !target))
             return reject();
         o_SetOrder(v, target, type, flag);
