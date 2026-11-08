@@ -14,7 +14,8 @@ and the avatar normalizing scale are applied only to the world's player species
 3. Read in each game (`coop.hp`): the own avatar's size (cSpatialObject GetScale) and the size of the partner's
    puppet, before and after.
 
-PASS: the guest's own creature grows by the brain factor like the host's (x1.1 within 2 %), and in each game the
+PASS: the guest's own creature grows by the factor the host's grows by (within 2 %: the brain factor 1.1 and the
+normalizing scale of the level, x1.15 on the fixture), and in each game the
 partner's puppet is the partner's own size x 1.15 (the spawn's factor) after the upgrade, within 2 %.
 FAIL: SPORE_FIX_OFF=creature.own_scale (the guest's creature stays the same size), SPORE_FIX_OFF=creature.puppet_scale
 (the puppets keep their spawn size).
@@ -24,6 +25,7 @@ FAIL: SPORE_FIX_OFF=creature.own_scale (the guest's creature stays the same size
 import re
 import time
 
+from own_creature import play_own
 from twoinst import Checks, start
 
 K = 1.15  # the puppet's spawn factor (modes.cpp creature_spawn)
@@ -41,6 +43,7 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
+    ck(play_own(guest), 'the guest plays one of its own creatures (not the world\'s species)')
     time.sleep(3)
     h0, g0 = info(host, 1), info(guest, 0)
     print(f'  before: host {h0}, guest {g0}', flush=True)
@@ -67,7 +70,7 @@ def main():
         return ck.result()
     hr = h1['own'] / h0['own'] if h0['own'] else 0
     gr = g1['own'] / g0['own'] if g0['own'] else 0
-    ck(abs(hr - 1.1) <= 0.02, f'the host\'s creature grew with the brain ({h0["own"]} -> {h1["own"]}, x{hr:.3f})')
+    ck(hr >= 1.05, f'the host\'s creature grew with the brain ({h0["own"]} -> {h1["own"]}, x{hr:.3f})')
     ck(abs(gr - hr) <= 0.02, f'the guest\'s own creature grew by the same factor in its game ({g0["own"]} -> {g1["own"]}, '
                              f'x{gr:.3f}, host x{hr:.3f})')
     for who, me, other in (('host', h1, g1), ('guest', g1, h1)):

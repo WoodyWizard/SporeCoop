@@ -560,6 +560,7 @@ static bool is_cc_part(uint32_t id)
 // as one it lacks (the checks, the substitutes and the lookalike search), so one lab lane can play a guest without a
 // pack: both games of a lane share one install. Never set outside the tests.
 static std::set<uint32_t> g_lacked;
+static bool g_objmodels_scan; // tests: objmodels scan
 static bool part_known(uint32_t id, uint32_t group)
 {
     if (!g_lacked.empty() && g_lacked.count(id))
@@ -1983,7 +1984,9 @@ void host_species_out(uint8_t peer, const Key& k)
     auto& sent = g_own_sent[peer];
     if (!sent.insert(k.instance).second)
         return; // checked (and sent if ours) already
-    if (!in_my_creations(k)) // a premade or a Sporepedia download: the same creation everywhere
+    // a premade or a Sporepedia download: the same creation wherever a game has that key (BUG-0724: not in every game,
+    // a Sporepedia cache is per profile; a guest without it asks for it, want_species / serve_species)
+    if (!in_my_creations(k))
         return;
     Bundle b;
     b.key = k;
@@ -3204,6 +3207,7 @@ std::string debug(const std::vector<std::string>& a)
                std::to_string(g_rx_descs.size()) + "\n";
     }
     if (!a.empty() && a[0] == "objmodels") { // tests (BUG-0730 / BUG-0731): the model keys of every placed object
+        g_objmodels_scan = a.size() > 1 && a[1] == "scan";
         // (cSpatialObject model key at object +0xC4, as vehicles and buildings), per noun: which package answers each
         // key here and how many part ids of its model this game lacks
         struct Row { unsigned n = 0; };
@@ -3221,9 +3225,20 @@ std::string debug(const std::vector<std::string>& a)
                             (*m)[{0xDEC00000u | (uint32_t)i, d[0], d[1], d[2]}]++;
                     }
                 const uint32_t* k = (const uint32_t*)((uint8_t*)o + 0xC4);
-                if (!k[0] || k[0] == 0xFFFFFFFFu || !k[1])
-                    return true;
-                (*m)[{noun, k[0], k[1], k[2]}]++;
+                if (k[0] && k[0] != 0xFFFFFFFFu && k[1])
+                    (*m)[{noun, k[0], k[1], k[2]}]++;
+                // every key-like triple in the object's first 0x600 bytes whose type is a model kind's (a model key
+                // kept elsewhere than +0xC4: a hut, an ornament), noun | 0x80000000 + its offset in the 'n' column
+                if (g_objmodels_scan && noun != 0x018EB45E && noun != 0x018EB4B7 && !IsBadReadPtr(o, 0x600))
+                    for (int off = 0; off + 12 <= 0x600; off += 4) {
+                        const uint32_t* t = (const uint32_t*)((uint8_t*)o + off);
+                        bool model = false;
+                        for (auto& mi : kModelInfo)
+                            model |= t[1] == mi.type && t[2] == mi.group;
+                        model |= t[1] == kPartProp && t[2] && t[2] != 0xFFFFFFFFu; // a noun's property file (tools)
+                        if (model && t[0] && t[0] != 0xFFFFFFFFu)
+                            (*m)[{noun | 0x80000000u, t[0], t[1], t[2]}] = (unsigned)off;
+                    }
                 return true;
             },
             &rows);

@@ -20,6 +20,7 @@ FAIL (SPORE_FIX_OFF=creature.hostile_party): the node never picks the guest.
 import re
 import time
 
+from own_creature import play_own
 from twoinst import Checks, start
 
 
@@ -34,6 +35,7 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
+    ck(play_own(guest), 'the guest plays one of its own creatures (not the world\'s species)')
     time.sleep(4)
     (n, tg, pk), rows = hostiles(host)
     print(f'  host: {n} hostile adults to the guest, {tg} targeting it, picks {pk}; nearest {rows[:3]}', flush=True)

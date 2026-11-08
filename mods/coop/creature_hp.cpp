@@ -265,14 +265,14 @@ bool host_party(void* c)
 // `coop.fix npc.pack_defends_partner off`: nobody defends the guest (0.7.10).
 static bool g_pack_defends = true;
 COOP_FIX("npc.pack_defends_partner", "BUG-0735", g_pack_defends, "creature: the host's pack goes for an animal that attacks a partner, as it does for the host's own creature");
-static uintptr_t a_PostStim, a_StimClear;
+static uintptr_t a_CmdStim, a_CanDefend;
 static constexpr float kDefendRange = 40.f;
 static uint32_t g_defends, g_defend_posts;
 static std::unordered_map<void*, double> g_defend_at; // attacker -> the last time the pack was sent at it
 
 void pack_defend(void* puppet, void* attacker)
 {
-    if (!g_pack_defends || !a_PostStim || !a_StimClear || !puppet || !attacker || attacker == game::avatar() ||
+    if (!g_pack_defends || !a_CmdStim || !a_CanDefend || !puppet || !attacker || attacker == game::avatar() ||
         game::is_puppet(attacker) || host_party(attacker) || !game::in_creature_stage())
         return;
     double now = H->time_seconds();
@@ -291,10 +291,11 @@ void pack_defend(void* puppet, void* attacker)
         if (!c || c == attacker || IsBadReadPtr(c, 0x1680) || game::is_dead(c) || net::dist(game::position(c), at) > kDefendRange)
             continue;
         uint8_t* ai = skg::field<uint8_t*>(c, 0xB4C);
-        if (!ai || IsBadReadPtr(ai, 0x200))
+        if (!ai || IsBadReadPtr(ai, 0x200) || !skg::cdecl_call<bool>(a_CanDefend, c))
             continue;
-        skg::thiscall<void>(a_StimClear, ai + 8, 0x20030030u, 0x40040000u);
-        skg::thiscall<void>(a_PostStim, ai + 8, 0x10u, 0u, 3.4028235e38f, attacker);
+        // as cPosseSimulator 0xD52E40 does for the avatar's attacker (case 0x400)
+        skg::thiscall<void*>(a_CmdStim, c, 0x10u, 0u, 0x20030030u, 0x40040000u, 0x7F7FFFFFu, 0x100000u, 0u, 0u, 0u,
+                             attacker, (uint32_t)0);
         n++;
     }
     if (n) {
@@ -421,8 +422,16 @@ static std::string pack()
             for (uint8_t id = 1; id < 8; id++)
                 if (void* p = C.puppet_of(id))
                     from += stimuli_from(c, p);
-        snprintf(line, sizeof line, "pack %p hp=%.2f from_partner=%d dead=%d target=%p\n", c, game::health(c), from,
-                 (int)game::is_dead(c), skg::field<void*>(c, 0xE7C));
+        void* av = game::avatar();
+        float dp = -1;
+        if (C.puppet_of)
+            for (uint8_t id = 1; id < 8; id++)
+                if (void* p = C.puppet_of(id))
+                    if (game::is_puppet(p) && (dp < 0 || net::dist(game::position(c), game::position(p)) < dp))
+                        dp = net::dist(game::position(c), game::position(p));
+        snprintf(line, sizeof line, "pack %p hp=%.2f from_partner=%d dead=%d target=%p d_avatar=%.1f d_puppet=%.1f\n", c,
+                 game::health(c), from, (int)game::is_dead(c), skg::field<void*>(c, 0xE7C),
+                 av ? net::dist(game::position(c), game::position(av)) : -1.f, dp);
         out += line;
     }
     return out.empty() ? "pack empty\n" : out;
@@ -528,6 +537,12 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
             say("no puppet or no animal near it\n");
             return 1;
         }
+        if (q.d > 6.f) { // an attacker is next to its victim: brought within 3 m
+            net::Vec3 pp = game::position(p), ap = game::position(q.best);
+            float k = 3.f / q.d;
+            net::Vec3 at{pp.x + (ap.x - pp.x) * k, pp.y + (ap.y - pp.y) * k, pp.z + (ap.z - pp.z) * k};
+            game::teleport(q.best, at, game::orientation(q.best));
+        }
         game::hit(p, (float)atof(argv[3]), 0, q.best); // through the damage filter (npc::damage_filter)
         char b[96];
         snprintf(b, sizeof b, "animal %p (%.1f m) hit the puppet\n", q.best, q.d);
@@ -618,8 +633,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         if (uintptr_t a = H->sym("SporeCoop::BT_HostileSpeciesTarget")) // BUG-0734
             H->hook_create(M, (void*)a, (void*)h_HostileCond, (void**)&o_HostileCond);
     }
-    a_PostStim = H->sym("SporeCoop::BT_PostStimulus"); // BUG-0735
-    a_StimClear = H->sym("SporeCoop::BT_ClearStimulus");
+    a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-0735
+    a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
     H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",

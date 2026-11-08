@@ -28,8 +28,9 @@ from twoinst import Checks, start
 
 def pack(con):
     out = con.call('coop.hp pack')['out']
-    return [dict(ptr=m.group(1), dead=m.group(2) == '1', target=m.group(3))
-            for m in re.finditer(r'^pack (\S+) hp=\S+ from_partner=\S+ dead=(\d) target=(\S+)', out, re.M)]
+    return [dict(ptr=m.group(1), dead=m.group(2) == '1', target=m.group(3), dav=float(m.group(4)), dp=float(m.group(5)))
+            for m in re.finditer(r'^pack (\S+) hp=\S+ from_partner=\S+ dead=(\d) target=(\S+) d_avatar=(\S+) d_puppet=(\S+)',
+                                 out, re.M)]
 
 
 def drama(con):
@@ -43,6 +44,17 @@ def main():
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
     time.sleep(4)
     if flock:
+        # the guest 150 m away from the host: the flock is made next to the guest's creature (70 m from it), not the host's
+        hp = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.avatar')['out'])
+        if hp:
+            x, y, z = (float(v) for v in hp.groups())
+            r = (x * x + y * y + z * z) ** 0.5
+            # 150 m along the surface (about: a step perpendicular to the position)
+            ax = (-y, x, 0.0) if abs(z) < 0.9 * r else (0.0, -z, y)
+            n = (ax[0] ** 2 + ax[1] ** 2 + ax[2] ** 2) ** 0.5
+            gx, gy, gz = (x + ax[0] / n * 150, y + ax[1] / n * 150, z + ax[2] / n * 150)
+            print('  guest:', guest.call(f'coop.npc gopos {gx:.1f} {gy:.1f} {gz:.1f}')['out'].strip()[:90], flush=True)
+            time.sleep(4)
         p0 = [m for m in pack(host) if not m['dead']]
         d0 = drama(guest)
         r = guest.call('coop.rules roar 33')['out'].strip()
@@ -66,6 +78,10 @@ def main():
         m0 = re.search(r'summon\s+started=(\d+)', d0)
         m1 = re.search(r'summon\s+started=(\d+)', d1)
         ck(len(p1) > len(p0), f"the host's game made the guest's flock (its pack {len(p0)} -> {len(p1)})")
+        new = [m for m in p1 if m['ptr'] not in {x['ptr'] for x in p0}]
+        print('  the new members:', [(m['dav'], m['dp']) for m in new], flush=True)
+        ck(new and all(0 <= m['dp'] < m['dav'] for m in new),
+           f"the flock came to the guest's creature, not to the host's ({[(m['dav'], m['dp']) for m in new]})")
         ck((int(m1.group(1)) if m1 else 0) == (int(m0.group(1)) if m0 else 0),
            "the guest's own game made no flock of its own (its summon event did not start)")
     else:

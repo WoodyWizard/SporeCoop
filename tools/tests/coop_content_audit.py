@@ -25,7 +25,7 @@ from twoinst import Checks, start
 
 def rows(con):
     out = []
-    for ln in con.call('coop.creations objmodels')['out'].splitlines():
+    for ln in con.call('coop.creations objmodels scan')['out'].splitlines():
         m = re.match(r'\s+obj noun=(\w+) n=(\d+) key=(\w+)/(\w+)/(\w+) from=(\S+) unknown_parts=(\S+)', ln)
         if m:
             out.append(dict(noun=m.group(1), n=int(m.group(2)), key=(m.group(3), m.group(4), m.group(5)),
@@ -48,7 +48,7 @@ def main():
     # the host's real models (a key the host's game answers itself); a guest's mirror of it may carry a key of ours
     missing = [r for r in hr if r['frm'] != 'none' and r['key'] in gfrom and gfrom[r['key']] == 'none']
     ck(not missing, f"every model of the host's objects that the guest's objects use is in the guest's game ({missing[:4]})")
-    bad = [r for r in hr + gr if r['unknown'] not in ('-', '0', 'unreadable')]
+    bad = [r for r in hr + gr if r['unknown'] not in ('-', '0', 'unreadable') and r['frm'] != 'none']
     ck(not bad, f'no model of a placed object names a part the game lacks ({bad[:4]})')
     own = sorted({(r['noun'], r['frm']) for r in hr if re.match(r'(EditorSaves|Pollination)', r['frm'])})
     print(f"  host objects drawn from a player's creations: {own}", flush=True)

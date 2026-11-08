@@ -2429,3 +2429,22 @@ BUG-0679, after [the kept hold](#space-kept-hold). GOG 2024 addresses (dc04aee5)
   trade forget`).
 * Not covered: a guest that joins under another name, or plays the same host world from another PC (the record is
   per profile; the host's kept copy still helps while the host runs).
+
+## Mirror models: a key of zeros, the host's own ship designs (2026-11-08, fix/w46-k2b-content-b)
+<a id="space-k2b-mirror-models"></a>
+
+BUG-0723 / BUG-0724, children of the content class BUG-0424 (`squadron.cpp`, guest side of the ship mirrors).
+
+* ✔ (runtime, lab 20261108-031320) A mirror spawned with `SpawnUFO(type, &pol, {0, 0, 0})` gets the gfx default UFO
+  9D5DB21A/476A98C7/40656200 (UfoGfx_InitFromUfo 0xE9B180), which the GOG 2024 install does not have: the BUG-0546 guard
+  (`game.ufo_model`) then draws it with the last ship model it had, the guest's own ship 0675F7B2 (two pirates as the
+  guest's ship); without the guard the fault at 0xE98DD0.
+* ✔ (runtime) The model the game itself gives a raid without an attacker empire, cPlayer +0x1280 (cGameNounManager +0x74,
+  see #space-npc-model above, 0xC5C8F3): 067256EA/476A98C7/40656200 on the space fixture, a model this game has. A key of
+  zeros now takes a local ship model of that empire, else this one, else no mirror (`fleet.zero_key`).
+* ✔ (runtime, lab 20261108-032213) The host's empire's ships name the host's own ship creations by My Creations ids; with
+  a creation of the same id the guest's game drew the guest's (BUG-0647's class). Every non-zero key now goes through
+  `creations::host_design(key, kMkUfo)` first (`fleet.host_designs`): the host's records under a key of ours (the mirror
+  waits for the answer, `design_waits=`), "not mine" for a premade or Sporepedia key. Mirrors never reach a save
+  (#space-save-strip, BUG-0522).
+* Test hooks: `coop.fleet fakemodel zero` (the host sends keys of zeros), `fakemodel 2 <inst>` (one instance for all).

@@ -84,6 +84,30 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
 }
 
 static uintptr_t a_Get, a_StartKind;
+// BUG-0736: the summon event's update (SporeCoop::SummonEvent_Update 0xD512A0, thiscall(event, u32) ret 4, slot of the
+// event vtable at .rdata 0x147B3D8) posts "follow" (BT_PostStimulus(0, 4, FLT_MAX, avatar)) to each member every frame
+// and releases members 50 / 100 m from the avatar (cGameNounManager +0x54). An event started for a partner's puppet
+// runs its update with that puppet as the avatar, so its flock follows the partner.
+using SummonUpdate_t = void(SK_THISCALL*)(void*, uint32_t);
+static SummonUpdate_t o_SummonUpdate;
+static void* g_flock_event;  // the summon event started for a puppet (host)
+static void* g_flock_puppet; // that puppet
+static unsigned g_flock_updates;
+static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
+{
+    void* nm = ev && ev == g_flock_event && g_flock_relay ? game::noun_manager() : nullptr;
+    void* pup = g_flock_puppet;
+    if (!nm || !pup || !game::is_puppet(pup) || !game::object_alive(pup)) {
+        o_SummonUpdate(ev, a);
+        return;
+    }
+    void*& av = skg::field<void*>(nm, game::kNounAvatarOff);
+    void* real = av;
+    av = pup;
+    o_SummonUpdate(ev, a);
+    av = real;
+    g_flock_updates++;
+}
 
 void init(const SkHost* host, SkMod* mod, const net::Session* sess)
 {
@@ -95,6 +119,8 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");
     if (a)
         H->hook_create(M, (void*)a, (void*)h_Start, (void**)&o_Start);
+    if (uintptr_t u = H->sym("SporeCoop::SummonEvent_Update"))
+        H->hook_create(M, (void*)u, (void*)h_SummonUpdate, (void**)&o_SummonUpdate);
     else
         H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
 }
@@ -122,6 +148,10 @@ bool summon_for(void* puppet)
         tun = nullptr;
     bool ok = g_started[8] != before;
     g_flock_relayed += ok;
+    if (ok) {
+        g_flock_event = g_last_event[8];
+        g_flock_puppet = puppet;
+    }
     H->log(M, SK_INFO, "drama: summon event for a partner's creature: %s", ok ? "started" : "none idle");
     return ok;
 }
@@ -140,9 +170,9 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
-    snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u\n",
+    snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u\n",
              (int)g_guest_events_fix, g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed,
-             g_flock_refused);
+             g_flock_refused, g_flock_updates);
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];
