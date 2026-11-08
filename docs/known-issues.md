@@ -2273,4 +2273,15 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: the host's frames ran on between the rejoin and the last save post (DNA and save lines in its log).
 * Not checked: the cause; whether v0.7.9 does the same (inferred not a 0.7.10 regression: nothing merged after
   e7d1734c touches the share path).
+* CORRECTION (2026-11-08, fix/w46-k7-findings): the host's frames did NOT run on. Its last state reached the guests at
+  s 86.3, 0.1 s after it handled Bob's leave, and its trace lines (end of on_frame) stop after s 80; every later line
+  (the rejoin, the share save and its retries, DNA from the guests' messages) comes from the keepalive
+  (coop.cpp keepalive_task: g_sess.update and world::tick from the window procedure when no frame came for 0.5 s).
+  Inferred: the main thread sat in a nested message loop that was neither App::Canvas::Tick (SporeKit's game-loop
+  fallback frame never started) nor Present; the share save needs the game's update, hence no file. The watchdog's
+  dump (30 s) never reached the log (inferred: its SuspendThread + VirtualQuery stack walk can hang under Wine).
+* Diagnostics since then: the keepalive logs, once per stall of 3 s, the main thread's call chain (return addresses
+  into the game, user32 frames) and its windows (`keepalive: no frame for ...`, `keepalive: the main thread's
+  windows ...`; test keepalive_stall). The next occurrence names the loop.
+* Not reproduced in 4 more runs of the report's seed on fix/w46-k7-findings (see the ticket).
 * Ticket: BUG-0687

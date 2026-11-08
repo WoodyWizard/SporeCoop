@@ -56,3 +56,4 @@ samples of the puppet's own height over the host's terrain):
 ## History
 - 2026-11-07: opened.
 - 2026-11-08 (fix/w46-k7-findings): fixed (creature.puppet_unground); puppet_unground FAIL x2 / PASS x2.
+- 2026-11-08 (fix/w46-k7-findings): campaign_tribe (seed 953406079) on the final build, lane 10, lab 20261108-010321 and 20261108-011356 (20 fps, players' network): both OK, no monitor ground violation; in the first, at s 238-247, right after the evolution at the nest under busy=cinematic,input_lock, the rule put partners' standing puppets back 10 times on the four games (0.37-0.67 m under, 0.7-1.7 m from their targets): the report's situation, now handled.

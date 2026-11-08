@@ -4939,3 +4939,8 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * `puppet_unground` (BUG-0683, ~2 min, creature fixture): `coop.puppet sink 0.69 0.7` puts the partner's puppet in the
   ground on the host; `coop.puppet agl` samples it. SPORE_FIX_OFF=creature.puppet_unground: stays under for 4 s (the
   game's own update put it back in 1 of 4 rounds).
+* `keepalive_stall` (BUG-0687, ~1 min, creature fixture): `coop.stalltest 6` (an outside-frame command) makes the host's
+  main thread run a message loop of its own for 6 s: no frames, the keepalive runs. The host's log must have one
+  `keepalive: no frame for` line with return addresses into the game and one `keepalive: the main thread's windows`
+  line; frames go on afterwards. As a normal (between-frames) command the loop runs inside the frame and the
+  outside-frame tasks, the keepalive too, wait for its end: no line at all (the first try).

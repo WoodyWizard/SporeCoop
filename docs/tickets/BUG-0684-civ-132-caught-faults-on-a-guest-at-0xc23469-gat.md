@@ -73,3 +73,4 @@ games have; the guest's own creatures carry food; the host's members carry food;
   The verdict rests on the code: worldobj.cpp is identical in v0.7.9. #3 failed "no problems (1)" on another class (a
   host vehicle purchase that made no vehicle, the BUG-0325 family).
 - 2026-11-08 (fix/w46-k7-findings): fixed (wobj.bundle_civ_carried); civ_village_bundle FAIL x2 / PASS x2.
+- 2026-11-08 (fix/w46-k7-findings): play_civ on the final build, lane 9, lab 20261108-010321-2: OK (0 guest faults). (An earlier play_civ, lab 20261108-005631, failed because a campaign was started on the same lane by mistake: not a result.)
