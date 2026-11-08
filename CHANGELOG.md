@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
+  partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
   made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
 

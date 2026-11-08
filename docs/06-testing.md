@@ -5361,3 +5361,8 @@ along and across the host's velocity):
   game's stores (`store planet <PlanetID> wants <key> <price> x3`); every store both games made must want the same
   spices at the same prices. The two "the store paid" prices alone are weak: an unwanted spice is 5% of the value in
   every store (both 281 with the fix off in lab 20261108-145056).
+* `coop_space_terra_tool.py` (suite `space_terra_tool`, cold, `space_free`, ~2 min, BUG-0749): both on planet
+  01460035, the host gets an Atmosphere Generator (`coop.space tool add 0x931426A0`), opens the atmosphere tab (W-266
+  on the tab row, which is at H-151 or H-51 by `Player.palette_open()`), clicks the tool's slot (1014, 1011) and the
+  ground; the host's planet record (`coop.space planet` b0/b8) and the guest's must both rise and stay close. The old
+  check in coop_space_play.py (`terra_got >= 1`) passed while the guest's planet never changed.

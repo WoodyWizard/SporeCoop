@@ -2565,3 +2565,26 @@ BUG-0758, lane 6 (GOG 2024), `coop_space_fast_sync_guest.py` on `space` (the gue
   speed slack. It logs a detail line for every p<guest> difference: `sync-check: p<id> <d> m from the guest's ship,
   the host's copy <d> m from its path of the last <s> s (nearest <s> s ago), the ship <d> m from it, slack <d> m:
   on its path, no difference (BUG-0758) | off its path`; counter `guest_path_saved=` in `coop.diag sync`.
+
+## Terraforming deltas need the planet's terraforming flag (2026-11-08, fix/w46-b1-space)
+<a id="space-terraform-flag"></a>
+
+BUG-0749, Ghidra GOG 2024 + runtime lane 6 (`space_free`, planet 01460035):
+* ✔ `cTerraformingManager::AddAtmosphereDelta` 0xBBC4B0 (thiscall, ecx unused, args planet, float; ret 8) adds to
+  `[planet +0x154] +0x1FD4` (the planet's terrain data; temperature pending +0x1FD8). Its only caller is
+  `cToolStrategy::OnHit` 0x10593B0 (0x1059586, then AddWaterDelta and AddTemperatureDelta).
+* ✔ The terrain tick 0xC83280 integrates the pending deltas into the planet record (0xC7FC50: record +0xB0 atmosphere,
+  +0xB4, and +0xB8 follows) only while the data's flag **+0x2030** is on, in Space; when the change is done
+  (0xC7EFF0) it clears the flag and the pending deltas. `SporeCoop::PlanetTerrain_SetTerraforming` 0xC7E490(data, on)
+  sets it; the tool path 0x1050BC0 (at 0x1051035) switches it on for the active planet.
+* ✔ So a partner's relayed deltas (spacecoop.cpp apply_terra) waited in +0x1FD4 and the partner's planet never
+  changed: with `space.terra_apply` off, the host's Atmosphere Generator moved its record b0 0 -> 0.103 while the
+  guest stayed at 0.000 with terra_got=1 (lab 20261108-151748). The mod now switches the flag on with the received
+  deltas (`terra_enabled=` in `coop.space`); the guest then follows the host within a few hundredths (0.040 / 0.042
+  after 8 s, lab 20261108-152042). The same for `coop.space terra` on the guest itself: a delta without the flag
+  does nothing.
+* ✔ Tools: `space_free`'s inventory (`spaceCreate`) has no atmosphere tool (the atmosphere tab W-266 is empty);
+  `coop.space tool add 0x931426A0` (Atmosphere Generator) / `0xA1C9D86E` (Ice Comet) add one charge each, shown after
+  another tab is opened. Palette open: tabs at y = H-151 (main W-426 ... atmosphere W-266, sculpting W-226, colouring
+  W-186, cargo W-146); the added tools sit in the second row (first slot 1014, 1011). Sculpting (9 tools) and
+  colouring (8 + reset) are not relayed at all: BUG-0763.
