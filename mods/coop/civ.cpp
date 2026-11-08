@@ -714,12 +714,26 @@ static std::vector<std::pair<void*, net::Vec3>> tribes_here()
     }, &out);
     return out;
 }
+// BUG-0659 (docs/re/civ.md#civ-tribe-ruins-fast): a guest removes a village on its second look without the host's
+// tribe, and the second list came 5 s after the one sent 0.5 s after the raid: each raid left the village in the
+// guest's world for 5-5.5 s (the detector's transient `Civilization:planet:village` / tribe_hut / tribe_tool /
+// tribe_food_mat rows, one sample each). With civ.tribe_ruins_fast the host sends kQuickLists lists 0.5 s apart after
+// a raid (the two looks then come within ~1 s; a lost one costs 0.5 s). Off: one quick list (0.7.10).
+static bool g_tribe_ruins_fast = true;
+COOP_FIX("civ.tribe_ruins_fast", "BUG-0659", g_tribe_ruins_fast,
+         "civ: a raided old tribe village goes on the guests within about a second, not 5 s later");
+constexpr int kQuickLists = 3;
+static int g_quick_left;
 static void host_send_tribes(double now)
 {
-    if (!g_fix_tribe_ruins || !(now - g_tribes_sent_at >= 5.0 || (g_tribe_gone && now - g_tribes_sent_at >= 0.5)))
-        return;
-    g_tribes_sent_at = now;
+    if (g_tribe_gone)
+        g_quick_left = g_tribe_ruins_fast ? kQuickLists : 1;
     g_tribe_gone = false;
+    if (!g_fix_tribe_ruins || !(now - g_tribes_sent_at >= 5.0 || (g_quick_left > 0 && now - g_tribes_sent_at >= 0.5)))
+        return;
+    if (now - g_tribes_sent_at < 5.0)
+        g_quick_left--;
+    g_tribes_sent_at = now;
     auto ts = tribes_here();
     if (ts.size() > 80)
         ts.resize(80); // 80 x 12 bytes: one packet
