@@ -10,6 +10,15 @@
   `coop.settings` (BUG-0762).
 - Cell: the regeneration near a partner ("shared healing") can be turned off by the host, also during play (setting
   `cell.regen`, on by default) (BUG-0762).
+- The co-op window in steps: the first start asks for your name (the one the other players see), then "Host a game"
+  or "Join a game". Host: the port and the Host button, with the addresses to give your friends. Join: the games found
+  on your network, and an address field that also takes a host name (`sporecoop.local`; port 47810 when none is
+  typed). The lobby shows each player's colour, stage, ping and ready state and the host's address, and has a
+  Settings page with the session settings by group: the host changes them (the "live" ones also during play, the
+  others are locked once the game started), guests see them. The host has a button "Ask the players for their
+  reports" (its action comes with the combined session report). "Stop hosting" is now "Close session" (BUG-0765).
+- "Report a problem" in the game's pause menu (Esc), below "Quit Spore": it makes the same report as the co-op
+  window's button (BUG-0765).
 
 ## [0.7.11] - 2026-11-08
 

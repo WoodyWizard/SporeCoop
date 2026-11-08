@@ -637,10 +637,11 @@ class Campaign:
     @staticmethod
     def is_ready(st):
         """this player is ready in the vote: its button offers "Not ready", or its own row (the
-        one marked "- you") says ready (coop_ui.cpp)"""
+        one marked "(you)" / "(host, you)", "- you" before 0.7.12) says ready (coop_ui.cpp)"""
         if st.get('ready', {}).get('text', '') in ('Not ready', 'Не готов'):
             return True
-        return any(r and ('- you' in r[0] or '- вы' in r[0]) and r[-1] in ('ready', 'готов') for r in st.get('rows', []))
+        return any(r and any(m in r[0] for m in ('- you', '- вы', 'you)', 'вы)')) and r[-1] in ('ready', 'готов')
+                   for r in st.get('rows', []))
 
     def ready(self, con, p):
         """F9 when the window is closed, then "I'm ready" (a real click on the widget)"""

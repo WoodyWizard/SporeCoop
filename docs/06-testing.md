@@ -5353,3 +5353,28 @@ GitHub Actions builds on ubuntu-22.04 with Python 3.10, and `make test` there pa
 is fine on the lab's Python 3.12+ but a SyntaxError on 3.10: the v0.7.11 tag build failed on six such
 lines. Put the value in a variable first. Check locally: `uv run --no-project --python 3.10 python -c
 "import ast,glob; [ast.parse(open(f).read()) for f in glob.glob('tools/**/*.py', recursive=True)]"`.
+
+## The co-op window in steps by real clicks (2026-11-08, feat/w46-coop-window)
+<a id="testing-ui-steps"></a>
+
+* `coop_ui.py` (suite `ui`, smoke, exclusive, ~6 min cold) walks the 0.7.12 window (docs/08-ui.md#ui-window-steps)
+  by clicks: it writes the lane's `mods/coop.ini` as at a first start (`name=Player`, no `[ui] name_chosen`) before
+  the games start and puts the old file back at the end (also after a failure). Name step on both (Continue on the
+  host, Enter on the guest), Host / Join, Host (port, Host), the settings page before the start (a session setting
+  switched off by a click: `creature.joint_hunt`), Join (the LAN list, "More >" until the own host is listed; a game of
+  another lane is never clicked), world transfer and load, F9 lobby (five columns, the address line, the host-only
+  "Ask the players" button), ready, chat, the settings in play (the menu's session setting reached the guest and is
+  `locked` and greyed out on both; a click on it changes nothing; the host's live `cell.regen` change shows on the
+  guest's page and in its game; every button of the guest is greyed out and its click changes nothing), "Ask the
+  players for their reports" (the F4 stub's line), the pause menu's "Report a problem" (the last button, over no other;
+  its click writes `SporeCoop-report-*-i<host>.zip`), Leave (the guest is on the Join step), `nosuchhost.invalid`
+  (the status names port 47810, the join ends), then a join by `localhost:<port>`. Shots `ui_step_name.png`,
+  `ui_step_choose.png`, `ui_step_host.png`, `ui_host_lobby.png`, `ui_settings_menu.png`, `ui_step_join.png`,
+  `ui_host_ingame.png`, `ui_guest_ingame.png`, `ui_settings_host_ingame.png`, `ui_settings_guest.png`,
+  `ui_pause_report.png`, `ui_join_by_name.png` (out/laneN/shots).
+* `coop_ui.Ui.goto(step)` walks the connect steps by clicks (name -> Continue, Back, Host a game / Join a game); tests
+  that click `host` or `join` from a closed window use it (`coop_tod_early.py`). A guest that left a session is on the
+  Join step already (`coop_ui_status.py`, `coop_lan_dedup.py` need nothing).
+* Lanes 6-8 have `name=Player` in their coop.ini: a window opened there by a test that never joined starts on the
+  name step (`goto` clicks Continue).
+* `coop.uistate color <argb>` is a lane knob (twoinst KNOBS): the colour column's layout shot.

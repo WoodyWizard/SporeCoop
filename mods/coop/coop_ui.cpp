@@ -624,6 +624,8 @@ static void do_name_ok()
     set_status("", kYellow);
 }
 
+static std::string g_join_line; // tests: the status line of the last join (a failed name lookup replaces it at once)
+
 static void do_join(const std::string& address)
 {
     std::string addr = address;
@@ -645,9 +647,9 @@ static void do_join(const std::string& address)
     save_str("ui", "last_address", addr);
     // a name or an address without a port: the session uses the default port (net::kDefaultPort)
     bool port = addr.find(':') != std::string::npos;
-    set_status(std::string(T("Connecting to ", "Подключение к ")) + addr +
-                   (port ? "" : ":" + std::to_string(net::kDefaultPort)) + "...",
-               kYellow);
+    g_join_line = std::string(T("Connecting to ", "Подключение к ")) + addr +
+                  (port ? "" : ":" + std::to_string(net::kDefaultPort)) + "...";
+    set_status(g_join_line, kYellow);
 }
 
 static void do_host()
@@ -1141,8 +1143,8 @@ static void refresh_connect()
     // the session status wins; otherwise the update line (a new SporeCoop release)
     text(D.status, g_status.empty() && up ? up_line : g_status);
     color(D.status, g_status.empty() && up ? kGreen : g_status_color);
-    // the Update button belongs to the update line, not to a session message (BUG-0104); not on the name step
-    show(D.update_btn, up && !up_btn.empty() && (!g_status_fix || g_status.empty()) && g_step != kStepName);
+    // the Update button belongs to the update line, not to a session message (BUG-0104)
+    show(D.update_btn, up && !up_btn.empty() && (!g_status_fix || g_status.empty()));
     text(D.update_btn, up_btn);
 }
 
@@ -1532,6 +1534,10 @@ static void refresh()
     g_pending = false;
     if (!g_ok)
         return;
+    // a session leaves the window on the step of its role (the next session of a guest is a join again), also one
+    // joined or hosted from the console while the window was closed
+    if (int r = A.role())
+        g_step = r == 2 ? kStepJoin : kStepHost;
     ensure_menu_button();
     pause_menu_tick();
     if (g_want_open && !D.root)
@@ -1566,11 +1572,6 @@ static void refresh()
         g_space_page = false;
     if (!lobby)
         g_settings_page = false;
-    // a session leaves the window on the step of its role (the next session of a guest is a join again)
-    if (role == 2)
-        g_step = kStepJoin;
-    else if (role == 1)
-        g_step = kStepHost;
     bool sett = lobby && g_settings_page && !g_space_page;
     for (Win w : D.page_name)
         show(w, !lobby && g_step == kStepName);
@@ -1798,7 +1799,8 @@ std::string debug_state()
     }
     for (int i = 0; i < 4; i++)
         if (D.row_name[i] && sui::visible(D.row_name[i]))
-            s += "row " + std::to_string(i) + " '" + sui::caption(D.row_name[i]) + "' '" + sui::caption(D.row_stage[i]) +
+            s += "row " + std::to_string(i) + " '" + sui::caption(D.row_name[i]) + "' '" + sui::caption(D.row_color[i]) +
+                 "' '" + sui::caption(D.row_stage[i]) +
                  "' '" + sui::caption(D.row_ping[i]) + "' '" + sui::caption(D.row_ready[i]) + "'\n";
     for (int i = 0; i < 5; i++)
         if (D.chat_lines[i] && !sui::caption(D.chat_lines[i]).empty())
@@ -1812,6 +1814,7 @@ std::string debug_state()
     if (D.lan_hdr)
         s += "lan '" + sui::caption(D.lan_hdr) + "'\n";
     s += "status '" + g_status + "'\n";
+    s += "joinline '" + g_join_line + "'\n";
     s += "spage first=" + std::to_string(g_space_first) + " rows=" + std::to_string(kSpaceRows) + "\n";
     if (D.address)
         s += "hostaddr '" + sui::caption(D.address) + "'\n";

@@ -330,7 +330,7 @@ KNOBS = re.compile(r'\s*(?:'
                    r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
                    r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
                    r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
-                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+lang\s+\S+|coop\.lanfake\b'
+                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+(?:lang|color)\s+\S+|coop\.lanfake\b'
                    r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
                    r'|frame\.limit\s+(?!auto\b)\S+|frames\.source\s+(?!auto\b)\S+'
                    r')')
