@@ -10,7 +10,7 @@ role:
 versions: 0.7.10 and earlier
 fixed_in: unreleased
 branch: fix/w46-b1-tribe
-commits:
+commits: 7e502373, 9e9f8685
 tests: tribe_duet
 signature:
 docs: docs/re/tribe.md#tribe-duet-test

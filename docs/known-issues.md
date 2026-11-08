@@ -614,7 +614,7 @@ anchor so other docs can link to it:
   opens and closes it only).
 * 2026-11-08 (fix/w46-g4b-coverage): healer bonus `tribe_healer` (found and fixed BUG-0745), NPC spice store
   `space_store` (BUG-0747 open: each game its own store), Civ planner buy `civ_planner_build` (BUG-0189); the rest are
-  concrete tickets: duet BUG-0748, terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
+  concrete tickets: duet BUG-0748 (test tribe_duet since 2026-11-08), terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
   BUG-0751.
 * Ticket: BUG-0199.
 

@@ -757,7 +757,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0745](BUG-0745-tribe-the-healer-bonus-never-fires-the-heal-hook.md) | fixed | bug | Tribe | 2026-11-08 | 0.7.11 | Tribe: the healer bonus never fires, the heal hook reads the maximum health at +0x5D4 (1.0) |
 | [BUG-0746](BUG-0746-cell-a-knocked-out-carnivore-may-still-swallow-m.md) | fixed | bug | Cell | 2026-11-08 | unreleased | Cell: a knocked-out carnivore may still swallow meat (cell.ko_no_eat blocks EatFood and chunks, not the meat swallow of interaction kind 10) |
 | [BUG-0747](BUG-0747-space-an-npc-empire-s-store-pays-a-different-pri.md) | open | desync | Space | 2026-11-08 |  | Space: an NPC empire's store pays a different price for the same spice in each game |
-| [BUG-0748](BUG-0748-tribe-no-test-of-the-duet-both-players-performer.md) | open | test | Tribe | 2026-11-08 |  | Tribe: no test of the duet (both players' performers on one NPC tribe) |
+| [BUG-0748](BUG-0748-tribe-no-test-of-the-duet-both-players-performer.md) | fixed | test | Tribe | 2026-11-08 | unreleased | Tribe: no test of the duet (both players' performers on one NPC tribe) |
 | [BUG-0749](BUG-0749-space-no-test-of-terraforming-with-a-real-tool.md) | open | test | Space | 2026-11-08 |  | Space: no test of terraforming with a real tool |
 | [BUG-0750](BUG-0750-space-no-test-of-an-npc-empire-s-mission-and-its.md) | open | test | Space | 2026-11-08 |  | Space: no test of an NPC empire's mission and its reward on the partner's game |
 | [BUG-0751](BUG-0751-space-no-test-of-a-guest-s-building-bought-in-a.md) | open | test | Space | 2026-11-08 |  | Space: no test of a guest's building bought in a colony's city planner |
