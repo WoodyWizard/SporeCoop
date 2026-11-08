@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "squadron.h"
 #include "player_life.h"
 #include "census.h"
 
@@ -1058,6 +1059,8 @@ static uint32_t g_hits_guest, g_hits_noatt; // guest: TakeDamage calls in Civ se
 static uintptr_t g_hit_att_vt;               // the vtable of the last attacker (diagnostics)
 static bool cosmetic_hit(void* att)
 {
+    if (game::mode_id() == modes::kSpace) // BUG-0677: a copy of a host ship's shot (a mirror's) hurts no building here
+        return squadron::shot_is_cosmetic(att);
     if (is_guest() && game::mode_id() == modes::kCiv) {
         g_hits_guest++;
         if (!att || IsBadReadPtr(att, 4))

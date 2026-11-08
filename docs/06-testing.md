@@ -4736,7 +4736,8 @@ From the S1 lab log sweep (703 runs, 2026-11-05/06) and the runs since:
   with the guest's second dump (worlddiff, as species_only); `Space:noun_only_host:city_walls / city_territory` (and
   the planet's cities, buildings, vehicles, herds) are a planet's surface loaded by a game whose camera is on it: not
   compared in the whole list in Space (worlddiff SPACE_PLANET_LOD); Space `default_beam_projectile` in the host's
-  game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open).
+  game only (persist 11 of 14) is real: Space shots are not relayed (BUG-0677, open; fixed unreleased, see
+  [the Space shots test](#testing-space-ship-shots)).
 
 ## The guest's cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
 <a id="testing-space-kept-hold"></a>
@@ -4994,3 +4995,32 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   of fix/w46-k7-findings: the guest's link dead 5.5 s both ways, Carol drawn 16.5 m off at state_age 3.6 s); the dead
   link is the `link` / `puppet` invariants' (and "X is not responding"). `SPORE_MONITOR='{"drawn_age": -1}'` is the
   rule before it (gates_selftest f_drawn_stale / f_drawn_stale_off).
+
+## The host's NPC ship shots on a guest (2026-11-08, fix/w46-k56-space)
+<a id="testing-space-ship-shots"></a>
+
+* `coop_space_shots.py` (~3 min, `space_empire` fixture, BUG-0677): both land on the colony planet 01460035 (in the
+  star system the spawned pirates never fired in 45 s: NPC ships fight on planets), the host spawns 2 ambush pirates
+  and 2 raiders and shoots each once (coop.fleet shoot: the game's TakeDamage, the pirates fight back on their own),
+  then counts the projectile objects (default_beam_projectile 0x24630D7, default_tool_projectile 0x24270C5) in each
+  game's noun list twice a second for 45 s (`coop.civ nouns <noun>` works in any stage). PASS 76 of 77 samples
+  (lab 20261108-020511); SPORE_FIX_OFF=space.shots: 0 of 78 (FAIL, lab 20261108-021047).
+* After the fix, play_space (lab 20261108-023555, 13 Space comparisons) had no `host_only:default_beam_projectile`;
+  `guest_only` / `noun_only_guest:default_beam_projectile` in 2 of 13 (the copy starts and ends up to 0.2 s after the
+  host's beam: relay lag, the class of the Civ shots in BUG-0657's notes). `All:state:time_of_day` on a Space planet in
+  6 of 13 is BUG-0712 (open).
+* Landing both takes 1-2 min on GOG 2024 lanes (play_space.Player.land_retry; the zoom does not land right after a
+  load).
+
+## The kept hold's limits (2026-11-08, fix/w46-k56-space)
+<a id="testing-space-kept-hold-limits"></a>
+
+* `coop_space_items_limits.py` (~5 min, `space` fixture, BUG-0679): the guest gets spice 0 x7 and an artifact
+  (`coop.space trade cargo 5 10D5D4D3`: the game's artifact factory), the host spice 1 x5 and 3 more slots (`trade
+  slots 3`); the guest leaves, gets 3 more spice while away, both games are started again (the host restart: one
+  bottle per lane, so both), the restarted host gets its spice and slots again (start's `before_join`, which also
+  switches SPORE_FIX_OFF off on the guest before it joins: a fix that acts during the join), the guest joins.
+  PASS: the guest has spice x10, the artifact, no host spice, its own 10 slots.
+* A guest's hold record (`<profile>/Spore/SporeCoop/holds/*.txt`) outlives the games: every test starts without one
+  (twoinst forget_holds, also in the warm reset with `coop.space trade forget` on both games); a test that needs the
+  record of its own earlier session passes `start(..., keep_holds=True)`.

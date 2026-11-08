@@ -272,6 +272,7 @@ add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=False, mi
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_siege_npc', P + 'coop_civ_siege_npc.py', warm=True, minutes=3, fixture='civ_npc')  # an NPC nation's army is no second player of a joint siege (BUG-0420; SPORE_FIX_OFF=civ.siege_players fails)
 add('space_friendly', P + 'coop_space_friendly.py', warm=True, minutes=3, fixture='space')  # the host's escort's hits on a guest and the guest's on the escort are not relayed (BUG-0420; SPORE_FIX_OFF=space.friendly_hits fails)
+add('space_shots', P + 'coop_space_shots.py', minutes=5, fixture='space_empire')  # a guest sees the beams of the host's NPC ships (BUG-0677; SPORE_FIX_OFF=space.shots fails)
 add('player_forget', P + 'coop_player_forget.py', minutes=4, fixture='space')  # after a leave no module keeps state under the departed player's id, ids are reused (BUG-0422; SPORE_FIX_OFF=core.player_forget fails)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
 add('space_own_save', P + 'coop_space_own_save.py', minutes=6, fixture='space')  # a guest in a Space save of its own keeps its own money (BUG-0709; SPORE_FIX_OFF=res.space_save fails)
@@ -493,6 +494,7 @@ add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Spa
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
 add('space_items_rejoin', P + 'coop_space_items_rejoin.py', minutes=5, fixture='space')  # a guest's own cargo hold is its own again after it rejoins, never the host's (BUG-0678; SPORE_FIX_OFF=space.keep_items fails)
+add('space_items_limits', P + 'coop_space_items_limits.py', minutes=6, fixture='space')  # a guest's own hold survives a host restart, keeps what changed while away, its own slots and artifact cargo (BUG-0679; SPORE_FIX_OFF=space.keep_items_local / space.keep_items_slots / space.keep_items_cargo fail)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
 add('space_share_wait', P + 'coop_space_share_wait.py', minutes=5)  # a guest waiting for the world while the host is on a planet is told why; the host's trace says share_wait=planet (BUG-0382; SPORE_FIX_OFF=world.share_wait_notice fails)
