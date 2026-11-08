@@ -4811,3 +4811,16 @@ out/lab/20261107-185421: 0xE99524 on visit 1).
 Lab note: lanes 2 and 3 have host caches of UFO summaries only (2026-11-07): a campaign whose Creature end brings a
 UFO visit faulted there at 0xE99524 (campaign_tribe "stopped in creature"), lanes 4 and 5 do not. A campaign_tribe
 A/B between builds must use the same lane.
+
+## A host turret's shots on a guest (2026-11-07, fix/w46-issue198)
+<a id="testing-civ-turret-shot"></a>
+
+* `coop_civ_turret_shot.py` (suite `civ_turret_shot`, warm, fixture civ_npc, about 105 s on lane 2): the host adds
+  two turrets to the NPC city nearest to its army (`coop.civ addturret`), waits until the guest has them (civ.turrets),
+  probes where each turret holds its combatant (`mem.read` of the turret, the dword 0x1466C28 at +0x588), then its
+  military vehicles attack that city (`coop.civ attack <id> <city> 2`) and the turrets fire at them for 60 s.
+  PASS: the host's turrets fired (`turret_shots: seen`), the guest fired copies (`fired`, no `bad_combatant`), both
+  games answer and have no fault. Twin: `SPORE_FIX_OFF=civ.turret_weapon` (an execute fault per copied shot on the
+  guest, BUG-0688; FAIL lab 20261107-204522). The first civ_npc test with a turret that fires: the fixture's NPC
+  cities have none near a fight, so add them with `addturret` when a test needs turret fire.
+
