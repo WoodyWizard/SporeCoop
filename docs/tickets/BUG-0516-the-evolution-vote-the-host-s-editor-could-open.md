@@ -10,7 +10,7 @@ role: all
 versions: 
 fixed_in: unreleased
 branch: fix/w46-e1-features
-commits: 3365fc83
+commits: 3365fc83 ec5aa499
 tests: editor_now (coop_editor_now.py)
 signature:
 docs: docs/re/creations.md#creations-evolve-in-place, docs/09-coop-design.md, docs/06-testing.md#testing-switch-vote-editor-now
@@ -46,6 +46,10 @@ first Creature editor, Creature -> Tribe, the Cell stage and the design stages k
 Evolve now while its game stays in Creature, the host is done first, the guest's click opens its own editor while the
 host plays, the guest leaves it.
 * PASS: out/lab/20261108-035852.
+* After the K2b merge (rel/0.7.11 fa4f5df3) the test failed at its last step: the own editor has no red cross since
+  creations.editor_request (docs/06-testing.md#testing-own-editor-no-cross); the guest now leaves with done
+  (fix/w46-e1-merge): PASS 3/3 out/lab/20261108-081737 (lane 4), FAIL with `SPORE_FIX_OFF=core.editor_now`
+  out/lab/20261108-082329.
 * FAIL with `SPORE_FIX_OFF=core.editor_now`: out/lab/20261108-040059 (the host still in Creature 16 s after the
   request, the guest's window showed I'm ready).
 
