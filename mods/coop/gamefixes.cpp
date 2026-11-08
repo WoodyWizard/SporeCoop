@@ -654,6 +654,77 @@ static void __fastcall ufo_set_visible_guard(void* gfx, void*, uint32_t visible)
     g_ufo_visible_orig(gfx, visible);
 }
 
+// BUG-0686 (docs/re/space.md#space-ufo-gfx-null): the ship gfx factory (SporeCoop::UfoGfx_Create 0xE994D0, slot 2 of
+// the gfx vtable 0x1486F6C, thiscall(any, cUFO*) ret 4) news a cUFOGfx (0xD8 bytes, ctor 0xE993A0), runs its
+// InitFromUfo (vt 0x24), then, outside game mode 0x1654C10, writes GetModel() (vt 0x2C) +4 |= 0x20 without a null
+// check: a read of 0x4 at 0xE99524 when the model world made no model for the ship's key (SetModel keeps none; the
+// game.ufo_model substitute needs a known ship model, which a Creature game has not). Seen on the host when the
+// Creature Drama Manager's UFO visit started while the evolution vote held the editor request (lab lanes 2 and 3,
+// whose Sporepedia caches hold UFO summaries only). The gfx's message listener (this = gfx + 0x3C,
+// SporeCoop::UfoGfx_HandleMessage 0xE9A7A0, thiscall(listener, id, data) ret 8) writes GetModel()+0x18 on message
+// 0x604C6F4 without a check too (0xE9A908, data 0x18). The guard makes the gfx the game's way and skips the flag
+// on a null model; the listener does nothing for 0x604C6F4 on a gfx without a model. Off: the game's code (0.7.10).
+using UfoGfxCreateFn = void*(__thiscall*)(void*, void*);
+using UfoGfxMsgFn = uint8_t(__thiscall*)(void*, uint32_t, void*);
+using UfoGfxCtorFn = void*(__thiscall*)(void*);
+using NewFn = void*(__cdecl*)(size_t, const char*, int, int, int, int);
+using ModeFn = uint32_t(__cdecl*)();
+static UfoGfxCreateFn g_ufo_create_orig;
+static UfoGfxMsgFn g_ufo_msg_orig;
+static UfoGfxCtorFn g_ufo_ctor;
+static NewFn g_game_new;
+static ModeFn g_game_mode;
+static bool g_ufo_gfx_fix = true;
+COOP_FIX("game.ufo_gfx", "BUG-0686", g_ufo_gfx_fix,
+         "gamefixes: a ship gfx the model world made no model for is made and kept without the null model's writes (no fault at 0xE99524 / 0xE9A908)");
+static std::atomic<unsigned> g_ufo_gfx_null{0}, g_ufo_msg_skipped{0};
+static constexpr uint32_t kUfoGfxModeNoFlag = 0x1654C10, kUfoMsgModel = 0x604C6F4;
+
+static void* ufo_gfx_model(void* gfx)
+{
+    if (!gfx || !readable(gfx, 4))
+        return nullptr;
+    void** vt = *(void***)gfx;
+    if (!vt || !readable(vt + 0x2C / 4, 4))
+        return nullptr;
+    using GetModelFn = void*(__thiscall*)(void*);
+    return ((GetModelFn)vt[0x2C / 4])(gfx);
+}
+
+static void* __fastcall ufo_gfx_create_guard(void* self, void*, void* ufo)
+{
+    if (!g_ufo_gfx_fix || !g_ufo_ctor || !g_game_new || !g_game_mode)
+        return g_ufo_create_orig(self, ufo);
+    void* mem = g_game_new(0xD8, "Simulator/cUFOGfx", 0, 0, 0, 0);
+    if (!mem)
+        return g_ufo_create_orig(self, ufo); // (the game's own path: it faults on a null gfx too)
+    void* gfx = g_ufo_ctor(mem);
+    void** vt = *(void***)gfx;
+    using InitFn = void(__thiscall*)(void*, void*);
+    ((InitFn)vt[0x24 / 4])(gfx, ufo);
+    void* model = ufo_gfx_model(gfx);
+    if (model) {
+        if (g_game_mode() != kUfoGfxModeNoFlag)
+            *(uint32_t*)((uint8_t*)model + 4) |= 0x20;
+    } else {
+        unsigned n = ++g_ufo_gfx_null;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_WARN, "game fixes: a ship gfx was made without a model (ship %p): kept, no fault (BUG-0686, %u)", ufo, n);
+    }
+    return gfx;
+}
+
+static uint8_t __fastcall ufo_gfx_msg_guard(void* listener, void*, uint32_t id, void* data)
+{
+    if (g_ufo_gfx_fix && id == kUfoMsgModel && listener && !ufo_gfx_model((uint8_t*)listener - 0x3C)) {
+        unsigned n = ++g_ufo_msg_skipped;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_WARN, "game fixes: a ship gfx without a model: its message %08X skipped (BUG-0686, %u)", id, n);
+        return 1;
+    }
+    return g_ufo_msg_orig(listener, id, data);
+}
+
 std::string arm_attack_cut()
 {
     if (!g_attack_orig)
@@ -1340,6 +1411,14 @@ void init(const SkHost* host, SkMod* mod)
     bool ufo = um && uv && H->hook_create(M, (void*)um, (void*)&ufo_set_model_guard, (void**)&g_ufo_model_orig) == 0 &&
                H->hook_create(M, (void*)uv, (void*)&ufo_set_visible_guard, (void**)&g_ufo_visible_orig) == 0;
     H->log(M, SK_INFO, "game fixes: ship model guard %s", ufo ? "on" : "off");
+    uintptr_t ugc = H->sym("SporeCoop::UfoGfx_Create"), ugm = H->sym("SporeCoop::UfoGfx_HandleMessage");
+    g_ufo_ctor = (UfoGfxCtorFn)H->sym("SporeCoop::UfoGfx_ctor");
+    g_game_new = (NewFn)H->sym("GeneralAllocator::new_");
+    g_game_mode = (ModeFn)H->sym("Simulator_GetCurrentGameMode");
+    bool ufo_gfx = ugc && ugm && g_ufo_ctor && g_game_new && g_game_mode &&
+                   H->hook_create(M, (void*)ugc, (void*)&ufo_gfx_create_guard, (void**)&g_ufo_create_orig) == 0 &&
+                   H->hook_create(M, (void*)ugm, (void*)&ufo_gfx_msg_guard, (void**)&g_ufo_msg_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: ship gfx null model guard %s (BUG-0686)", ufo_gfx ? "on" : "off");
     if (HMODULE exe = GetModuleHandleW(nullptr)) { // the game's code section (the vtable slot checks of BUG-0575)
         auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
         auto* sec = IMAGE_FIRST_SECTION(nt);
@@ -1406,7 +1485,9 @@ std::string status()
            ", attack spots missing " + std::to_string(g_spots_missing.load()) + " (test cuts " +
            std::to_string(g_spot_cuts) + (g_spot_cut_test ? ", armed" : "") + ")" +
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
-           std::to_string(g_ufo_invisible_skipped.load()) + ")" + ", broken model effects dropped " +
+           std::to_string(g_ufo_invisible_skipped.load()) + "), ship gfx made without a model " +
+           std::to_string(g_ufo_gfx_null.load()) + " (their messages skipped " + std::to_string(g_ufo_msg_skipped.load()) +
+           ")" + ", broken model effects dropped " +
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
            ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +
