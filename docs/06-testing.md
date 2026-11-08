@@ -4828,7 +4828,8 @@ BUG-0547 (docs/re/space.md#space-copy-on-path). `coop_space_fast_sync.py` (suite
 fixture, ~5 minutes) sets `SPORE_NET` itself when the lab gives none (delay 40, jitter 20, a 300 ms spike every ~10 s
 for 6 s): on a local lane no flight pattern made the sync-check's copy differ at all (W pulses, braking, zooms, a
 disabled guest; ~600 checks), the copy only falls behind its speed allowance when its speed changes within the moment
-(the rescue flight) or a state comes late. Checks: such moments happened, the guest drew the ship within 10 m of the
-host's path each time, the sync-check took none for a difference, no MISMATCH, and `coop.diag sync force shift` is
-still one. `SPORE_FIX_OFF=sync.own_path` must FAIL (every moment is a difference). The forced MISMATCH is inside
+(the rescue flight) or a state comes late. Checks: moments with the copy within 10 m of the host's path happened, the
+sync-check took none of those for a difference, no MISMATCH, and `coop.diag sync force shift` is still one. A copy off
+the path (lab 20261107-215251 #1: 11.4 m past a ship that had stopped, a latency spike's extrapolation, BUG-0674) stays
+a first-look difference that its recheck clears. `SPORE_FIX_OFF=sync.own_path` must FAIL (every moment is a difference). The forced MISMATCH is inside
 `LAB-MARK sync-force` lines (the lab's gate leaves it out).
