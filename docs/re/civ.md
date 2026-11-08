@@ -1376,3 +1376,23 @@ BUG-0670, the buildings of docs/re/civ.md#civ-host-designs. Lab lane 9 (`tools/t
   the building SetModelKey with it. The building's own key is written back into +0xC4 while the game saves (savestrip
   save hooks) and with SetModelKey when the session ends. Test civ_host_building (FAIL 20261107-120600, PASS
   20261107-120446: the new house and the loaded one show the host's model; after `coop.leave` the guest's own again).
+
+## A turret's combatant and the guest's copies of turret shots (2026-11-07, fix/w46-issue198)
+<a id="civ-turret-combatant"></a>
+
+BUG-0688 (GitHub #198), GOG 2024 addresses. Lab lane 2 (`tools/tests/coop_civ_turret_shot.py`).
+* ✔ (runtime, lab 20261107-204140, 2 host and 2 guest turrets made by City_AddTurret) a city turret object (noun
+  0x436F342) has the vtable **0x1466E30**; its combatant is at **turret + 0x588**, vtable **0x1466C28** (the GOG 2016
+  0x1467758 of the turret TakeDamage row above). +0x120 (a building's combatant) holds no object in a turret: seen
+  0x00000000, 0x3DA4944E, 0xAA670100, 0x2134B200 (floats / flags); the player's minidump had 0x6DB2C23E.
+* ✔ The attacker of a turret's hits (the TakeDamage hooks' `att`) is that combatant: att_vt 0x1466C28 in every hit
+  of the test; `cosmetic_hit` finds the turret at att - 0x588 (640 of 640 guest hits dropped, lab 20261107-204140).
+* ✔ Cause of the crash: guest_fire took every turret shooter's combatant at +0x120 and weapon_of called vt 0x14 of
+  that word: with `SPORE_FIX_OFF=civ.turret_weapon` 284 execute faults on the guest's main thread in 60 s (one per
+  copied turret shot, eip = the garbage "slot", here 0x8080FF00; the lab's frame guard, BUG-0667, caught them, a
+  player's game died: #198, eip 0xCCCCCCCC), no copy fired (lab 20261107-204522). Turret shot relay (BUG-0477) had
+  never run in a test before: the fixtures' NPC cities had no turret near a fight.
+* ✔ Fix `civ.turret_weapon`: a turret's combatant at +0x588; weapon_of calls vt 0x14 only when the combatant's
+  vtable lies in SporeApp.exe's image and its slot 0x14 in an executable section of it (every shooter kind; a wrong
+  one is skipped, counted as `bad_combatant` in the `turret_shots:` line of `coop.civ` and logged once per vtable).
+  With it the guest fired 264 copies of 264 host turret shots, no fault.
