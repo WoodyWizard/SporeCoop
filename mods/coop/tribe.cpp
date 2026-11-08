@@ -1627,8 +1627,29 @@ void on_member_anims(uint8_t kind, net::Reader& r)
     }
 }
 
+// tests (BUG-0759): `coop.tribe setvel <id> <vx> <vy> <vz> <s>` holds a host member's velocity field (cLocomotiveObject
+// mVelocity) at that value for s seconds, as the game left the chief's in campaign_tc2 (119.7 m/s while it slept)
+struct TestVel {
+    net::Vec3 v;
+    double until;
+};
+static std::unordered_map<void*, TestVel> g_test_vel;
+static void test_vel_tick(double now)
+{
+    for (auto it = g_test_vel.begin(); it != g_test_vel.end();) {
+        if (now > it->second.until || !game::object_alive(it->first)) {
+            it = g_test_vel.erase(it);
+            continue;
+        }
+        auto& f = F<float[3]>(it->first, 0xC0 + 0x1C8);
+        f[0] = it->second.v.x; f[1] = it->second.v.y; f[2] = it->second.v.z;
+        ++it;
+    }
+}
+
 static void host_tick(double now)
 {
+    test_vel_tick(now);
     if (now - g_last_send < 0.12)
         return;
     g_last_send = now;
@@ -4748,6 +4769,21 @@ std::string debug(const std::vector<std::string>& a)
             return "no such mirror";
         thiscall<void>(a_SetChieftain, tribe, c);
         return "leader=" + std::to_string((int)is_leader(c)) + " tool " + std::to_string(F<int>(c, kHeldToolOff));
+    }
+    if (a.size() >= 6 && a[0] == "setvel" && is_host()) { // setvel <id> <vx> <vy> <vz> <s>: tests (BUG-0759), above
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        g_test_vel[c] = {{(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())},
+                         H->time_seconds() + atof(a[5].c_str())};
+        return "velocity held";
+    }
+    if (a.size() >= 3 && a[0] == "sethp" && is_host()) { // sethp <member id> <hp>: tests (BUG-0759), the member's health
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        game::set_health(c, (float)atof(a[2].c_str()));
+        return "hp " + std::to_string(game::health(c));
     }
     if (a.size() >= 3 && a[0] == "settool" && is_host()) { // settool <member id> <type>: tests (BUG-0583), the game's
         // SetSpecializedTool on the host's member (any tribe's), as when it takes a rack's weapon

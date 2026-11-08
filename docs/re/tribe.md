@@ -2840,3 +2840,19 @@ BUG-0744. GOG 2024, lane 7, `coop_tribe_fruit_order.py`.
   member's order record shows rec=2 with the tree, and the member walks there (the guest's mirror follows).
 * Fix `tribe.fruit_order`: such an order takes the nearest tree with fruit left within 12 m, else the host's nearest
   fruit within 15 m.
+
+## A member's jump and a velocity left at 120 m/s on the guest's mirror (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-mirror-jump"></a>
+
+BUG-0759 (not reproduced). GOG 2024, lane 7.
+* ✔ (Ghidra) The sleep tick 0xDAF7B0 (node 0x04611FF4): state 0 walks the member into its hut's radius (hut vt 0x60) or
+  to a point at its edge and stops it (spatial vt 0xEC); 1-3 play 0x2796B22 / 0x2796B25 and add health per tick (rate
+  from a property, 0xF3FAAC05 with a heal tool, else 0xA1B01538); 4 ends with 0x2796B28. A member at full health leaves
+  at once (node 0x05524115 next). No teleport.
+* ✔ (runtime) On the way into the hut a member jumps ~5 m in one frame (its velocity reads 128.7 m/s for one state);
+  the guest's mirror is at most 0.8 m off 0.5 s later. A `coop.tribe put` teleport of 10-11.5 m is followed within
+  0.4 s (drive::step snaps over 8 m).
+* ✔ (runtime) The velocity field (cLocomotiveObject +0x1C8 of the citizen) held at 113-120 m/s for 6-8 s on a standing
+  member (`coop.tribe setvel`): the game does not move it (once 3 m, the frame the hold started on a member that had
+  just stood); the guest's mirror stays at its place (0.0-0.7 m, also over a 100 ms link): the lead does not carry it
+  ahead.

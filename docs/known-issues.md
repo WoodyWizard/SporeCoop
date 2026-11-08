@@ -2380,6 +2380,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * campaign_tc2, 4 players: `t: 1 apart (t4 11.5)`, the host's leader at 119.7 m/s, the guest's mirror at 0; once per
   run at most (0.7.10 and 0.7.11).
 * Ticket: BUG-0759.
+* 2026-11-08 (fix/w46-b1-tribe): not reproduced with 2 players (a teleport of 10-11.5 m, the chief and an NPC chief
+  sleeping in the hut, the velocity held at 120 m/s, a 100 ms link: the mirror followed each time,
+  docs/re/tribe.md#tribe-mirror-jump); the ticket is closed not-reproduced, the regression test is tribe_mirror_jump.
+  Reproduce: campaign_tc2 (40 min, rare); next time save both games' coop.bodyrec rows (SPORE_BODYREC_DIAG=1).
 ## Tribe: a raid takes the NPC hut to health 0 and no conquest follows (2026-11-08, fix/w46-final11-triage)
 <a id="issue-tribe-conquest-missing"></a>
 
