@@ -3525,3 +3525,13 @@ section creature-herd-evolution-desync (what advances +0xF0).
   game's CreatureStun on its proxy (`creature.stun_proxy`).
 * ✔ (runtime, tribe_member_age) A baby of the player tribe (SpawnMember(0)) grows up after ~57 s; the guest's mirror
   grows up in the same second by its own game: the age needs no sync while both spawned together.
+
+## An NPC proxy's maximum health (2026-11-07, fix/w46-k2a-state)
+<a id="creature-proxy-max-health"></a>
+
+* ✔ A proxy (a creature of the NPC's species made by the mod) gets the species' adult maximum health from the game
+  (cCombatant vt 0x58), not the host NPC's: a baby of the creature fixture had max 5 on the host and 10 on its proxy
+  (lab 20261107-231824). CORRECTION (2026-11-07, fix/w46-k2a-state): BUG-0698's note "the game gives the proxy the
+  host's max by its own rules" is disproved by that run.
+* ✔ creature_hp's GetMaxHp hook answers a stored maximum for the mod's creatures (`game::is_puppet`: puppets and
+  proxies); `npc.max_health` (BUG-0710) stores NpcSpawn.max_health there.

@@ -9,6 +9,8 @@
   (BUG-0704).
 - A player who joins after another left no longer inherits the departed player's Space star (Jump-to), roster and
   budget, or the values and designs the host last sent to it (BUG-0706).
+- Creature: a baby animal's health bar on the guest showed the adult maximum of its species (BUG-0710).
+- Space: the host's shared money no longer goes into a guest that plays a Space save of its own (BUG-0709).
 - Hit impacts and other world effects of a partner are played on your own ground where the two games' grounds differ
   (BUG-0608).
 - Tribe and Civilization: food or money a guest earned while the host was loading or in the menu now reaches the

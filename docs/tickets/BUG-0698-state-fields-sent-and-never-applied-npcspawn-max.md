@@ -32,3 +32,4 @@ no-fail-run: a unit check of the source (it failed with 20 problems before the t
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-k2a-state-b): fixed.
+- 2026-11-07 (fix/w46-k2a-state): CORRECTION: NpcSpawn.max_health is needed (a baby's proxy had the adult max); applied by BUG-0710.
