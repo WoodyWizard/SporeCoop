@@ -1966,7 +1966,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0575: Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3)
 - BUG-0576: Tribe -> Civ: black screen after evolving from Tribe into the city stage
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
-- BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
+- BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) (not reproduced: the game's own exit with the editor held or open is clean, exit_editor_held, 2026-11-07)
 - BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
 - BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then)
 - BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin)
