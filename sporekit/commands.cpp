@@ -352,7 +352,7 @@ static int c_shot(void*, int argc, const char* const* argv, SkOut* o)
 
 static int c_key(void*, int argc, const char* const* argv, SkOut* o)
 {
-    NEED(2, "key <vk|name> [tap|down|up]");
+    NEED(2, "key <vk|name> [tap|down|up|elsewhere]");
     std::string k = argv[1];
     int vk = 0;
     struct { const char* n; int vk; } names[] = {

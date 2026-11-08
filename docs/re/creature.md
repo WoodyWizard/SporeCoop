@@ -3573,3 +3573,103 @@ BUG-0683 (the partners' side of BUG-0504 / BUG-0592), GOG 2024, lab lane 9.
 * Rule (`creature.puppet_unground`): a puppet whose partner stands, under 0.25 m below GetHeightAt for 0.5 s, is put
   onto its ground where it stands (on a mound at its target's height); the own creature has the same rule
   (creature.own_ground).
+
+## The callers of PlayerSpecies and IsPlayerSpecies, classified for a guest (2026-11-08, fix/w46-k2b-content-b)
+<a id="creature-player-species-callers"></a>
+
+BUG-0738 (the audit), BUG-0732..0737 (the rules it found), children of the class BUG-0418. GOG 2024, Ghidra
+(`tools/ghidra/q.sh --build 2024`); the addresses of the BUG-0418 ticket were already the GOG 2024 ones (0xC04B50,
+0xD7D9F0, 0xC04440, 0xC02870, 0xC0A100, 0xC22450, 0xD2E720 checked). `cSpeciesManager_PlayerSpecies` 0x4DF490 (the
+world's player species, cSpeciesManager +0xA4) has 60 calling functions; creature vt 0xD0 `IsPlayerSpecies` 0xC0C430
+(`+0xB20 == PlayerSpecies`) has one direct caller, the thunk 0xC228B0 (a second vtable 0x146ADD0), the rest are
+`call [reg+0xD0]`. A guest playing its own creature is another species in its own game (its avatar), and on the host
+its puppet is a stranger. Verdicts: **party** (a partner's species should count), **own** (the guest's own avatar
+should get the player rule), **keep** (the world's species is right on every game).
+
+| Caller (start) | Rule | Verdict | Now |
+|---|---|---|---|
+| vt 0x80 0xC04B50 (calls 0xC04C5B, vt 0xD0 ret 0xC04B6F) | creature size: normalizing scale + brain factor for the player species | own | `creature.own_scale` (BUG-0732) |
+| vt 0x7C 0xC04170 | base max hp with the brain level | own | `creature.own_brain_hp` (BUG-0375) |
+| 0xD7D9F0 (call 0xD7DA43, ret 0xD7DA48, a direct compare) | BT node 0x04A1A1E6: hostile species (relation 2 / 5) attack player-species adults | party (host) in theory; the node never ran in the lab | BUG-0734 not reproduced (npc.partners) |
+| 0xC04440 (call 0xC046A8) | AI flags [+0xB4C] +0x5FC: 0x1000 player species, 0x200 brain > 4 | party (host), no visible effect found | BUG-0737 |
+| 0xC0A100 (0xC0A8AD, 0xC0AC6E) | herd spawn: brain factor for PS herds, strength +0x2E2 relative to PS | keep | |
+| 0xC6D0B0 (0xC6D227) | an egg / newborn of a PS herd: brain factor x normalizing | keep (a guest has no family; its NPCs are the host's) | |
+| 0xC09B40 Create (0xC09C09) | a PS creature takes the player archetype tuning 0x4E0220 | keep | |
+| 0xC02870 (only from Create 0xC09D2A) | NPC strength 0..10 = round((own hp sum - PS hp sum) / 100 + 5) | keep (the world's NPC tuning) | BUG-0737 |
+| 0xC22450 SetSpeciesProfile | a null species is PS | keep (a fallback) | BUG-0737 |
+| 0xC6ABF0 | friendly nest | (party) | BUG-0561 (+0x191) |
+| 0xC6A120, 0xC6D960, 0xC6E690 | herd update / respawn timers (the player herd 0 or 0x1582E5C) | keep | |
+| 0xD40AF0, 0xD40C70, 0xD401E0, 0xD425A0, 0xB6BBF0, 0xB6CB10, 0xE8DF30 | nest herd, migration, allied nest, minimap, "Home Nest" name, rollover, tooltip | keep / covered | BUG-0561, BUG-0642 |
+| 0xD1E830 | ability bar from species +0x6D4 | own | BUG-0358 |
+| 0xD2E720 CalculateAvatarNormalizingScale (0xD2E73B) | PS +0x55C against property 0xB561B9EB [min, max] by level | own (through vt 0x80) | BUG-0732 |
+| 0xD43DE0, 0xD45740, 0xD439B0, 0xD39DC0, 0xD87590 | stage entry, herd evolution, cinematic end, an effect, a BT tick (result unused) | keep | |
+| 0xBA39B0 (0xBA3AA9, from ApplyEvent 0xBA4A00) | a relation event's stimulus 0x10000 calms the avatar's species or PS creatures | keep (low) | |
+| 0xB99570, 0x4D2270, 0xCC5D40, 0xE434A0, 0xFE0150 | planet species lists without PS (cards, Sporepedia, spawn lists) | keep | |
+| Tribe: 0xC932F0, 0xC93430, 0xC99F50, 0xCC6440, 0xCC8BB0, 0xCD60F0, 0xCD8FF0, 0xCDE7E0, 0xCE67E0, 0xCFB9F0, 0xCFBD70 | the tribe's species (spawn, default, bake, the name token 0xFD26CBF8) | keep (the host's world species) | |
+| Civ / Space / UI / editor: 0xAEBE10, 0xB29000, 0xB5BB40, 0xB9A020, 0xB9AB60, 0xD5BF50, 0xD5C6D0, 0xD5CCA0, 0xD5CF80, 0xD5FB10, 0xDD1530, 0xFF8FB0, 0xD1D2E0, 0xDEB720, 0xDEB8E0 | comm events, empire species, citizen fallback, key classification, editor context +0x48 | keep (the empire's species is the host's) | |
+| vt 0xD0 in CreatureAbilityHit 0xC20390..0xC21190 | a non-PS attacker's damage x its herd archetype (0xC046F0) +0x158 | own (inferred; not checked) | |
+| vt 0xD0 in NPCTickAI 0xC09570 | noticing, skipped for PS | party (host) | `npc.partners` (BUG-0016) |
+| vt 0xD0 in GetRelationship 0xBA40E0, CreatureSocialMode 0xC0E800 | relations | party | `creature.relations` (BUG-0462) |
+| vt 0xD0 in 0xC0EA30 | relation kind: PS + target pack bit 0x100 = ally | party (guest, small; inferred) | |
+| vt 0xD0 in 0xC03010 | hatchling greeting | keep (the puppet_jump regression of BUG-0462) | |
+| vt 0xD0 in 0xC084B0, 0xC23F00, 0xD52E40, 0xD65980, 0xBA4A00, 0xBA5080 | nest sound, relation helper, posse 0x10000, same-species attack check, relation events | keep | |
+| vt 0xD0 in 0xD7C290, 0xD6E880, 0xD6F500, 0xD8D270 | animation pick, distance 7.5 for non-PS, relation 4 / 6 BT, stimulus 0x200000 to PS in the awareness list | party (host), low | |
+| vt 0xD0 in 0xD8CB20, 0xD38150, 0xD405F0, 0xD2C000 | avatar target UI, migration of non-PS herd members, pack UI cards (0xE24C70) only for PS members | guest side, inferred | |
+
+* ✔ (Ghidra) vt 0x80 0xC04B50 (`cCreatureAnimal_ComputeScale`): see the .sym entry; the brain factor table 0x150C8E4 is
+  1.0 1.1 1.2 1.3 1.4 1.5 1.5. The size is not kept in a field: the callers SetScale the result; the brain upgrade
+  0xD3FCA0 (`CreatureBrainUpgrade`) rescales every other creature of the avatar's species and gives the avatar
+  SetScale(vt 0x80(0)). Each game runs its own brain upgrade (the DNA total is synced).
+* ✔ (runtime, lab 20261108-033541) On the creature fixture the host's own creature grew 1.0 -> 1.15 at brain level 1
+  (the brain factor 1.1 and the level's normalizing scale), the puppets 1.15 -> 1.315 (x1.15 of the spawn).
+* Fix BUG-0732 (`creature.own_scale`): vt 0x80 of the own avatar of another species runs with PlayerSpecies answering
+  the avatar's own species (a hook of 0x4DF490 that answers an override only while it is set), and the normalizing
+  global `g_AvatarNormalizingScale` 0x169E374 the call recomputed is put back (the world species' creatures keep it).
+* Fix BUG-0733 (`creature.puppet_scale`): PlayerState carries the sender's own creature's size (`body`, appended
+  after agl), the puppet is set to body x 1.15 (the spawn's factor, kept) when it differs by more than 1 %.
+* ✔ (Ghidra) 0xD7D9F0 (`BT_HostileSpeciesTarget`): see the .sym entry. ✔ (runtime, lab 20261108-042844) BUG-0734 not
+  reproduced: with a species made hostile (its record relation 2, `coop.social record`) and the guest next to four of
+  its adults, the condition was called 0 times in 40 s (a counting hook) and all four took the guest's puppet as their
+  target anyway: the npc.partners AI swap (BUG-0016) drives that. The party-answer hook was taken out again.
+* ✔ (runtime, lab 20261108-034334) GetRelationship(animal, puppet) on a puppet of the partner's own creature (no
+  archetype tuning, +0xE84 null) outside the AI swap faults in the diet rule (IsHerbivore 0xC0B8E8 data 0x608): a caller
+  of the mod lends the avatar's tuning first (`coop.hp hostiles`).
+* ✔ (Ghidra) Pack defence: TakeDamage 0xC075E0 on the avatar posts 0x400 and calls `cPosseSimulator_Relay` 0xD52E40
+  (0x400, 0): each member that `PosseMemberCanDefend` 0xD7D0E0 and is not allied (0xC0EA30(x, 6)) gets
+  `CreatureCommandStimulus` 0xC0C070(0x10, 0, 0x20030030, 0x40040000, FLT_MAX, 0x100000, 0, 0, 0, attacker, 0): the
+  attacker is the stimulus' sender. The post 0xD335362C of CreatureAttackTarget 0xC02B40 is not pack defence: its
+  listeners are ExecuteAction 0xD39360 (a tracking event 0x64487065) and CreatureStageEventHandler 0xD47FC0 (the part
+  reward roll, target +0xB58 |= 2), both in the attacker's own game: a guest's attack on its proxies runs them in the
+  guest's game (inferred covered). Fix BUG-0735 (`npc.pack_defends_partner`): an NPC's hit on a puppet that the host
+  forwards gives the host's pack members within 40 m the same call.
+* ✔ (Ghidra) Summon Flock: `SummonEvent_Start` 0xD50EA0 and `SummonEvent_Update` 0xD512A0 (.sym). Fix BUG-0736
+  (`creature.flock_relay`): the guest's own event kind 8 does not start; its ability's first tick (BT_SpecialAbilityTick,
+  type 0x33) sends K_FLOCK; the host starts the event with the guest's puppet as cGameNounManager +0x54 (start and
+  update), so the herd is made 70 m from the guest's creature and joins the party's pack (the host's: one posse per
+  world, which follows the host's creature afterwards; the guests show its members as NF_PACK allies).
+## What a guest's game shows of its own hit on an animal (2026-11-08, fix/w46-k2b-content-a)
+<a id="creature-guest-hit-feedback"></a>
+
+BUG-0717 (class BUG-0428). Lane 6, `tools/tests/coop_npc_hit_feedback.py` (suite `npc_hit_feedback`).
+
+* ✔ (runtime, lab 20261108-040716) A guest's hit on a proxy (the game's TakeDamage call with the guest's avatar as the
+  attacker, filtered by npc::damage_filter and sent to the host): the proxy's health in the guest's game drops 0.07 to
+  0.28 s later (the host's NPC state), the proxy plays the host NPC's animation in most samples of the next 4 s (the
+  behaviour animations relay, #creature-bt-anims), and `coop.hp dmglog` shows the guest's TakeDamage `filtered` (no second
+  health change, no second throw, no stimulus on a proxy without AI). Nothing of TakeDamage's own work is missing on
+  the guest: it is the host's, and its results arrive (health, death, throw by position, the reaction animation).
+
+## Every partner's puppet carries an archetype tuning (2026-11-08, fix/w46-k2b-content-a)
+<a id="creature-puppet-tuning"></a>
+
+BUG-0722 (class BUG-0431). Lane 6, `tools/tests/coop_puppet_tuning.py` (suite `puppet_tuning`, four players).
+
+* ✔ (runtime, lab 20261108-040137) With four players (Bob with his own profile, Carol and Dave of the host's world), the
+  puppet of Bob's own species (7CB508F6, a herd without an archetype) had **+0xE84 = 0 on the three other games** for
+  the whole run; the other puppets and every proxy had one (`coop.npc untuned`). Bob's and Carol's hunt and their
+  social acts with it ran without a fault: the readers named in BUG-0431 (0xC0C300's callers, 0xC115E0) were not
+  reached with that puppet in this run, but the state was there.
+* Fix `npc.puppet_tuning` (npc.cpp `puppet_tuning_tick`, five times a second in the Creature stage, both roles): a
+  puppet without a tuning gets the avatar's (the player archetype: Create's choice for a creature of the player's
+  herd) through `SporeCoop::cCreatureBase_SetTuning`. `coop.npc` prints `puppets_set=` on the `npc tuning:` line. The
+  guards for SelectUI, the stage event handler and the AI tick's loan stay (a proxy or a creature of a save).

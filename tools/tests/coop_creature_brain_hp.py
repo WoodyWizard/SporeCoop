@@ -18,6 +18,7 @@ creature is another species in its own game and kept level 0's.
 import re
 import time
 
+from own_creature import back_to_world, play_own
 from twoinst import Checks, start
 
 
@@ -36,6 +37,7 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
+    play_own(guest)  # (since BUG-0345 a guest plays the world's species unless it chooses its own)
     h0, g0 = hp_info(host), hp_info(guest)
     print(f'  before: host {h0}, guest {g0}', flush=True)
     ck(h0 and g0 and h0['level'] == 0 and g0['level'] == 0, 'both at brain level 0')
@@ -71,6 +73,7 @@ def main():
     ck(pm is not None and abs(pm - g1['max']) <= 0.05, f'the host\'s game shows the guest\'s new max health ({pm} / {g1["max"]})')
     pm = puppet_max(guest, 0)
     ck(pm is not None and abs(pm - h1['max']) <= 0.05, f'the guest\'s game shows the host\'s new max health ({pm} / {h1["max"]})')
+    back_to_world(guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

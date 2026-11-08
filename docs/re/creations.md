@@ -1197,3 +1197,63 @@ BUG-0581, BUG-0457. GOG 2024, lanes 4 / 5 (`coop_editor_sync.py --case host|host
 * ✔ (runtime) A guest that stays in its own editor while the host evolves gets the host's new bundle there; back in
   the stage its game builds the host's puppet from the host's new creature (the model record the game finds for the
   puppet's species = the host's, `coop.creations bem` / `speciesof`). BUG-0457 not reproduced that way either.
+
+## Content of the host's designs: descriptions, buildings, the model audit (2026-11-08, fix/w46-k2b-content-b)
+<a id="creations-k2b-design-content"></a>
+
+BUG-0725 / BUG-0726 / BUG-0727 / BUG-0728 / BUG-0730 / BUG-0731, children of the content class BUG-0424. The class's one
+method stays `creations::ensure_model` (every model the mod makes the game build).
+
+* ✔ (code) Before: `add_part_descs` added descriptions for creature, cell and UFO bundles only (the key's type), the
+  host's design answers (BUG-0647 vehicles, BUG-0670 buildings, BUG-0724 ships) went without them, `apply_own_design`
+  dropped what came and `ensure_model` substituted without descriptions: a lacking part became the fixed fallback of its
+  kind (kBasePartFallbacks; vehicle 00046BAE in lab 20261108-032319). Now every bundle carries the descriptions of the
+  part group of its model kind (vehicle and UFO parts share 0x40646000, buildings 0x40636000), every received description
+  is kept for the session by part id (`g_rx_descs`, at most 4096) and ensure_model's substitution uses them
+  (`content.design_lookalike`). Order in Civ: a building is first built from the guest's copy of the design (no
+  description yet: the fixed fallback for a second), then the BUG-0670 sweep re-keys it to the host's design with the
+  lookalike.
+* ✔ (code, runtime lab 20261108-032432) `allow_copy = false` (buildings: SetBuildingModel reads the design key itself)
+  refused any model with a lacking part, a rule of the first BUG-0469 version (a copy under a key of ours). With
+  `content.model_key` the copy answers the model's own key, so such a caller builds it too (`content.building_copy`).
+* Test hooks: `coop.creations lack <id> | clear` (the mod's checks, substitutes and lookalike search treat a part this
+  game has as lacking: one lab lane has one install for both games; the game itself still has it, so no bake fault can
+  show), `mparts <kind> <inst>` (the part ids of the model the game reads; `!` lacking, `+d` described), `looks` (the
+  lookalike choices), `objmodels` (every placed object's model key at object +0xC4 and a city's three decoration keys
+  at +0x528, the package that answers each and its lacking part ids: the audit test content_audit_<stage>).
+## One builder for the mod's editor requests, checked against the game's (2026-11-08, fix/w46-k2b-content-a)
+<a id="creations-editor-request-builder"></a>
+
+BUG-0720, BUG-0721 (class BUG-0431). GOG 2024, Ghidra; test `tools/tests/coop_editor_request.py` (suite
+`editor_request`).
+
+* ✔ (decompile) `EditorRequest_ctor` 0x5A9140 leaves +0xC = -1, +0x10..+0x18 = 0, +0x1C = the game mode
+  (IGameModeManager vt 0x38), bytes +0x34..+0x38 = 0, **+0x39 = 1**, +0x3A = 0, **+0x3B = 1**, **+0x3C = 0**, +0x3D = 1,
+  the four string slots +0x40..+0x5C on the static empty strings, +0x64..+0x6F flags (+0x6D / +0x6E = 1), the vector
+  +0x70..+0x78 empty, +0x84..+0x98 = 0. The creature stage's evolution request (CreatureGame_HandleMessage 0xD42E50,
+  message 0x4471C60, Creature mode, `this+0xDA` set) then sets +0xC 0x465C50BA, the species (0xC0BD60), +0x90
+  0x64AA168, +0x94 the collected parts (0xB5FAB0), bytes +0x34/+0x36/+0x37/+0x38/+0x39/+0x3B = 0 and +0x3C/+0x3D =
+  1, and pushes cPlayer +0x10FC, +0x1100, +0x1104, +0x1108 (the consequence traits, #creations-cplayer-fields) into
+  +0x70 (0x454D30). So against the constructor it changes **+0x39 1 -> 0, +0x3B 1 -> 0, +0x3C 0 -> 1** and fills the
+  vector. Before it builds the request it lifts the time pause 0x4BF38A8 when its count is above 0
+  (`cGameTimeManager::GetPauseCount` 0xB321E0 via 0xAD70D0, then Toggle 0xB32390).
+* ✔ After Submit it posts **0x5D02A72** (a 0x40-byte message, +8 = 0x596E60(the collected parts)): handled by
+  `cEditor::HandleMessage` (0x592BB2: data +8 against the list of `editor+0x3AC`) and also posted by 0xD3C650
+  (+0x27C) outside the evolution; ? what the editor shows with it is not seen. Then byte **0x1686AF0 = 1**: read by
+  0xB5EB94 (FUN_00b5eae0: with it, or with the mode manager's switch pending `+0x28`, the per-frame stage update
+  skips its mode-specific part) and by `cTribeInputStrategy::SetHoverObjectCursorAndRollover` 0xCD00C0; written also
+  by 0xCD2266 / 0xCF5ABA (Tribe) and cleared at 0xB5F19D. A transition flag: between Submit and the editor the mode
+  manager's pending switch has the same effect on 0xB5EB94.
+* The mod's requests (`open_own_editor`, `coop.vote editor`, `coop.vote evolve`) come from one builder now,
+  `build_editor_request(kind, editor, species)` in coop.cpp: the constructor, +0xC, the species, +0x94 (Creature),
+  the flags and the traits as the game's (`creations.editor_request`; off: the old requests with only +0xC, the
+  species and +0x94), +0x90 only for the evolution kind. Left out on purpose (the test's allow-list): +0x90 for the
+  own editor (its price is charged by BUG-0466), the message 0x5D02A72 and the byte 0x1686AF0.
+* `coop.editreq diff` (tests, Creature): runs the game's own builder once (the creature game's handler with message
+  0x4471C60 and +0xDA set, its Submit captured, nothing opened, the byte 0x1686AF0 put back) and compares it byte by
+  byte with the mod's own and evolution requests (vtables, refcount, the strings' and the vector's pointers left out;
+  the vector by its contents).
+* ✔ (code, BUG-0721) Outside the Creature stage the mod builds no editor request: `open_own_editor` is reached only
+  from the vote's own-editor step, which opens it only in Creature (coop.cpp, the caller at the vote end); the Cell,
+  Tribe, Civ and Space editors of a vote are the game's own requests (h_Submit holds and releases them, it never
+  builds one), and `coop.vote editor` builds one only for tests (in Tribe for a member's species, BUG-0217).

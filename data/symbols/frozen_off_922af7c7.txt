@@ -199,3 +199,13 @@ SporeCoop::SpotRecord_Release ; BUG-0740: the host's creature attack markers are
 SporeCoop::SpotRecord_Table ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
 SporeCoop::TribeMarker_Place ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
 SporeCoop::SpotRecord_CellId ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::cCreatureAnimal_ComputeScale ; BUG-0732: the own creature of another species does not grow with its brain upgrades
+SporeCoop::g_AvatarNormalizingScale ; BUG-0732: (with cCreatureAnimal_ComputeScale)
+SporeCoop::CreatureCommandStimulus ; BUG-0735: the host's pack does not defend a guest
+SporeCoop::PosseMemberCanDefend ; BUG-0735: (with CreatureCommandStimulus)
+SporeCoop::SummonEvent_Update ; BUG-0736: a guest's Summon Flock is made next to the guest but follows the host's creature at once
+SporeCoop::Cell_ElectricAttack ; BUG-0715: a guest's electric part does not reach the host's creatures on GOG 2016 (cell.electric)
+SporeCoop::Cell_PoisonCloud ; BUG-0716: test counter of a guest's poison clouds, GOG 2016 not hooked
+SporeCoop::Cell_PoisonCull_ret ; BUG-0716: a guest's poison clouds are destroyed at once on GOG 2016 (cell.own_products)
+SporeCoop::Cell_CanPoison ; BUG-0716: test status only
+SporeCoop::Cell_PoisonStep ; BUG-0716: a guest's poison part makes no clouds in the host's game on GOG 2016 (cell.puppet_poison)

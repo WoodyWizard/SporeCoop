@@ -12,6 +12,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "drama.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
 
@@ -32,7 +33,9 @@ enum Kind : uint8_t {
     K_SPIT_PLAYER = 7, // host -> guest {u8 player, f32 seconds}: an NPC's spit hit the guest's puppet (BUG-0641)
     K_SPIT_NPC = 8,    // guest -> host {u16 npc id, f32 seconds}: the guest's spit hit a host NPC's mirror (BUG-0641)
     K_STUN_PROXY = 9,  // host -> guests {u16 npc id, f32 seconds}: the host's game stunned its NPC (BUG-0700)
+    K_FLOCK = 10,      // guest -> host {}: the guest's Summon Flock, made by the host's game for its puppet (BUG-0736)
 };
+static unsigned g_flock_sent, g_flock_got;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -396,6 +399,12 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
 {
     if (g_roar_fix && c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
         uint8_t* ab = ability_ptr(c, (int)st[0]);
+        if (ab && *(uint32_t*)(ab + 8) == 0x33 && drama::g_flock_relay) { // BUG-0736: the own Summon Flock
+            net::Writer w;
+            w.u8(K_FLOCK);
+            C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+            g_flock_sent++;
+        }
         if (ab && *(uint32_t*)(ab + 8) == kRoar) { // the first tick of the own roar: the host's game plays it too
             float range = *(float*)(ab + 0xA8) + *(float*)(ab + 0xF4), secs = *(float*)(ab + 0xA0);
             net::Writer w;
@@ -1085,6 +1094,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         if (r.ok() && from == 0 && is_guest())
             ufo_mirror_rx(v);
+    } else if (kind == K_FLOCK) { // BUG-0736
+        if (from == 0 || !is_host() || !drama::g_flock_relay || !game::in_creature_stage())
+            return;
+        g_flock_got++;
+        void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
+        if (p && !game::is_dead(p))
+            drama::summon_for(p);
     } else if (kind == K_ROAR) {
         uint32_t t = r.u32();
         float range = r.f32(), secs = r.f32();
@@ -1123,6 +1139,8 @@ std::string status()
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: ufo fix=%d seen=%u skipped=%u\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped);
+    out += b;
+    snprintf(b, sizeof b, "player_rules: flock fix=%d sent=%u got=%u\n", (int)drama::g_flock_relay, g_flock_sent, g_flock_got);
     return out + b;
 }
 

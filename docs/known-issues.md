@@ -2315,3 +2315,35 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Not checked: how the game removes the marker; why `coop.drama start 7` on the tribe fixture made none.
 * Ticket: BUG-0740 (from BUG-0528)
 
+## All stages: a model in a database the mod cannot read is built unchecked (2026-11-08, fix/w46-k2b-content-b)
+<a id="issue-content-unreadable-model"></a>
+
+* What happens: creations::ensure_model checks the parts of a model through the package file that answers it; a
+  database without a file location (a folder database) cannot be read, and such a model is built as it is (log
+  "creations: content: <kind> model ...: its records cannot be read here: built as it is").
+* Reproduce: not reproduced (0 of 32157 lab logs; content_audit_<stage> shows no unreadable model).
+* Known: every database of the GOG 2024 and Steam installs and of the profiles is a package file.
+* Next steps: a mod installed as a folder database would show it; then read the record through the database's
+  OpenRecord stream.
+* Ticket: BUG-0727
+
+## Creature: a guest's Summon Flock follows the host's creature after it came (2026-11-08, fix/w46-k2b-content-b)
+<a id="issue-flock-follows-host"></a>
+
+* What happens: since BUG-0736 the host's game makes a guest's Summon Flock next to the guest's creature and the flock
+  joins the party's pack; the pack (cPosseSimulator, one per game) follows the host's creature, so the flock walks to
+  the host over time. It defends the guest too (BUG-0735).
+* Reproduce: flock_relay with the guest far from the host, then watch the members' distances (`coop.hp pack`).
+* Known: the posse follows cGameNounManager +0x54; per-member following of a puppet is not in the game.
+* Ticket: BUG-0736
+## Cell: whether a guest's poison clouds hurt the host's creatures is not shown in the lab (2026-11-08, fix/w46-k2b-content-a)
+<a id="issue-cell-guest-poison-damage"></a>
+
+* What happens: since BUG-0716 the host's game makes a guest's poison clouds (from the guest's creation, through the
+  game's own poison step). Whether they hurt a creature as the host's own clouds do is not seen: the lab fixture has no
+  creation with a poison part, and the part written into a model's data (`coop.pool borrow poison graft`) makes clouds
+  that hurt nothing even for the host's own avatar.
+* Reproduce: a guest whose own cell has a poison part, next to a host creature (`coop.pool borrow status x p<id>` on
+  the host: `puppet_clouds=`), the creature's health in the host's game (`coop.pool cell c<key>`).
+* Known: docs/re/cell.md#cell-electric-attack (the poison step, the clouds, what the graft sets).
+* Ticket: BUG-0716 (the clouds fixed; the damage not verified).

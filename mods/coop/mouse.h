@@ -33,4 +33,16 @@ bool last_click_own();
 // where the last one was, in the game window's client pixels
 void last_click(int& x, int& y);
 
+// BUG-0713 (class BUG-0429: mod input read globally): the one way the mod reads a key or the pointer. A key counts
+// when the game window took its WM_KEYDOWN / WM_SYSKEYDOWN (not the auto-repeat), so a key pressed while another
+// program has the focus does nothing; the pointer is where the last WM_MOUSEMOVE over the game window put it.
+// `coop.fix input.window off` (g_window_input false): the callers poll GetAsyncKeyState / GetCursorPos as before.
+extern bool g_window_input;
+// presses of `vk` the game window took so far (a consumer keeps the last value it handled)
+uint32_t key_presses(int vk);
+// a new press of `vk` since `seen` (updated): the edge a consumer acts on
+bool key_pressed(int vk, uint32_t& seen);
+// the last mouse move over the game window, client pixels (false before the first one)
+bool last_move(int& x, int& y);
+
 } // namespace mouse

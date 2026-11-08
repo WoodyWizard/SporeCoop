@@ -22,6 +22,29 @@
   second instead of five (BUG-0659).
 - Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
   ground now sees that body too (BUG-0665).
+- All stages: F9 pressed in another program (a browser, a chat client) no longer shows or hides the co-op window;
+  the social digits and the marker that shows partners where you point read only the game window too (BUG-0713).
+- Space: a host ship without a model of its own is no longer drawn on a guest's screen as a copy of the guest's own
+  ship; it gets the model of a ship of its empire, or the game's raider model (BUG-0723).
+- Space: the ships of the host's empire (its escorts, its colonies' defenders) show the host's own ship designs on a
+  guest's screen, not the guest's creation that happens to have the same id (BUG-0724).
+- Civilization: a part of a host's vehicle or building design that a guest's game lacks is shown as the most similar
+  part that game has, not as one fixed part (BUG-0725); a host's building with such a part is no longer missing from
+  the guest's city (BUG-0726).
+- Creature: a guest playing its own creature now grows with its brain upgrades like the host's creature (BUG-0732), and
+  every player sees the other players' creatures at their real size after a brain upgrade (BUG-0733).
+- Creature: the host's pack (with the creatures a guest recruited) defends a guest that an animal attacks (BUG-0735).
+- Creature: a guest's Summon Flock is made in the shared world next to the guest's creature (both players see it, it
+  joins the party's pack); before, it was made in the guest's own game only (BUG-0736).
+- Cell: a guest's bite on a creature now plays the creature's hurt animation and reaction in the host's game, as the
+  host's own bite does, and a lethal bite sent by a guest who was just knocked out no longer kills (BUG-0714).
+- Cell: a guest's electric part now hurts the host's creatures; before, its zaps showed only on the guest's screen and
+  the creature's health came back (BUG-0715).
+- Cell: a guest's poison part now makes its poison clouds in the host's game, where the host's creatures meet them;
+  before, the guest's own game removed each cloud at once and the host's made none (BUG-0716).
+- Cell: a game with very many cells around (over about 2000, e.g. four players at a high level) no longer crashes in
+  the game's collision step: the hard limit of the game's merge buffer is guarded now, not only the co-op budgets
+  (BUG-0718).
 - Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer
   run on the old way through a latency spike when they turn or stop meanwhile (members were shown up to 8-9 m off,
   animals jumped, a ship's copy flew 11 m past where it had stopped) (BUG-0674).

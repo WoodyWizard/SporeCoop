@@ -373,6 +373,9 @@ struct PlayerState {
     // ground (PF_JUMPING); kNoAgl otherwise or from an older sender (appended after scale: older readers stop
     // before it). NPC states carry it in the MSG_NPC_STATE batch's trailer (npc.cpp), not here
     float agl = kNoAgl;
+    // BUG-0733: the sender's own creature's size (cSpatialObject GetScale) in the Creature stage; 0 = not sent (another
+    // stage, or an older sender: appended after agl, older readers stop before it)
+    float body = 0;
 
     void write(Writer& w) const
     {
@@ -386,6 +389,7 @@ struct PlayerState {
         w.u32(mode); w.u32(world);
         w.f32(scale);
         w.f32(agl);
+        w.f32(body);
     }
     bool read(Reader& r)
     {
@@ -399,6 +403,7 @@ struct PlayerState {
         mode = r.u32(); world = r.u32();
         scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         agl = r.ok() && r.left() >= 4 ? r.f32() : kNoAgl;
+        body = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         return r.ok();
     }
 };

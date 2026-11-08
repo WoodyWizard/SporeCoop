@@ -1233,9 +1233,13 @@ void tick()
 {
     if (!g_ok)
         return;
-    // F9: show/hide the co-op window anywhere in the game
-    bool f9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
-    if (f9 && !g_f9_down)
+    // F9: show/hide the co-op window anywhere in the game. BUG-0713: a press the game window took (mouse.h), not
+    // the physical key: F9 in another program toggled the window (input.window off: the old polling)
+    mouse::install((HWND)H->game_window());
+    static uint32_t s_f9_seen = mouse::key_presses(VK_F9);
+    bool f9_press = mouse::key_pressed(VK_F9, s_f9_seen);
+    bool f9 = mouse::g_window_input ? f9_press : (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+    if (f9 && (mouse::g_window_input || !g_f9_down))
         open(!g_want_open);
     g_f9_down = f9;
     // The galaxy menu's intro cinematic (~10 s, starting ~16 s after the menu came up unless the

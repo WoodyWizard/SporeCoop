@@ -550,7 +550,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 // `coop.fix npc.tuning off`: the proxy keeps the tuning its own Create picked.
 static bool g_tuning_fix = true;
 COOP_FIX("npc.tuning", "BUG-0462", g_tuning_fix, "creature: an animal on the guest has the host's archetype (its relation, social game and behaviour data)");
-static uint32_t g_tunings_set = 0, g_tunings_missing = 0;
+static uint32_t g_tunings_set = 0, g_tunings_missing = 0, g_puppet_tunings_set = 0; // (puppets: BUG-0722)
 
 static uint32_t tuning_key(void* c)
 {
@@ -636,7 +636,7 @@ std::string debug_untune(uint16_t id)
 std::string tuning_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u epic_steps=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing,
+    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u puppets_set=%u epic_steps=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing, g_puppet_tunings_set,
              g_epic_steps_set);
     return b;
 }
@@ -2216,9 +2216,44 @@ static bool g_kill_clear = true;
 COOP_FIX_UNSAFE("npc.kill", "BUG-0082", g_kill_clear, "creature: the guest's kill list is cleared every frame (coop.npc killfix)");
 void set_kill_clear(bool on) { g_kill_clear = on; }
 
+// BUG-0722 (class BUG-0431): game code reads a creature's archetype tuning (+0xE84) without a null check (the getter
+// 0xC0C300 from 0xBA43E0, ApplyEvent 0xBA4A00, CreatureSocialSuccess 0xD9BBD0, Create 0xC09B40, the direct read
+// 0xC115E0; docs/re/creature.md#creature-puppet-tuning). Proxies get the host's (npc.tuning); a partner's puppet got
+// one only from its herd: the puppet of a guest playing its own species (a herd without an archetype) had none on
+// every other game (lab 20261108-040137: 1 of 24-25 of ours on three games, for minutes). Guards covered three
+// readers only (SelectUI, the stage event handler, the AI tick, which lends the avatar's for its tick). Now every
+// puppet in the Creature stage without one gets the avatar's tuning (the player archetype, what Create gives a
+// creature of the player's herd), checked five times a second. `coop.fix npc.puppet_tuning off`: as before.
+static bool g_puppet_tuning_fix = true;
+COOP_FIX("npc.puppet_tuning", "BUG-0722", g_puppet_tuning_fix, "creature: a partner's creature always carries an archetype tuning, the player's (game code reads it without a check)");
+static void puppet_tuning_tick(double now)
+{
+    static double last;
+    if (!g_puppet_tuning_fix || now - last < 0.2 || !C.sess || !C.puppet_of || game::mode_id() != modes::kCreature)
+        return;
+    last = now;
+    static uintptr_t set = H->sym("SporeCoop::cCreatureBase_SetTuning");
+    void* av = game::avatar();
+    void* t = av && skg::readable((uint8_t*)av + 0xE84, 4) ? *(void**)((uint8_t*)av + 0xE84) : nullptr;
+    if (!set || !t)
+        return;
+    for (auto& p : C.sess->players()) {
+        if (p.id == C.sess->my_id())
+            continue;
+        void* pup = C.puppet_of(p.id);
+        if (!pup || !game::is_puppet(pup) || !game::object_alive(pup) || !skg::readable((uint8_t*)pup + 0xE84, 4) ||
+            *(void**)((uint8_t*)pup + 0xE84))
+            continue;
+        skg::thiscall<void>(set, pup, t);
+        g_puppet_tunings_set++;
+        H->log(M, SK_INFO, "npc: the puppet %p of player %u had no archetype tuning: the player's given (BUG-0722)", pup, (unsigned)p.id);
+    }
+}
+
 void tick(double now)
 {
     tick_frame(now);
+    puppet_tuning_tick(now);
     if (g_kill_clear)
         g_kill.clear(); // guest_tick empties it itself; anything left here is from a skipped frame
 }
@@ -2622,6 +2657,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
                 log_hit(p.id, attacker, damage, "forwarded");
+                creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
             }
         }
         return false; // puppets mirror the guest's own health

@@ -1,4 +1,5 @@
 #include "modes.h"
+#include "mouse.h"
 
 #include <windows.h>
 
@@ -77,6 +78,8 @@ static void creature_fill(void* av, net::PlayerState& st)
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
+    if (game::in_creature_stage())
+        st.body = game::scale(av); // BUG-0733
 }
 
 // BUG-0507: a guest crashed in drive_puppet -> creature_drive -> walk_place -> set_speed on a puppet whose
@@ -299,9 +302,28 @@ static void puppet_unground(void* p, const net::PlayerState& s_in, const net::Ve
     g_puppets_ungrounded++;
 }
 
+// BUG-0733 (class BUG-0418): the partner's puppet got its size once, at its spawn (its own game's pick x 1.15), and
+// kept it: the partner's creature grows with each brain upgrade in its own game (creature vt 0x80: x 1.0 .. 1.5 by
+// level, docs/re/creature.md#creature-player-species-callers), on the other screen it stayed the size it had. Now the
+// puppet follows the size the partner's own game gives its creature (PlayerState body), with the spawn's 1.15 kept.
+// `coop.fix creature.puppet_scale off`: the spawn's size (0.7.10).
+static bool g_puppet_body_fix = true;
+COOP_FIX("creature.puppet_scale", "BUG-0733", g_puppet_body_fix, "creature: a partner's creature on this screen has the size its own game gives it (it grows with the partner's brain upgrades)");
+constexpr float kPuppetBodyK = 1.15f; // (the spawn's factor since 0.6, 7834f08d)
+static void puppet_body(void* p, const net::PlayerState& s)
+{
+    if (!g_puppet_body_fix || !(s.body > 0.05f && s.body < 50.f) || !game::in_creature_stage())
+        return;
+    float want = s.body * kPuppetBodyK, have = game::scale(p);
+    if (have > 0 && std::fabs(have - want) <= 0.01f * want)
+        return;
+    game::set_scale(p, want);
+}
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
+    puppet_body(p, s_in);
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     // BUG-0376: the partner is off the ground: never onto this game's ground
@@ -1490,7 +1512,15 @@ static bool mouse_on_planet(net::Vec3& out)
         return false;
     HWND w = (HWND)g_host_for_modes->game_window();
     POINT pt;
-    if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
+    // BUG-0713 (class BUG-0429): where the pointer last moved over the game window (mouse.h), not the screen cursor
+    // in another program (input.window off: GetCursorPos)
+    int mx = 0, my = 0;
+    if (mouse::g_window_input) {
+        mouse::install(w);
+        if (!w || !mouse::last_move(mx, my))
+            return false;
+        pt = {mx, my};
+    } else if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
         return false;
     uintptr_t mmget = S("App::IGameModeManager::Get"), ray = S("App::cViewer::GetCameraToPoint");
     void* mm = mmget ? skg::cdecl_call<void*>(mmget) : nullptr;
