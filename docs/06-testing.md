@@ -5163,3 +5163,11 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
 * The guest records with `coop.bodyrec start diag`: rows `q<id>` are the NPC proxies' interpolation targets of the
   frame before (the frame's drawn proxy is that driving plus the game's update). Lines `split:` (target vs driving)
   and `window ... same moment ...` (each failing window sample at its real frame times) tell where an error comes from.
+* cell_new_game (BUG-0293, docs/re/cell.md#cell-eat-gate): a cell eats by the scale difference, not by size: meat at
+  0 / 1, plants at 1 (`coop.pool see`'s last column); a probe only swims to food its cell can eat.
+* The sync-check's `late` issue (BUG-0379): `coop.diag` shows `sync_late=`; a total is late only when the guest misses
+  a host value that stood for over 1 s, a band cell only when it was in the band at the previous check too;
+  `coop.fix diag.late_streak off` gives the 0.7.10 compare back.
+* creature_npc_dash / tribe_npc_dash (BUG-0363) are judged at the same moment on both games' own positions
+  (docs/06-testing.md#testing-dash-same-moment); a window measure forgives a copy at any lag. Their red runs are
+  BUG-0753 (one NPC id's states 3-12 m off) until it is fixed.
