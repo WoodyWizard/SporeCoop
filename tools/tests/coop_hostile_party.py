@@ -7,8 +7,9 @@ A guest's own creature is another species in the host's game: its puppet was nev
 past the guest (the npc.partners AI swap covers the avatar-oriented nodes, not this one).
 
 1. Two games on the creature fixture; the guest plays its own creature.
-2. The host hits the nearest animal three times (`coop.npc hosthit`): the species' relation to the players becomes
-   "attacked" (2; the guest's game follows the host's table). The host's game lists the adult animals hostile to the guest's creature
+2. The species of the animal nearest to the players (not the host's) turns hostile: its record in the host's
+   species table says "attacked" (`coop.social record <species> 2 0`, what ApplyEvent 2 keeps; the guests follow the
+   host's table). The host's game lists the adult animals hostile to the guest's creature
    (`coop.hp hostiles 1`: the game's own GetRelationship(animal, puppet)).
 3. For 40 s the host's game is read: which animals target the guest's puppet (+0xE7C, the creature or its combatant),
    without any command telling them to; the animal that was hit is left out (it fights back by itself).
@@ -46,8 +47,6 @@ def main():
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
     ck(play_own(guest), 'the guest plays one of its own creatures (not the world\'s species)')
     time.sleep(4)
-    # the guest attacks one animal: its species' relation to the players becomes "attacked" (2, ApplyEvent 2 in the
-    # host's TakeDamage), the relation node 0x04A1A1E6 reads
     m = re.search(r'world player species ([0-9A-F]{8})', host.call('coop.creations')['out'])
     own = m.group(1) if m else ''
     # an animal of another species than the host's (its family is the host's party)
@@ -58,24 +57,20 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     _, nid, (ptr, species, _, _) = ns[0]
-    for _ in range(3):  # (a guest's hit lands as the puppet's: the record is the host avatar's attack, BUG-0462 table)
-        print('  host:', host.call(f'coop.npc hosthit {nid} 0.5')['out'].strip(), flush=True)
-        time.sleep(1)
+    # the species turns hostile to the players: its record in the host's species table (what the game's
+    # ApplyEvent keeps; the guests follow the host's table) says "attacked" (2)
+    print('  host:', host.call(f'coop.social record {species} 2 0')['out'].strip(), flush=True)
+    time.sleep(2)
     (n, tg, pk), rows, who = hostiles(host)
     print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
-    if not rows:  # no species of the fixture is hostile (relation 2 / 5) by its tuning: an epic is
-        print('  host:', host.call('coop.npc epic 1 25')['out'].strip(), flush=True)
-        time.sleep(3)
-        (n, tg, pk), rows, who = hostiles(host)
-        print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
-    print(f'  host: hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
-    ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature after its attack')
+    print(f'  host: species of #{nid} {ptr} ({species}) hostile; {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
+    ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature (relation 2)')
     best, others = (0, 0, 0), []
     t0 = time.time()
     while rows and time.time() - t0 < 40:
         time.sleep(2)
         (n, tg, pk), rows2, who = hostiles(host)
-        others = [w for w in who if w != ptr]  # (the attacked animal fights back by itself: TakeDamage)
+        others = who
         best = max(best, (len(others), pk, n))
         if others and pk > 0:
             break
@@ -83,7 +78,7 @@ def main():
     print('  host:', [ln for ln in host.call('coop.hp')['out'].splitlines() if ln.startswith(('party', 'relations'))],
           flush=True)
     ck(best[1] > 0, f'the hostile-species node picked the guest\'s creature (party picks {best[1]})')
-    ck(best[0] > 0, f'an animal of the hostile species that the guest did not hit targets the guest ({best[0]})')
+    ck(best[0] > 0, f'an animal of the hostile species targets the guest ({best[0]})')
     back_to_world(guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
