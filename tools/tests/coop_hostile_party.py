@@ -21,7 +21,7 @@ FAIL (SPORE_FIX_OFF=creature.hostile_party): the node never picks the guest.
 import re
 import time
 
-from own_creature import play_own
+from own_creature import back_to_world, play_own
 from twoinst import Checks, start
 
 
@@ -63,6 +63,11 @@ def main():
         time.sleep(1)
     (n, tg, pk), rows, who = hostiles(host)
     print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
+    if not rows:  # no species of the fixture is hostile (relation 2 / 5) by its tuning: an epic is
+        print('  host:', host.call('coop.npc epic 1 25')['out'].strip(), flush=True)
+        time.sleep(3)
+        (n, tg, pk), rows, who = hostiles(host)
+        print('  host:', host.call('coop.hp hostiles 1')['out'].splitlines()[0], flush=True)
     print(f'  host: hit #{nid} {ptr} ({species}); {n} hostile adults to the guest now, nearest {rows[:3]}', flush=True)
     ck(rows, 'animals of the host\'s world are hostile to the guest\'s creature after its attack')
     best, others = (0, 0, 0), []
@@ -79,6 +84,7 @@ def main():
           flush=True)
     ck(best[1] > 0, f'the hostile-species node picked the guest\'s creature (party picks {best[1]})')
     ck(best[0] > 0, f'an animal of the hostile species that the guest did not hit targets the guest ({best[0]})')
+    back_to_world(guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

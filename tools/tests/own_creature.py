@@ -26,3 +26,9 @@ def play_own(guest, timeout=40):
                 time.sleep(3)  # the new body settles
                 return True
     return False
+
+
+def back_to_world(guest):
+    """the lane's guest profile back to the world's species (the choice is recorded per world, worlds.ini)"""
+    guest.call('coop.creations choose creature none')
+    guest.call('coop.creations worlds forget')

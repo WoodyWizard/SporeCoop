@@ -25,7 +25,7 @@ FAIL: SPORE_FIX_OFF=creature.own_scale (the guest's creature stays the same size
 import re
 import time
 
-from own_creature import play_own
+from own_creature import back_to_world, play_own
 from twoinst import Checks, start
 
 K = 1.15  # the puppet's spawn factor (modes.cpp creature_spawn)
@@ -78,6 +78,7 @@ def main():
         ck(me['puppet'] is not None and abs(me['puppet'] - want) <= 0.02 * want,
            f'the {who}\'s game shows the partner\'s creature at its size ({me["puppet"]}, the partner\'s own '
            f'{other["own"]} x {K})')
+    back_to_world(guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
