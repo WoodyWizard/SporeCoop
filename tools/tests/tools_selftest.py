@@ -18,7 +18,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             before), an existing test, FAIL and PASS lab run ids or `no-fail-run:`, no path outside the
             repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
-            .sym has the same name (BUG-0086)
+            .sym has the same name (BUG-0086); a name a test tool calls missing from the .sym files, a
+            float result of an entry without its `returns:` note, an integer result of one that has it (BUG-0430)
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
             place: exit-time, log and short crash files, crash line first (BUG-0247)
   mergelogs tools/merge_logs.py orders two players' lines by the session clock, picks the last session,
@@ -381,6 +382,30 @@ def test_relint():
     os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
     r = lint()
     check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
+    # BUG-0430: a test tool's `call <Name>` needs the name too; a float result needs the entry's `returns:` note
+    os.remove(fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'frozen_off_922af7c7.txt'), fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
+    os.makedirs(os.path.join(tree, 'tools', 'tests'), exist_ok=True)
+    tool = os.path.join(tree, 'tools', 'tests', 'coop_zz.py')
+    open(tool, 'w').write("con.call('call Simulator::ToolOnlyName cdecl')\n")
+    r = lint()
+    check(r.returncode == 1 and 'missing symbol Simulator::ToolOnlyName (used at tools/tests/coop_zz.py:1)' in r.stdout,
+          'a symbol a test tool calls by name must be in the .sym files (BUG-0430)')
+    os.remove(tool)
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::ZzFloat=0x00401000 ; verified thiscall(x) ret 4\n'
+                'Simulator::ZzSaysFloat=0x00401010 ; verified thiscall(x) ret 4; returns: float (ST0)\n')
+    open(os.path.join(tree, 'mods', 'coop', 'zz_ret.cpp'), 'w').write(
+        'static uintptr_t a_Zz, a_Says;\n'
+        'float f(void* x) { return thiscall<float>(a_Zz, x) + (float)thiscall<int>(a_Says, x); }\n'
+        'void init() { a_Zz = S("Simulator::ZzFloat"); a_Says = S("Simulator::ZzSaysFloat"); }\n')
+    r = lint()
+    check(r.returncode == 1 and 'Simulator::ZzFloat: called with a float result at mods/coop/zz_ret.cpp:2' in r.stdout,
+          'a float result of an entry without its `returns:` note is flagged (BUG-0430)')
+    check('Simulator::ZzSaysFloat is called with a int result' in r.stdout,
+          'an integer result of an entry that returns a float in ST0 is flagged (BUG-0430)')
+    os.remove(os.path.join(tree, 'mods', 'coop', 'zz_ret.cpp'))
 
 
 # ---------------------------------------------------------------- release
