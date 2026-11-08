@@ -13,6 +13,7 @@ closes in this release, fixed or with evidence after a serious dedicated attempt
 
 | Package | Mechanism | Tickets |
 |---|---|---|
+| **P5 Player reports after 0.7.10** (step 0) | GitHub #198: a guest crashes when it copies a shot of a host city turret (the turret's combatant read at the building offset) | BUG-0688 |
 | **P4 Creature** | A guest's avatar found ~14 m from where it joined, the host's creations on the guest, the previous creature version after the host's editor, the DNA budget message of a held editor request, the guest's editor showing the host's new parts, a chat line lost in play_creature | BUG-0333, 0629, 0200, 0457, 0581, 0283 |
 | **V2 Civ and Space** | A guest's vehicle gift lost, vehicles of owner 0 after the chunk budget drop, the Space sync mismatch during a rescue, the zoom after a load, the ships' p90 near its limit, the Civ money row of the detector | BUG-0325, 0206, 0547, 0182, 0190, 0613 |
 | **K2a Classes: state** | State sent but not applied, hits and world state without a relation / world filter, per-player state under a reused id, credits and effects dropped or undone; a relayed effect at the sender's ground height | classes BUG-0419, 0420, 0422, 0423; BUG-0608 |
