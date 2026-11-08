@@ -85,6 +85,9 @@ public:
     float rtt_ring[kRttRing] = {};
     uint32_t rtt_ring_n = 0;
     float rtt_quantile(float q) const;
+    // the time (ms) of this game's previous read of the socket (Session::update): a sample's ack came in between that
+    // read and this one, so half of that wait is taken off the ring's sample (a loaded game's own frame time)
+    uint32_t poll_prev_ms = 0;
     uint32_t last_recv_ms = 0;
     uint32_t created_ms = 0;
     ConnStats stats;

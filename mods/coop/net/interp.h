@@ -241,6 +241,11 @@ template <size_t N> struct HorizonMedian {
 // network: over 2 m 0.88-0.96 s, max 6-7.4 m). Off: 0.7.10 (no lead over a 15 m/s path).
 inline bool g_lead_throw_fix = true;
 constexpr float kThrowAgree = 0.35f; // the state's speed within this share of the path's, the directions within ~20 deg
+// And a step under kPutStep is never a put: under a lab load of ~30 the host's state times are off its positions by up to
+// a frame, two states 10-20 ms apart in its time carry a 33 ms walk, and a 9-10 m/s member read as 12-18 m/s: its lead
+// stood at the newest state for 0.4 s while the member walked on (6 m off, body_trail_tribe_player lab 20261108-005832,
+// t3 at 3.2-3.6 s). A real put (an egg's hatchling, a respawn, the game's teleport) goes further.
+constexpr float kPutStep = 1.0f; // m
 // BUG-0651 (K4, `coop.fix drive.lead_low`): the no-lead rule reads the link's own latency, not the mean round trip. The
 // mean (Connection::rtt_ms, an average of the last ~10 samples) follows every latency spike of the player network for
 // 0.5-1 s and both games' frame times (a sample waits for the host's frame that reads it and the guest's that reads the
@@ -377,12 +382,15 @@ public:
                 float k = (float)(1.0 / dt);
                 pv = {(n.s.pos.x - pr->s.pos.x) * k, (n.s.pos.y - pr->s.pos.y) * k, (n.s.pos.z - pr->s.pos.z) * k};
                 ps = len(pv);
-                // BUG-0675 (g_lead_throw_fix): unless its own velocity says it moves that fast that way (a throw)
+                // BUG-0675 (g_lead_throw_fix): not when the step is short (kPutStep: the two states' times are off by
+                // a loaded sender's frame) or its own velocity says it moves that fast that way (a throw)
                 bool put = ps > 15.f || (jump_speed > 0 && ps > jump_speed);
-                if (put && g_lead_throw_fix && !(jump_speed > 0 && ps > jump_speed) && sn > 15.f &&
-                    std::fabs(sn - ps) <= kThrowAgree * ps &&
-                    pv.x * n.s.vel.x + pv.y * n.s.vel.y + pv.z * n.s.vel.z >= 0.94f * ps * sn)
-                    put = false;
+                if (put && g_lead_throw_fix && !(jump_speed > 0 && ps > jump_speed)) {
+                    const bool agree = sn > 15.f && std::fabs(sn - ps) <= kThrowAgree * ps &&
+                                       pv.x * n.s.vel.x + pv.y * n.s.vel.y + pv.z * n.s.vel.z >= 0.94f * ps * sn;
+                    if (agree || ps * (float)dt < kPutStep)
+                        put = false;
+                }
                 if (put)
                     return {}; // the sender's body was put somewhere: no walk to go on with
             }

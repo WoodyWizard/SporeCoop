@@ -139,6 +139,7 @@ private:
     bool welcomed_ = false;
     uint32_t welcome_world_ = 0; // guest: Welcome::world of the host
     uint32_t join_started_ = 0;
+    uint32_t last_poll_ms_ = 0; // BUG-0651: the previous update's socket read
     std::vector<std::unique_ptr<Peer>> peers_;
     std::vector<PlayerInfo> roster_; // client: known players (incl. host)
     std::vector<uint32_t> retired_;  // host: conn ids of dropped peers (their late packets are ignored)

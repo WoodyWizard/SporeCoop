@@ -752,6 +752,9 @@ void Session::update()
     if (lookup_ && !poll_lookup(now))
         return;
     uint8_t buf[2048];
+    for (auto& p : peers_) // BUG-0651: when this game read the socket before
+        p->conn.poll_prev_ms = last_poll_ms_;
+    last_poll_ms_ = now;
     for (int i = 0; i < 256; i++) {
         Endpoint from;
         int n = tr_->recv_from(from, buf, sizeof buf);

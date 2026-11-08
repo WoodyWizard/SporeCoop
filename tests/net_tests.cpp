@@ -1046,6 +1046,46 @@ static float puppet_stop_past(bool fix, bool* slowed)
     return past;
 }
 
+
+// BUG-0675 / BUG-0651 (drive.lead_throw): a member walking at 9.5 m/s whose loaded sender stamps its states off its frames
+// (positions every 1/30 s, the times alternately 6 ms early and late: every other pair of states 21 ms apart in its time,
+// a 15 m/s path): the mean distance of the shown target from the member (its sender time now)
+static double jitter_err(bool fix)
+{
+    const bool was = g_lead_throw_fix;
+    const double was_ow = g_one_way;
+    g_lead_throw_fix = fix;
+    g_one_way = 0.045;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 150; i++) {
+        double st = i / 30.0, ts = st + (i % 2 ? 0.006 : -0.006);
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + ts * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = {(float)(st * 9.5), 0.f, 0.f};
+        s.vel = {9.5f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.045, s});
+    }
+    size_t k = 0;
+    PlayerState o;
+    int n = 0;
+    double sum = 0;
+    for (double now = 10.0; now < 14.8; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o) || now < 11.0)
+            continue;
+        n++;
+        sum += std::fabs(o.pos.x - (now - 10.0) * 9.5);
+    }
+    g_lead_throw_fix = was;
+    g_one_way = was_ow;
+    return n ? sum / n : 99.0;
+}
+
 static void test_lead_fall()
 {
     printf("remote bodies moved on through a latency spike (BUG-0674, BUG-0675, BUG-0651)\n");
@@ -1070,6 +1110,10 @@ static void test_lead_fall()
     printf("  a thrown NPC (20 m/s, two of three states lost): the target stands up to %.2f s (0.7.10 %.2f s)\n", t_on, t_off);
     CHECK(t_off >= 0.06);
     CHECK(t_on < 0.04);
+    double j_on = jitter_err(true), j_off = jitter_err(false);
+    printf("  a 9.5 m/s member stamped 6 ms off its frames: mean target error %.2f m (0.7.10 %.2f m)\n", j_on, j_off);
+    CHECK(j_off > 0.18);
+    CHECK(j_on < 0.1);
     CHECK(lead_off_with(false, 0.14, 0.045));  // 0.7.10: the mean reads the spikes and frame waits: no lead
     CHECK(!lead_off_with(true, 0.14, 0.045));  // the player network under load keeps it
     CHECK(lead_off_with(true, 0.14, 0.10));    // the mobile network does not

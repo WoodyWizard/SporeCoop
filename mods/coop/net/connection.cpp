@@ -240,7 +240,14 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
     }
     float sample = (float)(now - p.time);
     rtt_ms = rtt_ms * 0.9f + sample * 0.1f;
-    rtt_ring[rtt_ring_n++ % kRttRing] = sample; // BUG-0651
+    // BUG-0651: the ring's sample without this game's own read wait (half the time since its previous read)
+    float own = 0;
+    if (poll_prev_ms) {
+        uint32_t from = (int32_t)(p.time - poll_prev_ms) > 0 ? p.time : poll_prev_ms;
+        if ((int32_t)(now - from) > 0)
+            own = (float)(now - from) * 0.5f;
+    }
+    rtt_ring[rtt_ring_n++ % kRttRing] = std::max(0.f, sample - own);
     if (!stats.rtt_n || sample < stats.rtt_min)
         stats.rtt_min = sample;
     if (sample > stats.rtt_max)
