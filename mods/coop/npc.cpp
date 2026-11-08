@@ -3,6 +3,7 @@
 #include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
+#include "settings.h"
 #include "teamplay.h"
 
 #include <algorithm>
@@ -394,7 +395,9 @@ void set_partner_targets(bool on) { g_partner_targets = on; }
 
 static void* ai_target(void* c)
 {
-    if (!g_enabled || !g_partner_targets || !is_host() || !game::in_creature_stage())
+    // (the session setting creature.npcs_target_partners, coop.ini npcs_target_partners its default; the fix switch
+    // and `coop.npc partners off` stay the test seams)
+    if (!g_enabled || !g_partner_targets || !settings::on(settings::kNpcTargets) || !is_host() || !game::in_creature_stage())
         return nullptr;
     void* av = game::avatar();
     auto prev = g_ai_target.find(c);

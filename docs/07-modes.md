@@ -222,3 +222,59 @@ BUG-0420 (class: hits, events and world state applied without a relation / world
   BUG-0705: the game itself applies no damage between ships of one empire, lab 20261107-222158, so this one is
   hygiene, not a visible fix).
 * Tests: coop_world_gate_vote, coop_civ_siege_npc, coop_space_friendly; validate_tests (the classes).
+
+## Session settings (2026-11-08, feat/w46-settings)
+<a id="modes-session-settings"></a>
+
+F3 of docs/plan-0.7.12.md, BUG-0762. One framework for the co-op mechanics the host can switch. Code:
+`mods/coop/settings_core.h` (portable: the table, the rules, the wire and file formats; unit tests in
+`tests/validate_tests.cpp` test_settings) and `mods/coop/settings.cpp` / `settings.h` (the game side).
+
+**Declared once.** Every setting is one row of `settings::kDefs`: `key` (console, wire and file name, never renamed),
+`group`, `label` (the lobby's text), `help`, the built-in default, the range, the scope, the `coop.ini [coop]` key that
+gives a new world's default (or none) and `off_in_rivals`. The UI (F1) lists the rows by group; nothing else needs
+to know them. A module reads a value with `settings::on(settings::kX)` / `settings::get(...)`: never `config_int`.
+
+| Key | Group | Default | Scope | coop.ini key | Read in |
+|---|---|---|---|---|---|
+| `cell.regen` | Cell | on | live | - | cellsync.cpp symbiosis_tick (twin switch `settings.cell_regen`) |
+| `all.partner_arrows` | All stages | on (off in Rivals) | live | - | F2 (not drawn yet) |
+| `all.dna_pace` | All stages | on | session | `dna_pace` | coop.cpp dna_pace_announce (BUG-0510) |
+| `creature.npcs_target_partners` | Creature | on | session | `npcs_target_partners` | npc.cpp ai_target |
+| `creature.pack_rescue` | Creature | on | session | `teamplay` | teamplay.cpp on_own_damage |
+| `creature.pack_heal` | Creature | on | live | `teamplay` | teamplay.cpp tick |
+| `creature.joint_hunt` | Creature | on | session | `teamplay` | teamplay.cpp on_player_hit |
+
+**Scopes.** *Session*: the host sets it before the start, that is while its game plays no world (the galaxy menu,
+the lobby of F1); once the host plays its world it is refused ("a session setting: ..."). *Live*: the host can change
+it in play too. A guest never sets one (refused: "the host decides"). `coop.settings force` (tests) skips the scope.
+
+**Where the values come from.** The host (or a player alone) has one table in force:
+* a world opens (the game plays a stage with its own creature and the save name is known): if the host changed
+  settings while no world was open (the lobby), those are the world's from now on; else the world's stored values;
+  a world without a file takes the defaults of a new world (the built-in default, the `coop.ini` key over it);
+* the table is written to `<profile>/Spore/SporeCoop/settings/<crc32 of the lower-case save name>.txt` (`world
+  <name>` then `<key> <value>` lines) on every open and every change; a key this build does not know is skipped, a
+  missing one takes the default, a file of another name (a crc collision) is not used. The save itself is never
+  touched. Two saves of the same name share a file (the same known limit as the world id, host_world.h).
+* a guest keeps no file of the host's world.
+
+**On the wire.** `MSG_SETTINGS` (66, host -> guests, reliable, class Session in host_world.h msg_class): u8 kind 0,
+u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}. The whole table goes to a guest on its join
+(`settings::on_player_join`, before the world share) and to every guest on every change, on a world open and when
+the started flag changes. By name: an older guest ignores the type, a newer one skips keys it does not know; a
+setting the host did not send keeps the guest's own value, and a guest of an older host plays with its own values
+(as before 0.7.12). A guest drops the host's table when the session ends. A live change shows a feed line on the
+guest ("The host set Regeneration near a partner: off").
+
+**Console.** `coop.settings` lists every setting (`key=value on|off [scope, default, changed] group: label - help`,
+first line: host / guest / alone, the open world, started, pending); `get <key>`, `set <key> on|off|default|<n>`,
+`force <key> <v>` (tests), `stored` (the stored file of the open world). `coop.dna pace 0|1` forces `all.dna_pace`.
+The support report's `settings:` line lists what differs from the built-in defaults.
+
+**Tests.** `coop_settings.py` (suite `settings`): the joining guest gets the table, a session setting is refused in
+play, a guest cannot set one, Cell regeneration on heals both cells next to each other (the game's health), off (a
+live change) the running guest gets it and neither cell heals, a session setting set in the galaxy menu is accepted,
+and after both games end and start again the host's world plays with its stored values and the new guest gets them.
+`SPORE_FIX_OFF=settings.cell_regen` fails the "off" checks. `twoinst.forget_settings()` removes the stored files at
+every test start (cold and warm), and `coop.settings set|force` and `coop.dna pace` are lane knobs.

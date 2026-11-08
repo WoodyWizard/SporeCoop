@@ -117,6 +117,9 @@ enum MsgType : uint8_t {
     MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
                           // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
                           // nv x u32}}. Older SporeCoop ignores it (an unknown type).
+    MSG_SETTINGS = 66,    // host -> guests (reliable): the session settings (settings_core.h, F3 of 0.7.12): u8 kind 0,
+                          // u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}; on a join and on
+                          // every change. Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

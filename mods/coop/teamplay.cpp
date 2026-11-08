@@ -8,6 +8,7 @@
 #include "game.h"
 #include "hunt_hits.h"
 #include "net/interp.h"
+#include "settings.h"
 
 namespace teamplay {
 
@@ -27,7 +28,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
-    g_on = H->config_int(M, "coop", "teamplay", 1) != 0;
+    // the session settings creature.pack_rescue / pack_heal / joint_hunt decide each bonus (coop.ini teamplay is
+    // their default); g_on is the console's switch for all of them (`coop.team off`)
 }
 
 bool enabled() { return g_on; }
@@ -57,7 +59,7 @@ void set_enabled(bool on) { g_on = on; }
 
 float on_player_hit(void* target, uint8_t player, float damage)
 {
-    if (!g_on || !target)
+    if (!g_on || !target || !settings::on(settings::kJointHunt))
         return damage;
     bool joint = g_hits.hit(target, player, H->time_seconds());
     (player ? g_hits_partners : g_hits_host)++;
@@ -88,7 +90,7 @@ static std::string nearest_partner(void* avatar, float max_dist, float* out_dist
 
 float on_own_damage(void* avatar, float damage)
 {
-    if (!g_on || !avatar || damage <= 0)
+    if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
         return damage;
     float hp = game::health(avatar);
     if (hp <= 0 || hp - damage > 0)
@@ -112,7 +114,7 @@ float on_own_damage(void* avatar, float damage)
 
 void tick(void* avatar, double now)
 {
-    if (!g_on || !avatar || now - g_last_regen < 1.0)
+    if (!g_on || !avatar || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal))
         return;
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);

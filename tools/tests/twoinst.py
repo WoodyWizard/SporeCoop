@@ -309,6 +309,13 @@ def forget_holds():
         subprocess.run(['rm', '-rf', d + '/SporeCoop/holds'])
 
 
+def forget_settings():
+    """BUG-0762: every test starts with the default session settings: no world keeps the values an earlier test
+    stored (<profile>/Spore/SporeCoop/settings, one file per world; a warm reset loads the same planet name)"""
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-rf', d + '/SporeCoop/settings'])
+
+
 # BUG-0430: switches and knobs live in the game process: coop.leave and a load keep them. A test that sets one
 # (`coop.fix x off`, `coop.worldfix retry 0`, `frame.limit 50`, `coop.diag sync force shift`, ...) and fails or
 # ends before it sets it back (or never does) left them changed for the next test of the lane, which then ran
@@ -322,6 +329,7 @@ KNOBS = re.compile(r'\s*(?:'
                    r'|coop\.\w+fix\s+\S+'  # coop.worldfix retry 0, coop.corefix <name> 0, coop.sessionfix 0, coop.framefix 0
                    r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
                    r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
+                   r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
                    r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+lang\s+\S+|coop\.lanfake\b'
                    r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
                    r'|frame\.limit\s+(?!auto\b)\S+|frames\.source\s+(?!auto\b)\S+'
@@ -386,6 +394,7 @@ def warm_reset(host, guest, fixture, planet):
         for c in (guest, host):
             c.call('coop.space trade forget')
         forget_holds()
+    forget_settings()
     sh('fixture', 'slot', fixture, lane.HOST_PROFILE, str(slot))
     host.call(f'coop.load Game{slot} {planet.split("/")[1]}')
     phases = []
@@ -559,6 +568,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
     if not KEEP_HOLDS[0]:
         forget_holds()
+    forget_settings()
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
     for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)
