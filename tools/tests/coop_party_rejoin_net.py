@@ -71,7 +71,11 @@ def species_view(p, ck, label):
             if at is None:
                 bad.append(f'{v.name} does not show {s.name}')
                 continue
-            best = min(pups, key=lambda r: math.dist(r['pos'], at), default=None)
+            # BUG-0450: the subject's own puppet by its player id (census owner=), not the puppet nearest to where the
+            # viewer shows it: four players spawned 1-3 m apart after a rejoin made the nearest one another player's
+            mine_p = [r for r in pups if r['owner'] == pid]
+            best = mine_p[0] if mine_p else None if any(r['owner'] >= 0 for r in pups) else \
+                min(pups, key=lambda r: math.dist(r['pos'], at), default=None)
             if best is None or math.dist(best['pos'], at) > near:
                 bad.append(f'{v.name}: no creature where it shows {s.name}')
                 continue
