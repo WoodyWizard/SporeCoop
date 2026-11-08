@@ -15,8 +15,8 @@
 - Space: a contract's time no longer runs out while the host's game is paused or outside Space (BUG-0695).
 - Shared food and money: a notice now says which player's purchase or earning changed the shared total (BUG-0696).
 - Space: the partner's ship shows its real health on the other screen, not always full (BUG-0697).
-- Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within a
-  quarter second instead of up to one and a half (BUG-0699).
+- Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within about a
+  third of a second instead of up to one second (BUG-0699).
 
 ## [0.7.10.1] - 2026-11-07
 

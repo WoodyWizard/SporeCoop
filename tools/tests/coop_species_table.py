@@ -64,7 +64,7 @@ def main():
             time.sleep(0.05)
         delays.append(round(time.time() - t0, 2))
     print(f'  the guest had the host\'s change after {delays} s', flush=True)
-    ck(delays and max(delays) <= 1.0, f"2a. a change of the host's table is in the guest's game within 1 s ({delays})")
+    ck(delays and max(delays) <= 0.5, f"2a. a change of the host's table is in the guest's game within 0.5 s ({delays})")
     h, g, d = settle(host, guest)
     print(f'  after the host\'s changes: {[(k, h.get(k), g.get(k)) for k in keys]}', flush=True)
     ck(keys and not d, f"2. the host's changed records are on the guest ({d[:3]})")

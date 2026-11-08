@@ -243,6 +243,8 @@ void add_money(int n)
 
 void* inventory()
 {
+    if (spaceext::away())
+        return nullptr; // the `away` test hook (space_ext.h): outside Space there is no inventory, as in spacecoop.cpp
     void* sg = a_SpaceGame ? *(void**)a_SpaceGame : nullptr;
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
