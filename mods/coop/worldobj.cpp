@@ -629,9 +629,27 @@ static void bundle_remove(void* b)
     thiscall<float>(a_RemoveBundles, bundle_mgr(), amt > 0 ? amt : 1.f, (void*)nullptr, b); // the bundle alone: destroyed
     g_bundles_removed++;
 }
+// BUG-0684 (docs/re/tribe.md#tribe-carried-bundles): the carried-bundle rules below assume that the guest's tribe members are
+// copies that run no behaviour of their own: true in Tribe. In Civ the old tribe villages run their own behaviour in each
+// game: a guest's member was handed the host's carried food (the nearest empty hand within 8 m) or carried its own, the
+// mod removed that bundle from its container while its gather node held it, and the node's next step read the empty
+// container (132 caught faults at 0xC23469 per frame, play_civ). Outside Tribe a carried bundle is left to the game
+// that carries it: none is made from the host's, none is removed. `coop.fix wobj.bundle_civ_carried off`: 0.7.10.
+static bool g_bundle_civ_fix = true;
+COOP_FIX("wobj.bundle_civ_carried", "BUG-0684", g_bundle_civ_fix,
+         "civ: food a creature of the guest's game carries is never taken from it or handed to it by the mod outside Tribe");
+static uint32_t g_bundles_left_alone;
+static bool carried_left_alone(uint32_t cls)
+{
+    return g_bundle_civ_fix && (cls & kBundleCarried) && game::mode_id() != modes::kTribe;
+}
 static bool bundle_behind(uint32_t, uint32_t host) { return host == kGone; }
 static void bundle_apply(const Item& l, uint32_t host)
 {
+    if (host == kGone && carried_left_alone(l.cls)) {
+        g_bundles_left_alone++;
+        return;
+    }
     if (host == kGone)
         bundle_remove(l.p);
 }
@@ -653,12 +671,19 @@ static bool g_bundle_carried_fix = true;
 COOP_FIX("wobj.bundle_carried", "BUG-0617", g_bundle_carried_fix,
          "tribe: the food a member carries on a guest's screen is the food the host's member carries");
 constexpr float kCarriedTol = 8.f;
-static bool bundle_own(const Item& l, double) { return !g_bundle_carried_fix && (l.cls & kBundleCarried) != 0; }
+static bool bundle_own(const Item& l, double)
+{
+    return carried_left_alone(l.cls) || (!g_bundle_carried_fix && (l.cls & kBundleCarried) != 0);
+}
 static float bundle_tol(uint32_t cls) { return g_bundle_carried_fix && (cls & kBundleCarried) ? kCarriedTol : 3.f; }
 static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
 {
     if (!g_bundle_fix || host == kGone || !a_CreateBundles || !bundle_mgr())
         return 0;
+    if (carried_left_alone(cls)) { // BUG-0684: no hand of the guest's own creatures gets the host's carried food
+        g_bundles_left_alone++;
+        return 0;
+    }
     float amt;
     memcpy(&amt, &host, 4);
     if (!std::isfinite(amt) || amt <= 0.f || amt > 1000.f)
@@ -1541,8 +1566,8 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated);
         s += b;
     }
-    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u; city decorations sets=%u removed=%u\n",
-             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_corn_sets, g_corn_removed);
+    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
+             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
     s += b;
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
              g_space_cit_puts, g_veh_drives);
@@ -1651,6 +1676,12 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
                 b = thiscall<void*>(a_CreateBundles, bundle_mgr(), (float)atof(argv[4]), (uint8_t*)c + 0x34, 1);
         } else if (!strcmp(argv[2], "take") && argc > 3) {
             b = (void*)strtoul(argv[3], nullptr, 16);
+            Items all; // (only a bundle the game still lists: a delivered one is freed, BUG-0684 test)
+            bundle_collect(all);
+            if (std::none_of(all.begin(), all.end(), [&](const Item& it) { return it.p == b; })) {
+                H->out_printf(out, "taken alive=0 (not listed)\n");
+                return 0;
+            }
             bundle_remove(b);
             H->out_printf(out, "taken alive=%d\n", !IsBadReadPtr(b, 0x30) && game::object_alive(b));
             return 0;

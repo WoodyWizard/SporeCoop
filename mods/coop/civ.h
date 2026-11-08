@@ -74,5 +74,6 @@ bool hit_is_cosmetic(void* attacker);
 void fire_local(void* owner, uintptr_t ret, bool fired); // BUG-0530 diagnostics (guest)
 // BUG-0493: the open city planner of this game holds this city (the mod changes none of its buildings then)
 bool planner_holds_city(void* city);
+void planner_probe_tick(); // BUG-0682 tests: `coop.civ planner_probe on`
 
 } // namespace civ

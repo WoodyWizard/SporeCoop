@@ -60,6 +60,12 @@ log must show the setup meeting the null camera and its game must be in a playab
   the first join, `0xC0000005 at 0x00B12D62 SporeCoop::SimCamera_LookAt+0x52 data=0x000002B4`.
 * PASS: out/lab/20261107-231113 (lane 9), out/lab/20261107-231252 (#1, #2, lane 9): the race on the first join,
   "skipped the tribe camera set-up", 0 faults.
+* On the merged rel/0.7.11 (ef329e5c) the join-time race was missed on lanes 2 / 3 (out/lab/20261108-003509,
+  20261108-012203: the guest's console answered ~30 s after its menu came up, the menu's intro had already played in
+  the menu and was ended at the load, BUG-0654; not a change of K2a). The test now also arms `coop.introstage` on the
+  guest (fix/w46-n1-camera-test): the intro starts in the first tick of its Tribe, as the timer starts it in the race.
+  FAIL (SPORE_FIX_OFF=tribe.camera_guard): out/lab/20261108-013444 #1, #2 (lane 3), the AV at SimCamera_LookAt+0x52;
+  PASS: out/lab/20261108-013439 #1, #2 (lane 2), "skipped the tribe camera set-up".
 * Hunts of the report's own case on this build (both fixes on): multi4_tribe and multi4_tribe_slow (4 players, 6 min,
   churn; the slow one at 20 fps over the players' networks): OK, 0 faults on all 4 games (out/lab/20261107-223550).
 
@@ -71,3 +77,4 @@ log must show the setup meeting the null camera and its game must be in a playab
 - 2026-10-28: status fixed -> not-reproduced: its only commit d605e96 shipped in v0.6.0; nothing was changed in 0.7.3.0, the ticket was closed because the guard was never seen failing again. fixed_in cleared (BUG-0215).
 - 2026-10-30 (fix/w13-tribe-civ): still not reproduced. All lab game logs of the main checkout (out/lab, 2026-10-22..30) searched for tribe-stage faults: none at this ticket's address in any tribe test; the only Tribe faults in campaigns are BUG-0285 / BUG-0310 (0xC0DB23, fixed by tribe.leave_walk). On this branch tribe_coop, tribe_play, tribe_far, chaos_tribe, menu_stale_player, campaign_tribe, tribe_leave_walk (3x) passed on lane 6 without a fault, freeze or crash (lab runs 20261030-141833, 20261030-140307). Status kept.
 - 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): reproduced with the join timing of BUG-0607 (the menu timer starts the intro in the first frames of Tribe); FAIL/PASS twin on tribe.camera_guard; status fixed (the guard was the fix, d605e96; the cause was found now).
+- 2026-11-08 (fix/w46-n1-camera-test): the race forced with coop.introstage (the join-time race depends on when the guest's console answers); FAIL/PASS again on the merged rel/0.7.11.

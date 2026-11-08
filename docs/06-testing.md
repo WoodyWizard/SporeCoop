@@ -4891,6 +4891,8 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 * `tribe_camera_null` (BUG-0167, cold, ~1 min a try): a guest joins 12.5 s after its galaxy menu came up
   (`twoinst.start(join_at=)`) with `world.intro_at_once` off before the join: the menu's own timer starts the intro in
   the first frames of its Tribe and the tribe setup meets the null simulator camera (4 of 4 on the first join).
+  Since 2026-11-08 the guest is also armed with `coop.introstage` (the intro in the first tick of its next stage): the
+  join time alone misses the race when the guest's console answers late (lanes 2 / 3, ~30 s).
   SPORE_FIX_OFF=tribe.camera_guard fails with the report's fault. Intros started by hand (PlayCinematic at the load
   request, in the Loading mode, on a host's reload) do not make the null camera: only the menu's own timer does.
 * `creature_death_coop` / `_slow` (BUG-0026): `coop_creature_death.py --coop`: the four skip variants (Esc during the
@@ -4957,3 +4959,33 @@ BUG-0674, BUG-0675, BUG-0651, BUG-0680 (docs/re/tribe.md#tribe-lead-fall).
   -010745-2 #1 on); compare fixes with an A/B on two lanes at the same time, never with runs of another hour.
 * npc_walk_tribe at `SPORE_FPS=30 SPORE_NET=player` counts the proxies' jumps (> 2.5 m in a frame): a walk that starts
   in a spike is known 0.3-0.5 s late, the proxy's target jumped at the start (late_lead brings it in now).
+## The monitor's drawn rule in Cell level changes (2026-11-08, fix/w46-k7-findings)
+<a id="testing-monitor-cell-scale"></a>
+
+BUG-0681. In Cell the own trace line ends with `wscale=<k>`, the game's world scale (cellsync::scale_now, G+0x514C)
+its positions are in. During a level change each game rescales at its own moment (docs/re/cell.md#cell-world-scale),
+so for a trace line or two the viewer draws the partner in one scale and the partner's own `pos=` is in another (raw
+distances up to 20-32 m in cell_levelup_view). The drawn rule (tools/tests/monitor.py Drawn.in_scale) converts the
+partner's position into the viewer's scale (pos x own scale / viewer scale) when both own lines of the moment carry a
+scale; logs without it are compared raw. `SPORE_MONITOR='{"drawn_scale": 0}'`: raw (the rule before). Planted cases in
+gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
+
+## Tests of the 0.7.10 final-check findings (2026-11-08, fix/w46-k7-findings)
+<a id="testing-k7-findings"></a>
+
+* `planner_leave` (BUG-0682, ~4 min, space fixture): the guest calls planner_city() every frame (`coop.civ planner_probe
+  on`) and quits to the galaxy menu 4 times (`coop.menu`); `stale_reads` must stay 0 and no game may fault.
+  SPORE_FIX_OFF=civ.planner_stale: 11-12 stale frames and 8 caught faults in game::cast per run.
+* `civ_village_bundle` (BUG-0684, ~2 min, civ_npc): the guest's pointer is moved over an old village both games have
+  (play_civ's Player.look_at + `move`); `coop.wobj bundle carry` on creatures of each game near it. Checks the game's
+  object lists: the guest's own carried food stays 10 s, the host's carried food is in no hand of the guest's own
+  creatures. Not every member is free: `carry` refuses a full hand; a member delivers its food to the mat by itself
+  (the bundle is freed: `bundle take` only on listed bundles).
+* `puppet_unground` (BUG-0683, ~2 min, creature fixture): `coop.puppet sink 0.69 0.7` puts the partner's puppet in the
+  ground on the host; `coop.puppet agl` samples it. SPORE_FIX_OFF=creature.puppet_unground: stays under for 4 s (the
+  game's own update put it back in 1 of 4 rounds).
+* `keepalive_stall` (BUG-0687, ~1 min, creature fixture): `coop.stalltest 6` (an outside-frame command) makes the host's
+  main thread run a message loop of its own for 6 s: no frames, the keepalive runs. The host's log must have one
+  `keepalive: no frame for` line with return addresses into the game and one `keepalive: the main thread's windows`
+  line; frames go on afterwards. As a normal (between-frames) command the loop runs inside the frame and the
+  outside-frame tasks, the keepalive too, wait for its end: no line at all (the first try).
