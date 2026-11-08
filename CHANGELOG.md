@@ -16,9 +16,16 @@
   typed). The lobby shows each player's colour, stage, ping and ready state and the host's address, and has a
   Settings page with the session settings by group: the host changes them (the "live" ones also during play, the
   others are locked once the game started), guests see them. The host has a button "Ask the players for their
-  reports" (its action comes with the combined session report). "Stop hosting" is now "Close session" (BUG-0765).
+  reports" (see below). "Stop hosting" is now "Close session" (BUG-0765).
 - "Report a problem" in the game's pause menu (Esc), below "Quit Spore": it makes the same report as the co-op
   window's button (BUG-0765).
+- One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
+  players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
+  window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without
+  that click. The reports come to the host over the session and the host gets one file to send,
+  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
+  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
+  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
 
 ## [0.7.11] - 2026-11-08
 

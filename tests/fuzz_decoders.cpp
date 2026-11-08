@@ -31,6 +31,7 @@
 #include "net/partprops.h"
 #include "net/protocol.h"
 #include "net/session.h"
+#include "net/sreport.h"
 #include "net/utf8.h"
 #include "net/validate.h"
 
@@ -675,6 +676,58 @@ static void fuzz_dbpf(uint64_t seed, int iters)
     printf("  %d packages (%d loaded, %d records read)\n", iters, loaded, records);
 }
 
+
+// ---------------------------------------------------------------- the session report (BUG-0767)
+// a guest's report zip and its messages come from another player's PC: the content check and the host's round
+static void fuzz_sreport(uint64_t seed, int iters)
+{
+    printf("session report (check_zip, the host's round)\n");
+    namespace sr = net::sreport;
+    Rng R(seed);
+    int passed = 0;
+    for (int i = 0; i < iters; i++) {
+        std::vector<uint8_t> z;
+        sr::ZipOut o;
+        o.out = [&z](const uint8_t* p, size_t n) {
+            z.insert(z.end(), p, p + n);
+            return true;
+        };
+        const char* names[] = {"README.txt", "logs/sporekit.log", "report-1.txt", "settings/coop.ini", "shots/a.jpg"};
+        int k = 1 + (int)R.below(5);
+        for (int j = 0; j < k; j++) {
+            std::string d = R.str(300);
+            o.add(names[j], (const uint8_t*)d.data(), d.size());
+        }
+        o.finish();
+        if (i % 4 != 0)
+            z = mutate(R, z);
+        Exact e(z);
+        std::string why;
+        passed += sr::check_zip(e.data(), e.n, &why);
+        // the same bytes through a round, in random pieces and kinds
+        sr::Round r;
+        r.id = 1;
+        sr::Guest g;
+        g.id = 1;
+        g.name = "x";
+        r.guests.push_back(g);
+        r.on_answer(1, sr::Answer{1, 1, (uint32_t)(R.below(3) ? e.n : R.below(1u << 26))}, 1);
+        for (size_t off = 0; off < e.n;) {
+            sr::Piece p;
+            p.round = 1;
+            p.offset = (uint32_t)(R.below(10) ? off : R.below(e.n + 10));
+            p.n = (uint16_t)std::min<size_t>(1 + R.below(sr::kChunkBytes), e.n - off);
+            p.data = e.data() + off;
+            r.on_piece(1, p, 2);
+            off += p.n;
+        }
+        r.on_done(1, sr::Done{1, R.below(2) ? sr::crc32(e.data(), e.n) : (uint32_t)R.next()}, 3);
+        if (r.guests[0].st == sr::State::Sent && !sr::check_zip(r.guests[0].data.data(), r.guests[0].data.size(), &why))
+            CHECK(false, "sreport: a sent report that does not pass the check%s", "");
+    }
+    printf("  %d archives (%d passed the check)\n", iters, passed);
+}
+
 // ---------------------------------------------------------------- part descriptions (BUG-0559)
 // a part's property list comes from the other player (the part this game lacks): parse + nearest
 static void fuzz_partprops(uint64_t seed, int iters)
@@ -1003,6 +1056,7 @@ int main(int argc, char** argv)
     fuzz_refpack(seed + 1, iters);
     fuzz_dbpf(seed + 2, iters);
     fuzz_partprops(seed + 23, iters);
+    fuzz_sreport(seed + 29, iters);
     fuzz_pack(seed + 3, iters / 2);
     fuzz_connection(seed + 4, iters * 5);
     fuzz_session(seed + 5, iters * 2);

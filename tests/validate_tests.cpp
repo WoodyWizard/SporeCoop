@@ -16,6 +16,7 @@
 #include "settings_core.h"
 #include "net/shared_ledger.h"
 #include "net/held_cmds.h"
+#include "net/sreport.h"
 #include <string>
 
 using namespace net;
@@ -489,6 +490,169 @@ static void test_settings()
     CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
 }
 
+
+// BUG-0767 (F4 of 0.7.12): the session report: the content check of a received report, the host's round, the zip
+static std::vector<uint8_t> zip_of(const std::vector<std::pair<std::string, std::string>>& files)
+{
+    std::vector<uint8_t> z;
+    sreport::ZipOut o;
+    o.out = [&z](const uint8_t* p, size_t n) {
+        z.insert(z.end(), p, p + n);
+        return true;
+    };
+    for (auto& [n, d] : files)
+        o.add(n, (const uint8_t*)d.data(), d.size());
+    o.finish();
+    return z;
+}
+
+static void test_sreport()
+{
+    using namespace sreport;
+    // names of a SporeKit report archive pass; folders, "..", drive letters, backslashes, programs do not
+    for (const char* ok : {"README.txt", "LEFT_OUT.txt", "report-20261108-101010-i21.txt", "crash-20261108-1.txt",
+                           "logs/sporekit.log", "logs/sporekit.21.log", "previous/sporekit-20261107.log",
+                           "crashes/crash-1.dmp", "crashes/crash-1.txt", "reports/report-1.txt", "shots/report-1.jpg",
+                           "settings/coop.ini"})
+        CHECK(allowed_name(ok));
+    for (const char* bad : {"../evil.bat", "logs/../evil.log", "C:/x.txt", "C:\\x.txt", "logs\\sporekit.log",
+                            "logs/a/b.log", "evil.exe", "logs/evil.exe", "shots/x.png", "/README.txt", "",
+                            ".hidden.txt", "settings/.ini", "report-1.txt ", "other/x.txt", "README.txt/x.log",
+                            "logs/sp\xC3\xA4.log", "settings/a:b.ini"})
+        CHECK(!allowed_name(bad));
+    // a real-shaped report passes the check; its names come back
+    auto good = zip_of({{"README.txt", "SporeCoop problem report"}, {"report-1.txt", "== summary"},
+                        {"logs/sporekit.log", std::string(5000, 'x')}, {"settings/coop.ini", "[coop]\nname=Bob\n"}});
+    std::vector<std::string> names;
+    std::string why;
+    CHECK(check_zip(good.data(), good.size(), &why, &names) && names.size() == 4);
+    // a name that climbs out, a second folder level, a program: refused
+    auto bad = zip_of({{"README.txt", "x"}, {"../../evil.bat", "@echo off"}});
+    CHECK(!check_zip(bad.data(), bad.size(), &why));
+    auto bad2 = zip_of({{"logs/a/b.log", "x"}});
+    CHECK(!check_zip(bad2.data(), bad2.size(), &why));
+    // junk, a cut zip, a flipped byte in a stored entry, an entry twice, an empty archive
+    std::vector<uint8_t> junk(4096);
+    for (size_t i = 0; i < junk.size(); i++)
+        junk[i] = (uint8_t)(i * 37 + 11);
+    CHECK(!check_zip(junk.data(), junk.size(), &why));
+    CHECK(!check_zip(good.data(), good.size() - 1, &why));
+    for (size_t cut = 0; cut < good.size(); cut += 97) // every prefix: refused, no read outside it (ASan)
+        CHECK(!check_zip(good.data(), cut, &why));
+    auto flip = good;
+    flip[60] ^= 0x20; // inside README.txt's data
+    CHECK(!check_zip(flip.data(), flip.size(), &why));
+    auto twice = zip_of({{"README.txt", "a"}, {"README.txt", "b"}});
+    CHECK(!check_zip(twice.data(), twice.size(), &why));
+    auto empty = zip_of({});
+    CHECK(!check_zip(empty.data(), empty.size(), &why));
+    // the entry names of the session zip: plain, unique
+    std::set<std::string> taken;
+    CHECK(entry_name("Host-", "Alice", 0, taken) == "Host-Alice.zip");
+    CHECK(entry_name("Guest-", "Bob", 1, taken) == "Guest-Bob.zip");
+    CHECK(entry_name("Guest-", "Bob", 2, taken) == "Guest-Bob-2.zip");
+    CHECK(entry_name("Guest-", "../C:\\x y", 3, taken) == "Guest-C_x_y.zip");
+    CHECK(entry_name("Guest-", "\xD0\x91\xD0\xBE\xD0\xB1", 4, taken) == "Guest-player4.zip");
+
+    // a round: Bob sends, Carol says no, Dave announces too much, Eve overruns, Finn sends junk, Gus never answers
+    Round r;
+    r.id = 77;
+    r.t0 = 0;
+    const char* nm[] = {"Bob", "Carol", "Dave", "Eve", "Finn", "Gus", "Hal"};
+    for (uint8_t i = 0; i < 7; i++) {
+        Guest g;
+        g.id = (uint8_t)(i + 1);
+        g.name = nm[i];
+        r.guests.push_back(g);
+    }
+    auto send_all = [&](uint8_t id, const std::vector<uint8_t>& d, uint32_t announce) {
+        Answer a{77, 1, announce};
+        Why w = r.on_answer(id, a, 1);
+        for (size_t off = 0; off < d.size() && w == Why::None; off += kChunkBytes) {
+            Piece p;
+            p.round = 77;
+            p.offset = (uint32_t)off;
+            p.n = (uint16_t)std::min(kChunkBytes, d.size() - off);
+            p.data = d.data() + off;
+            w = r.on_piece(id, p, 2);
+        }
+        if (w == Why::None)
+            w = r.on_done(id, Done{77, crc32(d.data(), d.size())}, 3);
+        return w;
+    };
+    CHECK(send_all(1, good, (uint32_t)good.size()) == Why::None && r.guests[0].st == State::Sent &&
+          r.guests[0].data == good);
+    CHECK(r.on_answer(2, Answer{77, 0, 0}, 1) == Why::None && r.guests[1].st == State::NotSent);
+    CHECK(r.on_answer(3, Answer{77, 1, kMaxReport + 1}, 1) == Why::TooBig && r.guests[2].st == State::Refused);
+    auto over = good;
+    over.resize(good.size() + 5000, 0x77);
+    CHECK(send_all(4, over, (uint32_t)good.size()) == Why::TooBig && r.guests[3].st == State::Refused &&
+          r.guests[3].data.empty()); // stopped at the announced size, nothing kept
+    CHECK(send_all(5, junk, (uint32_t)junk.size()) == Why::Malformed && r.guests[4].st == State::Refused);
+    // a piece out of order (Hal)
+    CHECK(r.on_answer(7, Answer{77, 1, 3000}, 1) == Why::None);
+    Piece p;
+    p.round = 77;
+    p.offset = 1000;
+    p.n = 10;
+    p.data = good.data();
+    CHECK(r.on_piece(7, p, 2) == Why::Order && r.guests[6].st == State::Refused);
+    // messages of another round or after the end: ignored
+    CHECK(r.on_answer(2, Answer{78, 1, 100}, 1) == Why::None && r.guests[1].st == State::NotSent);
+    CHECK(!r.finished());
+    r.tick(kAnswerWait - 1);
+    CHECK(r.guests[5].st == State::Asked);
+    r.tick(kAnswerWait + 1);
+    CHECK(r.guests[5].st == State::TimedOut && r.finished());
+    CHECK(r.count(State::Sent) == 1 && r.count(State::Refused) == 4 && r.count(State::NotSent) == 1);
+    CHECK(r.line_of(r.guests[2]) == "Dave: refused (too big)" && r.line_of(r.guests[1]) == "Carol: not sent");
+    // a guest that leaves mid-transfer
+    Round r2;
+    r2.id = 5;
+    Guest g;
+    g.id = 1;
+    g.name = "Bob";
+    r2.guests.push_back(g);
+    r2.on_answer(1, Answer{5, 1, 3000}, 1);
+    r2.on_leave(1);
+    CHECK(r2.guests[0].st == State::Left && r2.finished());
+    // a stalled transfer times out
+    Round r3;
+    r3.id = 6;
+    r3.guests.push_back(g);
+    r3.on_answer(1, Answer{6, 1, 3000}, 10);
+    r3.tick(10 + kStallWait - 1);
+    CHECK(r3.guests[0].st == State::Receiving);
+    r3.tick(10 + kStallWait + 1);
+    CHECK(r3.guests[0].st == State::TimedOut);
+    // the session zip is itself a valid zip with the reports stored as received
+    auto sess = zip_of({{"Host-Alice.zip", std::string(good.begin(), good.end())},
+                        {"Guest-Bob.zip", std::string(good.begin(), good.end())}, {"SESSION.txt", "x"}});
+    size_t at = 0;
+    for (size_t i = 0; i + good.size() <= sess.size(); i++)
+        if (!memcmp(sess.data() + i, good.data(), good.size())) {
+            at++;
+            i += good.size() - 1;
+        }
+    CHECK(at == 2);
+    // the messages read back; a piece longer than one packet or past its message does not
+    net::Writer w;
+    Piece q;
+    q.round = 9;
+    q.offset = 1000;
+    q.n = 3;
+    const uint8_t b3[3] = {1, 2, 3};
+    q.data = b3;
+    q.write(w);
+    net::Reader rd(w.data.data(), w.data.size());
+    Piece q2;
+    CHECK(rd.u8() == kChunk && q2.read(rd) && q2.n == 3 && q2.own[2] == 3 && q2.offset == 1000);
+    net::Reader rd2(w.data.data(), w.data.size() - 1);
+    rd2.u8();
+    Piece q3;
+    CHECK(!q3.read(rd2));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -505,6 +669,7 @@ int main(int argc, char** argv)
     test_numbers();
     test_players();
     test_give_target();
+    test_sreport();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

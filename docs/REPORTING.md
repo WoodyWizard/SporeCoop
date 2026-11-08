@@ -11,6 +11,11 @@ Thanks for helping! One file from each player is usually all we need.
   **Report a problem**. It makes the same file and opens the folder with it selected.
 * If both of you were playing, send the files of **both** players: the host's and the guest's.
   Each game's log says what that game saw; the two together show what went wrong between them.
+* **In a session, the host can collect everybody's report** (since 0.7.12): the host's **Report a problem** also
+  asks every guest for its report, and the host's lobby has **Ask the players for their reports** (any time, without
+  the host's own report). Each guest's co-op window opens with "The host asks for your report: Send / Don't send";
+  nothing is sent without that click. The host then gets one file, `SporeCoop-session-report-<date-time>.zip`, with
+  every report in it: send that one. See [one report for the session](#reporting-session).
 
 The file holds the game build, Windows or Wine, memory and graphics card, the co-op session, the
 logs of the last runs, the mod settings and **screenshots of the game** taken when a problem was
@@ -400,3 +405,62 @@ its own moment ("No screenshot of this moment": the graphics device is not used 
 or a hung game); its archive still has the marks' screenshots. How they are taken:
 docs/02-modkit.md#modkit-report-shots.
 
+
+## One report for the session (2026-11-08, feat/w46-session-report)
+<a id="reporting-session"></a>
+
+0.7.12 F4 (docs/plan-0.7.12.md, BUG-0767). Code: `mods/coop/sreport.cpp` (the game side), `mods/coop/net/sreport.h`
+(portable: messages, the content check, the zip writer, the host's round; unit tests in tests/validate_tests.cpp
+`test_sreport`, fuzzed in tests/fuzz_decoders.cpp `fuzz_sreport`). Twin switch `coop.fix core.session_report off`: the
+host asks nobody (0.7.11: each player sends its own file).
+
+**What the players see.** The host starts a round with **Report a problem** (with the host's own report) or **Ask the
+players for their reports** (lobby and F9, any time, without it; greyed out while a round runs). Every guest's game
+opens its co-op window on the lobby with "<host> (host) asks for your report:" and the buttons **Send** / **Don't
+send**; the status line says what is sent ("Sent: logs, a game summary, screenshots, crash files (paths masked)") and a
+panel says the same. A guest that clicks Send makes the same zip its own "Report a problem" makes (with a screenshot
+first), and it goes to the host over the session connection; the guest's line then reads "Your report went to the host
+(N KB)", "You did not send your report" or "The host refused your report (too big | not a SporeCoop report | broken
+transfer)". A guest can still make its own report any time. The host's status line counts the answers ("Reports: 2 of 3
+- Bob: sent (1234 KB), Carol: not sent, Dave: sending 40%") and at the end says "Session report saved:
+SporeCoop-session-report-<time>.zip - ..." (a panel and a chat line too).
+
+**The file.** `mods\logs\SporeCoop-session-report-<time>.zip` (stored entries): `Host-<name>.zip` (the host's own
+report, when the round came from its Report a problem), `Guest-<name>.zip` per guest that sent (names reduced to
+letters, digits, `-` and `_`; a name with none of them is `player<id>`; a second Bob is `Guest-Bob-2.zip`) and
+`SESSION.txt`: one line per guest (`sent (N KB)`, `not sent`, `timed out`, `refused (<why>)`, `left`). No network
+address is written into it. It is written to `<name>.zip.part` outside the frame and renamed when complete; a round in
+which nothing came writes no file. The reports are kept in memory until the round ends (a report is 1-5 MB, at most
+25 MB each).
+
+**Safety rules (plan F4).**
+* Consent: a guest sends only after its click; an unanswered question ends after 120 s ("timed out"; the guest's
+  question disappears). An older SporeCoop drops the question (an unknown message type): listed "timed out".
+* Size: at most 25 MB per player (`kMaxReport`). A guest announces its size first: over the cap it is refused at once
+  and the guest sends nothing; a guest that sends more than it announced is stopped at that size (a `kStop`, the rest
+  is ignored). A transfer with no piece for 60 s is "timed out"; a guest that leaves is "left".
+* Content (`check_zip`): the bytes must be one zip whose end record ends the file, 1-4096 entries, no encryption, no
+  ZIP64, stored or deflate, local headers that match the central directory, data inside the file, no overlaps, no
+  name twice, the CRC of every stored entry, and only the names a SporeKit report has (`allowed_name`): `README.txt`,
+  `LEFT_OUT.txt`, `report-*.txt` / `crash-*.txt` at the top, else one of the folders `logs/` and `previous/` (`.log`),
+  `crashes/` (`.txt`, `.dmp`), `reports/` (`.txt`), `shots/` (`.jpg`), `settings/` (`.ini`) and a plain file name:
+  printable ASCII, no backslash, no colon or drive letter, no `..`, no leading dot, no second folder level. The plan's
+  "no folders" is read as "no folder but these six": the report archive has always had them (sporekit/diag.cpp
+  `diag_write_bundle_with`). Also the CRC-32 of the whole transfer (`kDone`). The host never unpacks a report and never
+  runs anything from it: it is stored in the session zip byte for byte as received.
+* Privacy: the reports already mask the Windows user name and paths (log.cpp mask_paths) and other players' addresses
+  (net/ipmask.h); the session zip adds only SESSION.txt (names and states).
+* A malformed or too big report is listed "refused" and nothing of it is kept (no crash, no partial file). The host's
+  log has the reason (`session report: Dave's report refused (not a SporeCoop report): entry name not of a report`),
+  the guest hears only the class of it.
+
+**Wire** (`MSG_REPORT` = 68, class Session in host_world.h, reliable): `kAsk` host -> guest {u32 round, str8 host},
+`kAnswer` guest -> host {u32 round, u8 send, u32 size}, `kChunk` {u32 round, u32 offset, u16 n <= 1000, bytes} in order,
+`kDone` {u32 round, u32 crc32}, `kStop` host -> guest {u32 round, u8 why}. The guest sends with the world transfer's
+flow control (600 reliable messages in flight on a LAN, 160 otherwise, at most 300 per frame).
+
+**Console**: `coop.sreport [status]` (the round, the host's and the guest's line, the last zip and its entries), `ask`
+(the host's button), `answer yes|no` (the guest's buttons, for hand runs), `test none|big|overrun|badname|junk` (tests:
+the guest sends a report over 25 MB, more than it announced, a zip with `../../evil.bat` in it, or random bytes).
+Test: `tools/tests/coop_session_report.py` (suite `session_report`, four players, real clicks): see
+docs/06-testing.md#testing-session-report.

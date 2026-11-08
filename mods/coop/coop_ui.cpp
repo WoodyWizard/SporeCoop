@@ -282,6 +282,7 @@ struct Dialog {
     std::vector<Win> page_lobby;
     Win session = nullptr, address = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, ask_btn = nullptr, settings_btn = nullptr;
+    Win rask = nullptr, rsend = nullptr, rnosend = nullptr; // a guest asked for its report (F4, BUG-0767)
     Win row_name[4] = {}, row_color[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
@@ -685,9 +686,12 @@ static void finish_report(void*)
                    kRed);
         return;
     }
+    bool round = A.report_round && A.report_round(); // F4: the host's report asked every guest for its report too
     set_status(std::string(T("Report saved: ", "Отчёт сохранён: ")) + p.substr(p.find_last_of("\\/") + 1) +
-                   T(" - attach it to an issue on GitHub; the other players should send theirs too",
-                     " - приложите его к issue на GitHub; другие игроки пусть пришлют свои") +
+                   (round ? T(" - asking the players for theirs: the session report follows",
+                              " - игроков попросили прислать свои: будет общий отчёт")
+                          : T(" - attach it to an issue on GitHub; the other players should send theirs too",
+                              " - приложите его к issue на GitHub; другие игроки пусть пришлют свои")) +
                    (shot ? T(". A screenshot of the game is included (coop.ini [report] screenshot=0 turns it off)",
                              ". В отчёт входит снимок экрана игры (отключить: coop.ini [report] screenshot=0)")
                          : ""),
@@ -750,6 +754,7 @@ static void do_send_chat()
 }
 
 static void do_set_click(int row);
+static std::string g_report_seen; // the last session report line put into the status (F4)
 
 static void build_dialog()
 {
@@ -998,6 +1003,20 @@ static void build_dialog()
                                if (!line.empty())
                                    set_status(line, kYellow, 10);
                            });
+    // a guest asked by the host for its report (F4, BUG-0767): the question in the row of the host's button, what is
+    // sent in the status line
+    D.rask = add_label(L, {40, 562, 400, 590}, "", kGold);
+    g_named["rask"] = D.rask;
+    D.rsend = add_button(L, "rsend", {410, 558, 560, 592}, T("Send", "Отправить"), [] {
+        if (A.report_answer)
+            A.report_answer(true);
+        g_dirty = true;
+    });
+    D.rnosend = add_button(L, "rnosend", {570, 558, 720, 592}, T("Don't send", "Не отправлять"), [] {
+        if (A.report_answer)
+            A.report_answer(false);
+        g_dirty = true;
+    });
 
     // ---- settings page (settings_core.h kDefs by group; docs/07-modes.md#modes-session-settings) ----
     auto& G = D.page_settings;
@@ -1271,6 +1290,24 @@ static void refresh_lobby()
     text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Close session", "Закрыть сессию") : T("Leave", "Выйти"));
     show(D.ask_btn, host);
+    // F4 (BUG-0767): the guest's question and the host's line about the round, in the status line
+    std::string rq;
+    int asked = !host && A.report_prompt ? A.report_prompt(rq) : 0;
+    show(D.rask, asked);
+    show(D.rsend, asked);
+    show(D.rnosend, asked);
+    if (asked)
+        text(D.rask, rq);
+    enable(D.ask_btn, !(A.report_round && A.report_round()));
+    std::string rl = host ? (A.report_line ? A.report_line() : "")
+                   : asked ? T("Sent: logs, a game summary, screenshots, crash files (paths masked)",
+                               "Отправится: логи, сводка, снимки, сбои (пути скрыты)")
+                           : rq;
+    if (rl != g_report_seen) {
+        g_report_seen = rl;
+        if (!rl.empty())
+            set_status(rl, asked ? kWhite : rl.find("refused") != std::string::npos ? kRed : kGreen, asked ? 0 : 60);
+    }
     // the address to give to friends (the host) or the host's (a guest)
     std::string addr = A.host_address ? A.host_address() : "";
     text(D.address, addr.empty() ? ""
@@ -1656,6 +1693,13 @@ void open(bool on)
 }
 
 bool is_open() { return g_want_open; }
+
+void open_lobby()
+{
+    g_settings_page = false;
+    g_space_page = false;
+    open(true);
+}
 
 bool step_aside(int x, int y, double secs)
 {

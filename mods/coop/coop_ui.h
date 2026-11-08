@@ -81,9 +81,16 @@ struct Api {
     // a screenshot for the report first: 1 requested, 0 not possible, -1 switched off (coop.ini)
     std::function<int()> report_shot;
     std::function<int()> report_shot_state;    // 1 being taken, 0 written, -1 failed
-    // host: "Ask the players for their reports" (lobby and F9, any time; F4 of 0.7.12 does the asking). Returns
-    // the line the window shows ("" = nothing to say); unset = the button says it is not available yet
+    // host: "Ask the players for their reports" (lobby and F9, any time; F4 of 0.7.12, BUG-0767). Returns the line the
+    // window shows ("" = nothing to say); unset = the button says it is not available
     std::function<std::string()> ask_reports;
+    // F4 (BUG-0767, sreport.h): the host asks the guests now (its "Report a problem" did too); the host's line about
+    // the round ("" none); the guest's question (1: asked now, line = the question; 0: line = what happened to its
+    // report) and its click
+    std::function<bool()> report_round;
+    std::function<std::string()> report_line;
+    std::function<int(std::string& line)> report_prompt;
+    std::function<void(bool send)> report_answer;
     // the lobby's address line: the host's "ip:port, ..." to give to friends, a guest's the host it joined
     std::function<std::string()> host_address;
     uint16_t default_port = 0;
@@ -92,6 +99,7 @@ struct Api {
 void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
+void open_lobby(); // open on the lobby page (not the settings / space page): a guest asked for its report
 bool is_open();
 // BUG-0599: the window covers (x, y) (screen pixels of the game window): hide it for `secs` so that a click of the
 // mod there reaches the game's window under it (the "game saved" box's OK); false = not open or not there
