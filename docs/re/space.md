@@ -2588,3 +2588,24 @@ BUG-0749, Ghidra GOG 2024 + runtime lane 6 (`space_free`, planet 01460035):
   another tab is opened. Palette open: tabs at y = H-151 (main W-426 ... atmosphere W-266, sculpting W-226, colouring
   W-186, cargo W-146); the added tools sit in the second row (first slot 1014, 1011). Sculpting (9 tools) and
   colouring (8 + reset) are not relayed at all: BUG-0763.
+
+## A colony's city planner in Space, by a guest (2026-11-08, fix/w46-b1-space)
+<a id="space-colony-planner"></a>
+
+BUG-0751, lane 6 (GOG 2024), `space_empire`, home planet 00460035 (9 cities of the player's empire, 12 plots each, all
+taken):
+* ✔ The planner opens by a click on a city once the ship is over it (`coop.space allies cities` dist under ~300 m,
+  the city's screen point): the same cCommunityEditor as in Civ (`coop.civ planner`: editor and city set). The palette
+  is the Civ one: the house tile at (123, 385), the green check at (1412, 1054); the camera is at ground level.
+* ✔ A house dragged onto a free plot (screen point from `coop.civ slots s<i>`) is built and paid at once: the shared
+  money fell by $1,600 on both games (shared.cpp). AddBuilding is called from the planner's return address
+  `SporeCoop::CityPlanner_AddBuilding_Ret` as in Civ, but **the new building's position reads (0 0 0) at that call**
+  (the slot places it afterwards).
+* ✔ Before BUG-0751 nothing reached the host: civ.cpp is off outside Civ (`active()`) and a Space city has no host
+  index. Now (`civ.space_planner_send`) the guest sends `CMD_SPACE_BUILD {place, noun, city position, position}` in
+  MSG_CIV_CMD; the host, on the same planet, finds its city within 60 m of that position and builds the same noun into
+  a free slot (`build_in_city`, not paid again). Another planet on the host: logged and counted (`space_planner:
+  away=` in `coop.civ`), not built (the planet's cities exist only while it is the active planet).
+* Test commands: `coop.civ scities` (every city of this game as s<i> with its position and building count; the order
+  matched between host and guest on 00460035), `coop.civ buildings s<i>`, `coop.civ slots s<i>`, `coop.civ unbuild
+  s<i> <k>` (cCity::DestroyBuilding 0xBE3530: a free plot for tests).

@@ -5366,3 +5366,9 @@ along and across the host's velocity):
   on the tab row, which is at H-151 or H-51 by `Player.palette_open()`), clicks the tool's slot (1014, 1011) and the
   ground; the host's planet record (`coop.space planet` b0/b8) and the guest's must both rise and stay close. The old
   check in coop_space_play.py (`terra_got >= 1`) passed while the guest's planet never changed.
+* `coop_space_planner_build.py` (suite `space_planner_build`, cold, `space_empire`, ~3 min, BUG-0751): both land on
+  00460035, the guest flies over the nearest city, both games destroy one house of it (`coop.civ unbuild`, test
+  setup: every plot of the fixture's cities is taken), the guest clicks the city (planner), drags the house tile onto
+  the free plot and closes; the host's city must get the house and the shared money fall by the price on both. The
+  flight toward the city is printed, not checked (`coop.space allies cities` sometimes lists nothing while flying);
+  the click that opens the planner is the check.

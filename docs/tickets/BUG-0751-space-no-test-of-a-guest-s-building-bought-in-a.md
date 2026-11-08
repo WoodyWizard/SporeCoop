@@ -1,20 +1,20 @@
 ---
 id: BUG-0751
 title: Space: no test of a guest's building bought in a colony's city planner
-status: open
-kind: test
+status: fixed
+kind: desync
 stage: Space
 reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-b1-space
+commits: 3fe2518f
+tests: space_planner_build
 signature:
-docs:
-related: BUG-0199
+docs: docs/re/space.md#space-colony-planner
+related: BUG-0199, BUG-0189, BUG-0766
 ---
 
 ## Report
@@ -35,15 +35,28 @@ work in Space, a Space variant is needed), close with the check; assert the host
 city and the money fell on both.
 
 ## Root cause
-A test gap, and probably a co-op gap (no Space mapping of a guest's planner building, see above).
+A test gap and a co-op gap. Observed (fix/w46-b1-space, lane 6, `space_empire`, home planet 00460035): with a plot
+freed in both games the guest's planner (opened by a click on the city once the ship is over it) built and paid a
+house ($1,600 off the shared money on both games), and the host's city kept 5 houses (lab 20261108-154201 with the
+switch off; the earlier attempt's planner had no free plot: all 9 cities have 12 of 12). Observed in the code and
+log: civ.cpp h_AddBuilding returns at once outside Civ (`active()`), and a Space city has no host index; at the
+planner's AddBuilding the new building's position reads (0 0 0).
 
 ## Fix
-Not done yet.
+civ.cpp (switch `civ.space_planner_send`): in Space the guest sends `CMD_SPACE_BUILD {place, noun, city position,
+position}`; the host, when its ship is on the same planet, builds the noun into a free slot of its city within 60 m
+of that position (build_in_city, not paid again). Counters `space_planner: sent= built= away= failed=` (coop.civ).
+Test helpers `coop.civ scities`, `unbuild s<i> <k>`, `buildings|slots s<i>`. Limit: the host on another planet does
+not get it (BUG-0766).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_planner_build.py` (suite `space_planner_build`):
+* FAIL with `SPORE_FIX_OFF=civ.space_planner_send`: lab 20261108-154201 (the guest has 6 houses, the host 5; the
+  flight check of that version also failed, later only printed).
+* PASS: lab 20261108-154848 and 20261108-155156 (the host's city 5 -> 6 houses, money -1,600 on both). Run
+  20261108-154529 had the house on the host too and failed only the flight check that is now printed.
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
+- 2026-11-08 (fix/w46-b1-space): test written (plot freed by the game's DestroyBuilding); it showed the host never got the building; fixed behind civ.space_planner_send; limit BUG-0766.

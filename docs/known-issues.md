@@ -2393,3 +2393,17 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 
 * tribe_conquer_orders: 1 of 5 runs of 0.7.11 played no conquest cinematic in 60 s after the hut's health 0.
 * Ticket: BUG-0761.
+## Space: sculpting and colouring tools change the planet in one game only (2026-11-08, fix/w46-b1-space)
+<a id="issue-space-sculpt-colour"></a>
+
+* What happens: the tool palette's terrain sculpting (raise / lower / flatten) and planet colouring tools are not
+  relayed; only the atmosphere / water / temperature deltas are (spacecoop.cpp K_TERRA). Inferred from the code.
+* Reproduce: two games on `space_free` on planet 01460035, a sculpting tool used by the host (tab W-226).
+* Ticket: BUG-0763.
+## Space: a guest's colony planner building is lost while the host is on another planet (2026-11-08, fix/w46-b1-space)
+<a id="issue-space-planner-away"></a>
+
+* What happens: since BUG-0751 the host builds a guest's planner building only when its own ship is on that planet;
+  otherwise the host's world never gets it (the money is spent for both). Log `civ: space planner: ... not built`.
+* Reproduce: coop_space_planner_build.py with the host's ship elsewhere.
+* Ticket: BUG-0766.

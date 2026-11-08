@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
+  is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
+  (BUG-0751).
 - Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
   partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
