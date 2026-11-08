@@ -45,3 +45,4 @@ To reproduce: `SPORE_LANE=3 python3 tools/tests/coop_campaign.py --from creature
 
 ## History
 - 2026-11-07: opened (fix/w46-advance-reg): one lab run, seen once.
+- 2026-11-07: the replay seed 953406079 (creature -> tribe, 2 min) passed 2/2 on v0.7.9 (lane 2) and 2/2 on rel/0.7.10 at the BUG-0686 merge (lane 3): not reproduced, not shown to be a 0.7.10 regression. Planned for 0.7.11 (K7).
