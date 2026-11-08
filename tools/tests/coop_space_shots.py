@@ -5,7 +5,8 @@ The divergence detector found the host's beams (default_beam_projectile) in no g
 host's ships never fired (squadron.cpp h_FireTool returns 0 for them), only the hits came over (MSG_UFO_DAMAGE), so a
 guest saw a fight without a shot.
 
-1. Two games on the `space` fixture (one star system).
+1. Two games on the `space_empire` fixture; both land on its colony planet 01460035 (NPC ships fight on planets:
+   raiders attack around a colony, docs/re/space.md 9.4).
 2. The host spawns ambush pirates (type 8: they attack the player anywhere) next to its ship and shoots each once
    (coop.fleet shoot: the game's TakeDamage with the host's ship as the attacker, so the pirate fights back on its own).
 3. For 45 s, twice a second, the projectile objects in each game's noun list (default_beam_projectile and
@@ -21,7 +22,11 @@ SPORE_FIX_OFF=space.shots: the guest's game has no projectile at all (FAIL).
 import re
 import time
 
+import lane
+from play_space import Player
 from twoinst import Checks, start
+
+PLANET = '01460035'  # space_empire's colony in the home system
 
 PROJ = {'24630D7': 'default_beam_projectile', '24270C5': 'default_tool_projectile'}
 
@@ -46,15 +51,23 @@ def shots_line(con):
 
 
 def main():
-    host, guest = start('space')
+    host, guest = start('space_empire')
     ck = Checks()
+    stats = {}
+    ph = Player('host', lane.HOST, 0, 1, time.time() + 1200, stats)
+    pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1200, stats)
+    ph.partner, pg.partner = pg, ph
+    for p in (ph, pg):
+        p.land_retry(PLANET)
+    print(f'  places: host {ph.place()} {ph.ctx()}, guest {pg.place()} {pg.ctx()}', flush=True)
+    ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet', 'both on the colony planet')
     time.sleep(3)
     before = set(ships(host))
-    for _ in range(3):
-        print(' ', host.call('coop.fleet spawn 8')['out'].strip(), flush=True)
+    for t in (8, 8, 2, 2):
+        print(' ', host.call(f'coop.fleet spawn {t}')['out'].strip(), flush=True)
     time.sleep(2)
     hs0 = ships(host)
-    pirates = [k for k, v in hs0.items() if k != 'me' and k not in before and v[0] == 8]
+    pirates = [k for k, v in hs0.items() if k != 'me' and k not in before and v[0] in (2, 8)]
     print(f'  host pirates {pirates}; host ship {hs0.get("me")}', flush=True)
     ck(pirates, 'the host has ambush pirates')
     time.sleep(2)
