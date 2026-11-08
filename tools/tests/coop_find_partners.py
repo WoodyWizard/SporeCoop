@@ -271,6 +271,22 @@ def other(ck, host, guest, stage):
             r = row_of(guest, 0)
             if r and r['kind'] == 'arrow':
                 break
+    if stage in ('civ', 'space'):
+        # Civ: the host's pointer (where it plays) pinned 400 m away; Space: the host's ship put over a point 400 m away;
+        # four directions in turn until it is off the guest's view
+        me = me_of(host)
+        if me:
+            u, v = basis(me)
+            for deg in (0, 90, 180, 270):
+                q = at(me, u, v, math.radians(deg), 400.0)
+                rq, rm = math.sqrt(sum(x * x for x in q)), math.sqrt(sum(x * x for x in me))
+                q = tuple(x * rm / rq for x in q)
+                cmd = ('coop.npc marker %.1f %.1f %.1f' if stage == 'civ' else 'coop.space over %.1f %.1f %.1f') % q
+                print('  host:', host.call(cmd)['out'].strip()[:120], flush=True)
+                time.sleep(3)
+                r = row_of(guest, 0)
+                if r and r['kind'] == 'arrow':
+                    break
     time.sleep(2)
     r = row_of(guest, 0)
     me_h = me_of(host)
@@ -315,6 +331,7 @@ def main():
                 c.call('coop.settings force all.partner_map on')
                 c.call('coop.find rivals 0')
                 c.call('coop.find color none')
+                c.call('coop.npc marker')
                 c.call('coop.team on')
             except OSError:
                 pass
