@@ -14,6 +14,8 @@ SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe] [--player: a member of
   the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL] [--rejoin: BUG-0664, below]
+  [--join-body: --rejoin, and the guest's game has a citizen within 3 m of the host's body all the time it lies there
+  (BUG-0665: a guest spawned no mirror for a body entry; SPORE_FIX_OFF=tribe.join_body must FAIL)]
 
 --rejoin (BUG-0664): the guest leaves and joins again; once the host has saved the world for it, the host's own
 member is killed, so the guest loads a world where that member is a body out of its tribe's list on the host. The
@@ -51,8 +53,9 @@ def citizens_at(con, p, r=20.0):
 ALL = '--all' in sys.argv
 # BUG-0620: the victim is a member of the player tribe (the host's own): a player's member that dies leaves its
 # tribe's member list while the game keeps its body (an NPC tribe's stays in its tribe, knocked out)
-PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv
-REJOIN = '--rejoin' in sys.argv  # BUG-0664
+PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv or '--join-body' in sys.argv
+REJOIN = '--rejoin' in sys.argv or '--join-body' in sys.argv  # BUG-0664
+JOIN_BODY = '--join-body' in sys.argv  # BUG-0665: the joined guest's game shows the body too
 EAT = '--eat' in sys.argv  # BUG-0667
 MENU = '--menu' in sys.argv  # BUG-0667: the guest leaves to the main menu while the body lies
 if EAT:
@@ -167,10 +170,11 @@ def rejoin_with_body(host, guest, ck, victim, attacker):
     while time.time() - t0 < 60 and guest_mode(guest) == TRIBE_MODE:
         time.sleep(0.3)
     print(f'  guest left its world after {time.time() - t0:.1f} s', flush=True)
+    p = members(host).get(victim, (0, 0, None))[2]
     print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
     together = wait_guest_in(host, guest, 150)
     ck(together, f'the guest is in the host\'s world again ({time.time() - t0:.1f} s)')
-    body_checks, missing = 0, []
+    body_checks, missing, shown, lone_at = 0, [], 0, []
     t1, sent = time.time(), bodies_sent(host)
     while time.time() - t1 < 24:
         in_list = victim in members(host)
@@ -186,6 +190,14 @@ def rejoin_with_body(host, guest, ck, victim, attacker):
             body_checks += 1
             if key in hk and key not in gk:
                 missing.append(round(time.time() - t1, 1))
+            if JOIN_BODY and p:  # BUG-0665: the guest's game has a citizen where the host's body lies
+                hc, gc = citizens_at(host, p, 6), citizens_at(guest, p, 21)
+                lone = [q for q in hc if not any(math.dist(q, g) <= 3 for g in gc)]
+                print(f'      host citizens within 6 m of the body {len(hc)}, guest within 21 m {len(gc)}, '
+                      f'host without a partner {len(lone)}', flush=True)
+                shown += bool(hc) and not lone
+                if lone:
+                    lone_at.append(round(time.time() - t1, 1))
             host.call('coop.diag sync now')
         time.sleep(4)
     time.sleep(5)
@@ -196,6 +208,10 @@ def rejoin_with_body(host, guest, ck, victim, attacker):
     ck(body_checks > 0, f'the host\'s body lay out of its member list after the guest joined ({body_checks} samples)')
     ck(c1[0] > c0[0], f'the host ran sync-checks ({c1[0] - c0[0]})')
     ck(c1[3] == c0[3], f'no sync-check MISMATCH while the body lay there ({c1[3] - c0[3]})')
+    if JOIN_BODY:
+        ck(p is not None, 'the victim\'s place on the host before the kill')
+        ck(shown > 0 and not lone_at, f'the joined guest\'s game has a citizen where the host\'s body lies '
+           f'({shown} samples; host body without a partner: {lone_at[:6]})')
 
 
 def main():

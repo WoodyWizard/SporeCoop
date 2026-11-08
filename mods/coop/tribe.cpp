@@ -191,6 +191,15 @@ struct HMember {
 static bool g_member_body_fix = true;
 COOP_FIX("tribe.member_body", "BUG-0620", g_member_body_fix,
          "tribe: the body of a member that died lies in every player's game as long as in the host's");
+// BUG-0665 (docs/known-issues.md#issue-tribe-join-body): a guest made no mirror for a body entry, so a guest that joined
+// or loaded the world while a dead member's body lay on the host had none (its own loaded member of it, alive in the
+// shared save, was removed at the end of the cycle as unknown). With tribe.join_body a body entry without a mirror binds
+// or spawns one as a live entry does; guest_tick then plays its death (tribe.ko) and takes it out of its tribe
+// (detach_body) as for a member that died while the guest was there. Off: no mirror for a body (0.7.10).
+static bool g_join_body_fix = true;
+COOP_FIX("tribe.join_body", "BUG-0665", g_join_body_fix,
+         "tribe: a guest that joins while a dead member's body lies on the host gets a mirror of that body too");
+static uint32_t g_join_bodies;
 constexpr double kBodyMax = 60.0;
 constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
 // guest: mirrors taken out of their tribe as bodies (destroyed on removal) -> the tribe they were taken out of
@@ -2493,7 +2502,7 @@ static void guest_state(net::Reader& r)
             g_gid_of.erase(c);
             g.c = c = nullptr;
         }
-        if (c || m.body) // (no new mirror for a body)
+        if (c || (m.body && !g_join_body_fix)) // (no new mirror for a body before BUG-0665)
             continue;
         auto not_made = [&g, id](const char* why) {
             if (g.not_made != why)
@@ -2528,6 +2537,10 @@ static void guest_state(net::Reader& r)
             // higher (BUG-0329)
             game::teleport(c, g_mirror_ground_fix ? drive::out_of_ground(g.pos, true) : g.pos, m.rot);
             g_spawned++;
+        }
+        if (m.body) { // BUG-0665: guest_tick lays it down as a body
+            g_join_bodies++;
+            MIRROR_LOG("tribe: mirror #%u is made for a body of the host's (BUG-0665)", id);
         }
         if (g.not_made)
             MIRROR_LOG("tribe: mirror #%u is made again (BUG-0685)", id);
@@ -3953,12 +3966,12 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
-                 g_teardown_bt_emptied, g_map_stale_skipped);
+                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
