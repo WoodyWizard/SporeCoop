@@ -151,16 +151,19 @@ def walk(con, rng, secs, jumps=0.0):
         d = partner_dist(con)
         if d is not None and d > TETHER:
             found = back_to_partner(con, W, H)
-            log.append(f'back {d:.0f}m' + ('' if found else ' (not found)'))
-            lost = 0 if found else lost + 1
-            if lost >= 2:  # the partner's tag is nowhere on the screen (the camera behind a hill): go there
-                # (latency_step_ingame, lab 20261101-180254: 'back 17m (not found)' for the whole walk)
+            # puppet_stops (BUG-0742): a "back" that found the partner's tag but did not bring the walker closer is no
+            # way back either: on the slope of the stop walk the walker stood 12-19 m off for 40 s, 8-10 "back" turns
+            # of 2-4 s each, and made 5-7 stops instead of 13 (w46-k3-bodies out/lab/20261107-122016)
+            d1 = partner_dist(con)
+            progress = found and d1 is not None and d1 < min(d - 3, TETHER)
+            log.append(f'back {d:.0f}m' + ('' if found else ' (not found)') + ('' if progress or not found else ' (no closer)'))
+            lost = 0 if progress else lost + 1
+            if lost >= (1 if STOP_WALK else 2):  # the partner's tag is nowhere on the screen (the camera behind a hill)
+                # or the way there does not get closer: go there (latency_step_ingame, lab 20261101-180254: 'back 17m
+                # (not found)' for the whole walk)
                 b = re.search(r'remote \d+ .*? pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.status')['out'])
                 if b:
-                    q = [float(x) for x in b.groups()]
-                    r = math.sqrt(sum(x * x for x in q))
-                    q = [x + x / r * 1.0 for x in q]  # a metre up: it falls onto the ground
-                    con.call('coop.npc gopos %.1f %.1f %.1f' % (q[0] + 3, q[1], q[2]))
+                    con.call('coop.npc gopos %.1f %.1f %.1f' % tuple(beside_pos([float(x) for x in b.groups()], 4.0)))
                     log.append('to the partner (gopos)')
                     time.sleep(2.0)
                 lost = 0
@@ -464,6 +467,15 @@ class Watch(threading.Thread):
             self.stop.wait(0.6)
 
 
+def beside_pos(p, d):
+    """a point d m from p along the ground (perpendicular to up) and a metre up: it falls onto the ground"""
+    r = math.sqrt(sum(x * x for x in p))
+    up = [x / r for x in p]
+    a = [0.0, -up[2], up[1]] if abs(up[0]) < 0.9 else [-up[2], 0.0, up[0]]
+    al = math.sqrt(sum(x * x for x in a))
+    return [p[i] + a[i] / al * d + up[i] * 1.0 for i in range(3)]
+
+
 def beside(walker, observer, d=4.0):
     """the walker next to the observer before its walk (BUG-0394: the first walk ended 15-25 m apart and the
     second walker's clicks on the partner's tag did not bring it back: it never walked)"""
@@ -471,12 +483,7 @@ def beside(walker, observer, d=4.0):
     dist = partner_dist(walker)
     if not m or dist is None or dist <= TETHER * 0.75:
         return
-    p = [float(x) for x in m.groups()]
-    r = math.sqrt(sum(x * x for x in p))
-    up = [x / r for x in p]
-    a = [0.0, -up[2], up[1]] if abs(up[0]) < 0.9 else [-up[2], 0.0, up[0]]
-    al = math.sqrt(sum(x * x for x in a))
-    q = [p[i] + a[i] / al * d + up[i] * 1.0 for i in range(3)]
+    q = beside_pos([float(x) for x in m.groups()], d)
     print(f'  walker {dist:.0f} m away: ' + walker.call('coop.npc gopos %.1f %.1f %.1f' % tuple(q))['out'].strip(), flush=True)
     time.sleep(3.0)
 
@@ -511,10 +518,13 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
             obs = dump(observer)
         r = analyse(obs, dump(walker), '')
         fps_k = min(1.0, (r['fps'] or 60) / 60)
-        if (r['frames'] > 200 * fps_k and r['win'] > 50 * fps_k) or r['hitch_share'] > LOADED:
+        # BUG-0742: the stop walk walks on until it made the stops the check needs (each stop takes longer on a
+        # loaded machine), at most WALK_MORE more walks: the limit of 8 stops is unchanged
+        few_stops = STOP_WALK and len(r['stops']) < 8
+        if ((r['frames'] > 200 * fps_k and r['win'] > 50 * fps_k) and not few_stops) or r['hitch_share'] > LOADED:
             break
         print(f'  measured too little ({r["frames"]} frames while it walks, {r["win"]} windows, '
-              f'{r["win_hitch"]} left out for hitches): it walks on', flush=True)
+              f'{r["win_hitch"]} left out for hitches, {len(r["stops"])} stops): it walks on', flush=True)
         log.append('| on')
         log += walk(walker, rng, secs, jumps)
     if stand:  # then it stands (BUG-0366: "constantly jumping" while the partner stood)
