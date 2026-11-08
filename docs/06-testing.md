@@ -5125,3 +5125,15 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   that stage (triage: `probe 0x00C911C0`). `SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]` (monitor.py): the
   SPORE_DETECTOR_DIAG commands also run for a finding whose sig contains one of them (e.g. `:ornament` with
   `coop.wobj raw 18C88E4 3000 576`, BUG-0528).
+
+## The host's creature attack markers on the guests (2026-11-08, fix/w46-attack-marker)
+<a id="testing-attack-marker"></a>
+
+* `coop_tribe_attack_marker.py [--rejoin]` (suites `tribe_attack_marker`, `tribe_attack_marker_rejoin`, ~1-1.5 min,
+  tribe fixture): BUG-0740. The host's game is asked for spot records round the player village (`coop.wsync spot x y
+  z`: SpotRecord_CellId as the creature attack's start calls it) until it makes one (a shore cell with no record near:
+  the 33rd place, 121 m away, on the fixture); the guest's game must then have that cell's record with a marker of model
+  0x356EB8A at the same place (`coop.wsync spots`, the game's own table) and an ornament there (`coop.census`).
+  `SPORE_FIX_OFF=wsync.tribe_marker` fails. The game's own attack (`coop.drama start 7`, also after `coop.tribe form`)
+  makes no marker on the fixture: it hits a village whose record exists, and a newly formed village lies inland where
+  no record can be made (docs/re/tribe.md#tribe-spot-markers).

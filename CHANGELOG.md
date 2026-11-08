@@ -12,6 +12,8 @@
   after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ### Fixed
+- Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to
+  every player, also to one who joins later (BUG-0740).
 - Space: when both players are on the same planet, the guest now sees the same time of day (sky) as the host (BUG-0712).
 - Creature: the eggs your family lays in your own nest are now there for every player, not only for the host (BUG-0660).
 - Tribe: food a tribe member was carrying when it died now lies on the ground for every player, instead of
