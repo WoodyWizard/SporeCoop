@@ -1,19 +1,19 @@
 ---
 id: BUG-0674
 title: Tribe and Creature: a remote body goes on the wrong way through a latency spike (the lead extrapolates up to 0.6 s at the old speed while the host body slows or turns): members 8-9 m off, NPC proxies teleported 2.5-5.6 m
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-07
 source: fix/w46-k3-bodies lab 20261107-102038
 role: guest
 versions: unreleased (rel/0.7.10 + fix/w46-k3-bodies)
-fixed_in:
-branch:
-commits:
-tests: body_trail_tribe_player, npc_walk_tribe at SPORE_FPS=30 SPORE_NET=player
+fixed_in: unreleased
+branch: fix/w46-k4-bodies
+commits: a25b8569, 6f79bc2e, 090caf4d, afc003d4, 34c2d19c, ef979ba7
+tests: net_tests test_lead_fall, npc_walk_tribe (SPORE_FPS=30 SPORE_NET=player), body_trail_hits, body_trail_tribe_player
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-lead-fall, docs/06-testing.md#testing-lead-fall
 related: BUG-0410, BUG-0425, BUG-0445
 ---
 
@@ -27,15 +27,34 @@ Observed (lab 20261107-102038 #2, member 1 at 19.4-20.6 s, coop.bodyrec rows of 
 
 How to tell it in a run: a member's worst samples of 8-9 m at 4-10 m/s in body_trail_tribe_player while its p90 is fine.
 
+K4 (observed): the same in a Space ship's VelocityEstimate::at (11.4 m past a stopped ship, space_fast_sync) and in
+the walked NPC proxies over the player network (npc_walk_tribe track rows, lab 20261108-011449 / -012638-2): a walk that
+started in a spike was known 0.3-0.5 s late and the proxy's target jumped 2.6 m at the start (no drive.lead_late for
+proxies), and a turn known late jumped the target 2.6-4 m, onto which walk_place's snap teleported the proxy.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix drive.lead_fall` (net/interp.h `net::fall_time`, one rule for every body moved on past its newest state): at
+the full speed up to the usual horizon (the median of the last 32 lead horizons) + kFallMargin 0.04 s, then falling
+exponentially (kFallTau 0.12 s), the velocity handed to the driving with it; the members' and NPCs' knee moves on by
+kFallSpike 0.5 of a newest state's extra age (a spike whose states flow late: falling from the plain median put NPCs
+behind on straight walks, their p90 0.33 -> 0.57 m, A/B lab 20261108-014500 / -2). VelocityEstimate::at (Civ vehicles,
+Space ships) with the plain knee. The NPC proxies also get drive.lead_late's late_time (`late_lead`) and the smoothing of
+every lead jump up to 8 m (`smooth_max`). Off: 0.7.10. Unit tests: a member turning round in a 0.35 s spike 6.0 -> 4.5 m
+worst, stopping 3.0 -> 1.5 m, straight on 0 -> 1.7 m (the cost), a ship stopping 8.4 -> 5.1 m, a proxy's late start 3.3 ->
+0.64 m per frame, a proxy's turn 3.0 -> 0.44 m per frame.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL: out/lab/20261108-011449-2 (SPORE_FIX_OFF=drive.lead_fall, npc_walk_tribe at SPORE_FPS=30 SPORE_NET=player: 3 of 3 FAIL,
+  4-12 proxy jumps); K3's 20261107-112016 / -112016-2 on the code before (6 of 6). `SPORE_FIX_OFF=drive.lead_fall
+  build/host/net_tests`: FAILED (6).
+- PASS: out/lab/20261108-014500-2 (npc_walk_tribe 2 of 2 and body_trail_hits 2 of 2 with the fix; at the same time on lane 6
+  with the K4 switches off, out/lab/20261108-014500: npc_walk_tribe 1 of 2); out/lab/20261108-013741 #1, #3; net_tests ALL OK.
+- Fragile: npc_walk_tribe still showed one proxy's 6 m one-frame jump in out/lab/20261108-015610 #1 (its target right for one
+  frame and back on the old line the next; not reproduced by a unit simulation of 400 random turns in spikes).
 
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: opened (fix/w46-k3-bodies, K3), not fixed there.
 - 2026-11-07 (fix/w46-k3-bodies): cause observed in the two runs (the lead's extrapolation through a spike while the host's member turned round); a known limit of the lead, left open for 0.7.11.
 - 2026-11-07 (fix/w46-k3-bodies): the after-part fixed for members (drive.lead_keep: no step back when continuity is lost, net_tests: over 2 m 0.67 s -> 0 s after the news); the extrapolation itself stays. The same mechanism makes walked NPC proxies jump 2.5-5.6 m over the player network (BUG-0445's variant, npc_walk_tribe labs 20261107-103414, -112016, -112016-2: on 0.7.9 and 0.7.10 alike). Open for 0.7.11: a lead that slows past the usual horizon, or a smaller kMaxLead for proxies.
+- 2026-11-08 (fix/w46-k4-bodies, K4): fixed (drive.lead_fall: the fall past the usual horizon, the proxies' late lead and smoothing); see Verification.

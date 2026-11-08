@@ -1,36 +1,48 @@
 ---
 id: BUG-0680
 title: Creature: the partner's puppet still slides over 0.3 m past where the partner stopped at about 1 stop in 12 (rest of BUG-0408; puppet_stops flaky)
-status: open
+status: fixed
 kind: desync
 stage: creature
 reported: 2026-11-07
 source: lab 20261107-132459 (A/B: rel/0.7.9 1/4 PASS, rel/0.7.10 3/4 PASS) and 20261107-124806
 role: 
 versions: 0.7.9, rel/0.7.10
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w46-k4-bodies
+commits: a25b8569, afc003d4
+tests: puppet_stops, net_tests test_lead_fall (puppet_stop_past)
+signature: a stop in a latency spike: the target steps back 0.7 m when the stop state comes
+docs: docs/re/tribe.md#tribe-lead-fall, docs/06-testing.md#testing-lead-fall
 related: BUG-0408
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+puppet_stops (SPORE_NET=player) failed 3 of 4 on v0.7.9 and 1 of 4 on rel/0.7.10 (lab 20261107-132459 of the rel/0.7.9 and
+rel/0.7.10 worktrees): the puppet over 0.3 m past where the walker's own creature stopped after 1 of 10-14 stops.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (the track rows of 20261107-132459 #1, guest sees host, the stop at 24.85 s): the walker at 4.75 m/s stopped
+while its states came late (a spike of the player network); the puppet's buffer (interpolated, delay 0.1 s) extrapolated the
+newest walking state at 4.75 m/s (max_extrap 0.25 s) and the target walked on; when the stop came it stepped back 0.72 m and
+the puppet stood 0.33 m (bodyrec) / 0.86 m (target) past the stop. The same class as BUG-0674 (a body moved on through a
+spike).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix drive.puppet_fall` (net/interp.h, SnapshotBuffer::interp_fall, set for Creature puppets in coop.cpp
+drive_puppet): past the newest state the target goes on at full speed for kPuppetFallMargin 0.02 s past the usual render
+horizon, then falls (kPuppetFallTau 0.05 s), its velocity too, so creature.puppet_stop's hold (own speed <= 0.3 m/s) holds
+the puppet where the target slows. Unit test: a stop in a 0.25 s spike, the target 0.71 -> 0.17 m past it. Off: 0.7.10.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL: `SPORE_FIX_OFF=drive.puppet_fall build/host/net_tests`: FAILED (2) (the target 0.71 m past the stop, its speed never falls);
+  the lab failures before: out/lab/20261107-132459 (v0.7.9 1 of 4 PASS). With the switch off on this branch puppet_stops did not
+  fail in 58 stops (out/lab/20261108-012638, max 0.15 m past): the spike has to fall on a stop.
+- no-fail-run: the lab repro needs a spike on a stop (~1 stop in 12); the deterministic FAIL is the unit test above.
+- PASS: net_tests ALL OK; puppet_stops in the final runs (History).
 
 ## History
 - 2026-11-07: opened.
 
 Observed: puppet_stops x4 on each, same time, lanes 4/5: v0.7.9 1/4 PASS (fails: 1 of 14, 1 of 11, 1 of 10 stops over 0.3 m, both directions), rel/0.7.10 3/4 PASS (the fail: too few stops to judge). Not a 0.7.10 regression; BUG-0408 holds for most stops but not all.
+- 2026-11-08 (fix/w46-k4-bodies, K4): fixed (drive.puppet_fall); the lab did not reproduce it with the switch off in 58 stops, the unit test does.
