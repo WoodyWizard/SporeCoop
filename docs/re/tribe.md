@@ -2707,7 +2707,9 @@ BUG-0528, BUG-0740. GOG 2024 (dc04aee5), Ghidra and lab lanes 9/10.
   0x8000 / 0x4000). Its only caller is `SporeCoop::SpotRecord_CellId` 0xC9B140 (+0x66F, return 0xC9B7AF).
 * ✔ (runtime, `probe 0x00C911C0`, lab 20261108-050749 campaign_tribe#3) the call during Tribe play came from the creature
   attack behaviour's start 0xD73930 (make = 0, return 0xD739E0), with this = the global 0x157ADB0: one marker for the
-  attack, made at its first attack and reused. The detector then sees it as a host-only ornament (`Tribe:*:ornament`,
+  attack, made at its first attack and reused.
+  ~ superseded (2026-11-08): "the global 0x157ADB0" is a record of the spot table, one marker per record: see
+  #tribe-spot-markers. The detector then sees it as a host-only ornament (`Tribe:*:ornament`,
   mapped to BUG-0740 in tools/detector_report.py): the attack runs only in the host's game.
 * ✔ (runtime) the tribe fixture's three ornaments of model 0x356EB8A are the same in both games; a share save, a guest's
   rejoin (2 players) and three extra guests' rejoins (4 players) made none (lane 9, 2026-11-08).
@@ -2717,3 +2719,38 @@ BUG-0528, BUG-0740. GOG 2024 (dc04aee5), Ghidra and lab lanes 9/10.
 * ? Why `coop.drama start 7` on the fixture (lab 20261108-052511, -052727: the attack started and ended within 150 s)
   made no marker: not known (no formed tribe, the pace rule held `coop.tribe form`; or the attack never reached its
   start behaviour).
+## The spot records and their markers in both games (2026-11-08, fix/w46-attack-marker)
+<a id="tribe-spot-markers"></a>
+
+BUG-0740. GOG 2024 (dc04aee5), Ghidra and lab lane 9 (`tools/tests/coop_tribe_attack_marker.py`). Extends
+#tribe-attack-marker and #tribe-attack-spot.
+
+* CORRECTION (2026-11-08, fix/w46-attack-marker): 0x157ADB0 is not a global marker holder: `SporeCoop::SpotRecord_Table`
+  0x157ABB0 is a fixed vector with inline storage (entries from 0x157ABC8, 0x60 bytes, the record at +8), and
+  0x157ADB0 is the record of its sixth entry. TribeMarker_Place 0xC911C0 runs on the record SpotRecord_CellId has just
+  made (asm 0xC9B79E..0xC9B7AA: ECX = 0xC9ABA0(table, &id), the table's get-or-insert): **every spot record has its own
+  marker** (+0x28 ornament of model 0x356EB8A, +0x24 a noun 0x2E72CAE object, a minimap blip). The tribe fixture's three
+  ornaments of the model are the three records of its villages, in both games (`coop.wsync spots`).
+* CORRECTION (2026-11-08): SpotRecord_CellId 0xC9B140 does not read its second argument (`make`): it scans the cells
+  +-4 round the asked place (a face grid of 0x80) for an existing record (returns its id) and, with none, makes the
+  record at the first cell of terrain kind 3, then places its marker; -1 when neither.
+* ✔ (Ghidra) 0xB83110 thiscall(planet, pos) is the cell's terrain kind: 3 = shallow water (the water surface 0.01..2 m
+  above the ground, slope under 5), 2 = deeper water, 1 = steep land, 0 = land. **Records are made only at shore cells**:
+  the creature attack's animals come out of the water there.
+* ✔ (Ghidra) Records are taken away only by the table's clear 0xC9A210 (the Tribe / Civ / Space modes' enter and exit),
+  which calls `SporeCoop::SpotRecord_Release` 0xC8F150 (fastcall(record): DestroyInstance of +0x24 and +0x28, the effect
+  +0x3C stopped) for each. A marker stays as long as the stage's table: the "removal when the attack ends" the ticket
+  asked about does not exist in the game.
+* ✔ (lab, lane 9) Why `coop.drama start 7` on the fixture made none: its attack hits the player village, whose record
+  exists (the asked place has a record in the window: no new record, no marker). Asking the host's game for places
+  round the village (`coop.wsync spot x y z`, SpotRecord_CellId as the attack's start does) made a record 121 m from it
+  at the 33rd place (a shore cell, cell 00760046); places at 60-150 m in one direction answered -1 (no shore).
+* ✔ (lab) The guest's game asked for the host's asked place makes the same cell's record at the same position (0.00 m
+  apart, lab 20261108-061051): the cell scan depends only on the planet's terrain, which both games have.
+* Fix `wsync.tribe_marker` (wsync.cpp row 15 `tribe_marker`): the host's row lists its records with a marker {cell id,
+  record position, the place SpotRecord_CellId was asked for (a hook remembers it per new record)}; a guest that lacks a
+  record asks its own game for that place outside the frame (the minimap blip is UI), or places the marker on a record
+  of that cell without one (TribeMarker_Place(rec, pos, 10.0)); markers the guest made for a host record that is gone
+  (the host's stage table cleared, the guest's not) are released with SpotRecord_Release. A rejoined guest gets them
+  from the row (the host sends all rows at a join). `coop.wsync spots` lists a game's table, `coop.wsync dump
+  tribe_marker` the row.

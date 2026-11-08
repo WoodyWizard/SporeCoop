@@ -12,8 +12,8 @@ docs/re/tribe.md#tribe-attack-marker.
    the player village (`coop.wsync spot`: SpotRecord_CellId as the attack's start calls it with the attacked place;
    a record is made only at a shore cell with none near) until one is made (the fixture's own attacks hit the
    village, whose record exists, lab 20261108-052511 / -052727).
-   --attack: the game's own way instead: a tribe formed now (`coop.tribe form`, the pace rule off) and the creature
-   attack event (`coop.drama start 7`); the host's new marker is waited for (150 s).
+   (The game's own attack on the fixture makes none: it hits the player village, whose record exists, and a tribe
+   formed now lies inland, where no record can be made: lab 20261108-061613.)
 2. --rejoin: then the guest leaves and joins again (its game loads the host's world without the record).
 PASS: the host's game made a new record with a marker of model 0x356EB8A; within 20 s the guest's game has the same
 cell's record with a marker of that model at the same place (its own game objects, `coop.wsync spots`), and an
@@ -77,7 +77,6 @@ def ornaments_near(con, pos, r=3.0):
 
 def main():
     rejoin = '--rejoin' in sys.argv
-    attack = '--attack' in sys.argv
     dist = 60.0
     for i, a in enumerate(sys.argv):
         if a == '--dist' and i + 1 < len(sys.argv):
@@ -92,35 +91,22 @@ def main():
     h0, g0 = spots(host), spots(guest)
     print(f'  before: host {len(h0)} spot records ({sum(has_marker(s) for s in h0.values())} with a marker), guest {len(g0)} '
           f'({sum(has_marker(s) for s in g0.values())})', flush=True)
-    if attack:  # the game's own attack: a tribe formed now (no record yet) and the creature attack event
-        print('  host: ' + host.call('coop.fix tribe.form_pace off')['out'].strip()[:100], flush=True)
-        print('  host: ' + host.call('coop.tribe form')['out'].strip()[:200], flush=True)
-        time.sleep(3)
-        print('  host: ' + host.call('coop.drama start 7')['out'].strip().replace('\n', ' | ')[:200], flush=True)
-        t0, new = time.time(), []
-        while time.time() - t0 < 150 and not new:
-            time.sleep(2)
+    # a record is made only at a shore cell (shallow water, kind 3 of 0xB83110) with no record within +-4 cells:
+    # places round the village are asked until one is
+    new, asked = [], 0
+    for d in (dist, dist * 1.5, dist * 2, dist * 2.5, dist * 3):
+        for k in range(12):
+            p = away(v, d, k * math.pi / 6)
+            host.call(f'coop.wsync spot {p[0]:.2f} {p[1]:.2f} {p[2]:.2f}')
+            asked += 1
+            time.sleep(0.4)
             h1 = spots(host)
             new = [c for c in h1 if c not in h0 and has_marker(h1[c])]
-        print(f'  host: new marked records {new} after {time.time() - t0:.0f} s; '
-              + host.call('coop.drama')['out'].strip().replace('\n', ' | ')[:200], flush=True)
-    else:
-        # a record is made only at a shore cell (shallow water, kind 3 of 0xB83110) with no record within +-4 cells:
-        # places round the village are asked until one is
-        new, asked = [], 0
-        for d in (dist, dist * 1.5, dist * 2, dist * 2.5, dist * 3):
-            for k in range(12):
-                p = away(v, d, k * math.pi / 6)
-                host.call(f'coop.wsync spot {p[0]:.2f} {p[1]:.2f} {p[2]:.2f}')
-                asked += 1
-                time.sleep(0.4)
-                h1 = spots(host)
-                new = [c for c in h1 if c not in h0 and has_marker(h1[c])]
-                if new:
-                    break
             if new:
                 break
-        print(f'  host: {asked} places asked, the last ({p[0]:.1f} {p[1]:.1f} {p[2]:.1f}) {d:.0f} m from the village', flush=True)
+        if new:
+            break
+    print(f'  host: {asked} places asked, the last ({p[0]:.1f} {p[1]:.1f} {p[2]:.1f}) {d:.0f} m from the village', flush=True)
     ck(len(new) == 1, f'the host\'s game made one new spot record with its marker of model {MODEL:08X} ({new})')
     if len(new) != 1:
         return ck.result()
@@ -131,10 +117,12 @@ def main():
         guest.call('coop.leave')
         time.sleep(4)
         print('  rejoin: ' + guest.call(lane.JOIN)['out'].strip()[:60], flush=True)
-        t1 = time.time()
-        while time.time() - t1 < 60 and 'Load' not in guest.call('game.mode')['out'] and \
-                'receiving world' not in guest.call('coop.status')['out']:
+        t1, left = time.time(), False
+        while time.time() - t1 < 60 and not left:  # the host's world is loaded again: the old copy goes
+            left = 'Tribe' not in guest.call('game.mode')['out']
             time.sleep(0.3)
+        ck(left, 'the guest\'s game left its old copy to load the host\'s world')
+        time.sleep(3)
         t1 = time.time()
         while time.time() - t1 < 120 and not ('Tribe' in guest.call('game.mode')['out'] and village(guest)):
             time.sleep(0.5)
