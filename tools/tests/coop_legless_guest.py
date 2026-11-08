@@ -209,6 +209,8 @@ def main():
             guest.call('click %d %d' % CANCEL)
             time.sleep(3)
             guest.call('click %d %d' % QUIT)  # the editor asks before it drops changes
+            if 'Creature' not in mode(guest):  # the own Creature editor without a red cross (BUG-0720): done
+                guest.call('click %d %d' % DONE)
             left = wait(lambda: 'Creature' in mode(guest), 30)
         ck(left, f'the guest leaves its editor ({how})')
     ck(wait(lambda: 'Creature' in mode(host), 60), 'the host is back in the Creature stage')

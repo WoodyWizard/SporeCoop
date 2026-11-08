@@ -206,7 +206,9 @@ def host_creature_editor(host, guest, ck):
         add_part(host, 170)
     time.sleep(2)
     print(f'  the host added a part: DNA in its editor {d_in} -> {dna(host)}', flush=True)
-    guest.call('click %d %d' % CANCEL)  # the guest leaves its own editor unchanged
+    # the guest leaves its own editor unchanged: with done (the own Creature editor has the evolution request's
+    # flags since BUG-0720: no red cross, docs/06-testing.md#testing-own-editor-no-cross)
+    guest.call('click %d %d' % DONE)
     time.sleep(2)
     host.call('click %d %d' % DONE)
 
