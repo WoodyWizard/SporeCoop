@@ -905,6 +905,13 @@ static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
     return {g_dash.a.x + g_dash.dir.x * fw + g_dash.side.x * sw, g_dash.a.y + g_dash.dir.y * fw + g_dash.side.y * sw,
             g_dash.a.z + g_dash.dir.z * fw + g_dash.side.z * sw};
 }
+// BUG-0753 (tests, `coop.fix tools.dash_after_send`): `coop.npc dash` moves its NPCs (set_position) after the game's
+// update; called before the states went out, the states carried the test's own write. The game does not keep that write
+// for the mate (on the host the mate stayed 7-9 m from the dashing NPC while its states said 1.2 m beside:
+// creature_npc_dash's "one NPC 3.6-12 m off for the whole run, raw lead too", lab 20261108-092241 rows of
+// fix/w46-g4-tests). After the send the states are what the game has, as in play. Off: before the send (the test as it was).
+static bool g_dash_after_send = true;
+COOP_FIX("tools.dash_after_send", "BUG-0753", g_dash_after_send, "tests: coop.npc dash moves its NPCs after the states went out (the states are the game's own positions)");
 static void dash_tick(double now)
 {
     if (!g_dash.id || now > g_dash.until) {
@@ -1471,7 +1478,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 *(net::Vec3*)((uint8_t*)c + game::kVelOff) = net::Vec3{};
             }
         }
-    dash_tick(now);
+    if (!g_dash_after_send)
+        dash_tick(now);
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
         if (now - it->second.last_seen > 2.0) {
@@ -1578,6 +1586,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             send_anim_snapshot(p.id, known);
     }
     g_anim_out.clear();
+    if (g_dash_after_send) // BUG-0753: the states above are the game's positions, not the test's own write
+        dash_tick(now);
     for (auto it = g_known.begin(); it != g_known.end();) { // guests that left
         bool present = false;
         for (auto& p : C.sess->players())
