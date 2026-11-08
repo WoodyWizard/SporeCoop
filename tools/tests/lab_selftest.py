@@ -426,7 +426,13 @@ def interrupt_cases(tree, tmp):
             fcntl.flock(holder, fcntl.LOCK_EX)
         child = subprocess.Popen([sys.executable, script, tree, tmp, mode, rec], env=dict(os.environ, MARK=mark),
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        time.sleep(8 if mode != 'retry' else 7)  # the lab waits 5 s after starting a lane's worker
+        # the signal must come while the test runs: wait for its process (the marker on its command line), not a
+        # fixed 8 s: under a loaded lab the child's start (imports, git, the 5 s pause after a lane's worker) took
+        # longer, the signal came before the exclusive phase and the free lane was never taken (lab unit 20261108-035548-2)
+        t_end = time.time() + 90
+        while not leftovers(mark) and time.time() < t_end and child.poll() is None:
+            time.sleep(0.2)
+        time.sleep(1)  # the lab's run_one holds the process now
         child.send_signal(sig)
         try:
             out, _ = child.communicate(timeout=60)
@@ -465,7 +471,10 @@ def interrupt_cases(tree, tmp):
     mark = f'labselftest_int_nohup_{os.getpid()}'
     child = subprocess.Popen([sys.executable, script, tree, tmp, 'nohup', os.path.join(tmp, 'rec_nohup.txt')],
                              env=dict(os.environ, MARK=mark), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(8)
+    t_end = time.time() + 90
+    while not leftovers(mark) and time.time() < t_end and child.poll() is None:
+        time.sleep(0.2)
+    time.sleep(1)
     child.send_signal(signal.SIGHUP)
     time.sleep(1)
     alive = child.poll() is None
