@@ -142,6 +142,11 @@ Shared contracts between the features:
 * The host goes through the editor and the cutscene, then the world is sent to guests automatically.
 * A guest cannot advance alone: their transition button leads to the vote.
 * An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
+* Cell -> Creature (BUG-0315, `core.switch_vote`): the host's click on History's check starts the vote "wants to move on
+  to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
+* An evolution inside the Creature stage (BUG-0516, `core.editor_now`) has no vote: the host's editor opens at once and
+  every guest gets "Evolve now" (90 s) for its own editor; a guest who does not take it plays on and evolves at its
+  nest later. The Cell stage's evolution, stage starts and design editors keep the vote.
 
 ## 9.4 What already works (verified by automated tests on two game instances)
 

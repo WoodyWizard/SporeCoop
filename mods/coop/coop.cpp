@@ -1319,6 +1319,7 @@ struct Vote {
     uint32_t editor = 0; // the editor the host opens (EditorRequest+0xC); guests open the same for their own creature
     uint32_t mode = 0;   // host: the stage and world the vote belongs to (BUG-0043)
     uint32_t world = 0;
+    bool arrival = false; // host (BUG-0315): the first Creature editor after a passed switch vote: a guest that arrived is ready
 };
 Vote g_vote;
 // BUG-0043: a vote ends with its stage, its world and its session (its action or editor request is
@@ -1348,6 +1349,37 @@ void set_ready(bool on);
 std::function<void()> g_vote_action; // a vote for something else than an editor (a superweapon ...)
 std::string g_vote_done = "evolution starts";
 
+// BUG-0315 (docs/09-coop-design.md 9.3): the host's click on History's check at the end of the Cell stage started the
+// Creature stage at once (0xE62440, SporeCoop::CellStage_ToCreature) and the guests were pulled after it; only the first
+// Creature editor waited for a vote. On: in a session the host's switch waits for a vote ("wants to move on to the
+// Creature stage"); when it passes, the game's own switch runs; the first Creature editor's vote that follows counts
+// every guest that has arrived in the host's Creature world as ready (they voted already). A guest's own click on the
+// check in the host's Cell world does not take it to Creature alone: during the vote it is its "I'm ready". Off: as
+// in 0.7.10. A session setting later (docs/plan-0.7.12.md F3).
+bool g_switch_vote_fix = true;
+COOP_FIX("core.switch_vote", "BUG-0315", g_switch_vote_fix, "core: the host's Cell -> Creature switch (History's check) waits for a vote of everybody");
+double g_switch_passed_at = -1000; // host: the switch vote passed (the arrival vote follows within 300 s)
+unsigned g_switch_votes, g_switch_held, g_switch_guest_held, g_switch_arrivals; // tests
+
+// BUG-0516: the host's evolution in the Creature stage (the mating call's request, tag +0x90 0x64AA168) waited for
+// every guest's ready (the vote, at most 60 s) although no world reload follows it since BUG-0508. On: the host's
+// editor opens at once (no vote); every guest in the host's world gets an offer for 90 s: the co-op window opens with
+// "Evolve now" (the ready button), which opens the guest's own editor when its stage has settled (own_editor_tick, as
+// after a vote); a guest that does not take it plays on (the host in an editor counts as away, BUG-0205) and can evolve
+// at its nest later. Stage starts (the first Creature editor, Creature -> Tribe), Cell and the design stages keep the
+// vote. Off: the vote as in 0.7.10. A session setting later (docs/plan-0.7.12.md F3).
+bool g_editor_now_fix = true;
+COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Creature evolution editor opens at once; each guest gets an Evolve now offer instead of the ready vote");
+constexpr uint8_t kVoteOffer = 1; // MSG_VOTE flags: an evolve offer, not a vote (sent with active = 0: older guests ignore it)
+constexpr double kOfferSeconds = 90.0;
+uint32_t g_offer_editor = 0;   // guest: the editor of the host's offer (0 = none)
+double g_offer_until = 0;
+bool g_offer_opened_ui = false;
+unsigned g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired; // tests
+extern double g_own_editor_due_at, g_own_editor_due_first;
+void broadcast_offer(uint32_t editor, const std::string& text);
+void offer_end(const char* why);
+
 // a vote whose result runs `action` (outside the frame) when everybody is ready or time is up
 bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action)
 {
@@ -1375,8 +1407,14 @@ void start_vote(void* req, const std::string& text)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u,
                   game::mode_id(), modes::current_world()};
-    trace::line("vote", "start '%s' editor=%s %s players=%d", text.c_str(), trace::hex(g_vote.editor).c_str(),
-                modes::mode_name(g_vote.mode), (int)g_sess.players().size());
+    // BUG-0315: the first Creature editor right after a passed switch vote: everybody voted for it already
+    g_vote.arrival = g_switch_vote_fix && req && g_vote.mode == modes::kCreature &&
+                     H->time_seconds() - g_switch_passed_at < 300.0;
+    if (g_vote.arrival)
+        g_switch_passed_at = -1000;
+    trace::line("vote", "start '%s' editor=%s %s players=%d%s", text.c_str(), trace::hex(g_vote.editor).c_str(),
+                modes::mode_name(g_vote.mode), (int)g_sess.players().size(),
+                g_vote.arrival ? " (after the switch vote: a guest that arrived is ready)" : "");
     for (auto& p : g_sess.players())
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
@@ -1861,14 +1899,23 @@ bool SK_CDECL h_Submit(void* req)
     if (req && mode == modes::kCell && g_sess.connected())
         cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
-        if (g_sess.role() == net::Role::Host) {
+        bool now_ok = g_editor_now_fix && g_sess.role() == net::Role::Host && !g_vote.active &&
+                      mode == modes::kCreature && skg::readable(req, 0x94) && skg::field<uint32_t>(req, 0x90) == 0x64AA168u;
+        if (now_ok) { // BUG-0516: the host's evolution goes on now, the guests get an offer
+            uint32_t id = skg::field<uint32_t>(req, 0xC);
+            LOG("evolution: the host's editor opens at once, the others get an offer (core.editor_now)");
+            broadcast_offer(id, g_name + " evolves now: press Evolve now (F9) to evolve yours too");
+            notice(g_name + " evolves now (the others may evolve too)", -1);
+        } else if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active)
                 start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
                                     modes::mode_name(mode) + ")");
             return false; // runs when the vote is over
+        } else {
+            offer_end("the own evolution"); // BUG-0516: this guest evolves on its own now
+            notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
+            set_ready(true);
         }
-        notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
-        set_ready(true);
     }
     if (!g_vote_bypass && req && creations::avatar_swap_settling(H->time_seconds())) {
         hold_submit(req); // BUG-0318: after the new body is built (submit_tick)
@@ -1885,6 +1932,57 @@ bool SK_CDECL h_Submit(void* req)
     if (r)
         g_editor_submitted_at = H->time_seconds();
     return r;
+}
+
+// BUG-0315: the Cell stage's switch to Creature (0xE62440: ends the cinematics, CreatureStart_FromCell, the mode
+// switch to 0x1654C01, the fade effect), reached from cCellModeStrategy::HandleMessage 0x47C1D19 (History's check)
+// and the cell event 0x1F (0xE7E130). cdecl void(void), globals only: safe to run later from outside the frame.
+typedef void(SK_CDECL* CellToCreature_t)();
+CellToCreature_t o_CellToCreature;
+bool g_switch_go = false; // the vote passed: the next call is the game's own switch
+void SK_CDECL h_CellToCreature()
+{
+    bool multi = g_sess.connected() && g_sess.players().size() > 1;
+    if (!g_switch_vote_fix || g_switch_go || game::mode_id() != modes::kCell || !multi) {
+        g_switch_go = false;
+        o_CellToCreature();
+        return;
+    }
+    if (g_sess.role() == net::Role::Client) {
+        if (host_world_now() != host_world::HostWorld::Same) { // the guest's own world: its own switch
+            o_CellToCreature();
+            return;
+        }
+        g_switch_guest_held++;
+        if (g_vote.active) {
+            LOG("the Creature stage: this guest's click on History's check is its I'm ready (BUG-0315)");
+            set_ready(true);
+        } else {
+            LOG("the Creature stage: a guest's own switch is not taken, the host starts it for everybody (BUG-0315)");
+            feed("the host moves everybody on to the Creature stage (after a vote)");
+        }
+        return;
+    }
+    g_switch_held++;
+    LOG("the host's switch to the Creature stage (from %p, cinematic %d)", __builtin_return_address(0),
+        (int)world::cinematic_playing());
+    if (g_vote.active) {
+        LOG("the Creature stage waits: a vote runs ('%s')", g_vote.text.c_str());
+        feed("the Creature stage: wait until the vote is over, then click History's check again");
+        return;
+    }
+    LOG("the Creature stage waits for a vote (BUG-0315, core.switch_vote)");
+    g_switch_votes++;
+    start_action_vote(g_name + " wants to move on to the Creature stage", "the Creature stage starts", [] {
+        if (game::mode_id() != modes::kCell) {
+            LOG("the Creature stage: the vote passed out of the Cell stage, nothing to start");
+            return;
+        }
+        g_switch_passed_at = H->time_seconds();
+        g_switch_go = true;
+        LOG("the Creature stage starts after the vote (BUG-0315)");
+        h_CellToCreature();
+    });
 }
 
 // BUG-0404 (the busy gate): an action vote's result (a superweapon ...) ran the moment the vote
@@ -1976,8 +2074,65 @@ void broadcast_vote()
     w.u8((uint8_t)std::max(0, g_vote.left));
     w.str8(g_vote.text);
     w.u32(g_vote.editor);
+    w.u8(0); // flags (BUG-0516)
     g_sess.broadcast_reliable(net::MSG_VOTE, w);
 }
+
+// BUG-0516: the host evolves now; every guest may open its own editor of the same id
+void broadcast_offer(uint32_t editor, const std::string& text)
+{
+    net::Writer w;
+    w.u8(0); // not a vote: an older guest takes it as the end of no vote
+    w.u8((uint8_t)kOfferSeconds);
+    w.str8(text);
+    w.u32(editor);
+    w.u8(kVoteOffer);
+    g_sess.broadcast_reliable(net::MSG_VOTE, w);
+    g_offers_sent++;
+    trace::line("vote", "offer sent: '%s' editor=%s", text.c_str(), trace::hex(editor).c_str());
+}
+
+// guest: the offer ends (taken, expired, the stage or the session left)
+void offer_end(const char* why)
+{
+    if (!g_offer_editor)
+        return;
+    trace::line("vote", "offer of editor %s ends: %s", trace::hex(g_offer_editor).c_str(), why);
+    g_offer_editor = 0;
+    if (g_offer_opened_ui && !g_vote.active)
+        coop_ui::open(false);
+    g_offer_opened_ui = false;
+    g_lobby_dirty = true;
+}
+
+// guest: "Evolve now": the own editor opens when the stage has settled (own_editor_tick)
+void offer_take()
+{
+    uint32_t id = g_offer_editor;
+    if (!id)
+        return;
+    g_offers_taken++;
+    offer_end("taken");
+    g_own_editor_due = id;
+    g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
+    feed("evolution: your editor opens in a moment");
+}
+
+void offer_tick(double now)
+{
+    if (!g_offer_editor)
+        return;
+    if (!g_sess.connected() || g_mode != modes::kCreature) {
+        offer_end(!g_sess.connected() ? "the session ended" : "the stage was left");
+        return;
+    }
+    if (now > g_offer_until) {
+        g_offers_expired++;
+        offer_end("time is up");
+        feed("evolution: you can evolve your creature at your nest later");
+    }
+}
+
 
 // the vote ends without its result: the editor request is released, the action is not run
 void drop_vote(const char* why)
@@ -2012,6 +2167,18 @@ void vote_tick(double now)
         }
     }
     g_vote.left = (int)(60 - (now - g_vote.t0));
+    if (g_vote.arrival) // BUG-0315: a guest that plays the host's Creature world now voted for it in Cell
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo || r.buf.empty() || (g_ready.count(id) && g_ready[id]))
+                continue;
+            const auto& ls = r.buf.latest();
+            if (same_place(ls) && (ls.flags & net::PF_IN_WORLD)) {
+                g_ready[id] = true;
+                g_lobby_dirty = true;
+                g_switch_arrivals++;
+                trace::line("vote", "player %u arrived in the Creature stage: ready (BUG-0315)", (unsigned)id);
+            }
+        }
     bool all = true;
     for (auto& p : g_sess.players())
         all &= g_ready.count(p.id) && g_ready[p.id];
@@ -3241,6 +3408,7 @@ void on_frame(void*, int, void*)
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
+    offer_tick(now); // BUG-0516
     vote_action_tick(now);
     coop_ui::tick();
     menu_tick(now);
@@ -4031,6 +4199,26 @@ void setup_callbacks()
                 return;
             bool has_editor = r.left() >= 4;
             uint32_t editor = has_editor ? r.u32() : 0;
+            uint8_t flags = r.left() >= 1 ? r.u8() : 0; // BUG-0516 (older hosts send none)
+            if (flags & kVoteOffer) { // the host evolves now: this guest may follow with its own editor
+                if (!editor || (g_vote_world_fix && guest_elsewhere()) || g_mode != modes::kCreature || !g_local ||
+                    g_own_editor_due) {
+                    trace::line("vote", "offer '%s' not taken: %s", text.c_str(),
+                                g_mode != modes::kCreature || !g_local ? "not playing the Creature stage" : "another world or an editor due");
+                    return;
+                }
+                g_offers_got++;
+                g_offer_editor = editor;
+                g_offer_until = H->time_seconds() + (left > 0 ? left : kOfferSeconds);
+                trace::line("vote", "offer by the host: '%s' editor=%s", text.c_str(), trace::hex(editor).c_str());
+                feed(text);
+                if (!coop_ui::is_open()) {
+                    g_offer_opened_ui = true;
+                    coop_ui::open(true);
+                }
+                g_lobby_dirty = true;
+                return;
+            }
             // BUG-0420: a guest that plays another world of the host's stage takes no part in the host's vote
             // (no vote screen, no evolution editor of the host's world); a vote it saw start here still ends
             if (g_vote_world_fix && !g_vote.active && guest_elsewhere()) {
@@ -4320,6 +4508,10 @@ void set_role(uint8_t role)
 
 void set_ready(bool on)
 {
+    if (g_offer_editor && !g_vote.active && g_sess.role() == net::Role::Client) { // BUG-0516: "Evolve now"
+        offer_take();
+        return;
+    }
     trace::line("vote", "own ready=%d set (vote %s)", (int)on, g_vote.active ? "on" : "off");
     g_ready[g_sess.my_id()] = on;
     if (g_sess.role() == net::Role::Client) {
@@ -5378,6 +5570,9 @@ void init_ui()
             share_all();
     };
     a.vote_active = [] { return g_vote.active; };
+    a.evolve_offer = [] { // BUG-0516
+        return g_offer_editor && !g_vote.active ? std::max(1, (int)(g_offer_until - H->time_seconds())) : 0;
+    };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
@@ -6178,6 +6373,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t a = H->sym("SporeCoop::CellStage_ToCreature")) // BUG-0315
+        H->hook_create(M, (void*)a, (void*)h_CellToCreature, (void**)&o_CellToCreature);
     if (uintptr_t a = H->sym("SporeCoop::CreatureGame_HandleMessage")) // BUG-0466
         H->hook_create(M, (void*)a, (void*)h_CreatureGameMsg, (void**)&o_CreatureGameMsg);
     if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))
@@ -6346,13 +6543,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
                            "editor held now %d, actions waited %u, action due %d\n"
                            "editor under the game's own pause %u (own busy %s, editor pause count %d)\n"
-                           "votes of the host not taken elsewhere %u",
+                           "votes of the host not taken elsewhere %u\n"
+                           "switch votes %u (host clicks held %u, guest clicks held %u, arrivals ready %u)\n"
+                           "evolve offers sent %u got %u taken %u expired %u, offer now %d",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
                            g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
-                           editor_pause_count(), g_vote_elsewhere);
+                           editor_pause_count(), g_vote_elsewhere, g_switch_votes, g_switch_held, g_switch_guest_held,
+                           g_switch_arrivals, g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired,
+                           g_offer_editor ? 1 : 0);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

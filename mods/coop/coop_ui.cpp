@@ -1087,7 +1087,11 @@ static void refresh_lobby()
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;
-    text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
+    int offer = A.evolve_offer ? A.evolve_offer() : 0; // BUG-0516: the host evolves now, this guest may follow
+    if (offer > 0)
+        text(D.ready_btn, T("Evolve now", "Эволюция"));
+    else
+        text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
     show(D.share_btn, host);
     enable(D.share_btn, !share_why || !g_share_explain_fix);
     text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
