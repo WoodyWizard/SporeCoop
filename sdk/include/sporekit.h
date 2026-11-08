@@ -183,6 +183,12 @@ typedef struct SkHost {
      * being made), 0 when it was written, -1 when it failed: a report that should include it waits
      * until this is not 1 (from its frame tick, never blocking) */
     int (*report_shot_pending)(void);
+
+    /* ---- since 0.3.15 (check size) ---- */
+    /* n filled triangles in back buffer pixels (xy: 6 floats per triangle, x0 y0 x1 y1 x2 y2), one ARGB colour
+     * (alpha blended), drawn on top like overlay_text and in call order with it. The game's render states are
+     * put back after each call. Valid only during SK_EV_OVERLAY; at most 256 triangles per call. */
+    void (*overlay_tris)(const float* xy, int n, uint32_t argb);
 } SkHost;
 
 typedef struct SkModInfo {
