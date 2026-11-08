@@ -428,11 +428,11 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0416](BUG-0416-lab-gate-monitor-drawn-in-chaos-tribe-the-guest.md) | fixed | test | Tribe | 2026-11-01 | 0.7.3.4 | Lab gate: monitor drawn in chaos_tribe, the guest's copy of the host's pointer at rest 164 m from the host's own |
 | [BUG-0417](BUG-0417-tests-npc-walk-s-flee-phase-hits-members-of-the.md) | fixed | test | Creature | 2026-11-01 | 0.7.3.4 | Tests: npc_walk's flee phase hits members of the host's own family, which hit the host back (monitor posse_damage gate) |
 | [BUG-0418](BUG-0418-class-player-species-avatar-only-game-rules-a-gu.md) | open | bug | Creature | 2026-11-01 |  | class: player-species / avatar-only game rules a guest misses (umbrella) |
-| [BUG-0419](BUG-0419-class-state-sent-but-not-applied-on-the-receiver.md) | open | bug | All | 2026-11-01 |  | class: state sent but not applied on the receiver (umbrella) |
-| [BUG-0420](BUG-0420-class-hits-events-and-world-state-applied-withou.md) | open | bug | All | 2026-11-01 |  | class: hits, events and world state applied without a relation / partner / world filter (umbrella) |
+| [BUG-0419](BUG-0419-class-state-sent-but-not-applied-on-the-receiver.md) | fixed | bug | All | 2026-11-01 | unreleased | class: state sent but not applied on the receiver (umbrella) |
+| [BUG-0420](BUG-0420-class-hits-events-and-world-state-applied-withou.md) | fixed | bug | All | 2026-11-01 | unreleased | class: hits, events and world state applied without a relation / partner / world filter (umbrella) |
 | [BUG-0421](BUG-0421-class-guest-local-game-objects-removed-or-never.md) | open | bug | All | 2026-11-01 |  | class: guest-local game objects removed or never created (umbrella) |
 | [BUG-0422](BUG-0422-class-per-player-state-under-a-reused-id-and-sta.md) | fixed | bug | All | 2026-11-01 | unreleased | class: per-player state under a reused id, and state that existed before a proxy (umbrella) |
-| [BUG-0423](BUG-0423-class-credits-and-effects-dropped-or-undone-ledg.md) | open | bug | All | 2026-11-01 |  | class: credits and effects dropped or undone (ledger, ack, owed effects) (umbrella) |
+| [BUG-0423](BUG-0423-class-credits-and-effects-dropped-or-undone-ledg.md) | fixed | bug | All | 2026-11-01 | unreleased | class: credits and effects dropped or undone (ledger, ack, owed effects) (umbrella) |
 | [BUG-0424](BUG-0424-class-content-parts-paints-designs-the-other-gam.md) | open | bug | All | 2026-11-01 |  | class: content (parts, paints, designs) the other game lacks (umbrella) |
 | [BUG-0425](BUG-0425-class-remote-body-placement-catch-up-and-snapsho.md) | fixed | bug | All | 2026-11-01 | 0.7.9 | class: remote body placement, catch-up and snapshot timing (umbrella) |
 | [BUG-0426](BUG-0426-class-object-lifetime-and-identity-liveness-addr.md) | open | bug | All | 2026-11-01 |  | class: object lifetime and identity (liveness, address reuse, our objects in saves) (umbrella) |
