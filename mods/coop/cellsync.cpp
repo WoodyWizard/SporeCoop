@@ -18,6 +18,7 @@
 
 #include "cell_logic.h"
 #include "dna_pace.h"
+#include "settings.h"
 #include "view_centres.h"
 #include "game.h"
 #include "modes.h"
@@ -3631,6 +3632,10 @@ static void guest_tick(double now)
 }
 
 // ---------------- both ----------------
+// BUG-0762 (F3 of 0.7.12): the regeneration near a partner is the host's live session setting cell.regen. Off
+// (`coop.fix settings.cell_regen off`): the setting is not read, the regeneration always runs (0.7.11).
+static bool g_regen_setting = true;
+COOP_FIX("settings.cell_regen", "BUG-0762", g_regen_setting, "cell: the regeneration near a partner follows the host's setting cell.regen");
 static void symbiosis_tick(double now)
 {
     uint8_t* a = avatar();
@@ -3669,7 +3674,8 @@ static void symbiosis_tick(double now)
         return;
     g_last_regen = now;
     int hp = F<int>(a, kHp);
-    if (hp > 0 && hp < 6 && !nearest_partner(12.f).empty()) {
+    // the session setting cell.regen (live, the host's): off = no health from a partner nearby, as in a solo game
+    if ((!g_regen_setting || settings::on(settings::kCellRegen)) && hp > 0 && hp < 6 && !nearest_partner(12.f).empty()) {
         F<int>(a, kHp) = hp + 1;
         if (a_Rollover && F<uint32_t>(a, 0x248))
             skg::cdecl_call<void>(a_Rollover, a, hp);

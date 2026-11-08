@@ -12,6 +12,7 @@
 #include "cell_logic.h"
 #include "cellsync.h"
 #include "dna_pace.h"
+#include "settings.h"
 #include "game.h"
 #include "gamefixes.h"
 #include "modes.h"
@@ -576,8 +577,8 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "gain")) // a reward of the game (a kill, a friend): the party's pace applies (BUG-0510)
         skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
-    if (argc > 2 && !strcmp(argv[1], "pace")) // as coop.ini [coop] dna_pace (tests)
-        dna_pace::g_ini = atoi(argv[2]);
+    if (argc > 2 && !strcmp(argv[1], "pace")) // tests: the session setting all.dna_pace (scope not checked)
+        settings::set(settings::kDnaPace, atoi(argv[2]), true);
     if (argc > 2 && !strcmp(argv[1], "local")) // tests: our total only, as a host total we missed (BUG-0128)
         game::dna_add_raw((float)atof(argv[2]));
     if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:

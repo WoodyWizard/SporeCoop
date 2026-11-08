@@ -13,6 +13,7 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "host_world.h"
+#include "settings_core.h"
 #include "net/shared_ledger.h"
 #include "net/held_cmds.h"
 #include <string>
@@ -414,6 +415,80 @@ static void test_host_world()
     CHECK(std::fabs(shown - 680) < 1e-9 && std::fabs(g.pending + 20) < 1e-9 && g.in_flight.size() == 1);
 }
 
+// F3 of 0.7.12: the session settings (settings_core.h): who may set one, the wire and the file formats, a world's open
+static void test_settings()
+{
+    using namespace settings;
+    CHECK(host_world::msg_class(net::MSG_SETTINGS) == host_world::MsgClass::Session);
+    for (int i = 0; i < kCount; i++) { // declared once, unique names, defaults in range
+        CHECK(find(kDefs[i].key) == i && kDefs[i].label && kDefs[i].help && kDefs[i].group);
+        CHECK(kDefs[i].def >= kDefs[i].min && kDefs[i].def <= kDefs[i].max);
+    }
+    CHECK(kDefs[kCellRegen].scope == Scope::Live && kDefs[kCellRegen].def == 1);
+    CHECK(kDefs[kPartnerArrows].scope == Scope::Live && kDefs[kPartnerArrows].off_in_rivals);
+    CHECK(std::string(kDefs[kDnaPace].ini) == "dna_pace" && std::string(kDefs[kNpcTargets].ini) == "npcs_target_partners");
+    // who sets: a guest never; a session setting only before the start; a live one any time
+    CHECK(can_set(kCellRegen, false, false) == Refusal::Guest && can_set(kDnaPace, false, true) == Refusal::Guest);
+    CHECK(can_set(kDnaPace, true, true) == Refusal::SessionStarted && can_set(kDnaPace, true, false) == Refusal::None);
+    CHECK(can_set(kCellRegen, true, true) == Refusal::None);
+    int v = -1;
+    CHECK(parse_value(kCellRegen, "off", v) && v == 0 && parse_value(kCellRegen, "default", v) && v == 1);
+    CHECK(!parse_value(kCellRegen, "2", v) && !parse_value(kCellRegen, "x", v) && !parse_value(kCellRegen, "", v));
+    // the wire: the whole table round trips; a key this build does not know is skipped; a cut message applies nothing
+    Values a;
+    a.v[kCellRegen] = 0;
+    a.v[kDnaPace] = 0;
+    net::Writer w;
+    write_msg(w, a, true);
+    {
+        net::Reader r(w.data.data(), w.size());
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(read_msg(r, got, sent, st) && got == a && st);
+        for (bool x : sent)
+            CHECK(x);
+    }
+    {
+        net::Writer n; // a newer host: one setting more, one of ours missing
+        n.u8(0); n.u8(0); n.u8(2);
+        n.str8("all.future_thing"); n.u32(7);
+        n.str8("cell.regen"); n.u32(0);
+        net::Reader r(n.data.data(), n.size());
+        Values got;
+        bool sent[kCount], st = true;
+        CHECK(read_msg(r, got, sent, st) && got.v[kCellRegen] == 0 && sent[kCellRegen] && !sent[kDnaPace] && !st);
+        CHECK(got.v[kDnaPace] == 1); // untouched
+    }
+    for (size_t cut = 0; cut < w.size(); cut++) {
+        net::Reader r(w.data.data(), cut);
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(!read_msg(r, got, sent, st) && got == Values());
+    }
+    {
+        net::Writer k; // another kind: not applied
+        k.u8(1); k.u8(0); k.u8(0);
+        net::Reader r(k.data.data(), k.size());
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(!read_msg(r, got, sent, st));
+    }
+    // the file: round trip; another world's file (a crc collision) is not this world's; bad lines skipped
+    Values d, out;
+    std::string f = format_file("planet.spo", a);
+    CHECK(parse_file(f, "planet.spo", d, out) && out == a);
+    CHECK(!parse_file(f, "other.spo", d, out) && out == d);
+    CHECK(parse_file("world planet.spo\r\ncell.regen 0\r\nnope 1\r\nall.dna_pace 9\r\n", "planet.spo", d, out) &&
+          out.v[kCellRegen] == 0 && out.v[kDnaPace] == 1);
+    // a world opens: the lobby's choice wins, else the stored values, else the defaults (coop.ini)
+    Values cur = a, stored, defs;
+    stored.v[kPackRescue] = 0;
+    CHECK(on_world_open(true, true, stored, defs, cur) == Opened::Pending && cur == a);
+    CHECK(on_world_open(false, true, stored, defs, cur) == Opened::Stored && cur == stored);
+    CHECK(on_world_open(false, false, stored, defs, cur) == Opened::Defaults && cur == defs);
+    CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -422,6 +497,7 @@ int main(int argc, char** argv)
     test_dna_pace();
     test_dna_ledger();
     test_host_world();
+    test_settings();
     test_held_cmds();
     test_chunks();
     test_cycle();

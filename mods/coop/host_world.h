@@ -103,6 +103,8 @@ inline MsgClass msg_class(uint8_t type)
     case net::MSG_LOBBY: case net::MSG_NOTICE: case net::MSG_ROLE: case net::MSG_CREATION: case net::MSG_DIAG:
     case net::MSG_ABILITY: case net::MSG_ANIM: case net::MSG_DAMAGE: // a partner's own creature (its puppet)
         return MsgClass::Session;
+    case net::MSG_SETTINGS: // the host's session settings: the session's rules wherever the guest plays
+        return MsgClass::Session;
     case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
     case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch
         return MsgClass::Session;

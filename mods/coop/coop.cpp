@@ -79,6 +79,8 @@
 #include "dna_route.h"
 #include "dna_ledger.h"
 #include "dna_pace.h"
+#include "settings.h"
+#include "space_ext.h"
 #include "host_world.h"
 #include "diag_coop.h"
 #include "trace.h"
@@ -247,7 +249,7 @@ static int pace_playing()
 // the divisor the host announces
 int dna_pace_announce()
 {
-    return dna_pace::divisor(g_dna_pace_fix && dna_pace::g_ini != 0, pace_playing());
+    return dna_pace::divisor(g_dna_pace_fix && settings::on(settings::kDnaPace), pace_playing());
 }
 // the divisor for a gain of this machine's game now (1: whole)
 static int pace_div()
@@ -3568,6 +3570,7 @@ void on_frame(void*, int, void*)
     g_adapter = modes::for_mode(g_mode);
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
+    settings::tick(); // F3: the host's world opened or closed (its stored settings)
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
@@ -4128,6 +4131,7 @@ void setup_callbacks()
     g_sess.cb.disconnected = [](const std::string& why) {
         support::on_disconnected(why);
         rejoin::clear(); // the session ended (BUG-0235)
+        settings::on_disconnect();
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
@@ -4137,6 +4141,7 @@ void setup_callbacks()
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         support::on_player_join(p);
+        settings::on_player_join(p.id); // F3: the host's session settings first
         shared::on_player_join(g_sess.role());
         wsync::on_player_join();
         creations::on_player_join(p.id);
@@ -4205,6 +4210,10 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        if (type == net::MSG_SETTINGS) { // F3: the host's session settings (Session class: wherever we play)
+            settings::on_message(type, from, r);
             return;
         }
         if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
@@ -4701,7 +4710,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
     SAY("dna spend: unsent=%.1f sent=%u got=%u owed=%.1f seen=%.1f/%d\n", g_dna_spend, g_dna_spends_sent, g_dna_spends_got,
         g_dna_spend_owed, g_dna_seen, (int)g_dna_seen_ok); // BUG-0466
-    SAY("dna pace: div=%d fix=%d ini=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), (int)g_dna_pace_fix, dna_pace::g_ini,
+    SAY("dna pace: div=%d fix=%d setting=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), (int)g_dna_pace_fix, settings::get(settings::kDnaPace),
         g_pace_heard, g_paced, g_paced_in, g_paced_out); // BUG-0510
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
@@ -5740,17 +5749,14 @@ COOP_FIX("diag.rts_cursor", "BUG-0380", g_cursor_check_fix,
          "sync-check: a Tribe / Civ player's pointer is compared only after it stood still for a second");
 constexpr double kCursorStill = 1.0;
 
-int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_npc_targets = 1, g_ini_teamplay = 1, g_ini_update = 1, g_ini_sync = 30;
+int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_update = 1, g_ini_sync = 30;
 
 void support_init()
 {
     g_ini_auto_load = H->config_int(M, "coop", "auto_load_world", 1);
     g_ini_share_npcs = H->config_int(M, "coop", "share_npcs", 1);
-    g_ini_npc_targets = H->config_int(M, "coop", "npcs_target_partners", 1);
-    g_ini_teamplay = H->config_int(M, "coop", "teamplay", 1);
     g_ini_update = H->config_int(M, "update", "check", 1);
     g_ini_sync = H->config_int(M, "coop", "sync_check", 30);
-    dna_pace::g_ini = H->config_int(M, "coop", "dna_pace", 1); // BUG-0510
     support::Probe p;
     p.sess = &g_sess;
     p.feed = feed;
@@ -5841,16 +5847,13 @@ void support_init()
             add("auto_load_world", g_ini_auto_load);
         if (g_ini_share_npcs != 1)
             add("share_npcs", g_ini_share_npcs);
-        if (g_ini_npc_targets != 1)
-            add("npcs_target_partners", g_ini_npc_targets);
-        if (g_ini_teamplay != 1)
-            add("teamplay", g_ini_teamplay);
         if (g_ini_update != 1)
             add("update.check", g_ini_update);
         if (g_ini_sync != 30)
             add("sync_check", g_ini_sync);
-        if (dna_pace::g_ini != 1)
-            add("dna_pace", dna_pace::g_ini);
+        std::string ss = settings::diff(); // the session settings (dna_pace, npcs_target_partners, teamplay, ...)
+        if (!ss.empty())
+            s += (s.empty() ? "" : " ") + ss;
         return s;
     };
     p.describe = [](const std::string& key) { // BUG-0381: the object's line of coop.npc list / coop.tribe
@@ -6188,7 +6191,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
     views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
-    npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
+    { // F3 of 0.7.12: the session settings (coop.ini dna_pace, npcs_target_partners, teamplay are their defaults)
+        settings::Ctx sc;
+        sc.sess = &g_sess;
+        sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
+        sc.world_name = [] { return modes::current_world_name(); };
+        sc.rivals = [] { return spaceext::rivals(); };
+        sc.feed = feed;
+        settings::init(H, M, sc);
+    }
     social::Ctx sc;
     sc.sess = &g_sess;
     sc.feed = feed;
@@ -6216,6 +6227,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
+                   settings::command, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
