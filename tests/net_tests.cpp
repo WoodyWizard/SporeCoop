@@ -629,6 +629,17 @@ static void test_interp_gap()
     }
 }
 
+// K4 (BUG-0674, BUG-0675, BUG-0651, BUG-0680): SPORE_FIX_OFF=<switch>[,...] keeps that fix off on the fix's side of
+// test_lead_fall too, so the run FAILs (the twin-switch check of CLAUDE.md 3 for the unit test)
+static bool k4_on(const char* name)
+{
+    const char* e = std::getenv("SPORE_FIX_OFF");
+    if (!e)
+        return true;
+    std::string s = std::string(",") + e + ",";
+    return s.find(std::string(",") + name + ",") == std::string::npos;
+}
+
 // BUG-0650 (drive.lead_late): a Tribe member's walk that starts in a latency spike (its first walking state 0.35 s
 // late instead of 0.05 s) moved M1's lead target 3 m in one frame; with the fix the target steps no more than a walk
 // and is at the lead again within 1.5 s
@@ -646,7 +657,7 @@ static float lead_late_max_step(bool fix, double spike_end, float* end_err, bool
         b.smooth_max = 4.f;
         b.late_lead = true;
         g_lead_late_fix = true;
-        g_lead_fall_fix = fix;
+        g_lead_fall_fix = fix && k4_on("drive.lead_fall");
     }
     g_one_way = 0.05;
     // the sender sends every 1/30 s; the body stands until sender time 3.0, then walks at 9 m/s along x
@@ -873,7 +884,7 @@ static float lead_fall_err(bool fall, int kind)
 {
     const bool was = g_lead_fall_fix;
     const double was_ow = g_one_way;
-    g_lead_fall_fix = fall;
+    g_lead_fall_fix = fall && k4_on("drive.lead_fall");
     SnapshotBuffer b;
     b.delay = 0.2;
     b.lead = true;
@@ -919,7 +930,7 @@ static float lead_fall_err(bool fall, int kind)
 static double ship_fall_err(bool fall)
 {
     const bool was = g_lead_fall_fix;
-    g_lead_fall_fix = fall;
+    g_lead_fall_fix = fall && k4_on("drive.lead_fall");
     VelocityEstimate e;
     e.max_ahead = 0.4;
     auto x_at = [](double st) { return st < 5.0 ? st * 28.0 : 140.0; };
@@ -949,7 +960,7 @@ static double throw_stand(bool fix)
 {
     const bool was = g_lead_throw_fix;
     const double was_ow = g_one_way;
-    g_lead_throw_fix = fix;
+    g_lead_throw_fix = fix && k4_on("drive.lead_throw");
     g_one_way = 0.045;
     SnapshotBuffer b;
     b.delay = 0.15;
@@ -992,7 +1003,7 @@ static bool lead_off_with(bool low_fix, double mean_ow, double low_ow)
 {
     const bool was = g_lead_low_fix;
     const double was_ow = g_one_way, was_low = g_one_way_low;
-    g_lead_low_fix = low_fix;
+    g_lead_low_fix = low_fix && k4_on("drive.lead_low");
     g_one_way = mean_ow;
     g_one_way_low = low_ow;
     SnapshotBuffer b;
@@ -1019,7 +1030,7 @@ static float puppet_stop_past(bool fix, bool* slowed)
 {
     const bool was = g_puppet_fall_fix;
     const double was_ow = g_one_way;
-    g_puppet_fall_fix = fix;
+    g_puppet_fall_fix = fix && k4_on("drive.puppet_fall");
     g_one_way = 0.05;
     SnapshotBuffer b;
     b.delay = 0.1;
@@ -1062,7 +1073,7 @@ static double jitter_err(bool fix)
 {
     const bool was = g_lead_throw_fix;
     const double was_ow = g_one_way;
-    g_lead_throw_fix = fix;
+    g_lead_throw_fix = fix && k4_on("drive.lead_throw");
     g_one_way = 0.045;
     SnapshotBuffer b;
     b.delay = 0.2;
@@ -1102,7 +1113,7 @@ static float proxy_turn_step(bool fix)
 {
     const bool was = g_lead_fall_fix;
     const double was_ow = g_one_way;
-    g_lead_fall_fix = fix;
+    g_lead_fall_fix = fix && k4_on("drive.lead_fall");
     g_one_way = 0.05;
     SnapshotBuffer b;
     b.delay = 0.15;
