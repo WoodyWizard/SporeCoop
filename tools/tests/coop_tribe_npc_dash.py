@@ -47,6 +47,7 @@ without; with it 0.6-0.9 m (SPORE_FIX_OFF=npc.kinematic must FAIL).
   SPORE_LANE=5 python3 tools/tests/coop_tribe_npc_dash.py
   SPORE_LANE=5 DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py
 """
+import json
 import math
 import os
 import re
@@ -58,6 +59,9 @@ from twoinst import Checks, start
 
 LIMIT = 1.5     # m (printed: samples farther than this)
 P90 = 1.2       # m: the 90th percentile of the errors (fix off: 1.5-2.8 m, on: 0.7-0.95 m)
+# DASH_FEED=0: no `coop.npc list` on the guest during the dash (it samples every proxy's buffer at the console's own time,
+# which moves drive.lead_late's / the smoothing's state between two frames; BUG-0363 check) and no fresh-state check
+FEED = os.environ.get('DASH_FEED', '1') != '0'
 SLOW_HOST = 25   # fps: a host under this makes its states late itself: too few fresh samples are inconclusive (BUG-0321)
 FRESH_SHARE = 0.6  # of the samples with a fresh state when the host is not slow (BUG-0430: late states fail)
 FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
@@ -111,13 +115,27 @@ def pct(v, q):
     return bt.pct(v, q) if v else -1.0
 
 
+def save_rows(hr, gr, keys, t0, t1):
+    """both games' rows of the dash for a later analysis (out/lane<N>/dash/<time>.json)"""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'out', f'lane{os.environ.get("SPORE_LANE", "x")}', 'dash')
+    try:
+        os.makedirs(d, exist_ok=True)
+        f = os.path.join(d, time.strftime('%Y%m%d-%H%M%S') + f'-{FIXTURE}.json')
+        with open(f, 'w') as fh:
+            json.dump(dict(keys=keys, t0=t0, t1=t1, host=hr, guest=gr), fh)
+        print(f'  rows saved: {os.path.normpath(f)}', flush=True)
+    except OSError as e:
+        print(f'  (rows not saved: {e})', flush=True)
+
+
 def judge_rows(host, guest, keys, t0, t1, windows):
     """BUG-0363: the same-moment measure from both games' rows; prints the comparison with the window measure.
     Returns (p90 m over every guest frame, frames)"""
     hr, gr = bt.dump(host), bt.dump(guest)
-    want = set(keys) | {'q' + k[1:] for k in keys}
+    want = set(keys) | {c + k[1:] for k in keys for c in 'qu'}
     hr = [r for r in hr if r[1] in want]
     gr = [r for r in gr if r[1] in want]
+    save_rows(hr, gr, keys, t0, t1)
     sm = bt.same_moment(hr, gr, keys, t0, t1)
     d = [r['d'] for r in sm]
     mov = [r['d'] for r in sm if r['sp'] >= bt.MOVING]
@@ -129,9 +147,15 @@ def judge_rows(host, guest, keys, t0, t1, windows):
     print(f'  split: the guest\'s target from the host\'s NPC (states, lead) p50 {pct(tg, .5):.2f} p90 {pct(tg, .9):.2f} m '
           f'({len(tg)}); the drawn proxy from its target (driving) p50 {pct(dv, .5):.2f} p90 {pct(dv, .9):.2f} m ({len(dv)})',
           flush=True)
+    rw = [r['raw'] for r in sm if r['raw'] is not None]
+    print(f'  raw lead (M1, no late time, no smoothing) from the host\'s NPC p50 {pct(rw, .5):.2f} p90 {pct(rw, .9):.2f} m '
+          f'({len(rw)})', flush=True)
     for key in keys:
         v = [r['d'] for r in sm if r['key'] == key]
-        print(f'    {key}: {len(v)} frames, p90 {pct(v, .9):.2f} m', flush=True)
+        far = [r for r in sm if r['key'] == key and r['d'] > 2 * P90]
+        ep = f'; over {2 * P90} m from {far[0]["t"] - t0:.1f} to {far[-1]["t"] - t0:.1f} s ({len(far)} frames)' if far else ''
+        print(f'    {key}: {len(v)} frames, p90 {pct(v, .9):.2f} m (target {pct([r["tgt"] for r in sm if r["key"] == key and r["tgt"] is not None], .9):.2f}, '
+              f'raw lead {pct([r["raw"] for r in sm if r["key"] == key and r["raw"] is not None], .9):.2f}){ep}', flush=True)
     # every window sample at the times its console readings really had (found in the rows)
     hb, gb = bt._by_key(hr), bt._by_key(gr)
     smi = {(r['key'], r['t']): r for r in sm}
@@ -209,7 +233,7 @@ def main():
         h1, th1 = timed(host, off_h)
         gsm, tg = timed(guest, off_g)
         h2, th2 = timed(host, off_h)
-        feed = proxy_feed(guest)
+        feed = proxy_feed(guest) if FEED else {}
         loop += 1
         if loop % 4 == 0:
             for con, lst in ((guest, fps_g), (host, fps_h)):
@@ -256,13 +280,16 @@ def main():
         # under SLOW_HOST: the machine, not the mod, makes the states late) ends the run inconclusive; otherwise the
         # guest must get fresh states for most samples and the p90 over all samples has a looser bound too (the
         # guest is capped at 15 fps on purpose, so its rate says nothing about the load)
-        if len(f) < 40 and 0 <= med(fps_h) < SLOW_HOST:
+        if FEED and len(f) < 40 and 0 <= med(fps_h) < SLOW_HOST:
             print(f'  only {len(f)} of {len(errs)} samples with a fresh state and the host at {med(fps_h):.1f} fps '
                   f'(the machine is too loaded to measure)')
             print('RESULT: SKIP (inconclusive: a slow host, BUG-0321)')
             return 0
-        ck(len(f) >= FRESH_SHARE * len(errs), f'the guest gets the host\'s states in time ({len(f)} of {len(errs)} samples '
-           f'with a state at most 0.25 s old and 7 a second, at least {FRESH_SHARE:.0%})')
+        if not FEED:
+            print('  (DASH_FEED=0: no coop.npc list during the dash, no fresh-state check)', flush=True)
+        else:
+            ck(len(f) >= FRESH_SHARE * len(errs), f'the guest gets the host\'s states in time ({len(f)} of {len(errs)} samples '
+               f'with a state at most 0.25 s old and 7 a second, at least {FRESH_SHARE:.0%})')
         if f:
             print(f'  window measure, fresh-state samples: {len(f)} of {len(errs)}, p90 {f[int(0.9 * len(f))]:.2f} m '
                   f'(all {p_all:.2f} m; not judged)', flush=True)

@@ -3112,10 +3112,15 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     if (!is_guest())
         return;
     char k[8];
+    const double now = H->time_seconds();
     for (auto& [id, px] : g_proxies)
         if (px.c && px.diag_have && game::object_alive(px.c) && !px.killed) {
             snprintf(k, sizeof k, "q%u", (unsigned)id);
             fn(k, px.diag_want, user);
+            if (!px.buf.empty()) { // u<id>: M1's raw lead now (const: no late_time, no smoothing; changes no state)
+                snprintf(k, sizeof k, "u%u", (unsigned)id);
+                fn(k, px.buf.raw_lead(now), user);
+            }
         }
 }
 

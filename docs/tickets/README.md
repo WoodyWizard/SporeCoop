@@ -733,3 +733,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0749](BUG-0749-space-no-test-of-terraforming-with-a-real-tool.md) | open | test | Space | 2026-11-08 |  | Space: no test of terraforming with a real tool |
 | [BUG-0750](BUG-0750-space-no-test-of-an-npc-empire-s-mission-and-its.md) | open | test | Space | 2026-11-08 |  | Space: no test of an NPC empire's mission and its reward on the partner's game |
 | [BUG-0751](BUG-0751-space-no-test-of-a-guest-s-building-bought-in-a.md) | open | test | Space | 2026-11-08 |  | Space: no test of a guest's building bought in a colony's city planner |
+| [BUG-0753](BUG-0753-creature-an-npc-proxy-s-interpolation-target-10.md) | open | desync | Creature | 2026-11-08 |  | creature: an NPC proxy's interpolation target 10-12 m from the host's running NPC for seconds with fresh states (creature_npc_dash) |
