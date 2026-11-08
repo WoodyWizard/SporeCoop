@@ -5372,3 +5372,9 @@ along and across the host's velocity):
   the free plot and closes; the host's city must get the house and the shared money fall by the price on both. The
   flight toward the city is printed, not checked (`coop.space allies cities` sometimes lists nothing while flying);
   the click that opens the planner is the check.
+* `coop_space_npc_mission.py` (suite `space_npc_mission`, cold, `space_free`, ~4 min, BUG-0750): the guest jumps to
+  80001FCC (0046102D), asks for missions by clicks, the Galactic Adventures intro it gets is completed by `coop.space
+  allies missions done` (else every empire offers it again), then at 80001F53 (00460038) it gets a regular mission
+  (478C8F3D, reward 30,000), accepts it by clicks and completes it by the same command; the host's shared money must
+  rise by the reward. Pitfall: a declined offer puts that empire's planet on cooldown ("Check us later") for the
+  session; the test never declines before the regular offer.

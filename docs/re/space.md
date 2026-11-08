@@ -2609,3 +2609,19 @@ taken):
 * Test commands: `coop.civ scities` (every city of this game as s<i> with its position and building count; the order
   matched between host and guest on 00460035), `coop.civ buildings s<i>`, `coop.civ slots s<i>`, `coop.civ unbuild
   s<i> <k>` (cCity::DestroyBuilding 0xBE3530: a free plot for tests).
+
+## NPC missions by the comm screen: the Galactic Adventures intro first (2026-11-08, fix/w46-b1-space)
+<a id="space-npc-mission-offer"></a>
+
+BUG-0750, Ghidra GOG 2024 + runtime lane 6 (`space_empire`, `space_free`):
+* ✔ `cMissionManager::ChooseMission` 0xFEEBC0 (thiscall(mgr, cEmpire* giver, cPlanetRecord*) ret 8): for an NPC
+  empire it first offers the Galactic Adventures intro mission **0x2AB57FAC** ("Tell me more..." -> "Beam Down?",
+  reward 0, flags 0x88) while that mission's entry in the manager's map is not in state 2/3, then a weighted pick of
+  the NPC mission table (mgr +0x34, 0x38-byte rows, first dword the mission id); mgr +0x1C overrides the pick.
+  `HasMissionsAvailable` 0xFEE260 gates it: fewer missions than mgr +0xE0, the planet not in the cooldown list
+  mgr +0xC8 (0xFEC730: "Check us later"), the relationship over a threshold. Declining an offer puts that planet on
+  cooldown and does not end the intro: every empire offers 2AB57FAC again.
+* ✔ The intro completed by its own SetState(5) (`coop.space allies missions done <ptr>`) ends it: the next empire
+  asked (80001F53 at 00460038 on `space_free`) offered a regular mission (id 478C8F3D, reward 30,000, flags 0x80).
+  Its answers by clicks: "Tell me more..." (720, 725), then the accept answer (720, 725): state 3. Completed by
+  SetState(5): the guest's money +30,000 and the host's shared money +30,000 (shared.cpp).
