@@ -4884,10 +4884,11 @@ guest order now names its target in the host's log ("target kind K id I ... not 
   TakeDamage (the 2026-10-22 loop): no freeze either way on GOG 2024.
 * `tribe_gameover_reload` / `_reload2` / `_slow` (BUG-0172): `coop_tribe_gameover.py --after-ok S --count N`: the
   member spawns come during the bounce back's reload, or 6 at once at 20 fps over the player network.
-* `menu_escape` (BUG-0184, one game, ~8 min): Escape with no intro, then the menu's own intro again and again (it
-  starts each time the menu comes back: `coop.load`, then `coop.menu`) with a click on "Co-op" 0-8.5 s into it or an
-  Escape at its start and end; the frames must go on. The intro started by hand (PlayCinematic) in the menu does not
-  end on the mod's Escape: no model of the player's intro.
+* `menu_escape` (BUG-0184, one game, ~6 min): six starts of the game, each with the menu's own intro (once per start,
+  ~16 s after the menu came up), "Co-op" clicked 0-7 s into it or Escape at its start, then Escape with no intro; the
+  frames must go on and the co-op window open. Not models of the player's intro: the intro started by hand
+  (PlayCinematic) does not end on the mod's Escape, and a return to the menu (`coop.load`, `coop.menu`) does not start
+  it again.
 * `exit_editor_held` / `exit_editor_open` (BUG-0578, ~4 min): the game's own exit (`coop.close`: WM_CLOSE to the game
   window, cSporeApp::Shutdown, the editors disposed) with the City Hall editor held (core.editor_own_pause off, the
   0.7.3.6 state) or open; the test checks the process ends and writes no crash report. The lane's other game (same

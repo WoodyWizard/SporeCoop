@@ -2596,3 +2596,15 @@ BUG-0167 (GOG 2024, lab lanes 9 / 10, test tribe_camera_null).
   switches it off to make the race; in the 4-player churns of lab 20261107-223550 the guests' logs show "would start
   outside the menu (mode 01654C02): not started" 1-2 times each), and `tribe.camera_guard` (d605e96, a lab switch since
   0.7.11, COOP_FIX_UNSAFE) skips LookAt / SimCamera_Update while the camera is null.
+## The game's own exit at the end of Tribe, the City Hall editor held or open (2026-11-07, fix/w46-n1-crashes)
+<a id="tribe-exit-editor"></a>
+
+BUG-0578 (GOG 2024, lab lanes 9 / 10, tests exit_editor_held / exit_editor_open; `coop.close` posts WM_CLOSE to the game
+window, the player's close button / Alt+F4; the lab's kill and `quit` end the process without the game's exit).
+* ✔ (runtime) WM_CLOSE runs the game's own exit: `App::cSporeApp::Shutdown`, the mod's summary and unload, then
+  "the game exits (ExitProcess 0)" 0.3-0.5 s later; no crash report.
+* ✔ With the City Hall editor request held (core.editor_own_pause off: "the editor waits", mode Tribe, busy
+  input_lock,paused, the 0.7.3.6 state of the report) the exit is clean too (lab 20261107-231415, 20261107-233741),
+  and from inside the City Hall editor (mode 00DBDBA1; lab 20261107-231415, 20261107-232504 x2).
+* ~ Not covered: Windows (the report's Steam build ran on Windows), a guest that timed out rather than left, and the
+  report's 81 s in the held state (today's old gate opens the editor ~60 s after the vote, so the test closes at 40 s).
