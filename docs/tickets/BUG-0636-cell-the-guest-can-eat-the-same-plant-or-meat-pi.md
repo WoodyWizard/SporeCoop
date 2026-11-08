@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-03 (the guest's mark)
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-cell-p0
 commits: d7a0a2c5
 tests: cell_eat_once (coop_cell_once.py --case eat, SPORE_NET delay=150)
@@ -54,3 +54,4 @@ off`: 0.7.9.
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-06: fixed in fix/w46-cell-p0 (cell.eat_once): a tombstone of the cells the guest ate; FAIL 20261106-215119, PASS 20261106-215503.
+- 2026-11-07: released in 0.7.10.

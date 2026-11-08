@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w46-cell-p0 lab 20261106-224058, 20261106-223318
 role: both
 versions: 0.7.9-dev
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-detector-scale
 commits: 5e39a0ce, 334a248f, 0243b621
 tests: cell_levelup_view, play_cell, tools_selftest worldstate
@@ -56,3 +56,4 @@ Lab, lane 9 (free 10), SPORE_DETECTOR=20, cell_levelup_view x2 + play_cell x2 ea
 ## History
 - 2026-11-06: opened.
 - 2026-11-07: fixed on fix/w46-detector-scale (census wscale, worlddiff converts the guest into the host scale).
+- 2026-11-07: released in 0.7.10.

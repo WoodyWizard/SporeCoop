@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: play_tribe, labs 20261101-134020 and 20261101-145528 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-k3-bodies
 commits: 407c1c97, 50232092, 1fcf09b2, b0f4e2eb, 0f0f32f1, 6baee26a, 51744dce, e266ef4e, 836b0b5e, d42bf1d5
 tests: body_trail_tribe_player, body_trail_tribe, tribe_walk_player, tribe_walk_mobile, net_tests test_lead_keep
@@ -51,3 +51,4 @@ Regression with the fix: tribe_walk_mobile out/lab/20261107-100645-2 3 of 3, -11
 - 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.2 s delay), fixed by drive.lead.
 - 2026-11-07 (orchestrator, 0.7.9 final check on a quiet lab): reopened, the claim does not hold: body_trail_tribe_player 2 of 2 FAIL with the lead (p90 2.14 / 2.81 m, longest over 2 m 1.49 / 2.91 s, out/lab/20261107-012856) and 2 of 2 FAIL with SPORE_FIX_OFF=drive.lead (p90 2.77 / 2.97 m, 2.96 / 4.17 s, out/lab/20261107-012856-2), also FAIL in the final check 20261106-231404 and the rerun 20261107-004042. The lead is better than or equal to 0.7.8 behaviour, so it ships as an improvement (CHANGELOG Changed), the rest goes to 0.7.10 K3.
 - 2026-11-07 (fix/w46-k3-bodies, K3): decomposed with the new coop.bodyrec diag rows (the no-lead rule, the slow late catch-up, the step back after a turn); fixed with drive.lead_keep. Status fixed, fixed_in unreleased.
+- 2026-11-07: released in 0.7.10.

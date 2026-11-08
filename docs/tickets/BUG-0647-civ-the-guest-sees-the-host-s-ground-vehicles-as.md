@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-09, M0ng0r-15
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-civ
 commits: 142b991e
 tests: civ_host_design
@@ -47,3 +47,4 @@ Test civ_host_design (coop_civ_host_design.py): the host's and the guest's My Cr
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: fixed in fix/w46-tribe-civ (creations.host_designs).
+- 2026-11-07: released in 0.7.10.

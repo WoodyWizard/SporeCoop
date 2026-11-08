@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-08
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-dance
 commits: c9265c9a, 865501d9, 8e1f4c48
 tests: tribe_party_music
@@ -59,3 +59,4 @@ Not verified: a guest joining during a party (the play is sent once), the night 
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: not reproduced in fix/w46-tribe-civ; footsteps found host-only: BUG-0669.
 - 2026-11-07: reproduced and fixed in fix/w46-tribe-dance (`tribe.party_music`).
+- 2026-11-07: released in 0.7.10.

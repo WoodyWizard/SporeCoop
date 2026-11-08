@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: fix/w46-k3-bodies lab 20261107-113600 chaos_tribe_awful#1 (lane 7)
 role: guest
 versions: unreleased (rel/0.7.10 + fix/w46-k3-bodies 1cbce569, with SPORE_FIX_OFF=tribe.mirror_keep,drive.lead_keep)
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-rejoin-crash
 commits: d8c99613 0eb35cc6 77444e1a
 tests: menu_hover, chaos_tribe_awful
@@ -66,3 +66,4 @@ armed to put the mouse on planet 5; the received world has 7.
 - 2026-11-07: opened.
 - 2026-11-07: opened by the K3 agent (fix/w46-k3-bodies) from a regression run; not analysed there.
 - 2026-11-07: fix/w46-rejoin-crash: analysed (the rollover planet kept across the menu's planet rebuild), reproduced, fixed (game.menu_hover) and the storm made visible (kit.fix faultstorm).
+- 2026-11-07: released in 0.7.10.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-13, Sterben-07
 role: both
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-civ
 commits: 80846470
 tests: tribe_colors
@@ -43,3 +43,4 @@ Test tribe_colors (coop_tribe_colors.py): the host forms a village, the guest's 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: fixed in fix/w46-tribe-civ (wsync.tribe_color).
+- 2026-11-07: released in 0.7.10.

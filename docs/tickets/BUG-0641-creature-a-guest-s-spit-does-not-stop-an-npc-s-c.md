@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-06, M0ng0r-11
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-creature-p0
 commits: 234a2d29, b418a0ab
 tests: spit_charge (coop_spit_charge.py)
@@ -60,3 +60,4 @@ own creature must hold 0x1000 in the guest's game. 5 tries each.
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): fixed (creature.spit_counter, plus the hit's return value and a 1 s window); FAIL 20261107-080322, PASS 20261107-080138, 20261107-080609. Strike half: no hit lost (host 242 forwarded, guest 246 received); the placement of the puppet goes to K3 (fix/w46-k3-bodies).
+- 2026-11-07: released in 0.7.10.

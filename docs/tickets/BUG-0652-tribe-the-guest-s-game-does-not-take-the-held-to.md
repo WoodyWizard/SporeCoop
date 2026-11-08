@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab log sweep 2026-11-06 (703 runs, 2026-11-05/06)
 role: 
 versions: 0.7.8, rel/0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-s1-sweep
 commits: 915c0e22
 tests: tribe_leader_sync (coop_tribe_leader_sync.py)
@@ -50,3 +50,4 @@ leader #4 led in the guest's game 1.1 s after the setup, #5 held the host's tool
 - 2026-11-06: opened from the orchestrator's lab log sweep; planned for 0.7.10.
 - 2026-11-07 (fix/w46-s1-sweep): fixed; see Root cause / Verification.
 - 2026-11-07 (fix/w46-s1-sweep): regressions: smoke 14/14 out/lab/20261107-115159; play_tribe, play_creature, play_civ, tribe_tools, tribe_leader_sync, kit_present_hitch OK out/lab/20261107-120858; tribe_walk_player flaky in its walk checks with the fix off and on alike (1 of 2 each: 20261107-123430 off, 20261107-123430-2 on), no tool warning in any of them.
+- 2026-11-07: released in 0.7.10.

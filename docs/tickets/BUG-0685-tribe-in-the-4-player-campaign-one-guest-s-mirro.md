@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab 20261107-141346 campaign (rel/0.7.10 e7d1734c, lane 2)
 role: guest
 versions: 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-leader
 commits: f4e96be8 a64ded85
 tests: tribe_leader_ko
@@ -66,3 +66,4 @@ mirror did not come again (no `t: missing`); the gate failed on `t: 1 apart` (BU
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: fixed on fix/w46-tribe-leader (tribe.mirror_blow); not a 0.7.10 regression.
+- 2026-11-07: released in 0.7.10.

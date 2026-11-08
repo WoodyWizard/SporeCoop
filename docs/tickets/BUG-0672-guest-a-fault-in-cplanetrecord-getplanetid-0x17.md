@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab rel/0.7.10 20261107-073512 tribe_play (lane 9)
 role: guest
 versions: rel/0.7.10 94066205
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-load
 commits: d612408c 76281c96 06d0b643
 tests: coop_tribe_world_map.py (suite tribe_world_map)
@@ -86,3 +86,4 @@ Test coop_tribe_world_map.py (suite tribe_world_map), lane 9, runs in the fix/w4
 - Questions: is it the 0.7.9 tribe.body_teardown detour or code new in 0.7.10 (P0-Cell, M1 merged)?
   Why did frameunwind not get frames going again (the fault may be outside SporeKit's frame)?
 - 2026-11-07 (fix/w46-final-triage): suite.py allows the gate finding the test makes on purpose (lab 20261107-141346: tribe_world_map, sync-check `t: 7 missing on the guest` at s 32.0, 0.5 s after the test let the held tribe states in again).
+- 2026-11-07: released in 0.7.10.

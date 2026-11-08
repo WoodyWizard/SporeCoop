@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: player report 2026-11-07 (Discord bug-reports post 'Items are not saved for players.', tag Space, text only, version not given)
 role: 
 versions: unknown (0.7.9 is current)
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-space-items
 commits: 767118a2, 13dccfa9, 08ff13df
 tests: space_items_rejoin
@@ -54,3 +54,4 @@ so they are not paid into a hold about to be replaced. Limits: BUG-0679.
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: reproduced and fixed on fix/w46-space-items (space.keep_items); limits in BUG-0679.
+- 2026-11-07: released in 0.7.10.

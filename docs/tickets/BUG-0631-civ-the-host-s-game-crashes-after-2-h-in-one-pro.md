@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-11
 role: host
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-addr-space
 commits: c7092dea, a39b4b15
 tests: mem_reserve, mem_census, mem_census_tour_guest, mem_census_tour_guest_places
@@ -131,3 +131,4 @@ a free block of 100 MB or more and the host's screen shows the notice; 3 min of 
   game's own cache, filled faster on the host by its partner's surroundings, no leak of the mod; fixed the crash side
   with core.mem_reserve (a kept block given back with a notice); the large-address flag checked (off in GOG 2024,
   impossible on Steam's SteamStub exe, not settable at runtime). Status fixed.
+- 2026-11-07: released in 0.7.10.

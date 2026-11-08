@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: found in fix/w46-tribe-civ (BUG-0646 analysis)
 role: guest
 versions: 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-misc
 commits: 05f4de4a
 tests: tribe_footsteps
@@ -47,3 +47,4 @@ PASS: out/lab/20261107-120034 (33 vs 36).
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: fixed in fix/w46-misc (npc.epic_steps): the footsteps were the epic's; the guest's proxy lacked the animation epic flag.
+- 2026-11-07: released in 0.7.10.

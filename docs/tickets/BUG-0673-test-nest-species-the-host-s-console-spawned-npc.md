@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: regression run of fix/w46-tribe-civ, 2026-11-07
 role: 
 versions: 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-misc
 commits: e71313b2, ba0cc08f
 tests: nest_species
@@ -40,3 +40,4 @@ out/lab/20261107-120856 before ba0cc08f).
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: cause found in fix/w46-misc (the console NPC looked like a saved stray to npc.stray_ids); test tool fixed (tools.console_npc).
+- 2026-11-07: released in 0.7.10.

@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: found in fix/w46-tribe-civ (BUG-0645 analysis)
 role: guest
 versions: 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-dance
 commits: 865501d9, 8e1f4c48
 tests: tribe_guest_baby, tribe_guest_baby_noeffects
@@ -52,3 +52,4 @@ Not verified: which effect id carries the message (the relay's), a host and a gu
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: reproduced with the real click, fixed in fix/w46-tribe-dance (`tribe.guest_baby`).
+- 2026-11-07: released in 0.7.10.

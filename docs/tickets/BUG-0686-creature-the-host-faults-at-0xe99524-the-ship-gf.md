@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab
 role: host
 versions: 0.7.10
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-advance-reg
 commits: 028c5863 fce291d5
 tests: creature_ufo_nomodel
@@ -60,3 +60,4 @@ worktree): 4/4 OK, no visit.
 
 ## History
 - 2026-11-07: opened and fixed (fix/w46-advance-reg): not a 0.7.10 regression (v0.7.9 faults the same way).
+- 2026-11-07: released in 0.7.10.

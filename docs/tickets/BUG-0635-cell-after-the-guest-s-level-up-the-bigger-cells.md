@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-02, M0ng0r-03
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-cell-p0
 commits: 47969057 1180b8f8 1a4de972
 tests: cell_levelup_view (coop_cell_levelup_view.py)
@@ -64,3 +64,4 @@ most of the screen, in both games alike (the cells of the old tier leave in a si
 * 2026-11-07, rel/0.7.10 3c81fb62: out/lab/20261107-161122 failed once (guest 61% vs host 39%, the test's own
   threshold); the next 4 runs passed (guest 36-73%, host 33-57%). Fix off loses 81-100%: the fix holds, the
   comparison with the host's own loss is noisy. Reopen if the guest loses over 80% again.
+- 2026-11-07: released in 0.7.10.

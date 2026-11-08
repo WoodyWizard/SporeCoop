@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-04
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-creature-p0
 commits: 89545851, ccf7cf63, b418a0ab
 tests: choice_world (coop_choice_world.py)
@@ -58,3 +58,4 @@ species (a sample with no avatar, during a second world load of the guest, count
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): fixed (creations.choice_world); FAIL 20261107-080727, PASS 20261107-075854, 20261107-080319.
+- 2026-11-07: released in 0.7.10.

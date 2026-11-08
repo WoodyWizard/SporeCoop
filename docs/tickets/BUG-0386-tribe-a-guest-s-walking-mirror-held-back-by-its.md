@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found by tribe_walk_mobile (fix/w30-tribe-walk)
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-k3-bodies
 commits: 0f0f32f1, 665d2c4a, e266ef4e
 tests: body_trail_tribe_hold (tools/tests/coop_body_trail.py --stage tribe --hold), tribe_walk_mobile
@@ -53,3 +53,4 @@ PASS, final code: body_trail_tribe_hold out/lab/20261107-120427 (3 of 3); earlie
   Tribe member steps over 5 m: t2 8.0 m at 3.5 s"). The BUG-0386 probe did not log (it needs over 2 m for 1 s in
   walk_place). Track files: out/lane9/track/tribe_walk_guest_walks_*.json of those runs.
 - 2026-11-07 (fix/w46-k3-bodies, K3): cause observed in the recorded track (the placing undone, never counted as lost, keep_lost off for mirrors); fixed by tribe.mirror_keep, test body_trail_tribe_hold with a planted hold. Status fixed, fixed_in unreleased.
+- 2026-11-07: released in 0.7.10.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab log sweep 2026-11-06 (703 runs, 2026-11-05/06)
 role: 
 versions: 0.7.8, rel/0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-s1-sweep
 commits: 915c0e22
 tests: kit_present_hitch (kit_present_hitch.py)
@@ -42,3 +42,4 @@ hitch gate failed on the test's own 2.6 s hitch: the gate is off for this test n
 ## History
 - 2026-11-06: opened from the orchestrator's lab log sweep; planned for 0.7.10.
 - 2026-11-07 (fix/w46-s1-sweep): fixed; see Root cause / Verification.
+- 2026-11-07: released in 0.7.10.

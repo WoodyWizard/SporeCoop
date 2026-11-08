@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-12
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-tribe-civ
 commits: 80846470
 tests: tribe_portraits
@@ -45,3 +45,4 @@ Test tribe_portraits (coop_tribe_portraits.py): the host's tribe becomes the hos
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: fixed in fix/w46-tribe-civ (creations.png).
 - 2026-11-07 (fix/w46-final-triage): suite.py allows the gate finding the test makes on purpose (lab 20261107-141346: tribe_portraits, monitor puppet `hidden: state older than 5 s` while the killed guest game was silent before its restart).
+- 2026-11-07: released in 0.7.10.

@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: found in the lab, fix/w46-creature-p0 (BUG-0639 probe)
 role: both
 versions: 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-herd-evo
 commits: 0ebcfb43, 64fe3af3, 4a07c2fc, ffce936a
 tests: nest_evolve (coop_nest_evolve.py), nest_evolve_probe (coop_nest_evolve_probe.py)
@@ -67,3 +67,4 @@ every 5 s for 60 s both games' own herds (`coop.nest evolve`) are compared nest 
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-herd-evo): fixed: wsync.herd_evo; FAIL 20261107-095730 / 100058 / 100333, PASS 20261107-100043 / 100318.
 - 2026-11-07 (fix/w46-herd-evo): regressions PASS: out/lab/20261107-100728 (play_creature, family_attack, evolve_world, wsync_transitions, nest_evolve), 20261107-100748 (detect_creature, creature, migration, nest_follow, nest_heal), smoke 20261107-103109 13/14 (creature: guest stuck in the Galaxy menu at the join, rerun PASS 20261107-105356); make test PASS.
+- 2026-11-07: released in 0.7.10.

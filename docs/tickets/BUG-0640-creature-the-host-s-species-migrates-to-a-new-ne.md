@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-04, M0ng0r-07
 role: both
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.10
 branch: fix/w46-creature-p0
 commits: 6a3d9e08, 99320566, 4fbb7cb9, bdba70da
 tests: nest_follow (coop_nest_follow.py), nest_follow_own (coop_nest_follow.py --own)
@@ -61,3 +61,4 @@ host's new nest (respawn place and home), and the heal there.
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): fixed (wsync.creature_nest); FAIL 20261107-074327, PASS 20261107-074330, 20261107-074824, own creature 20261107-074827.
+- 2026-11-07: released in 0.7.10.

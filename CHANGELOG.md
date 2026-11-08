@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-11-07
+
 ### Changed
 - Civilization: the host's vehicles are drawn where the game is moving them on the guest's screen, no longer a step
   behind (found with BUG-0438).
