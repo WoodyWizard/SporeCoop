@@ -3872,7 +3872,11 @@ void tick(double now)
         return;
     prune_gone();
     g_cmd_world = modes::current_world();
-    if (is_host() && !g_cmd_held.q.empty()) // BUG-0693: the commands that came while this game was away
+    static double active_at, active_since;
+    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
+        active_since = now;
+    active_at = now;
+    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle) // BUG-0693: the commands that came while this game was away
         g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
             net::Reader r(c.bytes.data(), c.bytes.size());
             H->log(M, SK_INFO, "civ: a command of player %u held while away runs now", c.from);

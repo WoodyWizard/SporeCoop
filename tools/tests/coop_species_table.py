@@ -50,8 +50,21 @@ def main():
     print(f'  host table {len(h)} records, guest {len(g)}; differences: {d}', flush=True)
     ck(not d, f'1. the guest has the host\'s table ({d[:3]})')
     keys = [k for k in sorted(h) if k[:2] not in ('7C', '7D')][:3]
-    for k, (rel, imp) in zip(keys, ((1, 0), (3, 1), (6, 3))):
-        print(' ', host.call(f'coop.social record {k} {rel} {imp}')['out'].strip(), k, rel, imp)
+    # how long a change of the host's table takes to be in the guest's game: the detector looks again 1.5 s after
+    # its first dump (worlddiff CELL_GAP), so a change must be there well within that
+    delays = []
+    for i, (rel, imp) in enumerate(((1, 0), (3, 1), (6, 3), (2, 0), (3, 2), (1, 1))):
+        k = keys[i % len(keys)] if keys else None
+        if not k:
+            break
+        time.sleep(0.37 * i % 1.0)  # at another phase of the host's send cadence each time
+        host.call(f'coop.social record {k} {rel} {imp}')
+        t0 = time.time()
+        while time.time() - t0 < 5 and table(guest).get(k, (0, 0, 0))[:2] != (rel, imp):
+            time.sleep(0.05)
+        delays.append(round(time.time() - t0, 2))
+    print(f'  the guest had the host\'s change after {delays} s', flush=True)
+    ck(delays and max(delays) <= 1.0, f"2a. a change of the host's table is in the guest's game within 1 s ({delays})")
     h, g, d = settle(host, guest)
     print(f'  after the host\'s changes: {[(k, h.get(k), g.get(k)) for k in keys]}', flush=True)
     ck(keys and not d, f"2. the host's changed records are on the guest ({d[:3]})")

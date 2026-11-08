@@ -62,6 +62,9 @@ def main():
         ck(g is not None and h is not None and abs(g - h) < 5, f'both games hold the same money ({h}, {g})')
     # 2. a purchase in the first frame after an editor visit (BUG-0692)
     if both_at(host, guest, BASE, ck):
+        # the host sends its total on a change and every 2 s after it: both_at's change came 3 s ago, so the 3 s editor
+        # visit ends 1 s away from the host's next total (ended on it, the total of that frame decides the outcome)
+        time.sleep(1.0)
         print(' ', guest.call(f'coop.res away 3 {RES} -200')['out'].strip())
         time.sleep(3 + 5)
         h, g = money(host), money(guest)

@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 
 #include "modes.h"
@@ -139,6 +140,8 @@ struct Res {
     std::map<uint8_t, uint32_t> acked; // host: last change counted per guest (echoed in MSG_RES)
     bool ack_dirty = false;            // host: a change was counted, send the total with its ack
     double owed = 0;                   // host (BUG-0691): guests' changes acked while the game could not hold them
+    std::map<uint8_t, double> causes;  // host (BUG-0696): each player's change since the last total
+    double applied = 0;                // host (BUG-0696): the guests' changes written into the game since then
     uint32_t epoch = 0;                // guest (BUG-0692): game::stage_epoch(mode) of the world the sync state is of
 };
 
@@ -182,6 +185,26 @@ static double g_away_change;
 static bool g_away_due;
 static uint32_t g_owed_paid; // tests: owed changes paid into the host's game
 static bool get_now(Res& r, double& v, double now) { return now >= g_block_until && r.get(v); }
+// BUG-0696: the shared total (MSG_RES) carried no cause: a guest's money or food jumped and nobody said whose purchase
+// or earning it was. On: the host appends each player's change since its last total (u8 n, {u8 player, f64 change},
+// after the ack list; older guests stop reading before it) and every game shows a notice for another player's change
+// of 25 or more; the host's own change is its game's change minus the guests'. Off: no cause (0.7.10).
+static bool g_cause_fix = true;
+COOP_FIX("res.cause", "BUG-0696", g_cause_fix, "shared: a notice says whose purchase or earning changed the shared money or food");
+static std::function<void(const std::string&)> g_feed;
+static uint32_t g_causes_shown;
+static constexpr double kCauseMin = 25; // a change below it is not said (the cities' income, a single food)
+static const char* label(const Res& r) { return r.id == 1 ? "food" : "money"; }
+static void say_cause(net::Session& s, const Res& r, uint8_t player, double v)
+{
+    if (!g_feed || std::fabs(v) < kCauseMin || player == s.my_id())
+        return;
+    char b[160];
+    snprintf(b, sizeof b, "%s %s %.0f %s (shared)", s.name_of(player).c_str(), v > 0 ? "earned" : "spent", std::fabs(v),
+             label(r));
+    g_feed(b);
+    g_causes_shown++;
+}
 static bool g_hold;          // the last tick: the guest is elsewhere and the totals are held
 static uint32_t g_held_totals; // tests: host totals ignored while held
 
@@ -237,6 +260,8 @@ void on_session_end()
         r.acked.clear();
         r.ack_dirty = false;
         r.owed = 0;
+        r.causes.clear();
+        r.applied = 0;
     }
 }
 
@@ -277,14 +302,18 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         if (r.mode != mode || !get_now(r, v, now)) {
             // BUG-0692: a guest out of the mode (an editor) keeps its sync state while the stage's world is the same
             if (!(g_mode_keep_fix && s.role() == net::Role::Client && r.have && r.mode != mode &&
-                  game::stage_epoch(r.mode) == r.epoch))
+                  game::stage_epoch(r.mode) == r.epoch)) {
+                if (r.have && g_away_due)
+                    H->log(M, SK_INFO, "shared %s: sync state dropped out of its mode (test)", r.name);
                 r.have = false;
+            }
             continue;
         }
         if (g_mode_keep_fix && s.role() == net::Role::Client && r.have && game::stage_epoch(r.mode) != r.epoch)
             r.have = false; // another world of the stage: wait for the host's total
         if (s.role() == net::Role::Host && r.owed != 0 && !g_hold) { // BUG-0691: pay what was acked while away
             r.set(net::shared_add(v, r.owed, g_floor_fix));
+            r.applied += r.owed;
             H->log(M, SK_INFO, "shared %s %+.1f owed to the guests paid", r.name, r.owed);
             r.owed = 0;
             g_owed_paid++;
@@ -308,7 +337,22 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
                         w.u8(id);
                         w.u32(seq);
                     }
+                    if (g_cause_fix && r.have) { // BUG-0696: whose changes these are (older guests stop before)
+                        double own = v - r.synced - r.applied;
+                        if (std::fabs(own) >= kCauseMin)
+                            r.causes[0] += own;
+                        w.u8((uint8_t)std::min<size_t>(r.causes.size(), 16));
+                        size_t i = 0;
+                        for (auto& [id, c] : r.causes) {
+                            if (i++ >= 16)
+                                break;
+                            w.u8(id);
+                            w.f64(c);
+                        }
+                    }
                 }
+                r.causes.clear();
+                r.applied = 0;
                 r.ack_dirty = false;
                 s.broadcast_reliable(net::MSG_RES, w);
                 r.synced = v;
@@ -364,8 +408,10 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                     r.ack_dirty = true;
                 }
             }
-            if (std::fabs(v) < 1e7)
+            if (std::fabs(v) < 1e7) {
                 r.owed += v;
+                r.causes[from] += v;
+            }
             (v > 0 ? r.gained : r.spent) += v;
             H->log(M, SK_INFO, "shared %s %+.1f from player %u owed (the game cannot hold it now)", r.name, v, from);
             return;
@@ -398,6 +444,15 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                 }
                 if (!rd.ok())
                     return;
+                if (g_cause_fix && rd.left() >= 1) { // BUG-0696: whose changes moved the total
+                    uint8_t nc = rd.u8();
+                    for (int i = 0; i < nc && rd.ok(); i++) {
+                        uint8_t pid = rd.u8();
+                        double c = rd.f64();
+                        if (rd.ok() && std::isfinite(c))
+                            say_cause(s, r, pid, c);
+                    }
+                }
                 if (!has_ack) { // the host counted nothing of ours in this session yet
                     has_ack = true;
                     ack = r.led.next_seq - 1 - (uint32_t)r.led.in_flight.size();
@@ -410,6 +465,8 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             r.synced = r.get(got) ? got : shown;
             r.have = true;
             r.epoch = game::stage_epoch(r.mode); // BUG-0692: the world this sync state is of
+            if (g_away_due)
+                H->log(M, SK_INFO, "shared %s: a host total %.1f taken (test)", r.name, v);
         } else if (type == net::MSG_RES_ADD && s.role() == net::Role::Host) {
             if (rd.left() >= 4) {
                 uint32_t seq = rd.u32();
@@ -418,8 +475,12 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                     r.ack_dirty = true;
                 }
             }
-            if (std::fabs(v) < 1e7)
+            if (std::fabs(v) < 1e7) {
                 r.set(net::shared_add(cur, v, g_floor_fix));
+                r.applied += v;
+                r.causes[from] += v;
+                say_cause(s, r, from, v); // BUG-0696: on the host at once
+            }
             (v > 0 ? r.gained : r.spent) += v; // tests: what the guests changed
             H->log(M, SK_INFO, "shared %s %+.1f from player %u", r.name, v, from);
         }
@@ -444,7 +505,7 @@ std::string brief()
 std::string status()
 {
     std::string out;
-    char b[128];
+    char b[192];
     for (auto& r : g_res) {
         double v;
         // only this mode's resources: in Space the player cCivilization still exists and its
@@ -454,9 +515,9 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u\n",
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u causes=%u\n",
                  r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created,
-                 r.owed, g_owed_paid);
+                 r.owed, g_owed_paid, g_causes_shown);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
@@ -471,6 +532,8 @@ std::string fix(const std::string& name, int on)
         *f = on != 0;
     return "shared fix " + name + " " + (*f ? "on" : "off") + "\n";
 }
+
+void set_feed(std::function<void(const std::string&)> f) { g_feed = std::move(f); }
 
 std::string test_knob(const std::string& what, double secs, const std::string& name, double change)
 {

@@ -5563,6 +5563,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         creations::world_species_out(peer, files);
     });
     shared::init(H, M);
+    shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
     game::set_dna_listener(on_dna);

@@ -30,6 +30,7 @@
 #include "space_logic.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "world.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -285,6 +286,57 @@ bool give_tool(uint32_t hash)
     return vcall<bool>(inv, 0x74 / 4, (const uint32_t*)k);
 }
 
+// BUG-0694: a reward paid while this game is outside Space (an editor, an adventure, the galaxy menu: no inventory,
+// maybe no empire) was lost: add_money / give_tool did nothing and the contract's id was spent; a mission's reward tools
+// (spacecoop K_MISSION) the same. Now what cannot be paid now is owed (money, a tool by hash or by key) and paid in the
+// first Space frame of the same Space world (spaceext::world_epoch; another world: dropped, logged). Off: lost (0.7.10).
+// BUG-0695: contract deadlines ran on the wall clock (H->time_seconds): a paused game, an editor, a menu or a load used
+// them up. On: the host's contract clock stops while it is not playing Space. Off: the wall clock (0.7.10).
+bool g_clock_fix = true;
+COOP_FIX("space.contract_clock", "BUG-0695", g_clock_fix, "space: a contract's time does not run out while the host's game is paused or outside Space");
+double g_clock_held; // tests: seconds the clock stood still
+bool g_owed_fix = true;
+COOP_FIX("space.reward_owed", "BUG-0694", g_owed_fix, "space: a contract or mission reward earned while outside Space is paid when back in Space");
+struct OwedReward {
+    int money = 0;
+    uint32_t hash = 0;       // a contract's tool (file name hash), 0 none
+    uint32_t key[3] = {};    // a mission's tool key, key[0] 0 none
+    uint32_t epoch = 0;
+    std::string what;
+};
+std::vector<OwedReward> g_owed;
+uint32_t g_owed_paid, g_owed_dropped;
+void say(const std::string& t);
+void owed_tick()
+{
+    if (g_owed.empty() || !spaceext::in_space())
+        return;
+    auto owed = std::move(g_owed);
+    g_owed.clear();
+    for (auto& o : owed) {
+        if (o.epoch != spaceext::world_epoch()) {
+            g_owed_dropped++;
+            H->log(M, SK_INFO, "contracts: an owed reward (%s) dropped: another Space world", o.what.c_str());
+            continue;
+        }
+        bool need_inv = o.hash || o.key[0];
+        if ((o.money && !empire()) || (need_inv && !inventory())) {
+            g_owed.push_back(o); // not yet (the inventory comes a moment after the Space frames start)
+            continue;
+        }
+        if (o.money)
+            add_money(o.money);
+        bool tool = o.hash ? give_tool(o.hash) : false;
+        if (o.key[0] && a_AddItemByKey && !vcall<bool>(inventory(), 0x74 / 4, (const uint32_t*)o.key)) {
+            thiscall<void>(a_AddItemByKey, inventory(), (const uint32_t*)o.key);
+            tool = true;
+        }
+        g_owed_paid++;
+        H->log(M, SK_INFO, "contracts: an owed reward paid (%s): money %d, tool %d", o.what.c_str(), o.money, (int)tool);
+        say(o.what + tr(": the reward you earned while away is yours now", ": награда, заработанная вне космоса, получена"));
+    }
+}
+
 struct ToolInfo {
     uint32_t hash;
     const char* en;
@@ -535,11 +587,24 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
     // money: one shared budget (the host adds it once, shared.cpp gives it to everybody), in rivals
     // mode every member of the crew gets it
     bool pay = spaceext::rivals() ? mine : host();
-    if (pay) {
+    // BUG-0694: outside Space (no empire / no inventory) the reward is owed, paid back in the same Space world
+    bool owe_money = g_owed_fix && pay && money_ && (!spaceext::in_space() || !empire());
+    bool owe_tool = g_owed_fix && mine && tool && (!spaceext::in_space() || !inventory());
+    if (owe_money || owe_tool) {
+        OwedReward o;
+        o.money = owe_money ? (int)money_ : 0;
+        o.hash = owe_tool ? tool : 0;
+        o.epoch = spaceext::world_epoch();
+        o.what = tr("Contract", "Контракт");
+        g_owed.push_back(o);
+        H->log(M, SK_INFO, "contracts: reward of contract %u owed (outside Space): money %d tool %08X", id, o.money, o.hash);
+    }
+    if (pay && !owe_money) {
         add_money((int)money_);
         g_money_got += (int)money_;
-    }
-    bool got_tool = mine && tool && give_tool(tool);
+    } else if (owe_money)
+        g_money_got += (int)money_;
+    bool got_tool = mine && tool && !owe_tool && give_tool(tool);
     if (got_tool)
         n_tools++;
     n_rewards++;
@@ -548,6 +613,8 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
         s += tr(" to the shared budget", " в общий бюджет");
     if (got_tool)
         s += " + " + tool_name(tool);
+    else if (owe_tool)
+        s += " + " + tool_name(tool) + tr(" (when you are back in space)", " (когда вернётесь в космос)");
     else if (mine && tool)
         s += tr(" (the tool is already in your cargo)", " (инструмент у вас уже есть)");
     if (!mine)
@@ -1027,8 +1094,16 @@ void survey_tick(double dt)
 
 void host_tick(double t)
 {
-    double dt = std::min(1.0, t - g_last_tick);
+    double gap = g_last_tick > 0 ? t - g_last_tick : 0;
+    double dt = std::min(1.0, gap);
     g_last_tick = t;
+    // BUG-0695: the contract's clock runs only while the host plays Space with the game's time running: a pause, an
+    // editor, a menu or a load (no frames: a long gap) moves the deadline on by the time it took
+    if (g_clock_fix && (g.state == S_OFFERED || g.state == S_ACTIVE) && gap > 0 &&
+        (gap > 1.0 || !spaceext::in_space() || world::time_paused())) {
+        g.deadline += gap;
+        g_clock_held += gap;
+    }
     // the crew: players still in the session
     if (g.state == S_OFFERED || g.state == S_ACTIVE) {
         auto pl = C().sess->players();
@@ -1115,6 +1190,8 @@ bool init(const SkHost* h, SkMod* m)
 
 void tick(double t)
 {
+    if (g_owed_fix)
+        owed_tick(); // BUG-0694 (also after the session ended: the reward was earned in it)
     if (!connected()) {
         if (g.state != S_NONE)
             g = Contract{};
@@ -1391,6 +1468,17 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "money %d\n", money());
         return b;
     }
+    if (a[0] == "clock") { // tests (BUG-0695): the contract's time left and how long its clock stood still
+        snprintf(b, sizeof b, "clock left=%.1f held=%.1f state=%d\n", g.state ? g.deadline - now() : 0.0, g_clock_held, (int)g.state);
+        return b;
+    }
+    if (a[0] == "result" && a.size() > 2) { // tests (BUG-0694): a won contract's result for this game: result <money> <tool hex>
+        std::vector<uint8_t> crew{spaceext::my_id()};
+        on_result(0xFFFF0000u + (g_owed_paid + g_owed_dropped + (uint32_t)g_owed.size()), true, 0, (uint32_t)atoi(a[1].c_str()),
+                  (uint32_t)strtoul(a[2].c_str(), nullptr, 16), crew, T_SURVEY);
+        snprintf(b, sizeof b, "result given; owed %u paid %u dropped %u\n", (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped);
+        return b;
+    }
     if (a[0] == "tool" && a.size() > 1) {
         uint32_t h = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         snprintf(b, sizeof b, "tool %08X %s: %s\n", h, tool_name(h).c_str(), has_tool(h) ? "have" : "no");
@@ -1418,3 +1506,18 @@ bool reg = spaceext::add({.name = "contracts",
                           .debug = debug});
 
 } // namespace
+
+namespace spaceext {
+// BUG-0694: a mission's reward tool this game cannot take now (outside Space): owed, given back in the same Space world
+bool owe_tool_key(const uint32_t key[3], const std::string& what)
+{
+    if (!g_owed_fix || !key[0])
+        return false;
+    OwedReward o;
+    memcpy(o.key, key, sizeof o.key);
+    o.epoch = world_epoch();
+    o.what = what;
+    g_owed.push_back(o);
+    return true;
+}
+} // namespace spaceext

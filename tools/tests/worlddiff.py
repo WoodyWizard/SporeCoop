@@ -110,7 +110,7 @@ NOUNS = {  # GameNounIDs of the Spore ModAPI (Simulator/SimulatorEnums.h); unkno
 }
 
 OBJ = re.compile(r'obj ([a-z])(-?\d+) key=([0-9A-F]{8}) alive=(-?\d+) hp=(\S+) ai=(-?\d+) own=(\S*) owner=(-?\d+) '
-                 r'pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\)(?: noun=([0-9A-F]{8}) ser=(\d+) scale=(\S+))?')
+                 r'pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\)(?: noun=([0-9A-F]{8}) ser=(\d+) scale=(\S+)(?: max=(\S+))?)?')
 HEAD = re.compile(r'census v1 role=(\S+) me=(\d+) mode=(.*?) modeid=([0-9A-F]+) world=([0-9A-F]+) t=([\d.]+)')
 ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)(?: wscale=(\S+))?')
 
@@ -191,7 +191,8 @@ class World:
                                       pos=tuple(_f(m.group(i)) for i in (9, 10, 11)),
                                       noun=int(m.group(12), 16) if m.group(12) else 0,
                                       ser=int(m.group(13)) if m.group(13) else 0,
-                                      scale=_f(m.group(14)) if m.group(14) else float('nan')))
+                                      scale=_f(m.group(14)) if m.group(14) else float('nan'),
+                                      max_hp=_f(m.group(15)) if m.group(15) else float('nan')))
                 continue
             m = ME.match(line)
             if m:
@@ -694,6 +695,11 @@ def diff(host, guest, area=None):
             # a guest registers a received creation under a key of its own (0x7C / 0x7D......): not a difference
             if x['key'] != y['key'] and not (y['key'][:2] in ('7C', '7D') or x['key'][:2] in ('7C', '7D')):
                 add('model', label, 1, f'{label} {i}: model {x["key"]} on the host, {y["key"]} on the guest')
+            # BUG-0698 (class BUG-0419): the game's max health of a matched creature (NpcSpawn.max_health is not applied:
+            # a proxy of the same species and age has the host's max by the game's own rules)
+            mx, my = x.get('max_hp', float('nan')), y.get('max_hp', float('nan'))
+            if x['alive'] and y['alive'] and math.isfinite(mx) and math.isfinite(my) and mx > 0 and my > 0 and _rel(mx, my) > 0.05:
+                add('max_hp', label, 1, f'{label} {i} key={x["key"]}: max health {mx:.0f} on the host, {my:.0f} on the guest')
             if x['alive'] and y['alive'] and math.isfinite(x['hp']) and math.isfinite(y['hp']) and abs(x['hp'] - y['hp']) > max(2.0, 0.2 * max(x['hp'], y['hp'])):
                 add('hp', label, 1, f'{label} {i}: hp {x["hp"]:.0f} on the host, {y["hp"]:.0f} on the guest')
             d = math.dist(x['pos'], y['pos'])

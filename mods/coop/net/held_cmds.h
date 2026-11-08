@@ -17,6 +17,7 @@ namespace net {
 struct HeldCommands {
     static constexpr size_t kMax = 32;     // commands held at most (the oldest goes first)
     static constexpr double kMaxAge = 120; // s: a command older than this is not run any more
+    static constexpr double kSettle = 3;   // s in the stage before they run (right after a load its cities are not known)
     struct Cmd {
         uint8_t from;
         uint32_t world;

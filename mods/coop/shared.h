@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "net/session.h"
@@ -13,6 +14,7 @@
 namespace shared {
 
 void init(const SkHost* host, SkMod* mod);
+void set_feed(std::function<void(const std::string&)> f); // BUG-0696: the notices of whose change it was
 // elsewhere: the guest plays another world of the host's stage (coop.cpp guest_elsewhere(),
 // BUG-0231): the totals are held (res.elsewhere), nothing is applied or sent
 void tick(net::Session& s, uint32_t mode, double now, bool elsewhere = false);

@@ -2342,3 +2342,14 @@ advance faulted the host at 0xE99524 (data 0x4) on lab lanes 2 and 3 (lab 202611
 * Fix (gamefixes, `game.ufo_gfx`): the factory is done the game's way by the mod (new, ctor, InitFromUfo, the flag
   only on a model); the listener skips 0x604C6F4 on a gfx without a model. Such a ship is not drawn. Counters in
   `coop.status` ("ship gfx made without a model N (their messages skipped N)").
+
+## The partner's ship health on the other game (2026-11-07, fix/w46-k2a-state-b)
+<a id="space-partner-ship-health"></a>
+
+* ✔ BUG-0697 (class BUG-0419): space_fill sends the ship's cCombatant health (+0x540 = combatant +0x38) and max
+  (+0x534 = combatant +0x2C); space_drive wrote the puppet's own max into its health every frame, so the partner's ship
+  was always drawn at full health. Now the partner's share of its max on the puppet's max (another design: another
+  max), at least 2 %: this game never kills the puppet, the partner's game decides its ship's fate (disabled, rescued,
+  destroyed). `coop.fix drive.space_hp off`: full health. Lab: a 40 % hit on either ship shows 0.60 on the other game's
+  puppet (`coop.puppet hp`), 1.00 with the switch off.
+* Contracts: see docs/re/host-centric.md#host-centric-away-credits (rewards owed outside Space, the contract clock).

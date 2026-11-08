@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe and Civilization: food or money a guest earned while the host was loading or in the menu now reaches the
+  host's game when it is back; before, the two games' totals stayed apart from then on (BUG-0691).
+- Tribe and Civilization: a guest's purchase right after leaving an editor is no longer undone by the host's next
+  total (the purchase made and the food or money back) (BUG-0692).
+- Civilization and Tribe: a guest's purchase, planner building, gift or superweapon request made while the host is
+  in an editor or the menu is made when the host is back, and the guest is told that it waits; before, it was dropped
+  without a word (BUG-0693).
+- Space: a contract or mission reward tool that arrives while the player is in an editor or an adventure is given
+  when the player is back in space; before, it was lost (BUG-0694).
+- Space: a contract's time no longer runs out while the host's game is paused or outside Space (BUG-0695).
+- Shared food and money: a notice now says which player's purchase or earning changed the shared total (BUG-0696).
+- Space: the partner's ship shows its real health on the other screen, not always full (BUG-0697).
+- Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within a
+  quarter second instead of up to one and a half (BUG-0699).
+
 ## [0.7.10.1] - 2026-11-07
 
 ### Fixed

@@ -99,6 +99,12 @@ static std::vector<SpeciesRec> g_host_table; // guest: the host's table
 static bool g_have_table = false;
 static uint32_t g_table_rx = 0, g_table_fixed = 0, g_table_tx = 0;
 
+// BUG-0699: the host looked at its species table once a second: a kill, an impression or an alliance reached the
+// guests 1-1.5 s later (the detector's species_relation / species_killed rows, found again 1.5 s after its first look).
+// On: every 0.25 s (the table is sent only when it changed). Off: once a second (0.7.10).
+static bool g_table_fast_fix = true;
+COOP_FIX("social.table_fast", "BUG-0699", g_table_fast_fix,
+         "creature: a change of the species relations (a kill, an alliance) reaches the guests within a quarter second");
 static void send_table(const std::vector<SpeciesRec>& t, int to)
 {
     net::Writer w;
@@ -1007,7 +1013,7 @@ void tick(double now)
         host_prompt_tick(now);
     if (is_host()) {
         static double last = 0;
-        if (now - last < 1.0)
+        if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
         auto t = read_table();

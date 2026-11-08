@@ -3684,7 +3684,11 @@ void tick(double now)
     if (!active())
         return;
     g_cmd_world = modes::current_world();
-    if (is_host() && !g_cmd_held.q.empty() && game::mode_id() == modes::kTribe) // BUG-0693
+    static double active_at, active_since;
+    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
+        active_since = now;
+    active_at = now;
+    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle && game::mode_id() == modes::kTribe) // BUG-0693
         g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
             net::Reader r(c.bytes.data(), c.bytes.size());
             H->log(M, SK_INFO, "tribe: a command of player %u held while away runs now", c.from);
@@ -4706,11 +4710,11 @@ std::string debug(const std::vector<std::string>& a)
             F<int>(hud, 0x10) = thiscall<int>(a_MaxPop, pt);
         return "level " + std::to_string(lv);
     }
-    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
+    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n> [age]: test setup, n more adults (age 0: babies)
         void* pt = player_tribe();
-        int n = 0;
+        int n = 0, age = a.size() >= 3 ? atoi(a[2].c_str()) : 1; // BUG-0700: babies grow up in the host's game
         for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 40; i++) {
-            void* c = spawn_member(pt, 1);
+            void* c = spawn_member(pt, age);
             if (!c)
                 break;
             n++;

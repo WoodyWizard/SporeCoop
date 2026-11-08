@@ -273,6 +273,7 @@ add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixtur
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
 add('res_away', P + 'coop_res_away.py', warm=True, minutes=3, fixture='civ')  # a guest's credit while the host cannot hold it, a purchase right after an editor visit, Civ money (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1; step 2 shows BUG-0692 only on Tribe food: res_away_tribe)
 add('res_away_tribe', P + 'coop_res_away.py --tribe', warm=True, minutes=3, fixture='tribe')  # the same with the Tribe food (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1, SPORE_FIX_OFF=res.mode_keep fails step 2)
+add('res_cause', P + 'coop_res_cause.py', warm=True, minutes=3, fixture='tribe')  # a notice says whose purchase or earning moved the shared food on the other game (BUG-0696; SPORE_FIX_OFF=res.cause fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
 add('civ_city_burst', P + 'coop_civ_city_burst.py', warm=True, minutes=3, fixture='civ_npc')  # three NPC cities the guest missed reach it at once with their vehicles (BUG-0380; SPORE_FIX_OFF=civ.city_burst fails)
 add('civ_cursor', P + 'coop_civ_cursor.py', warm=True, minutes=3, fixture='civ')  # the sync-check leaves out a moving Civ pointer, a resting one is where the guest shows it (BUG-0380; SPORE_FIX_OFF=diag.rts_cursor fails)
@@ -476,6 +477,8 @@ add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
+add('space_reward_away', P + 'coop_space_reward_away.py', warm=True, minutes=3, fixture='space')  # a contract's reward tool reaching a player outside Space is given when it is back (BUG-0694; SPORE_FIX_OFF=space.reward_owed fails)
+add('space_contract_clock', P + 'coop_space_contract_clock.py', warm=True, minutes=3, fixture='space')  # a contract's time stands still while the host is outside Space (BUG-0695; SPORE_FIX_OFF=space.contract_clock fails)
 add('space_partner_hp', P + 'coop_space_partner_hp.py', minutes=3)  # the partner's ship shows its real health on the other game, both ways (BUG-0697; SPORE_FIX_OFF=drive.space_hp fails)
 add('space_helper', P + 'coop_space_helper.py', warm=True, minutes=3, fixture='space')  # a disabled partner rescues nobody (BUG-0131; SPORE_SPACE_FIX=0 fails)
 add('space_down_reload', P + 'coop_space_down_reload.py', warm=True, minutes=4, fixture='space')  # a load starts the disable rule anew (BUG-0257; SPORE_FIX_OFF=space.down_epoch fails)
@@ -737,6 +740,7 @@ add('tribe_theme_music', P + 'coop_tribe_theme_music.py', minutes=3, fixture='tr
 add('tribe_party_music', P + 'coop_tribe_party_music.py', minutes=4, fixture='tribe')  # BUG-0646: the guest's game plays the music of the dance at the fire pit (coop.audio; SPORE_FIX_OFF=tribe.party_music fails)
 add('tribe_footsteps', P + 'coop_tribe_footsteps.py', minutes=3, fixture='tribe')  # BUG-0669: the guest's game plays the footsteps of the host's epic (coop.audio of the footstep path 0x9A6CBC with the epic flag, half the host's count; SPORE_FIX_OFF=npc.epic_steps fails)
 add('tribe_guest_baby', P + 'coop_tribe_guest_baby.py', minutes=3, fixture='tribe')  # BUG-0671: a member the guest buys at its hut is born in the host's game and is the guest's (SPORE_FIX_OFF=tribe.guest_baby fails)
+add('tribe_member_age', P + 'coop_tribe_member_age.py', minutes=7, fixture='tribe')  # BUG-0700: a baby of the player tribe grows up in the host's game and its mirror on the guest with it
 add('tribe_guest_baby_noeffects', P + 'coop_tribe_guest_baby.py --no-effects', minutes=3, fixture='tribe')  # BUG-0671 without the world effects relay: the host makes the guest's member itself (SPORE_FIX_OFF=tribe.guest_baby fails: no member)
 add('tribe_fight_sounds', P + 'coop_tribe_fight_sounds.py', minutes=3, fixture='tribe')  # BUG-0600: the guest's game plays the fight's effect sounds and the combat voices of the host's members (coop.audio per sound id, 80 %; SPORE_FIX_OFF=mirror.fx fails)
 add('tribe_hit_impacts', P + 'coop_tribe_hit_impacts.py', minutes=3, fixture='tribe')  # BUG-0603: the guest's game plays the hit impacts of the host's members' attacks (an attack animation's per-target effects; coop.audio per sound id, 80 %; SPORE_FIX_OFF=effects.hit_targets fails)
