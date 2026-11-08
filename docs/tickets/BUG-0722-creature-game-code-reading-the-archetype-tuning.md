@@ -29,7 +29,7 @@ Observed (runtime, lane 6, four players: Bob with his own profile, Carol and Dav
 ## Verification
 Test `puppet_tuning` (tools/tests/coop_puppet_tuning.py: four players, a hunt, social acts, a rejoin; every game's creatures sampled for +0xE84 = 0 among ours).
 * FAIL with `SPORE_FIX_OFF=npc.puppet_tuning`: out/lab/20261108-041250 (Bob's puppet untuned on Carol and Dave)
-* PASS: out/lab/20261108-041635 (none untuned on any game, all 23 + 23 + 23 + 3 of ours tuned, no fault)
+* PASS: out/lab/20261108-041635, out/lab/20261108-052622 (none untuned on any game, all 23 + 23 + 23 + 3 of ours tuned, no fault)
 * Also out/lab/20261108-040137 (the first run, before the fix: untuned on the host, Carol and Dave).
 
 ## History

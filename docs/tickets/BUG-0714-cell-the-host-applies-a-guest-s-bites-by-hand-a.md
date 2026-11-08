@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-k2b-content-a
-commits: e81a56d9
+commits: e81a56d9 aaadb06c
 tests: cell_guest_hit
 signature:
 docs: docs/re/cell.md#cell-guest-hit-game

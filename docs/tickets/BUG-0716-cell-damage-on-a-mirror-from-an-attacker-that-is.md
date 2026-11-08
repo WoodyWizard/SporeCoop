@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-k2b-content-a
-commits: ad15c36c
+commits: e81a56d9 ad15c36c aaadb06c
 tests: cell_poison
 signature:
 docs: docs/re/cell.md#cell-electric-attack

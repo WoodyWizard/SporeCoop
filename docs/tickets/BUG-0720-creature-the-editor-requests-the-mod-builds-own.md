@@ -29,7 +29,8 @@ One builder, `build_editor_request(kind, editor, species)` (coop.cpp), used by o
 ## Verification
 Test `editor_request` (tools/tests/coop_editor_request.py: the game's request against the mod's own and evolution requests, on the host and the guest).
 * FAIL with `SPORE_FIX_OFF=creations.editor_request`: out/lab/20261108-035759 (own request: +0x39, +0x3B, +0x3C and the vector differ on both games)
-* PASS: out/lab/20261108-035848 (no difference but the allowed +0x90, both games)
+* PASS: out/lab/20261108-035848, out/lab/20261108-052538 (no difference but the allowed +0x90, both games)
+* Related PASS: editor_sync_guest out/lab/20261108-045207, guest_editor_locks out/lab/20261108-045521, party_creature4 out/lab/20261108-050537
 
 ## History
 - 2026-11-08: opened.

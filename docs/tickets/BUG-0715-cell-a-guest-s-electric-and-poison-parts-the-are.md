@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-k2b-content-a
-commits: e81a56d9
+commits: e81a56d9 ad15c36c aaadb06c
 tests: cell_electric
 signature:
 docs: docs/re/cell.md#cell-electric-attack
@@ -29,7 +29,7 @@ Static (Ghidra, GOG 2024): 0xE71520 (SporeCoop::Cell_ElectricAttack, called only
 ## Verification
 Test `cell_electric` (tools/tests/coop_cell_parts_attack.py --part electric).
 * FAIL with `SPORE_FIX_OFF=cell.electric`: out/lab/20261108-035148 (12 zaps on the guest, no type-1 hit on the host, the creature kept hp 60)
-* PASS: out/lab/20261108-034904 (4 type-1 hits applied, hp 57 -> 51), out/lab/20261108-035327 (3 type-1 hits, 57 -> 51)
+* PASS: out/lab/20261108-034904 (4 type-1 hits applied, hp 57 -> 51), out/lab/20261108-035327 (3 type-1 hits, 57 -> 51), out/lab/20261108-052922 (the final code)
 
 ## History
 - 2026-11-08: opened.
