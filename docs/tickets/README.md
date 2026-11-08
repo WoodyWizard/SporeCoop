@@ -199,7 +199,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.2 | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | fixed | bug | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the host's capture caption stops everybody's game |
 | [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the NPC AI still spawns vehicles on guests |
-| [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
+| [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | fixed | test | Civ | 2026-10-27 | unreleased | Civilization: no building placement through the city planner in tests |
 | [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | not-reproduced | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |
 | [BUG-0192](BUG-0192-space-rivals-mode-limits-space-rivalry-cpp-2026.md) | open | feature | Space | 2026-10-23 |  | Space rivals mode: limits (space_rivalry.cpp, 2026-10-23) |
