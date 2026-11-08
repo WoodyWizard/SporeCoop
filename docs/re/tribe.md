@@ -2834,3 +2834,88 @@ F2. GOG 2024 (dc04aee5), Ghidra static only. The class and its API: [creature-mi
 * ✔ The own marker is the camera: 0xCCDDB0 (Tribe UI update) calls Minimap_SetAvatar with the camera's position /
   direction (0xB10160 / 0xB13840). In Tribe, `Minimap_WorldToMap`'s caller 0xE0BF20 hides blips outside the map rect
   instead of leaving them on the edge.
+## The guest's copy of a host-formed tribe uses up its spawn marker (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-copy-marker"></a>
+
+BUG-0741. GOG 2024, lane 7, `coop_tribe_copy_marker.py`.
+* ✔ (runtime) The tribe fixture has 4 tribe spawn markers (cGameplayMarker +0x108 == 0x57F09E5E, position +0x1A8) at
+  the same places in both games. With `tribe.form_pace` off, one `coop.tribe form` on the host formed **two** tribes
+  within a second (2 -> 3 -> 4 tribes: with 3-4 tribes the controller forms every second, #tribe-form-needs), each
+  exactly at a marker, and the host's markers went 4 -> 2.
+* ✔ The guest's copies (tribe.npc_tribes) are made ~1 s after the host's forming at the host's place (0.0 m from the
+  marker); without `tribe.copy_marker` the guest kept all 4 markers.
+* Fix `tribe.copy_marker`: the copy destroys the guest's marker nearest it within 30 m (cGameNounManager::DestroyInstance,
+  as FormTribe 0xCC6440 does). Not done: FormTribe's other steps after the spawn (the terraforming call 0xBBEDD0 on
+  marker +0x11C, the herds near the new village destroyed or moved) are not repeated on the guest.
+
+## A guest's gather order on a fruit the host lacks (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-fruit-order"></a>
+
+BUG-0744. GOG 2024, lane 7, `coop_tribe_fruit_order.py`.
+* ✔ (runtime) A guest's right-click gather on a loose fruit sends CitizenAction 2 with target kind 2 (noun 0x2C9CC91
+  and the fruit's position); the host resolves it with find_object within 8 m. Destroying the host's fruit there
+  (`coop.tribe unfruit`) and ordering at once reproduces the reject of play_tribe ("no such target here").
+* ✔ A Gather (2) on a planet tree (cTreeData) with fruit left is accepted by DoAction on the host as on a fruit: the
+  member's order record shows rec=2 with the tree, and the member walks there (the guest's mirror follows).
+* Fix `tribe.fruit_order`: such an order takes the nearest tree with fruit left within 12 m, else the host's nearest
+  fruit within 15 m.
+
+## A member's jump and a velocity left at 120 m/s on the guest's mirror (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-mirror-jump"></a>
+
+BUG-0759 (not reproduced). GOG 2024, lane 7.
+* ✔ (Ghidra) The sleep tick 0xDAF7B0 (node 0x04611FF4): state 0 walks the member into its hut's radius (hut vt 0x60) or
+  to a point at its edge and stops it (spatial vt 0xEC); 1-3 play 0x2796B22 / 0x2796B25 and add health per tick (rate
+  from a property, 0xF3FAAC05 with a heal tool, else 0xA1B01538); 4 ends with 0x2796B28. A member at full health leaves
+  at once (node 0x05524115 next). No teleport.
+* ✔ (runtime) On the way into the hut a member jumps ~5 m in one frame (its velocity reads 128.7 m/s for one state);
+  the guest's mirror is at most 0.8 m off 0.5 s later. A `coop.tribe put` teleport of 10-11.5 m is followed within
+  0.4 s (drive::step snaps over 8 m).
+* ✔ (runtime) The velocity field (cLocomotiveObject +0x1C8 of the citizen) held at 113-120 m/s for 6-8 s on a standing
+  member (`coop.tribe setvel`): the game does not move it (once 3 m, the frame the hold started on a member that had
+  just stood); the guest's mirror stays at its place (0.0-0.7 m, also over a 100 ms link): the lead does not carry it
+  ahead.
+
+## The duet's preconditions: instruments, the social order, the performance node (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-duet-test"></a>
+
+BUG-0748 (no test yet). GOG 2024, lane 7, out/b1tribe/exp_duet.py (not in git).
+* ✔ (runtime) Instruments bought the game's way (`coop.tribe buy <type> <m> <deg>` + `buy_end`) are taken by any
+  member the host orders to grab them (`coop.tribe grab <id> <tool index>` on the host, also a guest's member): held
+  4 s later. A tool from `coop.tribe build` (make_player_tool) was not taken in 45 s; `settool` changes the held type
+  only.
+* ✔ (Ghidra) A social click on another tribe's hut (DoActionGeneric 0xCD0C20, InputAction 0xE) costs food (property
+  0xFD444753, default 10) unless a selected member's first tool has +0x12C == 5; it sets the mission card
+  (0xCD3D70) and orders CitizenAction **9** on the tribe (0xF only shows hint 0x30D20036).
+* ✔ (runtime) CitizenAction 9 on an NPC tribe with instrument holders, from the host or from the guest (taken by the
+  host: rec=9 with the tribe), gives node **0x0462855E** (enter 0xDB00C0, tick 0xDBB7D0, exit 0xDB0950: the group walk
+  and the food-bundle gift, ApplyRelationship 0x530CF06) for ~15 s, then idle nodes; never the performance 0xB46E8803.
+* ✔ (Ghidra) The performance's session is made by the enter of node **0xF473F46A** (0xDA59A0): a "Social" group
+  (0x18EB4B7) whose index goes to ai+0x600 +0x1A8 (what SocialSession_Get reads), stimulus 0x200000 to the member and
+  0x100000 / 0x10000 to the members in cTribeUI +0x94..+0x98 (the UI's list). The node id is only in the BT action
+  table (0x15933EC); its chooser is BT data. ? what enters it (a step of the social mini-game's UI is likely).
+* Test commands: `coop.tribe duet` (performers: id, owner, the session's target, state, ui, progress `ui+0x68`;
+  `ticks=`), `coop.tribe act_obj <action> <noun hex> <x y z>`, switch `coop.fix tribe.duet off`.
+* ✔ CORRECTION (2026-11-08, fix/w46-b1-tribe): what starts the performance is found. In social mode with instrument
+  holders selected, a right-click on a **member** of the other village (the game's hint "Right click on a tribe member
+  to perform for them") gives **CitizenAction 26** on that member; the members enter 0xB46E8803 within 2 s, with a
+  session on the village (state 0 -> 1 -> 3/5, without notes it ends at 6 after ~20 s) and the host's HUD shows the
+  social meter. A guest's member ordered with 26 (sent to the host) joins the same session; duet_tick then fills the
+  progress 0.08 a second (labs 20261108-161904, -163746). The host's right-clicks gave the order only with the chief in
+  the selection (2 runs). The "? what enters it" above is answered by this; 26 was listed as "Recruit (social)" in §2.
+
+## When a raided hut falls, and the conquest after it (2026-11-08, fix/w46-b1-tribe)
+<a id="tribe-hut-fall"></a>
+
+BUG-0761. GOG 2024, lane 7, `coop_tribe_conquer_orders.py`.
+* ✔ (Ghidra) cCombatant::TakeDamage 0xBFCF10 (a hut's combatant at hut +0x120): health +0x38 -= damage; under 1.5e-5
+  it sets health 0, **state +0x34 = 2** and posts the death message (0x1622184 block); +0x28 the last attacker. Damage
+  type 10 adds instead (repairs), type 0xB nothing.
+* ✔ (runtime) Raid blows on an NPC hut take 3.75-4.0, so from a written 40 the health can end at 0.25-0.5 with state 1:
+  the hut stands until one more blow; the conquest cinematic TRG_TotemPole_Conquer (0x5418B038) plays 0-4 s after
+  state 2 (4 runs). `coop.tribe huthp` prints `exact=` / `state=` / `last=`.
+* ✔ (runtime) The raiders (`coop.tribe order <id> 15 <hut>`) can leave a hut that still stands (26/400 for 60 s, no
+  raider within 14 m): the order again sends them back.
+* (Ghidra, not finished) The conquest's completion is cTribeToTribeMission vt 0x78 0xC2F7F0 (state 5, the goal,
+  the cinematic); a probe on it counted ~12 calls a second (it returns at once when the state is already 5), its
+  caller was not found.

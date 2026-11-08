@@ -614,7 +614,7 @@ anchor so other docs can link to it:
   opens and closes it only).
 * 2026-11-08 (fix/w46-g4b-coverage): healer bonus `tribe_healer` (found and fixed BUG-0745), NPC spice store
   `space_store` (BUG-0747 open: each game its own store), Civ planner buy `civ_planner_build` (BUG-0189); the rest are
-  concrete tickets: duet BUG-0748, terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
+  concrete tickets: duet BUG-0748 (test tribe_duet since 2026-11-08), terraforming with a tool BUG-0749, NPC missions BUG-0750, Space colony planner
   BUG-0751.
 * Ticket: BUG-0199.
 
@@ -2366,6 +2366,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Two players at the same NPC empire see different stores: each game generates its own (wanted spices and price
   factor at random). `coop_space_store.py`: the guest sold a Red Spice for 281, the host for 4,779 to the same empire.
   Both earnings go into the shared money, so nothing is lost, but the trade screens disagree.
+* Fixed (unreleased, fix/w46-b1-space, `space.store_seed`): the store's fill is seeded from its planet in a session
+  (docs/re/space.md#space-npc-store-seed). Left: a store the host's game made before the session started.
 * Ticket: BUG-0747.
 ## Space: the host's copy of a guest's ship fails the sync-check while it flies key pulses (2026-11-08, fix/w46-final11-triage)
 <a id="issue-space-guest-ship-path"></a>
@@ -2373,6 +2375,12 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * `sync-check: MISMATCH ... p: 1 apart (pN 30-80 m)` with N a guest's own id: the host's puppet of that guest's ship is
   a state behind on its path while the ship brakes or turns; `sync.own_path` (BUG-0547) takes back only the host's
   own ship (p0). Seen in campaign / campaign_space / play_space since 0.7.3. Nothing wrong to see in the game.
+* Update (2026-11-08, fix/w46-b1-space): not reproduced in two-player runs (about 520 checks of a guest flying pulses,
+  reversals, a disabled ship, spikes, a 12 fps host: 0 differences, docs/re/space.md#space-guest-ship-path); the lag
+  explanation does not hold for a guest's own key (copy and digest share the link). The campaign cases persisted over
+  the recheck and came while the host waited to share its world with a newcomer. `sync.own_path_guests` now logs a
+  detail line for each p<guest> difference (copy and ship against the guest's received path): the next sighting says
+  whether the copy was on the path. Ticket closed not reproduced; reopen with that line.
 * Ticket: BUG-0758.
 ## Tribe: the host's chief jumps (~120 m/s) and a guest's mirror stays 10-12 m off (2026-11-08, fix/w46-final11-triage)
 <a id="issue-tribe-chief-jump"></a>
@@ -2380,8 +2388,28 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * campaign_tc2, 4 players: `t: 1 apart (t4 11.5)`, the host's leader at 119.7 m/s, the guest's mirror at 0; once per
   run at most (0.7.10 and 0.7.11).
 * Ticket: BUG-0759.
+* 2026-11-08 (fix/w46-b1-tribe): not reproduced with 2 players (a teleport of 10-11.5 m, the chief and an NPC chief
+  sleeping in the hut, the velocity held at 120 m/s, a 100 ms link: the mirror followed each time,
+  docs/re/tribe.md#tribe-mirror-jump); the ticket is closed not-reproduced, the regression test is tribe_mirror_jump.
+  Reproduce: campaign_tc2 (40 min, rare); next time save both games' coop.bodyrec rows (SPORE_BODYREC_DIAG=1).
 ## Tribe: a raid takes the NPC hut to health 0 and no conquest follows (2026-11-08, fix/w46-final11-triage)
 <a id="issue-tribe-conquest-missing"></a>
 
 * tribe_conquer_orders: 1 of 5 runs of 0.7.11 played no conquest cinematic in 60 s after the hut's health 0.
 * Ticket: BUG-0761.
+## Space: sculpting and colouring tools change the planet in one game only (2026-11-08, fix/w46-b1-space)
+<a id="issue-space-sculpt-colour"></a>
+
+* What happens: the tool palette's terrain sculpting (raise / lower / flatten) and planet colouring tools are not
+  relayed; only the atmosphere / water / temperature deltas are (spacecoop.cpp K_TERRA). Inferred from the code.
+* Reproduce: two games on `space_free` on planet 01460035, a sculpting tool used by the host (tab W-226).
+* Ticket: BUG-0763.
+## Space: a guest's colony planner building is lost while the host is on another planet (2026-11-08, fix/w46-b1-space)
+<a id="issue-space-planner-away"></a>
+
+* What happens: since BUG-0751 the host builds a guest's planner building only when its own ship is on that planet;
+  otherwise the host's world never gets it (the money is spent for both). Log `civ: space planner: ... not built`.
+* Reproduce: coop_space_planner_build.py with the host's ship elsewhere.
+* Ticket: BUG-0766.
+* 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
+  raid; docs/re/tribe.md#tribe-hut-fall).

@@ -29,6 +29,23 @@
   game; a player can pick another free one (eight in all): the ">" next to the own colour in the lobby, or the
   console `coop.find color <name>`. Name tags,
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
+### Fixed
+- Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
+  is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
+  (BUG-0751).
+- Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
+  partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
+- Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
+  made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
+- Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not
+  respawn bigger than "small again" (BUG-0746).
+- Tribe: a guest's game uses up the spawn place of a village the host's game founded, as the host's does, so the
+  same place is never used twice (BUG-0741).
+- Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
+  members gather from the nearest fruit tree there (BUG-0744).
+
+### Tests
+- Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
 
 ## [0.7.11] - 2026-11-08
 ## [0.7.11.1] - 2026-11-08

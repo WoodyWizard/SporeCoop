@@ -3002,6 +3002,9 @@ nearest plants on its screen (`coop.pool eat <key>`, EatFood); the food totals o
 not grow by them. `SPORE_FIX_OFF=cell.ko_no_eat` fails (+12 per plant on both games). Pitfalls: a
 `coop.pool tp` right after the start is undone by the hatch (the test moves again until 15 m away);
 the plants it touched drift off the screen or are eaten by the pool (printed only).
+BUG-0746 (fix/w46-b1-tribe): while out it also swallows the two nearest meat cells whole (`coop.pool swallow <key>
+[kind]`: the game's interaction executor 0xE7E7F0 with kind 10, or 9 on plants when no meat is on its screen; the meal
+comes ~1 s later); `SPORE_FIX_OFF=cell.ko_no_swallow` fails (+12 on both games, docs/re/cell.md#cell-ko-swallow).
 
 cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respawns=` counters of
 `coop.pool` belong to the game process and survive the warm reset, so the test compares them with
@@ -5395,3 +5398,59 @@ own blip list read back (`coop.find map`, a unit direction: compare directions t
 * Twins: `SPORE_FIX_OFF=find.arrows` / `find.colors` / `find.map` fail (lab 20261108-160354 / -160500 / -160615).
 * Two lab runs started on overlapping lanes (`--lanes 10 --skip 1..8` while a `--lane 9` run played) took the busy
   lane 9 and killed its games: run the tests of one branch in one lab command.
+## Space: a guest's ship against its path, the NPC store compared (2026-11-08, fix/w46-b1-space)
+<a id="testing-space-guest-path-store"></a>
+
+* `coop_space_fast_sync_guest.py` (suite `space_fast_sync_guest`, cold, `space`, ~6 min, BUG-0758): the mirror of
+  space_fast_sync for a guest's own ship: SPORE_NET with spikes and SPORE_FPS host:12 unless set, the GUEST flies
+  full-speed pulses that turn back at once while the host asks for a check (`coop.diag sync now`) in the turn, then
+  its ship is disabled at full speed with checks right after. Checks: no p1 MISMATCH; any p1 difference that lies on
+  the guest's received path is none (`sync.own_path_guests`); the forced shift on the guest's digest is a MISMATCH.
+  In 4 runs no p1 difference came at all (docs/re/space.md#space-guest-ship-path): the test is a guard that the path
+  check never hides a real offset, not a reproduction.
+* Pitfall: a second disable within the 60 s cooldown destroys the ship (hp 0, the death cinematic) instead.
+* `coop_space_store.py` (suite `space_store`) also compares the NPC stores (BUG-0747): `coop.space stores` lists this
+  game's stores (`store planet <PlanetID> wants <key> <price> x3`); every store both games made must want the same
+  spices at the same prices. The two "the store paid" prices alone are weak: an unwanted spice is 5% of the value in
+  every store (both 281 with the fix off in lab 20261108-145056).
+* `coop_space_terra_tool.py` (suite `space_terra_tool`, cold, `space_free`, ~2 min, BUG-0749): both on planet
+  01460035, the host gets an Atmosphere Generator (`coop.space tool add 0x931426A0`), opens the atmosphere tab (W-266
+  on the tab row, which is at H-151 or H-51 by `Player.palette_open()`), clicks the tool's slot (1014, 1011) and the
+  ground; the host's planet record (`coop.space planet` b0/b8) and the guest's must both rise and stay close. The old
+  check in coop_space_play.py (`terra_got >= 1`) passed while the guest's planet never changed.
+* `coop_space_planner_build.py` (suite `space_planner_build`, cold, `space_empire`, ~3 min, BUG-0751): both land on
+  00460035, the guest flies over the nearest city, both games destroy one house of it (`coop.civ unbuild`, test
+  setup: every plot of the fixture's cities is taken), the guest clicks the city (planner), drags the house tile onto
+  the free plot and closes; the host's city must get the house and the shared money fall by the price on both. The
+  flight toward the city is printed, not checked (`coop.space allies cities` sometimes lists nothing while flying);
+  the click that opens the planner is the check.
+* `coop_space_npc_mission.py` (suite `space_npc_mission`, cold, `space_free`, ~4 min, BUG-0750): the guest jumps to
+  80001FCC (0046102D), asks for missions by clicks, the Galactic Adventures intro it gets is completed by `coop.space
+  allies missions done` (else every empire offers it again), then at 80001F53 (00460038) it gets a regular mission
+  (478C8F3D, reward 30,000), accepts it by clicks and completes it by the same command; the host's shared money must
+  rise by the reward. Pitfall: a declined offer puts that empire's planet on cooldown ("Check us later") for the
+  session; the test never declines before the regular offer.
+## Tribe tests of B1 (2026-11-08, fix/w46-b1-tribe)
+<a id="testing-tribe-b1"></a>
+
+* `tribe_copy_marker` (coop_tribe_copy_marker.py, BUG-0741, cold, ~1 min): both games' tribe spawn markers
+  (`coop.tribe markers`, now with `markers_used=`), the host's controller forms its next tribes (`coop.tribe form` with
+  `coop.fix tribe.form_pace off` on the host: the party's food holds it otherwise; one call can form two tribes in a
+  second); the guest must have a copy of each and no marker where the host used one. `SPORE_FIX_OFF=tribe.copy_marker`
+  fails.
+* `tribe_fruit_order` (coop_tribe_fruit_order.py, BUG-0744, cold, ~1 min): the guest selects its member and orders a
+  gather on its own fruit (`coop.tribe fruit <x y z>`, the DoActionForObjects of a right-click) right after the host's
+  game lost every fruit there (`coop.tribe unfruit <x y z> <r>`); the host must take it (a tree instead) and the guest
+  see its member walk there. `SPORE_FIX_OFF=tribe.fruit_order` fails.
+* `tribe_mirror_jump` (coop_tribe_mirror_jump.py, BUG-0759, warm, ~1 min): a host member put 11.5 m away with its
+  velocity field held at 120 m/s (`coop.tribe setvel <id> <vx vy vz> <s>`, host); the guest's mirror must stay within
+  3 m. A regression test without a twin (BUG-0759 was not reproduced). `coop.tribe sethp <id> <hp>` (host) hurts a
+  member (a member at full health leaves the sleep node at once).
+* `tribe_conquer_orders` (BUG-0761): the hut has fallen at the game's state 2 (`coop.tribe huthp` prints `exact=`,
+  `state=`, `last=`), not at a printed 0 (0.25-0.5 left stood); stalled raiders get the raid order again. Pitfall: do not
+  add a wait between the fall and the cinematic wait, the cinematic (8 s, closed by tribe.conquer_caption) plays 0-4 s
+  after the fall.
+* `tribe_duet` (coop_tribe_duet.py, BUG-0748, cold, ~2 min): social mode, instrument holders, a right-click on a member of the NPC village (CitizenAction 26); `SPORE_FIX_OFF=tribe.duet` fails. Tools: `coop.tribe duet` (the performers in node 0xB46E8803), `coop.tribe act_obj <action>
+  <noun> <x y z>`, `coop.fix tribe.duet off`; instruments for both players' members: `coop.tribe buy <type> 9 <deg>` +
+  `buy_end` and `grab` on the host (docs/re/tribe.md#tribe-duet-test).
+* Cell: `coop.pool swallow <key> [kind]` (BUG-0746, cell_ko_food).

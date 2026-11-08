@@ -214,3 +214,6 @@ SporeCoop::Minimap_MoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (
 SporeCoop::Minimap_FindBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
 SporeCoop::Minimap_RemoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
 SporeCoop::CreatureMinimap_Ptr ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::PlanetTerrain_SetTerraforming ; BUG-0749: a partner's terraforming does not switch the planet's terraforming on (the deltas wait, the planet does not change)
+SporeCoop::cSpaceTrading_FillNPCStore ; BUG-0747: NPC stores are not seeded from their planet (each game its own store)
+Simulator::Cell::ExecuteInteraction ; BUG-0746: a knocked-out cell may still swallow meat whole on GOG 2016 (cell.ko_no_swallow not hooked there)

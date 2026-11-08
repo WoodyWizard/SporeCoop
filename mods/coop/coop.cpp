@@ -5950,6 +5950,13 @@ void support_init()
         v = local_state().pos;
         return true;
     };
+    p.partner_states = [] { // BUG-0758
+        std::vector<support::Probe::StatePos> v;
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo && !r.buf.empty())
+                v.push_back({id, r.buf.latest().time_ms, r.buf.latest().pos});
+        return v;
+    };
     p.mode = [] { return g_mode; };
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };
@@ -7008,6 +7015,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
+    cvc.space_place = [] { return g_mode == modes::kSpace ? g_world : 0u; }; // BUG-0751
     cvc.host_away = [] { return host_absent_for(Absent::Civ); }; // BUG-0151, BUG-0231
     civ::init(H, M, std::move(cvc));
     census::Ctx csc;

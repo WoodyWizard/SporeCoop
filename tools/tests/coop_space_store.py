@@ -10,8 +10,10 @@ shared.cpp carries the change to the other game (a guest's earning goes to the h
    Trade (420, 744), the spice in the cargo (327, 760), Sell Item (1063, 884): one unit at the store's price.
 3. The guest sells first, then the host.
 PASS: the seller's cargo has one unit less (its own game), the seller's money rose by the price, and the OTHER game's
-shared money rose by the same price within 10 s (and the other game's cargo is unchanged).
-SPORE_FIX_OFF=res.guest_send must FAIL (the guest's earning never reaches the host).
+shared money rose by the same price within 10 s (and the other game's cargo is unchanged); both stores paid the same
+price for the same spice (BUG-0747: each game made its own random store).
+SPORE_FIX_OFF=res.guest_send must FAIL (the guest's earning never reaches the host); SPORE_FIX_OFF=space.store_seed
+must FAIL (the two prices differ: 9 of 10 times for a random factor, more when the store does not want the spice).
 
   SPORE_LANE=3 python3 tools/tests/coop_space_store.py
 """
@@ -85,6 +87,7 @@ def sell(ck, seller, other, who):
     for _ in range(2):
         seller.call('click 424 882')  # Goodbye
         time.sleep(2)
+    return price
 
 
 def main():
@@ -92,8 +95,24 @@ def main():
     ck = Checks()
     for con, who in ((host, 'host'), (guest, 'guest')):
         settle(con, who, 20)
-    sell(ck, guest, host, 'guest')
-    sell(ck, host, guest, 'host')
+    pg = sell(ck, guest, host, 'guest')
+    ph = sell(ck, host, guest, 'host')
+    # BUG-0747: the same empire's store pays the same price in both games (its wants and price factors are seeded
+    # from its planet: the log line "the NPC store of planet ... seeded")
+    for con, who in ((host, 'host'), (guest, 'guest')):
+        print(f'  {who}: ' + ' '.join(t for t in sp(con).split() if t.startswith('stores_seeded=')), flush=True)
+    stores = {}
+    for con, who in ((host, 'host'), (guest, 'guest')):
+        lines = [ln for ln in sp(con, 'stores').splitlines() if ln.startswith('store planet')]
+        print(f'  {who} stores: {lines}', flush=True)
+        stores[who] = {ln.split()[2]: ln.split(' wants ')[1] for ln in lines}
+    common = sorted(set(stores['host']) & set(stores['guest']))
+    ck(common, f'both games made a store at the same planet ({common})')
+    diff = [k for k in common if stores['host'][k] != stores['guest'][k]]
+    ck(not diff, f'every store both games made wants the same spices at the same prices ({len(common) - len(diff)} of '
+                 f'{len(common)}: {[(k, stores["host"][k], stores["guest"][k]) for k in diff]})')
+    ck(pg is not None and ph is not None and abs(pg - ph) < 1,
+       f'both games\' stores paid the same for one Red Spice (guest {pg}, host {ph})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
