@@ -271,9 +271,11 @@ struct Compared {
     bool other_place = false; // host and guest play different stages / worlds: nothing compared
     int objects = 0;          // objects compared by position
     std::vector<Issue> issues;
-    // BUG-0430: what the BUG-0379 windows let through: totals that matched only a value the host had in the seconds
-    // before (late), cells missing between the sure part and the sent part of the guest's nearest ones
+    // BUG-0430: what the BUG-0379 windows let through: totals that matched only a value the host had left more than a
+    // moment before it asked (Late::fresh), cells missing between the sure part and the sent part of the guest's
+    // nearest ones that were in that band at the check before too (Late::steady: not a cell of a set that is changing)
     int late_totals = 0, late_cells = 0, late_band = 0;
+    std::set<uint32_t> band; // this check's band (the next check's Late::steady)
     bool late() const { return late_totals > 0 || (late_band > 0 && late_cells * 20 > late_band); } // > 5 % of the band
 };
 
@@ -291,13 +293,27 @@ inline float dist(const Entry& a, const Entry& b)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// BUG-0430: what tells a late guest from the normal lag of a changing value. fresh: the host's totals of the last
+// moment before it asked (kLateAge, ~1 s: a guest one update behind a rising total matches one of them); a guest
+// value matched only by an older recent one is late. steady: the band cells of the check before; a cell missing that
+// was not in it came with the host's changing set. Null: nothing counts as late.
+struct Late {
+    const std::vector<std::pair<uint8_t, float>>* fresh = nullptr;
+    const std::set<uint32_t>* steady = nullptr;
+};
+
 // host: its own digest against a guest's. `recent` (optional): totals the host had in the seconds
 // before it asked (BUG-0379): a guest shows a shared total a moment after the host counted it (the
 // host sends it, MSG_CELL_FOOD), and the host's digest is built a round trip after the guest's, so a
 // guest value the host had a moment ago is no difference.
 inline Compared compare(const Digest& host, const Digest& guest, const Limits& lim = {},
-                        const std::vector<std::pair<uint8_t, float>>* recent = nullptr)
+                        const std::vector<std::pair<uint8_t, float>>* recent = nullptr, const Late& late = {})
 {
+    auto had = [&](const std::vector<std::pair<uint8_t, float>>* v, uint8_t id, float gv) {
+        return v && std::any_of(v->begin(), v->end(), [&](const std::pair<uint8_t, float>& r) {
+                   return r.first == id && std::fabs(r.second - gv) <= lim.total;
+               });
+    };
     Compared c;
     char b[160];
     if (host.mode != guest.mode || host.world != guest.world) {
@@ -315,10 +331,9 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     for (auto& [id, hv] : host.totals)
         for (auto& [gid, gv] : guest.totals)
             if (gid == id && std::fabs(hv - gv) > lim.total) {
-                if (recent && std::any_of(recent->begin(), recent->end(), [&, id = id, gv = gv](const std::pair<uint8_t, float>& r) {
-                        return r.first == id && std::fabs(r.second - gv) <= lim.total;
-                    })) {
-                    c.late_totals++; // the host had it a moment ago: no difference, but late (BUG-0430)
+                if (had(recent, id, gv)) {
+                    if (late.fresh && !had(late.fresh, id, gv))
+                        c.late_totals++; // the host left that value more than a moment ago: late (BUG-0430)
                     continue;
                 }
                 snprintf(b, sizeof b, "%s: host %.1f, guest %.1f", total_name(id), hv, gv);
@@ -359,6 +374,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
                     band_cells.insert(cd[i].second);
             }
             c.late_band = (int)band_cells.size();
+            c.band = band_cells;
         }
     }
     for (auto& [k, he] : h) {
@@ -368,8 +384,8 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
             if (kind == 'n' && (!lim.npc_missing || !me || dist(*he, *me) > lim.npc_near))
                 continue; // out of the guest's range: never sent to it
             if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k))) {
-                if (dist(*he, *me) <= lim.cell_near && band_cells.count(k))
-                    c.late_cells++; // sent, missing: the windows of BUG-0379 let it through (BUG-0430)
+                if (dist(*he, *me) <= lim.cell_near && band_cells.count(k) && late.steady && late.steady->count(k))
+                    c.late_cells++; // sent, missing, in the band since the check before (BUG-0430)
                 continue; // around another player or past the nearest 900: not sent to this guest (BUG-0298)
             }
             c.issues.push_back({"missing:" + key_text(k), "missing", key_text(k), 0, ""});

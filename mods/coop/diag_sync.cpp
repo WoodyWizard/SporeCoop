@@ -236,6 +236,7 @@ struct GuestCheck {
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
     int late_run = 0;           // checks in a row that passed only through the BUG-0379 windows (BUG-0430)
+    std::set<uint32_t> band;    // the band cells of the last check (dg::Late::steady)
 };
 // BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
 // the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
@@ -252,12 +253,15 @@ static bool g_stage_end_fix = true;
 COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
 // BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
 // late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
-// matched, or over 5 % of the guest's sent band of cells missing) are a `late` issue (it goes through the recheck as
+// matched while the host had left it over 1 s before asking, or over 5 % of the guest's sent band of cells missing that
+// were in the band at the check before too: lab 20261108-080337 showed that a rising total or a changing set alone
+// is the normal one-update lag) are a `late` issue (it goes through the recheck as
 // any other). Off: never (0.7.10). The count: sync_late= in coop.diag.
 static bool g_fix_late_streak = true;
 COOP_FIX("diag.late_streak", "BUG-0379 BUG-0430", g_fix_late_streak, "sync-check: a guest that passes 3 checks in a row only through the late windows is reported late");
 static unsigned g_sync_late = 0;
 constexpr double kTotalLag = 3.0;
+constexpr double kLateAge = 1.0; // a guest value the host left more than this before asking is late (BUG-0430)
 struct TotalAt {
     double t;
     uint8_t id;
@@ -507,14 +511,24 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Digest hd = build_digest(gd.seq);
     dg::Limits lim = limits_for(hd.mode, hd.world);
     add_speed_slack(lim, hd.mode, from);
-    std::vector<std::pair<uint8_t, float>> recent;
+    std::vector<std::pair<uint8_t, float>> recent, fresh;
     if (g_fix_total_lag)
         for (auto& r : g_host_totals)
-            if (r.t >= g.asked - kTotalLag)
+            if (r.t >= g.asked - kTotalLag) {
                 recent.push_back({r.id, r.v});
+                if (r.t >= g.asked - kLateAge)
+                    fresh.push_back({r.id, r.v});
+            }
+    std::set<uint32_t> steady = std::move(g.band);
+    dg::Late late;
+    if (g_fix_late_streak) {
+        late.fresh = &fresh;
+        late.steady = &steady;
+    }
     dg::Digest gconv = gd;
     to_host_scale(hd, gconv); // BUG-0606
-    dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr);
+    dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr, late);
+    g.band = c.band;
     {
         net::Session::Link lk; // BUG-0547: the guest's round trip widens the window
         own_path_check(hd, gconv, lim, c, now, g_P.sess->link_of(from, lk) && lk.rtt_ms >= 0 ? lk.rtt_ms / 1000.0 : 0.1);
