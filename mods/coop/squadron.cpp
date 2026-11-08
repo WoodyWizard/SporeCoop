@@ -124,10 +124,13 @@ static bool g_fake_zero;      // tests (BUG-0723): the host sends a model key of
 // of which the GOG 2024 install has: a mirror without a model (the BUG-0546 / BUG-0686 guards only keep it from
 // faulting), and that guard then drew it with the last ship model it had (lab 20261108-031320: two pirates as the
 // guest's own ship). A zero key is now a model this game does not have: the model of a ship of that empire this game
-// made itself, else the model the game gives a raid without an empire (cPlayer +0x1280), else no mirror.
+// made itself, else the model the game gives a raid without an empire (cPlayer +0x1280), else no mirror. A key this game
+// does not have (BUG-0323) takes the same last fallback: before, such a ship had no mirror at all when no ship of its
+// empire was here (a pirate), and the guest did not see a ship the host had (sync-check "s missing", lab
+// 20261108-043549).
 // `coop.fix fleet.zero_key off`: SpawnUFO with the zeros (0.7.10).
 static bool g_zero_key_fix = true;
-COOP_FIX("fleet.zero_key", "BUG-0723", g_zero_key_fix, "space: a host ship with no model key is mirrored with a local ship model of its empire or the game's raid model, never with SpawnUFO's default (a model this game lacks)");
+COOP_FIX("fleet.zero_key", "BUG-0723", g_zero_key_fix, "space: a host ship with no model key or one this game lacks is mirrored with a local ship model of its empire or the game's raid model, never with SpawnUFO's default and never left out");
 // BUG-0724: the host's empire's own ships (escorts, colony defenders) carry the keys of the host's own ship creations
 // (My Creations, ids sequential per profile); the guest's game resolved such a key to ITS OWN creation of that id. Each
 // key goes through creations::host_design (the BUG-0647 path of civ vehicles): the host's records under a key of ours.
@@ -969,7 +972,7 @@ static void guest_state(net::Reader& r)
                 bool sub = false;
                 if (g_model_fix)
                     sub = local_model(pol, type, key);
-                if (!sub && zero && g_zero_key_fix)
+                if (!sub && g_zero_key_fix) // (an unknown key too: a ship rather than none, lab 20261108-043549)
                     sub = pirate_model(key);
                 if (g_unknown_logged.insert(key[0]).second)
                     H->log(M, SK_INFO, "space: host ship model %08X %s%s", key[0],
