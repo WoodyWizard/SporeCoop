@@ -5,8 +5,10 @@ plus what 0.7.11 leaves open. It starts after 0.7.11 is released. The same rules
 every ticket of this plan closes in this release; every feature gets an automated test on game instances that
 checks what the other player sees; a feature keeps the old behaviour behind its switch.
 
-**Status: draft.** The settings list (F3) is a proposal: the owner decides which settings exist, their
-defaults and which ones a session may change after it started.
+**Status: approved by the owner (2026-11-08).** Decisions: every setting of the F3 list as proposed, with the
+proposed defaults and scopes (friendly fire included, off by default); the combined report as proposed, plus a
+host button "Ask the players for their reports" usable at any time; the player types the name (no Steam / GOG
+profile name).
 
 ## Sources (Discord, forum "suggestions")
 
@@ -26,14 +28,14 @@ defaults and which ones a session may change after it started.
 
 | Package | What | Notes |
 |---|---|---|
-| **F1 Co-op window 2.0** | The window in steps: (1) first start: the name (default: the Steam or GOG profile name when it can be read), (2) Host or Join, (3a) Host: port, Host, (3b) Join: games found on the network, an address field that takes host names (`sporecoop.local`, the port 47810 when none is typed), (4) Lobby: players (name, colour, stage, ping, ready), the host's address, Ready, the session settings (F3; the host edits them, guests see them), Send my world (host), Leave / Close session. In game (F9): players, chat, the settings (read-only for guests, the host's changes allowed for the settings marked "live"), Report a problem. "Report a problem" also in the game's pause menu. | Spore's own UI style (the current window toolkit, docs/08-ui.md). Test: ui tests drive every step by real clicks. |
+| **F1 Co-op window 2.0** | The window in steps: (1) first start: the player types the name (owner 2026-11-08: no Steam / GOG profile name), (2) Host or Join, (3a) Host: port, Host, (3b) Join: games found on the network, an address field that takes host names (`sporecoop.local`, the port 47810 when none is typed), (4) Lobby: players (name, colour, stage, ping, ready), the host's address, Ready, the session settings (F3; the host edits them, guests see them), Send my world (host), Leave / Close session. In game (F9): players, chat, the settings (read-only for guests, the host's changes allowed for the settings marked "live"), Report a problem. "Report a problem" also in the game's pause menu. | Spore's own UI style (the current window toolkit, docs/08-ui.md). Test: ui tests drive every step by real clicks. |
 | **F2 Find each other** | (a) An arrow at the screen edge for every partner off screen, in the player's colour, with the name and the distance; on screen the name tag stays. Every stage with an avatar view: Cell, Creature, Tribe (the chief), Civ (optional: the partner's capital), Space (the partner's ship). Off in Rivals mode (and switchable, F3). (b) The partners on the minimap of Creature and Tribe (and the Cell's, if it has one) as triangles in their colour. (c) A player colour: chosen in the lobby, else assigned (4 distinct colours), shown in the lobby, the arrows, the map and the chat. | Test: a guest at 80 m off screen gets an arrow pointing at the host's real position (checked in the guest's game), no arrow in Rivals. |
 | **F3 Session settings** | One settings framework: the host's choice is sent to every guest when it joins and when it changes; stored with the host's world (the next session keeps it); shown in the lobby and F9. Each existing co-op mechanic gets a setting (list below) instead of an ini line or nothing. The ini keeps the defaults for a new world. | Every setting has a test with it on and off. The lobby shows which settings differ from the defaults. |
-| **F4 One report for the session** | The host's "Report a problem" asks every guest for its report; each guest sees "The host asks for your report: send / don't send"; the reports go to the host over the session connection; the host gets one `SporeCoop-session-report-<time>.zip` with `Host-<name>.zip` and `Guest-<name>.zip` inside. A guest can still make its own report. | Safety rules below. Test: a 4-player session, every report arrives, a guest that says no is listed as "not sent", a too big or malformed report is refused. |
+| **F4 One report for the session** | The host's "Report a problem" asks every guest for its report, and the host has its own button "Ask the players for their reports" (lobby and F9, any time, without making the host's own report; owner 2026-11-08); each guest sees "The host asks for your report: send / don't send"; the reports go to the host over the session connection; the host gets one `SporeCoop-session-report-<time>.zip` with `Host-<name>.zip` and `Guest-<name>.zip` inside. A guest can still make its own report. | Safety rules below. Test: a 4-player session, every report arrives, a guest that says no is listed as "not sent", a too big or malformed report is refused. |
 | **F5 One creature for everyone** | A session setting for Cell and Creature: "Each player's own creature" / "Everybody plays the host's creature". In the second mode every guest plays the host's species, only the host evolves it (the guest's editor and evolution buttons are hidden, the vote is the host's alone), and an evolution changes every player's creature at once. | Builds on BUG-0345 / BUG-0638 (the world's species). Test: the host evolves, every guest's avatar changes to the new creature, no guest editor opens. |
 | **B1 Left from 0.7.11** | What the 0.7.11 final check finds and the open tickets 0.7.11 leaves (with evidence) | |
 
-## F3: proposed settings (the owner decides)
+## F3: settings (approved 2026-11-08)
 
 Scope: **session** = the host sets it in the lobby before the start, kept with the world; **live** = the host can
 change it during play (F9).
