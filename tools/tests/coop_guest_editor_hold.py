@@ -96,21 +96,20 @@ def main():
     print(f"  the guest's editor DNA: {d_open} when it opened, {seen} after the host's body arrived", flush=True)
     ck(d_open is not None and all(v is not None and abs(v - d_open) < 1 for v in seen),
        f"the guest's open editor keeps its DNA while the host's new body arrives ({d_open} -> {seen})")
-    guest.call('click %d %d' % DONE)  # the own Creature editor has no red cross since BUG-0720: the check (docs/06-testing.md#testing-own-editor-no-cross)
+    guest.call('click %d %d' % CANCEL)
     left = wait(lambda: 'Creature' in mode(guest) or 'LoadGame' in mode(guest), 20)
     got = guest_log_has('creations: player 0 creature =', pos)
-    print(f"  guest mode 20 s after one click on the check: {mode(guest).strip()}; host's body arrived: {got}",
+    print(f"  guest mode 20 s after one click on the red cross: {mode(guest).strip()}; host's body arrived: {got}",
           flush=True)
     print('  guest ' + guest.call('coop.creations')['out'].strip().splitlines()[1], flush=True)
     if not left:
         shot(guest, 'editor_hold_stays.png')
-    ck(left, 'one click leaves the unchanged editor (seen: it stayed, showed the host\'s legs, '
+    ck(left, 'one click on the red cross leaves the unchanged editor (seen: it stayed, showed the host\'s legs, '
        'asked "changes will be lost")')
     if not left:
         guest.call('click %d %d' % CANCEL)
         time.sleep(3)
         guest.call('click %d %d' % QUIT)
-        guest.call('click %d %d' % DONE)
         wait(lambda: 'Editor' not in mode(guest), 30)
     ck(wait(lambda: 'Creature' in mode(host), 60), 'the host is back in the Creature stage')
     ck.faults(host=host, guest=guest)

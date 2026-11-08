@@ -1263,3 +1263,22 @@ BUG-0720, BUG-0721 (class BUG-0431). GOG 2024, Ghidra; test `tools/tests/coop_ed
   from the vote's own-editor step, which opens it only in Creature (coop.cpp, the caller at the vote end); the Cell,
   Tribe, Civ and Space editors of a vote are the game's own requests (h_Submit holds and releases them, it never
   builds one), and `coop.vote editor` builds one only for tests (in Tribe for a member's species, BUG-0217).
+
+## The own editor's red cross and save dialog: request +0x39 / +0x3B / +0x3C (2026-11-08, fix/w46-editor-cancel)
+<a id="creations-own-editor-cancel"></a>
+
+BUG-0756 (after BUG-0720). GOG 2024, Ghidra and lane 4 (`tools/tests/coop_own_editor_cancel.py`).
+
+* ✔ (disassembly) `cEditor::OnEnter` hands three request bytes to its UI object (`cEditor+0x78`): 0x58FB8D `+0x39` ->
+  0x5DCDC0 (UI +0x103; windows 0x682102A / 0x682102B shown only when it is 0; then 0x5DC9B0 enables 0x55FDCA8 and
+  0x47BC958 with it), 0x58FBD0 `+0x3A` AND a property -> 0x5DCE60, 0x58FBE7 `+0x3B` -> 0x5DCC80 (UI +0x106; window
+  **0x90439D7C visible = +0x3B**). `+0x3C` is read at 0x58F9BD and passed with the species key (+0x10) to 0x5BF1E0.
+* ✔ (runtime, lane 4, an exploration knob `coop.editreq keep <mask>`) the guest's own Creature editor with the game's
+  evolution values (+0x39 0, +0x3B 0, +0x3C 1) has no red cross (the pixel at 1383,1062 the panel's colour); with the
+  constructor's +0x39 1 / +0x3B 1 (mask 3) or all three (mask 7) the cross is drawn; +0x3C alone (mask 4) gives none.
+  The evolution editor's Esc menu has no exit item (Resume Editing, Spore Guide, Settings; Exit to Main Menu / Quit
+  Spore greyed), and done after an edit leaves without the save dialog.
+* `creations.own_editor_cancel` (coop.cpp build_editor_request): the own editor keeps the constructor's 1 / 1 / 0 in
+  these three bytes (the 0.7.10 own editor: the cross and the Save New / Replace / Don't Save dialog); every other
+  field of BUG-0720 stays the game's. `coop.editreq diff` allows the three bytes for the own kind.
+* ? Not separated: which of +0x39 / +0x3C brings the save dialog back (both are restored); the cross is +0x3B's.

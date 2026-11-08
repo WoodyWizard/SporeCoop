@@ -5206,6 +5206,10 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 ## The guest's own editor has no red cross since creations.editor_request (2026-11-08, fix/w46-e1-merge)
 <a id="testing-own-editor-no-cross"></a>
 
+* ~ superseded (2026-11-08): see the CORRECTION below.
+  CORRECTION (2026-11-08, fix/w46-editor-cancel): the owner wants the 0.7.10 own editor; BUG-0756
+  (`creations.own_editor_cancel`) gives it its red cross and save dialog back and the tests below click the cross
+  again (docs/re/creations.md#creations-own-editor-cancel; test own_editor_cancel).
 * ✔ (lab, lane 4) Since BUG-0720 (`creations.editor_request`) the guest's own editor is requested with the flags of the
   game's evolution request (+0x39 / +0x3B = 0, +0x3C / +0x3D = 1): it shows only the green check at the bottom right,
   no red cross; a click at the cross's place (1383, 1062) does nothing and the guest stays in the editor
