@@ -2757,3 +2757,8 @@ BUG-0740. GOG 2024 (dc04aee5), Ghidra and lab lane 9 (`tools/tests/coop_tribe_at
 * ✔ (lab 20261108-063825, the switch off) The host's share save carries its spot records: a guest that rejoined after
   the host's record was made had it (with its marker, the same place) right after loading the host's world, without a
   SpotRecord_CellId call of its own. What a guest misses is only a record made after its load.
+* ✔ (lab 20261108-063947 campaign_tribe, 4 players, the fix on) The game's own attack: at the Tribe arrival the host's
+  game made 5 records from 0xCDDE70 (the spawn markers; each guest's game makes them itself), and 112 s later one from
+  the creature attack's start (return 0xD739E0) for (-196.8 -441.8 -127.7): cell A0540026, its marker at (-177.4 -445.2
+  -142.6), the ticket's place. All three guests' games made the same cell's record and marker within 0.7 s; the
+  detector had no Tribe ornament row.

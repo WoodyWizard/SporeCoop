@@ -61,6 +61,7 @@ same place and an ornament there. FAIL with `SPORE_FIX_OFF=wsync.tribe_marker`: 
 no record after 20 s, no ornament). PASS: out/lab/20261108-061051, 20261108-061349. `tribe_attack_marker_rejoin`
 (the guest rejoins after the marker is made): PASS out/lab/20261108-062026, also with the switch off (20261108-063825: the host's share save carries the records; only a record made after a guest's load is missed). play_tribe PASS 20261108-062153,
 detect_tribe PASS 20261108-063308.
+The game's own attack in a campaign (campaign_tribe, 4 players, out/lab/20261108-063947): the host's attack start made the record of cell A0540026 at the ticket's place (-177.4 -445.2 -142.6); every guest's game made the same record and marker within 0.7 s, no Tribe ornament detector row.
 Not reproduced through the game's own attack on the fixture (`coop.tribe form` with the pace rule off + `coop.drama
 start 7`: no new record in 151 s, lab 20261108-061613): see the root cause.
 
