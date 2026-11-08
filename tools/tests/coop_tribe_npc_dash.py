@@ -47,6 +47,7 @@ without; with it 0.6-0.9 m (SPORE_FIX_OFF=npc.kinematic must FAIL).
   SPORE_LANE=5 python3 tools/tests/coop_tribe_npc_dash.py
   SPORE_LANE=5 DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py
 """
+import bisect
 import json
 import math
 import os
@@ -58,7 +59,8 @@ import coop_multi as cm
 from twoinst import Checks, start
 
 LIMIT = 1.5     # m (printed: samples farther than this)
-P90 = 1.2       # m: the 90th percentile of the errors (fix off: 1.5-2.8 m, on: 0.7-0.95 m)
+P90_S = 0.3     # s x the dash speed: the 90th percentile of the errors (BUG-0757; see P90 below)
+ALONG_MIN = -0.043  # s: BUG-0757, the copy's median offset along the host's path (on -0.041 .. +0.009, off -0.045 .. -0.074)
 # DASH_FEED=0: no `coop.npc list` on the guest during the dash (it samples every proxy's buffer at the console's own time,
 # which moves drive.lead_late's / the smoothing's state between two frames; BUG-0363 check) and no fresh-state check
 FEED = os.environ.get('DASH_FEED', '1') != '0'
@@ -66,13 +68,23 @@ SLOW_HOST = 25   # fps: a host under this makes its states late itself: too few 
 FRESH_SHARE = 0.6  # of the samples with a fresh state when the host is not slow (BUG-0430: late states fail)
 FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
-OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs this far beside the first
-# the small herd animal of the fixture's planet (the one 4 m off in the 4-player probes, BUG-0305)
 FIXTURE = os.environ.get('DASH_FIXTURE', 'tribe')
+# m: the second animal runs this far beside the first. BUG-0757: the Tribe fixture's animals (06808ACA, 40-50 hp) are
+# wider than 1.2 m: the guest's game pushed its two proxies 2.6-3.8 m apart (the host's pair 1.3-2.8 m; tribe_npc_dash
+# rows, labs 20261108-105804 #1, #3), a sideways error of the game's own separation of two bodies on one spot, not of the
+# copy; 3 m there. Creature's nest animals stay at 1.2 m (their pair the same on both games)
+OFF = float(os.environ.get('DASH_OFF', '3.0' if FIXTURE == 'tribe' else '1.2'))
+# the small herd animal of the fixture's planet (the one 4 m off in the 4-player probes, BUG-0305)
 # Creature: the nest species next to the fixture's start (BUG-0281)
 SPECIES = os.environ.get('DASH_SPECIES', '065CBE70' if FIXTURE == 'creature' else '06808ACA')
 # m/s: Creature NPCs ran at up to 4 m/s in coop.npc list (spd=) on lane 5
 SPEED = float(os.environ.get('DASH_SPEED', '4' if FIXTURE == 'creature' else '6.5'))
+# m: BUG-0757. The limit was 1.2 m, calibrated on Creature's 4 m/s dash (BUG-0281: fix on 0.7-0.95 m): 0.3 s of the dash.
+# The errors that stay are of time (the corners and the reversals of the zigzag known a latency late, a guest frame of
+# 65 ms at 15 fps), so they scale with the speed: the Tribe fixture's 6.5 m/s dash left 1.2-1.4 m with the copy on time
+# (its median offset along the path -0.03 .. +0.02 s; lab 20261108-110422). The same 0.3 s at the fixture's speed:
+# Creature 1.2 m (unchanged), Tribe 1.95 m; the frame lag itself is judged by ALONG_MIN
+P90 = max(1.2, P90_S * SPEED)
 
 
 def host_animals(con):
@@ -185,7 +197,33 @@ def judge_rows(host, guest, keys, t0, t1, windows):
         print(f'    window {e:.2f} m at {tt:.1f} s: same moment {dd:.2f} (target {g(t_)}, driving {g(dr)}), nearest the '
               f'host\'s path {g(pd)} m at lag {f(lag)} s; host readings at {f(ts[0])} / {f(ts[1])} / {f(ts[2])} s of the '
               f'guest\'s', flush=True)
-    return pct(d, .9), len(sm)
+    return pct(d, .9), len(sm), along_offset(hr, gr, keys, t0, t1)
+
+
+def along_offset(hr, gr, keys, t0, t1):
+    """BUG-0757: the drawn copies' median time offset along the host's path while running (s, + ahead, - behind): the
+    error along the host's velocity over its speed, every guest frame of the host's NPC over 2 m/s"""
+    hb, gb = bt._by_key(hr), bt._by_key(gr)
+    out = []
+    for key in keys:
+        hv, gv = hb.get(key, []), gb.get(key, [])
+        ht = [x[0] for x in hv]
+        for t, gp in gv:
+            if t < t0 or t > t1:
+                continue
+            h = bt.host_at(hv, ht, t)
+            if h is None:
+                continue
+            i = bisect.bisect_left(ht, t)
+            j0, j1 = max(0, i - 3), min(len(hv) - 1, i + 2)
+            dt = hv[j1][0] - hv[j0][0]
+            if dt < 0.02:
+                continue
+            v = [(hv[j1][1][k] - hv[j0][1][k]) / dt for k in range(3)]
+            sp = math.sqrt(sum(x * x for x in v))
+            if sp > 2:
+                out.append(sum((gp[k] - h[k]) * v[k] for k in range(3)) / sp / sp)
+    return pct(out, .5) if out else None
 
 
 def main():
@@ -221,6 +259,8 @@ def main():
           f'{(rt_h + rt_g) * 500:.0f} ms)', flush=True)
     host.call('coop.bodyrec start')
     guest.call('coop.bodyrec start diag')
+    if os.environ.get('DASH_WALK_VARIANT'):  # (diagnostics, BUG-0757) how npc.walk moves the proxies
+        print('  ' + guest.call('coop.npctrack variant ' + os.environ['DASH_WALK_VARIANT'])['out'].strip(), flush=True)
     print('  host:', host.call(f'coop.npc dash {nid} {LEN} {SPEED} 45 {WIDTH} {mate} {OFF}')['out'].strip(), flush=True)
     time.sleep(2)
     errs, fresh, fps_g, fps_h, loop, windows = [], [], [], [], 0, []
@@ -265,7 +305,7 @@ def main():
         print(f'  guest proxy #{i}:', line[0][:300] if line else '-', flush=True)
     guest.call('frame.limit auto')
     ck(len(keys) == 2 and min(per.values()) >= 30, f'samples of both animals on both machines ({per})')
-    p90_rows, n_rows = judge_rows(host, guest, keys, t0_rows, t1_rows, windows)
+    p90_rows, n_rows, along = judge_rows(host, guest, keys, t0_rows, t1_rows, windows)
     if errs:
         s = sorted(errs)
         far = sum(1 for e in errs if e > LIMIT)
@@ -298,7 +338,10 @@ def main():
        f'the same moment)')
     if n_rows:
         ck(p90_rows <= P90, f'the guest shows the running animals where the host has them at the same moment '
-           f'(90 % of {n_rows} frames within {p90_rows:.2f} m, limit {P90} m)')
+           f'(90 % of {n_rows} frames within {p90_rows:.2f} m, limit {P90:.2f} m)')
+        # BUG-0757 (npc.place_now): not a guest frame behind the host along its path
+        ck(along is not None and along >= ALONG_MIN, f'the running copy is not a frame behind the host along its path '
+           f'(median {along if along is not None else 0:+.3f} s, limit {ALONG_MIN} s)')
     return ck.result()
 
 

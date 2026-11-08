@@ -12,6 +12,8 @@
   after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
 
 ### Fixed
+- Creature and Tribe: a running animal of the host is no longer shown a frame behind where the host has it on a
+  slower PC (BUG-0757).
 - Update: a short hiccup of GitHub's download server (an answer like 504, a dropped connection, a download that
   breaks off) no longer ends the update at once. The in-game update and SporeCoopSetup.exe try again up to 3 times,
   1 and 3 seconds apart; if it still fails, the message says how many tries were made (BUG-0755).

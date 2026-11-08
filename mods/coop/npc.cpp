@@ -1724,8 +1724,18 @@ static void check_listed()
     }
 }
 
+// BUG-0757 (`coop.fix npc.place_now`, as civ.place_now BUG-0438): a walked proxy is placed where its target will be a
+// frame later. The placing of this frame is what the game draws and the next frame reads back, so a proxy placed on its
+// target now was always one guest frame behind the host's NPC: at 15 fps and 6.5 m/s 0.42 m (the drawn copy 0.05-0.07 s
+// behind the host along the path, p50, tribe_npc_dash lab 20261108-102113 rows). Aimed ahead by the last frame's time
+// (at most 0.1 s) along the target's velocity. Off: on the target (0.7.10).
+static bool g_place_now_fix = true;
+COOP_FIX("npc.place_now", "BUG-0757", g_place_now_fix, "creature, tribe: a walking animal's copy is placed where the host has it when the frame is drawn, not a frame behind");
+static double g_frame_dt = 0, g_frame_last = 0;
 static void guest_tick(double now)
 {
+    g_frame_dt = g_frame_last > 0 ? std::min(std::max(now - g_frame_last, 0.0), 0.1) : 0.0; // BUG-0757
+    g_frame_last = now;
     void* av = game::avatar();
     // remove local NPCs collected by the update filter
     std::sort(g_kill.begin(), g_kill.end());
@@ -1913,7 +1923,11 @@ static void guest_tick(double now)
                 o.keep_lost = true;
                 o.catch_prop = true; // BUG-0425
                 o.variant = g_walk_variant;
-                drive::walk_place(px.c, s.pos, s.rot, vel, px.drv, now, o);
+                // BUG-0757 (npc.place_now): aimed where the target is when the placing shows up, a frame later
+                net::Vec3 aim = s.pos;
+                if (g_place_now_fix)
+                    aim = {aim.x + vel.x * (float)g_frame_dt, aim.y + vel.y * (float)g_frame_dt, aim.z + vel.z * (float)g_frame_dt};
+                drive::walk_place(px.c, aim, s.rot, vel, px.drv, now, o);
                 walked = true;
             } else {
                 if (!px.kinematic)
