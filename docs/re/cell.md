@@ -1868,3 +1868,59 @@ BUG-0666, follow-up of [#cell-goldie](#cell-goldie). GOG 2024, Ghidra (q.sh, obj
 * A mod that had to end it (not needed): post 0x445F729 (MessagePost, vt+0x18), never MessageSend from the frame hook
   (the DXVK deadlock of world.cpp); stuck = S+0x68 == 1, the event at G+0x5198 of type 0x24 with ev+0x1C <= 0.
 
+
+## What a cell can eat (2026-11-08, fix/w46-g4-tests)
+<a id="cell-eat-gate"></a>
+
+Static (Ghidra, GOG 2024 decompile and disassembly; BUG-0293 / BUG-0589). "Kind" below is the **interaction kind**
+(interaction `+8`, chosen per part pair), not the event type (`+0x24` in the event pool, dispatcher 0xE7E130):
+the Bite of §3 runs from event type 10, which interaction kind 8 posts.
+
+* ✔ Who decides: HandleCollisionPair 0xE7F140 -> 0xE73DD0 (both ways) picks the pair test by who has a model
+  (`+0xFC`) and GFX (`+0x248`): both 0xE6AD80 (part vs part), only the other 0xE73620, only this one 0xE738F0 (its
+  parts vs the other's body, other part type 0xC), neither 0xE73BB0. Parts come from GetCellModelData 0xE679E0
+  (rows of 0x48 bytes: `+0xC` part type, `+0x10..+0x18` offset, `+0x3C` radius, placed at `+0x4C + size * (offset * M)`,
+  radius * size; part type 1 is skipped). Meat has no model: the eater's parts are tested against its body. Every
+  touching pair asks **0xE6A3F0** for a kind (args: self part type, other cellType `+0xB4`, other res flags `+0xB0`,
+  `d = GetScaleDifference(self, other)` 0xE573E0, other part type); 0xE59CC0 keeps the highest kind, then the
+  executor 0xE7E7F0 runs it (EBX = A = the part's owner, EDI = B). A kind whose handler refuses falls back to the
+  plain contact push 0xE67100.
+* ✔ `d = clamp(other.level - self.level + 2, 0, 4)` with `+0x358`; the avatar's -1 is read as the level of the food
+  total `S+0x1C` (0xE4EE40, table 0x1483B54 rows of 0x1C): **level 1 at 0-99, 2 at 100-199, 3 at 200-299 ... (1 +
+  food / 100), 10 at 1000** (the size steps every 50 points, the level every 100). d = 2 is the same level, 1 the
+  food one level smaller. **There is no size test**: only levels, part types and flags.
+* ✔ Meat (cellType 2, ai.type 0) touched by a part of type 2 (inferred: the carnivore mouth):
+  d 0 (both alive) or d 1 (food not the avatar, eater alive) -> **kind 10** = eat: 0xE7E020 (ESI = food) plays
+  animation 0xC, posts event type 1 (foodType 2) whose callback 0xE7DB80 -> 0xE7D880 swallows the food (DestroyCell,
+  avatar: telemetry 0xE514A0) and whose end 0xE7D800 runs OnEat 0xE7D760 -> AvatarEat (points, hp). **Not EatFood**
+  (event 0x12 is the plant path below), so the EatFood hook (`cell.ko_no_eat`) does not see a carnivore's meat.
+  d 2 (same level) -> kind 7 = mouth bite 0xE7B470 (event type 4, callback 0xE7B280): meat is not damageable
+  (IsDamageable), so BreakOrSwallow 0xE7AEE0: the meat breaks, **no points**. d 3 -> kind 4/7; d 4 -> push only.
+* ✔ Plants (cellType 3): part type 4 (inferred: the herbivore mouth) at d 1 -> **kind 0xB** -> 0xE72910 posts
+  **event 0x12 = EatFood** 0xE7DF40 (OnEat, then the plant shrinks one level by table 0x1483B10 or is destroyed);
+  part type 3 at d 1 -> kind 9 (swallowed whole, event type 1, foodType 3). Other d: no eat. Part type 4 on a cell
+  with AI (or the avatar) at d 1-2 -> kind 0xC (event 0x13 EatChunkA); 0xE57560 = "has an AI block type != 0 or is
+  the avatar", so never on meat.
+* ✔ Refusals in the handlers (then only the push): kind 10 (0xE7E020) and kind 0xB (0xE72910): **the eater's
+  `+0x178` lock**, the food's `+0x17B`, ShouldNotAttack(eater, food) (kind 10), the food's `+0x111` (kind 10); the
+  food's `+0x179` (being eaten) makes them do nothing. Kind 7 (0xE7B470): eater `+0x178` / `+0x17F`, victim `+0x17C`
+  / `+0x17B`. CollectPartToken 0xE7B630 refuses on the same eater `+0x178`. The eater's `+0x111`
+  (invulnerable), its hp and its size are not read; no timer or respawn cooldown is read (no hatch either: the
+  co-op small respawn is the mod's `downed_tick`, not RebuildLevel). Writers of `+0x178 = 1`: Bite 0xE7B0A0 (attacker
+  **and victim**), KillCell's locks 0xE59170, PlayerDeath 0xE72060, 0xE591C0, 0xE59500, 0xE59A70, 0xE5F160,
+  0xE69A90 and more; the code that clears it again was not found (?).
+* CanEat 0xE68470 (§9) is the AI's prey test, not this gate: it says yes to same-level meat (d 2) where a mouth
+  only breaks it.
+* `coop.pool see` columns: `see c<key> <kind> <size ratio = its +0x58 / our +0x58> <hp> <distance m> <screen x> <screen y>`
+  (nearest first; puppets, dead and dying left out; a guest lists only mirrors). The ratio is for reading only:
+  the game's rule uses levels. A cell's `level=` (`coop.pool cell`, `coop.pool meat`) is its `+0x358`; a player's is
+  -1 and counts as the food-total level above.
+* Applied to lab 20261106-003243 (BUG-0293): food 102 -> player level 2, the meat level 1 -> d 1: edible by the
+  host as by the guest (who ate level-1 meat at the same food). The host's 4 tries left the meat alive with hp 6 and
+  pushed it 1-3 m along the host's path (observed), i.e. neither kind 10 nor kind 7 ran: either no mouth part touched
+  it or the host's `+0x178` was set (inferred: its cell had been knocked out and respawned small just before,
+  `respawns=1`, `bites_taken=4`; Bite sets the victim's `+0x178`, and the lethal one is intercepted by `go_down`
+  before the game's death flow). Not measured: the host's lock bytes during the tries (`coop.pool tokens`
+  own_locks, third digit = `+0x178`).
+* BUG-0589's one guest miss (meat "the same level 3"): if that was d 2, a mouth could only have broken it, never eaten
+  it (inferred).
