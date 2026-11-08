@@ -1317,6 +1317,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-11-05 (fix/w45-crashes): not reproduced in 5 more Creature -> Tribe changes (2 x campaign_tribe, 3 x
   campaign_ct, SPORE_DETECTOR=20; none took the original path, a share save during the change); the signature is in no other lab log; the grid's slot layout is
   in docs/re/tribe.md#tribe-flora-grid-slots.
+* 2026-11-08 (fix/w46-n2-desyncs): the original path forced (`CAMPAIGN_SHARE_SPAM=1`, suite campaign_tribe_share: the
+  host's share posted every ~1.5 s through the change) and reached 4 times in 12 four-player Creature -> Tribe changes
+  (2 with Cell first, 4 over SPORE_NET=players): 0 faults. Ticket closed as not-reproduced; the tripwire idea stays.
 * Ticket: BUG-0359
 
 ## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)

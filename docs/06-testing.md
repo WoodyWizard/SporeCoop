@@ -5039,3 +5039,12 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   "I'm ready" the moment the knockout ends, so the host's cell editor opens 0.3 s later (inside the 2-3 s window the
   mate path never reaches). The bite check is `coop.pool selfhit 1` on the host: the host refuses a guest's
   `coop.pool hurt 0 1` on a player's cell (no PvP), which once looked like an invulnerable host (lab 20261108-034839).
+* `CAMPAIGN_SHARE_SPAM=1` (coop_campaign.py; suite `campaign_tribe_share`, ~9 min, 4 players): from the Creature advance
+  until 4 s into Tribe the host posts its world share to the last guest every ~1.5 s, so a share save is being written
+  while the game enters Tribe (BUG-0359's path, "went from Creature to Tribe during the save"). Reached in 4 of 10 runs
+  (lab 20261108-040233, -044415): the shares go out with an already written save in the others. Works with any campaign
+  that advances from Creature (campaign_ct with the env set).
+* `CAMPAIGN_HOST_CMDS_<STAGE>=<cmd>[;<cmd>]` (coop_campaign.py): console commands for the host once every guest is in
+  that stage (triage: `probe 0x00C911C0`). `SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]` (monitor.py): the
+  SPORE_DETECTOR_DIAG commands also run for a finding whose sig contains one of them (e.g. `:ornament` with
+  `coop.wobj raw 18C88E4 3000 576`, BUG-0528).

@@ -870,6 +870,9 @@ class Campaign:
         services = [Service(self, p) for p in self.P]
         for s in services:
             s.start()
+        spam = None
+        if os.environ.get('CAMPAIGN_SHARE_SPAM') == '1' and stage == 'creature':
+            spam = self.share_spam(nxt)
         try:
             while time.time() - t0 < timeout and not self.dead:
                 hst = cl.stage_of(self.host.call('game.mode'))
@@ -889,6 +892,8 @@ class Campaign:
                 s.stop = True
             for s in services:
                 s.join(30)
+            if spam:
+                spam.join(30)
         took = time.time() - t0
         if cl.stage_of(self.host.call('game.mode')) != nxt:
             self.note(f'the host did not reach {nxt} in {took / 60:.1f} min')
@@ -899,6 +904,35 @@ class Campaign:
         self.follow(nxt, services)  # a guest left behind is a finding; the game goes on in the stage
         self.vote_check(log0, t0)
         return True
+
+    def share_spam(self, nxt):
+        """BUG-0359 (CAMPAIGN_SHARE_SPAM=1): the host's world share posted again every ~1.5 s through the
+        Creature -> Tribe change, until 4 s after the host is in Tribe, so a share save is being written while
+        the game enters Tribe (the reported path "went from Creature to Tribe during the save"); to one guest
+        (the last one) so the others follow as usual"""
+        con = Console(self.host.inst, timeout=30)
+        gid = self.guests[-1].pid if self.guests else None
+
+        def run():
+            seen_at = None
+            n = 0
+            end = time.time() + self.advance_minutes('creature') * 60 + 30
+            while time.time() < end and not self.dead:
+                try:
+                    if cl.stage_of(con.call('game.mode').get('out', '')) == nxt:
+                        seen_at = seen_at or time.time()
+                        if time.time() - seen_at > 4:
+                            break
+                    con.call(f'coop.share {gid}' if gid else 'coop.share')
+                    n += 1
+                except (OSError, ValueError, KeyError):
+                    pass
+                time.sleep(1.5)
+            self.note(f'share spam: {n} shares posted through the change to {nxt}')
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return t
 
     def follow(self, nxt, services=()):
         """every guest follows the host into the stage (the world share) and is in its world"""
@@ -942,6 +976,10 @@ class Campaign:
             self.note(f'all guests play {nxt} together with the host after {time.time() - t0:.0f} s')
             if nxt == 'tribe':
                 self.chiefs_check('arrival')
+            # CAMPAIGN_HOST_CMDS_<STAGE>=<cmd>[;<cmd>]: console commands for the host once every guest is in the stage
+            # (triage, e.g. `probe 0x00C911C0` for BUG-0528's markers)
+            for cmd in [c.strip() for c in os.environ.get(f'CAMPAIGN_HOST_CMDS_{nxt.upper()}', '').split(';') if c.strip()]:
+                self.note(f'host {cmd}: {self.host.call(cmd).strip()[:120]}')
             return True
         behind = [g for g in self.guests if cl.stage_of(g.call('game.mode')) != nxt or g.pid not in self.together()]
         if not behind:  # they got there just after the time
