@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.10.1] - 2026-11-07
+
 ### Fixed
 - Civilization: a guest's game could crash about ten seconds into a fight with vehicles near a city whose defence
   turrets fired back; the guest now shows the host's turret shots without a crash (BUG-0688, #198).

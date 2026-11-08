@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: GitHub #198
 role: guest
 versions: 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.10.1
 branch: fix/w46-issue198
 commits: 0643d9ca, 9cc0f350
 tests: civ_turret_shot
@@ -64,3 +64,4 @@ army attacks it, the turrets fire for 60 s.
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: fixed on fix/w46-issue198 (civ.turret_weapon), test civ_turret_shot.
+- 2026-11-07: released in 0.7.10.1.
