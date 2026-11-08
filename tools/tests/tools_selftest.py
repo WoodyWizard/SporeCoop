@@ -712,6 +712,14 @@ def test_worldstate():
     out = sorted(f['sig'] for f in worlddiff.diff(h, g))
     check(out == ['Tribe:guest_only:game_bundle_held', 'Tribe:host_only:game_bundle_carried', 'Tribe:unmatched:game_bundle'],
           f'carried on one game only, ground food 4.5 m off, food in another container: their own rows ({out})')
+    # BUG-0489: one gameplay marker more on the host (an invisible spawn point a game's own logic consumes,
+    # docs/re/creature.md#creature-gameplay-markers): no row
+    mk = 'obj g{} key=00000000 alive=1 hp=-1.0 ai=-1 own= owner=-1 pos=({} 2.0 3.0) noun=036BE27E ser={} scale=1.00'
+    hc = 'census v1 role={} me={} mode=Creature modeid=01654C01 world=A3930F03 t=1.0\nme pos=(1.0 2.0 3.0) ok=1'
+    h = worlddiff.World('\n'.join([hc.format('host', 0), mk.format(1, 10.0, 1), mk.format(2, 40.0, 2), 'end objects=2']))
+    g = worlddiff.World('\n'.join([hc.format('guest', 1), mk.format(1, 10.0, 5), 'end objects=1']))
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(not [x for x in out if 'gameplay_marker' in x], f'a gameplay marker on the host only: no row ({out})')
     # BUG-0596: a game that lists no object (it loads its world) is not compared
     obj = 'obj c{} key=2915F01F alive=1 hp=10.0 ai=1 own=npc owner=0 pos=(1.0 2.0 3.0)'
     h = worlddiff.World('\n'.join(['census v1 role=host me=0 mode=Creature modeid=01654C01 world=A3930F03 t=1.0',

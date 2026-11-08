@@ -3573,3 +3573,47 @@ BUG-0683 (the partners' side of BUG-0504 / BUG-0592), GOG 2024, lab lane 9.
 * Rule (`creature.puppet_unground`): a puppet whose partner stands, under 0.25 m below GetHeightAt for 0.5 s, is put
   onto its ground where it stands (on a mound at its target's height); the own creature has the same rule
   (creature.own_ground).
+
+## Gameplay markers (2026-11-08, fix/w46-g4-tests)
+<a id="creature-gameplay-markers"></a>
+
+BUG-0489. GOG 2024, Ghidra only (no runtime run). Noun 0x36BE27E, `cGameplayMarker` (RegisterNounType(0x36BE27E,
+0x36BE278, "cGameplayMarker") in 0xB24720), vtable 0x146C400 (the one the detector printed).
+
+* ✔ A gameplay marker is an invisible spawn point: it names the object it spawns and remembers where that object
+  was. Layout (ctor 0xC3F110 zeroes these; Write 0xC3EE80 / Read 0xC3EF80; the serializer field names after the
+  vtable, .rdata 0x146C474..): +0x34 the spatial part (vt 0x2C position, 0x30 orientation, 0x38 / 0x3C set them),
+  +0x108 mDefinitionId (the marker kind), +0x10C the type of the noun it spawns, +0x110 that noun's id (a species,
+  an ornament or a level key), +0x114 a 0x88-byte block of kind-specific values (saved raw), +0x19C mpNextMarker,
+  +0x1A0 mpHeadMarker (chains), +0x1A4 mpAssociatedNoun (the spawned object, released by the dtor 0xC3EDA0),
+  +0x1A8 mNounPosition, +0x1B4 mNounOrientation (where the object was when it went away), +0x1C4 mbNounRemoved.
+* ✔ Kinds (+0x108) seen in the code: 0x91FE517B herd spawn (+0x10C = herd 0x1BE418E; +0x110 0xD8C67022 /
+  0xAED08DD4 are kept through a repopulation with +0x1C4 = 1, and the Creature start 0xD43DE0 puts the player at
+  a random 0x91FE517B / 0xD8C67022 marker, 0xB99050); 0x57F09E5E tribe spawn ([tribe.md](tribe.md#tribe-form-needs));
+  0xD18D25CD city site (the Civ populate step 0xB9FB90 from "num_cities", via 0xB941E0); 0xC012AE1F a chain of path
+  points (+0x124 == 4, +0x11C index, +0x120 speed, linked by +0x19C; the Creature populate step reads them into
+  cCreatureModeStrategy +0x50); markers whose noun is an interactive ornament (+0x10C 0x3A2511E, +0x110 a part level
+  key 0x57F31D0E / 0D / 0C / 0B).
+* ✔ The markers are made by the planet populate step of a stage start, `0xBA1DB0(mode)`: Creature 0xBA16E0
+  (herd markers in the avatar's region, 0xB9AB60 / 0xB94090, and prop lists around the avatar, 0xB9B1E0 /
+  0xB9C980), Tribe 0xB9CBF0, Civ 0xB9D970; Tribe and Civ first clear the old ones (0xB99410). A marker file can be
+  loaded too (0xD1C610, from the Creature start with the planet property 0x64C82C8C). They are saved, so a guest
+  gets the host's markers with the world: they are shared world content, not made per player.
+* ✔ Spawning (`0xB93310(marker, type, id)`, cdecl): makes the noun at +0x1A8 / +0x1B4 and holds it in +0x1A4.
+  `Relevance_Update` 0xACE4E0 ([the relevance pass](#creature-view-centres)) spawns a marker's object inside a
+  sphere's enter radius and destroys it outside every leave radius (writing its last place back into the marker).
+  Markers themselves are not made or destroyed there.
+* ✔ Markers consumed by one game's own logic: the NPC tribe controller (0xCC6440) destroys the tribe spawn marker
+  it formed a tribe at (the host only; a guest's copy of that tribe keeps the marker: the Tribe detector's 1 guest /
+  0 host unpaired marker). `0xD408E0`, called from `Simulator::CreatureStageEventHandler` 0xD47FC0 after the
+  events of the local avatar (part unlocks), destroys, when the part level counter cCreatureModeStrategy +0xE0
+  (1..4) is complete for this game's collection, the interactive ornaments of that level (+0x110 == 2, +0x28 ==
+  the level key) and their markers, then counts up: per player.
+* ~ The Creature detector's one extra marker on the host (21 / 20, 1 host / 0 guest unpaired, 14% of comparisons)
+  is not placed yet: the unmatched rows print no position and no census dump with markers is saved. Likely the
+  part-level cleanup above (the guest's own collection) or the host's populate step around its own avatar.
+* Detector: `gameplay_marker` is in worlddiff.IGNORE (the spawned objects are compared themselves). The guest keeping
+  a tribe spawn marker the host's controller used is harmless while the guest's controller is blocked
+  (`tribe.guest_tribes`, BUG-0587): BUG-0741 records it.
+* ? Not looked up: the 0xD14690 / 0xD14A60 readers (vtables 0x1479900 / 0x14799BC, a marker from a property
+  definition) and the dev marker editor 0xD197A0 / 0xD1AFE0 ("LevelEditor", creates 0xC012AE1F chains).
