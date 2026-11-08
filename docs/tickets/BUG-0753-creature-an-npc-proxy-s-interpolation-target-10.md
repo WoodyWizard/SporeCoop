@@ -1,19 +1,19 @@
 ---
 id: BUG-0753
 title: creature: an NPC proxy's interpolation target 10-12 m from the host's running NPC for seconds with fresh states (creature_npc_dash)
-status: open
-kind: desync
+status: fixed
+kind: test
 stage: Creature
 reported: 2026-11-08
 source: fix/w46-g4-tests lab 20261108-082630
 role: guest
 versions: 0.7.11 (rel/0.7.11 + fix/w46-g4-tests)
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w46-k4-proxy
+commits: 6b9d124f, 735cff8b
 tests: creature_npc_dash, tribe_npc_dash
 signature:
-docs:
+docs: docs/06-testing.md#testing-dash-order
 related: BUG-0363, BUG-0674, BUG-0281
 ---
 
@@ -35,24 +35,29 @@ Tribe (tribe_npc_dash, same lab): 1.36 / 1.65 / 1.68 m, split half target (p90 ~
 How to reproduce: `tools/lab.py run creature_npc_dash --repeat 3 --retry 0` (fails 3 of 3 on 20261108-082630).
 
 ## Root cause
-Not found. Observed: the error is in the target, with fresh states. Candidates (inferred, not checked):
-* drive.lead_fall / the NPC proxies' smoothing (BUG-0674, 34c2d19c today: `px.buf.smooth_max = 8.f` for NPC
-  proxies, the lead's jumps up to 8 m kept as a decaying offset, the continuation at the shown velocity): an offset
-  that does not decay or a continuation that runs on the wrong way at a dash's turn would put the target metres off
-  with fresh states. Split it with the `u<id>` rows (M1's raw lead, no late time, no smoothing: added to
-  `coop.bodyrec start diag` on fix/w46-g4-dash) and with `SPORE_FIX_OFF=drive.lead_fall`.
-* the console's `coop.npc list` (the test's fresh-state probe, every 0.6 s) calls `px.buf.sample()` at the console's
-  own time between frames, and sample() moves the lead's state (late_time, smoothing: mutable members): the test may
-  disturb what it measures. Check with `DASH_FEED=0` (no list during the dash).
-* states of another creature under the same id on the host (one NPC of the two, never both).
+Observed (the rows of lab 20261108-092241 of fix/w46-g4-tests, n2 dashing, n3 its mate): on the host n3 stayed 6.8-9.4 m
+from n2 for the whole run (it moved under 0.13 m a sample) while on the guest it ran 1.2 m beside n2, where `coop.npc dash`
+puts the mate. The test's dash_tick (set_position of both animals) ran in the host's npc tick before the NPC states were
+built, so the states carried the test's own write; the host's game keeps that write for the dashing NPC but not for the
+mate (its next update puts it back), so the guest showed the mate where the test wanted it and the comparison with the
+host's own NPC was 3.6-12 m. A test artefact: the guest showed exactly the states it got; in play no mod write precedes
+the states. G4's three inferred candidates (smoothing, drive.lead_fall, the list probe) are excluded by their runs.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix tools.dash_after_send` (npc.cpp, tests only): dash_tick runs after the states went out, so the states are the
+game's own positions as in play, and a dashing NPC whose written position the game kept carries the dash's velocity (the
+game's own velocity after its update is its locomotion's: with it alone tribe_npc_dash got 3.6-3.9 m, lab
+20261108-101527-2). Off: before the send (the test as it was).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL: out/lab/20261108-095739 (SPORE_FIX_OFF=tools.dash_after_send, creature_npc_dash 1 of 3 FAIL: 90 % within 9.54 m, limit
+  1.2 m); G4's 20261108-091147 / -091630 / -092113 before (2 of 3 each).
+- PASS: creature_npc_dash out/lab/20261108-095739-2 (3 of 3, the same time on lane 6) and out/lab/20261108-102113-2 (3 of 3, the
+  final build).
+- tribe_npc_dash (out/lab/20261108-102113): 1 of 3; its target is right now (p90 0.55-0.63 m, before 1.0-3.2 m), the rest is
+  the driving one guest frame behind its target at 15 fps, a separate ticket: BUG-0757.
 
 ## History
 - 2026-11-08: opened (fix/w46-g4-dash, static analysis of lab 20261108-082630).
 - 2026-11-08 (fix/w46-g4-tests): G4 diagnostic runs (lane 2, creature_npc_dash x3 each): out/lab/20261108-091147 (2/3), with SPORE_FIX_OFF=drive.lead_fall 20261108-091630 (2/3), DASH_FEED=0 20261108-092113 (2/3). Every failing run has n3 among the two dashing animals and n3 off by a constant 3.6-8.1 m for the whole run (raw lead = target = 3.6 / 8.1 m from the host's NPC, driving ~0.1 m); every run with the pair n1/n2 passes (p90 0.5-0.6 m). Not the smoothing (raw lead M1 is as far), not drive.lead_fall (the same with it off), not the test's coop.npc list probe (the same with DASH_FEED=0). Inferred: the host's states for that NPC id are not the host NPC's own position (a wrong object or offset behind the id), or the guest maps that id to another position; the earlier independent sync-check 'n3 10.9 apart' agrees. Needs a dedicated fix (K4 class: remote bodies).
+- 2026-11-08 (fix/w46-k4-proxy): cause found (the test's set_position before the state send, the mate not kept by the host's game); fixed in the test path (tools.dash_after_send).

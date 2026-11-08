@@ -507,8 +507,16 @@ static bool g_fail_next; // tests (coop.worldfix failnext): the next share_now f
 static std::vector<PendingShare> g_pending;
 extern bool g_share_reset_fix;
 
+static std::map<uint8_t, double> g_share_asked; // BUG-0754: host time a share to the peer was asked for
+double since_share(uint8_t peer)
+{
+    auto it = g_share_asked.find(peer);
+    return it == g_share_asked.end() ? 1e9 : H->time_seconds() - it->second;
+}
+
 bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
+    g_share_asked[peer] = H->time_seconds(); // BUG-0754
     if (save_first) {
         for (auto& p : g_pending)
             if (p.peer == peer && p.need_save) {

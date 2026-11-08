@@ -41,6 +41,7 @@ struct Probe {
     // BUG-0588: the host's game is in the end of its stage (Tribe: from the City Hall editor on its animals are at
     // (0 0 0), its village is taken down): its world is no longer the one a guest plays, the sync-check waits
     std::function<bool()> stage_end;
+    std::function<double(uint8_t)> since_share; // BUG-0754: s since a world share to that guest was asked for
     std::function<bool(float&)> dna; // the DNA total when there is one
     std::function<bool(int&)> cell_food;
     std::function<float()> cell_scale; // BUG-0606: the own Cell world scale, 0 outside Cell

@@ -15,6 +15,8 @@
 - Update: a short hiccup of GitHub's download server (an answer like 504, a dropped connection, a download that
   breaks off) no longer ends the update at once. The in-game update and SporeCoopSetup.exe try again up to 3 times,
   1 and 3 seconds apart; if it still fails, the message says how many tries were made (BUG-0755).
+- The co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) while the host
+  sends its world to a partner (BUG-0754).
 - Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
   (BUG-0752).
 - Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to

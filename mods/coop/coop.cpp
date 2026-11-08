@@ -5782,6 +5782,7 @@ void support_init()
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };
     p.stage_end = [] { return tribe::stage_end(); };
+    p.since_share = [](uint8_t peer) { return world::since_share(peer); };
     p.dna = [](float& v) {
         if (!game::avatar() || g_mode != modes::kCreature)
             return false;

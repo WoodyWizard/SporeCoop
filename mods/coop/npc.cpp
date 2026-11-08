@@ -785,6 +785,7 @@ std::string current_anims()
     return out;
 }
 
+static void dash_velocity(uint16_t id, const net::Vec3& pos, net::Vec3& vel); // BUG-0753 (tests)
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;
@@ -792,6 +793,10 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.pos = game::position(c);
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
+    // BUG-0753 (tools.dash_after_send): a dashing NPC moved by the test's write moves at the dash's velocity (the game's own
+    // velocity after its update is its locomotion's, not the written path's), when the game kept the write (the mate's
+    // is not kept: then its own)
+    dash_velocity(id, s.pos, s.vel);
     s.health = game::health(c);
     s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
@@ -897,6 +902,9 @@ struct Dash {
     double t0 = 0, until = 0;
     uint16_t mate = 0; // a second NPC on the same path, `off` m to the side (a herd that flees together)
     float off = 0;
+    // BUG-0753: what the last dash_tick wrote (index 0 the dasher, 1 the mate), for host_state's velocity
+    net::Vec3 w[2], v[2];
+    bool wrote[2] = {false, false};
 };
 static Dash g_dash;
 static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
@@ -904,6 +912,21 @@ static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
     float fw = g_dash.len * k / 4.f, sw = (k == 0 || k == 4) ? 0.f : (k & 1 ? g_dash.width : -g_dash.width);
     return {g_dash.a.x + g_dash.dir.x * fw + g_dash.side.x * sw, g_dash.a.y + g_dash.dir.y * fw + g_dash.side.y * sw,
             g_dash.a.z + g_dash.dir.z * fw + g_dash.side.z * sw};
+}
+// BUG-0753 (tests, `coop.fix tools.dash_after_send`): `coop.npc dash` moves its NPCs (set_position) after the game's
+// update; called before the states went out, the states carried the test's own write. The game does not keep that write
+// for the mate (on the host the mate stayed 7-9 m from the dashing NPC while its states said 1.2 m beside:
+// creature_npc_dash's "one NPC 3.6-12 m off for the whole run, raw lead too", lab 20261108-092241 rows of
+// fix/w46-g4-tests). After the send the states are what the game has, as in play. Off: before the send (the test as it was).
+static bool g_dash_after_send = true;
+COOP_FIX("tools.dash_after_send", "BUG-0753", g_dash_after_send, "tests: coop.npc dash moves its NPCs after the states went out (the states are the game's own positions)");
+static void dash_velocity(uint16_t id, const net::Vec3& pos, net::Vec3& vel)
+{
+    if (g_dash_after_send && g_dash.id)
+        for (int m = 0; m < 2; m++)
+            if (g_dash.wrote[m] && id == (m ? g_dash.mate : g_dash.id) &&
+                net::dist(pos, g_dash.w[m]) < 0.5f + drive::speed(g_dash.v[m]) * 0.1f)
+                vel = g_dash.v[m];
 }
 static void dash_tick(double now)
 {
@@ -955,6 +978,9 @@ static void dash_tick(double now)
             w = {w.x / r * gr, w.y / r * gr, w.z / r * gr};
         game::set_position(c, w);
         *(net::Vec3*)((uint8_t*)c + game::kVelOff) = v;
+        g_dash.w[m] = w;
+        g_dash.v[m] = v;
+        g_dash.wrote[m] = true;
     }
 }
 // tests (BUG-0339): host NPC #id goes back to the game's creature pool, as the relevance pass does it
@@ -1471,7 +1497,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 *(net::Vec3*)((uint8_t*)c + game::kVelOff) = net::Vec3{};
             }
         }
-    dash_tick(now);
+    if (!g_dash_after_send)
+        dash_tick(now);
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
         if (now - it->second.last_seen > 2.0) {
@@ -1578,6 +1605,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             send_anim_snapshot(p.id, known);
     }
     g_anim_out.clear();
+    if (g_dash_after_send) // BUG-0753: the states above are the game's positions, not the test's own write
+        dash_tick(now);
     for (auto it = g_known.begin(); it != g_known.end();) { // guests that left
         bool present = false;
         for (auto& p : C.sess->players())

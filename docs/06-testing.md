@@ -5307,3 +5307,15 @@ Classes BUG-0428, BUG-0431, BUG-0432 (their children BUG-0714 ... BUG-0722). All
 * creature_npc_dash / tribe_npc_dash (BUG-0363) are judged at the same moment on both games' own positions
   (docs/06-testing.md#testing-dash-same-moment); a window measure forgives a copy at any lag. Their red runs are
   BUG-0753 (one NPC id's states 3-12 m off) until it is fixed.
+
+## The dash probe's order and checks during a world share (2026-11-08, fix/w46-k4-proxy)
+<a id="testing-dash-order"></a>
+
+* BUG-0753: `coop.npc dash` writes its animals' positions (set_position) in the host's npc tick. Before the states were
+  built that write went to the guests as the NPCs' states, but the host's game keeps it only for the dashing animal, not
+  for its mate: creature_npc_dash compared a mate the guest showed 1.2 m beside the dasher with the host's own mate 7-9 m
+  away. With `tools.dash_after_send` the write comes after the send (states are the game's positions). A comparison of
+  "what the guest shows" with "what the host has" is only fair when the states are the host game's own values.
+* BUG-0754, suite `share_sync` (~1.5 min, creature fixture): `coop.diag sync now` also drops a pending recheck, so a test
+  that polls it every second never sees a MISMATCH (it needs 2 checks 3 s apart); ask once and let the interval
+  (`coop.diag sync 2`) run. `coop.share due` takes the evolution path (the save first), `coop.share <id>` sends at once.
