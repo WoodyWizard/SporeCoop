@@ -63,6 +63,14 @@ bool input_key(int vk, const char* mode)
     if (!w || vk <= 0 || vk > 255)
         return false;
     ensure_hooks();
+    if (mode && !strcmp(mode, "elsewhere")) {
+        // BUG-0713 (class BUG-0429): the key pressed while another program has the focus: the physical key state
+        // (GetAsyncKeyState / GetKeyState) is down for a few frames, the game window gets no message
+        g_vkdown[vk] = 1;
+        int v = vk;
+        run_after_frames(3, [v] { g_vkdown[v] = 0; });
+        return true;
+    }
     bool down = !mode || !strcmp(mode, "tap") || !strcmp(mode, "down");
     bool up = !mode || !strcmp(mode, "tap") || !strcmp(mode, "up");
     UINT kd = (vk == VK_MENU || vk == VK_F10) ? WM_SYSKEYDOWN : WM_KEYDOWN;

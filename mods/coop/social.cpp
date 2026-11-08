@@ -1,4 +1,5 @@
 #include "social.h"
+#include "mouse.h"
 #include "fixes.h"
 #include "creations.h"
 
@@ -673,7 +674,17 @@ static void guest_tick(double now)
     if (!front)
         on = false;
     s_was_front = front;
+    // BUG-0713 (class BUG-0429): a digit the game window took from its queue (mouse.h); a tap between two polls is
+    // not missed and a digit typed in another program never counts (input.window off: the polling above)
+    static uint32_t s_seen[4] = {mouse::key_presses('1'), mouse::key_presses('2'), mouse::key_presses('3'),
+                                 mouse::key_presses('4')};
     for (int k = 0; k < 4; k++) {
+        bool press = mouse::key_pressed('1' + k, s_seen[k]);
+        if (mouse::g_window_input) {
+            if (press && on && now - g_last_act >= 0.5)
+                act(k);
+            continue;
+        }
         SHORT st = GetAsyncKeyState('1' + k); // bit 0: pressed since the last call (a short tap)
         bool down = (st & mask) != 0;
         if (down && !g_keys[k] && on && now - g_last_act >= 0.5) // (the bar's hook may have sent it)

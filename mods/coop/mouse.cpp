@@ -18,6 +18,15 @@ static size_t g_click_pos = std::u16string::npos; // BUG-0551: where in g_chars 
 static bool g_own_armed, g_last_own;
 static int g_own_x, g_own_y;
 static ULONGLONG g_own_until;
+// BUG-0713 (class BUG-0429): the keys the game window took from its queue (WM_KEYDOWN / WM_SYSKEYDOWN without
+// the auto-repeat bit) and the last mouse move over it
+static volatile uint32_t g_key_presses[256];
+static volatile int g_move_x, g_move_y;
+static volatile bool g_moved;
+
+bool g_window_input = true;
+COOP_FIX("input.window", "BUG-0429 BUG-0713", g_window_input,
+         "F9, the social digits and the Civ marker read input only from the game window's own messages");
 
 static bool ours(HWND w)
 {
@@ -39,6 +48,17 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             g_last_own = g_own_armed && p.x == g_own_x && p.y == g_own_y && GetTickCount64() < g_own_until;
             if (g_last_own)
                 g_own_armed = false;
+        }
+        if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN) && !(m->lParam & (1 << 30)) && m->wParam < 256 &&
+            ours(m->hwnd))
+            g_key_presses[m->wParam] = g_key_presses[m->wParam] + 1;
+        if (m->message == WM_MOUSEMOVE && ours(m->hwnd)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            g_move_x = p.x;
+            g_move_y = p.y;
+            g_moved = true;
         }
         if (m->message == WM_CHAR && ours(m->hwnd) && g_chars.size() < 256)
             g_chars.push_back((char16_t)m->wParam);
@@ -62,6 +82,25 @@ void shutdown()
 }
 
 uint32_t clicks() { return g_clicks; }
+
+uint32_t key_presses(int vk) { return vk >= 0 && vk < 256 ? g_key_presses[vk] : 0; }
+
+bool key_pressed(int vk, uint32_t& seen)
+{
+    uint32_t n = key_presses(vk);
+    bool r = n != seen;
+    seen = n;
+    return r;
+}
+
+bool last_move(int& x, int& y)
+{
+    if (!g_moved)
+        return false;
+    x = g_move_x;
+    y = g_move_y;
+    return true;
+}
 
 std::u16string take_chars(std::u16string* after_click)
 {

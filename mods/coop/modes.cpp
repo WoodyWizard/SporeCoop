@@ -1,4 +1,5 @@
 #include "modes.h"
+#include "mouse.h"
 
 #include <windows.h>
 
@@ -1490,7 +1491,15 @@ static bool mouse_on_planet(net::Vec3& out)
         return false;
     HWND w = (HWND)g_host_for_modes->game_window();
     POINT pt;
-    if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
+    // BUG-0713 (class BUG-0429): where the pointer last moved over the game window (mouse.h), not the screen cursor
+    // in another program (input.window off: GetCursorPos)
+    int mx = 0, my = 0;
+    if (mouse::g_window_input) {
+        mouse::install(w);
+        if (!w || !mouse::last_move(mx, my))
+            return false;
+        pt = {mx, my};
+    } else if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
         return false;
     uintptr_t mmget = S("App::IGameModeManager::Get"), ray = S("App::cViewer::GetCameraToPoint");
     void* mm = mmget ? skg::cdecl_call<void*>(mmget) : nullptr;
