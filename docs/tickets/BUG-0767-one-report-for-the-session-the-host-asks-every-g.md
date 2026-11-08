@@ -10,7 +10,7 @@ role: all
 versions: 0.7.11
 fixed_in: unreleased
 branch: feat/w46-session-report
-commits: 04061890, c941e143
+commits: 04061890, c941e143, 2eb251bc
 tests: session_report, unit (validate_tests test_sreport, fuzz_decoders fuzz_sreport)
 signature:
 docs: docs/REPORTING.md#reporting-session, docs/08-ui.md#ui-session-report, docs/06-testing.md#testing-session-report
@@ -41,9 +41,12 @@ previous/, crashes/, reports/, shots/, settings/; one level). Twin switch `coop.
 asked (0.7.11). Console `coop.sreport` (status, ask, answer, test hooks big / overrun / badname / junk).
 
 ## Verification
-`coop_session_report.py` (suite `session_report`, four players, real clicks): PASS out/lab/20261108-163527 (lane 4) and
-out/lab/20261108-163752 (lane 4, with the one-line result); FAIL with `SPORE_FIX_OFF=core.session_report` out/lab/20261108-163757
-(lane 5: no guest is asked in rounds A, B, C; the host's report alone still works). Unit: validate_tests `test_sreport`
+`coop_session_report.py` (suite `session_report`, four players, real clicks): PASS out/lab/20261108-163527,
+out/lab/20261108-163752 and out/lab/20261108-164730 (lane 4, the final code 2eb251bc, together with report_shot, ui,
+ui_explain on lanes 4-5: all OK); FAIL with `SPORE_FIX_OFF=core.session_report` out/lab/20261108-163757 (lane 5, c941e143:
+no guest is asked in rounds A, B, C; the host's report alone still works). report_shot failed once in
+out/lab/20261108-164357 (the round's line had replaced the host's "Report saved ... screenshot" status; fixed in 2eb251bc
+with the round's count in its own label). Unit: validate_tests `test_sreport`
 (names, the zip check incl. every prefix of a valid zip under ASan, a round with sent / not sent / too big / overrun /
 junk / out of order / timed out / left), fuzz_decoders `fuzz_sreport` (6000 mutated archives through the check and a
 round). `make test` passes.
