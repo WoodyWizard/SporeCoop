@@ -1167,6 +1167,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   regen check" with N > 5.
 * Known: not the debug hit, not npc.kinematic, not the editor wait (BUG-0330 analysis).
 * Ticket: BUG-0333.
+* NOT REPRODUCED (2026-11-07, fix/w46-p4-creature): on rel/0.7.11 the guest no longer swaps to its newest own creation in a
+  world it never played it in (BUG-0345, BUG-0638); with the swap forced (`SPORE_FIX_OFF=creations.guest_world_species`)
+  16 runs (team, `tools/lab.py run guest_spot,guest_spot_swap`) kept the guest within 0.4 m. Closed as not-reproduced.
 ## Tribe: the village ground is up to 5 m higher or lower on the guests (2026-10-30, fix/w17-tribe)
 <a id="issue-tribe-village-ground"></a>
 
