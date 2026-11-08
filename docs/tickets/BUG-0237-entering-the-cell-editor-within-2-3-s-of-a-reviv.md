@@ -11,9 +11,9 @@ versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
 commits: b57410f
-tests: cell_editor_invuln
+tests: cell_editor_invuln, cell_editor_timed, cell_editor_timed_revive, cell_editor_vote, cell_editor_vote_revive
 signature:
-docs: docs/re/cell.md#cell-rebuilds-in-session
+docs: docs/re/cell.md#cell-rebuilds-in-session, docs/re/cell.md#cell-editor-vote-timing
 related: #171, BUG-0070, BUG-0221
 ---
 
@@ -25,6 +25,16 @@ BUG-0070 (#48, commit e7ab004, release 0.7.3.0) resets our knockout state when t
 ## Root cause
 Not reproducible, as the docs predicted. Measured on lane 2 (GOG 2024): guest `coop.pool invulnfor 120` (+0x111 = 1 and the timer), its own cell editor through the mating call (real clicks), cancel. On the first read back in the pool the avatar is a new object with a new index (7F010000 -> 808C0126, another pointer) and +0x111 = 0; 4 s later a host bite took 6 -> 5 hp. The editor's return rebuilds the pool and recreates the avatar, so the timer `reset_knockout` drops has no flag left to clear.
 
+2026-11-08 (fix/w46-n2-desyncs, N2 of 0.7.11): the window reached for the first time, still no invulnerable cell.
+The earlier attempts went through the mate (the mating cinematic: the stage is left ~10 s after the knockout). The
+other way into a cell editor is the host's evolution vote (a guest's own editor never opens with it: lab
+20261108-034621): the host, knocked out while its own vote is open, enters its editor 0.28-0.37 s after its knockout
+ends when the guest clicks "I'm ready" at that moment (revive: +0x111 still 1 on the last read in Cell). After the
+cancel the avatar is a new object with +0x111 = 0 and a bite hurts (4 of 4, lab 20261108-035038). Why the current
+code cannot hit it: the flag is a field of the avatar object, and every way out of the Cell stage into a cell editor
+comes back through the editor's RebuildLevel, which recreates the avatar; the timer reset_knockout drops has no
+object left whose flag it would have to clear.
+
 ## Fix
 None needed (step 2 of the issue was conditional). Added the test-only command `coop.pool invulnfor <s>` and the guard test.
 
@@ -34,6 +44,13 @@ None needed (step 2 of the issue was conditional). Added the test-only command `
 * no-fail-run: the problem does not occur (the avatar is recreated by the editor's rebuild).
 * Timed re-check 2026-10-30 (fix/w9-cell-away, lane 3): `coop_cell_editor_timed.py` (suites cell_editor_timed, cell_editor_timed_revive), out/lab/20261030-002235-fix-w9-cell-away: the stage is left ~10 s after the mate is touched (9.86 s respawn, 10.02 s revive), so the 3 s / 2 s timer has always run out first; the flag is clear after the editor and a bite hurts. Both runs ended as SKIP under the first version of the test (the window not reached); the test now passes as a guard and prints the time.
 
+* Vote path (2026-11-08, fix/w46-n2-desyncs): cell_editor_vote, cell_editor_vote_revive PASS x2 out/lab/20261108-035038
+  (editor 0.36 / 0.34 s after a respawn, 0.28 / 0.28 s after a revive; flag clear, 6 -> 5 hp). The mate path again:
+  cell_editor_timed, cell_editor_timed_revive, cell_editor_invuln PASS out/lab/20261108-032648 (SPORE_NET=players,
+  guest 20 fps); out/lab/20261108-030127 cell_editor_timed FAIL was the setup (the mate gone after the respawn,
+  `alive=0`), its revive twin and cell_editor_invuln PASS.
+* no-fail-run: the state does not occur on the current code (the avatar is recreated by every editor return).
+
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: the avatar comes back from the cell editor recreated with +0x111 clear; closed as not reproduced, guard test cell_editor_invuln.
@@ -42,3 +59,4 @@ None needed (step 2 of the issue was conditional). Added the test-only command `
   the stage was left 10.51 s (respawn) and 10.41 s (revive) after the knockout ended, outside the
   3 s / 2 s window again; a host bite took 6 -> 5 hp after the editor. The mating cinematic is the
   only way into the cell editor, so the window stays unreachable. Still not reproduced.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): the 2-3 s window reached through the host's vote (editor 0.28-0.37 s after the knockout); the avatar is recreated by the editor's return, flag clear, bite hurts (4/4). Not reproduced; closed with that evidence.

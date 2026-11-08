@@ -5034,3 +5034,8 @@ gates_selftest (`f_drawn_scale`, `_off`, `_real`, `_old`).
   objects): the three forgotten ids must be in the guest's game again within 8 m of the host's NPC.
   `SPORE_FIX_OFF=npc.resync` fails (out/lab/20261108-032117), with the fix it passes (20261108-032237 x2).
 
+* `coop_cell_editor_timed.py --vote [--revive]` (suites `cell_editor_vote`, `cell_editor_vote_revive`, ~1.5 min):
+  BUG-0237 through the host's evolution vote: the host is knocked out while its vote is open and the guest clicks
+  "I'm ready" the moment the knockout ends, so the host's cell editor opens 0.3 s later (inside the 2-3 s window the
+  mate path never reaches). The bite check is `coop.pool selfhit 1` on the host: the host refuses a guest's
+  `coop.pool hurt 0 1` on a player's cell (no PvP), which once looked like an invulnerable host (lab 20261108-034839).
