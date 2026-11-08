@@ -33,6 +33,7 @@ static findx::Colors g_tab;     // in force here (host: its own; guest: the host
 static uint32_t g_changes = 1;
 static int g_want = -1;         // the colour this player picked (coop.ini [coop] color), -1 none
 static uint32_t g_msgs_in, g_msgs_out, g_refused;
+bool g_test_rivals = false;     // tests: `coop.find rivals 1` reads as the Rivals mode on (settings' off_in_rivals)
 
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
@@ -224,7 +225,7 @@ static bool g_has_me = false;
 static std::vector<Rec> g_last; // the last overlay pass (coop.find)
 static double g_last_t = 0;
 static uint32_t g_drawn_total = 0;
-constexpr float kSize = 22.f, kMargin = 46.f;
+constexpr float kSize = 28.f, kMargin = 46.f;
 
 // projected point of w: filled = the projection gave a point (in front of the camera); on = inside its view
 static bool project(const float* w, float* sc, bool& filled)
@@ -499,8 +500,8 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (a1 == "rivals" && argc > 2) { // tests: this game's Rivals flag (Space sets it by the players' vote)
-        spaceext::set_rivals(atoi(argv[2]) != 0);
-        SAY("rivals=%d arrows_on=%d\n", (int)spaceext::rivals(), (int)arrows_on());
+        g_test_rivals = atoi(argv[2]) != 0; // (the Space flag itself follows the host's rivalry state)
+        SAY("rivals=%d arrows_on=%d\n", (int)(spaceext::rivals() || g_test_rivals), (int)arrows_on());
         return 0;
     }
     if (a1 == "project" && argc > 4) { // tests: where a world point is on this game's screen

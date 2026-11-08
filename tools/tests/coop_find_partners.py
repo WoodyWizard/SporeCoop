@@ -184,16 +184,19 @@ def creature(ck, host, guest, stage):
     # 2. the guest 80 m away, the host off its screen in front of its camera
     hp = avatar(host)
     u, v = basis(hp)
-    found = None
+    found = tag_dir = None
     for k in range(16):
         a = k * math.pi / 8
         guest.call('coop.abilities goto %.3f %.3f %.3f' % at(hp, u, v, a, 80.0))
         time.sleep(2.0)
         r = row_of(guest, 0)
         print(f'  dir {k}: {r and (r["kind"], r["filled"], r["x"], r["y"], r["dist"])}', flush=True)
+        if r and r['kind'] == 'tag' and tag_dir is None:
+            tag_dir = a
         if r and r['kind'] == 'arrow' and r['filled'] == '1' and r['walked'] == '0':
             found = a
-            break
+            if tag_dir is not None:
+                break
     ck(found is not None, 'a place 80 m from the host where the host is off the guest\'s screen, in front of it')
     if found is not None:
         time.sleep(1.0)
@@ -247,13 +250,14 @@ def creature(ck, host, guest, stage):
     ck(wait(lambda: 0 not in blips(guest), 5), 'all.partner_map off: the host is no longer on the guest\'s minimap')
     host.call('coop.settings set all.partner_map on')
     ck(wait(lambda: 0 in blips(guest), 5), 'all.partner_map on: back')
-    # 3. next to each other, the host on the guest's screen: a name tag, no arrow
+    # 3. the host on the guest's screen (a place of the search where it was): a name tag, no arrow
     hp = avatar(host)
     tag = None
-    for k in range(8):
-        guest.call('coop.abilities goto %.3f %.3f %.3f' % at(hp, u, v, k * math.pi / 4, 7.0))
-        time.sleep(1.5)
+    for a in ([tag_dir] if tag_dir is not None else []) + [k * math.pi / 4 for k in range(8)]:
+        guest.call('coop.abilities goto %.3f %.3f %.3f' % at(hp, u, v, a, 40.0 if a != tag_dir else 80.0))
+        time.sleep(2.0)
         r = row_of(guest, 0)
+        print(f'  on screen try: {r and (r["kind"], r["x"], r["y"], r["dist"])}', flush=True)
         if r and r['kind'] == 'tag':
             tag = r
             break

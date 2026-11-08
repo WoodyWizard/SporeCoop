@@ -6290,7 +6290,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         sc.sess = &g_sess;
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
-        sc.rivals = [] { return spaceext::rivals(); };
+        sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
         sc.feed = feed;
         settings::init(H, M, sc);
     }

@@ -67,6 +67,7 @@ bool map_on();
 int command(void*, int argc, const char* const* argv, SkOut* out); // coop.find
 std::string status();           // a line for coop.status
 
+extern bool g_test_rivals;      // tests: this game reads as in the Rivals mode
 extern bool g_arrows_fix;       // find.arrows (BUG-0764): off = no arrows (0.7.11)
 extern bool g_map_fix;          // find.map (BUG-0764): off = no partners on the minimap (0.7.11)
 extern bool g_colors_fix;       // find.colors (BUG-0764): off = each game picks colours by itself (0.7.11 had none)
