@@ -311,17 +311,20 @@ def other(ck, host, guest, stage):
     shot(guest, f'find_{stage}_guest.png')
     shot(host, f'find_{stage}_host.png')
     if stage == 'tribe':
-        time.sleep(1.0)
-        gb = blips(guest)
-        print(f'  guest map: {gb}', flush=True)
-        ck(0 in gb and me_h and map_off(gb[0][0], me_h) < 6, "tribe: the guest's minimap has the host's chief at its position")
+        best = None  # the chief may still walk: the blip (0.25 s updates) against the position read right before it
+        for _ in range(4):
+            time.sleep(1.0)
+            me_h = me_of(host)
+            gb = blips(guest)
+            if 0 in gb and me_h:
+                off = map_off(gb[0][0], me_h)
+                best = off if best is None else min(best, off)
+        print(f'  guest map: {gb}, the nearest {best} m', flush=True)
+        ck(best is not None and best < 6, f"tribe: the guest's minimap has the host's chief at its position ({best} m)")
         if '--icons' in sys.argv:  # looks: the game's blip icons by flags (docs/re/creature.md#creature-minimap)
             for f in ('2', '10', '40', '1', '10000', '0', '4', '20', '80', '100', '200', '400', '800', '1000'):
-                guest.call('coop.settings force all.partner_map off')
-                time.sleep(0.8)
                 guest.call('coop.find map ' + f)
-                guest.call('coop.settings force all.partner_map on')
-                time.sleep(1.2)
+                time.sleep(1.5)
                 print('  icon', f, [l for l in guest.call('coop.find map')['out'].splitlines() if l.startswith('blip')], flush=True)
                 shot(guest, f'icon_tribe_{f}.png')
             guest.call('coop.find map 2')

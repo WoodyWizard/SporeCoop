@@ -395,7 +395,8 @@ static void map_task(void*)
             uint32_t key = key_of(t.id);
             float pos[3] = {t.pos[0], t.pos[1], t.pos[2]};
             const BlipDesc* d = find_blip(m, t.id);
-            if (d && d->argb != color_of(t.id)) { // a new colour: a new blip (the tint is set when it is made)
+            if (d && (d->argb != color_of(t.id) || d->flags != g_map_flags)) { // a new colour / icon: a new blip (the tint
+                                                                                  // and the image are set when it is made)
                 skg::thiscall<void>(a_Remove, m, key, 1, 0);
                 g_map_removes++;
                 d = nullptr;
