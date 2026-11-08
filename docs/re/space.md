@@ -2439,3 +2439,24 @@ BUG-0712. GOG 2024, lanes 4 / 5.
   not move in 30 s. wsync's sky row (SetOrientation + TimeOfDay_Apply) applied on a guest in Space brings it to the
   host's within a second (`wsync.space_tod`, only while both are on that planet).
 
+
+## The tutorial lock and how it ends (2026-11-08, fix/w46-g4-tests)
+<a id="space-tutorial-lock"></a>
+
+BUG-0181. GOG 2024, Ghidra:
+* ✔ cMissionManager (Get 0xFEB880 = [0x16DAC64]) serializer table 0x1396A80: +0x16 mbFirstCommunication,
+  +0x17 mbFlightSchoolFinished (get 0xFEB900, set 0xFEB8F0), **+0x18 mbMission201Finished** (get 0xFEB920, set
+  0xFEB910; the getter is code-folded, ~90 callers of other classes), +0x5C mTutorialMissionStates,
+  +0x80 mTutorialTargetPlanetKeys, +0x94 mTutorialSpeciesIDs, +0xA8 mTrackedMissions, +0xC8 mRecentNPCMissions,
+  +0xD4 mRecentColonyMissions.
+* ~ The galaxy travel check 0xFFC780 (thiscall(player UFO, star) ret 4 -> bool): while +0x18 is 0 only the home
+  star and the target star of mission 0x7BDBB97D (Story201, Cast 0x422227E) pass, so the red "Distance" refusal
+  of space_empire (docs/06-testing.md 6.15) is this lock, not the drive range; afterwards the range (0xFFC6A0).
+* ~ The Story201 mission class (vtable 0x146FDE0, ctor 0xC5F340): OnCompleted (vt +0x94) 0xC5F780 clears star
+  flag 0x40000, calls 0xBB9DA0 and sets +0x18 = 1. The galaxy-entry handler 0xFDABE0 plays SPG_EnteredGalaxy_201
+  while +0x18 is 0.
+* ~ The release cheat `spaceCreate` ("unlocks and recharges creation tools while playing in space",
+  App/cToolChargeCommand, ParseLine 0xB5FF40, registered at 0xB63115 next to moreMoney): needs the
+  interplanetary drive 0x4133FE05 ("Advance further in the game..." otherwise), clears
+  [cAppModeSpace+0x188]+0x48/+0x49 (?), sets +0x17 and +0x18 to 1, adds or recharges (AddAmmo 5) the tools
+  of prop 0x68C20E1 (prop file 0x30608F0B / 0x59252EE9). The `tool` developer cheat (0x10234D0) also sets +0x18.

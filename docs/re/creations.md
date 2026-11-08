@@ -941,6 +941,12 @@ BUG-0457. GOG 2024, lane 4 (`tools/tests/coop_editor_sync.py --case host|host2`)
 * ✔ (disassembly) 0xD42E50 message 0x4471C60 (posted by 0xE45E0F at the end of the mating scene) builds the
   request only when `this+0xDA` (creature game base +0xDE) is set; it is set at 0xD2C709 on message
   0x287259F6 with data+0xC == 0x6455B55 (the mating-call command), cleared in the constructor 0xD3BA3F.
+  ~ superseded (2026-11-08): see the CORRECTION below and docs/re/creature.md#creature-mating-call.
+  CORRECTION (2026-11-08, fix/w46-g4-tests, Ghidra static): 0xE45760 (where 0xE45E0F lies) is the Timeline UI's handler
+  (shown by 0x6256B62; its button 0x446E560 or Esc posts 0x4471C60 after 500 ms), not the end of the mating scene;
+  0x6455B55 (handler 0xD2C570) is enabled only when avatar vt 0xD8 == 4 or after CRG_BrainUpgrade4 and posts 0x5120262
+  (the timeline): ~ the stage-end evolve button. So the +0xDE / 0x64AA168 request is the end-of-stage editor; the
+  mating editor is 0xD3C650 with tag 0x12191CA (also the Cell -> Creature editor's tag).
   The stage's return 0xD43DE0 applies a stored result (this+0x60) only when it comes back from the editor
   modes 0x1654C06 / 0xDBDBA1 (0xD44442).
 * ? Not reproduced: the report's "previous version". The same-key path (a key-only bundle of a stage species

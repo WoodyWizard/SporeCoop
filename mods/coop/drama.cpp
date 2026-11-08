@@ -98,6 +98,29 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
+    if (a.size() >= 1 && a[0] == "mate") {
+        // BUG-0177 (docs/re/creature.md#creature-mating-call): the mate the drama manager picked near the nest (mgr
+        // +0x38 mpMate, marked +0xB58 & 0x10), and the avatar's behaviour tree node (brain +0xB4C, +0x1D8: 02D852F0
+        // while it goes to mate)
+        void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+        if (!mgr || !skg::readable(mgr, 0x40))
+            return "no drama manager\n";
+        uint8_t* mate = *(uint8_t**)((uint8_t*)mgr + 0x38);
+        uint8_t* av = (uint8_t*)game::avatar();
+        auto node = [](uint8_t* c) -> uint32_t {
+            if (!c || !skg::readable(c + 0xB4C, 4))
+                return 0;
+            uint8_t* br = *(uint8_t**)(c + 0xB4C);
+            return br && skg::readable(br + 0x1D8, 4) ? *(uint32_t*)(br + 0x1D8) : 0;
+        };
+        bool ok = mate && skg::readable(mate, 0xB60);
+        net::Vec3 p = ok ? game::position(mate) : net::Vec3{};
+        snprintf(b, sizeof b, "mate %p flags=%X node=%08X pos=(%.1f %.1f %.1f) | avatar node=%08X eggs=%d flags=%X\n",
+                 (void*)mate, ok ? *(uint32_t*)(mate + 0xB58) : 0, ok ? node(mate) : 0, p.x, p.y, p.z, node(av),
+                 av && skg::readable(av + 0x1678, 4) ? *(int*)(av + 0x1678) : -1,
+                 av && skg::readable(av + 0xB58, 4) ? *(uint32_t*)(av + 0xB58) : 0);
+        return b;
+    }
     snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X\n", (int)g_guest_events_fix, g_mask, (int)is_guest(),
              game::mode_id());
     out += b;
