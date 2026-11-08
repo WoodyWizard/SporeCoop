@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w46-k2b-content-a
-commits: ad15c36c
+commits: ad15c36c 97e3c4d8
 tests: puppet_tuning
 signature:
 docs: docs/re/creature.md#creature-puppet-tuning
