@@ -38,7 +38,7 @@ Not a regression: the game's own null check missing, reached through the lab lan
   Creature game knows no ship model ("none known, kept").
 * ✔ The same fault on v0.7.9 (lane 3, creature_ufo_nomodel, the first visit): the build does not matter.
 * ✔ campaign_tribe A/B (SPORE_DETECTOR=20): v0.7.9 lane 3: 4/4 OK (one visit, a baked ship); e7d1734c lane 4: 4/4
-  OK (no visit); 4c1d891f lane 2: 4/4 OK (no visit); before, 4c1d891f failed 3 of 7 runs (lanes 2, 3). The visit comes in about 1 run of 3 (random), at the stage's end.
+  OK (no visit); 4c1d891f lane 2: 4/4 OK (no visit); the earlier 4c1d891f failures: 20261107-171750 and -175737-2 #2 this fault (lane 2), -182231 #2 the BUG-0687 freeze (lane 3). The visit comes in about 1 run of 3 (random), at the stage's end.
 * ~ Inferred: the visit picks a complete UFO when the cache has one (no "not in this game" line on lanes 4/5).
 
 ## Fix
