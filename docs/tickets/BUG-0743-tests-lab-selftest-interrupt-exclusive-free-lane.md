@@ -41,10 +41,11 @@ in a terminal; the signal is sent once the test's own process runs (its marker i
 ## Verification
 FAIL (before, SIGINT ignored): out/g4/ (scratch) probe of 5e15c390's lab_selftest: interrupt_exclusive, free_lane_locked,
 interrupt_retry fail, the same three as the report (also with only the wait change). PASS with the fix under SIGINT
-ignored (FAILS []) and in a terminal. Lab: the `unit` runs of this branch (out/lab, queue unit1) in the History.
+ignored (FAILS []) and in a terminal. Lab PASS: unit 3 of 3 started from a background queue (SIGINT ignored), out/lab/20261108-072703.
 no-fail-run: the FAIL is a scratch probe, not a lab run directory (the lab's own unit run of the old code is the
 report's 20261108-035548-2).
 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4-tests): found (SIGINT ignored in background labs) and fixed in the self-test.
+- 2026-11-08 (fix/w46-g4-tests): lab: unit 3 of 3 from a background queue (SIGINT ignored, the report's condition) while lanes 3, 6, 7 played: out/lab/20261108-072703, every interrupt case ok.
