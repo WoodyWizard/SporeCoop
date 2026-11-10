@@ -2413,3 +2413,23 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+
+## Civ: vehicles get faster and faster during long sieges (2026-11-10, plan/w47-reports)
+<a id="issue-civ-boost-stacking"></a>
+* The city-alarm boost can take an already boosted speed as the vehicle's own (x1.5 per alarm cycle), and a boost
+  forgotten while its vehicle lives is never taken back (docs/re/civ.md#civ-boost-stacking).
+* Reproduce: a continuous NPC siege of a player city for several minutes; the defenders' `+0x218` grows.
+* Tickets: BUG-0771, BUG-0773.
+
+## Captures and conquests shown on one game only (2026-11-10, plan/w47-reports)
+<a id="issue-capture-one-game"></a>
+* Civ: a captured city goes to the player with the nearest vehicle, not the one who took it (BUG-0775, suspected).
+* Tribe: a conquered village has no conquest row for the guests (BUG-0777, suspected).
+* Reproduce: not yet; the player report had no files and no stage.
+
+## Space: a guest's badges are the host's after a rejoin (2026-11-10, plan/w47-reports)
+<a id="issue-space-badges-rejoin"></a>
+* The badges and rank live in the host's save the guest loads again; nothing keeps the guest's own (as the cargo
+  hold before BUG-0678).
+* Reproduce: earn a badge as a guest, leave, join again.
+* Ticket: BUG-0786.

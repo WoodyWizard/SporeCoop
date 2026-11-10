@@ -1514,3 +1514,14 @@ BUG-0189, lane 3 (GOG 2024), `civ_npc`, runtime of docs/re/civ.md#civ-planner-pa
   removed by the guest's reconcile within 2 s (the host does not have it) while the price stays paid.
 * Palette tiles of the Civ planner (1440x1080): City Hall (123, 215), house (123, 385), factory (123, 558),
   entertainment (123, 730), turret (123, 905); the green check (1412, 1054).
+
+## The city-alarm boost and its base speed (2026-11-10, plan/w47-reports)
+<a id="civ-boost-stacking"></a>
+
+* ~ (code audit, GitHub #199) The alarm boost (h_OnAttacked, civ.cpp) re-reads a vehicle's `+0x218` (top speed) as
+  its base whenever the last boost has run out, and the alarm of a city repeats every 20 s, the boost's own length.
+  A hit in the game update after the boost's end and before that frame's boost_tick reads the boosted value: the
+  base grows x1.5 per cycle of a continuous siege (BUG-0771). An entry erased while its vehicle lives (out of the
+  vehicle table, on_world_change) is not restored (BUG-0773). Not yet seen in the lab.
+* ? Whether and when the game's RecalcStats rewrites `+0x218` from the vehicle's design (it would heal a stuck
+  value): not known.
