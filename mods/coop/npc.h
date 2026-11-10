@@ -99,6 +99,9 @@ bool enabled();
 
 // tests (BUG-0487): the guest forgets a proxy without telling the host; the resync's counters
 std::string debug_forget(uint16_t id);
+// guest (tests, BUG-0850): the game destroys proxy <id> by itself (DestroyInstance, no bookkeeping of ours), then the
+// proxy is dropped before the next npc tick (as a despawn or the stale drop in the same frame); counts DestroyInstance
+std::string debug_gamekill(uint16_t id);
 std::string resync_status();
 std::string tuning_status();
 void set_anim_quiet(float s); // tests: the snapshot waits this long after a start (BUG-0464)

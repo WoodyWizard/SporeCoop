@@ -169,6 +169,11 @@ COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the ai
 static bool g_max_hp_fix = true;
 COOP_FIX("npc.max_health", "BUG-0710", g_max_hp_fix, "creature: an animal's maximum health on the guest is the host's (babies, elders)");
 static uint32_t g_max_hp_applied;
+// BUG-0850: 97392cd1 (BUG-0710) put forget_puppet into destroy_proxy's unbraced else, so destroy_creature ran for a
+// proxy the guest's game had destroyed already too: a second cGameNounManager::DestroyInstance of it (0.7.11, 0.7.11.1).
+// Off: that second destroy again.
+static bool g_destroy_once_fix = true;
+COOP_FIX_UNSAFE("npc.destroy_once", "BUG-0850", g_destroy_once_fix, "creature, tribe: an animal the guest's game removed itself is not destroyed a second time when its proxy goes");
 // tests (BUG-0550): `coop.npc lift <id> <m>`: the host's NPC <m> over its ground, every frame for <s> s
 static uint16_t g_lift_id = 0;
 static float g_lift_m = 0;
@@ -521,6 +526,25 @@ std::string debug_forget(uint16_t id)
     destroy_proxy(id);
     g_forgotten++;
     return "forgot proxy " + std::to_string(id) + " (the host still counts it as known)\n";
+}
+
+std::string debug_gamekill(uint16_t id)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c || game::is_destroyed(it->second.c))
+        return "no live proxy " + std::to_string(id) + "\n";
+    void* c = it->second.c;
+    if (!gamefixes::count_destroys(c))
+        return "no DestroyInstance hook: cannot count\n";
+    game::destroy_untracked(c); // the game's own destroy: is_destroyed(c) from now on
+    bool gone = game::is_destroyed(c);
+    destroy_proxy(id);
+    unsigned n = gamefixes::destroys_counted();
+    gamefixes::count_destroys(nullptr);
+    char b[160];
+    snprintf(b, sizeof b, "gamekill proxy %u: destroyed_by_game=%d destroy_calls=%u fix=%d\n", (unsigned)id, (int)gone, n,
+             (int)g_destroy_once_fix);
+    return b;
 }
 
 std::string resync_status()
@@ -1674,11 +1698,14 @@ static void destroy_proxy(uint16_t id)
         return;
     if (it->second.c) {
         g_proxy_of.erase(it->second.c);
-        if (game::is_destroyed(it->second.c)) // the game removed it already: only forget it
+        if (game::is_destroyed(it->second.c)) { // the game removed it already: only forget it
             game::puppet_unregister(it->second.c);
-        else
+            if (!g_destroy_once_fix) // BUG-0850 off: 0.7.11.1, a second DestroyInstance of the destroyed proxy
+                game::destroy_creature(it->second.c);
+        } else {
             creature_hp::forget_puppet(it->second.c);
             game::destroy_creature(it->second.c);
+        }
     }
     g_proxies.erase(it);
 }

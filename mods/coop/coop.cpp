@@ -4933,6 +4933,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_untune((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "gamekill")) { // guest (tests, BUG-0850): the game destroys proxy <id>, then it goes
+        SAY("%s", npc::debug_gamekill((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "forget")) { // guest (tests, BUG-0487): forget <id>
         SAY("%s", npc::debug_forget((uint16_t)atoi(argv[2])).c_str());
         return 0;
