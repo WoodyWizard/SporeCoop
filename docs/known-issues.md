@@ -2503,3 +2503,26 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * BUG-0835 (desync, suspected): touching a mirrored poison cloud counts as eating it.
 * BUG-0837 (tooling): 0xC1B030 has two names in the .sym (docs/re/creature.md#creature-c1b030-two-names).
 * BUG-0839 (bug): game::world_epoch() counts only Creature worlds (Tribe users of the epoch).
+
+## Cell: a rename of an imported cell sends only metadata, the host crashes at 0xE83EC8 (2026-11-10, plan/w47-lineages)
+<a id="issue-cell-metadata-only-rename"></a>
+
+* What happens (fork finding, code audit on ours): a guest renames an imported cell in the Cell editor; the bundle
+  has no bem record and the host faults building it (creations.cpp share_own / apply).
+* Reproduce: see the ticket (2 instances, Cell, free rename of an imported cell).
+* Ticket: BUG-0802.
+
+## The mouse after the game saved box (2026-11-10, plan/w47-lineages)
+<a id="issue-saved-box-cursor"></a>
+
+* What happens: after every save the mod clicks the box's OK and the game reads the mouse at that point for ~5 s
+  (sporekit virtual cursor); an OK button outside the window is clicked forever and never confirmed.
+* Reproduce: `coop.save`, then watch the cursor / the box (tickets).
+* Tickets: BUG-0804, BUG-0806.
+
+## Smaller findings from the Lineages fork review (2026-11-10, plan/w47-lineages)
+<a id="issue-fork-review-small"></a>
+
+* Live Cell state goes to a guest still loading the world (suspected bandwidth cost): BUG-0809.
+* `coop.ui show|btn|font|tree` cast a typed number to a window pointer (console crash): BUG-0812.
+* A nest mate roaming beyond the native reply radius never answers the mating call (suspected): BUG-0815.

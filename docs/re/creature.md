@@ -3888,3 +3888,24 @@ F2 "Find each other" (partners on the game's minimap). GOG 2024 (dc04aee5), Ghid
   node is the sneak setter called without force (a no-op for a creature without a sneak ability, type 0xD / 0x52).
   mirror_fx.cpp replays it on a guest's proxies with force = 1, which forces the sneak (+0xBB1 = 1, noise 0, the alpha
   eased to 0.2 by 0xC1CF30); the host relays only a change of +0xBB1, so the replay matches the host's game.
+## Fork findings: mating reply, paired approach, follow camera lens (2026-11-10, plan/w47-lineages)
+<a id="creature-fork-mating-fov"></a>
+
+From a fork, not verified by us: PandizeLive/SporeCoop-Lineages lineages38..41-dev (Steam / GOG 2024 code).
+Tickets: BUG-0815, BUG-0866.
+* 0xD7DAB0 (their SporeCoop::CreatureMateResponse): cdecl float(nestmate), 1 when player and mate are in range for the
+  native mating reply; the radius around the nest measured 9.67 m. A mate roaming at 11.3 m scored 0 for good.
+* 0xC42F80 (their CreatureMatePositionReached): thiscall bool(creature spatial component = creature+0xC0), native
+  locomotion goal reached. In phase 2 of BT node 0x02D852F0 (tick 0xD6D560, our SporeCoop::BT_MateTick, six stack
+  arguments) the native code can wait for ever when the mate resumes roaming.
+* The mate's node while it should answer: 0x71BE644C seen instead of the reply 0x91BFFC22.
+* Mating hearts effect id 0x9005E011 (a creature effect; missing on an eligible mate in a report).
+* 0xD30830 (our SporeCoop::CreatureCursorKind, their CreatureClickAction): action 9 dispatches the mating stimulus at
+  0xD331A3. It returns 0 while the simulator input-block counter is 1; native HUD hover sets it to 1 and a mouse move
+  into the world sets 0 (a virtual cursor left over the HUD keeps it at 1).
+* Follow camera id 0xB03AF999 (Creature and stock Adventure play; the Adventure briefing uses another camera).
+  App::cCameraManager::GetActiveCameraID 0x7C61F0, Update 0x7C6440 (viewer at manager+0xB0), cGameModeManager::
+  GetCameraManager 0x967D90 ([ecx+0x2C]), cViewer::SetPerspectiveProjection 0x7C5480 (thiscall(float fov)),
+  SetViewWindow 0x7C4BD0 (thiscall(float, float) ret 8, camera at viewer+0x170), BeginUpdate 0x7C5080, EndUpdate
+  0x7C3CE0. Perspective camera: +0x6C == 1, view window +0x5C / +0x60, viewport +0x78 / +0x7C / +0x80 / +0x84 (u16).
+
