@@ -2451,3 +2451,24 @@ Each line is one open ticket with its reproduction in "How to test" (plan 0.7.13
   hold before BUG-0678).
 * Reproduce: earn a badge as a guest, leave, join again.
 * Ticket: BUG-0786.
+## Core: session report and settings state survive a voluntary leave (0.7.12 only) (2026-11-10, plan/w47-core)
+<a id="issue-core-sreport-leave"></a>
+
+* What happens: after Leave / host / join (not a disconnect) a guest keeps its report upload and the previous host's
+  settings table into the next session; a host keeps a running report round. Inferred from the code.
+* Reproduce: the guest leaves while `coop.sreport status` says `guest=sending`, joins again (BUG-0770 How to test).
+* Tickets: BUG-0770 (and BUG-0783: an Ask while busy waits 120 s; BUG-0780: the zip written in one main-thread call, suspected).
+## Core: a leaver's I'm ready flag passes to the next player of its id (2026-11-10, plan/w47-core)
+<a id="issue-core-ready-reuse"></a>
+
+* What happens: a player that never sent a state keeps `g_ready` after leaving; the newcomer with its id counts as
+  ready in the vote. Inferred from the code.
+* Reproduce: BUG-0772 How to test.
+* Ticket: BUG-0772.
+## Net: hardening of untrusted input (names, discovery, half-open peers, device names) (2026-11-10, plan/w47-core)
+<a id="issue-net-hardening"></a>
+
+* What happens: received player names are not cleaned (BUG-0774); discovery answers any internet source (BUG-0776);
+  16 half-open peers block joins (BUG-0778); `safe_rel` accepts DOS device names (BUG-0785). Inferred from the code.
+* Reproduce: the How to test sections of the tickets.
+* Tickets: BUG-0774, BUG-0776, BUG-0778, BUG-0785.
