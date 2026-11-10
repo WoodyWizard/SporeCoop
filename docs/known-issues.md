@@ -2413,3 +2413,21 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+## Found in the audit of fork PR #196: not fixed yet (2026-11-10, plan/w47-pr196)
+<a id="issue-pr196-audit"></a>
+
+Each line is one open ticket with its reproduction in "How to test" (plan 0.7.13):
+* Creature guest crash risks from cached pointers: a proxy driven between the 1 s noun-list checks (BUG-0842), a
+  freed cached nest herd (BUG-0843); 0.7.11 regression: destroy_proxy destroys an already destroyed proxy (BUG-0850,
+  hotfix candidate).
+* Tribe guest: RemoveMember through a stale mirror citizen (BUG-0844); a baby mirror spawned mid-growth (BUG-0857,
+  suspected).
+* Tribe -> Civ: a share save between the City Hall and vehicle editors (BUG-0849, suspected); a null animal pen at
+  graduation (BUG-0856, suspected for our saves). Civ -> Space: the spacecraft editor under the launch pause
+  (BUG-0855, suspected).
+* Saves and shares: the watcher takes the specialty question (window 0x06318E78) for the saved box (BUG-0846);
+  unreadable save files are left out of a share (BUG-0847); Windows staged slot move fails on a brief lock (BUG-0848).
+* Adventures: two captains, the host crashes at the act change (BUG-0845, suspected); saves and the quit message in a
+  standalone adventure (BUG-0854).
+* Other: uninstaller weaknesses (BUG-0851), run-compressed paint headers skipped (BUG-0852), win_tests close race
+  (BUG-0853), co-op buttons under a native modal with input_lock 0 (BUG-0858, suspected).

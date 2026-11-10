@@ -1514,3 +1514,16 @@ BUG-0189, lane 3 (GOG 2024), `civ_npc`, runtime of docs/re/civ.md#civ-planner-pa
   removed by the guest's reconcile within 2 s (the host does not have it) while the price stays paid.
 * Palette tiles of the Civ planner (1440x1080): City Hall (123, 215), house (123, 385), factory (123, 558),
   entertainment (123, 730), turret (123, 905); the green check (1412, 1054).
+
+## Fork notes: the shared message box and the Civ -> Space editor request (2026-11-10, plan/w47-pr196)
+<a id="civ-shared-message-box"></a>
+
+From the fork PandizeLive/SporeCoop-Lineages PR #196 (BUG-9057, BUG-9070), not verified by us:
+
+* ~ The captured-city specialty question is a window 0x06318E78, the same control id as the "game saved" box
+  (docs/re/creature.md, CORRECTION 2026-11-10); its choices are 0x05107B19 (Religious) and 0x05107B1A (Military), it has
+  no OK 0xFFFFFFF1. An unanswered specialty question also holds the fork's capture checkpoint. Our watcher: BUG-0846.
+* ~ The native Civ -> Space spacecraft EditorRequest: editor +0xC = 0x96B24187, model +0x10 = 0, return mode +0x1C =
+  Civ (0x01654C04 in the fork's notation), context +0x90 = 0x0116D51D; after the vote the host showed input_lock and
+  paused with the request held (BUG-0855). Which pause reason it uses is not known (our BUG-0576 rule masks the pause
+  only for reason 0x4BF38A6).

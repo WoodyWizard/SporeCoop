@@ -2408,6 +2408,11 @@ BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
   lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
   prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
   mod confirm it again, `coop.save box` says whether it is up.
+  CORRECTION (2026-11-10, plan/w47-pr196): 0x06318E78 is a shared native message-box layout, not only the saved box:
+  the pause menu's save questions (above, 0.7.x notes) and the Civ captured-city specialty question use it too (the
+  latter with buttons 0x05107B19 Religious and 0x05107B1A Military and no OK 0xFFFFFFF1; from the fork
+  PandizeLive/SporeCoop-Lineages PR #196 BUG-9057, not verified by us). world.cpp box_task must not take any
+  0x06318E78 for the saved box: BUG-0846. See docs/re/civ.md#civ-shared-message-box.
 
 ## The home nest heals a guest (2026-11-03, fix/w41-creature-left)
 <a id="creature-nest-heal"></a>

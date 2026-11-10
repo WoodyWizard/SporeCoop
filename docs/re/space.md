@@ -2625,3 +2625,22 @@ BUG-0750, Ghidra GOG 2024 + runtime lane 6 (`space_empire`, `space_free`):
   asked (80001F53 at 00460038 on `space_free`) offered a regular mission (id 478C8F3D, reward 30,000, flags 0x80).
   Its answers by clicks: "Tell me more..." (720, 725), then the accept answer (720, 725): state 3. Completed by
   SetState(5): the guest's money +30,000 and the host's shared money +30,000 (shared.cpp).
+
+## Fork notes: adventures (2026-11-10, plan/w47-pr196)
+<a id="space-fork-adventure-notes"></a>
+
+From the fork PandizeLive/SporeCoop-Lineages PR #196 (docs/re/space.md#space-duo-adventure there, BUG-9003 / 9004),
+not verified by us:
+
+* ~ Two captains that joined at the galaxy menu and both started the tutorial (mission 6666E0D1): the host, which had
+  added the guest's Creature-stage puppet, faulted at SporeApp+0x80714E (Steam 2024) in
+  cScenarioPlayMode::SetCurrentAct from Initialize. The fork infers the scenario rebuilds its cast on act changes and
+  draws the partner as a name marker only. Our Adventure adapter spawns creature puppets: BUG-0845.
+* ~ The save path and the quit message 0x4715068 inside a standalone adventure (from the galaxy menu, no home planet)
+  fault at cStarManager::GetPlanetRecord+0x2D: BUG-0854.
+* ~ Play controller: cScenarioMode +0x78; play state +0x90 (3 playing, 5 / 6 summary), current act +0xB8, completed
+  goals +0x0C+0x1C, active goal vector +0x64 / +0x68 with entries of 0x1AC bytes (type +0x24, required count +0x30,
+  target +0x28). Agrees with ModAPI cScenarioPlayMode.h. The goal credit at 0xF1ACF0 is thiscall(play, goal, spatial,
+  spatial) ret 0xC (a null first spatial = the captain): it increments the count and runs the normal completion.
+* ~ The Steam 3010a413 executable on disk is packed: its static bytes do not decode to the runtime code (the fork's
+  static dump gave invalid instruction boundaries); read code from a running game.
