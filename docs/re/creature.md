@@ -3873,3 +3873,13 @@ F2 "Find each other" (partners on the game's minimap). GOG 2024 (dc04aee5), Ghid
 * ✔ (runtime, looks of `find_icons`, the Tribe minimap) icons by flags: 0x2 a small hut (the tribe icon), 0x10 a small
   arrow-like mark, 0x40 / 0x1 / 0x10000 round dots, 0 a low mound, **0x4 a small pointed (triangle-like) mark**, 0x20 /
   0x80 a nest / hut, 0x1000 a star-like mark; every one takes the tint. SporeCoop's partner blips use 0x4.
+
+## 0xC1B030: one function under two names (2026-11-10, plan/w47-cellcreature)
+<a id="creature-c1b030-two-names"></a>
+
+* CORRECTION (2026-11-10, plan/w47-cellcreature, BUG-0837, code audit, no runtime): `CreatureSetSneaking` 0xC1B030
+  (#creature-sneak, BUG-0463) and `SporeCoop::Creature_CombatVoice` 0xC1B030 (docs/re/tribe.md, BUG-0600) are the same
+  function: both entries describe +0xBB1, +0xB80 and the sounds 0xC881120E / 0x529FEC69. The "combat voice" of the fight
+  node is the sneak setter called without force (a no-op for a creature without a sneak ability, type 0xD / 0x52).
+  mirror_fx.cpp replays it on a guest's proxies with force = 1, which forces the sneak (+0xBB1 = 1, noise 0, the alpha
+  eased to 0.2 by 0xC1CF30); the host relays only a change of +0xBB1, so the replay matches the host's game.

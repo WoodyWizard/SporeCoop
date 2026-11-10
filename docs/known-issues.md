@@ -2413,3 +2413,34 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+
+## Cell and Creature: findings of the code audit for 0.7.13 (2026-11-10, plan/w47-cellcreature)
+<a id="issue-audit-cell-creature-2026-11-10"></a>
+
+Read-only audit of main e49e1e23 (0.7.11.1); not checked in the running game. Each line is one open ticket (root cause,
+fix idea, test in the ticket); "suspected" ones need a reproduction first.
+
+* BUG-0795 (crash): a partner's effect message is played on a puppet freed between two frames (effects.cpp, BUG-0091 sibling).
+* BUG-0796 (crash): a partner's animation is played on a Cell or Tribe puppet around a stage switch (on_remote_anim).
+* BUG-0797 (bug): a Cell guest in another world (or still in Cell while the host is in Creature) gets an emptying pool.
+* BUG-0798 (bug): a downed cell is held at its pre-rescale spot across a level change: no revive.
+* BUG-0799 (bug): a knocked-out cell's poison still hurts and kills NPCs.
+* BUG-0800 (bug): the guest's Summon Flock event is never forgotten: the host's own flock follows the guest.
+* BUG-0801 (bug): votes wait 60 s when a guest plays another world (3-4 players).
+* BUG-0803 (bug): NPC nests never evolve in a connected guest's own world.
+* BUG-0805 (crash): proxy pointers used by MSG_DAMAGE / social handlers without a liveness check.
+* BUG-0808 (bug): the social meter stays on screen after a leave mid social game.
+* BUG-0811 (bug): the own editor's flags stay set after a refused Submit.
+* BUG-0814 (crash, suspected): a carried rock stays held by a destroyed puppet.
+* BUG-0817 (bug): the guest's mirror of the host's drama UFO goes into the guest's saves.
+* BUG-0819 (bug, suspected): the BUG-0200 species alias also runs in the guest's own world.
+* BUG-0821 (bug): the host's Cell kill ledger records a kill before refusing it.
+* BUG-0823 (bug, suspected): cellsync::puppet_cell() without the pool index check.
+* BUG-0825 (bug, suspected): a deferred destroy can hit a real creature at a reused address.
+* BUG-0827 (desync, suspected): a whole swallow of a host cell feeds the guest while the cell lives on.
+* BUG-0829 (desync, suspected): away DNA may move the guest's evolution bar twice.
+* BUG-0831 (bug): a departed guest's social game goes on on the host.
+* BUG-0833 (bug, suspected): nest egg mirrors leak their references at each guest world change.
+* BUG-0835 (desync, suspected): touching a mirrored poison cloud counts as eating it.
+* BUG-0837 (tooling): 0xC1B030 has two names in the .sym (docs/re/creature.md#creature-c1b030-two-names).
+* BUG-0839 (bug): game::world_epoch() counts only Creature worlds (Tribe users of the epoch).
