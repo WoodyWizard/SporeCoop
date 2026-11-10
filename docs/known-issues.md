@@ -2413,3 +2413,24 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+## Core: session report and settings state survive a voluntary leave (0.7.12 only) (2026-11-10, plan/w47-core)
+<a id="issue-core-sreport-leave"></a>
+
+* What happens: after Leave / host / join (not a disconnect) a guest keeps its report upload and the previous host's
+  settings table into the next session; a host keeps a running report round. Inferred from the code.
+* Reproduce: the guest leaves while `coop.sreport status` says `guest=sending`, joins again (BUG-0770 How to test).
+* Tickets: BUG-0770 (and BUG-0783: an Ask while busy waits 120 s; BUG-0780: the zip written in one main-thread call, suspected).
+## Core: a leaver's I'm ready flag passes to the next player of its id (2026-11-10, plan/w47-core)
+<a id="issue-core-ready-reuse"></a>
+
+* What happens: a player that never sent a state keeps `g_ready` after leaving; the newcomer with its id counts as
+  ready in the vote. Inferred from the code.
+* Reproduce: BUG-0772 How to test.
+* Ticket: BUG-0772.
+## Net: hardening of untrusted input (names, discovery, half-open peers, device names) (2026-11-10, plan/w47-core)
+<a id="issue-net-hardening"></a>
+
+* What happens: received player names are not cleaned (BUG-0774); discovery answers any internet source (BUG-0776);
+  16 half-open peers block joins (BUG-0778); `safe_rel` accepts DOS device names (BUG-0785). Inferred from the code.
+* Reproduce: the How to test sections of the tickets.
+* Tickets: BUG-0774, BUG-0776, BUG-0778, BUG-0785.
