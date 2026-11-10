@@ -7,7 +7,7 @@ after 0.7.12 (docs/plan-0.7.12.md, paused 2026-11-08). The rules of docs/plan-0.
 plan closes in this release, fixed with a test that FAILs with its switch off and PASSes with it, or closed with
 evidence after a serious attempt; "not reached" is not an outcome.
 
-**Status: draft, waiting for the owner.** Nothing here is implemented. Every ticket below is open and was written by
+**Status: draft; the owner's decisions of 2026-11-10 are at the end.** Nothing here is implemented. Every ticket below is open and was written by
 the agent that found it: Report, Root cause (file:line, observed or inferred, confidence), Fix idea, How to test.
 Almost all findings come from reading code, not from a run: the first step of each package is the FAIL test.
 
@@ -34,7 +34,7 @@ not verified by us".
 
 | What | Tickets | When |
 |---|---|---|
-| **H0 Hotfix of 0.7.11.1** (the owner decides: 0.7.11.2 now, or with 0.7.12) | BUG-0850: `destroy_proxy` in npc.cpp destroys an NPC proxy the game already removed (an `else` without braces since BUG-0710): a second DestroyInstance on a guest, in Creature and Tribe | as soon as decided |
+| **H0 Hotfix of 0.7.11.1** (the owner: release 0.7.11.2 now) | BUG-0850: `destroy_proxy` in npc.cpp destroys an NPC proxy the game already removed (an `else` without braces since BUG-0710): a second DestroyInstance on a guest, in Creature and Tribe | as soon as decided |
 | **0.7.12 blockers** (bugs in the unreleased 0.7.12 code) | BUG-0770 (session report and settings survive a leave), BUG-0780 (the session zip written in one call on the main thread), BUG-0783 (a guest that is sending ignores the next Ask) | before 0.7.12 ships; added to plan-0.7.12 B2 |
 
 ## Work packages (one agent, one branch, one lane pair each)
@@ -56,9 +56,10 @@ not verified by us".
 | **G1 Adventures: safety** (no adventure co-op yet) | The host's time of day overriding an adventure's lighting, the partner's puppet in the scenario cast crashing the host at an act change | BUG-0789, 0845 |
 | **P1 Performance, tools, small things** | `readable` calling VirtualQuery on every check (measure first), the wheel without modifier flags in tests, a console command casting a number to a window, the paint reader skipping run-compressed models, one function under two names in the .sym | BUG-0791, 0859, 0812, 0852, 0837 |
 
-## Feature ideas from the forks (the owner decides which, and for which release)
+## Feature ideas from the forks (moved to the Rivals plan)
 
-Not part of the bug work. Each ticket says how the fork built it.
+Not part of the bug work. Decided by the owner on 2026-11-10: they are planned with the Rivals release (0.8), see
+docs/11-rivals.md#rivals-fork-feature-ideas. Each ticket says how the fork built it.
 
 | Idea | Ticket | Size | Relation to our plans |
 |---|---|---|---|
@@ -90,9 +91,9 @@ Not part of the bug work. Each ticket says how the fork built it.
 7. After the release: answer GitHub #199, #200, #201 and the Discord posts that were fixed (with the owner's yes on
    each Discord text).
 
-## What the owner should decide
+## Owner decisions (2026-11-10)
 
-1. H0: release 0.7.11.2 with the BUG-0850 fix now, or ship it with 0.7.12.
-2. Which feature ideas go into 0.7.13 (or a later release), especially difficulty scaling (BUG-0870).
-3. Whether to contact the fork authors (Lineages, GA) about contributing their work upstream.
-4. The Discord report archive of "Screen tearing" (BUG-0779) could not be downloaded: the file is needed.
+1. H0: release 0.7.11.2 with the BUG-0850 fix now (in work: fix/w47-proxy-destroy).
+2. The feature ideas go to the Rivals plan (0.8): docs/11-rivals.md#rivals-fork-feature-ideas.
+3. The owner contacts the fork authors himself.
+4. The owner downloaded the "Screen tearing" report archive; it is analysed in BUG-0779.

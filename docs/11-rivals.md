@@ -315,3 +315,31 @@ Test: `coop_space_map.py` already founds a guest colony and checks that it is go
 2026-11-04 (fix/w42-space-life, BUG-0195): steps 1 (memory only, no side file), 2 and 5 are done
 (`space.keep_colonies`, space_map.cpp; test `coop_space_colony_rejoin.py`, and `coop_space_map.py`'s last
 check now expects the colony back). Step 4 (cities, spice) is not: the colony comes back with one city.
+
+## Feature ideas from the forks, planned with 0.8 (2026-11-10, plan/0.7.13)
+<a id="rivals-fork-feature-ideas"></a>
+
+Decided by the owner on 2026-11-10: the feature ideas found in the outside forks (docs/plan-0.7.13.md, "Feature
+ideas from the forks") are not part of the 0.7.13 bug work; they are planned here, with the Rivals release (0.8).
+Each ticket says how the fork built it (files, game functions, RE facts), marked "NOT FINAL: taken from the fork,
+verify on our code". The owner is in contact with the fork authors himself. Which of them ship in 0.8 itself and
+which before or after is decided when 0.8 is planned in detail (11.10); the notes say where each one fits.
+
+| Idea | Ticket | Fork | Where it fits in Rivals / 0.8 |
+|---|---|---|---|
+| The per-stage Together / Rivals table and the 4x4 relation table (a data model with unit tests, a lobby page, faction diagnostics) | BUG-0794 | nvstlex/SporeCoopNVST | 11.2 (the lobby's table of stages) and 11.4 (relations): take the table as the data model, stored in the session settings of 0.7.12 (F3); their blocker list (a real rival needs its own native cTribe / cCivilization) belongs to 11.9 |
+| Difficulty scaling by party size (stage progress +60 % per seat, enemy health and damage, hunger, city takeover effort, raid size; a slider up to 400 %) | BUG-0870 | PandizeLive/SporeCoop-Lineages | 11.8 shared systems and step 7 (balance): Rivals needs per-player progress and balance numbers anyway; a session setting. (plan-0.7.12 F3 left difficulty out of 0.7.12 on purpose) |
+| Host campaign autosaves after milestones (stage change, editor save) and every ten minutes | BUG-0864 | Lineages | 11.5 (how a stage ends): a long Rivals campaign must survive a crash; needs BUG-0804 (the cursor after the saved box) first |
+| Optional session password and a recent servers list | BUG-0867 | Lineages | the co-op window (0.7.12 F1); Rivals games between people who are not friends want a password |
+| Tooltips on the co-op window's buttons in Spore's own style | BUG-0874 | Lineages | the co-op window (F1): the Rivals lobby adds many controls (11.2) that need explaining |
+| Personal Cell edits (mating call) without a Ready vote | BUG-0868 | Lineages | 11.3.1 Cell rivals: in a race every player edits its own cell without stopping the others; in Together mode a session setting |
+| A shared creations library (received creations in their own Sporepedia tab, kept between sessions) | BUG-0873 | Lineages | 11.6 (the draft: copies from the winner) needs creations to travel between players and stay |
+| Frame rate cap 1-360 and borderless window in Spore's Graphic Settings | BUG-0865 | Lineages | independent of Rivals (comfort); may help BUG-0779 (picture tearing) |
+| Wider third-person field of view in Creature and Adventure (Ctrl+Scroll) | BUG-0866 | Lineages | independent of Rivals (comfort) |
+| Co-op Galactic Adventures (a shared run: lobby and captains, objectives and act changes by the host, items, dialogs, downed and revive, shared result); works for 2 players on native Windows in the fork | BUG-0793 | jwhans0n/SporeCoopGA | 11.11 says "Rivals in Adventures: not planned": co-op adventures come first, as their own step of 0.8 or a release next to it, with the fork's author; safety fixes for today's code are in 0.7.13 (G1: BUG-0789, 0845) |
+| Shared Adventure Editor (host plus up to 3 guests edit one adventure) | BUG-0863 | SporeCoopGA | after BUG-0793, led by the fork's author |
+
+Also found in the Lineages fork, not in the owner's list of 2026-11-10 (kept here so they are not lost; decide with
+the rest): a warm reconnect that reuses an unchanged Cell world (BUG-0869), the players' cells swimming in the Cell
+stage as native NPC species (BUG-0872; close to 11.3.1 and 11.3.2 "rival species"), a depth handle for parts in the
+creature editor (BUG-0871).
