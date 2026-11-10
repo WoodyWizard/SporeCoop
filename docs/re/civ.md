@@ -1527,3 +1527,13 @@ From the fork PandizeLive/SporeCoop-Lineages PR #196 (BUG-9057, BUG-9070), not v
   Civ (0x01654C04 in the fork's notation), context +0x90 = 0x0116D51D; after the vote the host showed input_lock and
   paused with the request held (BUG-0855). Which pause reason it uses is not known (our BUG-0576 rule masks the pause
   only for reason 0x4BF38A6).
+## The city-alarm boost and its base speed (2026-11-10, plan/w47-reports)
+<a id="civ-boost-stacking"></a>
+
+* ~ (code audit, GitHub #199) The alarm boost (h_OnAttacked, civ.cpp) re-reads a vehicle's `+0x218` (top speed) as
+  its base whenever the last boost has run out, and the alarm of a city repeats every 20 s, the boost's own length.
+  A hit in the game update after the boost's end and before that frame's boost_tick reads the boosted value: the
+  base grows x1.5 per cycle of a continuous siege (BUG-0771). An entry erased while its vehicle lives (out of the
+  vehicle table, on_world_change) is not restored (BUG-0773). Not yet seen in the lab.
+* ? Whether and when the game's RecalcStats rewrites `+0x218` from the vehicle's design (it would heal a stuck
+  value): not known.
