@@ -137,6 +137,10 @@ On a creature: `cCreatureBase+0xB20 mpSpeciesProfile`, `+0xB24` profile version 
 `ResourceKey* __cdecl GetModelKeyForCellResource(ResourceKey* out, cellRef)` (hidden out first,
 plain `ret`): walks the .cell resource's model entries (`res+0x14`, count `+0x18`, 0x28 bytes
 each, kind at +4):
+- ~ CORRECTION (2026-11-10, plan/w47-lineages, from a fork, not verified by us): PandizeLive/SporeCoop-Lineages
+  feat/lineages-43 (docs/re/cell.md there) read `+0x18` as 0 or garbage on GetData's result for creature species and
+  tells the player's own species by its model key (native key = S+0x10) instead. Check before relying on the entry
+  list; see docs/re/cell.md#cell-fork-lineages-43.
 - kind 3 → `{entry+0x10, cll 0x3D97A8E4, *(u32*)0x15A8D0C = 0x40616200}` (fixed cell model);
 - kind 4 → random creature model (0xE655D0);
 - **kind 5 → the player's cell: `S+0x10..+0x18`** where `S = *(u8**)(*(u8**)0x16B4BE4 + 0x5190)`
@@ -1282,3 +1286,36 @@ BUG-0756 (after BUG-0720). GOG 2024, Ghidra and lane 4 (`tools/tests/coop_own_ed
   these three bytes (the 0.7.10 own editor: the cross and the Save New / Replace / Don't Save dialog); every other
   field of BUG-0720 stays the game's. `coop.editreq diff` allows the three bytes for the own kind.
 * ? Not separated: which of +0x39 / +0x3C brings the save dialog back (both are restored); the cross is +0x3B's.
+
+## Fork findings: editor depth handle, offline author, PNG importer (2026-11-10, plan/w47-lineages)
+<a id="creations-fork-editor-depth"></a>
+
+From a fork, not verified by us: PandizeLive/SporeCoop-Lineages feat/lineages-42/43 (GOG 2024 / Steam code,
+their docs/re/creations.md). Tickets: BUG-0871, BUG-0873.
+* Editor depth ("nudge") handle: kind fnv("nudge") 0x503283AA, switched in the deform-style handle's GetTuningFile
+  0x480780 on handle+0x8C (0xE20E2032 = power). Only the Adventure outfitter setup A56567F7 names a nudge tuning
+  file 0x10CB4B28!0x3C3BA77F, and it is in no package: the native handle is unused. Deform-style handles are built
+  per rigblock in 0x441910 from up to 32 definitions (0x5C bytes) of IModelWorld vt 0xE8 0x745000; appending a
+  definition crashed the build (per-handle arrays at rigblock +0x704 / +0x73C sized from the model).
+* Editors::cTuningSpine::Get 0x401070 (runtime global 0x1C10C1C): +0x60 spine, +0x6C deform, +0x78 nudge, +0x84 power,
+  +0x90 ball connector, +0x9C rotation ball, +0xA8 rotation ring; loaded by 0x5DBD60 from cEditor::OnEnter.
+* Moving a part works: EditorRigblock +0x48 and model +0x0C, EditorModel +0x51 = 1, then
+  cEditor::CommitEditHistory 0x586410 thiscall(bool, EditStateEditHistory* = 0) ret 8; Save keeps it in the bem,
+  Undo restores it. Writing +0x48 alone does not move the part. cEditor* at 0x15E4EF0 (ModAPI cEditor::ptr; runtime
+  0x1C24EF0), editor+0xD4 selected rigblock, rigblock +0x1C/+0x20 part instance / group.
+* Handle colours (prop 10CB4FA8!DB33584A): default (0.67, 0.75, 1.2), rollover (0.54, 0.81, 0.54), active
+  (1.0, 1.2, 0.42); power 10CB4FA8!900A4DB5 orange (0.93, 0.48, 0.16).
+* Editor setups: group 0x40600100, key list editorEnabledManipulators 0x10119203; enabling the outfitter tools on the
+  creature setup in memory added no handle (negative result).
+* My Creations: a creation counts as the player's own when cAssetMetadata::GetAuthorID 0x5508A0 (+0x68/+0x6C) is the
+  user's id or -2 (offline author; Sporepedia 0x66DE73..0x66DE90). Offline partners' creations therefore look like
+  ours. Answering another author id did not move an asset out of My Creations (negative result). My Creations is
+  feed item 4E5892EB!146C1D8C, query C84E51B6 on root filter userCreated (fnv 37216F9C).
+* PNG import: App::Thumbnail_cImportExport::Get 0x5F79C0 (cdecl), ImportPNG 0x5FC3C0 thiscall(importer, const
+  wchar_t*, ResourceKey*) ret 8 (false with the existing key for a known creation), DecodePNG 0x5FBB90 (stream,
+  metadata 0x90 bytes, IStream**) ret 0xC; IO::FileStream PathCtor 0x931DE0, Open 0x9318C0 (1,3,1,0 = read,
+  existing, share read), AddRef 0x931780: native ImportPNG pins its stack stream before DecodePNG, a caller that does
+  not crashes when the decoder releases it. FeedItem_GetAssetKeys 0x668D60 thiscall(feed, vector<AssetKey16>*) ret 4.
+* A Sporepedia PNG import keeps a cll record (~13 KB) where the editor keeps a bem record (~1.9 KB): the bytes of one
+  cell do not match across the two paths.
+

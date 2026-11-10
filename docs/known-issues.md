@@ -2413,3 +2413,26 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+
+## Cell: a rename of an imported cell sends only metadata, the host crashes at 0xE83EC8 (2026-11-10, plan/w47-lineages)
+<a id="issue-cell-metadata-only-rename"></a>
+
+* What happens (fork finding, code audit on ours): a guest renames an imported cell in the Cell editor; the bundle
+  has no bem record and the host faults building it (creations.cpp share_own / apply).
+* Reproduce: see the ticket (2 instances, Cell, free rename of an imported cell).
+* Ticket: BUG-0802.
+
+## The mouse after the game saved box (2026-11-10, plan/w47-lineages)
+<a id="issue-saved-box-cursor"></a>
+
+* What happens: after every save the mod clicks the box's OK and the game reads the mouse at that point for ~5 s
+  (sporekit virtual cursor); an OK button outside the window is clicked forever and never confirmed.
+* Reproduce: `coop.save`, then watch the cursor / the box (tickets).
+* Tickets: BUG-0804, BUG-0806.
+
+## Smaller findings from the Lineages fork review (2026-11-10, plan/w47-lineages)
+<a id="issue-fork-review-small"></a>
+
+* Live Cell state goes to a guest still loading the world (suspected bandwidth cost): BUG-0809.
+* `coop.ui show|btn|font|tree` cast a typed number to a window pointer (console crash): BUG-0812.
+* A nest mate roaming beyond the native reply radius never answers the mating call (suspected): BUG-0815.
