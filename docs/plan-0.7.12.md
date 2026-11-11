@@ -86,6 +86,6 @@ The host's PC receives files made by other people's PCs. Rules:
    regeneration, partner arrows) to prove it.
 2. Then in parallel (at most 3 lab agents): F1 (window, uses F3), F2 (arrows, map, colours), F4 (report).
 3. F5 and the rest of the F3 settings.
-4. Final check: every new test, ui tests by real clicks, play_* of all stages with the default settings and with
+4. Final check: the visual checks (the key-frame review of host and guest sheets by an agent, ui_golden, the same-view test; owner 2026-11-10, a standing step of every release from now on), every new test, ui tests by real clicks, play_* of all stages with the default settings and with
    the non-default ones, campaign_*, a 4-player session; then the release.
 5. After the release: answer the suggestion posts that were implemented (with the owner's yes on each text).

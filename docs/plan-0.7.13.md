@@ -104,7 +104,7 @@ docs/11-rivals.md#rivals-fork-feature-ideas. Each ticket says how the fork built
 4. Wave 3: N1, G1, A1, P1 (A1 needs no lab: build files, docs, vendor submissions by the owner).
 5. Each package starts with the tests that reproduce its findings; a finding whose test cannot be made to fail after
    a serious attempt is closed as not reproduced with the runs as evidence.
-6. Integration run after every two merges; final check as in plan-0.7.11 (every new test, play_* of all stages,
+6. Integration run after every two merges; final check as in plan-0.7.11 plus the visual checks of 0.7.12 (the key-frame review, ui_golden, the same view on both games) (every new test, play_* of all stages,
    campaign_*, detect_*, the long sessions), then the release.
 7. After the release: answer GitHub #199, #200, #201 and the Discord posts that were fixed (with the owner's yes on
    each Discord text).
