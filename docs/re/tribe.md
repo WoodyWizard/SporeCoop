@@ -494,7 +494,7 @@ bonus never fired (BUG-0745).
   | cTribe::GetChieftain | 0xC8FEB0 | thiscall → leader cast to 0x4F176642 or 0 | ✔ |
   | **cTribe::SetChieftain** | **0xC8FED0** | thiscall(tribe, citizen /*0 = first adult not +0xB5E*/) ret 4 | ✔ |
   | cCreatureCitizen::IsChieftain | 0xC233F0 | thiscall → bool (`(city?city:tribe)->leader == this`) | ✔ |
-  | cCreatureCitizen::SetSpecializedTool | **0xC27AE0** | thiscall(int toolType) ret 4; writes +0x102C, **0 on the leader becomes 0xB**, refreshes handheld (vt 0xAC(1)) and the tribe palette | ✔ |
+  | cCreatureCitizen::SetSpecializedTool | **0xC27AE0** | thiscall(int toolType) ret 4; writes +0x102C, **0 on the leader becomes 0xB**, refreshes handheld (vt 0xAC(1)) and the tribe palette (~ superseded 2026-11-10: vt 0xAC rebuilds the abilities, the hand is not touched, see [tribe-held-item](#tribe-held-item)) | ✔ |
   | cCreatureCitizen GetDesiredScale (vt 0x80) | 0xC23E10 | → float ST0; leader × g 0x1582214 (tuning), others random in [g 0x15DA92C, g 0x15DA930] | ✔ |
 * SetChieftain does: SetLeader(c); `spatial(c+0xC0)->vt[0x40](c->vt[0x80](0))` (SetScale to the
   chief scale); `SetSpecializedTool(c, 0xB)` (**tool 11 = chief staff**); `combatant->vt[0x2C](1)`;
@@ -2947,3 +2947,80 @@ GOG 2024 / Steam code; check against overrides_dc04aee5.sym before use), not ver
   -nosound never gets rounds (session state 4). Mute through the profile's volume instead (our lab does).
 * ~ The cTribe constructor is 0xC98430 (not a stage cleanup); the native layout 0xC98940 reads the species at
   +0x18CC and faults at 0xCE6AE7 when it was cleared at unload (same site as BUG-0672, other trigger in the fork).
+
+## What a member holds in its hand: the handheld item and its model (2026-11-10, fix/w47-tribe-looks)
+<a id="tribe-held-item"></a>
+
+* ✔ (Ghidra GOG 2024 + runtime lane 6) cCreatureCitizen **+0xFFC mCurrentHandheldItem** is what the game draws in the
+  member's hand, not the tool type +0x102C. Items (the model switch of 0xC250A0): 0 nothing, 1 / 2 / 3 the racks'
+  weapons of tool 1 / 2 / 3, 0xD tool 5, 0xE tool 4, 0xF tool 6, 0x10 tool 7, **0x11 the chief's staff (tool 0xB)**,
+  0x12 tool 9 (the healer's rod); ~ 4 / 5 / 6 have model variants by leader and tool 8, 7..0xC and 0x13..0x17 are
+  other models by id without GetTribeToolData (? what: carried food, fish). `GetHandheldItemForTool` 0xC23740 thiscall(citizen, tool) ret 4 maps a tool
+  to its item (for the tribe's leader only tools 1, 2, 7, 8, 0xB give 0x11, the rest 0).
+* ✔ **0xC250A0** (`SporeCoop::Citizen_SetHandheldItem`) thiscall(citizen, int item, int hand) ret 8: hand -1 = the
+  member's own hand +0xFC4; detaches what that hand holds (0xC241A0), writes +0xFFC when the hand is the own one, and
+  attaches the item's model to the attachment key `0x2735300 + hand` (0xC17EC0 -> 0xC150D0; the model part only for a
+  member with a tribe, +0x1014). 46 call sites, most of them behaviour nodes (0xD7.., 0xD9.., 0xDA.., 0xDB..).
+* ✔ 0xC26470 thiscall(citizen, int hand) ret 4: "the hand shows the tool": item = 0x11 for a leader with tool 0,
+  else GetHandheldItemForTool(+0x102C); calls 0xC250A0 when the hand or the item differs. Callers: SetChieftain
+  0xC8FEE0 (after SetSpecializedTool(0xB)), the grab behaviour 0xDAB4A0 (right after its SetSpecializedTool), five
+  other nodes. 0xC255E0 thiscall(citizen, item, bool) ret 8 is the animated change (plays 0x2C39200 and attaches at
+  the animation's event, through 0xC26540); 0xC26DF0 thiscall(citizen, mask, bool) ret 8 the gather node's.
+* ✔ **SetSpecializedTool 0xC27B00 does not touch the hand**: it writes +0x102C, resets the ability indices (+0xE8C..)
+  and calls vt 0xAC(1) = 0xC1CDE0, which rebuilds the abilities (not "refreshes the handheld").
+  ~ superseded (2026-11-10): the lines above that say SetSpecializedTool "refreshes handheld (vt 0xAC(1))".
+  CORRECTION (2026-11-10, fix/w47-tribe-looks): decompiled 0xC27B00 and 0xC1CDE0; at runtime a guest's mirror with
+  tool 7 set by the tool field had +0xFFC = 0 and no model while the host's member had 0x10 (lane 6).
+* ✔ `0xC0E110` (`SporeCoop::Creature_AttachmentOf`) thiscall(creature, key) ret 4: the attachment record of the
+  animated body (creature +0xB54 -> +0x17C, 0x9CAA90), 0 without a body; record +0x8C = the attached model. With the
+  hand's key it tells whether the hand has a model (`model=` of `coop.tribe`): 1 on the host's chief, 0 on the
+  guest's copy before the fix.
+* ✔ (lab 20261110-201619 key frames, 20261110-210216 with the fix off) A guest's mirrors run no behaviours, so
+  nothing set their hands: the mirror of the host's chief (bound to the guest's own save's member: tool 0xB, leader
+  1, **item 0**) stood without its staff; the mirrors with tool 6 / 7 (BUG-0514's tool field) were empty-handed. A
+  mirror that leader_sync made the leader (SetChieftain -> 0xC26470) did get its staff: an NPC chief had one, the
+  player tribe's had none. The host's members have item 0 at times in the host's own game (seen: the chief, away from
+  the village after a rejoin, for more than 30 s; musicians with tool 6; ~ the gather and idle nodes put it away).
+* ✔ **How the item is held: the timed modifier of kind 5.** A creature has 8 timed modifiers (creature +0xB48 -> a
+  table of 8 entries of 0x44 bytes: +0x00 8 dwords of data, +0x20 u16 serial, +0x24 kind (-1 free), +0x28 a sub-kind,
+  +0x2C a time, +0x30 / +0x34 / +0x38 functions (+0x34 the remove, +0x38 the tick), +0x3C the owner, +0x40; made by
+  0xBCA980, ended by **0xBCA1B0** thiscall(table, u16 serial | index << 16) ret 4, `SporeCoop::CreatureModifiers_Remove`).
+  The attach (0xC240E0, for an item with GetTribeToolData +0x30) adds one of kind 5 with the data {the attachment's
+  index in creature +0xE40 (0x24-byte entries), the handle of the animation playing now, started 0}. Its tick 0xC11240
+  starts the taking of the item on its first run (attachment +0xC count up, 0xC0FCA0, started = 1) and keeps the
+  modifier while that animation is in state 1 or 2; its remove 0xC14A00 (count down, 0xC141D0 at 0) puts the item into
+  the resting grip (the chief: the arm raised, the staff upright). The detach 0xC241A0 ends the hand's modifier too.
+* ✔ (runtime lane 6, shots) In the host's game the attach comes inside a short animation (the change animation
+  0x2C39200 or a behaviour's), so the modifier ends by itself: a standing chief has none (`hold=0`), one waving its
+  staff has one for that animation. A mirror's animation is its idle loop: the modifier never ended and the staff
+  stuck out forward with the arm down for as long as the mirror stood (seen in the first sheets with the field alone,
+  lab 20261110-211339). The same on the HOST when a test called 0xC250A0 on its standing chief
+  (`coop.tribe hand <id> <item>`), until `coop.tribe hand <id> end` ended the modifier: then upright at once. Ended
+  before its first tick (started 0) the remove does nothing and the item stays without a grip (tried).
+* ✘ Tried and dropped: the game's animated change 0xC255E0 (`ChangeHandheldItem`, thiscall(citizen, item, bool) ret 8)
+  plus its second half 0xC26540 (thiscall(citizen, tool) ret 4, called by behaviour nodes every tick: attaches the
+  tool's item to the hand the animation's channel 0x7D7502FC names): on a mirror the event attach came once in 15
+  tries (the change animation is not the mirror's current one for long).
+* Fix (BUG-0906, switch `tribe.held_item`): the item is a replicated field of the members (fields.h kind
+  `tribe_member_item` 9, field `item` 5, on the wire item + 1), applied with 0xC250A0(item, -1) whenever the mirror's
+  +0xFFC differs; four times a second a mirror's started kind 5 modifier that has lasted 1.5 s is ended with the
+  game's remove (tribe.cpp held_items_tick). Off puts the mirror's own item back. `coop.tribe` rows print `item=`,
+  `model=` and `hold=` (1: a started kind 5 modifier, the item still held as in the middle of taking it).
+* ? Not done: a mirror does not play the host member's staff or instrument animations through this (those are the
+  animation relay's); during them the host has `hold=1` and the mirror the resting grip.
+* ? Not checked: the look of carried things (items 0x13..0x17: fish, fruit) on the mirrors, which the field now
+  copies too; the hand of the guest's own members in the host's game is the host's own state (nothing to copy back).
+
+## A partner's name in Tribe: the chief and the members, not the pointer (2026-11-10, fix/w47-tribe-looks)
+<a id="tribe-name-tags"></a>
+
+* ✔ The Tribe (and Civ) adapter's "puppet" of a partner is no object: a marker at the planet point under the
+  partner's mouse (modes.cpp rts_fill / mouse_on_planet; with input.window the last point the pointer moved over in
+  the game window). coop.cpp's overlay drew the partner's bare name 0.5 m over that point: a name over empty ground
+  wherever the mouse rested (BUG-0907: at the fire pit in same_view_tribe, on a slope in play_tribe's start frame, lab
+  20261110-201619). The members' own labels (draw_owner_tags: the owner's name, "<name>'s chief" for its chief) were
+  right all along.
+* Fix (switch `tribe.pointer_tag`): in Tribe the pointer gets no name; the partner's labels are its chief's and
+  members', and the arrow of F2 when the chief is off screen. Civ keeps the name at the pointer (there it is the
+  "where the partner plays" mark the arrow also points at). `coop.find labels` lists the labels of the last overlay
+  pass (kind player / chief / member / city / vehicle, the player, the screen point, the world point, the text).
