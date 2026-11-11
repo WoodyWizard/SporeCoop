@@ -73,6 +73,8 @@ arrows and minimap marks to find each other, player colours, and one report for 
 - Tribe: on a guest's screen the members now hold what they hold in the host's game: the chief its staff with the
   skull, the others their weapons, instruments and healer's rods. Before, the copies of the host's members often
   stood empty-handed on the guest's screen (the host's chief without its staff) (BUG-0906).
+- Tribe: the chief's staff has the same size on the guest's screen as in the host's game; it was about a third bigger
+  there (BUG-0912).
 - Tribe: a partner's name no longer hangs over empty ground. It was drawn at the spot under the partner's mouse
   pointer, with nobody under it; the partner's name is now only over its chief and its members (and on the arrow at
   the screen edge when the chief is off screen) (BUG-0907).

@@ -5697,6 +5697,10 @@ Both tests are `tools/tests/coop_tribe_looks.py` (fixture `tribe`); their bugs w
   20261110-210554). With the fix the labels are 1-3 px from the projected points.
 * `tribe_tools` now also checks that the weapon a guest's member took is in its hand on both screens (item and model
   the same, a key frame `weapon`) (the frame is taken with the game's own camera, too far to judge the weapon by eye): its old check read only the tool type, which the game does not draw.
+* `tribe_held_item` also compares the held models' scale (`iscale=` of `coop.tribe`, BUG-0912): every member's within
+  5 %, the chief's staff within 3 %; `SPORE_FIX_OFF=tribe.item_scale` fails (guest 2.845, host 2.188, lab
+  20261110-221944). `tribe_chief_removed` (BUG-0911) checks the 1.3x ratio on the host only and compares the guest's
+  chief sizes with the host's game: a guest's `chief_scale=` ratio is its own bookkeeping.
 * Test commands: `coop.tribe hand <id>` (item, model, hold, scale), `hand <id> <item>` (the hand emptied and the
   game's attach again: on a standing member the item is then badly held, also on the host), `hand <id> end` (ends
   the kind 5 modifier: the resting grip).

@@ -3011,6 +3011,23 @@ GOG 2024 / Steam code; check against overrides_dc04aee5.sym before use), not ver
 * ? Not checked: the look of carried things (items 0x13..0x17: fish, fruit) on the mirrors, which the field now
   copies too; the hand of the guest's own members in the host's game is the host's own state (nothing to copy back).
 
+## The size of a held item (2026-11-10, fix/w47-tribe-looks-2)
+<a id="tribe-item-size"></a>
+
+* ✔ (Ghidra GOG 2024) The attach 0xC250A0 sizes the item's model once: `s = (bbox[+0x14] - bbox[+8]) * *(float*)
+  0x1581334` with the bbox of the member's spatial vt 0x68 (0xC250F9), then model vt 0x20(Transform*) reads the
+  model's transform, the scale (+0x10 of the 0x38-byte Transform: u16 flags, u16 change count, offset, scale, 3x3)
+  is set to s, the count raised, model vt 0x18(Transform*) writes it (0xC2552F..). Model = the hand's attachment
+  record +0x8C. Citizen vt 0xE0 (0xC23360) returns an id for model vt 0x44(5, id, 3), not a size.
+* ✔ (lab 20261110-221944) The model keeps that size when the member's scale changes later: the host's chief
+  (size 2.844 after the mod's 1.3x) holds a staff of scale 2.188, its own size at the attach. A mirror that got the
+  staff after it had the host's size had 2.845 (BUG-0912).
+* Fix `tribe.item_scale`: the model's scale is a replicated field (kind `tribe_member_item_scale` 10, field 6),
+  written the same way; `coop.tribe` rows print `iscale=` and `scale=`.
+* ✔ A player's chief's `chief_scale` ratio (coop.status) is its size over a NEW GetDesiredScale pick noted by
+  chiefs_tick: 1.30 on the host by construction, no measure on a guest, whose mirror has the host's size
+  (BUG-0911).
+
 ## A partner's name in Tribe: the chief and the members, not the pointer (2026-11-10, fix/w47-tribe-looks)
 <a id="tribe-name-tags"></a>
 

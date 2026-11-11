@@ -12,7 +12,8 @@ state the older tests read (the tool type, the leader) was the same on both game
   1. Tribe fixture. Every member of every tribe that both games have: the guest's item and model are the host's
      (the host read before and after the guest: a member that changes its item in between is read again).
   2. The host's player tribe has a leader that holds the staff (item 0x11) with a model in the host's game: the same
-     on the guest. A key frame of kind `sameview` 14 m from that chief (the staff with the skull on both screens).
+     on the guest, in the resting grip, and the staff's model has the host's size (`iscale=`, BUG-0912:
+     `SPORE_FIX_OFF=tribe.item_scale` fails that). A key frame of kind `sameview` 14 m from that chief.
   3. The guest leaves and joins again: 1 and 2 again (the mirrors are made anew), another key frame. (There the
      host's chief may be away gathering with the staff put away in the host's game too: then its hand is compared
      as every member's.)
@@ -44,7 +45,7 @@ from twoinst import Checks, keyframe, start  # noqa: E402
 STAFF = 0x11
 TAG_UP = 2.6  # m: coop.cpp draw_owner_tags
 ROW = re.compile(r'\s+#(\d+) \S+ owner=(-?\d+) age=(\d+) sel=\d+ hp=([\d.]+) pos=\((-?[\d.]+) (-?[\d.]+) (-?[\d.]+)\).*'
-                 r' tool=(-?\d+) leader=(\d) item=(-?\d+) model=(-?\d+) hold=(\d)')
+                 r' tool=(-?\d+) leader=(\d) item=(-?\d+) model=(-?\d+) hold=(\d) iscale=([\d.]+) scale=([\d.]+)')
 
 
 def members(con):
@@ -60,7 +61,8 @@ def members(con):
             out[int(m.group(1))] = dict(tribe=ti, player=player, owner=int(m.group(2)), adult=m.group(3) == '1',
                                         hp=float(m.group(4)), pos=tuple(float(m.group(i)) for i in (5, 6, 7)),
                                         tool=int(m.group(8)), leader=m.group(9) == '1', item=int(m.group(10)),
-                                        model=int(m.group(11)), hold=int(m.group(12)))
+                                        model=int(m.group(11)), hold=int(m.group(12)), iscale=float(m.group(13)),
+                                        scale=float(m.group(14)))
     return out
 
 
@@ -109,6 +111,12 @@ def check_item(ck, host, guest, tag, strict=True):
     ck(len(hs) >= 3, f'{tag}: both games have the members ({len(hs)} compared)')
     ck(not bad, f'{tag}: every member\'s hand on the guest\'s screen holds what it holds in the host\'s game '
                 f'(differ: {["#%d" % i for i in bad]})')
+    sizes = {i: (hm[i]['iscale'], gm[i]['iscale']) for i, (hi, hmod, gi, gmod) in hs.items()
+             if hmod == 1 and gmod == 1 and hi == gi and i in gm}
+    off = sorted(i for i, (a, b) in sizes.items() if abs(a - b) > 0.05 * a)
+    print(f'  {tag}: item sizes (host, guest): ' + ', '.join(f'#{i} {a:.2f} {b:.2f}' for i, (a, b) in sorted(sizes.items())),
+          flush=True)
+    ck(not off, f'{tag}: what the members hold has the host\'s size on the guest\'s screen (differ: {["#%d" % i for i in off]})')
     armed = [i for i, (hi, hmod, _, _) in hs.items() if hi and hmod == 1]
     ck(len(armed) >= 1, f'{tag}: the host\'s game has members with something in the hand ({len(armed)})')
     lead = next((i for i, m in sorted(hm.items()) if m['player'] and m['leader']), None)
@@ -129,6 +137,20 @@ def check_item(ck, host, guest, tag, strict=True):
         ck(ok, f'{tag}: the guest\'s game draws the copy of the host\'s chief #{lead} with the staff in its resting grip '
                f'(item {g and g["item"]}, model {g and g["model"]}, still being taken {g and g["hold"]}; the game\'s tool '
                f'{g and g["tool"]}, leader {g and g["leader"]})')
+        # BUG-0912: the staff has the size it has in the host's game (the game sizes an item's model at the attach by
+        # the member's size then; the host's chief was made 1.3x after it, its copy before)
+        hs = gs = 0.0
+        t1 = time.time()
+        while time.time() - t1 < 10:
+            h2, g2 = members(host).get(lead), members(guest).get(lead)
+            if h2 and g2 and h2['model'] == 1 and g2['model'] == 1:
+                hs, gs = h2['iscale'], g2['iscale']
+                if abs(gs - hs) <= 0.03 * hs:
+                    break
+            time.sleep(1.0)
+        ck(hs > 0 and abs(gs - hs) <= 0.03 * hs,
+           f'{tag}: the staff of the chief\'s copy has the size of the host\'s (the model\'s scale: guest {gs:.3f}, host '
+           f'{hs:.3f}; the chief itself guest {g2 and g2["scale"]}, host {h2 and h2["scale"]})')
         # the grip must last: a mirror's "taking it" state never ended by itself (the staff stuck out forward)
         stuck, t1 = 0, time.time()
         while time.time() - t1 < 8:

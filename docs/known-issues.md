@@ -2589,3 +2589,6 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   sets the host's size. docs/re/tribe.md#tribe-held-item.
 * Not checked: citizen vt 0xE0, the model's scale on both games.
 * Tickets: BUG-0911 (the test), BUG-0912 (the staff).
+* FIXED (2026-11-10, fix/w47-tribe-looks-2, unreleased): the held model's size is replicated (`tribe.item_scale`,
+  docs/re/tribe.md#tribe-item-size); the test compares the guest's chief sizes with the host's game.
+* Still open: a guest's copy does not play the host member's staff swing (BUG-0914).
