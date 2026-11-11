@@ -35,7 +35,7 @@ Leave was BUG-0770 (fixed on the same branch).
 Tests only: `twoinst.warm_reset` closes the co-op window on both games after the leave (`coop.uistate 0`), as a cold
 start has it; coop_frames_loop.py closes it itself before F9, checks it was closed, that F9 opens it and that a
 second F9 closes it.
-switch: none (a test fix: the FAIL run is the integration run before the change)
+No mod change (a test fix): no switch; the FAIL run is the integration run before the change.
 
 ## Verification
 * FAIL: lab 20261108-170205 (rel/0.7.12 out/lab, lane 5: report_shot then frames_loop warm).
