@@ -32,6 +32,10 @@ was 0 by then: the game's own "not enough money"), nothing was sent, nothing was
 check does not know (it treats only "the city changed hands" and "refused by the host" as no purchase).
 Not related to BUG-0933 (Space money held on a guest): Civ money was in sync on all four games.
 
+Seen again in fix/w47-final12b lab 20261111-113158 (campaign): `PROBLEM Alice bought a vehicle in city 0 (button
+062D6902) and the host made none (money 1000.0 -> 0.0)`: Alice is the host itself, so no message was involved: the
+bots' race on the last 1000, a problem of the bot's check.
+
 ## Fix
 None yet. Next step: play_civ `buy` reads the guest's own money and button state right before the click and counts
 "the shared money ran out meanwhile" (the host's money below the price after the wait and no command sent,

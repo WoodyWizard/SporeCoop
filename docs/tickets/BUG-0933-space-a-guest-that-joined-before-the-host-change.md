@@ -64,6 +64,10 @@ the game's own money on both machines after the host earns 5000 and after the gu
 * FAIL: out/lab/20261111-110127 (`SPORE_FIX_OFF=res.space_save_follow`, lane 2): host 105000, guest 100000; the
   guest's 700 never reach the host. Also rel/0.7.12 out/lab/20261111-090547 (campaign, before the fix).
 * PASS: out/lab/20261111-110129 (lane 4), out/lab/20261111-110356 (lane 4), out/lab/20261111-110525 (lane 2).
+* campaign_space x2 out/lab/20261111-111643; campaign_short, campaign_space, campaign_ct, campaign_tribe OK in
+  out/lab/20261111-113158. The full campaign of that run (the save changes from Cadian.spo to Tavael.spo at 12:23)
+  has no `Space:state:money` line and no `[shared]` finding, and every guest's Space trace lines are synced after
+  the first one or two (110, 103 and 106 lines); it failed on another problem (BUG-0942, a fault storm in Tribe).
 * BUG-0709's test still passes: space_own_save out/lab/20261111-110356-4; detect_space out/lab/20261111-110531.
 
 ## History

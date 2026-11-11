@@ -2714,3 +2714,15 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: whether the host offers the world at all in this case, what a guest in another star system does.
 * Next steps: decide whether the guest follows (as in the gated stages) or is told.
 * Ticket: BUG-0941
+
+## Tribe: a fault storm in the game's resource code on a guest after the host loaded its Tribe world again (2026-11-11, campaign, fix/w47-final12b)
+<a id="issue-tribe-reload-fault-storm"></a>
+
+* What happens: 813 caught faults `0xC0000005 at 0x008E8230 Resource::PFIndexModifiable::GetFileCount (read 0x154)` on
+  a guest in Tribe, a 2 s hitch and a fault storm report; the game goes on.
+* Reproduce: seen once, fix/w47-final12b lab 20261111-113158 (campaign, lane 2, Bob), 14 s after the host's reload of
+  its Tribe world while the guest realigned (villages and tools removed, BUG-0564).
+* Known: calls 00C90741 00C30069 00CD3770 00BA266E 00BA1EE0 00B5D229 00CDF46C; in no other log on this machine.
+* Not checked: the callers, which index is null.
+* Next steps: Ghidra on the callers; a test with a host reload in Tribe and a realigning guest.
+* Ticket: BUG-0942
