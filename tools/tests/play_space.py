@@ -37,7 +37,7 @@ import threading
 import time
 
 import lane
-from twoinst import Checks, Monitor, shot, start  # (also puts tools/ on the path)
+from twoinst import Checks, Monitor, keyframe, shot, start  # (also puts tools/ on the path)
 from sporectl import Console  # noqa: E402
 
 DRIVE = 'interstellardrive'  # tool file name (FNV-1 hash 0x2569FAE8), docs/re/space.md 7.9
@@ -705,7 +705,12 @@ def main():
     errs, together_s, samples = [], 0, 0
     stuck, freed, life = {}, {}, {}
     t_last = time.time()
+    keyframe('start', 'both ships in the star system: the partner ship drawn with its model, the Space HUD and the palette in place')
+    kf_mid = [False]
     while time.time() < end and not Monitor.events and ph.is_alive() and pg.is_alive():
+        if not kf_mid[0] and (end - time.time()) < 0.5 * a.minutes * 60:
+            kf_mid[0] = True
+            keyframe('mid', 'play in progress: both ships flying, no black screen, the galaxy view or the planet as the mode says')
         time.sleep(3)
         now = time.time()
         try:
@@ -789,6 +794,7 @@ def main():
                 print('   ', line)
         print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_space.py --minutes {a.minutes} --seed {seed}')
     try:
+        keyframe('end', 'after the play: both games in Space, the partner ship drawn where it is, no loading screen')
         shot(host, 'play_space_end_host.png')
         shot(guest, 'play_space_end_guest.png')
         ck.faults(host=host, guest=guest)

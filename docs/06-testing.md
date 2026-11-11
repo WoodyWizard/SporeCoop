@@ -2746,6 +2746,8 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
    these suites; a test that cannot run (a lane, a fixture) is named in the release notes.
 3. `tools/lab.py fixcheck` has no CONTRADICTED claim.
 4. `make test` passed (it runs lab_selftest.py and gates_selftest.py).
+5. The key frame review of the final check's run passed: `tools/frames_review.py <run>`, the sheets looked at
+   by an agent by the checklist of [key frames](#testing-key-frames), every finding a ticket.
 ## Creature health between players: coop.hp, partner_hp, party, brain_hp (2026-11-01, fix/w30-creature-hp)
 <a id="testing-creature-hp"></a>
 
@@ -5482,3 +5484,64 @@ lab's games (3 + 3 objects, creature and tribe fixtures): the test asserts the c
 The bug was an `else` with two statements and no braces; llvm-mingw's `-Wall` does not include
 `-Wmisleading-indentation`, so the build never warned. The Makefile's COMMON flags (coop.dll, sporekit.dll, the
 loader) have `-Werror=misleading-indentation` now: on 2026-11-10 this line was its only hit in the tree.
+## Key frames and the review by eye (2026-11-10, feat/w47-visual)
+<a id="testing-key-frames"></a>
+
+Most checks read the game's state through the console; a bug that is only visible (a wrong model or paint, a body
+left where an egg was, a frozen pose, a shifted window, an object in the air) passes them. Key frames make the lab
+look at the screens too, at a few chosen moments.
+
+* `twoinst.keyframe(tag, note, players=None, kind='key', extra=None)` shoots every game of the test at the same
+  moment (one thread and one console connection each), stores a 960 px JPEG per game in
+  `out/lab/<run>/frames/<test>/<nn>_<tag>_<role>.jpg` and one line in that folder's `manifest.jsonl` (test, number,
+  tag, the note = what should be visible, kind, time, stage, each game's file, `game.mode` and `coop.avatar`
+  position). `players` is `{role: Console}`, default the host and guest of the last `twoinst.start()`; the campaign
+  passes `host-Alice`, `guest-Bob`, ... (`kind='phase'`). A key frame never fails a test (a game that does not
+  answer gets `ok: false`). The lab passes `SPORE_LAB_RUN` (the run folder) and `SPORE_LAB_TEST` (the test name)
+  to every test; a test started by hand writes into `out/[laneN/]frames/manual/<script>/`. Each frame costs ~0.3 s
+  per game and ~60-120 KB.
+* Where they are (2-3 per test, only at moments where looks matter): `play_cell|creature|tribe|civ|space` (start,
+  half time, end), the campaign (every phase end, all four players, `phase_frame()`), `nest_species`,
+  `tribe_portraits`, `creature_brain_hp`, `civ_host_design`, `space_shots`, `find_partners` (tag and arrow of each
+  stage), `one_creature`, `tribe_conquer_orders`, `cell_levelup_view`, `same_view` (kind `sameview`, see
+  the same view section). A new key frame needs a note that says what a reviewer should see.
+* `tools/frames_review.py <run> [--max 80] [--test a,b] [--kind sameview]` builds the contact sheets: per key frame
+  one JPEG with the games side by side (host first; 720 px tiles, 480 px with more than two games) under a label
+  (test, number, tag, kind, stage, the note, each game's mode and position, "NO SHOT" for a game without a frame),
+  in `out/lab/<run>/frames/sheets/`, with `index.html` and `sheets.md` (one line per sheet: its path and note). At
+  most `--max` sheets: every `sameview` frame, then the others spread over the tests (each test's first and last
+  frame first). Needs Pillow (the lab has it, the CI installs it); without it the tool says so and exits 2.
+  `tools/tests/visual_selftest.py` (make test) checks the names, the cap and the sheets on a fake run.
+
+### The review checklist
+
+The reviewer (an agent with an image reader, or a person) opens the sheets of `sheets.md` one by one and compares
+the two screens with each other and with the note. Per stage:
+
+* **Every stage**: no black screen, no loading screen or galaxy menu where the label says play; no white squares
+  (missing textures or portraits); UI panels where they belong (HUD, the co-op status, the tribe or Civ panel, the
+  Space palette), none cut off or doubled; name tags over the partner and, when the partner is off screen, its arrow
+  at the edge in its colour; no error text, no stuck caption or modal box the test did not expect.
+* **Cell**: the same cells with the same parts and colours on both screens around the same place; no cell drawn at
+  a wrong scale after a level change; no frozen cell among moving ones.
+* **Creature**: the same species, models and paints on both screens (the host's creation, not the guest's of the
+  same key; the guest's own creature where it plays one); nobody under the ground or floating; no body or egg left
+  where a live creature should be, no duplicate of a creature; no T-pose or frozen pose; nests and eggs on the
+  ground.
+* **Tribe**: the same huts, members and tools on both; members on the ground (none in the air or sunk), no body
+  left standing; the roster with portraits (no white squares); the raided hut down on both.
+* **Civilization**: vehicles and buildings with their real models (no default cube, no other player's design), land
+  vehicles on the ground, the same cities on both.
+* **Space**: the partner's ship drawn with its model where the host has it, beams on both screens in a fight, the
+  planet or the system as the mode says.
+* **sameview sheets**: the two tiles show the same scene from the same camera: the same creatures at the same
+  places in the picture with the same looks (the counts of the automatic check are in the label).
+
+How to report a finding: a ticket (`tools/tickets.py new`, kind `bug`) with what is wrong on which screen, the two
+sheet paths (`out/lab/<run>/frames/sheets/<sheet>.jpg`) and the frame files, the test and the run id; a finding
+that a test should catch by itself also names the check it lacks. A sheet that cannot be judged (both screens the
+same loading screen, a camera in a wall) is no finding: say so in the review notes.
+
+**The final check of every release runs this step** ([the release rule](#testing-release-rule), item 5): the run of
+the final check (play_* of all stages, the campaign tests, the feature tests above, `ui_golden`, `same_view`) is
+reviewed by its sheets, at most ~80, and the review's findings are tickets before the tag.

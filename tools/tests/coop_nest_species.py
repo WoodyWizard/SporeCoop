@@ -202,6 +202,8 @@ def main():
     checks(ck, host, guest, nid, host_bem, 'spawned', own_bem)
     shot(guest, 'nest_species_guest.png')
     shot(host, 'nest_species_host.png')
+    twoinst.keyframe('spawned', 'the host\'s NPC of its own creation: the same model and paint on both screens (the guest '
+                                'shows the host\'s creation, not its own creation of that key), standing on the ground')
 
     # the world (with the herd of the host's creature in it) goes to the guest again
     out = host.call('coop.save')['out']
@@ -229,6 +231,8 @@ def main():
     print(f'  the guest\'s herds learned from its world: {sorted(nests)}')
     checks(ck, host, guest, nid, host_bem, 'after the world went again', own_bem)
     shot(guest, 'nest_species_guest_after.png')
+    twoinst.keyframe('after_world', 'after the world went again: the guest still shows the host\'s creation at the nests, '
+                                    'no duplicate creature, no default model')
 
     # BUG-0200: after the session the guest's own games give its own creation for that key again
     guest.call('coop.leave')

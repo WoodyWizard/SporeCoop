@@ -94,8 +94,8 @@ def run_round(ck, party, label, how, answers, hooks, expect_names, expect_states
            f'[{label}] {g.name}: the question names the host, the status says what is sent ({s.get("world", "")!r})')
         if shots and g is party.guests[0]:
             keep_shot(g, 'session_report_guest_dialog.png')
-        ck(ui.click('rsend' if answers[g.name] == 'send' else 'rnosend'),
-           f'[{label}] {g.name} clicks {"Send" if answers[g.name] == "send" else "Don't send"}')
+        button = 'Send' if answers[g.name] == 'send' else "Don't send"  # (Python 3.10: no quote inside the f-string)
+        ck(ui.click('rsend' if answers[g.name] == 'send' else 'rnosend'), f'[{label}] {g.name} clicks {button}')
     if not asked:
         return
     # the round ends: the host's line lists every guest

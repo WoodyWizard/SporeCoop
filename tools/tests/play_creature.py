@@ -29,7 +29,7 @@ import lane
 import uifind
 from coop_sync import LIMITS, angle, pct, sample
 from sporectl import Console
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 OLD_ATTACK = '--old-attack' in sys.argv  # BUG-0618: the old attack loop (to compare the landing rate)
 
@@ -640,13 +640,20 @@ def main():
     players = [Player('host', lane.HOST, 1, world, sh, seed, deadline),
                Player('guest', lane.GUEST, 0, world, sh, seed + 1, deadline, exit_at)]
     print(f'  screen {players[0].W}x{players[0].H}, family species {world.family}', flush=True)
+    keyframe('start', 'both creatures on the ground near the nest, the same species and paint on both screens, '
+                      'name tags over the partner, the HUD in place')
     for p in players:
         p.start()
     acc = {}
     t_print = time.time()
+    mid_frame = False
     try:
         while any(p.is_alive() for p in players):
             measure(host, guest, acc)
+            if not mid_frame and time.time() > t0 + a.minutes * 15:  # (before the guest's menu visit at 30-60 %)
+                mid_frame = True
+                keyframe('mid', 'play in progress: creatures and NPCs on the ground (none floating or sunk), '
+                                'no bodies or eggs left standing as live creatures, no T-poses')
             if time.time() - t_print > 60:
                 t_print = time.time()
                 dl = acc['dna'][-1]
@@ -767,6 +774,8 @@ def main():
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_creature.py --minutes {a.minutes} --seed {seed}')
     shot(host, 'play_creature_host.png')
     shot(guest, 'play_creature_guest.png')
+    keyframe('end', 'after the play: both games in Creature play (no menu, no loading screen), the partner visible '
+                    'or its arrow at the edge, the same creatures on both')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

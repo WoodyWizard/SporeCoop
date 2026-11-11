@@ -78,7 +78,7 @@ from coop_multi import fps, join_cmd, limit, measure, over_limit, start_extra, w
 import coop_multi as cm
 from coop_ui import Ui
 from sporectl import Console
-from twoinst import Monitor, shot, start
+from twoinst import Monitor, keyframe, shot, start
 
 CHECK_EVERY = 30
 CAPTION_OK = (1410, 1048)    # the green check of a caption that waits for the player
@@ -1392,6 +1392,22 @@ class Hands(threading.Thread):
                         pass
 
 
+PHASE_NOTES = {
+    'play': 'end of the {stage} play: every player still in {stage} play, the same creatures / tribes / cities / ships on '
+            'every screen, the partners drawn (none in the air or under the ground), the HUD in place',
+    'advance': 'after the {stage} -> next stage change: every game in the new stage, no loading or black screen left, '
+               'the players\' new creations drawn with their own models',
+    'finale': 'after the finale: every game in Space or at the galactic core, no loading screen, no frozen picture',
+}
+
+
+def phase_frame(camp, kind, stage):
+    """a key frame of every player at a phase's end (docs/06-testing.md#testing-key-frames)"""
+    roles = {('host-' if i == 0 else 'guest-') + p.name: p.con for i, p in enumerate(camp.P)}
+    keyframe(f'{kind}-{stage}', PHASE_NOTES.get(kind, '{stage}').format(stage=stage), players=roles, kind='phase',
+             extra=[f'campaign stage now {camp.stage}, phase {camp.phase}'])
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--from', dest='start', default='cell', choices=cl.STAGES)
@@ -1470,6 +1486,7 @@ def main():
                     break
             elif kind == 'finale':
                 camp.finale()
+            phase_frame(camp, kind, stage)
             camp.check()
     except (OSError, ValueError) as e:
         camp.finding('dead', f'console:{e!r}'[:60], f'a console failed: {e!r}')

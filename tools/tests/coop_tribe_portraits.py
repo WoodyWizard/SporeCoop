@@ -93,6 +93,8 @@ def main():
     ck(png_known(guest, SPECIES), f'the guest\'s game answers the picture of the species {SPECIES:08X} (the portraits)')
     gpath = shot(guest, 'tribe_portraits_guest.png')
     hpath = shot(host, 'tribe_portraits_host.png')
+    twoinst.keyframe('roster', 'the tribe roster (left column) on the guest shows portraits of the host\'s species like '
+                               'the host\'s: no white squares, the members drawn with the host\'s model')
     gw = white_in_roster(gpath) if gpath and os.path.exists(gpath) else -1
     hw = white_in_roster(hpath) if hpath and os.path.exists(hpath) else -1
     print(f'  white pixels in the roster column: guest {gw:.3f}, host {hw:.3f}', flush=True)
