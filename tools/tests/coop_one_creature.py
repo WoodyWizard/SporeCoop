@@ -22,7 +22,7 @@ import time
 
 import settings_lib as sl
 import twoinst
-from coop_evolve_in_place import add_part, cinematic, editor_ui, field, in_editor, mode, puppet_key
+from coop_evolve_in_place import add_part, cinematic, editor_ui, field, host_bundle, in_editor, mode, puppet_key
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -104,11 +104,13 @@ def main():
         h1 = avatar_key(host)
         ck(h1 and h1 != h0, f"the host's editor gave it a new creature ({h0} -> {h1})")
         # 4. every player's creature changed
-        watch(60, lambda: avatar_key(guest) == h1 and puppet_key(guest, 'creature') == h1)
-        g1, p1 = avatar_key(guest), puppet_key(guest, 'creature')
-        print(f'  guest: avatar {g1}, puppet of the host {p1}; mode {mode(guest).strip()}', flush=True)
+        # (the puppet of the host has the host's newest bundle's key in the guest's game, or the species key itself)
+        drawn = lambda: puppet_key(guest, 'creature') in (host_bundle(guest, 'creature')[0], h1)  # noqa: E731
+        watch(60, lambda: avatar_key(guest) == h1 and drawn())
+        g1, p1, b1 = avatar_key(guest), puppet_key(guest, 'creature'), host_bundle(guest, 'creature')
+        print(f'  guest: avatar {g1}, puppet of the host {p1}, the host\'s bundle {b1}; mode {mode(guest).strip()}', flush=True)
         ck(g1 == h1, f"the guest's avatar is the host's new creature ({g1}, host {h1})")
-        ck(p1 == h1, f"the guest's game draws the host with the new creature ({p1})")
+        ck(p1 and p1 in (b1[0], h1) and b1[0] != h0, f"the guest's game draws the host with the new creature ({p1}, bundle {b1})")
         # 5. the guest's own request
         print('  guest:', guest.call('coop.vote evolve')['out'].strip().splitlines()[0], flush=True)
         watch(15)
