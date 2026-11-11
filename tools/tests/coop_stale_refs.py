@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# suite: none (an RE tool, report only: each scan stops the host for ~7 s; BUG-0930)
 """BUG-0926 (RE): who still names the partner's puppet after it is destroyed in a fight (Creature, host).
 
 The rounds of coop_npc_lost_target.py: the guest stands next to a host NPC and hits it until the NPC attacks the
