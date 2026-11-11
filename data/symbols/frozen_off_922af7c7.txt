@@ -220,3 +220,4 @@ Simulator::Cell::ExecuteInteraction ; BUG-0746: a knocked-out cell may still swa
 SporeCoop::SpaceToolListener_HandleMessage ; BUG-0763: the terrain sculpting relay is off on GOG 2016
 SporeCoop::Terrain_GetActive ; BUG-0763: the terrain sculpting / colouring relay is off on GOG 2016
 Terrain::cTerrainSphere::SetColors ; BUG-0763: the planet colouring relay is off on GOG 2016
+SporeCoop::City_WriteCityData ; BUG-0901: a Space colony building the mod builds is not written into the city's data (lost when the planet is left)
