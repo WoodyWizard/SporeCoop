@@ -2411,6 +2411,9 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   otherwise the host's world never gets it (the money is spent for both). Log `civ: space planner: ... not built`.
 * Reproduce: coop_space_planner_build.py with the host's ship elsewhere.
 * Ticket: BUG-0766.
+* FIXED (2026-11-10, fix/w47-b2): the host keeps it until its ship is on that planet (civ.space_build_hold); the
+  host's own colony buildings reach the guests too (BUG-0884). Open: whether a building the mod makes is kept when
+  the planet is left and made again (BUG-0901).
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
 ## Found in the audit of fork PR #196: not fixed yet (2026-11-10, plan/w47-pr196)
@@ -2526,3 +2529,12 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Live Cell state goes to a guest still loading the world (suspected bandwidth cost): BUG-0809.
 * `coop.ui show|btn|font|tree` cast a typed number to a window pointer (console crash): BUG-0812.
 * A nest mate roaming beyond the native reply radius never answers the mating call (suspected): BUG-0815.
+
+## Space: a colony building the mod builds may not survive leaving the planet (2026-11-10, fix/w47-b2)
+<a id="issue-space-mod-building-kept"></a>
+
+* What happens (suspected): the game makes a planet's cities again from its record when it becomes the active planet
+  (a house destroyed at run time came back); a building made by build_in_city (a partner's planner building) may not
+  be in that record, so it would vanish when the ship leaves and lands again. Not checked.
+* Reproduce: docs/tickets BUG-0901 (How: free the plot with the planner's own demolish, not `coop.civ unbuild`).
+* Ticket: BUG-0901.

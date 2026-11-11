@@ -2644,3 +2644,24 @@ not verified by us:
   spatial) ret 0xC (a null first spatial = the captain): it increments the count and runs the normal completion.
 * ~ The Steam 3010a413 executable on disk is packed: its static bytes do not decode to the runtime code (the fork's
   static dump gave invalid instruction boundaries); read code from a running game.
+
+## Colony buildings for a planet a game is not on (2026-11-10, fix/w47-b2)
+<a id="space-colony-build-hold"></a>
+
+BUG-0766 / BUG-0884, lane 4 (GOG 2024), `space_empire`, home planet 00460035:
+* ✔ A planet's cities are made again when it becomes the active planet, from what the game keeps for it (the planet
+  record's city data, presumably cCityData; not traced): a house the test destroyed with `coop.civ unbuild`
+  (cCity::DestroyBuilding) while the host's ship was there was back after the ship left (zoom out to the system) and
+  landed again 1-2 min later (lab 20261110-185810: the host's city 11 buildings after the destroy, 12 with 6 houses
+  after the return, with civ.space_build_hold off, so not the kept building). So a building destroyed at run time is
+  not written into that data; whether one made by the mod's build_in_city (BUG-0751 and the relays here) is kept when
+  the ship leaves and comes back is open: BUG-0901.
+* ✔ So the kept building of BUG-0766 found the city full on the host's return ("no free slot", lab 20261110-184846)
+  until a plot was free again: civ.cpp space_tick tries a kept building again every 2 s for 60 s.
+* ✔ 5 s after a game's place became the planet its cities are listed (`all_cities()`; local_city_near finds the city
+  by the buyer's city position within 60 m).
+* ✔ In Space the host's own planner AddBuilding (return address a_PlannerAddBuildingRet) reads the building's position
+  (0 0 0), as the guest's does (BUG-0751); a frame or two later the planner has placed it: space_tick sends it then
+  (or after 3 s) with the placed position, so the receiver's SnapToSlot takes the slot nearest the host's.
+* Limit: a building kept for a planet the game never visits in that session is lost at the session end (the hold is
+  session state).
