@@ -51,3 +51,10 @@ play in every tile.
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-11: second final check (out/lab/20261111-090547, review on plan/w47-frames2): the same moments again:
+  sheets 003, 013, 018 (advance-cell: the host in the landing cinematic), 027 (find_partners creature_arrow: the
+  guest in the deep-water warning), 030 (play_cell start: the guest in the meteor intro), 042 (play_tribe start:
+  both cameras on a bare slope). New: 035 (play_civ end: the host in a trade-route talk box of an NPC nation),
+  009 (campaign advance-civ: guest Dave with the co-op window open), 033 (play_civ start: money 33,000 on the
+  host and 3,000 on the guest, shot between the test's money gift and its arrival 5 s later). Not this time:
+  play_creature end (both in play), play_space end, campaign play-cell.

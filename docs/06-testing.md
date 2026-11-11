@@ -5617,6 +5617,14 @@ by side and the creatures in them counted.
   roster in the campaigns), BUG-0922 (the host in the game-over caption at the end of play_tribe), BUG-0923 (the join
   notice twice), BUG-0924 (key frames shot in editors, cinematics, a pause menu). The green light column of the first
   review was not seen again (the regen crosses are on both screens).
+* Review of the second 0.7.12 final check (lab 20261111-090547, 57 sheets, plan/w47-frames2): BUG-0920 holds (one_creature
+  `evolved`: the guest has the world and the HUD), BUG-0921 holds (campaign, campaign_ct and campaign_tribe: portraits in
+  every guest's roster), BUG-0923 holds (one "Bob appeared in the world"). BUG-0922 not seen (the host plays at the end
+  of play_tribe), BUG-0929 and BUG-0914 still there. New: BUG-0935 (the guest's roster cards red with empty health
+  bars), BUG-0936 (members at rest in other poses on the two games, 3 of 7 Tribe pairs), BUG-0937 (the guest's HUD
+  portrait stale after a creature change), BUG-0938 (the galaxy menu's logo over Civ play on one guest), BUG-0939 (an
+  arrow "Dave 504 m" to the planet's centre). To read a roster, crop x 915..960 of the frame and enlarge 4-5 times: the
+  480 px tiles of the 4-player sheets do not show it.
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 

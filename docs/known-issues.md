@@ -2689,3 +2689,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: what the fields are, who reads them.
 * Next steps: name the writers in Ghidra, clear the fields in the destroy hook (mods/coop/gamefixes.cpp).
 * Ticket: BUG-0930
+## Seen in the key frames of the second 0.7.12 final check (2026-11-11, plan/w47-frames2)
+<a id="issue-frames2-0712"></a>
+
+* Tribe: the guest's roster shows its members' cards red with an empty health bar after minutes of play while the
+  host's roster has them healthy (play_tribe mid and end, campaign guests 2 and 3; lab 20261111-090547 and
+  20261111-044257). Not analysed. Ticket: BUG-0935
+* Tribe: members at rest at the fire sit or crouch on one game and stand on the other, both ways (same_view_tribe
+  views 2 and 3, tribe_name_tags). Probably the idle animations are not relayed, as in BUG-0914. Ticket: BUG-0936
+* Creature: the guest's HUD portrait keeps the first species after its creature changed (appeared_once) or after the
+  host's evolution in creature.mode host (one_creature). Ticket: BUG-0937
+* Civ: the galaxy menu's logo and legal lines over the play of a guest that joined 11 s after its menu came up
+  (campaign_space, seen once). Ticket: BUG-0938
+* Tribe: right after Creature -> Tribe the host draws an arrow "504 m" to the planet's centre for a guest that has
+  no chief yet (campaign, one frame). Ticket: BUG-0939
