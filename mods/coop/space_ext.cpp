@@ -5,6 +5,7 @@
 
 #include "coop_ui.h"
 #include "fixes.h"
+#include "settings.h"
 #include "game.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
@@ -201,12 +202,32 @@ void init_all(const SkHost* h, SkMod* m, const spacecoop::Ctx* c)
     }
 }
 
+// F3 (BUG-0768): the host's session settings switch whole features (space.trade, .contracts, .diplomacy, .allies,
+// .finale, .rivals): a feature switched off gets no tick, no messages (they are dropped), no overlay and no page rows
+static int setting_of(const std::string& name)
+{
+    static const std::pair<const char*, settings::Id> m[] = {
+        {"trade", settings::kSpaceTrade},         {"contracts", settings::kSpaceContracts},
+        {"diplomacy", settings::kSpaceDiplomacy}, {"allies", settings::kSpaceAllies},
+        {"finale", settings::kSpaceFinale},       {"rivalry", settings::kSpaceRivals}};
+    for (auto& [n, id] : m)
+        if (name == n)
+            return id;
+    return -1;
+}
+bool feature_allowed(const std::string& name)
+{
+    int id = setting_of(name);
+    return id < 0 || settings::on((settings::Id)id);
+}
+static bool live(size_t i) { return g_on[i] && feature_allowed(all()[i].name); }
+
 void tick_all(double now)
 {
     epoch_tick();
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
-        if (g_on[i] && v[i].tick)
+        if (live(i) && v[i].tick)
             v[i].tick(now);
 }
 
@@ -215,7 +236,7 @@ bool dispatch(uint8_t kind, uint8_t origin, net::Reader& r)
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
         if (v[i].kind_lo && kind >= v[i].kind_lo && kind <= v[i].kind_hi) {
-            if (g_on[i] && v[i].on_message)
+            if (live(i) && v[i].on_message)
                 v[i].on_message(kind, origin, r);
             return true;
         }
@@ -235,7 +256,7 @@ void overlay_all()
 {
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
-        if (g_on[i] && v[i].draw_overlay)
+        if (live(i) && v[i].draw_overlay)
             v[i].draw_overlay();
 }
 
@@ -244,7 +265,7 @@ std::vector<Row> rows_all()
     std::vector<Row> out;
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
-        if (g_on[i] && v[i].rows)
+        if (live(i) && v[i].rows)
             for (auto& r : v[i].rows())
                 out.push_back(std::move(r));
     return out;
@@ -257,6 +278,10 @@ std::string status_all()
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++) {
         if (!g_on[i]) {
             s += v[i].name + ": off\n";
+            continue;
+        }
+        if (!feature_allowed(v[i].name)) {
+            s += v[i].name + ": off (the session setting)\n";
             continue;
         }
         std::string l = v[i].status ? v[i].status() : v[i].name + ": on";

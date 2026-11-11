@@ -290,6 +290,10 @@ using Enter_t = void(__cdecl*)();
 static Enter_t o_Enter;
 static void __cdecl h_Enter()
 {
+    if (!spaceext::feature_allowed("finale")) { // F3 (BUG-0768): space.finale off: as in a solo game
+        o_Enter();
+        return;
+    }
     bool before = has_flag(kFlagEnteredCore);
     if (!before && !g_go && !g_alone) {
         auto miss = missing();

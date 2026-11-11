@@ -1258,7 +1258,10 @@ static void refresh_lobby()
     int ck = 0, cown = 0;
     bool hint = false; // the creation row says how to get a choice: it may take the arrows' room
     std::string cname, cl;
+    bool one = A.one_creature && A.one_creature(); // F5 (BUG-0769): the host's creature for everybody
     if (A.creation && A.creation(ck, cname, cown)) {
+        if (one && ck != 2)
+            cown = 0;
         cl = ck == 1 ? T("My cell: ", "Моя клетка: ") : ck == 2 ? T("My ship: ", "Мой корабль: ") : T("My creature: ", "Моё существо: ");
         bool me_host = A.role() == 1;
         if (!cname.empty())
@@ -1268,7 +1271,9 @@ static void refresh_lobby()
         else // BUG-0598: say whose it is
             cl += ck == 2 ? T("your empire's ship", "корабль вашей империи")
                   : me_host ? T("your world's species", "вид вашего мира") : T("the host's species", "вид хоста");
-        if (ck != 2 && cown > 0)
+        if (one && ck != 2)
+            cl += T(" (the host evolves it for everybody)", " (хост развивает его для всех)");
+        else if (ck != 2 && cown > 0)
             cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
         else if (g_creation_hint_fix && ck != 2 && !me_host) { // no arrows: how to get a choice
             cl += T(" (make one in an editor to pick it)", " (создайте своё в редакторе)");
@@ -1317,7 +1322,7 @@ static void refresh_lobby()
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;
-    int offer = A.evolve_offer ? A.evolve_offer() : 0; // BUG-0516: the host evolves now, this guest may follow
+    int offer = A.evolve_offer && !one ? A.evolve_offer() : 0; // BUG-0516: the host evolves now, this guest may follow
     if (offer > 0)
         text(D.ready_btn, T("Evolve now", "Эволюция"));
     else

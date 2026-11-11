@@ -2396,6 +2396,10 @@ void on_session_end()
     teamplay::reset();
 }
 
+// F3 (BUG-0768): all.friendly_fire (session, default off): a player's hit on a partner's creature hurts that partner
+static bool friendly_fire() { return settings::on(settings::kFriendlyFire); }
+static unsigned g_pvp_out, g_pvp_in, g_pvp_relayed; // hits on partners sent / taken by the host's avatar / relayed
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     double now = H->time_seconds();
@@ -2621,6 +2625,27 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     case net::MSG_DAMAGE: { // guest: the host says we were hit
         net::Damage d;
+        if (is_host() && from != 0 && friendly_fire() && d.read(r) && std::isfinite(d.damage)) {
+            // F3 (BUG-0768), all.friendly_fire: a guest hit a partner's creature in its game: the host's own avatar
+            // takes it here, another guest's hit goes on to that guest (as if the host's game had seen it)
+            d.damage = std::clamp(d.damage, 0.f, kMaxHit);
+            d.attacker = 0xFFFF;
+            if (d.player == 0) {
+                void* av = game::avatar();
+                if (!av || game::mode_id() != modes::kCreature)
+                    return;
+                float dmg = teamplay::on_own_damage(av, d.damage);
+                log_hit(0, C.puppet_of ? C.puppet_of(from) : nullptr, dmg, "friendly fire from a guest", true);
+                game::apply_damage(av, dmg, d.type, C.puppet_of ? C.puppet_of(from) : nullptr);
+                g_pvp_in++;
+            } else if (d.player != from && net::is_player(*C.sess, d.player)) {
+                net::Writer w;
+                d.write(w);
+                C.sess->send_reliable_to(d.player, net::MSG_DAMAGE, w);
+                g_pvp_relayed++;
+            }
+            return;
+        }
         if (!is_guest() || !d.read(r) || d.player != C.sess->my_id())
             return;
         void* av = game::avatar();
@@ -2666,8 +2691,23 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             }
             return false;
         }
-        if (game::is_puppet(c))
-            return false; // no friendly fire on other players
+        if (game::is_puppet(c)) {
+            if (attacker == av && av && friendly_fire()) // F3 (BUG-0768): the hit goes to that player (via the host)
+                for (auto& p : C.sess->players())
+                    if (p.id != C.sess->my_id() && C.puppet_of(p.id) == c) {
+                        net::Damage d;
+                        d.player = p.id;
+                        d.damage = damage;
+                        d.type = type;
+                        d.attacker = 0xFFFF;
+                        net::Writer w;
+                        d.write(w);
+                        C.sess->send_reliable_to(0, net::MSG_DAMAGE, w);
+                        g_pvp_out++;
+                        log_hit(p.id, attacker, damage, "friendly fire, sent");
+                    }
+            return false; // the puppet mirrors that player's own health
+        }
         if (c == av) {
             damage = teamplay::on_own_damage(av, damage);
             log_hit(C.sess->my_id(), attacker, damage, "");
@@ -2703,7 +2743,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
-            if (attacker && attacker != av && !game::is_puppet(attacker)) {
+            bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
+            if (pvp)
+                g_pvp_out++;
+            if (pvp || (attacker && attacker != av && !game::is_puppet(attacker))) {
                 net::Damage d;
                 d.player = p.id;
                 d.damage = damage;
@@ -2715,7 +2758,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
                 log_hit(p.id, attacker, damage, "forwarded");
-                creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
+                if (!pvp)
+                    creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
             }
         }
         return false; // puppets mirror the guest's own health
@@ -2779,7 +2823,10 @@ std::string status()
         snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u\n",
                  g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,
                  g_frozen_spawns, g_frozen_despawns, g_frozen_retired);
-        return std::string(b) + b2 + meat_status() + game::destroy_deferred_status() + "\n";
+        char b3[128]; // F3 (BUG-0768)
+        snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
+                 g_pvp_in, g_pvp_relayed);
+        return std::string(b) + b2 + b3 + meat_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
@@ -2792,7 +2839,10 @@ std::string status()
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied);
     }
-    return b + meat_status() + game::destroy_deferred_status() + "\n";
+    char b3[128]; // F3 (BUG-0768)
+    snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
+             g_pvp_in, g_pvp_relayed);
+    return b + std::string(b3) + meat_status() + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc

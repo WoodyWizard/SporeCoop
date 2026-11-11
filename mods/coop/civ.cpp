@@ -23,6 +23,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "settings.h"
 #include "fields.h"
 #include "creations.h"
 #include "savestrip.h"
@@ -1753,7 +1754,8 @@ static uint8_t player_of_combatant(void* att)
     return it == g_hv.end() ? 0xFF : it->second.owner;
 }
 
-static uint8_t role(uint8_t p) { return C.role_of && p != 0xFF ? C.role_of(p) : 0; }
+// F3 (BUG-0768): civ.roles off: nobody has a role, no role bonus
+static uint8_t role(uint8_t p) { return C.role_of && p != 0xFF && settings::on(settings::kCivRoles) ? C.role_of(p) : 0; }
 
 // building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
 // the player is remembered for the capture damage the original adds
@@ -1803,7 +1805,7 @@ static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t o
         for (auto& [p, t] : hits)
             if (now - t < kJointWindow)
                 players++;
-        if (players >= 2) {
+        if (players >= 2 && settings::on(settings::kCivSiege)) { // F3 (BUG-0768): civ.joint_siege
             dmg *= 1.5f;
             g_joint_hits++;
             if (!g_joint_told.count(city) && C.notice) {
@@ -1932,11 +1934,17 @@ static bool g_sw_bypass;
 static bool g_fix_sw_vote = true;
 COOP_FIX("civ.sw_vote", "BUG-0117", g_fix_sw_vote, "civ: a superweapon vote keeps its own weapon and target");
 static uint32_t g_sw_refused;
+static unsigned g_sw_unvoted = 0; // superweapons fired without a vote (civ.superweapon_vote off; coop.civ sw_unvoted)
 static int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
 static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
 {
+    // F3 (BUG-0768): civ.superweapon_vote off: the host's (and a guest's own) superweapon fires at once
     if (g_sw_bypass || !active() || C.sess->players().size() < 2)
         return o_FireSW(civ, type, target);
+    if (is_host() && !settings::on(settings::kCivSwVote)) {
+        g_sw_unvoted++;
+        return o_FireSW(civ, type, target);
+    }
     float pos[3] = {target ? target[0] : 0, target ? target[1] : 0, target ? target[2] : 0};
     if (is_guest()) { // the host asks everybody
         net::Writer w;
@@ -1989,6 +1997,14 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
         return;
     g_sw_last_req = type;
+    if (!settings::on(settings::kCivSwVote)) { // F3 (BUG-0768): no vote, the guest's superweapon fires now
+        g_sw_bypass = true;
+        g_sw_fired = type;
+        o_FireSW(pc, type, pos);
+        g_sw_bypass = false;
+        g_sw_unvoted++;
+        return;
+    }
     if (g_fix_sw_vote) {
         std::array<float, 3> p{pos[0], pos[1], pos[2]};
         if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p] {
@@ -2352,7 +2368,7 @@ static void trade_tick(double now)
         if (o != kShared && o != 0xFF)
             owned.push_back({city, o});
     int pairs = 0, gain = 0;
-    auto economic = [](uint8_t p) { return C.role_of && C.role_of(p) == 2; };
+    auto economic = [](uint8_t p) { return role(p) == 2; };
     for (size_t i = 0; i < owned.size(); i++)
         for (size_t j = i + 1; j < owned.size() && pairs < 8; j++)
             if (owned[i].second != owned[j].second) {
@@ -4273,11 +4289,11 @@ std::string status()
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
-                 "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u "
+                 "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u sw_unvoted=%u boosts=%u "
                  "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
-                 g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
+                 g_religious_boosts, g_alarms, g_votes, g_sw_unvoted, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
                  g_max_chunk, g_siege_npc);
     else
         snprintf(b, sizeof b,

@@ -44,6 +44,7 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err)
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
+    seen_names_.clear();
     lan_id_ = new_conn_id(now(), tr_->local_port() ^ 0x4C414E00u); // BUG-0210: new per hosted game
     logf(cb, "hosting on UDP port %u", tr_->local_port());
     return true;
@@ -306,7 +307,7 @@ std::string Session::status() const
         return "offline\n";
     if (role_ == Role::Host)
         snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
-                 (int)players().size(), kMaxPlayers);
+                 (int)players().size(), max_players);
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
@@ -463,6 +464,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
             // A busy player of the same name (loading, saving) keeps its entry: the token differs
             const bool by_token = unique_names && rejoin_by_name && g_fix.rejoin_token;
+            bool dropped_by_token = false;
             if (by_token && h.has_token && h.proto == kProtoVersion && !(build && h.build && h.build != build))
                 for (size_t k = 0; k < peers_.size(); k++) {
                     Peer* o = peers_[k].get();
@@ -470,6 +472,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                         this->now() - o->conn.last_recv_ms > 2000) {
                         logf(cb, "player %u (%s) rejoins: its old entry is dropped", o->id, o->name.c_str());
                         drop_peer(k, 0); // PLAYER_LEAVE(old) goes out before PLAYER_JOIN(new)
+                        dropped_by_token = true;
                         break;
                     }
                 }
@@ -482,6 +485,23 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             } else if (alloc_id() == 0xFF) {
                 rej.reason = REJ_FULL;
                 rej.text = "session is full";
+            } else {
+                // F3 (BUG-0768): the host's player limit and the late-join rule. A rejoin (its old entry dropped by its
+                // token, or a name seen in this session, whose silent old entry the name rule below replaces) passes
+                bool seen = dropped_by_token ||
+                            std::find(seen_names_.begin(), seen_names_.end(), h.name) != seen_names_.end();
+                int here = 1; // the host
+                for (auto& o : peers_)
+                    if (o.get() != &p && o->accepted && !o->bye &&
+                        !(seen && o->name == h.name && this->now() - o->conn.last_recv_ms > 2000))
+                        here++;
+                if (here >= max_players) {
+                    rej.reason = REJ_FULL;
+                    rej.text = "session is full (the host takes " + std::to_string(max_players) + " players)";
+                } else if (!seen && join_closed && join_closed()) {
+                    rej.reason = REJ_STARTED;
+                    rej.text = "the host does not take new players after the start";
+                }
             }
             if (rej.reason) {
                 Writer w;
@@ -516,6 +536,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                     p.name = base + " " + std::to_string(k);
             }
             p.accepted = true;
+            if (std::find(seen_names_.begin(), seen_names_.end(), p.name) == seen_names_.end())
+                seen_names_.push_back(p.name);
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
@@ -765,7 +787,7 @@ void Session::update()
             rep.port = tr_->local_port();
             rep.name = my_name_;
             rep.players = (uint8_t)players().size();
-            rep.max_players = kMaxPlayers;
+            rep.max_players = (uint8_t)max_players;
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;

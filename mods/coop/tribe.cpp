@@ -26,6 +26,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "settings.h"
 #include "fields.h"
 
 using skg::thiscall;
@@ -3143,7 +3144,7 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
             for (auto& [o, t] : hits)
                 if (now - t < kPincerWindow)
                     players++;
-            if (players >= 2) {
+            if (players >= 2 && settings::on(settings::kTribePincer)) { // F3 (BUG-0768): tribe.pincer
                 dmg *= 1.5f;
                 g_pincer_hits++;
                 if (now - g_pincer_told[vt] > 60 && C.notice) {
@@ -3151,13 +3152,13 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
                     C.notice("pincer attack: +50% damage");
                 }
             }
-            if (near_own_chief(ac, ao)) {
+            if (settings::on(settings::kTribeAura) && near_own_chief(ac, ao)) { // tribe.chief_aura
                 dmg *= 1.2f;
                 g_aura_hits++;
             }
         }
         // a chief about to fall next to a partner's member: the tribe protects it
-        if (vt == pt && is_chief(victim)) {
+        if (vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
             float hp = F<float>(victim, 0x5E0), mx = F<float>(victim, 0x5D4);
             uint8_t o = owner_of(victim);
             if (dmg >= hp && mx > 0 && now - g_chief_saved[victim] > 60) {
@@ -3254,7 +3255,7 @@ static std::vector<Performer> performers()
 }
 static void duet_tick(double now)
 {
-    if (!g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet)
+    if (!g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet || !settings::on(settings::kTribeDuet)) // F3: tribe.duet
         return;
     g_last_duet = now;
     void* pt = player_tribe();
@@ -3508,7 +3509,7 @@ static void epic_tick(double now)
     }
     if (!g_epic_next)
         g_epic_next = now + 480; // the first one after 8 minutes together
-    if (!g_epic && now > g_epic_next && C.sess->players().size() >= 2) {
+    if (!g_epic && now > g_epic_next && C.sess->players().size() >= 2 && settings::on(settings::kTribeEpic)) { // F3
         g_epic_next = now + 600;
         spawn_epic();
     }
@@ -4452,6 +4453,9 @@ std::string debug(const std::vector<std::string>& a)
                 return "no epic / member";
             return hit(g_epic, at, a.size() > 3 ? (float)atof(a[3].c_str()) : 50.f);
         }
+        // F3 (BUG-0768): tribe.epic off: no co-op epic (`epic force` spawns one anyway, tests)
+        if (!settings::on(settings::kTribeEpic) && !(a.size() >= 2 && a[1] == "force"))
+            return "no epic: the session setting tribe.epic is off";
         bool ok = spawn_epic();
         uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
         char b[200];

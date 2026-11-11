@@ -126,6 +126,8 @@ std::vector<void*> game_missions();
 // neutral or at war. The setters are for space_rivalry.cpp only.
 enum class Relation : uint8_t { Ally = 0, Neutral = 1, War = 2 };
 bool rivals();
+// F3 (BUG-0768): the host's session settings allow this feature (space.trade, ..., space.rivals for "rivalry")
+bool feature_allowed(const std::string& name);
 Relation relation(uint8_t a, uint8_t b);
 void set_rivals(bool on);
 void set_relation(uint8_t a, uint8_t b, Relation r);

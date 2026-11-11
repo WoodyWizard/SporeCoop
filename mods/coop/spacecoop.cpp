@@ -16,6 +16,7 @@
 #include "space_logic.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "settings.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -50,6 +51,7 @@ struct Key {
 };
 
 // ---- state ----
+static unsigned g_disable_off = 0; // space.disable off: a lethal hit next to a partner destroyed the ship
 static double g_down_until, g_repair_t, g_last_down;
 static bool g_down, g_down_fresh; // fresh: disabled since the last down_tick (BUG-0147)
 static bool g_helper_fix = true;   // coop.space helperfix 0: any partner here rescues, also a disabled or frozen one (BUG-0131)
@@ -223,6 +225,10 @@ float filter_own_damage(void* ufo, float dmg, int type)
     auto here = helpers_here();
     if (here.empty())
         return dmg; // nobody can help: the native death
+    if (!settings::on(settings::kSpaceDisable)) { // F3 (BUG-0768): space.disable off: destroyed as in a solo game
+        g_disable_off++;
+        return dmg;
+    }
     // disabled instead of destroyed: HP stays at 1, no more damage, no shooting
     g_down = true;
     g_down_until = now + kDownTime;
@@ -1627,10 +1633,10 @@ std::string status()
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
-             "partners_here=%u partners_down=%u bad_origin=%u\n",
+             "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_terra_enabled, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
-             (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
+             (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off);
     return b + spaceext::status_all();
 }
 

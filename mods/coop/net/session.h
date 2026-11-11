@@ -68,6 +68,11 @@ public:
     uint32_t welcome_world() const { return welcome_world_; }
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network
+    // F3 (BUG-0768), host: the players the session takes, the host counted (all.max_players, 2..kMaxPlayers), and
+    // whether a new player is refused now (all.late_join off while the host plays its world). A player who was in
+    // this session already (its name, or its rejoin token) may always come back. coop.cpp sets both every frame
+    int max_players = kMaxPlayers;
+    std::function<bool()> join_closed;
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -121,6 +126,7 @@ private:
     void drop_peer(size_t idx, uint8_t reason);
     void send_chat_to(Peer& p, const Chat& c);
     uint8_t alloc_id() const;
+    std::vector<std::string> seen_names_; // host: every name admitted since host() (the late-join rule)
     bool retired(uint32_t conn) const;
     void start_hello(const Endpoint& ep, uint32_t now);
     bool poll_lookup(uint32_t now); // false = the session ended or still waits

@@ -57,6 +57,7 @@ struct Api {
     // own creation of the current stage: kind 0 creature / 1 cell / 2 ship, its name ("" = the
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;
+    std::function<bool()> one_creature; // F5: a guest plays the host's creature (no arrows, no Evolve now)
     std::function<void(int)> creation_cycle;
     // tribe / civilization: how many own units are selected (what: "member", "vehicle", "city"),
     // the partner they would go to; give_do gives them

@@ -163,6 +163,7 @@ enum RejectReason : uint8_t {
     REJ_VERSION = 1,
     REJ_FULL = 2,
     REJ_BUILD = 3,
+    REJ_STARTED = 4, // F3 all.late_join off: the host plays its world already (an older guest shows the text)
 };
 
 enum PlayerFlags : uint8_t {

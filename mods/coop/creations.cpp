@@ -21,6 +21,7 @@
 #include "content_packs.h"
 #include "net/partprops.h"
 #include "trace.h"
+#include "settings.h"
 
 namespace creations {
 
@@ -1326,9 +1327,24 @@ static bool own_option(Kind k, const Key& key)
     return false;
 }
 
+// F5 (BUG-0769): creature.mode host (the host's session setting): every guest plays the host's cell and creature
+bool one_creature() { return settings::get(settings::kCreatureMode) == 1; }
+static unsigned g_one_mine; // mine() answered with the host's creation for that reason (coop.creations)
+
 Option mine(Kind k)
 {
     bool guest = C.sess && C.sess->role() == net::Role::Client;
+    if (guest && k != kUfo && one_creature()) { // no own choice, no world record: the host's creation, also evolved
+        g_one_mine++;
+        auto h = g_applied.find({0, (uint8_t)k});
+        Key a = h != g_applied.end() && h->second.orig.instance ? h->second.orig
+                : k == kCreature                                ? avatar_species_key()
+                                                                : cell_key();
+        for (auto& o : g_opts[k])
+            if (o.key.instance == a.instance)
+                return o;
+        return {a, ""};
+    }
     // BUG-0278: a choice of a creation of the host's world that is not one of ours (taken over from
     // an editor by 0.7.3.0) is not a choice; "the world's own" follows the host's creature
     bool chosen = g_chosen[k];
@@ -3020,6 +3036,11 @@ void choose(Kind k, const Key& key)
 
 void cycle(Kind k, int dir)
 {
+    if (k != kUfo && one_creature() && C.sess && C.sess->role() == net::Role::Client) {
+        if (C.feed) // F5 (BUG-0769): the guest's creation arrows are hidden; a click that comes anyway changes nothing
+            C.feed("everybody plays the host's creature (session setting)");
+        return;
+    }
     auto opts = options(k);
     // BUG-0278: "the world's own" (the host's creature) is one of the choices: a guest can go back
     // to it from a creature of its own
@@ -3057,6 +3078,8 @@ std::string status()
              "species asked=%u got=%u sent=%u missing=%u old_sent=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u paints_fb=%u unknown_logged=%u cc=%d%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+    s += b;
+    snprintf(b, sizeof b, "  creature mode: %s (host's creation answers=%u)\n", one_creature() ? "host" : "own", g_one_mine);
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

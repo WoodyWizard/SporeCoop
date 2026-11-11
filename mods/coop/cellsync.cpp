@@ -511,9 +511,16 @@ static void ko_expire(double now)
     }
 }
 
+static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt);
+static bool g_ko_dying = false; // cell.respawn_small off: the timed-out knock-out ends in the game's own death
+static uint32_t g_ko_deaths = 0; // ... how often (coop.cell status: ko_deaths)
+
 static bool go_down(uint8_t* c)
 {
-    if (!c || c != avatar() || !C.sess || !C.sess->connected())
+    if (!c || c != avatar() || !C.sess || !C.sess->connected() || g_ko_dying)
+        return false;
+    // F3 (BUG-0768): cell.knockout off: a lethal hit kills as in a solo game, also next to a partner
+    if (!g_downed && !settings::on(settings::kCellKnockout))
         return false;
     if (!g_downed) {
         if (nearest_partner(1e9f, nullptr, nullptr, true).empty())
@@ -565,8 +572,22 @@ static void downed_tick(uint8_t* a, double now, double dt)
     }
     if (now - g_down_since < kDownTime)
         return;
-    // nobody came: respawn next to the partner, small again
     g_downed = false;
+    if (!settings::on(settings::kCellRespawn)) { // F3 (BUG-0768): nobody came: the game's own death and respawn
+        F<float>(a, kOpacity) = 1.f;
+        F<uint8_t>(a, kInvuln) = 0;
+        F<int>(a, kHp) = 0;
+        g_invuln_until = 0;
+        send_ko(KO_UP, 0, 0);
+        g_ko_deaths++;
+        if (C.notice)
+            C.notice(C.my_name() + " was not revived in time");
+        g_ko_dying = true;
+        h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, 0, 0.f);
+        g_ko_dying = false;
+        return;
+    }
+    // nobody came: respawn next to the partner, small again
     net::Vec3 at = g_down_pos;
     std::string partner = nearest_partner(1e9f, &at, nullptr, true);
     stop_at(a, partner.empty() ? at : net::Vec3{at.x + 2.f, at.y + 1.f, 0.f});
@@ -6153,16 +6174,16 @@ std::string status()
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u hits_spared=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u guest_attacks=%u guest_attacks_spared=%u guest_attack_kills=%u guest_attack_types=%u/%u/%u/%u/%u/%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_hits_spared, g_bitten_in,
+        snprintf(b, sizeof b, "cell(host): food=%d ko_deaths=%u own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u hits_spared=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u guest_attacks=%u guest_attacks_spared=%u guest_attack_kills=%u guest_attack_types=%u/%u/%u/%u/%u/%u\n", food, g_ko_deaths, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_hits_spared, g_bitten_in,
                  g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped, g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late, g_guest_attacks, g_guest_attacks_spared, g_guest_attack_kills, g_guest_attack_types[0], g_guest_attack_types[1], g_guest_attack_types[2], g_guest_attack_types[3], g_guest_attack_types[4], g_guest_attack_types[5]);
     else
         snprintf(b, sizeof b,
-                 "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
+                 "cell(guest): food=%d ko_deaths=%u mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
                  "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u soft_turns=%u chunks_sent=%u chunks_taken=%u breaks_sent=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
                  "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u "
                  "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u zaps=%u zap_hits=%u product_hits=%u product_pairs=%u products=%u foreign_hits=%u/%u/%u\n",
-                 food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
+                 food, g_ko_deaths, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size(), g_zaps, g_zap_hits,

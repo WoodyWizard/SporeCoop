@@ -108,6 +108,7 @@ std::vector<uint32_t> model_parts(const std::vector<uint8_t>& bem); // part ids 
 // My Creations of this kind, newest first
 std::vector<Option> options(Kind k);
 Option mine(Kind k);
+bool one_creature(); // F5: creature.mode host (every guest plays the host's cell and creature)
 void choose(Kind k, const Key& key); // {} = keep the world's own
 // UI: the next / previous own creation
 void cycle(Kind k, int dir);

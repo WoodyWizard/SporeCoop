@@ -338,7 +338,7 @@ static void tell_state(const std::string& who, uint32_t npc, uint8_t what, bool 
     spaceext::notice(s);
 }
 
-static bool sharing() { return spaceext::connected() && !spaceext::rivals(); }
+static bool sharing() { return spaceext::connected() && !spaceext::rivals() && spaceext::feature_allowed("diplomacy"); }
 
 // ---------------- hooks ----------------
 static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b, uint32_t ev, float scale)
