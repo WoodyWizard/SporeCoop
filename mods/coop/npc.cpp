@@ -3082,6 +3082,15 @@ bool test_hit_now() { return g_test_hit; }
 
 bool debug_hit(uint16_t id, float damage)
 {
+    if (is_host()) { // tests (BUG-0926): the host's own creature hits its NPC #id (the game's TakeDamage, the filter)
+        auto h = g_host_by_id.find(id);
+        if (h == g_host_by_id.end() || !g_seen_now.count(h->second) || !game::avatar())
+            return false;
+        g_test_hit = true;
+        game::hit(h->second, damage, 0, game::avatar());
+        g_test_hit = false;
+        return true;
+    }
     auto it = g_proxies.find(id);
     if (it == g_proxies.end() || !it->second.c || !game::avatar())
         return false;

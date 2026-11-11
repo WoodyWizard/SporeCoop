@@ -234,6 +234,10 @@ static bool note_dialog(DWORD stalled_ms)
     if (!dlg)
         return false;
     std::string title = window_text(dlg), text;
+    static int no_answer;
+    if (title == "(no answer)" && ++no_answer <= 3) // the box is still being made, or its thread is busy: once more in a second
+        return false;
+    no_answer = 0;
     EnumChildWindows(dlg, dialog_child, (LPARAM)&text);
     logf(&g_kit_mod, SK_ERROR, "watchdog: no frames for %.1f s, the main thread shows a dialog '%s':%s", stalled_ms / 1000.0,
          title.c_str(), text.empty() ? " (no text read)" : text.c_str());

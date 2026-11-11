@@ -2,11 +2,13 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "creations.h"
 #include "fixes.h"
@@ -524,19 +526,41 @@ struct Scrub {
     unsigned cleared;
 };
 
+// BUG-0926: a stimulus also names a second creature, at +0x10, with no reference: in the "attacked" stimulus 0x200
+// that TakeDamage posts to the victim's herd the sender (+0x2C) is the victim and +0x10 is the ATTACKER. The scrub of
+// BUG-0456 looked at the sender only, so the herd mates of an NPC the partner had hit kept naming the partner's
+// destroyed puppet as the attacker; the puppet's block lives on while references to it remain and is freed when the
+// last one goes, and the herd-help node (BT_HerdHelpEval 0xD8F1C0) then called +0xC0 vt 0x58 / +0x5A8 vt 0xC of the
+// freed creature: a pure virtual call (R6025, the game ends; lab 20261111-064457 and the 0.7.12 final check's
+// long_creature, 0.4-2 s after the partner's death; on Windows 0x40000015 at 0xD8F2AD, BUG-0456's own signature).
+// A stimulus whose +0x10 names the creature being destroyed is cleared as a whole, like one sent by it.
+// Old (`coop.fix npc.stale_attacker off`): the sender only.
+static bool g_stale_attacker_fix = true;
+COOP_FIX("npc.stale_attacker", "BUG-0926", g_stale_attacker_fix,
+         "creature: a destroyed creature is also taken out of the NPCs' stimuli that name it as the attacker (the herd-help AI called it after it was freed: runtime error R6025, the game ended)");
+static std::atomic<unsigned> g_attackers_cleared{0};
+constexpr size_t kStimOther = 0x10;
+
 static unsigned scrub_stimuli(uint8_t* stim, const uint8_t* dying)
 {
     unsigned n = 0;
     for (int i = 0; i < 8; i++) {
         uint8_t* s = stim + i * kStimSlot;
         uint8_t* snd = at<uint8_t*>(s, kStimSender);
-        if (!(at<uint32_t>(s, 0) | at<uint32_t>(s, 4)) || snd < dying || snd >= dying + kCreatureSpan)
+        uint8_t* other = at<uint8_t*>(s, kStimOther);
+        bool by_sender = snd >= dying && snd < dying + kCreatureSpan;
+        bool by_other = g_stale_attacker_fix && other >= dying && other < dying + kCreatureSpan;
+        if (by_other) // (no reference to drop; also in a slot that is not live: the next post need not write it)
+            *(void**)(s + kStimOther) = nullptr;
+        if (!(at<uint32_t>(s, 0) | at<uint32_t>(s, 4)) || (!by_sender && !by_other))
             continue;
+        if (!by_sender)
+            g_attackers_cleared++;
         *(uint32_t*)s = 0;
         *(uint32_t*)(s + 4) = 0;
         *(uint32_t*)(s + 8) = 0;
         *(void**)(s + kStimSender) = nullptr;
-        if (readable(snd, 4) && readable(*(void**)snd, 8)) // Release, as the game's clear does
+        if (snd && readable(snd, 4) && readable(*(void**)snd, 8)) // Release, as the game's clear does
             ((void(__thiscall*)(void*))(*(void***)snd)[1])(snd);
         n++;
     }
@@ -621,8 +645,148 @@ bool count_destroys(void* obj)
     return g_destroy_orig != nullptr;
 }
 unsigned destroys_counted() { return g_count_n; }
+// BUG-0926 (RE, tests): who still names a destroyed creature. The last creatures destroyed (address, when, whether a
+// puppet of ours) are kept; `coop.staleref [index]` scans the process's writable memory for pointers into such a
+// creature's block and says where each one sits: inside a listed object (noun, offset), inside a creature's AI block,
+// in a module's data (our own tables), elsewhere on the heap. A pointer into a freed creature that a live object
+// still holds is a use of freed memory waiting for its reader (BUG-0453, BUG-0456, BUG-0918 were found one by one).
+struct Destroyed {
+    uint8_t* at;
+    double when;
+    bool puppet;
+    uint32_t serial;
+};
+static Destroyed g_destroyed[8];
+static unsigned g_destroyed_n;
+static bool g_staleref_on;
+
+struct StaleHit {
+    uint32_t noun; // 0: not in a listed object
+    uint32_t off;
+    uint8_t kind;  // 0 object, 1 AI block, 2 module, 3 other
+    void* first;
+    unsigned n;
+    char mod[24];
+};
+
+static int c_staleref(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
+        g_staleref_on = argv[1][1] == 'n';
+        H->out_printf(out, "staleref %s\n", g_staleref_on ? "on" : "off");
+        return 0;
+    }
+    if (!g_destroyed_n) {
+        H->out_printf(out, "no creature destroyed since `coop.staleref on`\n");
+        return 0;
+    }
+    uint8_t* want = argc > 1 ? (uint8_t*)strtoul(argv[1], nullptr, 16) : nullptr; // a creature's address: that one
+    const Destroyed* d = nullptr;
+    for (unsigned k = 0; k < g_destroyed_n && k < 8 && !d; k++) { // the newest first
+        const Destroyed& c = g_destroyed[(g_destroyed_n - 1 - k) % 8];
+        if (!want || c.at == want)
+            d = &c;
+    }
+    if (!d) {
+        H->out_printf(out, "%p was not destroyed since `coop.staleref on` (or 8 creatures ago)\n", want);
+        return 0;
+    }
+    // the listed objects and the creatures' AI blocks, sorted by address
+    struct Blk {
+        uint8_t* at;
+        uint32_t size, noun;
+        uint8_t kind;
+    };
+    static std::vector<Blk> blks;
+    blks.clear();
+    game::for_each_object(
+        [](void* o, uint32_t noun, void*) {
+            bool creature = noun == kAnimalNoun || noun == kCitizenNoun;
+            blks.push_back({(uint8_t*)o, creature ? (uint32_t)kCreatureSpan : 0x400u, noun, 0});
+            if (creature && readable(o, kAiOff + 4))
+                if (uint8_t* ai = at<uint8_t*>(o, kAiOff); ai && readable(ai, 0x700))
+                    blks.push_back({ai, 0x700, noun, 1});
+            return true;
+        },
+        nullptr);
+    std::sort(blks.begin(), blks.end(), [](const Blk& a, const Blk& b) { return a.at < b.at; });
+    std::vector<StaleHit> hits;
+    unsigned total = 0, in_self = 0;
+    uintptr_t lo = (uintptr_t)d->at, hi = lo + kCreatureSpan;
+    volatile uint32_t marker = 0;
+    MEMORY_BASIC_INFORMATION mi;
+    for (uint8_t* a = (uint8_t*)0x10000; a < (uint8_t*)0x7FFF0000 && VirtualQuery(a, &mi, sizeof mi) == sizeof mi;
+         a = (uint8_t*)mi.BaseAddress + mi.RegionSize) {
+        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+            !(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
+            continue;
+        uint32_t* p = (uint32_t*)mi.BaseAddress;
+        uint32_t* e = (uint32_t*)((uint8_t*)mi.BaseAddress + mi.RegionSize);
+        if ((uint8_t*)&marker >= (uint8_t*)p && (uint8_t*)&marker < (uint8_t*)e) // our own stack
+            continue;
+        for (; p < e; p++) {
+            uint32_t v = *p;
+            if (v < lo || v >= hi)
+                continue;
+            total++;
+            if ((uintptr_t)p >= lo && (uintptr_t)p < hi) { // the block's own pointers into itself
+                in_self++;
+                continue;
+            }
+            StaleHit h{0, 0, 3, p, 1, ""};
+            auto it = std::upper_bound(blks.begin(), blks.end(), (uint8_t*)p, [](uint8_t* x, const Blk& b) { return x < b.at; });
+            if (it != blks.begin() && (uint8_t*)p < (it - 1)->at + (it - 1)->size) {
+                h.noun = (it - 1)->noun;
+                h.kind = (it - 1)->kind;
+                h.off = (uint32_t)((uint8_t*)p - (it - 1)->at);
+            } else if (mi.Type == MEM_IMAGE) {
+                h.kind = 2;
+                h.off = (uint32_t)((uint8_t*)p - (uint8_t*)mi.AllocationBase);
+                char path[MAX_PATH] = "";
+                GetModuleFileNameA((HMODULE)mi.AllocationBase, path, sizeof path);
+                const char* b = strrchr(path, '\\');
+                snprintf(h.mod, sizeof h.mod, "%s", b ? b + 1 : path);
+            } else
+                h.off = v - (uint32_t)lo; // elsewhere: grouped by what part of the creature is named
+            bool merged = false;
+            for (auto& o : hits)
+                if (o.kind == h.kind && o.noun == h.noun && o.off == h.off && !strcmp(o.mod, h.mod)) {
+                    o.n++;
+                    merged = true;
+                    break;
+                }
+            if (!merged && hits.size() < 400)
+                hits.push_back(h);
+        }
+    }
+    H->out_printf(out, "staleref %p puppet=%d serial=%u destroyed %.2f s ago: %u pointers into it (%u its own), listed now %d\n", d->at,
+                  (int)d->puppet, d->serial, H->time_seconds() - d->when, total, in_self, (int)game::creature_listed(d->at));
+    if (readable(d->at, 0x5B0)) // what the block is now: the creature's vtables (alive or a zombie), a base class's (destructed), other
+        H->out_printf(out, "  block now: vt %08X +4 %08X +8 %08X destroyed byte %u, +0xC0 vt %08X +0xC4 %08X, +0x5A8 vt %08X +0x5AC %08X\n",
+                      at<uint32_t>(d->at, 0), at<uint32_t>(d->at, 4), at<uint32_t>(d->at, 8), (unsigned)at<uint8_t>(d->at, 0x21),
+                      at<uint32_t>(d->at, 0xC0), at<uint32_t>(d->at, 0xC4), at<uint32_t>(d->at, 0x5A8), at<uint32_t>(d->at, 0x5AC));
+    std::sort(hits.begin(), hits.end(), [](const StaleHit& a, const StaleHit& b) { return a.kind != b.kind ? a.kind < b.kind : a.off < b.off; });
+    static const char* kinds[] = {"object", "ai", "module", "other"};
+    unsigned shown = 0;
+    for (auto& h : hits) {
+        if (h.kind == 3 && shown >= 80)
+            break;
+        if (h.kind == 3)
+            H->out_printf(out, "  other names +0x%X x%u first at %p\n", h.off, h.n, h.first);
+        else if (h.kind == 2)
+            H->out_printf(out, "  module %s+0x%X x%u\n", h.mod, h.off, h.n);
+        else
+            H->out_printf(out, "  %s noun=%08X +0x%X x%u first at %p -> +0x%X\n", kinds[h.kind], h.noun, h.off, h.n, h.first,
+                          (unsigned)(*(uint32_t*)h.first - lo));
+        shown++;
+    }
+    return 0;
+}
+
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
+    if (g_staleref_on && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
+        g_destroyed[g_destroyed_n++ % 8] = {(uint8_t*)obj, H->time_seconds(), game::is_puppet(obj), game::object_serial(obj)};
     if (obj && obj == g_count_obj)
         g_count_n++;
     if (g_destroy_listener && obj)
@@ -1539,6 +1703,8 @@ void init(const SkHost* host, SkMod* mod)
     H->log(M, SK_INFO, "game fixes: galaxy menu rollover guard %s", menu ? "on" : "off");
     H->command_add(M, "coop.menuhover", "coop.menuhover [arm <i> | off] - the galaxy menu's planets and its rollover; tests: the next rebuild puts the mouse on planet i first (BUG-0676)",
                    c_menuhover, nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.staleref", "coop.staleref on | off | [creature] - RE / tests (BUG-0926): pointers into the creature destroyed last (or the one at that address), by where they sit",
+                   c_staleref, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxlist", "coop.fxlist [creature] - a creature's attached effects (BUG-0575)", c_fxlist, nullptr,
                    SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxcut", "coop.fxcut - tests (BUG-0575): the next model with a running attached effect has it stopped and given a freed part",
@@ -1568,7 +1734,8 @@ std::string status()
            " (test cuts " + std::to_string(g_attack_cuts) + (g_attack_cut_test ? ", armed" : "") + ")" +
            ", null raster fills skipped " + std::to_string(g_null_fills.load()) +
            ", avatar targets cleared " + std::to_string(g_avatar_targets_cleared.load()) +
-           ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
+           ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (as the attacker " +
+           std::to_string(g_attackers_cleared.load()) + ", destroys " +
            std::to_string(g_destroys_scanned.load()) + "), missing save areas made " +
            std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")" +
            ", attack spots missing " + std::to_string(g_spots_missing.load()) + " (test cuts " +

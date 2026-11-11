@@ -5361,7 +5361,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 3 && !strcmp(argv[1], "hit")) {
         bool ok = npc::debug_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
-        SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy");
+        SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy (a guest) or NPC (the host)");
         return ok ? 0 : 1;
     }
     if (argc > 1)

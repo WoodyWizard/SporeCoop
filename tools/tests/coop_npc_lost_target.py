@@ -144,7 +144,7 @@ def main():
         time.sleep(HIDE_S + 1.0)  # the puppet is back
     st = host.call('coop.status')['out']
     print('  host', host.call('exc')['out'].splitlines()[0], '|',
-          re.search(r'attacks ended without a target.*?\(destroys \d+\)', st).group(0), flush=True)
+          re.search(r'attacks ended without a target.*?destroys \d+\)', st).group(0), flush=True)
     ck(removals >= MIN_REMOVALS, f'the puppet was removed while an NPC attacked it {removals} times (>= {MIN_REMOVALS})')
     ck(stale_total == 0, f'no NPC stimulus named the removed puppet ({stale_total} did)')
     ck(armed_cuts >= ARMED_CUTS, f'NPCs lost their target in their attack animation {armed_cuts} times (>= {ARMED_CUTS}) '
