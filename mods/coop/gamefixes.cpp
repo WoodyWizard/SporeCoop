@@ -584,6 +584,32 @@ static void forget_sender(void* dying)
     }
 }
 
+// BUG-0918 (found with BUG-0917): the avatar's combat target (+0xE7C, the target's combatant) outlives the target. The game clears the
+// target of every NPC aimed at a creature it destroys, not the avatar's (vanilla never destroys a creature the player
+// fights: corpses stay 60 s); co-op destroys a partner's puppet (the partner dies, hides, leaves) and a guest's
+// proxies. Lab 20261111-030815: the host's avatar, its target the partner's puppet (a click on it), named the
+// removed puppet for the whole 1.5 s watched, and the puppet's memory was given to a later puppet. The game's own
+// ability use (Ability_Use 0xD1E930, a combat key) casts that pointer (vt 0x5C) and measures the gap to it
+// (Ability_TargetGap): a use of freed memory. Before a creature is destroyed, an avatar aimed at it loses its target
+// through the creature's own SetTarget (vt 0x84, null: the reference is released while the target still lives).
+static bool g_avatar_target_fix = true;
+COOP_FIX("game.avatar_stale_target", "BUG-0918", g_avatar_target_fix,
+         "creature: the avatar's combat target is cleared when the creature it names is destroyed (a combat key then used freed memory)");
+static std::atomic<unsigned> g_avatar_targets_cleared{0};
+static void forget_avatar_target(void* dying)
+{
+    void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+    if (!av || av == dying || !readable(av, 0xE80))
+        return;
+    const uint8_t* t = at<const uint8_t*>(av, 0xE7C);
+    if (!t || t < (const uint8_t*)dying || t >= (const uint8_t*)dying + kCreatureSpan)
+        return;
+    skg::vcall<void>(av, 0x84 / 4, (void*)nullptr, 1, 0);
+    unsigned n = ++g_avatar_targets_cleared;
+    if (n <= 16 || n % 100 == 0)
+        H->log(M, SK_INFO, "game fixes: the avatar's target was %p, destroyed now: cleared (BUG-0918, %u in all)", dying, n);
+}
+
 static DestroyListener g_destroy_listener; // BUG-0623 (civ.cpp, BUG-0539)
 void set_destroy_listener(DestroyListener fn) { g_destroy_listener = fn; }
 static void* g_count_obj; // tests (BUG-0850)
@@ -606,6 +632,8 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
         if (noun == kAnimalNoun || noun == kCitizenNoun)
             forget_sender(obj);
     }
+    if (g_avatar_target_fix && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
+        forget_avatar_target(obj);
     g_destroy_orig(nm, obj);
 }
 
@@ -1539,6 +1567,7 @@ std::string status()
            std::to_string(g_phys_scans.load()) + "), attacks ended without a target " + std::to_string(g_attack_ended.load()) +
            " (test cuts " + std::to_string(g_attack_cuts) + (g_attack_cut_test ? ", armed" : "") + ")" +
            ", null raster fills skipped " + std::to_string(g_null_fills.load()) +
+           ", avatar targets cleared " + std::to_string(g_avatar_targets_cleared.load()) +
            ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
            std::to_string(g_destroys_scanned.load()) + "), missing save areas made " +
            std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")" +
