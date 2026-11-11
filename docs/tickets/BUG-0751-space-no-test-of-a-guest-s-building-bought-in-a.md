@@ -60,3 +60,4 @@ not get it (BUG-0766).
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-space): test written (plot freed by the game's DestroyBuilding); it showed the host never got the building; fixed behind civ.space_planner_send; limit BUG-0766.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: only guest -> host is covered; the host's Space planner buildings and the ones it builds for a guest are not relayed (civ.cpp:1447 returns outside Civ); new ticket BUG-0884.

@@ -2413,3 +2413,116 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0766.
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
+## Found in the audit of fork PR #196: not fixed yet (2026-11-10, plan/w47-pr196)
+<a id="issue-pr196-audit"></a>
+
+Each line is one open ticket with its reproduction in "How to test" (plan 0.7.13):
+* Creature guest crash risks from cached pointers: a proxy driven between the 1 s noun-list checks (BUG-0842), a
+  freed cached nest herd (BUG-0843); 0.7.11 regression: destroy_proxy destroys an already destroyed proxy (BUG-0850,
+  hotfix candidate).
+* Tribe guest: RemoveMember through a stale mirror citizen (BUG-0844); a baby mirror spawned mid-growth (BUG-0857,
+  suspected).
+* Tribe -> Civ: a share save between the City Hall and vehicle editors (BUG-0849, suspected); a null animal pen at
+  graduation (BUG-0856, suspected for our saves). Civ -> Space: the spacecraft editor under the launch pause
+  (BUG-0855, suspected).
+* Saves and shares: the watcher takes the specialty question (window 0x06318E78) for the saved box (BUG-0846);
+  unreadable save files are left out of a share (BUG-0847); Windows staged slot move fails on a brief lock (BUG-0848).
+* Adventures: two captains, the host crashes at the act change (BUG-0845, suspected); saves and the quit message in a
+  standalone adventure (BUG-0854).
+* Other: uninstaller weaknesses (BUG-0851), run-compressed paint headers skipped (BUG-0852), win_tests close race
+  (BUG-0853), co-op buttons under a native modal with input_lock 0 (BUG-0858, suspected).
+
+## Civ: vehicles get faster and faster during long sieges (2026-11-10, plan/w47-reports)
+<a id="issue-civ-boost-stacking"></a>
+* The city-alarm boost can take an already boosted speed as the vehicle's own (x1.5 per alarm cycle), and a boost
+  forgotten while its vehicle lives is never taken back (docs/re/civ.md#civ-boost-stacking).
+* Reproduce: a continuous NPC siege of a player city for several minutes; the defenders' `+0x218` grows.
+* Tickets: BUG-0771, BUG-0773.
+
+## Captures and conquests shown on one game only (2026-11-10, plan/w47-reports)
+<a id="issue-capture-one-game"></a>
+* Civ: a captured city goes to the player with the nearest vehicle, not the one who took it (BUG-0775, suspected).
+* Tribe: a conquered village has no conquest row for the guests (BUG-0777, suspected).
+* Reproduce: not yet; the player report had no files and no stage.
+
+## Space: a guest's badges are the host's after a rejoin (2026-11-10, plan/w47-reports)
+<a id="issue-space-badges-rejoin"></a>
+* The badges and rank live in the host's save the guest loads again; nothing keeps the guest's own (as the cargo
+  hold before BUG-0678).
+* Reproduce: earn a badge as a guest, leave, join again.
+* Ticket: BUG-0786.
+## Core: session report and settings state survive a voluntary leave (0.7.12 only) (2026-11-10, plan/w47-core)
+<a id="issue-core-sreport-leave"></a>
+
+* What happens: after Leave / host / join (not a disconnect) a guest keeps its report upload and the previous host's
+  settings table into the next session; a host keeps a running report round. Inferred from the code.
+* Reproduce: the guest leaves while `coop.sreport status` says `guest=sending`, joins again (BUG-0770 How to test).
+* Tickets: BUG-0770 (and BUG-0783: an Ask while busy waits 120 s; BUG-0780: the zip written in one main-thread call, suspected).
+## Core: a leaver's I'm ready flag passes to the next player of its id (2026-11-10, plan/w47-core)
+<a id="issue-core-ready-reuse"></a>
+
+* What happens: a player that never sent a state keeps `g_ready` after leaving; the newcomer with its id counts as
+  ready in the vote. Inferred from the code.
+* Reproduce: BUG-0772 How to test.
+* Ticket: BUG-0772.
+## Net: hardening of untrusted input (names, discovery, half-open peers, device names) (2026-11-10, plan/w47-core)
+<a id="issue-net-hardening"></a>
+
+* What happens: received player names are not cleaned (BUG-0774); discovery answers any internet source (BUG-0776);
+  16 half-open peers block joins (BUG-0778); `safe_rel` accepts DOS device names (BUG-0785). Inferred from the code.
+* Reproduce: the How to test sections of the tickets.
+* Tickets: BUG-0774, BUG-0776, BUG-0778, BUG-0785.
+
+## Cell and Creature: findings of the code audit for 0.7.13 (2026-11-10, plan/w47-cellcreature)
+<a id="issue-audit-cell-creature-2026-11-10"></a>
+
+Read-only audit of main e49e1e23 (0.7.11.1); not checked in the running game. Each line is one open ticket (root cause,
+fix idea, test in the ticket); "suspected" ones need a reproduction first.
+
+* BUG-0795 (crash): a partner's effect message is played on a puppet freed between two frames (effects.cpp, BUG-0091 sibling).
+* BUG-0796 (crash): a partner's animation is played on a Cell or Tribe puppet around a stage switch (on_remote_anim).
+* BUG-0797 (bug): a Cell guest in another world (or still in Cell while the host is in Creature) gets an emptying pool.
+* BUG-0798 (bug): a downed cell is held at its pre-rescale spot across a level change: no revive.
+* BUG-0799 (bug): a knocked-out cell's poison still hurts and kills NPCs.
+* BUG-0800 (bug): the guest's Summon Flock event is never forgotten: the host's own flock follows the guest.
+* BUG-0801 (bug): votes wait 60 s when a guest plays another world (3-4 players).
+* BUG-0803 (bug): NPC nests never evolve in a connected guest's own world.
+* BUG-0805 (crash): proxy pointers used by MSG_DAMAGE / social handlers without a liveness check.
+* BUG-0808 (bug): the social meter stays on screen after a leave mid social game.
+* BUG-0811 (bug): the own editor's flags stay set after a refused Submit.
+* BUG-0814 (crash, suspected): a carried rock stays held by a destroyed puppet.
+* BUG-0817 (bug): the guest's mirror of the host's drama UFO goes into the guest's saves.
+* BUG-0819 (bug, suspected): the BUG-0200 species alias also runs in the guest's own world.
+* BUG-0821 (bug): the host's Cell kill ledger records a kill before refusing it.
+* BUG-0823 (bug, suspected): cellsync::puppet_cell() without the pool index check.
+* BUG-0825 (bug, suspected): a deferred destroy can hit a real creature at a reused address.
+* BUG-0827 (desync, suspected): a whole swallow of a host cell feeds the guest while the cell lives on.
+* BUG-0829 (desync, suspected): away DNA may move the guest's evolution bar twice.
+* BUG-0831 (bug): a departed guest's social game goes on on the host.
+* BUG-0833 (bug, suspected): nest egg mirrors leak their references at each guest world change.
+* BUG-0835 (desync, suspected): touching a mirrored poison cloud counts as eating it.
+* BUG-0837 (tooling): 0xC1B030 has two names in the .sym (docs/re/creature.md#creature-c1b030-two-names).
+* BUG-0839 (bug): game::world_epoch() counts only Creature worlds (Tribe users of the epoch).
+
+## Cell: a rename of an imported cell sends only metadata, the host crashes at 0xE83EC8 (2026-11-10, plan/w47-lineages)
+<a id="issue-cell-metadata-only-rename"></a>
+
+* What happens (fork finding, code audit on ours): a guest renames an imported cell in the Cell editor; the bundle
+  has no bem record and the host faults building it (creations.cpp share_own / apply).
+* Reproduce: see the ticket (2 instances, Cell, free rename of an imported cell).
+* Ticket: BUG-0802.
+
+## The mouse after the game saved box (2026-11-10, plan/w47-lineages)
+<a id="issue-saved-box-cursor"></a>
+
+* What happens: after every save the mod clicks the box's OK and the game reads the mouse at that point for ~5 s
+  (sporekit virtual cursor); an OK button outside the window is clicked forever and never confirmed.
+* Reproduce: `coop.save`, then watch the cursor / the box (tickets).
+* Tickets: BUG-0804, BUG-0806.
+
+## Smaller findings from the Lineages fork review (2026-11-10, plan/w47-lineages)
+<a id="issue-fork-review-small"></a>
+
+* Live Cell state goes to a guest still loading the world (suspected bandwidth cost): BUG-0809.
+* `coop.ui show|btn|font|tree` cast a typed number to a window pointer (console crash): BUG-0812.
+* A nest mate roaming beyond the native reply radius never answers the mating call (suspected): BUG-0815.

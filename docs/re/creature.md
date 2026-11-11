@@ -2408,6 +2408,11 @@ BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
   lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
   prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
   mod confirm it again, `coop.save box` says whether it is up.
+  CORRECTION (2026-11-10, plan/w47-pr196): 0x06318E78 is a shared native message-box layout, not only the saved box:
+  the pause menu's save questions (above, 0.7.x notes) and the Civ captured-city specialty question use it too (the
+  latter with buttons 0x05107B19 Religious and 0x05107B1A Military and no OK 0xFFFFFFF1; from the fork
+  PandizeLive/SporeCoop-Lineages PR #196 BUG-9057, not verified by us). world.cpp box_task must not take any
+  0x06318E78 for the saved box: BUG-0846. See docs/re/civ.md#civ-shared-message-box.
 
 ## The home nest heals a guest (2026-11-03, fix/w41-creature-left)
 <a id="creature-nest-heal"></a>
@@ -3873,3 +3878,67 @@ F2 "Find each other" (partners on the game's minimap). GOG 2024 (dc04aee5), Ghid
 * ✔ (runtime, looks of `find_icons`, the Tribe minimap) icons by flags: 0x2 a small hut (the tribe icon), 0x10 a small
   arrow-like mark, 0x40 / 0x1 / 0x10000 round dots, 0 a low mound, **0x4 a small pointed (triangle-like) mark**, 0x20 /
   0x80 a nest / hut, 0x1000 a star-like mark; every one takes the tint. SporeCoop's partner blips use 0x4.
+
+## 0xC1B030: one function under two names (2026-11-10, plan/w47-cellcreature)
+<a id="creature-c1b030-two-names"></a>
+
+* CORRECTION (2026-11-10, plan/w47-cellcreature, BUG-0837, code audit, no runtime): `CreatureSetSneaking` 0xC1B030
+  (#creature-sneak, BUG-0463) and `SporeCoop::Creature_CombatVoice` 0xC1B030 (docs/re/tribe.md, BUG-0600) are the same
+  function: both entries describe +0xBB1, +0xB80 and the sounds 0xC881120E / 0x529FEC69. The "combat voice" of the fight
+  node is the sneak setter called without force (a no-op for a creature without a sneak ability, type 0xD / 0x52).
+  mirror_fx.cpp replays it on a guest's proxies with force = 1, which forces the sneak (+0xBB1 = 1, noise 0, the alpha
+  eased to 0.2 by 0xC1CF30); the host relays only a change of +0xBB1, so the replay matches the host's game.
+## Fork findings: mating reply, paired approach, follow camera lens (2026-11-10, plan/w47-lineages)
+<a id="creature-fork-mating-fov"></a>
+
+From a fork, not verified by us: PandizeLive/SporeCoop-Lineages lineages38..41-dev (Steam / GOG 2024 code).
+Tickets: BUG-0815, BUG-0866.
+* 0xD7DAB0 (their SporeCoop::CreatureMateResponse): cdecl float(nestmate), 1 when player and mate are in range for the
+  native mating reply; the radius around the nest measured 9.67 m. A mate roaming at 11.3 m scored 0 for good.
+* 0xC42F80 (their CreatureMatePositionReached): thiscall bool(creature spatial component = creature+0xC0), native
+  locomotion goal reached. In phase 2 of BT node 0x02D852F0 (tick 0xD6D560, our SporeCoop::BT_MateTick, six stack
+  arguments) the native code can wait for ever when the mate resumes roaming.
+* The mate's node while it should answer: 0x71BE644C seen instead of the reply 0x91BFFC22.
+* Mating hearts effect id 0x9005E011 (a creature effect; missing on an eligible mate in a report).
+* 0xD30830 (our SporeCoop::CreatureCursorKind, their CreatureClickAction): action 9 dispatches the mating stimulus at
+  0xD331A3. It returns 0 while the simulator input-block counter is 1; native HUD hover sets it to 1 and a mouse move
+  into the world sets 0 (a virtual cursor left over the HUD keeps it at 1).
+* Follow camera id 0xB03AF999 (Creature and stock Adventure play; the Adventure briefing uses another camera).
+  App::cCameraManager::GetActiveCameraID 0x7C61F0, Update 0x7C6440 (viewer at manager+0xB0), cGameModeManager::
+  GetCameraManager 0x967D90 ([ecx+0x2C]), cViewer::SetPerspectiveProjection 0x7C5480 (thiscall(float fov)),
+  SetViewWindow 0x7C4BD0 (thiscall(float, float) ret 8, camera at viewer+0x170), BeginUpdate 0x7C5080, EndUpdate
+  0x7C3CE0. Perspective camera: +0x6C == 1, view window +0x5C / +0x60, viewport +0x78 / +0x7C / +0x80 / +0x84 (u16).
+
+## Locomotion, combatant and clip facts from the GA fork (2026-11-10, plan/w47-gaforks)
+<a id="creature-ga-fork-locomotion"></a>
+
+Source: jwhans0n/SporeCoopGA, branch `sync/upstream-0.7.8-main`, docs/re/creature.md "Adventure follower locomotion"
+and docs/re/adventure-world.md (dc04aee5, static disassembly and their Windows runs). **From a fork, not verified by us**:
+marked `?` until one of ours checks them.
+
+* ? Creature spatial vtable 0x1469EC0: +0xC4 SetDesiredSpeed 0xC11570 thiscall(spatial, float, int) ret 8 (writes the
+  desired speed at spatial +0x1E0); +0xC8 0xC41EA0 reads +0x1E0; **+0xCC GetStandardSpeed 0xC42080** reads +0x1E4;
+  +0xE0 MoveTo 0xC435F0 thiscall(spatial, Vector3*, float goalStop, float acceptableStop, bool) ret 0x10; +0xEC Stop
+  0xC43800 (stop request, desired speed 0).
+* ? **MoveTo resets the speed**: at 0xC437C8 MoveTo reads vt +0xCC and at 0xC437E3 calls vt +0xC4 with it, so a
+  SetDesiredSpeed given before a MoveTo is lost (matches what BUG-0365 saw in Tribe; drive::step still has that order,
+  BUG-0788). Give the speed after the MoveTo.
+* ? The current movement request is inline at spatial +0x1F4 (0xC42020 returns its address): +0x14 destination Vec3,
+  +0x20 goal-stop, +0x5C mode (MoveTo with bool false = 1, Stop = 0), +0x60 acceptable-stop. Creature-relative:
+  destination +0x2C8, goal-stop +0x2D4, mode +0x310, acceptable-stop +0x314, velocity +0x288 (spatial +0x1C8, getter
+  0xD20610, writer 0xC41EC0).
+* ? Current animation clip without a native call: AnimatedCreature vtable 0x1448AF0 +0x58 = 0xA05090 thiscall(animated,
+  u32* id, float* time, int* extra, int* index) ret 0x10. By hand: creature +0xB54 -> AnimatedCreature, its +0x184 the
+  query pointer; layer = query +0xFA4 (< 16), slot index = query +0xF0C + 4*layer (< 16), slot = query + 8 + 0xF0*index;
+  clip id slot +0xD8, time (double) +0xA8, extra +0xB0, generation +0xB4. Idle-walk clip 0x04866DAB
+  (idle_walk_lookat_loop), its start 0x04866D8E.
+* ? A combatant's virtual **+0x0C is ToGameData** (its owner object) for every combatant class; subtracting the creature's
+  0x5A8 from a vehicle / building / UFO combatant gives a wrong pointer (BUG-0790). Generic damage is combatant vt +0x18;
+  the common base damage entry 0xBFCF10 (ret 0x14) covers vehicles, buildings, ornaments; type 10 heals (adds HP at
+  0xBFD135), normal damage subtracts at 0xBFD176 and calls death handling 0xF249B0.
+* ? Combatant +0x2C is raw tuning, not the maximum HP (creatures often store 1.0 there while the maximum is 100): use
+  GetMaxHitPoints (combatant vt +0x58). Health is combatant +0x38. Invincible +0x80, dead state +0x34 == 2.
+* ? IsHostileToCreature 0xC0B9C0 thiscall(creature, otherCreature) ret 4: asks the relationship manager, hostile statuses
+  2 and 5 (adventure overrides included).
+* ? Native Windows cost: skg::readable (VirtualQuery = NtQueryVirtualMemory) took 97-99 % of the main thread in a
+  438-actor adventure on Windows (3.9-5.9 FPS); a scoped region cache brought it to 21.5 FPS (BUG-0791).

@@ -14,7 +14,7 @@ commits:
 tests: content_audit_tribe, content_audit_civ, content_audit_space (coop_content_audit.py)
 signature:
 docs: docs/re/creations.md#creations-k2b-design-content
-related: BUG-0424, BUG-0469
+related: BUG-0424, BUG-0469, BUG-0852
 ---
 
 ## Report
@@ -32,3 +32,4 @@ no-fail-run: not reproduced (0 of 32157 lab logs; content_audit runs below show 
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): not reproduced; evidence above.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: one level below this ticket the class is real: BUG-0852 (open) shows that a model whose records ARE read can still go unchecked when its skin-effect bytes are run-compressed (creations.cpp model_effects returns false, the callers skip the paints). The content audit (content_audit_<stage>) counts no such model because it does not see them either. Untried test: a creature model with an FE n run across its coat / detail layers (the fork's 1934-byte example) through the content check. Verdict of this ticket (records readable) unchanged.

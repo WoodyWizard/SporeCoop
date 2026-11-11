@@ -2095,3 +2095,30 @@ BUG-0746 (from the static [eat gate](#cell-eat-gate)). GOG 2024, lane 7, `coop_c
 * Fix `cell.ko_no_swallow`: the executor is hooked; kinds 9 and 10 with our knocked-out avatar as the eater run as
   kind 1 (the executor's plain contact push, what it does when a swallow refuses). Counted as `ko_swallows_blocked=`
   in `coop.pool`. A partner's cell and the NPCs swallow as before.
+
+## Fork findings: personal Cell editors, spawn models, Cell editor return (2026-11-10, plan/w47-lineages)
+<a id="cell-fork-lineages-43"></a>
+
+From a fork, not verified by us: PandizeLive/SporeCoop-Lineages lineages30..43-dev (Steam / GOG 2024 code).
+Tickets: BUG-0802, BUG-0809, BUG-0868, BUG-0872.
+* The Cell growth table's personal editor ids (EditorRequest +0xC) seen live: 0x1D2EC0A0 and 0x1D2EC0A4..0x1D2EC0A7
+  (the mating call); the Creature landfall editor is 0xFD4902BD.
+* The model of a native spawn is chosen once inside CreateCellObject by GetModelKeyForCellResource 0xE65640; no call
+  outside a population marker while a game runs. The graphics come from the cell's +0xFC, so the key given at creation
+  stays the cell's look and diet. The cell resource reference +0x108 (`*(u32*)ref` = .cell instance) is shared by
+  every cell of a species.
+* A native predator species (.cell 0BC1FF72, AI 0x1006) has a herbivore model (B0B9BAFF: +0x1250 = 0, +0x1251 = 1);
+  AI 0x1006 picks prey by the model's diet (IsPrey -> CanEat): the mouth decides hunting or grazing.
+* A cell creation in EditorSaves.package is its bem record (0x1A99B06B) plus metadata (0x030BDEE3); no record of type
+  cll (0x3D97A8E4) although the key says cll. After a free rename of an imported cell only the metadata is written
+  (BUG-0802).
+* cCellGFX::PreloadCreature 0xE64980: cdecl void(u32 instance), plain ret; builds {instance, cll, group 0x40616200} and
+  loads it through cCellGFX+0x58 vt 0x30.
+* Collision: `+0x58` is a scale; the sphere is model radius (+0x1244) times it.
+* Level 1 creature species of a new carnivore game had no loot table (res+0xD4 = 0); the loot table's entry layout is
+  not known (entries did not resolve to cell types).
+* Cell UI camera: cCellUI +0x48 / +0x54 / +0x60 drawn / target / lag positions (agrees with our BUG-0343 fix).
+* CORRECTION note (fork, 2026-11-07): the first saved editor visit of a starter model changed spent DNA from 0 to -88
+  in a solo-like fixture while food and earned DNA stayed; a starter-model valuation / refund is a candidate for
+  BUG-0351, not proven vanilla sell-back. Not checked by us.
+

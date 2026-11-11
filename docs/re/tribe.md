@@ -1827,6 +1827,7 @@ the first four return addresses into the game's code: the creator of every effec
     `SporeCoop::Creature_SetSprint` 0xC1AE70, called by ~30 behaviour nodes (run to the target).
   * 0xC881120E (into a fight) / 0x529FEC69 (out of it) = `SporeCoop::Creature_CombatVoice` 0xC1B030 (+0xBB1 the
     in-combat byte), called by the fight node 0xD69540 and the TakeDamage of animals and citizens.
+    CORRECTION (2026-11-10, plan/w47-cellcreature, BUG-0837): 0xC1B030 is CreatureSetSneaking (docs/re/creature.md#creature-c1b030-two-names); +0xBB1 is the sneak byte, force = 1 forces the sneak.
   * 0xCE5F2ED0 = effect 0xA231DA2F of 0xCCBE90 (~ the tribe UI's order marker at the target: the effect id is picked by
     the order kind and the camera distance band): the ordering player's own feedback, not a member's.
   * other pool effects of the members (no sound in these runs): 0x8ADA6617 (pool 1 on the NPC chief, from 0xC2103D),
@@ -2919,3 +2920,30 @@ BUG-0761. GOG 2024, lane 7, `coop_tribe_conquer_orders.py`.
 * (Ghidra, not finished) The conquest's completion is cTribeToTribeMission vt 0x78 0xC2F7F0 (state 5, the goal,
   the cinematic); a probe on it counted ~12 calls a second (it returns at once when the state is already 5), its
   caller was not found.
+
+## Fork notes: graduation pen, growth, totem, level (2026-11-10, plan/w47-pr196)
+<a id="tribe-fork-graduation-notes"></a>
+
+From the fork PandizeLive/SporeCoop-Lineages PR #196 (addresses in its "canonical" notation, which it maps to the
+GOG 2024 / Steam code; check against overrides_dc04aee5.sym before use), not verified by us:
+
+* ~ Graduation (after the City Hall editor) hides village assets at 0xCDD461: it calls 0xC90060, which returns tribe
+  +0x19C4 (mpDomesticatedAnimalsPen, ModAPI cTribe.h), then that object's vt 0x54 with argument 0 and no null check.
+  A tribe with a null pen faults at 0xCDD466 (stack through SimCamera_Update+806). All 7 tribes of the fork's restored
+  fixture had null pen and egg pen (+0x19C8). Ticket BUG-0856. Their guard matches the 11 bytes
+  8B 10 8B C8 8B 42 54 6A 00 FF D0 at that site.
+* ~ cCreatureCitizen GrowUp = vt +0x78 (0xC248C0, plain ret): base growth, adds the citizen's spatial to the
+  selectable members, updates model, scale and adult AI flags, clears the baby hit sphere; pointer and species stay
+  (BUG-0857).
+* ~ Totem segment add 0xC8DDA0 thiscall(totem, int type, ColorRGB*) ret 8: appends to the type vector +0x11C and the
+  colour vector +0x130, updates the attachments when the model is loaded; conquest 0xCDADC0+0xAF calls it with type 0;
+  the factory 0xC992D0 makes a placed totem for a new tribe.
+* ~ The tribe's level: the max-population method 0xC8EC70 calls 0xA1AC90, which reads community +0x38 (as our code
+  uses, tribe.cpp `F<int>(pt, 0x38)`). The fork says ModAPI's +0x32C "upgrade" is not established as the live level:
+  our +0x32C mUpgradeLevel above is the serializer's field name only, do not read it as the level.
+* ~ The social mini-game UI's primary vtable is 0x14818B8 on the current build (the fork); the 0x14823F8 in the social
+  section above was written before the GOG 2024 switch (build not named there). Our code reads only +0x68.
+* ~ Native Tribal performance rounds (length, count, requests) come from AudioSystem events: a game started with
+  -nosound never gets rounds (session state 4). Mute through the profile's volume instead (our lab does).
+* ~ The cTribe constructor is 0xC98430 (not a stage cleanup); the native layout 0xC98940 reads the species at
+  +0x18CC and faults at 0xCE6AE7 when it was cleared at unload (same site as BUG-0672, other trigger in the fork).

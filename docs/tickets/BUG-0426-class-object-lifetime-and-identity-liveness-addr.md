@@ -37,3 +37,4 @@ Source: docs/generalisation-plan.md G9.
 ## History
 - 2026-11-01: opened.
 - 2026-11-03: fix/w40-crashes: one class piece in the game itself: every NPC stimulus naming a creature is cleared before the creature is destroyed (npc.stale_sender, BUG-0456), and the attack node ends when the destroy clears its target (BUG-0453).
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review of BUG-0020: also a guest's NPC proxies in the game's nest herds go into the guest's own save (savestrip.cpp:59-63, creature_filter needs own_kind_herd at 111-112); no harm seen (a loaded proxy acts as a normal NPC), noted here and not ticketed.

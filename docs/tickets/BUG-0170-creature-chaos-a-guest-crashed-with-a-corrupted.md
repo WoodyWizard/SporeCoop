@@ -14,7 +14,7 @@ commits:
 tests: chaos_creature_long, multi4_creature_seed, multi4_creature_slow, multi4_players
 signature:
 docs:
-related:
+related: BUG-0842, BUG-0843
 ---
 
 ## Report
@@ -65,3 +65,4 @@ What was run (fix/w1-creature, lane 4, GOG 2024 dc04aee5; lab run out/lab/202610
 - 2026-10-27: not reproduced on fix/w1-creature (2 creature chaos runs, 0 faults); two freed-pointer candidates fixed (BUG-0082, BUG-0091).
 - 2026-10-30: fix/w13-creature: chaos_creature_long (6 min, 2 players) OK in out/lab/20261030-141545 (fix/w13-creature, lane 5, GOG 2024), 0 faults on both games. The 4-player replay (seed 1035603402) was not run (lanes 4 and 5 were busy with this batch's tests). Not reproduced; stays.
 - 2026-11-08 (fix/w46-n1-crashes, 0.7.11 N1): the report's 4-player seed replayed 6 times (also at 20 fps over the players' networks, and with core.frame / npc.kill off): no fault; stays not-reproduced, closed with the runs.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): candidate writers from the 0.7.13 audit, inferred, low-medium confidence: the report's code (fix/npc-lag of 2026-10-23, the 0.7.2.4 line) kept every NPC proxy and every cached nest herd across frames with only the +0x21 byte (is_destroyed / object_alive) as a check (v0.7.2.4 npc.cpp:329 and :427; BUG-0300's noun-list check came 2026-10-30). A guest that spawns a proxy into a freed cached herd (BUG-0843: SpawnCreature links the new member into the herd's list, a write into freed memory) or drives a freed proxy (BUG-0842) corrupts the heap exactly as reported (an AV, then GeneralAllocator_FreeInternal, then a hang in MallocInternal). Both windows still exist in 0.7.12 (npc.cpp:1637, :1789-1806). 0x009ABB5C / 0x9AC1B0 have no name in either .sym, so the fault site itself is not placed. Untried test: the 4-player seed with the host's animals churned under the guests (host editor, a load, a nest despawn) while the guests are near them, so cached herds and proxies are freed between the once-a-second checks; it must fault or log a freed herd with the BUG-0843 / 0842 switches off. Verdict unchanged (no run evidence).
