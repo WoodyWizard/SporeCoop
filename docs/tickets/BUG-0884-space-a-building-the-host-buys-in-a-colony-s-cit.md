@@ -10,7 +10,7 @@ role: both
 versions: 0.7.11.1
 fixed_in: unreleased
 branch: fix/w47-b2
-commits: 8b6a60dd aca22a9c
+commits: 8b6a60dd aca22a9c 3946ad47
 tests: space_planner_host
 signature:
 docs: docs/re/space.md#space-colony-build-hold
@@ -36,7 +36,9 @@ Extend coop_space_planner_build.py: host and guest on the home planet 00460035 w
 ## Fix
 In Space the host now relays a colony building it gets: its own planner building (h_AddBuilding with the planner's
 return address; the planner places it a frame later, so `space_tick` sends it once its position is set, or after 3 s,
-with that position) and the one it builds for a guest (host_space_build, or a kept one of BUG-0766), as CMD_SPACE_BUILD
+with that position; since 3946ad47 only once the planner has closed with the building still in the city: a drop that
+missed the plot adds the building and takes it away again, and the guest got a house the host did not have, lab
+20261110-193142) and the one it builds for a guest (host_space_build, or a kept one of BUG-0766), as CMD_SPACE_BUILD
 {planet, noun, city position, position} host -> every guest except the buyer. A guest on that planet (5 s after it
 came) builds it into the city near that position (build_in_city, not paid, `g_applying` so it is not sent back);
 otherwise it keeps it until its ship is there (the same hold as BUG-0766). An older guest drops the message (a guest
@@ -48,9 +50,12 @@ ignores MSG_CIV_CMD outside Civ). Counters `relayed= relay_in=`. Twin switch `co
 planner with real input (the city flown to, clicked, the house tile dragged onto a free plot); the guest's city must
 get it.
 * FAIL with `SPORE_FIX_OFF=civ.space_planner_relay`: lab 20261110-190114 (the guest's city 5 -> 5 houses).
-* PASS: lab 20261110-184846 (5 -> 6 houses, the money -1,600 on both), 20261110-191918.
+* PASS: lab 20261110-184846 (5 -> 6 houses, the money -1,600 on both), 20261110-191918; with the planner-closed send
+  20261110-194600 and 20261110-193940 #2 (its #1: the host's drop missed the plot, and the guest correctly got no
+  house: the check "nobody gets a house the buyer's planner did not keep"; the test now drops once more).
 * Not run: three players (guest A buys, guest B gets it): the path is the same send with the buyer excluded.
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0751. Severity medium, confidence medium.
 - 2026-11-10: fixed on fix/w47-b2 (the host relays its Space colony buildings; test space_planner_host).
+- 2026-11-10: the relay waits for the planner to close with the building (3946ad47); BUG-0902 opened for the guest side.
