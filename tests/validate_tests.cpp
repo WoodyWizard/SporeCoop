@@ -423,7 +423,7 @@ static void test_settings()
     using namespace settings;
     CHECK(host_world::msg_class(net::MSG_SETTINGS) == host_world::MsgClass::Session);
     for (int i = 0; i < kCount; i++) { // declared once, unique names, defaults in range
-        CHECK(find(kDefs[i].key) == i && kDefs[i].label && kDefs[i].help && kDefs[i].group);
+        CHECK(kDefs[i].key && find(kDefs[i].key) == i && kDefs[i].label && kDefs[i].help && kDefs[i].group);
         CHECK(kDefs[i].def >= kDefs[i].min && kDefs[i].def <= kDefs[i].max);
     }
     CHECK(kDefs[kCellRegen].scope == Scope::Live && kDefs[kCellRegen].def == 1);
@@ -436,6 +436,18 @@ static void test_settings()
     int v = -1;
     CHECK(parse_value(kCellRegen, "off", v) && v == 0 && parse_value(kCellRegen, "default", v) && v == 1);
     CHECK(!parse_value(kCellRegen, "2", v) && !parse_value(kCellRegen, "x", v) && !parse_value(kCellRegen, "", v));
+    // F3 step 3 (BUG-0768): defaults are 0.7.11's behaviour; friendly fire off; 2..4 players; F5's named values
+    CHECK(kDefs[kFriendlyFire].def == 0 && kDefs[kFriendlyFire].scope == Scope::Session);
+    CHECK(kDefs[kPlayerLimit].def == 4 && kDefs[kPlayerLimit].min == 2 && kDefs[kPlayerLimit].max == 4);
+    CHECK(parse_value(kPlayerLimit, "3", v) && v == 3 && !parse_value(kPlayerLimit, "1", v) && !parse_value(kPlayerLimit, "5", v));
+    CHECK(!parse_value(kPlayerLimit, "on", v) && value_text(kPlayerLimit, 3) == "3");
+    CHECK(kDefs[kCreatureMode].def == 0 && value_text(kCreatureMode, 0) == "own" && value_text(kCreatureMode, 1) == "host");
+    CHECK(parse_value(kCreatureMode, "host", v) && v == 1 && parse_value(kCreatureMode, "own", v) && v == 0);
+    CHECK(parse_value(kCreatureMode, "on", v) && v == 1 && !parse_value(kCreatureMode, "hosts", v));
+    CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
+    for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
+        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : 1));
+    CHECK(kCount < 255); // MSG_SETTINGS: u8 n
     // the wire: the whole table round trips; a key this build does not know is skipped; a cut message applies nothing
     Values a;
     a.v[kCellRegen] = 0;

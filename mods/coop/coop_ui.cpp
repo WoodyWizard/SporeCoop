@@ -1391,6 +1391,14 @@ static std::vector<int> settings_entries()
     return e;
 }
 
+// a setting's value as its button shows it: On / Off, a named value (creature.mode: Own / Host's), a number
+static std::string value_label(int id, int v)
+{
+    std::string val = settings::value_text(id, v);
+    return val == "on" ? T("On", "Вкл") : val == "off" ? T("Off", "Выкл") : val == "own" ? T("Own", "Свои")
+           : val == "host" ? T("Host's", "Хоста") : val;
+}
+
 // who may change setting `id` from this window now (settings_core.h can_set: a guest never, a session setting
 // only before the start)
 static settings::Refusal set_refusal(int id)
@@ -1415,8 +1423,7 @@ static void do_set_click(int row)
                          : std::string(T("Not changed: ", "Не изменено: ")) + why;
         g_set_line_color = kRed;
     } else {
-        std::string val = settings::value_text(id, nv);
-        g_set_line = std::string(d.label) + ": " + (val == "on" ? T("on", "вкл") : val == "off" ? T("off", "выкл") : val);
+        g_set_line = std::string(d.label) + ": " + value_label(id, nv);
         g_set_line_color = kGreen;
     }
     trace::line("ui", "setting %s -> %d (%s)", d.key, nv, why.c_str());
@@ -1462,8 +1469,7 @@ static void refresh_settings()
         bool differs = v != d.def;
         text(D.set_label[i], std::string(d.label) + (differs ? " *" : ""));
         color(D.set_label[i], differs ? kYellow : kWhite);
-        std::string val = settings::value_text(id, v);
-        text(D.set_btn[i], val == "on" ? T("On", "Вкл") : val == "off" ? T("Off", "Выкл") : val);
+        text(D.set_btn[i], value_label(id, v));
         auto r = set_refusal(id);
         enable(D.set_btn[i], r == settings::Refusal::None);
         bool live = d.scope == settings::Scope::Live;

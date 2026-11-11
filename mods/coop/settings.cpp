@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "fixes.h"
 #include "net/protocol.h"
 
 namespace settings {
@@ -206,11 +207,19 @@ static int raw(Id id)
     return g_cur.v[id];
 }
 
+// BUG-0768 (F3 step 3): the settings wired in this step (kNameTags and every row after it) are read by their modules;
+// `coop.fix settings.all off` makes each of them read its built-in default (0.7.11: every mechanic as before, friendly
+// fire off), the twin of the step's tests. The rows of steps 1-2 have their own switches (settings.cell_regen, F2's).
+static bool g_wired = true;
+COOP_FIX("settings.all", "BUG-0768", g_wired,
+         "settings: the co-op mechanics of F3 step 3 (name tags, friendly fire, joining, Cell knock-out, Tribe, Civ, Space, "
+         "creature mode, ...) follow the host's settings");
+
 int get(Id id)
 {
     if (id < 0 || id >= kCount)
         return 0;
-    int v = raw(id);
+    int v = !g_wired && id >= kNameTags ? kDefs[id].def : raw(id);
     if (kDefs[id].off_in_rivals && C.rivals && C.rivals())
         return 0;
     return v;

@@ -777,3 +777,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0765](BUG-0765-co-op-window-2-0-the-window-in-steps-name-host-j.md) | fixed | feature | All | 2026-11-08 | unreleased | Co-op window 2.0: the window in steps (name, Host / Join, lobby with the session settings), Report a problem in the pause menu |
 | [BUG-0766](BUG-0766-space-a-guest-s-colony-planner-building-is-lost.md) | open | desync | Space | 2026-11-08 |  | Space: a guest's colony planner building is lost when the host's ship is on another planet |
 | [BUG-0767](BUG-0767-one-report-for-the-session-the-host-asks-every-g.md) | fixed | feature | All | 2026-11-08 | unreleased | One report for the session: the host asks every guest for its report, one session zip |
+| [BUG-0768](BUG-0768-f3-step-3-every-co-op-mechanic-of-the-settings-t.md) | open | feature | all | 2026-11-08 |  | F3 step 3: every co-op mechanic of the settings table is a session setting |
+| [BUG-0769](BUG-0769-f5-one-creature-for-everyone-creature-mode-every.md) | open | feature | Creature | 2026-11-08 |  | F5: one creature for everyone (creature.mode: everybody plays the host's creature) |

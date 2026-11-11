@@ -31,6 +31,30 @@ enum Id : int {
     kPackRescue,     // Creature: a deadly hit near a partner leaves 40 % health (teamplay.cpp)
     kPackHeal,       // Creature: partners heal each other nearby (teamplay.cpp tick)
     kJointHunt,      // Creature: a target another player hit deals +25 % (teamplay.cpp on_player_hit)
+    // step 3 of F3 (feat/w46-settings-all): every other co-op mechanic of the plan's table, defaults = 0.7.11
+    kNameTags,       // all stages: the name tag over every partner (coop.cpp on_overlay)
+    kFriendlyFire,   // Cell, Creature, Tribe, Civ: players can hurt each other (Space keeps its rivals mode)
+    kPlayerLimit,     // the players a session takes (2..4, the host counted; net/session.cpp admit)
+    kLateJoin,       // a player may join a session whose host plays its world already
+    kCellKnockout,   // Cell: a lethal hit next to a partner knocks out (revive within 10 s) instead of killing
+    kCellRespawn,    // Cell: nobody revived the knocked-out cell in 10 s: it respawns next to the partner, small
+    kSwitchVote,     // Cell -> Creature: the host's switch waits for a vote of everybody (BUG-0315)
+    kCreatureMode,   // Cell, Creature: 0 every player's own creature, 1 everybody plays the host's (F5)
+    kEditorNow,      // Creature: the host's evolution editor opens at once, guests get an offer (BUG-0516)
+    kTribePincer,    // Tribe: members of two players hitting one tribe within 10 s deal +50 %
+    kTribeAura,      // Tribe: members near their own chief hit +20 %, a chief next to a partner's member keeps 30 %
+    kTribeDuet,      // Tribe: performances of two players for one village fill its mini-game faster
+    kTribeEpic,      // Tribe: now and then an epic creature comes to the village (80 food killed together)
+    kCivRoles,       // Civ: the governors' roles (military, economic, religious) and their bonuses
+    kCivSiege,       // Civ: two players attacking one city capture it 50 % faster
+    kCivSwVote,      // Civ: a superweapon fires after a vote of everybody
+    kSpaceDisable,   // Space: a destroyed ship next to a partner is only disabled for 20 s
+    kSpaceTrade,     // Space: tool gifts and trade between players (space_trade.cpp)
+    kSpaceContracts, // Space: co-op contracts (space_contracts.cpp)
+    kSpaceDiplomacy, // Space: shared relations with the NPC empires (space_diplomacy.cpp)
+    kSpaceAllies,    // Space: the partners' colonies as an allied empire (space_allies.cpp)
+    kSpaceFinale,    // Space: the galaxy's core together (space_finale.cpp)
+    kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
     kCount
 };
 
@@ -44,6 +68,7 @@ struct Def {
     Scope scope;
     const char* ini;     // coop.ini [coop] key whose value is the default of a new world, or nullptr
     bool off_in_rivals;  // read as off while the Rivals mode is on (the value itself is kept)
+    const char* names = nullptr; // a choice of named values: "name0|name1|..." (value_text, the lobby), else on / off
 };
 
 inline const Def kDefs[kCount] = {
@@ -71,6 +96,75 @@ inline const Def kDefs[kCount] = {
     {"creature.joint_hunt", "Creature", "Joint hunt bonus",
      "on: a hit on a target another player hit in the last seconds deals +25 % damage; off: no bonus",
      1, 0, 1, Scope::Session, "teamplay", false},
+    {"all.name_tags", "All stages", "Name tags over players",
+     "on: every partner's name shows over its creature, tribe chief, vehicle or ship; off: no name tags",
+     1, 0, 1, Scope::Live, nullptr, false},
+    {"all.friendly_fire", "All stages", "Friendly fire",
+     "on: players can hurt each other in Cell, Creature, Tribe and Civ (Space keeps its rivals mode); off: no player hurts another",
+     0, 0, 1, Scope::Session, nullptr, false},
+    {"all.max_players", "All stages", "Players who can join",
+     "how many players the session takes, the host counted (2 to 4); a player over it is told the session is full",
+     4, 2, 4, Scope::Live, nullptr, false},
+    {"all.late_join", "All stages", "Joining after the start",
+     "on: a player can join while the host plays its world; off: only in the galaxy menu (a player who lost the connection may come back)",
+     1, 0, 1, Scope::Live, nullptr, false},
+    {"cell.knockout", "Cell", "Knock-out instead of death",
+     "on: a lethal hit next to a partner knocks the cell out, a partner revives it within 10 s; off: the cell dies as in a solo game",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"cell.respawn_small", "Cell", "Respawn next to the partner",
+     "on: a knocked-out cell nobody revived respawns next to the partner as a small cell; off: it dies as in a solo game",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"core.switch_vote", "Cell", "Vote before the Creature stage",
+     "on: the host's switch from Cell to Creature waits for a vote of everybody; off: the stage starts at once",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"creature.mode", "Creature", "Creature",
+     "own: every player plays its own creature and evolves it; host: everybody plays the host's creature, only the host evolves it (the partners get no editor)",
+     0, 0, 1, Scope::Session, nullptr, false, "own|host"},
+    {"core.editor_now", "Creature", "Host's editor opens at once",
+     "on: the host's evolution editor opens at once, each partner gets an Evolve now offer; off: everybody votes first",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"tribe.pincer", "Tribe", "Pincer bonus",
+     "on: members of two players hitting the same tribe within 10 s deal +50 % damage; off: no bonus",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"tribe.chief_aura", "Tribe", "Chief aura",
+     "on: members near their own chief hit +20 %, a chief about to fall next to a partner's member keeps 30 % health; off: no aura",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"tribe.duet", "Tribe", "Duet",
+     "on: performances of two players' members for the same village fill its mini-game faster; off: as in a solo game",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"tribe.epic", "Tribe", "Epic creature event",
+     "on: now and then an epic creature comes to the village (80 food when killed together); off: no co-op epic",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.roles", "Civilization", "Roles",
+     "on: every player governs with a role (military, economic, religious) and its bonus; off: no roles, no bonuses",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.joint_siege", "Civilization", "Joint siege bonus",
+     "on: a city attacked by two players' vehicles is captured 50 % faster; off: no bonus",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.superweapon_vote", "Civilization", "Superweapons need a vote",
+     "on: a superweapon fires after a vote of everybody; off: it fires at once",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.disable", "Space", "Disabled, not destroyed",
+     "on: a destroyed ship next to a partner is only disabled for 20 s and the partner repairs it; off: it is destroyed as in a solo game",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.trade", "Space", "Trade and gifts",
+     "on: players give each other tools and trade spice; off: no trade between players",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.contracts", "Space", "Co-op contracts",
+     "on: contracts for the players together; off: none",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.diplomacy", "Space", "Shared diplomacy",
+     "on: the relations with the NPC empires are the players' together; off: every player's own",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.allies", "Space", "Partners as allies",
+     "on: the partners' colonies show as an allied empire; off: not shown",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.finale", "Space", "Finale together",
+     "on: the galaxy's core is entered together; off: as in a solo game",
+     1, 0, 1, Scope::Session, nullptr, false},
+    {"space.rivals", "Space", "Rivals mode allowed",
+     "on: the host can switch Space to the rivals mode (own empires, budgets, fights); off: the players stay allies",
+     1, 0, 1, Scope::Session, nullptr, false},
 };
 
 inline const Def& def(int id) { return kDefs[id]; }
@@ -85,7 +179,21 @@ inline int find(const std::string& key)
 
 inline int clamp_value(int id, int v) { return v < kDefs[id].min ? kDefs[id].min : v > kDefs[id].max ? kDefs[id].max : v; }
 
-// "on", "off", "yes", "no", "default" or a number; false when it is none of them
+// the name of value v of a named setting ("" when it has no names or no such value)
+inline std::string value_name(int id, int v)
+{
+    const char* n = kDefs[id].names;
+    for (int i = 0; n && *n; i++) {
+        const char* e = strchr(n, '|');
+        size_t len = e ? (size_t)(e - n) : strlen(n);
+        if (i == v)
+            return std::string(n, len);
+        n = e ? e + 1 : nullptr;
+    }
+    return "";
+}
+
+// "on", "off", "yes", "no", "default", a value's name (creature.mode: own, host) or a number; false when it is none of them
 inline bool parse_value(int id, const std::string& s, int& out)
 {
     if (s == "on" || s == "yes" || s == "true") {
@@ -94,6 +202,12 @@ inline bool parse_value(int id, const std::string& s, int& out)
         out = 0;
     } else if (s == "default") {
         out = kDefs[id].def;
+    } else if (kDefs[id].names && [&] {
+                   for (int i = kDefs[id].min; i <= kDefs[id].max; i++)
+                       if (value_name(id, i) == s)
+                           return out = i, true;
+                   return false;
+               }()) {
     } else {
         char* end = nullptr;
         long v = strtol(s.c_str(), &end, 10);
@@ -108,6 +222,9 @@ inline bool parse_value(int id, const std::string& s, int& out)
 
 inline std::string value_text(int id, int v)
 {
+    std::string nm = value_name(id, v);
+    if (!nm.empty())
+        return nm;
     if (kDefs[id].min == 0 && kDefs[id].max == 1)
         return v ? "on" : "off";
     return std::to_string(v);
