@@ -20,6 +20,7 @@
 #include "space_ext.h"
 #include "stage_epoch.h"
 #include "world.h"
+#include "wsync.h"
 #include "net/held_cmds.h"
 #include "net/ids.h"
 #include "net/interp.h"
@@ -2676,6 +2677,7 @@ int remove_village(void* t)
     }
     g_unmapped_since.erase(t);
     g_ours_t.erase(t);
+    wsync::village_gone(t); // BUG-0942: the game's goal card of this village
     game::destroy_creature(t); // (not an animal: DestroyInstance at once)
     return 1;
 }

@@ -427,6 +427,62 @@ static std::string f_goal(const Entry& e)
     return g_fmt;
 }
 
+// ---- BUG-0942 (realign.village_goal): a mission of a village this guest's realign destroys. The game never
+// destroys a tribe in the Tribe stage, so its cTribeToTribeMission keeps the tribe (an intrusive pointer: the block
+// stays, the hut pointer +0x368 is null, no members) in the manager's current mission +0x74 (the HUD's goal card),
+// its vector +0x14 and its map +0x78. The card's text function 0xC30000 reads `tribe->hut->combatant state` when the
+// tribe has no members: a read of 0x154 through the null hut, in the manager's update every frame once a goal event
+// marked it dirty (the fault unwinds before the dirty byte is cleared): 813 caught faults on a campaign guest.
+// Two parts: the card of the village goes with the village (the manager's own RemoveMission, outside the frame: the
+// HUD panel), and the text function is skipped for a mission whose village has neither a hut nor members (the
+// missions left in the vector and the map, refreshed by pol). Off: both as before.
+static bool g_village_goal_fix = true;
+COOP_FIX("realign.village_goal", "BUG-0942", g_village_goal_fix,
+         "tribe: the goal card of a village a guest's realign removed goes with it; no card text for a village without a hut");
+using CardText_t = void(SK_THISCALL*)(void*);
+static CardText_t o_card_text;
+static uint32_t g_card_skipped, g_cards_dropped;
+static bool village_is_gone(void* mission)
+{
+    void* t = R(mission, 0x84) ? F<void*>(mission, 0x80) : nullptr;
+    if (!R(t, 0x36C) || F<void*>(t, 0x368))
+        return false;
+    uintptr_t cnt = S("SporeCoop::cTribe_PopulationCount");
+    return cnt && skg::thiscall<int>(cnt, t) == 0; // the game's own test before it reads the hut
+}
+static void SK_THISCALL h_card_text(void* mission)
+{
+    if (g_village_goal_fix && village_is_gone(mission)) {
+        if (g_card_skipped++ == 0)
+            H->log(M, SK_INFO, "wsync: the goal card text of a mission whose village is gone (no hut, no members) is "
+                               "not refreshed (realign.village_goal, BUG-0942)");
+        return;
+    }
+    o_card_text(mission);
+}
+static void* g_gone_mission; // the manager's current mission to remove outside the frame (compared, never read)
+static void drop_card_task(void*)
+{
+    void* m = g_gone_mission;
+    g_gone_mission = nullptr;
+    void* mgr = mission_mgr();
+    uintptr_t rm = S("SporeCoop::TribeMissionManager_RemoveMission");
+    if (!mgr || !rm || !m || F<void*>(mgr, 0x74) != m)
+        return;
+    skg::thiscall<void>(rm, mgr, m);
+    g_cards_dropped++;
+    H->log(M, SK_INFO, "wsync: the goal card was on a village removed here: the card goes with it (realign.village_goal, BUG-0942)");
+}
+void village_gone(void* tribe)
+{
+    void* mgr = mission_mgr();
+    void* m = mgr ? F<void*>(mgr, 0x74) : nullptr;
+    if (!g_village_goal_fix || !tribe || !R(m, 0x84) || F<void*>(m, 0x80) != tribe)
+        return;
+    g_gone_mission = m;
+    H->run_outside_frame(drop_card_task, nullptr);
+}
+
 // ---- row: Cell, the DNA the host's editors spent (cCellSerializableData +0x2C; the food +0x1C is MSG_CELL_FOOD's):
 // what the guest's Cell DNA shows is DNAForFood(food) - spent (docs/re/cell.md#cell-editor-dna)
 static bool g_cell_spent_fix = true;
@@ -1674,6 +1730,23 @@ static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "end spots\n");
         return 0;
     }
+    if (argc >= 3 && !strcmp(argv[1], "goal") && !strcmp(argv[2], "dirty")) {
+        // tests (BUG-0942): the manager's own "a goal changed, refresh the cards" (vt 0x28 with pol 0), what the game's
+        // relation changes, orders and mission events end with
+        void* mgr = mission_mgr();
+        uintptr_t rf = S("SporeCoop::TribeMissionManager_Refresh");
+        if (!mgr || !rf) {
+            H->out_printf(out, "no mission manager\n");
+            return 0;
+        }
+        // `goal dirty <pol hex>`: with a village's pol, as its relation events do (the map's mission of that pol
+        // gets its text at once)
+        uint32_t rp = argc >= 4 ? (uint32_t)strtoul(argv[3], nullptr, 16) : 0;
+        skg::thiscall<void>(rf, mgr, rp);
+        H->out_printf(out, "goal refresh asked (pol %08X; card text skipped %u, cards dropped %u)\n", rp, g_card_skipped,
+                      g_cards_dropped);
+        return 0;
+    }
     if (argc >= 3 && !strcmp(argv[1], "goal")) { // tests: the host's goal card on the village of this pol
         uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
         for (auto& t : npc_tribes())
@@ -1696,7 +1769,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     M = mod;
     C = ctx;
     H->command_add(mod, "coop.wsync",
-                   "coop.wsync [dump [row]|want <row>|rel <pol> <delta>|goal <pol>] - host-owned world state (time of day, "
+                   "coop.wsync [dump [row]|want <row>|rel <pol> <delta>|goal <pol>|goal dirty [pol]] - host-owned world state (time of day, "
                    "stages done, village relations, the Tribe goal): rows, this game's values",
                    c_wsync, nullptr, SK_CMD_MAIN_THREAD);
     // BUG-0740: the position each new spot record was asked for (the host's row sends it)
@@ -1705,6 +1778,10 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     if (!spot)
         g_cellid_orig = nullptr;
     H->log(M, SK_INFO, "wsync: spot record hook %s", spot ? "on" : "off");
+    // BUG-0942: the goal card's text function, for a mission whose village is gone
+    uintptr_t ct = S("SporeCoop::TribeMission_RefreshCard");
+    if (!ct || H->hook_create(M, (void*)ct, (void*)&h_card_text, (void**)&o_card_text) != 0)
+        H->log(M, SK_WARN, "wsync: no goal card text hook (realign.village_goal guards the card only)");
 }
 
 } // namespace wsync

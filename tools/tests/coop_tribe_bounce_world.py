@@ -52,6 +52,9 @@ def main():
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(6)
+    # BUG-0943: tribe.form_pace holds the third tribe until the party's food is over the threshold times the players
+    print('  host: ' + host.call('coop.res add food 300')['out'].strip(), flush=True)
+    time.sleep(3)
     print('  host: ' + host.call('coop.tribe form')['out'].strip(), flush=True)
     print('  host: ' + host.call('coop.res add food 40')['out'].strip(), flush=True)
     time.sleep(10)

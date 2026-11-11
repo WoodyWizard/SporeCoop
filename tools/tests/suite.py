@@ -414,6 +414,7 @@ add('tribe_new_villages', P + 'coop_wsync_tribe.py villages', minutes=4, fixture
 add('wsync_stages', P + 'coop_wsync_tribe.py stages', minutes=5, fixture='tribe')  # BUG-0577: the guest's game has the host's stages done, also after a rejoin (SPORE_FIX_OFF=wsync.stages fails)
 add('wsync_transitions', P + 'coop_wsync_transitions.py', minutes=8, fixture='tribe')  # W1 class (BUG-0419): every host-owned world state row (sky, day, stages, relations, goal, food) is the host's in the guest's game after the host's game over + reload, a rejoin and the guest's own changes (SPORE_FIX_OFF=wsync.tod,wsync.stages,wsync.tribe_rel,wsync.tribe_goal,res.food_add fails)
 add('tribe_bounce_world', P + 'coop_tribe_bounce_world.py', minutes=5, fixture='tribe')  # BUG-0564 class (W2): after the host's game over and reload the guest's game has the host's tribes and food; SPORE_FIX_OFF=realign.villages fails
+add('tribe_bounce_goal', P + 'coop_tribe_bounce_goal.py', minutes=5, fixture='tribe')  # BUG-0942: the guest's goal card is on a village the host's reloaded world has not: the realign removes the village and its card, a goal event after it faults nowhere (SPORE_FIX_OFF=realign.village_goal fails: the fault storm 0x008E8230 read 0x154)
 add('tribe_attack_spot', P + 'coop_tribe_attack_spot.py', minutes=4, fixture='tribe')  # BUG-0582: a creature attack's animal whose village spot record is gone ends its attack, no fault every frame on the host (SPORE_FIX_OFF=tribe.attack_spot fails)
 add('tribe_attack_marker', P + 'coop_tribe_attack_marker.py', minutes=4, fixture='tribe')  # BUG-0740: the host's game's spot record marker (ornament 0x356EB8A, minimap blip) of a place far from a village is in the guest's game too (SPORE_FIX_OFF=wsync.tribe_marker fails)
 add('tribe_attack_marker_rejoin', P + 'coop_tribe_attack_marker.py --rejoin', minutes=6, fixture='tribe')  # BUG-0740: as tribe_attack_marker, the guest rejoins after the host's marker was made (passes with the switch off too: the host's share save carries the records, lab 20261108-063825)
@@ -833,7 +834,10 @@ def select(spec):
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in SUITES:
+        if w.startswith('='):  # `=campaign`: the test of that name, not the suite of the same name
+            assert w[1:] in names, f'unknown test: {w[1:]}'
+            want.add(w[1:])
+        elif w in SUITES:
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'

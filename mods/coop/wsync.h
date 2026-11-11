@@ -45,5 +45,7 @@ void on_player_join(); // host: the newcomer gets every row at once
 // a guest with the time-of-day row on takes the host's sky from MSG_WSTATE, not MSG_WORLD_TIME
 bool owns_time_of_day();
 std::string status();
+// BUG-0942: a guest is about to destroy this village (tribe::remove_village): its goal card goes with it
+void village_gone(void* tribe);
 
 } // namespace wsync
