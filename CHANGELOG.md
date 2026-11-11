@@ -78,6 +78,10 @@
   members gather from the nearest fruit tree there (BUG-0744).
 
 ### Tests
+- The two play tests that failed now and then for no fault of the mod are settled: the Creature bots now really hunt
+  the same animal together (they check which creature the game targeted, walk around the partner when it stands in
+  the way, and bite together), and the Cell test checks that the host's creatures hunt a guest with a controlled
+  trial instead of comparing how often each player happened to be hunted (BUG-0618, BUG-0910).
 - Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
 - One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
   players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
