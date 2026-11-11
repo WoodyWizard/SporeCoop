@@ -2122,3 +2122,18 @@ Tickets: BUG-0802, BUG-0809, BUG-0868, BUG-0872.
   in a solo-like fixture while food and earned DNA stayed; a starter-model valuation / refund is a candidate for
   BUG-0351, not proven vanilla sell-back. Not checked by us.
 
+
+## How fast a hunter takes a player that comes into its prey range (2026-11-10, fix/w47-play-bots)
+<a id="cell-hunt-trial"></a>
+
+BUG-0910. GOG 2024, lab lane 10, the cell fixture after `coop.pool food 600` on the host (hunters that take the
+players for prey: 5-14 within 80 m, prey ranges 4.0 and 8.3 m), `coop.pool prey 80 hunters`.
+* ✔ (runtime, 4 trials) A player's cell put 0.6 of the prey range from a hunter's centre (`coop.pool swimto c<key>
+  tp <m>`), the other player outside the range: the hunter's chase target `+0x22C` in the host's game is that
+  player's cell 0.2-2.1 s later (the re-pick timer `+0x238`), for the host's avatar and for a guest's puppet alike.
+* ✔ (runtime) With the puppet's level left as it was made (`coop.fix cell.puppet_level off`, the bug of section 9):
+  IsPrey is 1 for the host and 0 for the guest for every hunter (prey_rules 13 of 57 differ) and none of 10 hunters
+  took the guest in 8 s each, while the first one tried took the host in 0.2-1.3 s.
+* How often a player is hunted in free play says little about this: over 45 lab runs of play_cell the host's NPCs
+  chased the host in 24916 samples and the guest in 24165 (in reach as prey 3225 / 3420), while single runs went
+  from 25 / 416 to 1269 / 339 (a pack that follows one player makes hundreds of samples).

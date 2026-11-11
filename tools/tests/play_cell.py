@@ -18,6 +18,7 @@ the guest vs the host (coop_sync.py method: p90 error); the partner visible to b
 """
 import argparse
 import math
+import os
 import random
 import re
 import sys
@@ -280,6 +281,71 @@ class Player:
             self.until = now + rng.uniform(0.5, 2)
 
 
+def hunters(host, r=80):
+    """the host's NPCs that take a player for prey (the game's own IsPrey, `coop.pool prey <r> hunters`):
+    ([the host's cell index, the guest's], [dict(idx, chase, flee, range, d=[host, guest], prey=[..], threat=[..])])"""
+    out = host.call(f'coop.pool prey {r} hunters')['out']
+    ids = [int(m.group(1)) for m in re.finditer(r'^player .*? idx=(\d+)', out, re.M)]
+    rows = []
+    for line in out.splitlines():
+        m = re.match(r'npc (\d+) level=-?\d+ chase=(\d+) flee=(\d+) ranges=([\d.]+)/', line)
+        pl = re.findall(r'\| .+? d=([\d.]+) prey=(\d) threat=(\d)', line)
+        if m and len(pl) >= 2:
+            rows.append(dict(idx=int(m.group(1)), chase=int(m.group(2)), flee=int(m.group(3)), range=float(m.group(4)),
+                             d=[float(x[0]) for x in pl], prey=[x[1] == '1' for x in pl],
+                             threat=[x[2] == '1' for x in pl]))
+    return ids, rows
+
+
+def hunt_trial(host, guest, who, tries=5, wait=8.0):
+    """BUG-0910, the controlled half of "the host's NPCs hunt the guest too": <who> ('host' | 'guest') is put
+    inside the prey range of a hunter of the host's game (0.6 of the range from its centre, not touching: a bite
+    would send the hunter to rest) while the other player is outside it, and stays there; the game's own pick
+    (PickTargets: the nearest prey in the range, docs/re/cell.md 9) must make that player's cell the hunter's chase
+    target (+0x22C in the host's game). Returns (hunters tried, hunters that chased it, lines)."""
+    wi, con = (1, guest) if who == 'guest' else (0, host)
+    tried, chased, lines, seen = 0, 0, [], set()
+    t_end = time.time() + 40
+    while tried < tries and not chased and time.time() < t_end:
+        if pool(con).get('downed'):  # knocked out: no prey for anyone; the partner is not there to revive it
+            lines.append(f'{who} is knocked out: waiting')
+            time.sleep(3)
+            continue
+        ids, rows = hunters(host)
+        mirrored = sample(guest)
+        cand = [r for r in rows if r['idx'] not in seen and not r['flee'] and f'c{r["idx"]}' in mirrored
+                and not r['threat'][wi] and r['d'][1 - wi] > r['range'] + 3
+                and r['chase'] not in ids]  # (not one that hunts a player already)
+        if len(ids) < 2 or not cand:
+            lines.append(f'no hunter to try ({len(rows)} hunters within 80 m of a player, {len(seen)} tried)')
+            break
+        r = min(cand, key=lambda x: (x['chase'] != 0, x['d'][wi]))  # one that hunts nothing first, the nearest
+        seen.add(r['idx'])
+        tried += 1
+        gap = 0.6 * r['range']
+        con.call('coop.pool hp 6')  # (a bite or two in the trial is no knockout)
+        con.call(f'coop.pool swimto c{r["idx"]} tp {gap:.2f}')
+        t1, state, last = time.time(), 'not chased', r
+        while time.time() - t1 < wait:
+            time.sleep(0.2)
+            ids2, rows2 = hunters(host)
+            row = next((x for x in rows2 if x['idx'] == r['idx']), None)
+            if row is None or len(ids2) < 2:
+                state = 'the hunter is gone (or takes nobody for prey now)'
+                break
+            last = row
+            if row['chase'] == ids2[wi]:
+                state = f'chased after {time.time() - t1:.1f} s'
+                chased += 1
+                break
+            if row['d'][wi] > 0.9 * row['range']:  # it swam on: stay inside its range
+                con.call(f'coop.pool swimto c{r["idx"]} tp {gap:.2f}')
+        lines.append(f'{who} at {gap:.1f} m of hunter c{r["idx"]} (prey range {r["range"]:.1f} m, takes the host / guest '
+                     f'for prey: {int(last["prey"][0])} / {int(last["prey"][1])}, the other player {last["d"][1 - wi]:.0f} m '
+                     f'away, chase target {last["chase"]}, players {ids}): {state}')
+    return tried, chased, lines
+
+
 def desync(host, guest):
     """guest copy of every cell vs the host's (coop_sync.py: closer of the two host samples)"""
     h1, g, h2 = sample(host), sample(guest), sample(host)
@@ -318,6 +384,7 @@ def main():
     t0 = time.time()
     st = {p.name: pool(p.c) for p in P}
     food0 = {p.name: st[p.name]['food'] for p in P}
+    st0 = dict(st)  # the counters at the start: the games of a warm run (lab --repeat) have counted before
     hist = []         # (t, host food, guest food)
     pos_err, rot_err = {}, {}
     food_mismatch = []
@@ -330,6 +397,7 @@ def main():
     # within their range, summed over the measures
     prey = {'me': [0, 0, 0], 'partner': [0, 0, 0]}
     prey_win = {'me': [0, 0, 0], 'partner': [0, 0, 0]}  # since the last measure line
+    hunted = {'me': 0, 'partner': 0}  # NPC samples: the player in the prey range, prey, and the chase target
     rules = [0, 0]  # NPC answers compared between the host's cell and the guest's / of them different
     last_measure = last_prey = 0.0
     ok = True
@@ -361,6 +429,8 @@ def main():
             if now - last_prey >= PREY_EVERY:
                 last_prey = now
                 out = host.call('coop.pool prey 30 sum')['out']
+                for m in re.finditer(r'prey_sum (\w+) .*hunted=(\d+)', out):
+                    hunted[m.group(1)] += int(m.group(2))
                 for m in re.finditer(r'prey_sum (\w+) around=(\d+) prey=(\d+) threat=(\d+)', out):
                     for i in range(3):
                         prey[m.group(1)][i] += int(m.group(i + 2))
@@ -431,10 +501,23 @@ def main():
         hs, gs = pool(host), pool(guest)
         print('  host ', hs['raw'].strip().replace('\n', ' | '))
         print('  guest', gs['raw'].strip().replace('\n', ' | '))
+        # BUG-0910: this run's share of the counters the checks below read (a warm run's games kept the counts of
+        # the run before: the third `--repeat` failed "the guest reports only what it ate" with 183 = 57 + 70 + 56)
+        for d, d0 in ((hs, st0['host']), (gs, st0['guest'])):
+            for k in ('eats_sent', 'own_eats', 'own_points', 'puppet_new'):
+                if d.get(k) is not None:
+                    d[k] -= d0.get(k) or 0
         gained = (hs['food'] or 0) - (food0['host'] or 0)
         ck(gained >= 20, f'the pair made progress by playing (food {food0["host"]} -> {hs["food"]})')
         ck(not food_mismatch, f'food progress equal on both machines ({len(hist) - len(food_mismatch)}/{len(hist)} checks; '
            f'mismatches {food_mismatch[:5]})')
+        # (a meal in the last moment: the guest's total follows the host's within a second, as in the measures above;
+        # read once, the end check failed 210 / 204 in lab 20261110-222127 #1, BUG-0910)
+        for _ in range(3):
+            if hs['food'] == gs['food']:
+                break
+            time.sleep(1.2)
+            hs['food'], gs['food'] = pool(host)['food'], pool(guest)['food']
         ck(hs['food'] == gs['food'], f'and at the end ({hs["food"]} / {gs["food"]})')
         ck((hs['own_points'] or 0) > 0 and (gs['own_points'] or 0) > 0,
            f'both ate by themselves (host {hs["own_eats"]} items / {hs["own_points"]} points, guest {gs["own_eats"]} / '
@@ -474,9 +557,35 @@ def main():
         # 2. and hunt it: at least a third as often as the host, unless the guest was rarely within reach
         #    of a hunter that takes it for prey (the prey range is 2-8 m: who swims among the hunters
         #    is hunted; the bot's paths vary a lot from session to session)
-        ck(chase[0] + chase[1] < 60 or 3 * chase[1] >= chase[0] or 3 * prey['partner'][1] < prey['me'][1],
-           f'the host\'s NPCs hunt the guest too (chased: guest {chase[1]}, host {chase[0]}; in reach as prey: '
-           f'guest {prey["partner"][1]}, host {prey["me"][1]})')
+        # BUG-0910: that was a ratio of chase samples over the bots' random paths (who swims among the hunters
+        # is hunted, a pack that follows one player makes hundreds of samples): 5 of 45 lab runs failed it with
+        # the guest hunted as much as the host over all runs (chase samples 24165 / 24916, in reach as prey
+        # 3420 / 3225). Now a controlled trial after the play: each player in turn is put into the prey range of
+        # a hunter of the host's game, alone; the game's own pick must make it the chase target (the host's
+        # turn shows that the trial works). SPORE_CELL_HUNT_RATIO=1: the old ratio check as well.
+        trial = {}
+        for who in ('guest', 'host'):
+            trial[who] = hunt_trial(host, guest, who)
+            for line in trial[who][2]:
+                print(f'  hunt trial: {line}', flush=True)
+        (g_tried, g_chased, _), (h_tried, h_chased, _) = trial['guest'], trial['host']
+        print(f'  hunt trial: the guest chased by {g_chased} of {g_tried} hunters tried, the host by {h_chased} of '
+              f'{h_tried}; in play: hunted while in reach as prey (samples): host {hunted["me"]} of {prey["me"][1]}, '
+              f'guest {hunted["partner"]} of {prey["partner"][1]}', flush=True)
+        if g_chased or (g_tried and h_chased):
+            ck(g_chased > 0, f'the host\'s NPCs hunt the guest too (a hunter with only the guest in its prey range '
+                             f'chases it: {g_chased} of {g_tried} tried; the host: {h_chased} of {h_tried})')
+        else:
+            # no trial (no hunter at this level, or none took the host either): what the play showed. The guest in a
+            # hunter's prey range as prey and that hunter's chase target at the same moment, or hardly ever in reach
+            ck(hunted['partner'] > 0 or chase[1] > 0 or prey['partner'][1] < 10,
+               f'the host\'s NPCs hunt the guest too (no hunter for a trial: guest {g_tried} tried, host {h_tried}; in '
+               f'play the guest was a hunter\'s chase target in {chase[1]} samples, {hunted["partner"]} of them in its '
+               f'prey range; in reach as prey {prey["partner"][1]})')
+        if os.environ.get('SPORE_CELL_HUNT_RATIO') == '1':
+            ck(chase[0] + chase[1] < 60 or 3 * chase[1] >= chase[0] or 3 * prey['partner'][1] < prey['me'][1],
+               f'(old ratio check) the host\'s NPCs hunt the guest too (chased: guest {chase[1]}, host {chase[0]}; in '
+               f'reach as prey: guest {prey["partner"][1]}, host {prey["me"][1]})')
         print(f'  eats while hurt (healed): host {heal["host"][0]} ({heal["host"][1]}), guest {heal["guest"][0]} '
               f'({heal["guest"][1]})', flush=True)
         print(f'  knockouts: host {ko_seen["host"]} guest {ko_seen["guest"]}; revives {hs["revives"]}/{gs["revives"]}, '

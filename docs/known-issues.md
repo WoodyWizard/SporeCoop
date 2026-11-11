@@ -1817,6 +1817,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   SporeCoop-wt/fix/w40-effects, relay off) and on main.
 * Reproduce: `tools/lab.py run play_creature --repeat 4` (about 1 run in 4).
 * Tickets: BUG-0499, BUG-0500
+* UPDATE (2026-11-10, fix/w47-play-bots): the "no joint hunt" runs that came back after BUG-0500's fix (4 of 10
+  runs on 2026-11-10) were the bots, not a puppet far from its player: BUG-0618 third round,
+  docs/06-testing.md#testing-w47-play-bots (7 of 7 runs pass with the new bot).
 
 ## Creature / Tribe: world objects not yet owned by the host (2026-11-03, fix/w40-world-objects)
 <a id="issue-world-objects-left"></a>
@@ -2592,3 +2595,17 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * FIXED (2026-11-10, fix/w47-tribe-looks-2, unreleased): the held model's size is replicated (`tribe.item_scale`,
   docs/re/tribe.md#tribe-item-size); the test compares the guest's chief sizes with the host's game.
 * Still open: a guest's copy does not play the host member's staff swing (BUG-0914).
+* FIXED (2026-11-10, fix/w47-colony, unreleased): a partner's hits for a planet this game is not on are kept and done
+  5 s after landing there (`space.sculpt_hold`, coop_space_sculpt_tool.py --away). Still open: a player who joins or
+  rejoins after the hits does not get them.
+
+## Creature: the second attacker stops behind the partner's creature (2026-11-10, fix/w47-play-bots)
+<a id="issue-creature-attack-behind-partner"></a>
+
+* A player who attacks an animal the partner already fights, coming from the partner's side: the attack key walks
+  the creature up and stops it about 2 m short, behind the partner's creature; further presses do nothing until the
+  player walks around by hand. A click on the animal often picks the partner's creature in front of it (the attack
+  key then does nothing). docs/re/creature.md#creature-walk-and-use-blocked, #creature-combat-click-target.
+* Reproduce: two games on the creature fixture, combat stance; the host clicks an animal and presses 1, then the
+  guest clicks the same animal from the host's side and presses 1 (the probes of fix/w47-play-bots, 2026-11-10).
+* Ticket: BUG-0913.

@@ -32,6 +32,10 @@ from sporectl import Console
 from twoinst import Checks, Monitor, keyframe, shot, start
 
 OLD_ATTACK = '--old-attack' in sys.argv  # BUG-0618: the old attack loop (to compare the landing rate)
+# BUG-0618 (W47): the bot before it checked which creature the game took for its target (any target counted as
+# the hunted animal, only the leader held its first bite)
+OLD_TARGET = '--old-target' in sys.argv or os.environ.get('SPORE_PLAY_OLD_TARGET') == '1'
+CLICK_UP = [0, -14, -28, -6, -40, -20]  # a click that missed the animal: higher on its body the next time (px)
 
 COMBAT_KEYS = ['1', '1', '1', '2', '3', '4']  # the first ability is the one every creature has
 DIALOGS = [('Do you want to save your game?', 'Cancel'), ('Are you sure?', 'Cancel'),
@@ -92,9 +96,10 @@ class World:
             out = self.con.call('coop.npc list')['out']
         d = {}
         for line in out.splitlines():
-            m = re.match(r'\s*#(\d+) (?:[0-9A-Fa-f]{8} )?species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
+            m = re.match(r'\s*#(\d+) (?:([0-9A-Fa-f]{8}) )?species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
             if m:
-                d['n' + m.group(1)] = dict(species=m.group(2), hp=float(m.group(3)), dead=bool(m.group(5)))
+                d['n' + m.group(1)] = dict(species=m.group(3), hp=float(m.group(4)), dead=bool(m.group(6)),
+                                           ptr=m.group(2))
         return d
 
 
@@ -106,6 +111,7 @@ class Shared:
         self.c = {}
         self.target = None  # (key, hunter)
         self.hunting = {}   # BUG-0618: key -> the players whose hunt of it runs now
+        self.in_reach = {}  # BUG-0618 (W47): key -> {player: when it last stood in reach of it, its target}
         self.killed = {}    # key -> set of players that hunted it when it died
 
     def add(self, key, n=1):
@@ -125,6 +131,7 @@ class Player(threading.Thread):
         self.con = Console(inst)
         self.W, self.H = screen(self.con)
         self.log, self.hunt_log, self.notes, self.reach_raw = [], [], [], []
+        self.traces = []
         self.error = None
 
     # ---- input and looking
@@ -207,27 +214,53 @@ class Player(threading.Thread):
         with self.sh.lock:
             self.sh.hunting.setdefault(key, set()).add(self.name)
         self.bites, self.first_reach, self.held = 0, None, 0
+        self.trace = []  # BUG-0618 diagnostics: (seconds into the hunt, what)
         try:
             r, hits = self._hunt(key, why)
         finally:
             with self.sh.lock:
                 self.sh.hunting.get(key, set()).discard(self.name)
+                self.sh.in_reach.get(key, {}).pop(self.name, None)
         self.add(f'hunt_{r}')
         fr = f'{self.first_reach - t0:.0f}' if self.first_reach else '-'
         # (the hit count stays the last but one word: main() sums it)
         self.hunt_log.append(f'{key} {why} {d0:.0f} m: {r} {time.time() - t0:.0f} s (own bites {self.bites}, in reach '
                              f'at {fr} s, first bite held {self.held}x) {hits} hits')
+        self.traces.append(f'{time.strftime("%H:%M:%S", time.localtime(t0))} {key} {why} {r}: '
+                           + ' '.join(f'{t - t0:.1f}{w}' for t, w in self.trace))
         return r
+
+    def own_ptr(self, key, info):
+        """the hunted animal's creature in our own game (the host's NPC, the guest's proxy of it)"""
+        if self.inst == lane.HOST:
+            return info.get('ptr')
+        m = re.search(rf'#{key[1:]} species=.* ptr=([0-9A-Fa-f]+)', self.do('coop.npc list'))
+        return m.group(1) if m else None
+
+    def tr(self, what):
+        self.trace.append((time.time(), what))
 
     def partner_hunts(self, key):
         with self.sh.lock:
             return bool(self.sh.hunting.get(key, set()) - {self.name})
+
+    def partner_in_reach(self, key, mark=True):
+        """BUG-0618 (W47): the partner stands in reach of this animal with it as its target (seen in the last
+        1.5 s); mark: so do we"""
+        now = time.time()
+        with self.sh.lock:
+            d = self.sh.in_reach.setdefault(key, {})
+            if mark:
+                d[self.name] = now
+            return any(now - t < 1.5 for n, t in d.items() if n != self.name)
 
     def _hunt(self, key, why='lead'):
         """walk to the animal (a click on it) and use the combat abilities until it is dead"""
         self.stance('combat')
         t0, last_hp, hits = time.time(), None, 0
         target, walk_at, walk_gap = None, 0.0, None  # BUG-0618: the game's target, the last walk-and-use start
+        mine, mine_at, miss = None, 0.0, 0  # the animal's creature in our game, when it was read, clicks that missed
+        stalls, alive_at = 0, time.time()   # walk-and-use starts that did not get nearer; the last death check
         while time.time() - t0 < 35 and time.time() < self.deadline:
             info = self.world.npcs().get(key)
             if info is None:
@@ -248,6 +281,10 @@ class Player(threading.Thread):
             o = self.objs().get(key) or self.look_for(key, 2)
             if not o:
                 return 'lost', hits
+            if not OLD_TARGET and time.time() - alive_at > 3:
+                alive_at = time.time()
+                if uifind.shown(self.con, 'You were killed'):  # (the caption waits for OK: step() answers it)
+                    return 'died', hits
             if OLD_ATTACK:  # BUG-0618: the old bot, a key 0.2-0.5 s after every click
                 if self.in_view(o[1], o[2]):
                     self.do(f'click {o[1]} {o[2]}')
@@ -264,23 +301,50 @@ class Player(threading.Thread):
             # reach a key works when the ability is ready (status 0; 8 = recharging). Keys 1..5 use the bar's
             # combat row (the fixture creature has one combat ability, key 1, reach 1 m).
             r = self.reach()
+            if mine is None or time.time() - mine_at > 2:
+                mine, mine_at = self.own_ptr(key, info), time.time()
+            # BUG-0618 (W47): is the game's target the hunted animal? A click picks what is under the cursor: often
+            # the partner's creature standing at the prey (ability status 12: no attack on it) or a herd mate next
+            # to it, and a click that hits nothing leaves the target of before (the partner, after a "follow"
+            # click). The old bot took any target for the animal: it stood at the partner "recharging" or bit the
+            # neighbour, so the two players seldom bit the same animal.
+            on_it = r['target'] is not None and mine is not None and int(r['target'], 16) == int(mine, 16)
+            if r['target'] and not on_it:
+                self.add('wrong_target')
+                self.tr(f'X{r["gap"]:.0f}')
+            if OLD_TARGET or mine is None:
+                on_it = r['target'] is not None and r['target'] == target
             if r['target'] is None and walk_gap is not None and time.time() - walk_at < 1.5:
                 # BUG-0618 (G4): the game clears the target for a moment during its walk-and-use; a click now would
                 # cancel the walk (retarget_none 60-360 times a run): it gets a moment to set it back
                 self.add('retarget_wait')
                 self.sleep(0.3)
                 continue
-            if r['target'] is None or r['dead'] or r['target'] != target:
+            if not on_it or r['dead']:
                 self.add('retarget_' + ('none' if r['target'] is None else 'dead' if r['dead'] else
                                         'first' if target is None else 'changed'))
-                if self.in_view(o[1], o[2]):
-                    self.do(f'click {o[1]} {o[2]}')
+                x, y = o[1], o[2] + (0 if OLD_TARGET else CLICK_UP[miss % len(CLICK_UP)])
+                if self.in_view(x, y):
+                    self.do(f'click {x} {y}')
                     self.add('target_click')
                     r = self.reach()
                     target = r['target']
+                    on_it = target is not None and (OLD_TARGET or mine is None or int(target, 16) == int(mine, 16))
+                    self.tr('c' if on_it else 'cx' if target else 'c-')
                     walk_at, walk_gap = 0.0, None  # (the old 1e9 sentinel kept the first walk key back)
+                    miss = 0 if on_it else miss + 1
+                    if not on_it and miss % len(CLICK_UP) == 0:
+                        # something stands in front of it on this screen (the partner's creature, mostly): look
+                        # from another side, as a player does: turn the camera, the next time walk to one side
+                        if (miss // len(CLICK_UP)) % 2:
+                            dx = self.rng.choice([-1, 1]) * self.rng.randint(120, 220)
+                            self.do(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
+                            self.add('look_around')
+                        else:
+                            self.side_step(o, miss // len(CLICK_UP))
+                            self.tr('S')
                 self.sleep(0.2, 0.4)
-                if r['target'] is None:
+                if not on_it:
                     continue
             keys = [k for k, (reach, st) in r['keys'].items()]
             if not keys:
@@ -295,9 +359,19 @@ class Player(threading.Thread):
                 # BUG-0618 (G4): the pack bites together: the leader holds its first bite (at most 8 s) until the
                 # partner hunts this animal too and is near (a Kook dies ~10 s after the leader reaches it: the
                 # joiner came too late and the joint table stayed at +0 though both hunted the same animals)
-                if why == 'lead' and not self.bites and time.time() - self.first_reach < 8 and \
-                        not (self.partner_hunts(key) and (self.partner_dist() or 99) < 10):
+                # W47: both hold it (the joiner bit alone while the leader walked up: 6 hp, a bite every 1.7 s), and
+                # until the partner stands in reach of the same animal, not within 10 m of us: 14 s at most while
+                # the partner hunts it, 5 s when it does not. (The walk-and-use bites once when it arrives: the
+                # hold keeps the other 5 hp for the pack.)
+                if OLD_TARGET:
+                    hold = why == 'lead' and time.time() - self.first_reach < 8 and \
+                        not (self.partner_hunts(key) and (self.partner_dist() or 99) < 10)
+                else:
+                    hold = not self.partner_in_reach(key) and \
+                        time.time() - self.first_reach < (14 if self.partner_hunts(key) else 5 if why == 'lead' else 0)
+                if not self.bites and hold:
                     self.held += 1
+                    self.tr('h')
                     self.sleep(0.3)
                     continue
                 if st == 0:
@@ -305,14 +379,28 @@ class Player(threading.Thread):
                     self.do('key ' + k)
                     self.add('attacks')
                     self.bites += 1
+                    self.tr(f'B{r["gap"]:.1f}')
                 else:
                     self.add('wait_recharge')
+                    self.tr(f's{st}')
                 self.sleep(0.25, 0.45)
+            elif not OLD_TARGET and walk_gap is not None and time.time() - walk_at > (1.5 if r['gap'] < 8 else 2.5) \
+                    and r['gap'] > walk_gap - (0.3 if r['gap'] < 8 else 1.0) and (r['gap'] < 8 or stalls):
+                # BUG-0618 (W47, docs/re/creature.md#creature-walk-and-use-blocked): the game's walk-and-use stops
+                # where another creature stands in its way (the partner at the prey: 2 m short, for as long as
+                # both stand there) and further key presses do nothing: a player walks around it. A click on the
+                # ground to one side of the animal, then the key again.
+                stalls += 1
+                self.side_step(o, stalls)
+                self.tr(f'S{r["gap"]:.0f}')
+                walk_at, walk_gap = 0.0, None
             elif walk_gap is None or (time.time() - walk_at > 2.5 and r['gap'] > walk_gap - 1.0):
                 # not walking to it (yet, or stopped): the key starts the game's walk-and-use
+                stalls += walk_gap is not None
                 self.reach_note(k, r)
                 self.do('key ' + k)
                 self.add('attacks')
+                self.tr(f'W{r["gap"]:.0f}')
                 walk_at, walk_gap = time.time(), r['gap']
                 self.sleep(0.3, 0.5)
             else:
@@ -320,6 +408,15 @@ class Player(threading.Thread):
                     walk_at, walk_gap = time.time(), r['gap']
                 self.sleep(0.3, 0.5)
         return 'timeout', hits
+
+    def side_step(self, o, n):
+        """walk a few metres to one side of the animal at screen point o (a click on the ground; sides in turn)"""
+        side = 1 if (n + (self.name == 'guest')) % 2 else -1
+        x = max(80, min(self.W - 80, o[1] + side * self.rng.randint(200, 300)))
+        y = max(int(self.H * 0.45), min(self.H - 200, o[2] + self.rng.randint(0, 40)))
+        self.do(f'click {x} {y}')
+        self.add('side_step')
+        self.sleep(1.2, 1.6)
 
     def reach(self):
         """the game's reach of the combat keys: {'target': ptr | None, 'dead', 'gap', 'keys': {key: (reach,
@@ -622,6 +719,8 @@ def main():
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--no-exit', action='store_true', help='the guest does not leave to the main menu')
     ap.add_argument('--old-attack', action='store_true', help='BUG-0618: the old bot (a key 0.2-0.5 s after each click)')
+    ap.add_argument('--old-target', action='store_true',
+                    help='BUG-0618 (W47): the bot that took any target of the game for the hunted animal')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  play creature: {a.minutes} min, seed {seed}', flush=True)
@@ -752,6 +851,10 @@ def main():
            f'the guest left to the main menu and came back ({sh.exit_result})')
     for p in players:
         print(f'  {p.name} hunts:', '; '.join(p.hunt_log[-10:]))
+        # (c click, c- click that picked nothing, X<gap> the game's target is another creature, W<gap> walk-and-use
+        # key, h first bite held, B<gap> bite key in reach, s<status> ability not ready)
+        for tl in p.traces:
+            print(f'    {p.name} hunt trace: {tl}')
         for n in p.notes[-5:]:
             print(f'    {p.name}:', n)
         print(f'  {p.name} key presses by the game\'s reach (BUG-0618):', ' '.join(

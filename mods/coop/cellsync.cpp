@@ -4463,8 +4463,11 @@ static std::string see(int max)
 
 // the NPCs within r of a player: what the game's own target tests say about each player
 // (docs/re/cell.md 9): prey (chase) / threat (flee) and the current chase target
-static std::string prey_report(float r, bool rows)
+// mode: 0 the sums only, 1 a row per NPC (40 at most), 2 only the hunters (NPCs that take a player for prey, 80 at
+// most: play_cell's hunt trial, BUG-0910)
+static std::string prey_report(float r, int mode)
 {
+    bool rows = mode != 0;
     uint8_t* av = avatar();
     if (!a_TargetParams || !a_IsPrey || !a_IsThreat || !a_GetData)
         return "symbols missing";
@@ -4473,6 +4476,7 @@ static std::string prey_report(float r, bool rows)
         uint8_t* c;
         // NPCs within r / in their prey range and IsPrey / in their threat range and IsThreat / chasing it
         int around = 0, prey = 0, threat = 0, chasing = 0;
+        int hunted = 0; // in its prey range, prey and its chase target now
     };
     std::vector<Pl> players{{"me", av}};
     if (C.puppets)
@@ -4512,6 +4516,7 @@ static std::string prey_report(float r, bool rows)
                  F<uint32_t>(c, kChase), F<uint32_t>(c, kFlee), F<float>(params, 0), F<float>(params, 4));
         std::string row = b;
         int mine = -1;
+        bool hunter = false;
         for (auto& pl : players) {
             bool prey = skg::cdecl_call<bool>(a_IsPrey, c, pl.c, params);
             bool threat = skg::cdecl_call<bool>(a_IsThreat, c, pl.c, params);
@@ -4527,17 +4532,19 @@ static std::string prey_report(float r, bool rows)
             pl.prey += prey && d <= F<float>(params, 0);
             pl.threat += threat && d <= F<float>(params, 4);
             pl.chasing += F<uint32_t>(c, kChase) == F<uint32_t>(pl.c, 0);
+            pl.hunted += prey && d <= F<float>(params, 0) && F<uint32_t>(c, kChase) == F<uint32_t>(pl.c, 0);
+            hunter |= prey;
             snprintf(b, sizeof b, " | %s d=%.1f prey=%d threat=%d", pl.name.c_str(), d, (int)prey, (int)threat);
             row += b;
         }
-        if (rows && n++ < 40)
+        if (mode == 2 ? hunter && n++ < 80 : rows && n++ < 40)
             out += row + "\n";
     });
     snprintf(b, sizeof b, "prey_rules compared=%d differ=%d\n", compared, differ);
     out += b;
     for (size_t i = 0; i < players.size(); i++) {
-        snprintf(b, sizeof b, "prey_sum %s around=%d prey=%d threat=%d chasing=%d\n", i ? "partner" : "me", players[i].around,
-                 players[i].prey, players[i].threat, players[i].chasing);
+        snprintf(b, sizeof b, "prey_sum %s around=%d prey=%d threat=%d chasing=%d hunted=%d\n", i ? "partner" : "me",
+                 players[i].around, players[i].prey, players[i].threat, players[i].chasing, players[i].hunted);
         out += b;
     }
     return out;
@@ -4958,7 +4965,8 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
     if (!a.empty() && a[0] == "prey")
-        return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f, a.size() < 3 || a[2] != "sum");
+        return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f,
+                           a.size() < 3 ? 1 : a[2] == "sum" ? 0 : a[2] == "hunters" ? 2 : 1);
     if (!a.empty() && a[0] == "bite") { // our avatar bites the nearest mirror (through DamageCell)
         uint8_t* best = nullptr;
         float bd = 1e9f;
@@ -5122,11 +5130,13 @@ std::string debug(const std::vector<std::string>& a)
         if (!c)
             return "no such cell";
         net::Vec3 p = pos_of(c);
-        if (a.size() >= 3 && a[2] == "tp") { // right next to it
+        if (a.size() >= 3 && a[2] == "tp") { // right next to it [tp <m>: that far from its centre, and stay there]
             net::Vec3 me = pos_of(av);
             float dx = me.x - p.x, dy = me.y - p.y, l = std::max(0.01f, std::sqrt(dx * dx + dy * dy));
-            float r = F<float>(av, kSize) * 0.8f + F<float>(c, kSize);
+            float r = a.size() >= 4 ? (float)atof(a[3].c_str()) : F<float>(av, kSize) * 0.8f + F<float>(c, kSize);
             stop_at(av, {p.x + dx / l * r, p.y + dy / l * r, 0.f});
+            if (a.size() >= 4)
+                return "moved near " + a[1];
         }
         auto* t = (float*)(av + kTarget);
         t[0] = p.x; t[1] = p.y; t[2] = 0;

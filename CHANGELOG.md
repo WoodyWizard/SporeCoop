@@ -105,6 +105,20 @@ arrows and minimap marks to find each other, player colours, and one report for 
 - Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
   members gather from the nearest fruit tree there (BUG-0744).
 
+### Tests
+- The two play tests that failed now and then for no fault of the mod are settled: the Creature bots now really hunt
+  the same animal together (they check which creature the game targeted, walk around the partner when it stands in
+  the way, and bite together), and the Cell test checks that the host's creatures hunt a guest with a controlled
+  trial instead of comparing how often each player happened to be hunted (BUG-0618, BUG-0910).
+- Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
+- One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
+  players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
+  window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without
+  that click. The reports come to the host over the session and the host gets one file to send,
+  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
+  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
+  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
+
 ## [0.7.11.2] - 2026-11-10
 
 ### Fixed
