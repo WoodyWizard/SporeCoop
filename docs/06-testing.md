@@ -5906,3 +5906,9 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   go (kill or re-hit the holder).
 * `coop.staleref` / `tools/tests/coop_stale_refs.py` (not in a suite: an RE tool, 7 s per scan): who still names a
   destroyed creature (docs/re/creature.md#creature-stimulus-attacker, BUG-0930).
+* Test `proxy_ghost` (coop_proxy_ghost.py, 1 min, creature fixture, BUG-0931): `coop.npc ghost <id>` on the guest makes
+  a proxy name memory that is no creature (its own creature destroyed), as when the guest's game frees a proxy behind
+  the mod's back (seen at the baby_game event after the evolution); the guest must have no fault, name the proxy in
+  its log and make it again. `SPORE_FIX_OFF=npc.proxy_listed_now` fails (139 faults in game::teleport).
+* Seen once in the same long_creature: a standing family animal 8.4 m apart on the guest in two sync-checks (BUG-0932,
+  open, not analysed).

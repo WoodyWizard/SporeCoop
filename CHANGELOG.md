@@ -59,6 +59,8 @@ arrows and minimap marks to find each other, player colours, and one report for 
   a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
+- Creature: a guest's game no longer stutters with "SporeCoop caught an error in its own code" when its baby is born
+  after the evolution with animals nearby (the mod moved animals its own game had just removed) (BUG-0931).
 - Creature: the host's game could end with a runtime error (a crash on Windows) a moment after a partner's creature
   died in a fight with a pack, mostly when the prey had just been killed: the pack's animals still wanted to help
   against the partner's creature that was no longer there (BUG-0926).
