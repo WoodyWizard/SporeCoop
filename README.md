@@ -34,29 +34,28 @@
    (on Linux: inside the game's Wine prefix, e.g. Bottles *Run Executable...*).
 2. **Install**: the setup finds Spore + Galactic Adventures (GOG or Steam), downloads the newest SporeCoop and checks it.
    Every player installs the same version.
-3. **Play**: start Spore, galaxy menu → **Co-op**. One player clicks **Host**, the others pick the game under
-   *Games on your network* (or type the host's address) and **Join**. The host's world loads for everybody.
+3. **Play**: start Spore, galaxy menu → **Co-op**, type your name. One player picks **Host a game** → **Host**, the
+   others **Join a game** and click the game under *Games on your network* (or type the host's address). The host's
+   world loads for everybody.
    Over the internet: a virtual LAN such as Tailscale, or UDP port 47810 forwarded ([how](docs/INSTALL.md#7-playing-over-the-internet)).
 
 More: [Install](#install) · [How to play](#how-to-play) · [Compatibility](#compatibility) · [FAQ](#faq)
 
 ## What's new
 
-**0.7.10 / 0.7.10.1** (2026-11-07):
+**0.7.12**, a feature update built from your suggestions:
 
-- **Civilization:** guests see the host's own city buildings and vehicles as the host designed them, the host's
-  vehicles move without lag, and a guest crash in fights near defence turrets is fixed.
-- **Tribe:** the guest's village grows with the host's hut upgrades; portraits, colours, chiefs and the dance music
-  match the host's game.
-- **Creature:** the guest follows the species to a new nest, spits stop charges between players, and a crash at the
-  UFO visit is fixed. **Space:** after a rejoin you get your own cargo hold back.
-- **Long sessions:** when the 32-bit game runs low on memory you are told to save and restart instead of crashing.
+- **A new co-op window** in steps: your name, *Host a game* or *Join a game*, a lobby with player colours.
+- **Session settings:** the host turns co-op mechanics on or off (shared healing in Cell, friendly fire, bonuses...).
+- **Find each other:** an arrow to every partner off screen, partners on the minimap, a colour for each player.
+- **One report for the session**, and *Report a problem* in the pause menu. **Space:** terraforming and colony
+  buildings now reach every player.
 
 Every change: [CHANGELOG.md](CHANGELOG.md) · downloads and release notes: [Releases](https://github.com/WoodyWizard/SporeCoop/releases).
 
 ## Contents
 
-- [Quick start](#quick-start) · [What's new](#whats-new) · [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
+- [Quick start](#quick-start) · [What's new](#whats-new) · [Features](#features) · [Session settings](#session-settings) · [Every stage together](#every-stage-together) · [Install](#install) ·
   [Compatibility](#compatibility) · [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
   [Community](#community) · [Building from source](#building-from-source) · [Credits](#credits)
 
@@ -69,6 +68,12 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 - **Co-op from the main menu.** A *Co-op* item in Spore's own galaxy menu: host a game, find
   friends on your network or type an address, chat and get ready in the lobby. **F9** opens it in game.
+- **Your session, your rules.** The host decides which co-op mechanics are on: see
+  [Session settings](#session-settings).
+- **Find each other.** Every player has a colour. A partner who is off screen gets an arrow at the edge of your
+  screen with the name and the distance, and in Creature and Tribe partners show on the minimap.
+- **One report for the session.** When something goes wrong, the host collects every player's report into one
+  file (each player agrees first): [how to report](docs/REPORTING.md).
 - **One world.** The host's save is sent to every guest and loaded automatically. The host
   simulates creatures, tribes, cities and ships; guests see the same world and act through the host.
 - **Your own creations.** Everybody plays their own creature, cell and spaceship from
@@ -81,14 +86,42 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/ui_lobby_menu.jpg" alt="The co-op window in the galaxy menu: hosting a game"></td>
-    <td width="50%"><img src="docs/media/creature_guest_window.jpg" alt="The co-op lobby in game (F9): players, stage, ping, ready, own creature"></td>
+    <td width="50%"><img src="docs/media/ui_lobby.jpg" alt="The co-op lobby in the galaxy menu: Alice hosts, Bob has joined, each with a colour"></td>
+    <td width="50%"><img src="docs/media/ui_ingame.jpg" alt="The co-op window in game (F9): players, colours, chat, Settings and the report buttons"></td>
   </tr>
   <tr>
-    <td>The <i>Co-op</i> window in the galaxy menu: host a game or join one.</td>
-    <td>In game, <b>F9</b>: players, stage, ping, readiness, chat and your own creature.</td>
+    <td>The lobby in the galaxy menu: players with their colours, the address for your friends, <b>Settings</b>.</td>
+    <td>In game, <b>F9</b>: players, chat in each player's colour, your own creature, the host's buttons.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/partner_arrow.jpg" alt="Creature stage: a blue arrow at the left edge of the screen points to Bob, 38 m away"></td>
+    <td><img src="docs/media/ui_settings.jpg" alt="The Settings page: partner arrows, minimap, name tags, friendly fire, Cell settings"></td>
+  </tr>
+  <tr>
+    <td>Bob is off screen: an arrow in his colour at the edge, with his name and distance.
+      <img src="docs/media/partner_minimap.jpg" alt="The Creature stage minimap: Bob's blue mark next to Alice" width="45%" align="right"></td>
+    <td>The host's <b>Settings</b> page: <i>live</i> settings can change during play too.</td>
   </tr>
 </table>
+
+### Session settings
+
+The host picks them in the lobby (**Settings**); every player gets them when joining, and they are kept with the
+host's world for the next session. Guests see them but cannot change them. Most settings are fixed once the game
+has started; the ones marked *live* can also be changed during play (F9). Every setting is on by default unless
+said otherwise, so a new world plays as before.
+
+- **Partner arrows**, **partners on the minimap** and **name tags** over players (all *live*).
+- **Friendly fire**: players can hurt each other (off by default; the Creature stage only for now).
+- **Cell:** regeneration near a partner (*live*), a knock-out instead of death next to a partner, the respawn next to
+  the partner as a small cell.
+- **Creature:** the pack bonuses (pack rescue, healing each other, the joint hunt bonus), and *everybody plays the
+  host's creature*: one species for all, only the host evolves it (off by default: everybody plays their own).
+- **Tribe** (pincer bonus, chief aura, the duet, the epic creature event), **Civilization** (roles, the joint siege
+  bonus, the superweapon vote) and **Space** (disabled instead of destroyed, trade, contracts, shared diplomacy,
+  allies, the finale together, rivals mode): each bonus on or off.
+- How many players may join (2 to 4) and whether they may join after the start (*live*), progress (DNA, food) at
+  the single-player pace, NPC animals treating partners like the host's creature, and a few more.
 
 ## Every stage together
 
@@ -165,24 +198,44 @@ Which build you have, file sizes and hashes, the Steam overlay, mixing versions 
 
 ## How to play
 
+**The first time**
+
+1. Galaxy menu → **Co-op**. The window asks for your name: the one the other players see. Type it → **Continue**
+   (you can change it later with *Change name*).
+2. Then choose **Host a game** or **Join a game**.
+
 **Host**
 
-1. Galaxy menu → **Co-op** → type your name → **Host**.
-2. Load a save or start a new game. The window shows the addresses your friends can use. You can play
-   alone right away: friends can join any time and get your world by themselves.
+1. **Host a game** → **Host** (the port is 47810; change it only if you forwarded another one). The window shows
+   the addresses your friends can use (*Friends connect to: ...*).
+2. The lobby opens. **Settings** (top left) shows the [session settings](#session-settings): change them now,
+   before the game starts; the ones marked *live* can also be changed later in game (F9).
+3. Load a save or start a new game. You can play alone right away: friends can join any time and get your world by
+   themselves.
 
 **Guest**
 
-1. Galaxy menu → **Co-op** → type your name.
-2. Click the host under *Games on your network*, or type the host's address (e.g. `100.64.12.7` on
-   Tailscale) → **Join**.
-3. The host's world arrives and loads by itself; you appear next to the host with your own creature.
+1. **Join a game**, then either click the host's game under *Games on your network*, or type the host's address
+   (e.g. `100.64.12.7` on Tailscale) or host name (e.g. `alice-pc`) in the address field → **Join**. Without a port
+   the default port 47810 is used; another one goes after a colon (`100.64.12.7:47811`).
+2. The lobby opens; the host's world arrives and loads by itself, and you appear next to the host with your own
+   creature.
+
+**The lobby**
+
+- Every player has a colour, shown in the lobby, the chat, the name tags, the arrows and the minimap. Click the
+  small **>** next to your own colour to try the next one (a colour another player has is skipped).
+- *I'm ready*, the chat, and the host's address (*Host address: ...*) for friends who want to join too.
+- **Close session** (host) ends the session for everybody; a guest's **Leave** goes back to *Join a game*.
 
 **In game**
 
 | Key / command | What it does |
 |---|---|
-| **F9** | the co-op window: players, stage, ping, readiness, chat, *Send my world*, *Leave* |
+| **F9** | the co-op window: players, colours, stage, ping, readiness, chat, *Settings*, *Send my world*, *Leave* / *Close session* |
+| *Settings* | the F9 window: the session settings; the host changes the *live* ones during play, guests see them |
+| *Report a problem* | the F9 window, and also the game's pause menu (Esc): makes a report file ([how to report](docs/REPORTING.md)); the host's report also asks every guest for theirs |
+| *Ask the players for their reports* | the host's F9 window: collects every player's report into one file at any time; each guest clicks *Send* or *Don't send* |
 | *My creature: … < >* | the F9 window: pick your own creature or cell from *My Creations*; without one of that kind you play the host's species (make one in an editor to get a choice) |
 | *Send my world* | the host sends the world again to everybody (greyed out until a game is loaded and somebody has joined) |
 | *I'm ready* | agree to evolve (editor, next stage) |
@@ -196,9 +249,9 @@ Which build you have, file sizes and hashes, the Steam overlay, mixing versions 
 
 ```
 Alice (GOG) and Bob (Steam) install Tailscale and the same SporeCoop version.
-Alice: Co-op → "Alice" → Host → loads her Tribe save.
-       The window says: friends connect to 100.64.12.7:47810
-Bob:   Co-op → "Bob" → 100.64.12.7 → Join.
+Alice: Co-op → "Alice" → Host a game → Host → loads her Tribe save.
+       The window says: Friends connect to: 100.64.12.7:47810
+Bob:   Co-op → "Bob" → Join a game → 100.64.12.7 → Join.
        Alice's tribe loads; Bob gets his share of the members and his own chief.
 Both:  F9 → I'm ready when the tribe is ready for Civilization.
 ```
@@ -235,12 +288,12 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.7.10.1 (the newest release is on the [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) page): co-op in every stage for up to 4 players, and a Space stage built for playing
+Version 0.7.12 (the newest release is on the [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) page): co-op in every stage for up to 4 players, and a Space stage built for playing
 together (the F9 window's **Space** page: partners on the map, allied colonies, trade, contracts,
 shared diplomacy, the galactic core together, rivals mode). Tested automatically on real game
-instances: 600+ scenario tests with real clicks, bots that play every stage through real input for
+instances: 770+ scenario tests with real clicks, bots that play every stage through real input for
 hours, 4-player sessions with rejoins, a chaos bot and simulated bad networks
-([stability report](docs/stability-report.md)). 568 reported bugs are fixed so far, each with its
+([stability report](docs/stability-report.md)). 690+ reported bugs are fixed so far, each with its
 own ticket and a test ([docs/tickets](docs/tickets/README.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md). Found a problem? Type `/bug <what you
 see>` in the co-op chat when it happens (it marks that moment in every player's log), then see

@@ -8,7 +8,8 @@ Thanks for helping! One file from each player is usually all we need.
   `Spore\SporebinEP1\mods\logs\SporeCoop-report-<date-time>.zip`. The next time you start the game
   it tells you the file's name.
 * **Anything else** (players out of sync, something does not work): press **F9** in the game, then
-  **Report a problem**. It makes the same file and opens the folder with it selected.
+  **Report a problem** (or press Esc: the game's pause menu has **Report a problem** too). It makes the same file
+  and opens the folder with it selected.
 * If both of you were playing, send the files of **both** players: the host's and the guest's.
   Each game's log says what that game saw; the two together show what went wrong between them.
 * **In a session, the host can collect everybody's report** (since 0.7.12): the host's **Report a problem** also
