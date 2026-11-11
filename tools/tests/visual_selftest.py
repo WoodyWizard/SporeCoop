@@ -2,6 +2,7 @@
 """Self-tests of the visual test tools (make test, no game; docs/06-testing.md#testing-key-frames):
 
   frames    key frame names and manifest, the selection cap, contact sheets of a fake run (tools/frames_review.py)
+  sameview  coop.cam / coop.census / coop.creations parsing, the projection, the match of two pictures (sameview.py)
 
   visual_selftest.py [check ...]   all checks by default; exit 1 when one fails
 The image checks need Pillow: without it they print a SKIP line (the CI installs Pillow)."""
@@ -100,7 +101,61 @@ def test_frames():
         os.environ.pop('SPORE_LAB_TEST', None)
 
 
-CHECKS = {'frames': test_frames}
+CAM = """viewer=03CD7E90 camera=03CD8310
+viewOffset=(0.000 0.000) viewWindow=(0.546 0.410) recip=(1.830 2.441) proj=1 near=1.000 far=10000.0
+viewport x=0 y=0 w=1440 h=1080
+  view[0] =    1.000    0.000    0.000    0.000
+  view[1] =    0.000    1.000    0.000    0.000
+  view[2] =    0.000    0.000    1.000    0.000
+  view[3] =   10.000  -20.000    5.000    1.000
+"""
+CENSUS = """census v1 role=host me=0 mode=Creature modeid=01654C01 world=68AC222A t=1.0
+obj c6 key=065CB8BD alive=1 hp=6.0 ai=1 own=npc owner=-1 pos=(10.0 5.0 5.0)
+obj c7 key=065CB8BD alive=0 hp=0.0 ai=1 own=npc owner=-1 pos=(12.0 5.0 6.0)
+obj c-1 key=290217AC alive=1 hp=9.0 ai=1 own=avatar owner=-1 pos=(8.0 0.0 5.0)
+obj c8 key=065CB8BD alive=1 hp=6.0 ai=1 own=npc owner=-1 pos=(10.0 -30.0 5.0)
+obj c9 key=065CB8BD alive=1 hp=6.0 ai=1 own=npc owner=-1 pos=(10.0 200.0 5.0)
+end objects=5
+"""
+CREATIONS = """  mine creature: 290217AC 'Ms Spoffit' (5 own)
+  player 0 creature: 065CBE70/2B978C46/40626200 ''
+  player 1 creature: 7CBD75FC/2B978C46/40626200 'Ms Spoffit'
+"""
+
+
+def test_sameview():
+    import sameview as sv
+    cam = sv.parse_cam(CAM)
+    check(cam is not None and cam['viewport'] == (0, 0, 1440, 1080) and cam['rows'][3] == [10.0, -20.0, 5.0],
+          'parse_cam reads the rows, the window and the viewport')
+    check(sv.parse_cam('no viewer') is None, 'parse_cam: no viewer, None')
+    x, y, z = sv.project(cam, (10.0, 5.0, 5.0))
+    check(abs(x - 720) < 0.01 and abs(y - 540) < 0.01 and abs(z - 25) < 0.01, f'a point ahead is in the middle ({x}, {y})')
+    x2, y2, _ = sv.project(cam, (15.0, 5.0, 8.0))
+    check(x2 > 720 and y2 < 540, f'right and up go right and up on the screen ({x2:.0f}, {y2:.0f})')
+    check(sv.project(cam, (10.0, -40.0, 5.0)) is None, 'a point behind the camera has no screen place')
+    rows = sv.parse_census(CENSUS)
+    check(len(rows) == 5 and rows[1]['alive'] == 0 and rows[2]['own'] == 'avatar', f'parse_census ({len(rows)} rows)')
+    al = sv.aliases(CREATIONS)
+    check(al == {'290217AC': '7CBD75FC'}, f'aliases: the own creation under the session key ({al})')
+    seen = sv.in_view(cam, rows, alias=al)
+    keys = sorted(r['key'] for r in seen)
+    check(keys == ['065CB8BD', '065CB8BD:dead', '7CBD75FC'], f'in_view: the picture, a body apart, the alias ({keys})')
+    moved = [dict(r, x=r['x'] + 30) for r in seen]
+    r = sv.compare(seen, moved)
+    check(r['ok'] and len(r['matched']) == 3, f'compare: the same creatures 30 px apart match ({r["line"]})')
+    far = [dict(r, x=r['x'] + 400) for r in seen]
+    check(not sv.compare(seen, far)['ok'], 'compare: another view (400 px apart) does not match')
+    other = [dict(r, key='0BADBEEF') for r in seen]
+    check(not sv.compare(seen, other)['ok'], 'compare: other species at the same places do not match')
+    check(not sv.compare([], [])['ok'], 'compare: two empty pictures are no match')
+    eye, tg = sv.camera_at([0.0, 0.0, 500.0], 0, 4, 25.0, 8.0)
+    d = sum((eye[i] - [0, 0, 500][i]) ** 2 for i in range(3)) ** 0.5
+    check(abs(d - (25 ** 2 + 8 ** 2) ** 0.5) < 0.01 and abs(tg[2] - 501) < 0.01, f'camera_at: 25 m along, 8 m up ({d:.2f})')
+    check(sv.view_cmd([1, 2, 3], [4, 5, 6], 50).startswith('coop.view set 1.000 2.000 3.000 4.000'), 'view_cmd')
+
+
+CHECKS = {'frames': test_frames, 'sameview': test_sameview}
 
 if __name__ == '__main__':
     want = sys.argv[1:] or list(CHECKS)

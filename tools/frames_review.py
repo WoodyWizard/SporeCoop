@@ -35,7 +35,7 @@ def build(run_dir, limit=80, tests=None, kind=None, out=None):
     if kind:
         entries = [e for e in entries if e.get('kind') == kind]
     chosen = frames.select(entries, limit)
-    out = out or os.path.join(run_dir, 'frames', 'sheets')
+    out = out or os.path.join(frames.frames_base(run_dir), 'sheets')
     os.makedirs(out, exist_ok=True)
     for f in os.listdir(out):  # a new build replaces the old sheets
         if f.endswith('.jpg') or f in ('index.html', 'sheets.md'):

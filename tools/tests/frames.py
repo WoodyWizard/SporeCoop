@@ -123,9 +123,15 @@ def read_manifest(path):
     return out
 
 
+def frames_base(run):
+    d = os.path.join(run, 'frames')
+    return d if os.path.isdir(d) else run
+
+
 def load_run(run):
-    """every key frame of a run folder (out/lab/<run>), in test and number order, with 'dir' set"""
-    base = os.path.join(run, 'frames')
+    """every key frame of a run folder (out/lab/<run>), in test and number order, with 'dir' set; a folder
+    without frames/ is the frames folder itself (out/laneN/frames/manual of a test started by hand)"""
+    base = frames_base(run)
     out = []
     try:
         tests = sorted(os.listdir(base))

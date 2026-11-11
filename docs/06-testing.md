@@ -5504,8 +5504,9 @@ look at the screens too, at a few chosen moments.
   half time, end), the campaign (every phase end, all four players, `phase_frame()`), `nest_species`,
   `tribe_portraits`, `creature_brain_hp`, `civ_host_design`, `space_shots`, `find_partners` (tag and arrow of each
   stage), `one_creature`, `tribe_conquer_orders`, `cell_levelup_view`, `same_view` (kind `sameview`, see
-  the same view section). A new key frame needs a note that says what a reviewer should see.
-* `tools/frames_review.py <run> [--max 80] [--test a,b] [--kind sameview]` builds the contact sheets: per key frame
+  [the same view](#testing-same-view)). A new key frame needs a note that says what a reviewer should see.
+* `tools/frames_review.py <run> [--max 80] [--test a,b] [--kind sameview]` (a run id, a run folder, or a
+  frames folder such as `out/lane6/frames/manual`) builds the contact sheets: per key frame
   one JPEG with the games side by side (host first; 720 px tiles, 480 px with more than two games) under a label
   (test, number, tag, kind, stage, the note, each game's mode and position, "NO SHOT" for a game without a frame),
   in `out/lab/<run>/frames/sheets/`, with `index.html` and `sheets.md` (one line per sheet: its path and note). At
@@ -5545,3 +5546,32 @@ same loading screen, a camera in a wall) is no finding: say so in the review not
 **The final check of every release runs this step** ([the release rule](#testing-release-rule), item 5): the run of
 the final check (play_* of all stages, the campaign tests, the feature tests above, `ui_golden`, `same_view`) is
 reviewed by its sheets, at most ~80, and the review's findings are tickets before the tag.
+
+## The same view on both games (2026-11-10, feat/w47-visual)
+<a id="testing-same-view"></a>
+
+An experiment of the visual tests: both games' cameras at the same place, so their screenshots can be compared side
+by side and the creatures in them counted.
+
+* `coop.view set <ex ey ez> <tx ty tz> [fov] [ux uy uz]` (test command, mods/coop/test_view.cpp): the main viewer at
+  the eye, looking at the target, `fov` the vertical angle in degrees (default: the game's own), up the planet's
+  (away from the centre at the eye) unless given; `coop.view off` gives the camera back to the game (and its view
+  window); `coop.view` prints the state and the viewer's real place. It hooks `cCameraManager::Update` at the first
+  `set` (passes through while off) and sets the transform after the game's camera ran, every frame
+  ([how](re/graphics.md#graphics-fixed-camera)). A lane knob (twoinst KNOBS): a test that set it starts the next one
+  cold.
+* `coop.census creatures`: the creature rows in any mode, the citizens (tribe members, noun 0x18EB4B7) too.
+* `tools/tests/coop_same_view.py` (suites `same_view`, `same_view_tribe`; ~1.5 min after the games are up): waits
+  until both games draw (a shot's mean brightness over 25), then from 25 m round the players' place (Creature: the
+  middle of the two creatures; Tribe: the host's player tribe) and 8 m up, in 4 directions, fov 50: `coop.view set`
+  on both, a key frame of kind `sameview` (the sheets of [key frames](#testing-key-frames) show both screens and the
+  check's line), and the automatic check: each game's census rows projected with its own camera (`coop.cam`, the
+  same formula as SporeKit's world_to_screen, tools/tests/sameview.py) within 70 m and on the screen, matched by
+  species key (a dead one apart) within 120 px; at least 75 % of the bigger list must match. A player's own creation
+  has another key in its own game ('mine creature' of `coop.creations`) than in the session: `sameview.aliases`
+  reads it as the session's. At the end both cameras must be back (the viewer away from the last fixed eye).
+* Twin: `SAMEVIEW_SHIFT=10` moves the guest's camera 10 m sideways: 0 of 7 matched, FAIL (lane 6, 2026-11-10).
+* Pass on lane 6 (by hand): Creature 7/7, 8/8, 7/7, 7/7 matched; Tribe 3/3 in each view. The look itself (models,
+  paints, poses) is left to the review by eye.
+* Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
+  cameras, other census rows).
