@@ -1434,6 +1434,22 @@ COOP_FIX("civ.space_planner_send", "BUG-0751", g_fix_space_planner_send,
          "civ: a building a guest buys in a Space colony's city planner is built in the host's game too (same planet)");
 static uint32_t g_space_builds_sent, g_space_builds_in, g_space_builds_away, g_space_builds_failed;
 static void send_space_build(void* city, void* b);
+// BUG-0766: a guest's colony building for a planet the host's ship is not on was dropped by the host ("not built:
+// this game is at ..."): the guest had it and had paid, the host's world (and every later share) never did. The
+// host now keeps it and builds it when its ship is on that planet (its cities exist only while it is the active
+// planet), 5 s after it came there. Off: dropped (0.7.11).
+static bool g_fix_space_build_hold = true;
+COOP_FIX("civ.space_build_hold", "BUG-0766", g_fix_space_build_hold,
+         "civ: a guest's Space colony building waits on the host until the host's ship is on that planet");
+// BUG-0884: in Space the host's own colony planner building, and the one it builds for a guest, went to nobody
+// (h_AddBuilding's relay is Civ only): the other guests' colony cities never had it. The host now sends it to every
+// guest but the one it came from (CMD_SPACE_BUILD, host -> guest); a guest builds it in its city there (not paid)
+// when its ship is on that planet, or keeps it until it is. Off: the host's (and the buyer's) game only (0.7.11).
+static bool g_fix_space_planner_relay = true;
+COOP_FIX("civ.space_planner_relay", "BUG-0884", g_fix_space_planner_relay,
+         "civ: a Space colony building the host gets is built in the other guests' games too");
+static void space_note_host_build(void* city, void* b, int except);
+static void space_tick(double now);
 
 using AddBuilding_t = int(SK_THISCALL*)(void*, void*, int);
 static AddBuilding_t o_AddBuilding;
@@ -1444,6 +1460,9 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
     if (!active() && !g_applying && b && is_guest() && game::mode_id() == modes::kSpace &&
         (uintptr_t)ret == a_PlannerAddBuildingRet && g_fix_space_planner_send)
         send_space_build(city, b); // BUG-0751
+    if (!active() && !g_applying && b && is_host() && game::mode_id() == modes::kSpace &&
+        (uintptr_t)ret == a_PlannerAddBuildingRet && g_fix_space_planner_relay)
+        space_note_host_build(city, b, -1); // BUG-0884: the host's own planner building
     if (!active() || g_applying || !b)
         return r;
     net::Vec3 pos;
@@ -3994,6 +4013,8 @@ static void prune_gone()
 
 void tick(double now)
 {
+    if (g_ok && C.sess && C.sess->connected())
+        space_tick(now); // BUG-0766 / BUG-0884
     if (!active())
         return;
     prune_gone();
@@ -4039,33 +4060,180 @@ static void send_space_build(void* city, void* b)
 
 static void* local_city_near(const net::Vec3& p);
 
+// BUG-0766 / BUG-0884: a colony building for a planet this game is not on yet (host: a guest's; guest: the host's)
+struct SpaceBuild {
+    int from;
+    uint32_t place, noun, world;
+    net::Vec3 cp, p;
+};
+static std::vector<SpaceBuild> g_space_held;
+static uint32_t g_space_held_built, g_space_relayed, g_space_relay_in;
+// host: its own planner building (placed by the planner a moment after AddBuilding: its position reads 0 0 0 then)
+struct SpaceOut {
+    void* b;
+    void* city;
+    uint32_t place, noun;
+    net::Vec3 cp;
+    double t;
+    int except;
+};
+static std::vector<SpaceOut> g_space_out;
+static uint32_t g_space_place_seen;
+static double g_space_place_since;
+
+static uint32_t space_place_now() { return C.space_place ? C.space_place() : 0; }
+
+// the building made in this game's city near cp (not paid: the buyer paid; the shared money follows)
+static void* space_build_here(const SpaceBuild& sb)
+{
+    void* city = local_city_near(sb.cp);
+    g_build_from = sb.from; // the buyer already has it
+    g_applying = true;      // not sent again by this game's h_AddBuilding
+    void* b = city ? build_in_city(city, sb.noun, sb.p, false) : nullptr;
+    g_applying = false;
+    g_build_from = -1;
+    H->log(M, b ? SK_INFO : SK_WARN, "civ: space planner: %s's building %08X in the city at (%.0f %.0f %.0f) %s",
+           sb.from >= 0 ? C.sess->name_of((uint8_t)sb.from).c_str() : "?", sb.noun, sb.cp.x, sb.cp.y, sb.cp.z,
+           b ? "built" : city ? g_build_fail : "no city near it");
+    return b;
+}
+
+static void space_send(const SpaceBuild& sb, int except)
+{
+    net::Writer w;
+    w.u8(CMD_SPACE_BUILD);
+    w.u32(sb.place);
+    w.u32(sb.noun);
+    w.f32(sb.cp.x); w.f32(sb.cp.y); w.f32(sb.cp.z);
+    w.f32(sb.p.x); w.f32(sb.p.y); w.f32(sb.p.z);
+    C.sess->broadcast_reliable(net::MSG_CIV_CMD, w, except);
+    g_space_relayed++;
+}
+
+// host: a building it got in a colony city goes to the guests (BUG-0884), once the planner placed it
+static void space_note_host_build(void* city, void* b, int except)
+{
+    if (!g_fix_space_planner_relay || !city || !b || C.sess->players().size() < 2 + (except >= 0 ? 1 : 0))
+        return;
+    uint32_t place = space_place_now();
+    if (!(place & 0x40000000u) || g_space_out.size() >= 64)
+        return;
+    g_space_out.push_back({b, city, place, game::noun_id(b), city_pos(city), H->time_seconds(), except});
+}
+
+static void space_hold(const SpaceBuild& sb, uint32_t mine)
+{
+    if (g_space_held.size() >= 128)
+        g_space_held.erase(g_space_held.begin());
+    g_space_held.push_back(sb);
+    H->log(M, SK_INFO, "civ: space planner: a building %08X for %08X kept until this game is there (now at %08X; %u kept)",
+           sb.noun, sb.place, mine, (unsigned)g_space_held.size());
+}
+
+static bool read_space_build(net::Reader& r, SpaceBuild& sb, int from)
+{
+    r.u8(); // CMD_SPACE_BUILD
+    sb.from = from;
+    sb.place = r.u32();
+    sb.noun = r.u32();
+    sb.cp.x = r.f32(); sb.cp.y = r.f32(); sb.cp.z = r.f32();
+    sb.p.x = r.f32(); sb.p.y = r.f32(); sb.p.z = r.f32();
+    sb.world = modes::current_world();
+    return r.ok();
+}
+
 // host, Space: a guest's colony planner building
 static void host_space_build(uint8_t from, net::Reader& r)
 {
-    r.u8(); // CMD_SPACE_BUILD
-    uint32_t place = r.u32(), noun = r.u32();
-    net::Vec3 cp, p;
-    cp.x = r.f32(); cp.y = r.f32(); cp.z = r.f32();
-    p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
-    if (!r.ok())
+    SpaceBuild sb;
+    if (!read_space_build(r, sb, from))
         return;
-    uint32_t mine = C.space_place ? C.space_place() : 0;
-    if (mine != place) {
+    uint32_t mine = space_place_now();
+    if (game::mode_id() != modes::kSpace || mine != sb.place) {
         g_space_builds_away++;
         H->log(M, SK_INFO, "civ: space planner: %s's building %08X on %08X not built: this game is at %08X (BUG-0751)",
-               C.sess->name_of(from).c_str(), noun, place, mine);
+               C.sess->name_of(from).c_str(), sb.noun, sb.place, mine);
+        if (g_fix_space_build_hold) // BUG-0766
+            space_hold(sb, mine);
         return;
     }
-    void* city = local_city_near(cp);
-    g_build_from = from; // the guest already has it (and paid in its planner)
-    void* b = city ? build_in_city(city, noun, p, false) : nullptr;
-    g_build_from = -1;
+    void* b = space_build_here(sb);
     if (b)
         g_space_builds_in++;
     else
         g_space_builds_failed++;
-    H->log(M, b ? SK_INFO : SK_WARN, "civ: space planner: %s's building %08X in the city at (%.0f %.0f %.0f) %s (BUG-0751)",
-           C.sess->name_of(from).c_str(), noun, cp.x, cp.y, cp.z, b ? "built" : city ? g_build_fail : "no city near it");
+    if (b)
+        space_note_host_build(local_city_near(sb.cp), b, from); // BUG-0884: the other guests
+}
+
+// guest, Space: the host's colony building (its own or another guest's), BUG-0884
+static void guest_space_build(net::Reader& r)
+{
+    SpaceBuild sb;
+    if (!read_space_build(r, sb, 0))
+        return;
+    g_space_relay_in++;
+    uint32_t mine = space_place_now();
+    if (game::mode_id() != modes::kSpace || mine != sb.place || H->time_seconds() - g_space_place_since < 5.0)
+        space_hold(sb, mine);
+    else
+        space_build_here(sb);
+}
+
+// every frame in any mode: the kept buildings of the planet this game is on now (5 s after it came: its cities are
+// made), the host's own planner buildings once placed
+static void space_tick(double now)
+{
+    uint32_t place = game::mode_id() == modes::kSpace ? space_place_now() : 0;
+    if (place != g_space_place_seen) {
+        g_space_place_seen = place;
+        g_space_place_since = now;
+    }
+    if (!g_space_out.empty()) {
+        std::vector<void*> cities = place ? all_cities() : std::vector<void*>{};
+        for (size_t i = 0; i < g_space_out.size();) {
+            SpaceOut& o = g_space_out[i];
+            bool city_ok = o.place == place && std::find(cities.begin(), cities.end(), o.city) != cities.end();
+            auto bl = city_ok ? vec_of((uint8_t*)o.city + kCityBuildings) : std::vector<void*>{};
+            bool alive = city_ok && std::find(bl.begin(), bl.end(), o.b) != bl.end();
+            net::Vec3 pos{};
+            if (alive)
+                game::object_position(o.b, pos);
+            bool placed = alive && (pos.x != 0 || pos.y != 0 || pos.z != 0);
+            if (!alive || placed || now - o.t > 3.0) {
+                if (alive && is_host()) {
+                    SpaceBuild sb{0, o.place, o.noun, modes::current_world(), o.cp, pos};
+                    space_send(sb, o.except);
+                    H->log(M, SK_INFO, "civ: space planner: a building %08X in the city at (%.0f %.0f %.0f) on %08X sent to the guests (BUG-0884)",
+                           o.noun, o.cp.x, o.cp.y, o.cp.z, o.place);
+                }
+                g_space_out.erase(g_space_out.begin() + i);
+            } else
+                i++;
+        }
+    }
+    if (g_space_held.empty() || !(place & 0x40000000u) || now - g_space_place_since < 5.0)
+        return;
+    uint32_t world = modes::current_world();
+    for (size_t i = 0; i < g_space_held.size();) {
+        SpaceBuild sb = g_space_held[i];
+        if (sb.world != world) { // another world loaded: not this galaxy's planet
+            g_space_held.erase(g_space_held.begin() + i);
+            continue;
+        }
+        if (sb.place != place) {
+            i++;
+            continue;
+        }
+        g_space_held.erase(g_space_held.begin() + i);
+        void* b = space_build_here(sb);
+        if (b)
+            g_space_held_built++;
+        else
+            g_space_builds_failed++;
+        if (b && is_host())
+            space_note_host_build(local_city_near(sb.cp), b, sb.from);
+    }
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -4074,6 +4242,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         net::Reader peek = r;
         if (peek.u8() == CMD_SPACE_BUILD) {
             host_space_build(from, r); // BUG-0751
+            return;
+        }
+    }
+    if (!active() && type == net::MSG_CIV_CMD && g_ok && is_guest() && from == 0 && r.left()) { // BUG-0884
+        net::Reader peek = r;
+        if (peek.u8() == CMD_SPACE_BUILD) {
+            guest_space_build(r);
             return;
         }
     }
@@ -4151,6 +4326,8 @@ static void clear_coop_tables(bool restore_speed)
 void on_session_end()
 {
     g_cmd_held.clear(); // BUG-0693
+    g_space_held.clear(); // BUG-0766 / BUG-0884
+    g_space_out.clear();
     host_buildings_session_end(); // BUG-0670
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
@@ -4295,9 +4472,10 @@ std::string status()
     snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u stops=%u released=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
              g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused, g_shot_stops_seen, g_shot_released);
-    char spb[120]; // BUG-0751
-    snprintf(spb, sizeof spb, "space_planner: sent=%u built=%u away=%u failed=%u\n", g_space_builds_sent, g_space_builds_in,
-             g_space_builds_away, g_space_builds_failed);
+    char spb[200]; // BUG-0751
+    snprintf(spb, sizeof spb, "space_planner: sent=%u built=%u away=%u failed=%u kept=%u kept_built=%u relayed=%u relay_in=%u\n",
+             g_space_builds_sent, g_space_builds_in, g_space_builds_away, g_space_builds_failed,
+             (unsigned)g_space_held.size(), g_space_held_built, g_space_relayed, g_space_relay_in);
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
