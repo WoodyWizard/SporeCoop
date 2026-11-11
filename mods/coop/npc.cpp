@@ -2894,16 +2894,33 @@ static uint32_t body_print(void* c)
     return h;
 }
 
+// BUG-0917 (the class of `coop.abilities reach`): the live objects of the game's list right now. A console command
+// runs between frames: the tables of the last tick (g_seen_now, the proxies, the herds) can name an object the
+// game freed since, and `list` makes virtual calls on them (body_print, noun_id).
+static std::unordered_set<void*> listed_now()
+{
+    std::unordered_set<void*> s;
+    game::for_each_object(
+        [](void* o, uint32_t, void* u) {
+            if (game::object_alive(o))
+                ((std::unordered_set<void*>*)u)->insert(o);
+            return true;
+        },
+        &s);
+    return s;
+}
+
 std::string list()
 {
     std::string out;
     char b[640];
     void* av = game::avatar();
     net::Vec3 ap = av ? game::position(av) : net::Vec3{};
+    const std::unordered_set<void*> live = listed_now();
     if (is_host()) {
         double now = H->time_seconds();
         for (auto& [c, hn] : g_host_npcs) {
-            if (!g_seen_now.count(c)) { // maybe freed already: no field reads
+            if (!g_seen_now.count(c) || !live.count(c)) { // maybe freed already: no field reads
                 snprintf(b, sizeof b, "  #%u %p not updated for %d ms\n", hn.id, c, (int)((now - hn.last_seen) * 1000));
                 out += b;
                 continue;
@@ -2923,25 +2940,28 @@ std::string list()
     } else {
         double now = H->time_seconds();
         for (auto& [k, h] : g_local_herds) {
+            bool hl = live.count(h) != 0; // (a herd gone from the list: its pointer only, no call on it)
             snprintf(b, sizeof b, "  nest %08X/%08X herd=%p alive=%d noun=%08X\n", (uint32_t)k, (uint32_t)(k >> 32), h,
-                     (int)game::object_alive(h), game::noun_id(h));
+                     (int)hl, hl ? game::noun_id(h) : 0u);
             out += b;
         }
         for (auto& [id, px] : g_proxies) {
+            // a proxy whose creature left the list since the last tick is printed as pending (nothing read on it)
+            void* pc = px.c && live.count(px.c) ? px.c : nullptr;
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
-            float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            net::Vec3 at = px.c ? game::position(px.c) : net::Vec3{};
+            float err = pc && have ? net::dist(game::position(pc), st.pos) : -1.f;
+            net::Vec3 at = pc ? game::position(pc) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
                      "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
                      " game_dead=%d impressed=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
-                     id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
-                     px.c ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.c ? drive::over_ground(at) : 0.f,
+                     id, px.key.instance, pc ? "spawned" : "pending", pc ? game::health(pc) : 0.f,
+                     pc ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, pc ? drive::over_ground(at) : 0.f,
                      have ? drive::over_ground(st.pos) : 0.f, px.made_agl, px.drv.grounded, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
-                     px.c ? drive::speed(game::velocity(px.c)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
-                     px.drv.nudges, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c),
-                     px.c ? (int)game::is_dead(px.c) : -1, px.c ? (int)game::impressed(px.c) : -1);
+                     pc ? drive::speed(game::velocity(pc)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
+                     px.drv.nudges, pc ? (int)game::is_puppet(pc) : -1, pc, pc ? game::herd_of(pc) : nullptr, body_print(pc),
+                     pc ? (int)game::is_dead(pc) : -1, pc ? (int)game::impressed(pc) : -1);
             out += b;
         }
     }

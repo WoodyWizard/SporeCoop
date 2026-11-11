@@ -13,6 +13,7 @@
 #include "cellsync.h"
 #include "dna_pace.h"
 #include "settings.h"
+#include "fixes.h"
 #include "game.h"
 #include "gamefixes.h"
 #include "modes.h"
@@ -22,6 +23,9 @@
 #include "sporekit_game.hpp"
 
 static const SkHost* H;
+namespace {
+SkMod* g_self;
+}
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
 namespace {
@@ -195,6 +199,45 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0917): `coop.abilities reach` takes only a live creature of the world's list for the avatar's target
+static bool g_fix_reach_target = true;
+COOP_FIX_UNSAFE("test.reach_target", "BUG-0917", g_fix_reach_target,
+                "tests: coop.abilities reach calls the game's gap function only on a target that is a live creature of the object list");
+
+// What the avatar's combat target (+0xE7C, a cCombatant*) is, by pointer compares with the game's object list
+// only (safe on a freed target): `creature` when it is the combatant (+0x5A8) of a live creature; else `owner`,
+// the listed object the pointer lies in (the nearest below it, within 0x1000), with its noun.
+struct TargetKind {
+    void* creature = nullptr;
+    void* owner = nullptr;
+    uint32_t noun = 0;
+    bool alive = false;
+};
+TargetKind target_kind(uint8_t* tc)
+{
+    struct F {
+        uint8_t* tc;
+        TargetKind k;
+    } f{tc, {}};
+    if (!tc)
+        return f.k;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* f = (F*)u;
+            auto* b = (uint8_t*)o;
+            if (b > f->tc || f->tc - b >= 0x1000 || (f->k.owner && b < (uint8_t*)f->k.owner))
+                return true;
+            f->k.owner = o;
+            f->k.noun = noun;
+            f->k.alive = game::object_alive(o);
+            return true;
+        },
+        &f);
+    if (f.k.owner && f.k.noun == 0x18EB45Eu && f.k.alive && (uint8_t*)f.k.owner + 0x5A8 == tc)
+        f.k.creature = f.k.owner;
+    return f.k;
+}
+
 // tests (BUG-0366): coop.abilities [play <i>] - the own avatar's abilities (vt 0xB0 count, vt 0xB4
 // get(i): +8 type, +0x10) and its height over the ground; `play` uses one (PlayAbility)
 int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
@@ -243,14 +286,43 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         // Ability_RangeScale(0); else the game posts a walk-and-attack goal (0x20). Status 0 = usable (0xD49220).
         uintptr_t gap_f = H->sym("SporeCoop::Ability_TargetGap"), scale_f = H->sym("SporeCoop::Ability_RangeScale"),
                   st_f = H->sym("SporeCoop::AbilityBar_Status");
-        uint8_t* tc = *(uint8_t**)((uint8_t*)av + 0xE7C); // the target's combatant (creature +0x5A8)
+        uint8_t* tc = *(uint8_t**)((uint8_t*)av + 0xE7C); // the target's combatant (a creature's is at +0x5A8)
         float gap = -1.f;
-        if (tc && gap_f && skg::readable(tc - 0x5A8, 0x5B0)) {
-            uint8_t* t = tc - 0x5A8;
-            gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
-            SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
-        } else
-            SAY("target none\n");
+        if (!g_fix_reach_target) { // before BUG-0917: every target taken for a creature after a `readable` check
+            if (tc && gap_f && skg::readable(tc - 0x5A8, 0x5B0)) {
+                uint8_t* t = tc - 0x5A8;
+                gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
+                SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
+            } else
+                SAY("target none\n");
+        } else {
+            // BUG-0917: +0xE7C is a cCombatant of any class (the game casts it to its spatial with the combatant's
+            // vt 0x5C before Ability_TargetGap), and a creature can be gone from the world while the field still
+            // names it. Only a live creature of the game's object list is a target here; nothing is called or read
+            // on anything else (pointer compares only).
+            TargetKind k = target_kind(tc);
+            if (k.creature && gap_f) {
+                uint8_t* t = (uint8_t*)k.creature;
+                gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
+                SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
+            } else if (!tc)
+                SAY("target none\n");
+            else if (k.owner)
+                SAY("target none (the game's target %p is no live creature: object %p noun 0x%X alive=%d, its "
+                    "combatant at +0x%X)\n",
+                    (void*)tc, k.owner, k.noun, k.alive ? 1 : 0, (unsigned)(tc - (uint8_t*)k.owner));
+            else
+                SAY("target none (the game's target %p is no object of the world's list)\n", (void*)tc);
+            static uint8_t* s_noted; // one log line per such target: what the avatar's target field named
+            if (tc && !k.creature && tc != s_noted) {
+                s_noted = tc;
+                H->log(g_self, SK_INFO,
+                       "abilities: the avatar's target %p is no live creature of the list (object %p noun 0x%X "
+                       "alive=%d, +0x%X): reach reports no target (BUG-0917)",
+                       (void*)tc, k.owner, k.noun, k.alive ? 1 : 0,
+                       k.owner ? (unsigned)(tc - (uint8_t*)k.owner) : 0u);
+            }
+        }
         float sc = scale_f ? ((float(__cdecl*)(int))scale_f)(0) : 1.f;
         int n = skg::vcall<int>(av, 0xB0 / 4);
         for (int i = 0; i < n && i < 64; i++) {
@@ -600,7 +672,6 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 namespace {
 typedef bool(SK_THISCALL* LoadGame_t)(void*, const void*);
 LoadGame_t o_LoadGame;
-SkMod* g_self;
 
 std::string str16(const void* s)
 {
