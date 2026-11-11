@@ -5573,6 +5573,9 @@ by side and the creatures in them counted.
 * Twin: `SAMEVIEW_SHIFT=10` moves the guest's camera 10 m sideways: 0 of 7 matched, FAIL (lane 6, 2026-11-10).
 * Pass on lane 6 (by hand): Creature 7/7, 8/8, 7/7, 7/7 matched; Tribe 3/3 in each view. The look itself (models,
   paints, poses) is left to the review by eye.
+* First review (lab 20261110-201619, 14 sheets): Tribe: the guest's copy of the host's chief lacks its staff
+  (BUG-0906), a partner tag over empty ground on the guest (BUG-0907); Creature: the host draws a tall green light
+  over the guest's creature that the guest's game does not show (the pack's regen effect, seen once, no ticket yet).
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 

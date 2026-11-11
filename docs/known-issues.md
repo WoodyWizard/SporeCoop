@@ -2534,3 +2534,13 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
+
+## Tribe looks the review of key frames found (2026-11-10, feat/w47-visual)
+<a id="issue-tribe-review-looks"></a>
+
+* What happens: with the same fixed camera on both games (same_view_tribe), the guest draws the host's chief without
+  the chief's staff the host's game shows (BUG-0906), and the guest shows a partner's name tag over empty ground with
+  no member under it (BUG-0907; also seen in play_tribe's start frame).
+* Reproduce: `tools/lab.py run same_view_tribe --lane N`, then `tools/frames_review.py <run>` and open the
+  same_view_tribe sheets (lab 20261110-201619).
+* Tickets: BUG-0906, BUG-0907.
