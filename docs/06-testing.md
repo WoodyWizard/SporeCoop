@@ -5877,3 +5877,27 @@ test command called (`coop.abilities reach`, polled by play_creature's bots) on 
   must never report the removed puppet (`SPORE_FIX_OFF=game.avatar_stale_target,test.reach_target` fails that too:
   80 of 80 asks). Without the fixes the stale reads do not fault in such a short test (the freed block keeps its
   content): the test asserts the state, not the fault.
+
+## What a player sees: the screenshot check (2026-11-11, fix/w47-one-creature-black)
+<a id="testing-screen-look"></a>
+
+BUG-0920: `one_creature` passed while the guest's screen was black with no HUD, because `game.mode` said Creature and
+`coop.avatar` was ok. The game's state does not tell that anything is drawn.
+
+* `tools/tests/screen_look.py`: `look(con, 'name.png')` shoots the game and measures three regions of the picture as
+  fractions of its size: `world` (the middle of the view), `bar` (the timeline bar along the bottom edge) and `map`
+  (the minimap at the bottom left); `drawn(s)` = world over 12 of 255, `hud(s)` = bar and map over 15. Measured in
+  the Creature stage: world 68-112, bar 44-56, map 54-101; the black screen with the mod's overlay on it: 0 / 0 / 0.
+  Without Pillow or a shot `look` returns None (the caller skips the check, as the other image checks do).
+* Use it after every step of a test that changes what a player's game shows (a body swap, an editor that is
+  refused, a mode change), not only at the end: the step that breaks the picture is then named by the test.
+  A fade or a caption can still run right after a step: `one_creature` looks again up to 3 times, 2 s apart.
+* `one_creature` now has 6 steps (the guest's own request built by the mod, then the game's own request through
+  `coop.vote mate`: the creature stage's handler of the mating call), checks that the guest's creature walks
+  after the refusals and that its health fits the swapped body. Twin switches: `core.evo_flag_clear` (steps 5
+  and 6 FAIL: black), `creations.swap_health` (the health check FAILS in step 1 on a cold lane, 10 of 16, or in
+  step 2 on a warm one, 16 of 10), `settings.all` (step 2). `ONE_CREATURE_PROBE=1` after a black step: 45 s, a
+  movement key, F9 twice, then the game's flag written to 0 by `mem.write`, a look after each.
+* `coop.vote mate` (Creature stage, tests): runs the game's own evolution request (handler 0xD42E50, message
+  0x4471C60 with +0xDA set); unlike `coop.vote evolve` the request, the post of 0x5D02A72 and the editor-pending
+  flag are all the game's (docs/re/creature.md#creature-editor-pending-flag).

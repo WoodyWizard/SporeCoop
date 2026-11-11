@@ -4030,3 +4030,57 @@ BUG-0917, BUG-0918. GOG 2024, disassembly (objdump) + lab lane 9 (coop_avatar_st
   used only after it was found in the game's object list in this call (`game::for_each_object`, pointer compares
   only); `readable` says nothing about a freed block (`coop.abilities reach` since BUG-0917; `coop.npc list` checks
   its tables against the list the same way).
+
+## The "editor pending" flag: a refused evolution request leaves a black screen (2026-11-11, fix/w47-one-creature-black)
+<a id="creature-editor-pending-flag"></a>
+
+BUG-0920. GOG 2024, lanes 9 / 10, `tools/tests/coop_one_creature.py` (creature.mode host), objdump of `SporeApp.exe`.
+
+* ✔ (disassembly) The creature stage's evolution request (message handler 0xD42E50, message 0x4471C60 with +0xDA
+  set: the mating call, docs/re/creations.md#creations-own-editor-dna) calls `EditorRequest::Submit`, posts
+  0x5D02A72 and then writes **1 to the byte 0x1686AF0** (`SporeCoop::CreatureEvolutionPending_flag`, at 0xD43069)
+  **whatever Submit answered**: the result of Submit is not looked at. Two more writers of 1: 0xCD2266 and 0xCF5ABA
+  (each after a call of 0x5A92C0 with an object whose +0x36..+0x3D / +0x64 bytes look like an editor request's;
+  not analysed which stage).
+* ✔ (disassembly) The only writer of 0 is 0xB5F19D, inside the function at 0xB5F181 (thiscall, two stack arguments
+  compared with 0x2CCD1D2 and 0xDBDBA1: the old and the new mode of a mode switch). So the flag falls when the game
+  switches modes (into the editor) and never by itself.
+* ✔ (disassembly + runtime) Readers: the per-frame function 0xB5EAE0 (at 0xB5EB94: `flag != 0` or the mode
+  switcher's +0x28 "switch pending" sets a local "hidden" byte and the per-mode call of the table at 0xB5F16C for
+  the modes 0x1654C01..05, Creature = 0xD38880 of 0xD38840's object, is skipped) and 0xCD00C0 (returns at once
+  while the flag is set). Runtime, a guest in the Creature stage with the flag at 1 and no editor coming (lab
+  20261111-063725, 20261111-064320): the whole picture is black, the game's HUD (minimap, ability bar, timeline
+  bar, mission panel) is not drawn, only the mod's own overlay is; `game.mode` says Creature, `coop.avatar` is ok,
+  no cinematic, no pause, no input lock in the mod's busy bits; the avatar does not walk on a held W (position
+  unchanged after 2 s); it stays so for 60 s, through a movement key and F9 twice. `mem.write 0x1686AF0 00`
+  brings the world and the HUD back within the 2 s to the next shot (world brightness 0 -> 110).
+* ✔ (runtime) Which step of creature.mode host makes it: the guest's own evolution request that the mod's Submit
+  hook refuses (step 5 of the test, `coop.vote evolve`: the request built by the mod, the flag set as the game
+  does; and step 6, `coop.vote mate`: the game's own handler run with +0xDA set, the flag set by the game). Not
+  the body swaps: after the swap to the own creature, to the host's creature, while the host is in its editor and
+  after the swap to the host's evolved creature the flag was 0 and the picture normal (world 103-107, bar 44,
+  map 100) in every run.
+* ~ The one earlier run of the test that was not black (feat/w46-settings-all, lane 6, 2026-11-10 19:13) was not
+  explained: its logs are gone. With the hook's refusal the flag cannot stay 0 unless something switched modes.
+* Fix (`core.evo_flag_clear`, coop.cpp evo_flag_tick): the flag is cleared when it is set in a stage and nothing
+  will open an editor: no vote, no held or queued request, no own editor due, no mode switch pending, no request
+  submitted to the game in the last 15 s. After the hook's own refusal (creature.mode host) on the next tick,
+  otherwise after 1 s of that state (a held request that was dropped, a Submit the game refused). ✔ runtime: the
+  flag is 1 right after the game's handler returned and 0 at the next read, the picture stays (lab
+  20261111-064331 and later).
+* ? Not checked: the host's screen while its evolution vote runs (the hook returns false there too and submits the
+  request when the vote ends; the flag is left alone while a vote is active or a request is held).
+* Test rule: `game.mode` and `coop.avatar` do not tell that a player sees anything. `tools/tests/screen_look.py`
+  measures a screenshot: the world's part of the view and the HUD's bar and minimap.
+
+## A swapped body keeps the old health number (2026-11-11, fix/w47-one-creature-black)
+<a id="creature-swap-health"></a>
+
+BUG-0928. Lanes 9 / 10, `coop_one_creature.py`.
+
+* ✔ (runtime) `cCreatureBase::SetSpecies` on the avatar changes the health maximum at once (combatant vt 0x58:
+  10 -> 16 for the test's Kirgle, read right after the call) and leaves the health as it was: a full 10 of 10
+  became 10 of 16, and 16 of 16 became 16 of 10 on the way back (the HUD's bar showed "16" over a body with 10 and
+  the green regeneration crosses). The game never clamps it later (16/10 for 40 s in lab 20261111-044257).
+* Fix (`creations.swap_health`, creations.cpp swap_health): the avatar's own swap (apply_own_avatar) keeps the
+  share of health: hp = old share x new maximum (at least 1, at most the maximum).

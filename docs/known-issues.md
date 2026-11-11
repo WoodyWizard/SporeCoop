@@ -2651,6 +2651,8 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how to test in the tickets.
 * Creature, creature.mode host: the guest's screen is black with no HUD 15 s after the host's evolution and the
   guest's own refused evolution request (one_creature, 3 of 4 runs; the test passes on the mode). Ticket: BUG-0920.
+  FIXED 2026-11-11 (fix/w47-one-creature-black, `core.evo_flag_clear`): the refused request left the game's
+  editor-pending flag set (docs/re/creature.md#creature-editor-pending-flag).
 * Tribe: after a Creature -> Tribe change in the session the guests' roster shows white squares for every member,
   the host's has the portraits (campaign, campaign_ct; not with the Creature fixture's species). Ticket: BUG-0921.
 * Tribe: the host sat in the game-over caption ("Alas! Your population...") for the last 40 s of play_tribe while the
@@ -2658,3 +2660,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * The host shows "X appeared in the world" twice within 0.4 s at a join (cosmetic). Ticket: BUG-0923.
 * Tests: seven key frames are shot in an editor, a cinematic or a pause menu, or with the camera on a bare slope.
   Ticket: BUG-0924.
+
+## Creature: a partner's name tag floats well over a low, long creature (2026-11-11, fix/w47-one-creature-black)
+<a id="issue-creature-tag-height"></a>
+
+* What happens: the name tag of a partner stands 1.5-2 m over its creature when the creature is low and long (the
+  Creature fixture's red species): with the camera close and steep the tag is drawn over the background, about a
+  body length away from the creature, and reads as a tag with no creature under it.
+* Reproduce: `one_creature`, key frames `host_creature` and `evolved` (host: "Bob", guest: "Alice"); the same
+  place on the screen in lab 20261111-044257 and 20261111-064331, so not a timing of the puppet's
+  respawn. A tall creature (play_creature, the guest's own) has the tag just over its head.
+* Known: the tag's height is `bounding_radius * 1.3 + 0.3` over the creature's origin (modes.cpp creature_tag):
+  the radius of a long body is its half length, not its height.
+* Not checked: the model's real height (a bounding box) as the source.
+* Next steps: none planned (cosmetic).
+* Ticket: BUG-0929
