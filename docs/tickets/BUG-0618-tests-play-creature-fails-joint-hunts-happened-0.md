@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w47-play-bots
-commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711, e6158137
+commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711, e6158137, 8b46435b, 5a0f08ed, 29f42cd6
 tests: play_creature
 signature:
 docs: docs/re/creature.md#creature-attack-reach, docs/re/creature.md#creature-combat-click-target, docs/re/creature.md#creature-walk-and-use-blocked, docs/06-testing.md#testing-w45-last, docs/06-testing.md#testing-w47-play-bots

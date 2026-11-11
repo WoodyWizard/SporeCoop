@@ -5704,7 +5704,15 @@ Both were faults of the tests, not of the mod (BUG-0618 third round, BUG-0910); 
   printed, now with `hunted=` (in the prey range, prey, and the chase target at that moment).
   `SPORE_CELL_HUNT_RATIO=1` adds the old ratio check. The puppet's level follow got its twin switch
   `cell.puppet_level` (it had none): off, the trial fails.
-@@CELLRUNS@@
+* play_cell runs (10 min each, lane 10, 2026-11-10). The old ratio check: 5 of 45 runs failed. The trial: the check
+  passed in 10 of 10 runs (20261110-214743 #1-#3, 20261110-222127 #1-#4, 20261110-231644 #1-#3; 1-3 hunters tried
+  for the guest, the chase 0.2-0.4 s after the move) and fails with `SPORE_FIX_OFF=cell.puppet_level`
+  (20261110-230511: the guest 0 of 5 hunters, the host 1 of 1), a run in which the old ratio check would have passed
+  (chase samples host 380, guest 161: the guest is chased through other paths too, species alerts and reactions).
+  Repeating found two more faults of the test, each failed one of those runs and is fixed: a warm run (`--repeat`
+  reuses the games) read the games' counters of the runs before ("the guest reports only what it ate": 183 = 57 +
+  70 + 56 in the third run, 20261110-214743 #3; now this run's share), and the end food check read a moving total
+  once (210 / 204, 20261110-222127 #1; now it waits 3 x 1.2 s like the measures do). The 6 runs after that all pass.
 * Pitfalls: `tools/lab.py run` started with `nohup ... &` ignores SIGINT (use SIGTERM to stop it). A test's script is
   read when the test starts and the lane's DLL is deployed then too: editing either while `--repeat` runs changes
   the later repeats.

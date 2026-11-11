@@ -8,9 +8,9 @@ reported: 2026-11-10
 source: rel/0.7.12 lab out/lab/20261110-200504 (lane 9)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w47-play-bots
-commits:
+commits: 8b46435b, 6aef369f, 3b53e9b2, ab2e9a2f
 tests: play_cell
 signature:
 docs: docs/re/cell.md#cell-hunt-trial, docs/06-testing.md#testing-w47-play-bots
@@ -47,8 +47,18 @@ for, docs/re/cell.md 9) had no twin switch: `coop.fix cell.puppet_level off` is 
 was made; with it off the trial fails.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the old ratio check, the mod unchanged): rel/0.7.12 out/lab/20261110-200504 and the four earlier runs of the
+Report (5 of 45). PASS (the trial): the check passed in 10 of 10 runs on fix/w47-play-bots, out/lab/20261110-214743
+#1-#3, out/lab/20261110-222127 #1-#4, out/lab/20261110-231644 #1-#3 (the guest chased 0.2-0.4 s after the move by the
+first to third hunter tried). The trial catches the bug it guards: FAIL with `SPORE_FIX_OFF=cell.puppet_level`,
+out/lab/20261110-230511 (the guest 0 of 5 hunters, the host 1 of 1; `prey_rules` 2666 of 14384 answers differ), a run
+in which the old ratio check would have passed (chase samples host 380, guest 161).
+Two of the ten runs failed other checks of play_cell, found by repeating and fixed in the test: a warm run read the
+games' counters of the runs before (20261110-214743 #3, "the guest reports only what it ate": 183 = 57 + 70 + 56) and
+the end food check read a moving total once (20261110-222127 #1, 210 / 204). The 6 runs after those fixes pass
+(20261110-222127 #2-#4, 20261110-231644 #1-#3).
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-10 (fix/w47-play-bots): the ratio replaced by a controlled trial; twin switch `cell.puppet_level`; warm
+  counters and the end food check of play_cell; 10 of 10 runs pass the check, the fix-off run fails it.
