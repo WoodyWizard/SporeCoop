@@ -59,6 +59,9 @@ arrows and minimap marks to find each other, player colours, and one report for 
   a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
+- Creature: the host's game could end with a runtime error (a crash on Windows) a moment after a partner's creature
+  died in a fight with a pack, mostly when the prey had just been killed: the pack's animals still wanted to help
+  against the partner's creature that was no longer there (BUG-0926).
 - Cell: while the host's game stands still (it reads a caption, a cinematic plays, the pause menu is open) a guest
   that swims on now gets the cells of the host's world around where it is. It kept getting the cells around the
   place it was at when the host stopped, and saw open water (BUG-0927).

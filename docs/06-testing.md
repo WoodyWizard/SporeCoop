@@ -5896,3 +5896,13 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   every tribe in time)" is the expected slow path (see the campaign section: the Tribe stage's end by raids is not
   sure to come in time, the host jumps): also in the final checks of 0.7.10 (20261107-141346) and 0.7.11
   (20261108-114435).
+* Test `herd_help_stale` (coop_herd_help_stale.py, 2 min, creature fixture, BUG-0926): the guest fights a host NPC,
+  the host's creature kills it (`coop.npc hit <id> 1000` now also works on the host: its own creature hits its NPC),
+  the puppet is removed (`coop.puppet respawn 7`); no NPC stimulus may name the removed puppet (sender +0x2C or the
+  second creature +0x10, read from memory) and the host must go on drawing. `SPORE_FIX_OFF=npc.stale_attacker`: the
+  host stops in the runtime's error box in round 0 (R6025, `BT_HerdHelpEval` in the chain).
+  Why `npc_lost_target` never met it: its NPC lives on and keeps the destroyed puppet's block alive (its last
+  attacker); a use of a freed creature needs the block freed, so a test of this class must make the last reference
+  go (kill or re-hit the holder).
+* `coop.staleref` / `tools/tests/coop_stale_refs.py` (not in a suite: an RE tool, 7 s per scan): who still names a
+  destroyed creature (docs/re/creature.md#creature-stimulus-attacker, BUG-0930).

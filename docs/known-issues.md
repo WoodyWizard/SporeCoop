@@ -2644,3 +2644,16 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Not checked: `coop.uistate`, civ::for_each_target, spacecoop::nav_entries.
 * Next steps: the same one-pass check against `game::for_each_object` in sync_entries and the tribe status.
 * Ticket: BUG-0919.
+
+## Creature: NPCs keep plain pointers to a partner's puppet that was destroyed in a fight (2026-11-11, fix/w47-final12)
+<a id="issue-creature-stale-puppet-pointers"></a>
+
+* What happens: nothing seen yet (no fault, no stop in 20 removals with the puppet's block freed). The fields are a
+  use of freed memory if the game reads them later; the stimulus fields of the same kind ended the host's game
+  (BUG-0456, BUG-0926).
+* Reproduce: `SPORE_LANE=2 python3 tools/tests/coop_stale_refs.py --rounds 6 [--kill-first --watch 6]`: the lines
+  `ai noun=018EB45E +0x694 / +0x6D8 / +0x68C`, `object noun=018EB45E +0x354..+0x370`, `+0x5D0`.
+* Known: docs/re/creature.md#creature-stimulus-attacker (the holders, the block's lifetime).
+* Not checked: what the fields are, who reads them.
+* Next steps: name the writers in Ghidra, clear the fields in the destroy hook (mods/coop/gamefixes.cpp).
+* Ticket: BUG-0930
