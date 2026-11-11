@@ -29,6 +29,23 @@
   game; a player can pick another free one (eight in all): the ">" next to the own colour in the lobby, or the
   console `coop.find color <name>`. Name tags,
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
+- Every co-op mechanic is now a host setting (the Settings page of the co-op window, `coop.settings`), with today's
+  behaviour as the default: name tags over players (`all.name_tags`, changeable during play), the number of players
+  a session takes (`all.max_players`, 2 to 4) and whether new players may join after the start (`all.late_join`; a
+  player who lost the connection may always come back), Cell knock-out instead of death next to a partner
+  (`cell.knockout`) and the respawn next to the partner as a small cell (`cell.respawn_small`), the vote before the
+  Creature stage (`core.switch_vote`), the host's evolution editor opening at once (`core.editor_now`), Tribe pincer
+  bonus, chief aura, duet and epic creature event (`tribe.pincer`, `tribe.chief_aura`, `tribe.duet`, `tribe.epic`),
+  Civilization roles, joint siege bonus and the superweapon vote (`civ.roles`, `civ.joint_siege`,
+  `civ.superweapon_vote`), Space "disabled, not destroyed" (`space.disable`) and the Space features trade, co-op
+  contracts, shared diplomacy, partners as allies, the finale together and the rivals mode (`space.trade`,
+  `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals`) (BUG-0768).
+- Friendly fire (setting `all.friendly_fire`, off by default): players' creatures can hurt each other in the Creature
+  stage. Cell, Tribe and Civilization follow later; Space keeps its rivals mode (BUG-0768).
+- One creature for everyone (setting `creature.mode`, Cell and Creature): "everybody plays the host's creature".
+  Every guest plays the host's species, only the host evolves it (its editor opens at once, no vote), the guests get
+  no editor and no creation arrows, and every evolution of the host changes every player's creature at once
+  (BUG-0769).
 ### Fixed
 - Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
   is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody

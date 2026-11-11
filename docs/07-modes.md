@@ -238,12 +238,56 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | Key | Group | Default | Scope | coop.ini key | Read in |
 |---|---|---|---|---|---|
 | `cell.regen` | Cell | on | live | - | cellsync.cpp symbiosis_tick (twin switch `settings.cell_regen`) |
-| `all.partner_arrows` | All stages | on (off in Rivals) | live | - | F2 (not drawn yet) |
+| `all.partner_arrows` | All stages | on (off in Rivals) | live | - | find.cpp arrows_on (F2) |
 | `all.dna_pace` | All stages | on | session | `dna_pace` | coop.cpp dna_pace_announce (BUG-0510) |
 | `creature.npcs_target_partners` | Creature | on | session | `npcs_target_partners` | npc.cpp ai_target |
 | `creature.pack_rescue` | Creature | on | session | `teamplay` | teamplay.cpp on_own_damage |
 | `creature.pack_heal` | Creature | on | live | `teamplay` | teamplay.cpp tick |
 | `creature.joint_hunt` | Creature | on | session | `teamplay` | teamplay.cpp on_player_hit |
+| `all.name_tags` | All stages | on | live | - | coop.cpp on_overlay (puppets, tribe members, civ cities and vehicles) |
+| `all.friendly_fire` | All stages | off | session | - | npc.cpp damage_filter / MSG_DAMAGE (Creature only) |
+| `all.max_players` | All stages | 4 (2..4) | live | - | net/session.cpp HELLO (`Session::max_players`) |
+| `all.late_join` | All stages | on | live | - | net/session.cpp HELLO (`Session::join_closed`) |
+| `cell.knockout` | Cell | on | session | - | cellsync.cpp go_down |
+| `cell.respawn_small` | Cell | on | session | - | cellsync.cpp downed_tick |
+| `core.switch_vote` | Cell | on | session | - | coop.cpp h_CellToCreature, start_vote (arrival) |
+| `creature.mode` | Creature | own (own / host) | session | - | creations.cpp mine, cycle; coop.cpp h_Submit, the offer; coop_ui.cpp |
+| `core.editor_now` | Creature | on | session | - | coop.cpp h_Submit |
+| `tribe.pincer` | Tribe | on | session | - | tribe.cpp h_CitizenTD |
+| `tribe.chief_aura` | Tribe | on | session | - | tribe.cpp h_CitizenTD (+20 %, the chief keeps 30 %) |
+| `tribe.duet` | Tribe | on | session | - | tribe.cpp duet_tick |
+| `tribe.epic` | Tribe | on | session | - | tribe.cpp epic_tick, `coop.tribe epic` (`epic force` spawns anyway) |
+| `civ.roles` | Civilization | on | session | - | civ.cpp role() (every role bonus) |
+| `civ.joint_siege` | Civilization | on | session | - | civ.cpp h_AddCapture |
+| `civ.superweapon_vote` | Civilization | on | session | - | civ.cpp h_FireSW, host_superweapon_request |
+| `space.disable` | Space | on | session | - | spacecoop.cpp filter_own_damage |
+| `space.trade`, `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals` | Space | on | session | - | space_ext.cpp (tick, messages, overlay, page rows of the feature), space_finale h_Enter, space_diplomacy sharing() |
+
+**Step 3 (BUG-0768, feat/w46-settings-all).** Every other mechanic of the plan's table is a row now; the default is
+0.7.11's behaviour. One twin switch for all of them: `coop.fix settings.all off` (SPORE_FIX_OFF=settings.all) makes
+every row from `all.name_tags` on read its built-in default whatever the host set (the tests' FAIL runs).
+* `all.max_players` / `all.late_join`: the host's net session refuses a HELLO over the limit ("session is full (the
+  host takes N players)", REJ_FULL) or of a new player while the host plays its world with late join off ("the host
+  does not take new players after the start", REJ_STARTED = 4, an older guest shows the text). A player who was in
+  this session (its name, kept since `host()`, or its rejoin token) always comes back.
+* `cell.respawn_small` off: the knock-out ends after its 10 s in the game's own death (KillCell on the avatar,
+  `ko_deaths=` in the cell status); `cell.knockout` off: no knock-out at all.
+* `all.friendly_fire` on (Creature only): a player's hit on a partner's puppet (the game's TakeDamage, the damage
+  filter) is sent to the host as MSG_DAMAGE with the victim's id; the host applies a hit on its own avatar or relays
+  it to the victim guest (`npc friendly fire: pvp_out / pvp_in / pvp_relayed` in coop.status). The host's own hit on a
+  guest's puppet goes the NPC hit's way. Cell, Tribe and Civ need more than a filter (the cell pair hook skips
+  puppets, the tribe members and civ vehicles of all players share the player's tribe / political id): BUG-0899.
+  Test command: `coop.team pvp <player id> <dmg>`.
+* Space features: `space_ext.cpp` gives a feature that its setting switched off no tick, no messages (dropped), no
+  overlay and no rows on the F9 Space page; `coop.space features` says "off (the session setting)".
+
+**One creature for everyone (F5, BUG-0769).** `creature.mode` = host: on a guest `creations::mine()` returns the
+host's creation of the kind (cell, creature: the host's newest bundle, else the world's species) whatever the guest
+chose or recorded for the world, so the avatar swap and the BUG-0508 follow give every guest the host's creature and,
+after each host editor, its new one in place. The guest's own editor requests (nest, mating call) are refused in
+h_Submit (a feed line), the host's evolution opens at once with no vote and no offer, a vote end or an offer opens
+no own editor on a guest, the co-op window shows no creation arrows and no "Evolve now" (`coop.creations next` is
+refused). `coop.creations` prints `creature mode: host|own`.
 
 **Scopes.** *Session*: the host sets it before the start, that is while its game plays no world (the galaxy menu,
 the lobby of F1); once the host plays its world it is refused ("a session setting: ..."). *Live*: the host can change

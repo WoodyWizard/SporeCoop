@@ -2526,3 +2526,11 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Live Cell state goes to a guest still loading the world (suspected bandwidth cost): BUG-0809.
 * `coop.ui show|btn|font|tree` cast a typed number to a window pointer (console crash): BUG-0812.
 * A nest mate roaming beyond the native reply radius never answers the mating call (suspected): BUG-0815.
+
+## Friendly fire only in the Creature stage (2026-11-10, feat/w46-settings-all)
+<a id="issue-friendly-fire-stages"></a>
+
+* What happens: the host's setting `all.friendly_fire` on lets players' creatures hurt each other in the Creature
+  stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
+* Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
+* Ticket: BUG-0899.

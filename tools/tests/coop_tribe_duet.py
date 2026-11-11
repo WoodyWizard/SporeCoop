@@ -18,14 +18,20 @@ notes are the player's). No test had ever started a performance (docs/re/tribe.m
 
 SPORE_FIX_OFF=tribe.duet must FAIL (the progress stays where the players' notes leave it: 0).
 
+--duet-off (BUG-0768, the session setting tribe.duet off, `coop.settings force` before the performance): the same
+performance for one village, and the progress stays under 5 % for 25 s (SPORE_FIX_OFF=settings.all: it rises: FAIL).
+
   SPORE_LANE=7 python3 tools/tests/coop_tribe_duet.py
 """
 import math
 import random
 import re
+import sys
 import time
 
 import play_tribe as pt
+import settings_lib as sl
+import twoinst
 from coop_tribe_tools import members
 from twoinst import Checks, shot, start
 
@@ -93,8 +99,22 @@ def perform_click(pl, npc):
 
 
 def main():
+    off = '--duet-off' in sys.argv
+    if off:
+        twoinst.forget_settings()
     host, guest = start('tribe')
     ck = Checks()
+    try:
+        if off:
+            ck(sl.force(host, [guest], 'tribe.duet', 'off'), 'the guest got tribe.duet off')
+        return run(host, guest, ck, off)
+    finally:
+        if off:
+            sl.reset([host], ('tribe.duet',))
+            twoinst.forget_settings()
+
+
+def run(host, guest, ck, off):
     time.sleep(5)
     mem = members(guest)
     gown = sorted(i for i, o in mem.items() if o != 0)
@@ -164,12 +184,15 @@ def main():
             best = max([best] + [p['progress'] for p in ps if p['target'] == same[0]])
         print(f'  {time.time() - t0:4.1f} s: ' + '; '.join(f'#{p["id"]} o{p["owner"]} {p["target"]} s{p["state"]} '
                                                          f'{p["progress"]:.2f}' for p in ps) + f' ticks={ticks}', flush=True)
-        if both and best > 0.5:
+        if both and best > 0.5 and not off:
             break
         time.sleep(1)
     shot(host, 'duet_host.png')
     ck(both is not None, f'both players\' members perform for the same village in the host\'s game ({both})')
-    ck(best > 0.2, f'the mini-game\'s progress rose with nobody playing ({best:.2f}, duet ticks {ticks})')
+    if off:
+        ck(best < 0.05, f'duet off: the mini-game\'s progress did not rise by itself ({best:.2f}, duet ticks {ticks})')
+    else:
+        ck(best > 0.2, f'the mini-game\'s progress rose with nobody playing ({best:.2f}, duet ticks {ticks})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

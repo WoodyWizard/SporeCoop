@@ -15,8 +15,16 @@ since BUG-0508, so the host goes on at once and each guest gets an offer ("Evolv
 
   coop_editor_now.py                                 (PASS)
   SPORE_FIX_OFF=core.editor_now coop_editor_now.py   (step 1 FAILS: the host's editor waits for the vote)
+
+--off (BUG-0768, the session setting core.editor_now off, `coop.settings force`): the host's request starts the vote
+as before 0.7.11 (the guest sees "I'm ready", no Evolve now offer), the host's editor waits for it (not open after
+10 s), opens after the guest's ready (a real click) (SPORE_FIX_OFF=settings.all: it opens at once: FAIL).
 """
+import sys
 import time
+
+import settings_lib as sl
+import twoinst
 
 from coop_ui import Ui
 from twoinst import Checks, start
@@ -48,12 +56,34 @@ def back(con, m0, secs=90):
     return wait(lambda: mode(con) == m0 and con.call('coop.avatar')['ok'], secs)
 
 
+def setting_off(host, guest, gu, ck):
+    ck(sl.force(host, [guest], 'core.editor_now', 'off'), 'the guest got core.editor_now off')
+    print(' ', host.call('coop.vote evolve')['out'].strip().splitlines()[0], flush=True)
+    st = gu.wait(lambda s: s.get('open') == '1' and s['ready']['vis'], 10, 'the vote')
+    ck(st and st['ready']['text'] in ("I'm ready", 'Я готов'), f"editor now off: the guest sees the vote ({st and st['ready']['text']!r})")
+    time.sleep(10)
+    ck(not in_editor(host) and 'vote active' in host.call('coop.vote')['out'],
+       f"editor now off: the host's editor waits for the vote ({mode(host).strip()})")
+    if st and st['ready']['vis']:
+        gu.click('ready')
+    ck(wait(lambda: in_editor(host), 60), f"the host's editor opens after the guest's ready ({mode(host).strip()})")
+
+
 def main():
     host, guest = start()
     ck = Checks()
     gu = Ui(guest, 'guest')
     time.sleep(3)
     m0 = mode(host)
+    if '--off' in sys.argv:
+        twoinst.forget_settings()
+        try:
+            setting_off(host, guest, gu, ck)
+        finally:
+            sl.reset([host], ('core.editor_now',))
+            twoinst.forget_settings()
+        ck.faults(host=host, guest=guest)
+        return ck.result()
 
     # 1. the host's editor at once
     t0 = time.time()

@@ -16,8 +16,15 @@ when it passes:
 
   coop_switch_vote.py                               (PASS)
   SPORE_FIX_OFF=core.switch_vote coop_switch_vote.py  (step 1 FAILS: the host's game enters Creature at once)
+
+--vote-off (BUG-0768, the session setting core.switch_vote off, `coop.settings force`): no vote, the host's check
+starts the Creature stage at once and the guest follows (SPORE_FIX_OFF=settings.all: the vote runs: FAIL).
 """
+import sys
 import time
+
+import settings_lib as sl
+import twoinst
 
 from coop_ui import Ui
 from twoinst import Checks, start
@@ -57,11 +64,41 @@ def f9(con):
     con.call('key 120 up')
 
 
+def vote_off(host, guest, ck):
+    """the setting off: History's check starts the Creature stage at once for everybody"""
+    ck(sl.force(host, [guest], 'core.switch_vote', 'off'), 'the guest got core.switch_vote off')
+    host.call('coop.pool food 1000')
+    t0 = time.time()
+    voted = False
+    while time.time() - t0 < 150 and 'Creature' not in mode(host):
+        voted |= vote_open(host)
+        if 'cine=1' in host.call('coop.pool')['out']:
+            host.call('click %d %d' % CAPTION_OK)
+            time.sleep(3)
+            continue
+        if time.time() - t0 > 25 and not voted:
+            history_check(host)
+        time.sleep(4)
+    ck(not voted, 'switch vote off: the host\'s check started no vote')
+    ck(wait(lambda: 'Creature' in mode(host), 60), f"switch vote off: the host's game enters Creature at once ({mode(host).strip()})")
+    ck(wait(lambda: 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'], 150),
+       f"the guest's game follows into the Creature stage ({mode(guest).strip()})")
+
+
 def main():
     host, guest = start('cell')
     ck = Checks()
     gu = Ui(guest, 'guest')
     time.sleep(3)
+    if '--vote-off' in sys.argv:
+        twoinst.forget_settings()
+        try:
+            vote_off(host, guest, ck)
+        finally:
+            sl.reset([host], ('core.switch_vote',))
+            twoinst.forget_settings()
+        ck.faults(host=host, guest=guest)
+        return ck.result()
 
     # the end of the Cell stage, the players' way (coop_cell_leave.py)
     host.call('coop.pool food 1000')

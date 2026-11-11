@@ -356,6 +356,55 @@ static void test_session()
     CHECK(bad.role() == Role::None);
 }
 
+// F3 (BUG-0768): the host's player limit (all.max_players) and the late-join rule (all.late_join off once the host
+// plays its world): a player over the limit or new after the start is refused with the reason; a player who was in
+// the session comes back
+static void test_join_rules()
+{
+    printf("join rules: the player limit and joining after the start (BUG-0768)\n");
+    Session host, a, b, c;
+    std::string err;
+    host.build = a.build = b.build = c.build = 0x922af7c7;
+    CHECK(host.host(0, "alice", err));
+    std::string port = "127.0.0.1:" + std::to_string(host.port());
+    host.max_players = 2;
+    CHECK(a.join(port, "bob", err));
+    pump(host, a, 300);
+    CHECK(a.connected() && host.players().size() == 2);
+    std::string why_b;
+    b.cb.disconnected = [&](const std::string& w) { why_b = w; };
+    CHECK(b.join(port, "carol", err));
+    pump(host, b, 300);
+    CHECK(!b.connected() && why_b.find("session is full") != std::string::npos && host.players().size() == 2);
+    printf("  limit 2: %s\n", why_b.c_str());
+    host.max_players = 3;
+    CHECK(b.join(port, "carol", err));
+    pump(host, b, 300);
+    CHECK(b.connected() && host.players().size() == 3);
+    printf("  %s", host.status().c_str());
+    CHECK(host.status().find("players=3/3") != std::string::npos);
+    // the host plays its world, new players not taken
+    host.max_players = 4;
+    bool closed = true;
+    host.join_closed = [&] { return closed; };
+    std::string why_c;
+    c.cb.disconnected = [&](const std::string& w) { why_c = w; };
+    CHECK(c.join(port, "dave", err));
+    pump(host, c, 300);
+    CHECK(!c.connected() && why_c.find("new players") != std::string::npos && host.players().size() == 3);
+    printf("  after the start: %s\n", why_c.c_str());
+    a.leave("test"); // bob leaves and comes back: he was in this session
+    pump(host, a, 200);
+    CHECK(host.players().size() == 2);
+    CHECK(a.join(port, "bob", err));
+    pump(host, a, 300);
+    CHECK(a.connected() && host.players().size() == 3);
+    closed = false; // joining after the start allowed again
+    CHECK(c.join(port, "dave", err));
+    pump(host, c, 300);
+    CHECK(c.connected() && host.players().size() == 4);
+}
+
 // BUG-0029: a guest that gets REJECT or BYE must not free its connection while that connection is
 // still parsing the packet (heap use-after-free, visible under -fsanitize=address: `make test-asan`)
 static void test_session_end_in_delivery()
@@ -3389,6 +3438,7 @@ int main(int argc, char** argv)
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();
     test_unique_names();
+    test_join_rules();
     test_big_snapshot();
     test_interp();
     test_interp_gap();

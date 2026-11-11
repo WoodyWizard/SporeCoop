@@ -136,6 +136,27 @@ class Ui:
         self.c.call('wait.frames 12 5000')
         return True
 
+    def show_setting(self, key, timeout=10):
+        """the settings page that lists `key` (13 rows a page, BUG-0768): back to the first page, then ">" until it
+        shows; the state then, or None"""
+        st = self.wait(lambda s: s['page'] == 'settings' and s.get('sets'), timeout, 'the settings page')
+        for _ in range(6):
+            if not st or not st['setprev']['vis'] or key in st.get('sets', {}):
+                break
+            self.click('setprev')
+            time.sleep(0.5)
+            st = self.state()
+        for _ in range(6):
+            if not st or key in st.get('sets', {}) or not st['setnext']['vis']:
+                break
+            self.click('setnext')
+            time.sleep(0.5)
+            st = self.state()
+        if not st or key not in st.get('sets', {}):
+            print(f'  {self.who}: {key} on no settings page')
+            return None
+        return st
+
     def goto(self, step, timeout=20):
         """walk the connect steps by clicks to `step` (choose | host | join): the name step's Continue (the name
         in the field stays), Back, Host a game / Join a game. False when the window is not on the connect page."""
@@ -304,6 +325,9 @@ def run(restart):
     st = host.wait(lambda s: s['page'] == 'settings' and s.get('sets'), 10, 'the settings page')
     sets = st.get('sets', {}) if st else {}
     check(len(sets) >= 7, f'host: the settings page lists the settings ({sorted(sets)})')
+    check(st and st['setnext']['vis'], 'host: the settings have more than one page (">")')
+    st = host.show_setting('creature.joint_hunt')  # (13 rows a page: the Creature group is on the second)
+    sets = st.get('sets', {}) if st else {}
     jh = sets.get('creature.joint_hunt')
     check(jh and jh['en'] and jh['tag'] == 'session' and jh['v'] == 1,
           f'host: a session setting can be changed before the start ({jh})')
@@ -406,8 +430,8 @@ def run(restart):
     # ---- 7. settings in play ----
     for ui in (host, guest):
         ui.click('settings')
-    hs = host.wait(lambda s: s['page'] == 'settings' and s.get('sets'), 10, 'host settings page')
-    gs = guest.wait(lambda s: s['page'] == 'settings' and s.get('sets'), 10, 'guest settings page')
+    hs = host.show_setting('creature.joint_hunt')
+    gs = guest.show_setting('creature.joint_hunt')
     hj = hs and hs['sets'].get('creature.joint_hunt')
     gj = gs and gs['sets'].get('creature.joint_hunt')
     check(gj and gj['v'] == 0, f'guest: the session setting the host set in the menu came with the session ({gj})')
@@ -419,6 +443,8 @@ def run(restart):
         st = host.state()
         check(st['sets']['creature.joint_hunt']['v'] == 0 and 'joint_hunt=0' in
               hc.call('coop.settings get creature.joint_hunt')['out'], 'host: the locked setting stays as it was')
+    hs = host.show_setting('cell.regen')  # the first page: Cell, All stages
+    guest.show_setting('cell.regen')
     hr = hs and hs['sets'].get('cell.regen')
     if hr:
         host.click(f'set{hr["row"]}')  # a live setting: off in play

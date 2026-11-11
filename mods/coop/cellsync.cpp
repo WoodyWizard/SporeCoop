@@ -6085,10 +6085,10 @@ std::string debug(const std::vector<std::string>& a)
         ko += kb;
     }
     snprintf(b, sizeof b,
-             "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d dying=%d dead=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u ko_bites_blocked=%u ko_hits_refused=%u ko_swallows_blocked=%u\n",
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused, g_ko_swallows_blocked);
+             g_downed ? 1 : 0, (int)F<uint8_t>(av, kDying), (int)F<uint8_t>(av, kDead), pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused, g_ko_swallows_blocked);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the part states S+0x34 (13 ints, 0 locked; until BUG-0467 this read 13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
