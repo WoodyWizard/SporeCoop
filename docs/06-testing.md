@@ -5610,6 +5610,13 @@ by side and the creatures in them counted.
 * First review (lab 20261110-201619, 14 sheets): Tribe: the guest's copy of the host's chief lacks its staff
   (BUG-0906), a partner tag over empty ground on the guest (BUG-0907); Creature: the host draws a tall green light
   over the guest's creature that the guest's game does not show (the pack's regen effect, seen once, no ticket yet).
+* Review of the 0.7.12 final check (lab 20261111-044257, 54 sheets): the same-view pairs of Creature and Tribe agree
+  (the same creatures, paints, tags, minimaps; the staff is in the hand on both, BUG-0906 / 0907 / 0912 hold); the
+  guest's copy of the chief still holds the staff upright while the host's swings it (BUG-0914, views 2 to 4 of
+  same_view_tribe). New: BUG-0920 (creature.mode host: the guest's screen black), BUG-0921 (white squares in the guests'
+  roster in the campaigns), BUG-0922 (the host in the game-over caption at the end of play_tribe), BUG-0923 (the join
+  notice twice), BUG-0924 (key frames shot in editors, cinematics, a pause menu). The green light column of the first
+  review was not seen again (the regen crosses are on both screens).
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 

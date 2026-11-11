@@ -2644,3 +2644,17 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Not checked: `coop.uistate`, civ::for_each_target, spacecoop::nav_entries.
 * Next steps: the same one-pass check against `game::for_each_object` in sync_entries and the tribe status.
 * Ticket: BUG-0919.
+
+## Key-frame review of the 0.7.12 final check (2026-11-11, plan/w47-frames)
+<a id="known-keyframes-0712"></a>
+
+Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how to test in the tickets.
+* Creature, creature.mode host: the guest's screen is black with no HUD 15 s after the host's evolution and the
+  guest's own refused evolution request (one_creature, 3 of 4 runs; the test passes on the mode). Ticket: BUG-0920.
+* Tribe: after a Creature -> Tribe change in the session the guests' roster shows white squares for every member,
+  the host's has the portraits (campaign, campaign_ct; not with the Creature fixture's species). Ticket: BUG-0921.
+* Tribe: the host sat in the game-over caption ("Alas! Your population...") for the last 40 s of play_tribe while the
+  guest played on; the test's game-over rule counts the guest's members and never pressed OK. Ticket: BUG-0922.
+* The host shows "X appeared in the world" twice within 0.4 s at a join (cosmetic). Ticket: BUG-0923.
+* Tests: seven key frames are shot in an editor, a cinematic or a pause menu, or with the camera on a bare slope.
+  Ticket: BUG-0924.
