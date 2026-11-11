@@ -6,6 +6,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -90,13 +91,74 @@ static std::map<Win, Cache> g_cache;
 static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
 constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
-// width of a text in the dialog font (average glyph width, measured at 1080p)
+// BUG-0904, BUG-0905, BUG-0908: labels center their text in their box (docs/08-ui.md), so a left-aligned label's box
+// is fitted to the text's width; with one average glyph width the rows of a column started up to ~8 px apart, a
+// caption overflowed its button and the lobby's Stage column touched the colour button. On: the advance of each glyph
+// (each glyph's advance measured in game, docs/08-ui.md#ui-text-width), the short settings caption and a
+// wider colour column. Off: the 0.7.12 pre-release layout.
+static bool g_layout_fix = true;
+COOP_FIX("core.ui_layout", "BUG-0905", g_layout_fix, "ui: labels fitted by the glyphs' widths, short Settings caption, room for the colour button");
+
+// width of a text in the dialog font (+30: the box's margins), measured at 1080p
 static float text_width(const std::string& t)
 {
-    int n = 0;
-    for (unsigned char ch : t)
-        n += (ch & 0xC0) != 0x80;
-    return n * 9.3f + 30;
+    if (!g_layout_fix) { // one average glyph width
+        int n = 0;
+        for (unsigned char ch : t)
+            n += (ch & 0xC0) != 0x80;
+        return n * 9.3f + 30;
+    }
+    // the advance of each glyph of the dialog font in pixels at 1440x1080 (measured: 12 against 4 copies of each
+    // glyph in a label, docs/08-ui.md#ui-text-width); ASCII 32..126, then Cyrillic U+0410..U+044F
+    static const unsigned char kAscii[95] = {
+        6, 7, 7, 11, 11, 13, 13, 4, 7, 7, 8, 11, 7, 7, 7, 7, 11, 11, 11,
+        11, 11, 11, 11, 11, 11, 11, 7, 7, 11, 11, 11, 8, 16, 12, 11, 12, 12, 11,
+        11, 13, 13, 5, 10, 12, 11, 14, 13, 13, 11, 13, 12, 10, 12, 13, 12, 17, 11,
+        13, 11, 7, 7, 7, 11, 11, 7, 10, 11, 10, 11, 11, 7, 10, 11, 6, 7, 10,
+        6, 16, 11, 11, 11, 11, 8, 8, 8, 11, 11, 16, 11, 10, 10, 7, 5, 7, 11};
+    static const unsigned char kCyr[64] = {
+        12, 11, 11, 10, 14, 11, 18, 11, 13, 14, 12, 13, 15, 13, 13, 13, 11, 12, 12, 12, 15, 12, 13, 12,
+        18, 18, 15, 16, 12, 12, 18, 12, 10, 11, 10, 9, 12, 11, 15, 9, 11, 11, 10, 11, 14, 11, 11, 11,
+        11, 10, 9, 10, 15, 11, 11, 11, 15, 16, 12, 14, 10, 10, 15, 11};
+    float w = 0;
+    for (size_t i = 0; i < t.size();) {
+        unsigned char ch = (unsigned char)t[i];
+        uint32_t cp = ch;
+        int n = ch < 0x80 ? 1 : (ch >> 5) == 6 ? 2 : (ch >> 4) == 14 ? 3 : 4;
+        if (n > 1) {
+            cp = ch & (0x3F >> (n - 1));
+            for (int k = 1; k < n && i + k < t.size(); k++)
+                cp = (cp << 6) | ((unsigned char)t[i + k] & 0x3F);
+        }
+        i += n;
+        if (cp >= 32 && cp < 127)
+            w += kAscii[cp - 32];
+        else if (cp >= 0x410 && cp < 0x450)
+            w += kCyr[cp - 0x410];
+        else if (cp == 0x401 || cp == 0x451) // Ё ё
+            w += 11;
+        else
+            w += 11;
+    }
+    return w + 30;
+}
+float caption_width(const std::string& t) { return text_width(t) - 30; }
+
+// README pictures (coop.uistate demo <address> <real port> <shown port>): the window shows a documentation address
+// instead of the PC's own and the default port instead of a test lane's; nothing else changes
+static std::string g_demo_addr, g_demo_from, g_demo_to;
+
+std::string demo_text(std::string t)
+{
+    if (g_demo_from.empty() || g_demo_from == g_demo_to)
+        return t;
+    for (const char* pre : {"port ", ":", "порт "}) {
+        std::string a = pre + g_demo_from, b = pre + g_demo_to;
+        for (size_t at = t.find(a); at != std::string::npos; at = t.find(a, at + b.size()))
+            if (at + a.size() == t.size() || !isdigit((unsigned char)t[at + a.size()]))
+                t.replace(at, a.size(), b);
+    }
+    return t;
 }
 
 static void fit(Win w, const Cache& c)
@@ -106,10 +168,11 @@ static void fit(Win w, const Cache& c)
     sui::set_area(w, r);
 }
 
-static void text(Win w, const std::string& t)
+static void text(Win w, const std::string& t0)
 {
     if (!w)
         return;
+    const std::string t = demo_text(t0);
     auto& c = g_cache[w];
     if (c.text != t) {
         c.text = t;
@@ -286,6 +349,7 @@ struct Dialog {
     Win rline = nullptr;                                     // the host: the answers while a round runs
     Win row_name[4] = {}, row_color[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win color_btn = nullptr; // F2: ">" next to the own colour: the next colour
+    Win stage_hdr = nullptr;  // the Stage column's header (moved with the column, BUG-0908)
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
@@ -919,7 +983,7 @@ static void build_dialog()
     D.session = add_label(L, {40, 104, 720, 130}, "", kWhite);
     add_label(L, {40, 138, 280, 162}, T("Player", "Игрок"), kDim);
     add_label(L, {280, 138, 345, 162}, T("Colour", "Цвет"), kDim);
-    add_label(L, {345, 138, 540, 162}, T("Stage", "Этап"), kDim);
+    D.stage_hdr = add_label(L, {345, 138, 540, 162}, T("Stage", "Этап"), kDim);
     add_label(L, {540, 138, 620, 162}, T("Ping", "Пинг"), kDim);
     add_label(L, {620, 138, 720, 162}, T("Ready", "Готов"), kDim);
     for (int i = 0; i < 4; i++) {
@@ -1165,6 +1229,8 @@ static void refresh_connect()
         for (size_t i = 0; i < ips.size() && i < 2; i++) // (two fit the line)
             hint += (i ? ",  " : "") + ips[i] + ":" + port;
     }
+    if (!g_demo_addr.empty())
+        hint = g_demo_addr;
     text(D.host_hint, hint.empty() ? "" : std::string(T("Friends connect to: ", "Друзья подключаются к: ")) + hint);
     std::string up_line, up_btn;
     bool up = A.update && A.update(up_line, up_btn);
@@ -1176,8 +1242,31 @@ static void refresh_connect()
     text(D.update_btn, up_btn);
 }
 
+bool g_give_hint_fix = true;
+COOP_FIX("core.ui_give_hint", "BUG-0909", g_give_hint_fix, "ui: the give row shows only in Tribe, Civilization and Space");
+
 static void refresh_lobby()
 {
+    static bool s_layout = g_layout_fix; // the switch changed: every left-aligned label is fitted anew
+    if (s_layout != g_layout_fix) {
+        s_layout = g_layout_fix;
+        for (auto& [w, c] : g_cache)
+            if (c.left)
+                fit(w, c);
+    }
+    { // BUG-0908: the Stage column starts after the colour button (318..346) with room, not at its edge
+        float x1 = g_layout_fix ? 362.f : 345.f;
+        for (int i = -1; i < 4; i++) {
+            Win w = i < 0 ? D.stage_hdr : D.row_stage[i];
+            if (!w)
+                continue;
+            auto& c = g_cache[w];
+            if (c.box.x1 != x1) {
+                c.box.x1 = x1;
+                fit(w, c);
+            }
+        }
+    }
     text(D.session, A.session_line());
     auto rows = A.players();
     int own_row = -1;
@@ -1283,7 +1372,9 @@ static void refresh_lobby()
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
     bool space = gwhat == "spice";
-    bool giving = A.give && !gto.empty() && (cl.empty() || space);
+    // BUG-0909: give() names what is given only in Tribe, Civilization and Space; elsewhere (the galaxy menu, Cell,
+    // Creature) the row showed the Tribe / Civ hint "Select your units to give them to a partner"
+    bool giving = A.give && !gto.empty() && (cl.empty() || space) && (!gwhat.empty() || !g_give_hint_fix);
     if (space) // the ship can't be changed in flight: the row is for the cargo
         cl = gn ? std::string(T("Spice in cargo: ", "Специи в трюме: ")) + std::to_string(gn)
                 : T("No spice in cargo to give", "В трюме нет специи");
@@ -1356,6 +1447,8 @@ static void refresh_lobby()
     }
     // the address to give to friends (the host) or the host's (a guest)
     std::string addr = A.host_address ? A.host_address() : "";
+    if (!g_demo_addr.empty() && !addr.empty())
+        addr = g_demo_addr;
     text(D.address, addr.empty() ? ""
                     : std::string(host ? T("Friends connect to: ", "Друзья подключаются к: ") : T("Host address: ", "Адрес хоста: ")) +
                           addr);
@@ -1364,7 +1457,9 @@ static void refresh_lobby()
     for (int i = 0; i < settings::kCount; i++)
         changed += settings::get((settings::Id)i) != settings::kDefs[i].def;
     char sb[80];
-    if (changed)
+    if (changed && g_layout_fix) // BUG-0904: the long caption wrapped out of the button; the page marks them with *
+        snprintf(sb, sizeof sb, T("Settings (%d)", "Настройки (%d)"), changed);
+    else if (changed)
         snprintf(sb, sizeof sb, T("Settings (%d changed)", "Настройки (изменено: %d)"), changed);
     else
         snprintf(sb, sizeof sb, "%s", T("Settings", "Настройки"));
@@ -1963,6 +2058,35 @@ void set_test_color(uint32_t argb)
 {
     g_test_color = argb;
     g_dirty = true;
+}
+
+void set_demo(const std::string& addr, const std::string& from, const std::string& to)
+{
+    g_demo_addr = addr;
+    g_demo_from = from;
+    g_demo_to = to;
+    g_dirty = true;
+}
+
+std::string widgets_state()
+{
+    // every visible widget of the window (tests: layout checks): screen rect, kind (L label, B button), the width
+    // the caption needs (caption_width) and the caption
+    std::string s;
+    if (!D.root || !sui::visible(D.root))
+        return s;
+    char b[512];
+    for (auto& [w, c] : g_cache) {
+        if (!sui::visible(w) || sui::parent(w) != D.root)
+            continue;
+        bool btn = g_btn_fn.count(w) != 0;
+        std::string cap = sui::caption(w);
+        Rect r = sui::screen_rect(w);
+        snprintf(b, sizeof b, "widget %.0f %.0f %.0f %.0f %c %.0f '%s'\n", r.x1, r.y1, r.x2, r.y2, btn ? 'B' : 'L',
+                 cap.empty() ? 0.f : caption_width(cap), cap.c_str());
+        s += b;
+    }
+    return s;
 }
 
 } // namespace coop_ui

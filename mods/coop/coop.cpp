@@ -3990,7 +3990,7 @@ void on_overlay(void*, int, void*)
     }
     std::string head;
     if (g_sess.role() == net::Role::Host)
-        head = "CO-OP host :" + std::to_string(g_sess.port()) + "  " + std::to_string(g_sess.players().size()) +
+        head = coop_ui::demo_text("CO-OP host :" + std::to_string(g_sess.port())) + "  " + std::to_string(g_sess.players().size()) +
                "/" + std::to_string(g_sess.max_players);
     else if (g_sess.role() == net::Role::Client)
         head = std::string("CO-OP guest  ") + (g_sess.connected() ? "connected" : "connecting...");
@@ -5949,6 +5949,18 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui: test colour %s", argv[2]);
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "demo")) { // README pictures: documentation address and port
+        if (argc > 4)
+            coop_ui::set_demo(argv[2], argv[3], argv[4]);
+        else
+            coop_ui::set_demo("", "", "");
+        SAY("ui: demo %s", argc > 4 ? argv[2] : "off");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "widgets")) { // tests: the visible widgets for layout checks
+        SAY("%s", coop_ui::widgets_state().c_str());
+        return 0;
+    }
     if (argc > 1)
         coop_ui::open(atoi(argv[1]) != 0);
     SAY("%s", coop_ui::debug_state().c_str());
@@ -7240,7 +7252,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>] - co-op window state (open/close it; lang, first, color: tests)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");

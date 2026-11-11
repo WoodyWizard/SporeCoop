@@ -206,6 +206,53 @@ def overlap(a, b):
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def widgets(con):
+    """`coop.uistate widgets`: every visible widget of the window, (rect, kind L|B, caption width, caption)"""
+    out = []
+    for line in con.call('coop.uistate widgets')['out'].splitlines():
+        m = re.match(r"widget (-?\d+) (-?\d+) (-?\d+) (-?\d+) ([LB]) (\d+) '(.*)'$", line)
+        if m:
+            out.append(([int(m.group(i)) for i in range(1, 5)], m.group(5), int(m.group(6)), m.group(7)))
+    return out
+
+
+BUTTON_PAD = 30  # a button's caption wraps when it needs more than its width minus ~30 px (BUG-0904)
+
+
+def layout_problems(con):
+    """the window's layout as the player sees it (BUG-0904, BUG-0908): every button caption fits its button, and no
+    label's text box (fitted to the text, docs/08-ui.md#ui-text-width) overlaps another widget with text. The
+    centred title labels (as wide as the window) are left out."""
+    ws = [w for w in widgets(con) if w[3].strip() and not (w[1] == 'L' and w[0][2] - w[0][0] >= 700)]
+    probs = []
+    for r, kind, need, cap in ws:
+        room = r[2] - r[0] - (BUTTON_PAD if r[2] - r[0] > 60 else 6)  # (the small arrow buttons: one glyph)
+        if kind == 'B' and need > room:
+            probs.append(f'button {cap!r} needs {need} px, has {room}')
+    for i, (r, kind, _, cap) in enumerate(ws):
+        for r2, kind2, _, cap2 in ws[i + 1:]:
+            if (kind == 'L' or kind2 == 'L') and overlap(r, r2):
+                probs.append(f'{cap!r} {r} overlaps {cap2!r} {r2}')
+    return probs
+
+
+def label_starts(con, path, rows):
+    """BUG-0905: the x where the text of each settings label starts in a screenshot (the first column with a bright
+    text pixel in the label's row); rows: the label widgets [(rect, ...)]"""
+    from PIL import Image
+    con.call('shot ' + path)
+    im = Image.open(path).convert('RGB')
+    px = im.load()
+    starts = []
+    for r, _, _, cap in rows:
+        y1, y2 = r[1] + 4, r[3] - 4
+        x = next((x for x in range(max(0, r[0] - 20), r[2])
+                  if any(max(px[x, y]) > 170 and sum(px[x, y]) > 380 for y in range(y1, y2))), None)
+        if x is not None:
+            starts.append((x, cap))
+    return starts
+
+
 def reports_since(t0):
     d = os.path.join(lane.game_dir(), 'SporebinEP1', 'mods', 'logs')
     return [f for f in os.listdir(d) if f.startswith('SporeCoop-report-') and f.endswith(f'-i{lane.HOST}.zip')
@@ -319,6 +366,8 @@ def run(restart):
     check(st and f':{lane.PORT}' in st.get('hostaddr', ''), f'host: the lobby gives the address ({st and st.get("hostaddr")!r})')
     check(st and st['askreports']['vis'], 'host: "Ask the players for their reports" in the lobby')
     shot(hc, 'ui_host_lobby.png')
+    probs = layout_problems(hc)
+    check(not probs, f'host: the lobby in the menu: captions fit, nothing overlaps {probs}')
 
     # the session settings before the start (the galaxy menu: no world played): a session setting by a click
     host.click('settings')
@@ -338,8 +387,24 @@ def run(restart):
         check('joint_hunt=0' in hc.call('coop.settings get creature.joint_hunt')['out'],
               'host: the game plays with it off (coop.settings)')
     shot(hc, 'ui_settings_menu.png')
+    host.click('setprev')  # the first page: All stages and Cell
+    time.sleep(1)
+    sets_rows = [w for w in widgets(hc) if w[1] == 'B' and (w[3] in ('On', 'Off') or w[3].isdigit())]
+    labels = [w for w in widgets(hc) if w[1] == 'L' and w[3].strip()
+              and any(b[0][0] > w[0][2] - 5 and abs((b[0][1] + b[0][3]) / 2 - (w[0][1] + w[0][3]) / 2) < 8
+                      for b in sets_rows)]
+    starts = label_starts(hc, os.path.join(lane.out_dir('shots'), 'ui_settings_raw.png'), labels)
+    xs = [x for x, _ in starts]
+    check(len(starts) >= 8 and max(xs) - min(xs) <= 4,
+          f'host: the settings labels are left-aligned (text starts at x {min(xs, default=0)}..{max(xs, default=0)},'
+          f' {len(starts)} labels; BUG-0905)')
+    probs = layout_problems(hc)
+    check(not probs, f'host: the settings page: captions fit, nothing overlaps {probs}')
     host.click('setback')
-    host.wait(lambda s: s['page'] == 'lobby', 5, 'back in the lobby')
+    st = host.wait(lambda s: s['page'] == 'lobby', 5, 'back in the lobby')
+    check(st and '(1' in st['settings']['text'], f'host: the Settings button counts the changed setting ({st and st["settings"]["text"]!r})')
+    probs = layout_problems(hc)
+    check(not probs, f'host: the lobby with a changed setting: captions fit, nothing overlaps {probs} (BUG-0904)')
     host.click('close')
     check(host.wait(lambda s: s['open'] == '0', 10, 'closed') is not None, 'host: the window closes')
 
@@ -370,6 +435,14 @@ def run(restart):
         guest.click('join')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
     check(st is not None, f'guest: joined, lobby {st["rows"] if st else None}')
+    # BUG-0909: with a partner to give to, the galaxy menu's lobby showed the Tribe / Civ hint
+    hc.call('coop.uistate 1')
+    st = host.wait(lambda s: s['open'] == '1' and len(s['rows']) >= 2, 10, 'host lobby with the guest')
+    time.sleep(1.5)
+    st = host.state()
+    check('Select your units' not in st.get('creation', '') and 'Select your units' not in st.get('world', ''),
+          f'host: no Tribe / Civ give hint in the galaxy menu ({st.get("creation")!r}, BUG-0909)')
+    hc.call('coop.uistate 0')
 
     # host loads its game; the guest gets the world and loads it
     subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', str(lane.HOST)], capture_output=True,
@@ -393,6 +466,9 @@ def run(restart):
     check(any(r[3].endswith('ms') for r in st['rows']), 'guest: ping shown')
     check(f':{lane.PORT}' in st.get('hostaddr', ''), f'guest: the host\'s address line ({st.get("hostaddr")!r})')
     check(not st['askreports']['vis'], 'guest: no "Ask the players for their reports" (host only)')
+    for ui in (host, guest):
+        probs = layout_problems(ui.c)
+        check(not probs, f'{ui.who}: the F9 lobby in game: captions fit, nothing overlaps {probs} (BUG-0908)')
 
     # ---- 5b. colours (F2): the column, a refused pick and a taken one by real clicks ----
     PINK, GREEN = 'FFFF5FC8', 'FF5CE05C'

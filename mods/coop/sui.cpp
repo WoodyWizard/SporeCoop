@@ -586,6 +586,24 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, " %08X", vcall<uint32_t>(b, 0x48 / 4, i));
         return 0;
     }
+    if (sub == "align" && argc > 3) { // experiments: a button's caption alignment (+0x3C) and type (+0x1C)
+        void* b = as_button((Win)strtoul(argv[2], nullptr, 16));
+        if (!b)
+            return 1;
+        if (argc > 4)
+            vcall<void>(b, 0x1C / 4, atoi(argv[4]));
+        vcall<void>(b, 0x3C / 4, atoi(argv[3]));
+        return 0;
+    }
+    if (sub == "area" && argc > 6) { // experiments: a window's area (parent coordinates)
+        set_area((Win)strtoul(argv[2], nullptr, 16), {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
+                                                       (float)atof(argv[6])});
+        return 0;
+    }
+    if (sub == "caption" && argc > 3) { // experiments: a window's caption (glyph widths: docs/08-ui.md#ui-text-width)
+        set_caption((Win)strtoul(argv[2], nullptr, 16), argv[3]);
+        return 0;
+    }
     if (sub == "font" && argc > 3) {
         set_font((Win)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16));
         return 0;

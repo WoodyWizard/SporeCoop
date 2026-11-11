@@ -123,6 +123,13 @@ extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu
 void first_start();
 // tests / layout shots (coop.uistate color <argb>): the lobby's colour of players without one (0 = "-")
 void set_test_color(uint32_t argb);
+// README pictures (coop.uistate demo <address> <real port> <shown port>, `demo off`): a documentation address in
+// place of the PC's own, the shown port in place of the real one in the window's texts
+void set_demo(const std::string& addr, const std::string& from, const std::string& to);
+// the text with the demo port in place of the real one (unchanged without `coop.uistate demo`)
+std::string demo_text(std::string t);
+// tests (coop.uistate widgets): every visible widget, `widget x1 y1 x2 y2 L|B <caption width> '<caption>'`
+std::string widgets_state();
 
 // the dialog text font (0 until the co-op window was built once)
 uint32_t text_font();
