@@ -115,3 +115,15 @@ docs/11-rivals.md#rivals-fork-feature-ideas. Each ticket says how the fork built
 2. The feature ideas go to the Rivals plan (0.8): docs/11-rivals.md#rivals-fork-feature-ideas.
 3. The owner contacts the fork authors himself.
 4. The owner downloaded the "Screen tearing" report archive; it is analysed in BUG-0779.
+
+## Owner decisions (2026-11-11)
+
+* **BUG-0913: fix it in 0.7.13** (package C1). While friendly fire is off (and outside Rivals), a partner's creature
+  in Creature (a) does not block the way: a player walks through it, and (b) is not picked as the attack target
+  by a click: the click goes to the animal behind it. With friendly fire on and in Rivals nothing changes (the
+  partner must stay a target and an obstacle). Accepted side effect: players' creatures can stand inside each
+  other. Test: two players hunt one animal, the second reaches it without a side step and its click on the animal
+  targets the animal (the game's own target field), with the switch off the old behaviour.
+* **Friendly fire in Rivals works in every stage** (Cell, Creature, Tribe, Civilization, Space): required, not
+  optional. BUG-0899 (the 0.7.12 setting works in Creature only) is closed by Rivals 0.8, see
+  docs/11-rivals.md#rivals-friendly-fire-all-stages.

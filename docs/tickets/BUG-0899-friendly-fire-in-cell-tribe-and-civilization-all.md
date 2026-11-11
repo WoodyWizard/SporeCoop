@@ -43,3 +43,4 @@ How players are kept from hurting each other today (read in the code, 2026-11-10
 
 ## History
 - 2026-11-10: opened (BUG-0768 follow-up); for the 0.7.13 plan.
+- 2026-11-11: the owner decided: friendly fire in Rivals must work in every stage (required); done with Rivals 0.8, docs/11-rivals.md#rivals-friendly-fire-all-stages.

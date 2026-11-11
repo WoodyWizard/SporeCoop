@@ -44,3 +44,4 @@ Reproduce: two games on the creature fixture, both in the combat stance; the hos
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-11: the owner decided: fix in 0.7.13 (walk through the partner and click through it while friendly fire is off; unchanged with friendly fire on and in Rivals), docs/plan-0.7.13.md "Owner decisions (2026-11-11)".

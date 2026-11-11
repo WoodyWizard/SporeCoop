@@ -343,3 +343,11 @@ Also found in the Lineages fork, not in the owner's list of 2026-11-10 (kept her
 the rest): a warm reconnect that reuses an unchanged Cell world (BUG-0869), the players' cells swimming in the Cell
 stage as native NPC species (BUG-0872; close to 11.3.1 and 11.3.2 "rival species"), a depth handle for parts in the
 creature editor (BUG-0871).
+
+## Friendly fire in every stage (2026-11-11, the owner)
+<a id="rivals-friendly-fire-all-stages"></a>
+
+Required for Rivals (the owner, 2026-11-11: not up for discussion): players can hurt each other in **every**
+stage: Cell, Creature, Tribe, Civilization and Space. The 0.7.12 session setting "Friendly fire" works in Creature
+only (BUG-0899); Cell, Tribe and Civilization are built with Rivals 0.8, Space already has its rivals mode. In
+co-op (not Rivals) the setting stays off by default.
