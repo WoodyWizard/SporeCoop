@@ -88,7 +88,7 @@ game: no new fault (`exc`), the current mission is none or on a village of the h
   village's mark is gone from the minimap, the game draws.
 * Related: campaign_tribe x2 20261111-132715, 20261111-133603, roster_portraits 20261111-132718, tribe_portraits 20261111-132721,
   tribe_goal and wsync_transitions 20261111-133230, tribe_bounce_world 20261111-131651 / 20261111-133233,
-  realign_tribe 20261111-133902. The whole campaign: CAMPAIGN_HERE
+  realign_tribe 20261111-133902. The whole campaign: lab 20261111-134438 PASS (83.7 min, four players to the Staff of Life, no fault in any game; one info finding known from the earlier campaigns: tribe -> civ not in 20 min). Its host reload removed no village this time ("the same planet" on the guests), so the campaign did not walk this path again: tribe_bounce_goal does.
 * `make test`.
 
 ## History
