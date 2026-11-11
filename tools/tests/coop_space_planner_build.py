@@ -18,6 +18,9 @@ city again from the planet's record (the house destroyed before is back), so the
 city gets the guest's house then (SPORE_FIX_OFF=civ.space_build_hold must FAIL).
 --buyer host (BUG-0884): the host buys the house in its planner: the guest's city has it
 (SPORE_FIX_OFF=civ.space_planner_relay must FAIL).
+--miss (BUG-0902): the buyer drops the house tile on a taken plot: the planner adds the building and takes it away
+again (nothing paid, the buyer's city keeps its houses); the other game must not get a house either
+(SPORE_FIX_OFF=civ.space_planner_closed must FAIL: the guest's send went at AddBuilding).
 
   SPORE_LANE=6 python3 tools/tests/coop_space_planner_build.py [--buyer guest|host] [--away]
 """
@@ -55,6 +58,18 @@ def money(con):
 def city_positions(con):
     return {int(m.group(1)): tuple(float(m.group(i)) for i in (2, 3, 4))
             for m in re.finditer(r's(\d+) pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.civ scities')['out'])}
+
+
+def civ_line(con):
+    out = con.call('coop.civ')['out']
+    return next((ln for ln in out.splitlines() if ln.startswith('space_planner:')), '')
+
+
+def planner_adds(con):
+    """the planner buildings this game sent or saw taken away again (the buyer's AddBuilding ran)"""
+    ln = civ_line(con)
+    return sum(int(m.group(1)) for k in ('sent', 'relayed', 'dropped')
+               for m in [re.search(rf'\b{k}=(\d+)', ln)] if m)
 
 
 def drag(con, sx, sy, tx, ty):
@@ -99,11 +114,14 @@ def fly_over_city(con, secs=60):
     return best
 
 
-def planner_buy(ck, buyer, bi, who):
+def planner_buy(ck, buyer, bi, who, miss=False):
     """real input on the buyer: the planner by a click on its city, the house tile dragged onto a free plot, the
     green check; the price it paid (None: not bought)"""
     opened = False
-    for _ in range(3):
+    for attempt in range(4):
+        if attempt:  # the ship drifted off the city (349 m, lab 20261110-200709): over it again first
+            fly_over_city(buyer, 30)
+            time.sleep(2)
         _, on, x, y, _ = min(cities(buyer))
         buyer.call(f'move {int(x)} {int(y)}')
         time.sleep(0.8)
@@ -114,13 +132,26 @@ def planner_buy(ck, buyer, bi, who):
             break
     shot(buyer, 'space_planner_open.png')
     ck(opened, f'the {who} opened the city planner by a click on the city')
-    free = []
+    free, busy = [], []
     for ln in buyer.call(f'coop.civ slots s{bi}')['out'].splitlines():
-        m = re.match(r'slot (\d+) free \S+ \S+ \S+ (-?\d+) (-?\d+)', ln)
-        if m and 150 < int(m.group(2)) < 1300 and 80 < int(m.group(3)) < 1000:
-            free.append((int(m.group(2)), int(m.group(3))))
+        m = re.match(r'slot (\d+) (free|busy) \S+ \S+ \S+ (-?\d+) (-?\d+)', ln)
+        if m and 150 < int(m.group(3)) < 1300 and 80 < int(m.group(4)) < 1000:
+            (free if m.group(2) == 'free' else busy).append((int(m.group(3)), int(m.group(4))))
     ck(free, f'a free plot on the {who}\'s planner screen ({free})')
     m0 = money(buyer)
+    if miss:  # BUG-0902: a drop on a taken plot: the planner adds the building and takes it away again
+        ck(opened and busy, f'a taken plot on the {who}\'s planner screen ({busy})')
+        if opened and busy:
+            drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], busy[0][0], busy[0][1])
+        shot(buyer, 'space_planner_missed.png')
+        m1 = money(buyer)
+        print(f'  the {who} dropped the house on a taken plot {busy[:1]}: money {m0} -> {m1}', flush=True)
+        for _ in range(3):
+            buyer.call(f'click {DONE[0]} {DONE[1]}')
+            time.sleep(3)
+            if 'city=00000000' in buyer.call('coop.civ planner')['out']:
+                break
+        return 0
     if opened and free:
         drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], free[0][0], free[0][1])
         if money(buyer) == m0:  # the drop missed the plot (seen at x ~1070, lab 20261110-193940): once more, nearer the middle
@@ -144,6 +175,7 @@ def main():
     ap.add_argument('--buyer', choices=('guest', 'host'), default='guest')
     ap.add_argument('--away', action='store_true', help='the other ship leaves the planet before the purchase and '
                     'lands again after it (BUG-0766)')
+    ap.add_argument('--miss', action='store_true', help='the buyer drops the house on a taken plot (BUG-0902)')
     a = ap.parse_args()
     host, guest = start('space_empire')
     ck = Checks()
@@ -181,8 +213,27 @@ def main():
     if a.away:  # BUG-0766: the other ship is off the planet while the house is bought
         ck(po.take_off(), f'the {ow}\'s ship leaves the planet ({po.ctx()}, at {po.place()})')
         time.sleep(3)
-    paid = planner_buy(ck, buyer, bi, bw)
+    adds0 = planner_adds(buyer)
+    paid = planner_buy(ck, buyer, bi, bw, a.miss)
     nb1, hb1, _ = houses(buyer, bi)
+    if a.miss:
+        time.sleep(3)
+        adds = planner_adds(buyer) - adds0
+        ck(hb1 == hb0, f'the {bw}\'s planner kept no house ({hb0} -> {hb1} houses)')
+        ck(adds > 0, f'the {bw}\'s planner added the building at the drop (planner adds sent / dropped +{adds})')
+        t0 = time.time()
+        no1, ho1 = no0, ho0
+        while time.time() - t0 < 20 and ho1 == ho0:
+            no1, ho1, _ = houses(other, oi)
+            time.sleep(1)
+        shot(other, 'space_planner_other.png')
+        print(f'  {ow}: {no0} -> {no1} buildings, {ho0} -> {ho1} houses; {civ_line(other)}', flush=True)
+        ck(ho1 == ho0, f'the {ow}\'s game got no house the {bw}\'s planner did not keep ({ho0} -> {ho1} houses)')
+        mh1, mg2 = money(host), money(guest)
+        ck(mh1 is not None and mg2 is not None and abs(mh1 - mg2) < 1 and abs(mh1 - mh0) < 1,
+           f'the shared money did not change (host {mh0} -> {mh1}, guest {mg0} -> {mg2})')
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     ck(hb1 == hb0 + 1, f'the {bw}\'s game has the new house ({hb0} -> {hb1} houses)')
     if a.away:
         time.sleep(3)
