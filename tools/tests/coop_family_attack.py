@@ -17,14 +17,13 @@ import time
 import creations_state
 from coop_creature_flock import friendly
 from coop_creature_kills import W, H, family, npcs, proxies
-from twoinst import Checks, start
+from twoinst import Checks, set_stance, start
 
 
 def bite(guest, nid, n=15):
     guest.call(f'coop.social goto {nid}')
     time.sleep(1)
-    guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
-    time.sleep(0.3)
+    set_stance(guest, 'combat', W, H)  # waits for the game time, read back from the game (BUG-0944)
     for _ in range(n):
         for line in guest.call('coop.targets all')['out'].splitlines():
             f = line.split()

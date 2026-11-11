@@ -9,6 +9,9 @@
    for the hunt card on both (the species table's kill count). The hunt is a player's (BUG-0690): one click on the
    animal, then the combat key (the game's walk-and-use) until the animal, which runs off first, is dead;
    KILLS_OLD_HUNT=1: the old loop (a click before every key, 45 keys): fails when the flight is long.
+   The stance is the game's (BUG-0944): the hunt waits until the guest's game time runs (the stage entry's pause holds
+   a black screen for seconds on some lanes; a click sent into it is lost and the whole hunt was played in the social
+   stance, 0 of 6 on lane 4) and reads the stance back (GetAbilityMode). KILLS_BLIND_STANCE=1: the one unchecked click.
 2. "Aggressive enemies didn't target my friend": the creature AI notices only the avatar
    (NPCTickAI). The guest stands next to an NPC far from the host; the NPC's AI must get the
    "noticed the player" stimulus 0x4000000 with the guest's puppet as the sender (read from the
@@ -19,7 +22,7 @@ import struct
 import time
 
 import creations_state
-from twoinst import Checks, shot, start
+from twoinst import Checks, ability_mode, game_runs, set_stance, shot, start
 
 W, H = 1440, 1080
 
@@ -104,10 +107,17 @@ def hunt(host, guest, nid, secs=90):
     2026-11-08): the guest follows it and kills it where it stops. The old loop's 45 keys (~55 s) ended inside the long
     flights (the mirror at 2-6 hp, out/lab/20261108-050538, -051223 #1): the hunt lasts until the NPC is dead, at most
     secs. Ends when the host's NPC is dead or after secs."""
+    blind = os.environ.get('KILLS_BLIND_STANCE') == '1'  # the twin (BUG-0944): one click on the stance button, unchecked
+    waited = None if blind else game_runs(guest)  # the stage entry's pause: input sent into it is lost
     guest.call(f'coop.social goto {nid}')
     time.sleep(1)
-    guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
-    time.sleep(0.3)
+    if blind:
+        guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
+        time.sleep(0.3)
+    else:
+        set_stance(guest, 'combat', W, H)
+    ran = 'not waited for' if waited is None else f'ran after {waited:.1f} s'
+    print(f'  the guest before the hunt: game time {ran}, stance {ability_mode(guest)} (1 = combat)', flush=True)
     keys, clicks, trail = 0, 0, []
     walk_at, walk_gap = 0.0, None
     old = os.environ.get('KILLS_OLD_HUNT') == '1'  # the twin: the old loop (a click before every key, 45 keys)
@@ -136,6 +146,8 @@ def hunt(host, guest, nid, secs=90):
         px = proxies(guest).get(nid)
         mine = px is not None and r['target'] is not None and int(r['target'], 16) == px[0]
         if not mine or r['dead']:
+            if not blind and ability_mode(guest) != 1:
+                set_stance(guest, 'combat', W, H)  # the game left the stance (the bar is built again by a creature swap)
             for line in guest.call('coop.targets all')['out'].splitlines():
                 f = line.split()
                 if len(f) == 5 and f[0] == 'obj' and f[1] == 'n' + nid and 20 < int(f[3]) < W - 20 and 90 < int(f[4]) < H - 170:
@@ -198,6 +210,7 @@ def run(host, guest):
         sp = npcs(host)[nid][1]
         k0h, k0g = killed(host, sp), killed(guest, sp)
         keys = hunt(host, guest, nid)
+        ck(ability_mode(guest) == 1, f'the guest hunted in the combat stance (the game\'s ability mode {ability_mode(guest)})')
         n = npcs(host).get(nid)
         ck(n is not None and n[4], f'the guest killed host NPC #{nid} ({sp}) with real input ({keys} combat keys)')
         time.sleep(2)

@@ -6008,3 +6008,21 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   the name (docs/re/tribe.md#tribe-gone-village-mission).
 * `lab.py run =campaign`: a name with `=` is the test of that name, not the suite (the suite `campaign` is five
   tests; the single whole campaign had no way to be asked for alone). 2026-11-11, fix/w47-getfilecount.
+
+## Real input right after start(): the guest's game can still stand on the stage entry's pause (2026-11-11, fix/w47-final12c)
+<a id="testing-stage-entry-input"></a>
+
+* BUG-0944: `start()` returns when the guest is in the stage. Its game time can still stand then (`coop.pauses`:
+  `paused=1 reasons: 04BF38A7=1`, a black screen with only the mod's overlay): 0 s on lanes 3 and 5, 4.5-4.9 s on
+  lane 4 (Creature fixture, measured 8 times on 2026-11-11), 7-40 s in Tribe. Clicks and keys sent into it are lost
+  without any sign. creature_kills clicked the combat stance 1.5 s after start() and hunted for 90 s in the social
+  stance: 0 of 6 on lane 4 while lanes 3 and 5 passed, with the same code that had passed on lane 4 six hours before.
+* Use `twoinst.game_runs(con)` before the first real input of a test (it returns the seconds waited) and
+  `twoinst.set_stance(con, 'combat' | 'social')` for the Creature stance: it waits, clicks and reads the stance back
+  (`twoinst.ability_mode`: the game's GetAbilityMode, 0 social, 1 combat).
+* A failure that is "5 of 5" on one lane is not yet a regression: run the test once on two other lanes and once with
+  the last passing commit on the failing lane (a scratch worktree, `--no-build` after its own `make`) before a bisect.
+  The trace line 10 s into the test tells it here: `busy=paused` with the avatar on its spawn point.
+* A hunt in the wrong stance looks like "the prey runs away and is never hit": the herbivore walks off at the
+  follower's speed (about 3 m/s, 5 m per sample) and the key sings. The last screenshot shows the bar's colour
+  (green social, red combat) and the mission card ("Impress ..." or "Hunt ...").

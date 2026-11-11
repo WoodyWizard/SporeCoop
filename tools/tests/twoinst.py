@@ -86,6 +86,39 @@ def shot(con, name):
     return path
 
 
+def game_runs(con, timeout=45.0):
+    """wait until the game's time runs (`coop.pauses`: paused=0). start() returns when the guest is in the stage; its
+    game can still stand on the stage entry's pause (reason 04BF38A7, a black screen while the entry waits for its bakes:
+    0 s on most lanes, 5 s and more on others, 10-40 s in Tribe) and real input sent then is lost (BUG-0944: the combat
+    stance click of creature_kills). Returns the seconds waited, None when it still stands after timeout."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if re.search(r'paused=0\b', con.call('coop.pauses').get('out') or ''):
+            return time.time() - t0
+        time.sleep(0.25)
+    return None
+
+
+def ability_mode(con):
+    """Creature: the game's stance (cCreatureGameData::GetAbilityMode): 0 social, 1 combat, None unknown"""
+    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call Simulator::cCreatureGameData::GetAbilityMode cdecl').get('out') or '')
+    return int(m.group(1), 16) if m else None
+
+
+def set_stance(con, kind, w=1440, h=1080, tries=4):
+    """Creature: the social / combat stance by the player's click on its button above the ability bar, read back from
+    the game (a click while the game stands or before the HUD is up does nothing, and a second click on a stance that
+    is already on is not needed): waits for the game time first (game_runs). True when the game is in the stance."""
+    want = 1 if kind == 'combat' else 0
+    game_runs(con)
+    for _ in range(tries):
+        if ability_mode(con) == want:
+            return True
+        con.call(f'click {w // 2 + (43 if want else -30)} {h - 82}')
+        time.sleep(0.6)
+    return ability_mode(con) == want
+
+
 PLAYERS = {}  # {'host': Console, 'guest': Console} of the last start(): keyframe()'s default games
 
 
