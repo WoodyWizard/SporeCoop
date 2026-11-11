@@ -2734,7 +2734,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                     log_hit(p.id, attacker, 0, "dropped (creature.air_immune)");
             return false;
         }
-        if (creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
+        bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
+        if (!pvp && creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
             for (auto& p : C.sess->players())
                 if (p.id != 0 && C.puppet_of(p.id) == c)
                     log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
@@ -2743,7 +2744,6 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
-            bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
             if (pvp)
                 g_pvp_out++;
             if (pvp || (attacker && attacker != av && !game::is_puppet(attacker))) {

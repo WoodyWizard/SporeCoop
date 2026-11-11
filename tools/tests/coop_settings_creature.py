@@ -104,11 +104,12 @@ def main():
         # 3. joining after the start
         ck(sl.force(host, [guest], 'all.late_join', 'off'), 'the running guest got all.late_join off')
         join_as(guest, 'Carol')
-        time.sleep(10)
+        told = sl.wait(lambda: 'does not take new players' in guest.call('coop.status')['out'], 10)  # (its toast)
+        time.sleep(4)
         hs = host.call('coop.status')['out']
         print('  guest:', (guest.call('coop.status')['out'].splitlines() or [''])[0], flush=True)
         ck(not connected(guest) and 'players=1/' in hs, 'late join off: a new player is refused after the start')
-        ck('does not take new players' in guest.call('coop.status')['out'], 'late join off: the refused player is told why')
+        ck(told, 'late join off: the refused player is told why')
         join_as(guest, 'Bob')
         ck(wait_guest_in(host, guest, 200), 'late join off: a player who was in the session comes back')
         ck(sl.force(host, [guest], 'all.late_join', 'on'), 'all.late_join on again')

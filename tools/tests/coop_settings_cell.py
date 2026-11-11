@@ -34,8 +34,8 @@ def pool(con):
     return con.call('coop.pool')['out']
 
 
-def cell_status(con):
-    return con.call('coop.status')['out']
+def respawns(guest):
+    return num(pool(guest), 'ko_respawns')
 
 
 def host_sees_ko(host):
@@ -60,11 +60,12 @@ def main():
         # 1. on: knocked out, then respawned small
         guest.call('coop.pool tp 30 0')
         time.sleep(1.5)
-        r0 = num(cell_status(guest), 'respawns') or 0
+        r0 = respawns(guest) or 0
         host.call('coop.pool hurt 1 50')
         ck(sl.wait(lambda: num(pool(guest), 'downed') == 1, 5), 'knock-out on: the guest is knocked out')
         ck(sl.wait(lambda: host_sees_ko(host), 3), 'knock-out on: the host sees the guest knocked out')
-        ck(sl.wait(lambda: (num(cell_status(guest), 'respawns') or 0) > r0, 16), 'respawn on: the guest respawned after 10 s')
+        host.call('coop.pool tp 40 0')  # the host keeps away: nobody revives the guest
+        ck(sl.wait(lambda: (respawns(guest) or 0) > r0, 16), 'respawn on: the guest respawned after 10 s')
         out = pool(guest)
         ck(num(out, 'downed') == 0 and not dying(out), f'respawn on: the guest plays on (not dying, not dead): {out.splitlines()[:1]}')
         ck(sl.wait(lambda: not host_sees_ko(host), 3), 'respawn on: the host no longer shows it knocked out')
@@ -73,12 +74,13 @@ def main():
         ck(sl.force(host, [guest], 'cell.respawn_small', 'off'), 'the running guest got cell.respawn_small off')
         guest.call('coop.pool tp 30 0')
         time.sleep(1.5)
-        d0 = num(cell_status(guest), 'ko_deaths') or 0
+        d0 = num(pool(guest), 'ko_deaths') or 0
         host.call('coop.pool hurt 1 50')
         ck(sl.wait(lambda: num(pool(guest), 'downed') == 1, 5), 'respawn off: the guest is knocked out first')
+        host.call('coop.pool tp 40 0')
         ok = sl.wait(lambda: dying(pool(guest)), 16, 0.25)
         print('  guest after 10 s:', [ln for ln in pool(guest).splitlines() if 'downed=' in ln][:1], flush=True)
-        ck(ok and (num(cell_status(guest), 'ko_deaths') or 0) == d0 + 1,
+        ck(ok and (num(pool(guest), 'ko_deaths') or 0) == d0 + 1,
            'respawn off: nobody revived it: the game\'s own death runs on the guest')
         ck(not host_sees_ko(host), 'respawn off: the host does not show it knocked out')
         ck(sl.wait(lambda: alive_again(guest), 90, 1), "the guest's game respawned its cell (the game's way)")
