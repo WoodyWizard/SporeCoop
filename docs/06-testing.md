@@ -5469,3 +5469,18 @@ from the lane's game folder with Python's zipfile: exactly the expected entries,
 lane share one `mods\logs`, the instance suffix tells them apart), SESSION.txt with each guest's state and no address,
 no `*.part` left. The test makes `report-*.txt` files on purpose (`reports=True`): it checks itself that no `crash-*`
 file appeared and every game still answers. `SPORE_FIX_OFF=core.session_report` fails (no guest is asked).
+
+## The session report across session ends, busy guests, slow disks (2026-11-10, fix/w47-b2)
+<a id="testing-sreport-leave"></a>
+
+`tools/tests/coop_sreport_leave.py` (suite `sreport_leave`, two games, Cell, ~4 min; BUG-0770, BUG-0783, BUG-0780;
+docs/REPORTING.md#reporting-session). A: the guest's upload hangs (`coop.sreport test stall`), the host gives the
+round up after 5 s (`coop.sreport stallwait 5`) and asks again: the guest's report arrives within 25 s. B: the guest
+leaves while its upload hangs and joins again: no "sending", no old question. C: the host leaves while asking: no
+round left, hosting again its Ask is not "Already asking". D: the guest leaves the host whose settings table it has
+and joins a host that sends none (`coop.corefix settings_in 0`): its own values again. E: a slow disk (`coop.sreport
+writedelay 3000`): every console answer of the host under 1 s while the zip is written. Twins:
+`SPORE_FIX_OFF=core.sreport_reask` fails A, `core.session_state_end` fails B and D, `core.sreport_write_worker` fails E.
+Pitfall: a test that leaves the co-op window open (a guest's window opens by itself for the host's question) made
+frames_loop's F9 check fail on warm games (BUG-0898): `warm_reset` now closes the window on both games
+(`coop.uistate 0`), and frames_loop presses F9 on a window it closed itself.
