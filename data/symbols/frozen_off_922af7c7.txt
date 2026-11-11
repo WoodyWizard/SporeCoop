@@ -224,3 +224,7 @@ SporeCoop::City_WriteCityData ; BUG-0901: a Space colony building the mod builds
 SporeCoop::Citizen_SetHandheldItem ; BUG-0906: a guest's mirrors of tribe members do not get the host members' handheld item (the chief's staff, weapons) on GOG 2016
 SporeCoop::Creature_AttachmentOf ; BUG-0906: `coop.tribe` prints model=-1 (tests only) on GOG 2016
 SporeCoop::CreatureModifiers_Remove ; BUG-0906: see SporeCoop::Citizen_SetHandheldItem
+SporeCoop::TribeMission_RefreshCard ; BUG-0942: the goal card text of a mission whose village a guest's realign removed is not guarded on GOG 2016
+SporeCoop::cTribe_PopulationCount ; BUG-0942: see SporeCoop::TribeMission_RefreshCard
+SporeCoop::TribeMissionManager_RemoveMission ; BUG-0942: the goal card of a removed village stays on GOG 2016
+SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (tests only) is off on GOG 2016

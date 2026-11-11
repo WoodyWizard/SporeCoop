@@ -33,7 +33,7 @@ import time
 from coop_tribe_bounce_world import bounce_ok, diff
 from coop_tribe_gameover import frames_go_on, player_members
 from coop_tribe_guest_tribes import show, tribes
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 from wsync_util import dump
 
 
@@ -75,6 +75,7 @@ def main():
     print(f'  guest goal: {gg and gg["raw"]}', flush=True)
     ck(gg and gg.get('key') != 'FFFFFFFF' and math.dist(gg['pos'], new[0]['pos']) < 40 and 'card=1' in gg['raw'],
        'the guest\'s goal card is on the new village')
+    keyframe('goal_on_new_village', 'the guest has the goal card of the new village (top left)')
     village = gg['pos'] if gg else new[0]['pos']
     gone_key = gg['key'] if gg else '0'  # the guest's own pol of that village
 
@@ -117,6 +118,7 @@ def main():
     gg = goal(guest)
     print(f'  guest goal 20 s after the goal event: {gg and gg["raw"]}; faults {f1}', flush=True)
     ck(f1 == f0, f'the guest\'s game caught no fault after the goal event ({f1 - f0} new)')
+    keyframe('after_realign', 'the village is gone: the guest has no goal card of it, the game draws')
     ck(gg is not None and (gg.get('key') == 'FFFFFFFF' or any(math.dist(t[1], gg['pos']) < 40 for t in h1)),
        f'the guest\'s goal card is not on the removed village ({gg and gg["raw"]})')
     ck(gg is not None and 'card=1' not in gg['raw'] or (gg and gg.get('key') != 'FFFFFFFF'),

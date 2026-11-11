@@ -151,6 +151,8 @@ def main():
     h0, g0 = planet(host), planet(guest)
     print(f'  baseline: host {len(h0)} objects, guest {len(g0)}: {show(compare(h0, g0))}', flush=True)
     if a.fixture == 'tribe':
+        host.call('coop.res add food 300')  # BUG-0943: tribe.form_pace holds the forming under 100 food x players
+        time.sleep(3)
         print('  host: ' + host.call('coop.tribe form')['out'].strip(), flush=True)
         huts = [o for o in planet(host) if o[0] == 'hut' and not o[3]]
         if ck(len(huts) >= 2, f'the host has two NPC huts ({len(huts)})'):

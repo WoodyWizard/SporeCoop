@@ -2741,4 +2741,6 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: calls 00C90741 00C30069 00CD3770 00BA266E 00BA1EE0 00B5D229 00CDF46C; in no other log on this machine.
 * Not checked: the callers, which index is null.
 * Next steps: Ghidra on the callers; a test with a host reload in Tribe and a realigning guest.
-* Ticket: BUG-0942
+* Ticket: BUG-0942 (fixed on fix/w47-getfilecount, unreleased: realign.village_goal. Not resource code: the
+  guest's goal card was on a village its realign destroyed, the card's text function reads the hut of a tribe without
+  members with no null check; docs/re/tribe.md#tribe-gone-village-mission; test tribe_bounce_goal)

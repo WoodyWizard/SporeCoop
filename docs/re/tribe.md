@@ -3077,3 +3077,43 @@ BUG-0921 (BUG-0643 again, the case players have). Lab lanes 7 and 8, `coop_roste
   with fewer members; the picture is the 21 rows below the frame's 2 rows, x 1407..1428. A white square is 100 %
   pure white there, a portrait 0 %. On the half-size shots of `twoinst.shot` the gold row blurs: one slot of three
   was missed.
+## A destroyed village and its goal mission: the fault storm at 0x8E8230 (2026-11-11, fix/w47-getfilecount)
+<a id="tribe-gone-village-mission"></a>
+
+BUG-0942. GOG 2024, Ghidra (private project) and lab lanes 2 / 3. Adds to #tribe-wsync and #tribe-realign.
+
+* ✔ `0x008E8230` is **not resource code**: it is the 4-byte getter `mov eax,[ecx+0x34]; ret`, shared by the linker
+  with every class that has such a getter; the ported name `Resource::PFIndexModifiable::GetFileCount` is one of its
+  owners (docs/re/creature.md 14.1: the cCombatant state). A fault there with `read 0x154` and ecx 0x120 is
+  `((cCombatant*)(null + 0x120))->state`: the combatant of a null cTribeHut. The nearest-name line of the fault
+  report ("cTribe_SetChieftain+0x861 < SpeciesGoal_Refresh+0x4B9 < ...") is far past those functions and misleads.
+* ✔ The chain `00C90741 00C30069 00CD3770 00BA266E 00BA1EE0 00B5D229 00CDF46C`:
+  0xC90730 `cTribe::HutIsDead`: `[tribe+0x368]+0x120 -> 0x8E8230 == 2`, **no null check of the hut**
+  < 0xC30000 the goal card's text (`SporeCoop::TribeMission_RefreshCard`, thiscall(cTribeToTribeMission), mission vt
+  0x80 via the thunk 0xC301E0): relation of mission+0x80 (the village) to the player picks prop 0x57E2F080 (attack)
+  or 0x3D61DF6C (befriend); then `SporeCoop::cTribe_PopulationCount` 0xC8F530 == 0 and HutIsDead -> prop 0xF1E0DD24
+  (the conquered text); the prop lists go to mission +0x84 / +0x88
+  < 0xCD3740 the Tribe Mission Manager's update (vt 0x10 of vtable 0x14772CC): every mission's vt 0xB8, then **while
+  the dirty byte +0x70 is set**: vt 0x80 of +0x68 and of +0x74 (the current mission), 0xB6F750, and only then
+  `+0x70 = 0` < 0xBA2550 the simulator's subsystem loop (vt 0x10 of each) < 0xBA1ED0 < 0xB5D0F0 < 0xCDF080.
+* ✔ So one fault becomes a storm: the game's handler unwinds the update before the dirty byte is cleared, the next
+  frame runs the same refresh again (813 faults in 14 s on the campaign guest, 1302 in 20 s in the lab), until the
+  current mission changes (the campaign: the goal row moved the card to a village of the host's world).
+* ✔ The dirty byte: `SporeCoop::TribeMissionManager_Refresh` 0xCD38E0 (manager vt 0x28, thiscall(mgr, pol or 0) ret
+  4) sets it (0xB6F5E0) and, with a pol, calls vt 0x80 of the map's mission of that pol at once. SetTargetTribe ends
+  with it; the game's relation and mission events call it. ? Which event set it 12 s after the realign in the
+  campaign was not traced (the test asks for it with `coop.wsync goal dirty`).
+* ✔ `SporeCoop::TribeMissionManager_RemoveMission` 0xCD37F0 (manager vt 0x30, thiscall(mgr, mission) ret 4): when
+  the mission is +0x68 or +0x74, its card leaves the HUD panel (0xE17F90) and the pointer is released; the vector
+  +0x14 and the map +0x78 keep the mission.
+* ✔ (runtime, lab 20261111-131344) `cGameNounManager::DestroyInstance` of a cTribe in the Tribe stage
+  (`tribe::remove_village`, the guest's realign) leaves its cTribeToTribeMission as it was: the mission holds the
+  tribe (intrusive, the block stays readable), `coop.wsync dump tribe_goal` still shows it as the target with
+  `card=1`, the tribe's hut pointer +0x368 is null and it has no members. The game itself never destroys a tribe in
+  the Tribe stage (a conquered village stays, with a dead hut: that is what HutIsDead is for), so nothing in the game
+  removes such a mission. CORRECTION (2026-11-11, fix/w47-getfilecount) to #tribe-realign "no fault in the 40 s
+  after": true only while the goal card is not on the removed village or no goal event comes.
+* Fix `realign.village_goal` (wsync.cpp): `wsync::village_gone(tribe)` from remove_village removes the current
+  mission of that village with RemoveMission outside the frame (the HUD card goes; the goal row puts the host's goal
+  there when the host has one), and a hook of 0xC30000 skips the text of a mission whose village has no hut and no
+  members (the missions left in the vector and the map, reached by Refresh(pol) or a later SetTargetTribe).

@@ -59,6 +59,11 @@ arrows and minimap marks to find each other, player colours, and one report for 
   a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
+- **Tribe: seconds of stutter and a "SporeCoop caught a problem" report on a guest after the host's game over.**
+  When the host's game loaded its Tribe world again (a game over, or a load) and a guest's goal card was on a
+  village that the host's world no longer had, the guest's game ran into the same error every frame once the
+  village was removed there: a hitch of a few seconds and a problem report, until the goal moved to another
+  village. The goal card now goes with the village (BUG-0942; since 0.7.7).
 - **Space: shared money stopped for a guest after the host changed its save.** A guest that had joined before the
   host loaded another save (or went on into a save with another name) got none of the host's money in Space for
   the rest of the session, and its own earnings and purchases never reached the host; only leaving and joining

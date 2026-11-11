@@ -5997,3 +5997,14 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   the body, not the ground point under it.
 * space_save_change (BUG-0933): fixture creature plus `spore.sh fixture slot space <profile> 9` and `coop.load
   Game9 Madas` on the host: a guest in Creature follows the host into Space by itself in about 15 s.
+* tribe_bounce_goal (BUG-0942): tribe_bounce_world's scenario with the goal card on the village the host's reload
+  drops, then `coop.wsync goal dirty` on the guest (the manager's own refresh request, vt 0x28 with pol 0). Fix off:
+  about 65 faults a second at 0x008E8230 from that command on. `coop.tribe form` forms nothing while tribe.form_pace
+  holds it ("pace: ... held" in its answer): give the host food over 100 x players first (`coop.res add food 300`;
+  BUG-0943: tribe_bounce_world had not formed its tribe since tribe.form_pace, its "scenario happened" check failed).
+  With that food the controller forms every tribe it has markers for (2 -> 6 villages), not one.
+* A fault at `0x008E8230 Resource::PFIndexModifiable::GetFileCount` is the shared getter `mov eax,[ecx+0x34]`, not
+  resource code: read the fault's data address (0x154 = null + 0x120 + 0x34) and the first return address instead of
+  the name (docs/re/tribe.md#tribe-gone-village-mission).
+* `lab.py run =campaign`: a name with `=` is the test of that name, not the suite (the suite `campaign` is five
+  tests; the single whole campaign had no way to be asked for alone). 2026-11-11, fix/w47-getfilecount.
