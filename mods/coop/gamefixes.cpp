@@ -586,8 +586,19 @@ static void forget_sender(void* dying)
 
 static DestroyListener g_destroy_listener; // BUG-0623 (civ.cpp, BUG-0539)
 void set_destroy_listener(DestroyListener fn) { g_destroy_listener = fn; }
+static void* g_count_obj; // tests (BUG-0850)
+static std::atomic<unsigned> g_count_n{0};
+bool count_destroys(void* obj)
+{
+    g_count_obj = obj;
+    g_count_n = 0;
+    return g_destroy_orig != nullptr;
+}
+unsigned destroys_counted() { return g_count_n; }
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
+    if (obj && obj == g_count_obj)
+        g_count_n++;
     if (g_destroy_listener && obj)
         g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
     if (g_stale_sender_fix && obj && readable(obj, 0x30)) {

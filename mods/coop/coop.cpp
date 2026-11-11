@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.11.1"
+#define COOP_VERSION "0.7.11.2"
 #endif
 
 #include <winsock2.h>
@@ -5080,6 +5080,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "untune")) { // guest (tests, BUG-0462): proxy <id> as made in a herd of ours
         SAY("%s", npc::debug_untune((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "gamekill")) { // guest (tests, BUG-0850): the game destroys proxy <id>, then it goes
+        SAY("%s", npc::debug_gamekill((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "forget")) { // guest (tests, BUG-0487): forget <id>

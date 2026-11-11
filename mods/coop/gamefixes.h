@@ -37,5 +37,8 @@ unsigned clear_stimuli_from(void* c, void* sender);
 // here: fn(obj, return address of the game's call), called before the object is destroyed, on the caller's thread
 using DestroyListener = void (*)(void* obj, uintptr_t ret);
 void set_destroy_listener(DestroyListener fn);
+// tests (BUG-0850): count the game's DestroyInstance calls of one object from now on (nullptr: stop); false: no hook
+bool count_destroys(void* obj);
+unsigned destroys_counted();
 
 } // namespace gamefixes

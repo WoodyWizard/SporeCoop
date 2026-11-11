@@ -5,7 +5,7 @@ CXX := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang++
 HOSTCXX ?= clang++
 
 B := build
-COMMON  := -O2 -g -Wall -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
+COMMON  := -O2 -g -Wall -Werror=misleading-indentation -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
 CFLAGS  := $(COMMON)
 CXXFLAGS:= $(COMMON) -std=c++20
 LDDLL   := -shared -static -Wl,--kill-at -Wl,--enable-stdcall-fixup

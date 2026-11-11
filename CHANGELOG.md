@@ -46,6 +46,7 @@
   Every guest plays the host's species, only the host evolves it (its editor opens at once, no vote), the guests get
   no editor and no creation arrows, and every evolution of the host changes every player's creature at once
   (BUG-0769).
+
 ### Fixed
 - Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
   is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
@@ -71,7 +72,13 @@
   did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
   is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
 
-## [0.7.11] - 2026-11-08
+## [0.7.11.2] - 2026-11-10
+
+### Fixed
+- Creature, Tribe: a guest's game could crash now and then when an animal's body was removed by the guest's own game
+  (its tribe killed it, a cleanup) and the host's animal then left: the mod removed that body a second time. This came
+  with 0.7.11 (BUG-0850).
+
 ## [0.7.11.1] - 2026-11-08
 
 0.7.11 was tagged but never published (its release build failed on a test script); 0.7.11.1 is 0.7.11 with that

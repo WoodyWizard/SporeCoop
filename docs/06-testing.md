@@ -5469,3 +5469,16 @@ from the lane's game folder with Python's zipfile: exactly the expected entries,
 lane share one `mods\logs`, the instance suffix tells them apart), SESSION.txt with each guest's state and no address,
 no `*.part` left. The test makes `report-*.txt` files on purpose (`reports=True`): it checks itself that no `crash-*`
 file appeared and every game still answers. `SPORE_FIX_OFF=core.session_report` fails (no guest is asked).
+## Counting the game's destroys of one object (2026-11-10, fix/w47-proxy-destroy)
+<a id="testing-destroy-count"></a>
+
+`coop.npc gamekill <id>` (guest, BUG-0850) destroys proxy `<id>`'s creature with the game's own
+`cGameNounManager::DestroyInstance` (no bookkeeping of ours, `game::destroy_untracked`), then drops the proxy in the
+same call (as a despawn or the stale drop before the next npc tick) and prints `destroyed_by_game=<0|1>
+destroy_calls=<n>`: gamefixes' DestroyInstance hook (the one hook of the function, BUG-0623) counts the calls for that
+object (`gamefixes::count_destroys(obj)` / `destroys_counted()`). A double destroy within one frame did not fault the
+lab's games (3 + 3 objects, creature and tribe fixtures): the test asserts the count, not a crash.
+`coop_npc_destroy_once.py` (`npc_destroy_once`, `npc_destroy_once_tribe`): SPORE_FIX_OFF=npc.destroy_once fails with 2.
+The bug was an `else` with two statements and no braces; llvm-mingw's `-Wall` does not include
+`-Wmisleading-indentation`, so the build never warned. The Makefile's COMMON flags (coop.dll, sporekit.dll, the
+loader) have `-Werror=misleading-indentation` now: on 2026-11-10 this line was its only hit in the tree.
