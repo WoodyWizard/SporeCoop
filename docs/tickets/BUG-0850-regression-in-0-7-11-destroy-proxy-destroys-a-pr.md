@@ -56,6 +56,9 @@ coop_npc_destroy_once.py: 3 living proxies near the guest, `coop.npc gamekill` e
   (tribe: {6: 2, 13: 2, 28: 2}). No fault in either run: the game tolerated the second destroy within the same frame,
   so the crash itself stays inferred (the object is freed later; a destroy of it after that would read freed memory).
 * PASS (fix on): 20261110-173543 (npc_destroy_once and npc_destroy_once_tribe, 2x each, 1 call per object, no fault).
+* No regression: smoke 20261110-174002 (14/14, with creature, tribe_coop, chaos_tribe); 20261110-175415 npc_walk,
+  npc_walk_tribe, play_tribe OK, play_creature FAIL with no joint hunt (the known flaky BUG-0500 pattern, about 1 run in
+  4, docs/known-issues.md#issue-play-creature-puppet-far; no fault); its rerun 20261110-180718 OK.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
