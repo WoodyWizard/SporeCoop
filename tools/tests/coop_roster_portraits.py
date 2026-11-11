@@ -27,7 +27,7 @@ import time
 import lane
 import twoinst
 from coop_campaign import Campaign, Player
-from twoinst import Checks, shot, start
+from twoinst import Checks, start
 
 
 def roster_slots(path):
@@ -87,8 +87,9 @@ def main():
     while time.time() - t0 < 120:
         for who, con in (('guest', guest), ('host', host)):
             con.call('key enter')  # a caption of the new stage
-            paths[who] = shot(con, f'roster_portraits_{who}.png')
-            slots[who] = roster_slots(paths[who]) if os.path.exists(paths[who]) else []
+            # a full-size shot (twoinst.shot halves it: the slot frames blur)
+            paths[who] = os.path.join(lane.out_dir('shots'), f'roster_portraits_{who}.png')
+            slots[who] = roster_slots(paths[who]) if con.call('shot ' + paths[who])['ok'] else []
         if len(slots['guest']) >= 2 and tribe_species(guest)[0] >= 2 and time.time() - t0 > 15:
             break
         time.sleep(4)
@@ -110,6 +111,9 @@ def main():
     ck(len(slots['guest']) >= 2, f'the guest\'s screen shows the roster ({len(slots["guest"])} slots found)')
     ck(not gwhite, f'no slot of the guest\'s roster is a white square ({len(gwhite)} of {len(slots["guest"])} white)')
     ck(not hwhite, f'no slot of the host\'s roster is a white square ({len(hwhite)} of {len(slots["host"])} white)')
+    for path in paths.values():  # kept at half size, as every test shot
+        if os.path.exists(path):
+            twoinst.recompress_png(path, 0.5)
     for it in camp.F.items:
         print(f'  campaign finding [{it["kind"]}] {it["stage"]}: {it["text"][:160]}', flush=True)
     ck.faults(host=host, guest=guest)
