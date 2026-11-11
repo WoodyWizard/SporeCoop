@@ -353,6 +353,7 @@ for st, n in (('cell', 4), ('creature', 4), ('tribe', 4), ('civ', 3), ('space', 
     add(f'pool_stress_{st}', P + f'coop_pool_stress.py --fixture {st} --players {n}', ('multi', 'extended'), minutes=7)
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
 add('space_own_save', P + 'coop_space_own_save.py', minutes=6, fixture='space')  # a guest in a Space save of its own keeps its own money (BUG-0709; SPORE_FIX_OFF=res.space_save fails)
+add('space_save_change', P + 'coop_space_save_change.py', minutes=8, fixture='creature')  # a guest that joined before the host loaded another save shares the Space money (BUG-0933; SPORE_FIX_OFF=res.space_save_follow fails)
 add('effect_ground', P + 'coop_effect_ground.py', warm=True, minutes=3, fixture='creature')  # a relayed world effect at its height over the receiver's ground (BUG-0608; SPORE_FIX_OFF=effects.ground fails)
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
 add('menu_stale_player', P + 'coop_menu_stale_player.py', minutes=12, fixture='tribe')  # a load from the galaxy menu with the old world's player empire left there (BUG-0284; --nofix fails)

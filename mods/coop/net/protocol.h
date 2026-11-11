@@ -126,6 +126,9 @@ enum MsgType : uint8_t {
     MSG_REPORT = 68,      // the session report (net/sreport.h, F4 of 0.7.12, BUG-0767): u8 kind; host -> guest the
                           // question / a stop, guest -> host the answer and its report zip in pieces (reliable).
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_HOST_WORLD = 69,  // host -> guests (reliable): u32 world, the world id of WELCOME again (host_world.h welcome_world:
+                          // the CRC of the host's save name), sent when the host's save changes during the session and
+                          // after a join (BUG-0933). Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

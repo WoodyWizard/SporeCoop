@@ -253,6 +253,24 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("play %d -> %d\n", atoi(argv[2]), r);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "target")) { // tests (BUG-0934): the avatar's combat target through the game's own
+        // SetTarget (creature vt 0x84, thiscall(target combatant = creature + 0x5A8, 1, 0), as the click's
+        // CreatureClickObject does): `none` clears it, <address> aims at that puppet of ours
+        void* p = nullptr;
+        if (strcmp(argv[2], "none")) {
+            void* want = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+            for (void* q : game::puppets())
+                if (q == want)
+                    p = q;
+            if (!p || !skg::readable(p, 0x5B0) || game::is_dead(p)) {
+                SAY("%s is no live puppet of ours\n", argv[2]);
+                return 1;
+            }
+        }
+        skg::vcall<void>(av, 0x84 / 4, p ? (void*)((uint8_t*)p + 0x5A8) : (void*)nullptr, 1, 0);
+        SAY("target %p (puppet %p)\n", *(void**)((uint8_t*)av + 0xE7C), p);
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "ground")) { // BUG-0377: the ground radius in the direction of x y z, no move
         net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
         SAY("ground %.2f\n", game::ground_radius(p));
@@ -784,7 +802,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z> | target none|<puppet address>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
