@@ -1333,6 +1333,8 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     return c;
 }
 
+static bool g_fix_puppet_level = true;
+COOP_FIX("cell.puppet_level", "BUG-0910", g_fix_puppet_level, "cell: a partner's cell in this game follows the players' level, so the host's creatures hunt a guest as they hunt the host");
 COOP_FIX("cell.puppet_scale", "BUG-0519", net::SnapshotBuffer::scale_lerp, "cell: the partner's cell is drawn in this game's world scale while a level change rescales either world");
 static void cell_drive(void* cp, const net::PlayerState& s_in, drive::State&, double)
 {
@@ -1393,7 +1395,8 @@ static void cell_drive(void* cp, const net::PlayerState& s_in, drive::State&, do
     // for 7 at food 600). Ask the game: the scale difference avatar -> puppet is 2 at the same level.
     uint8_t* g = cell_game();
     uint8_t* av = g ? cell_at(*(uint32_t*)(g + 0x411C)) : nullptr;
-    if (uintptr_t diff = S("Simulator::Cell::GetScaleDifference"); av && av != c && diff) {
+    // `coop.fix cell.puppet_level off`: the level of the moment the puppet was made (play_cell's hunt trial, BUG-0910)
+    if (uintptr_t diff = S("Simulator::Cell::GetScaleDifference"); av && av != c && diff && g_fix_puppet_level) {
         int d = skg::cdecl_call<int>(diff, av, c); // clamped to 0..4: converges within a few frames
         int lvl = *(int*)(c + 0x358) + 2 - d;
         if (d != 2 && lvl >= 0 && lvl < 32)

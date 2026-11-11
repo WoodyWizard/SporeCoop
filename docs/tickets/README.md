@@ -914,3 +914,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0903](BUG-0903-visual-tests-key-frames-with-a-review-by-eye-gol.md) | fixed | tooling | All | 2026-11-10 | unreleased | Visual tests: key frames with a review by eye, golden images of the co-op window, the same view on both games |
 | [BUG-0906](BUG-0906-tribe-the-guest-s-copy-of-the-host-s-chief-has-n.md) | open | bug | Tribe | 2026-11-10 |  | Tribe: the guest's copy of the host's chief has no chief's staff (the host's game draws it) |
 | [BUG-0907](BUG-0907-tribe-a-partner-s-name-tag-floats-over-empty-gro.md) | open | bug | Tribe | 2026-11-10 |  | Tribe: a partner's name tag floats over empty ground on the guest (no member drawn under it) |
+| [BUG-0910](BUG-0910-tests-play-cell-fails-the-host-s-npcs-hunt-the-g.md) | open | test | Cell | 2026-11-10 |  | tests: play_cell fails 'the host's NPCs hunt the guest too' on a ratio of chase samples over the bots' random paths |

@@ -63,6 +63,9 @@ float on_player_hit(void* target, uint8_t player, float damage)
         return damage;
     bool joint = g_hits.hit(target, player, H->time_seconds());
     (player ? g_hits_partners : g_hits_host)++;
+    // tests (BUG-0618): every hit the joint table counted, for the play bots' hunt timeline
+    H->log(M, SK_INFO, "team: hit %p by player %u dmg %.1f hp %.1f%s", target, (unsigned)player, damage, game::health(target),
+           joint ? " joint" : "");
     if (!joint)
         return damage;
     g_joint_hits++;
