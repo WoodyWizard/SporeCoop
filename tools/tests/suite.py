@@ -687,6 +687,9 @@ add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
 # report are refused, the host's zip holds exactly the expected entries, the host's report alone; it makes reports on
 # purpose (checks crashes itself); SPORE_FIX_OFF=core.session_report fails
 add('session_report', P + 'coop_session_report.py', ('multi', 'extended'), minutes=8, reports=True)
+# BUG-0770 / BUG-0783: the session report and the host's settings table end with their session (a guest's and a host's
+# Leave), a guest busy sending answers the next Ask; SPORE_FIX_OFF=core.session_state_end and core.sreport_reask fail
+add('sreport_leave', P + 'coop_sreport_leave.py', minutes=6, fixture='cell', reports=True)
 add('cell_nan', P + 'coop_cell_nan.py', minutes=3)  # a guest's own cell NaN is put back, no tiles from NaN boxes, a level-up after it (BUG-0299; SPORE_FIX_OFF=cell.nan_guard fails)
 add('cell_stale', P + 'coop_cell_stale.py', minutes=2)  # a group member drops a dead chase target copied from its leader: no fault per frame on the host (BUG-0306; SPORE_FIX_OFF=cell.pick_guard fails)
 add('cell_nan_all', P + 'coop_cell_nan.py --all', minutes=3)  # the own cell NaN in every field: healed once, not NaN again (BUG-0307; SPORE_FIX_OFF=cell.nan_heal_all fails)
