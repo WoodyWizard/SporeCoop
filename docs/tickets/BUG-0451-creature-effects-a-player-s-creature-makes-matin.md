@@ -220,3 +220,4 @@ with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-202617.
   a world start of an id it saw only in a painter world. `effects.other_stages` is on by default (Tribe, Civ);
   Space is behind `effects.space` (off). Test: effects_party_tribe / _civ, tribe_effects back in the full suite.
   docs/re/creature.md#creature-effects-painter.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the Space half of the relay (effects.space, off by default) had no ticket; new ticket BUG-0895.

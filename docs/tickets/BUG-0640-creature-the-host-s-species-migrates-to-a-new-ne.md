@@ -62,3 +62,4 @@ host's new nest (respawn place and home), and the heal there.
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): fixed (wsync.creature_nest); FAIL 20261107-074327, PASS 20261107-074330, 20261107-074824, own creature 20261107-074827.
 - 2026-11-07: released in 0.7.10.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the guest's migration target is compared with the host's only after the host's claim (wsync.cpp:844), not while the host migrates; new ticket BUG-0881 for the two-migration / far-guest case.

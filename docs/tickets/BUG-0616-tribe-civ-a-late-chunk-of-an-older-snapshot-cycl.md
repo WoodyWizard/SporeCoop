@@ -33,3 +33,4 @@ no-fail-run: unit test only (the lab's netem cannot make a whole-cycle reorderin
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): opened from BUG-0612 and fixed (net.cycle_order).
 - 2026-11-07: released in 0.7.9.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: realign.cpp:249 still restarts a cycle on any other cycle number (the tracker was applied to Tribe and Civ only); new ticket BUG-0886.

@@ -33,3 +33,4 @@ no-fail-run: docs only (the classification); the fixes it led to have their own 
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-k2b-content-b): the classification written; children fixed or closed.
 - 2026-11-08: released in 0.7.11.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the caller table still has own / party rows (CreatureAbilityHit damage, the ally relation, the pack UI) with no check and no ticket; follow-up BUG-0893.
