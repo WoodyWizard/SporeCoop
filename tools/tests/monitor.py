@@ -827,9 +827,19 @@ class Watch(threading.Thread):
                 st[who] = now
             return []
         t0 = st[who]
-        hr, gr = body_trail.since(hc, t0 - body_trail.GAP), body_trail.since(gc, t0)
-        if gr:
-            st[who] = max(r[0] for r in gr)
+        # BUG-0916: only the kinds that are judged are kept (a Cell host lists 1100 cells a frame, none judged), each
+        # read is bounded (body_trail.since), and a read that was cut starts the next period from now, not from where
+        # it stopped: no backlog builds up behind the game's ring
+        kinds = body_trail.detect_kinds(stage)
+        t_now = body_trail.now(gc)
+        hr = body_trail.since(hc, t0 - body_trail.GAP, kinds=kinds)
+        cut = body_trail.since.cut
+        gr = body_trail.since(gc, t0, kinds=kinds)
+        cut = cut or body_trail.since.cut
+        st[who] = t_now if cut or not gr else max(t_now - 1.0, max(r[0] for r in gr))
+        if cut and not st.get('cut_said'):
+            st['cut_said'] = True
+            self.out(f'  (detector trail: a read of {who} ended early ({cut}): the next period starts from now)')
         return body_trail.detect_findings(stage, hr, gr)
 
     def detect(self):

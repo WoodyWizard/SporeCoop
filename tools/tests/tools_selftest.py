@@ -26,6 +26,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   mergelogs tools/merge_logs.py orders two players' lines by the session clock, picks the last session,
             places lines without a clock with --all, and lists the sessions (docs/REPORTING.md#reporting-support)
   campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
+  trail     body_trail.since (the detector's read of coop.bodyrec) ends, keeps no row twice and is bounded on a model
+            of the game's command; the old loop (SPORE_BODYTRAIL_OLD_SINCE=1) never ends on it (BUG-0916)
   testlint  tools/tests/test_lint.py: a game test in no suite, a check on a mod counter without a reason (BUG-0430)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
@@ -824,6 +826,89 @@ def test_worldstate():
 
 
 # ---------------------------------------------------------------- test_lint (BUG-0430)
+def test_trail():
+    """BUG-0916: body_trail.since ends, keeps no row twice and is bounded, on a model of the game's `coop.bodyrec
+    since` (mods/coop/coop.cpp: rows after t0 on the full double, times printed with 4 decimals, n rows a page)"""
+    print('trail: the detector\'s bodyrec read ends and is bounded (BUG-0916)')
+    # SELFTEST_BODYTRAIL=<dir>: the body_trail.py of another copy (an old version: the check fails there)
+    sys.path.insert(0, os.environ.get('SELFTEST_BODYTRAIL') or os.path.dirname(os.path.abspath(__file__)))
+    import bisect
+    import body_trail
+
+    class Game:
+        """frames of `per` rows every dt s (4 players first, then cells), a ring of `ring` rows that goes on
+        filling `rate` frames per call (the game plays while the test reads)"""
+        def __init__(self, per, frames, dt=0.0151234567, ring=400000, rate=0, limit=4000):
+            self.per, self.dt, self.ring, self.rate, self.limit = per, dt, ring, rate, limit
+            self.t = [1000.0 + i * dt for i in range(frames)]
+            self.calls = 0
+
+        def call(self, line):
+            w = line.split()
+            self.calls += 1
+            if self.calls > self.limit:
+                raise RuntimeError('the read did not end')
+            for _ in range(self.rate):
+                self.t.append(self.t[-1] + self.dt)
+            del self.t[:max(0, len(self.t) - self.ring // self.per)]
+            t0, n, step = float(w[2]), int(w[3]), float(w[4])
+            out, kept = [], -1e300
+            for ft in self.t[bisect.bisect_right(self.t, t0):]:
+                if ft < kept + step:
+                    continue
+                kept = ft
+                for k in range(self.per):
+                    if len(out) >= n:
+                        break
+                    out.append(f'{ft:.4f} {"p" if k < 4 else "c"}{k} 1.000 2.000 3.000')
+                if len(out) >= n:
+                    break
+            return {'ok': True, 'out': '\n'.join(out) + '\n'}
+
+    def read(g, **kw):
+        try:
+            rows = body_trail.since(g, 999.0, **kw)
+        except RuntimeError as e:
+            return None, str(e)
+        return rows, getattr(body_trail.since, 'cut', '')
+
+    old = os.environ.pop('SPORE_BODYTRAIL_OLD_SINCE', None)
+    try:
+        # the campaign's host in Cell: 1100 rows a frame, one whole frame in a page of 2000
+        g = Game(1100, 300)
+        rows, cut = read(g, kinds='p')
+        frames = sorted({r[0] for r in rows or []})
+        check(rows is not None and not cut and len(rows) == 4 * len(frames) and len(frames) > 60,
+              f'1100 rows a frame: the read ends with every kept frame once, players only '
+              f'({len(rows or [])} rows of {len(frames)} frames in {g.calls} calls, cut {cut!r})')
+        rows, cut = read(Game(1100, 300))
+        check(rows is not None and len(rows) == len({(r[0], r[1]) for r in rows}),
+              f'every kind kept: no row twice ({len(rows or [])} rows)')
+        # a frame larger than the page: read whole with a larger page
+        rows, cut = read(Game(2600, 40), kinds='pc')
+        per = {}
+        for r in rows or []:
+            per[r[0]] = per.get(r[0], 0) + 1
+        check(rows is not None and per and set(per.values()) == {2600},
+              f'2600 rows a frame: whole frames with a larger page ({len(per)} frames, sizes {sorted(set(per.values()))})')
+        # the game goes on recording faster than the test reads: the read is cut, not endless
+        g = Game(1100, 300, rate=40)
+        rows, cut = read(g, kinds='p', max_pages=30)
+        check(rows is not None and cut and g.calls <= 31 and len(rows) <= 31 * 8000,
+              f'a game that records faster than it is read: cut after {g.calls} calls ({cut!r}), {len(rows or [])} rows')
+        rows, cut = read(Game(300, 2000), max_rows=5000)
+        check(rows is not None and cut and len(rows) < 5000 + 2000, f'the row limit holds ({len(rows or [])} rows, {cut!r})')
+        # the old loop on the same game: it never ends (the model stops it after 4000 calls)
+        os.environ['SPORE_BODYTRAIL_OLD_SINCE'] = '1'
+        g = Game(1100, 300)
+        rows, why = read(g)
+        check(rows is None and g.calls > 4000, f'the old loop (SPORE_BODYTRAIL_OLD_SINCE=1) does not end on it ({why})')
+    finally:
+        os.environ.pop('SPORE_BODYTRAIL_OLD_SINCE', None)
+        if old is not None:
+            os.environ['SPORE_BODYTRAIL_OLD_SINCE'] = old
+
+
 def test_testlint():
     print('testlint: a game test in no suite, a check on a mod counter')
     root = os.path.join(TMP, 'tl')
@@ -857,7 +942,8 @@ def test_testlint():
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
-          'worldstate': test_worldstate, 'testlint': test_testlint}
+          'worldstate': test_worldstate, 'testlint': test_testlint,
+          'trail': test_trail}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

@@ -18,6 +18,7 @@ import collections
 import math
 import os
 import re
+import time
 
 MOVING = 0.5  # m/s: the host's body moves
 TRAIL_M = 2.0  # m: a copy this far off ...
@@ -247,18 +248,40 @@ def ensure_on(con):
     return 'bodyrec on' in con.call('coop.bodyrec count').get('out', '')
 
 
-def since(con, t0, step=DET_STEP, page=2000):
-    """rows after absolute time t0 (one frame per step s)"""
+# BUG-0916: since() was `t0 = <the last whole frame's printed time>` and "until a page comes back short". The game
+# prints a row's time with 4 decimals and answers "rows after t0" on the full double: for a frame whose time was
+# rounded down the same frame came back, and with one whole frame per page (a host in Cell with four players: 1100 rows
+# a frame, 4 of them players, a page of 2000) the reply was the same page again and again until the game's ring
+# (400000 rows: 5 s there) dropped the frame, then the next frame stuck the same way: the loop never reached "now" and
+# kept every copy (the campaign's script: 27 MB/s, 16.9 GB when the stage ended; lab 20261111-000117).
+# Now: the next page starts past the frame (half the printed step later), a page that brings nothing new ends the
+# read, a frame larger than the page is read with a larger page, only the wanted kinds are kept, and the read ends at
+# SINCE_ROWS kept rows, SINCE_PAGES pages or SINCE_SECS seconds (the caller is told: since.cut).
+# SPORE_BODYTRAIL_OLD_SINCE=1: the old loop (the self-test's FAIL side, tools_selftest.py trail).
+T_EPS = 0.00005     # s: half of the last printed digit of a row's time
+PAGE_MAX = 16000    # rows: a reply stays well under the console's 1 MB (a row is ~41 bytes)
+PAGE_WIDE = 8000    # rows: the page grows to this while it holds fewer than three whole frames
+SINCE_ROWS = 120000  # kept rows of one read (about 33 MB of tuples)
+SINCE_PAGES = 120
+SINCE_SECS = 10.0
+
+
+def _rows(text):
+    got = []
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) == 5:
+            try:
+                got.append((float(f[0]), f[1], (float(f[2]), float(f[3]), float(f[4]))))
+            except ValueError:
+                pass
+    return got
+
+
+def _since_old(con, t0, step=DET_STEP, page=2000):
     rows = []
     while True:
-        got = []
-        for line in con.call(f'coop.bodyrec since {t0:.4f} {page} {step}').get('out', '').splitlines():
-            f = line.split()
-            if len(f) == 5:
-                try:
-                    got.append((float(f[0]), f[1], (float(f[2]), float(f[3]), float(f[4]))))
-                except ValueError:
-                    pass
+        got = _rows(con.call(f'coop.bodyrec since {t0:.4f} {page} {step}').get('out', ''))
         if len(got) < page:
             return rows + got
         last = got[-1][0]
@@ -269,13 +292,59 @@ def since(con, t0, step=DET_STEP, page=2000):
         t0 = whole[-1][0]
 
 
+def since(con, t0, step=DET_STEP, page=2000, kinds=None, max_rows=SINCE_ROWS, max_pages=SINCE_PAGES,
+          max_secs=SINCE_SECS, clock=time.time):
+    """rows after absolute time t0 (one frame per step s), of the kinds wanted (first letter of the key; None:
+    all). Bounded: since.cut says why a read ended before the game's last row ('' when it is complete)"""
+    since.cut = ''
+    if os.environ.get('SPORE_BODYTRAIL_OLD_SINCE') == '1':
+        return _since_old(con, t0, step, page)
+    rows, pages, start = [], 0, clock()
+
+    def keep(rs):
+        rows.extend(r for r in rs if kinds is None or r[1][:1] in kinds)
+
+    while True:
+        got = _rows(con.call(f'coop.bodyrec since {t0:.5f} {page} {step}').get('out', ''))
+        pages += 1
+        if len(got) < page:  # the game's last rows
+            keep(got)
+            return rows
+        last = got[-1][0]
+        whole = [r for r in got if r[0] < last]  # the last frame may be cut: read again from past the frame before
+        if not whole and page < PAGE_MAX:  # one frame fills the page: a larger page
+            page = min(PAGE_MAX, page * 4)
+            continue
+        if not whole:  # a frame larger than any page: its first rows, then on from past it
+            whole = got
+        keep(whole)
+        if len({r[0] for r in whole}) < 3 and page < PAGE_WIDE:  # a call per frame: fewer, larger pages
+            page = min(PAGE_WIDE, page * 2)
+        nxt = whole[-1][0] + T_EPS
+        if nxt <= t0:  # (never with T_EPS: no way to go on)
+            since.cut = 'no progress'
+            return rows
+        t0 = nxt
+        if len(rows) >= max_rows or pages >= max_pages or clock() - start > max_secs:
+            since.cut = (f'{len(rows)} rows' if len(rows) >= max_rows else f'{pages} pages' if pages >= max_pages
+                         else f'{max_secs:g} s')
+            return rows
+
+
+since.cut = ''
+
+
+def detect_kinds(stage):
+    """the kinds the detector judges in a stage (in Tribe and Civ a player's row is its mouse marker on the planet,
+    modes.cpp rts_fill, not a body: seen as Civilization:trail:player p90 8-9 m in every period of play_civ, lab
+    20261106-071756)"""
+    return 'ntvs' if stage in ('Tribe', 'Civilization') else 'ntvps'
+
+
 def detect_findings(stage, host_rows, guest_rows):
     """the detector's `<stage>:trail:<kind>` findings of one period (dicts as worlddiff.diff's)"""
     out = []
-    # (in Tribe and Civ a player's row is its mouse marker on the planet, modes.cpp rts_fill, not a body: seen as
-    # Civilization:trail:player p90 8-9 m in every period of play_civ, lab 20261106-071756)
-    kinds = 'ntvs' if stage in ('Tribe', 'Civilization') else 'ntvps'
-    res = analyse(host_rows, guest_rows, kinds=kinds)
+    res = analyse(host_rows, guest_rows, kinds=detect_kinds(stage))
     for kind, r in sorted(res.items()):
         if r['n'] < DET_MIN:
             continue

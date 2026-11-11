@@ -62,6 +62,21 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
                   monitor=monitor))
 
 
+def games(t):
+    """how many games a test runs at once (the lab's memory gate, tools/lab.py MemGate, BUG-0916): `games` of its
+    entry when set, else 4 for a campaign, N of `--players N`, 0 for a test without a game, 2 otherwise"""
+    import re
+    if t.get('games') is not None:
+        return t['games']
+    cmd = t.get('cmd', '')
+    if cmd.startswith('make') or t.get('gates') is NO_GAME:
+        return 0
+    m = re.search(r'--players[ =](\d+)', cmd)
+    if m:
+        return int(m.group(1))
+    return 4 if 'coop_campaign.py' in cmd or '_4p' in cmd else 2
+
+
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
 add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails), the setup's Spore-without-GA folder and GitHub API 403 fallback (BUG-0391: SPORE_WIN_UNIT_ARGS=--old-ga fails; BUG-0392: SPORE_FIX_OFF=update.web_fallback fails), download retries on 504 / dropped connections (BUG-0755: SPORE_FIX_OFF=update.retry fails)

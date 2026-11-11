@@ -35,6 +35,10 @@ Cases (ticket):
                 a hitch of a load or of the frame source switch are handled
   same_second   two lab processes started in the same second: a run directory each, flaky.json counts
                 both (BUG-0353, BUG-0362); the old shared directory (SPORE_LAB_SHARED_RUNDIR=1) fails it
+  mem_script    a test script over the lab's memory limit (SPORE_LAB_SCRIPT_RSS_MB) is killed and fails with
+                "the test script used N MB"; a small one passes with its peak in the result (BUG-0916)
+  mem_gate      the memory gate: a 4-game test waits while MemAvailable is short and starts when it is back; the
+                games of a test just started count; with nothing running it fails as not started after the wait
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -52,6 +56,8 @@ import time
 
 LANE = 10
 FAILS = []
+# the fake tests of this file start whatever the machine's free memory is (the gate has its own cases, mem_gate)
+os.environ['SPORE_LAB_MEM_FLOOR_GB'] = '0'
 
 
 def check(cond, what):
@@ -293,7 +299,10 @@ def game_log_case(tree, tmp):
     """the harness files in a fake layout <tmp>/gl/SPORE/SporeCoop + a worktree, run from the worktree"""
     base = os.path.join(tmp, 'gl')
     repo = os.path.join(base, 'SPORE', 'SporeCoop')
-    for f in ('tools/sporectl.py', 'tools/tests/lane.py', 'tools/tests/twoinst.py', 'tools/tests/fixtures.py'):
+    for f in ('tools/sporectl.py', 'tools/tests/lane.py', 'tools/tests/twoinst.py', 'tools/tests/fixtures.py',
+              'tools/tests/memprobe.py'):
+        if not os.path.exists(os.path.join(tree, f)):  # (memprobe.py: not in a tree before BUG-0916)
+            continue
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
     git(repo, 'init', '-q', '-b', 'main')
@@ -641,6 +650,83 @@ def kill_case(tree, tmp):
     check(rc not in (0, None) and c == [], f'kill --lane 11: refused ({rc}, {c})')
 
 
+def mem_cases(tree, tmp):
+    """BUG-0916: the script memory limit and the memory gate"""
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import threading
+    import lab
+    import suite
+    if not hasattr(lab, 'MemSampler'):
+        check(False, 'mem_script: this lab has no memory limit for test scripts (BUG-0916)')
+        return
+    py = f'{sys.executable} -c'
+    logdir = os.path.join(tmp, 'mem')
+    os.makedirs(logdir)
+    old = (lab.SCRIPT_RSS_MB, lab.MEM_STEP, lab.AFTER)
+    lab.SCRIPT_RSS_MB, lab.MEM_STEP, lab.AFTER = 150, 0.3, 0.5
+    try:
+        base = dict(warm=False, fixture=None, exclusive=False, minutes=1, reports=False)
+        marker = f'labselftest_mem_{os.getpid()}'
+        big = dict(base, name='mem_big', cmd=f'{py} "import time; x = bytearray(400 << 20); time.sleep(30); '
+                                             f'print(\'RESULT: OK\')" {marker}')
+        small = dict(base, name='mem_small', cmd=f'{py} "import time; time.sleep(1.5); print(\'RESULT: OK\')"')
+        t0 = time.time()
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = lab.run_one(big, LANE, tree, logdir, False)
+            r2 = lab.run_one(small, LANE, tree, logdir, False)
+        line = next((x for x in r['fails'] if 'the test script used' in x), '')
+        check(not r['ok'] and line and time.time() - t0 < 25 and not leftovers(marker),
+              f'mem_script: a script of 400 MB over a 150 MB limit is killed and fails ({line[:90]})')
+        check(not r.get('harness'), 'mem_script: it is a failure, not harness trouble to retry')
+        check(r2['ok'] and 0 < r2['mem'].get('script_rss_mb', 0) < 150,
+              f'mem_script: a small script passes, its peak RSS in the result ({r2.get("mem")})')
+    finally:
+        lab.SCRIPT_RSS_MB, lab.MEM_STEP, lab.AFTER = old
+
+    # the gate, on a fake MemAvailable
+    old = (lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb)
+    avail = [30.0]
+    lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT = 8.0, 1.6, 0.1, 0.6
+    lab.mem_available_gb = lambda: avail[0]
+    try:
+        four = dict(name='four', cmd='python3 tools/tests/coop_campaign.py --minutes 8')
+        two = dict(name='two', cmd='python3 tools/tests/coop_x.py')
+        check(suite.games(four) == 4 and suite.games(two) == 2 and suite.games(dict(cmd='make test')) == 0
+              and suite.games(dict(cmd='python3 tools/tests/coop_party.py --players 3')) == 3,
+              'mem_gate: games of a test: 4 for a campaign, N of --players N, 2 otherwise, 0 for make')
+        said = []
+        g = lab.MemGate(said.append)
+        a1 = g.admit(four)
+        check(isinstance(a1, list), 'mem_gate: 30 GB available: a 4-game test starts')
+        # 30 - 6.4 (the first test's games, not grown yet) - 6.4 = 17.2: a second starts; a third (10.8) too; a
+        # fourth (4.4 under 8) waits
+        a2, a3 = g.admit(four), g.admit(four)
+        got = []
+        th = threading.Thread(target=lambda: got.append(g.admit(four)), daemon=True)
+        th.start()
+        time.sleep(0.5)
+        check(isinstance(a2, list) and isinstance(a3, list) and not got and any('four waits' in x for x in said),
+              f'mem_gate: the fourth campaign at once waits ({said[:1]})')
+        g.release(a1)
+        g.release(a2)
+        th.join(5)
+        check(got and isinstance(got[0], list), 'mem_gate: it starts when two of them ended')
+        for tok in (a3, got[0] if got else None):
+            g.release(tok)
+        avail[0] = 9.0
+        t0 = time.time()
+        r = g.admit(two)
+        check(isinstance(r, str) and 'not started' in r and time.time() - t0 < 5,
+              f'mem_gate: 9 GB available and nothing of the run running: not started after the wait ({str(r)[:80]})')
+        ev = threading.Event()
+        ev.set()
+        check(g.admit(two, ev) is None, 'mem_gate: an interrupt ends the wait')
+        lab.MEM_FLOOR_GB = 0
+        check(g.admit(four) == [], 'mem_gate: SPORE_LAB_MEM_FLOOR_GB=0 switches it off')
+    finally:
+        lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tree', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -652,6 +738,7 @@ def main():
         worktree_case(tree, tmp)
         game_log_case(tree, tmp)
         kill_case(tree, tmp)
+        mem_cases(tree, tmp)
         same_second_case(tree, tmp)
         gate_cases(tree, tmp)
         watch_cases(tree, tmp)

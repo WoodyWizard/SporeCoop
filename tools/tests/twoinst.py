@@ -14,6 +14,9 @@ from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
 import fixtures  # noqa: E402
 from lane import APPDATA, sh  # noqa: E402,F401
+import memprobe  # noqa: E402
+
+memprobe.start()  # SPORE_MEMPROBE=1|trace: the test script's own memory (BUG-0916)
 
 
 def wait_up(inst, t=120):
