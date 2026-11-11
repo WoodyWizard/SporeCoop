@@ -4065,6 +4065,8 @@ struct SpaceBuild {
     int from;
     uint32_t place, noun, world;
     net::Vec3 cp, p;
+    double tried = 0;    // the first time it found no free plot here (0 = not yet)
+    double next_try = 0; // then the next try
 };
 static std::vector<SpaceBuild> g_space_held;
 static uint32_t g_space_held_built, g_space_relayed, g_space_relay_in;
@@ -4084,7 +4086,7 @@ static double g_space_place_since;
 static uint32_t space_place_now() { return C.space_place ? C.space_place() : 0; }
 
 // the building made in this game's city near cp (not paid: the buyer paid; the shared money follows)
-static void* space_build_here(const SpaceBuild& sb)
+static void* space_build_here(const SpaceBuild& sb, bool quiet = false)
 {
     void* city = local_city_near(sb.cp);
     g_build_from = sb.from; // the buyer already has it
@@ -4092,6 +4094,8 @@ static void* space_build_here(const SpaceBuild& sb)
     void* b = city ? build_in_city(city, sb.noun, sb.p, false) : nullptr;
     g_applying = false;
     g_build_from = -1;
+    if (quiet && !b)
+        return b;
     H->log(M, b ? SK_INFO : SK_WARN, "civ: space planner: %s's building %08X in the city at (%.0f %.0f %.0f) %s",
            sb.from >= 0 ? C.sess->name_of((uint8_t)sb.from).c_str() : "?", sb.noun, sb.cp.x, sb.cp.y, sb.cp.z,
            b ? "built" : city ? g_build_fail : "no city near it");
@@ -4225,11 +4229,23 @@ static void space_tick(double now)
             i++;
             continue;
         }
+        if (sb.tried && now < sb.next_try) {
+            i++;
+            continue;
+        }
         g_space_held.erase(g_space_held.begin() + i);
-        void* b = space_build_here(sb);
+        void* b = space_build_here(sb, sb.tried != 0);
         if (b)
             g_space_held_built++;
-        else
+        else if (!strcmp(g_build_fail, "no free slot") && (!sb.tried || now - sb.tried < 60.0)) {
+            // the planet's cities are made again from its record when it becomes the active planet: a plot freed in
+            // this session may come back later, or the city is still settling: tried again every 2 s for 60 s
+            sb.tried = sb.tried ? sb.tried : now;
+            sb.next_try = now + 2.0;
+            g_space_held.insert(g_space_held.begin() + i, sb);
+            i++;
+            continue;
+        } else
             g_space_builds_failed++;
         if (b && is_host())
             space_note_host_build(local_city_near(sb.cp), b, sb.from);

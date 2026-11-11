@@ -13,8 +13,9 @@ position (CMD_SPACE_BUILD) and the host builds it in its city there when its shi
    onto the free plot (its screen point from `coop.civ slots`), closes with the green check.
 PASS: the guest's planner took the price, the host's game has a new house in that city (the game's building list),
 the shared money fell by the same amount on both. SPORE_FIX_OFF=civ.space_planner_send must FAIL.
---away (BUG-0766): the host's ship leaves the planet before the guest buys and lands again after it: the host's
-city has the house then (SPORE_FIX_OFF=civ.space_build_hold must FAIL).
+--away (BUG-0766): the host's ship leaves the planet before the guest buys and lands again after it; the game made the
+city again from the planet's record (the house destroyed before is back), so the test frees a plot again: the host's
+city gets the guest's house then (SPORE_FIX_OFF=civ.space_build_hold must FAIL).
 --buyer host (BUG-0884): the host buys the house in its planner: the guest's city has it
 (SPORE_FIX_OFF=civ.space_planner_relay must FAIL).
 
@@ -188,6 +189,13 @@ def main():
         time.sleep(3)
         op = city_positions(other)
         oi = next((k for k, p in op.items() if sum((x - y) ** 2 for x, y in zip(p, bp)) < 100), oi)
+        # the game makes the planet's cities again from its record when it becomes the active planet: the house the
+        # test destroyed before is back (lab 20261110-185810). The test frees a plot again; the kept building takes it
+        no0, ho0, bl = houses(other, oi)
+        k = next((n for n, ln in enumerate(bl) if HOUSE in ln), None)
+        print(f'  {ow} back: {no0} buildings ({ho0} houses); {other.call(f"coop.civ unbuild s{oi} {k}")["out"]}', flush=True)
+        time.sleep(1)
+        no0, ho0, _ = houses(other, oi)
     got, no1, ho1 = None, None, None
     t0 = time.time()
     while time.time() - t0 < 25 and not got:
