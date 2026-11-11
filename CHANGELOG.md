@@ -55,6 +55,13 @@
   is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
 
 ## [0.7.11] - 2026-11-08
+## [0.7.11.2] - 2026-11-10
+
+### Fixed
+- Creature, Tribe: a guest's game could crash now and then when an animal's body was removed by the guest's own game
+  (its tribe killed it, a cleanup) and the host's animal then left: the mod removed that body a second time. This came
+  with 0.7.11 (BUG-0850).
+
 ## [0.7.11.1] - 2026-11-08
 
 0.7.11 was tagged but never published (its release build failed on a test script); 0.7.11.1 is 0.7.11 with that
