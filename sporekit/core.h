@@ -220,6 +220,7 @@ const std::string& diag_files_text();
 void diag_install();          // the crash filter, ExitProcess log
 void diag_after_device();     // GPU and other hooks into the log (once)
 void diag_hang_report(const char* why);
+void diag_dialog_report(const char* why); // BUG-0925: an error dialog of the C runtime on the main thread (once per run)
 void diag_storm_report(const char* why); // BUG-0676: one fault caught in every frame (once per run)
 void diag_init_failed(int result);      // BUG-0521: App::cSporeApp::Init returned 0 (the game ends) // the watchdog: no frames while focused (once per run)
 void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
@@ -228,6 +229,8 @@ void watchdog_start();
 void watchdog_mark(const char* stage);
 void watchdog_loop_tick();           // after every App::Canvas::Tick: the game loop is alive (BUG-0347)
 std::string watchdog_dump_now();
+void watchdog_dialog_test_report(bool on); // tests (kit.test.dialog report)
+void watchdog_stack_here();                // the main thread, from its window procedure (WM_SK_STACK)
 
 // cheats.cpp
 int cheat_register(const char* keyword, const char* devkit_prefix, const char* desc);
@@ -242,6 +245,7 @@ void exceptions_clear();
 // window message used to run main-thread tasks when no frames are presented
 #define WM_SK_PUMP (WM_APP + 0x5C0)
 #define WM_SK_PUMP_OUT (WM_APP + 0x5C1)
+#define WM_SK_STACK (WM_APP + 0x5C2) // BUG-0925: the main thread logs its own call chain (watchdog_stack_here)
 
 // focus.cpp
 void focus_install_hooks();
@@ -282,6 +286,7 @@ extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no 
 extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
 extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
 extern KitFix g_fix_initfail;  // BUG-0521: a failed start of the game is reported and explained
+extern KitFix g_fix_dialognote; // BUG-0925: a dialog on the main thread is named in the log (text, stack, report)
 extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (minimized) is not a hang
 extern KitFix g_fix_presentlost; // BUG-0653: a hitch over 2 s is not Present lost (game loop passes without Present needed)
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed

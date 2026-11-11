@@ -59,6 +59,10 @@ static LRESULT CALLBACK h_WndProc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         pump_outside_tasks();
         return 0;
     }
+    if (m == WM_SK_STACK) {
+        watchdog_stack_here();
+        return 0;
+    }
     if (g_background) {
         switch (m) {
         case WM_ACTIVATEAPP:

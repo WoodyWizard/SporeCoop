@@ -753,6 +753,48 @@ static int c_test_hang(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+// BUG-0925 tests: the main thread shows a message box on its next frame (no frames while it is up, the thread pumps
+// messages, as the C runtime's error box); this thread closes it after ms. "report": the watchdog also writes the
+// report it writes for a runtime library box.
+static BOOL CALLBACK test_dialog_find(HWND w, LPARAM l)
+{
+    wchar_t t[64] = L"";
+    GetWindowTextW(w, t, 64);
+    if (wcscmp(t, L"SporeKit test dialog"))
+        return TRUE;
+    *(HWND*)l = w;
+    return FALSE;
+}
+static int c_test_dialog(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int ms = argc > 1 ? atoi(argv[1]) : 6000;
+    if (ms < 500 || ms > 60000)
+        ms = 6000;
+    watchdog_dialog_test_report(argc > 2 && !strcmp(argv[2], "report"));
+    uint64_t f0 = frame_index();
+    run_on_main([] {
+        MessageBoxW(nullptr, L"Runtime error!\n\nR6025\n- pure virtual function call (a test)", L"SporeKit test dialog", MB_OK);
+    });
+    DWORD t0 = GetTickCount();
+    HWND dlg = nullptr;
+    while (!dlg && GetTickCount() - t0 < 10000) {
+        Sleep(50);
+        EnumThreadWindows(main_thread_id(), test_dialog_find, (LPARAM)&dlg);
+    }
+    if (!dlg) {
+        outf(o, "no dialog seen within 10 s");
+        return 1;
+    }
+    uint64_t f1 = frame_index();
+    Sleep(ms);
+    uint64_t f2 = frame_index();
+    PostMessageW(dlg, WM_COMMAND, IDOK, 0);
+    watchdog_dialog_test_report(false);
+    outf(o, "dialog shown for %d ms: frames %llu before, %llu when it was up, %llu when it was closed", ms,
+         (unsigned long long)f0, (unsigned long long)f1, (unsigned long long)f2);
+    return 0;
+}
+
 void register_builtin_commands()
 {
     SkMod* k = &g_kit_mod;
@@ -844,6 +886,8 @@ void register_builtin_commands()
                 c_test_hooknew, nullptr, M);
     command_add(k, "kit.test.window", "kit.test.window minimize|restore|hide|show - the game window (BUG-0347: no frames, the loop runs)",
                 c_test_window, nullptr, A);
+    command_add(k, "kit.test.dialog", "kit.test.dialog [ms] [report] - the main thread shows a message box for ms (no frames; BUG-0925: the watchdog names it)",
+                c_test_dialog, nullptr, W);
     command_add(k, "kit.test.hang", "kit.test.hang [ms] - block the main thread on its next frame (a real hang, BUG-0347)",
                 c_test_hang, nullptr, A);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);

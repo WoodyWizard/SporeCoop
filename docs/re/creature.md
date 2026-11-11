@@ -1941,6 +1941,7 @@ Player reports BUG-0453 (host crash 0xD65D23, read 0, twice) and BUG-0456 (host 
   ret 8). After the puppet's destroy the NPC's "noticed" stimulus 0x4000000 still named it for 4 s
   (the object's vtables still cCreatureAnimal 0x146A080 / combatant 0x1469E30 in the lab), 28-37 stale
   senders over 6 removals in one run.
+* ~ superseded (2026-11-11): see #creature-stimulus-attacker (it calls the creature at stimulus +0x10, the attacker, not the sender).
 * ✔ BUG-0456: the herd-help node 0xD8F1C0 (`SporeCoop::BT_HerdHelpEval`, likely) takes the sender of
   the "attacked" stimulus 0x200 (0xD998E0), checks +0x135 and vt 0x2C, then calls its combatant
   `[c+0x5A8]` vt 0xC(0x18EB45E) at 0xD8F2AB. In the player's dump the object (ebp) had the root base
@@ -4084,3 +4085,35 @@ BUG-0928. Lanes 9 / 10, `coop_one_creature.py`.
   the green regeneration crosses). The game never clamps it later (16/10 for 40 s in lab 20261111-044257).
 * Fix (`creations.swap_health`, creations.cpp swap_health): the avatar's own swap (apply_own_avatar) keeps the
   share of health: hp = old share x new maximum (at least 1, at most the maximum).
+## A stimulus names two creatures: the sender and, at +0x10, a second one without a reference (2026-11-11, fix/w47-final12)
+<a id="creature-stimulus-attacker"></a>
+
+BUG-0926 (the 0.7.12 final check's long_creature host: runtime error R6025). GOG 2024, Ghidra and lab lanes 2 and 5.
+* CORRECTION (2026-11-11, fix/w47-final12) of #creature-lost-target ("the herd-help node takes the sender ... and
+  calls it"): `SporeCoop::BT_HerdHelpEval` 0xD8F1C0 takes the stimulus 0x200, checks its **sender** (+0x2C, 0xD998E0:
+  cast, alive) and slot +0xC == 1, and then calls the creature at slot **+0x10** (`[+0xC0]` vt 0x58, `[+0x5A8]` vt
+  0xC(0x18EB45E) at 0xD8F2AB, flags +0xB5E / +0xB58); with +0x10 null it takes the sender of 0x400 (0xD99930) or
+  gives up. Evidence: the decompilation; two R6025 stops with 0xD8F2AD in the main thread's chain (lab
+  20261111-064457, lane 2 `coop_stale_refs.py --kill-first`); the stimuli read from memory.
+* ✔ A stimulus slot (0x38 bytes, 8 per AI block at +8): masks +0 / +4, value +8, **+0xC, +0x10, +0x14** written by the
+  poster after BT_PostStimulus returns the slot, the sender +0x2C (a reference). For the "attacked" stimulus 0x200
+  that a hit posts to the victim's herd: sender = the herd mate that was hit, **+0x10 = the attacker, a plain
+  pointer**. ✔ (runtime) After a guest's hits on a host NPC the AI blocks of 1-3 NPCs hold the guest's puppet at
+  +0x168 / +0x1A0 (slots 6 / 7, +0x10).
+* ✔ (runtime) **A destroyed creature's block is freed when its last reference goes, not at DestroyInstance**: right
+  after the destroy the block keeps cCreatureAnimal's vtables (0x146A080, +0xC0 0x1469EC0, +0x5A8 0x1469E30), the
+  destroyed flag +0x21 and its count at +8: 23 -> 5 -> 2 -> 1 within 0.1-1 s (stimuli scrubbed, targets cleared),
+  then 1 for 25+ s: the NPC it hit last holds it at combatant +0x28 (creature +0x5D0), until that NPC is hit by
+  somebody else (two hits of the host's creature: the block freed and reused at once) or is gone. With that NPC
+  killed just before the destroy the block is freed 0.33 s after it.
+* ✔ So the R6025 needs: a guest fought an NPC of a herd (its mates hold 0x200 with +0x10 = the puppet), that NPC is
+  killed, the guest's creature dies (the puppet is destroyed and soon freed), a mate's tree evaluates herd-help
+  within the stimulus's life. `herd_help_stale` makes exactly this; fix off: the host stops in round 0.
+* Fix: the destroy hook's scrub clears a stimulus by +0x10 too (`npc.stale_attacker`).
+* ~ Other holders seen by `coop.staleref` after a puppet's destroy, not named yet (BUG-0930): AI block +0x694 and
+  +0x6D8 (-> the creature), +0x68C (-> its combatant), creature +0x354 .. +0x370 (-> its +0xC0 sub-object, a list
+  that changes), combatant +0x28 (the last attacker, a reference).
+* Method: `coop.staleref on`, then `coop.staleref <creature address>` after its destroy: every pointer into the
+  block in writable memory, grouped by holder (a listed object + offset, a creature's AI block + offset, a module's
+  data, elsewhere) and the block's state now. The scan stops the game for ~7 s. Our own `game::g_dmglog` (a log
+  ring) shows up as a module holder: records only.

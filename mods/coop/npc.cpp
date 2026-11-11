@@ -288,6 +288,7 @@ static void set_body_meat(void* c, float m)
 // behind our back (driving it wrote into freed memory) and is made again; the log names it.
 // `coop.fix npc.proxy_listed off`: no check (0.7.3.1).
 static bool g_listed_fix = true;
+static uint8_t* g_ghost; // tests (coop.npc ghost, BUG-0931): a zeroed block that is no creature
 COOP_FIX("npc.proxy_listed", "BUG-0300", g_listed_fix, "creature: a guest makes a proxy again whose creature left the world unnoticed");
 static uint32_t g_proxy_unlisted = 0, g_proxy_nospecies = 0;
 static double g_listed_at = 0;
@@ -529,6 +530,29 @@ std::string debug_forget(uint16_t id)
     destroy_proxy(id);
     g_forgotten++;
     return "forgot proxy " + std::to_string(id) + " (the host still counts it as known)\n";
+}
+
+// guest (tests, BUG-0931): the proxy of `id` loses its creature behind the mod's back and its pointer names memory
+// that is no creature (a zeroed block: a null vtable, as the freed block of the report), as when the game removed
+// and freed it between two checks
+std::string debug_ghost(uint16_t id)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c || game::is_destroyed(it->second.c))
+        return "no live proxy " + std::to_string(id) + "\n";
+    if (!g_ghost)
+        g_ghost = (uint8_t*)VirtualAlloc(nullptr, 0x4000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!g_ghost)
+        return "no memory\n";
+    memset(g_ghost, 0, 0x4000);
+    void* real = it->second.c;
+    g_proxy_of.erase(real);
+    creature_hp::forget_puppet(real);
+    game::destroy_creature(real);
+    it->second.c = g_ghost;
+    char b[120];
+    snprintf(b, sizeof b, "proxy %u: its creature %p destroyed, the proxy now names %p (no creature)\n", (unsigned)id, real, (void*)g_ghost);
+    return b;
 }
 
 std::string debug_gamekill(uint16_t id)
@@ -1713,12 +1737,22 @@ static void destroy_proxy(uint16_t id)
     g_proxies.erase(it);
 }
 
+// BUG-0931: the check of BUG-0300 ran once a second and the proxies are driven in every frame: a proxy the guest's own
+// game removed and freed in between (lab 20261111-071518 long_creature: two proxies when the guest's baby_game event
+// started, at the end of its evolution) was driven for 0.45 s: 29 caught faults in game::teleport (a vtable of 0 in the
+// freed block), each one a cut-off frame. The check now runs in every frame, right before the proxies are driven
+// (pointer compares against the noun list: about 200 objects). Old (`coop.fix npc.proxy_listed_now off`): once a second.
+static bool g_listed_now_fix = true;
+COOP_FIX("npc.proxy_listed_now", "BUG-0931", g_listed_now_fix, "creature: a guest never moves a mirrored animal that its own game has just removed (it did for up to a second: errors caught in the mod's code, a stutter)");
+
 // BUG-0300 (see g_listed_fix): reads the noun list only; an object that is not in it is never touched
 static void check_listed()
 {
     struct Acc {
         std::unordered_set<void*> listed;
-    } a;
+    };
+    static Acc a; // (kept: no allocation per frame once it has its buckets)
+    a.listed.clear();
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             if (noun == 0x18EB45Eu && game::object_alive(o))
@@ -1813,7 +1847,8 @@ static void guest_tick(double now)
             g_stale_dropped++;
         }
     }
-    if (now - g_listed_at >= 1.0 && game::in_creature_stage()) { // (Creature only: the case seen; Tribe untouched)
+    // BUG-0931: in every frame, before any proxy is driven (g_listed_now_fix); once a second before
+    if ((g_listed_now_fix || now - g_listed_at >= 1.0) && game::in_creature_stage()) { // (Creature only: the case seen; Tribe untouched)
         g_listed_at = now;
         check_listed();
     }
@@ -3082,6 +3117,15 @@ bool test_hit_now() { return g_test_hit; }
 
 bool debug_hit(uint16_t id, float damage)
 {
+    if (is_host()) { // tests (BUG-0926): the host's own creature hits its NPC #id (the game's TakeDamage, the filter)
+        auto h = g_host_by_id.find(id);
+        if (h == g_host_by_id.end() || !g_seen_now.count(h->second) || !game::avatar())
+            return false;
+        g_test_hit = true;
+        game::hit(h->second, damage, 0, game::avatar());
+        g_test_hit = false;
+        return true;
+    }
     auto it = g_proxies.find(id);
     if (it == g_proxies.end() || !it->second.c || !game::avatar())
         return false;

@@ -5921,3 +5921,44 @@ BUG-0920: `one_creature` passed while the guest's screen was black with no HUD, 
   is shown twice for a real reason (seen in its old copy of the world, then again after its load).
 * A hot reload (`lab.py reload --lane N`) ends the session of the lane's games (both back to not connected, the
   module's state empty): host and join again by the lane's commands (`lane.HOST_CMD`, `lane.JOIN`).
+## A dialog on the main thread: the runtime's error box in the log (2026-11-11, fix/w47-final12)
+<a id="testing-dialog-note"></a>
+
+BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopped in 'Wine C++ Runtime Library').
+* A game that "FROZE" with `faults 0` may show a dialog: the C runtime's error box (the game's MSVCR90 and our UCRT
+  DLLs both: R6025 pure virtual function call, abort(), an assertion) raises no exception. Look in its game log for
+  `watchdog: no frames for 2.0 s, the main thread shows a dialog '<title>': [Static] '<text>' [Button] 'OK'` and the
+  lines `WATCHDOG (a dialog on the main thread): its call chain, read by the thread itself` after it: return
+  addresses of every module from the top of the stack down (candidates, as every stack scan: stale words are among
+  them). The runtime's frames (msvcr90.dll / ucrtbase.dll) come first, the first SporeApp.exe / coop.dll address
+  under them is the caller. A runtime library box also writes `report-*.txt` (the lab fails the test on it).
+* Under Wine, do not suspend a thread that sits in a nested message loop (SuspendThread + GetThreadContext from the
+  watchdog: lab 20261111-062921-2, the suspend did not return while the box was up and the thread stayed stopped
+  afterwards). A thread that pumps messages reads its own stack (WM_SK_STACK, `stack.here`).
+* Test `dialog_note` (coop_dialog_note.py, 1 min, creature fixture, `reports=True`): `kit.test.dialog 6000 report`
+  shows a message box with a runtime error's text on the host's main thread and closes it; the log line, the chain
+  (user32 and sporekit in it), the report and frames afterwards are checked. `DIALOG_NOTE_OFF=1` (`kit.fix
+  dialognote 0`) fails.
+* Test `cell_host_paused` (coop_cell_host_paused.py, 1.5 min, cell fixture, BUG-0927): the host in its pause menu,
+  the guest jumps 130 m: its coverage of the host's cells around its new place (`SPORE_FIX_OFF=cell.send_centres`
+  fails with 10 %). The campaign's coverage check also meets this state whenever the host stands in a caption.
+* The campaign's `info` finding "the stage change tribe -> civ did not finish in 20 min (the raids did not conquer
+  every tribe in time)" is the expected slow path (see the campaign section: the Tribe stage's end by raids is not
+  sure to come in time, the host jumps): also in the final checks of 0.7.10 (20261107-141346) and 0.7.11
+  (20261108-114435).
+* Test `herd_help_stale` (coop_herd_help_stale.py, 2 min, creature fixture, BUG-0926): the guest fights a host NPC,
+  the host's creature kills it (`coop.npc hit <id> 1000` now also works on the host: its own creature hits its NPC),
+  the puppet is removed (`coop.puppet respawn 7`); no NPC stimulus may name the removed puppet (sender +0x2C or the
+  second creature +0x10, read from memory) and the host must go on drawing. `SPORE_FIX_OFF=npc.stale_attacker`: the
+  host stops in the runtime's error box in round 0 (R6025, `BT_HerdHelpEval` in the chain).
+  Why `npc_lost_target` never met it: its NPC lives on and keeps the destroyed puppet's block alive (its last
+  attacker); a use of a freed creature needs the block freed, so a test of this class must make the last reference
+  go (kill or re-hit the holder).
+* `coop.staleref` / `tools/tests/coop_stale_refs.py` (not in a suite: an RE tool, 7 s per scan): who still names a
+  destroyed creature (docs/re/creature.md#creature-stimulus-attacker, BUG-0930).
+* Test `proxy_ghost` (coop_proxy_ghost.py, 1 min, creature fixture, BUG-0931): `coop.npc ghost <id>` on the guest makes
+  a proxy name memory that is no creature (its own creature destroyed), as when the guest's game frees a proxy behind
+  the mod's back (seen at the baby_game event after the evolution); the guest must have no fault, name the proxy in
+  its log and make it again. `SPORE_FIX_OFF=npc.proxy_listed_now` fails (139 faults in game::teleport).
+* Seen once in the same long_creature: a standing family animal 8.4 m apart on the guest in two sync-checks (BUG-0932,
+  open, not analysed).

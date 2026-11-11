@@ -966,6 +966,21 @@ void diag_hang_report(const char* why)
     report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped responding"); });
 }
 
+// BUG-0925: the main thread shows an error dialog of the C runtime (a pure virtual call, abort(), an assertion): no
+// exception, no frames, the game ends when the box is closed. The report names the box's text; once per run.
+void diag_dialog_report(const char* why)
+{
+    static std::atomic<int> once{0};
+    if (once++)
+        return;
+    std::string p;
+    if (!report_step("the dialog report", [&] { p = diag_write_report(why, nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, "stopped with an error message"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "error dialog report: %s", p.c_str()); });
+    report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped with an error message"); });
+}
+
 // BUG-0676: one fault the game's handler catches in every frame (a fault storm): the game runs on but cannot get past
 // it (a mode whose exit stopped half-way keeps faulting in its frame). A report and a mark once per run, so the player
 // and the lab get a report of a game that looks stuck but never crashes.

@@ -68,6 +68,16 @@ arrows and minimap marks to find each other, player colours, and one report for 
   the host was not playing).
 - The host saw "<player> appeared in the world" twice when a player joined, and once more each time that player
   changed its creature. It is shown once (BUG-0923).
+- Creature: a guest's game no longer stutters with "SporeCoop caught an error in its own code" when its baby is born
+  after the evolution with animals nearby (the mod moved animals its own game had just removed) (BUG-0931).
+- Creature: the host's game could end with a runtime error (a crash on Windows) a moment after a partner's creature
+  died in a fight with a pack, mostly when the prey had just been killed: the pack's animals still wanted to help
+  against the partner's creature that was no longer there (BUG-0926).
+- Cell: while the host's game stands still (it reads a caption, a cinematic plays, the pause menu is open) a guest
+  that swims on now gets the cells of the host's world around where it is. It kept getting the cells around the
+  place it was at when the host stopped, and saw open water (BUG-0927).
+- A game that stops with a runtime error message box (for example "pure virtual function call") now writes the
+  message's text and where it came from into its log and makes a report, as it does for a crash (BUG-0925).
 - Creature: a crash risk when you attack after your target is gone. If your creature's target was a partner's
   creature (you had clicked it) or an animal that then left your game (the partner died or left, the host's game
   removed the animal), the game kept aiming at it, and the next attack key read memory that was already freed. Your

@@ -144,6 +144,111 @@ static void dump_thread_stack(DWORD tid, const char* why)
     logf(&g_kit_mod, SK_ERROR, "%s", out.c_str());
 }
 
+// BUG-0925: a dialog on the main thread (class #32770) stops the frames for good while the thread pumps messages:
+// the C runtime's error box (the game's MSVCR90 and our UCRT both show it: "Runtime error!" with R6025 pure virtual
+// function call, "abnormal program termination" from abort(), an assertion) raises no exception, so nothing was
+// logged: the 0.7.12 final check's long_creature host sat in 'Wine C++ Runtime Library' and the log had the title
+// only. Once per stall, 2 s in, the dialog's title and the text of its controls go to the log, with the main
+// thread's stack (every module: the caller of the runtime's function is under the box's frames) and, for a runtime
+// library box, a report. Nothing is dismissed. The texts are read with a timeout: the thread may not pump.
+static BOOL CALLBACK find_dialog(HWND w, LPARAM l)
+{
+    wchar_t cls[16] = L"";
+    GetClassNameW(w, cls, 16);
+    if (wcscmp(cls, L"#32770") || !IsWindowVisible(w))
+        return TRUE;
+    *(HWND*)l = w;
+    return FALSE;
+}
+
+static std::string window_text(HWND w)
+{
+    wchar_t t[1024] = L"";
+    DWORD_PTR n = 0;
+    if (!SendMessageTimeoutW(w, WM_GETTEXT, 1024, (LPARAM)t, SMTO_ABORTIFHUNG, 500, &n))
+        return "(no answer)";
+    std::string s = narrow(t);
+    for (size_t i = 0; i < s.size(); i++) // one log line
+        if (s[i] == '\r' || s[i] == '\n' || s[i] == '\t')
+            s[i] = s[i] == '\n' ? '|' : ' ';
+    return s;
+}
+
+static BOOL CALLBACK dialog_child(HWND w, LPARAM l)
+{
+    auto* out = (std::string*)l;
+    wchar_t cls[32] = L"";
+    GetClassNameW(w, cls, 32);
+    std::string t = window_text(w);
+    if (!t.empty() && out->size() < 1400)
+        *out += " [" + narrow(cls) + "] '" + t + "'";
+    return TRUE;
+}
+
+// The main thread's call chain while it shows the dialog, read by the main thread itself from the box's message loop
+// (the window procedure, WM_SK_STACK), inside a frame or not. Not through a suspend: under Wine the suspend of a
+// thread that waits in a nested message loop did not come back before the loop ended, and the thread then stayed
+// stopped (lab 20261111-062921-2: no dump, no frame after the box; BUG-0687's watchdog dump "never reached the log"
+// the same way). Return addresses of every module from its esp up to the stack base: the runtime's own frames
+// (msvcr90 / ucrtbase) and their caller (SporeApp.exe, coop.dll, sporekit.dll) are under the box's.
+static std::atomic<bool> g_stack_here_pending{false};
+void watchdog_stack_here()
+{
+    if (!g_stack_here_pending.exchange(false) || GetCurrentThreadId() != main_thread_id())
+        return;
+    volatile uint32_t marker = 0;
+    const uint32_t* hi = *(uint32_t**)((uint8_t*)NtCurrentTeb() + 4);
+    std::string out = "WATCHDOG (a dialog on the main thread): its call chain, read by the thread itself\n";
+    int found = 0;
+    for (const uint32_t* p = (const uint32_t*)&marker; p < hi && found < 200; p++) {
+        uint32_t v = *p;
+        MEMORY_BASIC_INFORMATION vm;
+        if (v < 0x10000 || !VirtualQuery((void*)(uintptr_t)v, &vm, sizeof vm) || vm.State != MEM_COMMIT || vm.Type != MEM_IMAGE ||
+            !(vm.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_EXECUTE_READWRITE)) || v - 6 < (uintptr_t)vm.BaseAddress)
+            continue;
+        const uint8_t* c = (const uint8_t*)(uintptr_t)v; // after a call instruction only (text and data words look like addresses too)
+        if (c[-5] != 0xE8 && c[-6] != 0xFF && c[-3] != 0xFF && c[-2] != 0xFF)
+            continue;
+        uintptr_t base = 0;
+        std::string m = module_of(v, &base);
+        char b[256];
+        snprintf(b, sizeof b, "  [%p] %08X %s+0x%X %s\n", (const void*)p, v, m.c_str(), (unsigned)(v - base), symbols_reverse(v).c_str());
+        if (out.size() + strlen(b) > 1800) { // (a log line holds 2 KB)
+            logf(&g_kit_mod, SK_ERROR, "%s", out.c_str());
+            out = "WATCHDOG (a dialog on the main thread), more:\n";
+        }
+        out += b;
+        found++;
+    }
+    logf(&g_kit_mod, SK_ERROR, "%s", out.c_str());
+}
+
+static bool g_dialog_test_report; // tests (kit.test.dialog report): the report also for a box that is not the runtime's
+void watchdog_dialog_test_report(bool on) { g_dialog_test_report = on; }
+
+// the visible dialog of the main thread, if any: logged with its text and the thread's stack; true when there was one
+static bool note_dialog(DWORD stalled_ms)
+{
+    HWND dlg = nullptr;
+    EnumThreadWindows(main_thread_id(), find_dialog, (LPARAM)&dlg);
+    if (!dlg)
+        return false;
+    std::string title = window_text(dlg), text;
+    static int no_answer;
+    if (title == "(no answer)" && ++no_answer <= 3) // the box is still being made, or its thread is busy: once more in a second
+        return false;
+    no_answer = 0;
+    EnumChildWindows(dlg, dialog_child, (LPARAM)&text);
+    logf(&g_kit_mod, SK_ERROR, "watchdog: no frames for %.1f s, the main thread shows a dialog '%s':%s", stalled_ms / 1000.0,
+         title.c_str(), text.empty() ? " (no text read)" : text.c_str());
+    g_stack_here_pending = true;
+    if (HWND w = (HWND)game_window())
+        PostMessageW(w, WM_SK_STACK, 0, 0);
+    if (title.find("Runtime Library") != std::string::npos || g_dialog_test_report)
+        diag_dialog_report(("the game shows an error dialog '" + title + "':" + text).c_str());
+    return true;
+}
+
 static HANDLE g_started;
 
 static DWORD WINAPI watchdog_thread(void*)
@@ -157,7 +262,7 @@ static DWORD WINAPI watchdog_thread(void*)
     bool ll_dumped = false;
     uint32_t last_loop = g_loop_ticks;
     DWORD loop_seen = since;
-    bool paused_logged = false;
+    bool paused_logged = false, dialog_noted = false;
     for (;;) {
         Sleep(1000);
         DWORD o = loader_lock_owner();
@@ -186,8 +291,11 @@ static DWORD WINAPI watchdog_thread(void*)
             since = now;
             dumped = false;
             paused_logged = false;
+            dialog_noted = false;
             continue;
         }
+        if (!dialog_noted && now - since > 2000 && fixed(g_fix_dialognote))
+            dialog_noted = note_dialog(now - since);
         // frames legitimately stop in menus only when minimized; boot must progress
         DWORD limit = frame_index() == 0 ? 15000 : 30000;
         DWORD stall_from = since;
