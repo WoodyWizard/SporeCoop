@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w47-lab-memory
-commits: a0630fc8
+commits: a0630fc8, 2531050f
 tests: campaign, campaign_ct, campaign_short
 signature:
 docs: docs/06-testing.md#testing-lab-memory
