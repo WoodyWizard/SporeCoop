@@ -314,11 +314,12 @@ def hunt_trial(host, guest, who, tries=5, wait=8.0):
         ids, rows = hunters(host)
         mirrored = sample(guest)
         cand = [r for r in rows if r['idx'] not in seen and not r['flee'] and f'c{r["idx"]}' in mirrored
-                and not r['threat'][wi] and r['d'][1 - wi] > r['range'] + 3]
+                and not r['threat'][wi] and r['d'][1 - wi] > r['range'] + 3
+                and r['chase'] not in ids]  # (not one that hunts a player already)
         if len(ids) < 2 or not cand:
             lines.append(f'no hunter to try ({len(rows)} hunters within 80 m of a player, {len(seen)} tried)')
             break
-        r = min(cand, key=lambda x: x['d'][wi])
+        r = min(cand, key=lambda x: (x['chase'] != 0, x['d'][wi]))  # one that hunts nothing first, the nearest
         seen.add(r['idx'])
         tried += 1
         gap = 0.6 * r['range']

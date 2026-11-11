@@ -3942,3 +3942,26 @@ marked `?` until one of ours checks them.
   2 and 5 (adventure overrides included).
 * ? Native Windows cost: skg::readable (VirtualQuery = NtQueryVirtualMemory) took 97-99 % of the main thread in a
   438-actor adventure on Windows (3.9-5.9 FPS); a scoped region cache brought it to 21.5 FPS (BUG-0791).
+
+## A combat click picks the creature under the cursor: the partner, a herd mate (2026-11-10, fix/w47-play-bots)
+<a id="creature-combat-click-target"></a>
+
+BUG-0618 (third round). GOG 2024, lab lanes 9 and 10, play_creature's hunt traces (out/lab/20261110-210848,
+-211106 of the branch) and a probe of `coop.abilities reach` against `coop.npc list` / `coop.npc creatures` /
+`coop.status` while the bots played.
+* ✔ (runtime) The avatar's combat target +0xE7C after a left click in the combat stance is the creature under the
+  cursor, whoever it is: a partner's puppet (the `remote ... puppet=` pointer of `coop.status`, flagged `ours` in
+  `coop.npc creatures`; also from 34-54 m away, after a click on the ground next to the partner) or another animal
+  of the hunted animal's herd standing next to it. A click that hits no creature keeps the target of before.
+* ✔ (runtime) With a partner's puppet as the target `AbilityBar_Status` of the bite (ability 5, type 0x1E, key 1) is
+  **12** and the key does nothing: no walk-and-use, no bite, for as long as the target stays (30 s at a gap of
+  0-1 m). ~ Inferred: 12 = this target may not be attacked (friendly fire off, the default). Other abilities showed
+  6 and 10 at the same time (not looked into).
+* ✔ (runtime, the joint table's hit log `team: hit <npc> by player <n>` in the host's game log) The fixture's
+  animals have 6 hp, a bite takes 1, one bite every 1.5-2 s: a player alone kills one in 9-10 s. A joint hit
+  (teamplay.cpp: another player's hit on the same animal in the last 6 s) needs the second player to bite the same
+  animal inside those 10 s.
+* ✔ Why play_creature's bots seldom bit the same animal (3 of 7 lab runs with +0 joint hits on 2026-11-10): the bot
+  took any target of the game for the animal it hunts. In the runs with +0 joint hits one bot bit the animal while
+  the other stood with the partner's creature (status 12, counted as "recharging") or a herd mate as its target
+  (wrong target in 249-953 of a player's looks per 10 minutes).
