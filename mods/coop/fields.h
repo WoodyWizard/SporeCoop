@@ -28,6 +28,7 @@ enum FieldId : uint8_t {
     F_TOOL = 2,  // cCreatureCitizen +0x102C mSpecializedTool / SetSpecializedTool (tribe.cpp, BUG-0514)
     F_LEADER = 3, // 2 = the member leads its tribe (cCommunity +0x11C), 1 = not; cTribe::SetChieftain (tribe.cpp, BUG-0652)
     F_MAX_HP = 4, // cCombatant vt 0x58 the maximum health; on a proxy through creature_hp's GetMaxHp hook (npc.cpp, BUG-0710)
+    F_ITEM_SCALE = 6, // the scale of the model in a tribe member's hand (the model's transform; tribe.cpp, BUG-0912)
     F_HELD_ITEM = 5, // cCreatureCitizen +0xFFC mCurrentHandheldItem + 1 / the game's attach 0xC250A0 (tribe.cpp, BUG-0906)
 };
 
@@ -61,6 +62,7 @@ enum KindId : uint8_t {
     K_SPACE_CITIZEN = 6, // Space: colony citizens bound by the world-object kind `space_citizen` (worldobj.cpp, BUG-0490)
     K_SPACE_VEHICLE = 7, // Space: colony vehicles bound by the world-object kind `space_vehicle` (worldobj.cpp, BUG-0490)
     K_CIV_VEHICLE = 8,   // Civ vehicles: the host's by net id, a guest's mirrors (civ.cpp, BUG-0549)
+    K_TRIBE_ITEM_SCALE = 10, // the size of what a tribe member holds (tribe.cpp, BUG-0912: its own switch tribe.item_scale)
     K_TRIBE_ITEM = 9,    // what a tribe member holds in its hand (tribe.cpp, BUG-0906: its own switch tribe.held_item)
 };
 

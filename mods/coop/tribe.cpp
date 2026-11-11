@@ -931,6 +931,55 @@ static int hand_model(void* c)
 static const fields::Field kHeldItem{fields::F_HELD_ITEM, "item", read_held_item, apply_held_item, 0.01f};
 static const fields::Field kItemFields[] = {kHeldItem};
 
+// BUG-0912: the game sizes the item's model when it attaches it (0xC250A0: the scale of the model's transform = the
+// height of the member's bounding box, spatial vt 0x68 [+0x14] - [+8], times the tuning float 0x1581334) and never
+// again. The host's chief got its staff at its own size and was made 1.3x by the mod afterwards (chiefs_tick); its
+// mirror gets the staff when it already has the host's 1.3x size: the staff was 1.3x bigger on the guest's screen
+// (tribe_held_item's key frames, lab 20261110-214352). The size of the held model is a replicated field of the
+// members (its own kind and switch): the guest sets the host's on its mirror's item, the way the attach does (the
+// model's transform read, its scale set, written back). 1 stands for "no model". `coop.fix tribe.item_scale off`:
+// the mirror's own item size.
+static bool g_item_scale_fix = true;
+COOP_FIX("tribe.item_scale", "BUG-0912", g_item_scale_fix, "tribe: what a guest's mirror of a member holds has the size it has in the host's game (the chief's staff was 1.3x bigger)");
+struct ItemXf { // Math Transform as the game passes it to a model (0x38 bytes)
+    uint16_t flags, count;
+    float offset[3];
+    float scale;
+    float rot[9];
+};
+static void* hand_item_model(void* c)
+{
+    if (!has_body(c) || !a_AttachmentOf || !F<int>(c, kHeldItemOff))
+        return nullptr;
+    uint8_t* rec = thiscall<uint8_t*>(a_AttachmentOf, c, kHandKeyBase + F<uint32_t>(c, kHandOff));
+    void* m = rec && skg::readable(rec + 0x8C, 4) ? *(void**)(rec + 0x8C) : nullptr;
+    return m && skg::readable(m, 4) && skg::readable(*(void**)m, 0x48) ? m : nullptr;
+}
+static uint32_t g_item_scale_sets;
+static float read_item_scale(void* c)
+{
+    void* m = hand_item_model(c);
+    if (!m)
+        return 1.f;
+    ItemXf t{};
+    vcall<void>(m, 0x20 / 4, &t); // the model's transform (as 0xC2553E)
+    return std::isfinite(t.scale) && t.scale > 0.001f && t.scale < 1000.f ? t.scale : 1.f;
+}
+static void apply_item_scale(void* c, float v)
+{
+    void* m = hand_item_model(c);
+    if (!m || !(v > 0.01f && v < 200.f))
+        return;
+    ItemXf t{};
+    vcall<void>(m, 0x20 / 4, &t);
+    t.scale = v;
+    t.count++; // (as 0xC25556: the transform's change count)
+    vcall<void>(m, 0x18 / 4, &t);
+    g_item_scale_sets++;
+}
+static const fields::Field kItemScale{fields::F_ITEM_SCALE, "item_scale", read_item_scale, apply_item_scale, 0.02f};
+static const fields::Field kItemScaleFields[] = {kItemScale};
+
 static int tool_type(void* tool) { return vcall<int>(tool, 0x58 / 4); }
 
 void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos, void* user), void* user)
@@ -1250,6 +1299,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
                       [] { return active(); }});
     fields::add_kind({fields::K_TRIBE_ITEM, "tribe_member_item", &g_held_item_fix, kItemFields, 1, member_each, member_mirror,
                       [] { return active(); }});
+    fields::add_kind({fields::K_TRIBE_ITEM_SCALE, "tribe_member_item_scale", &g_item_scale_fix, kItemScaleFields, 1, member_each,
+                      member_mirror, [] { return active(); }});
     a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
     a_AttachmentOf = H->sym("SporeCoop::Creature_AttachmentOf");
     a_ModifierRemove = H->sym("SporeCoop::CreatureModifiers_Remove");
@@ -5427,7 +5478,7 @@ static uint32_t bt_node(void* c)
 std::string list()
 {
     std::string out;
-    char b[320];
+    char b[400];
     void* pt = player_tribe();
     auto tribes = all_tribes();
     for (size_t ti = 0; ti < tribes.size(); ti++) {
@@ -5464,11 +5515,11 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d iscale=%.3f scale=%.3f\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
                      bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c),
-                     F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0); // (BUG-0906: what the hand holds,
+                     F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0, read_item_scale(c), game::scale(c)); // (BUG-0906: what the hand holds,
             // whether a model is attached, 1 while the item is still being taken: not in the resting grip)
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
