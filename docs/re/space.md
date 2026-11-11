@@ -2700,3 +2700,35 @@ BUG-0763 / BUG-0883, Ghidra GOG 2024 + runtime lane 5 (`space_free`, planet 0146
   record (0.0 in the terraformer's): -1 looks like "water not computed yet".
 * ? Not checked: whether the sculpted terrain effects and the colours stay after leaving and landing again (in either
   game), and sculpting / colouring done while no partner is on the planet (not sent: BUG-0900).
+
+## A colony city's kept data, planner sends after the close, partner sculpts while away (2026-11-10, fix/w47-colony)
+<a id="space-city-data"></a>
+
+BUG-0901 / BUG-0902 / BUG-0900, Ghidra GOG 2024 + runtime lanes 4 / 5:
+* ✔ What the game keeps of a colony city (answers "presumably cCityData; not traced" in
+  docs/re/space.md#space-colony-build-hold): `cCity` +0x2F0 is its `cCityData` (the planet record's cCivData city
+  data). The planet's city maker 0xFF6900 (from 0xFF96B0, the planet becoming active) builds each city from it: an
+  empty building list (+0x7C..+0x80) makes a generated layout (FUN_00be87d0) and writes it back (0xFF26C0); otherwise
+  one building per 0x38-byte entry (+0 position, +0xC rotation (4 floats), +0x1C health, +0x20 state (2 = ruined
+  path 0xBC32A0), +0x24 / +0x25 flags, +0x28 -> building +0x28C, +0x2C, +0x34 noun; the City Hall noun 0x18EA1EB
+  updates the existing hall) through CreateInstance + cCity::AddBuilding + a layout slot; turrets from +0x90 (0x34
+  bytes, noun +0x30).
+* ✔ The game writes a live city into its data only through `SporeCoop::City_WriteCityData` 0xBD9FA0 (fastcall city:
+  `data->0xFF26C0(city, active planet's record)`, buildings from layout slots 0..13). Callers: the planner's exit
+  0xD100B0 (every city of the civilization, also stage paths), cBuilding::TakeDamage, City_RemoveTurret, 0xFF55D0,
+  0xBE74C0 (cCity::CreateBuilding + write). cCity::AddBuilding and cCity::DestroyBuilding do not write: that is why a
+  house destroyed by `coop.civ unbuild` came back, and why a building the mod made with build_in_city was gone after
+  the game's ship left the planet and landed again (lab 20261110-201410: both games' cities back at 4 factories / 6
+  houses after the mod's factory). Fix `civ.space_city_data`: space_build_here (every Space relay path) calls
+  City_WriteCityData after build_in_city; lab 20261110-202314: both cities keep the factory (5) after leaving and
+  landing.
+* ✔ A planner drop on a taken plot (Space colony, real drag) runs the planner's AddBuilding (return address
+  CityPlanner_AddBuilding_Ret) and takes the building away again, no money taken (lab 20261110-201036, the guest's
+  city stays at 5 houses). So a building seen at AddBuilding must not be sent before the planner closed with it
+  (BUG-0884 host side, BUG-0902 guest side: `civ.space_planner_closed`).
+* ✔ Partner sculpts / colours (K_SCULPT / K_COLOUR) received while this game is not on that planet are kept and
+  repeated 5 s after landing there (`space.sculpt_hold`): lab 20261110-201800, the guest away during two raises and a
+  colour: after its landing its terrain at the spot equal to the host's (0.00 m), colours (0, 11, 0) on both.
+* ? Not checked: whether a game keeps its own sculpts and colours when its ship leaves and lands again (the sphere's
+  effect list +0x798 is runtime state; the planet's stored terrain is not traced), and whether the effects reach the
+  save. A partner who joins (or rejoins) after the hits does not get them (the hold is per running game).

@@ -5506,3 +5506,21 @@ frames_loop's F9 check fail on warm games (BUG-0898): `warm_reset` now closes th
   (also while the ship is elsewhere).
 * Pitfall: `Player.land_retry(PLANET)` once ended on another planet of the system (place 0x40460035 instead of
   0x41460035, lab 20261110-185942); check the place, not only `ctx() == 'planet'`.
+
+## Space colony buildings and sculpts while away (2026-11-10, fix/w47-colony)
+<a id="testing-space-colony-keep"></a>
+
+* `space_planner_miss` (coop_space_planner_build.py --miss, BUG-0902, cold, `space_empire`, ~3.5 min): the guest's
+  planner opened by a click, the house tile dropped on a taken plot (`coop.civ slots` lists `busy` plots): the guest's
+  planner adds the building and takes it away (no money); the test asserts it did run (`space_planner: sent=` or
+  `dropped=` up) and the host's city stays at 5 houses. `SPORE_FIX_OFF=civ.space_planner_closed` fails.
+* `space_city_keep` (coop_space_city_keep.py, BUG-0901, cold, `space_empire`, ~3 min): in both games one house
+  destroyed and a factory built there by the mod (`coop.civ sbuild s<i> house|factory|fun`: build_in_city plus the
+  city data write of space_build_here), both ships take off and land: each city must still have the factory. A
+  factory, so the house the game puts back in that plot (the city is made from its data) cannot pass for it.
+  `SPORE_FIX_OFF=civ.space_city_data` fails.
+* `space_sculpt_away` (coop_space_sculpt_tool.py --away, BUG-0900, cold, `space_free`, ~4 min): the guest takes off
+  before the host's two raises and a colour, lands again: terrain at 6 points around the spot and colours must be the
+  host's. `SPORE_FIX_OFF=space.sculpt_hold` fails (14 m apart).
+* Pitfall: the planner click on a colony city sometimes misses because the ship drifted off the city (349 m, lab
+  20261110-200709): planner_buy now flies over the city again before each further click.

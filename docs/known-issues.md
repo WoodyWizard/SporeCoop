@@ -2548,6 +2548,9 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   be in that record, so it would vanish when the ship leaves and lands again. Not checked.
 * Reproduce: docs/tickets BUG-0901 (How: free the plot with the planner's own demolish, not `coop.civ unbuild`).
 * Ticket: BUG-0901.
+* FIXED (2026-11-10, fix/w47-colony, unreleased): confirmed (lab 20261110-201410: the mod's building gone after leaving
+  and landing); the game writes a live city into its cCityData only through City_WriteCityData (the planner's exit),
+  the mod now calls it after its colony building (`civ.space_city_data`, coop_space_city_keep.py).
 ## Space: sculpting and colouring done alone stay in one game (2026-11-10, fix/w47-b2-space)
 <a id="issue-space-sculpt-alone"></a>
 
@@ -2556,3 +2559,6 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: space_free, the guest sculpts / recolours 01460035 alone (coop_space_sculpt_tool.py's clicks), then the
   host lands there: coop.ground at the spot and `coop.space sculpt` colours differ.
 * Ticket: BUG-0900.
+* FIXED (2026-11-10, fix/w47-colony, unreleased): a partner's hits for a planet this game is not on are kept and done
+  5 s after landing there (`space.sculpt_hold`, coop_space_sculpt_tool.py --away). Still open: a player who joins or
+  rejoins after the hits does not get them.

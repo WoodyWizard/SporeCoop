@@ -48,6 +48,12 @@
   (BUG-0769).
 
 ### Fixed
+- Space: sculpting the ground and colouring a planet while no partner is on it now reaches the partners too: their
+  game makes the same changes when their ship lands there; before, they kept the old terrain and colours (BUG-0900).
+- Space: a colony building a partner bought (built in your game by the mod) is now kept when your ship leaves the
+  planet and lands again, and in your saves; before, the game rebuilt the city without it (BUG-0901).
+- Space: a guest's drag in a colony's city planner that does not end on a free plot no longer builds an unpaid
+  building in the host's game (BUG-0902).
 - Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
   the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
 - Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
