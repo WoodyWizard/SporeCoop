@@ -326,7 +326,9 @@ MEM_STEP = 2.0
 # them) and the games of the run's tests started in the last MEM_RAMP seconds grown to theirs, MemAvailable stays over
 # MEM_FLOOR_GB. Otherwise it waits (other tests of the run end, other work frees memory); after MEM_WAIT seconds with
 # no test of this run running it fails as not started. SPORE_LAB_MEM_FLOOR_GB=0: no gate.
-MEM_GAME_GB = float(os.environ.get('SPORE_LAB_GAME_GB', '1.6') or 0)
+# MEM_GAME_GB: measured 2026-11-11, a game of a 4-player campaign: 0.5 GB RSS in Cell, 0.8 GB in Space after 80 min;
+# MemAvailable rose by 3.9 GB when the campaign's four games ended (the games, their Wine helpers, GPU buffers in RAM).
+MEM_GAME_GB = float(os.environ.get('SPORE_LAB_GAME_GB', '1.0') or 0)
 MEM_FLOOR_GB = float(os.environ.get('SPORE_LAB_MEM_FLOOR_GB', '8') or 0)
 MEM_RAMP = 900.0
 MEM_WAIT = float(os.environ.get('SPORE_LAB_MEM_WAIT', '1800') or 0)

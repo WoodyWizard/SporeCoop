@@ -867,7 +867,10 @@ def test_trail():
 
     def read(g, **kw):
         try:
-            rows = body_trail.since(g, 999.0, **kw)
+            try:
+                rows = body_trail.since(g, 999.0, **kw)
+            except TypeError:  # (an old copy: no kinds / limits)
+                rows = body_trail.since(g, 999.0)
         except RuntimeError as e:
             return None, str(e)
         return rows, getattr(body_trail.since, 'cut', '')

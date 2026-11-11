@@ -2609,3 +2609,15 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: two games on the creature fixture, combat stance; the host clicks an animal and presses 1, then the
   guest clicks the same animal from the host's side and presses 1 (the probes of fix/w47-play-bots, 2026-11-10).
 * Ticket: BUG-0913.
+
+## Creature: a caught fault in the game's reach check on a stale combat target (2026-11-11, fix/w47-lab-memory)
+<a id="issue-creature-target-gap-fault"></a>
+
+* In the campaign's Creature play with four players a guest's game caught one fault, `0xC0000005 at 0x3F800000`
+  inside the game's `Ability_TargetGap` (the reach of an attack on the avatar's combat target): one of the two
+  creatures was no live object any more. The game went on. Not known whether the caller was the play bot's test
+  command `coop.abilities reach` or the game's own ability use (then a player can hit it). Seen twice in one night
+  (campaign: a guest at 18 min; long_creature: the host at 27 min), each a second after a hunt's kill; both tests fail.
+* Reproduce: `SPORE_DETECTOR=20 tools/lab.py run campaign --lane 9` (lab 20261111-002733 of fix/w47-lab-memory, the
+  first guest at 18 min); not reproduced on purpose yet.
+* Ticket: BUG-0917.

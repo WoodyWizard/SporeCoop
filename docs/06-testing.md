@@ -5767,3 +5767,82 @@ Both were faults of the tests, not of the mod (BUG-0618 third round, BUG-0910); 
 * Pitfalls: `tools/lab.py run` started with `nohup ... &` ignores SIGINT (use SIGTERM to stop it). A test's script is
   read when the test starts and the lane's DLL is deployed then too: editing either while `--repeat` runs changes
   the later repeats.
+
+## Memory: the test scripts, the games, how many campaigns at once (2026-11-11, fix/w47-lab-memory)
+<a id="testing-lab-memory"></a>
+
+The final check of 0.7.12 (lab 20261111-000117 in rel/0.7.12: four campaigns on four lanes, `SPORE_DETECTOR=20`) took
+the machine to 60 of 62 GB with the swap full after 11 minutes (BUG-0916). The games were not the cause.
+
+* **The cause: `body_trail.since`**, the detector's read of `coop.bodyrec since <t> <n> <step>` (monitor.py
+  `detect_trail`, BUG-0609). It asked for the next page from the printed time of the last whole frame (4 decimals)
+  until a page came back short. The game answers "rows after t" on the full double: a frame whose time was rounded
+  down came back again. With several whole frames in a page that only repeats one frame; with exactly one whole frame
+  in a page the reply is the same page again, until the game's ring (400000 rows) drops that frame, and then the
+  next frame sticks the same way. A host in Cell with four players lists 1100 rows a frame (4 players, 1096 cells;
+  a page is 2000 rows, the ring is 5 s long there), so the read never reached "now" and kept every copy for as long
+  as the Cell stage lasted: +27 MB/s. Measured alone on lane 9 with a watchdog (lab 20261111-001707, the old code):
+  44 MB at 0:24 of the Cell play, 405 MB at 0:39, 1.2 GB at 1:09, 2.0 GB at 1:40, 2.9 GB at 2:10, 4.1 GB at 2:56
+  (stopped there by the watchdog at 4 GB);
+  `SPORE_MEMPROBE=1` named the line (every stack dump: `monitor.detect_trail` -> `body_trail.since`). In the final
+  check the script was at 16.9 GB when the Cell stage ended (9.5 min) and fell to 3.6 GB when the read returned.
+  Two of the four campaigns start in Cell (`campaign`, `campaign_ct`): about 34 GB of scripts on a machine where other
+  programs held 34 GB.
+* It was not new in 0.7.12. The trace of the stuck read is in older logs: a campaign's Cell play of 8 minutes at
+  `SPORE_DETECTOR=20` should print about 70 `DETECTOR-SAMPLE` lines with `"stage": "Cell"`; the final check of 0.7.11
+  (rel/0.7.11 lab 20261108-114435) printed 4 for `campaign` and 4 for `campaign_ct`, as the 0.7.12 run did (4 and 5):
+  the detector made its first samples and then sat in one read until Creature. Those runs had the memory to spare
+  (nobody measured it). With the fix the same play prints 69 Cell samples (lab 20261111-002733).
+* **The fix** (body_trail.py): the next page starts half a printed digit past the last whole frame (`T_EPS`), a page
+  that brings nothing new ends the read, a page with fewer than three whole frames is asked for larger (up to 8000
+  rows; a frame larger than the page: up to 16000), only the kinds the detector judges are kept (`detect_kinds`: no
+  cells), and a read ends at 120000 kept rows, 120 pages or 10 s (`since.cut` says so; the detector then starts its
+  next period from now and prints one `detector trail: a read ... ended early` line). `SPORE_BODYTRAIL_OLD_SINCE=1`
+  is the old loop. Self-test: `tools_selftest.py trail` (a model of the game's command: 1100 rows a frame, a frame
+  larger than the page, a game that records faster than it is read; the old loop does not end on it).
+  The same campaign with the fix (lab 20261111-002733, lane 9, the whole game to Space, 81 minutes): the script's
+  RSS 56 MB 7 minutes into the Cell play, 75 MB after 10 minutes, 84 MB at its peak; no read was cut.
+* **The lab's guard** (tools/lab.py, lab_selftest.py `mem_script` / `mem_gate`):
+  * every test's script is sampled every 2 s (the python processes of the test's session): `results.json` keeps
+    `mem: {script_rss_mb, games_rss_mb, games, avail_min_gb}` per test (the script's peak RSS, the peak RSS of the
+    lane's games together and their number, the lowest MemAvailable) and `summary.md` has a `## Memory` table;
+  * a script over 2048 MB (`SPORE_LAB_SCRIPT_RSS_MB`, 0 = no limit) is killed at once and the test fails with
+    `FAIL lab: the test script used N MB of memory (limit 2048 MB ...)`, never retried as harness trouble;
+  * the memory gate: a test starts only when MemAvailable, less what the games of the run's tests started in the last
+    15 minutes will still take, less its own games (`suite.games(t)`: 4 for a campaign, N of `--players N`, 2
+    otherwise) at `SPORE_LAB_GAME_GB` (1.0 GB) each, stays over `SPORE_LAB_MEM_FLOOR_GB` (8 GB; 0 = no gate).
+    Otherwise it waits (`(memory: <test> waits: ...)`) until tests of the run end or memory comes back; with no test
+    of the run running it fails as not started after `SPORE_LAB_MEM_WAIT` (1800 s).
+* **Tools.** `tools/memwatch.py --pid <lab pid> --out <file>`: a watchdog beside a run (every 5 s the RSS of the
+  tree's python3 processes and of every game by lane, MemAvailable; SIGTERM to the lab when a python3 passes
+  `--max-gb` 4 or MemAvailable falls under `--min-avail-gb` 12). `SPORE_MEMPROBE=1` (or `trace`: tracemalloc too):
+  the test script writes its RSS every second to `<run>/memprobe.<test>.<pid>.log` and, past 300 MB, every thread's
+  stack (and the largest allocation sites): the stack of a loop that keeps what it reads is in every dump.
+* **What the tests need** (measured 2026-11-11 on lanes 9 and 10 with the fix, `SPORE_DETECTOR=20`; labs
+  20261111-002733, -002757, -014656):
+
+  | | script peak RSS | games' peak RSS together |
+  |---|---|---|
+  | play_cell / _creature / _tribe / _civ / _space (2 games, 11-13 min) | 46 / 58 / 53 / 42 / 53 MB | 1.04-1.20 GB |
+  | long_creature_short / long_tribe_short (2 games) | 35 / 42 MB | 1.11 / 1.14 GB |
+  | long_creature (2 games, 45 min) | 38 MB | 1.15 GB |
+  | campaign_short / _tribe / _space / _ct (4 games, 8-13 min) | 56 / 54 / 50 / 71 MB | 2.25-2.34 GB |
+  | campaign (4 games, 81 min, Cell to Space) | 84 MB | 3.08 GB |
+
+  A game (SporeApp.exe under Wine) is 0.50-0.60 GB RSS in its first 40 minutes in any stage, 0.69 GB in Civ after an
+  hour and 0.81 GB in Space after 80 minutes of one process. Beside it: `bottles-cli` 50 MB a game, the lane's Wine
+  helpers (wineserver, services, winedevice, explorer, plugplay, rpcss) 0.1 GB a lane, the headless shell 0.3 GB once.
+  Seen from the system: MemAvailable rose by 1.5 GB when two games of 0.55 GB ended and by 3.9 GB when the
+  campaign's four games of 0.8 GB ended, so a game costs 0.75-1.0 GB (GPU buffers held in RAM: 1.6 GB of GTT with six
+  games). The GPU: 6.6 of 16.4 GB VRAM in use with six games and the desktop.
+* **The budget of a 4-lane final check** (16 games when four campaigns run at once; not measured with 16, this
+  task ran one campaign at a time: 16 times the figures above): 10-12 GB in the first half hour (16 x 0.75 GB), up to
+  16 GB if all four were long campaigns late in the game (only `campaign` is; the others end after 8-13 minutes), plus
+  0.3 GB of scripts. On this machine (62 GB) with other programs holding 34 GB, MemAvailable is about 28 GB: **four
+  campaigns at once fit** (12-16 GB, 12 GB or more stay free). The gate decides at each start: with 1.0 GB a game and
+  8 GB to stay free the fourth campaign starts at once from 24 GB available, the third from 20 GB, the second from
+  16 GB; below that it waits for an earlier one to end. What filled the machine was the two scripts (2 x 17 GB), not
+  the games. Other limits of many lanes stay as they are: the one Xwayland of the headless shell
+  ([saturation](#testing-xwayland-saturation), BUG-0663) and the GPU (6.19, `SPORE_MAX_LANES`).
+* The same runs found BUG-0917: one caught fault in the game's `Ability_TargetGap` in the campaign (a guest, 18 min)
+  and one in long_creature (the host, 27 min), each a second or two after a hunt's kill; both tests fail on it.

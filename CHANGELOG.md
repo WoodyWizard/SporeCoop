@@ -111,6 +111,10 @@ arrows and minimap marks to find each other, player colours, and one report for 
   the way, and bite together), and the Cell test checks that the host's creatures hunt a guest with a controlled
   trial instead of comparing how often each player happened to be hunted (BUG-0618, BUG-0910).
 - Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
+- The test lab watches memory: a test script that grows past 2 GB is stopped and fails with a clear line, every
+  result records the script's and the games' memory, and a test waits when its games would not fit into the free
+  memory. The cause of a run that filled the PC's memory (a read of the divergence detector that never ended in a
+  four-player Cell stage) is fixed (BUG-0916).
 - One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
   players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
   window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without
