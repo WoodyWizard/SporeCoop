@@ -57,7 +57,7 @@ def main():
     ck = Checks()
     try:
         # 1. the Space features
-        ck('off' not in feature(guest, 'trade') and 'off' not in feature(guest, 'rivalry'),
+        ck('(the session setting)' not in feature(guest, 'trade') + feature(guest, 'rivalry'),
            f'features on: trade and rivalry run on the guest ({feature(guest, "trade")!r}, {feature(guest, "rivalry")!r})')
         stats = {}
         ph = Player('host', lane.HOST, 0, 1, time.time() + 1200, stats)
@@ -79,7 +79,7 @@ def main():
         ck('Switch to rivals' not in sp(host, 'rows'), 'features off: the host\'s Space page has no rivals switch')
         for k in ('space.trade', 'space.rivals'):
             sl.force(host, [guest], k, 'on')
-        ck('Switch to rivals' in sp(host, 'rows') and 'off' not in feature(guest, 'trade'), 'features on again')
+        ck('Switch to rivals' in sp(host, 'rows') and '(the session setting)' not in feature(guest, 'trade'), 'features on again')
         # 2. disabled, not destroyed (the default)
         st = lethal(guest)
         ck(field(st, 'down') == 1 and field(st, 'state') == 0, f'space.disable on: the lethal hit disabled the guest ({st})')
