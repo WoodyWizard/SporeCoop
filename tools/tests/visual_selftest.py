@@ -2,6 +2,8 @@
 """Self-tests of the visual test tools (make test, no game; docs/06-testing.md#testing-key-frames):
 
   frames    key frame names and manifest, the selection cap, contact sheets of a fake run (tools/frames_review.py)
+  golden    the window crop's compare: the same picture passes, a button 2 px aside or gone fails, a masked
+            change passes, the stored reference keeps a small colour swatch (golden.py)
   sameview  coop.cam / coop.census / coop.creations parsing, the projection, the match of two pictures (sameview.py)
 
   visual_selftest.py [check ...]   all checks by default; exit 1 when one fails
@@ -155,7 +157,53 @@ def test_sameview():
     check(sv.view_cmd([1, 2, 3], [4, 5, 6], 50).startswith('coop.view set 1.000 2.000 3.000 4.000'), 'view_cmd')
 
 
-CHECKS = {'frames': test_frames, 'sameview': test_sameview}
+def window_image(bx=60, by=80, show=True, text_at=None):
+    """a fake co-op window: a dark panel, gold buttons with dark 'text' strokes, a pink swatch"""
+    from PIL import Image, ImageDraw
+    im = Image.new('RGB', (380, 330), (28, 52, 66))
+    d = ImageDraw.Draw(im)
+    if show:
+        d.rounded_rectangle((bx, by, bx + 150, by + 24), 8, fill=(190, 160, 50))
+        for k in range(6):
+            d.line((bx + 30 + 15 * k, by + 7, bx + 38 + 15 * k, by + 17), fill=(30, 30, 30), width=2)
+    d.rounded_rectangle((220, 80, 370, 104), 8, fill=(190, 160, 50))
+    d.rectangle((150, 200, 158, 206), fill=(255, 95, 200))
+    if text_at:
+        d.text(text_at, '192.168.1.5:47810', fill=(230, 230, 230))
+    return im
+
+
+def test_golden():
+    if skip_without_pil('golden'):
+        return
+    import golden
+    ref = window_image()
+    r = golden.compare(window_image(), ref)
+    check(r['ok'] and r['n'] == 0, f'the same picture passes ({r["n"]} pixels)')
+    r = golden.compare(window_image(bx=62), ref)
+    check(not r['ok'] and r['bbox'] and 55 <= r['bbox'][0] <= 66, f'a button 2 px aside fails ({r["why"]}, {r["bbox"]})')
+    r = golden.compare(window_image(show=False), ref)
+    check(not r['ok'], f'a button gone fails ({r["why"]})')
+    noisy = window_image(text_at=(20, 260))
+    r = golden.compare(noisy, ref)
+    check(not r['ok'], f'an unmasked new text fails ({r["frac"]:.3%})')
+    r = golden.compare(noisy, ref, [(15, 255, 160, 275)])
+    check(r['ok'], f'the same text under a mask passes ({r["frac"]:.3%})')
+    r = golden.compare(window_image().resize((300, 330)), ref)
+    check(not r['ok'] and not r['size_ok'], 'another size fails')
+    p = os.path.join(TMP, 'ref.png')
+    golden.save_ref(ref, p)
+    back = golden.load_ref(p)
+    check(back.getpixel((154, 203)) == (255, 95, 200), f'the stored reference keeps the pink swatch ({back.getpixel((154, 203))})')
+    check(golden.compare(window_image(), back)['ok'], 'a stored reference compares as the picture')
+    out = golden.diff_image(window_image(bx=62), ref, [(15, 255, 160, 275)], os.path.join(TMP, 'diff.png'))
+    from PIL import Image
+    with Image.open(out) as im:
+        check(im.width == 3 * 380 + 8, f'diff image: the picture, the reference and the differences ({im.size})')
+    check(golden.to_local((700, 400, 800, 420), (400, 200, 1100, 860)) == (148, 98, 202, 112), 'to_local scales and pads')
+
+
+CHECKS = {'frames': test_frames, 'golden': test_golden, 'sameview': test_sameview}
 
 if __name__ == '__main__':
     want = sys.argv[1:] or list(CHECKS)

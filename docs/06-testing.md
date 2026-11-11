@@ -5575,3 +5575,39 @@ by side and the creatures in them counted.
   paints, poses) is left to the review by eye.
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
+
+## Golden images of the co-op window (2026-11-10, feat/w47-visual)
+<a id="testing-ui-golden"></a>
+
+`tools/tests/coop_ui_golden.py` (suite `ui_golden`, full, ~2 min, cold, any lane; lane 3 in the batches) brings each
+step of the co-op window up by real clicks in a fixed state and compares the window with a stored picture:
+
+* State: a first start (coop_ui.first_start_ini, the old coop.ini put back), English (`coop.uistate lang en`), the
+  names Alice / Bob, the host pink and the guest green (`coop.find color`), the default session settings, the `space`
+  fixture (so the lobby has its Space page). The guest joins by the typed address (the LAN list holds other lanes'
+  games), the host loads its game with `coop.load`.
+* Steps (12): `name`, `choose`, `host_step`, `lobby_menu`, `settings_menu`, `join_step` (guest), `ingame_host`,
+  `ingame_guest` (F9 in Space), `settings_host`, `settings_guest`, `space_host`, `pause_report` (the pause menu's
+  buttons with "Report a problem").
+* Each step: the pointer is moved off the window (no hover highlight), a full-size `shot`, the window's rect from
+  `coop.uistate` (`window x1 y1 x2 y2 vis`, new) cropped and halved (380x330), compared with
+  `tools/tests/golden/<step>.png` (RGB PNG, 15-55 KB, ~500 KB for all). Masked: a 3 px border (the game shows through
+  the frame's edge) and the texts that vary between runs, by their rects in `coop.uistate`: `area <name> x1 y1 x2 y2
+  vis` lines (new: session, hostaddr, version, lanhdr, statusline, world, creationline, setline, meline, hosthint,
+  ping0-3, chatline0-4) and named controls (port, address, lan0-2, lanmore). The per-step list is `VARY` in the test.
+* Tolerance (tools/tests/golden.py): both pictures blurred by one pixel; a pixel differs when a channel differs by
+  more than 48; a step fails when more than 0.1 % of the unmasked pixels differ (`pause_report` 0.6 %: the game's menu
+  is translucent) or one 12x12 block is more than 35 % different. Lab noise: up to 0.05 % (the close button's corner),
+  the pause menu 0.19 %. A failure prints the differing region in screen pixels and writes `<step>_diff.png` (the
+  crop, the reference, the differences in red with the masks in blue) next to the crops in
+  `out/lab/<run>/frames/ui_golden/golden/`.
+* **Updating the references on purpose** (a changed layout): `SPORE_LANE=3 python3 tools/tests/coop_ui_golden.py
+  --update` (also `--only name,choose`), then look at every new `tools/tests/golden/*.png` before the commit and name
+  the reason in the commit message. They are made on the lab's 1440x1080 games; another resolution or language does
+  not compare.
+* Twins (test switch `coop.uistate nudge <control> <dx> <dy>` / `hide <control>` / `nudge off`, applied after every
+  refresh of the window; a lane knob): `UI_GOLDEN_TWIN="nudge gohost 4 0"` (Host a game 4 px to the right) fails
+  `choose`; `UI_GOLDEN_TWIN="hide ready"` fails `lobby_menu`, `ingame_host`, `ingame_guest` (1.4 % each; lab 20261110-200801). Pass: 20261110-201216 (0 differing pixels in every step); nudge FAIL: 20261110-201357 (choose 0.17 %, the region the Host button).
+* Pitfalls: a palette PNG (256 colours) turned the host's pink swatch grey and moved other pixels by up to 99 levels:
+  references are RGB. A reference made before the colour picks arrived holds other swatches: the test waits for and
+  checks the colours before the in-game steps.

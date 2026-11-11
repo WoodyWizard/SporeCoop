@@ -72,6 +72,7 @@ add('civ', P + 'coop_mode.py --fixture civ', minutes=3)
 add('space', P + 'coop_mode.py --fixture space', minutes=3)
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
+add('ui_golden', P + 'coop_ui_golden.py', minutes=7)  # the co-op window's steps by real clicks against their golden images (tools/tests/golden/*.png, masks for addresses, pings, the version, chat, LAN): a control that moves or vanishes fails (UI_GOLDEN_TWIN="nudge gohost 4 0" / "hide ready" fail; --update writes the references; docs/06-testing.md#testing-ui-golden)
 add('menu_escape', P + 'coop_menu_escape.py', minutes=10)  # BUG-0184: Escape and Co-op clicks around the galaxy menu's own intro (also near its end) keep the frames going
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
