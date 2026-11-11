@@ -38,3 +38,4 @@ Re-run on the merged branch fix/w46-k2b-content (the run dirs above were in the 
 - 2026-11-08: fix/w46-k2b-content-a: the guest's clouds traced (destroyed at once on the guest, none on the host), fixed host-side (cell.puppet_poison), test cell_poison; the damage of the grafted part not reproduced.
 - 2026-11-08: FAIL / PASS runs repeated on the merged K2b branch.
 - 2026-11-08: released in 0.7.11.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the poison test asserts the mod's cloud counter (coop_cell_parts_attack.py:108), not damage in the host's game; the damage gap is new ticket BUG-0892.

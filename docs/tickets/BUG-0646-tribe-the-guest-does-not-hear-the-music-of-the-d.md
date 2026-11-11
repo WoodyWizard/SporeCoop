@@ -60,3 +60,4 @@ Not verified: a guest joining during a party (the play is sent once), the night 
 - 2026-11-07: not reproduced in fix/w46-tribe-civ; footsteps found host-only: BUG-0669.
 - 2026-11-07: reproduced and fixed in fix/w46-tribe-dance (`tribe.party_music`).
 - 2026-11-07: released in 0.7.10.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the relayed stop is lost when either game is outside Tribe mode at that moment (tribe.cpp:1510-1515, 1581), so the guest's music can play on; new ticket BUG-0890.

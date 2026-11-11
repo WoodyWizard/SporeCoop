@@ -59,3 +59,4 @@ Seen on the way: sculpting and colouring tools are not relayed at all (BUG-0763)
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-space): test written with the real tool; it found the guest's planet never changed (the terraforming flag); fixed behind space.terra_apply.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: deltas made while no partner is on the planet are dropped (spacecoop.cpp:1026 sends only `if (here)`, apply_terra returns off-planet at :1052); new ticket BUG-0883.

@@ -47,3 +47,4 @@ tools_selftest.py tickets_check, 13 cases on a temporary repository. FAIL: with 
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (964b098). Left: BUG-0149's test oracle (item 6 of #149).
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the left-open item (coop_social_console decides on acts_in) is filed as its own test ticket BUG-0891.
