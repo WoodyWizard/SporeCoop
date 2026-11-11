@@ -55,7 +55,8 @@ clicks), drags the house tile onto a taken plot; the guest's planner must have a
 * FAIL on the code before the fix: lab 20261110-201036 (the host 5 -> 6 houses).
 * FAIL with `SPORE_FIX_OFF=civ.space_planner_closed`: lab 20261110-201757 (the host 5 -> 6 houses).
 * PASS: lab 20261110-201407 (`dropped=1` on the guest, the host 5 -> 5).
-* Regression (a kept purchase still reaches the host): see the History line of the `space_planner_build` run.
+* PASS again in lab 20261110-203201 (lanes 4 / 5), with the area's tests: space_planner_build (a kept purchase still
+  reaches the host after the planner's close), space_planner_away, space_city_keep, space_sculpt_tool, space_sculpt_away.
 
 ## History
 - 2026-11-10: opened.

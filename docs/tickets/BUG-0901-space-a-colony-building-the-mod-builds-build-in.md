@@ -58,7 +58,8 @@ leave the planet and land again; each city must still have the factory (a factor
 in that plot cannot pass for it).
 * FAIL on the code before the fix: lab 20261110-201410; with `SPORE_FIX_OFF=civ.space_city_data`: lab
   20261110-202628 (both games 4 -> 4 factories, 6 -> 6 houses).
-* PASS: lab 20261110-202314 (both games 4 -> 5 factories, 6 -> 5 houses after the landing).
+* PASS: lab 20261110-202314 (both games 4 -> 5 factories, 6 -> 5 houses after the landing), 20261110-203201 (with
+  space_planner_build / away / miss, space_sculpt_tool / away: 6 of 6).
 * Not run: the real relay paths end to end with a leave and a landing after the build (they call the same
   space_build_here); the save after it.
 

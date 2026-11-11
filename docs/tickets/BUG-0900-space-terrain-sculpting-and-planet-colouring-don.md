@@ -57,7 +57,8 @@ leave and a landing, and in the save, is not traced (0.7.13 if a report shows it
 raises the ground twice and colours the planet with real clicks, the guest lands again: its terrain around the spot
 (6 points) and its colours must be the host's.
 * FAIL with `SPORE_FIX_OFF=space.sculpt_hold`: lab 20261110-202317 (14.33 m apart, colours (0, 0, 0) / (0, 11, 0)).
-* PASS: lab 20261110-201800 (0.00 m, colours (0, 11, 0) on both; the guest `held=0/3 held_done=3`).
+* PASS: lab 20261110-201800 (0.00 m, colours (0, 11, 0) on both; the guest `held=0/3 held_done=3`), 20261110-203201
+  (also space_sculpt_tool, the live relay with both on the planet: OK).
 
 ## History
 - 2026-11-10: opened.
