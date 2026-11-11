@@ -1448,7 +1448,7 @@ COOP_FIX("civ.space_build_hold", "BUG-0766", g_fix_space_build_hold,
 static bool g_fix_space_planner_relay = true;
 COOP_FIX("civ.space_planner_relay", "BUG-0884", g_fix_space_planner_relay,
          "civ: a Space colony building the host gets is built in the other guests' games too");
-static void space_note_host_build(void* city, void* b, int except);
+static void space_note_host_build(void* city, void* b, int except, bool planner = false);
 static void space_tick(double now);
 
 using AddBuilding_t = int(SK_THISCALL*)(void*, void*, int);
@@ -1462,7 +1462,7 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
         send_space_build(city, b); // BUG-0751
     if (!active() && !g_applying && b && is_host() && game::mode_id() == modes::kSpace &&
         (uintptr_t)ret == a_PlannerAddBuildingRet && g_fix_space_planner_relay)
-        space_note_host_build(city, b, -1); // BUG-0884: the host's own planner building
+        space_note_host_build(city, b, -1, true); // BUG-0884: the host's own planner building
     if (!active() || g_applying || !b)
         return r;
     net::Vec3 pos;
@@ -4078,6 +4078,8 @@ struct SpaceOut {
     net::Vec3 cp;
     double t;
     int except;
+    bool planner; // the host's own planner building: sent when the planner closed with it (a drag that does not end
+                  // on a free plot adds the building and takes it away again: lab 20261110-193142)
 };
 static std::vector<SpaceOut> g_space_out;
 static uint32_t g_space_place_seen;
@@ -4115,14 +4117,14 @@ static void space_send(const SpaceBuild& sb, int except)
 }
 
 // host: a building it got in a colony city goes to the guests (BUG-0884), once the planner placed it
-static void space_note_host_build(void* city, void* b, int except)
+static void space_note_host_build(void* city, void* b, int except, bool planner)
 {
     if (!g_fix_space_planner_relay || !city || !b || C.sess->players().size() < 2 + (except >= 0 ? 1 : 0))
         return;
     uint32_t place = space_place_now();
     if (!(place & 0x40000000u) || g_space_out.size() >= 64)
         return;
-    g_space_out.push_back({b, city, place, game::noun_id(b), city_pos(city), H->time_seconds(), except});
+    g_space_out.push_back({b, city, place, game::noun_id(b), city_pos(city), H->time_seconds(), except, planner});
 }
 
 static void space_hold(const SpaceBuild& sb, uint32_t mine)
@@ -4204,7 +4206,8 @@ static void space_tick(double now)
             if (alive)
                 game::object_position(o.b, pos);
             bool placed = alive && (pos.x != 0 || pos.y != 0 || pos.z != 0);
-            if (!alive || placed || now - o.t > 3.0) {
+            bool open = alive && o.planner && planner_city() == o.city && now - o.t < 600.0;
+            if (!alive || (!open && (placed || now - o.t > 3.0))) {
                 if (alive && is_host()) {
                     SpaceBuild sb{0, o.place, o.noun, modes::current_world(), o.cp, pos};
                     space_send(sb, o.except);

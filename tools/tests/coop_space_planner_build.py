@@ -123,6 +123,10 @@ def planner_buy(ck, buyer, bi, who):
     m0 = money(buyer)
     if opened and free:
         drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], free[0][0], free[0][1])
+        if money(buyer) == m0:  # the drop missed the plot (seen at x ~1070, lab 20261110-193940): once more, nearer the middle
+            fx, fy = free[0][0] + (40 if free[0][0] < W // 2 else -40), free[0][1]
+            print(f'  the {who}\'s first drop did not take: again at ({fx}, {fy})', flush=True)
+            drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], fx, fy)
     shot(buyer, 'space_planner_built.png')
     m1 = money(buyer)
     paid = m0 - m1 if m0 is not None and m1 is not None else None
@@ -205,7 +209,10 @@ def main():
     shot(other, 'space_planner_other.png')
     print(f'  {ow}: {no0} -> {no1} buildings, {ho0} -> {ho1} houses; '
           f'{other.call("coop.civ")["out"].splitlines()[-1] if other.call("coop.civ")["out"] else ""}', flush=True)
-    ck(got, f'the {ow}\'s game has the {bw}\'s new house in that city ({ho0} -> {ho1} houses)')
+    if hb1 == hb0 + 1:
+        ck(got, f'the {ow}\'s game has the {bw}\'s new house in that city ({ho0} -> {ho1} houses)')
+    else:  # the drag did not end on the plot (the planner took the building away again): nobody may get it
+        ck(not got and ho1 == ho0, f'the {ow}\'s game got no house the {bw}\'s planner did not keep ({ho0} -> {ho1})')
     time.sleep(3)
     mh1, mg2 = money(host), money(guest)
     mb0 = mg0 if a.buyer == 'guest' else mh0
