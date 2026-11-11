@@ -384,6 +384,7 @@ def main():
     t0 = time.time()
     st = {p.name: pool(p.c) for p in P}
     food0 = {p.name: st[p.name]['food'] for p in P}
+    st0 = dict(st)  # the counters at the start: the games of a warm run (lab --repeat) have counted before
     hist = []         # (t, host food, guest food)
     pos_err, rot_err = {}, {}
     food_mismatch = []
@@ -500,6 +501,12 @@ def main():
         hs, gs = pool(host), pool(guest)
         print('  host ', hs['raw'].strip().replace('\n', ' | '))
         print('  guest', gs['raw'].strip().replace('\n', ' | '))
+        # BUG-0910: this run's share of the counters the checks below read (a warm run's games kept the counts of
+        # the run before: the third `--repeat` failed "the guest reports only what it ate" with 183 = 57 + 70 + 56)
+        for d, d0 in ((hs, st0['host']), (gs, st0['guest'])):
+            for k in ('eats_sent', 'own_eats', 'own_points', 'puppet_new'):
+                if d.get(k) is not None:
+                    d[k] -= d0.get(k) or 0
         gained = (hs['food'] or 0) - (food0['host'] or 0)
         ck(gained >= 20, f'the pair made progress by playing (food {food0["host"]} -> {hs["food"]})')
         ck(not food_mismatch, f'food progress equal on both machines ({len(hist) - len(food_mismatch)}/{len(hist)} checks; '
