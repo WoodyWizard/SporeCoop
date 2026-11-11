@@ -592,8 +592,12 @@ add('space_seed_profile', P + 'coop_space_seed_profile.py', minutes=4, fixture='
 add('space_land_early', P + 'coop_space_land_early.py', minutes=3, fixture='space')  # the wheel lands on the home planet right after a load (BUG-0182)
 add('space_fast_sync', P + 'coop_space_fast_sync.py', minutes=9, fixture='space')  # the sync-check keeps the copy of a fast host ship that brakes and turns (the rescue flight, latency spikes; it sets its own SPORE_NET) in sync: compared with the host's path (BUG-0547; SPORE_FIX_OFF=sync.own_path fails)
 add('space_terra_tool', P + 'coop_space_terra_tool.py', minutes=6, fixture='space_free')  # BUG-0749: the host's Atmosphere Generator (real clicks: the palette tab, the slot, the ground) changes the planet record in the guest's game too (SPORE_FIX_OFF=space.terra_apply fails)
+add('space_sculpt_tool', P + 'coop_space_sculpt_tool.py', minutes=8, fixture='space_free')  # BUG-0763: the host's terrain sculpting and planet colouring tools (real clicks) change the guest's planet too (SPORE_FIX_OFF=space.terra_sculpt fails)
+add('space_terra_elsewhere', P + 'coop_space_terra_elsewhere.py', minutes=8, fixture='space_free')  # BUG-0883: the guest terraforms alone (Atmosphere Generator, real clicks); the host's record of the planet follows while away and after landing (SPORE_FIX_OFF=space.terra_elsewhere fails)
 add('space_npc_mission', P + 'coop_space_npc_mission.py', minutes=5, fixture='space_free')  # BUG-0750: the guest asks two NPC empires for missions in their comm screens (real clicks; the Galactic Adventures intro done by command), accepts a mission with a reward, completes it: the host's shared money rises by the reward (SPORE_FIX_OFF=res.guest_send fails)
 add('space_planner_build', P + 'coop_space_planner_build.py', minutes=5, fixture='space_empire')  # BUG-0751: the guest buys a house in a Space colony city's planner (real clicks and a drag onto a plot freed by the test): the host's game has it, the shared money fell on both (SPORE_FIX_OFF=civ.space_planner_send fails)
+add('space_planner_away', P + 'coop_space_planner_build.py --away', minutes=7, fixture='space_empire')  # BUG-0766: the host's ship is off the planet while the guest buys a house in a colony's planner, lands again: the host's city has it then (SPORE_FIX_OFF=civ.space_build_hold fails)
+add('space_planner_host', P + 'coop_space_planner_build.py --buyer host', minutes=5, fixture='space_empire')  # BUG-0884: the host buys a house in its colony's planner: the guest's city has it (SPORE_FIX_OFF=civ.space_planner_relay fails)
 add('space_fast_sync_guest', P + 'coop_space_fast_sync_guest.py', minutes=7, fixture='space')  # the mirror for a guest's own ship: the host's copy of a guest flying pulses is compared with the guest's path from the received states (BUG-0758; SPORE_FIX_OFF=sync.own_path_guests fails)
 add('space_defenders', P + 'coop_space_defenders.py', warm=True, minutes=3, fixture='space')  # the game's Defenders are not partner puppets (BUG-0111; --without-fix fails)
 add('space_mirror_model', P + 'coop_space_mirror_model.py', warm=True, minutes=3, fixture='space')  # a host ship whose model the guest lacks does not fault the guest (BUG-0323; --without-fix fails)
@@ -698,6 +702,9 @@ add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
 # report are refused, the host's zip holds exactly the expected entries, the host's report alone; it makes reports on
 # purpose (checks crashes itself); SPORE_FIX_OFF=core.session_report fails
 add('session_report', P + 'coop_session_report.py', ('multi', 'extended'), minutes=8, reports=True)
+# BUG-0770 / BUG-0783: the session report and the host's settings table end with their session (a guest's and a host's
+# Leave), a guest busy sending answers the next Ask; SPORE_FIX_OFF=core.session_state_end and core.sreport_reask fail
+add('sreport_leave', P + 'coop_sreport_leave.py', minutes=6, fixture='cell', reports=True)
 add('cell_nan', P + 'coop_cell_nan.py', minutes=3)  # a guest's own cell NaN is put back, no tiles from NaN boxes, a level-up after it (BUG-0299; SPORE_FIX_OFF=cell.nan_guard fails)
 add('cell_stale', P + 'coop_cell_stale.py', minutes=2)  # a group member drops a dead chase target copied from its leader: no fault per frame on the host (BUG-0306; SPORE_FIX_OFF=cell.pick_guard fails)
 add('cell_nan_all', P + 'coop_cell_nan.py --all', minutes=3)  # the own cell NaN in every field: healed once, not NaN again (BUG-0307; SPORE_FIX_OFF=cell.nan_heal_all fails)

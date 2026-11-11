@@ -49,12 +49,18 @@ def main():
                     break
         ck(h1 > h0, f'host: the guest hit arrived ({h0} -> {h1}; tried {tried[-4:]})')
 
-    # F9 is read in the mod's frame
+    # F9 is read in the mod's frame. BUG-0898: from a closed window (an earlier test on warm games may have left it
+    # open, e.g. report_shot's question to the guest: F9 then closed it and the check failed)
+    guest.call('coop.uistate 0')
+    time.sleep(1)
+    before = guest.call('coop.uistate')['out']
     guest.call('key 0x78')
     time.sleep(2)
     ui = guest.call('coop.uistate')['out']
-    ck('open=1' in ui, 'guest: F9 opened the co-op window')
+    ck('open=0' in before and 'open=1' in ui, f'guest: F9 opened the co-op window (before {before.split()[:1]}, after {ui.split()[:1]})')
     guest.call('key 0x78')
+    time.sleep(2)
+    ck('open=0' in guest.call('coop.uistate')['out'], 'guest: F9 again closed it')
 
     guest.call('frames.source auto')
     time.sleep(2)

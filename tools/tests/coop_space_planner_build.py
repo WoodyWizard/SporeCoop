@@ -13,9 +13,15 @@ position (CMD_SPACE_BUILD) and the host builds it in its city there when its shi
    onto the free plot (its screen point from `coop.civ slots`), closes with the green check.
 PASS: the guest's planner took the price, the host's game has a new house in that city (the game's building list),
 the shared money fell by the same amount on both. SPORE_FIX_OFF=civ.space_planner_send must FAIL.
+--away (BUG-0766): the host's ship leaves the planet before the guest buys and lands again after it; the game made the
+city again from the planet's record (the house destroyed before is back), so the test frees a plot again: the host's
+city gets the guest's house then (SPORE_FIX_OFF=civ.space_build_hold must FAIL).
+--buyer host (BUG-0884): the host buys the house in its planner: the guest's city has it
+(SPORE_FIX_OFF=civ.space_planner_relay must FAIL).
 
-  SPORE_LANE=6 python3 tools/tests/coop_space_planner_build.py
+  SPORE_LANE=6 python3 tools/tests/coop_space_planner_build.py [--buyer guest|host] [--away]
 """
+import argparse
 import re
 import time
 
@@ -93,83 +99,125 @@ def fly_over_city(con, secs=60):
     return best
 
 
+def planner_buy(ck, buyer, bi, who):
+    """real input on the buyer: the planner by a click on its city, the house tile dragged onto a free plot, the
+    green check; the price it paid (None: not bought)"""
+    opened = False
+    for _ in range(3):
+        _, on, x, y, _ = min(cities(buyer))
+        buyer.call(f'move {int(x)} {int(y)}')
+        time.sleep(0.8)
+        buyer.call(f'click {int(x)} {int(y)}')
+        time.sleep(6)
+        if 'city=00000000' not in buyer.call('coop.civ planner')['out']:
+            opened = True
+            break
+    shot(buyer, 'space_planner_open.png')
+    ck(opened, f'the {who} opened the city planner by a click on the city')
+    free = []
+    for ln in buyer.call(f'coop.civ slots s{bi}')['out'].splitlines():
+        m = re.match(r'slot (\d+) free \S+ \S+ \S+ (-?\d+) (-?\d+)', ln)
+        if m and 150 < int(m.group(2)) < 1300 and 80 < int(m.group(3)) < 1000:
+            free.append((int(m.group(2)), int(m.group(3))))
+    ck(free, f'a free plot on the {who}\'s planner screen ({free})')
+    m0 = money(buyer)
+    if opened and free:
+        drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], free[0][0], free[0][1])
+        if money(buyer) == m0:  # the drop missed the plot (seen at x ~1070, lab 20261110-193940): once more, nearer the middle
+            fx, fy = free[0][0] + (40 if free[0][0] < W // 2 else -40), free[0][1]
+            print(f'  the {who}\'s first drop did not take: again at ({fx}, {fy})', flush=True)
+            drag(buyer, TILE_HOUSE[0], TILE_HOUSE[1], fx, fy)
+    shot(buyer, 'space_planner_built.png')
+    m1 = money(buyer)
+    paid = m0 - m1 if m0 is not None and m1 is not None else None
+    ck(paid and paid > 0, f'the {who}\'s planner took the house\'s price (${paid})')
+    for _ in range(3):
+        buyer.call(f'click {DONE[0]} {DONE[1]}')
+        time.sleep(3)
+        if 'city=00000000' in buyer.call('coop.civ planner')['out']:
+            break
+    return paid
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--buyer', choices=('guest', 'host'), default='guest')
+    ap.add_argument('--away', action='store_true', help='the other ship leaves the planet before the purchase and '
+                    'lands again after it (BUG-0766)')
+    a = ap.parse_args()
     host, guest = start('space_empire')
     ck = Checks()
     stats = {}
     ph = Player('host', lane.HOST, 0, 1, time.time() + 1200, stats)
     pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1200, stats)
+    buyer, other = (guest, host) if a.buyer == 'guest' else (host, guest)
+    pb, po = (pg, ph) if a.buyer == 'guest' else (ph, pg)
+    bw, ow = a.buyer, ('host' if a.buyer == 'guest' else 'guest')
     for p in (ph, pg):
         p.land_retry(HOME)
     ck(ph.ctx() == 'planet' and ph.place() == pg.place(), f'both on the home planet ({ph.place()}, {pg.place()})')
     time.sleep(4)
-    d = fly_over_city(guest)
-    print(f'  the guest flew toward a city of its empire (nearest {d} m)', flush=True)  # the planner click below is the check
+    d = fly_over_city(buyer)
+    print(f'  the {bw} flew toward a city of its empire (nearest {d} m)', flush=True)  # the planner click below is the check
     time.sleep(2)
-    _, _, _, _, gi = min(cities(guest))
-    gp = city_positions(guest).get(gi)
-    hp = city_positions(host)
-    hi = next((k for k, p in hp.items() if gp and sum((a - b) ** 2 for a, b in zip(p, gp)) < 100), None)
-    ck(gp is not None and hi is not None, f'the same city in both games (guest s{gi} {gp}, host s{hi})')
-    if hi is None:
+    _, _, _, _, bi = min(cities(buyer))
+    bp = city_positions(buyer).get(bi)
+    op = city_positions(other)
+    oi = next((k for k, p in op.items() if bp and sum((x - y) ** 2 for x, y in zip(p, bp)) < 100), None)
+    ck(bp is not None and oi is not None, f'the same city in both games ({bw} s{bi} {bp}, {ow} s{oi})')
+    if oi is None:
         ck.faults(host=host, guest=guest)
         return ck.result()
     # test setup: a free plot (a house destroyed by the game's own call in both games)
-    for con, ci, who in ((guest, gi, 'guest'), (host, hi, 'host')):
+    for con, ci, who in ((buyer, bi, bw), (other, oi, ow)):
         bl = houses(con, ci)[2]
         k = next((n for n, ln in enumerate(bl) if HOUSE in ln), None)
         print(f'  {who}: {con.call(f"coop.civ unbuild s{ci} {k}")["out"]}', flush=True)
     time.sleep(2)
-    nh0, hh0, _ = houses(host, hi)
-    ng0, hg0, _ = houses(guest, gi)
+    no0, ho0, _ = houses(other, oi)
+    nb0, hb0, _ = houses(buyer, bi)
     mh0, mg0 = money(host), money(guest)
-    print(f'  before: host {nh0} buildings ({hh0} houses), guest {ng0} ({hg0}); money host {mh0} guest {mg0}', flush=True)
-    # the planner by a click on the city
-    opened = False
-    for _ in range(3):
-        _, on, x, y, _ = min(cities(guest))
-        guest.call(f'move {int(x)} {int(y)}')
-        time.sleep(0.8)
-        guest.call(f'click {int(x)} {int(y)}')
-        time.sleep(6)
-        if 'city=00000000' not in guest.call('coop.civ planner')['out']:
-            opened = True
-            break
-    shot(guest, 'space_planner_open.png')
-    ck(opened, 'the guest opened the city planner by a click on the city')
-    free = []
-    for ln in guest.call(f'coop.civ slots s{gi}')['out'].splitlines():
-        m = re.match(r'slot (\d+) free \S+ \S+ \S+ (-?\d+) (-?\d+)', ln)
-        if m and 150 < int(m.group(2)) < 1300 and 80 < int(m.group(3)) < 1000:
-            free.append((int(m.group(2)), int(m.group(3))))
-    ck(free, f'a free plot on the guest\'s planner screen ({free})')
-    if opened and free:
-        drag(guest, TILE_HOUSE[0], TILE_HOUSE[1], free[0][0], free[0][1])
-    shot(guest, 'space_planner_built.png')
-    mg1 = money(guest)
-    paid = mg0 - mg1 if mg0 is not None and mg1 is not None else None
-    ck(paid and paid > 0, f'the guest\'s planner took the house\'s price (${paid})')
-    for _ in range(3):
-        guest.call(f'click {DONE[0]} {DONE[1]}')
+    print(f'  before: {ow} {no0} buildings ({ho0} houses), {bw} {nb0} ({hb0}); money host {mh0} guest {mg0}', flush=True)
+    if a.away:  # BUG-0766: the other ship is off the planet while the house is bought
+        ck(po.take_off(), f'the {ow}\'s ship leaves the planet ({po.ctx()}, at {po.place()})')
         time.sleep(3)
-        if 'city=00000000' in guest.call('coop.civ planner')['out']:
-            break
-    ng1, hg1, _ = houses(guest, gi)
-    ck(hg1 == hg0 + 1, f'the guest\'s game has the new house ({hg0} -> {hg1} houses)')
-    got = None
-    t0 = time.time()
-    while time.time() - t0 < 20 and not got:
-        nh1, hh1, _ = houses(host, hi)
-        got = hh1 == hh0 + 1
+    paid = planner_buy(ck, buyer, bi, bw)
+    nb1, hb1, _ = houses(buyer, bi)
+    ck(hb1 == hb0 + 1, f'the {bw}\'s game has the new house ({hb0} -> {hb1} houses)')
+    if a.away:
+        time.sleep(3)
+        print(f'  {ow} away: {other.call("coop.civ")["out"].splitlines()[-1] if other.call("coop.civ")["out"] else ""}',
+              flush=True)
+        po.land_retry(HOME)
+        ck(po.ctx() == 'planet' and po.place() == pb.place(), f'the {ow} lands on the home planet again ({po.place()})')
+        time.sleep(3)
+        op = city_positions(other)
+        oi = next((k for k, p in op.items() if sum((x - y) ** 2 for x, y in zip(p, bp)) < 100), oi)
+        # the game makes the planet's cities again from its record when it becomes the active planet: the house the
+        # test destroyed before is back (lab 20261110-185810). The test frees a plot again; the kept building takes it
+        no0, ho0, bl = houses(other, oi)
+        k = next((n for n, ln in enumerate(bl) if HOUSE in ln), None)
+        print(f'  {ow} back: {no0} buildings ({ho0} houses); {other.call(f"coop.civ unbuild s{oi} {k}")["out"]}', flush=True)
         time.sleep(1)
-    shot(host, 'space_planner_host.png')
-    print(f'  host: {nh0} -> {nh1} buildings, {hh0} -> {hh1} houses; '
-          f'{host.call("coop.civ")["out"].splitlines()[-1] if host.call("coop.civ")["out"] else ""}', flush=True)
-    ck(got, f'the host\'s game has the guest\'s new house in that city ({hh0} -> {hh1} houses)')
+        no0, ho0, _ = houses(other, oi)
+    got, no1, ho1 = None, None, None
+    t0 = time.time()
+    while time.time() - t0 < 25 and not got:
+        no1, ho1, _ = houses(other, oi)
+        got = ho1 == ho0 + 1
+        time.sleep(1)
+    shot(other, 'space_planner_other.png')
+    print(f'  {ow}: {no0} -> {no1} buildings, {ho0} -> {ho1} houses; '
+          f'{other.call("coop.civ")["out"].splitlines()[-1] if other.call("coop.civ")["out"] else ""}', flush=True)
+    if hb1 == hb0 + 1:
+        ck(got, f'the {ow}\'s game has the {bw}\'s new house in that city ({ho0} -> {ho1} houses)')
+    else:  # the drag did not end on the plot (the planner took the building away again): nobody may get it
+        ck(not got and ho1 == ho0, f'the {ow}\'s game got no house the {bw}\'s planner did not keep ({ho0} -> {ho1})')
     time.sleep(3)
     mh1, mg2 = money(host), money(guest)
-    ck(mh0 is not None and mh1 is not None and paid and abs((mh0 - mh1) - paid) < 1 and abs(mh1 - mg2) < 1,
-       f'the shared money fell by the price on both games (host {mh0} -> {mh1}, guest {mg0} -> {mg2})')
+    mb0 = mg0 if a.buyer == 'guest' else mh0
+    ck(mh0 is not None and mh1 is not None and paid and abs((mb0 - (mg2 if a.buyer == 'guest' else mh1)) - paid) < 1
+       and abs(mh1 - mg2) < 1, f'the shared money fell by the price on both games (host {mh0} -> {mh1}, guest {mg0} -> {mg2})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -33,6 +33,7 @@ void tick(); // every frame
 void on_message(uint8_t from, net::Reader& r);
 void on_player_leave(uint8_t id);
 void on_disconnect();
+void on_session_end(); // BUG-0770: every session end (coop.cpp end_session), state only
 
 // host: ask every guest; host_zip = the host's own report ("" = without it). Returns the line the window shows.
 std::string ask(const std::string& host_zip);

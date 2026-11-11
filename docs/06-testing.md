@@ -5482,3 +5482,27 @@ lab's games (3 + 3 objects, creature and tribe fixtures): the test asserts the c
 The bug was an `else` with two statements and no braces; llvm-mingw's `-Wall` does not include
 `-Wmisleading-indentation`, so the build never warned. The Makefile's COMMON flags (coop.dll, sporekit.dll, the
 loader) have `-Werror=misleading-indentation` now: on 2026-11-10 this line was its only hit in the tree.
+
+## The session report across session ends, busy guests, slow disks (2026-11-10, fix/w47-b2)
+<a id="testing-sreport-leave"></a>
+
+`tools/tests/coop_sreport_leave.py` (suite `sreport_leave`, two games, Cell, ~4 min; BUG-0770, BUG-0783, BUG-0780;
+docs/REPORTING.md#reporting-session). A: the guest's upload hangs (`coop.sreport test stall`), the host gives the
+round up after 5 s (`coop.sreport stallwait 5`) and asks again: the guest's report arrives within 25 s. B: the guest
+leaves while its upload hangs and joins again: no "sending", no old question. C: the host leaves while asking: no
+round left, hosting again its Ask is not "Already asking". D: the guest leaves the host whose settings table it has
+and joins a host that sends none (`coop.corefix settings_in 0`): its own values again. E: a slow disk (`coop.sreport
+writedelay 3000`): every console answer of the host under 1 s while the zip is written. Twins:
+`SPORE_FIX_OFF=core.sreport_reask` fails A, `core.session_state_end` fails B and D, `core.sreport_write_worker` fails E.
+Pitfall: a test that leaves the co-op window open (a guest's window opens by itself for the host's question) made
+frames_loop's F9 check fail on warm games (BUG-0898): `warm_reset` now closes the window on both games
+(`coop.uistate 0`), and frames_loop presses F9 on a window it closed itself.
+## Space tool tests: sculpting, colouring, terraforming alone (2026-11-10, fix/w47-b2-space)
+<a id="testing-space-sculpt"></a>
+
+* `coop_space_sculpt_tool.py` (BUG-0763, ~3 min on one lane) and `coop_space_terra_elsewhere.py` (BUG-0883, ~2.5 min):
+  palette coordinates in docs/re/space.md#space-sculpt-colour; `coop.space sculpt` shows the relay counters, the last
+  sculpting spot (`last=`) and the active terrain's colours; `coop.space planet <PlanetID>` reads a planet record by id
+  (also while the ship is elsewhere).
+* Pitfall: `Player.land_retry(PLANET)` once ended on another planet of the system (place 0x40460035 instead of
+  0x41460035, lab 20261110-185942); check the place, not only `ctx() == 'planet'`.

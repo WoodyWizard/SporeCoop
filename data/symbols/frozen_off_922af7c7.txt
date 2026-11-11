@@ -217,3 +217,6 @@ SporeCoop::CreatureMinimap_Ptr ; BUG-0764: no partners on the minimap on GOG 201
 SporeCoop::PlanetTerrain_SetTerraforming ; BUG-0749: a partner's terraforming does not switch the planet's terraforming on (the deltas wait, the planet does not change)
 SporeCoop::cSpaceTrading_FillNPCStore ; BUG-0747: NPC stores are not seeded from their planet (each game its own store)
 Simulator::Cell::ExecuteInteraction ; BUG-0746: a knocked-out cell may still swallow meat whole on GOG 2016 (cell.ko_no_swallow not hooked there)
+SporeCoop::SpaceToolListener_HandleMessage ; BUG-0763: the terrain sculpting relay is off on GOG 2016
+SporeCoop::Terrain_GetActive ; BUG-0763: the terrain sculpting / colouring relay is off on GOG 2016
+Terrain::cTerrainSphere::SetColors ; BUG-0763: the planet colouring relay is off on GOG 2016

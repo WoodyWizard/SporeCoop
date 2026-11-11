@@ -4099,6 +4099,11 @@ COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification l
 uint8_t g_give_pick = net::kNoGiveTarget;
 bool g_give_pick_reset_fix = true;
 COOP_FIX("give.pick_reset", "BUG-0234", g_give_pick_reset_fix, "civ: the Give pick ends with its player and the session");
+// BUG-0770: the session settings of the host and the session report's round / question / upload end on every session
+// end (a Leave, a new host or join, the unload), not only when the network drops it (cb.disconnected)
+bool g_session_state_end_fix = true;
+bool g_settings_in = true; // not a lab switch: tests (coop.corefix settings_in 0) drop the host's settings tables
+COOP_FIX("core.session_state_end", "BUG-0770", g_session_state_end_fix, "core: the host's settings table and the session report end with every session");
 // The session-end structure (BUG-0214, GitHub #148; docs/06-testing.md#testing-fix-registry):
 //  block 1, the module calls: with session.end on every path calls every module; off, a path calls
 //    only what it called before BUG-0033 (Disconnect always called them all);
@@ -4190,6 +4195,10 @@ void end_session(EndPath path, bool cell)
     if (g_share_cine_each_fix) { // BUG-0232: no wait of an old session shortens a later one
         g_share_cine_since = 0;
         g_share_due_at = 0;
+    }
+    if (g_session_state_end_fix) { // BUG-0770 (state only: safe inside g_sess.update())
+        settings::on_disconnect();
+        sreport::on_session_end();
     }
 }
 
@@ -4338,6 +4347,8 @@ void setup_callbacks()
             return;
         }
         if (type == net::MSG_SETTINGS) { // F3: the host's session settings (Session class: wherever we play)
+            if (!g_settings_in)
+                return; // tests (coop.corefix settings_in 0): a host older than 0.7.12 sends no table
             settings::on_message(type, from, r);
             return;
         }
@@ -6150,7 +6161,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
                 {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix},
                 {"away_dna", &g_away_dna_fix}, {"away_editor", &g_away_editor_fix},
-                {"away_goal", &social::g_goal_owe_fix}};
+                {"away_goal", &social::g_goal_owe_fix}, {"settings_in", &g_settings_in}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

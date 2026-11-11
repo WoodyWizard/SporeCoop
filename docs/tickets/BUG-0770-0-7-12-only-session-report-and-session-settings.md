@@ -1,19 +1,19 @@
 ---
 id: BUG-0770
 title: 0.7.12-only: session report and session settings state survive a voluntary leave, re-host or re-join
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: 0.7.12 (rel/0.7.12, unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w47-b2
+commits: dbb4498b
+tests: sreport_leave
 signature:
-docs:
+docs: docs/REPORTING.md#reporting-session
 related: BUG-0767, BUG-0783
 ---
 
@@ -43,7 +43,10 @@ Inferred from the code (rel/0.7.12 7ec10ba3), confidence high:
 * Host: `g_round` is never dropped at a session end; `tick()` times its guests out after `kAnswerWait` and writes.
 
 ## Fix
-<!-- not fixed yet -->
+`end_session` (coop.cpp, block 3, every EndPath) now calls `settings::on_disconnect()` and the new
+`sreport::on_session_end()`: the guest's question / upload end as on a disconnect, the host's round is dropped unless its
+zip is being written, its own report path of that round is forgotten (state only: safe inside `g_sess.update()`).
+Twin switch `coop.fix core.session_state_end off` (the calls only from cb.disconnected, 0.7.12 F3 / F4).
 
 ## Fix idea
 One reset on every session end: call `settings::on_disconnect()`, `sreport::on_disconnect()` and a new host-side
@@ -52,7 +55,13 @@ One reset on every session end: call `settings::on_disconnect()`, `sreport::on_d
 old behaviour.
 
 ## Verification
-<!-- not fixed yet -->
+`coop_sreport_leave.py` (suite `sreport_leave`, two games, Cell), parts B (the guest leaves while its upload hangs,
+joins again), C (the host leaves while asking, hosts again) and D (the guest leaves the host whose table it had and
+joins a host that sends none: `coop.corefix settings_in 0`):
+* FAIL with `SPORE_FIX_OFF=core.session_state_end`: lab 20261110-183640 (B: after the rejoin the guest still says
+  "Sending your report to the host: 50%"; D: "guest (the host's table)", all.dna_pace=0 of the old host instead of its
+  own 1; C was not reached: the guest's stale upload took the next Ask).
+* PASS: lab 20261110-183103, 20261110-184220 (two runs, every part).
 
 ## How to test
 New lab test `coop_sreport_leave.py` (2 instances): (a) the host asks, the guest answers Send, `coop.sreport test
@@ -63,3 +72,4 @@ on it must not say "the host's table" and dna_pace is its own value. FAILS on re
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-10: fixed on fix/w47-b2 (end_session resets both modules; test sreport_leave).

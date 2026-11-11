@@ -401,6 +401,7 @@ struct Round {
     double t0 = 0;
     std::vector<Guest> guests;
     uint32_t cap = kMaxReport; // tests may lower it (never raise it)
+    double stall_wait = kStallWait; // tests may lower it (coop.sreport stallwait)
 
     Guest* find(uint8_t gid)
     {
@@ -489,7 +490,7 @@ struct Round {
     void tick(double now)
     {
         for (auto& g : guests) {
-            if ((g.st == State::Asked && now - t0 > kAnswerWait) || (g.st == State::Receiving && now - g.last > kStallWait)) {
+            if ((g.st == State::Asked && now - t0 > kAnswerWait) || (g.st == State::Receiving && now - g.last > stall_wait)) {
                 g.st = State::TimedOut;
                 std::vector<uint8_t>().swap(g.data);
             }

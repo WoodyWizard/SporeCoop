@@ -390,6 +390,7 @@ def warm_reset(host, guest, fixture, planet):
     slot = 10 + (st.get('slot', 9) - 9) % 10
     for c in (guest, host):
         c.call('coop.leave')
+        c.call('coop.uistate 0')  # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it)
     if not KEEP_HOLDS[0]:  # BUG-0679: no hold record of an earlier test (its file and its memory)
         for c in (guest, host):
             c.call('coop.space trade forget')

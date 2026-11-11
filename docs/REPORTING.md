@@ -466,3 +466,26 @@ flow control (600 reliable messages in flight on a LAN, 160 otherwise, at most 3
 the guest sends a report over 25 MB, more than it announced, a zip with `../../evil.bat` in it, or random bytes).
 Test: `tools/tests/coop_session_report.py` (suite `session_report`, four players, real clicks): see
 docs/06-testing.md#testing-session-report.
+
+**Session ends and busy guests (2026-11-10, fix/w47-b2: BUG-0770, BUG-0783, BUG-0780).**
+* Every session end (a Leave, hosting or joining while a session is open, the mod unload, a disconnect) ends the
+  guest's question and upload ("The session ended before your report was sent") and drops the host's round unless its
+  zip is being written (`sreport::on_session_end`, called from coop.cpp end_session; the host's session settings table
+  is dropped there too, `settings::on_disconnect`). Before, only a disconnect did: a guest that left while sending went
+  on uploading to its next host (pieces of a dead round, in front of its own messages) and was asked by the old host
+  in the next session; a host that left kept its round ("Already asking" when hosting again); a guest kept the old
+  host's settings until (or, with a host older than 0.7.12, instead of) the new host's table. Switch
+  `coop.fix core.session_state_end off`.
+* A guest still making or sending its report when the host asks again (the host asks only after its last round ended:
+  written, or the guest timed out) takes the new round at once: the report being made goes to it, an upload starts
+  again from its start under the new round. Before, the new round waited the full 120 s for an answer. Switch
+  `core.sreport_reask`.
+* The session zip is read and written on a worker thread (net::g_spawn_thread, the pinned thread of coop.cpp); the
+  result line comes back to the main thread. Measured on Wine (lane 4, a 1.2 MB guest report on an NVMe disk): the
+  write took 0-3 ms (`last_ms=`), so the stall was small with real reports; it grows with the reports (up to 64 + 3 x
+  25 MB) and the disk. Switch `core.sreport_write_worker` (off: outside the frame on the main thread). `coop.sreport
+  status` has a `write worker=... jobs_worker= jobs_main= last_ms=` line.
+* Test knobs: `coop.sreport test stall` (the guest's upload of the round it is asked stops halfway, once),
+  `stallwait <s>` (the host's wait for the next piece, 2-60 s), `writedelay <ms>` (a slow disk: that long per MB of
+  the session zip), `coop.corefix settings_in 0` (a guest drops the host's settings tables: a host older than 0.7.12).
+  Test: `tools/tests/coop_sreport_leave.py` (suite `sreport_leave`).

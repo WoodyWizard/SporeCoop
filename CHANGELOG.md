@@ -48,9 +48,18 @@
   (BUG-0769).
 
 ### Fixed
+- Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
+  the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
+- Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
+  the games of the partners on the same planet too; before, only the user saw the new terrain and colours (BUG-0763).
 - Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
   is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
   (BUG-0751).
+- Space: a colony building a guest buys while the host's ship is on another planet (or in orbit) is no longer lost
+  for the host's world: the host's game builds it once its ship is on that planet (BUG-0766).
+- Space: a building the host buys in a colony's city planner, and one a guest buys, now appear in every other
+  player's colony city too (on their planet, or when their ship gets there); before, only the buyer and the host had
+  it (BUG-0884).
 - Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
   partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game

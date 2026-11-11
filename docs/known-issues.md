@@ -2404,6 +2404,9 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   relayed; only the atmosphere / water / temperature deltas are (spacecoop.cpp K_TERRA). Inferred from the code.
 * Reproduce: two games on `space_free` on planet 01460035, a sculpting tool used by the host (tab W-226).
 * Ticket: BUG-0763.
+* FIXED (2026-11-10, fix/w47-b2-space, unreleased): both are relayed to partners on the same planet
+  (`space.terra_sculpt`, coop_space_sculpt_tool.py). Done with nobody else on the planet: still one game only (BUG-0900,
+  below).
 ## Space: a guest's colony planner building is lost while the host is on another planet (2026-11-08, fix/w46-b1-space)
 <a id="issue-space-planner-away"></a>
 
@@ -2411,6 +2414,9 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   otherwise the host's world never gets it (the money is spent for both). Log `civ: space planner: ... not built`.
 * Reproduce: coop_space_planner_build.py with the host's ship elsewhere.
 * Ticket: BUG-0766.
+* FIXED (2026-11-10, fix/w47-b2): the host keeps it until its ship is on that planet (civ.space_build_hold); the
+  host's own colony buildings reach the guests too (BUG-0884). Open: whether a building the mod makes is kept when
+  the planet is left and made again (BUG-0901).
 * 2026-11-08 (fix/w46-b1-tribe): a test problem, fixed in the test (the hut at 0.25-0.5 still stood, raiders left the
   raid; docs/re/tribe.md#tribe-hut-fall).
 ## Found in the audit of fork PR #196: not fixed yet (2026-11-10, plan/w47-pr196)
@@ -2534,3 +2540,19 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
+## Space: a colony building the mod builds may not survive leaving the planet (2026-11-10, fix/w47-b2)
+<a id="issue-space-mod-building-kept"></a>
+
+* What happens (suspected): the game makes a planet's cities again from its record when it becomes the active planet
+  (a house destroyed at run time came back); a building made by build_in_city (a partner's planner building) may not
+  be in that record, so it would vanish when the ship leaves and lands again. Not checked.
+* Reproduce: docs/tickets BUG-0901 (How: free the plot with the planner's own demolish, not `coop.civ unbuild`).
+* Ticket: BUG-0901.
+## Space: sculpting and colouring done alone stay in one game (2026-11-10, fix/w47-b2-space)
+<a id="issue-space-sculpt-alone"></a>
+
+* What happens: the sculpting / colouring relay (BUG-0763) reaches only partners whose ship is on that planet at the
+  hit; a partner who lands later or rejoins sees the old terrain and colours. Inferred from the code.
+* Reproduce: space_free, the guest sculpts / recolours 01460035 alone (coop_space_sculpt_tool.py's clicks), then the
+  host lands there: coop.ground at the spot and `coop.space sculpt` colours differ.
+* Ticket: BUG-0900.

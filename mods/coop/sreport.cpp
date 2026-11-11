@@ -3,11 +3,14 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "fixes.h"
@@ -25,6 +28,9 @@ static Ctx C;
 
 bool g_fix = true;
 COOP_FIX("core.session_report", "BUG-0767", g_fix, "core: the host's report asks every guest for its report (one session zip)");
+// BUG-0783: a guest still making or sending its report answers a new Ask at once (its report goes to the new round)
+bool g_reask_fix = true;
+COOP_FIX("core.sreport_reask", "BUG-0783", g_reask_fix, "core: a guest making or sending its report answers the host's next Ask");
 
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 #define LOG(...) H->log(M, SK_INFO, __VA_ARGS__)
@@ -87,6 +93,7 @@ static std::vector<std::string> g_last_entries;
 static bool g_writing;                    // the session zip is being written outside the frame
 static uint32_t g_round_seq;
 static unsigned g_rounds, g_refused, g_stops_sent;
+static double g_stall_wait = kStallWait;  // tests (coop.sreport stallwait <s>): the host's wait for the next piece
 
 static void send_stop(uint8_t to, Why w)
 {
@@ -109,13 +116,35 @@ static std::string summary_line(const Round& r)
     return s;
 }
 
-// outside the frame: the session zip from the host's report and every checked guest report, then the result line
-static void write_session(void*)
+// BUG-0780: the session zip is read and written on a worker thread (pinned, net::g_spawn_thread): the host's own report
+// (up to 64 MB) and every guest's (up to 25 MB each) were read and written in one call on the game's main thread, so
+// the host's game stood still meanwhile (no frame, no network: seconds on a slow disk). The result line comes back to
+// the main thread (tick). Off: the whole write outside the frame on the main thread (0.7.12 F4).
+bool g_write_worker_fix = true;
+COOP_FIX("core.sreport_write_worker", "BUG-0780", g_write_worker_fix, "core: the session report zip is written on a worker thread");
+static int g_write_delay_ms; // tests (coop.sreport writedelay <ms>): a slow disk, this long per MB written
+
+struct WriteJob {
+    std::unique_ptr<Round> r;
+    std::string host_zip, host_name, dir;
+    int delay_ms = 0;
+    // results (read on the main thread)
+    std::string line, ui_line, path, log, err;
+    std::vector<std::string> names;
+    double ms = 0;
+};
+static std::mutex g_job_mx;
+static WriteJob* g_job_done; // a finished job the main thread takes (tick)
+static unsigned g_jobs_worker, g_jobs_main;
+static double g_last_write_ms;
+
+// the file work: no SporeKit calls (it runs on a worker thread)
+static void do_write(WriteJob& j)
 {
-    std::unique_ptr<Round> r = std::move(g_round);
-    g_writing = false;
-    if (!r)
-        return;
+    LARGE_INTEGER f0, t0, t1;
+    QueryPerformanceFrequency(&f0);
+    QueryPerformanceCounter(&t0);
+    Round& rr = *j.r;
     std::set<std::string> taken;
     struct E {
         std::string name;
@@ -124,43 +153,50 @@ static void write_session(void*)
     std::vector<uint8_t> host_data;
     std::vector<E> entries;
     std::string text = "SporeCoop session report " + stamp() + "\n";
-    text += g_host_zip.empty() ? "Asked by the host (\"Ask the players for their reports\"), without the host's own report.\n"
+    text += j.host_zip.empty() ? "Asked by the host (\"Ask the players for their reports\"), without the host's own report.\n"
                                : "The host's \"Report a problem\": the host's report and every guest's it asked for.\n";
     text += "Each report is stored here exactly as it was received (never unpacked). Paths and the Windows user name\n"
             "are masked in every report; no player's network address is written into this file.\n\n";
-    if (!g_host_zip.empty()) {
-        if (read_file(g_host_zip, host_data, 64u << 20)) {
-            std::string n = entry_name("Host-", g_host_name, 0, taken);
+    if (!j.host_zip.empty()) {
+        if (read_file(j.host_zip, host_data, 64u << 20)) {
+            std::string n = entry_name("Host-", j.host_name, 0, taken);
             entries.push_back({n, &host_data});
             text += n + "  the host's own report (" + std::to_string((host_data.size() + 1023) / 1024) + " KB)\n";
         } else
-            text += "the host's own report could not be read: " + file_of(g_host_zip) + "\n";
+            text += "the host's own report could not be read: " + file_of(j.host_zip) + "\n";
     }
-    for (auto& g : r->guests) {
+    for (auto& g : rr.guests) {
         if (g.st == State::Sent) {
             std::string n = entry_name("Guest-", g.name, g.id, taken);
             entries.push_back({n, &g.data});
-            text += n + "  " + r->line_of(g) + "\n";
+            text += n + "  " + rr.line_of(g) + "\n";
         } else
-            text += "(no file)  " + r->line_of(g) + "\n";
+            text += "(no file)  " + rr.line_of(g) + "\n";
     }
-    std::string line;
     if (entries.empty()) {
-        line = "No report came: " + summary_line(*r);
-        g_ui_line = "No report came (see the chat)";
-        LOG("session report: round %u: nothing to write (%s)", r->id, summary_line(*r).c_str());
+        j.line = "No report came: " + summary_line(rr);
+        j.ui_line = "No report came (see the chat)";
+        j.log = "session report: round " + std::to_string(rr.id) + ": nothing to write (" + summary_line(rr) + ")";
     } else {
-        std::string dir = logs_dir(), base = "SporeCoop-session-report-" + stamp(), name = base + ".zip";
-        for (int k = 2; GetFileAttributesW(widen(dir + "\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES; k++)
+        std::string base = "SporeCoop-session-report-" + stamp(), name = base + ".zip";
+        for (int k = 2; GetFileAttributesW(widen(j.dir + "\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES; k++)
             name = base + "-" + std::to_string(k) + ".zip";
-        std::string path = dir + "\\" + name, part = path + ".part";
+        std::string path = j.dir + "\\" + name, part = path + ".part";
         FILE* f = _wfopen(widen(part).c_str(), L"wb");
         ZipOut z;
         SYSTEMTIME t;
         GetLocalTime(&t);
         z.dtime = (uint16_t)((t.wHour << 11) | (t.wMinute << 5) | (t.wSecond / 2));
         z.ddate = (uint16_t)(((t.wYear - 1980) << 9) | (t.wMonth << 5) | t.wDay);
-        z.out = [f](const uint8_t* p, size_t n) { return f && fwrite(p, 1, n, f) == n; };
+        size_t written = 0;
+        int delay = j.delay_ms;
+        z.out = [f, &written, delay](const uint8_t* p, size_t n) {
+            size_t before = written >> 20;
+            written += n;
+            if (delay > 0 && (written >> 20) != before)
+                Sleep((DWORD)delay); // tests: a slow disk
+            return f && fwrite(p, 1, n, f) == n;
+        };
         std::vector<std::string> names;
         for (auto& e : entries) {
             z.add(e.name, e.data->data(), e.data->size());
@@ -172,25 +208,90 @@ static void write_session(void*)
         if (f)
             ok = fclose(f) == 0 && ok;
         if (ok && MoveFileExW(widen(part).c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING)) {
-            g_last_zip = path;
-            g_last_entries = names;
-            line = "Session report saved: " + name + " - " + summary_line(*r);
-            g_ui_line = "Session report saved: " + name;
-            LOG("session report: round %u: %s (%u entries, %u KB): %s", r->id, path.c_str(), z.entries(), z.bytes() >> 10,
-                summary_line(*r).c_str());
+            j.path = path;
+            j.names = names;
+            j.line = "Session report saved: " + name + " - " + summary_line(rr);
+            j.ui_line = "Session report saved: " + name;
+            j.log = "session report: round " + std::to_string(rr.id) + ": " + path + " (" + std::to_string(z.entries()) +
+                    " entries, " + std::to_string(z.bytes() >> 10) + " KB): " + summary_line(rr);
         } else {
             DeleteFileW(widen(part).c_str()); // no partial file
-            line = "The session report could not be written (" + summary_line(*r) + ")";
-            g_ui_line = "The session report could not be written (see the chat)";
-            H->log(M, SK_ERROR, "session report: cannot write %s", path.c_str());
+            j.line = "The session report could not be written (" + summary_line(rr) + ")";
+            j.ui_line = "The session report could not be written (see the chat)";
+            j.err = "session report: cannot write " + path;
         }
     }
-    trace::line("report", "round %u done: %s", r->id, summary_line(*r).c_str());
-    g_line = line;
+    QueryPerformanceCounter(&t1);
+    j.ms = (t1.QuadPart - t0.QuadPart) * 1000.0 / f0.QuadPart;
+}
+
+// main thread: the result line of a written round
+static void finish_write(WriteJob* j, const char* where)
+{
+    if (!j->err.empty())
+        H->log(M, SK_ERROR, "%s", j->err.c_str());
+    else
+        LOG("%s", j->log.c_str());
+    LOG("session report: round %u written in %.0f ms (%s)", j->r->id, j->ms, where);
+    g_last_write_ms = j->ms;
+    if (!j->path.empty()) {
+        g_last_zip = j->path;
+        g_last_entries = j->names;
+    }
+    g_ui_line = j->ui_line;
+    trace::line("report", "round %u done: %s", j->r->id, summary_line(*j->r).c_str());
+    g_line = j->line;
+    g_writing = false;
     if (C.feed)
-        C.feed(line);
+        C.feed(j->line);
     if (C.chat_log)
-        C.chat_log("* " + line);
+        C.chat_log("* " + j->line);
+    delete j;
+}
+
+static void write_worker(void* p)
+{
+    auto* j = static_cast<WriteJob*>(p);
+    do_write(*j);
+    std::lock_guard<std::mutex> lk(g_job_mx);
+    g_job_done = j;
+}
+
+// outside the frame on the main thread (core.sreport_write_worker off, or no thread could be started)
+static void write_main(void* p)
+{
+    auto* j = static_cast<WriteJob*>(p);
+    do_write(*j);
+    g_jobs_main++;
+    finish_write(j, "main thread");
+}
+
+// the round is over: its session zip from the host's report and every checked guest report
+static void start_write()
+{
+    auto* j = new WriteJob;
+    j->r = std::move(g_round);
+    j->host_zip = g_host_zip;
+    j->host_name = g_host_name;
+    j->dir = logs_dir();
+    j->delay_ms = g_write_delay_ms;
+    g_writing = true;
+    if (g_write_worker_fix && net::g_spawn_thread && net::g_spawn_thread(write_worker, j)) {
+        g_jobs_worker++;
+        return;
+    }
+    H->run_outside_frame(write_main, j);
+}
+
+static void take_written()
+{
+    WriteJob* j = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_job_mx);
+        std::swap(j, g_job_done);
+    }
+    if (j)
+        finish_write(j, "worker thread");
 }
 
 std::string ask(const std::string& host_zip)
@@ -233,6 +334,7 @@ std::string ask(const std::string& host_zip)
     for (auto& g : r->guests)
         C.sess->send_reliable_to(g.id, net::MSG_REPORT, w);
     g_host_zip = host_zip;
+    r->stall_wait = g_stall_wait;
     g_round = std::move(r);
     g_rounds++;
     g_line = "Asking " + std::to_string(g_round->guests.size()) + " player(s) for their reports...";
@@ -315,8 +417,9 @@ static std::vector<uint8_t> g_out; // the zip being sent
 static uint32_t g_out_size;        // announced (tests may send more)
 static size_t g_out_off;
 static std::string g_guest_line;
-static std::string g_test = "none"; // tests: none | big | overrun | badname | junk
-static unsigned g_asks, g_sent_reports, g_declined, g_stopped;
+static std::string g_test = "none"; // tests: none | big | overrun | badname | junk | stall
+static uint32_t g_stall_round;      // tests (stall): the round whose upload stops halfway (once)
+static unsigned g_asks, g_sent_reports, g_declined, g_stopped, g_reasked;
 static bool g_make_queued;
 
 static void send_answer(bool send, uint32_t size)
@@ -427,7 +530,27 @@ static void guest_message(uint8_t kind, net::Reader& r)
             return;
         g_asks++;
         if (g_gs == GState::Making || g_gs == GState::Sending) {
-            LOG("session report: asked again while sending: the new round waits for no answer");
+            if (!g_reask_fix || a.round == g_ask_round) {
+                LOG("session report: asked again while sending: the new round waits for no answer");
+                return;
+            }
+            // BUG-0783: the host asks again only after its last round ended (written or given up), so the report
+            // being made or sent goes to the new round: the player already chose Send in this session. Making: the
+            // answer goes when it is made. Sending: the new round is answered now and the upload starts again from
+            // its start (the pieces still queued carry the old round: the host drops them).
+            uint32_t old = g_ask_round;
+            g_ask_round = a.round;
+            g_ask_host = a.host.substr(0, 40);
+            g_ask_at = now_s();
+            g_reasked++;
+            if (g_gs == GState::Sending) {
+                g_out_off = 0;
+                send_answer(true, g_out_size);
+                g_guest_line = "Sending your report to the host...";
+            }
+            LOG("session report: asked again (round %u, was %u) while %s: my report goes to the new round", a.round, old,
+                g_gs == GState::Sending ? "sending" : "making");
+            trace::line("report", "asked again while busy (round %u)", a.round);
             return;
         }
         g_ask_round = a.round;
@@ -474,6 +597,10 @@ static void guest_tick()
     int rtt = C.sess->rtt_of(0);
     size_t window = rtt >= 0 && rtt < 40 ? 600 : 160;
     int budget = 300;
+    if (g_test == "stall" && !g_stall_round)
+        g_stall_round = g_ask_round;
+    if (g_test == "stall" && g_stall_round == g_ask_round && g_out_off >= g_out.size() / 2)
+        return; // tests: this round's upload stops halfway (the host times it out), a later round's goes through
     while (budget-- > 0 && C.sess->pending_to(0) < window && g_out_off < g_out.size()) {
         Piece p;
         p.round = g_ask_round;
@@ -510,6 +637,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
 
 void tick()
 {
+    take_written(); // BUG-0780
     if (!C.sess)
         return;
     if (is_guest())
@@ -522,10 +650,8 @@ void tick()
         for (size_t i = 0; i < before.size(); i++)
             if (before[i] != g_round->guests[i].st)
                 LOG("session report: %s", g_round->line_of(g_round->guests[i]).c_str());
-        if (g_round->finished()) {
-            g_writing = true;
-            H->run_outside_frame(write_session, nullptr);
-        }
+        if (g_round->finished())
+            start_write();
     }
 }
 
@@ -552,21 +678,41 @@ void on_disconnect()
         g_guest_line = "The session ended before your report was sent";
     g_gs = g_gs == GState::Idle ? GState::Idle : GState::Done;
     std::vector<uint8_t>().swap(g_out);
+    g_out_off = 0;
+}
+
+// BUG-0770: every session end (end_session in coop.cpp, every path; it may run inside the network update: state only,
+// no sends). The guest's question or upload ends as on a disconnect; the host's round is dropped unless its zip is
+// being written (the write job owns it), its own report of that round forgotten.
+void on_session_end()
+{
+    on_disconnect();
+    if (g_round && !g_writing) {
+        LOG("session report: round %u dropped: the session ended", g_round->id);
+        trace::line("report", "round %u dropped at the session end", g_round->id);
+        g_round.reset();
+        g_line = g_ui_line = "";
+    }
+    if (!g_writing)
+        g_host_zip.clear();
 }
 
 std::string status()
 {
     static const char* gs[] = {"idle", "asked", "making", "sending", "done"};
     char b[256];
-    snprintf(b, sizeof b, "sreport fix=%d round=%s rounds=%u refused=%u stops=%u guest=%s asks=%u sent=%u declined=%u stopped=%u test=%s\n",
+    snprintf(b, sizeof b, "sreport fix=%d round=%s rounds=%u refused=%u stops=%u guest=%s asks=%u sent=%u declined=%u stopped=%u reasked=%u test=%s\n",
              (int)g_fix, g_round ? (g_writing ? "writing" : "asking") : "none", g_rounds, g_refused, g_stops_sent,
-             gs[(int)g_gs], g_asks, g_sent_reports, g_declined, g_stopped, g_test.c_str());
+             gs[(int)g_gs], g_asks, g_sent_reports, g_declined, g_stopped, g_reasked, g_test.c_str());
     std::string s = b;
     s += "hostline '" + host_line() + "'\n";
     std::string gl;
     int asked = guest_prompt(gl);
     s += "guestline " + std::to_string(asked) + " '" + gl + "'\n";
     s += "last " + (g_last_zip.empty() ? std::string("-") : file_of(g_last_zip)) + "\n";
+    snprintf(b, sizeof b, "write worker=%d jobs_worker=%u jobs_main=%u last_ms=%.0f delay_ms=%d\n", (int)g_write_worker_fix,
+             g_jobs_worker, g_jobs_main, g_last_write_ms, g_write_delay_ms);
+    s += b;
     s += "entries";
     for (auto& e : g_last_entries)
         s += " " + e;
@@ -591,15 +737,26 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (sub == "test" && argc > 2) {
         std::string t = argv[2];
-        if (t != "none" && t != "big" && t != "overrun" && t != "badname" && t != "junk") {
-            SAY("test: none | big | overrun | badname | junk\n");
+        if (t != "none" && t != "big" && t != "overrun" && t != "badname" && t != "junk" && t != "stall") {
+            SAY("test: none | big | overrun | badname | junk | stall\n");
             return 1;
         }
         g_test = t;
+        g_stall_round = 0;
         SAY("sreport test=%s\n", g_test.c_str());
         return 0;
     }
-    SAY("coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk\n");
+    if (sub == "writedelay" && argc > 2) { // tests: a slow disk (ms per MB of the session zip)
+        g_write_delay_ms = std::max(0, std::min(5000, atoi(argv[2])));
+        SAY("sreport writedelay=%d\n", g_write_delay_ms);
+        return 0;
+    }
+    if (sub == "stallwait" && argc > 2) { // tests: the host's wait for the next piece of a report (s, 2..60)
+        g_stall_wait = std::max(2.0, std::min(kStallWait, atof(argv[2])));
+        SAY("sreport stallwait=%.0f\n", g_stall_wait);
+        return 0;
+    }
+    SAY("coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk|stall | stallwait <s> | writedelay <ms>\n");
     return 1;
 }
 
