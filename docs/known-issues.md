@@ -2572,3 +2572,14 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * FIXED (2026-11-10, fix/w47-colony, unreleased): a partner's hits for a planet this game is not on are kept and done
   5 s after landing there (`space.sculpt_hold`, coop_space_sculpt_tool.py --away). Still open: a player who joins or
   rejoins after the hits does not get them.
+
+## Creature: the second attacker stops behind the partner's creature (2026-11-10, fix/w47-play-bots)
+<a id="issue-creature-attack-behind-partner"></a>
+
+* A player who attacks an animal the partner already fights, coming from the partner's side: the attack key walks
+  the creature up and stops it about 2 m short, behind the partner's creature; further presses do nothing until the
+  player walks around by hand. A click on the animal often picks the partner's creature in front of it (the attack
+  key then does nothing). docs/re/creature.md#creature-walk-and-use-blocked, #creature-combat-click-target.
+* Reproduce: two games on the creature fixture, combat stance; the host clicks an animal and presses 1, then the
+  guest clicks the same animal from the host's side and presses 1 (the probes of fix/w47-play-bots, 2026-11-10).
+* Ticket: BUG-0913.

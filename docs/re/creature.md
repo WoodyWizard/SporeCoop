@@ -3965,3 +3965,26 @@ BUG-0618 (third round). GOG 2024, lab lanes 9 and 10, play_creature's hunt trace
   took any target of the game for the animal it hunts. In the runs with +0 joint hits one bot bit the animal while
   the other stood with the partner's creature (status 12, counted as "recharging") or a herd mate as its target
   (wrong target in 249-953 of a player's looks per 10 minutes).
+
+## The walk-and-use stops behind a creature in its way: the second attacker (2026-11-10, fix/w47-play-bots)
+<a id="creature-walk-and-use-blocked"></a>
+
+BUG-0618, BUG-0913. GOG 2024, lab lane 9, two probes on the creature fixture (the scripts' output:
+out/hunt_probe1.txt, out/hunt_probe2.txt of the branch; `coop.abilities reach` and `coop.avatar` four times a second).
+* ✔ (runtime) The host walks to an animal with the bite key (44.6 m, in reach at gap 0.8-0.9 m after 15 s) and stands
+  there. The guest, coming from the same side (both start at the nest), with the right target (+0xE7C = its proxy of
+  the animal) and status 0, walks 44 m in 13 s and **stops at gap 2.0-2.3 m**, 1.7 m from the host's creature (the
+  puppet in its game), out of the bite's reach (1.0 m). Every further key press (one every 3 s, then every 0.7 s, for
+  100 s) does nothing: the creature does not move and does not bite. The same in the next round at the same
+  animal (the guest still at 2.3 m).
+* ✔ (runtime) After a walk to one side (a click on the ground beside the animal, 1.3 s) the next key press gets it
+  there: in reach after 1-4 such steps (25.6 s in all in one case). With both in reach, both biting: 4 joint hits
+  out of 6 hits on one animal.
+* ~ Inferred: the game's creatures do not walk through each other (the locomotion's avoidance or the physics,
+  #creature-contact-pairs: the contact callback skips creature pairs) and the walk-and-use goal (0x20) takes the
+  straight way; a partner's puppet is held at the partner's place by the mod's drive, so it does not give way.
+  Not checked: whether an NPC in the way stops the walk the same way, and whether a pack member of the game does.
+* What it means for players (BUG-0913, open): the second player to attack an animal the partner fights must walk
+  around the partner by hand; the attack key alone leaves the creature standing behind the partner.
+* play_creature's bots (BUG-0618): the bot that pressed the key again every 2.5 s stood there until its hunt
+  timed out (traces `W5 W5 W5 ...`, `W1 W2 W1 ...`); now it steps to a side when the walk does not get nearer.

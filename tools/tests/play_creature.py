@@ -260,6 +260,7 @@ class Player(threading.Thread):
         t0, last_hp, hits = time.time(), None, 0
         target, walk_at, walk_gap = None, 0.0, None  # BUG-0618: the game's target, the last walk-and-use start
         mine, mine_at, miss = None, 0.0, 0  # the animal's creature in our game, when it was read, clicks that missed
+        stalls, alive_at = 0, time.time()   # walk-and-use starts that did not get nearer; the last death check
         while time.time() - t0 < 35 and time.time() < self.deadline:
             info = self.world.npcs().get(key)
             if info is None:
@@ -280,6 +281,10 @@ class Player(threading.Thread):
             o = self.objs().get(key) or self.look_for(key, 2)
             if not o:
                 return 'lost', hits
+            if not OLD_TARGET and time.time() - alive_at > 3:
+                alive_at = time.time()
+                if uifind.shown(self.con, 'You were killed'):  # (the caption waits for OK: step() answers it)
+                    return 'died', hits
             if OLD_ATTACK:  # BUG-0618: the old bot, a key 0.2-0.5 s after every click
                 if self.in_view(o[1], o[2]):
                     self.do(f'click {o[1]} {o[2]}')
@@ -329,10 +334,15 @@ class Player(threading.Thread):
                     walk_at, walk_gap = 0.0, None  # (the old 1e9 sentinel kept the first walk key back)
                     miss = 0 if on_it else miss + 1
                     if not on_it and miss % len(CLICK_UP) == 0:
-                        # something stands in front of it on this screen: look from another side, as a player does
-                        dx = self.rng.choice([-1, 1]) * self.rng.randint(120, 220)
-                        self.do(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
-                        self.add('look_around')
+                        # something stands in front of it on this screen (the partner's creature, mostly): look
+                        # from another side, as a player does: turn the camera, the next time walk to one side
+                        if (miss // len(CLICK_UP)) % 2:
+                            dx = self.rng.choice([-1, 1]) * self.rng.randint(120, 220)
+                            self.do(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
+                            self.add('look_around')
+                        else:
+                            self.side_step(o, miss // len(CLICK_UP))
+                            self.tr('S')
                 self.sleep(0.2, 0.4)
                 if not on_it:
                     continue
@@ -350,14 +360,15 @@ class Player(threading.Thread):
                 # partner hunts this animal too and is near (a Kook dies ~10 s after the leader reaches it: the
                 # joiner came too late and the joint table stayed at +0 though both hunted the same animals)
                 # W47: both hold it (the joiner bit alone while the leader walked up: 6 hp, a bite every 1.7 s), and
-                # until the partner stands in reach of the same animal, not within 10 m of us: 12 s at most while
-                # the partner hunts it, 5 s when it does not
+                # until the partner stands in reach of the same animal, not within 10 m of us: 14 s at most while
+                # the partner hunts it, 5 s when it does not. (The walk-and-use bites once when it arrives: the
+                # hold keeps the other 5 hp for the pack.)
                 if OLD_TARGET:
                     hold = why == 'lead' and time.time() - self.first_reach < 8 and \
                         not (self.partner_hunts(key) and (self.partner_dist() or 99) < 10)
                 else:
                     hold = not self.partner_in_reach(key) and \
-                        time.time() - self.first_reach < (12 if self.partner_hunts(key) else 5 if why == 'lead' else 0)
+                        time.time() - self.first_reach < (14 if self.partner_hunts(key) else 5 if why == 'lead' else 0)
                 if not self.bites and hold:
                     self.held += 1
                     self.tr('h')
@@ -373,8 +384,19 @@ class Player(threading.Thread):
                     self.add('wait_recharge')
                     self.tr(f's{st}')
                 self.sleep(0.25, 0.45)
+            elif not OLD_TARGET and walk_gap is not None and time.time() - walk_at > (1.5 if r['gap'] < 8 else 2.5) \
+                    and r['gap'] > walk_gap - (0.3 if r['gap'] < 8 else 1.0) and (r['gap'] < 8 or stalls):
+                # BUG-0618 (W47, docs/re/creature.md#creature-walk-and-use-blocked): the game's walk-and-use stops
+                # where another creature stands in its way (the partner at the prey: 2 m short, for as long as
+                # both stand there) and further key presses do nothing: a player walks around it. A click on the
+                # ground to one side of the animal, then the key again.
+                stalls += 1
+                self.side_step(o, stalls)
+                self.tr(f'S{r["gap"]:.0f}')
+                walk_at, walk_gap = 0.0, None
             elif walk_gap is None or (time.time() - walk_at > 2.5 and r['gap'] > walk_gap - 1.0):
                 # not walking to it (yet, or stopped): the key starts the game's walk-and-use
+                stalls += walk_gap is not None
                 self.reach_note(k, r)
                 self.do('key ' + k)
                 self.add('attacks')
@@ -386,6 +408,15 @@ class Player(threading.Thread):
                     walk_at, walk_gap = time.time(), r['gap']
                 self.sleep(0.3, 0.5)
         return 'timeout', hits
+
+    def side_step(self, o, n):
+        """walk a few metres to one side of the animal at screen point o (a click on the ground; sides in turn)"""
+        side = 1 if (n + (self.name == 'guest')) % 2 else -1
+        x = max(80, min(self.W - 80, o[1] + side * self.rng.randint(200, 300)))
+        y = max(int(self.H * 0.45), min(self.H - 200, o[2] + self.rng.randint(0, 40)))
+        self.do(f'click {x} {y}')
+        self.add('side_step')
+        self.sleep(1.2, 1.6)
 
     def reach(self):
         """the game's reach of the combat keys: {'target': ptr | None, 'dead', 'gap', 'keys': {key: (reach,
