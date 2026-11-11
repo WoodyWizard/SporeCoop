@@ -5408,6 +5408,13 @@ own blip list read back (`coop.find map`, a unit direction: compare directions t
   fixture (a star system) the ships stay together (`coop.space shipaway` is reverted by the game: Space gets tag rows,
   no arrow shot). `coop.space away` is another test switch (act as outside Space), not a move.
 * Twins: `SPORE_FIX_OFF=find.arrows` / `find.colors` / `find.map` fail (lab 20261108-160354 / -160500 / -160615).
+* BUG-0939 (2026-11-11, `find.placed`): `find_partners_tribe` ends with the guest without a place: its pointer pinned
+  at 0 0 0 (`coop.npc marker 0 0 0` is exactly the state of a pointer that was never put on the planet: a game whose
+  mouse never moved over it, so every lab game unless a test pins or clicks) and its chief dropped
+  (`coop.tribe drop_chief 1`; the fixture's guest has one adult, no new chief). The host must have no `coop.find`
+  row, no label and no blip for it, and all of them again once the pointer is pinned on the planet. Twin
+  `SPORE_FIX_OFF=find.placed` fails (lab 20261111-111249: an arrow to 0 0 0, 525 m); PASS lab 20261111-111141. A wait
+  for "a row exists" after moving a pointer returns the stale row: wait for the row at the new place.
 * Two lab runs started on overlapping lanes (`--lanes 10 --skip 1..8` while a `--lane 9` run played) took the busy
   lane 9 and killed its games: run the tests of one branch in one lab command.
 ## Space: a guest's ship against its path, the NPC store compared (2026-11-08, fix/w46-b1-space)

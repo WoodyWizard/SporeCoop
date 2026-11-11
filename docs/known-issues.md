@@ -2703,3 +2703,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   (campaign_space, seen once). Ticket: BUG-0938
 * Tribe: right after Creature -> Tribe the host draws an arrow "504 m" to the planet's centre for a guest that has
   no chief yet (campaign, one frame). Ticket: BUG-0939
+* (2026-11-11, fix/w47-arrow-origin) BUG-0939 fixed: a partner without a place in this world (no chief yet and its
+  pointer never put on the planet: position 0 0 0) has no arrow, blip or name (`find.placed`).
