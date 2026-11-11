@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan), found while checking fork PR #196 BUG-9012
 role: guest
 versions: 0.7.11, 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.11.2
 branch: fix/w47-proxy-destroy
 commits: aa725a1a
 tests: npc_destroy_once, npc_destroy_once_tribe
@@ -63,3 +63,4 @@ coop_npc_destroy_once.py: 3 living proxies near the guest, `coop.npc gamekill` e
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-10: fixed on fix/w47-proxy-destroy (hotfix for 0.7.11.2): braces, switch npc.destroy_once, test npc_destroy_once.
+- 2026-11-10: released in 0.7.11.2.

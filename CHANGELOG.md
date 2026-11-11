@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.11.2] - 2026-11-10
+
 ### Fixed
 - Creature, Tribe: a guest's game could crash now and then when an animal's body was removed by the guest's own game
   (its tribe killed it, a cleanup) and the host's animal then left: the mod removed that body a second time. This came
