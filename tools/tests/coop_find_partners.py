@@ -197,6 +197,8 @@ def creature(ck, host, guest, stage):
         if r['kind'] == 'tag' and tag_dir is None:  # 3. the host on the guest's screen: the name tag, no arrow
             tag_dir = a
             shot(guest, f'find_{stage}_onscreen.png')
+            twoinst.keyframe(f'{stage}_tag', 'the host on the guest\'s screen: its name tag in the host\'s colour over '
+                                             'it, no arrow; the host\'s own screen shows the guest 80 m away')
         if r['kind'] == 'arrow' and r['filled'] == '1' and r['walked'] == '0':
             found = a
             if tag_dir is not None:
@@ -217,6 +219,8 @@ def creature(ck, host, guest, stage):
         ck(min(x, y, sw - x, sh - y) < 60, f'the arrow is at the screen edge ({x:.0f}, {y:.0f})')
         ck(65 < float(r['dist']) < 100, f'the distance shown is about 80 m ({r["dist"]})')
         path = shot(guest, f'find_{stage}_arrow.png')
+        twoinst.keyframe(f'{stage}_arrow', 'the host off the guest\'s screen: an arrow at the screen edge in the host\'s '
+                                           'colour (pink) pointing toward it, the distance about 80 m')
         n = arrow_pixels(path, r, sw, host_rgb)
         print(f'  arrow pixels in the host\'s colour: {n}', flush=True)
         ck(r['drawn'] == '1' and n >= 3, f"the guest's screen shows the arrow in the host's colour ({n} pixels)")

@@ -24,7 +24,7 @@ import time
 
 import lane
 from play_space import Player
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 PLANET = '01460035'  # space_empire's colony in the home system
 
@@ -77,6 +77,7 @@ def main():
     for p in pirates:
         print(f'  host shoots #{p}:', host.call(f'coop.fleet shoot {p} 1')['out'].strip(), flush=True)
     hs, gs, both, hn, gn, seq, t0 = 0, 0, 0, 0, 0, [], time.time()
+    kf = [False]
     while time.time() - t0 < 45:
         h, g = projectiles(host), projectiles(guest)
         hs += h > 0
@@ -85,6 +86,10 @@ def main():
         hn += h
         gn += g
         seq.append(f'{h}/{g}')
+        if h > 0 and g > 0 and not kf[0]:  # the first sample with shots in both games
+            kf[0] = True
+            keyframe('beams', 'the host\'s pirates fire: beams or projectiles on both screens, the ships drawn with '
+                              'their models, the planet below, the Space HUD in place')
         if time.time() - t0 > 20 and hs == 0:  # no fight yet: shoot them again
             for p in pirates:
                 host.call(f'coop.fleet shoot {p} 1')
@@ -101,6 +106,7 @@ def main():
     gme = ships(guest).get('me')
     print(f'  guest ship hp {g_hp0} -> {gme}', flush=True)
     ck(gme is not None, "the guest's ship is still there")
+    keyframe('end', 'after the fight: both ships over the colony planet, no black screen, the guest\'s ship drawn')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -20,7 +20,7 @@ import time
 
 from coop_tribe_gather_stall import ai, pos_of
 from coop_tribe_tools import dist, members
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 HUT = '1E4DAAE'
 
@@ -145,6 +145,8 @@ def main():
             print('  cut: ' + host.call('coop.tribe huthp %.2f %.2f %.2f %.0f' % (hp + (a.hp,)))['out'].strip(), flush=True)
             cut = True
     ck(fell is not None, f'the raid ended the hut (its state 2 in the host\'s game, {fell and round(fell)} s)')
+    keyframe('hut_fell', 'the raided village: the hut down on both screens, the raiders on the ground round it, no body '
+                         'standing up, no member in the air')
     for mid in raiders:
         out, _, _ = ai(host, mid)
         print(f'  after the fall #{mid}: {out[:480]}', flush=True)
@@ -186,6 +188,8 @@ def main():
         time.sleep(3)
     print(f'  stuck raiders (round, moved m, tree ticks in the wait): {stuck}', flush=True)
     ck(not stuck, f'every raider walks on a new order after the village fell ({stuck})')
+    keyframe('after_orders', 'after the new orders: both games in Tribe play (no cinematic left), the members walking '
+                             'with a walk pose (no T-pose, no slide), the tribe panel in place')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

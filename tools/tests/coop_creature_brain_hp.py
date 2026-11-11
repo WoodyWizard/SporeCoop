@@ -21,7 +21,7 @@ import re
 import time
 
 import creations_state
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 
 def hp_info(con):
@@ -61,6 +61,8 @@ def run(host, guest):
     print(f'  before: host {h0}, guest {g0}', flush=True)
     ck(h0 and g0 and h0['level'] == 0 and g0['level'] == 0, 'both at brain level 0')
     ck(g0 and not g0['same'], 'the guest plays its own creature (not the world\'s player species)')
+    keyframe('own_creature', 'the guest plays its own creature: on both screens the guest is drawn with its own model and '
+                             'paint (not the host\'s species), both on the ground, health bars in place')
     host.call('coop.dna add 250')
     h1 = g1 = None
     t0 = time.time()
@@ -76,6 +78,7 @@ def run(host, guest):
     h1, g1 = hp_info(host), hp_info(guest)
     print(f'  after: host {h1}, guest {g1}', flush=True)
     ck(h1 and g1 and h1['level'] == 1 and g1['level'] == 1, 'both games at brain level 1')
+    keyframe('brain1', 'both at brain level 1: no upgrade caption left open, both creatures drawn as before (no T-pose)')
     if not (h0 and g0 and h1 and g1):
         ck.faults(host=host, guest=guest)
         return ck.result()

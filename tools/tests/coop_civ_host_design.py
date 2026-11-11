@@ -135,6 +135,8 @@ def main():
         print(f'  guest mirror #{new}: model key {mk:08X} -> model {gh} (host {ha}, guest own {hb})', flush=True)
         ck(gh == ha, f'the guest\'s mirror of the host\'s vehicle shows the host\'s design ({gh}, host {ha}, '
                      f'the guest\'s own creation {hb})')
+        twoinst.keyframe('mirror', 'the host\'s new vehicle and the guest\'s mirror of it look alike where they are on '
+                                   'screen (the host\'s design, not the guest\'s creation of that id), the Civ HUD in place')
     if new is not None:
         # a vehicle of the loaded world: the guest joins again, its game loads the host's world (with that
         # vehicle and the design key in the save) and binds the loaded vehicle as the mirror
@@ -160,6 +162,8 @@ def main():
               guest.call('coop.creations designs')['out'].strip(), flush=True)
         ck(gh2 == ha, f'after a world load the guest\'s mirror of that vehicle shows the host\'s design ({gh2}, host {ha}, '
                       f'the guest\'s own {hb})')
+        twoinst.keyframe('after_rejoin', 'after the guest\'s rejoin: both in Civ play (no loading screen), the vehicles '
+                                         'with the host\'s designs')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

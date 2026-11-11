@@ -63,12 +63,13 @@ arrows and minimap marks to find each other, player colours, and one report for 
   Ice Comet and the like) change the planet in the partners' games too (their game received the change but never
   applied it), also when no partner is on that planet at the time (before, the change was lost for them and the
   planet kept different T-scores); and the terrain sculpting tools (raise, lower, flatten...) and the planet
-  colouring tools change it in the games of the partners on the same planet (before, only the user saw the new
-  terrain and colours) (BUG-0749, BUG-0883, BUG-0763).
+  colouring tools change it in the partners' games, at once when they are on the same planet, else when their ship
+  lands there (before, only the user saw the new terrain and colours) (BUG-0749, BUG-0883, BUG-0763, BUG-0900).
 - Space: buildings bought in a colony's city planner now appear in every player's game. A guest's building is built
   in the host's game (before, it stayed in the guest's game only while the money was spent for everybody), also when
   the host's ship is on another planet or in orbit (it is built once the ship gets there), and a building the host
-  or a guest buys appears in every other player's colony city too (BUG-0751, BUG-0766, BUG-0884).
+  or a guest buys appears in every other player's colony city too; such a building stays when a ship leaves the
+  planet and lands again, and in the saves (BUG-0751, BUG-0766, BUG-0884, BUG-0901).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
   made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
 - Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not

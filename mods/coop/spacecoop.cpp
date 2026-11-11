@@ -1249,11 +1249,96 @@ static void SK_THISCALL h_SetColors(void* terrain, int ramp, uint32_t a, uint32_
 
 static void* active_terrain() { return a_TerrainActive ? cdecl_call<void*>(a_TerrainActive) : nullptr; }
 
+// BUG-0900: a partner's sculpting / colouring for a planet this game is not on was dropped (apply_* return), so a
+// player who sculpted alone, or a partner who landed later, had the old terrain and colours for good. This game now
+// keeps such a hit with its planet (session state, 50 sculpts and 64 colours a planet, as the sphere keeps 50
+// effects) and repeats it in the order it came 5 s after its ship is on that planet. Off: dropped (0.7.11).
+static bool g_fix_sculpt_hold = true;
+COOP_FIX("space.sculpt_hold", "BUG-0900", g_fix_sculpt_hold,
+         "space: a partner's sculpting and colouring for a planet this game is not on is done when it lands there");
+struct HeldTerrainHit {
+    uint32_t place, world;
+    bool colour;
+    uint32_t effect; // sculpt: the terrain effect's id; colour: the ramp
+    uint32_t a, b;   // colour indices
+    uint8_t xf[0x38];
+};
+static std::vector<HeldTerrainHit> g_terrain_held;
+static uint32_t g_terrain_held_n, g_terrain_held_done, g_terrain_place_seen;
+static double g_terrain_place_since;
+static void apply_sculpt(uint32_t place, uint32_t effect, const uint8_t xf_in[0x38]);
+static void apply_colour(uint32_t place, int ramp, uint32_t a, uint32_t b);
+
+static void terrain_hold(const HeldTerrainHit& h)
+{
+    size_t same = 0;
+    for (auto& o : g_terrain_held)
+        same += o.place == h.place && o.colour == h.colour;
+    if (same >= (h.colour ? 64u : 50u) || g_terrain_held.size() >= 1024)
+        for (auto it = g_terrain_held.begin(); it != g_terrain_held.end(); ++it)
+            if (g_terrain_held.size() >= 1024 || (it->place == h.place && it->colour == h.colour)) {
+                g_terrain_held.erase(it); // the oldest of that planet goes
+                break;
+            }
+    g_terrain_held.push_back(h);
+    g_terrain_held_n++;
+}
+
+// a received hit for a planet this game is not on (or just came to: its terrain settles first)
+static bool terrain_hold_if_away(uint32_t place, bool colour, uint32_t effect, uint32_t a, uint32_t b,
+                                 const uint8_t* xf)
+{
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    bool here = mine == place && in_space() && active_terrain() && H->time_seconds() - g_terrain_place_since >= 5.0;
+    if (here || !g_fix_sculpt_hold || g_applying || !(place & 0x40000000u))
+        return false;
+    HeldTerrainHit h{place, modes::current_world(), colour, effect, a, b, {}};
+    if (xf)
+        memcpy(h.xf, xf, sizeof h.xf);
+    terrain_hold(h);
+    return true;
+}
+
+// every frame in Space: the kept hits of the planet this game is on, 5 s after it came
+static void terrain_hold_tick(double now)
+{
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    if (mine != g_terrain_place_seen) {
+        g_terrain_place_seen = mine;
+        g_terrain_place_since = now;
+    }
+    if (g_terrain_held.empty() || !(mine & 0x40000000u) || now - g_terrain_place_since < 5.0 || !active_terrain())
+        return;
+    uint32_t world = modes::current_world();
+    std::vector<HeldTerrainHit> due;
+    for (auto it = g_terrain_held.begin(); it != g_terrain_held.end();) {
+        if (it->world != world) // another world loaded
+            it = g_terrain_held.erase(it);
+        else if (it->place == mine) {
+            due.push_back(*it);
+            it = g_terrain_held.erase(it);
+        } else
+            ++it;
+    }
+    for (auto& h : due) {
+        if (h.colour)
+            apply_colour(h.place, (int)h.effect, h.a, h.b);
+        else
+            apply_sculpt(h.place, h.effect, h.xf);
+        g_terrain_held_done++;
+    }
+    if (!due.empty())
+        H->log(M, SK_INFO, "space: %u sculpting / colouring hits a partner made on %08X while this game was away done now (BUG-0900)",
+               (unsigned)due.size(), mine);
+}
+
 // the listener's branch for 0x4A32D09 does not read `this` (0x1051A14: data only), so a game whose listener has not
 // been seen yet can still repeat it
 static void apply_sculpt(uint32_t place, uint32_t effect, const uint8_t xf_in[0x38])
 {
     g_sculpt_got++;
+    if (terrain_hold_if_away(place, false, effect, 0, 0, xf_in))
+        return;
     uint32_t mine = C.my_place ? C.my_place() : 0;
     if (mine != place || !in_space() || !o_ToolMsg || !active_terrain())
         return;
@@ -1271,6 +1356,8 @@ static void apply_sculpt(uint32_t place, uint32_t effect, const uint8_t xf_in[0x
 static void apply_colour(uint32_t place, int ramp, uint32_t a, uint32_t b)
 {
     g_colour_got++;
+    if (terrain_hold_if_away(place, true, (uint32_t)ramp, a, b, nullptr))
+        return;
     uint32_t mine = C.my_place ? C.my_place() : 0;
     void* t = active_terrain();
     if (mine != place || !in_space() || !o_SetColors || !t)
@@ -1667,6 +1754,7 @@ void tick(double now)
     down_tick(now);
     respawn_tick(now);
     terra_tick(now);
+    terrain_hold_tick(now); // BUG-0900
     for (auto it = g_partner_down.begin(); it != g_partner_down.end();)
         it = now > it->second + 2 ? g_partner_down.erase(it) : std::next(it);
     // a disabled partner here: a beacon on its ship
@@ -2099,7 +2187,7 @@ std::string debug(const std::vector<std::string>& a)
     if (spaceext::debug(a, ext)) // coop.space features | rows | press <n> | <feature> ...
         return ext;
     void* u = my_ufo();
-    char b[200];
+    char b[320];
     if (a[0] == "hit" && a.size() > 1 && u) { // the game's damage path on the own ship
         float hp0 = F<float>(u, kHp);
         static const float zero[3] = {0, 0, 0}; // the hit direction must not be null
@@ -2497,9 +2585,10 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "sculpt") { // BUG-0763: the sculpting / colouring relay and the active terrain's colours
         snprintf(b, sizeof b,
                  "sculpt seen=%u sent=%u got=%u applied=%u last=%.2f,%.2f,%.2f colour seen=%u sent=%u got=%u applied=%u "
-                 "own_hits=%u listener=%d ",
+                 "own_hits=%u listener=%d held=%u/%u held_done=%u ",
                  g_sculpt_seen, g_sculpt_sent, g_sculpt_got, g_sculpt_applied, g_sculpt_last[0], g_sculpt_last[1],
-                 g_sculpt_last[2], g_colour_seen, g_colour_sent, g_colour_got, g_colour_applied, g_own_hits, g_tool_listener ? 1 : 0);
+                 g_sculpt_last[2], g_colour_seen, g_colour_sent, g_colour_got, g_colour_applied, g_own_hits, g_tool_listener ? 1 : 0,
+                 (unsigned)g_terrain_held.size(), g_terrain_held_n, g_terrain_held_done);
         return b + colours_text();
     }
     return "usage: coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet | sculpt]";

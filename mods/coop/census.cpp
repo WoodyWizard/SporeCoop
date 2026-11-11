@@ -25,16 +25,20 @@ static Ctx C;
 
 constexpr uint32_t kCreatureNoun = 0x18EB45Eu; // cCreatureAnimal (docs: SporeCoop::NounCast)
 
-static void creature_rows(std::vector<Row>& rows)
+constexpr uint32_t kCitizenNoun = 0x18EB4B7u; // cCreatureCitizen (tribe members, city citizens)
+
+static void creature_rows(std::vector<Row>& rows, bool citizens = false)
 {
     struct U {
         std::vector<Row>* rows;
         void* av;
-    } u{&rows, game::avatar()};
+        bool citizens;
+    } u{&rows, game::avatar(), citizens};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* u = (U*)p;
-            if (noun != kCreatureNoun || !game::object_alive(o) || u->rows->size() >= 2000)
+            bool kind = noun == kCreatureNoun || (u->citizens && noun == kCitizenNoun);
+            if (!kind || !game::object_alive(o) || u->rows->size() >= 2000)
                 return true;
             Row r;
             r.kind = 'c';
@@ -143,8 +147,11 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     SAY("census v1 role=%s me=%u mode=%s modeid=%08X world=%08X t=%.1f\n", role, conn ? C.sess->my_id() : 0,
         modes::mode_name(mode), mode, world, H->time_seconds());
     std::vector<Row> rows;
-    if (mode == modes::kCreature)
-        creature_rows(rows);
+    // `creatures`: the creature rows in any mode, the citizens (tribe members) too (tests: the creatures in a camera's
+    // picture in Tribe, docs/06-testing.md#testing-same-view)
+    bool creatures = argc >= 2 && !strcmp(argv[1], "creatures");
+    if (mode == modes::kCreature || creatures)
+        creature_rows(rows, creatures);
     else if (mode == modes::kCiv)
         civ::census_rows(rows);
     std::map<uint32_t, int> nouns;
@@ -207,7 +214,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     H->command_add(M, "coop.census",
-                   "coop.census [all [r [x y z]]] - the shared objects of this mode as the game has them, with net ids (tests: "
+                   "coop.census [all [r [x y z]] | creatures] - the shared objects of this mode as the game has them, with net ids (tests: "
                    "tools/tests/census.py); all: every placed game object within r m and the noun counts (worlddiff.py)",
                    c_census, nullptr, SK_CMD_MAIN_THREAD);
     wstate_init(H, M, &C);

@@ -2746,6 +2746,8 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
    these suites; a test that cannot run (a lane, a fixture) is named in the release notes.
 3. `tools/lab.py fixcheck` has no CONTRADICTED claim.
 4. `make test` passed (it runs lab_selftest.py and gates_selftest.py).
+5. The key frame review of the final check's run passed: `tools/frames_review.py <run>`, the sheets looked at
+   by an agent by the checklist of [key frames](#testing-key-frames), every finding a ticket.
 ## Creature health between players: coop.hp, partner_hp, party, brain_hp (2026-11-01, fix/w30-creature-hp)
 <a id="testing-creature-hp"></a>
 
@@ -5516,3 +5518,156 @@ frames_loop's F9 check fail on warm games (BUG-0898): `warm_reset` now closes th
   (also while the ship is elsewhere).
 * Pitfall: `Player.land_retry(PLANET)` once ended on another planet of the system (place 0x40460035 instead of
   0x41460035, lab 20261110-185942); check the place, not only `ctx() == 'planet'`.
+## Key frames and the review by eye (2026-11-10, feat/w47-visual)
+<a id="testing-key-frames"></a>
+
+Most checks read the game's state through the console; a bug that is only visible (a wrong model or paint, a body
+left where an egg was, a frozen pose, a shifted window, an object in the air) passes them. Key frames make the lab
+look at the screens too, at a few chosen moments.
+
+* `twoinst.keyframe(tag, note, players=None, kind='key', extra=None)` shoots every game of the test at the same
+  moment (one thread and one console connection each), stores a 960 px JPEG per game in
+  `out/lab/<run>/frames/<test>/<nn>_<tag>_<role>.jpg` and one line in that folder's `manifest.jsonl` (test, number,
+  tag, the note = what should be visible, kind, time, stage, each game's file, `game.mode` and `coop.avatar`
+  position). `players` is `{role: Console}`, default the host and guest of the last `twoinst.start()`; the campaign
+  passes `host-Alice`, `guest-Bob`, ... (`kind='phase'`). A key frame never fails a test (a game that does not
+  answer gets `ok: false`). The lab passes `SPORE_LAB_RUN` (the run folder) and `SPORE_LAB_TEST` (the test name)
+  to every test; a test started by hand writes into `out/[laneN/]frames/manual/<script>/`. Each frame costs ~0.3 s
+  per game and ~60-120 KB.
+* Where they are (2-3 per test, only at moments where looks matter): `play_cell|creature|tribe|civ|space` (start,
+  half time, end), the campaign (every phase end, all four players, `phase_frame()`), `nest_species`,
+  `tribe_portraits`, `creature_brain_hp`, `civ_host_design`, `space_shots`, `find_partners` (tag and arrow of each
+  stage), `one_creature`, `tribe_conquer_orders`, `cell_levelup_view`, `same_view` (kind `sameview`, see
+  [the same view](#testing-same-view)). A new key frame needs a note that says what a reviewer should see.
+* `tools/frames_review.py <run> [--max 80] [--test a,b] [--kind sameview]` (a run id, a run folder, or a
+  frames folder such as `out/lane6/frames/manual`) builds the contact sheets: per key frame
+  one JPEG with the games side by side (host first; 720 px tiles, 480 px with more than two games) under a label
+  (test, number, tag, kind, stage, the note, each game's mode and position, "NO SHOT" for a game without a frame),
+  in `out/lab/<run>/frames/sheets/`, with `index.html` and `sheets.md` (one line per sheet: its path and note). At
+  most `--max` sheets: every `sameview` frame, then the others spread over the tests (each test's first and last
+  frame first). Needs Pillow (the lab has it, the CI installs it); without it the tool says so and exits 2.
+  `tools/tests/visual_selftest.py` (make test) checks the names, the cap and the sheets on a fake run.
+
+### The review checklist
+
+The reviewer (an agent with an image reader, or a person) opens the sheets of `sheets.md` one by one and compares
+the two screens with each other and with the note. Per stage:
+
+* **Every stage**: no black screen, no loading screen or galaxy menu where the label says play; no white squares
+  (missing textures or portraits); UI panels where they belong (HUD, the co-op status, the tribe or Civ panel, the
+  Space palette), none cut off or doubled; name tags over the partner and, when the partner is off screen, its arrow
+  at the edge in its colour; no error text, no stuck caption or modal box the test did not expect.
+* **Cell**: the same cells with the same parts and colours on both screens around the same place; no cell drawn at
+  a wrong scale after a level change; no frozen cell among moving ones.
+* **Creature**: the same species, models and paints on both screens (the host's creation, not the guest's of the
+  same key; the guest's own creature where it plays one); nobody under the ground or floating; no body or egg left
+  where a live creature should be, no duplicate of a creature; no T-pose or frozen pose; nests and eggs on the
+  ground.
+* **Tribe**: the same huts, members and tools on both; members on the ground (none in the air or sunk), no body
+  left standing; the roster with portraits (no white squares); the raided hut down on both.
+* **Civilization**: vehicles and buildings with their real models (no default cube, no other player's design), land
+  vehicles on the ground, the same cities on both.
+* **Space**: the partner's ship drawn with its model where the host has it, beams on both screens in a fight, the
+  planet or the system as the mode says.
+* **sameview sheets**: the two tiles show the same scene from the same camera: the same creatures at the same
+  places in the picture with the same looks (the counts of the automatic check are in the label).
+
+How to report a finding: a ticket (`tools/tickets.py new`, kind `bug`) with what is wrong on which screen, the two
+sheet paths (`out/lab/<run>/frames/sheets/<sheet>.jpg`) and the frame files, the test and the run id; a finding
+that a test should catch by itself also names the check it lacks. A sheet that cannot be judged (both screens the
+same loading screen, a camera in a wall) is no finding: say so in the review notes.
+
+**The final check of every release runs this step** ([the release rule](#testing-release-rule), item 5): the run of
+the final check (play_* of all stages, the campaign tests, the feature tests above, `ui_golden`, `same_view`) is
+reviewed by its sheets, at most ~80, and the review's findings are tickets before the tag.
+
+## The same view on both games (2026-11-10, feat/w47-visual)
+<a id="testing-same-view"></a>
+
+An experiment of the visual tests: both games' cameras at the same place, so their screenshots can be compared side
+by side and the creatures in them counted.
+
+* `coop.view set <ex ey ez> <tx ty tz> [fov] [ux uy uz]` (test command, mods/coop/test_view.cpp): the main viewer at
+  the eye, looking at the target, `fov` the vertical angle in degrees (default: the game's own), up the planet's
+  (away from the centre at the eye) unless given; `coop.view off` gives the camera back to the game (and its view
+  window); `coop.view` prints the state and the viewer's real place. It hooks `cCameraManager::Update` at the first
+  `set` (passes through while off) and sets the transform after the game's camera ran, every frame
+  ([how](re/graphics.md#graphics-fixed-camera)). A lane knob (twoinst KNOBS): a test that set it starts the next one
+  cold.
+* `coop.census creatures`: the creature rows in any mode, the citizens (tribe members, noun 0x18EB4B7) too.
+* `tools/tests/coop_same_view.py` (suites `same_view`, `same_view_tribe`; ~1.5 min after the games are up): waits
+  until both games draw (a shot's mean brightness over 25), then from 25 m round the players' place (Creature: the
+  middle of the two creatures; Tribe: the host's player tribe) and 8 m up, in 4 directions, fov 50: `coop.view set`
+  on both, a key frame of kind `sameview` (the sheets of [key frames](#testing-key-frames) show both screens and the
+  check's line), and the automatic check: each game's census rows projected with its own camera (`coop.cam`, the
+  same formula as SporeKit's world_to_screen, tools/tests/sameview.py) within 70 m and on the screen, matched by
+  species key (a dead one apart) within 120 px; at least 75 % of the bigger list must match. A player's own creation
+  has another key in its own game ('mine creature' of `coop.creations`) than in the session: `sameview.aliases`
+  reads it as the session's. At the end both cameras must be back (the viewer away from the last fixed eye).
+* Twin: `SAMEVIEW_SHIFT=10` moves the guest's camera 10 m sideways: 0 of 7 matched, FAIL (lane 6, 2026-11-10).
+* Pass on lane 6 (by hand): Creature 7/7, 8/8, 7/7, 7/7 matched; Tribe 3/3 in each view. The look itself (models,
+  paints, poses) is left to the review by eye.
+* First review (lab 20261110-201619, 14 sheets): Tribe: the guest's copy of the host's chief lacks its staff
+  (BUG-0906), a partner tag over empty ground on the guest (BUG-0907); Creature: the host draws a tall green light
+  over the guest's creature that the guest's game does not show (the pack's regen effect, seen once, no ticket yet).
+* Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
+  cameras, other census rows).
+
+## Golden images of the co-op window (2026-11-10, feat/w47-visual)
+<a id="testing-ui-golden"></a>
+
+`tools/tests/coop_ui_golden.py` (suite `ui_golden`, full, ~2 min, cold, any lane; lane 3 in the batches) brings each
+step of the co-op window up by real clicks in a fixed state and compares the window with a stored picture:
+
+* State: a first start (coop_ui.first_start_ini, the old coop.ini put back), English (`coop.uistate lang en`), the
+  names Alice / Bob, the host pink and the guest green (`coop.find color`), the default session settings, the `space`
+  fixture (so the lobby has its Space page). The guest joins by the typed address (the LAN list holds other lanes'
+  games), the host loads its game with `coop.load`.
+* Steps (12): `name`, `choose`, `host_step`, `lobby_menu`, `settings_menu`, `join_step` (guest), `ingame_host`,
+  `ingame_guest` (F9 in Space), `settings_host`, `settings_guest`, `space_host`, `pause_report` (the pause menu's
+  buttons with "Report a problem").
+* Each step: the pointer is moved off the window (no hover highlight), a full-size `shot`, the window's rect from
+  `coop.uistate` (`window x1 y1 x2 y2 vis`, new) cropped and halved (380x330), compared with
+  `tools/tests/golden/<step>.png` (RGB PNG, 15-55 KB, ~500 KB for all). Masked: a 3 px border (the game shows through
+  the frame's edge) and the texts that vary between runs, by their rects in `coop.uistate`: `area <name> x1 y1 x2 y2
+  vis` lines (new: session, hostaddr, version, lanhdr, statusline, world, creationline, setline, meline, hosthint,
+  ping0-3, chatline0-4) and named controls (port, address, lan0-2, lanmore). The per-step list is `VARY` in the test.
+* Tolerance (tools/tests/golden.py): both pictures blurred by one pixel; a pixel differs when a channel differs by
+  more than 48; a step fails when more than 0.1 % of the unmasked pixels differ (`pause_report` 0.6 %: the game's menu
+  is translucent) or one 12x12 block is more than 35 % different. Lab noise: up to 0.05 % (the close button's corner),
+  the pause menu 0.19 %. A failure prints the differing region in screen pixels and writes `<step>_diff.png` (the
+  crop, the reference, the differences in red with the masks in blue) next to the crops in
+  `out/lab/<run>/frames/ui_golden/golden/`.
+* **Updating the references on purpose** (a changed layout): `SPORE_LANE=3 python3 tools/tests/coop_ui_golden.py
+  --update` (also `--only name,choose`), then look at every new `tools/tests/golden/*.png` before the commit and name
+  the reason in the commit message. They are made on the lab's 1440x1080 games; another resolution or language does
+  not compare.
+* Twins (test switch `coop.uistate nudge <control> <dx> <dy>` / `hide <control>` / `nudge off`, applied after every
+  refresh of the window; a lane knob): `UI_GOLDEN_TWIN="nudge gohost 4 0"` (Host a game 4 px to the right) fails
+  `choose`; `UI_GOLDEN_TWIN="hide ready"` fails `lobby_menu`, `ingame_host`, `ingame_guest` (1.4 % each; lab 20261110-200801). Pass: 20261110-201216 (0 differing pixels in every step); nudge FAIL: 20261110-201357 (choose 0.17 %, the region the Host button).
+* Pitfalls: a palette PNG (256 colours) turned the host's pink swatch grey and moved other pixels by up to 99 levels:
+  references are RGB. A reference made before the colour picks arrived holds other swatches: the test waits for and
+  checks the colours before the in-game steps.
+* (2026-11-10, docs/w47-readme-0712) `--update` paints the masked regions of each reference flat (`golden.save_ref(...,
+  blank=masks)`, colour `golden.BLANK`): the varying texts (the PC's LAN addresses, the lane's port, pings) never
+  reach the files in git; compare() skips those regions anyway. The references were made anew on lane 2 with the
+  layout of BUG-0904/0905/0908/0909 (glyph-width label fitting, Stage column at 362, "Settings (N)"): PASS lab
+  20261110-210841, twin `UI_GOLDEN_TWIN="nudge gohost 4 0"` FAIL lab 20261110-211023 (choose: 0.17 %).
+
+## Space colony buildings and sculpts while away (2026-11-10, fix/w47-colony)
+<a id="testing-space-colony-keep"></a>
+
+* `space_planner_miss` (coop_space_planner_build.py --miss, BUG-0902, cold, `space_empire`, ~3.5 min): the guest's
+  planner opened by a click, the house tile dropped on a taken plot (`coop.civ slots` lists `busy` plots): the guest's
+  planner adds the building and takes it away (no money); the test asserts it did run (`space_planner: sent=` or
+  `dropped=` up) and the host's city stays at 5 houses. `SPORE_FIX_OFF=civ.space_planner_closed` fails.
+* `space_city_keep` (coop_space_city_keep.py, BUG-0901, cold, `space_empire`, ~3 min): in both games one house
+  destroyed and a factory built there by the mod (`coop.civ sbuild s<i> house|factory|fun`: build_in_city plus the
+  city data write of space_build_here), both ships take off and land: each city must still have the factory. A
+  factory, so the house the game puts back in that plot (the city is made from its data) cannot pass for it.
+  `SPORE_FIX_OFF=civ.space_city_data` fails.
+* `space_sculpt_away` (coop_space_sculpt_tool.py --away, BUG-0900, cold, `space_free`, ~4 min): the guest takes off
+  before the host's two raises and a colour, lands again: terrain at 6 points around the spot and colours must be the
+  host's. `SPORE_FIX_OFF=space.sculpt_hold` fails (14 m apart).
+* Pitfall: the planner click on a colony city sometimes misses because the ship drifted off the city (349 m, lab
+  20261110-200709): planner_buy now flies over the city again before each further click.

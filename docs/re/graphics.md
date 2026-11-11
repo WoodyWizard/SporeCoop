@@ -153,3 +153,25 @@ numbers are the growth).
   both games), twice on the host because it also keeps the world around its partner alive. Stage changes give little
   back (the heap's segments stay).
 * Negative: no allocation of ours grows; no growth per puppet, per mirror or per revisit.
+
+## A fixed camera on the main viewer (2026-11-10, feat/w47-visual)
+<a id="graphics-fixed-camera"></a>
+
+✔ seen at runtime in Creature and Tribe (lane 6, GOG 2024), ✔ Ghidra.
+* The main viewer is `IGameModeManager::Get()` vt 0x58. viewer+0 is the camera-to-world matrix (rows right, forward,
+  up, position; row determinant +1 in both stages), [viewer+0x170] the camera (+0x5C / +0x60 the half view window at
+  distance 1, +0x6C 1 = perspective, +0x78 the D3D viewport).
+* Every frame the active camera's Update (from `cCameraManager::Update` 0x7C6440, through its vtable at 0x1410744)
+  writes the viewer with `cViewer::SetViewTransform` 0x7C4DD0 (a Math::Transform: flags 2|4, count, offset, scale,
+  rotation rows right / forward / up; `GetViewTransform` 0x7C41C0 gives one). A transform set right after
+  `cCameraManager::Update` returns is the one the frame is drawn with: the hook of `coop.view` (mods/coop/test_view.cpp)
+  put the camera at a given eye in the first frame, `coop.cam` read it back exactly (0.000 m), the screenshot showed
+  that view, and the game's camera came back on its own the frame after the hook stopped.
+* `cViewer::SetPerspectiveProjection` 0x7C5480 takes the VERTICAL field of view in degrees (tan(fov/2) into +0x60, +0x5C
+  scaled to keep the aspect); Creature's follow camera draws with +0x60 = 0.4097 (about 44.6 degrees), Tribe's likewise.
+  This confirms the fork's viewer notes of [the mating fork notes](creature.md#creature-fork-mating-fov) for
+  SetPerspectiveProjection, SetViewWindow and the camera fields.
+* The relevance pass (`Relevance_Tick` 0xAD2300) centres on the viewer: a fixed camera 25 m from the players keeps the
+  same NPCs alive (no change seen in a 4-view run); far placements would change which NPCs the host's game runs.
+* Pitfall: right after a guest's join in Tribe its world is black for some seconds (the name tags are drawn); wait for
+  the picture (coop_same_view.py waits for a mean brightness over 25).

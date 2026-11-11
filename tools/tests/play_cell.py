@@ -25,7 +25,7 @@ import time
 
 import lane
 from coop_sync import angle, pct
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 MEASURE = 10.0
 PREY_EVERY = 2.0  # coop.pool prey on the host
@@ -334,7 +334,12 @@ def main():
     last_measure = last_prey = 0.0
     ok = True
     try:
+        keyframe('start', 'both cells in the tide pool, the same cells and paints on both screens, name tags over the partner, the HUD in place')
+        kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and ok:
+            if not kf_mid[0] and time.time() > t0 + a.minutes * 30:
+                kf_mid[0] = True
+                keyframe('mid', 'play in progress: the partner cell where the host has it, NPC cells and food on both, no white squares, no frozen cell')
             now = time.time()
             for p in P:
                 prev = st[p.name]
@@ -482,6 +487,7 @@ def main():
         ck(hs['parts'] == gs['parts'], f'the same parts unlocked on both ({hs["parts"]} / {gs["parts"]})')
         for name, con in (('host', host), ('guest', guest)):
             print(f'  {name} removals:', ' | '.join(con.call('coop.pool why')['out'].strip().splitlines()), flush=True)
+        keyframe('end', 'after the play: both games still in Cell play (no menu, no loading screen), the same cells on both')
         shot(host, 'play_cell_host.png')
         shot(guest, 'play_cell_guest.png')
         ck.faults(host=host, guest=guest)

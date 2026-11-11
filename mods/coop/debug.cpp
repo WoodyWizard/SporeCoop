@@ -526,6 +526,10 @@ void coop_module_of(uintptr_t a, char* out, size_t cap)
     } else
         snprintf(out, cap, "%08X", (unsigned)a);
 }
+namespace testview {
+void init(const SkHost*, SkMod*); // test_view.cpp: coop.view
+}
+
 void coop_register_debug_commands(const SkHost* host, SkMod* self)
 {
     H = host;
@@ -536,6 +540,7 @@ void coop_register_debug_commands(const SkHost* host, SkMod* self)
     coop_register_debug_commands2(host, self);
     host->command_add(self, "coop.cam", "coop.cam [x y] - dump camera, optional screen ray", c_cam, nullptr,
                       SK_CMD_MAIN_THREAD);
+    testview::init(host, self);
 }
 
 

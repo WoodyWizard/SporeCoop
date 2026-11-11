@@ -1,17 +1,17 @@
 ---
 id: BUG-0900
 title: Space: terrain sculpting and planet colouring done with no partner on the planet never reach the partners
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-10
 source: fix/w47-b2-space (BUG-0763, 2026-11-10)
 role: both
 versions: 0.7.12 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w47-colony
+commits: 82b16f99
+tests: space_sculpt_away
 signature:
 docs: docs/re/space.md#space-sculpt-colour
 related: BUG-0763, BUG-0883
@@ -36,12 +36,30 @@ tool (tab W-226, slot (1108, 966)) and the first colour (tab W-186, slot (1121, 
   host keeps a per-planet list of the hits (effect id + transform, last colour triple) and sends it to a partner who
   lands (or applies it to the planet's stored data).
 
+* Observed (code, fix/w47-colony): the sender already sends every hit of its own tool (sculpt_place needs only a
+  session and a planet; the host relays a guest's), so the hits reach every game; the receiver dropped them.
+* Observed (lab 20261110-202317, switch off): the guest's ship off the planet during the host's two raises and a
+  colour; after the guest's landing its terrain at the spot 14.33 m from the host's and its colours (0, 0, 0) against
+  (0, 11, 0).
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Decided to fix now (cheap: no planet-record data needed). spacecoop.cpp: a K_SCULPT / K_COLOUR for a planet this game
+is not on (or came to less than 5 s ago) is kept with its planet and world (session state; at most 50 sculpts and 64
+colours a planet, the oldest go; 1024 in all) and repeated in the order it came 5 s after this game's ship is on that
+planet (terrain_hold_tick), with the game's own calls as for a partner on the planet. Counters `held= held_done=` in
+`coop.space sculpt`. Twin switch `coop.fix space.sculpt_hold off` (dropped, 0.7.11).
+Limits (written in docs/re/space.md#space-city-data): a player who joins or rejoins after the hits does not get them
+(the hold lives in the running games, not in the planet record); whether the game keeps sculpts and colours across a
+leave and a landing, and in the save, is not traced (0.7.13 if a report shows it).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_sculpt_tool.py --away` (suite `space_sculpt_away`): both land on 01460035, the guest takes off, the host
+raises the ground twice and colours the planet with real clicks, the guest lands again: its terrain around the spot
+(6 points) and its colours must be the host's.
+* FAIL with `SPORE_FIX_OFF=space.sculpt_hold`: lab 20261110-202317 (14.33 m apart, colours (0, 0, 0) / (0, 11, 0)).
+* PASS: lab 20261110-201800 (0.00 m, colours (0, 11, 0) on both; the guest `held=0/3 held_done=3`), 20261110-203201
+  (also space_sculpt_tool, the live relay with both on the planet: OK).
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-10: fixed on fix/w47-colony (a partner's hits for another planet kept and done on landing; switch space.sculpt_hold; test space_sculpt_away).
