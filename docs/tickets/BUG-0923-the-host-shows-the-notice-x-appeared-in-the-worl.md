@@ -52,7 +52,8 @@ world".
 - FAIL (SPORE_FIX_OFF=notify.appeared_once): out/lab/20261111-065449 (a new panel and a new log line after the
   creature change; the switch goes off after the lab's join, so part 1 runs fixed in that run: there the join's
   rebuild was kept quiet, "puppet rebuilds not told 1").
-- PASS: out/lab/20261111-065556.
+- PASS: out/lab/20261111-065556, out/lab/20261111-070559.
+- campaign_ct with four players (out/lab/20261111-070555): one line per guest at the join in the host's log.
 - Not verified: the doubled line at the join itself with the switch off (the lab joins before SPORE_FIX_OFF is
   applied; the join's rebuild comes only when the bundle arrives after the first state: 1 of 3 starts here).
 

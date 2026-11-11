@@ -65,7 +65,10 @@ slot whose inside is plain white is a white square. Checks: the guest's game ans
 the guest's screen shows the roster, no slot is white (host too).
 - FAIL (SPORE_FIX_OFF=creations.bundle_png): out/lab/20261111-065944 (the picture unknown on the guest, 2 of 3 slots
   white: the chief's icon and two white members), out/lab/20261111-064706 (half-size shots: 1 of 2 found slots white).
-- PASS: out/lab/20261111-065948, out/lab/20261111-065323 (half-size shots).
+- PASS: out/lab/20261111-065948, out/lab/20261111-070559, out/lab/20261111-065323 (half-size shots).
+- Four players: campaign_ct out/lab/20261111-070555 (PASS): the key frames `05_play-tribe_*` show 14 portraits on each
+  of the three guests and on the host (by eye), `04_advance-creature_*` too.
+- Other tests: tribe_portraits, evolve_in_place_creature (out/lab/20261111-070559), `make test`.
 - By eye: the key frames `01_roster_guest.jpg` of the FAIL runs show the white squares, of the PASS runs the purple
   creature on its card as on the host.
 - Not verified: a guest of 0.7.11 or older with a 0.7.12 host (it registers every record of a bundle, so it should get
