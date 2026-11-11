@@ -14,7 +14,7 @@ commits:
 tests:
 signature: the editor waits: the game is busy (paused), editor 0x96B24187
 docs: docs/re/civ.md#civ-shared-message-box
-related: BUG-0576, BUG-0404, BUG-0311
+related: BUG-0576, BUG-0404, BUG-0311, BUG-0578
 ---
 
 ## Report
@@ -53,3 +53,4 @@ docs/re/civ.md.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0578 (a crash in Model::Release at game exit with a held editor request, 0.7.3.6) is what a player may hit when this hold makes them quit; the exit test exit_editor_held should be run with this editor once the hold is reproduced.

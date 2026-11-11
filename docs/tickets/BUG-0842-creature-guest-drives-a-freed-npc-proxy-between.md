@@ -14,7 +14,7 @@ commits:
 tests:
 signature: fork: coop D1A80 null vtable read 44 via npc guest_tick -> drive::step
 docs:
-related: BUG-0426, BUG-0300
+related: BUG-0426, BUG-0300, BUG-0170
 ---
 
 ## Report
@@ -64,3 +64,4 @@ the chaos lane (objects freed and recreated) if it does not fail reliably.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: a candidate explanation of BUG-0170 (the 4-player Creature guest heap corruption of 2026-10-23, whose code had the same window without any list check). Scope note: check_listed runs only `game::in_creature_stage()` (npc.cpp:1789), so Tribe animal proxies are driven every frame with the +0x21 byte as the only check; the fix and its test should cover Tribe too (the guest's own tribe kills and frees proxies there, the comment at npc.cpp:1799).

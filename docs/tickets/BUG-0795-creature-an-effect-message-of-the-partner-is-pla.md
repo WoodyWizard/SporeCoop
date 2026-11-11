@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs: 
-related: BUG-0091 BUG-0426 BUG-0451
+related: BUG-0091, BUG-0426, BUG-0451, BUG-0520
 ---
 
 ## Report
@@ -37,3 +37,4 @@ Not fixed yet.
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0520 (the game's UFO abduction freeing the partner's puppet on the host, duplicate of BUG-0507) is the known native free that reaches this path on 0.7.10+; BUG-0507's check sits in drive_puppet only. Linked both ways.
