@@ -30,6 +30,8 @@
   console `coop.find color <name>`. Name tags,
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
 ### Fixed
+- Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
+  the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
 - Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
   the games of the partners on the same planet too; before, only the user saw the new terrain and colours (BUG-0763).
 - Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship

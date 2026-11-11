@@ -1,19 +1,19 @@
 ---
 id: BUG-0883
 title: Space: terraforming done while no partner is on the planet never reaches the other games (deltas dropped)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w47-b2-space
+commits: COMMITS
+tests: tools/tests/coop_space_terra_elsewhere.py
 signature:
-docs:
+docs: docs/re/space.md#space-sculpt-colour
 related: BUG-0749, BUG-0766, BUG-0763
 ---
 
@@ -35,11 +35,22 @@ Keep the per-planet sums when no partner is here and send them anyway with the P
 space_free, two games: the guest lands on planet 01460035, the host stays in orbit of another star; the guest uses an Atmosphere Generator (coop_space_terra_tool.py's clicks) for 8 s; then the host lands on 01460035. Assert the host's planet record +0xB0 is within 0.01 of the guest's. FAIL now (host 0.0), PASS with the fix. Also the reverse (host terraforms, guest away).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Adding the delta sums to a partner's record (the fix idea) would not match: the terrain tick integrates the pending
+deltas over seconds with a decay and clamps (0xC7FC50, observed: the guest's +0xB0 rose to 0.112 and fell back to
+0.096 after one tool use). So, after the player's own terraforming, spacecoop.cpp sends the planet record's values
+(+0xB0, +0xB4, +0xB8) while they change (K_TERRA_REC, at most once a second, until 30 s after the last change), to
+everyone. A receiver not on that planet sets `cStarManager::GetPlanetRecord(id)` +0xB0 / +0xB4 (clamped 0..1) /
++0xB8; one on the planet does so only while no terraforming runs there (flag +0x2030 off), else the live deltas
+(K_TERRA) move it. Works both ways (the host relays a guest's rows). Switch `coop.fix space.terra_elsewhere off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_space_terra_elsewhere.py (lane 5: the guest lands on 01460035, the host stays in the system; the guest's
+Atmosphere Generator with real clicks; the host's record of the planet by PlanetID while away, then after landing):
+* FAIL with SPORE_FIX_OFF=space.terra_elsewhere: out/lab/20261110-190250 (guest (0.107, 0.446, 0.047), host away
+  (0.0, 0.45, -1.0); after landing host (0.0, 0.45, 0.0) vs guest (0.096, 0.435, 0.036)).
+* PASS: out/lab/20261110-185433, out/lab/20261110-190723 (host within 0.003 away and after landing).
+* Only the guest -> host direction is tested; host -> guest uses the same code (not run).
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0749. Severity medium, confidence high.
+- 2026-11-10: fixed on fix/w47-b2-space (record values sent instead of deltas; switch space.terra_elsewhere).

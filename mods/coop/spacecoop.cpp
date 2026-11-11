@@ -38,7 +38,7 @@ constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540
 constexpr double kDownTime = 20.0, kRepairHold = 2.0;
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
-enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6, K_SCULPT = 7, K_COLOUR = 8 };
+enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6, K_SCULPT = 7, K_COLOUR = 8, K_TERRA_REC = 9 };
 
 static uintptr_t a_PlayerUFOGet, a_Context, a_ActivePlanet, a_StarMgr, a_GetStarRecord, a_ModeSpace, a_EnterSystem,
     a_LeavePlanet, a_TravelSystem, a_PlanetCleanup, a_PlanetCleanupMgr, a_AddHealth, a_SetHealth, a_Destroyed,
@@ -996,6 +996,19 @@ static void SK_THISCALL h_SetState(void* m, int s)
 // ---------------- terraforming ----------------
 using Terra_t = void(SK_THISCALL*)(void*, void*, float);
 static Terra_t o_Terra[3];
+// BUG-0883: the deltas above go only to partners on the same planet (K_TERRA), and the game does not add a delta to
+// the record as it is: the terrain tick integrates it over seconds with a decay (0xC7FC50), so a partner elsewhere
+// could not add the sum to its record either. Terraforming done alone stayed in the user's game. Now, after the
+// player's own terraforming, the planet record's values (+0xB0 atmosphere, +0xB4 temperature, +0xB8 water) go to
+// everyone while they change (K_TERRA_REC, at most once a second, until 30 s after the last change); a partner who is
+// not on that planet, or is on it without terraforming running there (flag +0x2030 off), sets its record of the
+// planet to them. Off: deltas only, to partners on the planet (0.7.12 and before).
+static bool g_terra_elsewhere_fix = true;
+COOP_FIX("space.terra_elsewhere", "BUG-0883", g_terra_elsewhere_fix,
+         "space: terraforming done with no partner on the planet reaches the partners' planet records too");
+static uint32_t g_terra_rec_place, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set;
+static double g_terra_rec_until, g_terra_rec_last_send;
+static float g_terra_rec_last[3] = {-1, -1, -1};
 static void note_terra(int which, void* planet, float d)
 {
     if (g_applying || !in_space() || !connected() || !a_ActivePlanet || planet != cdecl_call<void*>(a_ActivePlanet))
@@ -1008,16 +1021,53 @@ static void note_terra(int which, void* planet, float d)
         g_terra_planet = place;
     }
     g_terra_acc[which] += d;
+    if (g_terra_rec_place != place)
+        g_terra_rec_last[0] = g_terra_rec_last[1] = g_terra_rec_last[2] = -1;
+    g_terra_rec_place = place; // BUG-0883
+    g_terra_rec_until = H->time_seconds() + 30;
 }
 static void SK_THISCALL h_TerraA(void* tm, void* p, float d) { note_terra(0, p, d); o_Terra[0](tm, p, d); }
 static void SK_THISCALL h_TerraW(void* tm, void* p, float d) { note_terra(1, p, d); o_Terra[1](tm, p, d); }
 static void SK_THISCALL h_TerraT(void* tm, void* p, float d) { note_terra(2, p, d); o_Terra[2](tm, p, d); }
+
+// BUG-0883: the record of the planet the player terraformed, sent while it changes
+static void* active_planet_record()
+{
+    void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+    void* rec = p && !IsBadReadPtr(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
+    return rec && !IsBadReadPtr(rec, 0xBC) ? rec : nullptr;
+}
+static void terra_rec_tick(double now)
+{
+    if (!g_terra_elsewhere_fix || !g_terra_rec_place || now > g_terra_rec_until || now - g_terra_rec_last_send < 1.0)
+        return;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    void* rec = mine == g_terra_rec_place ? active_planet_record() : nullptr;
+    if (!rec)
+        return;
+    float v[3] = {F<float>(rec, 0xB0), F<float>(rec, 0xB4), F<float>(rec, 0xB8)};
+    bool changed = false;
+    for (int i = 0; i < 3; i++)
+        changed |= std::fabs(v[i] - g_terra_rec_last[i]) > 0.0005f;
+    if (!changed)
+        return;
+    net::Writer w;
+    w.u32(g_terra_rec_place);
+    for (float f : v)
+        w.f32(f);
+    send(K_TERRA_REC, w);
+    memcpy(g_terra_rec_last, v, sizeof v);
+    g_terra_rec_last_send = now;
+    g_terra_rec_until = now + 30;
+    g_terra_rec_sent++;
+}
 
 static void terra_tick(double now)
 {
     if (now - g_terra_last < 0.5)
         return;
     g_terra_last = now;
+    terra_rec_tick(now);
     if (!g_terra_planet || (!g_terra_acc[0] && !g_terra_acc[1] && !g_terra_acc[2]))
         return;
     bool here = false;
@@ -1068,6 +1118,33 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     }
     g_applying = false;
     g_terra_got++;
+}
+
+// BUG-0883: a partner's planet record values after its own terraforming
+static void apply_terra_rec(uint32_t planet_place, const float v[3])
+{
+    g_terra_rec_got++;
+    if (!g_terra_elsewhere_fix || !(planet_place & 0x40000000u) || !a_StarMgr)
+        return;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    void* rec = nullptr;
+    if (mine == planet_place) {
+        void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        void* data = p && !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
+        if (data && !IsBadReadPtr(data, 0x2034) && F<uint8_t>(data, 0x2030))
+            return; // terraforming runs here: the live deltas (K_TERRA) move this record
+        rec = active_planet_record();
+    } else {
+        static uintptr_t get_rec = H->sym("Simulator::cStarManager::GetPlanetRecord");
+        void* sm = cdecl_call<void*>(a_StarMgr);
+        rec = sm && get_rec ? thiscall<void*>(get_rec, sm, planet_place & 0x3FFFFFFFu) : nullptr;
+    }
+    if (!rec || IsBadWritePtr(rec, 0xBC))
+        return;
+    for (int i = 0; i < 3; i++)
+        if (std::isfinite(v[i]))
+            F<float>(rec, 0xB0 + 4 * i) = i < 2 ? std::min(1.f, std::max(0.f, v[i])) : v[i];
+    g_terra_rec_set++;
 }
 
 // ---------------- terrain sculpting and planet colouring (BUG-0763) ----------------
@@ -1432,6 +1509,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             apply_terra(place, d);
         break;
     }
+    case K_TERRA_REC: { // BUG-0883
+        uint32_t place = r.u32();
+        float v[3] = {r.f32(), r.f32(), r.f32()};
+        if (r.ok())
+            apply_terra_rec(place, v);
+        break;
+    }
     case K_SCULPT: { // BUG-0763
         uint32_t place = r.u32(), effect = r.u32();
         uint8_t xf[0x38];
@@ -1620,6 +1704,7 @@ void on_session_end()
     g_last_star.clear();
     g_raid_since.clear();
     g_terra_planet = 0;
+    g_terra_rec_place = 0; // BUG-0883
     g_gifts_out.clear(); // unanswered gifts most likely arrived (only a failure is answered); g_gifts_owed stays
     g_gifts_held.clear();
     g_gift_hold = g_gift_noroom = false;
@@ -1790,10 +1875,10 @@ std::string status()
     char b[512];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_terra_enabled, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
     return b + spaceext::status_all();
 }

@@ -5469,3 +5469,13 @@ from the lane's game folder with Python's zipfile: exactly the expected entries,
 lane share one `mods\logs`, the instance suffix tells them apart), SESSION.txt with each guest's state and no address,
 no `*.part` left. The test makes `report-*.txt` files on purpose (`reports=True`): it checks itself that no `crash-*`
 file appeared and every game still answers. `SPORE_FIX_OFF=core.session_report` fails (no guest is asked).
+
+## Space tool tests: sculpting, colouring, terraforming alone (2026-11-10, fix/w47-b2-space)
+<a id="testing-space-sculpt"></a>
+
+* `coop_space_sculpt_tool.py` (BUG-0763, ~3 min on one lane) and `coop_space_terra_elsewhere.py` (BUG-0883, ~2.5 min):
+  palette coordinates in docs/re/space.md#space-sculpt-colour; `coop.space sculpt` shows the relay counters, the last
+  sculpting spot (`last=`) and the active terrain's colours; `coop.space planet <PlanetID>` reads a planet record by id
+  (also while the ship is elsewhere).
+* Pitfall: `Player.land_retry(PLANET)` once ended on another planet of the system (place 0x40460035 instead of
+  0x41460035, lab 20261110-185942); check the place, not only `ctx() == 'planet'`.
