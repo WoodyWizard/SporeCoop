@@ -1817,6 +1817,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   SporeCoop-wt/fix/w40-effects, relay off) and on main.
 * Reproduce: `tools/lab.py run play_creature --repeat 4` (about 1 run in 4).
 * Tickets: BUG-0499, BUG-0500
+* UPDATE (2026-11-10, fix/w47-play-bots): the "no joint hunt" runs that came back after BUG-0500's fix (4 of 10
+  runs on 2026-11-10) were the bots, not a puppet far from its player: BUG-0618 third round,
+  docs/06-testing.md#testing-w47-play-bots (7 of 7 runs pass with the new bot).
 
 ## Creature / Tribe: world objects not yet owned by the host (2026-11-03, fix/w40-world-objects)
 <a id="issue-world-objects-left"></a>

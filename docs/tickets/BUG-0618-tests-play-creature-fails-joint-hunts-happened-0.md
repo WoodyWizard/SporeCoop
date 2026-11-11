@@ -8,13 +8,13 @@ reported: 2026-11-06
 source: rel/0.7.9 integration run out/lab/20261106-040221 (fix/w45-int2)
 role: 
 versions: 
-fixed_in: 0.7.11
-branch: fix/w46-g4-tests
+fixed_in: unreleased
+branch: fix/w47-play-bots
 commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711, e6158137
 tests: play_creature
 signature:
-docs: docs/re/creature.md#creature-attack-reach, docs/06-testing.md#testing-w45-last
-related: BUG-0099
+docs: docs/re/creature.md#creature-attack-reach, docs/re/creature.md#creature-combat-click-target, docs/re/creature.md#creature-walk-and-use-blocked, docs/06-testing.md#testing-w45-last, docs/06-testing.md#testing-w47-play-bots
+related: BUG-0099, BUG-0913, BUG-0500
 ---
 
 ## Report
@@ -45,6 +45,9 @@ starts 17-74 m away), and an ability out of reach does nothing.
   biting one animal within 6 s: each player led its own hunt most of the time.
 
 ## Fix
+W47 (2026-11-10): the bot checks that the game's target is the animal it hunts (a click picks the partner's creature
+or a herd mate), walks to a side when the game's walk-and-use stops behind the partner, and whoever is in reach first
+waits for the partner; see the History entry. Earlier rounds:
 Bot only, the game and the limit unchanged: `coop.abilities reach` (debug.cpp: the target, its gap, every ability's
 reach and status, the HUD bar's rows) tells the bot the game's own reach; the bot clicks the target once, presses a key
 of the bar's combat row out of reach once to start the game's walk-and-use (again only when the gap does not shrink for
@@ -55,6 +58,10 @@ counted), play_creature prints "hits: guest sent / host applied; joint table: ho
 shows whether the guest's hits did not land, were lost, or did not overlap with the host's.
 
 ## Verification
+W47 (2026-11-10, fix/w47-play-bots): FAIL (the bot of 0.7.11): out/lab/20261110-210848 #2 on this branch (+0), rel/0.7.12
+out/lab/20261110-200504, feat/w47-visual out/lab/20261110-201619, fix/w47-proxy-destroy out/lab/20261110-175415. PASS
+(the new bot) 7 of 7: out/lab/20261110-220532 #1-#3 (+29, +66, +42), out/lab/20261110-223754 #1-#4 (+43, +19, +37, +24).
+Earlier rounds:
 FAIL (the old bot): rel/0.7.9 out/lab/20261106-040221 (+0 joint hits, guest 16 hits for 196 presses; the same code's runs
 before this branch: 0-26 joint, 10-50 guest hits). PASS with the new bot 4 in a row: out/lab/20261106-134606 (#1-#4:
 +5, +21, +5, +7 joint hits; guest hits 16 / 55 / 18 / 26, every one sent arrived). Before the pack change:
@@ -77,3 +84,28 @@ Earlier: no-fail-run: a flaky bot outcome, not reproduced in 3 runs on lane 3 (0
   hunts did not overlap), not a regression; left fixed, reopen when it repeats.
 - 2026-11-08 (fix/w46-g4-tests): G4 reopened and fixed again: the +0 joint runs repeated (fix/w46-p4-creature 20261107-212113, fix/w46-k2a-state 20261107-232019, fix/w46-k4-bodies 20261108-020506, fix/w46-k8-open 20261108-023113; 5 of ~33 played runs since the 0.7.9 fix, joint hits median ~6 of ~80 hits). Cause (G4 analysis of 52 runs, out/g4/joint in the fix/w46-g4-tests worktree): both bots hunted the same animals, the joiner started 1-3 s after the leader, but only the leader bit: a Kook dies ~10 s after the leader reaches it; the bot's walk-and-use key waited behind a 1e9 gap sentinel after every click, a moment's lost target (retarget_none 60-360 times a run) made a new click that cancelled the walk, and a leader that lost its prey left the pack apart. Fix (e6158137, bot only, the check unchanged): no sentinel, a short wait instead of a click when the game drops the target during its walk, the leader holds its first bite at most 8 s until the partner hunts the same animal and is near, a pack hunt passes to the partner when the leader's ends; the hunt log names each bot's own bites. PASS 4 of 4: out/lab/20261108-060716 (+27, +1, +32, +34 joint hits). The +1 run: the joiners often arrive after the 8 s hold (own bites 0 in most pack hunts), a thinner tail, no failure. FAIL (the old bot): the four runs above; --old-attack keeps the 0.7.8 loop.
 - 2026-11-08: released in 0.7.11.
+- 2026-11-10 (fix/w47-play-bots): reopened and fixed a third time: +0 joint hits in 3 of 4 lab runs of the day on
+  0.7.11.1 / 0.7.11.2 code (fix/w47-proxy-destroy 20261110-175415, rel/0.7.12 20261110-200504, feat/w47-visual
+  20261110-201619; fix/w47-proxy-destroy 20261110-180718 passed with +4) and in 1 of 6 runs of the unchanged bot on this
+  branch (20261110-210848 #2; the others +3, +21, +8, +7, +2): 4 of 10, and 4 of 17 since the G4 fix. Not the mod: the
+  joint-hunt setting was on (the table counted 28-65 host and 26-39 partner hits a run), every hit sent arrived, and
+  coop_team's controlled joint hit works. Cause, from a trace of every hunt and the joint table's hit log (new: `team:
+  hit <npc> by player <n>` in the host's game log): in the shared hunts one bot bit and the other could not.
+  (1) The bot took any target of the game for the animal it hunts; a click picks the creature under the cursor, often
+  the partner's creature standing at the prey (ability status 12: the key does nothing) or a herd mate, and a click
+  that hits nothing keeps the old target (`wrong_target` 249-953 looks per player and run;
+  docs/re/creature.md#creature-combat-click-target). (2) The game's walk-and-use stops 2 m short behind the partner's
+  creature and further key presses do nothing (reproduced in a probe: 100 s at gap 2.3 m; BUG-0913 opened for players;
+  docs/re/creature.md#creature-walk-and-use-blocked): the bot pressed the key every 2.5 s until its hunt timed out.
+  (3) The walk-and-use bites on arrival, so G4's "the leader holds its first bite" held nothing back, and a joiner
+  that arrived first bit alone (6 hp, a bite every 1.7 s). Not the cause: BUG-0500's puppet far from its player (the
+  puppets were where the players were: sync p* p90 0.5 m), the animals fleeing, the 6 s window, K4's drive, the
+  0.7.12 settings split. Fix (bot only, the check `joint > 0` unchanged): the bot compares the game's target with
+  the animal's creature in its own game and clicks again (higher on the body, after six misses a turn of the camera
+  or a step aside); a walk-and-use that does not get nearer is followed by a walk to one side and the key again; who
+  is in reach first waits for the partner to be in reach of the same animal (14 s at most while the partner hunts it);
+  a hunt ends when the "You were killed" caption is up. `--old-target` / `SPORE_PLAY_OLD_TARGET=1`: the bot of 0.7.11.
+  A first version with only (1) and (3) failed with +0 (20261110-214123 #1: both bots stalled at `W5 W5 ...`), which
+  showed (2). FAIL (the old bot): 20261110-210848 #2 and the three runs above.
+  PASS (the new bot) 7 of 7: out/lab/20261110-220532 #1-#3 (+29, +66, +42 joint hits) and out/lab/20261110-223754 #1-#4
+  (+43, +19, +37, +24); kills by both players 8-13 a run. Also found: BUG-0913 (open).

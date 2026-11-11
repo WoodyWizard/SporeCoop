@@ -3961,7 +3961,7 @@ BUG-0618 (third round). GOG 2024, lab lanes 9 and 10, play_creature's hunt trace
   animals have 6 hp, a bite takes 1, one bite every 1.5-2 s: a player alone kills one in 9-10 s. A joint hit
   (teamplay.cpp: another player's hit on the same animal in the last 6 s) needs the second player to bite the same
   animal inside those 10 s.
-* ✔ Why play_creature's bots seldom bit the same animal (3 of 7 lab runs with +0 joint hits on 2026-11-10): the bot
+* ✔ Why play_creature's bots seldom bit the same animal (4 of 10 lab runs with +0 joint hits on 2026-11-10): the bot
   took any target of the game for the animal it hunts. In the runs with +0 joint hits one bot bit the animal while
   the other stood with the partner's creature (status 12, counted as "recharging") or a herd mate as its target
   (wrong target in 249-953 of a player's looks per 10 minutes).

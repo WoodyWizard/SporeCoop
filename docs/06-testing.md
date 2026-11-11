@@ -5656,3 +5656,55 @@ step of the co-op window up by real clicks in a fixed state and compares the win
   host's. `SPORE_FIX_OFF=space.sculpt_hold` fails (14 m apart).
 * Pitfall: the planner click on a colony city sometimes misses because the ship drifted off the city (349 m, lab
   20261110-200709): planner_buy now flies over the city again before each further click.
+
+## The play bots' two chronic checks: the pack's joint hits, who the Cell hunters hunt (2026-11-10, fix/w47-play-bots)
+<a id="testing-w47-play-bots"></a>
+
+Both were faults of the tests, not of the mod (BUG-0618 third round, BUG-0910); neither limit was loosened.
+
+* **play_creature "joint hunts happened (+0 joint hits)"** (BUG-0618). A joint hit needs both players' bites on one
+  animal within 6 s (teamplay.cpp); the fixture's animals have 6 hp and a bite takes 1 every 1.7 s, so the second
+  player must bite inside the 10 s the first one needs alone. Three things kept the second bot from biting
+  (docs/re/creature.md#creature-combat-click-target, #creature-walk-and-use-blocked):
+  1. A click picks the creature under the cursor: the partner's creature standing at the prey (ability status 12,
+     the key does nothing) or a herd mate, and a click that hits nothing keeps the old target. The bot took any
+     target for its animal (`wrong_target` 249-953 looks per player and run): it stood at the partner "recharging"
+     or bit the neighbour. Now it compares the game's target (`coop.abilities reach`: `target <ptr>`) with the
+     animal's creature in its own game (host: `coop.npc list` `#<id> <ptr>`, guest: `ptr=` of its proxy), clicks
+     higher on the body after a miss (`CLICK_UP`), and turns the camera or steps aside after six misses.
+  2. The game's walk-and-use stops about 2 m short where the partner's creature stands in the way, and further key
+     presses do nothing (BUG-0913, open: a player has the same problem). The bot pressed the key again every 2.5 s
+     until its hunt timed out; now it walks to one side (a click on the ground beside the animal) and presses again.
+  3. The walk-and-use bites once on arrival; after it whoever is in reach first waits (14 s at most while the
+     partner hunts the same animal, 5 s as a leader without a partner) until the partner is in reach too
+     (`Shared.in_reach`), then both bite. Before only the leader waited, and only before its first key press.
+  Also: a hunt ends as `died` when the "You were killed" caption is up (it waited out its 35 s before).
+  `--old-target` (or `SPORE_PLAY_OLD_TARGET=1`): the bot of 0.7.11.
+* Diagnostics kept: every hit the joint table counts is in the host's game log (`team: hit <npc ptr> by player <n>
+  dmg .. hp ..[ joint]`), and play_creature prints a trace per hunt (`hunt trace`: seconds into the hunt and `c` a
+  click that picked the animal, `cx` another creature, `c-` nothing, `X<gap>` the game's target is another creature,
+  `W<gap>` a walk-and-use key, `S<gap>` a step to the side, `h` waiting for the partner, `B<gap>` a bite key in
+  reach, `s<status>` not ready: 8 recharging, 12 the target may not be attacked).
+* play_creature runs (10 min each, lanes 9 / 10, 2026-11-10). The bot of 0.7.11: +0 joint hits in 4 of 10 runs of the
+  day (fix/w47-proxy-destroy 20261110-175415, rel/0.7.12 20261110-200504, feat/w47-visual 20261110-201619, this
+  branch 20261110-210848 #2; the passes +2, +3, +4, +7, +8, +21), 4 of 17 since the 0.7.11 fix. The new bot: 7 of 7,
+  +29, +66, +42 (20261110-220532 #1-#3) and +43, +19, +37, +24 (20261110-223754 #1-#4) joint hits; 8-13 kills by
+  both a run. A first version without the step to the side failed with +0 (20261110-214123 #1).
+* **play_cell "the host's NPCs hunt the guest too"** (BUG-0910) compared chase samples of the two players over
+  the bots' random paths (guest >= a third of the host's unless it was in reach a third as often). Over 45 lab runs
+  the host's NPCs chased the two players alike (host 24916 samples, guest 24165; in reach as prey 3225 / 3420), but
+  single runs went from 25 / 416 to 1269 / 339: a pack that follows one player makes hundreds of samples, so 5 of
+  45 runs failed (and one would have failed the mirrored check). The check is now a controlled trial after the play
+  (`hunt_trial`, docs/re/cell.md#cell-hunt-trial): each player in turn is put 0.6 of the prey range from a hunter
+  of the host's game that hunts no player (`coop.pool prey 80 hunters`, `coop.pool swimto c<key> tp <m>`), the
+  other player outside the range, and that hunter's chase target in the host's game must become the player's cell
+  (0.2-2 s; 8 s and 5 hunters at most). The host's turn shows that the trial works: the check fails when the host
+  is chased and the guest is not. Without a hunter for a trial (a level without hunters) it falls back on the play:
+  the guest was some hunter's chase target, or was hardly ever in reach as prey. The play's numbers are still
+  printed, now with `hunted=` (in the prey range, prey, and the chase target at that moment).
+  `SPORE_CELL_HUNT_RATIO=1` adds the old ratio check. The puppet's level follow got its twin switch
+  `cell.puppet_level` (it had none): off, the trial fails.
+@@CELLRUNS@@
+* Pitfalls: `tools/lab.py run` started with `nohup ... &` ignores SIGINT (use SIGTERM to stop it). A test's script is
+  read when the test starts and the lane's DLL is deployed then too: editing either while `--repeat` runs changes
+  the later repeats.
