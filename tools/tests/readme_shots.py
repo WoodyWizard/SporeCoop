@@ -28,8 +28,19 @@ MAX_KB = 195
 GUEST_CREATURE = 'Chitis'  # one of the guest's own test creations (My Creations), drawn unlike the host's species
 
 
+DEMO_ADDR = '100.64.12.7:47810'  # the README's example address: no PC's own address or test lane port in a picture
+
+
+def demo(*cons):
+    """the window and the overlay show DEMO_ADDR and port 47810 instead of this PC's addresses and the lane's port"""
+    for c in cons:
+        c.call(f'coop.uistate demo {DEMO_ADDR} {lane.PORT} 47810')
+
+
 def grab(con, name, keep=True):
     raw = os.path.join(lane.out_dir('shots'), name + '.png')
+    con.call('move 1380 1000')  # the pointer off the window's buttons (no hover highlight)
+    time.sleep(0.3)
     con.call('shot ' + raw)
     time.sleep(1.0)
     if keep:
@@ -224,9 +235,10 @@ def stage_menu():
     time.sleep(2)
     g.call(lane.JOIN)
     time.sleep(6)
+    demo(h, g)
     h.call('coop.uistate 1')
     time.sleep(3)
-    grab(h, 'ui_lobby')  # before a setting changes: "Settings (1 changed)" spills out of its button (BUG-0904)
+    grab(h, 'ui_lobby')
     ui = Ui(h, 'host')
     if ui.click('settings'):
         st = ui.show_setting('all.friendly_fire')
@@ -249,6 +261,7 @@ def main():
             stage_menu()
             continue
         h, g = start(FIXTURE.get(st, st))
+        demo(h, g)
         time.sleep(4)
         STAGES[st](h, g)
     lane.sh('kill')

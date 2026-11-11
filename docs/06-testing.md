@@ -4894,13 +4894,16 @@ guest order now names its target in the host's log ("target kind K id I ... not 
 
 * `SPORE_LANE=3 python3 tools/tests/readme_shots.py [cell creature tribe civ space gif find menu]` makes every
   picture of the README (docs/media/, 1280x960 JPEG under 195 KB) and `coop_creature.gif` (~7 MB); ~6 min for all.
-  Since 0.7.12 (docs/w47-readme-0712): `menu` makes `ui_lobby` (the lobby in the galaxy menu, taken before a
-  setting changes: "Settings (1 changed)" spills out of its button, BUG-0904) and `ui_settings` (page 1 with
+  Since 0.7.12 (docs/w47-readme-0712): `menu` makes `ui_lobby` (the lobby in the galaxy menu, no setting changed
+  yet) and `ui_settings` (page 1 with
   Friendly fire switched on by a click); `find` (creature fixture) makes `ui_ingame` (the host's F9 window, one chat
   line of each player in its colour, taken 12 s after the chat so the notifications have faded), `partner_arrow`
   (the guest moved 38 m along the host camera's first matrix row with `coop.npc gopos`: off screen, the arrow at the
   edge) and `partner_minimap` (a 2x crop of the minimap, 0..235 x 895..1040 of the 1440x1080 capture, from the same
-  shot). The lobby shows the host's real LAN addresses and the lane's port (47812 on lane 2).
+  shot). Every stage first runs `coop.uistate demo 100.64.12.7:47810 <lane port> 47810` on both games: the
+  window's address lines show that documentation address instead of the PC's own, and the window's texts and the
+  overlay's "CO-OP host :<port>" the default port instead of the lane's (`coop.uistate demo off` ends it). `grab`
+  moves the pointer off the window first (`move 1380 1000`): a button under it is drawn highlighted.
 * `shot <path>` takes ~45 ms at 1440x1080, so a frame sequence at 10 fps works (the GIF: 100 shots in 10 s).
 * `coop.overlay off` hides the status block and the players' name tags too: the README pictures keep the overlay on.
 * Two players walk side by side by real input: right after a load both cameras face the same way, so W held on
