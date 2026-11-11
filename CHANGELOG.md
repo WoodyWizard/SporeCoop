@@ -29,6 +29,7 @@
   game; a player can pick another free one (eight in all): the ">" next to the own colour in the lobby, or the
   console `coop.find color <name>`. Name tags,
   arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
+
 ### Fixed
 - Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
   is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
@@ -54,7 +55,6 @@
   did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
   is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
 
-## [0.7.11] - 2026-11-08
 ## [0.7.11.2] - 2026-11-10
 
 ### Fixed
