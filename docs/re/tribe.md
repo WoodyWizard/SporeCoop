@@ -2300,6 +2300,7 @@ BUG-0643. Lab lane 5.
   picture for the tribe's species: white squares. Fix `creations.png`: a creation's records include its pngs (model group and
   thumbnail group +1). Test tribe_portraits: the guest's game answers the png of the host's species (lab 20261107-081042 FAIL,
   20261107-081214 PASS).
+* (2026-11-11: the players' case was not this one, see #tribe-portraits-session-species, BUG-0921.)
 * ? In the lab the roster kept the fixture species' portraits after the members' species and the tribe's first species key
   (+0x1920, the inline first element of mSpeciesKeys +0x1904, runtime) were set to the host's creation before the world share:
   which key the roster reads was not found, so the test checks the resource, not the screen.
@@ -3041,3 +3042,38 @@ GOG 2024 / Steam code; check against overrides_dc04aee5.sym before use), not ver
   members', and the arrow of F2 when the chief is off screen. Civ keeps the name at the pointer (there it is the
   "where the partner plays" mark the arrow also points at). `coop.find labels` lists the labels of the last overlay
   pass (kind player / chief / member / city / vehicle, the player, the screen point, the world point, the text).
+
+## The roster portraits of a species the host made in the session (2026-11-11, fix/w47-roster-portraits)
+<a id="tribe-portraits-session-species"></a>
+
+BUG-0921 (BUG-0643 again, the case players have). Lab lanes 7 and 8, `coop_roster_portraits.py`.
+* ✔ (runtime, lane 7, Cell -> Creature -> Tribe with 2 players) The guest's player tribe has the host's species key
+  (291E2509 on both; `coop.tribe`), and the roster asks the png {0x2F7D0004, 0x40626200, that key}: the host's game
+  answered it (`coop.creations png 291E2509` known=1), the guest's did not (known=0) and drew every member slot as a
+  plain white square (no red cross: that is a png that is there and broken, #tribe-portraits). The guest did have the
+  picture, under the content key of the host's own species only (7D573565, own_species_*.package).
+* ✔ (code + runtime) Why the BUG-0643 fix missed it: the species of the host's tribe is normally the creature the
+  host plays, and that one reaches a guest twice. First as the host's creation bundle (share_own -> make_bundle,
+  "player 0 creature = ... (2 records)": bem and metadata), which the guest registers under the host's own key at
+  priority 2000 (world_*.package). Then as an own species of the host's world (host_species_out, 4 records with the
+  png, `creations.png`): apply_own_species puts it under the content key 0x7D...... and under the host's key only
+  when nothing answers for that key (`!key_exists`), and the bundle's package already does. So the host's key had
+  a model and no picture. tribe_portraits (BUG-0643) passed because its species is another creation of the host
+  (`coop.tribe setspecies`), never sent as a bundle.
+* Fix `creations.bundle_png`: make_bundle takes the creation's pngs too (the model group and the thumbnail group
+  +1, up to 1 MB each; a bundle of pictures without a bem is sent without them). The world package of the host's key
+  then answers the picture, for every version of the host's creature. Off: as 0.7.11.
+* CORRECTION (2026-11-11, fix/w47-roster-portraits) to #tribe-portraits "the game keeps a picture it drew for the
+  whole process": that holds for a png that was found (also a broken one). A png that was NOT found is asked again:
+  in the same guest process, after the picture was registered and the world loaded again (a rejoin), the white
+  squares became portraits (lane 7, hot reload of the fixed coop.dll into the running games, out/lane7/shots
+  probe_g / probe2_g by eye). ? Whether the slots of a roster that is already on the screen pick the picture up
+  without a load was not tried.
+* ✔ (runtime) The host's species made by the Cell -> Creature change has one png in the host's My Creations (group
+  0x40626200; `coop.creations png <key> 40626201` known=0 on the host) before the first editor is over: the 4
+  records of host_species_out are sent 1 s before the host's editor opens.
+* The picture check of the test: a roster slot is found on a full-size 1440x1080 shot by its frame, a gold row
+  (about 253 224 163) across x 1403..1429; slots are 36.4 px apart from y 646 on (the chief's icon first) or lower
+  with fewer members; the picture is the 21 rows below the frame's 2 rows, x 1407..1428. A white square is 100 %
+  pure white there, a portrait 0 %. On the half-size shots of `twoinst.shot` the gold row blurs: one slot of three
+  was missed.

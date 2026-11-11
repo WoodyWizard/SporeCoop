@@ -46,3 +46,4 @@ Test tribe_portraits (coop_tribe_portraits.py): the host's tribe becomes the hos
 - 2026-11-07: fixed in fix/w46-tribe-civ (creations.png).
 - 2026-11-07 (fix/w46-final-triage): suite.py allows the gate finding the test makes on purpose (lab 20261107-141346: tribe_portraits, monitor puppet `hidden: state older than 5 s` while the killed guest game was silent before its restart).
 - 2026-11-07: released in 0.7.10.
+- 2026-11-11: BUG-0921: the players' case (the tribe is of the creature the host plays, sent as a bundle first) was not covered by creations.png; fixed there (creations.bundle_png, test roster_portraits looks at the screen).

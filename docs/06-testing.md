@@ -5877,3 +5877,24 @@ test command called (`coop.abilities reach`, polled by play_creature's bots) on 
   must never report the removed puppet (`SPORE_FIX_OFF=game.avatar_stale_target,test.reach_target` fails that too:
   80 of 80 asks). Without the fixes the stale reads do not fault in such a short test (the freed block keeps its
   content): the test asserts the state, not the fault.
+
+## The roster portraits on the screenshot; the appeared notice (2026-11-11, fix/w47-roster-portraits)
+<a id="testing-roster-portraits"></a>
+
+* `roster_portraits` (coop_roster_portraits.py, ~6 min, cell fixture, BUG-0921): the campaign's stage changes with two
+  players (`coop_campaign.Campaign.advance('cell')`, `('creature')` on a Namespace of the campaign's arguments: 40 s
+  and 2 min), then a picture check of the Tribe roster: `roster_slots(path)` finds the slots by their gold frame row
+  and gives the share of pure white inside each (1.00 = a white square, 0.00 = a portrait or an icon).
+  `SPORE_FIX_OFF=creations.bundle_png` fails. It needs full-size shots (`shot <path>` by the console, 1440x1080):
+  `twoinst.shot` halves the png and the frame row blurs (one slot of three missed, lab 20261111-064706). The test
+  halves its shots after the check.
+* A stage change the players' way for any test: the Campaign class works with 2 players and without the campaign's
+  main (Player('Alice', lane.HOST), Player('Bob', lane.GUEST, lane.JOIN); `ids()`, `health()`, `advance(stage)`).
+* `appeared_once` (coop_appeared_once.py, ~1 min, creature fixture, BUG-0923): what the host's game shows is read
+  from `coop.status` (`toast <kind> (rect) '<text>'` lines: the notification panels on the screen, 6 s each).
+  `SPORE_FIX_OFF=notify.appeared_once` fails on the creature change part only: the lab applies SPORE_FIX_OFF after
+  the join, so a switch that matters at the join cannot be tested off by the first join; a rejoin in the same host
+  session does not repeat the case (the same bundle id: no puppet rebuild), and a guest that only leaves and joins
+  is shown twice for a real reason (seen in its old copy of the world, then again after its load).
+* A hot reload (`lab.py reload --lane N`) ends the session of the lane's games (both back to not connected, the
+  module's state empty): host and join again by the lane's commands (`lane.HOST_CMD`, `lane.JOIN`).
