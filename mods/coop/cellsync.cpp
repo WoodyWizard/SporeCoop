@@ -3179,6 +3179,16 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host ----------------
+// BUG-0927: which cells a guest gets (the ones within 120 m of its own cell, its nearest 900) was decided with the
+// view centres of the last tile pass (g_views, filled in the PopulateTiles hook). The game runs no tile pass while
+// its simulation stands (a caption that waits for its check mark, a cinematic, the pause menu): in the 0.7.12 final
+// check's campaign the host stood in a caption for 110 s, a guest swam 100 m on and still got the cells around the
+// place it had been at (850 mirrors, none on its screen: 12 % of the host's 159 cells around it). The states are
+// sent in every tick, so the centres are taken in every tick (the same registry, views::partners).
+// Old (`coop.fix cell.send_centres off`): the tile pass's centres.
+static bool g_fix_send_centres = true;
+COOP_FIX("cell.send_centres", "BUG-0927", g_fix_send_centres, "cell: a guest gets the host's cells around where it is now, also while the host's game stands in a caption, a cinematic or the pause menu (it got the cells around where it was when the host stopped)");
+static float g_send_centre_lag, g_send_centre_lag_max;
 struct SendCell {
     uint8_t* c;
     uint32_t idx;
@@ -3230,7 +3240,25 @@ static void host_tick(double now)
     // BUG-0174: each guest gets the cells within 120 m of its own cell (the host populates around it
     // too, h_PopTiles); a guest without a centre yet, or `fix cell.partner_tiles off`: around the host.
     std::vector<E> all;
-    bool per_guest = g_fix_partner_tiles && g_views.size() > 1;
+    // BUG-0927: the centres of this tick, not the tile pass's (see g_fix_send_centres)
+    views::Set fresh;
+    if (g_fix_send_centres && g_fix_partner_tiles) {
+        fresh.set_host({me.x, me.y, 0.f});
+        views::Centre pc[views::kMaxCentres];
+        size_t n = views::partners(modes::kCell, H->time_seconds(), pc, views::kMaxCentres - 1);
+        for (size_t i = 0; i < n; i++)
+            fresh.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
+        if (g_views.size() > 1 && fresh.size() > 1) { // diagnostics: how far the tile pass's centres are behind
+            float worst = 0;
+            for (auto& c : fresh.list())
+                if (const views::Centre* o = c.player ? g_views.find(c.player) : nullptr)
+                    worst = std::fmax(worst, std::hypot(o->pos.x - c.pos.x, o->pos.y - c.pos.y));
+            g_send_centre_lag = worst;
+            g_send_centre_lag_max = std::fmax(g_send_centre_lag_max, worst);
+        }
+    }
+    const views::Set& vs = g_fix_send_centres && g_fix_partner_tiles ? fresh : g_views;
+    bool per_guest = g_fix_partner_tiles && vs.size() > 1;
     for_each_cell([&](uint8_t* c, uint32_t idx) {
         if (modes::cell_is_puppet(c) || !F<void*>(c, kRes))
             return;
@@ -3240,7 +3268,7 @@ static void host_tick(double now)
                 H->log(M, SK_WARN, "coop: cell: host cell %08X has a pose that is not finite: not sent (BUG-0292)", idx);
             return;
         }
-        if (per_guest ? !g_views.near_any(p.x, p.y, 120.f) && net::dist(p, me) > 120.f : net::dist(p, me) > 120.f)
+        if (per_guest ? !vs.near_any(p.x, p.y, 120.f) && net::dist(p, me) > 120.f : net::dist(p, me) > 120.f)
             return;
         all.push_back({c, idx});
     });
@@ -3248,7 +3276,7 @@ static void host_tick(double now)
     for (auto& pl : C.sess->players()) {
         if (pl.id == 0)
             continue;
-        const views::Centre* vc = per_guest ? g_views.find((uint8_t)pl.id) : nullptr;
+        const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
         if (vc) {
@@ -6215,7 +6243,10 @@ std::string status()
     snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u wipe_calls=%u wipe_kept=%u wipe_destroyed=%u wipe_near_lost=%u\n",
              (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again,
              g_wipe_calls, g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost);
-    return b + std::string(d) + t + j + o;
+    char sc[160]; // BUG-0927
+    snprintf(sc, sizeof sc, "cell_send_centres: fix=%d tile_pass_behind=%.1f max=%.1f tile_passes=%u\n", (int)g_fix_send_centres,
+             g_send_centre_lag, g_send_centre_lag_max, g_tile_passes);
+    return b + std::string(d) + t + j + o + sc;
 }
 
 std::vector<syncdbg::Entry> sync_entries()
