@@ -2557,6 +2557,25 @@ bool avatar_swap_settling(double now)
     return swap || fresh;
 }
 
+// BUG-0928: SetSpecies gives the avatar the new species' health maximum and leaves its health as it was: a guest
+// that went from its own creature (16 of 16) to the host's (10 at most) had 16 of 10 (a bar of "16" over a body
+// with 10, regenerating on top), and the way back left a full creature at 10 of 16. On: the avatar keeps the share
+// of its health over the swap (full stays full, half stays half). Off: the old number stays.
+static bool g_swap_health_fix = true;
+COOP_FIX("creations.swap_health", "BUG-0928", g_swap_health_fix, "creations: the avatar keeps its share of health when its creature is swapped");
+static unsigned g_swap_health_set;
+static void swap_health(void* av, float hp0, float max0)
+{
+    float max1 = game::max_health(av);
+    if (!g_swap_health_fix || game::is_dead(av) || !(hp0 > 0) || !(max0 > 0) || !(max1 > 0) || max1 == max0)
+        return;
+    float share = hp0 / max0 > 1.f ? 1.f : hp0 / max0;
+    float hp1 = share * max1 < 1.f ? 1.f : share * max1;
+    game::set_health(av, hp1);
+    g_swap_health_set++;
+    H->log(M, SK_INFO, "creations: own avatar's health %.1f/%.1f -> %.1f/%.1f over the swap (BUG-0928)", hp0, max0, hp1, max1);
+}
+
 static void apply_own_avatar()
 {
     if (game::mode_id() == modes::kCell && C.sess && C.sess->connected()) {
@@ -2599,7 +2618,9 @@ static void apply_own_avatar()
             return; // not resolvable (yet)
         }
         int age = *(int*)((uint8_t*)av + 0xB34);
+        float hp0 = game::health(av), max0 = game::max_health(av);
         thiscall<bool>(a_SetSpecies, av, prof, age, true);
+        swap_health(av, hp0, max0);
         g_swap_at = now;
         g_swap_frame = H->frame_index();
         g_swaps++;

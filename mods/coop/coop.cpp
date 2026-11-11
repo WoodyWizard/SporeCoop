@@ -1381,6 +1381,8 @@ bool g_editor_now_fix = true;
 // F5 (BUG-0769): the session setting creature.mode = host (everybody plays the host's creature) is in force here
 bool host_creature_mode() { return settings::get(settings::kCreatureMode) == 1; }
 uint32_t g_one_evolutions = 0, g_one_refused = 0; // its host evolutions / refused guest editor requests (coop.status)
+// BUG-0920: an editor request the mod took and will never submit (evo_flag_tick clears the game's flag at once)
+bool g_evo_flag_refused = false;
 COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Creature evolution editor opens at once; each guest gets an Evolve now offer instead of the ready vote");
 constexpr uint8_t kVoteOffer = 1; // MSG_VOTE flags: an evolve offer, not a vote (sent with active = 0: older guests ignore it)
 constexpr double kOfferSeconds = 90.0;
@@ -2017,6 +2019,7 @@ bool SK_CDECL h_Submit(void* req)
             g_one_refused++;
             LOG("evolution: creature.mode host: this guest's editor request is refused (the host evolves)");
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
+            g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
             return false;
         } else if (now_ok) { // BUG-0516: the host's evolution goes on now, the guests get an offer
             uint32_t id = skg::field<uint32_t>(req, 0xC);
@@ -3008,6 +3011,49 @@ void* g_settle_avatar = nullptr;
 double g_settle_since = 0;
 bool pause_ui_up();
 
+// BUG-0920: the game's "an editor of the stage is pending" flag left set with no editor coming. The creature
+// stage's evolution request (its message handler 0xD42E50, the mating call) sets the byte 0x1686AF0 after
+// EditorRequest::Submit whatever Submit answered, and only the next mode switch clears it (0xB5F19D). While it is
+// set the frame function 0xB5EAE0 skips the stage's own drawing: the world and the whole game HUD are gone, the
+// screen is black with only the mod's overlay, for good (60 s, input and F9 change nothing; the byte written back
+// to 0 brings the picture back within a frame). A request the mod's Submit hook refuses and never submits later
+// (creature.mode host: a guest's own evolution request, 0.7.12) left the guest like that; a held request that
+// is dropped, or one the game's own Submit refuses, would too. On: when the flag is set in a stage and nothing
+// will open an editor (no vote, no held or queued request, no own editor due, no mode switch pending, no request
+// submitted in the last 15 s), it is cleared: at once after a refusal, else after 1 s of that state. Off: as before.
+bool g_evo_flag_fix = true;
+COOP_FIX("core.evo_flag_clear", "BUG-0920", g_evo_flag_fix,
+         "core: an editor request that is refused or dropped does not leave the stage's screen black (the game's editor-pending flag is cleared)");
+unsigned g_evo_flags_cleared = 0; // coop.status, tests
+double g_evo_flag_idle_since = 0;
+int evo_flag_now()
+{
+    uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag");
+    return f ? *(uint8_t*)f : -1;
+}
+void evo_flag_tick(double now)
+{
+    bool refused = g_evo_flag_refused;
+    g_evo_flag_refused = false;
+    uintptr_t f = g_evo_flag_fix ? H->sym("SporeCoop::CreatureEvolutionPending_flag") : 0;
+    if (!f || !*(uint8_t*)f || !stage_mode(game::mode_id()) || g_vote.active || g_submit_later || g_submit_queued ||
+        g_own_editor_due || g_own_editor_queued || mode_switch_pending() || now - g_editor_submitted_at < 15.0) {
+        g_evo_flag_idle_since = 0;
+        return;
+    }
+    if (!refused) { // not the mod's own refusal: only after the state held for a second
+        if (!g_evo_flag_idle_since)
+            g_evo_flag_idle_since = now;
+        if (now - g_evo_flag_idle_since < 1.0)
+            return;
+    }
+    *(uint8_t*)f = 0;
+    g_evo_flag_idle_since = 0;
+    g_evo_flags_cleared++;
+    LOG("evolution: the game's editor-pending flag was left set with no editor coming (%s): cleared, the stage is drawn again (BUG-0920, %u)",
+        refused ? "the request was refused" : "nothing pending for 1 s", g_evo_flags_cleared);
+}
+
 // BUG-0404 (the busy gate): the guest's own editor waited for a cinematic but not for a pause: due
 // while the guest's game time stood (the pause menu, the Sporepedia, My Collections) it was dropped
 // for good ("your editor did not open (pause menu)") or opened under the Sporepedia. It now waits at
@@ -3531,6 +3577,7 @@ void on_frame(void*, int, void*)
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
+    evo_flag_tick(now); // BUG-0920
     offer_tick(now); // BUG-0516
     vote_action_tick(now);
     coop_ui::tick();
@@ -6985,6 +7032,21 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
                                *(uint8_t*)f = 1;
                            SAY("evolution request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "mate") && game::mode_id() == modes::kCreature) {
+                           // tests (BUG-0920): the game's own evolution request, not one built by the mod: its message
+                           // handler 0xD42E50 run with message 0x4471C60 and +0xDA set (the avatar met its mate, as
+                           // coop.editreq diff does), the request goes through the Submit hook like a player's mating
+                           // call; the game then posts 0x5D02A72 and sets its editor-pending flag itself
+                           if (!game::avatar() || !g_creature_game || !o_CreatureGameMsg) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           uint8_t& da = skg::field<uint8_t>(g_creature_game, 0xDA);
+                           uint8_t da0 = da;
+                           da = 1;
+                           o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
+                           da = da0;
+                           SAY("the game's own evolution request ran (editor-pending flag %d)\n", evo_flag_now());
                        } else if (argc > 1 && !strcmp(argv[1], "action") && g_sess.role() == net::Role::Host) {
                            // an action vote like the superweapon's (tests, BUG-0043)
                            start_action_vote(g_name + " wants to test an action", "the test action runs",
@@ -7000,7 +7062,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            "editor under the game's own pause %u (own busy %s, editor pause count %d)\n"
                            "votes of the host not taken elsewhere %u\n"
                            "switch votes %u (host clicks held %u, guest clicks held %u, arrivals ready %u)\n"
-                           "evolve offers sent %u got %u taken %u expired %u, offer now %d",
+                           "evolve offers sent %u got %u taken %u expired %u, offer now %d\n"
+                           "editor-pending flag %d, cleared %u (BUG-0920)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
@@ -7008,7 +7071,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
                            editor_pause_count(), g_vote_elsewhere, g_switch_votes, g_switch_held, g_switch_guest_held,
                            g_switch_arrivals, g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired,
-                           g_offer_editor ? 1 : 0);
+                           g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does
