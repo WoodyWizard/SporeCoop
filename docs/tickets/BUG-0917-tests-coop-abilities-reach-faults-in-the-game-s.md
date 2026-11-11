@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w47-target-gap
-commits: bb0c7737, 5dc9698c
+commits: bb0c7737, 5dc9698c, 0d586e59
 tests: avatar_stale_target, play_creature, long_creature_short, campaign, long_creature
 signature: 0xC0000005 at 0x3F800000, calls 00D99A4A (Ability_TargetGap+0x2A)
 docs: docs/re/creature.md#creature-avatar-stale-target, docs/06-testing.md#testing-commands-object-list
@@ -106,7 +106,14 @@ Test `avatar_stale_target` (tools/tests/coop_avatar_stale_target.py, lane 9, fix
 * With the guard on and the game fix off (out/lab/20261111-031056): reach used the removed puppet 0 times of 96 asks
   while the field named it (the run fails on BUG-0918's check only).
 * PASS: out/lab/20261111-031225, out/lab/20261111-031354.
-VERIFY_RUNS
+Play runs with both fixes (fix/w47-target-gap, `SPORE_DETECTOR=20`, no fault in any game log): play_creature x3 on
+lane 9: out/lab/20261111-031649, out/lab/20261111-032734, out/lab/20261111-033823 (all OK; the avatar's target was
+cleared at a destroy 1, 3 and 2 times, the reach command met no stale target any more); long_creature_short x2 on
+lane 10: out/lab/20261111-031658 (both OK, 4 clears). Before the game fix, play_creature out/lab/20261111-025527
+(the guarded command only): OK, one stale target met and reported as no target.
+The full long_creature (lane 10, 45.9 min, the test that failed): out/lab/20261111-034946 OK, no fault, 3 clears.
+Related tests on lane 9 (all OK): creature_kills out/lab/20261111-035019, npc_lost_target out/lab/20261111-035136,
+team out/lab/20261111-035316, avatar_stale_target out/lab/20261111-035408. The campaign was not rerun.
 `make test` passes.
 
 ## History
