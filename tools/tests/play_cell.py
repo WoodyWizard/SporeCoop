@@ -511,6 +511,13 @@ def main():
         ck(gained >= 20, f'the pair made progress by playing (food {food0["host"]} -> {hs["food"]})')
         ck(not food_mismatch, f'food progress equal on both machines ({len(hist) - len(food_mismatch)}/{len(hist)} checks; '
            f'mismatches {food_mismatch[:5]})')
+        # (a meal in the last moment: the guest's total follows the host's within a second, as in the measures above;
+        # read once, the end check failed 210 / 204 in lab 20261110-222127 #1, BUG-0910)
+        for _ in range(3):
+            if hs['food'] == gs['food']:
+                break
+            time.sleep(1.2)
+            hs['food'], gs['food'] = pool(host)['food'], pool(guest)['food']
         ck(hs['food'] == gs['food'], f'and at the end ({hs["food"]} / {gs["food"]})')
         ck((hs['own_points'] or 0) > 0 and (gs['own_points'] or 0) > 0,
            f'both ate by themselves (host {hs["own_eats"]} items / {hs["own_points"]} points, guest {gs["own_eats"]} / '
