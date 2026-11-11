@@ -10,7 +10,7 @@ role: both
 versions: 0.7.11.1
 fixed_in: unreleased
 branch: fix/w47-b2-space
-commits: COMMITS
+commits: 63288d47
 tests: tools/tests/coop_space_terra_elsewhere.py
 signature:
 docs: docs/re/space.md#space-sculpt-colour
