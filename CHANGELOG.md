@@ -2,84 +2,79 @@
 
 ## [Unreleased]
 
+A feature update built from the players' suggestions: a new co-op window, session settings chosen by the host,
+arrows and minimap marks to find each other, player colours, and one report for the whole session.
+
 ### Added
-- Session settings: the host's co-op settings now reach every player when they join and whenever the host changes
-  one, and they are kept with the host's world, so the next session in that world plays with the same choices. The
-  `coop.ini` lines `dna_pace`, `npcs_target_partners` and `teamplay` are now the defaults for a new world. Some
-  settings can only be changed before the start (no world loaded), others ("live") also during play. Console:
-  `coop.settings` (BUG-0762).
-- Cell: the regeneration near a partner ("shared healing") can be turned off by the host, also during play (setting
-  `cell.regen`, on by default) (BUG-0762).
-- The co-op window in steps: the first start asks for your name (the one the other players see), then "Host a game"
-  or "Join a game". Host: the port and the Host button, with the addresses to give your friends. Join: the games found
-  on your network, and an address field that also takes a host name (`sporecoop.local`; port 47810 when none is
-  typed). The lobby shows each player's colour, stage, ping and ready state and the host's address, and has a
-  Settings page with the session settings by group: the host changes them (the "live" ones also during play, the
-  others are locked once the game started), guests see them. The host has a button "Ask the players for their
-  reports" (see below). "Stop hosting" is now "Close session" (BUG-0765).
+- A new co-op window in steps. The first time it asks for your name (the one the other players see; *Change name*
+  later), then *Host a game* or *Join a game*. Host: the port and the Host button, with the addresses to give your
+  friends. Join: the games found on your network, and an address field that also takes a host name
+  (`sporecoop.local`; port 47810 when you type none). The lobby shows each player's colour, stage, ping and ready
+  state and the host's address, and has a **Settings** page (see below) (BUG-0765).
 - "Report a problem" in the game's pause menu (Esc), below "Quit Spore": it makes the same report as the co-op
   window's button (BUG-0765).
+- One report for the session: the host's "Report a problem" also asks every guest for its report, and the host's
+  button "Ask the players for their reports" (lobby and F9) does it any time without the host's own report. Each
+  guest's co-op window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is
+  sent without that click. The reports come to the host over the session and the host gets one file to send,
+  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
+  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
+  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
+- Session settings: the host decides which co-op mechanics are on, on the Settings page of the co-op window (or
+  `coop.settings` in the console). The settings reach every player when they join and whenever the host changes one,
+  and they are kept with the host's world, so the next session in that world plays with the same choices. Most can
+  only be changed before the game starts; the "live" ones also during play (F9). Guests see them but cannot change
+  them. The defaults keep today's behaviour (BUG-0762, BUG-0768). The settings:
+  - all stages: partner arrows, partners on the minimap and name tags over players (live), progress at the
+    single-player pace, NPC animals treating partners like the host's creature, how many players a session takes
+    (2 to 4) and whether new players may join after the start (live; a player who lost the connection may always
+    come back);
+  - Cell: regeneration near a partner ("shared healing", live), the knock-out instead of death next to a partner,
+    the respawn next to the partner as a small cell, the vote before the Creature stage;
+  - Creature: pack rescue, partners healing each other (live), the joint hunt bonus, the host's evolution editor
+    opening at once;
+  - Tribe: the pincer bonus, the chief aura, the duet, the epic creature event;
+  - Civilization: roles, the joint siege bonus, the superweapon vote;
+  - Space: "disabled, not destroyed", trade, co-op contracts, shared diplomacy, partners as allies, the finale
+    together, the rivals mode.
+- Friendly fire (a setting, off by default): players' creatures can hurt each other in the Creature stage. Cell,
+  Tribe and Civilization follow later; Space keeps its rivals mode (BUG-0768).
+- One creature for everyone (a setting for Cell and Creature, off by default): every guest plays the host's species
+  and only the host evolves it (its editor opens at once, no vote); the guests get no editor and no creation arrows,
+  and every evolution of the host changes every player's creature at once (BUG-0769).
 - Find each other: every partner who is off screen gets an arrow at the edge of the screen, in the partner's colour,
-  with the name and the distance (Cell and Creature: the partner's creature, Tribe: its chief, Civilization: where the
-  partner plays, else its capital, Space: its ship). On screen the name tag stays. Host settings `all.partner_arrows`
-  (on; never in the Rivals mode) and `all.partner_map` (on), both changeable during play (BUG-0764).
+  with the name and the distance (Cell and Creature: the partner's creature, Tribe: its chief, Civilization: where
+  the partner plays, else its capital, Space: its ship). On screen the name tag stays. Never in the Rivals mode
+  (BUG-0764).
 - Partners on the minimap: in Creature and Tribe every partner shows on the game's minimap as a mark in the
   partner's colour (BUG-0764).
-- Player colours: every player gets one of four distinct colours (yellow, blue, pink, green), the same on every
-  game; a player can pick another free one (eight in all): the ">" next to the own colour in the lobby, or the
-  console `coop.find color <name>`. Name tags,
-  arrows, minimap marks, the galaxy map's tags and the chat lines show it (BUG-0764).
-- Every co-op mechanic is now a host setting (the Settings page of the co-op window, `coop.settings`), with today's
-  behaviour as the default: name tags over players (`all.name_tags`, changeable during play), the number of players
-  a session takes (`all.max_players`, 2 to 4) and whether new players may join after the start (`all.late_join`; a
-  player who lost the connection may always come back), Cell knock-out instead of death next to a partner
-  (`cell.knockout`) and the respawn next to the partner as a small cell (`cell.respawn_small`), the vote before the
-  Creature stage (`core.switch_vote`), the host's evolution editor opening at once (`core.editor_now`), Tribe pincer
-  bonus, chief aura, duet and epic creature event (`tribe.pincer`, `tribe.chief_aura`, `tribe.duet`, `tribe.epic`),
-  Civilization roles, joint siege bonus and the superweapon vote (`civ.roles`, `civ.joint_siege`,
-  `civ.superweapon_vote`), Space "disabled, not destroyed" (`space.disable`) and the Space features trade, co-op
-  contracts, shared diplomacy, partners as allies, the finale together and the rivals mode (`space.trade`,
-  `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals`) (BUG-0768).
-- Friendly fire (setting `all.friendly_fire`, off by default): players' creatures can hurt each other in the Creature
-  stage. Cell, Tribe and Civilization follow later; Space keeps its rivals mode (BUG-0768).
-- One creature for everyone (setting `creature.mode`, Cell and Creature): "everybody plays the host's creature".
-  Every guest plays the host's species, only the host evolves it (its editor opens at once, no vote), the guests get
-  no editor and no creation arrows, and every evolution of the host changes every player's creature at once
-  (BUG-0769).
+- Player colours: every player gets one of four distinct colours (yellow, blue, pink, green), the same in every
+  game; a player can pick another free one (eight in all) with the ">" next to the own colour in the lobby (or
+  `coop.find color <name>`). Name tags, arrows, minimap marks, the galaxy map's tags and the chat lines show it
+  (BUG-0764).
+
+### Changed
+- The co-op window's "Stop hosting" is now "Close session" (BUG-0765).
+- The `coop.ini` lines `dna_pace`, `npcs_target_partners` and `teamplay` are now only the defaults for a new world;
+  a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
-- Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
-  the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
-- Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
-  the games of the partners on the same planet too; before, only the user saw the new terrain and colours (BUG-0763).
-- Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
-  is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
-  (BUG-0751).
-- Space: a colony building a guest buys while the host's ship is on another planet (or in orbit) is no longer lost
-  for the host's world: the host's game builds it once its ship is on that planet (BUG-0766).
-- Space: a building the host buys in a colony's city planner, and one a guest buys, now appear in every other
-  player's colony city too (on their planet, or when their ship gets there); before, only the buyer and the host had
-  it (BUG-0884).
-- Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
-  partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
+- Space: terraforming now reaches your partners. The atmosphere, temperature and water tools (Atmosphere Generator,
+  Ice Comet and the like) change the planet in the partners' games too (their game received the change but never
+  applied it), also when no partner is on that planet at the time (before, the change was lost for them and the
+  planet kept different T-scores); and the terrain sculpting tools (raise, lower, flatten...) and the planet
+  colouring tools change it in the games of the partners on the same planet (before, only the user saw the new
+  terrain and colours) (BUG-0749, BUG-0883, BUG-0763).
+- Space: buildings bought in a colony's city planner now appear in every player's game. A guest's building is built
+  in the host's game (before, it stayed in the guest's game only while the money was spent for everybody), also when
+  the host's ship is on another planet or in orbit (it is built once the ship gets there), and a building the host
+  or a guest buys appears in every other player's colony city too (BUG-0751, BUG-0766, BUG-0884).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
   made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
 - Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not
   respawn bigger than "small again" (BUG-0746).
-- Tribe: a guest's game uses up the spawn place of a village the host's game founded, as the host's does, so the
-  same place is never used twice (BUG-0741).
 - Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
   members gather from the nearest fruit tree there (BUG-0744).
-
-### Tests
-- Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
-- One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
-  players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
-  window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without
-  that click. The reports come to the host over the session and the host gets one file to send,
-  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
-  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
-  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
 
 ## [0.7.11.2] - 2026-11-10
 
