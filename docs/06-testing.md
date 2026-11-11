@@ -5870,3 +5870,29 @@ test command called (`coop.abilities reach`, polled by play_creature's bots) on 
   must never report the removed puppet (`SPORE_FIX_OFF=game.avatar_stale_target,test.reach_target` fails that too:
   80 of 80 asks). Without the fixes the stale reads do not fault in such a short test (the freed block keeps its
   content): the test asserts the state, not the fault.
+
+## A dialog on the main thread: the runtime's error box in the log (2026-11-11, fix/w47-final12)
+<a id="testing-dialog-note"></a>
+
+BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopped in 'Wine C++ Runtime Library').
+* A game that "FROZE" with `faults 0` may show a dialog: the C runtime's error box (the game's MSVCR90 and our UCRT
+  DLLs both: R6025 pure virtual function call, abort(), an assertion) raises no exception. Look in its game log for
+  `watchdog: no frames for 2.0 s, the main thread shows a dialog '<title>': [Static] '<text>' [Button] 'OK'` and the
+  lines `WATCHDOG (a dialog on the main thread): its call chain, read by the thread itself` after it: return
+  addresses of every module from the top of the stack down (candidates, as every stack scan: stale words are among
+  them). The runtime's frames (msvcr90.dll / ucrtbase.dll) come first, the first SporeApp.exe / coop.dll address
+  under them is the caller. A runtime library box also writes `report-*.txt` (the lab fails the test on it).
+* Under Wine, do not suspend a thread that sits in a nested message loop (SuspendThread + GetThreadContext from the
+  watchdog: lab 20261111-062921-2, the suspend did not return while the box was up and the thread stayed stopped
+  afterwards). A thread that pumps messages reads its own stack (WM_SK_STACK, `stack.here`).
+* Test `dialog_note` (coop_dialog_note.py, 1 min, creature fixture, `reports=True`): `kit.test.dialog 6000 report`
+  shows a message box with a runtime error's text on the host's main thread and closes it; the log line, the chain
+  (user32 and sporekit in it), the report and frames afterwards are checked. `DIALOG_NOTE_OFF=1` (`kit.fix
+  dialognote 0`) fails.
+* Test `cell_host_paused` (coop_cell_host_paused.py, 1.5 min, cell fixture, BUG-0927): the host in its pause menu,
+  the guest jumps 130 m: its coverage of the host's cells around its new place (`SPORE_FIX_OFF=cell.send_centres`
+  fails with 10 %). The campaign's coverage check also meets this state whenever the host stands in a caption.
+* The campaign's `info` finding "the stage change tribe -> civ did not finish in 20 min (the raids did not conquer
+  every tribe in time)" is the expected slow path (see the campaign section: the Tribe stage's end by raids is not
+  sure to come in time, the host jumps): also in the final checks of 0.7.10 (20261107-141346) and 0.7.11
+  (20261108-114435).

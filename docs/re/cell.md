@@ -2137,3 +2137,19 @@ players for prey: 5-14 within 80 m, prey ranges 4.0 and 8.3 m), `coop.pool prey 
 * How often a player is hunted in free play says little about this: over 45 lab runs of play_cell the host's NPCs
   chased the host in 24916 samples and the guest in 24165 (in reach as prey 3225 / 3420), while single runs went
   from 25 / 416 to 1269 / 339 (a pack that follows one player makes hundreds of samples).
+
+## Which cells a guest gets while the host's game stands (2026-11-11, fix/w47-final12)
+<a id="cell-send-centres"></a>
+
+BUG-0927. GOG 2024, lab lanes 2 and 5.
+* ✔ (runtime) The game runs no tile pass (PopulateTiles, our hook `h_PopTiles`) while its simulation stands:
+  the pause menu (`tile_passes` of `coop.pool` 1855 -> 1855 over 8 s, lab 20261111-063915), a caption that waits for
+  its check mark / a cinematic (`busy=cinematic,input_lock`, the `tiles:` line once in 110 s, lab 20261111-044257
+  campaign). Nothing is populated or removed on the host meanwhile; the mod's `host_tick` still sends states 10
+  times a second and the guests still play.
+* ✔ Anything the host decides per send tick must not read state that only the tile pass refreshes: the per-guest
+  choice (within 120 m, the nearest 900) read the tile pass's view centres and a guest that swam on got the cells
+  around its old place (10-13 % of the host's cells around it). The centres now come from `views::partners` in
+  every tick (`cell.send_centres`).
+* A guest that swims out of the area the host populated before it stood finds open water until the host plays
+  again (the tile pass is the game's): not changed.
