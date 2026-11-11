@@ -467,9 +467,31 @@ std::string status()
     return b;
 }
 
+struct Label {
+    std::string kind, text;
+    uint8_t id;
+    float sx, sy, p[3];
+};
+static std::vector<Label> g_labels;
+void labels_begin() { g_labels.clear(); }
+void note_label(const char* kind, uint8_t id, const std::string& text, const float sc[2], const float world[3])
+{
+    if (g_labels.size() < 256)
+        g_labels.push_back({kind, text, id, sc[0], sc[1], {world[0], world[1], world[2]}});
+}
+
 int command(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string a1 = argc > 1 ? argv[1] : "";
+    if (a1 == "labels") { // tests (BUG-0907): the name labels of the last overlay pass
+        int sw = 0, sh = 0;
+        H->screen_size(&sw, &sh);
+        for (auto& l : g_labels)
+            SAY("label kind=%s id=%u sx=%.1f sy=%.1f pos=%.2f,%.2f,%.2f text=%s\n", l.kind.c_str(), l.id, l.sx, l.sy, l.p[0],
+                l.p[1], l.p[2], l.text.c_str());
+        SAY("labels=%u sw=%d sh=%d\n", (unsigned)g_labels.size(), sw, sh);
+        return 0;
+    }
     if (a1 == "color" && argc > 2 && (!strcmp(argv[2], "none") || !strcmp(argv[2], "auto"))) { // no pick: the host assigns
         g_want = -1;
         if (H->config_set_str)
