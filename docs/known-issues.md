@@ -2556,3 +2556,13 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: space_free, the guest sculpts / recolours 01460035 alone (coop_space_sculpt_tool.py's clicks), then the
   host lands there: coop.ground at the spot and `coop.space sculpt` colours differ.
 * Ticket: BUG-0900.
+
+## Tribe looks the review of key frames found (2026-11-10, feat/w47-visual)
+<a id="issue-tribe-review-looks"></a>
+
+* What happens: with the same fixed camera on both games (same_view_tribe), the guest draws the host's chief without
+  the chief's staff the host's game shows (BUG-0906), and the guest shows a partner's name tag over empty ground with
+  no member under it (BUG-0907; also seen in play_tribe's start frame).
+* Reproduce: `tools/lab.py run same_view_tribe --lane N`, then `tools/frames_review.py <run>` and open the
+  same_view_tribe sheets (lab 20261110-201619).
+* Tickets: BUG-0906, BUG-0907.

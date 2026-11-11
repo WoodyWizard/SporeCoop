@@ -5944,6 +5944,12 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui: back to the first start (the name step)");
         return 0;
     }
+    if (argc > 2 && (!strcmp(argv[1], "nudge") || !strcmp(argv[1], "hide"))) { // tests: ui_golden's twin
+        bool hide = !strcmp(argv[1], "hide");
+        SAY("%s", coop_ui::test_nudge(argv[2], argc > 3 && !hide ? (float)atof(argv[3]) : 0.f,
+                                      argc > 4 && !hide ? (float)atof(argv[4]) : 0.f, hide).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "color")) { // tests / layout shots: a colour for players without one
         coop_ui::set_test_color((uint32_t)strtoul(argv[2], nullptr, 16));
         SAY("ui: test colour %s", argv[2]);
@@ -7240,7 +7246,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>] - co-op window state (open/close it; lang, first, color: tests)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off] - co-op window state (open/close it; lang, first, color, nudge, hide: tests)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");

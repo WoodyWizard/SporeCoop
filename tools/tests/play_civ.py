@@ -22,7 +22,7 @@ import time
 import lane
 from coop_ui import Ui
 from sporectl import Console
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 W, H = 1440, 1080
 HUD_BOTTOM = 940  # the palette / minimap / buttons start below this line
@@ -869,7 +869,12 @@ def main():
     capture_max = {}
     owners0 = {i: c['pol'] for i, c in hcit.items()}
     try:
+        keyframe('start', 'both games in Civilization: the cities and vehicles with their real models (no default cubes), the Civ HUD in place')
+        kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and not game.stop:
+            if not kf_mid[0] and time.time() > t0 + a.minutes * 30:
+                kf_mid[0] = True
+                keyframe('mid', 'play in progress: vehicles on the ground or in the air as their kind is, the same buildings on both, no black screen')
             time.sleep(8)
             if Monitor.events:
                 game.problem('invariant: ' + '; '.join(Monitor.events))
@@ -972,6 +977,7 @@ def main():
             print('   ', line)
         print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_civ.py --minutes {a.minutes} --seed {seed}')
     try:
+        keyframe('end', 'after the play: both games in Civ play, the same cities and vehicles on both, no loading screen')
         shot(host, 'play_civ_host.png')
         shot(guest, 'play_civ_guest.png')
         ck.faults(host=host, guest=guest)

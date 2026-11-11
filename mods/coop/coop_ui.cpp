@@ -1618,6 +1618,34 @@ static void pause_menu_tick()
     H->log(M, SK_INFO, "ui: \"Report a problem\" added to the pause menu (%d buttons, pitch %.1f)", n, pitch);
 }
 
+// tests (ui_golden's twin, docs/06-testing.md#testing-ui-golden): a named control moved by (dx, dy) or hidden,
+// applied at the end of every refresh, so the page logic cannot put it back
+struct Nudge {
+    float dx = 0, dy = 0;
+    bool hide = false;
+    bool have_base = false;
+    Rect base{};
+};
+static std::map<std::string, Nudge> g_nudges;
+
+static void apply_test_nudges()
+{
+    for (auto& [name, n] : g_nudges) {
+        auto it = g_named.find(name);
+        if (it == g_named.end() || !it->second)
+            continue;
+        Win w = it->second;
+        if (!n.have_base) {
+            n.base = sui::area(w);
+            n.have_base = true;
+        }
+        if (n.hide)
+            sui::set_visible(w, false);
+        else
+            sui::set_area(w, Rect{n.base.x1 + n.dx, n.base.y1 + n.dy, n.base.x2 + n.dx, n.base.y2 + n.dy});
+    }
+}
+
 static void refresh()
 {
     g_pending = false;
@@ -1703,6 +1731,8 @@ static void refresh()
         refresh_lobby();
     else
         refresh_connect();
+    if (!g_nudges.empty())
+        apply_test_nudges();
 }
 
 static void refresh_task(void*) { refresh(); }
@@ -1880,6 +1910,27 @@ std::string debug_state()
     H->screen_size(&sw, &sh);
     snprintf(b, sizeof b, "screen %d %d\n", sw, sh);
     s += b;
+    if (D.root) { // the window's frame on the screen (tests: ui_golden crops it)
+        Rect r = sui::screen_rect(D.root);
+        snprintf(b, sizeof b, "window %.0f %.0f %.0f %.0f %d\n", r.x1, r.y1, r.x2, r.y2, (int)sui::visible(D.root));
+        s += b;
+        // the texts that vary between runs (ui_golden masks them): addresses, ports, pings, the version, chat, LAN
+        std::vector<std::pair<std::string, Win>> areas = {
+            {"session", D.session}, {"hostaddr", D.address}, {"version", D.version}, {"lanhdr", D.lan_hdr},
+            {"statusline", D.status}, {"world", D.world}, {"creationline", D.creation}, {"setline", D.set_line},
+            {"meline", D.me_line}, {"hosthint", D.host_hint}};
+        for (int i = 0; i < 4; i++)
+            areas.push_back({"ping" + std::to_string(i), D.row_ping[i]});
+        for (int i = 0; i < 5; i++)
+            areas.push_back({"chatline" + std::to_string(i), D.chat_lines[i]});
+        for (auto& [nm, w] : areas)
+            if (w) {
+                Rect a = sui::screen_rect(w);
+                snprintf(b, sizeof b, "area %s %.0f %.0f %.0f %.0f %d\n", nm.c_str(), a.x1, a.y1, a.x2, a.y2,
+                         (int)sui::visible(w));
+                s += b;
+            }
+    }
     if (g_menu_btn && in_menu()) { // never a call on an item of a menu that is gone (BUG-0163)
         Rect r = sui::screen_rect(g_menu_btn);
         snprintf(b, sizeof b, "menu %.0f %.0f %.0f %.0f %d '%s'\n", r.x1, r.y1, r.x2, r.y2,
@@ -1963,6 +2014,30 @@ void set_test_color(uint32_t argb)
 {
     g_test_color = argb;
     g_dirty = true;
+}
+
+std::string test_nudge(const std::string& name, float dx, float dy, bool hide)
+{
+    if (name == "off") { // every nudged control back to its place
+        for (auto& [nm, n] : g_nudges) {
+            auto it = g_named.find(nm);
+            if (it != g_named.end() && it->second && n.have_base)
+                sui::set_area(it->second, n.base);
+        }
+        g_nudges.clear();
+        g_dirty = true;
+        return "ui: no control nudged";
+    }
+    if (!g_named.count(name))
+        return "ui: no control '" + name + "' (the window is built at its first open)";
+    Nudge& n = g_nudges[name];
+    n.dx = dx;
+    n.dy = dy;
+    n.hide = hide;
+    g_dirty = true;
+    char b[128];
+    snprintf(b, sizeof b, "ui: %s %s (%.0f, %.0f)", name.c_str(), hide ? "hidden" : "moved by", dx, dy);
+    return b;
 }
 
 } // namespace coop_ui

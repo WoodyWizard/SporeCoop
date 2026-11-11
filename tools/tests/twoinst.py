@@ -83,6 +83,63 @@ def shot(con, name):
     return path
 
 
+PLAYERS = {}  # {'host': Console, 'guest': Console} of the last start(): keyframe()'s default games
+
+
+def keyframe(tag, note, players=None, kind='key', extra=None):
+    """a key frame (docs/06-testing.md#testing-key-frames): every game of the test is shot at the same moment
+    (one thread each), stored as a ~960 px JPEG in <run>/frames/<test>/<nn>_<tag>_<role>.jpg with a manifest line
+    (the note says what should be visible; each game's mode and position). players: {role: Console}, default the
+    host and guest of start(); kind 'key', 'phase' (a campaign's phase end) or 'sameview'. Never fails the test:
+    a game that does not answer gets ok=false in the manifest. Returns the manifest entry (None on an error)."""
+    import frames
+    try:
+        players = dict(players or PLAYERS)
+        if not players:
+            return None
+        d = frames.frames_dir(lane.out_dir())
+        nn = frames.next_number(d)
+        tmp = lane.out_dir('shots', 'keyframes')
+        games = {}
+
+        def one(role, con):
+            g = {'file': frames.frame_file(nn, tag, role), 'ok': False, 'mode': '', 'pos': None}
+            games[role] = g
+            try:
+                c = Console(con.port - 47799, timeout=30)
+                png = os.path.join(tmp, f'{os.getpid()}_{nn}_{frames.safe(role, 12)}.png')
+                if c.call('shot ' + png).get('ok') and frames.to_jpeg(png, os.path.join(d, g['file'])):
+                    g['ok'] = True
+                try:
+                    os.remove(png)
+                except OSError:
+                    pass
+                g['mode'] = frames.parse_mode(c.call('game.mode').get('out'))
+                g['pos'] = frames.parse_pos(c.call('coop.avatar').get('out'))
+                c.sock and c.sock.close()
+            except (OSError, ValueError) as e:
+                g['error'] = repr(e)[:120]
+
+        ths = [threading.Thread(target=one, args=(r, c), daemon=True) for r, c in players.items()]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join(60)
+        for g in games.values():  # a frame Pillow could not write (no Pillow): no file in the manifest
+            if not g['ok']:
+                g['file'] = ''
+        stage = next((g['mode'] for r, g in sorted(games.items(), key=lambda kv: frames.role_order(kv[0]))
+                      if g.get('mode')), '')
+        e = frames.now_entry(frames.test_name(), nn, tag, note, kind, stage, games, extra)
+        frames.record(d, e)
+        shot_n = sum(1 for g in games.values() if g['ok'])
+        print(f'  (key frame {nn:02d} {tag}: {shot_n} of {len(games)} games shot -> {d})', flush=True)
+        return e
+    except Exception as ex:  # noqa: BLE001: a key frame never fails a test
+        print(f'  (key frame {tag}: {ex!r})', flush=True)
+        return None
+
+
 class Monitor(threading.Thread):
     """Invariants during a test (docs/10-dev-pipeline.md): a game whose frames stop for more than
     FREEZE seconds is frozen (the SporeKit watchdog logs the main thread stack at 30 s); a game whose
@@ -330,7 +387,8 @@ KNOBS = re.compile(r'\s*(?:'
                    r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
                    r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
                    r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
-                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+(?:lang|color)\s+\S+|coop\.lanfake\b'
+                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+novel\s+\S+|coop\.uistate\s+(?:lang|color|nudge|hide)\s+\S+|coop\.lanfake\b'
+                   r'|coop\.view\s+set\b'  # a fixed camera (coop_same_view.py): off at the test's end, a crash leaves it
                    r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
                    r'|frame\.limit\s+(?!auto\b)\S+|frames\.source\s+(?!auto\b)\S+'
                    r')')
@@ -458,6 +516,8 @@ def start(*a, **kw):
                 print(f'  SPORE_FIX_OFF: warning: {name} is unsafe (its off side can corrupt memory or data)', flush=True)
     apply_fps(host, 'host')
     apply_fps(guest, 'guest')
+    PLAYERS.clear()
+    PLAYERS.update(host=host, guest=guest)
     return host, guest
 
 

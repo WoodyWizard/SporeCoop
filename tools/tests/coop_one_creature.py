@@ -67,6 +67,8 @@ def main():
         # 2. one creature for everyone
         ck(sl.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
         ck(sl.wait(lambda: avatar_key(guest) == h0, 40), f"the guest's avatar plays the host's creature {h0} ({avatar_key(guest)})")
+        twoinst.keyframe('host_creature', 'creature.mode host: the guest is drawn with the host\'s creature (model and '
+                                          'paint) on both screens, both on the ground')
         guest.call('key 120 down')  # F9: the co-op window
         time.sleep(0.3)
         guest.call('key 120 up')
@@ -118,6 +120,8 @@ def main():
         ck('Creature' in mode(guest) and guest.call('coop.avatar')['ok'], f'the guest plays on ({mode(guest).strip()})')
         shot(guest, 'one_creature_guest.png')
         shot(host, 'one_creature_host.png')
+        twoinst.keyframe('evolved', 'after the host\'s editor: both creatures drawn as the host\'s NEW creature on both '
+                                    'screens (not the old one), no editor or caption left open on the guest')
     finally:
         sl.reset([host], ('creature.mode',))
         twoinst.forget_settings()

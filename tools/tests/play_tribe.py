@@ -33,7 +33,7 @@ import time
 
 import lane
 from coop_sync import LIMITS, angle, game_paused, pct, sample, wait_running
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 SOCIAL_BTN, ATTACK_BTN = (725, 1030), (795, 1030)  # tribe UI interaction mode (1440x1080)
 MINIMAP = (110, 980)                               # a point inside the minimap
@@ -747,7 +747,12 @@ def main():
     t0, last_measure, n, ok = time.time(), 0, 0, True
     g.t0 = t0
     try:
+        keyframe('start', 'both tribes at the village, the members on the ground with the same models and paints, the tribe panel in place')
+        kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and ok:
+            if not kf_mid[0] and time.time() > t0 + a.minutes * 30:
+                kf_mid[0] = True
+                keyframe('mid', 'play in progress: members gather and fight on the ground (none in the air or under it), no leftover bodies standing')
             g.step(g.p[n % 2])
             n += 1
             if time.time() - last_measure > 10:
@@ -822,6 +827,7 @@ def main():
             print('   ', line)
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_tribe.py --minutes {a.minutes} --seed {seed}')
     try:
+        keyframe('end', 'after the play: both games in Tribe play, the same huts and members on both, the tribe panel and minimap in place')
         shot(host, 'play_tribe_host.png')
         shot(guest, 'play_tribe_guest.png')
         ck.faults(host=host, guest=guest)

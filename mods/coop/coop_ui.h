@@ -123,6 +123,8 @@ extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu
 void first_start();
 // tests / layout shots (coop.uistate color <argb>): the lobby's colour of players without one (0 = "-")
 void set_test_color(uint32_t argb);
+// tests (ui_golden's twin): a named control of coop.uistate moved by (dx, dy) or hidden until "off"
+std::string test_nudge(const std::string& name, float dx, float dy, bool hide);
 
 // the dialog text font (0 until the co-op window was built once)
 uint32_t text_font();

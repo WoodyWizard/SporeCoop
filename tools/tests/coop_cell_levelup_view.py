@@ -19,7 +19,7 @@ import argparse
 import re
 import time
 
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 
 def screen(con):
@@ -53,6 +53,8 @@ def main():
     # 30 m behind for two trace lines: the monitor's drawn gate, lab 20261106-223318)
     guest.call('coop.pool tp 30 0')
     time.sleep(10)  # the guest's mirrors around its new place, the host's picture of it there
+    keyframe('before', 'the guest 30 m from the host: each screen shows its own cell with the cells round it, the '
+                       'partner off screen or at the edge, no white squares')
     for i in range(a.rounds):
         time.sleep(3)
         s0 = {'host': screen(host), 'guest': screen(guest)}
@@ -70,6 +72,9 @@ def main():
             gone = len(s0[who] - s1[who]) / len(s0[who])
             lost[who].append(gone)
             parts.append(f'{who}: {len(s0[who])} on screen, {len(s0[who] - s1[who])} gone ({gone:.0%}), {len(n1[who] - s0[who])} new on screen')
+        if i < 2:
+            keyframe(f'change{i + 1}', 'right after a level change ({}): the cells on the guest\'s screen are still there '
+                                       'and drawn at the new scale, as on the host\'s'.format('up' if i % 2 == 0 else 'down'))
         print(f'  change {i + 1} ({"up" if i % 2 == 0 else "down"}): ' + '; '.join(parts) +
               f' | host wipes {w1.get("wipe_calls", 0) - w0.get("wipe_calls", 0)}, kept {w1.get("wipe_kept", 0) - w0.get("wipe_kept", 0)}, '
               f'destroyed {w1.get("wipe_destroyed", 0) - w0.get("wipe_destroyed", 0)} '
