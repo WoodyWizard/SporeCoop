@@ -59,6 +59,10 @@ arrows and minimap marks to find each other, player colours, and one report for 
   a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
+- Creature: a crash risk when you attack after your target is gone. If your creature's target was a partner's
+  creature (you had clicked it) or an animal that then left your game (the partner died or left, the host's game
+  removed the animal), the game kept aiming at it, and the next attack key read memory that was already freed. Your
+  target is now cleared when its creature goes (BUG-0918).
 - Space: terraforming now reaches your partners. The atmosphere, temperature and water tools (Atmosphere Generator,
   Ice Comet and the like) change the planet in the partners' games too (their game received the change but never
   applied it), also when no partner is on that planet at the time (before, the change was lost for them and the
@@ -115,6 +119,9 @@ arrows and minimap marks to find each other, player colours, and one report for 
   result records the script's and the games' memory, and a test waits when its games would not fit into the free
   memory. The cause of a run that filled the PC's memory (a read of the divergence detector that never ended in a
   four-player Cell stage) is fixed (BUG-0916).
+- The play bots' reach command (`coop.abilities reach`) no longer calls the game on a target that is not a live
+  creature (two long tests failed on a fault it caused), `coop.npc list` checks its creatures against the game's
+  list, and a new test removes the creature the avatar targets (BUG-0917).
 - One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
   players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
   window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without

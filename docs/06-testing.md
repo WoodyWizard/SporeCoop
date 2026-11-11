@@ -5846,3 +5846,27 @@ the machine to 60 of 62 GB with the swap full after 11 minutes (BUG-0916). The g
   ([saturation](#testing-xwayland-saturation), BUG-0663) and the GPU (6.19, `SPORE_MAX_LANES`).
 * The same runs found BUG-0917: one caught fault in the game's `Ability_TargetGap` in the campaign (a guest, 18 min)
   and one in long_creature (the host, 27 min), each a second or two after a hunt's kill; both tests fail on it.
+
+## Test commands and the game's pointers: the object list, not `readable` (2026-11-11, fix/w47-target-gap)
+<a id="testing-commands-object-list"></a>
+
+BUG-0917: two long tests (campaign, long_creature) failed on one caught fault each inside a game function that a
+test command called (`coop.abilities reach`, polled by play_creature's bots) on a creature that had left the world.
+* A console command runs between frames. A pointer it reads from the game (a target field, a herd) or from a table
+  the mod filled in the last tick may name a freed object; `skg::readable` / `IsBadReadPtr` say nothing about a
+  freed heap block. Before a call or a deep read: find the pointer in the game's object list in the same call
+  (`game::for_each_object`, `game::creature_listed`: pointer compares only). `coop.abilities reach` prints
+  `target none (...)` with what the field named, and one log line per such target
+  (`abilities: the avatar's target ... is no live creature of the list`).
+* Whose fault is it: the `calls:` list of a fault line holds return addresses inside the exe only. A function called
+  by coop.dll shows no caller there. The fault report in the test log (`host faults:` / the findings) has the 12
+  stack words from esp: with the function's frame size (its `sub esp` and pushes) the word of the return address is
+  found, and `addr2line -f -e build/coop.dll 0x10000000+<address - load base>` names it; the load base is 64 KB
+  aligned, the text section's size leaves a few dozen candidates and only the right one gives a function
+  (docs/re/creature.md#creature-avatar-stale-target; llvm-symbolizer is not installed on the lab machine).
+* Test `avatar_stale_target` (coop_avatar_stale_target.py, 1.5 min, creature fixture): the host's avatar targets the
+  partner's puppet with a real click, the puppet is removed as on a death; the game's target field must be clear
+  0.3 s later (BUG-0918, `SPORE_FIX_OFF=game.avatar_stale_target` fails: 8 of 8 rounds) and `coop.abilities reach`
+  must never report the removed puppet (`SPORE_FIX_OFF=game.avatar_stale_target,test.reach_target` fails that too:
+  80 of 80 asks). Without the fixes the stale reads do not fault in such a short test (the freed block keeps its
+  content): the test asserts the state, not the fault.

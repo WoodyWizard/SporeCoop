@@ -2621,3 +2621,26 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: `SPORE_DETECTOR=20 tools/lab.py run campaign --lane 9` (lab 20261111-002733 of fix/w47-lab-memory, the
   first guest at 18 min); not reproduced on purpose yet.
 * Ticket: BUG-0917.
+* CORRECTION (2026-11-11, fix/w47-target-gap): fixed (unreleased). The caller was the test command
+  `coop.abilities reach` (the return address above the game function's frame is coop.dll `c_abilities`); it now
+  calls the game only on a live creature of the object list (BUG-0917). The game's own ability use reads the same
+  stale field (the game never clears the avatar's target when its creature is destroyed): the mod clears it at the
+  destroy (BUG-0918). docs/re/creature.md#creature-avatar-stale-target, test `avatar_stale_target`.
+
+## Tests: commands that read last tick's tables without the game's object list (2026-11-11, fix/w47-target-gap)
+<a id="issue-test-commands-stale-tables"></a>
+
+* What happens: nothing seen yet. A code audit for BUG-0917 (console commands run between frames) found two more
+  commands of the play bots that use pointers of the mod's tables of the last tick with only `object_alive` (a read
+  of the pointer's own +0x21) or no check: `coop.targets all` (npc::sync_entries, npc.cpp: `g_host_npcs` with
+  `g_seen_now`, the proxies; tribe.cpp's entries: reads of position and orientation only, no calls) and
+  `coop.status` in Tribe (tribe.cpp status: `game::scale(c)`, a virtual call, on the chiefs of `g_chief` without
+  `active()`; coop_long_session.py asks it right after stage changes).
+* Reproduce: not reproduced. `g_seen_now` is not rebuilt while the simulation stands (pause, the death caption, a
+  cinematic); the guest's proxy table is checked against the object list once a second.
+* Known: `coop.npc list` had the same pattern with virtual calls (body_print, noun_id on a cached herd) and checks
+  the object list since BUG-0917. Safe by the audit: `coop.targets` (plain), `coop.npc`, `coop.team`, `coop.avatar`,
+  `coop.status` in Creature, `coop.social`, `coop.dna`, `coop.cam`, the other forms of `coop.abilities`.
+* Not checked: `coop.uistate`, civ::for_each_target, spacecoop::nav_entries.
+* Next steps: the same one-pass check against `game::for_each_object` in sync_entries and the tribe status.
+* Ticket: BUG-0919.

@@ -3988,3 +3988,45 @@ out/hunt_probe1.txt, out/hunt_probe2.txt of the branch; `coop.abilities reach` a
   around the partner by hand; the attack key alone leaves the creature standing behind the partner.
 * play_creature's bots (BUG-0618): the bot that pressed the key again every 2.5 s stood there until its hunt
   timed out (traces `W5 W5 W5 ...`, `W1 W2 W1 ...`); now it steps to a side when the walk does not get nearer.
+
+## The avatar's combat target outlives its creature; the combatant-to-spatial cast (2026-11-11, fix/w47-target-gap)
+<a id="creature-avatar-stale-target"></a>
+
+BUG-0917, BUG-0918. GOG 2024, disassembly (objdump) + lab lane 9 (coop_avatar_stale_target.py).
+* ✔ (asm) `Ability_Use` 0xD1E930 does not take the target (+0xE7C) for a creature: at 0xD1EDB4 it reads the field
+  (0xC0EFC0), casts it with 0xAD2610 (cdecl(combatant): `combatant->vt 0x5C(0x1186577)`, the cSpatialObject type id;
+  null in gives null) and calls `Ability_TargetGap` only when the cast gives a spatial (`test eax,eax; je`). The
+  target is a cCombatant of any class; "creature = target - 0x5A8, spatial = creature + 0xC0" holds for creatures
+  only. Nothing there checks that the target still lives.
+* ✔ (asm) `Ability_TargetGap` 0xD99A20 has 36 direct callers in the exe (0xC08101 ... 0xDB9B52, among them
+  0xD1EDE6 in Ability_Use and 0xD67D92 in the attack node's tick) and no pointer to it in the image. Its frame:
+  `sub esp,0x1C; push ebx; push edi` (and `push esi` on the 0x1000-flag path at +0x62): the return address is at
+  esp+0x2C at the vt 0x74 call (+0x28), at esp+0x28 after the `push esi`. The flag path stores the x of a's position
+  into the slot of the first argument (`movss [esp+0x2c],xmm0` at +0x73): a fault report's stack word there is a
+  float, not the pointer.
+* ✔ (runtime, lab 20261111-030815 and -031056, 8 of 8 rounds each) **The game does not clear the avatar's target
+  when the creature it names is destroyed** (it does for NPCs, #creature-lost-target): the host's avatar, its target the
+  partner's puppet (a click on it in the combat stance), had +0xE7C = the removed puppet + 0x5A8 for the whole 1.5 s
+  watched after `coop.puppet respawn 3` (the removal of a partner's death). The puppet's address came back as the
+  address of a later puppet (1E990408 in rounds 1, 3, 5, 7; 1E297BE8 in rounds 2, 4, 6): the memory is freed, the
+  reference SetTarget took (vt 0x60) does not keep the object.
+* ✔ (runtime) Reading through the stale field does not fault while the freed block keeps its content: 80 calls of
+  Ability_TargetGap on the removed puppet (the old `coop.abilities reach`) and 12 presses of the combat key in the
+  1.5 s after the removal, no fault. It faults when the block was given to something else: the two faults of
+  BUG-0917 came 18 and 27 minutes into a session (the spatial's vtable was a heap pointer whose slot 0x74 held 1.0f,
+  and null).
+* ✔ The caller of the two faults of BUG-0917 was the mod's test command: the return address above
+  Ability_TargetGap's frame (the fault report's stack word at esp+0x28: 0x70C286D4) is `c_abilities`
+  (mods/coop/debug.cpp:250, the line after the gap call) for the one 64 KB-aligned load base of coop.dll that gives
+  any function (0x70B20000; addr2line over the 49 bases the text section allows), and none of the 36 return
+  addresses of the game's own callers is in either report's `calls:` list (that list holds return addresses of the
+  exe only: a caller in coop.dll is never in it).
+* Fix (BUG-0918, `game.avatar_stale_target`): the destroy hook (cGameNounManager::DestroyInstance, gamefixes.cpp
+  destroy_guard) clears the avatar's target through the creature's SetTarget (vt 0x84, null, 1, 0) before a creature
+  the field points into (creature .. +0x1700) is destroyed; Creature stage only. With it +0xE7C is 0 at the first
+  read after the removal (lab 20261111-031225). Not looked at: a tribe member's target (the tribe target ring,
+  docs/re/tribe.md#tribe-target-ring, reads it) and the pack members' (BUG-0512 clears those aimed at a puppet).
+* Rule for the mod's own code and test commands: a pointer read from +0xE7C (or any target field of the game) is
+  used only after it was found in the game's object list in this call (`game::for_each_object`, pointer compares
+  only); `readable` says nothing about a freed block (`coop.abilities reach` since BUG-0917; `coop.npc list` checks
+  its tables against the list the same way).
