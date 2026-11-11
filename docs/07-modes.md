@@ -324,3 +324,32 @@ live change) the running guest gets it and neither cell heals, a session setting
 and after both games end and start again the host's world plays with its stored values and the new guest gets them.
 `SPORE_FIX_OFF=settings.cell_regen` fails the "off" checks. `twoinst.forget_settings()` removes the stored files at
 every test start (cold and warm), and `coop.settings set|force` and `coop.dna pace` are lane knobs.
+
+## The host's save as a guest knows it: followed, not the WELCOME value (2026-11-11, fix/w47-final12b)
+<a id="modes-host-save-follow"></a>
+
+BUG-0933 (class BUG-0420, a limit BUG-0709 left: "the host's save is the one of the guest's join").
+
+* ✔ `host_world::space_other` (the shared Space money held on a guest in another Space save) compared the guest's save
+  with `Session::welcome_world()`, a value of the guest's join. The host's save changes in a session: a load of
+  another save, and the campaign's Tribe -> Civ step (`Cadian.spo` 9652F8AD -> `Tavael.spo` BF000B7B, rel/0.7.12 lab
+  20261111-090547). Every guest that joined before was "elsewhere" in Space for good: `money=...(unsynced)` in its
+  trace lines for the whole stage, `held=1/N` in `coop.res`.
+* ✔ In the gated stages the host's PlayerState names its save (`world` = the CRC of the save name, the value
+  `welcome_world` returns there); in Space the state's world is the place (star, planet), so the save cannot be read
+  from it.
+* The rule now (host_world.h `host_save_now`, `announce_world`; coop.cpp `host_save_tick`, `host_save_known`):
+  * a guest replaces the known save by the host's state world whenever that state is in a gated stage (0 never
+    replaces a known one); this alone repairs the campaign's case, also with a 0.7.11 host;
+  * the host sends `MSG_HOST_WORLD` (69: u32, the value a WELCOME would carry now; reliable, Session class, ignored
+    by older builds) when its world id changed to another known one and after every join (a WELCOME sent while the
+    host is in an editor or a menu names 0); this covers Space save -> Space save;
+  * the followed value ends with the session: the next one starts from its WELCOME.
+* `coop.fix res.space_save_follow off`: 0.7.11 (the WELCOME value, no announcement). `coop.status`: the line
+  `host save: known X (welcome W, followed F, heard N), mine M, space_other=B, announced A`.
+* ✔ In Space the mod's save name is the save file's name until the game saves (a copy of the fixture under
+  `Otherspace.spo` was world 32DFFED8, and `Madas.spo` 33DE75F6 again after the host's save for a share, lab
+  20261111-105829): "another Space save" can change with the first save of a renamed copy.
+* ? A connected guest in Space is not taken along when the host loads another Space save (BUG-0941, open): with the
+  rule above it hears the new save and holds the shared money while it plays the old one.
+* Tests: space_save_change (FAIL with the switch off: lab 20261111-110127), space_own_save (BUG-0709) unchanged.

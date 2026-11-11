@@ -22,7 +22,7 @@ it, docs/re/creature.md#creature-attack-reach), then the puppet is removed as on
 The setup (BUG-0934): the click goes at the puppet's body, not its feet; a click that picked another object is said,
 the target is cleared (the game's SetTarget) and another point is clicked; when no click takes the puppet the game's
 SetTarget names it (`coop.abilities target <puppet>`), so that the round still runs. At least 6 of 8 rounds must run
-and at least 2 by a real click. STALE_TARGET_MISS=1: every click misses (all rounds by SetTarget: the test FAILS on
+and at least 2 by a real click. STALE_TARGET_MISS=1: every click goes to a corner of the view (all rounds by SetTarget: the test FAILS on
 the real-click count only); OLD_STALE_TARGET_SETUP=1: the setup before BUG-0934.
 Checks: the target was the puppet at the removal (else the test proves nothing); the game's target field of the
 avatar (read from the game's memory) does not name the removed puppet 0.3 s after the removal; reach never used the
@@ -96,13 +96,16 @@ def click_puppet(host, av, pup, tries=len(OFFSETS)):
         return None
     for i in range(tries):
         dx, dy = OFFSETS[i % len(OFFSETS)]
-        if os.environ.get('STALE_TARGET_MISS') == '1':
-            dx, dy = 0, -400  # tests of this setup: every click goes over the puppet's head
-        clicked = False
+        clicked, x, y = False, -1, -1
+        before = u32(host, av + 0xE7C)
         for line in host.call('coop.targets')['out'].splitlines():
             f = line.split()
             if len(f) == 5 and f[0] == 'player':
                 x, y = int(f[3]) + dx, int(f[4]) + dy
+                if os.environ.get('STALE_TARGET_MISS') == '1':
+                    # tests of this setup: every click goes to a corner of the view (400 px over the feet still
+                    # took the puppet: next to the avatar it fills the middle of the screen, lab 20261111-110935)
+                    x, y = (40, 100) if i % 2 == 0 else (W - 40, 100)
                 if 20 < x < W - 20 and 90 < y < H - 170:
                     host.call(f'click {x} {y}')
                     clicked = True
@@ -110,6 +113,8 @@ def click_puppet(host, av, pup, tries=len(OFFSETS)):
         time.sleep(0.4)
         t = u32(host, av + 0xE7C)
         if t == pup + 0x5A8:
+            if os.environ.get('STALE_TARGET_MISS') == '1':
+                print(f'    (miss mode: target {before or 0:08X} before the click at {x} {y}, the puppet after it)', flush=True)
             return 'click'
         if t:
             print(f'    (click {i} at the puppet {dx:+d} {dy:+d} px picked another object: +0xE7C = {t:08X}, '

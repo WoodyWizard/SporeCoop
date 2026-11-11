@@ -2689,3 +2689,28 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: what the fields are, who reads them.
 * Next steps: name the writers in Ghidra, clear the fields in the destroy hook (mods/coop/gamefixes.cpp).
 * Ticket: BUG-0930
+
+## Civ: a guest's vehicle purchase made no vehicle and no refusal while four players bought at once (2026-11-11, campaign, fix/w47-final12b)
+<a id="issue-civ-buy-lost-at-once"></a>
+
+* What happens: play_civ printed `PROBLEM Bob bought a vehicle in city 0 ... and the host made none (money 1000.0 ->
+  0.0)` once (rel/0.7.12 lab 20261111-090547, campaign, 09:56).
+* Reproduce: not reproduced; four bots buying vehicles in the first seconds of the Civ play with 3000 shared money.
+* Known: three purchases of 1000 were made on the host in 14 s, `rejected=0`, `buys_refused=0`, the guest's
+  `cmds_sent=0` shortly before; the last 1000 went to another player's purchase around the click. Inferred: the
+  guest's own game refused the click for lack of money and nothing was sent (a race the bot's check does not know).
+* Not checked: the guest's button state and money at the click.
+* Next steps: play_civ `buy` counts "the money ran out meanwhile" by the guest's own money and `cmds_sent`.
+* Ticket: BUG-0940
+
+## Space: a connected guest is not taken along when the host loads another Space save (2026-11-11, fix/w47-final12b)
+<a id="issue-space-load-not-followed"></a>
+
+* What happens: the host loads another Space save while a guest is connected in Space; the guest keeps playing its
+  copy of the old save (the host's ship is shown there) until it leaves and joins again.
+* Reproduce: two games in the space fixture; copy the host's slot to Game9 with the .spo renamed; `coop.load Game9
+  <name>` on the host (lab 20261111-105829, 20261111-105831: no "receiving world" on the guest before its rejoin).
+* Known: since BUG-0933 the guest hears the host's new save and holds the shared money meanwhile (docs/07-modes.md#modes-host-save-follow).
+* Not checked: whether the host offers the world at all in this case, what a guest in another star system does.
+* Next steps: decide whether the guest follows (as in the gated stages) or is told.
+* Ticket: BUG-0941

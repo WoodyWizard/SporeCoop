@@ -59,6 +59,10 @@ arrows and minimap marks to find each other, player colours, and one report for 
   a world played before keeps the host's settings for it (BUG-0762).
 
 ### Fixed
+- **Space: shared money stopped for a guest after the host changed its save.** A guest that had joined before the
+  host loaded another save (or went on into a save with another name) got none of the host's money in Space for
+  the rest of the session, and its own earnings and purchases never reached the host; only leaving and joining
+  again helped. The guest now follows the host's save (BUG-0933; since 0.7.11).
 - **Creature: health after a change of the creature.** Switching to another creature (your own from F9, or
   the host's in a session) kept the old health number against the new maximum (16 of 10, or 10 of 16). The
   share of health is kept now (BUG-0928).
