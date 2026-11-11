@@ -16,8 +16,10 @@ screen edge to the partners off screen, the partners on the game's minimap.
      partner's real position on the other game, in the partner's colour; all.partner_map off removes it.
 --stage tribe | cell | civ | space: the colours, the arrow / tag rows pointing at the partner's real position (Tribe:
   its chief), the minimap (Tribe), and screenshots for the owner's review (out/[laneN/]shots/find_<stage>_*.png).
+  Tribe also (BUG-0939): the guest without a chief and with its pointer never put on the planet (position 0 0 0) has
+  no arrow, tag, name label or minimap blip on the host's game; with its pointer on the planet it has them there.
 Twins: SPORE_FIX_OFF=find.arrows fails 2 (no arrow), find.colors fails 1 (each game its own colours), find.map
-fails 5 (no blip).
+fails 5 (no blip), find.placed fails the Tribe part (an arrow / tag and a blip at 0 0 0).
 
   SPORE_LANE=9 python3 tools/tests/coop_find_partners.py [--stage creature]
 """
@@ -332,6 +334,61 @@ def other(ck, host, guest, stage):
                 print('  icon', f, [l for l in guest.call('coop.find map')['out'].splitlines() if l.startswith('blip')], flush=True)
                 shot(guest, f'icon_tribe_{f}.png')
             guest.call('coop.find map 2')
+        else:
+            unplaced(ck, host, guest)
+
+
+def labels_of(con, pid):
+    return [kv(l) for l in con.call('coop.find labels')['out'].splitlines()
+            if l.startswith('label ') and int(kv(l).get('id', -1)) == pid]
+
+
+def unplaced(ck, host, guest):
+    """BUG-0939 (find.placed), Tribe: a partner that is in the stage with no chief yet and a pointer never put on the
+    planet (its reported position is 0 0 0: the frame right after Creature -> Tribe) has no arrow, no tag and no
+    minimap blip on the other game; once its pointer is on the planet the arrow / tag points there."""
+    r0 = wait(lambda: row_of(host, 1), 8)
+    print(f"  host row for the guest (its chief): {r0 and (r0['kind'], r0['pos'], r0['dist'])}", flush=True)
+    ck(r0 is not None and math.sqrt(sum(x * x for x in r0['p'])) > 50,
+       "tribe: the host's game has the guest's chief as an arrow or a tag (the control)")
+    print('  guest:', guest.call('coop.npc marker 0 0 0')['out'].strip(), flush=True)
+    print('  host:', host.call('coop.tribe drop_chief 1')['out'].strip(), flush=True)
+    time.sleep(4)
+    seen = []
+    for _ in range(6):  # 3 s of the host's overlay passes and map updates
+        r = row_of(host, 1)
+        b = blips(host).get(1)
+        lb = [l for l in labels_of(host, 1) if l.get('kind') in ('player', 'chief')]
+        seen.append((r and (r['kind'], r['pos'], r['dist'], r['drawn']), b and b[0], [(l['kind'], l['pos']) for l in lb]))
+        time.sleep(0.5)
+    print(f'  host, the guest without a chief and with its pointer at 0 0 0: {seen[-1]}', flush=True)
+    status = [l for l in guest.call('coop.avatar')['out'].splitlines() if 'pos=' in l]
+    print(f'  guest coop.avatar: {status[:1]}', flush=True)
+    ck(avatar(guest) == (0.0, 0.0, 0.0), 'tribe: the guest reports the position 0 0 0 (no chief, the pointer not on the planet)')
+    ck(all(x[0] is None for x in seen),
+       f'tribe: no arrow and no tag for a partner without a place ({next((x[0] for x in seen if x[0]), None)})')
+    ck(all(x[1] is None for x in seen),
+       f'tribe: no minimap blip for a partner without a place ({next((x[1] for x in seen if x[1]), None)})')
+    ck(all(not x[2] for x in seen),
+       f'tribe: no name label for a partner without a place ({next((x[2] for x in seen if x[2]), None)})')
+    shot(host, 'find_tribe_unplaced_host.png')
+    twoinst.keyframe('tribe_unplaced', 'the guest has no chief and its pointer is not on the planet: the host\'s screen '
+                                       'has no arrow, no name and no minimap mark for the guest')
+    # the pointer on the planet, 30 m from the host's chief: the partner has a place again
+    me = me_of(host)
+    if not me:
+        ck(False, 'tribe: the host has its own position')
+        return
+    u, v = basis(me)
+    q = at(me, u, v, 0.0, 30.0)
+    rq, rm = math.sqrt(sum(x * x for x in q)), math.sqrt(sum(x * x for x in me))
+    q = tuple(x * rm / rq for x in q)
+    print('  guest:', guest.call('coop.npc marker %.1f %.1f %.1f' % q)['out'].strip(), flush=True)
+    r = wait(lambda: (lambda x: x if x and math.dist(x['p'], q) < 2 else None)(row_of(host, 1)), 8) or row_of(host, 1)
+    print(f'  host row for the guest (its pointer on the planet): {r and (r["kind"], r["pos"], r["dist"])}', flush=True)
+    ck(r is not None and math.dist(r['p'], q) < 2, 'tribe: with its pointer on the planet the guest is an arrow or a tag there')
+    b = wait(lambda: (lambda x: x if x and map_off(x[0], q) < 6 else None)(blips(host).get(1)), 5) or blips(host).get(1)
+    ck(b is not None and map_off(b[0], q) < 6, f'tribe: ... and a minimap blip there ({b and b[0]})')
 
 
 def main():

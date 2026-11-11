@@ -29,6 +29,15 @@ COOP_FIX("find.map", "BUG-0764", g_map_fix, "Creature, Tribe: every partner on t
 bool g_colors_fix = true;
 COOP_FIX("find.colors", "BUG-0764", g_colors_fix, "all stages: the host gives every player one colour, the same on every game (F2)");
 
+// BUG-0939: right after Creature -> Tribe the host drew "Dave 504 m" pointing at the planet's centre: Dave's game was
+// in the stage and sent its state, it had no chief yet, and the arrow fell back to its pointer, which was never put
+// on the planet (0 0 0). On: a partner is a target (arrow, minimap blip, name tag at its puppet) only while it is
+// shown here (a fresh in-world state of this stage and world: its puppet exists) and its position is a place
+// (findx::placed: not the origin, on the planet); an unplaced pointer gives way to the capital in Civ. Off: every
+// finite position, with or without a state (0.7.11).
+bool g_placed_fix = true;
+COOP_FIX("find.placed", "BUG-0939", g_placed_fix, "all stages: no arrow, minimap blip or name for a partner that has no place in this world yet (no chief / avatar yet, loading, an editor, a position at the planet's centre)");
+
 static findx::Colors g_tab;     // in force here (host: its own; guest: the host's)
 static uint32_t g_changes = 1;
 static int g_want = -1;         // the colour this player picked (coop.ini [coop] color), -1 none

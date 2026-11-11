@@ -127,6 +127,26 @@ inline bool read_table(net::Reader& r, Colors& out)
     return true;
 }
 
+// ---- a place an arrow can point at (BUG-0939) ----
+// A partner's position is a place only when it is finite, is not the zero vector (the protocol's "no position": a
+// PlayerState nobody filled, a Tribe / Civ pointer that was never put on the planet) and, in a planet stage, is on
+// the planet: farther from the planet's centre than half of ref_r, the own avatar's distance from it (ref_r 0: no
+// planet (Cell's plane, Space) or no own avatar, the first two rules only). The centre itself is where the game
+// keeps what is in no place (BUG-0274, BUG-0339).
+inline bool placed(const float p[3], float ref_r)
+{
+    if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
+        return false;
+    if (p[0] == 0 && p[1] == 0 && p[2] == 0)
+        return false;
+    if (ref_r > 0 && std::isfinite(ref_r)) {
+        float r = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        if (r < ref_r * 0.5f)
+            return false;
+    }
+    return true;
+}
+
 // ---- the arrow: a partner off screen ----
 // sx, sy: its projected position (filled: the projection gave a point, i.e. in front of the camera); on: the
 // projection says it is in the view. The arrow sits on an ellipse-ish rectangle inside the screen edge (margins mx,

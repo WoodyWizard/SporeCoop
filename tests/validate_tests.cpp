@@ -555,6 +555,15 @@ static void test_find()
     CHECK(arrow_tris(a, 22, 0, v) == 2 && std::fabs(v[0] - a.x) < 1e-3f && std::fabs(v[1] - a.y) < 1e-3f);
     CHECK(dist_text(80.4f) == "80 m" && dist_text(1520) == "1.5 km");
     CHECK(angle_diff_deg(3.1f, -3.1f) < 5.f);
+    // BUG-0939: a place an arrow can point at: not the zero vector, not NaN, on the planet in a planet stage
+    {
+        float zero[3] = {0, 0, 0}, nan[3] = {1, NAN, 0}, chief[3] = {129.3f, -471.8f, -119.8f}, pool[3] = {3, -20, 8};
+        float cell[3] = {100.06f, 100.24f, 0}, ship[3] = {-138.35f, 32.5f, 20.4f}, high[3] = {300, -900, -200};
+        CHECK(!placed(zero, 0) && !placed(zero, 504) && !placed(nan, 0));
+        CHECK(placed(chief, 504) && placed(high, 504)); // on the planet, over it
+        CHECK(!placed(pool, 504) && placed(pool, 0));   // near the centre: no place on a planet, one without a planet
+        CHECK(placed(cell, 0) && placed(ship, 0));
+    }
 }
 
 // BUG-0767 (F4 of 0.7.12): the session report: the content check of a received report, the host's round, the zip

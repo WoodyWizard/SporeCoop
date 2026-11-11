@@ -3930,6 +3930,20 @@ bool g_status_block_fix = true;   // BUG-0155
 COOP_FIX("core.status_block", "BUG-0155", g_status_block_fix, "ui: the status text and notifications start below the co-op window");
 std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
 
+// BUG-0939: the planet's size the partners' positions are held against: the own avatar's distance from the planet's
+// centre in the planet stages, 0 where the world has no such centre (Cell's plane, Space)
+static float find_ref_radius(const float me[3])
+{
+    if (g_mode != modes::kCreature && g_mode != modes::kTribe && g_mode != modes::kCiv)
+        return 0.f;
+    return std::sqrt(me[0] * me[0] + me[1] * me[1] + me[2] * me[2]);
+}
+static bool find_placed(const net::Vec3& p, float ref_r)
+{
+    float q[3] = {p.x, p.y, p.z};
+    return findx::placed(q, ref_r);
+}
+
 // F2 (BUG-0764): where every partner is in this stage, for the arrows and the minimap. Cell, Creature, Space: its
 // creature / cell / ship (the puppet); Tribe: its chief (else its pointer); Civ: where it plays now (its pointer
 // marker, the camera's focus) else its first city. me: the own avatar (Tribe: the own chief).
@@ -3972,20 +3986,30 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
         me[0] = pk.own.x, me[1] = pk.own.y, me[2] = pk.own.z;
         has_me = true;
     }
+    // BUG-0939 (find.placed): only a partner shown here (its puppet: a fresh in-world state of this stage and world)
+    // with a position that is a place; the own position too (an own pointer never put on the planet is no "me")
+    bool fix = pfind::g_placed_fix;
+    if (fix && has_me && !findx::placed(me, 0.f))
+        has_me = false;
+    float ref_r = has_me ? find_ref_radius(me) : 0.f;
     for (auto& [id, r] : g_remotes) {
         if (id == g_sess.my_id() || r.echo)
+            continue;
+        bool here = r.puppet && r.puppet_adapter;
+        if (fix && !here)
             continue;
         pfind::Target t{};
         t.id = id;
         t.name = r.name;
         net::Vec3 p{};
         bool have = false;
+        if (here)
+            p = modes::entity_pos(r.puppet_adapter, r.puppet);
         if (g_mode == modes::kTribe && pk.chief.count(id)) {
             p = pk.chief[id];
             have = true;
             t.what = coop_ui::russian() ? "вождь" : "chief";
-        } else if (r.puppet && r.puppet_adapter) {
-            p = modes::entity_pos(r.puppet_adapter, r.puppet);
+        } else if (here && (!fix || find_placed(p, ref_r))) {
             have = true;
             t.flat = r.puppet_adapter->flat;
         } else if (g_mode == modes::kCiv && pk.city.count(id)) {
@@ -3994,6 +4018,8 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
             t.what = coop_ui::russian() ? "столица" : "capital";
         }
         if (!have || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            continue;
+        if (fix && !find_placed(p, ref_r))
             continue;
         t.pos[0] = p.x, t.pos[1] = p.y, t.pos[2] = p.z;
         v.push_back(t);
@@ -4053,6 +4079,8 @@ void on_overlay(void*, int, void*)
         if (g_tribe_tag_fix && ad->mode == modes::kTribe) // BUG-0907: the pointer has nothing to label
             continue;
         net::Vec3 p = modes::entity_pos(ad, r.puppet);
+        if (pfind::g_placed_fix && !find_placed(p, 0.f)) // BUG-0939: a pointer never put on the planet has no name
+            continue;
         float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
         float h = ad->tag_height ? ad->tag_height(r.puppet) : 3.f;
         float up = len > 1 ? h / len : 0; // above the head, along the planet normal

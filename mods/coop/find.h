@@ -77,5 +77,6 @@ extern bool g_test_rivals;      // tests: this game reads as in the Rivals mode
 extern bool g_arrows_fix;       // find.arrows (BUG-0764): off = no arrows (0.7.11)
 extern bool g_map_fix;          // find.map (BUG-0764): off = no partners on the minimap (0.7.11)
 extern bool g_colors_fix;       // find.colors (BUG-0764): off = each game picks colours by itself (0.7.11 had none)
+extern bool g_placed_fix;       // find.placed (BUG-0939): off = a partner without a place in this world is a target too
 
 } // namespace pfind
