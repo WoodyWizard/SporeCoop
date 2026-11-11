@@ -78,6 +78,19 @@ inline bool space_other(bool connected_guest, uint32_t my_mode, uint32_t my_save
     return my_save != 0 && host_save != 0 && my_save != host_save;
 }
 
+// BUG-0933: the host's save as a guest knows it. WELCOME names it once, at the join; a host that loads another save
+// later (or whose save gets its name later) made every guest that joined before "a guest in another Space save" for
+// the rest of the session (space_other above compared with the stale WELCOME value): no shared Space money.
+//   * a guest follows the host's save: `known` (WELCOME, then MSG_HOST_WORLD from a 0.7.12 host) is replaced by
+//     the host's state world whenever that state is in a gated stage (there the state's world is the save's CRC,
+//     so this works with an older host too); 0 never replaces a known save;
+//   * the host announces its world id again when it changed to another known one (0, a menu or a load: not said).
+inline uint32_t host_save_now(uint32_t known, bool has_state, uint32_t st_mode, uint32_t st_world)
+{
+    return has_state && gated(st_mode) && st_world != 0 ? st_world : known;
+}
+inline bool announce_world(uint32_t now, uint32_t announced) { return now != 0 && now != announced; }
+
 // BUG-0420 (class: world state applied without a world filter): every message type has one class here, so that
 // a new message is never open by default. The switch below has no default: GCC fails the build of coop.dll and of
 // tests/validate_tests.cpp on a MsgType that is not listed (-Werror=switch), which is the "every MSG_ classified"
@@ -107,6 +120,7 @@ inline MsgClass msg_class(uint8_t type)
         return MsgClass::Session;
     case net::MSG_COLORS: // the player colours (F2): the session's, wherever the guest plays
     case net::MSG_REPORT: // the session report (BUG-0767): a player's own report, asked wherever the guest plays
+    case net::MSG_HOST_WORLD: // the host's save now (BUG-0933): what "elsewhere" is measured against, wherever we play
         return MsgClass::Session;
     case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
     case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch

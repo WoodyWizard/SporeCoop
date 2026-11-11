@@ -5977,3 +5977,23 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   its log and make it again. `SPORE_FIX_OFF=npc.proxy_listed_now` fails (139 faults in game::teleport).
 * Seen once in the same long_creature: a standing family animal 8.4 m apart on the guest in two sync-checks (BUG-0932,
   open, not analysed).
+
+## avatar_stale_target: a click at the puppet's feet can pick another object; the setup now recovers (2026-11-11, fix/w47-final12b)
+<a id="testing-stale-target-setup"></a>
+
+* BUG-0934 (rel/0.7.12 lab 20261111-090547): six rounds in a row the click at the puppet's projected position
+  (`coop.targets` gives the feet) made another object the avatar's target (+0xE7C = 108EF4B8, no creature's
+  combatant; a carcass lay 2 m from the host's nest) and the test gave each round up: 2 of 8 rounds, FAIL on the
+  precondition, although the fix under test held.
+* The setup now: the body first (22 px above the feet), five more points; a wrong pick is printed with the game's
+  words for the target (`coop.abilities reach`: object, noun), cleared through the game's SetTarget and clicked
+  again; last resort `coop.abilities target <puppet address>` (the game's own SetTarget, creature vt 0x84 with the
+  puppet's combatant: what `CreatureClickObject` does; `none` clears; only a live puppet of ours is taken). The
+  test needs 6 of 8 rounds and 2 by a real click, and prints `target by click|set` per round.
+* `STALE_TARGET_MISS=1`: every click goes to a top corner of the view (the fallback alone; the test then fails only
+  on the real-click count). A click 400 px over the puppet's feet still took the puppet (lab 20261111-110935: next
+  to the avatar the puppet fills the middle of the screen), so the picked object of BUG-0934 stood in front of it. `OLD_STALE_TARGET_SETUP=1`: the old setup.
+* General: a bot that needs "X is the target" should read the target back, say what was picked instead, and click
+  the body, not the ground point under it.
+* space_save_change (BUG-0933): fixture creature plus `spore.sh fixture slot space <profile> 9` and `coop.load
+  Game9 Madas` on the host: a guest in Creature follows the host into Space by itself in about 15 s.

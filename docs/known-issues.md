@@ -2705,3 +2705,40 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   no chief yet (campaign, one frame). Ticket: BUG-0939
 * (2026-11-11, fix/w47-arrow-origin) BUG-0939 fixed: a partner without a place in this world (no chief yet and its
   pointer never put on the planet: position 0 0 0) has no arrow, blip or name (`find.placed`).
+
+## Civ: a guest's vehicle purchase made no vehicle and no refusal while four players bought at once (2026-11-11, campaign, fix/w47-final12b)
+<a id="issue-civ-buy-lost-at-once"></a>
+
+* What happens: play_civ printed `PROBLEM Bob bought a vehicle in city 0 ... and the host made none (money 1000.0 ->
+  0.0)` once (rel/0.7.12 lab 20261111-090547, campaign, 09:56).
+* Reproduce: not reproduced; four bots buying vehicles in the first seconds of the Civ play with 3000 shared money.
+* Known: three purchases of 1000 were made on the host in 14 s, `rejected=0`, `buys_refused=0`, the guest's
+  `cmds_sent=0` shortly before; the last 1000 went to another player's purchase around the click. Inferred: the
+  guest's own game refused the click for lack of money and nothing was sent (a race the bot's check does not know).
+* Not checked: the guest's button state and money at the click.
+* Next steps: play_civ `buy` counts "the money ran out meanwhile" by the guest's own money and `cmds_sent`.
+* Ticket: BUG-0940
+
+## Space: a connected guest is not taken along when the host loads another Space save (2026-11-11, fix/w47-final12b)
+<a id="issue-space-load-not-followed"></a>
+
+* What happens: the host loads another Space save while a guest is connected in Space; the guest keeps playing its
+  copy of the old save (the host's ship is shown there) until it leaves and joins again.
+* Reproduce: two games in the space fixture; copy the host's slot to Game9 with the .spo renamed; `coop.load Game9
+  <name>` on the host (lab 20261111-105829, 20261111-105831: no "receiving world" on the guest before its rejoin).
+* Known: since BUG-0933 the guest hears the host's new save and holds the shared money meanwhile (docs/07-modes.md#modes-host-save-follow).
+* Not checked: whether the host offers the world at all in this case, what a guest in another star system does.
+* Next steps: decide whether the guest follows (as in the gated stages) or is told.
+* Ticket: BUG-0941
+
+## Tribe: a fault storm in the game's resource code on a guest after the host loaded its Tribe world again (2026-11-11, campaign, fix/w47-final12b)
+<a id="issue-tribe-reload-fault-storm"></a>
+
+* What happens: 813 caught faults `0xC0000005 at 0x008E8230 Resource::PFIndexModifiable::GetFileCount (read 0x154)` on
+  a guest in Tribe, a 2 s hitch and a fault storm report; the game goes on.
+* Reproduce: seen once, fix/w47-final12b lab 20261111-113158 (campaign, lane 2, Bob), 14 s after the host's reload of
+  its Tribe world while the guest realigned (villages and tools removed, BUG-0564).
+* Known: calls 00C90741 00C30069 00CD3770 00BA266E 00BA1EE0 00B5D229 00CDF46C; in no other log on this machine.
+* Not checked: the callers, which index is null.
+* Next steps: Ghidra on the callers; a test with a host reload in Tribe and a realigning guest.
+* Ticket: BUG-0942

@@ -374,6 +374,11 @@ static void test_host_world()
     CHECK(!host_world::space_other(true, space, 5, true, space, 0) && !host_world::space_other(true, space, 5, true, cr, 6));
     CHECK(!host_world::space_other(false, space, 5, true, space, 6) && !host_world::space_other(true, cr, 5, true, space, 6));
     CHECK(host_world::welcome_world(space, 7, 9) == 9 && host_world::welcome_world(cr, 7, 9) == 7);
+    // BUG-0933: the host's save follows the host (its state in a gated stage, never 0); announced when it changed
+    CHECK(host_world::host_save_now(5, true, cr, 6) == 6 && host_world::host_save_now(5, true, space, 6) == 5);
+    CHECK(host_world::host_save_now(5, true, cr, 0) == 5 && host_world::host_save_now(5, false, cr, 6) == 5);
+    CHECK(host_world::announce_world(6, 5) && !host_world::announce_world(6, 6) && !host_world::announce_world(0, 5));
+    CHECK(host_world::msg_class(net::MSG_HOST_WORLD) == host_world::MsgClass::Session);
     using host_world::MsgClass;
     using host_world::msg_class;
     using host_world::world_state_msg;

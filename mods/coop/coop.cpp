@@ -1112,6 +1112,45 @@ bool guest_elsewhere() { return host_world_now() == host_world::HostWorld::Other
 // Space money is held. `coop.fix res.space_save off`: applied there (0.7.10).
 static bool g_space_save_fix = true;
 COOP_FIX("res.space_save", "BUG-0709", g_space_save_fix, "space: a guest in a Space save of its own keeps its own money");
+// BUG-0933: the host's save was the one named in WELCOME for the whole session: a guest that joined before the host
+// loaded another save (or advanced into a save with another name) was "in a Space save of its own" from then on and
+// never got the shared Space money (nor did its earnings reach the host). On: the guest follows the host's save
+// (host_world.h host_save_now: the host's state in a gated stage, MSG_HOST_WORLD from the host when its world id
+// changes and after a join). `coop.fix res.space_save_follow off`: the WELCOME value for good (0.7.11).
+static bool g_save_follow_fix = true;
+COOP_FIX("res.space_save_follow", "BUG-0933", g_save_follow_fix,
+         "space: a guest that joined before the host changed its save shares the Space money again");
+static uint32_t g_host_save = 0;       // guest: the host's save heard or seen after WELCOME (0: none yet)
+static uint32_t g_world_announced = 0; // host: the world id last sent as MSG_HOST_WORLD
+static uint32_t g_host_save_heard = 0; // tests: MSG_HOST_WORLD taken
+static uint32_t host_save_known()
+{
+    return g_save_follow_fix && g_host_save ? g_host_save : g_sess.welcome_world();
+}
+// once per frame, before the session's update (a WELCOME and the announcement after it come inside the update)
+static void host_save_tick()
+{
+    if (g_sess.role() == net::Role::Host) {
+        g_host_save = 0;
+        if (g_save_follow_fix && host_world::announce_world(g_sess.world, g_world_announced)) {
+            net::Writer w;
+            w.u32(g_sess.world);
+            g_sess.broadcast_reliable(net::MSG_HOST_WORLD, w);
+            g_world_announced = g_sess.world;
+        }
+        return;
+    }
+    g_world_announced = 0;
+    if (g_sess.role() != net::Role::Client || !g_sess.connected()) {
+        g_host_save = 0; // the next session starts with its WELCOME
+        return;
+    }
+    auto it = g_remotes.find(0);
+    if (it != g_remotes.end() && !it->second.buf.empty()) {
+        const auto& ls = it->second.buf.latest();
+        g_host_save = host_world::host_save_now(g_host_save, true, ls.mode, ls.world);
+    }
+}
 bool guest_space_other()
 {
     if (!g_space_save_fix)
@@ -1120,7 +1159,7 @@ bool guest_space_other()
     auto it = g_remotes.find(0);
     bool has = it != g_remotes.end() && !it->second.buf.empty();
     return host_world::space_other(guest, g_mode, g_mode == modes::kSpace ? modes::current_world() : 0, has,
-                                   has ? it->second.buf.latest().mode : 0, g_sess.welcome_world());
+                                   has ? it->second.buf.latest().mode : 0, host_save_known());
 }
 
 // the module asking host_absent_for (npc runs in Creature and Tribe)
@@ -3575,6 +3614,7 @@ void on_frame(void*, int, void*)
     // guests never read it
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
+    host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
     g_sess.update();
     lobby_tick(now);
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
@@ -4387,6 +4427,7 @@ void setup_callbacks()
         settings::on_player_join(p.id); // F3: the host's session settings first
         pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
+        g_world_announced = 0; // BUG-0933: the newcomer's WELCOME may have named no world (the host in an editor)
         wsync::on_player_join();
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
@@ -4468,6 +4509,14 @@ void setup_callbacks()
         }
         if (type == net::MSG_REPORT) { // F4: the session report (BUG-0767)
             sreport::on_message(from, r);
+            return;
+        }
+        if (type == net::MSG_HOST_WORLD) { // BUG-0933: the host's save now (Session class)
+            uint32_t w = r.u32();
+            if (from == 0 && r.ok() && w != 0 && g_sess.role() == net::Role::Client) {
+                g_host_save = w;
+                g_host_save_heard++;
+            }
             return;
         }
         if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
@@ -4981,6 +5030,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
         (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
         g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
+    SAY("host save: known %08X (welcome %08X, followed %08X, heard %u), mine %08X, space_other=%d, announced %08X\n", host_save_known(),
+        g_sess.welcome_world(), g_host_save, g_host_save_heard, g_mode == modes::kSpace ? modes::current_world() : 0,
+        (int)guest_space_other(), g_world_announced); // BUG-0933
     SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
