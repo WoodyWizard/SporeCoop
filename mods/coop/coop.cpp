@@ -134,6 +134,9 @@ struct Remote {
     double drawn_at = -1;
     // coop.track (BUG-0414): the partner's animations played on its puppet (MSG_ANIM), the last one's id
     uint32_t anims = 0, anim_last = 0;
+    // BUG-0923 (notify.appeared_once): the shown puppet was taken away to be built again with the partner's new
+    // look (creations' appearance_changed): the puppet made next is the same appearance, not told again
+    bool relook = false;
 };
 
 net::Session g_sess;
@@ -878,6 +881,12 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
 static bool g_partner_silent_fix = true;
 COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
 uint32_t g_silent_notices = 0; // tests
+// BUG-0923: a partner's creation record arrives 0.3-0.4 s after its first puppet (at a join) or later (a new body):
+// the puppet is rebuilt with that look, and each making told "<name> appeared in the world" (twice at every join on
+// the host). Off: every puppet made is told (0.7.11)
+static bool g_appeared_once_fix = true;
+COOP_FIX("notify.appeared_once", "BUG-0923", g_appeared_once_fix, "core: a partner's puppet rebuilt with its new look is not told as 'appeared in the world' again");
+uint32_t g_appeared_told = 0, g_appeared_quiet = 0; // coop.status
 
 static void silent_tick(Remote& r, double now)
 {
@@ -921,8 +930,10 @@ void drive_puppet(Remote& r, double now)
     }
     if (!visible || (r.puppet && r.puppet_adapter != g_adapter)) {
         despawn(r);
-        if (!visible)
+        if (!visible) {
+            r.relook = false; // gone from our place: its next puppet is a real appearance
             return;
+        }
     }
     if (!r.puppet) {
         r.puppet = g_adapter->spawn(s, g_local);
@@ -933,7 +944,14 @@ void drive_puppet(Remote& r, double now)
         r.puppet_adapter = g_adapter;
         r.puppet_world = g_world;
         r.drv = drive::State{};
-        feed(r.name + " appeared in the world");
+        bool again = g_appeared_once_fix && r.relook; // BUG-0923: the same partner, rebuilt with its new look
+        r.relook = false;
+        if (again)
+            g_appeared_quiet++;
+        else {
+            g_appeared_told++;
+            feed(r.name + " appeared in the world");
+        }
         if (g_mode == modes::kCreature) // which body the partner got here and why (support trace)
             trace::line("body", "puppet of %u '%s': species %08X here; its creation here %s, its own game reports %08X%s",
                         r.id, r.name.c_str(), game::species_instance(r.puppet),
@@ -4907,6 +4925,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("appeared notices: told %u, puppet rebuilds not told %u (BUG-0923)\n", g_appeared_told, g_appeared_quiet);
     SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
     SAY("%s", social::status().c_str());
@@ -7093,8 +7112,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     crc.cell_rebuilt = [] { cellsync::join_partner(); };
     crc.appearance_changed = [](uint8_t id) { // rebuild that player's puppet with its own look
         auto it = g_remotes.find(id);
-        if (it != g_remotes.end())
+        if (it != g_remotes.end()) {
+            it->second.relook = it->second.puppet != nullptr; // BUG-0923: built again in a frame or two, not a new arrival
             despawn(it->second);
+        }
     };
     creations::init(H, M, std::move(crc));
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };

@@ -1448,6 +1448,13 @@ static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
     return r.ok();
 }
 
+// BUG-0921: a player's creation bundle carries its pictures (png in the model group and the thumbnail group +1).
+// The guest registers the host's bundle under the host's own key above every package (world_*.package): that copy
+// answers for the species of the host's world, and without a picture in it the guest's Tribe roster drew a white
+// square for every member (the host's own species picture of BUG-0643 is only registered under the host's key when
+// nothing answers for that key yet, and the bundle always came first). Off: the model and the metadata only (0.7.11)
+static bool g_bundle_png_fix = true;
+COOP_FIX("creations.bundle_png", "BUG-0921", g_bundle_png_fix, "creations: a player's creation bundle carries its pictures (the Tribe roster's portraits of the host's species made in the session)");
 static bool make_bundle(Kind k, const Key& key, Bundle& b)
 {
     b.key = key;
@@ -1455,15 +1462,22 @@ static bool make_bundle(Kind k, const Key& key, Bundle& b)
         return key.instance != 0; // a premade: no records (everybody has it)
     const dbpf::Package& pk = g_es;
     for (auto& e : pk.entries()) {
-        if (e.key.instance != key.instance || (e.key.type != kBem && e.key.type != kMeta))
+        bool png = g_bundle_png_fix && e.key.type == kPng && e.size <= (1u << 20) &&
+                   (e.key.group == kInfo[k].group || e.key.group == kInfo[k].group + 1);
+        if (e.key.instance != key.instance || (e.key.type != kBem && e.key.type != kMeta && !png))
             continue;
-        if (e.key.group != kInfo[k].group)
+        if (e.key.group != kInfo[k].group && !png)
             continue;
         dbpf::Record r;
         r.key = e.key;
         if (pk.read(e, r.data))
             b.recs.push_back(std::move(r));
     }
+    bool model = false; // pictures alone are no creation (callers take "no records" as "not on disk yet")
+    for (auto& r : b.recs)
+        model |= r.key.type == kBem;
+    if (!model)
+        std::erase_if(b.recs, [](const dbpf::Record& r) { return r.key.type == kPng; });
     return true;
 }
 

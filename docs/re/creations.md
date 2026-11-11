@@ -1319,3 +1319,24 @@ their docs/re/creations.md). Tickets: BUG-0871, BUG-0873.
 * A Sporepedia PNG import keeps a cll record (~13 KB) where the editor keeps a bem record (~1.9 KB): the bytes of one
   cell do not match across the two paths.
 
+
+## A player's creation bundle carries its pictures (2026-11-11, fix/w47-roster-portraits)
+<a id="creations-bundle-png"></a>
+
+BUG-0921, BUG-0923.
+* ✔ A creation reaches the other games by two ways that both end under the host's key on a guest: the player's
+  bundle (share_own / make_bundle from the mod's copy of EditorSaves: registered under a content key 0x7C......
+  and, for the host's, under the host's own key at priority 2000) and the host's own species of its world
+  (host_species_out / records_from_game: content key 0x7D......, the host's key only when nothing answers for it).
+  The bundle is first, so what it lacks is missing under the host's key: before `creations.bundle_png` the pngs
+  (the Tribe roster's white squares, docs/re/tribe.md#tribe-portraits-session-species). Whatever else the game
+  reads by a species key must be in the bundle, not only in the own-species records.
+* ✔ (runtime) A bundle with the png: 3 records for the species of a Cell -> Creature change (bem, metadata, one
+  png).
+* ✔ (runtime, BUG-0923) A partner's bundle arrives after its first state at a first join (0.3-0.4 s on the host:
+  the puppet is made from the state, then `appearance_changed` takes it away and the next frame makes it again
+  with the creation's look) and again whenever the partner's creature changes. Each making wrote "<name> appeared
+  in the world"; `notify.appeared_once` keeps the puppet's rebuild quiet (coop.cpp Remote::relook, cleared when the
+  partner leaves our place). A guest that joins again in the same host session sends the same bundle id: no
+  rebuild, one notice. A guest that only leaves and joins (its game still in its copy of the world) is shown at
+  once and again after its load: two notices 8 s apart, a real hide and show, kept.

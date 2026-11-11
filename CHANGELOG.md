@@ -62,6 +62,12 @@ arrows and minimap marks to find each other, player colours, and one report for 
 - **Creature: health after a change of the creature.** Switching to another creature (your own from F9, or
   the host's in a session) kept the old health number against the new maximum (16 of 10, or 10 of 16). The
   share of health is kept now (BUG-0928).
+- Tribe: the guests' tribe roster (the member portraits at the right edge) showed white squares instead of the
+  portraits when the tribe was of the host's own creature, which is the usual case after Cell or Creature. The
+  host's creature now reaches the other players with its picture (BUG-0921; the fix of 0.7.10 covered only a creature
+  the host was not playing).
+- The host saw "<player> appeared in the world" twice when a player joined, and once more each time that player
+  changed its creature. It is shown once (BUG-0923).
 - Creature: a crash risk when you attack after your target is gone. If your creature's target was a partner's
   creature (you had clicked it) or an animal that then left your game (the partner died or left, the host's game
   removed the animal), the game kept aiming at it, and the next attack key read memory that was already freed. Your
