@@ -3742,6 +3742,13 @@ void draw_marks()
 }
 
 uint32_t g_tags_drawn = 0;   // name tags over partners drawn in the last overlay pass (coop.status; all.name_tags)
+// BUG-0907: in Tribe a partner's name tag was drawn at its pointer (the planet point under its mouse: the Tribe
+// adapter's "puppet" is that marker, modes.cpp), with nothing under it: a name over empty ground, on a slope or at
+// the fire pit, wherever the partner's mouse last was (same_view_tribe and play_tribe key frames, lab
+// 20261110-201619). The partner's label in Tribe is the tag of its chief and members (draw_owner_tags), and its arrow
+// when the chief is off screen (find_targets): the pointer gets no name. Off: the name at the pointer (0.7.11).
+bool g_tribe_tag_fix = true;
+COOP_FIX("tribe.pointer_tag", "BUG-0907", g_tribe_tag_fix, "tribe: a partner's name is over its chief and members only, not over the empty ground under its mouse pointer");
 
 // tribe stage: the owner's name over every member of the player tribe (own members in gold)
 void draw_owner_tags()
@@ -3755,9 +3762,12 @@ void draw_owner_tags()
             if (!H->world_to_screen(w, sc))
                 return;
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
-            if (tribe::is_chief(c))
+            bool chief = tribe::is_chief(c);
+            if (chief)
                 n = "\u2605 " + n + "'s chief";
             H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
+            float at[3] = {p.x, p.y, p.z};
+            pfind::note_label(chief ? "chief" : "member", owner, n, sc, at);
             g_tags_drawn++;
         },
         nullptr);
@@ -3777,6 +3787,8 @@ void draw_civ_tags()
             if (city)
                 n = "[" + n + "]";
             H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
+            float at[3] = {p.x, p.y, p.z};
+            pfind::note_label(city ? "city" : "vehicle", owner, n, sc, at);
             g_tags_drawn++;
         },
         nullptr);
@@ -3939,6 +3951,7 @@ void on_overlay(void*, int, void*)
     // vehicles); pings, the knock-out bar and the arrows stay
     bool tags = labels && settings::on(settings::kNameTags);
     g_tags_drawn = 0;
+    pfind::labels_begin(); // (tests: coop.find labels)
     if (labels) {
         draw_marks();
         cellsync::draw_overlay();
@@ -3972,6 +3985,8 @@ void on_overlay(void*, int, void*)
         if (!r.puppet || !av)
             continue;
         auto* ad = r.puppet_adapter;
+        if (g_tribe_tag_fix && ad->mode == modes::kTribe) // BUG-0907: the pointer has nothing to label
+            continue;
         net::Vec3 p = modes::entity_pos(ad, r.puppet);
         float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
         float h = ad->tag_height ? ad->tag_height(r.puppet) : 3.f;
@@ -3985,6 +4000,8 @@ void on_overlay(void*, int, void*)
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
             H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, pfind::color_of(id), tag.c_str()); // F2
+            float at[3] = {p.x, p.y, p.z};
+            pfind::note_label("player", id, tag, sc, at);
             g_tags_drawn++;
         }
     }
@@ -6505,7 +6522,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
-    H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
+    H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);

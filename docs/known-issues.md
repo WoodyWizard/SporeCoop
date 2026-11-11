@@ -2559,6 +2559,9 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: space_free, the guest sculpts / recolours 01460035 alone (coop_space_sculpt_tool.py's clicks), then the
   host lands there: coop.ground at the spot and `coop.space sculpt` colours differ.
 * Ticket: BUG-0900.
+* FIXED (2026-11-10, fix/w47-colony, unreleased): a partner's hits for a planet this game is not on are kept and done
+  5 s after landing there (`space.sculpt_hold`, coop_space_sculpt_tool.py --away). Still open: a player who joins or
+  rejoins after the hits does not get them.
 
 ## Tribe looks the review of key frames found (2026-11-10, feat/w47-visual)
 <a id="issue-tribe-review-looks"></a>
@@ -2569,6 +2572,20 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
 * Reproduce: `tools/lab.py run same_view_tribe --lane N`, then `tools/frames_review.py <run>` and open the
   same_view_tribe sheets (lab 20261110-201619).
 * Tickets: BUG-0906, BUG-0907.
-* FIXED (2026-11-10, fix/w47-colony, unreleased): a partner's hits for a planet this game is not on are kept and done
-  5 s after landing there (`space.sculpt_hold`, coop_space_sculpt_tool.py --away). Still open: a player who joins or
-  rejoins after the hits does not get them.
+* FIXED (2026-11-10, fix/w47-tribe-looks, unreleased): the members' handheld item is replicated (`tribe.held_item`,
+  docs/re/tribe.md#tribe-held-item), the pointer has no name in Tribe (`tribe.pointer_tag`,
+  docs/re/tribe.md#tribe-name-tags); tests tribe_held_item, tribe_name_tags.
+
+## Tribe: the chief's staff is bigger on the guest's screen; a test's guest-side chief size check (2026-11-10, fix/w47-tribe-looks)
+<a id="issue-tribe-staff-size"></a>
+
+* What happens: with the held items replicated (BUG-0906) the guest draws the host's chief's staff about 1.2-1.3x
+  bigger than the host does (sheet 008 of lab 20261110-214352). `tribe_chief_removed` fails its check "guest: the new
+  chief is 1.3x its size" (1.58, 1.20; also with the branch's switches off).
+* Reproduce: `tools/lab.py run tribe_held_item --lane N` + `tools/frames_review.py <run>`; `tools/lab.py run
+  tribe_chief_removed --lane N --retry 0`.
+* Known: inferred only: the item model is sized at the attach, the mod's 1.3x chief size comes after the host's attach
+  and before the guest's; the guest's chief ratio is read against the guest's own base size while the scale field
+  sets the host's size. docs/re/tribe.md#tribe-held-item.
+* Not checked: citizen vt 0xE0, the model's scale on both games.
+* Tickets: BUG-0911 (the test), BUG-0912 (the staff).

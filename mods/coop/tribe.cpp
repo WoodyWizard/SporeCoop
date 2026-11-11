@@ -826,6 +826,111 @@ static void apply_leader(void* c, float v)
 static const fields::Field kHeldTool{fields::F_TOOL, "tool", read_held_tool, apply_held_tool, 0.01f};
 static const fields::Field kToolFields[] = {kHeldTool};
 
+// BUG-0906: what a member holds in its hand (+0xFFC mCurrentHandheldItem: 0x11 the chief's staff, 1..4 / 0xD..0x10 /
+// 0x12 the racks' weapons, instruments and the healer's rod, 0x13.. what it carries) is put there by the game's
+// behaviours (the grab 0xDAB4A0, the idle and gather nodes: 0xC26470 / 0xC250A0), never by SetSpecializedTool, which
+// only writes the tool type. A guest's mirrors run no behaviours: the mirror of the host's chief stood without its
+// staff (the tool read 0xB on both games) and the mirrors of members with a weapon or an instrument were empty-handed
+// (seen in the same_view_tribe key frames, lab 20261110-201619). The held item is a replicated field of the members
+// (its own kind and switch): the guest attaches the host member's item with the game's own call. On the wire the
+// item + 1 (values under 0.001 are not sent). `coop.fix tribe.held_item off`: the mirrors' hands as before.
+constexpr uintptr_t kHeldItemOff = 0xFFC; // cCreatureCitizen: mCurrentHandheldItem
+constexpr uintptr_t kHandOff = 0xFC4;     // ... the hand (an attachment slot) the item goes to
+constexpr uint32_t kHandKeyBase = 0x2735300; // the attachment key of hand h (0xC250A0)
+static uintptr_t a_SetHandheldItem, a_AttachmentOf;
+static bool g_held_item_fix = true;
+COOP_FIX("tribe.held_item", "BUG-0906", g_held_item_fix, "tribe: a guest's mirror of a member holds what the host's member holds (the chief's staff, a weapon, an instrument)");
+static uint32_t g_item_sets;
+// the member's animated body exists (+0xB54: null once the game cleaned the citizen up)
+static bool has_body(void* c) { return is_citizen(c) && F<void*>(c, 0xB54) != nullptr; }
+static float read_held_item(void* c) { return has_body(c) ? (float)(F<int>(c, kHeldItemOff) + 1) : 1.f; }
+// The item's model alone is not the look: how it is held is a timed modifier of kind 5 of the creature (the table at
+// +0xB48, 8 entries of 0x44 bytes; data: the attachment's index, the handle of an animation, a "started" flag; added
+// by the attach 0xC250A0 through 0xC240E0). Its tick 0xC11240 starts the taking of the item on its first run
+// (attachment +0xC count up, 0xC0FCA0) and lives as long as its animation plays; its remove 0xC14A00 (count down,
+// 0xC141D0) puts the item into the resting grip (the chief: the arm raised, the staff upright). In the host's game
+// the animation is a short one (the change animation 0x2C39200, a behaviour's), the modifier ends with it. A
+// mirror's animation is its idle loop, which never ends: the modifier stayed and the item was held as in the middle
+// of taking it (the staff stuck out forward, the arm down; the same on the host when a test attached there, until
+// the modifier was ended by hand). So a started kind 5 modifier that a mirror has had for kHoldMax s is ended with
+// the game's own remove (as the detach 0xC241A0 does): the item settles into the grip.
+constexpr uintptr_t kModifiersOff = 0xB48; // cCreatureBase: the timed modifiers' table (8 x 0x44)
+constexpr double kHoldMax = 1.5;
+static uintptr_t a_ModifierRemove;
+static uint32_t g_item_holds_ended;
+struct HoldSeen {
+    uint32_t handle;
+    double since;
+};
+static std::unordered_map<uint16_t, HoldSeen> g_hold_seen; // mirror id -> its started modifier, first seen
+// the hand's started modifier of c: its handle (u16 serial | index << 16), 0 none; end: remove it
+static uint32_t hold_modifier(void* c, bool end)
+{
+    uint8_t* tab = F<uint8_t*>(c, kModifiersOff);
+    if (!a_ModifierRemove || !tab || !skg::readable(tab, 8 * 0x44))
+        return 0;
+    for (uint32_t i = 0; i < 8; i++) {
+        uint8_t* e = tab + i * 0x44;
+        if (*(int*)(e + 0x24) != 5 || *(int*)(e + 0x28) != 0 || *(void**)(e + 0x3C) != c || !*(int*)(e + 8))
+            continue; // (not started: ended now it would leave the item without a grip)
+        uint32_t h = (uint32_t) * (uint16_t*)(e + 0x20) | (i << 16) | 0x80000000u;
+        if (end) {
+            thiscall<void>(a_ModifierRemove, tab, h & 0x7FFFFFFFu);
+            g_item_holds_ended++;
+        }
+        return h;
+    }
+    return 0;
+}
+static void set_hand(void* c, int item) { thiscall<void>(a_SetHandheldItem, c, item, -1); } // -1: its own hand (+0xFC4)
+// guest, a few times a second: the mirrors' items settle into the grip
+static void held_items_tick(double now)
+{
+    static double last;
+    if (now - last < 0.25 && now >= last)
+        return;
+    last = now;
+    if (!g_held_item_fix) {
+        g_hold_seen.clear();
+        return;
+    }
+    for (auto& [id, m] : g_gm) {
+        void* c = m.c;
+        uint32_t h = c && game::object_alive(c) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
+        auto it = g_hold_seen.find(id);
+        if (!h) {
+            if (it != g_hold_seen.end())
+                g_hold_seen.erase(it);
+        } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since)
+            g_hold_seen[id] = {h, now};
+        else if (now - it->second.since >= kHoldMax) {
+            hold_modifier(c, true);
+            g_hold_seen.erase(it);
+        }
+    }
+    if (g_hold_seen.size() > 512)
+        g_hold_seen.clear();
+}
+static void apply_held_item(void* c, float v)
+{
+    int item = (int)std::lround(v) - 1, cur = has_body(c) ? F<int>(c, kHeldItemOff) : -1;
+    if (cur < 0 || !a_SetHandheldItem || item < 0 || item > 0x17 || cur == item)
+        return;
+    set_hand(c, item);
+    if (g_item_sets++ < 20)
+        H->log(M, SK_INFO, "tribe: member #%u's hand: item %d -> %d as in the host's game (BUG-0906)", member_id(c), cur, item);
+}
+// tests: 1 when the game has a model attached to the member's hand (what is drawn), 0 none, -1 unknown
+static int hand_model(void* c)
+{
+    if (!has_body(c) || !a_AttachmentOf)
+        return -1;
+    uint8_t* rec = thiscall<uint8_t*>(a_AttachmentOf, c, kHandKeyBase + F<uint32_t>(c, kHandOff));
+    return rec && skg::readable(rec + 0x8C, 4) && *(void**)(rec + 0x8C) ? 1 : 0;
+}
+static const fields::Field kHeldItem{fields::F_HELD_ITEM, "item", read_held_item, apply_held_item, 0.01f};
+static const fields::Field kItemFields[] = {kHeldItem};
+
 static int tool_type(void* tool) { return vcall<int>(tool, 0x58 / 4); }
 
 void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos, void* user), void* user)
@@ -1143,6 +1248,11 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
                       [] { return active(); }});
     fields::add_kind({fields::K_TRIBE_TOOL, "tribe_member_tool", &g_tool_hold_fix, kToolFields, 1, member_each, member_mirror,
                       [] { return active(); }});
+    fields::add_kind({fields::K_TRIBE_ITEM, "tribe_member_item", &g_held_item_fix, kItemFields, 1, member_each, member_mirror,
+                      [] { return active(); }});
+    a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
+    a_AttachmentOf = H->sym("SporeCoop::Creature_AttachmentOf");
+    a_ModifierRemove = H->sym("SporeCoop::CreatureModifiers_Remove");
     a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
     a_IsLeader = H->sym("SporeCoop::Citizen_IsLeader");
     a_SetChieftain = H->sym("SporeCoop::cTribe_SetChieftain");
@@ -3933,8 +4043,10 @@ void tick(double now)
     drop_foreign_selection();
     if (is_host())
         host_tick(now);
-    else if (is_guest())
+    else if (is_guest()) {
         guest_tick(now);
+        held_items_tick(now); // BUG-0906
+    }
     coop_tick(now);
 }
 
@@ -4018,6 +4130,7 @@ void before_save()
 void on_session_end()
 {
     g_cmd_held.clear(); // BUG-0693
+    g_hold_seen.clear(); // BUG-0906
     for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
         if (game::object_alive(c))
             restore_body_tribe(c, t);
@@ -4785,6 +4898,24 @@ std::string debug(const std::vector<std::string>& a)
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         return c ? ai_line(c) : "no such member";
     }
+    if (a.size() >= 2 && a[0] == "hand") { // hand <member id> [item | end]: tests (BUG-0906), the member's hand: what it
+        // holds, its scale; with an item the game's attach again (the hand emptied first)
+        void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
+        if (!has_body(c))
+            return "no such member";
+        if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
+            thiscall<void>(a_SetHandheldItem, c, 0, -1);
+            set_hand(c, atoi(a[2].c_str()));
+        }
+        if (a.size() >= 3 && a[2] == "end")
+            return "end " + std::to_string(hold_modifier(c, true) ? 1 : 0);
+        char b[160];
+        snprintf(b, sizeof b, "hand item=%d model=%d hand=%d scale=%.3f desired=%.3f sets=%u", F<int>(c, kHeldItemOff),
+                 hand_model(c), F<int>(c, kHandOff), vcall<float>((uint8_t*)c + 0xC0, 0x34 / 4), vcall<float>(c, 0x80 / 4, 0),
+                 g_item_sets);
+        return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
+               std::to_string(g_item_holds_ended);
+    }
     if (a.size() >= 3 && a[0] == "applytool" && is_guest()) { // applytool <member id> <type>: tests (BUG-0583), the
         // mirror's tool field applied as if the host's member held that tool (tribe.tool_hold's own apply)
         void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
@@ -5333,10 +5464,12 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
-                     bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c));
+                     bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c),
+                     F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0); // (BUG-0906: what the hand holds,
+            // whether a model is attached, 1 while the item is still being taken: not in the resting grip)
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,

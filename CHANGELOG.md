@@ -70,6 +70,32 @@ arrows and minimap marks to find each other, player colours, and one report for 
   the host's ship is on another planet or in orbit (it is built once the ship gets there), and a building the host
   or a guest buys appears in every other player's colony city too; such a building stays when a ship leaves the
   planet and lands again, and in the saves (BUG-0751, BUG-0766, BUG-0884, BUG-0901).
+- Tribe: on a guest's screen the members now hold what they hold in the host's game: the chief its staff with the
+  skull, the others their weapons, instruments and healer's rods. Before, the copies of the host's members often
+  stood empty-handed on the guest's screen (the host's chief without its staff) (BUG-0906).
+- Tribe: a partner's name no longer hangs over empty ground. It was drawn at the spot under the partner's mouse
+  pointer, with nobody under it; the partner's name is now only over its chief and its members (and on the arrow at
+  the screen edge when the chief is off screen) (BUG-0907).
+- Space: sculpting the ground and colouring a planet while no partner is on it now reaches the partners too: their
+  game makes the same changes when their ship lands there; before, they kept the old terrain and colours (BUG-0900).
+- Space: a colony building a partner bought (built in your game by the mod) is now kept when your ship leaves the
+  planet and lands again, and in your saves; before, the game rebuilt the city without it (BUG-0901).
+- Space: a guest's drag in a colony's city planner that does not end on a free plot no longer builds an unpaid
+  building in the host's game (BUG-0902).
+- Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
+  the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
+- Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
+  the games of the partners on the same planet too; before, only the user saw the new terrain and colours (BUG-0763).
+- Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
+  is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
+  (BUG-0751).
+- Space: a colony building a guest buys while the host's ship is on another planet (or in orbit) is no longer lost
+  for the host's world: the host's game builds it once its ship is on that planet (BUG-0766).
+- Space: a building the host buys in a colony's city planner, and one a guest buys, now appear in every other
+  player's colony city too (on their planet, or when their ship gets there); before, only the buyer and the host had
+  it (BUG-0884).
+- Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
+  partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
 - Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
   made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
 - Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not

@@ -22,7 +22,7 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 |---|---|---|---|---|---|
 | Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | - | `coop_mode.py --fixture cell` ✅ |
 | Creature | avatar creature | creature in the avatar's pack | save | DNA, collected parts (the union, [creations-part-pickup](re/creations.md#creations-part-pickup)), host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
-| Tribe | mouse pointer on the planet | name-tagged pointer + `coop ping` marks | save | tribe food | `--fixture tribe` ✅ |
+| Tribe | mouse pointer on the planet | the owner's name over its members (its chief marked), `coop ping` marks; the pointer itself has no name since 0.7.12 (BUG-0907) | save | tribe food | `--fixture tribe` ✅ |
 | Civilization | mouse pointer on the planet | name-tagged pointer + marks | save | civilization money | `--fixture civ` ✅ |
 | Space | player's ship (`cSimulatorPlayerUFO`) | "defender" ship, invulnerable | star (StarID) or planet (PlanetID) | empire money | `--fixture space` ✅ |
 | Adventures | captain (avatar creature) | captain creature | adventure key | - | echo puppet ✅ |
@@ -98,6 +98,8 @@ The RTS stages have no single avatar, and everyone shares one world (the host's)
 cities and citizens therefore already exist on every machine. The mod shows **where each player is
 currently working**:
 
+* In Tribe the pointer is not drawn (0.7.12, BUG-0907: its bare name hung over empty ground): a partner is found by
+  the names over its members and the arrow to its chief. Civ shows the partner's name at its pointer.
 * The pointer is the point on the planet under the mouse. The ray comes from `cViewer::GetCameraToPoint`
   and is intersected with a sphere of radius |position of the tribe/first city|.
 * `coop ping` places a blinking `[ ! ] Name` mark for everyone for 6 s (`MSG_PING_MARK`;

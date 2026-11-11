@@ -918,3 +918,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0907](BUG-0907-tribe-a-partner-s-name-tag-floats-over-empty-gro.md) | open | bug | Tribe | 2026-11-10 |  | Tribe: a partner's name tag floats over empty ground on the guest (no member drawn under it) |
 | [BUG-0908](BUG-0908-ui-the-lobby-s-colour-button-touches-the-stage-c.md) | fixed | bug | UI | 2026-11-10 | unreleased | UI: the lobby's colour '>' button touches the Stage column, the stage text starts right after it |
 | [BUG-0909](BUG-0909-ui-the-lobby-in-the-galaxy-menu-shows-the-tribe.md) | fixed | bug | UI | 2026-11-10 | unreleased | UI: the lobby in the galaxy menu shows the Tribe / Civ hint 'Select your units to give them to a partner' |
+| [BUG-0906](BUG-0906-tribe-the-guest-s-copy-of-the-host-s-chief-has-n.md) | fixed | bug | Tribe | 2026-11-10 | unreleased | Tribe: the guest's copy of the host's chief has no chief's staff (the host's game draws it) |
+| [BUG-0907](BUG-0907-tribe-a-partner-s-name-tag-floats-over-empty-gro.md) | fixed | bug | Tribe | 2026-11-10 | unreleased | Tribe: a partner's name tag floats over empty ground on the guest (no member drawn under it) |
+| [BUG-0911](BUG-0911-tribe-chief-removed-fails-on-the-guest-the-new-c.md) | open | test | Tribe | 2026-11-10 |  | tribe_chief_removed fails on the guest: the new chief is not 1.3x its own size (1.58, 1.20) |
+| [BUG-0912](BUG-0912-tribe-the-chief-s-staff-is-about-1-3x-bigger-on.md) | open | bug | Tribe | 2026-11-10 |  | Tribe: the chief's staff is about 1.3x bigger on the guest's screen than on the host's |

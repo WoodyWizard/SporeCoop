@@ -64,6 +64,12 @@ void tick(double now);          // every frame: the minimap update is scheduled 
 bool arrows_on();               // the setting (with Rivals) and the twin switch
 bool map_on();
 
+// tests (BUG-0907): the name labels the overlay drew over the world in its last pass (`coop.find labels`): kind
+// "player" (a partner's creature, cell, ship or pointer), "chief" / "member" (Tribe), "city" / "vehicle" (Civ), the
+// player it names, the text, where on the screen and the world point it stands for
+void labels_begin();
+void note_label(const char* kind, uint8_t id, const std::string& text, const float sc[2], const float world[3]);
+
 int command(void*, int argc, const char* const* argv, SkOut* out); // coop.find
 std::string status();           // a line for coop.status
 

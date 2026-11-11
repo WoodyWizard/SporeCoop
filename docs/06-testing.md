@@ -5671,3 +5671,36 @@ step of the co-op window up by real clicks in a fixed state and compares the win
   host's. `SPORE_FIX_OFF=space.sculpt_hold` fails (14 m apart).
 * Pitfall: the planner click on a colony city sometimes misses because the ship drifted off the city (349 m, lab
   20261110-200709): planner_buy now flies over the city again before each further click.
+
+## Tribe looks: what the members hold, where the names stand (2026-11-10, fix/w47-tribe-looks)
+<a id="testing-tribe-looks"></a>
+
+Both tests are `tools/tests/coop_tribe_looks.py` (fixture `tribe`); their bugs were found by eye in the key frames
+([key frames](#testing-key-frames)), the game state the older tests read (the tool type, the leader) was right.
+
+* `tribe_held_item` (`--part item`, BUG-0906, cold, ~1.5 min): for every member both games have, the guest's
+  handheld item and hand model are the host's (`coop.tribe` rows: `item=` the game's mCurrentHandheldItem +0xFFC,
+  `model=` 1 when the hand's attachment record has a model, docs/re/tribe.md#tribe-held-item; the host is read before
+  and after the guest and a member whose item changed in between is read again); the host's chief holds the staff
+  (item 17) with a model on both, and the guest's copy has it in the resting grip for 8 s (`hold=0`: no started
+  kind 5 modifier, docs/re/tribe.md#tribe-held-item; with `hold=1` the staff sticks out forward, which the item and
+  the model cannot tell and the first sheets showed); a key frame of kind `sameview` 14 m from the chief; the guest leaves and joins
+  again and the same is checked (there the host's chief may be away with the staff put away in the host's own game:
+  then its hand is compared as every member's). `SPORE_FIX_OFF=tribe.held_item` fails (the chief's copy item 0 model
+  0, lab 20261110-214355); pass lab 20261110-214352, 20261110-215928.
+* `tribe_name_tags` (`--part tags`, BUG-0907, warm, ~1 min): each game's pointer pinned on the ground 9 m from the
+  members (`coop.npc marker`), both cameras at the same place (`coop.view set`); every label of `coop.find labels`
+  (new: the name labels of the last overlay pass with their screen points) that names the partner must be within 60
+  px of one of the partner's members: the HOST's position of it raised by the tag's 2.6 m and projected by that
+  game's own camera (`coop.find project`); the partner's chief has a label; a key frame of kind `sameview`.
+  `SPORE_FIX_OFF=tribe.pointer_tag` fails (the name at the pointer 407-483 px from every member, lab
+  20261110-210554). With the fix the labels are 1-3 px from the projected points.
+* `tribe_tools` now also checks that the weapon a guest's member took is in its hand on both screens (item and model
+  the same, a key frame `weapon`) (the frame is taken with the game's own camera, too far to judge the weapon by eye): its old check read only the tool type, which the game does not draw.
+* Test commands: `coop.tribe hand <id>` (item, model, hold, scale), `hand <id> <item>` (the hand emptied and the
+  game's attach again: on a standing member the item is then badly held, also on the host), `hand <id> end` (ends
+  the kind 5 modifier: the resting grip).
+* Pitfalls: the host's members have nothing in the hand at times in the host's own game (the chief away from the
+  village: item 0 for more than 30 s): compare the two games, do not expect a staff at every moment. `model=` is -1
+  for a member without an animated body (+0xB54 null: cleaned up).
+* The review by eye stays the judge of the look: the two tests print what the game attached, the sheets show it.

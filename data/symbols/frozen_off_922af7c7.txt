@@ -221,3 +221,6 @@ SporeCoop::SpaceToolListener_HandleMessage ; BUG-0763: the terrain sculpting rel
 SporeCoop::Terrain_GetActive ; BUG-0763: the terrain sculpting / colouring relay is off on GOG 2016
 Terrain::cTerrainSphere::SetColors ; BUG-0763: the planet colouring relay is off on GOG 2016
 SporeCoop::City_WriteCityData ; BUG-0901: a Space colony building the mod builds is not written into the city's data (lost when the planet is left)
+SporeCoop::Citizen_SetHandheldItem ; BUG-0906: a guest's mirrors of tribe members do not get the host members' handheld item (the chief's staff, weapons) on GOG 2016
+SporeCoop::Creature_AttachmentOf ; BUG-0906: `coop.tribe` prints model=-1 (tests only) on GOG 2016
+SporeCoop::CreatureModifiers_Remove ; BUG-0906: see SporeCoop::Citizen_SetHandheldItem
