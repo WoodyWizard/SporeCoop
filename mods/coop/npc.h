@@ -48,6 +48,7 @@ bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage, float push = 0); // host avatar hits host NPC #id (push: thrown, tests)
 bool debug_recruit(uint16_t id);
+std::string debug_ghost(uint16_t id); // tests (BUG-0931)
 void* debug_spawn(uint32_t instance);           // host: an NPC of that crt species next to the avatar                 // host: NPC #id joins the pack (cPosseSimulator AddMember)
 void* debug_spawn_epic(uint8_t player, float dist, uint32_t archetype, uint32_t species = 0); // host (tests): an epic near a player's creature
 void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id

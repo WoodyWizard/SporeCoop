@@ -5354,6 +5354,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(c ? "spawned %p" : "unknown species or no avatar", c);
         return c ? 0 : 1;
     }
+    if (argc > 2 && !strcmp(argv[1], "ghost")) { // guest, tests (BUG-0931): proxy #id names memory that is no creature
+        SAY("%s", npc::debug_ghost((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "recruit")) { // host: NPC #id joins the pack (AddMember)
         bool ok = npc::debug_recruit((uint16_t)atoi(argv[2]));
         SAY(ok ? "joined the pack" : "no such npc or it cannot join");
