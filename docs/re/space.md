@@ -2644,3 +2644,39 @@ not verified by us:
   spatial) ret 0xC (a null first spatial = the captain): it increments the count and runs the normal completion.
 * ~ The Steam 3010a413 executable on disk is packed: its static bytes do not decode to the runtime code (the fork's
   static dump gave invalid instruction boundaries); read code from a running game.
+
+## Terrain sculpting and planet colouring tools, and terraforming records between players (2026-11-10, fix/w47-b2-space)
+<a id="space-sculpt-colour"></a>
+
+BUG-0763 / BUG-0883, Ghidra GOG 2024 + runtime lane 5 (`space_free`, planet 01460035):
+* ✔ Palette (open, 1440x1080): sculpting tab W-226, its tools in two rows at y 966 / 1009, first slot x 1108 then
+  +37 per slot (5 + 4 tools); colouring tab W-186, three sub-categories on the left (x 1006: y 960 cloud, 985
+  mountains, 1011 water), 8 colours at x 1121 / 1158 / 1195 / 1232 in the same two rows, the reset at (1308, 987).
+* ✔ A sculpting tool's hit posts message **0x4A32D09** to the Space tool listener
+  (`SporeCoop::SpaceToolListener_HandleMessage` 0x1051860, thiscall(listener, msg, data) ret 8): data[0] the terrain
+  effect's id (the first raise tool: 0x05AC7EE3), data[10] -> a Transform (0x38 bytes: flags, +4 position, +0x10
+  scale, +0x14 3x3 rotation). The listener calls the active terrain's vt 0x64
+  (`Terrain::cTerrainSphere::StartTerrainEffect` 0xFA71D0: the Swarm terrain effect at that transform, kept in the
+  sphere's list +0x798, 50 at most). It is the listener's only message for a raise tool (a probe on all its messages
+  and on ApplyStamp saw nothing else); `this` is not read in that branch, so a partner can repeat it with the same data.
+  The raise at the same screen spot twice: the ground there rose ~10 m, then +3.5 to +5.2 m (coop.ground =
+  GetHeightAt; visible within 3 s).
+* ✔ Message 0x5E667A2 (the listener's other terrain branch) is ApplyStamp with prop list data[0] in group 0x40828100
+  and the same Transform; not posted by the sculpting tools (not seen in the run).
+* ✔ Colouring: `cToolStrategy::OnHit` 0x10593B0 (after the terraforming deltas) reads the active terrain
+  (`SporeCoop::Terrain_GetActive` 0xF48A60, [0x16C8EBC]) colours (GetColors vt 0x78) and calls SetColors (vt 0x74,
+  0xF9B3A0) with the tool's +0x248 (terrain ramp 1..64, 0 = reset), +0x250, +0x24C (indices < 16) where they differ,
+  -1 = keep. The first colour of the cloud sub-category moved GetColors from (0, 0, 0) to (0, 11, 0).
+* ✔ The tool's owner (cSpaceToolData +0x114) is the firing ship's cGameDataUFO **+0x34**, not the cGameDataUFO itself.
+* ✔ Relay (spacecoop.cpp K_SCULPT / K_COLOUR, `space.terra_sculpt`): only after a hit of the player's own tool
+  (OnHit with that owner, the message within 5 s), to partners on the same planet, repeated with g_applying set: lab
+  20261110-184527 (heights equal to 0.00 m, colours equal); off: the guest's terrain and colours stay (lab
+  20261110-184850, 14 m apart).
+* ✔ Terraforming records (BUG-0883): the terrain tick does not add a delta to the record as it is (0xC7FC50: the
+  pending deltas decay and are integrated over seconds, records +0xB0 / +0xB4 clamped to 0..1, +0xB8 clamped to the
+  range 0xFC20A0 gives and only when >= 0), so a partner elsewhere cannot add the sent sums. The mod sends the record
+  values after the own terraforming instead (K_TERRA_REC, `space.terra_elsewhere`); a partner off the planet sets
+  `cStarManager::GetPlanetRecord(id)` +0xB0 / +0xB4 / +0xB8. A planet the host never visited had +0xB8 = -1.0 in its
+  record (0.0 in the terraformer's): -1 looks like "water not computed yet".
+* ? Not checked: whether the sculpted terrain effects and the colours stay after leaving and landing again (in either
+  game), and sculpting / colouring done while no partner is on the planet (not sent: BUG-0900).
