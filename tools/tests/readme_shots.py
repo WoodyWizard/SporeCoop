@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Screenshots and the animation for the README (docs/media/): every stage with two players, a co-op
 mechanic triggered so the picture shows it (the partner's own creature, knockout, pincer toast, city
-alarm, a disabled ship with its repair beacon), the co-op window in the galaxy menu and in game (F9),
-and an animated GIF of two players walking together in the Creature stage.
+alarm, a disabled ship with its repair beacon), the co-op window in the galaxy menu (the lobby with the
+player colours, the Settings page) and in game (F9), the arrow to a partner off screen and the partner's mark on
+the minimap, and an animated GIF of two players walking together in the Creature stage.
 Full-size captures (1440x1080), saved as 1280x960 JPEG under MAX_KB.
 
   SPORE_LANE=3 python3 tools/tests/readme_shots.py [stage ...]
-  stages: cell creature tribe civ space gif menu (default: all)
+  stages: cell creature tribe civ space gif find menu (default: all)
 
 The GIF needs ffmpeg. The players are the lane's test names Alice (host) and Bob (guest)."""
 import os
@@ -18,7 +19,8 @@ import threading
 import time
 
 import lane
-from twoinst import ROOT, Console, start, wait_up
+from coop_ui import Ui
+from twoinst import ROOT, Console, forget_settings, start, wait_up
 
 OUT = os.path.join(ROOT, 'docs', 'media')
 SIZE = (1280, 960)
@@ -34,11 +36,18 @@ def grab(con, name, keep=True):
         save(name)
 
 
-def save(name):
+def save(name, crop=None, scale=None, src=None):
+    """the capture as a JPEG in docs/media: `crop` (x1, y1, x2, y2 of the 1440x1080 capture) and `scale` for a
+    detail picture (the minimap), else fitted to SIZE"""
     from PIL import Image
-    raw = os.path.join(lane.out_dir('shots'), name + '.png')
+    raw = os.path.join(lane.out_dir('shots'), (src or name) + '.png')
     im = Image.open(raw).convert('RGB')
-    im.thumbnail(SIZE, Image.LANCZOS)
+    if crop:
+        im = im.crop(crop)
+    if scale:
+        im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
+    else:
+        im.thumbnail(SIZE, Image.LANCZOS)
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + '.jpg')
     for q in (84, 80, 76, 72, 68, 64, 60):  # the best quality under MAX_KB
@@ -99,10 +108,30 @@ def stage_creature(h, g):
     guest_own_creature(g)
     beside(h, g, 3.0)
     grab(h, 'creature_host')
-    g.call('coop.uistate 1')  # the co-op window in game (F9)
+
+
+MINIMAP = (0, 895, 235, 1040)  # the Creature stage's minimap in a 1440x1080 capture
+
+
+def stage_find(h, g):
+    """the host's co-op window in game (F9) with a chat line of each player in its colour, then the guest walks
+    off the host's screen: the arrow at the screen edge and the partner's mark on the minimap"""
+    g.call('cheat coop say Hi Alice, I am right behind you')
+    time.sleep(1)
+    h.call('cheat coop say Follow my arrow, Bob')
+    time.sleep(12)  # the chat notifications fade
+    h.call('coop.uistate 1')
     time.sleep(2)
-    grab(g, 'creature_guest_window')
-    g.call('coop.uistate 0')
+    grab(h, 'ui_ingame')
+    h.call('coop.uistate 0')
+    time.sleep(1)
+    r, a = camera_right(h), vec(h.call('coop.avatar')['out'])
+    if r and a:  # ~40 m to the side: off screen, inside the minimap's range
+        g.call('coop.npc gopos %.2f %.2f %.2f' % tuple(a[i] + 38 * r[i] for i in range(3)))
+    time.sleep(4)
+    print('   ' + (h.call('coop.find')['out'].strip().splitlines() or [''])[-1], flush=True)
+    grab(h, 'partner_arrow')
+    save('partner_minimap', crop=MINIMAP, scale=2, src='partner_arrow')
 
 
 def stage_gif(h, g):
@@ -177,10 +206,12 @@ def stage_space(h, g):
 
 
 def stage_menu():
-    """the co-op window in the galaxy menu: Alice hosts, Bob joined from his menu (no world loaded)"""
+    """the co-op window in the galaxy menu: Alice hosts, Bob joined from his menu (no world loaded); the lobby with
+    the colours, and the Settings page with one changed setting"""
     lane.sh('kill')
     time.sleep(2)
     lane.sh('deploy')
+    forget_settings()
     lane.run_guest()
     time.sleep(2)
     lane.run_host()
@@ -195,12 +226,20 @@ def stage_menu():
     time.sleep(6)
     h.call('coop.uistate 1')
     time.sleep(3)
-    grab(h, 'ui_lobby_menu')
+    grab(h, 'ui_lobby')  # before a setting changes: "Settings (1 changed)" spills out of its button (BUG-0904)
+    ui = Ui(h, 'host')
+    if ui.click('settings'):
+        st = ui.show_setting('all.friendly_fire')
+        if st and not st['sets']['all.friendly_fire']['v']:
+            ui.click('set%d' % st['sets']['all.friendly_fire']['row'])
+        ui.show_setting('all.partner_arrows')  # the first page: All stages, Cell
+        time.sleep(2)
+        grab(h, 'ui_settings')
 
 
-STAGES = {'creature': stage_creature, 'gif': stage_gif, 'cell': stage_cell, 'tribe': stage_tribe,
-          'civ': stage_civ, 'space': stage_space}
-FIXTURE = {'gif': 'creature'}
+STAGES = {'creature': stage_creature, 'gif': stage_gif, 'find': stage_find, 'cell': stage_cell,
+          'tribe': stage_tribe, 'civ': stage_civ, 'space': stage_space}
+FIXTURE = {'gif': 'creature', 'find': 'creature'}
 
 
 def main():
