@@ -24,8 +24,8 @@ The host's line: `n1 here: #1 species=065CBE70 hp=10.00 dist=22.7 pos=(-164.8 -4
 an animal of the host's family standing still near the nest; the guest was walking towards the nest from 80 m.
 
 ## Root cause
-Not analysed (seen once; the guest's line for n1 was not looked up). Not in the two later long_creature runs of the
-branch if they pass (see BUG-0926's history).
+Not analysed (seen once; the guest's line for n1 was not looked up). Not in the two later long_creature runs of the branch (out/lab/20261111-080711, -080715) nor in six
+long_creature_short runs.
 
 ## Fix
 None.
