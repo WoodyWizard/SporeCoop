@@ -46,3 +46,4 @@ shows (the guest's name). Main credits the host: FAIL.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0648 (Discord 2026-11-06, 0.7.8: the guest's vehicles trigger captures but do not capture) is the same mechanism seen by a player before; its regression test civ_guest_attack never checked the captor.

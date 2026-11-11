@@ -14,7 +14,7 @@ commits:
 tests: campaign, campaign_ct, campaign_tribe, campaign_tribe_share
 signature: dc04aee5:GeneralAllocator_FreeInternal+0x64 < delete_ < 0x00702C44 (HierGrid unlink) < 0x00702E88 < 0x00B0818E (flora HandleMessage)
 docs: docs/re/tribe.md#tribe-flora-grid-free, docs/re/tribe.md#tribe-flora-grid-slots
-related: BUG-0308, BUG-0348, BUG-0170, BUG-0276
+related: BUG-0308, BUG-0348, BUG-0170, BUG-0276, BUG-0507
 ---
 
 ## Report
@@ -130,3 +130,4 @@ forced ones and 12 changes of this attempt).
   stress out/lab/20261031-204524-fix-w27-heap 8/8 ok. Stays open, no fix.
 - 2026-11-05 (fix/w45-crashes): not reproduced again (5 more Creature -> Tribe changes, 0 faults; the share-save-during-the-change path no longer happens in these campaigns); lab history searched (signature only in 20261031-185843); grid slot layout and the 0.51f literal recorded; stays open, no fix.
 - 2026-11-08 (fix/w46-n2-desyncs, N2): the reported path (a share save during the Creature -> Tribe change) forced with CAMPAIGN_SHARE_SPAM and hit 4 times, 12 four-player changes in all, 0 faults; signature still only in 20261031-185843. Closed as not-reproduced with that evidence.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review, inferred, low confidence: 0.7.3.1 had no liveness check on the Creature puppets (BUG-0507, creature.puppet_alive, came in 0.7.4): the host drove a freed puppet raw (set_speed, walk_place write floats into the object), and this host had Bob's leave and rejoin in Creature. A float written through a freed puppet into a block reused by a flora grid node fits the 0.51f header better than the paths tried. The audit's freed-puppet writers BUG-0795 (effects relay) and BUG-0814 (carried rock) cannot explain it: their code came first in v0.7.10. Untried test: campaign_tribe_share (4 players, a rejoin in Creature) with SPORE_FIX_OFF=creature.puppet_alive; a fault or a 'gone already' drive of a freed puppet with the switch off would date the writer. Verdict unchanged.

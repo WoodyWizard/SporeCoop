@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related: BUG-0775, BUG-0593
+related: BUG-0775, BUG-0593, BUG-0648
 ---
 
 ## Report
@@ -33,3 +33,4 @@ Two players, the civilization has 1 city (the shared capital). `coop.civ capture
 
 ## History
 - 2026-11-10: opened from the Tribe / Civ / Space code audit for the 0.7.13 plan.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: a second candidate for BUG-0648's host report (0.7.8: the guest's captures do not count); the resplit code is from 74144ecf (2026-10-21), so it was in 0.7.8. Linked.

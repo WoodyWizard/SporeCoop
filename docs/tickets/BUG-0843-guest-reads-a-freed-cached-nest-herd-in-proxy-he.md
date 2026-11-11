@@ -14,7 +14,7 @@ commits:
 tests:
 signature: fork: coop.dll game::noun_id read 00000020, called by support describe and npc::list
 docs:
-related: BUG-0426
+related: BUG-0426, BUG-0170
 ---
 
 ## Report
@@ -57,3 +57,4 @@ reload.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: the same object_alive-on-a-cached-herd pattern was in 0.7.2.4 (npc.cpp:329 of that tag); a candidate writer of BUG-0170's guest heap corruption (spawning a proxy into a freed herd writes into freed memory). Linked.

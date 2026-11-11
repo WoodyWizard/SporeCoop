@@ -14,7 +14,7 @@ commits:
 tests:
 signature: 
 docs:
-related: BUG-0559, BUG-0469
+related: BUG-0559, BUG-0469, BUG-0727
 ---
 
 ## Report
@@ -55,3 +55,4 @@ guest.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0727 (not reproduced: a model whose records cannot be read built unchecked) is the parent case; this ticket is the same outcome for readable records. Linked.

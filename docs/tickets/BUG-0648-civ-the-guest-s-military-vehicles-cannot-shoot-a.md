@@ -14,7 +14,7 @@ commits: c9265c9a
 tests: civ_guest_attack
 signature:
 docs: docs/re/civ.md#civ-guest-attack
-related: BUG-0602, BUG-0031, BUG-0477, BUG-0420
+related: BUG-0602, BUG-0031, BUG-0477, BUG-0420, BUG-0775, BUG-0875
 ---
 
 ## Report
@@ -43,3 +43,4 @@ no-fail-run: not reproducible on 0.7.10 (the guest's attack works); regression t
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: not reproduced in fix/w46-tribe-civ; regression test civ_guest_attack.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: the host's half of the report ("the guest's vehicles can't capture cities but trigger them") now has a code explanation that the 0.7.10 retest did not cover: h_Capture credits the city to the player whose vehicle is nearest (civ.cpp:1704-1718, BUG-0775), and with 2 players the next resplit deals every city out round-robin (civ.cpp:2310-2321, BUG-0875); both are in the code since 2026-10-21 (74144ecf), so they apply to 0.7.8. civ_guest_attack checks the hit points and the capture meter, not who owns the city after the capture. Untried test: the guest's army takes a city while a host vehicle stands nearer, then read g_city_owner and the city menu's owner on both games (expected: the guest). The fix belongs to BUG-0775 / BUG-0875 (R2 of 0.7.13); the guest's own half (cannot shoot the city hall) stays unexplained.

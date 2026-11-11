@@ -14,7 +14,7 @@ commits:
 tests: exit_editor_held, exit_editor_open
 signature: 3010a413:SporeApp.exe Graphics::cModelWorld::FinishBackgroundLoad+0x2735 (GOG 2024 0x753D05)
 docs: docs/re/tribe.md#tribe-exit-editor
-related: BUG-0576
+related: BUG-0576, BUG-0855
 ---
 
 ## Report
@@ -69,3 +69,4 @@ held state does not come in play any more (the editor opens at once), so a playe
 - 2026-11-04 (fix/w43-transitions, T1): the same session as BUG-0576 (the held City Hall editor, then the quit):
   not-reproduced, the state is gone with BUG-0576.
 - 2026-11-07 (fix/w46-n1-crashes, 0.7.11 N1): the game's own exit (WM_CLOSE) tried with the editor held and open: clean, no crash report (lab 20261107-231415, 232504, 233741). Stays not-reproduced, closed with the runs.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: the ticket closed partly because BUG-0576 removed the state the player quit from (an editor request held by the game's own pause). BUG-0855 (open, 0.7.13 T1) suspects the same hold at Civ -> Space: BUG-0576's mask covers only the Tribe pause reason 0x4BF38A6. If it is confirmed, the exit-with-a-held-editor state of this crash is reachable again. Untried test: exit_editor_held with the spacecraft editor (Civ -> Space vote), not the City Hall.
