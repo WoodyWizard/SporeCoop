@@ -5484,3 +5484,12 @@ writedelay 3000`): every console answer of the host under 1 s while the zip is w
 Pitfall: a test that leaves the co-op window open (a guest's window opens by itself for the host's question) made
 frames_loop's F9 check fail on warm games (BUG-0898): `warm_reset` now closes the window on both games
 (`coop.uistate 0`), and frames_loop presses F9 on a window it closed itself.
+## Space tool tests: sculpting, colouring, terraforming alone (2026-11-10, fix/w47-b2-space)
+<a id="testing-space-sculpt"></a>
+
+* `coop_space_sculpt_tool.py` (BUG-0763, ~3 min on one lane) and `coop_space_terra_elsewhere.py` (BUG-0883, ~2.5 min):
+  palette coordinates in docs/re/space.md#space-sculpt-colour; `coop.space sculpt` shows the relay counters, the last
+  sculpting spot (`last=`) and the active terrain's colours; `coop.space planet <PlanetID>` reads a planet record by id
+  (also while the ship is elsewhere).
+* Pitfall: `Player.land_retry(PLANET)` once ended on another planet of the system (place 0x40460035 instead of
+  0x41460035, lab 20261110-185942); check the place, not only `ctx() == 'planet'`.

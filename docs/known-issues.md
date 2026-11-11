@@ -2404,6 +2404,9 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   relayed; only the atmosphere / water / temperature deltas are (spacecoop.cpp K_TERRA). Inferred from the code.
 * Reproduce: two games on `space_free` on planet 01460035, a sculpting tool used by the host (tab W-226).
 * Ticket: BUG-0763.
+* FIXED (2026-11-10, fix/w47-b2-space, unreleased): both are relayed to partners on the same planet
+  (`space.terra_sculpt`, coop_space_sculpt_tool.py). Done with nobody else on the planet: still one game only (BUG-0900,
+  below).
 ## Space: a guest's colony planner building is lost while the host is on another planet (2026-11-08, fix/w46-b1-space)
 <a id="issue-space-planner-away"></a>
 
@@ -2538,3 +2541,11 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   be in that record, so it would vanish when the ship leaves and lands again. Not checked.
 * Reproduce: docs/tickets BUG-0901 (How: free the plot with the planner's own demolish, not `coop.civ unbuild`).
 * Ticket: BUG-0901.
+## Space: sculpting and colouring done alone stay in one game (2026-11-10, fix/w47-b2-space)
+<a id="issue-space-sculpt-alone"></a>
+
+* What happens: the sculpting / colouring relay (BUG-0763) reaches only partners whose ship is on that planet at the
+  hit; a partner who lands later or rejoins sees the old terrain and colours. Inferred from the code.
+* Reproduce: space_free, the guest sculpts / recolours 01460035 alone (coop_space_sculpt_tool.py's clicks), then the
+  host lands there: coop.ground at the spot and `coop.space sculpt` colours differ.
+* Ticket: BUG-0900.

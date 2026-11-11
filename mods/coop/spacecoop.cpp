@@ -38,7 +38,7 @@ constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540
 constexpr double kDownTime = 20.0, kRepairHold = 2.0;
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
-enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6 };
+enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6, K_SCULPT = 7, K_COLOUR = 8, K_TERRA_REC = 9 };
 
 static uintptr_t a_PlayerUFOGet, a_Context, a_ActivePlanet, a_StarMgr, a_GetStarRecord, a_ModeSpace, a_EnterSystem,
     a_LeavePlanet, a_TravelSystem, a_PlanetCleanup, a_PlanetCleanupMgr, a_AddHealth, a_SetHealth, a_Destroyed,
@@ -996,6 +996,19 @@ static void SK_THISCALL h_SetState(void* m, int s)
 // ---------------- terraforming ----------------
 using Terra_t = void(SK_THISCALL*)(void*, void*, float);
 static Terra_t o_Terra[3];
+// BUG-0883: the deltas above go only to partners on the same planet (K_TERRA), and the game does not add a delta to
+// the record as it is: the terrain tick integrates it over seconds with a decay (0xC7FC50), so a partner elsewhere
+// could not add the sum to its record either. Terraforming done alone stayed in the user's game. Now, after the
+// player's own terraforming, the planet record's values (+0xB0 atmosphere, +0xB4 temperature, +0xB8 water) go to
+// everyone while they change (K_TERRA_REC, at most once a second, until 30 s after the last change); a partner who is
+// not on that planet, or is on it without terraforming running there (flag +0x2030 off), sets its record of the
+// planet to them. Off: deltas only, to partners on the planet (0.7.12 and before).
+static bool g_terra_elsewhere_fix = true;
+COOP_FIX("space.terra_elsewhere", "BUG-0883", g_terra_elsewhere_fix,
+         "space: terraforming done with no partner on the planet reaches the partners' planet records too");
+static uint32_t g_terra_rec_place, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set;
+static double g_terra_rec_until, g_terra_rec_last_send;
+static float g_terra_rec_last[3] = {-1, -1, -1};
 static void note_terra(int which, void* planet, float d)
 {
     if (g_applying || !in_space() || !connected() || !a_ActivePlanet || planet != cdecl_call<void*>(a_ActivePlanet))
@@ -1008,16 +1021,53 @@ static void note_terra(int which, void* planet, float d)
         g_terra_planet = place;
     }
     g_terra_acc[which] += d;
+    if (g_terra_rec_place != place)
+        g_terra_rec_last[0] = g_terra_rec_last[1] = g_terra_rec_last[2] = -1;
+    g_terra_rec_place = place; // BUG-0883
+    g_terra_rec_until = H->time_seconds() + 30;
 }
 static void SK_THISCALL h_TerraA(void* tm, void* p, float d) { note_terra(0, p, d); o_Terra[0](tm, p, d); }
 static void SK_THISCALL h_TerraW(void* tm, void* p, float d) { note_terra(1, p, d); o_Terra[1](tm, p, d); }
 static void SK_THISCALL h_TerraT(void* tm, void* p, float d) { note_terra(2, p, d); o_Terra[2](tm, p, d); }
+
+// BUG-0883: the record of the planet the player terraformed, sent while it changes
+static void* active_planet_record()
+{
+    void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+    void* rec = p && !IsBadReadPtr(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
+    return rec && !IsBadReadPtr(rec, 0xBC) ? rec : nullptr;
+}
+static void terra_rec_tick(double now)
+{
+    if (!g_terra_elsewhere_fix || !g_terra_rec_place || now > g_terra_rec_until || now - g_terra_rec_last_send < 1.0)
+        return;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    void* rec = mine == g_terra_rec_place ? active_planet_record() : nullptr;
+    if (!rec)
+        return;
+    float v[3] = {F<float>(rec, 0xB0), F<float>(rec, 0xB4), F<float>(rec, 0xB8)};
+    bool changed = false;
+    for (int i = 0; i < 3; i++)
+        changed |= std::fabs(v[i] - g_terra_rec_last[i]) > 0.0005f;
+    if (!changed)
+        return;
+    net::Writer w;
+    w.u32(g_terra_rec_place);
+    for (float f : v)
+        w.f32(f);
+    send(K_TERRA_REC, w);
+    memcpy(g_terra_rec_last, v, sizeof v);
+    g_terra_rec_last_send = now;
+    g_terra_rec_until = now + 30;
+    g_terra_rec_sent++;
+}
 
 static void terra_tick(double now)
 {
     if (now - g_terra_last < 0.5)
         return;
     g_terra_last = now;
+    terra_rec_tick(now);
     if (!g_terra_planet || (!g_terra_acc[0] && !g_terra_acc[1] && !g_terra_acc[2]))
         return;
     bool here = false;
@@ -1068,6 +1118,175 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     }
     g_applying = false;
     g_terra_got++;
+}
+
+// BUG-0883: a partner's planet record values after its own terraforming
+static void apply_terra_rec(uint32_t planet_place, const float v[3])
+{
+    g_terra_rec_got++;
+    if (!g_terra_elsewhere_fix || !(planet_place & 0x40000000u) || !a_StarMgr)
+        return;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    void* rec = nullptr;
+    if (mine == planet_place) {
+        void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        void* data = p && !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
+        if (data && !IsBadReadPtr(data, 0x2034) && F<uint8_t>(data, 0x2030))
+            return; // terraforming runs here: the live deltas (K_TERRA) move this record
+        rec = active_planet_record();
+    } else {
+        static uintptr_t get_rec = H->sym("Simulator::cStarManager::GetPlanetRecord");
+        void* sm = cdecl_call<void*>(a_StarMgr);
+        rec = sm && get_rec ? thiscall<void*>(get_rec, sm, planet_place & 0x3FFFFFFFu) : nullptr;
+    }
+    if (!rec || IsBadWritePtr(rec, 0xBC))
+        return;
+    for (int i = 0; i < 3; i++)
+        if (std::isfinite(v[i]))
+            F<float>(rec, 0xB0 + 4 * i) = i < 2 ? std::min(1.f, std::max(0.f, v[i])) : v[i];
+    g_terra_rec_set++;
+}
+
+// ---------------- terrain sculpting and planet colouring (BUG-0763) ----------------
+// docs/re/space.md#space-sculpt-colour. Sculpting: the tool's hit posts message 0x4A32D09 {+0 the terrain effect's
+// instance id, +0x28 -> a Transform (0x38 bytes: +4 position, +0x10 scale, +0x14 3x3 rotation)}; the Space tool
+// listener 0x1051860 hands it to the active terrain's vt 0x64 (0xFA71D0), which starts that terrain effect at the
+// transform and keeps it in the sphere's list +0x798 (50 at most). Colouring: cToolStrategy::OnHit 0x10593B0 calls
+// the active terrain's SetColors (vt 0x74: terrain ramp 1..64 or 0 = reset, two colour indices < 16, -1 = keep) with
+// the tool's +0x248 / +0x250 / +0x24C. Both changed the planet in the user's game only; now each one goes to the
+// partners as the game's own call (K_SCULPT: the message, K_COLOUR: the SetColors arguments) and a partner on the
+// same planet repeats it. Only what follows a hit of the player's own tool goes out. Off: not sent (0.7.12 and before).
+static bool g_terra_sculpt_fix = true;
+COOP_FIX("space.terra_sculpt", "BUG-0763", g_terra_sculpt_fix,
+         "space: terrain sculpting and planet colouring tools change the planet in the partners' games too");
+constexpr uint32_t kMsgSculpt = 0x04A32D09;
+constexpr double kSculptAfterHit = 5.0; // s after the own tool's hit in which a sculpting message is the player's
+using ToolMsg_t = bool(SK_THISCALL*)(void*, uint32_t, uint32_t*);
+using ToolHit_t = bool(SK_THISCALL*)(void*, void*, const float*, int, int);
+using SetColors_t = void(SK_THISCALL*)(void*, int, uint32_t, uint32_t);
+static ToolMsg_t o_ToolMsg;
+static ToolHit_t o_ToolHit;
+static SetColors_t o_SetColors;
+static uintptr_t a_TerrainActive;
+static void* g_tool_listener;
+static int g_tool_hit_depth;  // inside a hit of the player's own tool
+static double g_own_hit_at = -100;
+static uint32_t g_sculpt_seen, g_sculpt_sent, g_sculpt_got, g_sculpt_applied, g_colour_seen, g_colour_sent,
+    g_colour_got, g_colour_applied, g_own_hits;
+static float g_sculpt_last[3];
+
+static uint32_t sculpt_place()
+{
+    if (g_applying || !in_space() || !connected())
+        return 0;
+    uint32_t place = C.my_place ? C.my_place() : 0;
+    return place & 0x40000000u ? place : 0;
+}
+
+static bool SK_THISCALL h_ToolMsg(void* self, uint32_t msg, uint32_t* m)
+{
+    g_tool_listener = self;
+    if (msg == kMsgSculpt && !g_applying && m && !IsBadReadPtr(m, 0x2C)) {
+        const uint8_t* xf = (const uint8_t*)(uintptr_t)m[10];
+        if (xf && !IsBadReadPtr(xf, 0x38)) {
+            g_sculpt_seen++;
+            memcpy(g_sculpt_last, xf + 4, 12);
+            uint32_t place = sculpt_place();
+            bool own = g_tool_hit_depth > 0 || H->time_seconds() - g_own_hit_at < kSculptAfterHit;
+            if (place && own && g_terra_sculpt_fix) {
+                net::Writer w;
+                w.u32(place);
+                w.u32(m[0]);
+                w.raw(xf, 0x38);
+                send(K_SCULPT, w);
+                g_sculpt_sent++;
+            }
+        }
+    }
+    return o_ToolMsg(self, msg, m);
+}
+
+static bool SK_THISCALL h_ToolHit(void* self, void* tool, const float* pos, int hit, int x)
+{
+    // the tool's owner (cSpaceToolData +0x114, set by FireTool 0x1050080) is the player's ship: its cSpatialObject
+    // part, cGameDataUFO +0x34 (runtime lane 5: owner = ufo + 0x34)
+    void* u = my_ufo();
+    void* owner = tool && !IsBadReadPtr(tool, 0x118) ? F<void*>(tool, 0x114) : nullptr;
+    bool own = u && owner && (owner == (uint8_t*)u + 0x34 || owner == u);
+    if (!own)
+        return o_ToolHit(self, tool, pos, hit, x);
+    g_own_hits++;
+    g_own_hit_at = H->time_seconds();
+    g_tool_hit_depth++;
+    bool r = o_ToolHit(self, tool, pos, hit, x);
+    g_tool_hit_depth--;
+    return r;
+}
+
+static void SK_THISCALL h_SetColors(void* terrain, int ramp, uint32_t a, uint32_t b)
+{
+    if (g_tool_hit_depth > 0 && !g_applying) {
+        g_colour_seen++;
+        uint32_t place = sculpt_place();
+        if (place && g_terra_sculpt_fix) {
+            net::Writer w;
+            w.u32(place);
+            w.u32((uint32_t)ramp);
+            w.u32(a);
+            w.u32(b);
+            send(K_COLOUR, w);
+            g_colour_sent++;
+        }
+    }
+    o_SetColors(terrain, ramp, a, b);
+}
+
+static void* active_terrain() { return a_TerrainActive ? cdecl_call<void*>(a_TerrainActive) : nullptr; }
+
+// the listener's branch for 0x4A32D09 does not read `this` (0x1051A14: data only), so a game whose listener has not
+// been seen yet can still repeat it
+static void apply_sculpt(uint32_t place, uint32_t effect, const uint8_t xf_in[0x38])
+{
+    g_sculpt_got++;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    if (mine != place || !in_space() || !o_ToolMsg || !active_terrain())
+        return;
+    alignas(4) uint8_t xf[0x38];
+    memcpy(xf, xf_in, sizeof xf);
+    uint32_t m[16] = {0};
+    m[0] = effect;
+    m[10] = (uint32_t)(uintptr_t)xf;
+    g_applying = true;
+    o_ToolMsg(g_tool_listener, kMsgSculpt, m);
+    g_applying = false;
+    g_sculpt_applied++;
+}
+
+static void apply_colour(uint32_t place, int ramp, uint32_t a, uint32_t b)
+{
+    g_colour_got++;
+    uint32_t mine = C.my_place ? C.my_place() : 0;
+    void* t = active_terrain();
+    if (mine != place || !in_space() || !o_SetColors || !t)
+        return;
+    g_applying = true;
+    o_SetColors(t, ramp, a, b);
+    g_applying = false;
+    g_colour_applied++;
+}
+
+static std::string colours_text()
+{
+    void* t = active_terrain();
+    if (!t)
+        return "no terrain";
+    int ramp = -1;
+    uint32_t a = 0xFFFFFFFF, b = 0xFFFFFFFF;
+    using Get_t = void(SK_THISCALL*)(void*, int*, uint32_t*, uint32_t*);
+    (*(Get_t*)(F<uint8_t*>(t, 0) + 0x78))(t, &ramp, &a, &b);
+    char s[96];
+    snprintf(s, sizeof s, "colours ramp=%d a=%d b=%d", ramp, (int)a, (int)b);
+    return s;
 }
 
 // ---------------- cargo ----------------
@@ -1290,6 +1509,28 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             apply_terra(place, d);
         break;
     }
+    case K_TERRA_REC: { // BUG-0883
+        uint32_t place = r.u32();
+        float v[3] = {r.f32(), r.f32(), r.f32()};
+        if (r.ok())
+            apply_terra_rec(place, v);
+        break;
+    }
+    case K_SCULPT: { // BUG-0763
+        uint32_t place = r.u32(), effect = r.u32();
+        uint8_t xf[0x38];
+        for (auto& c : xf)
+            c = r.u8();
+        if (r.ok())
+            apply_sculpt(place, effect, xf);
+        break;
+    }
+    case K_COLOUR: { // BUG-0763
+        uint32_t place = r.u32(), ramp = r.u32(), ca = r.u32(), cb = r.u32();
+        if (r.ok())
+            apply_colour(place, (int)ramp, ca, cb);
+        break;
+    }
     case K_GIFT:
     case K_GIFT_BACK: {
         uint8_t to = r.u8();
@@ -1463,6 +1704,7 @@ void on_session_end()
     g_last_star.clear();
     g_raid_since.clear();
     g_terra_planet = 0;
+    g_terra_rec_place = 0; // BUG-0883
     g_gifts_out.clear(); // unanswered gifts most likely arrived (only a failure is answered); g_gifts_owed stays
     g_gifts_held.clear();
     g_gift_hold = g_gift_noroom = false;
@@ -1526,6 +1768,13 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
         H->hook_create(M, (void*)a_TerraT, (void*)h_TerraT, (void**)&o_Terra[2]);
     }
+    a_TerrainActive = S("SporeCoop::Terrain_GetActive"); // BUG-0763
+    if (uintptr_t tm = S("SporeCoop::SpaceToolListener_HandleMessage"))
+        H->hook_create(M, (void*)tm, (void*)h_ToolMsg, (void**)&o_ToolMsg);
+    if (uintptr_t th = S("Simulator::cToolStrategy::OnHit"))
+        H->hook_create(M, (void*)th, (void*)h_ToolHit, (void**)&o_ToolHit);
+    if (uintptr_t sc = S("Terrain::cTerrainSphere::SetColors"))
+        H->hook_create(M, (void*)sc, (void*)h_SetColors, (void**)&o_SetColors);
     H->log(M, SK_INFO, "space co-op: rescue %s, jump %s, missions %s, terraform %s, cargo %s",
            a_AddHealth && a_Destroyed ? "on" : "off", a_TravelSystem && a_GetStarRecord ? "on" : "off",
            a_SetState ? "on" : "off", a_TerraA ? "on" : "off", a_CreateTrading && a_Trading ? "on" : "off");
@@ -1626,10 +1875,10 @@ std::string status()
     char b[512];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_terra_enabled, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
     return b + spaceext::status_all();
 }
@@ -2225,16 +2474,29 @@ std::string debug(const std::vector<std::string>& a)
         }
         return o.empty() ? "no stores\n" : o;
     }
-    if (a[0] == "planet") {
+    if (a[0] == "planet") { // [PlanetID]: that planet's record (BUG-0883), else the active one
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* rec = p ? F<void*>(p, 0x13C) : nullptr;
+        if (a.size() > 1) {
+            uintptr_t gr = H->sym("Simulator::cStarManager::GetPlanetRecord");
+            void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+            rec = sm && gr ? thiscall<void*>(gr, sm, (uint32_t)strtoul(a[1].c_str(), nullptr, 16)) : nullptr;
+        }
         if (!rec)
             return "not on a planet";
         snprintf(b, sizeof b, "planet b0=%.3f b4=%.3f b8=%.3f", F<float>(rec, 0xB0), F<float>(rec, 0xB4),
                  F<float>(rec, 0xB8));
         return b;
     }
-    return "usage: coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet]";
+    if (a[0] == "sculpt") { // BUG-0763: the sculpting / colouring relay and the active terrain's colours
+        snprintf(b, sizeof b,
+                 "sculpt seen=%u sent=%u got=%u applied=%u last=%.2f,%.2f,%.2f colour seen=%u sent=%u got=%u applied=%u "
+                 "own_hits=%u listener=%d ",
+                 g_sculpt_seen, g_sculpt_sent, g_sculpt_got, g_sculpt_applied, g_sculpt_last[0], g_sculpt_last[1],
+                 g_sculpt_last[2], g_colour_seen, g_colour_sent, g_colour_got, g_colour_applied, g_own_hits, g_tool_listener ? 1 : 0);
+        return b + colours_text();
+    }
+    return "usage: coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet | sculpt]";
 }
 
 } // namespace spacecoop
