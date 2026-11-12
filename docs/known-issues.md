@@ -2834,3 +2834,6 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   caption, card or event log entry) is used after the old Space world is gone.
 * Next steps: why no crash report is written; the same in a solo game.
 * Ticket: BUG-0956
+* Fixed (unreleased, fix/w48-new, 2026-11-12): a destroyed window in the window manager's list of modal windows that
+  PopModal made the modal one (game.dead_modal_list); no report because Wine cannot dispatch a fault with esp outside
+  the stack (kit.fix offstack writes one now). docs/re/space.md#space-modal-list-crash.

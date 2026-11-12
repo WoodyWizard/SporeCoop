@@ -1614,3 +1614,15 @@ lanes 4 / 5, fixture civ_npc.
 * ? Not checked: a religious conversion's capture (Convert, no hit: credited by g_siege or the nearest vehicle); the
   owners after a host's load (on_world_change clears g_city_owner, every city is dealt anew: captures are not kept
   across loads, BUG-0950).
+
+## City owners across a host's load (2026-11-12, fix/w48-new)
+<a id="civ-owners-kept"></a>
+
+BUG-0950. ✔ (runtime, lane 5, civ_npc) A host that saves (`coop.menu`) and loads the same slot again gets the same
+cities back at the same positions (within a metre); the mod's owner tables were cleared by on_world_change and
+host_assign_cities dealt every city anew: the host's bought city became the guest's (lab 20261112-072252, fix off).
+Fix `civ.owners_kept`: the host writes the owners of the player civilization's cities every 2 s per world
+(world::current_game_key: `<slot dir>\<planet>.spo`) by position and owner name (with the gift / capture marks) and
+gives them back at the first split after a world change (a city within 5 m, the owner must be in the session); when
+every city got its owner back nothing is dealt anew. Kept in memory only: a restart of the host's game loses them, and a
+new session deals the cities anew. `coop.civ tables` prints `kept: fix= worlds= this_world= saved= restored= key=`.

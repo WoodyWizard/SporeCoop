@@ -6322,3 +6322,23 @@ two-game tests of ~1-2 min after the games are up unless said otherwise.
   (cdecl float(int kind, creature*)): harmless while the stack slot held 0, a fault at 0xD38A56 and both play_creature
   bots hung once other code changed the stack (BUG-0957, fixed). A test command that calls the game is checked against
   the disassembly like mod code.
+
+## The badge rejoin crash, city owners across a host's load, world_queue part 4 (2026-11-12, fix/w48-new)
+<a id="testing-modal-list-owners"></a>
+
+* `coop_dead_modal_list.py` (suite `dead_modal_list`, warm, space): `coop.deadmodal list` on the guest puts a destroyed
+  object (vtable slots 0x65) under a fake modal window in the window manager's list +0x81C and pops the modal window
+  through the game's PopModal (WM vt 0x78). PASS: the window manager ends with no modal window and nothing listed, no
+  fault. `SPORE_FIX_OFF=game.dead_modal_list`: PopModal calls 0x65, the guest faults (FAIL). BUG-0956.
+* `space_badges_rejoin` with `BADGES_RESTART=0` is the real-game reproduction (crash rate 9 of 10 under a loaded machine
+  in the morning, about 1 of 3 later at load 4); `BADGES_LISTENERS=1` prints `coop.msglisteners` at the start,
+  before the leave and in the galaxy menu.
+* Pitfall: a crash with esp outside the stack can end the game without a line in its log (Wine refuses the dispatch
+  before the vectored handlers): look for "Exception frame is not in stack limits" in out/run.N.log of the worktree.
+* `coop_civ_owners_reload.py` (suite `civ_owners_reload`, warm, civ_npc, ~1.5 min): the host buys the NPC city nearest
+  its capital, the guest the next one, the host goes to the galaxy menu (`coop.menu` saves) and loads the same slot
+  (read from `coop.civ tables` `kept: key=`); the owners by position on both games must be those of before.
+  `SPORE_FIX_OFF=civ.owners_kept`: the host's purchase becomes the guest's (FAIL). BUG-0950.
+* `world_queue` part 4 (BUG-0954): since BUG-0508 the host's evolution goes in place for a guest in its own editor;
+  part 4 checks that no world is sent then, and shares the host's world with `coop.share` while the guest is still in
+  its editor for the BUG-0074 check. `SPORE_FIX_OFF=world.world_reset` now works like `--without world_reset` (FAIL).

@@ -410,3 +410,18 @@ BUG-0779 (screen tearing with Spore ModAPI and a d3d9 wrapper), BUG-0782 (crashe
   BUG-0779). Advice for players: docs/INSTALL.md#install-rtss, docs/INSTALL.md#install-tearing.
 * Tests: `kit.test.loadlib <file>` loads a DLL from the game folder (build/test/rtsshooks.dll is a do-nothing DLL,
   tests/dll/stand_in.c).
+
+## A fault with the stack pointer outside the thread's stack (2026-11-12, fix/w48-new)
+<a id="modkit-offstack-report"></a>
+
+BUG-0956: a game that ran heap bytes after a call through a destroyed object (docs/re/space.md#space-modal-list-crash)
+had esp in the heap when it faulted. Wine refuses to dispatch such a fault (`err:seh:NtRaiseException Exception frame is
+not in stack limits => unable to dispatch exception.` in the lane's out/run.N.log) and ends the process: the game's
+handlers, the unhandled-exception filter and the ExitProcess hook never run, so no crash report was written (Windows
+checks the stack the same way). Two cases were seen: the dispatch reaches the vectored handlers (SporeKit's fault
+logger runs, then the process ends) and, in about 1 of 4 runs, Wine refuses even that (nothing can be caught).
+* The fault logger (exceptions.cpp) compares the fault's esp with the allocation of the thread's StackBase; outside it
+  logs "the stack pointer ... is outside this thread's stack (BUG-0956)", the return addresses on the thread's real
+  stack above and below its innermost SEH record and the raw dwords under it (the live frames of the call that went
+  astray), and has the report thread made at boot (the BUG-0056 one) write the crash report, the archive and the
+  minidump while it waits. `kit.fix offstack 0`: nothing of this (0.3.15).
