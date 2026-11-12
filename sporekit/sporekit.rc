@@ -1,0 +1,6 @@
+// SporeKit's version resource (BUG-0784)
+#define SC_FILE_DESC "SporeKit: mod framework for SPORE (loads SporeCoop's mods)"
+#define SC_ORIG_NAME "sporekit.dll"
+#define SC_INTERNAL_NAME "sporekit"
+#define SC_FILE_TYPE VFT_DLL
+#include "../installer/version.rc"

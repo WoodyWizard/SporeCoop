@@ -1,0 +1,37 @@
+// The VERSIONINFO resource of every SporeCoop binary (BUG-0784): the file's description, product,
+// version and origin, shown in Explorer's Properties > Details and read by antivirus heuristics
+// (an exe or dll without one looks more suspicious). The including .rc defines SC_FILE_DESC,
+// SC_ORIG_NAME, SC_INTERNAL_NAME and SC_FILE_TYPE; build/version.h (Makefile, from COOP_VERSION)
+// defines SC_VER_NUM and SC_VER_STR.
+#include <winver.h>
+#include "version.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION SC_VER_NUM
+PRODUCTVERSION SC_VER_NUM
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE SC_FILE_TYPE
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "SporeCoop (open source project, github.com/WoodyWizard/SporeCoop)"
+            VALUE "FileDescription", SC_FILE_DESC
+            VALUE "FileVersion", SC_VER_STR
+            VALUE "InternalName", SC_INTERNAL_NAME
+            VALUE "LegalCopyright", "Copyright (c) 2026 WoodyWizard. MIT License."
+            VALUE "OriginalFilename", SC_ORIG_NAME
+            VALUE "ProductName", "SporeCoop"
+            VALUE "ProductVersion", SC_VER_STR
+            VALUE "Comments", "Co-op mod for SPORE. Source code and build: https://github.com/WoodyWizard/SporeCoop"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

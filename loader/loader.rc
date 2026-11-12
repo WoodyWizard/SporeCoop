@@ -1,0 +1,7 @@
+// the loader's version resource (BUG-0784); installed as steam_api.dll, the game's own file is kept
+// as steam_api_orig.dll
+#define SC_FILE_DESC "SporeCoop loader: steam_api.dll proxy that forwards to steam_api_orig.dll and loads SporeKit"
+#define SC_ORIG_NAME "steam_api.dll"
+#define SC_INTERNAL_NAME "sporekit-loader"
+#define SC_FILE_TYPE VFT_DLL
+#include "../installer/version.rc"

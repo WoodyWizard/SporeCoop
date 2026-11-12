@@ -5,6 +5,7 @@ CXX := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang++
 HOSTCXX ?= clang++
 
 B := build
+comma := ,
 COMMON  := -O2 -g -Wall -Werror=misleading-indentation -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
 CFLAGS  := $(COMMON)
 CXXFLAGS:= $(COMMON) -std=c++20
@@ -39,9 +40,22 @@ loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll
 coop: $(B)/coop.dll
 
-$(B)/steam_api.dll: loader/loader.c loader/steam_api.def updater/pending.h
+$(B)/steam_api.dll: loader/loader.c loader/steam_api.def updater/pending.h $(B)/obj/loader/loader_rc.o
 	@mkdir -p $(B)
-	$(CC) $(CFLAGS) -shared -o $@ loader/loader.c loader/steam_api.def -Wl,--kill-at
+	$(CC) $(CFLAGS) -shared -o $@ loader/loader.c loader/steam_api.def $(B)/obj/loader/loader_rc.o -Wl,--kill-at
+
+# BUG-0784: a VERSIONINFO resource in every binary (installer/version.rc), its version from
+# COOP_VERSION: build/version.h is rewritten only when the version changes
+WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
+COOP_VERSION = $(shell sed -n 's/^\#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
+VER_NUM = $(shell echo "$(COOP_VERSION)" | awk -F. '{printf "%d,%d,%d,%d", $$1, $$2, $$3, $$4}')
+$(B)/version.h: mods/coop/coop.cpp
+	@mkdir -p $(B)
+	@printf '#define SC_VER_NUM %s\n#define SC_VER_STR "%s"\n' "$(VER_NUM)" "$(COOP_VERSION)" > $@.tmp
+	@if cmp -s $@.tmp $@; then rm $@.tmp; touch $@; else mv $@.tmp $@; echo "version.h: $(COOP_VERSION) ($(VER_NUM))"; fi
+$(B)/obj/%_rc.o: %.rc installer/version.rc $(B)/version.h
+	@mkdir -p $(dir $@)
+	$(WINDRES) -i $< -o $@ -I$(B) -Iinstaller
 
 $(B)/obj/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -51,22 +65,24 @@ $(B)/obj/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(MINHOOK)/include -Isdk/include -c $< -o $@ -MMD -MP
 
-$(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ)
+$(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ) $(B)/obj/sporekit/sporekit_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
-$(B)/coop.dll: $(COOP_OBJ)
+$(B)/coop.dll: $(COOP_OBJ) $(B)/obj/mods/coop/coop_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 
 # SporeCoopSetup.exe: install / update / uninstall (installer/, updater/)
-WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
-COOP_VERSION = $(shell sed -n 's/^#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
 setup: $(B)/SporeCoopSetup.exe
 $(B)/setup.ico: data/ui/coop_icon.png tools/make_ico.py
 	@mkdir -p $(B)
 	python3 tools/make_ico.py $< $@
-$(B)/obj/installer/setup_rc.o: installer/setup.rc installer/setup.manifest $(B)/setup.ico
+# the manifest's assemblyIdentity version is COOP_VERSION too (BUG-0784; it was 1.0.0.0)
+$(B)/setup.manifest: installer/setup.manifest $(B)/version.h
+	sed 's/name="SporeCoop.Setup" version="[0-9.]*"/name="SporeCoop.Setup" version="$(subst $(comma),.,$(VER_NUM))"/' $< > $@
+	grep -q 'version="$(subst $(comma),.,$(VER_NUM))"' $@
+$(B)/obj/installer/setup_rc.o: installer/setup.rc installer/version.rc $(B)/setup.manifest $(B)/setup.ico $(B)/version.h
 	@mkdir -p $(dir $@)
-	$(WINDRES) -i installer/setup.rc -o $@ --include-dir installer
+	$(WINDRES) -i installer/setup.rc -o $@ -I$(B) -Iinstaller
 $(B)/SporeCoopSetup.exe: installer/setup.cpp installer/install.cpp installer/install.h updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
 	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $(filter-out %.h,$^) \
 		-lwinhttp -lcomctl32 -lshell32 -lole32 -ladvapi32 -luser32 -lgdi32
