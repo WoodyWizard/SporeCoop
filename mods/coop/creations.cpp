@@ -18,6 +18,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "own_world.h"
 #include "content_packs.h"
 #include "net/partprops.h"
 #include "trace.h"
@@ -2112,10 +2113,26 @@ static bool alias_skip(uint32_t hi)
     return false;
 }
 
+// BUG-0819: the alias is the host's world's: while this guest plays a world of its own (own_world::elsewhere, or a
+// Space save of its own) its game gives its own creation for its own keys again, as at the session end (its own
+// nests showed the host's creature, and a herd member spawned meanwhile could carry our key into that save); it comes
+// back when the guest plays the host's world again. Off: aliased wherever the guest plays (0.7.12).
+static bool g_alias_own_world_fix = true;
+COOP_FIX("creations.alias_own_world", "BUG-0819", g_alias_own_world_fix,
+         "creature: a guest's own world gives the guest's own creations for its keys, not the host's");
+static unsigned g_alias_own_undone;
 static void alias_tick()
 {
     if (!g_host_alias_fix || !C.sess || C.sess->my_id() == 0)
         return;
+    if (g_alias_own_world_fix && (own_world::elsewhere() || own_world::space_other())) {
+        for (auto& [hi, a] : g_alias)
+            if (a.prof) {
+                alias_undo(hi, a);
+                g_alias_own_undone++;
+            }
+        return;
+    }
     for (auto& [hi, ours] : g_remap) {
         Alias& a = g_alias[hi];
         if (alias_skip(hi)) {
@@ -3489,8 +3506,8 @@ std::string debug(const std::vector<std::string>& a)
                     h = fnv(r.data.data(), r.data.size());
         auto alias = g_alias.find(k.instance);
         char b[200];
-        snprintf(b, sizeof b, "profile %08X key %08X bem %08X aliased %d (set %u restored %u)\n", k.instance, pk.instance, h,
-                 alias != g_alias.end() && alias->second.prof == p ? 1 : 0, g_alias_set, g_alias_restored);
+        snprintf(b, sizeof b, "profile %08X key %08X bem %08X aliased %d (set %u restored %u own_world %u)\n", k.instance, pk.instance, h,
+                 alias != g_alias.end() && alias->second.prof == p ? 1 : 0, g_alias_set, g_alias_restored, g_alias_own_undone);
         return b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
