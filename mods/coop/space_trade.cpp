@@ -135,6 +135,19 @@ static int g_hold;         // tests: 1 do not answer gifts (the answer is still 
 // of it comes back (before).
 static bool g_delivered_fix = true;
 COOP_FIX("trade.delivered", "BUG-0542", g_delivered_fix, "space: a gift the partner had received does not come back when the session ends");
+// BUG-0832: such a delivered sale was paid (the export bonus) only when the seller was in Space at that moment: a
+// seller in an editor or an adventure got nothing. The payment is owed now and paid in the first Space frame of the
+// same game (the world tag of the sale, as refunds are). `coop.fix trade.sale_owed off`: not paid (0.7.12).
+static bool g_sale_owed_fix = true;
+COOP_FIX("trade.sale_owed", "BUG-0832", g_sale_owed_fix,
+         "space: a spice sale that arrived is paid when the seller was out of Space at the session end");
+struct OwedSale {
+    int total, n;
+    std::string name;
+    spacelogic::WorldTag tag;
+};
+static std::vector<OwedSale> g_owed_sales;
+static uint32_t g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped;
 static uint32_t g_kept_at_end;
 static uint32_t g_owed_paid, g_owed_dropped;
 static uint32_t g_owed_kept;        // BUG-0225: owed items kept for another game (as last decided)
@@ -1119,9 +1132,20 @@ static bool add_cargo(uint8_t type, const Key& k, int n)
     return ok;
 }
 
-// make the game's hold `want`; returns how many items could not be made as they were (logged)
+// BUG-0826: the items a restore could not make (a plant or animal the game's factory does not know here, spice
+// without a free slot) were gone for good: the record on disk and the host's kept copy took the reduced hold right
+// after. Now they are kept for the Space world of that restore (memory) and added to what this game records and
+// sends as its hold, so the next restore (a rejoin, another load) tries them again. `coop.fix space.keep_items_missed
+// off`: the reduced hold is recorded (0.7.12).
+static bool g_keep_missed_fix = true;
+COOP_FIX("space.keep_items_missed", "BUG-0826", g_keep_missed_fix,
+         "space: cargo a rejoin could not put back stays in the guest's kept hold for the next try");
+static std::vector<InvItem> g_inv_missed;
+static uint32_t g_inv_missed_epoch, g_inv_missed_kept;
+
+// make the game's hold `want`; returns how many items could not be made as they were (logged); `missed` gets them
 static uint32_t g_inv_restored, g_inv_failed, g_inv_removed;
-static int apply_inv(const Inv& want)
+static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
 {
     void* inv = inventory();
     if (!inv)
@@ -1213,6 +1237,8 @@ static int apply_inv(const Inv& want)
     }
     for (const InvItem* x : todo) {
         failed++;
+        if (missed)
+            missed->push_back(*x);
         H->log(M, SK_WARN, "trade: own hold: %08X (type %d x%d) could not come back", x->key.v[0], x->type, x->count);
     }
     refresh_palettes();
@@ -1321,6 +1347,7 @@ static bool rec_read(const std::string& key, Inv& v)
     return same && v.slots >= 0;
 }
 
+static void merge_missed(Inv& v); // BUG-0826
 // the hold of a world whose hold is this player's own goes to the record when it changes (at most once a second;
 // also while not connected, as long as that world is open: a refund paid at the session end, items picked up after)
 static void rec_tick(double now)
@@ -1332,11 +1359,44 @@ static void rec_tick(double now)
     Inv v;
     if (!read_inv(v))
         return;
+    merge_missed(v); // BUG-0826
     std::vector<uint8_t> b = inv_bytes(v);
     if (b == g_rec_last)
         return;
     g_rec_last = std::move(b);
     rec_write(g_rec_key, v);
+}
+
+// BUG-0826: a restore of world `e` that left items out: they stay in what this game records and sends as its hold
+static void note_missed(uint32_t e, std::vector<InvItem>&& missed)
+{
+    if (!g_keep_missed_fix)
+        return;
+    g_inv_missed = std::move(missed);
+    g_inv_missed_epoch = e;
+    if (!g_inv_missed.empty())
+        H->log(M, SK_INFO, "trade: %u items of the own hold could not come back: kept in the record for the next try (BUG-0826)",
+               (unsigned)g_inv_missed.size());
+}
+
+static void merge_missed(Inv& v)
+{
+    if (!g_keep_missed_fix || g_inv_missed.empty() || g_inv_missed_epoch != spaceext::world_epoch())
+        return;
+    for (auto& x : g_inv_missed) {
+        bool found = false;
+        for (auto& y : v.items)
+            if (y.type == x.type && y.key == x.key) {
+                found = true;
+                if (y.count < x.count)
+                    y.count = x.count;
+                if (y.ammo < x.ammo)
+                    y.ammo = x.ammo;
+            }
+        if (!found && v.items.size() < 250)
+            v.items.push_back(x);
+    }
+    g_inv_missed_kept++;
 }
 
 // this world's hold is mine from now on (restored, or nothing was kept: the save's)
@@ -1421,8 +1481,10 @@ static void inv_tick(double now)
         if (!key.empty() && rec_read(key, own)) {
             if (now - g_inv_epoch_t < 2.0)
                 return;
-            int failed = apply_inv(own);
+            std::vector<InvItem> missed;
+            int failed = apply_inv(own, &missed);
             if (failed >= 0) {
+                note_missed(e, std::move(missed)); // BUG-0826
                 g_inv_applied_epoch = e;
                 g_inv_restored++;
                 g_rec_used++;
@@ -1438,6 +1500,8 @@ static void inv_tick(double now)
         }
     }
     rec_tick(now);
+    if (!fresh)
+        merge_missed(v); // BUG-0826 (a fresh hold is the host's copy: as it is)
     std::vector<uint8_t> b = inv_bytes(v);
     if (!fresh && b == g_inv_last)
         return;
@@ -1510,9 +1574,11 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
         return;
     int failed = 0;
     if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
-        failed = apply_inv(v);
+        std::vector<InvItem> missed;
+        failed = apply_inv(v, &missed);
         if (failed < 0)
             return; // no hold now: the host sends it again
+        note_missed(e, std::move(missed)); // BUG-0826
         g_inv_applied_epoch = e;
         g_inv_restored++;
         g_inv_failed += (uint32_t)failed;
@@ -1576,11 +1642,45 @@ static std::string inv_status()
 }
 
 // ---------------- frame ----------------
+// BUG-0832: owed sale payments, in the first Space frame of the game they were made in (also after the session ended)
+static void pay_owed_sales()
+{
+    if (g_owed_sales.empty() || !here() || inv_restore_pending())
+        return;
+    auto v = std::move(g_owed_sales);
+    g_owed_sales.clear();
+    for (auto& o : v) {
+        spacelogic::OwedAction a = spaceext::owed_id() ? spaceext::owed_action(o.tag)
+                                   : o.tag.epoch == spaceext::world_epoch() ? spacelogic::OwedAction::Pay
+                                                                             : spacelogic::OwedAction::Drop;
+        if (a == spacelogic::OwedAction::Keep) {
+            g_owed_sales.push_back(o); // another game: paid when that one is loaded again
+            continue;
+        }
+        if (a == spacelogic::OwedAction::Drop) {
+            g_sales_owed_dropped++;
+            H->log(M, SK_INFO, "trade: the payment for %d x %s owed from world %u dropped", o.n, o.name.c_str(), o.tag.epoch);
+            continue;
+        }
+        add_money(o.total);
+        g_sales++;
+        g_sold += o.n;
+        g_earned += o.total;
+        g_sales_owed_paid++;
+        spaceext::notice(spaceext::tr("Sold ", "Продано: ") + std::to_string(o.n) + " " + o.name + ": +$" + std::to_string(o.total));
+    }
+    while (g_owed_sales.size() > spacelogic::kOwedKeepMax) {
+        g_sales_owed_dropped++;
+        g_owed_sales.erase(g_owed_sales.begin());
+    }
+}
+
 static void tick(double now)
 {
     inv_tick(now);
     if (g_refund_fix)
         pay_owed(); // also after the session ended
+    pay_owed_sales(); // BUG-0832
     if (!spaceext::connected())
         return;
     for (auto& o : g_out) // BUG-0542: did the partner's side get it?
@@ -1630,6 +1730,9 @@ static void on_session_end()
                 g_sales++;
                 g_sold += o.n;
                 g_earned += total;
+            } else if (o.kind == K_SELL && g_sale_owed_fix) { // BUG-0832: paid back in Space
+                g_owed_sales.push_back({o.n * o.price, o.n, o.name, o.tag});
+                g_sales_owed++;
             }
             continue;
         }
@@ -1773,11 +1876,12 @@ static std::string status()
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
              "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
-             "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u\n",
+             "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u sales_owed=%u/%u/%u/%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
              (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch(),
-             (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end);
+             (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end,
+             (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped);
     return b;
 }
 
@@ -1890,8 +1994,11 @@ static std::string debug(const std::vector<std::string>& a)
         Inv v;
         return read_inv(v) ? inv_text(v) : "no inventory\n";
     }
-    if (a[0] == "kept") // BUG-0678: the host's kept holds, the guest's restore
-        return inv_status();
+    if (a[0] == "kept") { // BUG-0678: the host's kept holds, the guest's restore
+        snprintf(b, sizeof b, "missed: fix=%d items=%u world=%u merged=%u\n", (int)g_keep_missed_fix,
+                 (unsigned)g_inv_missed.size(), g_inv_missed_epoch, g_inv_missed_kept); // BUG-0826
+        return inv_status() + b;
+    }
     if (a[0] == "cargo" && a.size() >= 3) { // tests (BUG-0679): cargo <type 0|1|5|6> <hex instance> [n]: the game's factory
         Key k;
         k.v[0] = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
