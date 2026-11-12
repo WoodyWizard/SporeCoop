@@ -601,6 +601,12 @@ static void meter_task(int op, int npc_id, float frac = 0, int rounds = 1)
     g_meter_tasks.push_back({op, npc_id, frac, rounds});
 }
 
+// BUG-0808: a guest that left (or lost the host) in the middle of a social game kept the game's meter (face and bar) on
+// its screen in its single-player game: meter_tick closes it, and it runs only in a session. Now on_session_end queues
+// the close (outside the frame). `coop.fix social.meter_end off`: left open (0.7.11).
+static bool g_meter_end_fix = true;
+COOP_FIX("social.meter_end", "BUG-0808", g_meter_end_fix, "creature: the social meter of a guest's open social game is hidden when the session ends");
+
 // guest, every frame: the meter follows the engagement
 static void meter_tick()
 {
@@ -1197,6 +1203,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    // BUG-0808: the meter of a social game still open is hidden (meter_tick, which closes it, stops with the session)
+    if (g_meter_end_fix && g_meter_npc >= 0)
+        meter_task(3, g_meter_npc);
     g_engaged = -1;
     g_meter_npc = -1;
     g_goal_paid.clear();
