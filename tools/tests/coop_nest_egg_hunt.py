@@ -19,7 +19,7 @@ it; a click or bite at the egg then lands on the hatchling (half health, one bit
    0.5 s later. Both games end in the same state: eaten on both and no hatchling at the place on the host, or
    hatched on both (the guest's mirror state 3); never eaten on the guest while the host's egg hatched, and never
    eaten AND hatched on the host (SetState(4) on a hatching egg).
-4. Hatch seen at once: the host's third egg hatches in 0.3 s; the guest's game is polled every 0.1 s. FAIL when the
+4. Hatch seen at once: the host's third egg hatches 0.1 s after one of the host's egg snapshots (the 1 Hz one); the guest's game is polled every 0.1 s. FAIL when the
    guest shows a spawned proxy within 1.5 m of the egg while its mirror of that egg is still intact (state 5 / 6)
    for longer than 0.4 s (the window where a click at the egg hits the hatchling).
 
@@ -187,7 +187,15 @@ def main():
 
     # ---- 4. the hatch reaches the guest with its hatchling ----
     if 4 in steps and (e := take()):
-        print('  host:', host.call(f'coop.nest hatch {e["p"]} 300')['out'].strip(), flush=True)
+        # the hatch right after one of the host's 1 Hz egg snapshots (the worst moment, as a player meets it at random):
+        # without nest.hatch_now the guest learns it only at the next one, ~0.8 s later
+        def snaps():
+            m = re.search(r'snaps_tx=(\d+)', host.call('coop.nest')['out'])
+            return int(m.group(1)) if m else -1
+        s0, tw = snaps(), time.time()
+        while snaps() == s0 and time.time() - tw < 3:
+            time.sleep(0.02)
+        print('  host:', host.call(f'coop.nest hatch {e["p"]} 100')['out'].strip(), flush=True)
         both, first_proxy, hatched_at, t0 = 0.0, None, None, time.time()
         last = t0
         while time.time() - t0 < 8:
