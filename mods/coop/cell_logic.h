@@ -309,4 +309,14 @@ inline void player_spawn_offset(int id, float radius, float* dx, float* dy)
     *dy = r * kS[slot];
 }
 
+// BUG-0959: the word of the host's trace line for a guest's kill (MSG_CELL_EAT). A kill of a knocked-out guest is
+// refused (BUG-0714 / BUG-0509) and says so; before, it said "applied" and then the next line refused it.
+inline const char* kill_word(bool again, bool alive, bool knocked_out)
+{
+    return again ? "refused (killed here already)"
+           : !alive ? "refused (gone or dying here)"
+           : knocked_out ? "refused (knocked out)"
+                         : "applied";
+}
+
 } // namespace cell_logic

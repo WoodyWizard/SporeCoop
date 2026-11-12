@@ -256,6 +256,15 @@ static void once()
     CHECK(o.at.size() <= 512); // bounded: old entries pruned
 }
 
+// BUG-0959: the host's trace word for a guest's kill: a knocked-out guest's kill is refused, never "applied"
+static void kill_word_ko()
+{
+    CHECK(!strcmp(kill_word(false, true, false), "applied"));
+    CHECK(!strcmp(kill_word(false, true, true), "refused (knocked out)"));
+    CHECK(!strcmp(kill_word(true, true, true), "refused (killed here already)"));
+    CHECK(!strcmp(kill_word(false, false, true), "refused (gone or dying here)"));
+}
+
 // BUG-0792: 3-4 players placed around the host: one spot each, at the radius, the host at the anchor
 static void player_spawn_slots()
 {
@@ -294,6 +303,7 @@ int main(int argc, char** argv)
     numerics();
     partner_tiles();
     once();
+    kill_word_ko();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;
