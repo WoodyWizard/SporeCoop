@@ -522,6 +522,31 @@ struct Kept {
 static std::map<std::string, Kept> g_kept; // host: player name -> its own colonies
 static uint32_t g_kept_epoch;
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
+// BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
+// and the newcomer gets the lowest free id: the same one. kept_tick never saw the player missing, k.id stayed, and
+// the rejoined guest's first (empty) roster became its kept list. The session's leave (PLAYER_LEAVE, player_life)
+// now marks the entry as left. `coop.fix space.kept_leave off`: only the per-frame check (0.7.12).
+static bool g_kept_leave_fix = true;
+COOP_FIX("space.kept_leave", "BUG-0810", g_kept_leave_fix,
+         "space: a guest's kept colonies come back after a crash rejoin that keeps its player id");
+static uint32_t g_kept_left;
+PLAYER_STATE("space_map_kept",
+             [](uint8_t id) {
+                 if (!g_kept_leave_fix)
+                     return;
+                 for (auto& [n, k] : g_kept)
+                     if (k.id == id) {
+                         k.id = 0xFF;
+                         k.restoring = false;
+                         g_kept_left++;
+                     }
+             },
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& [nm, k] : g_kept)
+                     n += k.id == id;
+                 return n;
+             });
 
 static void send_kept(uint8_t id, Kept& k)
 {
@@ -654,8 +679,9 @@ static std::string kept_status()
 {
     std::string s;
     char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u\n", (int)g_keep_fix,
-             (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size());
+    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u\n", (int)g_keep_fix,
+             (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
+             g_kept_left);
     s += b;
     for (auto& [n, k] : g_kept) {
         snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", n.c_str(), k.id == 0xFF ? -1 : k.id,
