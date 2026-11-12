@@ -28,6 +28,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "trace.h"
+#include "own_world.h"
 
 void coop_module_of(uintptr_t a, char* out, size_t cap); // debug.cpp (RE, BUG-0355)
 
@@ -236,6 +237,21 @@ static int g_solo_food[2]; // guest: meat / plant points eaten meanwhile (the gu
 static bool g_solo_owed;   // the host is back: g_solo_food goes out before its first state or total is applied
 static uint32_t g_solo_times, g_solo_released, g_solo_spawns, g_solo_sent, g_solo_dropped;
 bool away_enabled() { return g_fix_away; }
+// BUG-0797: the guest plays its own pool also while it plays another Cell world than the host's (joined from its own
+// game, loaded a save of its own: own_world::elsewhere) or while the host already plays another stage and this guest
+// is still in Cell (own_world::host_left, BUG-0638's path): the host's pool never comes there, and the guarded hooks
+// (h_Populate, h_SpawnLoot, h_Pair) emptied the guest's pool, dropped its loot and its predators' pairs. Off: only
+// the host in the menu / an editor / a load counts (0.7.12).
+static bool g_fix_solo_elsewhere = true;
+COOP_FIX("cell.solo_elsewhere", "BUG-0797", g_fix_solo_elsewhere,
+         "cell: a guest in another Cell world (or still in Cell while the host is in another stage) plays its own pool");
+// BUG-0809: the host sends its live cells (MSG_CELL_STATE, 10 per second, up to kSendCap cells) only to a guest whose
+// latest state is in the host's Cell world (own_world::peer_here): a guest in the menu, on the loading screen,
+// downloading the world or in a Cell world of its own drops them, and on a slow link they competed with the world's
+// reliable chunks. Off: every guest every cycle (0.7.12).
+static bool g_fix_send_here = true;
+COOP_FIX("cell.send_here", "BUG-0809", g_fix_send_here, "cell: the host sends live Cell state only to guests in its Cell world");
+static uint32_t g_send_held; // host: sends held back for a guest not in the host's Cell world (tests)
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
 // Class BUG-0420: a world event on one cell acted on once (cell_logic::Once, docs/re/cell.md#cell-once).
@@ -3276,6 +3292,10 @@ static void host_tick(double now)
     for (auto& pl : C.sess->players()) {
         if (pl.id == 0)
             continue;
+        if (g_fix_send_here && !own_world::peer_here((uint8_t)pl.id)) {
+            g_send_held++; // BUG-0809
+            continue;
+        }
         const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
@@ -3898,7 +3918,8 @@ static void solo_send()
 
 static void solo_tick()
 {
-    bool want = g_fix_away && is_guest() && in_cell() && C.host_away && C.host_away();
+    bool want = g_fix_away && is_guest() && in_cell() &&
+                ((C.host_away && C.host_away()) || (g_fix_solo_elsewhere && (own_world::elsewhere() || own_world::host_left())));
     if (want == g_solo)
         return;
     if (want) {
@@ -4342,6 +4363,11 @@ void on_session_end()
 // above have: tests read the first `food=`)
 static std::string away_status()
 {
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        char h[80];
+        snprintf(h, sizeof h, "cell_send: held_not_here=%u\n", g_send_held); // BUG-0809
+        return h;
+    }
     if (!C.sess || C.sess->role() != net::Role::Client)
         return "";
     char e[200];
