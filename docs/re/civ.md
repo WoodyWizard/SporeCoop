@@ -1627,3 +1627,15 @@ BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 6 (`coop.civ reusehunt`, do
   list, pointers only) drops a mirror whose vehicle left the list, which happens at the removal, before the free; the
   new vehicle at the block is then a vehicle the host has not and the guest's cycle removes it (both with
   `civ.mirror_lifetime` on and off). prune_gone runs only while the Civ mode is active.
+
+## City owners across a host's load (2026-11-12, fix/w48-new)
+<a id="civ-owners-kept"></a>
+
+BUG-0950. ✔ (runtime, lane 5, civ_npc) A host that saves (`coop.menu`) and loads the same slot again gets the same
+cities back at the same positions (within a metre); the mod's owner tables were cleared by on_world_change and
+host_assign_cities dealt every city anew: the host's bought city became the guest's (lab 20261112-072252, fix off).
+Fix `civ.owners_kept`: the host writes the owners of the player civilization's cities every 2 s per world
+(world::current_game_key: `<slot dir>\<planet>.spo`) by position and owner name (with the gift / capture marks) and
+gives them back at the first split after a world change (a city within 5 m, the owner must be in the session); when
+every city got its owner back nothing is dealt anew. Kept in memory only: a restart of the host's game loses them, and a
+new session deals the cities anew. `coop.civ tables` prints `kept: fix= worlds= this_world= saved= restored= key=`.

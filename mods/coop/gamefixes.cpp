@@ -202,8 +202,55 @@ static bool modal_alive(const void* w)
     return executable(((const uintptr_t*)vt)[0xC4 / 4]) && executable(((const uintptr_t*)vt)[0xF8 / 4]);
 }
 
+// BUG-0956: the windows under the modal one (the list +0x81C, node {next, prev, window, handler}) can hold a destroyed
+// window as well. PopModal of the top one makes the next listed window the modal one and calls its vt 0x10 at once:
+// a guest that had earned a Space badge and loaded the host's world from the same game had the refcounted base's
+// vtable 0x13EB92C there (slot 0x10 reads 0x00420065, the tail `mov esp,ebp; pop ebp; ret 4` of 0x420050), so the
+// game ran on with esp in the heap and Wine ended it without a report (the fault could not be dispatched). Before
+// each PopModal (and UpdateHover) such entries are unlinked (the node is left to the game's allocator: 16 bytes).
+// `coop.fix game.dead_modal_list off`: not checked (0.7.12).
+static bool g_dead_modal_list_fix = true;
+COOP_FIX("game.dead_modal_list", "BUG-0956", g_dead_modal_list_fix,
+         "gamefixes: a destroyed window in the window manager's list of modal windows is dropped before PopModal makes it the modal one");
+static std::atomic<unsigned> g_dead_modal_listed{0};
+static bool modal_alive(const void* w);
+static void drop_dead_listed(uint8_t* m, const char* when)
+{
+    if (!g_dead_modal_list_fix || !m)
+        return;
+    uintptr_t* head = (uintptr_t*)(m + 0x81C);
+    int guard = 0;
+    for (uintptr_t* n = (uintptr_t*)head[0]; n && n != head && guard < 256; guard++) {
+        if (!readable(n, 16))
+            break;
+        uintptr_t* next = (uintptr_t*)n[0];
+        void* w = (void*)n[2];
+        if (w && !modal_alive(w)) {
+            uintptr_t* prev = (uintptr_t*)n[1];
+            if (!readable(prev, 8) || !readable(next, 8))
+                break;
+            prev[0] = (uintptr_t)next; // unlink, as PopModal does (0x9594A8)
+            next[1] = (uintptr_t)prev;
+            unsigned k = ++g_dead_modal_listed;
+            if (k <= 8)
+                H->log(M, SK_WARN, "game fixes: a destroyed window %p (vtable %08X) was listed under the modal window (%s): "
+                       "dropped it (BUG-0956)", w, readable(w, 4) ? (unsigned)*(uintptr_t*)w : 0u, when);
+        }
+        n = next;
+    }
+}
+
+using PopModalFn = bool(__thiscall*)(void*, void*, void*);
+static PopModalFn g_popmodal_orig;
+static bool __fastcall popmodal_guard(void* wm, void*, void* w, void* arg)
+{
+    drop_dead_listed((uint8_t*)wm, "PopModal");
+    return g_popmodal_orig(wm, w, arg);
+}
+
 static void* __fastcall hover_guard(void* wm, void*, void* out, int flag)
 {
+    drop_dead_listed((uint8_t*)wm, "UpdateHover");
     uint8_t* m = (uint8_t*)wm;
     void* modal = m ? *(void**)(m + 0x82C) : nullptr;
     if (g_dead_modal_fix && modal && !modal_alive(modal)) {
@@ -235,6 +282,44 @@ std::string fake_dead_modal(void* wm)
     *(void**)(m + 0x82C) = g_test_obj;
     *(void**)(m + 0x830) = nullptr;
     return "the modal window is now a destroyed object\n";
+}
+
+// tests (BUG-0956): a destroyed window listed under a modal window, then that modal window popped (WM vt 0x78), as
+// the game's mode switch does. The listed object's vtable slots hold 0x65 (the destroyed object's slot 0x10 led to
+// 0x00420065 and the game ran on in the heap; a fault at 0x65 shows the same call without killing the stack)
+static uintptr_t g_test_vt2[0x100 / 4];
+static uintptr_t g_test_dead[4], g_test_top[4], g_test_node[4];
+std::string fake_dead_listed(void* wm)
+{
+    uint8_t* m = (uint8_t*)wm;
+    if (!m)
+        return "no window manager\n";
+    if (*(void**)(m + 0x82C))
+        return "a modal window is open: not replaced\n";
+    uintptr_t* head = (uintptr_t*)(m + 0x81C);
+    if (head[0] != (uintptr_t)head)
+        return "modal windows listed: not replaced\n";
+    for (auto& v : g_test_vt2)
+        v = 0x65;
+    g_test_dead[0] = (uintptr_t)g_test_vt2;
+    g_test_top[0] = (uintptr_t)g_test_vt2; // never called: PopModal calls only the window it makes modal
+    g_test_node[0] = (uintptr_t)head;
+    g_test_node[1] = (uintptr_t)head;
+    g_test_node[2] = (uintptr_t)g_test_dead;
+    g_test_node[3] = 0;
+    head[0] = head[1] = (uintptr_t)g_test_node;
+    *(void**)(m + 0x82C) = g_test_top;
+    *(void**)(m + 0x830) = nullptr;
+    void** vt = *(void***)m;
+    using Pop = bool(__thiscall*)(void*, void*, void*);
+    bool r = ((Pop)vt[0x78 / 4])(m, g_test_top, nullptr);
+    bool clean = !*(void**)(m + 0x82C) && head[0] == (uintptr_t)head;
+    if (!clean) { // the fake objects must not stay in the game's window manager
+        *(void**)(m + 0x82C) = nullptr;
+        head[0] = head[1] = (uintptr_t)head;
+    }
+    return std::string("popped the modal window over a destroyed listed one: ") + (r ? "1" : "0") +
+           (clean ? ", the window manager has no modal window and nothing listed\n" : ", left over (cleared)\n");
 }
 
 // BUG-0285 / BUG-0310: Citizen_OffStageCheck (0xACA2A0, thiscall(mgr, object), ret 4) sends a
@@ -1615,6 +1700,9 @@ void init(const SkHost* host, SkMod* mod)
     uintptr_t uh = H->sym("UTFWin::cWindowManager::UpdateHover");
     bool hover = uh && g_code_hi && H->hook_create(M, (void*)uh, (void*)&hover_guard, (void**)&g_hover_orig) == 0;
     H->log(M, SK_INFO, "game fixes: dead modal window guard %s", hover ? "on" : "off");
+    uintptr_t pm = H->sym("UTFWin::cWindowManager::PopModal");
+    bool pop = pm && g_code_hi && H->hook_create(M, (void*)pm, (void*)&popmodal_guard, (void**)&g_popmodal_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: dead listed modal window guard %s (BUG-0956)", pop ? "on" : "off");
     uintptr_t os = H->sym("SporeCoop::Citizen_OffStageCheck");
     g_idle_walk = (IdleWalkFn)H->sym("SporeCoop::Citizen_IdleWalk");
     bool walk = os && g_idle_walk && H->hook_create(M, (void*)os, (void*)&offstage_guard, (void**)&g_offstage_orig) == 0;
@@ -1727,7 +1815,7 @@ std::string status()
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
            ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
-           std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
+           std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) + ", dead listed modal windows dropped " + std::to_string(g_dead_modal_listed.load()) +
            ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens while the stage is left " +
            std::to_string(g_offstage_citizens.load()) + "), cleaned-up citizen walks skipped " +
            std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) +

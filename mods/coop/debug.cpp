@@ -23,6 +23,7 @@
 #include "sporekit_game.hpp"
 
 static const SkHost* H;
+static std::string msglisteners_text(uint32_t id); // BUG-0956 (RE)
 namespace {
 SkMod* g_self;
 }
@@ -85,6 +86,73 @@ int c_pauses(void*, int, const char* const*, SkOut* out)
 }
 
 // the game's quit message (world.cpp load_slot): saves and leaves the stage for the galaxy menu
+// BUG-0956 (RE): the listeners of one message id in the game's message managers (the one of the mode switch,
+// [App::MessageManager_ptr], and IMessageManager::Get's): the entry's object, its vtable and slot +4 (the
+// listener's HandleMessage), the function / user of a function entry; "BAD" = a vtable outside the exe image
+static bool readable(const void* p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION m;
+    if (!p || !VirtualQuery(p, &m, sizeof m) || m.State != MEM_COMMIT || (m.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return false;
+    return (uintptr_t)p + n <= (uintptr_t)m.BaseAddress + m.RegionSize;
+}
+static bool in_exe(uint32_t v)
+{
+    auto base = (uintptr_t)GetModuleHandleW(nullptr);
+    auto nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+    return v >= base && v < base + nt->OptionalHeader.SizeOfImage;
+}
+int c_msglisteners(void*, int argc, const char* const* argv, SkOut* out)
+{
+    SAY("%s", msglisteners_text(argc > 1 ? (uint32_t)strtoul(argv[1], nullptr, 16) : 0x212D3E7u).c_str());
+    return 0;
+}
+} // namespace
+std::string msglisteners_text(uint32_t id)
+{
+    std::string o;
+    char b[200];
+#undef SAY
+#define SAY(...) (snprintf(b, sizeof b, __VA_ARGS__), o += b)
+    const char* names[2] = {"App::MessageManager_ptr", "App::IMessageManager_ptr"};
+    for (const char* nm : names) {
+        uintptr_t g = H->sym(nm);
+        const uint32_t* mgr = g && readable((void*)g, 4) ? *(const uint32_t* const*)g : nullptr;
+        if (!mgr || !readable(mgr, 0x80)) {
+            SAY("%s: none\n", nm);
+            continue;
+        }
+        const uint32_t* buckets = (const uint32_t*)mgr[0x74 / 4];
+        uint32_t n = mgr[0x78 / 4];
+        SAY("%s = %08X, %u buckets\n", nm, (unsigned)(uintptr_t)mgr, n);
+        if (!n || !readable(buckets, 4 * (n + 1)))
+            continue;
+        int k = 0;
+        for (const uint32_t* node = (const uint32_t*)buckets[id % n]; node && readable(node, 12) && k < 64; node = (const uint32_t*)node[2], k++) {
+            if (node[0] != id)
+                continue;
+            const uint32_t* list = (const uint32_t*)node[1];
+            int i = 0;
+            for (const uint32_t* e = list && readable(list, 8) ? (const uint32_t*)list[0] : nullptr; e && e != list && readable(e, 0x1C) && i < 200;
+                 e = (const uint32_t*)e[0], i++) {
+                uint32_t obj = e[2], vt = 0, h = 0;
+                if (obj && readable((void*)(uintptr_t)obj, 4)) {
+                    vt = *(const uint32_t*)(uintptr_t)obj;
+                    if (readable((void*)(uintptr_t)vt, 8))
+                        h = ((const uint32_t*)(uintptr_t)vt)[1];
+                }
+                SAY("  %08X: %u obj=%08X vt=%08X +4=%08X fn=%08X user=%08X flag=%u%s\n", id, i, obj, vt, h, e[5], e[6], e[4] & 0xFF,
+                    obj && !(in_exe(vt) && in_exe(h)) ? " BAD" : "");
+            }
+        }
+        break; // both globals hold the same manager (seen 2026-11-12)
+    }
+    return o;
+}
+#undef SAY
+#define SAY(...) H->out_printf(out, __VA_ARGS__)
+namespace {
+
 int c_menu(void*, int, const char* const*, SkOut* out)
 {
     std::string err;
@@ -120,10 +188,14 @@ int c_close(void*, int, const char* const*, SkOut* out)
 }
 
 // tests (BUG-0270): the window manager's modal window becomes a destroyed object
-int c_deadmodal(void*, int, const char* const*, SkOut* out)
+int c_deadmodal(void*, int argc, const char* const* argv, SkOut* out)
 {
     uintptr_t get = H->sym("UTFWin::IWindowManager::Get");
     void* wm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (argc > 1 && !strcmp(argv[1], "list")) { // BUG-0956
+        SAY("%s", gamefixes::fake_dead_listed(wm).c_str());
+        return 0;
+    }
     SAY("%s", gamefixes::fake_dead_modal(wm).c_str());
     return 0;
 }
@@ -805,6 +877,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.msglisteners", "coop.msglisteners [hex id] - the game's listeners of a message (RE, BUG-0956; default 0x212D3E7, the mode change)",
+                      c_msglisteners, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
@@ -813,7 +887,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_introstage, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.close", "coop.close - WM_CLOSE to the game window: the game's own exit (tests, BUG-0578)", c_close,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.deadmodal", "tests (BUG-0270): the window manager's modal window becomes a destroyed object",
+    host->command_add(self, "coop.deadmodal", "coop.deadmodal [list] - tests (BUG-0270): the window manager's modal window becomes a destroyed object; list (BUG-0956): a destroyed window listed under a modal one that is popped",
                       c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.leavewalk", "tests (BUG-0310): the next citizen walked off-stage is a cleaned-up one",
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);

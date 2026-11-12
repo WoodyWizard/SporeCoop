@@ -2867,3 +2867,31 @@ Runtime (2026-11-12, fix/w48-reports, lane 4/5, GOG 2024):
   untouched.
 * ✔ A host that earned a badge and loads its own save again: no fault. A guest that earned one and loads the host's
   world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/known-issues.md#issue-space-badge-rejoin-fault).
+
+## The modal window list and the badge rejoin crash (2026-11-12, fix/w48-new)
+<a id="space-modal-list-crash"></a>
+
+BUG-0956. GOG 2024 (dc04aee5), runtime (lane 4, space_badges_rejoin with `BADGES_RESTART=0`) and Ghidra.
+* ✔ (runtime) The crash: after the guest's load of the host's world (`world: loading Madas.spo`), the mode switch from
+  the galaxy menu (cGameModeManager::SetActiveModeAt 0x7D8D40 -> 0x7D8670: old mode vt 0x1C, MessageSend 0x212D3E7,
+  new mode vt 0x18) runs from the message queue 4 ms later. The thread's real stack (logged by SporeKit's off-stack
+  report, docs/02-modkit.md#modkit-offstack-report) holds MessageSend+0x1EC (0x88568C, a listener's call) under
+  0x7D8741; deeper ones are cWindowManager code (PopModal+0x51, ProcessMessage, UpdateHover).
+* ✔ (Ghidra + registers) PopModal 0x959410 (WM vt 0x78) of the top modal window makes the first window of the list
+  `+0x81C` (eastl list, node {next, prev, IWindow*, handler}) the modal one and calls its vt 0x10 at once (0x95945A).
+  At every fault `edi = esi + 0x81C` (esi = the window manager), `edx = 0x00420065`: the slot 0x10 of the vtable
+  0x13EB92C (the refcounted base a destroyed object is left with, as in the BUG-0270 notes above; slot 0x10 holds
+  0x00420065, UTF-16 text past the table's end). 0x420065 is the tail of 0x420050: `mov eax,[ebp-4]; mov esp,ebp;
+  pop ebp; ret 4`, with ebp = the popped window (+4, its secondary vtable 0x1414BA0), so esp moves into the heap,
+  eax = 0x1440D0C (the UI::Window base vtable of the window being disposed) and the game runs heap bytes until an
+  illegal / privileged instruction or an access violation at a changing address. Wine then cannot dispatch the fault
+  ("err:seh:NtRaiseException Exception frame is not in stack limits") and ends the process.
+* ~ (inferred) The destroyed window in the list is one the badge's earning put up as a modal window (the caption /
+  card of the badge) and the Space UI destroyed at the stage exit without PopModal; a restarted game has no such
+  entry. Which window it is was not identified (the listener list of 0x212D3E7 was intact before and after the load,
+  `coop.msglisteners`).
+* Fix `game.dead_modal_list` (gamefixes.cpp): before every PopModal and UpdateHover the list's entries whose window
+  is not alive (its vtable slots 0xC4 / 0xF8 not code, the BUG-0270 check) are unlinked.
+* `coop.msglisteners [hex id]` lists the game's listeners of a message (App::MessageManager_ptr 0x16514CC: hash map
+  +0x74 buckets, +0x78 count, node {id, list*, next}, list node {next, prev, object, priority, flag, fn, user});
+  0x212D3E7 had 9 listeners in the galaxy menu (audio 0xEA9DA0, simulator 0xB63650, achievements 0x677100, ...).

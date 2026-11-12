@@ -27,6 +27,7 @@
 #include "fields.h"
 #include "creations.h"
 #include "savestrip.h"
+#include "world.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -323,6 +324,25 @@ struct PendingCapture {
     double at;
 };
 static std::unordered_map<void*, PendingCapture> g_capture_by;
+// BUG-0950: the owner tables live only in the host's memory and are cleared by every world change, so a host that
+// loaded its Civ world again (the same save after the menu, a load while connected) dealt every city out anew: a
+// city a guest captured, bought or was given became another player's. The host keeps the owners of the players'
+// cities per world (world::current_game_key) by position and owner name, written every 2 s while it plays, and
+// gives them back to the cities of that world after its load (the owner must be in the session).
+// `coop.fix civ.owners_kept off`: dealt anew (0.7.12).
+static bool g_fix_owners_kept = true;
+COOP_FIX("civ.owners_kept", "BUG-0950", g_fix_owners_kept,
+         "civ: the players' city owners (captured, bought and given cities too) are kept when the host loads the same world again");
+struct KeptCity {
+    net::Vec3 pos;
+    std::string owner; // the player's name; "" = the shared capital
+    bool gifted, captured;
+};
+static std::map<std::string, std::vector<KeptCity>> g_kept_cities; // host: world key -> its players' cities
+static std::string g_kept_key;                                     // host: the key of the world played now
+static double g_kept_at = -1;
+static bool g_kept_tried;   // host: the restore after this world change was tried
+static uint32_t g_kept_restored, g_kept_saved; // tests
 static void* g_ui_city;                               // the city whose menu was opened last
 static uint32_t g_gifts;
 
@@ -2581,6 +2601,43 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
             it = here || now - it->second.at > 120.0 ? g_capture_by.erase(it) : std::next(it);
         }
     }
+    if (g_fix_owners_kept && !g_kept_tried && !cities.empty()) { // BUG-0950: the first split after a world change
+        g_kept_tried = true;
+        g_kept_key = world::current_game_key();
+        auto it = g_kept_cities.find(g_kept_key);
+        size_t got = 0;
+        if (!g_kept_key.empty() && it != g_kept_cities.end() && g_city_owner.empty()) {
+            for (void* c : cities) {
+                net::Vec3 p = city_pos(c);
+                const KeptCity* best = nullptr;
+                for (auto& k : it->second)
+                    if (net::dist(k.pos, p) < 5.0f && (!best || net::dist(k.pos, p) < net::dist(best->pos, p)))
+                        best = &k;
+                if (!best)
+                    continue;
+                uint8_t id = 0xFF;
+                if (best->owner.empty())
+                    id = kShared;
+                else
+                    for (auto& pl : C.sess->players())
+                        if (pl.name == best->owner)
+                            id = pl.id;
+                if (id == 0xFF)
+                    continue;
+                g_city_owner[c] = id;
+                if (best->gifted)
+                    g_city_gifted.insert(c);
+                if (best->captured)
+                    g_city_captured.insert(c);
+                got++;
+            }
+            g_kept_restored += (uint32_t)got;
+            H->log(M, SK_INFO, "civ: %u of %u player cities got their owners of this world back (BUG-0950)", (unsigned)got,
+                   (unsigned)cities.size());
+        }
+        if (got == cities.size())
+            g_split_for = players; // every city has its owner again: nothing is dealt anew
+    }
     bool resplit = players != g_split_for;
     g_split_for = players;
     if (cities.empty())
@@ -2981,6 +3038,27 @@ static void host_tick(double now)
     std::sort(players.begin(), players.end());
     bool roster_changed = players != g_split_for;
     host_assign_cities(players);
+    if (g_fix_owners_kept && now - g_kept_at > 2.0) { // BUG-0950: the owners of this world, by position and name
+        g_kept_at = now;
+        if (void* pc = player_civ()) {
+            if (g_kept_key.empty())
+                g_kept_key = world::current_game_key();
+            std::vector<KeptCity> v;
+            for (void* c : vec_of((uint8_t*)pc + kCivCities)) {
+                auto it = g_city_owner.find(c);
+                if (it == g_city_owner.end() || it->second == 0xFF)
+                    continue;
+                v.push_back({city_pos(c), it->second == kShared ? std::string() : C.sess->name_of(it->second),
+                             g_city_gifted.count(c) > 0, g_city_captured.count(c) > 0});
+                if (it->second != kShared && v.back().owner.empty())
+                    v.pop_back(); // a player without a name: not kept
+            }
+            if (!g_kept_key.empty() && !v.empty()) {
+                g_kept_cities[g_kept_key] = std::move(v);
+                g_kept_saved++;
+            }
+        }
+    }
     // BUG-0031: the vehicles of a player who left go to the owner of the nearest player city (the
     // cities were split anew just now); before, nobody could order them, they took slots of the
     // vehicle cap and the next joiner under the reused id inherited them
@@ -4809,6 +4887,9 @@ void on_world_change()
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
+    g_kept_tried = false; // BUG-0950: the next split gives the new world's kept owners back
+    g_kept_key.clear();
+    g_kept_at = H->time_seconds() + 3.0; // nothing is written over the kept owners before that
     g_city_short_since = -1;
     g_cities_waiting_told = 0;
     g_cyc.reset();
@@ -5187,7 +5268,13 @@ std::string debug(const std::vector<std::string>& a)
                  "buys_done=%u refused=%u away_sent=%u\n",
                  (unsigned)g_city_captured.size(), g_credit_by[0], g_credit_by[1], g_credit_by[2], g_credit_by[3],
                  g_city_buys_sent, g_city_buys_done, g_city_buys_refused, g_away_captures_sent);
-        return std::string(b) + c;
+        char k[200]; // BUG-0950
+        size_t kn = 0;
+        if (auto it = g_kept_cities.find(g_kept_key); it != g_kept_cities.end())
+            kn = it->second.size();
+        snprintf(k, sizeof k, "kept: fix=%d worlds=%u this_world=%u saved=%u restored=%u key=%s\n", (int)g_fix_owners_kept,
+                 (unsigned)g_kept_cities.size(), (unsigned)kn, g_kept_saved, g_kept_restored, g_kept_key.c_str());
+        return std::string(b) + k + c;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)

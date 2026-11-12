@@ -241,3 +241,6 @@ SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (
 Simulator::Cell::SwallowWhole ; BUG-0827: a host cell a guest swallows whole is not marked as eaten (old behaviour)
 SporeCoop::Havok_GroupFilter_IsCollisionEnabled ; BUG-0913: a partner's creature still blocks the way (old behaviour)
 SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still picks a partner's creature (old behaviour)
+UTFWin::cWindowManager::PopModal ; BUG-0956: game fixes: no guard against a destroyed window in the list of modal windows on GOG 2016
+App::MessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016

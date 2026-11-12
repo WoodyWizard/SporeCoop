@@ -15,6 +15,14 @@
   host, not on top of each other (BUG-0792).
 - Cell: renaming a cell whose model came from elsewhere (a partner's or an imported cell) no longer crashes the host;
   the new name goes out with the model, and a cell without its model is not built (BUG-0802).
+- Space: a guest that had earned a badge no longer crashes while it loads the host's world when it joins again from
+  the same running game. A window the game had already destroyed was left in its list of open dialogs and was used
+  when the next dialog closed (BUG-0956).
+- SporeKit: a crash in which the game's stack pointer had left its stack (Windows and Wine end such a game at once)
+  now writes a crash report as well; before, the game vanished without one (BUG-0956).
+- Civilization: when the host saves and loads its world again, every player keeps the cities it had, captured and
+  bought ones too; before, all cities were dealt out anew and a city the host had bought could become the guest's
+  (BUG-0950).
 - Cell: a guest that plays a Cell world of its own while connected (or is still in Cell while the host is already in
   the Creature stage) gets a living pool again: new cells and food appear, kills drop loot, predators hunt. Before, its
   pool only emptied (BUG-0797).
