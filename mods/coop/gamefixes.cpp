@@ -723,7 +723,7 @@ static void forget_avatar_target(void* dying)
 // When co-op destroys a partner's puppet in a fight, the NPC it hit last keeps that reference: the destroyed puppet's
 // block lives on (vtables intact, destroyed flag set, count 1) until that NPC is hit by another creature or goes, 25 s
 // and more in the lab (lab lane 2, coop_stale_refs.py --watch). Vanilla never destroys a creature in a fight (corpses
-// stay 60 s). Before a creature is destroyed, every listed creature whose last attacker is it lets go of it (the
+// stay 60 s). Right after a creature is destroyed, every listed creature whose last attacker it was lets go of it (the
 // reference released, the field null, as a creature never hit has it), so the block is freed with its other references.
 // Old (`coop.fix npc.stale_last_attacker off`): the reference stays until the game replaces it.
 static bool g_last_attacker_fix = true;
@@ -935,12 +935,17 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
     }
     if (g_avatar_target_fix && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         forget_avatar_target(obj);
+    bool la = false;
     if (g_last_attacker_fix && obj && readable(obj, 0x30)) {
         uint32_t noun = game::noun_id(obj);
-        if (noun == kAnimalNoun || noun == kCitizenNoun)
-            forget_last_attacker(obj);
+        la = noun == kAnimalNoun || noun == kCitizenNoun;
     }
     g_destroy_orig(nm, obj);
+    // after the destroy: a reference released before it may be the creature's last one (the game's destroy then ran on
+    // a freed block: a fault at 0xC0439F, lab 20261112-134349); afterwards it frees the block as the game's own
+    // replacement of the last attacker does
+    if (la)
+        forget_last_attacker(obj);
 }
 
 // BUG-0454 (BUG-0371): the host's creature editor crashed three times at RenderWare::Raster::Fill+0x7
