@@ -79,6 +79,7 @@ def games(t):
 
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
+add('unit_parallel', P + 'unit_parallel.py', minutes=2, gates=NO_GAME)  # BUG-0969: 3 copies of the native net tests at once, 2 rounds: all ALL OK (a fixed localhost port collided; old code: 1 of 2 copies failed)
 add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails), the setup's Spore-without-GA folder and GitHub API 403 fallback (BUG-0391: SPORE_WIN_UNIT_ARGS=--old-ga fails; BUG-0392: SPORE_FIX_OFF=update.web_fallback fails), download retries on 504 / dropped connections (BUG-0755: SPORE_FIX_OFF=update.retry fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)

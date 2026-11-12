@@ -85,7 +85,19 @@ def main():
             elif e - s > 0.3:
                 g_near = [(round(t - t0, 2), x, h) for t, x, h in rows['guest'] if s - 0.5 < t < e + 0.5][::3]
                 missed.append((round(s - t0, 1), round(e - s, 2), an))
+                g_near = [(round(t - t0, 2), x, h) for t, x, h in rows['guest'] if s - 1.5 < t < e + 0.5][::2]
+                h_near = [(round(t - t0, 2), x, h) for t, x, h in rows['host'] if s - 1.5 < t < e + 0.5][::2]
                 print(f'    the mirror around the host\'s hold at {s - t0:.1f} s: {g_near[:20]}', flush=True)
+                print(f'    the host around it: {h_near[:40]}', flush=True)
+        if missed:  # the guest's own hold events of the chief (receipt of the host's start / end, binding, cuts)
+            tr = Console(lane.GUEST).call(f'coop.tribe holdtrace {cid}')['out']
+            m_now = re.search(r'now ([\d.]+)', tr)
+            if m_now:  # (game seconds: shown relative to this moment, the wall clock of the call)
+                gnow, wnow = float(m_now.group(1)), time.time() - t0
+                for ln in tr.splitlines():
+                    p = ln.split()
+                    if p[:1] == ['hev'] and float(p[1]) > gnow - (wnow - missed[0][0]) - 3:
+                        print(f'    guest {round(float(p[1]) - gnow + wnow, 2)} {" ".join(p[3:])}', flush=True)
         print(f'  window {w + 1}: {len(rows["host"])} / {len(rows["guest"])} samples; host holds '
               f'{[(round(s - t0, 1), round(e - s, 2), x) for s, e, x in hh]}; the mirror\'s own holds so far {own}', flush=True)
         if own and a.who == 'host':

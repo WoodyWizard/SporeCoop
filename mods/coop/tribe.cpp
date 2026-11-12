@@ -994,6 +994,19 @@ COOP_FIX("tribe.mirror_hold_only", "BUG-0962", g_hold_only_fix,
 constexpr double kHoldUnsent = 0.35;
 static uint32_t g_hold_only_ended;
 static void hold_try(GMember& g, double now);
+// tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
+struct HoldEv {
+    double t;
+    uint16_t id;
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), O own hold seen, C own cut, M 1.5 s end, R relay played
+    uint32_t a, b;
+};
+static HoldEv g_hold_ev[256];
+static uint32_t g_hold_ev_n;
+static void hold_ev(uint16_t id, char what, uint32_t a, uint32_t b)
+{
+    g_hold_ev[g_hold_ev_n++ % 256] = {H->time_seconds(), id, what, a, b};
+}
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
 {
@@ -1014,10 +1027,14 @@ static void held_items_tick(double now)
         if (!h) {
             if (it != g_hold_seen.end())
                 g_hold_seen.erase(it);
-        } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since)
+        } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since) {
             g_hold_seen[id] = {h, now};
-        else if (g_hold_only_fix && g_mirror_hold_fix && !m.hold_bound && !m.hold_anim &&
+            uint32_t cur = 0;
+            game::drawn_state(c, nullptr, &cur);
+            hold_ev(id, 'O', cur, m.hold_bound);
+        } else if (g_hold_only_fix && g_mirror_hold_fix && !m.hold_bound && !m.hold_anim &&
                  now - it->second.since >= kHoldUnsent) { // BUG-0962: no host hold for it
+            hold_ev(id, 'C', 0, 0);
             hold_modifier(c, true);
             g_hold_seen.erase(it);
             g_hold_only_ended++;
@@ -1027,6 +1044,7 @@ static void held_items_tick(double now)
                 cur == m.hold_anim_bound)
                 continue; // BUG-0914: taken in the host's animation, it ends with it
             m.hold_bound = false;
+            hold_ev(id, 'M', 0, 0);
             hold_modifier(c, true);
             g_hold_seen.erase(it);
         }
@@ -1726,8 +1744,11 @@ static void hold_try(GMember& g, double now)
         return;
     int item = F<int>(g.c, kHeldItemOff);
     uint32_t cur = 0;
-    if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim)
+    if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim) {
+        hold_ev(member_id(g.c), 't', g.hold_anim, item <= 0 ? 0xFFFFFFFFu : cur);
         return;
+    }
+    hold_ev(member_id(g.c), 'T', cur, hold_modifier(g.c, false) ? 1 : 0);
     if (!hold_modifier(g.c, false)) {
         // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
         // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
@@ -2176,6 +2197,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             auto it = g_gm.find(id);
             if (!g_mirror_hold_fix || it == g_gm.end())
                 continue;
+            hold_ev(id, anim ? 'S' : 'E', anim, 0);
             if (!anim) { // the host's member put the item back into the grip: so does a mirror that took it for it
                 GMember& g = it->second;
                 g.hold_anim = 0;
@@ -2275,6 +2297,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             continue;
         }
         g.anim_rx_at = now;
+        hold_ev(id, 'R', anim, kind);
         if (game::play_behaviour_anim(c, anim, how, a, b)) {
             g_anim_relay_played++;
             g.relayed_anim = anim; // (BUG-0936)
@@ -6296,6 +6319,21 @@ std::string debug(const std::vector<std::string>& a)
     }
     // anims: tests (BUG-0569), the animation each member plays now as the game holds it (Anim::AnimatedCreature
     // vt 0x58 GetCurrentAnimation): host, its members by id (with the tribe index), guest, its mirrors by the host's id
+    if (!a.empty() && a[0] == "holdtrace") { // tests (BUG-0968): the guest's last hold events, oldest first
+        int want = a.size() > 1 ? atoi(a[1].c_str()) : -1;
+        std::string o;
+        char b[96];
+        uint32_t n = std::min<uint32_t>(g_hold_ev_n, 256);
+        for (uint32_t i = g_hold_ev_n - n; i != g_hold_ev_n; i++) {
+            const HoldEv& e = g_hold_ev[i % 256];
+            if (want >= 0 && e.id != want)
+                continue;
+            snprintf(b, sizeof b, "hev %.3f %u %c %08X %08X\n", e.t, e.id, e.what, e.a, e.b);
+            o += b;
+        }
+        snprintf(b, sizeof b, "now %.3f\n", H->time_seconds());
+        return o + b;
+    }
     if (!a.empty() && a[0] == "anims") {
         std::string o;
         char b[160];
