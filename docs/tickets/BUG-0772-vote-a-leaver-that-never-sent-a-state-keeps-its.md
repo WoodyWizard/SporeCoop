@@ -46,8 +46,9 @@ Erase `g_ready[id]` and `g_lobby_rtt[id]` before the early return in `player_lea
 
 ## Verification
 * no-fail-run: not reproduced on 0.7.12's path (lab out/lab/20261112-111316: the newcomer under the leaver's id was not
-  ready with the old leave code). The lab test vote_leaver stays as a regression test (PASS runs in the branch
-  report).
+  ready with the old leave code). The lab test vote_leaver stays as a regression test: PASS out/lab/20261112-112000 and
+  out/lab/20261112-112115. (Its one FAIL line in 20261112-111316, "the scripted guest left", was the test's own
+  match of the bare name in coop.status, fixed to the roster row.)
 
 ## How to test
 Lab test (3 instances): the host starts an action vote while guest B is in the menu (no state sent yet);

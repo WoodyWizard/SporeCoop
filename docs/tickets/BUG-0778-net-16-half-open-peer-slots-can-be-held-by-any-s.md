@@ -54,7 +54,9 @@ Make a Peer only for a packet whose first message parses as a HELLO of our proto
   addresses, then a real guest; a datagram without HELLO from a joined guest's endpoint with another connection id):
   FAIL `net_tests --off halfopen_cap` (6 failed checks, out/n1-unit/net_off_halfopen_cap.txt), PASS in make test twice
   (out/n1-unit/net_pass_1.txt, net_pass_2.txt).
-* Lab regression: rejoin_loop, party_creature4, creations_rejoin, smoke on this branch (runs in the branch report).
+* Lab regression on this branch: smoke 14/14 out/lab/20261112-112238, party_creature4 out/lab/20261112-112000-2,
+  rejoin_loop out/lab/20261112-112216, creations_rejoin out/lab/20261112-112730, campaign_short
+  out/lab/20261112-112847.
 * No lab FAIL twin: the flood needs a sender from 16 endpoints during a join; the unit case drives the real Session.
 
 ## How to test

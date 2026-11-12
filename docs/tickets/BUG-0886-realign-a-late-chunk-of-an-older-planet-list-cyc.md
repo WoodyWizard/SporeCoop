@@ -44,8 +44,8 @@ kept as it was in PlanetRx).
   cycle 5; a one-chunk older cycle; duplicates; the wrap): FAIL `validate_tests --nofix` ("cycle 5 ... NOT complete,
   1 objects", out/n1-unit/validate_nofix.txt), PASS in make test twice (out/n1-unit/validate_pass_1.txt,
   validate_pass_2.txt).
-* No lab FAIL twin: the late chunk needs a reordering on demand. Lab regression: realign_creature_rejoin is not in
-  my runs; smoke covers tribe_coop / civ_coop with the receiver.
+* No lab FAIL twin: the late chunk needs a reordering on demand. Lab regression: realign_creature_rejoin PASS
+  out/lab/20261112-113754; smoke (tribe_coop, civ_coop) out/lab/20261112-112238.
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0616. Severity low, confidence high.
