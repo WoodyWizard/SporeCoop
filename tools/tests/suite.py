@@ -215,6 +215,8 @@ add('sync_lowfps', P + 'coop_sync.py --fps 15 civ tribe', warm=True, minutes=5) 
 add('creations', P + 'coop_creations.py', minutes=4)  # BUG-0345: a guest plays its own creature when chosen or already played in this world, else the world's species; the notice on both games (SPORE_FIX_OFF=creations.guest_world_species fails)
 add('choice_world', P + 'coop_choice_world.py', minutes=8, fixture='cell')  # BUG-0638: a guest in its own Cell editor while the host enters Creature plays the world's species after the load, not a creature chosen in another world; the host shows it so (SPORE_FIX_OFF=creations.choice_world fails)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
+add('vote_leaver', P + 'coop_vote_leaver.py', warm=True, minutes=3, fixture='creature')  # BUG-0772 (not reproduced, a regression test): a player that pressed I'm ready and left before sending a state: the next player of its id is not ready, the vote waits for it
+add('net_names', P + 'coop_net_names.py', warm=True, minutes=3, fixture='creature')  # BUG-0774: a name with a newline, control and broken bytes from the network is one clean line in the host's and the guest's session and logs (SPORE_FIX_OFF=net.name_clean fails)
 add('chat_long', P + 'coop_chat_long.py', warm=True, minutes=2, fixture='creature')  # a reliable message bigger than a packet is split, nothing behind it stalls (BUG-0034)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('cell_own_load', P + 'coop_cell_own_load.py', minutes=4)  # BUG-0342
