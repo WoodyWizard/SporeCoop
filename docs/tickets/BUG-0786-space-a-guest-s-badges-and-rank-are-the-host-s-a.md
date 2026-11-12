@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-reports
-commits: 0c8d2bbf
+commits: 0c8d2bbf, a4c922aa
 tests: space_badges_rejoin
 signature:
 docs: docs/re/space.md#space-badges, docs/06-testing.md#testing-frame-cap
