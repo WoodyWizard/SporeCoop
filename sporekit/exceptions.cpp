@@ -108,6 +108,69 @@ bool exceptions_stack_overflow(EXCEPTION_RECORD* er, CONTEXT* ctx, DWORD* tid, d
     return true;
 }
 
+// BUG-0956: esp outside the faulting thread's own stack (another allocation than the one of the TIB's StackBase):
+// the game jumped into heap bytes that moved esp. Wine refuses to dispatch such a fault ("Exception frame is not in
+// stack limits") and ends the process; the SEH frames on the real stack are never run.
+static bool off_stack(uintptr_t esp, uintptr_t* lo, uintptr_t* hi)
+{
+    auto* tib = (const NT_TIB*)NtCurrentTeb();
+    *hi = (uintptr_t)tib->StackBase;
+    *lo = (uintptr_t)tib->StackLimit;
+    MEMORY_BASIC_INFORMATION a, b;
+    if (!*hi || !VirtualQuery((const void*)(*hi - 1), &b, sizeof b))
+        return false;
+    if (!VirtualQuery((const void*)esp, &a, sizeof a))
+        return true;
+    return a.AllocationBase != b.AllocationBase;
+}
+
+// the return addresses on the thread's real stack around its innermost SEH record: the live frames above it (the
+// caller chain of the code that went astray), then the nearest ones below it (the call itself, or older frames);
+// logged once per run for an off-stack fault
+static void log_real_stack(uintptr_t lo, uintptr_t hi)
+{
+    auto* tib = (const NT_TIB*)NtCurrentTeb();
+    uintptr_t seh = (uintptr_t)tib->ExceptionList;
+    if (seh < lo || seh >= hi)
+        seh = lo;
+    logf(&g_kit_mod, SK_ERROR, "  the thread's stack %08X..%08X, innermost SEH record %08X; return addresses above it, then "
+         "below it:", (unsigned)lo, (unsigned)hi, (unsigned)seh);
+    for (int dir = 0; dir < 2; dir++) {
+        char line[400];
+        int len = 0, n = 0;
+        for (int i = 0; i < 0x1000 && n < (dir ? 160 : 48); i++) {
+            uintptr_t q = dir == 0 ? (seh & ~3u) + 4 * i : (seh & ~3u) - 4 * (i + 1);
+            if (q < lo || q + 4 > hi)
+                break;
+            uint32_t v = *(const uint32_t*)q;
+            if (!exe_return_address(v))
+                continue;
+            n++;
+            std::string name = symbols_reverse(v);
+            len += snprintf(line + len, sizeof line - len, " [%c%X]%08X %s", dir ? '-' : '+', (unsigned)(4 * i + 4 * dir), v,
+                            name.empty() ? "?" : name.c_str());
+            if (len > 280) {
+                logf(&g_kit_mod, SK_ERROR, "   %s", line);
+                len = 0;
+            }
+        }
+        if (len)
+            logf(&g_kit_mod, SK_ERROR, "   %s", line);
+    }
+    // the raw dwords just below the record (the innermost frames: locals, arguments, return addresses)
+    for (int row = 0; row < 8; row++) {
+        char line[160];
+        int len = 0;
+        uintptr_t q0 = (seh & ~3u) - 0x20 * (row + 1);
+        if (q0 < lo)
+            break;
+        len += snprintf(line, sizeof line, "-%03X:", (unsigned)(seh - q0));
+        for (int k = 0; k < 8; k++)
+            len += snprintf(line + len, sizeof line - len, " %08X", *(const uint32_t*)(q0 + 4 * k));
+        logf(&g_kit_mod, SK_ERROR, "   %s", line);
+    }
+}
+
 // The handler runs at the first chance of every fault, on the faulting thread, maybe inside a lock
 // of SporeKit (BUG-0115):
 //  * a fault inside the handler itself, or while this thread holds g_mu (SK_TF_IN_EXC), is not
@@ -218,6 +281,15 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             named += (i ? " < " : "") + (n.empty() ? std::string("?") : n);
         }
         logf(&g_kit_mod, SK_ERROR, "  called from: %s", named.c_str());
+    }
+    uintptr_t lo, hi;
+    static volatile LONG offstack_told;
+    if (code != EXCEPTION_STACK_OVERFLOW && fixed(g_fix_offstack) && off_stack(c->Esp, &lo, &hi) &&
+        InterlockedCompareExchange(&offstack_told, 1, 0) == 0) {
+        logf(&g_kit_mod, SK_ERROR, "the stack pointer %08X is outside this thread's stack: this fault cannot be dispatched, "
+             "the game ends now (BUG-0956)", (unsigned)c->Esp);
+        log_real_stack(lo, hi);
+        diag_offstack_report(ep);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }

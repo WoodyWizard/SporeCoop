@@ -835,6 +835,7 @@ static DWORD WINAPI crash_report_thread(void* p)
 // thread is made at boot and waits: the filter only signals it and waits for it.
 static CrashJob g_so_job;
 static HANDLE g_so_go, g_so_done;
+static const char* g_so_what = "stack overflow"; // BUG-0956: the same thread writes the report of an off-stack fault
 
 static DWORD WINAPI so_report_thread(void*)
 {
@@ -851,13 +852,28 @@ static DWORD WINAPI so_report_thread(void*)
                  g_so_job.tid);
         CreateDirectoryW(logs_dir().c_str(), nullptr);
         write_text(logs_dir() + L"\\" + widen(g_so_job.base) + L".txt", b);
-        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX (stack overflow) at 0x%08X %s, thread %lu", code,
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX (%s) at 0x%08X %s, thread %lu", code, g_so_what,
              (unsigned)eip, where(eip).c_str(), g_so_job.tid);
     });
     if (!g_so_job.base.empty())
         crash_report_thread(&g_so_job);
     SetEvent(g_so_done);
     return 0;
+}
+
+// BUG-0956: a fault whose esp is outside its thread's stack (the game called through a freed object into heap
+// bytes that moved esp) is never dispatched to the game's handlers or this filter: Wine ends the process with
+// "Exception frame is not in stack limits" (Windows checks the stack the same way), so no report was written. The
+// fault logger calls this at the first chance; the report thread made at boot writes the report while it waits.
+void diag_offstack_report(EXCEPTION_POINTERS* ep)
+{
+    if (!g_so_go || !fixed(g_fix_offstack) || g_crashed++ != 0)
+        return;
+    g_so_what = "the stack pointer is outside the thread's stack";
+    g_so_job.ep = ep;
+    g_so_job.tid = GetCurrentThreadId();
+    SetEvent(g_so_go);
+    WaitForSingleObject(g_so_done, kReportWaitMs);
 }
 
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
