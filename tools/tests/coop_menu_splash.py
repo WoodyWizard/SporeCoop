@@ -3,14 +3,17 @@
 not stay on a guest's screen in the stage after a join from the menu.
 
 The galaxy menu shows a splash step by step (GalaxyGameEntry +0x204: logos, then the legal lines' window 0x05B82B38
-for 4.1 s); its update runs only in the menu. The guest here joins from its menu the moment the legal lines come up
-(polled with `coop.ui where 05B82B38`, bounded), so its load leaves the menu while they stand. Checked in the guest's
-own window tree in the stage, three times over 20 s: no window of the splash is drawn (every window from the game's
-own splash table, through visible parents), and a key frame of both games. Without the fix
-(SPORE_FIX_OFF=world.menu_splash) the legal lines stay over the creature stage.
+for 4.1 s); its update runs only in the menu, and leaving the menu does not hide a step that is up. The lab's guests
+reach their menu after the splash (state 2, the legal lines never drawn in 28 s of polling, lab 2026-11-12), so the
+natural moment (a join within the 4.1 s of the legal lines) is not reached here: the guest waits for its menu, the
+legal lines are put up as their step puts them up (`coop.ui show <0x05B82B38> 1`, the game's SetFlag(visible)), and
+it joins at once. Checked in the guest's own window tree in the stage, three times over 20 s: no window of the splash
+is drawn (every window from the game's own splash table, through visible parents), and a key frame of both games.
+Without the fix (SPORE_FIX_OFF=world.menu_splash) the legal lines stay over the creature stage.
 
   SPORE_LANE=4 python3 tools/tests/coop_menu_splash.py
 """
+import re
 import struct
 import time
 
@@ -19,17 +22,22 @@ from twoinst import Checks, keyframe, start
 
 LEGAL = '05B82B38'
 GROUPS = ('06776FE0', '06776FE1')
+ESRB = 'Online Interactions Not Rated by the ESRB'
 seen_legal = []
 
 
 def wait_legal(guest):
-    """before the join: until the menu's legal lines are up (at most 30 s)"""
+    """before the join: the menu's legal lines up (as their splash step shows them), then the join"""
     t0 = time.time()
-    while time.time() - t0 < 30:
-        if 'none' not in guest.call(f'coop.ui where {LEGAL}')['out']:
-            seen_legal.append(round(time.time() - t0, 2))
-            return
-        time.sleep(0.1)
+    while time.time() - t0 < 20 and 'GalaxyGameEntry' not in guest.call('game.mode')['out']:
+        time.sleep(0.3)
+    m = re.search(r'Window ([0-9A-F]{8}) id=0x' + LEGAL, guest.call(f'coop.ui find {ESRB}')['out'])
+    if m:
+        guest.call(f'coop.ui show {m.group(1)} 1')
+    up = 'none' not in guest.call(f'coop.ui where {LEGAL}')['out']
+    print(f'  guest menu: the legal lines {"up" if up else "NOT up"} before the join ({m and m.group(1)})', flush=True)
+    if up:
+        seen_legal.append(round(time.time() - t0, 2))
 
 
 def splash_ids(con):
@@ -48,8 +56,7 @@ def drawn(con, ids):
 def main():
     host, guest = start('creature', join_at=0.5, before_join=wait_legal)
     ck = Checks()
-    print(f'  the guest joined {seen_legal[0] if seen_legal else "-"} s after its menu\'s legal lines came up', flush=True)
-    ck(bool(seen_legal), 'the guest\'s menu showed its legal lines before the join')
+    ck(bool(seen_legal), 'the guest\'s menu had its legal lines up at the join')
     ids = splash_ids(guest)
     print(f'  the menu\'s splash windows: {ids}', flush=True)
     ck(LEGAL in ids, f'the game\'s splash table names the legal lines ({LEGAL})')
