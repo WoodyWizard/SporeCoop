@@ -4368,3 +4368,23 @@ Follows #creature-stimulus-attacker and #creature-freed-block-reuse.
   (lab 20261112-135316 / -135318 against 20261112-133753). Fix `npc.stale_last_attacker` (gamefixes.cpp).
 * ~ Creature +0x354 .. +0x370 (a list naming other creatures' +0xC0): rewritten from scan to scan, 4 creatures held a
   destroyed puppet's +0xC0 there 7 s after its destroy; no fault in 20 removals with the block freed. Not named.
+## The galaxy menu's splash: a step left up by a join from the menu (2026-11-12, fix/w48-rest)
+<a id="creature-menu-splash"></a>
+
+BUG-0938. GOG 2024, Ghidra (private project), lab lanes 4 / 5 (tools/tests/coop_menu_splash.py). Not the intro
+cinematic of #creature-intro-camera / docs/re/tribe.md#tribe-intro-camera.
+
+* ✔ GalaxyGameEntry ([0x16A1344]) +0x204: the splash table, 6 steps of 12 bytes {window id, delay, time shown}:
+  0x0670A3F8 0.1 s, **0x05B82B38** (the legal lines: the "galactic adventures" logo, "Online Interactions Not Rated by
+  the ESRB" 0x05B8BD48 under 0x06776FE0, "(c) 2009 Electronic Arts Inc.") 4.1 s, 0x0670A3F8 0.5 s, 0x05BFDC38 4.5 s,
+  0x05BFDC68 4.5 s, 0x066F3C30 (full screen). Sub-state +0x200 (1 delay, 2 shown, 3 pause, 4 next), +0x1F2 / +0x1F3 /
+  +0x1F4 flags, +0x1EC the intro state (2, 5 intro playing or not started, 6 done).
+* ✔ `SporeCoop::GalaxyGameEntry_SplashTick` 0xDEAC80 shows a step's window (vt 0x7C(1, 1)) and hides it when its
+  time runs out; `GalaxyGameEntry_SplashEnd` 0xDEA510 hides 0x06776FE0 / 0x06776FE1 and deletes the layout. Both only
+  in the menu: a window up at the moment the menu is left stays up in the stage (✔ lab 20261112-140450: the legal lines
+  over Creature play 17 s and more).
+* ✔ The lab's guests reach their menu after the splash (state 2, 0x066F3C30 up for the first ~4 s, the legal lines
+  never drawn in 28 s; the layout deleted ~5 s after the menu's log line): the natural window is the first seconds of
+  a cold game's menu (a player who joins at once).
+* Fix `world.menu_splash` (world.cpp): in a stage, once a second outside the frame, every drawn window of that table
+  (and 0x06776FE0 / 0x06776FE1) is hidden.
