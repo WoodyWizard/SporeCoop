@@ -85,7 +85,7 @@ static uint32_t player_pol()
 
 // the player's colonies (SpacePlayerData +0x20 vector<cPlanet*>, record +0x13C) and their cities
 // (record +0x15C cCivData with +0x14 == the player's pol, its +0x3C cCityData vector, docs/re/space.md 5.2)
-static std::vector<Colony> colonies(uint32_t pol, bool host_side = false)
+static std::vector<Colony> colonies(uint32_t pol, bool host_side = false, bool capped = true)
 {
     std::vector<Colony> out;
     void* spd = a_Spd ? *(void**)a_Spd : nullptr;
@@ -95,7 +95,7 @@ static std::vector<Colony> colonies(uint32_t pol, bool host_side = false)
     void** e = F<void**>(spd, 0x24);
     if (!b || e < b || e - b > (g_all_fix ? (ptrdiff_t)kListMax : 256))
         return out;
-    size_t cap = g_all_fix ? kListMax : g_old_cap;
+    size_t cap = g_all_fix || !capped ? kListMax : g_old_cap; // (the test listing shows every colony)
     for (void** it = b; it < e; ++it) {
         if (out.size() >= cap) {
             g_cut++;
@@ -387,7 +387,7 @@ static std::string debug(const std::vector<std::string>& a)
         uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         float v = (float)atof(a[2].c_str());
         int n = 0;
-        for (auto& c : colonies(player_pol()))
+        for (auto& c : colonies(player_pol(), false, false))
             if (c.id == id)
                 for (float* p : c.cities)
                     *p = v, n++;
@@ -400,7 +400,7 @@ static std::string debug(const std::vector<std::string>& a)
         return b;
     }
     std::string s = status() + "\n";
-    for (auto& c : colonies(player_pol())) {
+    for (auto& c : colonies(player_pol(), false, false)) {
         snprintf(b, sizeof b, "colony %08X cities %zu:", c.id, c.cities.size());
         s += b;
         for (float* p : c.cities) {

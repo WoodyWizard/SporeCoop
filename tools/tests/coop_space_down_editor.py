@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""BUG-0836: the disabled state's invincibility and a trip to an editor that rebuilds the player's ship.
+"""BUG-0836: the disabled state's invincibility and a new ship object in the same Space world.
 
-The guest's ship is disabled (`coop.space disable 1`; nobody repairs it: `repairdist 0`). The guest opens the captain
-screen (a real click on the rank badge) and enters the outfitter ("Enter Outfitter"), leaves it again and is back in
-Space. When the disabled state ends (its 20 s stand still in the editor), the guest's own ship must take damage again:
-`coop.space hit 20` through the game's damage path takes HP and the ship's invincible byte is 0.
+The disabled state set the ship's invincible byte every frame on whatever ship the player had and cleared it at the
+end only on the ship it was set on: a new player UFO object in the same world would keep it until a load.
 
-Before the fix the state wrote the invincible byte every frame on whatever ship the player had, and the end cleared
-it only on the ship the state was set on: a new ship object made by the trip stayed invincible until a load.
-SPORE_FIX_OFF=space.down_ship_only: FAIL when the trip made a new ship object (the test prints both ships).
+1. Probe: which of the trips a player makes inside one Space world gives the player a new UFO object (pointer or the
+   game's object serial, `coop.space downstate` ship= serial=): landing and taking off, a jump to another star and
+   back, the galaxy view and back, the captain screen's outfitter (an editor) when it opens.
+2. For the first trip that does: the guest's ship is disabled (`disable 1`, nobody repairs it), makes that trip, and
+   once the state is over the own ship must take damage again (`hit 20`, invincible byte 0).
+   SPORE_FIX_OFF=space.down_ship_only: FAIL then.
+No such trip: the test fails with "no trip made a new ship object" (the case the ticket feared is not reachable by
+these trips; the probe's lines are the evidence).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_down_editor.py
 """
@@ -17,9 +20,11 @@ import time
 
 import play_space
 import uifind
-from twoinst import Checks, shot, start
+from coop_space_finale import fin, get_drive, settle, to_galaxy
+from twoinst import Checks, start
 
 BADGE = (1390, 890)  # the rank badge over the ship's picture, 1440x1080
+HOME_STAR = 4587573
 
 
 def sp(con, *a):
@@ -30,8 +35,17 @@ def ds(con):
     return dict(re.findall(r'(\w+)=(\S+)', sp(con, 'downstate')))
 
 
+def ship(con):
+    d = ds(con)
+    return d.get('ship'), d.get('serial')
+
+
 def mode(con):
     return con.call('game.mode')['out'].strip()
+
+
+def ctx(con):
+    return fin(con).get('ctx')
 
 
 def wait(cond, secs, step=0.5):
@@ -44,16 +58,70 @@ def wait(cond, secs, step=0.5):
     return cond()
 
 
-def click_caption(con, caption):
-    """the centre of the first window with this caption (also one under a hidden parent), clicked like a player"""
-    hits = uifind.find(con, caption)
-    if not hits:
+def trip_land(con):
+    print('    land:', sp(con, 'land'))
+    wait(lambda: ctx(con) == '0', 40, 1)
+    time.sleep(4)
+    print('    takeoff:', sp(con, 'takeoff'))
+    return wait(lambda: ctx(con) == '1', 40, 1)
+
+
+def trip_jump(con):
+    print('    jumpto:', sp(con, 'jumpto', HOME_STAR + 1))
+    time.sleep(15)
+    print('    jump back:', sp(con, 'jump'))
+    time.sleep(15)
+    return ctx(con) == '1'
+
+
+def trip_galaxy(con, ck):
+    to_galaxy(con, 'guest', ck)
+    print('    back into the home system:', sp(con, 'finale goto', HOME_STAR, 'enter'))
+    return wait(lambda: ctx(con) == '1', 60, 2)
+
+
+def trip_outfitter(con):
+    con.call(f'move {BADGE[0]} {BADGE[1]}')
+    time.sleep(0.5)
+    con.call(f'click {BADGE[0]} {BADGE[1]}')
+    if not wait(lambda: play_space.captain_open(con), 10):
         return False
-    x, y, _ = next((h for h in hits if h[2]), hits[0])
-    con.call(f'move {x} {y}')
-    time.sleep(0.4)
-    con.call(f'click {x} {y}')
-    return True
+    hits = uifind.find(con, 'Enter Outfitter')
+    print('    Enter Outfitter:', hits)
+    pick = [h for h in hits if h[2]] or hits  # (its parent is hidden: the click at its place, like a player's)
+    if pick:
+        con.call(f'move {pick[0][0]} {pick[0][1]}')
+        time.sleep(0.4)
+        con.call(f'click {pick[0][0]} {pick[0][1]}')
+    opened = wait(lambda: 'Space' not in mode(con), 15, 1)
+    print('    outfitter opened:', bool(opened), mode(con))
+    for _ in range(8):
+        if 'Space' in mode(con) and not play_space.captain_open(con):
+            break
+        if 'Space' not in mode(con):
+            con.call('click 1380 1062')  # the editor's exit
+        else:
+            play_space.close_captain(con)
+        time.sleep(3)
+    return wait(lambda: 'Space' in mode(con), 60, 1)
+
+
+def trip_respawn(con):
+    """a death of the own ship (nobody near: the native death) and the respawn at the colony: "a new spaceship at
+    the ready"""
+    # (a lethal hit next to the host would disable the ship: the disabled state with nobody to repair ends in the
+    # game's own death after 20 s)
+    print('    disable:', sp(con, 'disable 1'))
+    wait(lambda: 'state=2' in sp(con, 'hp'), 40, 1)
+    print('    dead:', sp(con, 'hp'))
+    for _ in range(40):  # the death caption and the respawn caption wait for OK
+        time.sleep(3)
+        h = sp(con, 'hp')
+        if 'state=0' in h and 'movie=0' in h:
+            break
+        con.call('key enter')
+    print('    after the respawn:', sp(con, 'hp'))
+    return 'state=0' in sp(con, 'hp')
 
 
 def main():
@@ -62,59 +130,39 @@ def main():
     time.sleep(4)
     for c in (host, guest):
         sp(c, 'repairdist 0')
-    print('  guest:', sp(guest, 'disable 1'), flush=True)
-    time.sleep(1)
-    d0 = ds(guest)
-    print('  guest disabled:', sp(guest, 'downstate'), flush=True)
-    ck(d0.get('down') == '1' and d0.get('inv') == '1', f'the guest\'s ship is disabled and invincible ({d0})')
-
-    guest.call(f'move {BADGE[0]} {BADGE[1]}')
-    time.sleep(0.5)
-    guest.call(f'click {BADGE[0]} {BADGE[1]}')
-    ck(wait(lambda: play_space.captain_open(guest), 10), 'guest: the rank badge opened the captain screen')
-    time.sleep(1)
-    print('  Enter Outfitter:', uifind.find(guest, 'Enter Outfitter'), flush=True)
-    ck(click_caption(guest, 'Enter Outfitter'), 'guest: "Enter Outfitter" is on the captain screen')
-    ok = wait(lambda: 'Space' not in mode(guest) or 'Edit' in mode(guest), 30, 1)
-    print('  guest mode:', mode(guest), flush=True)
-    ck(ok, 'guest: the outfitter (an editor) opened')
-    time.sleep(6)
-    shot(guest, 'down_editor_outfitter.png')
-    # leave the editor without changes: its exit (the red X at the bottom right, as the creature editors) or Esc
-    for _ in range(6):
-        if 'Space' in mode(guest) and 'Edit' not in mode(guest):
-            break
-        guest.call('click 1380 1062')
-        time.sleep(3)
-        if 'Space' in mode(guest) and 'Edit' not in mode(guest):
-            break
-        guest.call('key enter')
-        time.sleep(3)
-    ok = wait(lambda: 'Space' in mode(guest) and 'Edit' not in mode(guest), 60, 1)
-    print('  guest mode:', mode(guest), flush=True)
-    ck(ok, 'guest: back in Space from the outfitter')
-    time.sleep(4)
-    d1 = ds(guest)
-    print('  guest back:', sp(guest, 'downstate'), flush=True)
-    new_ship = d1.get('ship') != d0.get('ship') or d1.get('serial') != d0.get('serial')
-    print(f'  the own ship before {d0.get("ship")}/{d0.get("serial")}, after {d1.get("ship")}/{d1.get("serial")}: '
-          f'{"a new ship object" if new_ship else "the same ship"}', flush=True)
-    ck(d1.get('down') == '1', f'the disabled state goes on after the editor ({d1.get("left")} s left)')
-    ok = wait(lambda: ds(guest).get('down') == '0', 40, 1)
-    ck(ok, 'the disabled state ended')
-    time.sleep(2)
-    for _ in range(5):  # a death caption, if the state ended with one (not expected)
-        if 'movie=0' in sp(guest, 'hp'):
-            break
-        guest.call('key enter')
+    get_drive(guest, 'guest', ck)
+    trips = [('land and take off', lambda: trip_land(guest)), ('a jump and back', lambda: trip_jump(guest)),
+             ('the galaxy view and back', lambda: trip_galaxy(guest, ck)), ('the outfitter', lambda: trip_outfitter(guest)),
+             ('a death and the respawn', lambda: trip_respawn(guest))]
+    found = None
+    for name, fn in trips:
+        before = ship(guest)
+        ok = fn()
+        settle(guest, 'guest')
+        after = ship(guest)
+        new = before != after
+        print(f'  probe: {name}: back={bool(ok)} ship {before} -> {after}: {"NEW SHIP" if new else "the same ship"}',
+              flush=True)
+        if new and found is None and 'respawn' not in name:  # (a death ends the disabled state itself)
+            found = (name, fn)
+    if not found:
+        ck(False, 'no trip made a new ship object (the probe lines above are the evidence)')
+    else:
+        name, fn = found
+        print('  guest:', sp(guest, 'disable 1'), flush=True)
+        time.sleep(1)
+        d0 = ds(guest)
+        ck(d0.get('down') == '1' and d0.get('inv') == '1', f'the guest\'s ship is disabled and invincible ({d0})')
+        fn()
+        settle(guest, 'guest')
+        print('  after', name + ':', sp(guest, 'downstate'), flush=True)
+        ck(wait(lambda: ds(guest).get('down') == '0', 40, 1), 'the disabled state ended')
         time.sleep(2)
-    d2 = ds(guest)
-    out = sp(guest, 'hit 20')
-    print('  guest after the state:', sp(guest, 'downstate'), '| hit 20:', out, flush=True)
-    m = re.search(r'hp ([\d.]+) -> ([\d.]+) .* invincible=(\d)', out)
-    ck(d2.get('inv') == '0' and m and m.group(3) == '0',
-       f'the own ship is not invincible after the state ended (inv={d2.get("inv")}, new ship: {new_ship})')
-    ck(m and float(m.group(2)) < float(m.group(1)) - 10, f'a hit takes its HP ({out})')
+        out = sp(guest, 'hit 20')
+        print('  hit 20:', out, '|', sp(guest, 'downstate'), flush=True)
+        m = re.search(r'hp ([\d.]+) -> ([\d.]+) .* invincible=(\d)', out)
+        ck(m and m.group(3) == '0', f'the own ship is not invincible after the state ended ({name})')
+        ck(m and float(m.group(2)) < float(m.group(1)) - 10, f'a hit takes its HP ({out})')
     for c in (host, guest):
         sp(c, 'repairdist 60')
     # only the game's own captain screen fault (BUG-0304) on the guest, none on the host (suite: reports=True)
