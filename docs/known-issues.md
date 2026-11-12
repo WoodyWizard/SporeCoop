@@ -2744,3 +2744,30 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-0942 (fixed on fix/w47-getfilecount, unreleased: realign.village_goal. Not resource code: the
   guest's goal card was on a village its realign destroyed, the card's text function reads the hut of a tribe without
   members with no null check; docs/re/tribe.md#tribe-gone-village-mission; test tribe_bounce_goal)
+
+## Tribe: a member thrown up by a hard blow stays on the ground on the guests' screens (2026-11-11, fix/w47-final12c)
+<a id="issue-tribe-member-toss-guests"></a>
+
+* What happens: on the host a member that takes a blow of 60 hp and more flies about 5 m up and lands 1.5-3 s later;
+  the guests see it stand where it was.
+* Reproduce: tribe_member_air (prints "the guest's mirror of #1 was at most 0.0x m over its ground"), or
+  `coop.tribe pincer <leader> <other member> 100` on the host of the tribe fixture.
+* Known: the mirrors keep their own height (BUG-0329, BUG-0444); the host's height over its ground is not sent for
+  members. docs/re/tribe.md#tribe-member-toss.
+* Not checked: the mirror's animation during the throw.
+* Next steps: 0.7.13: a height-over-ground trailer for members while they are up.
+* Ticket: BUG-0946
+
+## Tribe: after a rejoin in Tribe the guest's ground round a village the host made live is 4.5-4.9 m off (2026-11-11, fix/w47-final12c)
+<a id="issue-tribe-rejoin-village-ground"></a>
+
+* What happens: the rejoined guest's animals (and whatever stands there) are 4.5-4.9 m lower than on the host round
+  the village; everything stands on its own ground, so it shows as objects cut by or floating over the other
+  player's view of the slope only where the two views are compared (the campaign's "ground height differs" note).
+* Reproduce: seen once, rel/0.7.12 lab 20261111-151535 (campaign, Carol, rejoin at s 1473 in the Tribe play, the
+  village made by the host at s 1290.9 at (-43.37 -504.67 -98.57)).
+* Known: the host's stamp came from 0x0109DFBF, the rejoined guest's from 0x01091981
+  (docs/re/tribe.md#tribe-terrain-stamps); the guests that were there when the village was made agree with the host.
+* Not checked: the share save's stamp list at the rejoin; whether a second load on the guest evens it out.
+* Next steps: 0.7.13: a two-game test (the host forms a village, the guest leaves and joins, `coop.terrain` round it).
+* Ticket: BUG-0947

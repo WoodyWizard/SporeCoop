@@ -94,6 +94,9 @@ struct TrackMember {
     const net::Vec3* drawn; // null: its position now
 };
 void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user);
+// diagnostics (BUG-0945): what a member does, for the "over the ground" line: its behaviour-tree node, health, the
+// game's dead flag, the held tool and item
+std::string member_brief(void* c);
 // diagnostics (coop.bodyrec start diag, K3): per member mirror of a guest rows `a<id>` (the driving's aim), `r<id>`
 // (M1's raw lead target), `l<id>` (x: how far the shown lead is behind M1's in s, y: 1 = no lead (jittery link), z: the
 // walk error m)

@@ -307,6 +307,17 @@ def field_cases(tmp):
     got = scenario(tmp, 'f_tribe_hi', *aligned_pair(host_own=' agl=0.00 agl_hi=7.00', h=dict(stage='Tribe'),
                                                     g=dict(stage='Tribe')))
     check(got == {'ground'}, f'monitor: ground: a tribe member 7 m over the ground ({got})')
+    # BUG-0945: a member that stays up (agl_held grows) is caught; members thrown by blows at two marks in a row
+    # (each up for a second or two) are not; agl_hold=0 is the rule before
+    tribe = dict(h=dict(stage='Tribe'), g=dict(stage='Tribe'))
+    got = scenario(tmp, 'f_tribe_hang', *aligned_pair(
+        host_own=lambda k: f' agl=0.00 agl_hi=5.60 agl_held={10.0 * k + 2.5:.1f}', **tribe))
+    check(got == {'ground'}, f'monitor: ground: a tribe member up for 12 s and more without a break ({got})')
+    toss = lambda k: f' agl=0.00 agl_hi={4.4 + k % 3:.2f} agl_held={0.5 + 0.5 * (k % 3):.1f}'  # noqa: E731
+    got = scenario(tmp, 'f_tribe_toss', *aligned_pair(host_own=toss, **tribe))
+    check(not got, f'monitor: ground: tribe members thrown up by blows at every mark, each for under 2 s ({got})')
+    got = scenario(tmp, 'f_tribe_toss_old', *aligned_pair(host_own=toss, **tribe), dict(agl_hold=0))
+    check(got == {'ground'}, f'monitor: ground: agl_hold=0 (the rule before BUG-0945) fails the thrown members ({got})')
     got = scenario(tmp, 'f_php', *aligned_pair(host_sees=' puppet_hp=10/10', g=dict(hp=4), hs=dict(hp=4)))
     check(got == {'puppet_hp'}, f'monitor: puppet_hp: the guest at 4/10, its creature on the host full ({got})')
     h, g = aligned_pair()

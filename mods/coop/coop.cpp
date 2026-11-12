@@ -3253,12 +3253,14 @@ bool g_trace_due = false;
 
 // the start of the mod's frame (after the stale-world check, before any message, module or puppet
 // driving): is a trace due this frame, and if so each partner's puppet as the game drew it
+static void tribe_air_watch(double now);
 void monitor_frame_start(double now)
 {
     bool ok = false;
     double st = support::session_time(&ok);
     g_trace_slot_now = ok ? std::floor(st / 10.0) : -1e9;
     g_trace_due = g_trace_at < -50 || (ok ? g_trace_slot_now != g_trace_slot : now - g_trace_at >= 10.0);
+    tribe_air_watch(now);
     if (!g_trace_due || !trace::on() || !g_sess.connected())
         return;
     for (auto& [id, r] : g_remotes) {
@@ -3307,6 +3309,77 @@ static bool tribe_agl(uint8_t owner, float& lo, float& hi)
     return a.n > 0;
 }
 
+// BUG-0945: which member is over the ground, for how long, and what it does there. The trace's agl_hi named no
+// member and no duration: the monitor's "tribe members 5.62 m over the ground on 2 lines" of a campaign could not be
+// told from its logs (a member hanging in the air, or members tossed by blows at two samples in a row: a hard blow
+// throws a member 3.4-3.7 m up for about 2 s on the host, docs/re/tribe.md#tribe-member-toss). 4 times a second:
+// every tracked member more than 3 m over the terrain has an air time (since when without a break, the highest
+// point); a line when it starts (the node, the speed, the height over the game's own surface: a rock or a mound over
+// the terrain is "on something") and one when it is down again. The trace gives the longest running air time of
+// the owner's members as agl_held=<s> next to agl_hi: the monitor's rule is about a member that stays up.
+struct AirTime {
+    double since, last;
+    float top;
+    uint8_t owner;
+};
+static std::unordered_map<uint16_t, AirTime> g_air;
+static constexpr float kAirOver = 3.f;
+static void tribe_air_watch(double now)
+{
+    static double next = 0;
+    if (g_mode != modes::kTribe || !g_sess.connected()) {
+        g_air.clear();
+        return;
+    }
+    if (now < next)
+        return;
+    next = now + 0.25;
+    struct Acc {
+        double now;
+    } a{now};
+    tribe::for_each_tracked(
+        [](const tribe::TrackMember& m, void* u) {
+            auto* a = (Acc*)u;
+            net::Vec3 p = m.drawn ? *m.drawn : game::position(m.c);
+            float h;
+            if (!agl_of(p, h) || h <= kAirOver)
+                return;
+            auto it = g_air.find(m.id);
+            if (it != g_air.end()) {
+                it->second.last = a->now;
+                it->second.top = std::max(it->second.top, h);
+                return;
+            }
+            g_air[m.id] = {a->now, a->now, h, m.owner};
+            float sr = game::surface_radius(p), r = drive::speed(p);
+            net::Vec3 v = game::velocity(m.c);
+            H->log(M, SK_INFO, "tribe: member #%u of player %u is %.2f m over the ground at (%.1f %.1f %.1f): %s speed=%.1f "
+                   "(up %.1f) over the game's surface %.2f",
+                   (unsigned)m.id, (unsigned)m.owner, h, p.x, p.y, p.z, tribe::member_brief(m.c).c_str(), drive::speed(v),
+                   r > 1 ? (v.x * p.x + v.y * p.y + v.z * p.z) / r : 0.f, sr > 1.f ? r - sr : -999.f);
+        },
+        &a);
+    for (auto it = g_air.begin(); it != g_air.end();) {
+        if (it->second.last >= now) {
+            ++it;
+            continue;
+        }
+        H->log(M, SK_INFO, "tribe: member #%u of player %u is down again (or gone) after %.1f s over %.0f m, highest %.2f m",
+               (unsigned)it->first, (unsigned)it->second.owner, it->second.last - it->second.since + 0.25, kAirOver,
+               it->second.top);
+        it = g_air.erase(it);
+    }
+}
+// the longest running air time of the owner's members, 0: none is up
+static double tribe_air_held(uint8_t owner, double now)
+{
+    double held = 0;
+    for (auto& [id, at] : g_air)
+        if (at.owner == owner)
+            held = std::max(held, now - at.since + 0.25);
+    return held;
+}
+
 // " agl=<m>" (Creature: the creature; Tribe: " agl=<lowest> agl_hi=<highest>" of the player's members)
 static std::string agl_field(uint8_t owner, void* creature, const net::Vec3* at)
 {
@@ -3317,7 +3390,9 @@ static std::string agl_field(uint8_t owner, void* creature, const net::Vec3* at)
         return b;
     }
     if (g_mode == modes::kTribe && tribe_agl(owner, lo, hi)) {
-        snprintf(b, sizeof b, " agl=%.2f agl_hi=%.2f", lo, hi);
+        int n = snprintf(b, sizeof b, " agl=%.2f agl_hi=%.2f", lo, hi);
+        if (hi > kAirOver) // BUG-0945: for how long a member has been up without a break (0.0: it came up just now)
+            snprintf(b + n, sizeof b - n, " agl_held=%.1f", tribe_air_held(owner, H->time_seconds()));
         return b;
     }
     return "";

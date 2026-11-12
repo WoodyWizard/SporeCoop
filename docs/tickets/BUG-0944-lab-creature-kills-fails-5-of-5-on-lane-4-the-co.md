@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.12
 fixed_in: unreleased
 branch: fix/w47-final12c
-commits:
+commits: 6d0b109a
 tests: creature_kills (coop_creature_kills.py; twin KILLS_BLIND_STANCE=1), family_attack
 signature:
 docs: docs/06-testing.md#testing-stage-entry-input

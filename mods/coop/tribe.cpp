@@ -4311,6 +4311,16 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
     }
 }
 
+std::string member_brief(void* c)
+{
+    if (!c || !game::object_alive(c) || !skg::readable(c, 0x1040))
+        return "gone";
+    char b[160];
+    snprintf(b, sizeof b, "bt=%08X hp=%.0f dead=%d age=%u tool=%d item=%d leader=%d", bt_node(c), game::health(c),
+             (int)game::is_dead(c), F<uint8_t>(c, kAgeOff), F<int>(c, kHeldToolOff), F<int>(c, kHeldItemOff), (int)is_leader(c));
+    return b;
+}
+
 void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user)
 {
     if (!active() || is_host())

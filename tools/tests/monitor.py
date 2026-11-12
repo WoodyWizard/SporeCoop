@@ -42,7 +42,11 @@ before; the fields are described in FIELDS and docs/06-testing.md#testing-monito
   ground        `agl=` (height over this game's terrain) of the own avatar, a puppet, the Tribe members
                 (lowest; `agl_hi=` the highest): under -0.5 m on 2 lines in a row; a Creature puppet over
                 3 m while its player's own creature is on its ground (own agl under 1 m: not jumping,
-                on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row
+                on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row. Tribe (BUG-0945):
+                a member that STAYS up: the line's `agl_held=` (how long one member has been over 3 m
+                without a break) is at least agl_hold (5 s) on both lines; a blow throws a member 3-7 m
+                up for about 2 s, and two samples 10 s apart can both fall into such throws. A log
+                without the field (before 0.7.12) is judged as before; agl_hold=0 is that old rule
   puppet_hp     the puppet's own health (partner line `puppet_hp=`) equals its player's own hp / max hp on
                 its line of the same moment (within 1 hp or 10 %), on 2 lines in a row
   posse_damage  `damage: <victim> hit by <kind> ... posse=1 amount=<hp>` with hp > 0: the hit player's own
@@ -79,7 +83,7 @@ POOL = re.compile(r'cell pool (\d+)/(\d+)')
 SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
                    r'session: player (\d+) \'.*\' (left)')
 DRAWN = re.compile(r' drawn=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) drawn_v=([-\d.naif]+)')
-AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?')
+AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?(?: agl_held=(-?[\d.naif]+))?')
 PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
 PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
 PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
@@ -93,7 +97,7 @@ PF_IN_WORLD, PF_DEAD = 1, 16
 DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50, link_pending=400, link_age=5.0,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
-                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
+                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0,
                 php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
                 drawn_scale=1, drawn_age=1.0)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
@@ -109,7 +113,8 @@ FIELDS = {
              "the game's world scale its positions are in (BUG-0681)",
     'ground': "own and partner lines in Creature / Tribe: `agl=<m>` = height over this game's terrain "
               "(cPlanetModel::GetHeightAt) of the avatar / puppet as drawn; Tribe: `agl=<lowest> agl_hi=<highest>` "
-              "of the player's tribe members",
+              "of the player's tribe members, and with a member over 3 m `agl_held=<s>` = how long one member has "
+              "been up without a break (BUG-0945)",
     'puppet_hp': "partner line in Creature: `puppet_hp=<hp>/<max>` read from the puppet creature itself (BUG-0373)",
     'posse_damage': "log line `damage: <victim id> hit by <kind> owner=<host|guest id|npc|-> posse=<0|1|?> "
                     "amount=<hp>[ forwarded| dropped (npc.party_peace)| from the host]` where a hit on a player is "
@@ -183,6 +188,8 @@ def monitor_fields(r):
         r['agl'] = num(m.group(1))
         if m.group(2) is not None:
             r['agl_hi'] = num(m.group(2))
+        if m.group(3) is not None:
+            r['agl_held'] = num(m.group(3))
     m = PUPPET_HP.search(rest)
     if m:
         r['puppet_hp'] = (num(m.group(1)), num(m.group(2)))
@@ -624,11 +631,18 @@ class Ground(Hook):
                                  f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}',
                             (who, pid, 'under', a['t'])))
 
+            def held(b):  # Tribe: whose members, how long one has been up, where the game log names it
+                if b['stage'] != 'Tribe':
+                    return ''
+                whose = who if pid is None else f'partner {pid}'
+                up = f', one of them up for {b["agl_held"]:.0f} s without a break' if 'agl_held' in b else ''
+                return f' (the members of {whose}{up}; the game log names the member: "tribe: member #.. is .. m over the ground")'
+
             def over(r):
                 if not ok(r):
                     return False
-                if r['stage'] == 'Tribe':
-                    return r.get('agl_hi', r['agl']) > c['agl_over']
+                if r['stage'] == 'Tribe':  # a member that stays up, not one thrown by a blow (BUG-0945)
+                    return r.get('agl_hi', r['agl']) > c['agl_over'] and r.get('agl_held', 1e9) >= c['agl_hold']
                 if pid is None:  # a creature on a rock reads 1-16 m (GetHeightAt is the terrain only)
                     return False
                 _, o = self.same_moment(tl, r)
@@ -636,7 +650,7 @@ class Ground(Hook):
             for a, b in self.runs(lst, over, n, None):
                 out.append((who, f'{who}: {"the tribe members" if b["stage"] == "Tribe" else what} '
                                  f'{b.get("agl_hi", b["agl"]):.2f} m over the ground ({b["stage"]}) on {n} lines from s '
-                                 f'{a["t"]:.0f}', (who, pid, 'over', a['t'])))
+                                 f'{a["t"]:.0f}' + held(b), (who, pid, 'over', a['t'])))
         return out
 
 

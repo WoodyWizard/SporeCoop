@@ -3188,7 +3188,7 @@ logs carry them too: [REPORTING.md#reporting-monitor-fields](REPORTING.md#report
 | rule | field (end of the line) | violation |
 |---|---|---|
 | drawn | partner `drawn=(x y z) drawn_v=<m/s>` | the drawn position over `DRAWN_BASE[stage]` (Cell / Creature / Tribe 3 m, Civ 6 m, Space 12 m) + `drawn_v` x (0.3 s + rtt + the two lines' time apart) from the partner's own `pos=` of the same mark, on 2 lines in a row; Tribe / Civ only while the pointer rests (`drawn_v` <= 0.5: a moving pointer's copy trails, tests pin it in jumps) |
-| ground | own / partner `agl=<m>`, Tribe `agl=<lowest> agl_hi=<highest>` of the player's members | under -0.5 m on 2 lines in a row (own avatar, puppet, members); a Creature puppet over 3 m while its player's own line says under 1 m (that covers jumps, rocks, water: the player's own height explains the puppet's); Tribe members over 3 m. Not the own creature over 3 m (`GetHeightAt` is the terrain only: 1-16 m on a rock) |
+| ground | own / partner `agl=<m>`, Tribe `agl=<lowest> agl_hi=<highest>` of the player's members | under -0.5 m on 2 lines in a row (own avatar, puppet, members); a Creature puppet over 3 m while its player's own line says under 1 m (that covers jumps, rocks, water: the player's own height explains the puppet's); Tribe members over 3 m with `agl_held` (one member's air time without a break) of 5 s and more (BUG-0945, #testing-monitor-tribe-air). Not the own creature over 3 m (`GetHeightAt` is the terrain only: 1-16 m on a rock) |
 | puppet_hp | partner `puppet_hp=<hp>/<max>` (read from the puppet creature) | differs from its player's own `hp=` of the same mark (max by 0.5, hp by 1 or 10 %) on 2 lines in a row |
 | posse_damage | `damage: <victim> hit by <kind> owner=... posse=<0|1|?> amount=<hp> [how]` (npc.cpp, where a hit on a player is applied, forwarded or dropped) | `posse=1` with an amount over 0, at once |
 | unlocks | own `parts=<count>:<hash>` (Creature) | a guest's count under the host's on its lines 70 s and 60 s before (same world), on 2 lines in a row |
@@ -6026,3 +6026,26 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
 * A hunt in the wrong stance looks like "the prey runs away and is never hit": the herbivore walks off at the
   follower's speed (about 3 m/s, 5 m per sample) and the key sings. The last screenshot shows the bar's colour
   (green social, red combat) and the mission card ("Impress ..." or "Hunt ...").
+
+## The monitor's ground rule in Tribe: a member that stays up, not one a blow threw (2026-11-11, fix/w47-final12c)
+<a id="testing-monitor-tribe-air"></a>
+
+* BUG-0945: "the tribe members 5.62 m over the ground (Tribe) on 2 lines" failed a campaign (rel/0.7.12 lab
+  20261111-151535) and its logs could not say which member or why. Now: the game log names every member over 3 m
+  when it goes up and when it is down again (`tribe: member #.. of player .. is .. m over the ground at ...: bt=...`,
+  `... is down again (or gone) after .. s over 3 m, highest .. m`), the trace line has `agl_held=<s>` next to
+  `agl_hi=` (how long one member of that player has been up without a break), and the rule counts a line only with
+  `agl_held` of 5 s and more (`agl_hold`; 0 = the rule before). The finding's text names whose members and the air
+  time.
+* Reading such a finding: grep the named game log for `over the ground` round the finding's second. `bt=05218BB3`
+  with `up 5..6` m/s is a throw by a blow (docs/re/tribe.md#tribe-member-toss: 5 m, 1.5 s, the host only); `over the
+  game's surface` near 0 is a member standing on a rock or a mound (the terrain is lower than what it stands on);
+  speed 0 with a large height and an idle node is a member on water (the sea bed is the terrain) or one that hangs.
+* The guests' `agl_hi` says nothing about a member the host has in the air: a mirror keeps its own height
+  (BUG-0329), so a host-only reading is the rule, not a hint.
+* `tribe_member_air` (coop_tribe_member_air.py, tribe fixture, 2 min): a member put onto deep water for 30 s (the
+  rule's finding, allowed for this test) and three blows on the leader (named, each down after under 2 s). A member
+  that was hit swims home at once: the water part comes first.
+* Probes that came back empty are worth their lines here: 30 min of play_tribe on three lanes and two Tribe plays of
+  four-player campaigns gave no member over 3 m at all, so a reproduction of the campaign's finding by "playing
+  more" costs hours; the log line is the way.

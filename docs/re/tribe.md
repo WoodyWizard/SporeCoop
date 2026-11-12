@@ -3117,3 +3117,32 @@ BUG-0942. GOG 2024, Ghidra (private project) and lab lanes 2 / 3. Adds to #tribe
   mission of that village with RemoveMission outside the frame (the HUD card goes; the goal row puts the host's goal
   there when the host has one), and a hook of 0xC30000 skips the text of a mission whose village has no hut and no
   members (the missions left in the vector and the map, reached by Refresh(pol) or a later SetTargetTribe).
+
+## A blow throws a member up; what else holds a member over the ground (2026-11-11, fix/w47-final12c)
+<a id="tribe-member-toss"></a>
+
+BUG-0945, BUG-0946. GOG 2024, tribe fixture, lanes 2 and 5 (probes, then tribe_member_air: lab 20261111-182334).
+✔ = observed at runtime. Heights are over the terrain (cPlanetModel::GetHeightAt), read 4 times a second.
+* ✔ A blow of 60, 100 or 140 hp on a player-tribe member that lives through it (`coop.tribe pincer <victim>
+  <attacker> <dmg>`: the combatant's TakeDamage vt 0x18 with a zero push vector, the attacker another member) throws
+  the victim up while its node is the fight node 0x05218BB3: 3.1-3.7 m a quarter second after the blow, moving up at
+  5.1-6.2 m/s, 4.96-5.04 m at the top, over 3 m for 1.3-1.5 s, on the ground again within 3 s. A blow of 20 hp does
+  not lift it over 3 m. A killing blow (5000 hp) lifts it 3.4-3.7 m before it lies down (node 0x05CA7FA7).
+* ✔ Only on the game that runs the member: the guest's mirror stays within 0.06 m of its own ground during the
+  throw (the mirrors keep their own height, BUG-0329 / BUG-0444). BUG-0946.
+* ✔ A wounded member (`coop.tribe sethp <id> 1`) in the sleep node 0x04611FF4 heals at its hut on the ground
+  (0.02 m, +6 to +9 hp a second), then node 0x05524115. A knocked-out leader (dead flag, node 0x05CA7FA7) lies on
+  the ground and stands up there after about 95 s with full health.
+* ✔ A member put onto deep water (`coop.tribe put` to a point whose sea bed is 25 m under the village's ground)
+  rises to the water's surface within 3 s and floats there, 15.2 m over the sea bed, standing in the idle node
+  0x04601D70 for 45 s and more; the guest's mirror floats the same way (its own game's water). A member that was hit
+  just before (fight node) swims back to the land at 12 m/s at once. The tribe fixture's water surface is at radius
+  496.9 m; the campaign planet Cadian's at about 499.7 m (a swimming creature's radius).
+* ✔ In 30 min of play_tribe (three lanes) and the Tribe plays of two four-player campaigns no member was over 3 m
+  once: the throws need blows harder than the fixture's animals deal.
+* The log lines for it: `tribe: member #<id> of player <p> is <m> m over the ground at (...): bt=<node> hp= dead=
+  age= tool= item= leader= speed= (up <m/s>) over the game's surface <m>` and `tribe: member #<id> of player <p> is
+  down again (or gone) after <s> s over 3 m, highest <m> m` (coop.cpp tribe_air_watch); the trace's `agl_held=`.
+* ? Not checked: which of the game's own attacks reach 60 hp on a member (an epic's and a rogue's are likely), and
+  whether the throw is the fight node's own reaction or the locomotion's (mode +0x2B0 = 3, docs/re/creature.md
+  "thrown").
