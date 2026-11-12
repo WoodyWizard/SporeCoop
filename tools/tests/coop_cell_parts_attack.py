@@ -22,6 +22,7 @@ SPORE_FIX_OFF=cell.electric (--part electric) / cell.puppet_poison (--part poiso
   SPORE_LANE=6 python3 tools/tests/coop_cell_parts_attack.py --part electric|poison [--seconds 40]
 """
 import argparse
+import math
 import re
 import time
 
@@ -31,6 +32,23 @@ from twoinst import Checks, start
 def num(out, key):
     m = re.search(r'\b' + key + r'=(-?\d+)', out)
     return int(m.group(1)) if m else None
+
+
+def clouds(con):
+    """keys of the poison cells this game has on its screen"""
+    out = con.call('coop.pool see 400')['out']
+    return {m.group(1) for m in re.finditer(r'^see (c\d+) poison ', out, re.M)}
+
+
+def cell_pos(con, key):
+    m = re.search(r'pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call(f'coop.pool cell {key}')['out'])
+    return (float(m.group(1)), float(m.group(2))) if m else None
+
+
+def puppet_pos(host, gid):
+    """where the host's game has the guest's puppet (coop.pool scalepos: p<id> rows)"""
+    m = re.search(r'\bp' + str(gid) + r'=\((-?[\d.]+) (-?[\d.]+)\)', host.call('coop.pool scalepos')['out'])
+    return (float(m.group(1)), float(m.group(2))) if m else None
 
 
 def types(host):
@@ -75,16 +93,30 @@ def main():
     if not key:
         return ck.result()
     print('  ' + host.call(f'coop.pool npcflag {key} hp 60')['out'].strip())
+    if a.part == 'poison':  # the host's own cell (it shares the fixture's model and so the graft) far from the creature
+        print('  host: ' + host.call('coop.pool tp 45 0')['out'].strip(), flush=True)
     time.sleep(2.5)
     t0_types, g0 = types(host), guest.call('coop.pool')['out']
     hp0 = num(host.call(f'coop.pool cell {key}')['out'], 'hp')
     low, t0, k0 = hp0, time.time(), 0
+    placed, seen_clouds = 0, set()
     while time.time() - t0 < a.seconds:
         guest.call(f'coop.pool swimto {key} tp')  # stays next to it (the electric step needs a target near its parts)
-        if a.part == 'poison' and k0 % 4 == 0:  # the host's game draws the guest's cell (the poison step needs its GFX)
-            host.call(f'coop.pool swimto {key} tp')
         k0 += 1
-        time.sleep(1.5)
+        if a.part == 'poison':
+            # BUG-0892: the creature onto each new cloud the host's game made next to the guest's puppet (the host's
+            # own cell is 45 m away): the game's own contact of a creature with a partner's cloud decides the damage
+            pp = puppet_pos(host, gid)
+            for ck_key in sorted(clouds(host) - seen_clouds):
+                seen_clouds.add(ck_key)
+                cp = cell_pos(host, ck_key)
+                if pp and cp and math.hypot(cp[0] - pp[0], cp[1] - pp[1]) < 8:
+                    r = host.call(f'coop.pool place {key} {ck_key}')['out'].strip()
+                    placed += 1
+                    if placed <= 3:
+                        print(f'  host: {r}', flush=True)
+                    time.sleep(0.4)
+        time.sleep(1.5 if a.part == 'electric' else 0.5)
         st = host.call(f'coop.pool cell {key}')['out']
         hp = num(st, 'hp')
         if hp is not None and low is not None:
@@ -108,8 +140,17 @@ def main():
         ck((num(hs, 'puppet_clouds') or 0) > 0, f'2. the host\'s game made the guest\'s poison clouds ({num(hs, "puppet_clouds")})')
     if a.part == 'electric':
         ck(hp0 is not None and low is not None and low < hp0, f'the creature lost health in the host\'s game ({hp0} -> {low})')
-    else:  # (the graft makes clouds but not the game's poison damage: the host's own avatar with it hurt nothing either)
-        print(f'  creature hp in the host\'s game {hp0} -> {low}; the host avatar\'s own clouds {num(hs, "clouds_made")}', flush=True)
+    else:  # BUG-0892: the damage in the host's game, not the cloud counter
+        print(f'  creature hp in the host\'s game {hp0} -> {low}; {placed} times put onto the guest\'s clouds; the host '
+              f'avatar\'s own clouds {num(hs, "clouds_made")}', flush=True)
+        ck(placed > 0, f'2. the creature was put onto the guest\'s clouds in the host\'s game ({placed} times)')
+        ck(hp0 is not None and low is not None and low < hp0,
+           f'2. the guest\'s clouds took health off the creature in the host\'s game ({hp0} -> {low})')
+        gst = guest.call(f'coop.pool cell {key}')['out']
+        ghp = num(gst, 'hp')
+        print(f'  the guest\'s mirror: hp {ghp} ({gst.strip()[:120]})', flush=True)
+        ck('no such cell' in gst or 'dying=1' in gst or (ghp is not None and low is not None and ghp <= low + 1),
+           f'2. the guest\'s mirror shows the loss (hp {ghp}, host {low})')
     guest.call('coop.pool borrow off')
     host.call(f'coop.pool borrow off x p{gid}')
     ck.faults(host=host, guest=guest)

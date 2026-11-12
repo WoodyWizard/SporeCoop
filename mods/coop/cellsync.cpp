@@ -5775,6 +5775,20 @@ std::string debug(const std::vector<std::string>& a)
                  F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_camera_heals);
         return b;
     }
+    if (a.size() >= 3 && a[0] == "place" && !is_guest()) { // tests (BUG-0892): put the cell c<key> onto the cell c<to>
+        // (a host creature onto a poison cloud: the game's own contact pair decides what it costs it)
+        uint32_t k = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint32_t t = (uint32_t)strtoul(a[2].c_str() + (a[2][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint8_t* c = modes::cell_at(k);
+        uint8_t* to = modes::cell_at(t);
+        if (!c || !to)
+            return "no such cell";
+        net::Vec3 p = pos_of(to);
+        stop_at(c, p);
+        char b[120];
+        snprintf(b, sizeof b, "placed c%u onto c%u at (%.2f %.2f)", k, t, p.x, p.y);
+        return b;
+    }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;
         if (a.size() >= 4) { // tests with 3-4 players (BUG-0152): next to that player's cell as we draw it
