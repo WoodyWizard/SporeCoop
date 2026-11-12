@@ -228,3 +228,5 @@ SporeCoop::TribeMission_RefreshCard ; BUG-0942: the goal card text of a mission 
 SporeCoop::cTribe_PopulationCount ; BUG-0942: see SporeCoop::TribeMission_RefreshCard
 SporeCoop::TribeMissionManager_RemoveMission ; BUG-0942: the goal card of a removed village stays on GOG 2016
 SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (tests only) is off on GOG 2016
+SporeCoop::cCity_Buy ; BUG-0877: a guest's purchase of a city is not sent to the host (old behaviour)
+SporeCoop::cTribe_SetConquered ; BUG-0777: a guest's village without a standing hut is not set conquered

@@ -12,6 +12,19 @@
   nations' vehicles, the attacking army included (BUG-0876).
 - Civilization: a guest sees a fast host vehicle right where it is, not several metres behind it (a vehicle over twice
   as fast as the guest's copy of it, for example a boosted one) (BUG-0787).
+- Civilization: a city a player captures stays that player's. With fewer cities than players the second city dealt
+  every city out again, and the host's capture became the guest's a moment later; a capture that waits for its
+  cinematic also lost its captor (BUG-0875).
+- Civilization: a captured city goes to the player whose vehicles took it, not to the player whose vehicle stood
+  nearest the city (BUG-0775).
+- Civilization: a guest that buys another nation's city gets it in both games; before, the money was spent and the
+  city changed hands nowhere (BUG-0877).
+- Civilization: a city a guest captures while the host is away (a menu, an editor, a load) is captured in the host's
+  game too when the host is back, instead of showing "won" on the guest's screen only (BUG-0878).
+- Tribe: a village the host's tribe conquers is conquered in the guest's game too (the hut falls, the goal is done);
+  it stood whole there (BUG-0777).
+- Tribe: a village a guest conquers while the host is away stays conquered when the host is back; the host's game
+  stood it up again (BUG-0879).
 
 ## [0.7.12] - 2026-11-11
 

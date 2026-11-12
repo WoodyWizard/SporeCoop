@@ -75,6 +75,10 @@ bool is_chief(void* citizen);
 // W2 (BUG-0564): a guest removes a village of its own the host has not (realign.cpp): 1 removed, 0 not this
 // one (the player tribe, mapped to a host tribe, not a guest in Tribe), -1 not now (a cinematic plays)
 int remove_village(void* tribe);
+// BUG-0777: guest, the host's hut fell: this game's hut takes the game's own killing blow (1 dealt, 0 none, -1 not now)
+int fell_hut(void* hut);
+// BUG-0777: guest, the host's village was conquered: its hut falls here, or the game's conquered flag is set
+int conquer_village(void* tribe);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 // the local player's own tribe members (positions), for the effect relay
 std::vector<net::Vec3> local_member_positions();

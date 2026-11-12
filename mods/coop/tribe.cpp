@@ -552,7 +552,18 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3, CMD_CONQUER = 4 };
+
+// BUG-0879: while the host is away the guest's own game plays (tribe.away): a raid of its members can end an NPC
+// village there (the hut's fall, the village's conquered flag +0x556, the conquest cinematic), and nothing told the
+// host: when it was back its state stood the village up again. A village this guest's game conquers while the host
+// is away now goes to the host as CMD_CONQUER (its position; held there until the host is back in Tribe, BUG-0693),
+// and the host's game fells that village's hut with the game's own blow by a member of that player.
+// `coop.fix tribe.away_conquest off`: 0.7.12.
+static bool g_away_conquest_fix = true;
+COOP_FIX("tribe.away_conquest", "BUG-0879", g_away_conquest_fix,
+         "tribe: a village a guest conquers while the host is away is conquered in the host's game when it is back");
+static uint32_t g_conquests_sent, g_conquests_done, g_conquests_refused;
 
 static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
@@ -2132,6 +2143,7 @@ static void baby_forget()
     g_baby_made.clear();
 }
 
+static void conquer_on_host(uint8_t from, const net::Vec3& p); // BUG-0879 (below)
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -2147,6 +2159,13 @@ static void host_command(uint8_t from, net::Reader& r)
     if (kind == CMD_BABY) { // BUG-0671
         if (g_guest_baby_fix && from != 0 && game::mode_id() == modes::kTribe)
             baby_on_host(from, pos);
+        else
+            g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_CONQUER) { // BUG-0879
+        if (g_away_conquest_fix && from != 0 && game::mode_id() == modes::kTribe)
+            conquer_on_host(from, pos);
         else
             g_cmds_rejected++;
         return;
@@ -2680,6 +2699,126 @@ int remove_village(void* t)
     wsync::village_gone(t); // BUG-0942: the game's goal card of this village
     game::destroy_creature(t); // (not an animal: DestroyInstance at once)
     return 1;
+}
+
+// BUG-0777: a hut the host's game saw fall falls in this guest's game too, through the game's own blow (the hut's
+// combatant TakeDamage vt 0x18, its remaining health and a little more, the attacker a member of the player tribe):
+// the game's own defeat follows (the death message, the village's conquered flag +0x556, the goal mission's end).
+// 1 dealt, 0 nothing to do, -1 not now (a cinematic plays).
+static int fell_hut_by(void* hut, int owner);
+int fell_hut(void* hut)
+{
+    if (!is_guest())
+        return 0;
+    return fell_hut_by(hut, -1);
+}
+static int fell_hut_by(void* hut, int owner) // owner >= 0: the attacker a member of that player if there is one
+{
+    if (!hut || game::mode_id() != modes::kTribe || !skg::readable(hut, 0x160))
+        return 0;
+    if (F<int>(hut, 0x120 + 0x34) == 2)
+        return 0;
+    if (game::cinematic_playing())
+        return -1;
+    void* pt = player_tribe();
+    void* att = nullptr;
+    if (pt)
+        for (void* c : members(pt))
+            if (is_citizen(c) && !game::is_dead(c) && (!att || (owner >= 0 && owner_of(c) == owner))) {
+                att = c;
+                if (owner < 0 || owner_of(c) == owner)
+                    break;
+            }
+    static const float zero[3] = {0, 0, 0}; // the hit direction must not be null
+    float hp = F<float>(hut, 0x120 + 0x38);
+    vcall<int>((uint8_t*)hut + 0x120, 0x18 / 4, hp + 10.f, 0xFFFFFFFFu, 0, zero, att ? (uint8_t*)att + 0x5A8 : nullptr);
+    H->log(M, SK_INFO, "tribe: a hut falls here (health %.1f, attacker %p of player %d): state %d (BUG-0777 / BUG-0879)", hp, att,
+           att ? (int)owner_of(att) : -1, F<int>(hut, 0x120 + 0x34));
+    return 1;
+}
+
+// BUG-0777: a village the host's game conquered: its hut falls here (fell_hut); a village without a standing hut
+// gets the game's own conquered flag (cTribe_SetConquered: +0x556, its view effect, its food bundles go), which the
+// goal mission's update (0xC2F750) reads to end the mission. 1 done, 0 nothing to do, -1 not now.
+int conquer_village(void* t)
+{
+    if (!t || !is_guest() || game::mode_id() != modes::kTribe || t == player_tribe() || !skg::readable(t, 0x557))
+        return 0;
+    if (F<uint8_t>(t, 0x556))
+        return 0;
+    void* hut = skg::readable(t, 0x36C) ? F<void*>(t, 0x368) : nullptr;
+    if (hut && skg::readable(hut, 0x160) && F<int>(hut, 0x120 + 0x34) != 2)
+        return fell_hut(hut);
+    static uintptr_t a_SetConquered = H->sym("SporeCoop::cTribe_SetConquered");
+    if (!a_SetConquered)
+        return 0;
+    if (game::cinematic_playing())
+        return -1;
+    thiscall<void>(a_SetConquered, t, 1);
+    H->log(M, SK_INFO, "tribe: the village %p the host's game conquered is conquered here (hut %p) (BUG-0777)", t, hut);
+    return 1;
+}
+
+// BUG-0879: guest, the conquered flag of every NPC village as last seen; a village this game conquers while the host
+// is away goes to the host
+static std::unordered_map<void*, uint8_t> g_conq_seen;
+static void away_conquest_tick(double now)
+{
+    static double next;
+    if (now < next || !is_guest())
+        return;
+    next = now + 0.5;
+    void* pt = player_tribe();
+    std::unordered_map<void*, uint8_t> seen;
+    for (void* t : all_tribes()) {
+        if (t == pt || !skg::readable(t, 0x557))
+            continue;
+        uint8_t f = F<uint8_t>(t, 0x556);
+        auto it = g_conq_seen.find(t);
+        if (f && it != g_conq_seen.end() && !it->second && g_away_conquest_fix && local_play()) {
+            net::Vec3 p = tribe_pos(t);
+            net::Writer w;
+            w.u8(CMD_CONQUER);
+            w.u8(0);
+            w.u32(0);
+            write_target(w, Target{});
+            w.f32(p.x); w.f32(p.y); w.f32(p.z);
+            C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w);
+            g_conquests_sent++;
+            H->log(M, SK_INFO, "tribe: this game conquered the village at (%.0f %.0f %.0f) while the host is away: sent to the host (BUG-0879)",
+                   p.x, p.y, p.z);
+            if (C.feed)
+                C.feed("your conquest waits: " + C.sess->name_of(0) + " (host) is away, it is made when the host is back");
+        }
+        seen[t] = f;
+    }
+    g_conq_seen.swap(seen);
+}
+
+// BUG-0879: host, a guest's game conquered the NPC village at p while this game was away: its hut falls here
+static void conquer_on_host(uint8_t from, const net::Vec3& p)
+{
+    void* pt = player_tribe();
+    void* best = nullptr;
+    float bd = 40.f;
+    for (void* t : all_tribes()) {
+        float d = net::dist(tribe_pos(t), p);
+        if (t != pt && d < bd && skg::readable(t, 0x557)) {
+            bd = d;
+            best = t;
+        }
+    }
+    void* hut = best && skg::readable(best, 0x36C) ? F<void*>(best, 0x368) : nullptr;
+    int r = best && !F<uint8_t>(best, 0x556) ? fell_hut_by(hut, from) : 0;
+    if (r > 0) {
+        g_conquests_done++;
+        H->log(M, SK_INFO, "tribe: player %u conquered the village at (%.0f %.0f %.0f) while this game was away: conquered here (BUG-0879)",
+               (unsigned)from, p.x, p.y, p.z);
+    } else {
+        g_conquests_refused++;
+        H->log(M, SK_INFO, "tribe: player %u's conquest of the village at (%.0f %.0f %.0f) not made here: %s (BUG-0879)", (unsigned)from,
+               p.x, p.y, p.z, !best ? "no village there" : F<uint8_t>(best, 0x556) ? "already conquered" : r < 0 ? "a cinematic plays" : "no standing hut");
+    }
 }
 
 static void guest_state(net::Reader& r)
@@ -4094,6 +4233,7 @@ void tick(double now)
             host_command(c.from, r);
         });
     drop_foreign_selection();
+    away_conquest_tick(now); // BUG-0879 (guest)
     if (is_host())
         host_tick(now);
     else if (is_guest()) {
@@ -4844,7 +4984,14 @@ std::string debug(const std::vector<std::string>& a)
     }
     // order <member id> <action> <x> <y> <z>: test setup (BUG-0531, host), the member's DoAction as an order gives it:
     // 4 walks there, 2 gathers the tree there, others take the object of this game nearest there (8 m)
-    if (a.size() >= 6 && a[0] == "order" && is_host()) {
+    // (on a guest while the host is away too: its own game runs its members then, BUG-0879 tests)
+    if (!a.empty() && a[0] == "conquests") { // BUG-0879 / BUG-0777 counters
+        char b[160];
+        snprintf(b, sizeof b, "conquests fix=%d sent=%u done=%u refused=%u local_play=%d\n", (int)g_away_conquest_fix, g_conquests_sent,
+                 g_conquests_done, g_conquests_refused, (int)local_play());
+        return b;
+    }
+    if (a.size() >= 6 && a[0] == "order" && (is_host() || local_play())) {
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         int action = atoi(a[2].c_str());
         net::Vec3 p{(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
@@ -4866,7 +5013,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     // huthp <x> <y> <z> <hp>: tests (BUG-0531, host), the health of the hut within 10 m of the point (cCombatant at
     // +0x120, docs/re/tribe.md): a raid then ends in a few blows
-    if (a.size() >= 5 && a[0] == "huthp" && is_host()) {
+    if (a.size() >= 5 && a[0] == "huthp" && (is_host() || local_play())) {
         net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
         void* h = game::find_object(0x01E4DAAE, p, 10.f);
         if (!h || !skg::readable(h, 0x160))

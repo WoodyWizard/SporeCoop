@@ -309,7 +309,21 @@ static net::Quat veh_rot(void* v)
 static std::unordered_map<void*, uint8_t> g_city_owner; // both: player city -> player id
 static std::vector<void*> g_host_cities;                // host: snapshot order; guest: host index -> local
 static std::unordered_set<void*> g_city_gifted;         // host: cities given away keep their owner
-static void* g_ui_city;                                 // the city whose menu was opened last
+// BUG-0875: a city a player captured keeps its captor when the cities are dealt out again (the shared capital's
+// threshold, a join or a leave). `coop.fix civ.capture_keeps off`: every city but the gifts dealt in turns (0.7.12).
+static bool g_fix_capture_keeps = true;
+COOP_FIX("civ.capture_keeps", "BUG-0875", g_fix_capture_keeps,
+         "civ: a city a player captured stays that player's when the cities are dealt out again");
+static std::unordered_set<void*> g_city_captured; // host: cities a player captured
+// host: the captor of a capture whose ChangeOwner waits for its cinematic (Capture plays CVG_Capture and the game
+// changes the owner at its end, docs/re/civ.md#civ-capture-keeps): the city is not the player civilization's yet
+// when h_Capture names the captor, so the drop loop of host_assign_cities forgot it and dealt the city out anew
+struct PendingCapture {
+    uint8_t owner;
+    double at;
+};
+static std::unordered_map<void*, PendingCapture> g_capture_by;
+static void* g_ui_city;                               // the city whose menu was opened last
 static uint32_t g_gifts;
 
 // ---------------- host ----------------
@@ -1224,6 +1238,8 @@ static Target read_target(net::Reader& r)
 }
 
 enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4, CMD_SPACE_BUILD = 5 };
+// (also 5 the superweapon request, 6 CMD_BUYCITY (BUG-0877) and 7 CMD_CAPTURE (BUG-0878), written as numbers
+// where they are sent above this line)
 
 static void say_host_away(const char* what); // BUG-0693
 static bool local_play();
@@ -1751,10 +1767,44 @@ static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint3
 static void caption_arm(); // BUG-0224 (below)
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
+// BUG-0775: a capture is credited to the player whose hit took the city (the capture runs inside that hit:
+// building / hall TakeDamage -> AddCaptureDamage -> CheckMilitaryCapture -> Capture), else the player who hit it
+// last within the joint-siege window; the nearest vehicle only when neither is known (a conversion, a test).
+// `coop.fix civ.capture_credit off`: always the nearest vehicle (0.7.12).
+static bool g_fix_capture_credit = true;
+COOP_FIX("civ.capture_credit", "BUG-0775", g_fix_capture_credit,
+         "civ: a captured city goes to the player whose vehicles took it, not to the one whose vehicle is nearest");
+static int g_capture_for = -1; // host: the player a capture made for a command is credited to (BUG-0877, BUG-0878)
+static uint32_t g_credit_by[4]; // host: captures credited by command, hit, siege, nearest vehicle
+static uint8_t capture_credit(void* city); // (below the siege)
+// BUG-0878: a capture the guest's own game makes while the host is away (local play: the guest's vehicles fight
+// in its game) went nowhere: the game showed "won", Capture was refused here and the host never knew. It goes to
+// the host as CMD_CAPTURE (held there until the host is back, civ.cmd_hold). `coop.fix civ.away_capture off`: 0.7.12.
+static bool g_fix_away_capture = true;
+COOP_FIX("civ.away_capture", "BUG-0878", g_fix_away_capture,
+         "civ: a city a guest captures while the host is away is captured in the host's game when it is back");
+static std::unordered_set<void*> g_away_capture_sent; // guest: cities sent this absence
+static uint32_t g_away_captures_sent;
 static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
 {
-    if (is_guest() && game::mode_id() == modes::kCiv && !g_applying)
+    if (is_guest() && game::mode_id() == modes::kCiv && !g_applying) {
+        void* pc = player_civ();
+        if (g_fix_away_capture && local_play() && pc && pol == pol_of(pc) && !g_away_capture_sent.count(city)) {
+            int ci = host_index_of_city(city);
+            if (ci >= 0) {
+                g_away_capture_sent.insert(city);
+                g_away_captures_sent++;
+                net::Writer w;
+                w.u8(7 /* CMD_CAPTURE */);
+                w.u8((uint8_t)ci);
+                w.u8((uint8_t)type);
+                H->log(M, SK_INFO, "civ: this game captured city %d while the host is away: sent to the host (BUG-0878)", ci);
+                send_cmd(w);
+            }
+        } else if (!local_play())
+            g_away_capture_sent.clear();
         return 0; // captures happen on the host and come back with the snapshot
+    }
     int r = o_Capture(city, pol, type, a3, a4, a5);
     if (is_host() && game::mode_id() == modes::kCiv) {
         caption_arm(); // every capture the host's game runs may show a caption that waits for OK
@@ -1772,7 +1822,14 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
                     owner = hv.owner;
                 }
             }
+            uint8_t credit = capture_credit(city);
+            if (credit != 0xFF)
+                owner = credit;
+            else
+                g_credit_by[3]++;
             g_city_owner[city] = owner;
+            g_city_captured.insert(city); // BUG-0875 (used with civ.capture_keeps)
+            g_capture_by[city] = {owner, H->time_seconds()};
             if (C.feed)
                 C.feed(C.sess->name_of(owner) + " captured a city");
         }
@@ -1798,6 +1855,74 @@ static uint32_t g_joint_hits, g_military_hits, g_religious_boosts, g_alarms, g_v
 static bool g_siege_players_fix = true;
 COOP_FIX("civ.siege_players", "BUG-0420", g_siege_players_fix, "civ: an NPC nation's army attacking the same city is not a second player of a joint siege");
 static uint32_t g_siege_npc;
+
+static uint8_t capture_credit(void* city) // 0xFF: not known (the nearest vehicle then)
+{
+    auto here = [](int p) { return p >= 0 && p < net::kMaxPlayers && net::is_player(*C.sess, (uint8_t)p); };
+    if (here(g_capture_for)) { // a guest's purchase or away capture (or the host's own purchase)
+        g_credit_by[0]++;
+        return (uint8_t)g_capture_for;
+    }
+    if (!g_fix_capture_credit)
+        return 0xFF;
+    if (here(g_hit_by)) { // the hit that took it
+        g_credit_by[1]++;
+        return g_hit_by;
+    }
+    auto it = g_siege.find(city);
+    if (it == g_siege.end())
+        return 0xFF;
+    double now = H->time_seconds(), best = -1;
+    uint8_t who = 0xFF;
+    for (auto& [p, t] : it->second)
+        if (here(p) && now - t < kJointWindow && t > best) {
+            best = t;
+            who = p;
+        }
+    if (who != 0xFF)
+        g_credit_by[2]++;
+    return who;
+}
+
+// BUG-0877: the purchase of an NPC city (cCivilization::FinishBuyCity -> cCity buy 0xBE99A0: SpendMoney, then
+// Capture type 2). On a guest the money went (its spending reaches the shared money) and the Capture was refused:
+// the city changed hands nowhere. A guest's purchase now goes to the host as CMD_BUYCITY and the host's game buys
+// it (its money, its Capture), credited to that guest. `coop.fix civ.buy_city off`: 0.7.12.
+static bool g_fix_buy_city = true;
+COOP_FIX("civ.buy_city", "BUG-0877", g_fix_buy_city,
+         "civ: a guest's purchase of another nation's city is made in the host's game and the city is that guest's");
+using CityBuy_t = void(SK_THISCALL*)(void*, uint32_t, float);
+static CityBuy_t o_CityBuy;
+static uint32_t g_city_buys_sent, g_city_buys_done, g_city_buys_refused;
+static void SK_THISCALL h_CityBuy(void* city, uint32_t pol, float price)
+{
+    void* pc = g_fix_buy_city && game::mode_id() == modes::kCiv && !g_applying ? player_civ() : nullptr;
+    if (pc && pol == pol_of(pc) && is_guest()) {
+        int ci = host_index_of_city(city);
+        if (ci < 0) {
+            if (C.notice)
+                C.notice("this city is not in the host's game: not bought");
+            return;
+        }
+        if (local_play())
+            say_host_away("your purchase of the city");
+        net::Writer w;
+        w.u8(6 /* CMD_BUYCITY */);
+        w.u8((uint8_t)ci);
+        w.f32(price);
+        send_cmd(w);
+        g_city_buys_sent++;
+        H->log(M, SK_INFO, "civ: this game buys city %d (price %.0f): sent to the host (BUG-0877)", ci, price);
+        return;
+    }
+    if (pc && pol == pol_of(pc) && is_host() && g_capture_for < 0) { // the host's own purchase is the host's
+        g_capture_for = C.sess->my_id();
+        o_CityBuy(city, pol, price);
+        g_capture_for = -1;
+        return;
+    }
+    o_CityBuy(city, pol, price);
+}
 
 static uint8_t player_of_combatant(void* att)
 {
@@ -2342,6 +2467,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_UIMessage, (void*)h_UIMessage, (void**)&o_UIMessage);
     H->hook_create(M, (void*)a_AddBuilding, (void*)h_AddBuilding, (void**)&o_AddBuilding);
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
+    if (uintptr_t cb = H->sym("SporeCoop::cCity_Buy")) // BUG-0877 (optional)
+        H->hook_create(M, (void*)cb, (void*)h_CityBuy, (void**)&o_CityBuy);
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
@@ -2419,6 +2546,17 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
         else
             ++it;
     }
+    if (g_fix_capture_keeps) { // BUG-0875: a capture whose owner change came after its cinematic gets its captor
+        double now = H->time_seconds();
+        for (auto it = g_capture_by.begin(); it != g_capture_by.end();) {
+            bool here = std::find(cities.begin(), cities.end(), it->first) != cities.end();
+            if (here && !g_city_owner.count(it->first)) {
+                g_city_owner[it->first] = it->second.owner;
+                g_city_captured.insert(it->first);
+            }
+            it = here || now - it->second.at > 120.0 ? g_capture_by.erase(it) : std::next(it);
+        }
+    }
     bool resplit = players != g_split_for;
     g_split_for = players;
     if (cities.empty())
@@ -2429,16 +2567,40 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
               [&](void* a, void* b) { return net::dist(city_pos(a), cap) < net::dist(city_pos(b), cap); });
     // fewer cities than players: the capital is shared so that everybody can play from the start
     bool shared = cities.size() < players.size();
+    auto present = [&](uint8_t o) { return std::find(players.begin(), players.end(), o) != players.end(); };
+    // BUG-0875: a city its captor (or a gift's receiver) keeps while that player is here
+    auto kept = [&](void* c) {
+        auto it = g_city_owner.find(c);
+        return it != g_city_owner.end() && present(it->second) &&
+               (g_city_gifted.count(c) || (g_fix_capture_keeps && g_city_captured.count(c)));
+    };
+    std::vector<uint8_t> first; // capture_keeps: the players without a city get the free ones first
+    if (g_fix_capture_keeps) {
+        std::unordered_set<uint8_t> has{0}; // the host: the capital
+        size_t free = 0;
+        for (size_t i = 1; i < cities.size(); i++)
+            if (kept(cities[i]))
+                has.insert(g_city_owner[cities[i]]);
+            else
+                free++;
+        for (size_t j = 1; j <= players.size(); j++)
+            if (!has.count(players[j % players.size()]))
+                first.push_back(players[j % players.size()]);
+        shared = first.size() > free; // the capital stays everybody's while a player would have no city
+    }
     if (shared != (g_city_owner.count(cities[0]) && g_city_owner[cities[0]] == kShared))
         resplit = true;
     size_t k = 0;
+    auto next = [&]() -> uint8_t {
+        size_t j = k++;
+        return j < first.size() ? first[j] : players[(1 + j - first.size()) % players.size()];
+    };
     for (size_t i = 0; i < cities.size(); i++) {
         if (!resplit && g_city_owner.count(cities[i]))
             continue;
-        if (g_city_gifted.count(cities[i]) && g_city_owner.count(cities[i]) &&
-            std::find(players.begin(), players.end(), g_city_owner[cities[i]]) != players.end())
-            continue; // a gift stays with its new owner while that player is here
-        g_city_owner[cities[i]] = i == 0 ? (shared ? kShared : 0) : players[(1 + k++) % players.size()];
+        if (kept(cities[i]) && (i > 0 || g_city_gifted.count(cities[i])))
+            continue; // a gift (or a capture: capture_keeps) stays with its owner while that player is here
+        g_city_owner[cities[i]] = i == 0 ? (shared ? kShared : 0) : next();
     }
 }
 
@@ -3196,6 +3358,36 @@ static void host_command(uint8_t from, net::Reader& r)
         g_build_from = -1;
         if (!b)
             return reject();
+    } else if (kind == 6 /* CMD_BUYCITY, BUG-0877 */ || kind == 7 /* CMD_CAPTURE, BUG-0878 */) {
+        uint8_t ci = r.u8();
+        float price = kind == 6 ? r.f32() : 0.f;
+        int type = kind == 7 ? r.u8() : 2;
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* pc = player_civ();
+        bool on = kind == 6 ? g_fix_buy_city && o_CityBuy : g_fix_away_capture;
+        if (!r.ok() || !on || !city || !pc || pol_of(city) == pol_of(pc) || !std::isfinite(price) || price < 0 ||
+            type < 0 || type > 2) {
+            snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "already the players'");
+            return reject();
+        }
+        float money = thiscall<float>(a_GetMoney, pc);
+        g_capture_for = from;
+        if (kind == 6)
+            o_CityBuy(city, pol_of(pc), price);
+        else
+            h_Capture(city, pol_of(pc), type, 0, 0, 0);
+        g_capture_for = -1;
+        // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
+        if (kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money) {
+            net::Writer nw;
+            nw.str8("the city was not bought: not enough money or no trade route in the host's game");
+            C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+            g_city_buys_refused++;
+            return reject();
+        }
+        g_city_buys_done += kind == 6;
+        H->log(M, SK_INFO, "civ: city %u %s for player %u in this game", (unsigned)ci, kind == 6 ? "bought" : "captured",
+               (unsigned)from);
     } else
         return reject();
     g_cmds_done++;
@@ -4461,6 +4653,8 @@ static void clear_coop_tables(bool restore_speed)
     g_siege.clear();
     g_joint_told.clear();
     g_city_gifted.clear();
+    g_city_captured.clear(); // BUG-0875
+    g_capture_by.clear();
     g_bfix_seen.clear();
     g_ui_city = nullptr;
     g_kill_later.clear();
@@ -4863,7 +5057,13 @@ std::string debug(const std::vector<std::string>& a)
                  (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired, g_veh_design_checked,
                  g_veh_design_fallback, g_build_skipped, g_bound_redesigned, g_last_order.type, g_last_order.kind,
                  g_last_order.id, g_last_order.noun);
-        return b;
+        char c[200]; // BUG-0775 / 0875 / 0877 / 0878
+        snprintf(c, sizeof c,
+                 "captures: captured=%u credit_cmd=%u credit_hit=%u credit_siege=%u credit_nearest=%u buys_sent=%u "
+                 "buys_done=%u refused=%u away_sent=%u\n",
+                 (unsigned)g_city_captured.size(), g_credit_by[0], g_credit_by[1], g_credit_by[2], g_credit_by[3],
+                 g_city_buys_sent, g_city_buys_done, g_city_buys_refused, g_away_captures_sent);
+        return std::string(b) + c;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)
@@ -4941,21 +5141,81 @@ std::string debug(const std::vector<std::string>& a)
         return "the local entity is null for " + std::to_string(n < 1 ? 1 : n > 600 ? 600 : n) + " frames\n";
     }
     // tests of the co-op mechanics through the game's own functions (host)
-    if (a.size() >= 3 && a[0] == "siege" && is_host()) { // siege <city> <player>: capture damage by that player
+    // siege <city> <player> [hits [pc]]: capture damage by that player (host; a guest while the host is away, its own
+    // game); `pc`: the attacker is the player civilization, so the game's own CheckMilitaryCapture takes the city for
+    // it at 100 (BUG-0775 / BUG-0878 tests)
+    if (a.size() >= 3 && a[0] == "siege" && (is_host() || local_play())) {
         size_t ci = (size_t)atoi(a[1].c_str());
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
         uintptr_t ctxf = H->sym("Simulator::GetActivePlanetRecord");
         if (!city)
             return "no such city";
         void* pc = player_civ();
-        g_hit_by = (uint8_t)atoi(a[2].c_str());
+        int hits = a.size() > 3 ? std::clamp(atoi(a[3].c_str()), 1, 200) : 1;
+        uint32_t att = a.size() > 4 && a[4] == "pc" && pc ? pol_of(pc) : 0x0BADF00Du;
         float before = F<float>(city, 0x748);
-        (void)pc; // an attacker that is not the city's owner (the game ignores its own civ)
-        h_AddCapture(skg::cdecl_call<void*>(ctxf), city, (uint8_t*)city + 0x2F0, pol_of(city), 10.f, 0x0BADF00Du,
-                     false);
-        g_hit_by = 0xFF;
+        uint32_t pol0 = pol_of(city);
+        for (int i = 0; i < hits && pol_of(city) == pol0; i++) {
+            g_hit_by = (uint8_t)atoi(a[2].c_str());
+            h_AddCapture(skg::cdecl_call<void*>(ctxf), city, (uint8_t*)city + 0x2F0, pol_of(city), 10.f, att, false);
+            g_hit_by = 0xFF;
+        }
+        char b[128];
+        snprintf(b, sizeof b, "capture %.2f -> %.2f pol %08X -> %08X", before, F<float>(city, 0x748), pol0, pol_of(city));
+        return b;
+    }
+    // bhp <city> <hp>: every building of the city but its hall down to that health at most (host; tests, BUG-0775:
+    // a real siege that ends in minutes)
+    if (a.size() >= 3 && a[0] == "bhp" && is_host()) {
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        float hp = std::max(1.f, (float)atof(a[2].c_str()));
+        int n = 0;
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings))
+            if (bl && bl != F<void*>(city, 0x320) /* the hall */ && F<int>(bl, kBuildingState) != 2 && F<float>(bl, kBuildingState + 4) > hp) {
+                F<float>(bl, kBuildingState + 4) = hp;
+                n++;
+            }
+        return std::to_string(n) + " buildings at " + std::to_string((int)hp) + " hp";
+    }
+    // vhp <id> <hp>: that vehicle's health (host; tests, BUG-0775: the besiegers live through the siege)
+    if (a.size() >= 3 && a[0] == "vhp" && is_host()) {
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v))
+            return "no such vehicle";
+        F<float>(v, kVHp) = std::max(1.f, (float)atof(a[2].c_str()));
+        return "hp " + std::to_string((int)F<float>(v, kVHp));
+    }
+    // vput <id> <x> <y> <z>: that vehicle put there (spatial SetPosition vt 0x38; host; tests, BUG-0775: a host vehicle
+    // standing nearer the city than the besiegers)
+    if (a.size() >= 5 && a[0] == "vput" && is_host()) {
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v))
+            return "no such vehicle";
+        float p[3] = {(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())};
+        vcall<void>((uint8_t*)v + kVSpatial, 0x38 / 4, (const float*)p);
+        net::Vec3 q = veh_pos(v);
         char b[96];
-        snprintf(b, sizeof b, "capture %.2f -> %.2f", before, F<float>(city, 0x748));
+        snprintf(b, sizeof b, "put at (%.1f %.1f %.1f)", q.x, q.y, q.z);
+        return b;
+    }
+    // buycity <city> [price]: the game's purchase of a city for the player civilization, as FinishBuyCity makes it
+    // (cCity buy 0xBE99A0; 0 = the game's GetBuyPrice) (tests, BUG-0877)
+    if (a.size() >= 2 && a[0] == "buycity") {
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* pc = player_civ();
+        uintptr_t fb = H->sym("SporeCoop::cCity_Buy");
+        if (!city || !pc || !fb)
+            return "no such city / civ / symbol";
+        float money = thiscall<float>(a_GetMoney, pc);
+        uint32_t pol0 = pol_of(city);
+        thiscall<void>(fb, city, pol_of(pc), a.size() > 2 ? (float)atof(a[2].c_str()) : 0.f); // through our hook
+        char b[160];
+        snprintf(b, sizeof b, "buycity %zu pol %08X -> %08X money %.0f -> %.0f sent=%u", ci, pol0, pol_of(city), money,
+                 thiscall<float>(a_GetMoney, pc), g_city_buys_sent);
         return b;
     }
     if (a.size() >= 2 && a[0] == "alarm" && is_host()) { // alarm <city>: as if an enemy attacked it

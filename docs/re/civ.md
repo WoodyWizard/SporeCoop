@@ -1574,3 +1574,43 @@ test `civ_boost_stack`, `civ_fast_mirror`).
   (velocity from arrival times, as with a host before BUG-0122); a 0.7.13 guest of an older host uses its own top.
 * ? Whether the game's RecalcStats rewrites `+0x218` by itself during play (it would heal a stuck value): still not
   seen; with the boost off the value stayed for minutes (BUG-0040 and here: 145.17 22 s after).
+## Captures and purchases on one game only (2026-11-12, fix/w48-captures)
+<a id="civ-capture-keeps"></a>
+
+BUG-0875, BUG-0775, BUG-0877, BUG-0878 (Discord 2026-11-09: "their settlement is captured, the host's is not"). GOG 2024,
+lanes 4 / 5, fixture civ_npc.
+* ✔ (runtime) A capture through the capture meter (`coop.civ siege <city> <player> <hits> pc`: AddCaptureDamage with
+  the player civilization's political id, the game's own CheckMilitaryCapture at 100) does **not** change the city's
+  owner at once: `Capture` plays the capture cinematic and the city is the player civilization's 8 s later (the
+  caption closed by civ.caption), from the cinematic-end message (GameCiv_HandleMessage, CVG_Capture: the pending
+  ChangeOwner). So when h_Capture names the captor the city is not in the player civilization's list yet, and the
+  drop loop of host_assign_cities ("cities the player lost") erased the owner it had just written: every such capture
+  was dealt out like a new city. (`coop.civ capture` through Capture directly showed the same; lab 20261112-003012.)
+* ✔ (code + runtime) host_assign_cities' resplit: with 2 players and 1 city the capital is shared (`cities < players`);
+  the second city crosses the threshold, every city but the gifts is dealt again: the capital to the host, the
+  captured city to `players[1]` = the guest. The host's own capture became the guest's (lab 20261112-004217, fix off:
+  owner 1 on both games, the guest's game lets the guest buy there).
+* Fix `civ.capture_keeps`: the captor waits in `g_capture_by` until the city is the player civilization's (120 s at
+  most); a city a player captured or was given keeps its owner at a resplit while that player is in the session; the
+  free cities go first to the players without a city, and the capital stays shared while a player would have none.
+* ✔ (code) The captor was the player whose vehicle was nearest the city (BUG-0775). The capture runs inside the hit
+  that took it (building / hall TakeDamage -> AddCaptureDamage -> CheckMilitaryCapture -> Capture), so `g_hit_by`
+  (b_damage) is the player whose vehicle hit last. Fix `civ.capture_credit`: that player, else the last player hit in
+  the joint-siege window (`g_siege`), else the nearest vehicle; `coop.civ tables` prints `captures: credit_cmd=
+  credit_hit= credit_siege= credit_nearest=`.
+* ✔ (Ghidra, GOG 2024) The purchase of a city: pie command 0xCF3350 -> `cCivilization_BuyCity` 0xBF0520 (the talk
+  with the city's nation, price offers) -> the talk's answer 0xCFF010 -> `cCivilization_FinishBuyCity` 0xBF0600 ->
+  `cCity_Buy` 0xBE99A0 (GetMoney, SpendMoney, Capture type 2). On a guest Capture is refused (h_Capture), the
+  spending reaches the shared money: money gone, no city (BUG-0877, lab 20261112-003450 with civ.buy_city off: the city
+  the NPC's in both games). Fix `civ.buy_city`: the guest's cCity_Buy sends CMD_BUYCITY (6: city index, price) and
+  returns; the host's game runs cCity_Buy itself, credited to that guest (`g_capture_for`); the host's own purchase
+  is credited to the host. A refused one tells the guest ("not enough money or no trade route").
+* ✔ (runtime) While the host is away (local play, civ.away) a guest's game besieges and captures by itself: its
+  CheckMilitaryCapture fires the "won" event and calls Capture, which a guest refuses; nothing went to the host (lab
+  20261112-003556, civ.away_capture off: the city the NPC's on both games after the host's return). Fix
+  `civ.away_capture`: that Capture sends CMD_CAPTURE (7: city index, type) once per city and absence; the host holds
+  it (civ.cmd_hold) and runs h_Capture for that guest when it is back. The host's city indices survived its reload of
+  the same save in the test (the city by its place).
+* ? Not checked: a religious conversion's capture (Convert, no hit: credited by g_siege or the nearest vehicle); the
+  owners after a host's load (on_world_change clears g_city_owner, every city is dealt anew: captures are not kept
+  across loads, BUG-0950).
