@@ -325,6 +325,17 @@ static bool g_reload_id_fix = true;
 COOP_FIX("allies.reload_id", "BUG-0225", g_reload_id_fix, "space: a galaxy reload is seen by the Space world epoch, not the cEmpire address");
 static uint32_t g_reload_resets;
 static bool g_same_galaxy; // tests (allies samegalaxy 1): the new player cEmpire has the old one's address
+// BUG-0838 (class BUG-0426): a mirror unmirrored before a reload of the world (a save on the way to the galaxy menu,
+// `allies remove`) kept its snapshots: the old world's cPlanetRecord (our reference) and the cCivData the mirror had
+// added to it. The first apply in the new world swapped the record (the old one released: our reference was its
+// last, so it went with the cities it held) and put the kept cCivData pointers of the old world into the new world's
+// record (AddCivData): freed objects in a planet the game draws and saves. Now the snapshots go with the galaxy (a
+// reset of the empire forgets them) and the kept cities belong to the record they came from (another record of that
+// planet: made again). Old (`coop.fix allies.snap_world off`): kept and re-added.
+static bool g_snap_world_fix = true;
+COOP_FIX("allies.snap_world", "BUG-0838", g_snap_world_fix, "space: after a reload of the world the allies mirror never puts the old world's cities into a planet of the new one (possible crash when landing there)");
+static uint32_t g_snaps_dropped;
+static void forget(Mirror& m);
 static void reset_empire(Mirror& m)
 {
     // a save also takes the unmirrored cEmpire out of the map (it is put back on the next apply):
@@ -342,6 +353,10 @@ static void reset_empire(Mirror& m)
     m.contact_before = 0;
     m.rel_on = spaceext::Relation::Ally;
     g_reload_resets++;
+    if (g_snap_world_fix && !m.applied && !m.planets.empty()) { // BUG-0838: the old galaxy's snapshots go with it
+        g_snaps_dropped += (uint32_t)m.planets.size();
+        forget(m);
+    }
 }
 
 // the mirror's cEmpire in the star manager: made once (then kept alive by our reference and put
@@ -519,6 +534,10 @@ static void add_planet(Mirror& m, void* rec)
         return;
     s.on = true;
     if (s.rec != rec) {
+        if (g_snap_world_fix && s.rec && !s.civ.empty()) { // BUG-0838: the kept cities are the other record's
+            s.civ.clear();
+            g_snaps_dropped++;
+        }
         vcall<void>(rec, 0); // AddRef
         if (s.rec)
             vcall<void>(s.rec, 1);
@@ -554,6 +573,10 @@ static void add_planet_own(Mirror& m, void* rec)
     s.on = true;
     s.own = true;
     if (s.rec != rec) {
+        if (g_snap_world_fix && s.rec && !s.civ.empty()) { // BUG-0838: the kept cities are the other record's
+            s.civ.clear();
+            g_snaps_dropped++;
+        }
         vcall<void>(rec, 0); // AddRef
         if (s.rec)
             vcall<void>(s.rec, 1);
@@ -1306,6 +1329,18 @@ static std::string debug(const std::vector<std::string>& a)
         g_hold = false;
         apply_all();
         return status();
+    }
+    if (a[0] == "civ" && a.size() > 1) { // tests (BUG-0838): civ <PlanetID hex>: the record and its cCivData now
+        uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        void* rec = planet_record(id);
+        std::string out = "planet " + a[1] + " rec=" + hex((uint32_t)(uintptr_t)rec) + " civ=";
+        for (void* c : rec ? ptr_vec((uint8_t*)rec + 0x15C, 64) : std::vector<void*>{})
+            out += hex((uint32_t)(uintptr_t)c) + ",";
+        for (auto& [n, m] : g_m)
+            if (auto it = m.planets.find(id); it != m.planets.end())
+                out += " kept_rec=" + hex((uint32_t)(uintptr_t)it->second.rec) + " kept_civ=" +
+                       std::to_string(it->second.civ.size()) + " on=" + std::to_string((int)it->second.on);
+        return out + " dropped=" + std::to_string(g_snaps_dropped) + "\n";
     }
     if (a[0] == "remove") { // unmirror (as before a save), no re-apply until "apply"
         unapply_all();

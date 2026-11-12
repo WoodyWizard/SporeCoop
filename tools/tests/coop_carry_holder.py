@@ -14,6 +14,7 @@ game's own fields: `coop.rules carry`, `last copy ... game_held=0`) and must not
 SPORE_FIX_OFF=creature.carry_holder must FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_carry_holder.py"""
+import math
 import re
 import time
 
@@ -25,6 +26,14 @@ def last_copy(con):
     out = con.call('coop.rules carry')['out']
     m = re.search(r'last copy of player \d+ obj=\S+ listed=(\d) game_held=(-?\d+) phys=(-?\d+) pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out)
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)), tuple(map(float, m.groups()[3:]))) if m else None
+
+
+def agl(con, p):
+    """height of p over the ground of con's game (the ground radius in its direction)"""
+    if not p:
+        return None
+    m = re.search(r'ground ([-\d.]+)', con.call('coop.abilities ground %.2f %.2f %.2f' % p)['out'])
+    return math.sqrt(sum(x * x for x in p)) - float(m.group(1)) if m and float(m.group(1)) > 0 else None
 
 
 def main():
@@ -52,7 +61,10 @@ def main():
     ck(after and after[0] == 1, 'the copy is still an object of the host\'s game')
     ck(after and after[1] == 0, f'the copy is not held any more in the host\'s game (game_held={after and after[1]})')
     time.sleep(3.5)
-    print('  host: ' + carry(host)[1].strip().splitlines()[-1], flush=True)
+    late = last_copy(host)
+    h1 = agl(host, late and late[3])
+    print(f'  host: the copy 5 s after: {late}, {h1 and round(h1, 2)} m over the ground', flush=True)
+    ck(h1 is not None and h1 < 0.6, f'the copy does not hang in the air ({h1 and round(h1, 2)} m over the ground)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -55,14 +55,19 @@ def main():
             break
         time.sleep(1)
     nests, prox = plist(guest)
-    # a species whose proxies all live in its one cached nest herd (another nest of it would take the cache's place,
-    # and the stale entry would never be asked)
+    # first the herds the guest made for species without a nest in its world (g_herds: nothing else refreshes them),
+    # then a species whose proxies all live in its one cached nest herd (another nest of it would take the cache's
+    # place, and the stale entry would never be asked)
     by_sp = {}
     for i, p in prox.items():
         by_sp.setdefault(p[0], set()).add(p[2])
-    cand = [i for i, p in sorted(prox.items()) if p[2] in nests and by_sp[p[0]] == {p[2]}]
+    family = set(int(m.group(1), 16) for m in re.finditer(r'herd=([0-9A-Fa-f]+) .*?fam=1', guest.call('coop.npc list')['out']))
+    cand = [i for i, p in sorted(prox.items()) if p[2] not in nests and p[2] not in family and len(by_sp[p[0]]) == 1]
+    cand += [i for i, p in sorted(prox.items()) if p[2] in nests and by_sp[p[0]] == {p[2]} and i not in cand]
     cand += [i for i, p in sorted(prox.items()) if p[2] in nests and i not in cand]
-    ck(cand, f'the guest has proxies in cached nest herds ({len(cand)} of {len(prox)}, {len(nests)} nest herds)')
+    print(f'  candidates {cand}: herds by species {dict((k, sorted(hex(h) for h in v)) for k, v in by_sp.items())}, '
+          f'nest herds {sorted(hex(h) for h in nests)}', flush=True)
+    ck(cand, f'the guest has proxies in herds it cached ({len(cand)} of {len(prox)}, {len(nests)} nest herds)')
     reused, wrong, used = 0, [], set()
     for i in cand:
         if reused >= a.tries:
@@ -72,7 +77,7 @@ def main():
             continue
         herd = prox[i][2]
         used.add(herd)
-        print(f'  proxy #{i} (species {prox[i][0]}) in nest herd {herd:08X}: ' +
+        print(f'  proxy #{i} (species {prox[i][0]}) in herd {herd:08X} (nest herd: {herd in nests}): ' +
               guest.call(f'coop.npc reusehunt {herd:X} 150 xH')['out'].strip().splitlines()[0], flush=True)
         t1 = time.time()
         h = hunt(guest)

@@ -3107,7 +3107,7 @@ std::string list()
             net::Vec3 at = pc ? game::position(pc) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
                      "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
-                     " game_dead=%d impressed=%d herd_sp=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
+                     " game_dead=%d impressed=%d herd_sp=%d fam=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
                      id, px.key.instance, pc ? "spawned" : "pending", pc ? game::health(pc) : 0.f,
                      pc ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
                      px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, pc ? drive::over_ground(at) : 0.f,
@@ -3118,7 +3118,8 @@ std::string list()
                      // BUG-0843: its herd (the game's +0x1674) is a listed herd of its own species (1), of another (0)
                      pc && game::herd_of(pc) && live.count(game::herd_of(pc))
                          ? (int)(game::herd_species(game::herd_of(pc)) == game::species_profile(pc))
-                         : -1);
+                         : -1,
+                     pc && game::herd_of(pc) && game::herd_of(pc) == game::avatar_herd() ? 1 : 0);
             out += b;
         }
     }

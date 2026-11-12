@@ -6913,6 +6913,23 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("%d puppet(s) removed\n", n);
                            return 0;
                        }
+                       // tests (BUG-0795): gamekillfx <pool> <hex id> <key> [n]: the game destroys every partner's Creature
+                       // puppet (as gamekill) and in the same call that partner's effect message arrives n times
+                       if (argc > 4 && !strcmp(argv[1], "gamekillfx")) {
+                           int n = argc > 5 ? std::max(1, atoi(argv[5])) : 1, k = 0;
+                           for (auto& [id, r] : g_remotes)
+                               if (r.puppet && creature_puppet(r.puppet_adapter) && game::creature_listed(r.puppet)) {
+                                   net::Vec3 p = game::position(r.puppet);
+                                   game::destroy_untracked(r.puppet);
+                                   for (int i = 0; i < n; i++)
+                                       effects::inject(id, id, 0, (uint8_t)atoi(argv[2]), (uint32_t)strtoul(argv[3], nullptr, 16),
+                                                       (uint32_t)strtoul(argv[4], nullptr, 0), p, net::kNoAgl);
+                                   SAY("puppet %u (%p) destroyed by the game, %d effect message(s) of it handled\n", id, r.puppet, n);
+                                   k++;
+                               }
+                           SAY("%s", effects::status().c_str());
+                           return k ? 0 : 1;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "gamekill")) { // tests (BUG-0507): the game destroys
                            int n = 0; // every partner's Creature puppet behind the mod's back (as it did on a
                            for (auto& [id, r] : g_remotes) // player's PC): the mod must notice and show it again
