@@ -315,6 +315,14 @@ static bool g_fix_capture_keeps = true;
 COOP_FIX("civ.capture_keeps", "BUG-0875", g_fix_capture_keeps,
          "civ: a city a player captured stays that player's when the cities are dealt out again");
 static std::unordered_set<void*> g_city_captured; // host: cities a player captured
+// host: the captor of a capture whose ChangeOwner waits for its cinematic (Capture plays CVG_Capture and the game
+// changes the owner at its end, docs/re/civ.md#civ-capture-keeps): the city is not the player civilization's yet
+// when h_Capture names the captor, so the drop loop of host_assign_cities forgot it and dealt the city out anew
+struct PendingCapture {
+    uint8_t owner;
+    double at;
+};
+static std::unordered_map<void*, PendingCapture> g_capture_by;
 static void* g_ui_city;                               // the city whose menu was opened last
 static uint32_t g_gifts;
 
@@ -1813,6 +1821,7 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
                 g_credit_by[3]++;
             g_city_owner[city] = owner;
             g_city_captured.insert(city); // BUG-0875 (used with civ.capture_keeps)
+            g_capture_by[city] = {owner, H->time_seconds()};
             if (C.feed)
                 C.feed(C.sess->name_of(owner) + " captured a city");
         }
@@ -2494,6 +2503,17 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
             it = g_city_owner.erase(it);
         else
             ++it;
+    }
+    if (g_fix_capture_keeps) { // BUG-0875: a capture whose owner change came after its cinematic gets its captor
+        double now = H->time_seconds();
+        for (auto it = g_capture_by.begin(); it != g_capture_by.end();) {
+            bool here = std::find(cities.begin(), cities.end(), it->first) != cities.end();
+            if (here && !g_city_owner.count(it->first)) {
+                g_city_owner[it->first] = it->second.owner;
+                g_city_captured.insert(it->first);
+            }
+            it = here || now - it->second.at > 120.0 ? g_capture_by.erase(it) : std::next(it);
+        }
     }
     bool resplit = players != g_split_for;
     g_split_for = players;
@@ -4563,6 +4583,7 @@ static void clear_coop_tables(bool restore_speed)
     g_joint_told.clear();
     g_city_gifted.clear();
     g_city_captured.clear(); // BUG-0875
+    g_capture_by.clear();
     g_bfix_seen.clear();
     g_ui_city = nullptr;
     g_kill_later.clear();
