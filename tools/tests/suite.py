@@ -104,6 +104,7 @@ add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creatu
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('civ_money_short', P + 'coop_civ_money_short.py', warm=True, minutes=3, fixture='civ')  # a paid build the money does not cover is not built, the shared money the same on both and never below 0 (BUG-0613; SPORE_FIX_OFF=civ.build_money fails)
+add('civ_build_refund', P + 'coop_civ_build_refund.py', minutes=4, fixture='civ')  # BUG-0807: a guest's building the host's game cannot build (the last plot taken by the host's in the same moment) gives its price back to the shared money (SPORE_FIX_OFF=civ.build_refund fails)
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
 add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell')  # creatures face as on the host on the guest; guest bites kill
@@ -969,10 +970,13 @@ add('tribe_mirror_anims', P + 'coop_tribe_mirror_anims.py', minutes=3, fixture='
 add('tribe_form_pace', P + 'coop_tribe_form_pace.py', minutes=3, fixture='tribe')  # BUG-0571: new villages at one player's food pace (party food over 100 x players), on the guest too (SPORE_FIX_OFF=tribe.form_pace fails)
 add('tribe_theme_music', P + 'coop_tribe_theme_music.py', minutes=3, fixture='tribe')  # BUG-0568: the guest's game plays the stage's fight theme music of its tribe (coop.audio; SPORE_FIX_OFF=tribe.theme_music fails)
 add('tribe_party_music', P + 'coop_tribe_party_music.py', minutes=4, fixture='tribe')  # BUG-0646: the guest's game plays the music of the dance at the fire pit (coop.audio; SPORE_FIX_OFF=tribe.party_music fails)
+add('tribe_party_editor', P + 'coop_tribe_party_music.py --editor', minutes=6, fixture='tribe')  # BUG-0890: the party music the host's game stops while the host is in its editor stops on the guest too (SPORE_FIX_OFF=tribe.party_stop fails)
 add('tribe_footsteps', P + 'coop_tribe_footsteps.py', minutes=3, fixture='tribe')  # BUG-0669: the guest's game plays the footsteps of the host's epic (coop.audio of the footstep path 0x9A6CBC with the epic flag, half the host's count; SPORE_FIX_OFF=npc.epic_steps fails)
 add('tribe_guest_baby', P + 'coop_tribe_guest_baby.py', minutes=3, fixture='tribe')  # BUG-0671: a member the guest buys at its hut is born in the host's game and is the guest's (SPORE_FIX_OFF=tribe.guest_baby fails)
 add('tribe_member_age', P + 'coop_tribe_member_age.py', minutes=7, fixture='tribe')  # BUG-0700: a baby of the player tribe grows up in the host's game and its mirror on the guest with it
 add('tribe_guest_baby_noeffects', P + 'coop_tribe_guest_baby.py --no-effects', minutes=3, fixture='tribe')  # BUG-0671 without the world effects relay: the host makes the guest's member itself (SPORE_FIX_OFF=tribe.guest_baby fails: no member)
+add('tribe_baby_pair', P + 'coop_tribe_baby_pair.py', minutes=4, fixture='tribe')  # BUG-0824: a member the host buys is the host's, also when a guest buys one in the same second; the guest never asks for the host's relayed purchase (SPORE_FIX_OFF=tribe.baby_pair fails)
+add('tribe_member_moves', P + 'coop_tribe_member_moves.py', minutes=8, fixture='tribe')  # BUG-0841 (evidence): no member joins the player tribe at an alliance or a conquest (every member of the player tribe has a player owner)
 add('tribe_fight_sounds', P + 'coop_tribe_fight_sounds.py', minutes=3, fixture='tribe')  # BUG-0600: the guest's game plays the fight's effect sounds and the combat voices of the host's members (coop.audio per sound id, 80 %; SPORE_FIX_OFF=mirror.fx fails)
 add('tribe_hit_impacts', P + 'coop_tribe_hit_impacts.py', minutes=3, fixture='tribe')  # BUG-0603: the guest's game plays the hit impacts of the host's members' attacks (an attack animation's per-target effects; coop.audio per sound id, 80 %; SPORE_FIX_OFF=effects.hit_targets fails)
 add('npc_frozen_death', P + 'coop_npc_frozen.py --case death', minutes=4, fixture='creature')  # BUG-0413: the host stands in its death caption, the guest walks off: the host's NPCs at the guest's new place are in its game (census; SPORE_FIX_OFF=npc.frozen_send fails)

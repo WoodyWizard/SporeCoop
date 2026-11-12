@@ -251,6 +251,10 @@ COOP_FIX("effects.release", "BUG-0451", g_release_fix,
 
 static double now() { return H ? H->time_seconds() : 0; }
 
+// BUG-0824: who wants to know of every world effect that starts here (this game's own and the relayed ones)
+static WorldStartFn g_world_start;
+void set_world_start_observer(WorldStartFn fn) { g_world_start = fn; }
+
 // The game's 0x44-byte Transform (VisualEffect_SetTransform 0xA827B0 as cCreatureBase's creators
 // build it): u16 flags, u16 change counter, Vec3 position at +4, uniform scale at +0x10, 3x3
 // rotation at +0x14. A world effect we relay gets the position the game put on it, scale 1 and the
@@ -587,6 +591,8 @@ static void process_world(void* fx, uint32_t id)
         g_watch_own = fx;
         g_watch_own_at = now();
     }
+    if (g_world_start)
+        g_world_start(C.sess->my_id(), id, fx, p);
     if (!C.near_local || !C.near_local(p)) {
         g_w_far++;
         if (g_log)
@@ -955,6 +961,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.x = p[0];
                 last.y = p[1];
                 last.z = p[2];
+                if (g_world_start)
+                    g_world_start(player, id, fx, net::Vec3{p[0], p[1], p[2]});
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
