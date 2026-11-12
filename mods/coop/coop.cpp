@@ -1661,6 +1661,12 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 // (docs/re/creations.md 7).
 bool g_own_editor = false; // the own editor was requested and the player has not left it yet
 static bool g_own_editor_charge_due = false; // BUG-0466: the own editor opened; its result charges once
+// BUG-0811: a refused Submit cleared g_own_editor but left the price due (the next editor result without the evolution
+// tag was charged as the own editor's), and the session end reset neither (the next editor of a later session waived the
+// part-list error). The game's own Submit (0x5A92C0) always returns 1: only the mod's hook refuses (its test capture),
+// so this is hardening. `coop.fix creations.own_editor_flags off`: as 0.7.11.
+static bool g_own_editor_flags_fix = true;
+COOP_FIX("creations.own_editor_flags", "BUG-0811", g_own_editor_flags_fix, "creature: a refused own editor request or the session end leaves no own-editor price or part waiver for a later editor");
 using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*, int);
 BlockingErrors_t o_BlockingErrors;
 unsigned g_part_list_waivers; // tests: how often the part-list error was waived
@@ -1785,8 +1791,11 @@ bool open_own_editor(uint32_t editor_id)
     g_own_editor_charge_due = true; // BUG-0466: its result charges the price
     bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
-    if (!r)
+    if (!r) {
         g_own_editor = false;
+        if (g_own_editor_flags_fix)
+            g_own_editor_charge_due = false; // BUG-0811: no editor, no price
+    }
     return r;
 }
 
