@@ -877,6 +877,9 @@ def main():
     capture_max = {}
     owners0 = {i: c['pol'] for i, c in hcit.items()}
     try:
+        tm = time.time()  # BUG-0924: the session's money reaches the guest ~5 s after the gift: the frame after it
+        while time.time() - tm < 10 and abs((money(hc) or 0) - (money(gc) or -1)) > 1:
+            time.sleep(0.5)
         keyframe('start', 'both games in Civilization: the cities and vehicles with their real models (no default cubes), the Civ HUD in place')
         kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and not game.stop:

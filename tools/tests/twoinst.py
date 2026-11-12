@@ -122,17 +122,62 @@ def set_stance(con, kind, w=1440, h=1080, tries=4):
 PLAYERS = {}  # {'host': Console, 'guest': Console} of the last start(): keyframe()'s default games
 
 
-def keyframe(tag, note, players=None, kind='key', extra=None):
+KEYFRAME_BUSY = ('cinematic', 'paused', 'editor', 'loading')  # BUG-0924: a frame at such a moment says nothing
+KEYFRAME_SETTLE = float(os.environ.get('SPORE_KEYFRAME_SETTLE', '20'))
+
+
+def _game_busy(con):
+    """the busy reasons of a game a key frame waits out (coop.status `busy:`, the editor modes), [] when none"""
+    try:
+        st = con.call('coop.status').get('out', '')
+        m = re.search(r'^busy: (\S+)', st, re.M)
+        why = [w for w in (m.group(1).split(',') if m else []) if w in KEYFRAME_BUSY]
+        if 'Editor' in con.call('game.mode').get('out', '') and 'editor' not in why:
+            why.append('editor')
+        return why
+    except (OSError, ValueError):
+        return []
+
+
+def keyframe_settle(players, settle=None):
+    """BUG-0924: wait (at most `settle` s) until no game of the frame plays a cinematic or a caption, stands in a
+    pause (the pause menu, a planner), sits in an editor or loads; {role: [reasons]} still busy at the end"""
+    settle = KEYFRAME_SETTLE if settle is None else settle
+    t0 = time.time()
+    cons = {}
+    for r, c in players.items():  # own connections: a bot thread may be using the test's console now
+        try:
+            cons[r] = Console(c.port - 47799, timeout=15)
+        except (OSError, ValueError):
+            pass
+    try:
+        while True:
+            busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
+            if not busy or time.time() - t0 >= settle:
+                return busy, time.time() - t0
+            time.sleep(0.5)
+    finally:
+        for c in cons.values():
+            c.sock and c.sock.close()
+
+
+def keyframe(tag, note, players=None, kind='key', extra=None, settle=None):
     """a key frame (docs/06-testing.md#testing-key-frames): every game of the test is shot at the same moment
     (one thread each), stored as a ~960 px JPEG in <run>/frames/<test>/<nn>_<tag>_<role>.jpg with a manifest line
     (the note says what should be visible; each game's mode and position). players: {role: Console}, default the
     host and guest of start(); kind 'key', 'phase' (a campaign's phase end) or 'sameview'. Never fails the test:
-    a game that does not answer gets ok=false in the manifest. Returns the manifest entry (None on an error)."""
+    a game that does not answer gets ok=false in the manifest. Returns the manifest entry (None on an error).
+    BUG-0924: first waits (settle s, SPORE_KEYFRAME_SETTLE, default 20; 0: at once) until no game is in a cinematic,
+    a pause, an editor or a load; a game still busy then is named in the manifest's extra (`busy role: why`)."""
     import frames
     try:
         players = dict(players or PLAYERS)
         if not players:
             return None
+        busy, waited = keyframe_settle(players, settle) if (settle is None or settle > 0) else ({}, 0.0)
+        if busy or waited >= 1:
+            extra = list(extra or []) + [f'busy {r}: {",".join(b)}' for r, b in sorted(busy.items())] + \
+                ([f'waited {waited:.1f} s for the games to settle'] if waited >= 1 else [])
         d = frames.frames_dir(lane.out_dir())
         nn = frames.next_number(d)
         tmp = lane.out_dir('shots', 'keyframes')
