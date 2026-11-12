@@ -40,5 +40,6 @@ void set_destroy_listener(DestroyListener fn);
 // tests (BUG-0850): count the game's DestroyInstance calls of one object from now on (nullptr: stop); false: no hook
 bool count_destroys(void* obj);
 unsigned destroys_counted();
+bool destroy_hooked(); // the DestroyInstance hook is in (game::listed keeps its frame's list exact through it)
 
 } // namespace gamefixes

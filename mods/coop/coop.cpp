@@ -552,6 +552,17 @@ void* local_now()
     return nullptr;
 }
 
+void* puppet_now(const Remote& r);
+// BUG-0426 class (L1 of 0.7.13): player id's Creature puppet, only while it is the live object made for it
+void* creature_puppet_live(uint8_t id)
+{
+    auto it = g_remotes.find(id);
+    if (it == g_remotes.end() || !it->second.puppet || !creature_puppet(it->second.puppet_adapter))
+        return nullptr;
+    void* p = puppet_now(it->second);
+    return p && game::creature_listed(p) ? p : nullptr;
+}
+
 void* puppet_now(const Remote& r)
 {
     if (!r.puppet || !r.puppet_adapter || !modes::stale_fix)
@@ -4284,6 +4295,9 @@ void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool 
 
 uint32_t g_anims_rx = 0, g_anims_played = 0;
 
+static bool g_anim_creature_only_fix = true;
+COOP_FIX("core.anim_creature_only", "BUG-0796", g_anim_creature_only_fix, "creature: a partner's animation is never played on its cell or its Tribe marker around a stage switch (the game read a creature's animation data there)");
+uint32_t g_anims_not_creature = 0;
 void on_remote_anim(const net::AnimEvent& ev)
 {
     g_anims_rx++;
@@ -4292,6 +4306,14 @@ void on_remote_anim(const net::AnimEvent& ev)
     auto it = g_remotes.find(ev.id);
     if (it == g_remotes.end() || !it->second.puppet)
         return;
+    // BUG-0796: a partner's animation is a creature's (cCreatureBase::PlayAnimation reads the animated creature at
+    // +0xB54): around a stage switch the puppet can be a Cell cell (a pool slot) or a Tribe marker (a heap object of
+    // 40 bytes), and the reliable MSG_ANIM still comes. Dropped unless the puppet is a live Creature one.
+    // Old (`coop.fix core.anim_creature_only off`): only a creature puppet was checked, any other one was played on.
+    if (g_anim_creature_only_fix && !creature_puppet(it->second.puppet_adapter)) {
+        g_anims_not_creature++;
+        return;
+    }
     if (creature_puppet(it->second.puppet_adapter) && !game::creature_listed(it->second.puppet)) {
         if (g_frame_fix) { // freed by a teardown the mod has not seen yet (BUG-0091)
             g_anims_dropped++;
@@ -5335,6 +5357,96 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_gamekill((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
+    // tests (BUG-0426 class, L1): reusehunt <hex address | p<proxy id> | puppet> [frames] [flags]: hunt for a new creature
+    // at the address (npc.cpp ReuseHunt); reusehunt alone: its status
+    // guest (tests, BUG-0805): handlerkill <id> damage|prompt [anim hex]: the game destroys proxy <id>'s creature
+    // (DestroyInstance, no bookkeeping: the proxy still names it, as before the next npc tick), then in the same call a
+    // host message about that proxy is handled: damage = the host says the guest was hit by it (MSG_DAMAGE),
+    // prompt = its social prompt (MSG_SOCIAL K_PROMPT)
+    if (argc > 3 && !strcmp(argv[1], "handlerkill")) {
+        uint16_t id = (uint16_t)atoi(argv[2]);
+        void* c = npc::debug_proxy_creature(id);
+        if (!c || !game::creature_listed(c) || !g_sess.connected() || g_sess.role() != net::Role::Client) {
+            SAY("no live proxy %u (a guest's)\n", id);
+            return 1;
+        }
+        uint32_t d0 = npc::handler_dropped();
+        game::destroy_untracked(c);
+        net::Writer w;
+        if (!strcmp(argv[3], "damage")) {
+            net::Damage d;
+            d.player = g_sess.my_id();
+            d.damage = 0.1f;
+            d.attacker = id;
+            d.write(w);
+            net::Reader r(w.data.data(), w.data.size());
+            npc::on_message(net::MSG_DAMAGE, 0, r);
+        } else {
+            w.u8(5); // K_PROMPT
+            w.u16(id);
+            w.u8(0);
+            w.u8(1);
+            w.u32(0);
+            w.u32(0);
+            w.u32(argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0x0F3A8D11u);
+            net::Reader r(w.data.data(), w.data.size());
+            social::on_message(net::MSG_SOCIAL, 0, r);
+        }
+        SAY("handlerkill: proxy %u's creature %p destroyed by the game, %s handled; calls dropped %u (BUG-0805)\n", id, c,
+            argv[3], npc::handler_dropped() - d0);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "settle")) { // guest (tests, BUG-0842): settle <s>
+        SAY("%s", npc::debug_settle(atof(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "reusehunt")) {
+        if (argc < 3) {
+            SAY("%s", npc::debug_reuse_status().c_str());
+            return 0;
+        }
+        void* t = nullptr;
+        if (argv[2][0] == 'p' && argv[2][1] != 'u')
+            t = npc::debug_proxy_creature((uint16_t)atoi(argv[2] + 1));
+        else if (!strcmp(argv[2], "puppet")) {
+            for (auto& [id, r] : g_remotes)
+                if (r.puppet && creature_puppet(r.puppet_adapter))
+                    t = r.puppet;
+        } else
+            t = (void*)strtoul(argv[2], nullptr, 16);
+        if (!t) {
+            SAY("no such object");
+            return 1;
+        }
+        const char* fl = argc > 4 ? argv[4] : "";
+        if (strchr(fl, 'H')) { // H: t is a herd; the tries are herds of the avatar's species (BUG-0843)
+            bool hl = game::listed(t, game::kHerdNoun);
+            net::Vec3 hat = game::avatar() ? game::position(game::avatar()) : net::Vec3{};
+            if (fl[0] == 'x' && hl)
+                game::destroy_untracked(t);
+            SAY("%s%s", fl[0] == 'x' && hl ? "herd destroyed by the game; " : hl ? "" : "(not a listed herd) ",
+                npc::debug_reuse_hunt(t, argc > 3 ? atoi(argv[3]) : 120, nullptr, 0, 1, nullptr, &hat, true).c_str());
+            return 0;
+        }
+        bool listed = game::creature_listed(t);
+        void* sp = listed && !strchr(fl, 'a') ? game::species_profile(t) : nullptr; // a: of the avatar's species
+        void* herd = listed && strchr(fl, 'h') ? game::herd_of(t) : nullptr; // h: in the herd the target was in
+        net::Vec3 at = listed ? game::position(t) : net::Vec3{};
+        // x: the game destroys it first (DestroyInstance, no bookkeeping of ours); n: the first tries run now, in this
+        // call (no frame of ours between); b<N>: N creatures per tick (the first tick after the destroy is in the frame
+        // the game frees it in)
+        bool x = fl[0] == 'x';
+        if (x && listed)
+            game::destroy_untracked(t);
+        int now_tries = strchr(fl, 'n') ? (argc > 5 ? atoi(argv[5]) : 40) : 0;
+        const char* bb = strchr(fl, 'b');
+        int burst = bb ? std::max(1, atoi(bb + 1)) : 1;
+        SAY("%s%s", x ? "destroyed by the game; " : "",
+            npc::debug_reuse_hunt(t, argc > 3 ? atoi(argv[3]) : 120, sp, now_tries, burst, herd, &at, false,
+                                  strchr(fl, 'r') != nullptr).c_str()); // r: Create with its reuse flag
+        SAY("%s", npc::debug_reuse_status().c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "forget")) { // guest (tests, BUG-0487): forget <id>
         SAY("%s", npc::debug_forget((uint16_t)atoi(argv[2])).c_str());
         return 0;
@@ -5679,6 +5791,23 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
 {
+    // tests (BUG-0796): animrx <player id> <hex anim> [n]: as if player id's MSG_ANIM arrived n times (default 1), whatever
+    // stage this game shows that player in (a cell in Cell, a marker in Tribe)
+    if (argc > 3 && !strcmp(argv[1], "animrx")) {
+        net::AnimEvent ev;
+        ev.id = (uint8_t)atoi(argv[2]);
+        ev.anim = (uint32_t)strtoul(argv[3], nullptr, 16);
+        int n = argc > 4 ? std::max(1, atoi(argv[4])) : 1;
+        uint32_t played0 = g_anims_played;
+        for (int i = 0; i < n; i++)
+            on_remote_anim(ev);
+        auto it = g_remotes.find(ev.id);
+        SAY("animrx: %d delivered to player %u (puppet %p, %s): played=%u not_creature=%u\n", n, ev.id,
+            it != g_remotes.end() ? it->second.puppet : nullptr,
+            it != g_remotes.end() && it->second.puppet_adapter ? it->second.puppet_adapter->name : "-",
+            g_anims_played - played0, g_anims_not_creature);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "animsend")) { // tests: as if the avatar played animation <hex> (BUG-0091)
         void* av = game::avatar();
         if (av)
@@ -6395,8 +6524,9 @@ int c_framefix(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1)
         g_frame_fix = atoi(argv[1]) != 0;
     SAY("frame order fix %s: calls on a puppet the game no longer lists: anims dropped=%u made=%u, despawns "
-        "dropped=%u made=%u\n",
-        g_frame_fix ? "on" : "off", g_anims_dropped, g_anims_unlisted, g_despawns_dropped, g_despawns_unlisted);
+        "dropped=%u made=%u; anims for a puppet that is no creature dropped=%u (BUG-0796)\n",
+        g_frame_fix ? "on" : "off", g_anims_dropped, g_anims_unlisted, g_despawns_dropped, g_despawns_unlisted,
+        g_anims_not_creature);
     return 0;
 }
 
@@ -6496,6 +6626,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         auto it = g_remotes.find(id);
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
+    ctx.puppet_live = [](uint8_t id) { return creature_puppet_live(id); };
     ctx.player_pos = [](uint8_t id, net::Vec3& pos) {
         auto it = g_remotes.find(id);
         if (it == g_remotes.end() || it->second.buf.empty())
@@ -6539,6 +6670,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             auto it = g_remotes.find(id);
             return it == g_remotes.end() ? nullptr : it->second.puppet;
         };
+        pc.puppet_live = [](uint8_t id) { return creature_puppet_live(id); };
         pc.airborne = [](uint8_t id) {
             auto it = g_remotes.find(id);
             return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_JUMPING);
@@ -6557,6 +6689,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             auto it = g_remotes.find(id);
             return it == g_remotes.end() ? nullptr : it->second.puppet;
         };
+        ec.puppet_live = [](uint8_t id) { return creature_puppet_live(id); };
         ec.all_puppets = [] {
             std::vector<std::pair<uint8_t, void*>> v;
             for (auto& [id, r] : g_remotes)
@@ -6749,6 +6882,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s\n", game::live_status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",

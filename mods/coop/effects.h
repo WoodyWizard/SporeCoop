@@ -25,6 +25,9 @@ namespace effects {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void*(uint8_t id)> puppet_of; // the creature of player `id` on this game
+    // BUG-0426 class (L1): player id's Creature puppet only while it is the live object made for it (listed, its serial,
+    // this frame's world); a Cell cell, a Tribe marker, a freed or reused one: null
+    std::function<void*(uint8_t id)> puppet_live;
     std::function<std::vector<std::pair<uint8_t, void*>>()> all_puppets; // every partner's puppet
     // true when a world position is on the local player's own controlled object (the avatar in
     // Creature / Cell, the tribe members in Tribe, the vehicles in Civ, the UFO in Space)

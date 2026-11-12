@@ -12,6 +12,8 @@
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
+#include "gamefixes.h"
+#include <unordered_map>
 
 using namespace skg;
 
@@ -1494,14 +1496,14 @@ void* avatar_herd()
     return nm ? field<void*>(nm, kNounAvatarHerdOff) : nullptr;
 }
 
-void* spawn_creature(const net::Vec3& pos, void* species, void* herd)
+void* spawn_creature(const net::Vec3& pos, void* species, void* herd, bool reuse)
 {
     if (!g_ready || !species || !herd)
         return nullptr;
     Vector3 p{pos.x, pos.y, pos.z};
     // static cCreatureAnimal* Create(const Vector3&, cSpeciesProfile*, int age,
     //                                cHerd*, bool isAvatar, bool reuse)   (cdecl)
-    return cdecl_call<void*>(a_CreatureCreate, &p, species, 1, herd, 0, 0);
+    return cdecl_call<void*>(a_CreatureCreate, &p, species, 1, herd, 0, reuse ? 1 : 0);
 }
 
 // A cinematic of the creature stage (CRG_ClaimNest, CRG_SpeciesMigrate, ...) takes creatures as
@@ -2089,8 +2091,120 @@ void puppet_unregister(void* c)
 bool is_puppet(void* c) { return std::find(g_puppets.begin(), g_puppets.end(), c) != g_puppets.end(); }
 const std::vector<void*>& puppets() { return g_puppets; }
 
+// ---- the object list of this frame (BUG-0426 class, L1 of 0.7.13; game.h listed / LiveRef) ----
+// `coop.fix game.listed_frame off`: every listed() walks the whole list (the 0.7.12 creature_listed), nothing kept.
+static bool g_listed_frame_fix = true;
+COOP_FIX("game.listed_frame", "BUG-0426", g_listed_frame_fix, "all: one walk of the game's object list per frame answers whether a kept pointer is still a live object (kept exact by the game's destroys)");
+static std::unordered_map<const void*, uint32_t> g_live; // object -> noun
+static uint64_t g_live_frame = ~0ull;
+static uint32_t g_live_counter = 0, g_live_epoch = ~0u;
+static bool g_live_dirty = true;
+static uint32_t g_live_walks, g_live_rewalks, g_live_destroys, g_live_hits, g_live_misses;
+static const uint32_t* serial_counter()
+{
+    // cGameNounManager::CreateInstance: `inc [0x167BE28]; mov [esi+0x24],eax` (docs/re/space.md#space-object-serial)
+    static const uint32_t* p = H ? (const uint32_t*)H->sym("SporeCoop::NounSerialCounter") : nullptr;
+    return p;
+}
+static void live_walk()
+{
+    g_live.clear();
+    for_each_object(
+        [](void* o, uint32_t noun, void*) {
+            if (object_alive(o))
+                g_live[o] = noun;
+            return true;
+        },
+        nullptr);
+    const uint32_t* sc = serial_counter();
+    g_live_counter = sc ? *sc : 0;
+    g_live_frame = H ? H->frame_index() : 0;
+    g_live_dirty = false;
+    g_live_walks++;
+}
+static bool scan_listed(const void* c, uint32_t noun)
+{
+    struct F {
+        const void* c;
+        uint32_t noun;
+        bool found;
+    } f{c, noun, false};
+    for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            auto* f = (F*)u;
+            if (o != f->c)
+                return true;
+            f->found = (!f->noun || n == f->noun) && object_alive(o);
+            return false;
+        },
+        &f);
+    return f.found;
+}
+bool listed(const void* obj, uint32_t noun)
+{
+    if (!obj || !g_ready)
+        return false;
+    // (no destroy hook: a destroy inside the frame would not be seen, so every question walks the list)
+    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !g_main_tid.load() || !fx_main_thread())
+        return scan_listed(obj, noun);
+    uint64_t f = H->frame_index();
+    uint32_t ep = world_epoch();
+    if (f != g_live_frame || ep != g_live_epoch || g_live_dirty) {
+        live_walk();
+        g_live_epoch = ep;
+    }
+    auto it = g_live.find(obj);
+    if (it == g_live.end()) {
+        const uint32_t* sc = serial_counter();
+        if (sc && *sc != g_live_counter) { // made by the game in this frame: walk again
+            live_walk();
+            g_live_rewalks++;
+            it = g_live.find(obj);
+        }
+    }
+    if (it == g_live.end()) {
+        g_live_misses++;
+        return false;
+    }
+    // listed in this frame and not destroyed through the hook since: its memory is the object's
+    if ((noun && it->second != noun) || field<uint8_t>((void*)obj, 0x21)) {
+        g_live_misses++;
+        return false;
+    }
+    g_live_hits++;
+    return true;
+}
+LiveRef live_ref(void* obj, uint32_t noun)
+{
+    LiveRef r;
+    if (!listed(obj, noun))
+        return r;
+    r.p = obj;
+    r.serial = object_serial(obj);
+    r.noun = noun;
+    return r;
+}
+bool alive(const LiveRef& r) { return r.p && listed(r.p, r.noun) && object_serial(r.p) == r.serial; }
+void note_destroyed(void* obj)
+{
+    if (g_live.erase(obj))
+        g_live_destroys++;
+}
+void note_created() { g_live_dirty = true; }
+bool listed_exact() { return g_listed_frame_fix && gamefixes::destroy_hooked(); }
+std::string live_status()
+{
+    char b[240];
+    snprintf(b, sizeof b, "listed: fix=%d hooked=%d counter=%d objects=%u walks=%u rewalks=%u destroys=%u hits=%u misses=%u",
+             (int)g_listed_frame_fix, (int)gamefixes::destroy_hooked(), (int)(serial_counter() != nullptr),
+             (unsigned)g_live.size(), g_live_walks, g_live_rewalks, g_live_destroys, g_live_hits, g_live_misses);
+    return b;
+}
+
 bool creature_listed(void* c)
 {
+    if (g_listed_frame_fix)
+        return listed(c, 0x18EB45Eu);
     struct F {
         void* c;
         bool found;

@@ -21,6 +21,20 @@ namespace effects {
 static const SkHost* H;
 static SkMod* M;
 static Ctx C;
+// BUG-0795 (class BUG-0426): a partner's effect message was played on the raw puppet pointer: one the game freed
+// between two frames (a teardown, the UFO abduction BUG-0520, the game's own destroy) or a Cell cell / Tribe marker
+// after a stage switch went into the game's effect code (cCreatureBase effect pool) on freed or foreign memory. Now
+// only on a Creature puppet that is the live object made for that player (game::listed and its serial, this frame's
+// world); the message is dropped otherwise (coop.effects: gone=). Old (`coop.fix effects.puppet_live off`): raw.
+static bool g_puppet_live_fix = true;
+COOP_FIX("effects.puppet_live", "BUG-0795", g_puppet_live_fix, "creature: a partner's effect is only played on its creature while that creature is still alive in this game (the game's effect code ran on a freed one)");
+static uint32_t g_puppet_gone;
+static void* partner_puppet(uint8_t player)
+{
+    if (g_puppet_live_fix)
+        return C.puppet_live ? C.puppet_live(player) : nullptr;
+    return C.puppet_of ? C.puppet_of(player) : nullptr;
+}
 
 // BUG-0451: the whole class of creature effects, relayed from the game's one effect path.
 static bool g_fix = true;
@@ -141,7 +155,7 @@ static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
     } else if (pool == 3) {
         // the game indexes the model's bone array (stride 0x2bc = 700) with this index and does not
         // check it (cCreatureBase::CreateEffect 0xC150D0); the array's end gives the count
-        void* puppet = C.puppet_of ? C.puppet_of(player) : nullptr;
+        void* puppet = partner_puppet(player);
         if (!puppet || !game::creature_bone_ok(puppet, (int32_t)key)) {
             g_bad_bone++;
             return false;
@@ -890,7 +904,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             H->log(M, SK_INFO, "effect: from %u world id %08X not played: a skin painter effect here", player, id);
         return;
     }
-    void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : (C.puppet_of ? C.puppet_of(player) : nullptr);
+    void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : partner_puppet(player);
+    if (!puppet && pool != 5 && g_puppet_live_fix && C.puppet_of && C.puppet_of(player)) {
+        g_puppet_gone++; // BUG-0795: a puppet that is no live creature of this game now (freed, a cell, a marker)
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u skipped, its puppet is no live creature here (id %08X key %08X)", player, id, key);
+        return;
+    }
     if (!puppet) {
         g_skipped++;
         if (g_log)
@@ -986,7 +1006,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     g_tokens = 20.0;
     g_tokens_at = 0;
-    g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
+    g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = g_puppet_gone = 0;
     g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
     g_elsewhere_tx = g_elsewhere_rx = 0;
     g_w_foreign = g_w_foreign_near = g_rx_foreign = 0;
@@ -1097,7 +1117,7 @@ std::string map_dump()
     }
     if (C.all_puppets)
         for (const auto& [id, puppet] : C.all_puppets()) {
-            if (!puppet)
+            if (!puppet || (g_puppet_live_fix && partner_puppet(id) != puppet)) // (BUG-0795, BUG-0919)
                 continue;
             snprintf(b, sizeof b, "puppet %u %p\n", id, puppet);
             s += b;
@@ -1119,7 +1139,7 @@ std::string probe(uint32_t key)
     }
     if (C.all_puppets)
         for (const auto& [id, puppet] : C.all_puppets()) {
-            if (!puppet)
+            if (!puppet || (g_puppet_live_fix && partner_puppet(id) != puppet)) // (BUG-0795, BUG-0919)
                 continue;
             void* fx = game::effect_from_pools(puppet, key);
             snprintf(b, sizeof b, "probe %u key=%08X game=%p active=%d\n", id, key, fx, game::effect_active(fx) ? 1 : 0);
@@ -1159,8 +1179,8 @@ std::string status()
     std::string s;
     char b[480];
     snprintf(b, sizeof b,
-             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
-             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
+             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u gone=%u\n",
+             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world, g_puppet_gone);
     s += b;
     uint32_t creates = 0, probes = 0, evicted = 0, mgr = 0, world = 0, anim = 0;
     game::effect_table_stats(creates, probes, evicted, mgr, world, anim);

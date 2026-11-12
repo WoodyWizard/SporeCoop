@@ -645,6 +645,7 @@ bool count_destroys(void* obj)
     return g_destroy_orig != nullptr;
 }
 unsigned destroys_counted() { return g_count_n; }
+bool destroy_hooked() { return g_destroy_orig != nullptr; }
 // BUG-0926 (RE, tests): who still names a destroyed creature. The last creatures destroyed (address, when, whether a
 // puppet of ours) are kept; `coop.staleref [index]` scans the process's writable memory for pointers into such a
 // creature's block and says where each one sits: inside a listed object (noun, offset), inside a creature's AI block,
@@ -789,6 +790,7 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
         g_destroyed[g_destroyed_n++ % 8] = {(uint8_t*)obj, H->time_seconds(), game::is_puppet(obj), game::object_serial(obj)};
     if (obj && obj == g_count_obj)
         g_count_n++;
+    game::note_destroyed(obj); // (BUG-0426: the object list of this frame, game::listed)
     if (g_destroy_listener && obj)
         g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
     if (g_stale_sender_fix && obj && readable(obj, 0x30)) {

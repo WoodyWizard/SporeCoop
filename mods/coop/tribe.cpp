@@ -296,8 +296,28 @@ struct GMember {
     net::Vec3 test_undo_at{};   // and its walk: where it is held
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
     const char* not_made = nullptr; // BUG-0685: why no mirror was made for it last time (logged when it changes)
+    uint32_t serial = 0;            // BUG-0844: c's cGameData::mID when it was bound
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
+// BUG-0844 (class BUG-0426): a mirror's citizen was kept across frames and checked by its own memory (object_alive):
+// the game frees a removed citizen later and gives the block to the next citizen it makes (a member of any tribe,
+// the guest's own too). While the host's states paused (its editor, the fork's graduation report) the mirror stayed
+// bound to that address: the guest then drove a member of another tribe as the host's member, and the snapshot's end
+// called RemoveMember through the citizen's owner field (garbage in a freed block: the fork's crash in
+// remove_member). Now a mirror's citizen is used only while it is the object bound (the object list of the frame and
+// its serial), and RemoveMember runs only on a live tribe that has it in its member vector; a citizen that is not is
+// only forgotten. Old (`coop.fix tribe.mirror_member_lifetime off`): object_alive and the owner field.
+static bool g_member_lifetime_fix = true;
+COOP_FIX("tribe.mirror_member_lifetime", "BUG-0844", g_member_lifetime_fix, "tribe: a guest never moves or removes another tribe's member that the game built where a removed copy of a host's member was");
+static uint32_t g_mirror_stale, g_remove_refused;
+static bool mirror_ok(const GMember& g)
+{
+    if (!g.c)
+        return false;
+    if (!g_member_lifetime_fix)
+        return game::object_alive(g.c);
+    return game::alive(game::LiveRef{g.c, g.serial, 0x18EB4B7u}); // (kCitizenNoun)
+}
 // BUG-0685: a guest's log says when a member mirror goes and why one is not made again (at most kMirrorLogMax lines;
 // a mirror's "not made" line only when its reason changes)
 constexpr uint32_t kMirrorLogMax = 60;
@@ -2278,8 +2298,32 @@ static void restore_body_tribe(void* c, void* t)
     g_teardown_restored++;
 }
 
+// BUG-0844: c is a live citizen and a live tribe of the world has it in its member vector: that tribe (else null)
+static void* tribe_holding(void* c)
+{
+    if (!game::listed(c, 0x18EB4B7u)) // (kCitizenNoun)
+        return nullptr;
+    for (void* t : all_tribes()) {
+        void** b = F<void**>(t, kMembersOff);
+        void** e = F<void**>(t, kMembersOff + 4);
+        for (void** it = b; it && it < e && it - b < 1024; ++it)
+            if (*it == c)
+                return t;
+    }
+    return nullptr;
+}
 static void remove_member(void* c)
 {
+    if (g_member_lifetime_fix && !g_detached.count(c)) {
+        void* lt = tribe_holding(c);
+        if (!lt) {
+            g_remove_refused++;
+            MIRROR_LOG("tribe: %p is no member of a live tribe (freed, or another object there): forgotten, not removed (BUG-0844)", c);
+            return;
+        }
+        vcall<void>(lt, 0x9C / 4, c, 1); // RemoveMember(c, destroy) on the tribe that holds it
+        return;
+    }
     void* t = F<void*>(c, kOwnerTribeOff);
     if (t)
         vcall<void>(t, 0x9C / 4, c, 1); // RemoveMember(c, destroy)
@@ -2774,8 +2818,10 @@ static void guest_state(net::Reader& r)
             g.buf.smooth_max = kMirrorSmoothMax; // BUG-0619 (drive.lead_smooth)
             g.buf.push(ps, now);
         }
-        if (c && !game::object_alive(c)) {
+        if (c && !mirror_ok(g)) { // (BUG-0844: also another object at its address)
             MIRROR_LOG("tribe: mirror #%u: its object is gone (not removed by the mod, BUG-0685)", id);
+            if (g_member_lifetime_fix && game::object_alive(c))
+                g_mirror_stale++;
             g_gid_of.erase(c);
             g.c = c = nullptr;
         }
@@ -2823,6 +2869,7 @@ static void guest_state(net::Reader& r)
             MIRROR_LOG("tribe: mirror #%u is made again (BUG-0685)", id);
         g.not_made = nullptr;
         g.c = c;
+        g.serial = game::object_serial(c); // BUG-0844
         g_gid_of[c] = id;
     }
     if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
@@ -2838,7 +2885,7 @@ static void guest_state(net::Reader& r)
     // the host does not know (the guest's tribes are only mirrors)
     for (auto it = g_gm.begin(); it != g_gm.end();) {
         if (!g_cycle_ids.count(it->first)) {
-            if (it->second.c && game::object_alive(it->second.c)) {
+            if (mirror_ok(it->second)) { // (BUG-0844)
                 MIRROR_LOG("tribe: mirror #%u goes: the host's snapshot has it no more%s (BUG-0685)", it->first,
                            g_detached.count(it->second.c) ? " (a body)" : "");
                 remove_member(it->second.c);
@@ -3043,7 +3090,7 @@ static void guest_tick(double now)
     if (local_play())
         return; // the last states would hold the members for 3 s
     for (auto& [id, g] : g_gm) {
-        if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
+        if (!mirror_ok(g) || now - g.seen > 3.0) // (BUG-0844)
             continue;
         g.ds.drawn = game::position(g.c); // coop.track (BUG-0365): where the game drew it this frame
         if (g_fix_ko && g.hp <= 0) {
@@ -4076,8 +4123,57 @@ PLAYER_STATE("tribe.held_cmds", [](uint8_t id) { g_cmd_held.forget(id); }, // BU
              });
 static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
 
+// tests (BUG-0844, class BUG-0426): mirror <id>'s citizen is removed by the game (RemoveMember with destroy on its
+// tribe, no bookkeeping of ours: the mirror still names it), then once a frame a member is made in the guest's own
+// tribe (removed again unless it is at the freed address) until the game gives it that block
+struct TribeHunt {
+    uint8_t* target = nullptr;
+    uint16_t id = 0;
+    int left = 0, tries = 0;
+    void* hit = nullptr;
+    uint32_t hit_serial = 0;
+};
+static TribeHunt g_th;
+static void tribe_hunt_tick()
+{
+    if (g_th.left <= 0 || !g_th.target)
+        return;
+    g_th.left--;
+    void* t = player_tribe();
+    if (!t)
+        return;
+    void* c = spawn_member(t, 1);
+    g_th.tries++;
+    if (!c)
+        return;
+    if ((uint8_t*)c == g_th.target) {
+        g_th.hit = c;
+        g_th.hit_serial = game::object_serial(c);
+        g_th.left = 0;
+        H->log(M, SK_INFO, "tribe reuse: the freed citizen address %p holds a new member of the player tribe (serial %u, try %d)",
+               c, g_th.hit_serial, g_th.tries);
+        return;
+    }
+    vcall<void>(t, 0x9C / 4, c, 1);
+}
+static std::string tribe_hunt_status()
+{
+    char b[400];
+    bool l = g_th.hit && game::listed(g_th.hit, kCitizenNoun) && game::object_serial(g_th.hit) == g_th.hit_serial;
+    net::Vec3 q = l ? game::position(g_th.hit) : net::Vec3{};
+    auto it = g_gm.find(g_th.id);
+    net::Vec3 want = it != g_gm.end() ? it->second.pos : net::Vec3{};
+    auto gi = l ? g_gid_of.find(g_th.hit) : g_gid_of.end();
+    snprintf(b, sizeof b, "tribe reuse target=%p mirror=%u left=%d tries=%d hit=%p alive=%d own_tribe=%d pos=(%.2f %.2f %.2f) "
+             "host_member=(%.2f %.2f %.2f) bound_as=%d stale=%u refused=%u\n", (void*)g_th.target, g_th.id, g_th.left,
+             g_th.tries, g_th.hit, (int)l, (int)(l && tribe_holding(g_th.hit) == player_tribe()), q.x, q.y, q.z, want.x,
+             want.y, want.z, gi != g_gid_of.end() ? (int)gi->second : -1, g_mirror_stale, g_remove_refused);
+    return b;
+}
+
 void tick(double now)
 {
+    tribe_hunt_tick();
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
     if (!active())
@@ -4920,6 +5016,29 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "frametool armed: tribe %d type %d (mapped=%u)", g_frame_tool.ix, g_frame_tool.type,
                  (unsigned)g_local_tribe_of.size());
         return b;
+    }
+    if (a.size() >= 1 && a[0] == "reusehunt" && is_guest()) { // reusehunt [<mirror id> [frames]]: BUG-0844 (tests)
+        if (a.size() < 2)
+            return tribe_hunt_status();
+        auto it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        // any: the first mirror with a living member of a live tribe, alive on the host, seen now; npc: of a tribe that
+        // is not the guest's player tribe (the new member is made in the player tribe: another tribe's)
+        if (a[1] == "any" || a[1] == "npc")
+            for (it = g_gm.begin(); it != g_gm.end(); ++it)
+                if (it->second.c && it->second.hp > 0 && !it->second.body && H->time_seconds() - it->second.seen < 1.0 &&
+                    !g_detached.count(it->second.c) && tribe_holding(it->second.c) && !game::is_dead(it->second.c) &&
+                    (a[1] == "any" || tribe_holding(it->second.c) != player_tribe()))
+                    break;
+        void* c = it != g_gm.end() ? it->second.c : nullptr;
+        void* lt = c ? tribe_holding(c) : nullptr;
+        if (!lt || g_detached.count(c))
+            return "no mirror with a member of a live tribe\n";
+        g_th = TribeHunt{};
+        g_th.target = (uint8_t*)c;
+        g_th.id = it->first;
+        g_th.left = a.size() > 2 ? atoi(a[2].c_str()) : 150;
+        vcall<void>(lt, 0x9C / 4, c, 1); // the game's removal (RemoveMember with destroy): the mirror still names it
+        return "mirror's citizen removed by the game; " + tribe_hunt_status();
     }
     if (a.size() >= 2 && a[0] == "statehold" && is_guest()) { // statehold 1|0: tests (BUG-0672), the host's tribe
         // states are ignored (the mapping of host tribe index -> this game's tribe stays as it is, as before the first
