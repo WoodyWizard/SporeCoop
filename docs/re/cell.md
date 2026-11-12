@@ -2212,3 +2212,20 @@ GOG 2024, lab lanes 2 / 3 (tests in docs/06-testing.md#testing-cell-c1). BUG-079
   Creature fall-off in Cell, lab 20261112-065254 / -065045): a cell slows down over ~1 s and the state's velocity is
   the cell's +0x90 (? small for the soft-body avatar: inferred, not read), so the 0.25 s of extrapolation adds
   nothing visible. The switch tried (drive.cell_fall) was taken out.
+
+## A guest's poison clouds hurt the host's creatures (2026-11-12, fix/w48-small)
+<a id="cell-poison-damage"></a>
+
+BUG-0892. Lab lane 3, cell fixture (`coop_cell_parts_attack.py --part poison`).
+* ✔ (runtime) The clouds the host's game makes for a guest's puppet (puppet_poison, the graft in the puppet's model data)
+  hurt a creature that touches them: put onto 7 new clouds (`coop.pool place`) the creature lost 6 hp in the host's game
+  (57 -> 51, 60 -> 54), and the guest's mirror showed it. With cell.puppet_poison off the puppet made no cloud in that
+  run (the game's own poison step did not run for it: the "it runs by itself" of #cell-c1-0713 needs the shared model
+  data at the moment the step looks; here nothing came).
+* ✔ The poison step needs the puppet's GFX in the host's game (`borrow status x p<id>`: gfx=0 with the host's cell 14 m
+  and 45 m away, no cloud): the host's camera must show the puppet.
+* ✔ puppet_poison lends the puppet the avatar index for its step, so in the cloud maker (h_Cloud) the maker of a
+  partner's cloud is `avatar()` too: tell them apart with `modes::cell_is_puppet(maker)`.
+* CORRECTION (2026-11-12, fix/w48-small, BUG-0892): "with the poison values written into a model's data ... it lost
+  nothing (lab 20261108-044202)" (#cell-electric-attack) is superseded for the damage: the creature then stood next to
+  the clouds and never touched one; on a cloud it loses health.

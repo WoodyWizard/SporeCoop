@@ -81,3 +81,9 @@ adventure "The Arena of Oorama" from the galaxy menu).
   sky was the host's, 0.0 degrees apart (lab 20261112-122031). With `wsync.tod` on (since BUG-0579, the default) the
   packet is not applied by a guest and the wsync sky row is not in play in kScenario, so the default build already kept
   each captain's own sky; `wsync.adventure_sky` also stops the host's send and the legacy apply in an adventure.
+* ✔ (runtime) Each game plays its own copy of an adventure: the scenario resource key (cScenarioMode +0x74 -> +0x10,
+  instance +8 / group +0x10) differs per play (the tutorial: 6FCBCE96, E6F78525, 288BE48A, group 408A0000; one key was
+  the host's in one run and the guest's in another), so the Adventure adapter's place ids differ and the partners are
+  "in another world": no puppet in an adventure by default (BUG-0845). `coop.adventure place <hex>` (tests) forces one
+  place id: then each game has the partner's captain as a creature puppet, and act changes (the game's own and
+  JumpToAct) ran with it in both orders of entry without a fault (lab 20261112-124436, 20261112-125719).
