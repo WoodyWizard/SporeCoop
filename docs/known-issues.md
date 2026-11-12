@@ -2820,3 +2820,22 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   brief lock), BUG-0849 (a share save in the end of Tribe: reproduced as the fault at 0xBCAB07), BUG-0854 (saves and
   the quit in an adventure: reproduced at GetPlanetRecord+0x2D). The entries above that name them are history.
 * Not reproduced: BUG-0817 (the guest's UFO mirror does not come back from a Creature save).
+
+## Cell: a partner's poison clouds hurt the other player (2026-11-12, test: fix/w48-cell)
+<a id="issue-cell-partner-poison"></a>
+
+* What happens: next to a player whose cell has a poison part, the partner's cell takes damage from those clouds in its
+  own game and is knocked out, although players do not hurt each other in Cell.
+* Reproduce: `coop_cell_ko_poison.py --who guest` without the guest's `coop.pool invulnfor` (the host's cell grafted
+  with the poison part, the guest 6 m away): knocked out within ~20 s (lab 20261112-070110).
+* Known: the host's clouds reach the guest as mirrors; the guest's game applies their contact to its own cell
+  (inferred). docs/re/cell.md#cell-c1-0713.
+* Not checked: the guest's clouds (made by the host for its puppet) on the host's cell.
+* Ticket: BUG-0958
+
+## Cell: the host's trace calls a refused kill "applied" (2026-11-12, test: fix/w48-cell)
+<a id="issue-cell-kill-trace"></a>
+
+* What happens: the support trace's eat line says "applied" for a knocked-out guest's kill that the next line refuses.
+* Reproduce: `coop_cell_kill_refused.py`, the host's game log.
+* Ticket: BUG-0959
