@@ -1456,6 +1456,16 @@ static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
 // nothing answers for that key yet, and the bundle always came first). Off: the model and the metadata only (0.7.11)
 static bool g_bundle_png_fix = true;
 COOP_FIX("creations.bundle_png", "BUG-0921", g_bundle_png_fix, "creations: a player's creation bundle carries its pictures (the Tribe roster's portraits of the host's species made in the session)");
+// BUG-0802: a rename of a creation whose model is not in our EditorSaves (a partner's or an imported cell played as our
+// own: its model is in the package it came from) saves only a new metadata record there; that bundle went out as it
+// was and the host built a cell of a key without a model (fault at 0xE83EC8). Now a bundle without its model takes the
+// model from the game's own resources (the package that has it), else from the records kept of an applied creation
+// (BUG-0370), else it has no records (the next round tries again; never sent), and a received bundle with records but
+// no model is refused (the player keeps the look it had). Off: 0.7.12.
+static bool g_meta_only_fix = true;
+COOP_FIX("creations.meta_only", "BUG-0802", g_meta_only_fix, "creations: a renamed creation whose model came from elsewhere is sent with its model, and a creation without its model is not built (the host crashed at 0xE83EC8)");
+static unsigned g_meta_filled, g_meta_waits, g_meta_refused; // tests: models added from the game / kept, bundles held, refused
+static const std::vector<dbpf::Record>* old_records(uint32_t inst);
 static bool make_bundle(Kind k, const Key& key, Bundle& b)
 {
     b.key = key;
@@ -1477,8 +1487,30 @@ static bool make_bundle(Kind k, const Key& key, Bundle& b)
     bool model = false; // pictures alone are no creation (callers take "no records" as "not on disk yet")
     for (auto& r : b.recs)
         model |= r.key.type == kBem;
+    if (!model && g_meta_only_fix && !b.recs.empty()) { // BUG-0802: metadata without its model
+        std::vector<dbpf::Record> found;
+        if (records_from_game({key.instance, kBem, kInfo[k].group}, found))
+            for (auto& r : found)
+                if (r.key.type == kBem && r.key.instance == key.instance && !r.data.empty()) {
+                    b.recs.push_back(std::move(r));
+                    model = true;
+                }
+        if (!model)
+            if (auto* old = old_records(key.instance))
+                for (auto& r : *old)
+                    if (r.key.type == kBem && !r.data.empty()) {
+                        b.recs.push_back(r);
+                        model = true;
+                    }
+        if (model)
+            g_meta_filled++;
+        else
+            g_meta_waits++;
+    }
     if (!model)
         std::erase_if(b.recs, [](const dbpf::Record& r) { return r.key.type == kPng; });
+    if (!model && g_meta_only_fix)
+        b.recs.clear(); // never a creation without its model
     return true;
 }
 
@@ -1556,6 +1588,11 @@ constexpr size_t kKeepOld = 24;
 static std::map<uint32_t, std::vector<dbpf::Record>> g_old_recs; // instance -> its records (renamed)
 static std::deque<uint32_t> g_old_order;
 static unsigned g_old_served;
+static const std::vector<dbpf::Record>* old_records(uint32_t inst)
+{
+    auto it = g_old_recs.find(inst);
+    return it != g_old_recs.end() ? &it->second : nullptr;
+}
 static void keep_records(uint32_t inst, const std::vector<dbpf::Record>& recs)
 {
     if (!inst || recs.empty() || g_old_recs.count(inst))
@@ -1781,6 +1818,16 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     auto& ap = g_applied[{owner, (uint8_t)k}];
     if (ap.id == id && (ap.key.instance || ap.unusable))
         return;
+    if (g_meta_only_fix && !b.recs.empty() &&
+        std::none_of(b.recs.begin(), b.recs.end(), [&](const dbpf::Record& r) {
+            return r.key.type == kBem && r.key.instance == b.key.instance && !r.data.empty();
+        })) { // BUG-0802: records without the model: nothing the game can build (0xE83EC8); the old look stays
+        g_meta_refused++;
+        g_last_error = "received a creation without its model";
+        H->log(M, SK_WARN, "creations: player %u's %s %08X came without its model (%u record(s)): not built here (BUG-0802)",
+               owner, kInfo[k].name, b.key.instance, (unsigned)b.recs.size());
+        return;
+    }
     std::string name;
     for (auto& r : b.recs)
         if (r.key.type == kMeta) {
@@ -2466,6 +2513,13 @@ static void share_own(double now)
         if (g_sent_id[k] == id)
             continue;
         g_sent_id[k] = id;
+        {
+            unsigned models = 0;
+            for (auto& r : b.recs)
+                models += r.key.type == kBem;
+            H->log(M, SK_INFO, "creations: sending our %s %08X: %u record(s), %u model(s)", kInfo[k].name, b.key.instance,
+                   (unsigned)b.recs.size(), models); // tests (BUG-0802)
+        }
         apply(me, (Kind)k, id, data); // our own, under the same key everybody uses
         if (is_host()) {
             g_store[{me, (uint8_t)k}] = data;
@@ -3131,6 +3185,9 @@ std::string status()
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
+    snprintf(b, sizeof b, "  meta_only: fix=%d filled=%u waits=%u refused=%u\n", (int)g_meta_only_fix, g_meta_filled, g_meta_waits,
+             g_meta_refused); // BUG-0802
+    s += b;
     snprintf(b, sizeof b, "  creature mode: %s (host's creation answers=%u)\n", one_creature() ? "host" : "own", g_one_mine);
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
@@ -3178,6 +3235,29 @@ std::string debug(const std::vector<std::string>& a)
                  p && skg::readable((char*)p + 0x504, 0x40) ? skg::field<uint32_t>(p, 0x504) : 0,
                  p && skg::readable((char*)p + 0x53C, 4) ? skg::field<uint32_t>(p, 0x53C) : 0);
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "sendmeta") { // tests (BUG-0802): our <kind>'s bundle with its metadata only, as a
+        // 0.7.12 guest sent a renamed creation whose model is in another package (to the host, or from the host to all)
+        int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
+        Option o = mine((Kind)k);
+        if (!o.key.instance || !C.sess || !C.sess->connected())
+            return "no creation of ours / no session";
+        Bundle b;
+        b.key = o.key;
+        if (!make_bundle((Kind)k, o.key, b) || b.recs.empty())
+            records_from_game({o.key.instance, kBem, kInfo[k].group}, b.recs);
+        std::erase_if(b.recs, [](const dbpf::Record& r) { return r.key.type != kMeta; });
+        if (b.recs.empty())
+            return "no metadata record";
+        if (a.size() >= 3) { // a new name in it: another bundle id
+            b.recs[0].data.push_back((uint8_t)atoi(a[2].c_str()));
+        }
+        std::vector<uint8_t> data = pack(b);
+        uint32_t id = fnv(data.data(), data.size());
+        send_bundle(is_host() ? -1 : 0, C.sess->my_id(), (Kind)k, id, data);
+        char r[96];
+        snprintf(r, sizeof r, "sent %s %08X with %u record(s), no model\n", kInfo[k].name, o.key.instance, (unsigned)b.recs.size());
+        return r;
     }
     if (a.size() >= 2 && (a[0] == "next" || a[0] == "prev")) {
         int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
