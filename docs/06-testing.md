@@ -6107,3 +6107,23 @@ were the test. No change of the mod.
   to stay put reads its node first (`coop.tribe`, `bt=`), polls that it is still there, and puts it again when it
   left; it does not sleep and hope.
 
+
+## Civ speed: the alarm boost and the guest's fast copies (2026-11-12, fix/w48-civ-speed)
+<a id="testing-civ-speed"></a>
+
+* `coop_civ_boost_stack.py` (suite `civ_boost_stack`, civ_npc, ~2 min cold): the host's alarm on its capital, five
+  alarms at the boost's end (`coop.civ alarm <city> expire`), a drive measured on the guest, then the boost forgotten
+  while the vehicle lives (`coop.civ hvdrop <id>`, `coop.civ world_change`). Reads the game's `+0x218` with
+  `mem.read`, and the guest copy's speed from its positions (1 s windows: 0.5 s windows of console samples jittered
+  to 34 m/s against 28.7 m/s). FAIL twins: `SPORE_FIX_OFF=civ.boost_players` (step 1), `civ.boost_base` (step 2:
+  11.4x, 225 m/s on the guest), `civ.boost_restore` (step 3). The test writes the own speed back when a step failed,
+  so the later steps start clean.
+* `coop.civ boosts` now prints `owner=` per entry and a `boosts= restored=` line.
+* The civ_npc fixture has one player city, the shared capital (owner 0xFD): its alarm boosts every player's vehicle,
+  the host's free vehicle (#1, top 19.12) included; NPC vehicle #2 (top 12.27) is the nearest to it and reaches 600 m
+  with `coop.civ move` within seconds.
+* `coop_civ_fast_mirror.py` (suite `civ_fast_mirror`, civ_npc, ~1 min): the host's vehicle at 55 m/s (mem.write
+  `+0x218` before `coop.civ move`: the order takes the speed it has then), driven between two points 300 m apart for
+  20 s; `coop.bodyrec` on both games, the copy against the host's vehicle at the same moment over the frames where it
+  drives over 30 m/s. body_trail.analyse() skips speeds over 60 m/s: the test has its own interpolation.
+  `SPORE_FIX_OFF=civ.vel_cap_host` fails (p50 4.9 m, p90 6.8 m; with the fix 0.7-0.9 / 1.8-2.3 m).

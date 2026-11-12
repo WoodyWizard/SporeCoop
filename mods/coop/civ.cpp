@@ -341,6 +341,13 @@ COOP_FIX("civ.place_now", "BUG-0438", g_place_now_fix,
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
+// BUG-0787: the jump limit came from the guest mirror's own top speed (+0x218), which the host's alarm boost (or a
+// faster host design) does not change: a host vehicle over twice as fast had every step taken as a jump, the mirror
+// stood and jumped. The host now sends each vehicle's top speed after the snapshot time (a tail an older guest
+// ignores) and the guest takes the larger of the two.
+static bool g_vel_cap_host_fix = true;
+COOP_FIX("civ.vel_cap_host", "BUG-0787", g_vel_cap_host_fix,
+         "civ: a guest's jump limit for a host vehicle uses the host vehicle's top speed (a boosted vehicle glides, it does not stand and jump)");
 static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
@@ -375,6 +382,7 @@ struct GV {
     bool has_put = false;
     float pushed = 0, pushed_max = 0, err = 0;
     double pushed_at = 0;
+    float host_top = -1.f; // BUG-0787: the host vehicle's top speed from the last snapshot, -1 = not sent
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
@@ -1899,9 +1907,34 @@ static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
 struct Boost {
     float orig;
     double until;
+    uint32_t pol = 0; // the vehicle's nation when it was boosted (BUG-0773: restore only on that vehicle)
 };
 static std::unordered_map<void*, Boost> g_boost;
 static std::unordered_map<void*, double> g_alarm_at;
+// BUG-0771 (GitHub #199): the next alarm of a city under siege comes when the last boost has just run out (both
+// 20 s). A hit in the game's update after `until` and before this frame's boost_tick found the entry expired but not
+// yet restored and read the boosted +0x218 as the vehicle's own speed: x1.5 per 40 s of a siege ("like flash").
+// With the fix a vehicle's own speed is read once, when its entry is made; re-arming only moves `until`.
+static bool g_fix_boost_base = true;
+COOP_FIX("civ.boost_base", "BUG-0771", g_fix_boost_base,
+         "civ: the city alarm boost keeps each vehicle's own speed, a new alarm at the boost's end does not stack it");
+// BUG-0773: a boost entry dropped while its vehicle lives (out of the host's table, a world change the stage
+// adapter saw while the vehicles were still there) put nothing back: the vehicle kept 1.5x (or more) for good
+static bool g_fix_boost_restore = true;
+COOP_FIX("civ.boost_restore", "BUG-0773", g_fix_boost_restore,
+         "civ: a boosted vehicle gets its own speed back when the mod forgets the boost while the vehicle lives");
+// BUG-0876: the alarm boosted every vehicle near the city that was not its owner's, NPC nations' too (owner 0xFE):
+// the army attacking the city drove faster as well
+static bool g_fix_boost_players = true;
+COOP_FIX("civ.boost_players", "BUG-0876", g_fix_boost_players,
+         "civ: the city alarm boosts only the other players' vehicles, not NPC nations' (the attackers)");
+static uint32_t g_boost_restored; // tests: boosts put back on a living vehicle that left the tables (BUG-0773)
+// the vehicle still carries the boost the mod wrote (not the game's own value after a RecalcStats, not another
+// vehicle at a reused address)
+static bool boost_ours(void* v, const Boost& b)
+{
+    return exists(v) && pol_of(v) == b.pol && F<float>(v, 0x218) == b.orig * 1.5f;
+}
 
 static void show_alarm(void* city, uint8_t kind, uint8_t owner)
 {
@@ -1943,9 +1976,14 @@ static void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
             continue;
         if (h.owner == owner || net::dist(veh_pos(v), cp) > 600.f)
             continue;
-        auto& b = g_boost[v];
-        if (b.until < now)
+        if (g_fix_boost_players && h.owner >= 0xFE) // BUG-0876: an NPC nation's vehicle (the attackers)
+            continue;
+        auto [bi, fresh] = g_boost.try_emplace(v);
+        Boost& b = bi->second;
+        if (g_fix_boost_base ? fresh : b.until < now) { // BUG-0771: the own speed once per entry
             b.orig = F<float>(v, 0x218);
+            b.pol = pol_of(v);
+        }
         b.until = now + 20.0;
     }
 }
@@ -1958,6 +1996,10 @@ static void boost_tick(double now)
         // vehicle in the game's own list is written to
         bool alive = g_fix_boost ? g_hv.count(v) && exists(v) : g_hv.count(v) && game::object_alive(v);
         if (!alive) {
+            if (g_fix_boost_restore && boost_ours(v, it->second)) { // BUG-0773: it lives, out of the table only
+                F<float>(v, 0x218) = it->second.orig;
+                g_boost_restored++;
+            }
             it = g_boost.erase(it);
             continue;
         }
@@ -2808,7 +2850,8 @@ static void host_tick(double now)
     // a city's buildings): ~1200 bytes with 9 cities and 24 vehicles, so with a grown planet the
     // guest got no cities, captures or the first 24 vehicles at all. The items are packed in order
     // (cities, spice nodes, one city's buildings, vehicles) into as many chunks as needed.
-    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kVehBytes = 41, kHead = 14; // + u32 time (BUG-0122)
+    // + u32 time (BUG-0122); a vehicle is 41 bytes + its f32 top speed in the tail after the time (BUG-0787)
+    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kVehBytes = 45, kHead = 14;
     const size_t kBudget = g_chunk_budget; // net::kMaxPacket - 48 (packet + message headers); tests: less
     std::vector<std::pair<net::Vec3, uint32_t>> nodes;
     if (g_cycle % 10 == 0)
@@ -2915,6 +2958,10 @@ static void host_tick(double now)
             w.f32(F<float>(v, kVHp));
         }
         w.u32(net::now_ms()); // BUG-0122: the host's time of the snapshot (velocity on the guest)
+        // BUG-0787: the vehicles' top speeds (+0x218, the alarm boost included) after the time, in the same order: a
+        // guest before 0.7.13 finds more than the time behind the vehicles and only loses the sender time
+        for (size_t i = c.v0; i < c.v1; i++)
+            w.f32(F<float>(vehicles[i], 0x218));
         g_max_chunk = std::max<uint32_t>(g_max_chunk, (uint32_t)w.size());
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
@@ -3831,7 +3878,15 @@ static void guest_state(net::Reader& r)
     guest_nodes_and_buildings(r);
     double now = H->time_seconds();
     uint8_t n = r.u8();
-    double sent = net::snapshot_time(r, (size_t)n * 41); // 41 bytes per vehicle
+    const size_t body = (size_t)n * 41; // 41 bytes per vehicle
+    double sent = net::snapshot_time(r, body);
+    const uint8_t* tops = nullptr; // BUG-0787: the host vehicles' top speeds after the time (a host from 0.7.13 on)
+    if (sent < 0 && r.ok() && n && r.left() == body + 4 + (size_t)n * 4) {
+        uint32_t ms;
+        memcpy(&ms, r.cur() + body, 4);
+        sent = ms / 1000.0;
+        tops = r.cur() + body + 4;
+    }
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
         GV m;
@@ -3848,7 +3903,18 @@ static void guest_state(net::Reader& r)
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
         // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
         bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
-        g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * F<float>(v, 0x218) + 10.f : 0.f;
+        float top = alive_v ? F<float>(v, 0x218) : 0.f;
+        g.host_top = -1.f;
+        if (tops) {
+            float ht;
+            memcpy(&ht, tops + 4 * (size_t)i, 4);
+            if (std::isfinite(ht) && ht > 0.f && ht < 10000.f) {
+                g.host_top = ht;
+                if (g_vel_cap_host_fix)
+                    top = std::max(top, ht);
+            }
+        }
+        g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * top + 10.f : 0.f;
         g.est.max_ahead = g_extrap_fix ? kVehAhead : 0.4;
         // BUG-0425 (drive.lead): moved on to the host's now as every remote body; at most kVehLead past its state:
         // its age is the send interval (0.1-0.13 s at 30 fps) plus the latency and a frame, which 0.15 s cut short
@@ -4382,10 +4448,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 // session or world must not inherit them (a city or vehicle at a reused address)
 static void clear_coop_tables(bool restore_speed)
 {
-    if (restore_speed && g_ok && game::mode_id() == modes::kCiv && nm())
+    if (restore_speed && g_ok && game::mode_id() == modes::kCiv && nm()) {
+        g_exist_frame = ~0ull; // the game's vehicle list of now (a load may have freed the ones listed this frame)
         for (auto& [v, b] : g_boost)
-            if (exists(v))
+            if (g_fix_boost_restore ? boost_ours(v, b) : exists(v)) {
                 F<float>(v, 0x218) = b.orig;
+                g_boost_restored++;
+            }
+    }
     g_boost.clear();
     g_alarm_at.clear();
     g_siege.clear();
@@ -4445,7 +4515,9 @@ void on_world_change()
     g_world_resets++;
     g_bld_rekeyed.clear(); // BUG-0670 (the buildings are freed)
     caption_disarm();
-    clear_coop_tables(false); // nothing to restore: the vehicles are gone
+    // BUG-0773: after a real load the vehicles are gone and nothing is written (boost_ours: in the game's list now,
+    // the same nation, still the speed the mod wrote); a world change seen while they live gives their speed back
+    clear_coop_tables(g_fix_boost_restore);
     // BUG-0223: the tables are forgotten here, not through on_session_end (its restoring clear
     // would write +0x218 into the old world's vehicles if the order ever changed)
     g_hv.clear();
@@ -4663,9 +4735,10 @@ std::string list()
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
             out.pop_back();
             const net::Vec3& ev = gi->second.est.vel;
-            snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f vel=%.1f top=%.1f jumps=%u\n",
+            snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f vel=%.1f top=%.1f jumps=%u htop=%.1f\n",
                      H->time_seconds() - gi->second.seen, gi->second.err, gi->second.pushed, gi->second.pushed_max,
-                     std::sqrt(ev.x * ev.x + ev.y * ev.y + ev.z * ev.z), F<float>(v, 0x218), gi->second.est.capped);
+                     std::sqrt(ev.x * ev.x + ev.y * ev.y + ev.z * ev.z), F<float>(v, 0x218), gi->second.est.capped,
+                     gi->second.host_top);
             out += b;
         }
     }
@@ -4891,8 +4964,25 @@ std::string debug(const std::vector<std::string>& a)
         if (!city)
             return "no such city";
         g_alarm_at.erase(city);
+        if (a.size() >= 3 && a[2] == "expire") { // BUG-0771: every boost has just run out, boost_tick not run yet
+            double now = H->time_seconds();
+            for (auto& [v, bo] : g_boost)
+                bo.until = now - 0.001;
+        }
         h_OnAttacked(city, 0, 0x0BADF00D);
         return "alarm raised";
+    }
+    if (a.size() >= 2 && a[0] == "hvdrop" && is_host()) { // hvdrop <net id>: out of the host's table, it lives (BUG-0773)
+        auto it = g_hv_by_id.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_hv_by_id.end())
+            return "no such vehicle";
+        g_hv.erase(it->second);
+        g_hv_by_id.erase(it);
+        return "dropped from the table";
+    }
+    if (!a.empty() && a[0] == "world_change") { // the tables' reset of a world change, the world staying (BUG-0773)
+        on_world_change();
+        return "world change run";
     }
     if (a.size() >= 2 && a[0] == "capture" && is_host()) { // capture <city>: the player civ takes it (tests, BUG-0187)
         size_t ci = (size_t)atoi(a[1].c_str());
@@ -4931,10 +5021,12 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         double now = H->time_seconds();
         for (auto& [v, bo] : g_boost) {
-            snprintf(b, sizeof b, "boost %p orig=%.3f left=%.1f\n", v, bo.orig, bo.until - now);
+            snprintf(b, sizeof b, "boost %p orig=%.3f left=%.1f owner=%d\n", v, bo.orig, bo.until - now,
+                     g_hv.count(v) ? (int)g_hv[v].owner : -1);
             out += b;
         }
-        return out.empty() ? "no boosts\n" : out;
+        snprintf(b, sizeof b, "boosts=%zu restored=%u\n", g_boost.size(), g_boost_restored);
+        return (out.empty() ? std::string("no boosts\n") : out) + b;
     }
     if (a.size() >= 3 && a[0] == "stale_hv" && is_host() && game::mode_id() == modes::kCiv) {
         // stale_hv <vehicle id> <owner> (tests, BUG-0222 / BUG-0059): the table entry of that vehicle as if

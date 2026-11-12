@@ -1537,3 +1537,40 @@ From the fork PandizeLive/SporeCoop-Lineages PR #196 (BUG-9057, BUG-9070), not v
   vehicle table, on_world_change) is not restored (BUG-0773). Not yet seen in the lab.
 * ? Whether and when the game's RecalcStats rewrites `+0x218` from the vehicle's design (it would heal a stuck
   value): not known.
+
+## The alarm boost measured, and the guest's jump limit (2026-11-12, fix/w48-civ-speed)
+<a id="civ-boost-measured"></a>
+
+Closes the "not yet seen in the lab" of docs/re/civ.md#civ-boost-stacking (GitHub #199, BUG-0771 / 0773 / 0876 / 0787;
+test `civ_boost_stack`, `civ_fast_mirror`).
+* ✔ The stacking is real once the order of the hit is the one the audit described: an alarm in the moment the last
+  boost has run out and before boost_tick restored it (`coop.civ alarm <city> expire` puts every boost's `until` just
+  behind now, then runs h_OnAttacked) re-read the boosted `+0x218` as the vehicle's own speed: 19.12 -> 28.68 -> ...
+  -> 217.8 (11.39x after six alarms), and after the boosts ran out the vehicle kept 145.17 for good (lab
+  20261112-003101, `civ.boost_base off`). ~ That this order happens in a real siege is inferred (alarm cooldown and
+  boost both 20 s, OnAttacked on every hit inside the game's update, boost_tick once per frame in host_tick): not
+  measured with an NPC army.
+* ✔ A vehicle drives at the `+0x218` it has when it gets its order (cVehicle::SetMoveOrder -> MoveTo reads it): the
+  host's free vehicle with 145 written was seen on the guest at 225 m/s (1 s windows); 28.7 written: 29-30 m/s; 55
+  written: 58-72 m/s. So the stacked value is what the players see, on both games.
+* ✔ civ_npc has a single player city (the shared capital, owner 0xFD): its alarm boosts every player's vehicle (owner
+  0..3), here the host's own free vehicle. With `civ.boost_players off` it also boosted the three NPC vehicles
+  within 600 m (12.27 -> 18.41, lab 20261112-003106).
+* ✔ In the host's tick a living vehicle never misses from `g_hv` at boost_tick time in normal play: the table is
+  pruned and re-listed in the same 0.1 s step that runs after boost_tick (a pol change gives a new id at once). The
+  BUG-0773 leak needs the tables cleared while the vehicles live (on_world_change on a false world change: the
+  BUG-0223 class) or a test drop (`coop.civ hvdrop <id>`). Both left 28.68 for good before the fix (lab
+  20261112-003336). The fix writes the own speed back only while the vehicle is in the game's list, of the same nation
+  and still at exactly `orig x 1.5` (the value the mod wrote), so a real load writes nothing into a new vehicle at a
+  reused address.
+* ✔ The guest's jump limit (BUG-0186 `2 x top + 10`) used the copy's own `+0x218`. A host vehicle at 55 m/s against a
+  copy whose own top is 19.1 (limit 48): every snapshot step was a "jump", the estimated velocity 0, the copy only
+  glided half way per frame: it trailed 4.8-4.9 m (p50) and 6.8 m (p90) behind the host's vehicle at the same moment,
+  `jumps=130` in 20 s (lab 20261112-003654, -003833). It did not stand still and teleport as the ticket guessed (the
+  glide catches up below 30 m). With the host's top speed in the snapshot: 0.7-0.9 / 1.8-2.3 m (lab 20261112-003659,
+  -003838).
+* ✔ Wire format (from 0.7.13): MSG_CIV_STATE vehicle chunk = n x 41 bytes, u32 host time, then n x f32 top speed
+  (+0x218) in the same order. A 0.7.12 guest sees more than the time after the vehicles and drops only the sender time
+  (velocity from arrival times, as with a host before BUG-0122); a 0.7.13 guest of an older host uses its own top.
+* ? Whether the game's RecalcStats rewrites `+0x218` by itself during play (it would heal a stuck value): still not
+  seen; with the boost off the value stayed for minutes (BUG-0040 and here: 145.17 22 s after).
