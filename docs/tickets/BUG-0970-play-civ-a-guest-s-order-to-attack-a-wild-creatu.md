@@ -57,6 +57,8 @@ FAIL with the switch off: out/lab/20261112-165013 (host rejected 2, orders -1, v
 the same host log line as the integration run); also 20261112-164639.
 PASS with the fix: out/lab/20261112-164915 and 20261112-164815 (orders 6 on the host, 28-30 m closer on both games,
 nothing rejected).
+play_civ with the fix, lane 5: out/lab/20261112-165156 (guest commands 81 sent, 81 executed, 0 rejected) and
+out/lab/20261112-170402 (85 / 85 / 0), both PASS. make test PASS.
 
 ## History
 - 2026-11-12: opened.
