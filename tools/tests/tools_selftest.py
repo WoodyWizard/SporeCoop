@@ -29,11 +29,16 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   trail     body_trail.since (the detector's read of coop.bodyrec) ends, keeps no row twice and is bounded on a model
             of the game's command; the old loop (SPORE_BODYTRAIL_OLD_SINCE=1) never ends on it (BUG-0916)
   testlint  tools/tests/test_lint.py: a game test in no suite, a check on a mod counter without a reason (BUG-0430)
+  laa       tools/laa.py on a fake 32-bit exe: set writes a verified backup and changes only the
+            Characteristics flag and the PE checksum (still valid), set again and a Steam .bind exe are
+            refused, restore brings back the original's sha256; a damaged backup is refused (BUG-0862)
+  symlist   upd::kSymbolFiles (updater/winupdate.h, what the uninstall deletes) names every
+            data/symbols/*.sym a release installs (BUG-0851)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
   tools_selftest.py [check ...]      all checks by default; exit 1 when one fails
-Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE / SELFTEST_TRIAGE run a check
+Environment: SELFTEST_LAA / SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE / SELFTEST_TRIAGE run a check
 against another copy of the tool (an old version: the check must FAIL there)."""
 import os
 import shutil
@@ -49,6 +54,7 @@ TICKETS = os.environ.get('SELFTEST_TICKETS', os.path.join(ROOT, 'tools', 'ticket
 RELINT = os.environ.get('SELFTEST_RELINT', os.path.join(ROOT, 'tools', 're_lint.py'))
 RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'release_check.sh'))
 TRIAGE = os.environ.get('SELFTEST_TRIAGE', os.path.join(ROOT, 'tools', 'crash_triage.py'))
+LAATOOL = os.environ.get('SELFTEST_LAA', os.path.join(ROOT, 'tools', 'laa.py'))
 HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
 fails = []
 
@@ -942,11 +948,104 @@ def test_testlint():
     check(r.returncode == 0, f'with `# counter: <reason>` it passes ({r.stdout.strip().splitlines()[-1:]})')
 
 
+# ---------------------------------------------------------------- laa (BUG-0862)
+def fake_exe(path, bind=False, checksum=True):
+    """a minimal PE32 (i386) with one or two sections and a valid PE checksum"""
+    import struct
+    names = [b'.text', b'.bind'] if bind else [b'.text']
+    b = bytearray(0x400 + 0x200 * len(names))
+    b[0:2] = b'MZ'
+    struct.pack_into('<I', b, 0x3C, 0x80)
+    b[0x80:0x84] = b'PE\0\0'
+    struct.pack_into('<HHIIIHH', b, 0x84, 0x14C, len(names), 0x5F000000, 0, 0, 224, 0x0102)
+    opt = 0x98
+    struct.pack_into('<H', b, opt, 0x10B)
+    struct.pack_into('<I', b, opt + 28, 0x400000)
+    for i, n in enumerate(names):
+        o = opt + 224 + 40 * i
+        b[o:o + 8] = n.ljust(8, b'\0')
+        struct.pack_into('<IIII', b, o + 8, 0x200, 0x1000 * (i + 1), 0x200, 0x400 + 0x200 * i)
+        b[0x400 + 0x200 * i:0x400 + 0x200 * i + 4] = bytes([0x90, 0x90, 0xC3, i])
+    if checksum:
+        sys.path.insert(0, os.path.join(ROOT, 'tools'))
+        import laa as laa_mod
+        struct.pack_into('<I', b, opt + 64, laa_mod.pe_checksum(bytes(b), opt + 64))
+    open(path, 'wb').write(b)
+    return bytes(b)
+
+
+def test_laa():
+    print('laa: the Large Address Aware tool (BUG-0862)')
+    import hashlib
+    import struct
+    if not os.path.exists(LAATOOL):
+        check(False, f'{os.path.relpath(LAATOOL, ROOT)} exists (inspect / set / restore the LAA flag)')
+        return
+    exe = os.path.join(TMP, 'SporeApp.exe')
+    orig = fake_exe(exe)
+
+    def run(*a):
+        return subprocess.run([sys.executable, '-I', LAATOOL, *a], capture_output=True, text=True)
+    r = run('status', exe)
+    check(r.returncode == 0 and 'Large Address Aware: no' in r.stdout, 'status: a fresh exe is not LAA')
+    r = run('set', exe)
+    new = open(exe, 'rb').read()
+    check(r.returncode == 0, f'set: exit 0 ({r.stdout.strip().splitlines()[:1]})')
+    ch = struct.unpack_from('<H', new, 0x96)[0]
+    check(ch & 0x20 and ch & ~0x20 == 0x0102, f'set: the flag is on, the other Characteristics bits kept (0x{ch:04x})')
+    diff = [i for i in range(len(orig)) if orig[i] != new[i]] if len(orig) == len(new) else ['size']
+    check(len(new) == len(orig) and set(diff) <= {0x96, 0x97, 0x98 + 64, 0x98 + 65, 0x98 + 66, 0x98 + 67},
+          f'set: only Characteristics and CheckSum changed (bytes {diff})')
+    sys.path.insert(0, os.path.dirname(LAATOOL))
+    import laa as laa_mod
+    check(struct.unpack_from('<I', new, 0x98 + 64)[0] == laa_mod.pe_checksum(new, 0x98 + 64), 'set: the PE checksum is valid')
+    bak = exe + '.pre-laa'
+    check(os.path.exists(bak) and open(bak, 'rb').read() == orig, 'set: the backup is the original')
+    check(open(bak + '.sha256').read().split()[0] == hashlib.sha256(orig).hexdigest(), 'set: the backup\'s .sha256')
+    r = run('set', exe)
+    check(r.returncode == 0 and 'already' in r.stdout and open(exe, 'rb').read() == new, 'set again: nothing changes')
+    r = run('restore', exe)
+    check(r.returncode == 0 and open(exe, 'rb').read() == orig and not os.path.exists(bak), 'restore: the original is back, the backup gone')
+    # a damaged backup is refused
+    run('set', exe)
+    with open(bak, 'r+b') as f:
+        f.seek(0x400)
+        f.write(b'\xcc')
+    r = run('restore', exe)
+    check(r.returncode == 1 and open(exe, 'rb').read() == new, 'restore: a backup that does not match its .sha256 is refused')
+    # Steam's DRM wrapper (.bind): refused without --force
+    steam = os.path.join(TMP, 'steam.exe')
+    s0 = fake_exe(steam, bind=True)
+    r = run('set', steam)
+    check(r.returncode == 1 and open(steam, 'rb').read() == s0 and not os.path.exists(steam + '.pre-laa'), 'set: a .bind exe is refused')
+    r = run('set', steam, '--force')
+    check(r.returncode == 0 and struct.unpack_from('<H', open(steam, 'rb').read(), 0x96)[0] & 0x20, 'set --force: a .bind exe gets the flag')
+    # not a PE file
+    junk = os.path.join(TMP, 'junk.exe')
+    open(junk, 'wb').write(b'not an exe')
+    check(run('set', junk).returncode == 1 and open(junk, 'rb').read() == b'not an exe', 'set: a file that is no exe is refused')
+
+
+# ---------------------------------------------------------------- symlist (BUG-0851)
+def test_symlist():
+    print('symlist: the uninstall knows every symbol file a release installs (BUG-0851)')
+    import glob
+    import re
+    h = open(os.path.join(ROOT, 'updater', 'winupdate.h')).read()
+    m = re.search(r'kSymbolFiles\[\]\s*=\s*\{([^}]*)\}', h)
+    listed = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    shipped = {os.path.basename(p) for p in glob.glob(os.path.join(ROOT, 'data', 'symbols', '*.sym'))}
+    check(bool(m), 'updater/winupdate.h has upd::kSymbolFiles')
+    check(shipped <= listed, f'every data/symbols/*.sym is listed (missing: {sorted(shipped - listed)})')
+    bat = open(os.path.join(ROOT, 'installer', 'uninstall.bat')).read()
+    check(all(n in bat for n in shipped), 'uninstall.bat names every data/symbols/*.sym')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
           'worldstate': test_worldstate, 'testlint': test_testlint,
-          'trail': test_trail}
+          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:
