@@ -7,19 +7,17 @@ click goes to the animal behind it). Before: the second player to attack an anim
 from the partner's side, stopped ~2 m short behind the partner's creature (the game's walk-and-use, goal 0x20) and
 its attack key did nothing; a click on the animal often took the partner's creature standing in front of it.
 
-Rounds (one animal each, the guest is the second hunter):
-1. The host's creature stands right at an animal of the host's world (`coop.npc gonpc <id> 1.2`).
-2. The guest's creature is put on the line from the animal through the host's creature, 7 m behind the host
-   (`coop.npc gopos`), its camera turned (right-drag) until the animal is in the middle of its screen: the host's
-   creature stands between the camera and the animal.
-3. The guest takes the combat stance and clicks at the animal's screen point (real input), as a player does:
-   the game's own target field of the guest's avatar (+0xE7C, a combatant: creature + 0x5A8) must name the
-   animal's creature in the guest's game (its proxy), not the host's creature (the puppet).
-4. The guest presses the attack key once (real input): the game's walk-and-use takes it to the animal; within
-   12 s the game's own gap to the target (`coop.abilities reach`) is within the bite's reach, with no other
-   input (no side step).
-At least 2 rounds must have the host's creature in front of the animal on the guest's screen (within 60 px of
-the click point and nearer to the camera), and every such round must pass 3 and 4.
+Rounds (one animal each, not of the players' family; the guest is the second hunter):
+1. The host's creature stands right at the animal (`coop.npc gonpc <id> 1.0`: 1 m from its centre).
+2. The guest takes the animal as its combat target from the animal's other side (a real click; the host's creature is
+   behind the animal from there), then is put 6 m behind the host's creature on the line through it (`coop.npc
+   gopos`) and presses the attack key (real input): the game's walk-and-use must bring it within the bite's reach
+   (the game's gap, `coop.abilities reach`) within 12 s, with no other input than the key pressed again when the
+   walk did not start. Judged when the host's creature is under 1.8 m from the animal and under 0.5 m off the way.
+3. From behind the host's creature again, the camera turned to the animal (right-drag), a real click on the animal:
+   the game's target field of the guest's avatar (+0xE7C, creature + 0x5A8) must name the animal (its proxy), not the
+   host's creature (the puppet). Judged when the host's creature is within 90 px of the click point and nearer.
+Before: `coop.find rivals 1` (and with --ff friendly fire on) must switch the skipping off (`coop.partnerpass on=0`).
 SPORE_FIX_OFF=creature.partner_pass must FAIL (the click takes the host's creature, or the walk stops behind it).
 --ff: the same with friendly fire on (all.friendly_fire): the old behaviour is kept; printed only.
 
@@ -60,10 +58,11 @@ def npcs(con):
     d = {}
     for line in con.call('coop.npc list')['out'].splitlines():
         # host: "#id <ptr> species=.. hp=.. dist=.. [DEAD]", guest: "#id species=.. <state> hp=.. dist=.. ... ptr=<ptr>"
-        m = re.match(r'\s*#(\d+) (?:([0-9A-Fa-f]{8}) )?species=[0-9A-F]+ (?:\S+ )?hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
+        m = re.match(r'\s*#(\d+) (?:([0-9A-Fa-f]{8}) )?species=([0-9A-F]+) (?:\S+ )?hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
         if m:
             p = re.search(r'\bptr=(?:0x)?([0-9A-Fa-f]+)', line)
-            d[int(m.group(1))] = dict(hp=float(m.group(3)), dist=float(m.group(4)), dead=bool(m.group(5)) or 'game_dead=1' in line,
+            d[int(m.group(1))] = dict(species=m.group(3), hp=float(m.group(4)), dist=float(m.group(5)),
+                                      dead=bool(m.group(6)) or 'game_dead=1' in line,
                                       ptr=int(p.group(1), 16) if p else (int(m.group(2), 16) if m.group(2) else 0))
     return d
 
@@ -119,30 +118,20 @@ def target_is(guest, av, ptr):
 
 
 def host_engage(host, nid):
-    """the host's own creature walks to the animal and bites it (a real click on it, the attack key): (gap, ok)"""
-    host.call(f'coop.npc gonpc {nid} 4')
+    """the host's creature right at the animal (`coop.npc gonpc <id> 1.0`: 1 m from its centre, as the partner
+    that fights it stands): the host's own gap to it"""
+    print('  host: ' + host.call(f'coop.npc gonpc {nid} 1.0')['out'].strip(), flush=True)
     time.sleep(1.5)
-    host.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
-    time.sleep(0.5)
-    o = aim(host, f'n{nid}')
-    if not o:
-        return None, False
-    host.call(f'click {o[1]} {o[2] - 15}')
-    time.sleep(0.5)
-    host.call('key 1')
-    t0 = time.time()
-    while time.time() - t0 < 8:
-        tr, gap, rch, st = reach(host)
-        if gap is not None and gap <= rch:
-            return gap, True
-        time.sleep(0.25)
-    return reach(host)[1], False
+    hs = sample(host)
+    a, h = (hs.get(f'n{nid}') or (None,))[0], (hs.get('p0') or (None,))[0]
+    return (round(math.dist(a, h), 2), True) if a and h and math.dist(a, h) < 3.0 else (None, False)
 
 
 def one_round(host, guest, nid, hid, label):
     """one animal the host fights: (front, click_ok, reached, on_partner, walk judged, closest gap)"""
+    guest.call('coop.abilities target none')  # (no target left from the round before)
     hg, engaged = host_engage(host, nid)
-    print(f'  [{label}] the host\'s creature at animal n{nid}: gap {hg} (in reach {engaged})', flush=True)
+    print(f'  [{label}] the host\'s creature at animal n{nid}: {hg} m from its centre', flush=True)
     if not engaged:
         return None
     gs = sample(guest)  # the animal (its proxy) and the host's creature (its puppet) as the guest's game has them
@@ -158,20 +147,21 @@ def one_round(host, guest, nid, hid, label):
     av, pup = avatar(guest), puppet(guest)
     mine = npcs(guest).get(nid, {}).get('ptr', 0)
     key = f'n{nid}'
-    # 1. the target from the side, where nothing stands in front of the animal
-    place(guest, [x + c * 6.0 for x, c in zip(a, side)])
+    # 1. the target from the animal's other side (the host's creature behind it there: the click takes the animal
+    # with the fix or without, so the walk is judged on its own)
+    place(guest, [x - c * 6.0 + sc * 1.5 for x, c, sc in zip(a, u, side)])
     guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
     time.sleep(0.5)
     o = aim(guest, key)
     if not o:
-        print(f'  [{label}] the animal is not on the guest\'s screen (from the side)', flush=True)
+        print(f'  [{label}] the animal is not on the guest\'s screen (from its other side)', flush=True)
         return None
     guest.call(f'click {o[1]} {o[2] - 15}')
     time.sleep(0.5)
     tg, ok = target_is(guest, av, mine)
     st = reach(guest)
     if not ok or st[3] != 0:  # (status 12: an animal of the players' own family: it may not be attacked)
-        print(f'  [{label}] the guest\'s target from the side {tg or 0:08X} (animal {ok}), key 1 {st}: not a round', flush=True)
+        print(f'  [{label}] the guest\'s target from the other side {tg or 0:08X} (animal {ok}), key 1 {st}: not a round', flush=True)
         return None
     # 2. (a) the walk: from behind the host's creature, on the line through it, the attack key
     gs = sample(guest)
@@ -187,7 +177,7 @@ def one_round(host, guest, nid, hid, label):
     print(f'    key 1 before: {reach(guest)} (target still the animal: {still}; the host\'s creature '
           f'{path if path is None else round(path, 2)} m off the way)', flush=True)
     guest.call('key 1')  # the attack key (1): the game's walk-and-use
-    reached, gaps, t0 = False, [], time.time()
+    reached, gaps, t0, presses = False, [], time.time(), 1
     while time.time() - t0 < 12:
         tr, gap, rch, kst = reach(guest)
         if gap is not None:
@@ -195,10 +185,16 @@ def one_round(host, guest, nid, hid, label):
             if gap <= rch:
                 reached = True
                 break
+            # (a press now and then does not start the walk at all, with or without the fix: a player presses again;
+            # stopped behind the partner, "every further press does nothing", BUG-0913)
+            if presses < 4 and time.time() - t0 > 1.5 * presses and len(gaps) > 5 and abs(gaps[-1] - gaps[-6]) < 0.05:
+                guest.call('key 1')
+                presses += 1
         time.sleep(0.25)
     print(f'  [{label}] (a) the guest\'s walk-and-use from behind the host: gaps {gaps[::4]} -> reached {reached} '
-          f'({time.time() - t0:.1f} s); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
-    walk = bool(in_path and still)
+          f'({time.time() - t0:.1f} s, {presses} press(es)); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
+    # judged: the host's creature right at the animal (under 1.8 m from its centre) and on the guest's way to it
+    walk = bool(still and path is not None and path < 0.5 and hg is not None and hg < 1.8)
     # 3. (b) the click: from behind the host again, the camera on the animal, a click on it
     guest.call('coop.abilities target none')
     place(guest, [x + c / ln * (ln + BEHIND) for x, c in zip(a, d)])
@@ -242,12 +238,17 @@ def main():
     hid = (re.search(r'client id=(\d+)', guest.call('coop.status')['out']) or [None, '1'])[1]
     print('  guest: ' + guest.call('coop.partnerpass')['out'].strip(), flush=True)
 
+    # the players' family at the nest may not be attacked (key 1 status 12): its species, from the guest's proxies (fam=1)
+    gl = guest.call('coop.npc list')['out']
+    family = set(re.findall(r'species=([0-9A-F]{8}) .*?fam=1', gl))
+    print(f'  the players\' family species (not hunted): {sorted(family)}', flush=True)
     used, rounds = set(), []
     try:
-        for r in range(a.rounds + 10):
-            if sum(1 for x in rounds if x[0]) >= 2 and sum(1 for x in rounds if x[4]) >= 2 and len(rounds) >= a.rounds:
+        for r in range(a.rounds + 14):
+            if sum(1 for x in rounds if x[0]) >= 2 and sum(1 for x in rounds if x[4]) >= 3 and len(rounds) >= a.rounds:
                 break
-            cand = sorted((v['dist'], k) for k, v in npcs(host).items() if not v['dead'] and k not in used and v['dist'] < 120)
+            cand = sorted((v['dist'], k) for k, v in npcs(host).items()
+                          if not v['dead'] and k not in used and v['dist'] < 120 and v.get('species') not in family)
             if not cand:
                 break
             nid = cand[0][1]
@@ -271,7 +272,7 @@ def main():
         ck(len(front) >= 2, f'rounds with the host\'s creature in front of the animal on the guest\'s screen: {len(front)} >= 2')
         ck(front and all(x[1] for x in front), 'the guest\'s click goes to the animal behind the host\'s creature (the game\'s target)'
            f' ({sum(1 for x in front if x[1])} of {len(front)})')
-        ck(len(way) >= 2, f'rounds with the host\'s creature in the guest\'s way and the animal as the target: {len(way)} >= 2')
+        ck(len(way) >= 2, f'rounds with the host\'s creature right at the animal in the guest\'s way, the animal the target: {len(way)} >= 2')
         ck(way and all(x[2] for x in way), 'the guest\'s attack key walks it to the animal past the host\'s creature, '
            f'no side step ({sum(1 for x in way if x[2])} of {len(way)}; closest gaps {[x[5] for x in way]})')
     ck.faults(host=host, guest=guest)

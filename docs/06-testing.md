@@ -6307,9 +6307,16 @@ on a warm-free lane (30 s of start):
   players' cells only (a Cell pool's mirrors are hundreds of rows a frame: the 400 000-row buffer held 16 s). A cell's
   stop is soft (it slows down over ~1 s and drifts at 0.2-0.4 m/s), so the test turns it back and forth and measures
   how far the host's copy is AHEAD of the guest's own cell along the way it swam 0.25 s before.
-* `partner_pass` (BUG-0913, `creature.partner_pass`, creature fixture): the host's creature put at an animal
-  (`coop.npc gonpc <id> 1.2`), the guest 6 m behind it on the line (`coop.npc gopos`, from the guest's own picture
-  of both), its camera turned until the animal is in the middle (right-drag), the combat stance, a real click on the
-  animal, then the attack key; the game's target field (+0xE7C = creature + 0x5A8) and the game's gap
-  (`coop.abilities reach`). Rounds count when the host's creature is within 90 px of the click point and nearer.
+* `partner_pass` (BUG-0913, `creature.partner_pass`, creature fixture, ~4 min): per animal (not of the players'
+  family: the nest's own species, `fam=1` in the guest's `coop.npc list`, gives key 1 status 12) the host's creature is
+  put 1 m from its centre (`coop.npc gonpc <id> 1.0`); the guest takes the animal as its target from the animal's
+  other side (a real click: there the host's creature is behind it, so the target is set with the fix or without),
+  then is put 6 m behind the host's creature on the line through it (`coop.npc gopos`) and presses the attack key
+  (real input; pressed again when the walk did not start: a press now and then does nothing in both builds): the
+  game's gap (`coop.abilities reach`) must come within the bite's reach. Then from behind again, the camera turned to
+  the animal (right-drag), a real click on the animal: the game's target field (+0xE7C = creature + 0x5A8). Judged:
+  walks with the host's creature under 1.8 m from the animal's centre and under 0.5 m off the way; clicks with it
+  within 90 px of the click point and nearer. The geometry matters: with the host's creature 2.5 m from the animal
+  the guest's walk goes round it in both builds; at 1.0-1.5 m it stops 1.4 m short behind it (fix off). Before
+  the judged part: `coop.find rivals 1` and (`--ff`) friendly fire on must switch the skipping off.
   `coop_avatar_stale_target.py` switches `creature.partner_pass` off on the host: it needs a click on the partner.

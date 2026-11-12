@@ -44,7 +44,7 @@ Guest `coop.pool selfhit` (knocked out), host `coop.pool food <next level line>`
 (`coop.pool selfhit 50`), the host's food crosses a level line; in the guest's own game its position x world scale
 must stay (under 1.5 m), the host's cell must stay near, then the host next to it revives it.
 * FAIL with `SPORE_FIX_OFF=cell.down_scale`: lab 20261112-065614 (102 m off its place, the host 106 m away).
-* PASS: lab 20261112-064328 (0.05 m, revived), 20261112-062128 (the 6 m variant: 0.00 m, revived).
+* PASS: lab 20261112-064328 (0.05 m, revived), 20261112-071436, 20261112-062128 (the 6 m variant: 0.00 m, revived).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).

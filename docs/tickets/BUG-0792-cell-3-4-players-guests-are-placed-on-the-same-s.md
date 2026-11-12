@@ -57,7 +57,7 @@ forced placement on joining an open session (join_after_load covers it).
 `tests/cell_tests.cpp player_spawn_slots`: both guests knocked out 60 m away respawn; then a save and share reloads
 both. In each guest's own game its cell and the other guest's must be over 4 m apart, both within 15 m of the host.
 * FAIL with `SPORE_FIX_OFF=cell.spawn_slots`: lab 20261112-065700 (2.3 m after the respawn, 0.01 m after the load).
-* PASS: lab 20261112-064328.
+* PASS: lab 20261112-064328, 20261112-071436.
 
 ## History
 - 2026-11-10: opened.

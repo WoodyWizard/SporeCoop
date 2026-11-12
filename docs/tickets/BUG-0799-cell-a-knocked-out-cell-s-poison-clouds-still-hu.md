@@ -48,7 +48,7 @@ gets the poison part, a control that the host's game makes its clouds, then the 
 in the host's game for 8 s.
 * FAIL with `SPORE_FIX_OFF=cell.ko_no_poison`: lab 20261112-065846 (host: 38 -> 56 clouds), 20261112-070740 (guest:
   33 -> 54).
-* PASS: host 20261112-062620, 20261112-063438; guest 20261112-070632.
+* PASS: host 20261112-062620, 20261112-063438, 20261112-071436; guest 20261112-070632, 20261112-071436.
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).

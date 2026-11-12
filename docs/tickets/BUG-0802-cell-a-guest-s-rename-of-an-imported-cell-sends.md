@@ -72,7 +72,7 @@ Switch `coop.fix creations.meta_only off` (0.7.12).
 three times; the host must not fault, must still draw the guest's cell and keep the guest's creation key it had;
 the guest's own shares never send a cell without a model.
 * FAIL with `SPORE_FIX_OFF=creations.meta_only`: lab 20261112-065557 (the host took key 7C8C6430 without a model).
-* PASS: lab 20261112-063453 (refused=3, the key kept, no fault).
+* PASS: lab 20261112-063453 (refused=3, the key kept, no fault), 20261112-071436.
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
