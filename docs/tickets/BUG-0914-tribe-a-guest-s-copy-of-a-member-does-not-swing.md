@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.12 (unreleased)
 fixed_in: unreleased
 branch: fix/w48-tribe-mirrors
-commits: 6fc65d20, b059baac, b781e846
+commits: 6fc65d20, b059baac, b781e846, 79e45732, 2fa8696f
 tests: tribe_mirror_hold
 signature:
 docs: docs/re/tribe.md#tribe-mirror-looks, docs/06-testing.md#testing-tribe-mirror-looks
@@ -44,8 +44,11 @@ Test `tools/tests/coop_tribe_mirror_idle.py --part hold` (suite `tribe_mirror_ho
 holding its staff in its animation (`coop.tribe hand`, the game's attach, or a gesture holding it already) and putting
 it back: the guest's copy holds it within 4 s of each take and has it as the host has it within 3.5 s of each end; key frames
 `swing` and `hold` of kind sameview.
-* FAIL with `SPORE_FIX_OFF=tribe.mirror_hold`: out/lab/20261112-100511 (0 of 3; key frame: the staff upright on the guest).
-* PASS: out/lab/20261112-100852 (3 of 3; key frame: the staff in the hand on both), HOLDPASS.
+* FAIL with `SPORE_FIX_OFF=tribe.mirror_hold`: out/lab/20261112-112028 (final test and build: 0 of 3),
+  out/lab/20261112-100511 (0 of 3; key frame `hold`: the staff upright on the guest).
+* PASS: out/lab/20261112-111359, out/lab/20261112-111717 (final test and build: 3 of 3, back 3 of 3);
+  out/lab/20261112-100852 (key frame `hold`: the staff in the hand on both).
+* Still seen in same_view_tribe stills (lab 20261112-102606, 2 of 4 views): BUG-0962.
 
 ## History
 - 2026-11-10: opened.
