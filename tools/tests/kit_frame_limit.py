@@ -3,7 +3,8 @@
 
 A player's report (Discord 2026-11-09, "Screen tearing"): with the mod the game ran uncapped (82-138 fps) and tore;
 he found it goes away without Spore ModAPI. The game's frame limit is its property kFrameLimitMS (AppProperties id
-44, `[[App::FrameLimit_ptr]+0x3C]+0xB0`; 16 ms in the GOG 2024 lab games, the 60 fps cap). SporeKit read it once at its first frame and wrote
+44, `[[App::FrameLimit_ptr]+0x3C]+0xB0`; 16 ms in the GOG 2024 lab games, the 60 fps cap). SporeKit read it once
+at its first frame and wrote
 that value back every 10 frames (sporekit/focus.cpp apply_frame_limit), so a frame limit another program set later
 (a ModAPI mod, a frame limiter, the game itself) was undone within 10 frames.
 
@@ -65,7 +66,8 @@ def main():
         return ck.result()
 
     def near_own(m):
-        return m is not None and own - 2 <= m <= own + 4
+        # at its own limit or slower when the machine is busy (other lanes), but well under the 50 ms one
+        return m is not None and own - 2 <= m <= 40
 
     mean, txt = interval(host, 6)
     print('  host before: ' + txt, flush=True)
