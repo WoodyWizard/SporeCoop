@@ -7,6 +7,7 @@
 namespace inst {
 
 bool g_fix = true;
+bool g_uninstall_fix = true; // not a lab switch: setup only (BUG-0851; setup /olduninstall, win_tests --old-uninstall)
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
@@ -263,7 +264,19 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     return Result::Ok;
 }
 
-bool do_uninstall(const std::wstring& root, std::string& msg)
+bool has_sporecoop(const std::wstring& root)
+{
+    std::wstring bin = root + L"\\SporebinEP1";
+    if (!upd::installed_version(root).empty())
+        return true;
+    // BUG-0851: a half removed install (the version file gone, the loader or coop.dll still there)
+    return g_uninstall_fix && (upd::is_loader(bin + L"\\steam_api.dll") || exists(bin + L"\\mods\\coop.dll") ||
+                               exists(bin + L"\\sporekit.dll"));
+}
+
+// the old uninstall (before BUG-0851): no lock, steam_api.dll only when it is the loader, a file that
+// cannot be deleted renamed and still "removed", every *.sym deleted
+static bool do_uninstall_old(const std::wstring& root, std::string& msg)
 {
     upd::apply_pending(root);
     std::wstring bin = root + L"\\SporebinEP1";
@@ -293,6 +306,94 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
     }
     DeleteFileW((root + L"\\Data\\SporeCoop.package").c_str());
     upd::cleanup_old(root);
+    msg = "SporeCoop is removed (your settings and logs in SporebinEP1\\mods are kept).";
+    return true;
+}
+
+// BUG-0851: the uninstall holds the update lock of the folder (an in-game update of a running
+// instance cannot write at the same time), puts the game's own steam_api.dll back also when it is
+// missing, deletes only SporeCoop's own files and says so when one of them could not be removed.
+bool do_uninstall(const std::wstring& root, std::string& msg)
+{
+    if (!g_uninstall_fix)
+        return do_uninstall_old(root, msg);
+    if (!is_game(root)) {
+        msg = folder_problem(root);
+        return false;
+    }
+    struct Lock {
+        void* h = nullptr;
+        bool ok = false;
+        ~Lock() { upd::release_update_lock(h); }
+    } lock;
+    lock.ok = upd::try_update_lock(root, &lock.h);
+    if (!lock.ok) {
+        msg = "Another SporeCoop update is running in this game folder (an open game or setup): close Spore and "
+              "the other setup, then press Uninstall again. Nothing was changed.";
+        return false;
+    }
+    upd::apply_pending(root); // the same thread holds the lock: the swaps an in-game update left run now
+    std::wstring bin = root + L"\\SporebinEP1";
+    if (exists(bin + L"\\mods\\sporecoop.pending")) {
+        msg = "An in-game update is still waiting for files the game holds open: close Spore, then press "
+              "Uninstall again. Nothing was changed.";
+        return false;
+    }
+    std::wstring sa = bin + L"\\steam_api.dll", orig = bin + L"\\steam_api_orig.dll";
+    bool sa_loader = false;
+    bool sa_there = exists(sa);
+    if (sa_there && !upd::inspect_loader(sa, sa_loader)) {
+        msg = "cannot read steam_api.dll (is Spore closed? run as administrator?). Nothing was changed.";
+        return false;
+    }
+    if (!sa_there || sa_loader) {
+        // the game's own file has to come back from steam_api_orig.dll (BUG-0851: also when steam_api.dll
+        // is missing, e.g. removed by an antivirus)
+        bool orig_loader = true;
+        if (!exists(orig) || !upd::inspect_loader(orig, orig_loader) || orig_loader) {
+            msg = "The game's original steam_api.dll (steam_api_orig.dll) is missing or not the game's file, so "
+                  "SporeCoop cannot be removed safely. Verify the game files in Steam / GOG Galaxy (or reinstall "
+                  "the game), then press Uninstall again. Nothing was changed.";
+            return false;
+        }
+        if (sa_there) {
+            std::wstring old = sa + SC_OLD_SUFFIX;
+            DeleteFileW(old.c_str());
+            bool moved = MoveFileExW(sa.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+            if (moved && upd::g_swap_delay_ms > 0) // tests (BUG-0139): a wide window between the two moves
+                Sleep((DWORD)upd::g_swap_delay_ms);
+            if (!moved) {
+                msg = "cannot restore steam_api.dll (run as administrator? is Spore closed?). Nothing was changed.";
+                return false;
+            }
+            if (!MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                MoveFileExW(old.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING); // the loader back: the game starts
+                msg = "cannot restore steam_api.dll (run as administrator? is Spore closed?). Nothing was changed.";
+                return false;
+            }
+        } else if (!MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            msg = "cannot restore steam_api.dll from steam_api_orig.dll (run as administrator?). Nothing was changed.";
+            return false;
+        }
+    }
+    // only SporeCoop's own files (BUG-0851: every *.sym was deleted, also a player's or another mod's)
+    std::vector<std::wstring> files = {bin + L"\\sporekit.dll", bin + L"\\mods\\coop.dll", root + L"\\Data\\SporeCoop.package"};
+    for (const char* n : upd::kSymbolFiles)
+        files.push_back(bin + L"\\mods\\sporekit\\symbols\\" + upd::widen(n));
+    files.push_back(bin + L"\\mods\\sporecoop.version"); // last: the setup still offers Uninstall after a failure
+    std::string failed;
+    for (auto& f : files)
+        if (!DeleteFileW(f.c_str())) {
+            DWORD e = GetLastError();
+            if (e != ERROR_FILE_NOT_FOUND && e != ERROR_PATH_NOT_FOUND)
+                failed += (failed.empty() ? "" : ", ") + upd::narrow(f.substr(root.size() + 1));
+        }
+    upd::cleanup_old(root);
+    if (!failed.empty()) {
+        msg = "The game's steam_api.dll is back, but these files could not be removed (in use? is Spore closed?): " +
+              failed + ". Close Spore and press Uninstall again.";
+        return false;
+    }
     msg = "SporeCoop is removed (your settings and logs in SporebinEP1\\mods are kept).";
     return true;
 }

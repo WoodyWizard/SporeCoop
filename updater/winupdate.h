@@ -66,6 +66,19 @@ extern bool g_web_fallback_fix; // update.web_fallback, BUG-0392: false = the AP
 // the version installed in a game folder (SporebinEP1/mods/sporecoop.version), "" if none
 std::string installed_version(const std::wstring& game_root);
 bool is_loader(const std::wstring& dll); // SporeCoop's steam_api.dll, not the game's own
+// BUG-0851: false when the file cannot be read or is empty; else *loader = it is SporeCoop's loader
+bool inspect_loader(const std::wstring& dll, bool& loader);
+
+// BUG-0851: the symbol files a release installs (data/symbols/*.sym; tools/tests/tools_selftest.py
+// `symlist` keeps the list complete): the uninstall deletes these and no other *.sym
+constexpr const char* kSymbolFiles[] = {"gog2016_922af7c7.sym", "march2017_dc04aee5.sym", "overrides_922af7c7.sym",
+                                        "overrides_dc04aee5.sym"};
+
+// BUG-0851: the update lock of a game folder without waiting, for the uninstall. false = another
+// update holds it (nothing may change); true = go on, *held (may be null: no lock with update.lock
+// off or when it cannot be made) is given to release_update_lock
+bool try_update_lock(const std::wstring& game_root, void** held);
+void release_update_lock(void* held);
 
 std::wstring widen(const std::string& s);
 std::string narrow(const std::wstring& s);

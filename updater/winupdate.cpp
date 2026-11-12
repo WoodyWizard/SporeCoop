@@ -596,18 +596,57 @@ std::string installed_version(const std::wstring& root)
     return v;
 }
 
-bool is_loader(const std::wstring& dll)
+bool inspect_loader(const std::wstring& dll, bool& loader)
 {
+    loader = false;
     HANDLE f = CreateFileW(dll.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0,
                            nullptr);
     if (f == INVALID_HANDLE_VALUE)
         return false;
     std::vector<char> b(256 << 10);
     DWORD got = 0;
-    ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr);
+    BOOL ok = ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr);
     CloseHandle(f);
+    if (!ok || got == 0)
+        return false;
     static const char tag[] = "sporekit-loader";
-    return std::search(b.begin(), b.begin() + got, tag, tag + sizeof tag - 1) != b.begin() + got;
+    loader = std::search(b.begin(), b.begin() + got, tag, tag + sizeof tag - 1) != b.begin() + got;
+    return true;
+}
+
+bool is_loader(const std::wstring& dll)
+{
+    bool loader = false;
+    return inspect_loader(dll, loader) && loader;
+}
+
+bool try_update_lock(const std::wstring& root, void** held)
+{
+    *held = nullptr;
+    if (!g_lock_fix)
+        return true;
+    HANDLE h = take_update_lock(root, 0);
+    if (h) {
+        *held = h;
+        return true;
+    }
+    // not taken: held by another update, or it cannot be made at all (then nobody else has it either)
+    wchar_t name[160];
+    if (!sc_lock_name(L"SporeCoopUpdate-", root.c_str(), name, 160))
+        return true;
+    HANDLE o = OpenMutexW(SYNCHRONIZE, FALSE, name);
+    if (!o)
+        return GetLastError() != ERROR_ACCESS_DENIED; // no such lock: nobody holds it
+    CloseHandle(o);
+    return false;
+}
+
+void release_update_lock(void* held)
+{
+    if (held) {
+        ReleaseMutex((HANDLE)held);
+        CloseHandle((HANDLE)held);
+    }
 }
 
 } // namespace upd

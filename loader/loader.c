@@ -15,6 +15,10 @@
 typedef int(__cdecl *SporekitBootFn)(HMODULE loader);
 typedef DWORD(WINAPI *EntryFn)(void *);
 
+/* BUG-0851: the loader's tag as a line of its own: uninstall.bat (without the setup) finds it with
+ * findstr, which reads a file line by line (in one long binary "line" Wine's findstr misses it) */
+__attribute__((used)) static const char g_marker_line[] = "\r\nsporekit-loader (SporeCoop)\r\n";
+
 static HMODULE g_self;
 static BYTE *g_entry;
 static BYTE g_saved[5];

@@ -31,8 +31,10 @@ static int g_fail;
 static std::wstring g_tmp;
 static bool g_old;          // --old
 static std::wstring g_bat;  // --bat <install.bat to test> (tools/tests/win_unit.py)
+static std::wstring g_ubat; // --ubat <uninstall.bat to test> (win_unit.py)
 static std::wstring g_excl; // --exclude <installer/ini.exclude>
 static std::wstring g_steam; // --steam <a real Steam folder, read only> (win_unit.py: the user's, if any)
+static bool g_close_wait_fix = true; // --old-closewait: the old final close of test_setup_close (BUG-0853)
 static std::wstring g_setup; // --setup <SporeCoopSetup.exe to test> (default: the one next to win_tests.exe)
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
@@ -873,12 +875,16 @@ static void test_setup_close()
     std::wstring cmd = L"\"" + setup + L"\" \"/dir:" + g + L"\" \"/pack:" + dir + L"\\new.pack\" /api:http://127.0.0.1:9/" +
                        (g_old ? L" /oldfix" : L"");
     SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", L"1500");
+    // BUG-0853: the job's WM_DONE 2 s after the last file: the old wait (all files new, then one
+    // WM_CLOSE) always closed into the busy window, which refused it, and the setup never ended
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", L"2000");
     STARTUPINFOW si{sizeof si};
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi{};
     BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
     SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", nullptr);
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", nullptr);
     CHECK(started);
     if (!started)
         return;
@@ -899,9 +905,17 @@ static void test_setup_close()
     }
     bool closed_early = WaitForSingleObject(pi.hProcess, 2000) == WAIT_OBJECT_0;
     printf("  closed during the job: %s\n", closed_early ? "yes" : "no (refused)");
-    // the job ends (5 files x 1.5 s), then the window closes
-    for (int i = 0; i < 200 && !closed_early && !all_of_version(g, "0.11.0", true); i++)
-        Sleep(100);
+    CHECK(!closed_early);
+    if (g_close_wait_fix) {
+        // BUG-0853: the job is over when the window enables Close again (refresh() after WM_DONE)
+        HWND close = w ? GetDlgItem(w, 13) : nullptr; // ID_CLOSE
+        int waited = 0;
+        for (; waited < 300 && !closed_early && close && !IsWindowEnabled(close); waited++)
+            Sleep(100);
+        printf("  Close enabled again after %.1f s\n", waited / 10.0);
+    } else // the old wait: the files only (the window may still be busy)
+        for (int i = 0; i < 200 && !closed_early && !all_of_version(g, "0.11.0", true); i++)
+            Sleep(100);
     if (!closed_early && w)
         PostMessageW(w, WM_CLOSE, 0, 0);
     bool ended = WaitForSingleObject(pi.hProcess, 20000) == WAIT_OBJECT_0;
@@ -914,9 +928,9 @@ static void test_setup_close()
     CHECK(all_of_version(g, "0.11.0"));
 }
 
-static bool run_bat(const std::wstring& bin)
+static bool run_bat(const std::wstring& bin, const wchar_t* name = L"install.bat")
 {
-    std::wstring cmd = L"cmd.exe /c install.bat < NUL > NUL";
+    std::wstring cmd = std::wstring(L"cmd.exe /c ") + name + L" < NUL > NUL";
     STARTUPINFOW si{sizeof si};
     PROCESS_INFORMATION pi{};
     if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, bin.c_str(), &si, &pi))
@@ -1638,6 +1652,138 @@ static void test_setup_retry()
     CHECK(l.find("attempt 2 of 3") != std::string::npos);
 }
 
+// ---------------- BUG-0851: the uninstaller ----------------
+
+// a fake game with SporeCoop 0.9.0 installed by do_install, the release's symbol file names and a
+// symbol file of the player's own
+static std::wstring installed_game(const wchar_t* name)
+{
+    std::wstring g = fake_game(name);
+    std::wstring dir = fresh_dir((std::wstring(name) + L"_dl").c_str());
+    put_bytes(dir + L"\\p.pack", upd::write_pack(make_pack("0.9.0")));
+    inst::Options o;
+    o.pack = dir + L"\\p.pack";
+    o.pack_dir = dir;
+    upd::ReleaseBox box;
+    std::string msg;
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    std::wstring sym = g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\";
+    put(sym + L"overrides_dc04aee5.sym", "ours");
+    put(sym + L"mine.sym", "the player's own");
+    return g;
+}
+
+struct LockHold {
+    std::wstring root;
+    HANDLE go, done;
+};
+static DWORD WINAPI lock_holder(void* a)
+{
+    auto* l = (LockHold*)a;
+    void* h = nullptr;
+    upd::try_update_lock(l->root, &h);
+    SetEvent(l->go);
+    WaitForSingleObject(l->done, 20000);
+    upd::release_update_lock(h);
+    return 0;
+}
+
+static void test_uninstall()
+{
+    printf("setup: uninstall (BUG-0851)\n");
+    std::string msg;
+    // (a) steam_api.dll missing (an antivirus took the loader), steam_api_orig.dll there
+    std::wstring g = installed_game(L"un_a"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\steam_api.dll").c_str());
+    bool ok = inst::do_uninstall(g, msg);
+    printf("  (a) loader missing: %d, %s\n", ok, msg.c_str());
+    CHECK(ok && get(bin + L"\\steam_api.dll") == "the game's steam api");
+    CHECK(!exists(bin + L"\\steam_api_orig.dll"));
+    // (b) coop.dll held open (a running game): not "removed"; the next try after it is closed is
+    g = installed_game(L"un_b"), bin = g + L"\\SporebinEP1";
+    HANDLE f = CreateFileW((bin + L"\\mods\\coop.dll").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(f != INVALID_HANDLE_VALUE);
+    ok = inst::do_uninstall(g, msg);
+    printf("  (b) coop.dll in use: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && msg.find("coop.dll") != std::string::npos);
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api"); // the game starts without the mod
+    CHECK(inst::has_sporecoop(g)); // the setup still offers Uninstall
+    CloseHandle(f);
+    ok = inst::do_uninstall(g, msg);
+    CHECK(ok && !exists(bin + L"\\mods\\coop.dll") && !inst::has_sporecoop(g));
+    // (c) only SporeCoop's symbol files go
+    printf("  (c) symbols: ours %s, the player's %s\n", exists(bin + L"\\mods\\sporekit\\symbols\\overrides_dc04aee5.sym") ? "kept" : "removed",
+           exists(bin + L"\\mods\\sporekit\\symbols\\mine.sym") ? "kept" : "removed");
+    CHECK(!exists(bin + L"\\mods\\sporekit\\symbols\\overrides_dc04aee5.sym"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+    // (d) another update holds the folder's lock: nothing changes
+    g = installed_game(L"un_d"), bin = g + L"\\SporebinEP1";
+    LockHold l{g, CreateEventW(nullptr, TRUE, FALSE, nullptr), CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    HANDLE t = CreateThread(nullptr, 0, lock_holder, &l, 0, nullptr);
+    WaitForSingleObject(l.go, 5000);
+    ok = inst::do_uninstall(g, msg);
+    printf("  (d) update lock held: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && upd::is_loader(bin + L"\\steam_api.dll") && exists(bin + L"\\mods\\coop.dll"));
+    SetEvent(l.done);
+    WaitForSingleObject(t, 20000);
+    CloseHandle(t);
+    CloseHandle(l.go);
+    CloseHandle(l.done);
+    CHECK(inst::do_uninstall(g, msg) && get(bin + L"\\steam_api.dll") == "the game's steam api");
+    // (e) the loader in place and no backup of the game's file: refused, nothing removed
+    g = installed_game(L"un_e"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\steam_api_orig.dll").c_str());
+    ok = inst::do_uninstall(g, msg);
+    printf("  (e) no steam_api_orig.dll: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && exists(bin + L"\\mods\\coop.dll") && exists(bin + L"\\sporekit.dll"));
+    // (f) a half removed install (the version file gone): the setup still offers Uninstall
+    g = installed_game(L"un_f"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\mods\\sporecoop.version").c_str());
+    CHECK(inst::has_sporecoop(g));
+    // (g) not a game folder
+    std::wstring nog = fresh_dir(L"un_g");
+    CHECK(!inst::do_uninstall(nog, msg));
+}
+
+// BUG-0851: uninstall.bat copied steam_api_orig.dll over any steam_api.dll (also one Steam had put
+// back) and left mods\coop.dll; now it runs the setup next to it, else checks the loader itself
+static void test_uninstall_bat()
+{
+    printf("uninstall.bat (BUG-0851)\n");
+    if (g_ubat.empty()) {
+        printf("  (skipped: no --ubat)\n");
+        return;
+    }
+    // 1. no setup next to it, Steam put its steam_api.dll back over the loader
+    std::wstring g = installed_game(L"ubat1"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    put(bin + L"\\steam_api.dll", "the game's steam api, updated by Steam");
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    printf("  1. no setup, Steam's file: steam_api.dll='%s' coop.dll %s\n", get(bin + L"\\steam_api.dll").c_str(),
+           exists(bin + L"\\mods\\coop.dll") ? "left" : "removed");
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api, updated by Steam");
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\sporekit.dll"));
+    CHECK(!exists(g + L"\\Data\\SporeCoop.package"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+    // 2. no setup, the loader in place: the game's file comes back
+    g = installed_game(L"ubat2"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api" && !exists(bin + L"\\steam_api_orig.dll"));
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\mods\\sporecoop.version"));
+    // 3. the setup next to it (from the zip) does the work
+    g = installed_game(L"ubat3"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    CHECK(CopyFileW(setup_exe().c_str(), (bin + L"\\SporeCoopSetup.exe").c_str(), FALSE));
+    DeleteFileW((bin + L"\\steam_api.dll").c_str());
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    printf("  3. with the setup: steam_api.dll='%s' coop.dll %s, log: %s\n", get(bin + L"\\steam_api.dll").c_str(),
+           exists(bin + L"\\mods\\coop.dll") ? "left" : "removed", get(bin + L"\\mods\\sporecoop-uninstall.log").c_str());
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api");
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\sporekit.dll"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -1669,6 +1815,12 @@ int main(int argc, char** argv)
             slotfs::g_staged_move_fix = false;
         else if (!strcmp(argv[i], "--old-collect")) // BUG-0847 (world.share_complete)
             slotfs::g_collect_fix = false;
+        else if (!strcmp(argv[i], "--old-closewait")) // BUG-0853 (the test's own race)
+            g_close_wait_fix = false;
+        else if (!strcmp(argv[i], "--old-uninstall")) // BUG-0851 (setup only)
+            inst::g_uninstall_fix = false;
+        else if (!strcmp(argv[i], "--ubat") && i + 1 < argc)
+            g_ubat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
             g_setup = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
@@ -1688,6 +1840,8 @@ int main(int argc, char** argv)
         upd::g_path_fix = false;
         upd::g_lock_fix = false;
         inst::g_ga_fix = inst::g_ga_dir_fix = false;
+        inst::g_uninstall_fix = false;
+        g_close_wait_fix = false;
         upd::g_web_fallback_fix = false;
         upd::g_retry_fix = false;
     }
@@ -1715,6 +1869,8 @@ int main(int argc, char** argv)
     test_setup_packs();
     test_setup_close();
     test_install_bat();
+    test_uninstall();
+    test_uninstall_bat();
     test_ga_folder();
     test_setup_ga_window();
     test_steam_ga_folder();

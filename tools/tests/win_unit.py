@@ -17,6 +17,9 @@ For install.bat, --old runs the install.bat of 7874654 (before BUG-0080, from to
 BUG-0392; --old-gadir: before the Steam Galactic Adventures folder "Spore 24720" was known (BUG-0391).
 A Steam folder in ~/.local/share/Steam is read (never written) to check the vdf / acf parsing. --setup runs the setup tests against another SporeCoopSetup.exe (a path under the repository:
 Bottles does not see /tmp), for example one built from main.
+--old-uninstall / --old-closewait: the uninstall before BUG-0851 (also the uninstall.bat of 572c8e68) / the
+old final close of test_setup_close (BUG-0853). SPORE_WIN_UNIT_PREFIX=<folder under the repository> runs
+win_tests.exe with a Bottles runner's wine (SPORE_WINE=<binary>) in that private prefix: no lane, no game.
 """
 import os
 import re
@@ -30,13 +33,14 @@ import lane  # noqa: E402
 
 
 OLD_BAT_COMMIT = '7874654'  # the last tools/package.sh that wrote install.bat itself (BUG-0080)
+OLD_UBAT_COMMIT = '572c8e68'  # uninstall.bat before BUG-0851
 
 
 def crlf(text):
     return re.sub(r'\r*\n', '\r\n', text)
 
 
-def stage_bat(old):
+def stage_bat(old, old_ubat=None):
     """install.bat (and ini.exclude) to test, with Windows line endings as tools/package.sh ships them"""
     if old:
         sh_text = subprocess.run(['git', '-C', ROOT, 'show', f'{OLD_BAT_COMMIT}:tools/package.sh'],
@@ -47,6 +51,11 @@ def stage_bat(old):
     out = os.path.join(ROOT, 'build', 'install_test.bat')
     with open(out, 'w', newline='') as f:
         f.write(crlf(bat))
+    ubat_text = (subprocess.run(['git', '-C', ROOT, 'show', f'{OLD_UBAT_COMMIT}:installer/uninstall.bat'],
+                                capture_output=True, text=True, check=True).stdout if (old if old_ubat is None else old_ubat)
+                 else open(os.path.join(ROOT, 'installer', 'uninstall.bat')).read())
+    with open(os.path.join(ROOT, 'build', 'uninstall_test.bat'), 'w', newline='') as f:
+        f.write(crlf(ubat_text))
     excl = os.path.join(ROOT, 'build', 'ini_test.exclude')
     with open(excl, 'w', newline='') as f:
         f.write(crlf(open(os.path.join(ROOT, 'installer', 'ini.exclude')).read()))
@@ -58,7 +67,8 @@ def win(path):
 
 
 def main():
-    assert lane.LANE > 1, 'never the real install (lane 1)'
+    prefix = os.environ.get('SPORE_WIN_UNIT_PREFIX')  # a private Wine prefix instead of a lane's bottle
+    assert prefix or lane.LANE > 1, 'never the real install (lane 1)'
     subprocess.run(['make', '-C', ROOT, '--no-print-directory', 'test-win'], check=True, stdout=subprocess.DEVNULL)
     exe = os.path.join(ROOT, 'build', 'win_tests.exe')
     out = os.path.join(lane.out_dir('win_unit'), 'win_tests.txt')
@@ -81,14 +91,29 @@ def main():
         args += ['--steam', win(steam)]
     if '--setup' in sys.argv[1:-1]:  # another SporeCoopSetup.exe (e.g. one built from main: its tests must fail)
         args += ['--setup', win(os.path.abspath(sys.argv[sys.argv.index('--setup') + 1]))]
-    bat, excl = stage_bat('--old' in args)
-    args += ['--bat', win(bat), '--exclude', win(excl)]
+    bat, excl = stage_bat('--old' in args, '--old' in args or '--old-uninstall' in args)
+    args += ['--bat', win(bat), '--exclude', win(excl), '--ubat', win(os.path.join(ROOT, 'build', 'uninstall_test.bat'))]
     w = 'Z:' + exe.replace('/', '\\')
     wo = 'Z:' + out.replace('/', '\\')
     # bottles-cli does not hand the program's stdout back: cmd redirects it into a file
     cmd = f'cmd /c "{w} {" ".join(args)} > {wo} 2>&1"'
     if os.path.exists(out):
         os.remove(out)
+    if prefix:
+        # SPORE_WIN_UNIT_PREFIX=<folder under the repository> [SPORE_WINE=<wine binary>]: no lane, no
+        # Bottles; for packages that need no game (BUG-0851, BUG-0853)
+        wine = os.environ.get('SPORE_WINE') or os.path.expanduser(
+            '~/.var/app/com.usebottles.bottles/data/bottles/runners/soda-11.0-10/bin/wine')
+        env = dict(os.environ, WINEPREFIX=os.path.abspath(prefix), WINEDEBUG='-all', WINEDLLOVERRIDES='mscoree,mshtml=')
+        with open(out, 'w') as fo:
+            subprocess.run([wine, exe, *args], stdout=fo, stderr=subprocess.STDOUT, env=env, timeout=600,
+                           stdin=subprocess.DEVNULL)
+        subprocess.run([os.path.join(os.path.dirname(wine), 'wineserver'), '-k'], env=env, capture_output=True)
+        text = open(out, errors='replace').read()
+        print(text.rstrip())
+        ok = 'ALL OK' in text
+        print('RESULT:', 'PASS' if ok else 'FAIL')
+        return 0 if ok else 1
     subprocess.run(['flatpak', 'run', '--command=bottles-cli', 'com.usebottles.bottles', 'run', '-b', lane.BOTTLE,
                     '-e', 'C:\\windows\\system32\\cmd.exe', '--', '/c', f'{w} {" ".join(args)} > {wo} 2>&1'],
                    capture_output=True, timeout=300, stdin=subprocess.DEVNULL)

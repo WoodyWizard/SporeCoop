@@ -59,7 +59,15 @@ enum class Result { Ok, Failed, Older };
 Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox& rel, std::string& msg,
                   const upd::Progress& progress = {}, std::string* older_version = nullptr,
                   std::string* installed = nullptr);
+// BUG-0851: refuses a folder that is not a game and a folder whose update lock another update holds or
+// that still has an in-game update waiting (nothing changed); puts the game's steam_api.dll back from
+// steam_api_orig.dll when the current one is the loader or missing (refuses when the backup is
+// missing or is itself the loader); deletes only SporeCoop's files (upd::kSymbolFiles, not every
+// *.sym); false with the files' names when one could not be deleted
 bool do_uninstall(const std::wstring& root, std::string& msg);
+// SporeCoop or a part of it is installed: the version file, the loader, coop.dll or sporekit.dll
+// (BUG-0851: the setup offers Uninstall also for a half removed install)
+bool has_sporecoop(const std::wstring& root);
 
 // tests: false = the setup's behaviour before BUG-0094 (any pack installed, no downgrade check) and
 // BUG-0139 (the window closes during a job); `/oldfix` on the setup's command line
@@ -69,5 +77,7 @@ extern bool g_ga_fix; // not a lab switch: setup only
 // tests: false = the folder handling of the first BUG-0391 fix, before the Steam GA folder "Spore 24720"
 // was known (setup `/oldgadir`, win_tests --old-gadir)
 extern bool g_ga_dir_fix; // not a lab switch: setup only
+// tests: false = the uninstall before BUG-0851 (setup `/olduninstall`, win_tests --old-uninstall)
+extern bool g_uninstall_fix; // not a lab switch: setup only
 
 } // namespace inst
