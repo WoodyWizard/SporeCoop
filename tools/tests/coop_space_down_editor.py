@@ -10,8 +10,8 @@ end only on the ship it was set on: a new player UFO object in the same world wo
 2. For the first trip that does: the guest's ship is disabled (`disable 1`, nobody repairs it), makes that trip, and
    once the state is over the own ship must take damage again (`hit 20`, invincible byte 0).
    SPORE_FIX_OFF=space.down_ship_only: FAIL then.
-No such trip: the test fails with "no trip made a new ship object" (the case the ticket feared is not reachable by
-these trips; the probe's lines are the evidence).
+No such trip (so far always: the case the ticket feared is not reachable by these trips, BUG-0836 not reproduced):
+the test checks that the own ship takes damage after the disabled state ended with a death and the respawn.
 
   SPORE_LANE=2 python3 tools/tests/coop_space_down_editor.py
 """
@@ -146,7 +146,16 @@ def main():
         if new and found is None and 'respawn' not in name:  # (a death ends the disabled state itself)
             found = (name, fn)
     if not found:
-        ck(False, 'no trip made a new ship object (the probe lines above are the evidence)')
+        # BUG-0836 not reproduced (lab 20261112-035324, 20261112-035944): the player's UFO is the same object (pointer
+        # and serial) after every trip of one Space world, a death and its respawn included. What is left to check:
+        # after the disabled state ended (here with the death), the own ship takes damage again.
+        print('  no trip made a new ship object: the disabled state always ends on its own ship', flush=True)
+        time.sleep(2)
+        out = sp(guest, 'hit 20')
+        print('  hit 20:', out, '|', sp(guest, 'downstate'), flush=True)
+        m = re.search(r'hp ([\d.]+) -> ([\d.]+) .* invincible=(\d)', out)
+        ck(m and m.group(3) == '0' and float(m.group(2)) < float(m.group(1)) - 10,
+           f'after the disabled state and the respawn the own ship takes damage ({out})')
     else:
         name, fn = found
         print('  guest:', sp(guest, 'disable 1'), flush=True)

@@ -6218,3 +6218,37 @@ creature is freed 10-40 frames later, the next creature of its species takes the
 * `coop_tribe_civ.py --rejoin` (suite `tribe_civ_rejoin`, BUG-0849, ~12 min): the guest leaves and joins again right
   after the host's City Hall editor; the host's planet file in its slot (`<planet>.spo`) is sampled until the host is
   in Civ: no write after the City Hall editor's end.
+
+## Space S1 tests of 0.7.13 (2026-11-12, fix/w48-space)
+<a id="testing-space-s1-0713"></a>
+
+Each test has a FAIL twin with its switch off (`SPORE_FIX_OFF=<switch>`); the run ids are in the tickets. All are cold
+two-game tests of ~1-2 min after the games are up unless said otherwise.
+
+| Suite name | Script | Ticket | Switch | What it asserts (the other game's state) |
+|---|---|---|---|---|
+| space_colony_crash | coop_space_colony_rejoin.py --crash | BUG-0810 | space.kept_leave | after a SIGKILL and a rejoin within 30 s (same id) the guest's planet is a colony of its empire again |
+| space_rival_away | coop_space_rival_away.py | BUG-0813 | space.rival_budget_world | rivals: the guest's game money keeps a reward paid on its return from `away` |
+| space_finale_gone | coop_space_finale_gone.py (~6 min) | BUG-0820 | space.finale_entered | the core opens for the guest after the host entered and flew away |
+| space_spice_away | coop_space_colony_spice.py --case away | BUG-0822 | space.colony_spice_away | the guest's collected colony cities stay empty after the host's return |
+| space_spice_mirror | coop_space_colony_spice.py --case mirror | BUG-0840 | space.colony_spice_mirror | the guest's own colony keeps its 40 spice per city |
+| space_spice_cap | coop_space_colony_spice.py --case cap (space_empire) | BUG-0834 | space.colony_spice_all | the guest's game has the host's spice in its third colony (`colonyspice cap 1` stands for 48) |
+| space_items_missed | coop_space_items_missed.py | BUG-0826 | space.keep_items_missed | an item the restore could not make stays in the record and in the host's kept hold |
+| space_gift_reload | coop_space_gift_reload.py | BUG-0828 | space.gift_match_newest | a refunded gift is back in game B's hold after an earlier gift in game A |
+| party_space_survey | coop_party_space_survey.py (3 players) | BUG-0830 | space.survey_needed | the survey is done and paid in every game with a late crew member at home |
+| space_sale_end | coop_space_sale_end.py | BUG-0832 | trade.sale_owed | the seller's game money has the sale after it was away at its session end |
+| effects_party_space | coop_effects_party.py --fixture space (3 players) | BUG-0895 | effects.space | the receivers' games create the actor's world effect at its ship |
+| space_load_follow | coop_space_load_follow.py | BUG-0941 | space.load_follow | the guest's game loads the world after the host loads another Space save |
+| space_down_editor | coop_space_down_editor.py | BUG-0836 | space.down_ship_only | a probe: which trip gives the player a new UFO object (see the ticket) |
+
+* New test commands: `coop.space colonyspice set <PlanetID> <spice>` (every city of that colony) and `colonyspice cap
+  <n>` (the old cap used with space.colony_spice_all off; reset at the session end); `coop.space downstate` shows the
+  own ship and the disabled ship (pointer, object serial, the invincible byte); `coop.space trade kept` has a `missed:`
+  line; `coop.status` has `space save: <file>, load shares N`.
+* A crash rejoin in a test: `coop_creature_desync.kill_game(lane.GUEST)`, `lane.run_guest()`, the join as soon as the
+  galaxy menu is up (9-10 s on lanes 2/3): well inside the session's 30 s timeout, so the token path (same id) is the
+  one tested, not a timeout and a new id.
+* Pitfalls: a test listing that goes through the code under test hides what the FAIL twin should show (the colony
+  listing used the 48 cap too: the FAIL run 20261112-034947 saw one colony; the listing is uncapped now). The captain
+  screen's "Enter Outfitter" has a hidden parent (`uifind.find` gives `vis=False`).
+* Party tests (3 games in one bottle) run fine on lanes 2/3 next to a two-game lane: ~1-3 min each.

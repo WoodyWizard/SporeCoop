@@ -1,19 +1,19 @@
 ---
 id: BUG-0895
 title: Space: the effects relay is off by default (effects.space, "unverified") and nobody tracks turning it on or testing it
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-space
+commits: 8f0afe6e
+tests: effects_party_space
 signature:
-docs:
+docs: docs/re/space.md#space-s1-0713, docs/known-issues.md#issue-effects-civ-space
 related: BUG-0451, BUG-0471, BUG-0527
 ---
 
@@ -34,7 +34,12 @@ Find a way to make an own-UFO effect in a test (weapon fire, a terraform tool, s
 effects_party_space with a real UFO effect: the partner's game must create the game's effect object, active, at the actor's UFO position. Must FAIL with effects.space off and PASS with it on.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`effects.space` is on by default (effects.cpp; the registry entry now names BUG-0895), and effects_party_space no
+longer switches it on by hand, so the suite runs it as shipped. The workload is the game's own effect: `coop.effects
+load 1 400 0` creates, at the player's ship, the id of the last effect the Space stage's game created in its own effect
+world (DC08F952 in the lab's space fixture); the relay host -> guest 1, host -> guest 2 and guest 1 -> guest 2 (the
+host's relay) creates it in the receiver's game, active, 0.05-0.06 m from the actor's ship. No fault on the three
+games, the relay under 1 % of the main thread. Switch `coop.fix effects.space off`: not relayed in Space (0.7.12).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
@@ -42,3 +47,4 @@ effects_party_space with a real UFO effect: the partner's game must create the g
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0451. Severity low, confidence medium.
+- 2026-11-12: fixed on fix/w48-space (effects.space on by default after the 3-player run passed and its twin failed).

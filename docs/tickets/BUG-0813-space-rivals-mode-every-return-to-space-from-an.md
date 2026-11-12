@@ -1,19 +1,19 @@
 ---
 id: BUG-0813
 title: Space rivals mode: every return to Space from an editor or adventure resets a guest's budget to the host's stale copy (money lost or created)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-space
+commits: c395848c
+tests: space_rival_away
 signature:
-docs:
+docs: docs/re/space.md#space-s1-0713
 related: BUG-0192
 ---
 
@@ -30,10 +30,19 @@ Clear g_budget_known only when spaceext::world_epoch() changes (a real load), no
 Host `coop.space rivalry mode rivals`; guest `coop.space contracts money` (M), `coop.space away 1`, `coop.space contracts result 5000 0`, `coop.space away 0`; after 3 s: FAIL = money M and `coop.space rivalry` shows restored=1; PASS = M+5000.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+A guest asks the host for its budget again (K_ASK) only when it comes into Space in another Space world
+(spaceext::world_epoch, which an editor, the outfitter or an adventure entered from Space does not change), not on
+every return to Space: the epoch at which the budget was known is kept (g_budget_epoch). Root cause confirmed at
+runtime: with the switch off, a 5000 reward paid in the first Space frame after `away` was undone by the host's
+K_SET (`restored` 0 -> 1, the money back to 50000). Switch `coop.fix space.rival_budget_world off` (0.7.12).
+`coop.space rivalry` shows `budget_kept=` (returns that kept the budget).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+`coop_space_rival_away.py` (suite `space_rival_away`): rivals mode, the guest `away 1`, a 5000 contract result
+while away, `away 0`; the guest's game money must be 50000 + 5000 and stay.
+* FAIL with `SPORE_FIX_OFF=space.rival_budget_world`: lab 20261112-032943 (55000 for a moment, then 50000, restored=1).
+* PASS: lab 20261112-032946 (55000 after 6 s, restored 0).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
+- 2026-11-12: fixed on fix/w48-space (the budget is asked for again only in another Space world; switch space.rival_budget_world).
