@@ -51,14 +51,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--windows', type=int, default=3)
     ap.add_argument('--secs', type=float, default=120)
+    ap.add_argument('--who', choices=('host', 'guest'), default='host',
+                    help="whose chief: the host's, or the guest's (simulated by the host too; BUG-0968)")
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
     game_runs(guest, 90)
     time.sleep(5)
-    lead = re.findall(r'#(\d+) \S+ owner=0 .*leader=1', host.call('coop.tribe')['out'])
+    owner = r'owner=0' if a.who == 'host' else r'owner=[1-9]\d*'
+    lead = re.findall(r'#(\d+) \S+ ' + owner + r' .*leader=1', host.call('coop.tribe')['out'])
     cid = lead[0] if lead else '1'
-    print(f'  the host\'s chief #{cid}', flush=True)
+    print(f'  the {a.who}\'s chief #{cid}', flush=True)
     own, shared, missed, t0 = [], 0, [], None
     for w in range(a.windows):
         rows = {'host': [], 'guest': []}
@@ -85,11 +88,12 @@ def main():
                 print(f'    the mirror around the host\'s hold at {s - t0:.1f} s: {g_near[:20]}', flush=True)
         print(f'  window {w + 1}: {len(rows["host"])} / {len(rows["guest"])} samples; host holds '
               f'{[(round(s - t0, 1), round(e - s, 2), x) for s, e, x in hh]}; the mirror\'s own holds so far {own}', flush=True)
-        if own:
+        if own and a.who == 'host':
             break
     st = next((ln.strip() for ln in guest.call('coop.status')['out'].splitlines() if 'unsent holds' in ln), '')
     print(f'  guest: {st[-60:]}', flush=True)
-    ck(own, f'the mirror took its item by its own animation at least once ({len(own)})')
+    if a.who == 'host':
+        ck(own, f'the mirror took its item by its own animation at least once ({len(own)})')
     ck(all(d < 0.8 for _, d, _ in own), f'every hold of the mirror\'s own ends within 0.8 s ({own})')
     ck(not missed, f'the host member\'s holds are the mirror\'s too ({shared} shared, missed {missed})')
     ck.faults(host=host, guest=guest)
