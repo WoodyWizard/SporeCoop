@@ -6107,3 +6107,30 @@ were the test. No change of the mod.
   to stay put reads its node first (`coop.tribe`, `bt=`), polls that it is still there, and puts it again when it
   left; it does not sleep and hope.
 
+
+## Captures and conquests on both games (2026-11-12, fix/w48-captures)
+<a id="testing-captures"></a>
+
+BUG-0875, BUG-0775, BUG-0877, BUG-0878, BUG-0777, BUG-0879. Each test reads the game's own state on both games
+(`coop.civ`: the city's political id, `(player)`, and the owner the city menu uses; `coop.realign planet village|hut`:
+`fl` bit 1 = a village's conquered flag cTribe +0x556 / a hut's combatant state 2).
+* `civ_capture_keeps` (civ_npc, ~1 min): the host's capture through the capture meter (`coop.civ siege <city> 0 150
+  pc`: AddCaptureDamage for the player civilization; the city changes hands 8 s later, after the capture cinematic).
+  The guest's game must refuse the guest a purchase there. Twin `civ.capture_keeps`.
+* `civ_capture_credit` (civ_npc, ~2.5 min): a REAL siege by the guest: three military vehicles given to the guest,
+  its real clicks on the city and the crosshair (as civ_guest_attack); the city's other buildings cut to 5 hp
+  (`coop.civ bhp <city> <hp>`), the guest's vehicles kept at their health (`coop.civ vhp <id> <hp>`: the city's
+  defence ends them before the capture otherwise), the host's own vehicle put 20 m from the hall (`coop.civ vput <id>
+  x y z`: a move order stops ~100 m off an enemy city; the besiegers fire from 60-73 m). Twin `civ.capture_credit`.
+* `civ_buy_city` (civ_npc, ~1 min): the guest's game buys a city through the game's purchase function (`coop.civ
+  buycity <city> <price>`: cCity_Buy, as FinishBuyCity calls it after the talk's accept; the talk itself is not
+  driven). Twin `civ.buy_city`.
+* `civ_away_capture` (civ_npc, ~1.5 min): host `coop.menu`, the guest's own game fills the capture meter
+  (`coop.civ siege` works on a guest while the host is away), then the host loads the same save. Twin
+  `civ.away_capture`.
+* `tribe_conquest_guest` (tribe, ~1 min): the host's raid (as tribe_conquer_orders) with the hut cut to 2 hp: one blow
+  ends it. Twin `realign.hut_fall`.
+* `tribe_away_conquest` (tribe, ~3 min): host `coop.menu`; the guest raids the fixture's NPC village in its own game
+  (`coop.tribe order` and `huthp` work on a guest while the host is away), then the host loads the same save (an NPC
+  tribe made by `coop.tribe npc_tribe` is not in the save: the fixture's own village is used). Twin
+  `tribe.away_conquest`; `coop.tribe conquests` prints sent / done / refused.
