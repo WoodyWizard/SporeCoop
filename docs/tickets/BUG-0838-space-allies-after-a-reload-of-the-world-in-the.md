@@ -35,7 +35,7 @@ mods/coop/space_allies.cpp: a reset of the mirror's empire for another galaxy (r
 ## Verification
 Test `space_allies_snap` (tools/tests/coop_space_allies_snap.py).
 * FAIL (SPORE_FIX_OFF=allies.snap_world): out/lab/20261112-011823 (the old world's cCivData in the record again).
-* PASS: out/lab/20261112-011341 (none re-added, new ones made; that run also checked a new record object, which it is not: the check is gone since).
+* PASS: out/lab/20261112-013003 (none re-added, new ones made); out/lab/20261112-011341 showed the same and failed only on a check for a new record object (it is the same object: the check is gone).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

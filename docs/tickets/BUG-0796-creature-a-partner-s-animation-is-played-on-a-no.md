@@ -35,7 +35,7 @@ Test hook: `coop.anim inject <player> <id>` on the guest while it shows the host
 ## Verification
 Tests `anim_not_creature` (Cell) and `anim_not_creature_tribe` (Tribe), tools/tests/coop_anim_not_creature.py.
 * FAIL (SPORE_FIX_OFF=core.anim_creature_only): out/lab/20261112-011637 (Cell: played=5), out/lab/20261112-011730 (Tribe: played=5).
-* PASS: out/lab/20261112-012019 (Tribe); Cell: see the final runs below.
+* PASS: out/lab/20261112-012019 (Cell and Tribe), out/lab/20261112-013003 (Cell).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).

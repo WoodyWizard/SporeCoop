@@ -35,7 +35,7 @@ Guest: remove a proxy with the game's own destroy (destroy_untracked, a proxy va
 ## Verification
 Test `npc_handler_live` (tools/tests/coop_npc_handler_live.py).
 * FAIL (SPORE_FIX_OFF=npc.handler_live): out/lab/20261112-010212 (10 stimuli named the removed creature).
-* PASS: out/lab/20261112-010824-2, out/lab/20261112-011341 (0 stimuli, no faults).
+* PASS: out/lab/20261112-010824-2, out/lab/20261112-011341, out/lab/20261112-013003 (0 stimuli, no faults).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).

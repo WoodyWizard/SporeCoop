@@ -38,8 +38,8 @@ mods/coop/view_centres.cpp: the lend of the sphere vector is a swap-ledger entry
 
 ## Verification
 Test `lend_ledger` (tools/tests/coop_lend_ledger.py).
-* FAIL (SPORE_FIX_OFF=game.lend_ledger): out/lab/20261112-010920 (PlayerSpecies still the guest's own species; the game's vector on the mod's buffer).
-* PASS: out/lab/20261112-010824-2.
+* FAIL (SPORE_FIX_OFF=game.lend_ledger): out/lab/20261112-010920, out/lab/20261112-013136 (with the call guards: PlayerSpecies still the guest's own species; the game's vector on the mod's buffer).
+* PASS: out/lab/20261112-010824-2, out/lab/20261112-013003.
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0110. Severity medium, confidence medium.

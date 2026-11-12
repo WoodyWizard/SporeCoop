@@ -58,7 +58,7 @@ mods/coop/game.cpp: `game::listed` / `game::LiveRef` (one walk of the object lis
 ## Verification
 Tests `proxy_identity` and `proxy_identity_tribe` (tools/tests/coop_proxy_identity.py): the game destroys a proxy's creature while the guest's npc tick waits, a new creature of that species gets the freed block, then it must not be driven as the host's animal; no faults.
 * FAIL (SPORE_FIX_OFF=npc.proxy_identity): out/lab/20261112-010612 (proxy_identity: proxies #6 and #7 driven onto the host's NPCs, 5 faults), out/lab/20261112-010017-2 (proxy_identity_tribe: 286 faults on the guest, sync-check MISMATCH). Before the audit used the check: out/lab/20261112-004057 (driven, 44 faults, the guest FROZE), out/lab/20261112-005401 (the guest crashed in MallocInternal).
-* PASS: out/lab/20261112-010017 (both tests).
+* PASS: out/lab/20261112-010017, out/lab/20261112-013003 (both tests each).
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).

@@ -49,7 +49,7 @@ mods/coop/tribe.cpp: a mirror records its citizen's serial when it is bound; `mi
 ## Verification
 Test `tribe_mirror_lifetime` (tools/tests/coop_tribe_mirror_lifetime.py): up to 16 rounds of statehold + the game's removal of an NPC-tribe mirror's citizen + a reuse hunt in the guest's player tribe.
 * FAIL (SPORE_FIX_OFF=tribe.mirror_member_lifetime): out/lab/20261112-010419 (the guest's new member at the freed block was driven onto the host's member #7).
-* PASS: out/lab/20261112-012019 (the reused block was seen and the mirror made again, stale=1; no faults).
+* PASS: out/lab/20261112-012019 (the reused block was seen and the mirror made again, stale=1; no faults), out/lab/20261112-013003.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).

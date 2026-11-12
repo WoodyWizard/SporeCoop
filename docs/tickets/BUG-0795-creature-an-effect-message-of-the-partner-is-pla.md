@@ -35,7 +35,7 @@ Two instances in Creature. Guest keeps a looping effect running (sprint) and spa
 ## Verification
 Test `effect_puppet_gone` (tools/tests/coop_effect_puppet_gone.py).
 * FAIL (SPORE_FIX_OFF=effects.puppet_live): out/lab/20261112-012117 (the game made 1 effect on the destroyed puppet).
-* PASS: see the final runs below.
+* PASS: out/lab/20261112-012019, out/lab/20261112-013003 (no effect made on it, no faults).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
