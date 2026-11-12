@@ -1025,11 +1025,11 @@ struct HoldEv {
     char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), O own hold seen, C own cut, M 1.5 s end, R relay played
     uint32_t a, b;
 };
-static HoldEv g_hold_ev[256];
+static HoldEv g_hold_ev[4096];
 static uint32_t g_hold_ev_n;
 static void hold_ev(uint16_t id, char what, uint32_t a, uint32_t b)
 {
-    g_hold_ev[g_hold_ev_n++ % 256] = {H->time_seconds(), id, what, a, b};
+    g_hold_ev[g_hold_ev_n++ % 4096] = {H->time_seconds(), id, what, a, b};
 }
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
@@ -6377,9 +6377,9 @@ std::string debug(const std::vector<std::string>& a)
         int want = a.size() > 1 ? atoi(a[1].c_str()) : -1;
         std::string o;
         char b[96];
-        uint32_t n = std::min<uint32_t>(g_hold_ev_n, 256);
+        uint32_t n = std::min<uint32_t>(g_hold_ev_n, 4096);
         for (uint32_t i = g_hold_ev_n - n; i != g_hold_ev_n; i++) {
-            const HoldEv& e = g_hold_ev[i % 256];
+            const HoldEv& e = g_hold_ev[i % 4096];
             if (want >= 0 && e.id != want)
                 continue;
             snprintf(b, sizeof b, "hev %.3f %u %c %08X %08X\n", e.t, e.id, e.what, e.a, e.b);

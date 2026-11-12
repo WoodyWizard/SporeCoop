@@ -3453,3 +3453,27 @@ BUG-0962. Lab lane 5 (tools/tests/coop_tribe_hold_only.py; the host's chief in `
   (it stood, 0x02481DE5) the mirror played 0x04C6CB05 again for 0.2 s and held for 0.15 s. Phase is under 0.1 s.
 * Fix `tribe.mirror_hold_only`: a hold of the mirror not bound to a host's hold, with none of the host's pending,
   ends after 0.35 s.
+
+## A host's hold the mirror missed: the change animation and another animation (2026-11-12, fix/w48-last)
+<a id="tribe-hold-missed"></a>
+
+BUG-0971, BUG-0968. Lab lanes 2 / 3, tribe fixture (tools/tests/coop_tribe_hold_only.py; `coop.tribe holdtrace [id]`
+on the guest: the last 4096 hold events of the mirrors: S / E the host's start / end received, T bound, t a miss
+(anim, the mirror's current animation or FFFFFFFF for no item), O / C / M the mirror's own hold seen / cut after 0.35 s /
+ended after 1.5 s, R / r a relayed start played / refused (anim, the animation right after), I the idle fix, P
+tribe.hold_anim's play). Follows #tribe-hold-only.
+
+* ✔ (lab, 4 misses of 0.43-0.68 s in 6 runs, all of them holds in the change animation 0x02C39200) Two ways:
+  (a) the change is where a member takes an item into its hand (0xC255E0, the item attached at the animation's event):
+  when the host's start came (0.1-0.4 s after the relayed start of 0x02C39200), the mirror played 0x02C39200 but its
+  hand item +0xFFC was still 0 (the replicated item field comes later): `t 02C39200 FFFFFFFF` at each start until the
+  host's end. (b) the host went from its gesture 0x04C6CB02 straight into the change: no relayed start of 0x02C39200
+  reached the mirror before the hold (once one came and the mirror stayed in the gesture), so every start found the
+  mirror in 0x04C6CB02 (`t 02C39200 04C6CB02`) until the host's end.
+* ✔ The host's chief and the guest's chief (both simulated by the host) behave the same; the guest's chief's gestures
+  0x04C6CB02 hold the torch / staff raised for 2-46 s on the host (shared by the mirror in every run sampled).
+* Fix `tribe.hold_item` (BUG-0971): starts go as MSG_NPC_ANIM kind 12 (kind 11's entries + u8 the host's item, +0xFFC);
+  hold_try attaches that item when the mirror's differs or is 0.
+* Fix `tribe.hold_anim` (BUG-0968): a fresh start (under 0.5 s) whose animation the mirror does not play starts it on
+  the mirror (at most once a second, as a relayed start for the idle fix) and binds the hold to it.
+* The BUG-0962 cut of the mirror's own holds is quantised by the 0.25 s tick: up to 0.85 s by design (0.8 s measured).
