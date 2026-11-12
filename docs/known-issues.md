@@ -2899,3 +2899,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (unreleased, fix/w48-last, 2026-11-12): the checks hosted on the fixed port kDefaultPort + 19 and asked the
   whole range, where another copy of the tests and the other lanes' games (they answer 127.0.0.1) live. They host on
   an ephemeral port and ask only it (Discovery::ports); test unit_parallel (3 copies at once).
+
+## Tribe: a same-view still shows the host's avatar and a chief in other poses on the guest (2026-11-12, test: fix/w48-last)
+<a id="issue-tribe-same-view-avatar-pose"></a>
+
+* What happens: same_view_tribe view 1 (lab 20261112-172240, run 1 of 3): the host's creature crouches at the fire on
+  the host, its puppet on the guest stands about 1 m off in a stepping pose; Bob's chief is mid-step on the guest only.
+* Reproduce: `lab.py run same_view_tribe --repeat 3`, compare the 01_view1 pairs.
+* Known: seen once; the other runs' views agree. Not checked whether it is an animation phase at the still's moment.
+* Ticket: BUG-0972
