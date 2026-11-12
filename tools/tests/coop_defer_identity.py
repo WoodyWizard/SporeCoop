@@ -13,7 +13,12 @@ of its species next to the avatar until the game gives one the freed block). Whe
 creature at that address must still live (the game's object list, its serial).
 SPORE_FIX_OFF=npc.defer_identity must FAIL.
 
-  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 6]"""
+The reuse is the game's: in about 1 of 8 rounds with the misses destroyed at once the block did not come back (half of
+the runs had no reuse in 6 rounds: 20261112-031338, 20261112-041619 #2). The hunt keeps its misses alive until it
+ends (`k`: their blocks do not go back to the game before the queued puppet's), and a round without a reuse is
+inconclusive: the test plays another one, up to --tries rounds within --minutes.
+
+  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 16] [--minutes 9]"""
 import argparse
 import re
 import time
@@ -32,12 +37,18 @@ def hunt(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--tries', type=int, default=6)
+    ap.add_argument('--tries', type=int, default=16)
+    ap.add_argument('--minutes', type=float, default=9)
+    ap.add_argument('--flags', default='xk')
     a = ap.parse_args()
+    t_end = time.time() + a.minutes * 60
     host, guest = start()
     ck = Checks()
     reused, gone = 0, 0
     for k in range(a.tries):
+        if time.time() > t_end:
+            print(f'  {k} rounds in {a.minutes} min without a reuse: no more rounds', flush=True)
+            break
         old = wait(lambda: puppet(host), 20)
         cm = eax(host, 'Simulator::cCinematicManager::Get cdecl')
         host.call(f'call Simulator::cCinematicManager::PlayCinematic thiscall {cm:#x} s:CRG_ClaimNest 1 1 0 0 0')
@@ -49,10 +60,10 @@ def main():
         st = re.search(r'deferred=(\d+) done_after=(\d+) pending=(\d+)', host.call('coop.npc')['out'])
         print(f'  round {k + 1}: old puppet {old and hex(old)}, new {new and hex(new)}, host {st and st.group(0)}', flush=True)
         if new and st and int(st.group(3)) > 0 and cinematic(host) == CLAIM:
-            print('  host: ' + host.call(f'coop.npc reusehunt {old:X} 150 x')['out'].strip().splitlines()[0], flush=True)
+            print('  host: ' + host.call(f'coop.npc reusehunt {old:X} 300 {a.flags}')['out'].strip().splitlines()[0], flush=True)
             h = hunt(host)
             t1 = time.time()
-            while time.time() - t1 < 8 and not h['hit'] and h['left'] > 0 and cinematic(host) == CLAIM:
+            while time.time() - t1 < 15 and not h['hit'] and h['left'] > 0 and cinematic(host) == CLAIM:
                 time.sleep(0.25)
                 h = hunt(host)
             playing = cinematic(host) == CLAIM

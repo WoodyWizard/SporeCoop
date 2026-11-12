@@ -3340,15 +3340,31 @@ struct ReuseHunt {
     bool herds = false;     // the tries are herds (CreateHerd), not creatures
     bool pool = false;      // Create with its reuse flag (a pooled creature of the species)
     void* herd = nullptr;   // the herd they are made in (null: a herd of their own each)
+    bool keep = false;      // k: the misses stay alive until the hunt ends (their blocks do not go back while it runs)
+    int every = 1;          // e<N>: a try every N frames
+    std::vector<void*> kept;
     net::Vec3 at{};         // where (without an avatar: Tribe)
     std::vector<void*> made;
 };
 static ReuseHunt g_reuse;
+static void reuse_release_kept()
+{
+    std::sort(g_reuse.kept.begin(), g_reuse.kept.end());
+    g_reuse.kept.erase(std::unique(g_reuse.kept.begin(), g_reuse.kept.end()), g_reuse.kept.end());
+    for (void* c : g_reuse.kept)
+        if (game::listed(c))
+            game::destroy_untracked(c);
+    g_reuse.kept.clear();
+}
 static void reuse_tick()
 {
+    if (!g_reuse.kept.empty() && (g_reuse.left <= 0 || g_reuse.hit))
+        reuse_release_kept();
     if (g_reuse.left <= 0 || !g_reuse.target)
         return;
     g_reuse.left--;
+    if (g_reuse.every > 1 && g_reuse.left % g_reuse.every)
+        return;
     if (g_reuse.unlisted_at < 0 && !game::listed(g_reuse.target))
         g_reuse.unlisted_at = g_reuse.tries;
     void* av = game::avatar();
@@ -3361,6 +3377,8 @@ static void reuse_tick()
     // burst: up to `burst` creatures in this one tick (the misses stay until the end of it, so each takes a new block)
     for (int k = 0; k < std::max(1, g_reuse.burst) && !g_reuse.hit; k++) {
         void* herd = g_reuse.herd ? g_reuse.herd : game::create_herd(p, sp);
+        if (g_reuse.keep && !g_reuse.herds && !g_reuse.herd)
+            g_reuse.herd = herd; // (one herd for the kept misses)
         void* c = g_reuse.herds ? herd : herd ? game::spawn_creature(p, sp, herd, g_reuse.pool) : nullptr; // (herds: the herd is the try)
         g_reuse.tries++;
         if (!c)
@@ -3382,13 +3400,21 @@ static void reuse_tick()
     for (void* c : miss) {
         if (g_reuse.made.size() < 8)
             g_reuse.made.push_back(c);
-        game::destroy_untracked(c);
+        if (g_reuse.keep && !g_reuse.herds)
+            g_reuse.kept.push_back(c);
+        else
+            game::destroy_untracked(c);
     }
+    if (g_reuse.left <= 0 || g_reuse.hit)
+        reuse_release_kept();
 }
 std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tries, int burst, void* herd,
-                             const net::Vec3* at, bool herds, bool pool)
+                             const net::Vec3* at, bool herds, bool pool, bool keep, int every)
 {
+    reuse_release_kept();
     g_reuse = ReuseHunt{};
+    g_reuse.keep = keep;
+    g_reuse.every = std::max(1, every);
     g_reuse.target = (uint8_t*)target;
     g_reuse.left = frames;
     g_reuse.species = species;
@@ -3416,9 +3442,9 @@ void* debug_proxy_creature(uint16_t id)
 std::string debug_reuse_status()
 {
     char b[200];
-    snprintf(b, sizeof b, "reuse target=%p left=%d tries=%d unlisted_at=%d hit=%p serial=%u hit_frame=%llu frame=%llu listed_now=%d\n",
+    snprintf(b, sizeof b, "reuse target=%p left=%d tries=%d unlisted_at=%d hit=%p serial=%u hit_frame=%llu frame=%llu listed_now=%d kept=%u\n",
              (void*)g_reuse.target, g_reuse.left, g_reuse.tries, g_reuse.unlisted_at, g_reuse.hit, g_reuse.hit_serial,
-             (unsigned long long)g_reuse.hit_frame, (unsigned long long)H->frame_index(), (int)game::listed(g_reuse.target));
+             (unsigned long long)g_reuse.hit_frame, (unsigned long long)H->frame_index(), (int)game::listed(g_reuse.target), (unsigned)g_reuse.kept.size());
     std::string s = b;
     if (g_reuse.hit && !g_reuse.herds) { // the new object at the freed address: what the game does with it now
         bool l = game::listed(g_reuse.hit, 0x18EB45Eu) && game::object_serial(g_reuse.hit) == g_reuse.hit_serial;
