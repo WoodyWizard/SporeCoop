@@ -231,3 +231,6 @@ SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (test
 SporeCoop::cCity_Buy ; BUG-0877: a guest's purchase of a city is not sent to the host (old behaviour)
 SporeCoop::cTribe_SetConquered ; BUG-0777: a guest's village without a standing hut is not set conquered
 SporeCoop::NounSerialCounter ; BUG-0842: on GOG 2016 game::listed does not see an object made inside the frame before the next frame (no serial counter to notice the creation)
+Simulator::Cell::SwallowWhole ; BUG-0827: a host cell a guest swallows whole is not marked as eaten (old behaviour)
+SporeCoop::Havok_GroupFilter_IsCollisionEnabled ; BUG-0913: a partner's creature still blocks the way (old behaviour)
+SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still picks a partner's creature (old behaviour)
