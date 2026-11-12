@@ -3461,7 +3461,7 @@ BUG-0971, BUG-0968. Lab lanes 2 / 3, tribe fixture (tools/tests/coop_tribe_hold_
 on the guest: the last 4096 hold events of the mirrors: S / E the host's start / end received, T bound, t a miss
 (anim, the mirror's current animation or FFFFFFFF for no item), O / C / M the mirror's own hold seen / cut after 0.35 s /
 ended after 1.5 s, R / r a relayed start played / refused (anim, the animation right after), I the idle fix, P
-tribe.hold_anim's play). Follows #tribe-hold-only.
+tribe.hold_anim's play, D a relayed start skipped after P). Follows #tribe-hold-only.
 
 * ✔ (lab, 4 misses of 0.43-0.68 s in 6 runs, all of them holds in the change animation 0x02C39200) Two ways:
   (a) the change is where a member takes an item into its hand (0xC255E0, the item attached at the animation's event):
@@ -3476,4 +3476,8 @@ tribe.hold_anim's play). Follows #tribe-hold-only.
   hold_try attaches that item when the mirror's differs or is 0.
 * Fix `tribe.hold_anim` (BUG-0968): a fresh start (under 0.5 s) whose animation the mirror does not play starts it on
   the mirror (at most once a second, as a relayed start for the idle fix) and binds the hold to it.
+* ✔ (lab 20261112-170115) A relayed start of the same animation arriving with the host's start (same moment: S, P, T,
+  R in the trace) started it a second time: the hold bound to the first start ended and every later start (T each
+  second) attached no started modifier until the host's end (2.7 s missed). The relay skips a start of the animation
+  hold_try played under 0.5 s before while the mirror still plays it (trace D).
 * The BUG-0962 cut of the mirror's own holds is quantised by the 0.25 s tick: up to 0.85 s by design (0.8 s measured).

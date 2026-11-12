@@ -2346,6 +2346,16 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             continue;
         }
         g.anim_rx_at = now;
+        if (g_hold_anim_fix && now - g.hold_play_at < 0.5 && g.relayed_anim == anim) {
+            uint32_t cur = 0;
+            if (game::drawn_state(c, nullptr, &cur) && cur == anim) {
+                // BUG-0968: hold_try started it for the host's hold just now (the start and the relay came together);
+                // started again, the hold bound to the first start ended and the item never came back (lab trace:
+                // P, T, R at one moment, then no hold for the host's 2.7 s)
+                hold_ev(id, 'D', anim, cur);
+                continue;
+            }
+        }
         bool played = game::play_behaviour_anim(c, anim, how, a, b);
         {
             uint32_t now_cur = 0;
