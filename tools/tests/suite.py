@@ -104,6 +104,7 @@ add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creatu
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('civ_money_short', P + 'coop_civ_money_short.py', warm=True, minutes=3, fixture='civ')  # a paid build the money does not cover is not built, the shared money the same on both and never below 0 (BUG-0613; SPORE_FIX_OFF=civ.build_money fails)
+add('civ_buy_race', P + 'coop_civ_buy_race.py', minutes=4, fixture='civ')  # BUG-0940: another player takes the last shared money between a bot's look at its purchase button and its click: no vehicle, money 0 on both, the guest's game sends nothing, play_civ counts buy_broke, not a PROBLEM (play_civ before the fix fails)
 add('civ_build_refund', 'SPORE_NET="delay=300" ' + P + 'coop_civ_build_refund.py', minutes=4, fixture='civ')  # BUG-0807: a guest's building the host's game cannot build (the last plot taken by the host's in the same moment) gives its price back to the shared money (SPORE_FIX_OFF=civ.build_refund fails)
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
