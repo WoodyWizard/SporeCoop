@@ -42,8 +42,12 @@ host's relay) creates it in the receiver's game, active, 0.05-0.06 m from the ac
 games, the relay under 1 % of the main thread. Switch `coop.fix effects.space off`: not relayed in Space (0.7.12).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_effects_party.py --fixture space` (suite `effects_party_space`, now in full; 3 players on one lane).
+* FAIL with `SPORE_FIX_OFF=effects.space`: lab 20261112-035553 (none of the three world effects reaches its receiver).
+* PASS: lab 20261112-035427 (all three, active, 0.05-0.06 m from the actor; relay 0.52-0.55 % of the main thread; no
+  fault).
+* Not done: a weapon shot or a tool effect fired by a player's own input (the workload uses the game's last created
+  effect id, as the other stages' party tests do).
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0451. Severity low, confidence medium.
