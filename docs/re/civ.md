@@ -1661,3 +1661,16 @@ BUG-0855. GOG 2024, the host's game logs of campaign_space runs (four players).
   vote (rel/0.7.13 lab 20261112-050529 and five more runs). Answers "Unknown: which pause reason the Civ launch uses".
 * ✔ With `core.editor_own_pause` off the spacecraft editor waited at the busy gate ("input_lock,paused") and came up
   61 s after its vote (lab 20261112-100520, 20261112-102046): the hold the fork saw (BUG-0855).
+
+## Wild creatures and a guest's orders on them (2026-11-12, fix/w48-civcmd)
+<a id="civ-wild-creature-orders"></a>
+
+BUG-0970. Lab lane 4, GOG 2024.
+* ✔ (runtime) Wild creatures in Civ (noun 0x18EB45E, cCreatureAnimal) are not synced: each game runs its own. Right
+  after the load both games have the same ones within 0.0-3.8 m (civ_npc: a herd of 10 near (-285 246 353), still
+  within 3.8 m after 5 min without play; civ: 4). Moved, fled or killed on one game, they differ for good.
+* ✔ (runtime) Every game also has a wild creature object without a species at (0 0 0) (not placed in the world;
+  `coop.census creatures` skips it). A nearest-creature search without a small radius finds it from the surface
+  (~500 m off).
+* ✔ (runtime) A guest's right-click on a creature sends CMD_ORDER type 1 with target kind 3 (noun + position); the
+  host now takes its own creature within 40 m of that place, else a move order there (`civ.creature_target`).

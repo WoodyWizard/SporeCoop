@@ -6702,3 +6702,16 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   both games of a lane at once; the game goes on. Seen in 2 recorded runs (20261101-143943, 20261112-135150).
   `Checks.faults` (twoinst.py) lets a game pass whose only faults are this signature and prints it without the
   "total faults: N" the lab counts; `SPORE_BOOT_FAULT_STRICT=1` counts it again. tools_selftest `bootfault`.
+
+## Civ: a guest's order on a wild creature (2026-11-12, fix/w48-civcmd)
+<a id="testing-civ-wild-creature"></a>
+
+* play_civ's "guest commands: sent N, the host executed N-k and rejected k": read the host's game log for
+  `rejected command kind K`; since BUG-0325 the line names the target. `target kind 3 ... noun 018EB45E` is a wild
+  creature (not synced in Civ): BUG-0970, fixed by `civ.creature_target` (the host's creature near there or a move).
+  A purchase refused by the guest's own game (BUG-0940) is `buy_broke`, not a rejection.
+* civ_guest_creature (fixture civ, ~1.5 min): the host's `coop.civ creatureshift <x y z> <r> <d>` sets its creatures
+  around the guest's d m aside, the guest's `coop.civ attack <id> c<x>,<y>,<z>` orders the attack of its own creature
+  there through its game's SetOrder. FAIL with SPORE_FIX_OFF=civ.creature_target (lab 20261112-165013), PASS
+  20261112-164915.
+* `coop.census creatures` prints the noun of each row (a citizen 0x18EB4B7 or a wild creature 0x18EB45E).

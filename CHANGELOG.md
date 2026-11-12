@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: a guest's vehicles sent to attack a wild creature no longer ignore the order when the host's
+  game has that creature elsewhere (wild creatures are not shared): they attack the host's creature near there or
+  drive there (BUG-0970).
 - Galaxy menu: the Spore logo, the "Online Interactions Not Rated by the ESRB" line and the copyright line no longer
   stay over the game after joining from the menu right after it came up (BUG-0938).
 - Tribe: while the host's tribe is out and the host's game shows "Alas! Your population has fallen below the
