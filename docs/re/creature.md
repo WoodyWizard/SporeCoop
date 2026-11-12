@@ -4379,3 +4379,50 @@ GOG 2024, lab lanes 6 / 7, `coop_creature_partner_pass.py` (BUG-0913). Adds to #
   puppet: 0 between the avatar and the partner's puppet in 6 runs (713-745 of the puppet's with other objects, lab
   20261112-124402, -124417). ? what holds it there (the walk-and-use's arrival or the game's attack position next to
   another creature: not read). The test does not count it as the BUG-0913 stop (that one is behind the partner).
+
+## A creature put inside a nest mound's collision is held: the walk-and-use that never starts (2026-11-12, fix/w48-walk)
+<a id="creature-walk-held-in-mound"></a>
+
+BUG-0964, BUG-0965. GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and lab lanes 2 / 3
+(`coop_creature_walk_start.py`, `coop.abilities walk raw`). Answers the "?" of #creature-partner-pass-rel (a press of
+the attack key that never moves the avatar).
+* ✔ (Ghidra) The attack key's walk-and-use is the behaviour tree node **0xD2F1ED12** (row .data 0x158B208: enter
+  0xD86DD0, tick `SporeCoop::BT_WalkAndUseTick` 0xD809D0, exit 0xD86F00), run while stimulus 0x20 (posted by
+  Ability_Use) holds; its slot +0xC is the ability index. Each tick it takes the point beside the target at the radii +
+  the reach on the line target -> creature, puts it onto the surface and calls `cCreatureBase::WalkTo` 0xC1C720(2,
+  point, facing, 0.01, 0.11) (request mode 3); in reach it stops (spatial vt 0xEC) and attacks (0xC03D80).
+* ✔ (Ghidra) The step: the LocomotionStrategy singleton (0xC144B0, "Simulator/LocomotionStrategy_Template", at spatial
+  +0x4CC) vt 0xC = `SporeCoop::Locomotion_WalkStep` 0xB48210, called through 0xC43300 from the physics step 0xB57D10 /
+  the simple ground path 0xB4A820. It reads the steering `SporeCoop::Locomotion_Steer` 0xC441E0 (the goal pull, type 4
+  weight -1, plus the force list spatial +0x490: the avatar has 0xB499D0, the static obstacles of cObstacleManager,
+  always on for the avatar, +0xB58 bit 9), the speed vt 0xC8 (+0x1E0, slowed near the goal), and 0xB46EF0 (turns the
+  facing toward the step at spatial +0x1E8 = pi rad/s and returns the speed x max(0, cos) of the turn left). With
+  spatial +0x77 == 0 (not on the plain ground) only the facing changes.
+* ✔ (runtime, about 1 press in 5 near the fixture's herds, guest / host / host alone without a session / host alone
+  with every fix of the mod off: lab 20261112-135647, -140131, -141120 (8 of 30), -141511) A press after the test put the
+  avatar 6 m from an animal with `coop.npc gopos`: node 0xD2F1ED12 runs, stimulus 0x20 holds, the request (mode 3,
+  goal-stop 0.01) points at the spot beside the animal, the facing points at it (cos 1.000), the steering too (|s| 1,
+  cos 1.000, one force 0xB499D0), desired speed 4.75, and the velocity (creature +0x288) stays 0 for 12 s. The whole
+  creature (+0 .. +0x1700) differs from a walking one only in its position and velocity. A plain WalkTo 3 m to the
+  side, back or ahead does nothing either (`coop.abilities walkto`; 3 m in 2 s on a walking one). It lasts across
+  further gopos placements in the same spot of a herd (3 rounds in a row, partner_pass 20261112-130029 r5 at 6, 4.5 and
+  8 m).
+* ✔ (runtime, lab 20261112-142742, -143501) Every held avatar stood 2.0-4.3 m from a nest's centre (noun 0x52AA6122) at
+  the terrain's height (radius 0.03-0.04 m over GetHeightAt) while the game's surface there (cPlanetModel_SurfacePoint:
+  the ray cast that hits the mound's collision) is 0.55-0.65 m higher: it was inside the nest mound's collision. Put 2 m
+  higher at the same spot (`coop.abilities lift 2`) it fell onto the mound and the next press walked it to the animal
+  (7 of 7, 3.3-13 m). One more held avatar stood 3.3 m under the terrain 23 m from a nest (inside a slope).
+* So the "press that does nothing" is not the game's walk-and-use and not the mod's play code: it is the tests'
+  teleport. `coop.npc gopos` lifted a point only onto GetHeightAt (the bare terrain, BUG-0400), which is under a nest
+  mound or a rock (testing pitfall, docs/06-testing.md: a nest mound is not in GetHeightAt); a creature never walks
+  into that place (it walks onto the mound): without a teleport 12 of 12 presses walked (every fix off, no session,
+  lab 20261112-143856-2). Fix `tools.gopos_surface`: the point goes onto the game's surface (`game::surface_radius`)
+  when it is under it. ✔ (runtime) The surface's ray cast hits creatures too: `gonpc <id> 1.0` (2 m over the
+  animal) lifted so landed the host on the animal's back and 2.3-2.8 m from it (partner_pass lab 20261112-144140-2);
+  gonpc keeps its 2 m drop, and gopos keeps the point when another creature is within 2.5 m. With it: 15 of 15 presses walked (lab 20261112-143501-2);
+  switched off: 4 held of 16 (20261112-143501).
+* `coop.abilities walk [raw]` prints the avatar's node (ai +0x1D8), stimuli, goal slots, speeds, the request
+  (spatial +0x1F4), the facing (spatial vt 0x5C) and its cos to the goal, `raw`: the steering sum (Locomotion_Steer
+  called once), the objects within 5 m (noun@distance/cos), the nearest nest with the radius of the terrain and the
+  surface, and the creature's dwords. `coop.abilities walkto x y z` walks the avatar with the game's WalkTo,
+  `target <ptr> any` takes any listed creature as the combat target (the game's SetTarget).

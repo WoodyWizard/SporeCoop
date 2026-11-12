@@ -767,6 +767,13 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     return host, guest
 
 
+# BUG-0967: a fault of the game's audio init (0x011ECE30, a constructor reading its third argument's +0x120, null:
+# 0x011EA810 <- the rw::audio core, Snd9Service) right after App::cSporeApp::Init, before the galaxy menu and any test
+# step; handled by the game. Seen twice in all lab runs (20261101-143943, 20261112-135150: host and guest at once).
+# SPORE_BOOT_FAULT_STRICT=1 counts it again.
+BOOT_AUDIO_FAULT = re.compile(r'0xC0000005 x(\d+) at 0x011ECE4F \S+ data=0x00000120 ')
+
+
 class Checks:
     def __init__(self):
         self.ok = True
@@ -778,7 +785,16 @@ class Checks:
 
     def faults(self, **cons):
         for name, con in cons.items():
-            out = con.call('exc')['out'].splitlines()
+            out = con.call('exc')['out'].splitlines() or ['']
+            m = re.search(r'total faults: (\d+)', out[0])
+            known = sum(int(k.group(1)) for line in out[1:] for k in [BOOT_AUDIO_FAULT.match(line.strip())] if k)
+            if m and known and int(m.group(1)) == known and os.environ.get('SPORE_BOOT_FAULT_STRICT') != '1':
+                # BUG-0967: only the game's own audio init (rw::audio, Snd9Service) at boot, before any test step,
+                # handled by the game: printed without the "total faults: N" the lab counts
+                print(f'{name} faults: none but {known} known one(s) of the game\'s audio init at boot (BUG-0967)')
+                for line in out[1:3]:
+                    print(f'    {line.strip()}')
+                continue
             print(f'{name} faults: {out[0]}')
             for line in out[1:4]:
                 print(f'    {line.strip()}')

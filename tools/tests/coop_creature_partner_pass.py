@@ -203,6 +203,22 @@ def walk_once(host, guest, nid, hid, av, mine, a, d, ln, behind, label):
         # in every direction, docs/re/creature.md#creature-walk-held-in-mound)
         print('    ' + '\n      '.join(x for x in guest.call('coop.abilities walk raw')['out'].splitlines()
                                        if x.startswith(('speed', 'steer', 'nest'))), flush=True)
+        if blocker != 'no start' and me2 and an2:  # (stopped on the way: held, or only that way? a plain walk 2 m
+            # to the side and 2 m back, the game's WalkTo; the partner's creature in the way leaves both free)
+            r0 = math.sqrt(sum(c * c for c in me2)) or 1
+            g = [a - b for a, b in zip(an2, me2)]
+            sd = [me2[1] / r0 * g[2] - me2[2] / r0 * g[1], me2[2] / r0 * g[0] - me2[0] / r0 * g[2],
+                  me2[0] / r0 * g[1] - me2[1] / r0 * g[0]]
+            sl, gl = math.sqrt(sum(c * c for c in sd)) or 1, math.sqrt(sum(c * c for c in g)) or 1
+            free = []
+            for v in ([c / sl * 2 for c in sd], [-c / gl * 2 for c in g]):
+                q1 = (sample(guest).get(f'p{hid}') or (None,))[0]
+                guest.call('coop.abilities walkto %.3f %.3f %.3f' % tuple(x + y for x, y in zip(q1, v)))
+                time.sleep(1.5)
+                q2 = (sample(guest).get(f'p{hid}') or (None,))[0]
+                free.append(round(math.dist(q1, q2), 2) if q1 and q2 else -1)
+            print(f'    a plain walk 2 m to the side / back from there: moved {free} m '
+                  f'({"held in every direction" if max(free) < 0.3 else "free to move"})', flush=True)
     return reached, gaps, blocker, path, still
 
 
