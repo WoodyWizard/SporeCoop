@@ -275,6 +275,7 @@ struct KitFix {
     const char* what;
     volatile LONG on;
 };
+extern KitFix g_fix_taskdrop;    // BUG-0860: dropped tasks are destroyed outside the task lock
 extern KitFix g_fix_outpump;     // BUG-0672: outside tasks wait for the frame's end, no repost loop in the game's message pump
 extern KitFix g_fix_frameunwind; // BUG-0667: a frame cut off by a caught fault does not stop the later ones
 extern KitFix g_fix_offstack;  // BUG-0956: a fault with the stack pointer off its thread's stack writes its report from the logger

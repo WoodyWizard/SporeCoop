@@ -404,7 +404,7 @@ static uint32_t g_incomplete;                      // cycles whose cleanup was s
 // BUG-0612 (the older-cycle part of BUG-0425's umbrella): a late chunk of an older snapshot cycle started that cycle
 // again (the newer cycle's chunks forgotten, older states over newer ones). Off: 0.7.8 (any other cycle restarts).
 bool g_cycle_order_fix = true;
-COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot cycle is dropped, not taken as a new cycle");
+COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot or realign planet-list cycle is dropped, not taken as a new cycle (BUG-0886 too)");
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
 // BUG-0672 (tribe.world_map): the mapping outlived the world it was made in. After a load (a warm reset, a received

@@ -56,6 +56,10 @@ void Discovery::update(uint32_t now)
         DiscoverReply rep;
         if (!rep.read(r) || rep.proto != kProtoVersion)
             continue;
+        if (g_fix.name_clean) { // BUG-0774: any machine of the LAN can answer; the list shows name and info
+            rep.name = utf8::net_name(rep.name);
+            rep.info = utf8::clean_text(rep.info, 64);
+        }
         on_reply(from, rep, now);
     }
     // BUG-0039: entries were never removed (a silent host was only hidden), so answers with a new

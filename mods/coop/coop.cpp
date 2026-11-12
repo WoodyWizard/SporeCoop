@@ -361,6 +361,19 @@ std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host
 bool g_role_fix = true;
 COOP_FIX("role.fix", "BUG-0064 BUG-0079", g_role_fix, "civ: roles end with their player and session (coop.role fix)");
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
+// BUG-0772 (not reproduced, a guard): the ready flags and round trips are in the BUG-0422 registry, so a join and a
+// leave of an id clear them like every other per-player state. The ticket's path (a leaver without a Remote kept
+// its flag) is not reached: the host's player_join makes the Remote (lab 20261112-111316, docs/tickets/BUG-0772).
+PLAYER_STATE(
+    "ready",
+    [](uint8_t id) {
+        g_ready.erase(id);
+        g_lobby_rtt.erase(id);
+    },
+    [](uint8_t id) -> size_t {
+        auto it = g_ready.find(id);
+        return it != g_ready.end() && it->second ? 1 : 0;
+    });
 bool g_lobby_dirty = false;
 double g_last_lobby = 0;
 net::Discovery g_disc;
@@ -3065,6 +3078,16 @@ void lobby_tick(double now)
             if (world.size() > 4 && world.substr(world.size() - 4) == ".spo")
                 world.resize(world.size() - 4);
             g_sess.lobby_info = std::string(mode) + (world.empty() || !g_adapter ? "" : " - " + world);
+            // BUG-0776: discovery queries from a subnet of this machine's adapters are answered too (a virtual LAN
+            // on public numbers); the list comes from the background lookup (adapters.cpp, BUG-0286)
+            static uint32_t bc_gen = ~0u;
+            if (adapters::generation() != bc_gen || g_sess.lan_broadcasts.empty()) {
+                bc_gen = adapters::generation();
+                g_sess.lan_broadcasts.clear();
+                for (auto& a : local_addresses())
+                    if (a.broadcast != 0xFFFFFFFFu && a.broadcast != 0)
+                        g_sess.lan_broadcasts.push_back(a.broadcast);
+            }
         }
     }
     if (g_disc_on) {
@@ -5174,6 +5197,8 @@ void setup_callbacks()
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
+        if (g_ready.erase(id) | g_lobby_rtt.erase(id)) // BUG-0772 guard: also for a leaver without a Remote
+            g_lobby_dirty = true;
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;

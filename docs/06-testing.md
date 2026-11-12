@@ -6503,3 +6503,23 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
   (`coop.terrain raw`) and the grounds after the host applied that stamp live (`coop.terrain stamp <template id>
   <key instance> <key group>`, new). `SPORE_FIX_OFF=tribe.village_load_stamp` fails.
 * `coop.terrain` callers (`from 0x...`) are GOG 2024 VAs now; before 2026-11-12 they were 0x400000 too high.
+
+## Net and session of 0.7.13 N1: unit cases and two lab tests (2026-11-12, fix/w48-net)
+<a id="testing-n1-net"></a>
+
+* `net_tests`: `test_name_clean` (BUG-0774), `test_discovery_source` (BUG-0776, a `FakeNet` transport that keeps the
+  address of every datagram sent), `test_halfopen` (BUG-0778: 16 header-only datagrams or 16 refused HELLOs, then a
+  real guest), `test_restart_in_callback` (BUG-0861: leave + host, host, leave + join elsewhere inside the guest's
+  cb.connected). Each fails with `net_tests --off name_clean|lan_only_disc|halfopen_cap|restart_gen`.
+* `validate_tests`: `test_world_path` (BUG-0785, `world_path::safe_rel`), `test_planet_rx` (BUG-0886,
+  `realign::PlanetRx`), `test_task_drop` (BUG-0860, `sk::drop_tasks` with a mutex that counts a lock taken while it is
+  held: the deadlock without hanging the test). All fail with `validate_tests --nofix`.
+* Lab `vote_leaver` (coop_vote_leaver.py, warm, ~3 min): two scripted guests (coop_net_robust.Peer, they never send a
+  player state) on the host of a two-game session; the first presses ready and leaves, the second gets its id; the
+  vote must wait for it. A regression test: it passes on 0.7.12 too (BUG-0772 not reproduced: the host's
+  player_join makes the Remote, so player_leave erases the flag; lab 20261112-111316). Lab `net_names` (coop_net_names.py): a scripted
+  guest with a newline, control and broken bytes in its HELLO name; the host's roster row and both games' logs
+  (`SPORE_FIX_OFF=net.name_clean` fails). `coop_net_robust.Peer(name)` takes bytes for a raw name.
+* Not on game instances, on purpose: LAN discovery from the internet, the half-open flood and a restart inside a
+  callback need addresses or callbacks a lab lane cannot make; a late realign chunk needs a reordering the lab's
+  netem does not give on demand. The unit cases drive the real Session / receiver code.

@@ -18,6 +18,9 @@
 #include "mouse.h"
 #include "coop_ui.h"
 #include "slotfs.h"
+#include "world_path.h"
+#include "net/fixes.h"
+#include "net/utf8.h"
 #include "sui.h"
 #include "fixes.h"
 #include "creations.h"
@@ -67,28 +70,12 @@ struct In {
 using slotfs::kMaxWorldBytes; // (slotfs.h: 128 MB, 2048 files; the host's collect checks them too, BUG-0847)
 using slotfs::kMaxWorldFiles;
 
-static bool safe_rel(const std::string& rel)
-{
-    if (rel.empty() || rel.size() > 200)
-        return false;
-    size_t start = 0;
-    int depth = 0;
-    while (start <= rel.size()) {
-        size_t end = rel.find_first_of("/\\", start);
-        if (end == std::string::npos)
-            end = rel.size();
-        std::string part = rel.substr(start, end - start);
-        if (part.empty() || part.back() == '.' || part.back() == ' ' || ++depth > 4)
-            return false; // also rejects leading or doubled separators, "." and ".." (Windows drops trailing dots)
-        // a planet file is named as the player typed it ("Bob's World!.spo"): any character a Windows
-        // file name may have, but no ':' (drives, streams), wildcards or control characters
-        for (unsigned char c : part)
-            if (c < 0x20 || c == 0x7F || strchr("<>:\"|?*", c))
-                return false;
-        start = end + 1;
-    }
-    return true;
-}
+// BUG-0785: the names Windows opens as devices (con, nul, com1, lpt1.spo ...) are refused too: CreateFileW opened
+// the device instead of a file of the slot, the write went nowhere (or waited on a serial port) and the world counted
+// as written without that file. `coop.fix world.device_names off`: the check before (world_path.h).
+static bool g_device_names_fix = true;
+COOP_FIX("world.device_names", "BUG-0785", g_device_names_fix, "world: a received file named as a Windows device (con, nul, com1, lpt1.spo) is refused");
+static bool safe_rel(const std::string& rel) { return world_path::safe_rel(rel, g_device_names_fix); }
 
 static std::deque<Out> g_out;
 static std::function<void(uint8_t, const std::vector<const std::vector<uint8_t>*>&)> g_share_hook;
@@ -1700,14 +1687,18 @@ static void finish(const std::string& host_name)
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
 {
     switch (type) {
-    case net::MSG_WORLD_OFFER:
+    case net::MSG_WORLD_OFFER: {
         g_in = In{};
-        if (g_in.offer.read(r) && g_in.offer.total_size <= kMaxWorldBytes && g_in.offer.file_count <= kMaxWorldFiles) {
+        bool got = g_in.offer.read(r);
+        if (got && net::g_fix.name_clean) // BUG-0774: the planet name goes into logs and the slot marker
+            g_in.offer.planet = utf8::clean_text(g_in.offer.planet, 120);
+        if (got && g_in.offer.total_size <= kMaxWorldBytes && g_in.offer.file_count <= kMaxWorldFiles) {
             g_in.active = true;
             g_feed("receiving world from " + host_name + " (" + std::to_string(g_in.offer.total_size / 1024) +
                    " KB)");
         }
         break;
+    }
     case net::MSG_WORLD_FILE: {
         net::WorldFile wf;
         if (g_in.active && wf.read(r)) {
@@ -1716,8 +1707,8 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
                 if (i != wf.index)
                     sum += f.data.size();
             if (!safe_rel(wf.path) || wf.index >= g_in.offer.file_count || sum > g_in.offer.total_size) {
-                H->log(M, SK_WARN, "world: rejected file %u '%s' (%u bytes) from %s", wf.index, wf.path.c_str(),
-                       wf.size, host_name.c_str());
+                H->log(M, SK_WARN, "world: rejected file %u '%s' (%u bytes) from %s", wf.index,
+                       utf8::clean_text(wf.path, 200).c_str(), wf.size, host_name.c_str()); // BUG-0774: a refused name may hold anything
                 g_feed("the world from " + host_name + " was rejected (bad file name or size)");
                 g_in = In{};
                 break;

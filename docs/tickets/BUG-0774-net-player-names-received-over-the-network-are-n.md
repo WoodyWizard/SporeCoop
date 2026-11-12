@@ -1,20 +1,21 @@
 ---
 id: BUG-0774
 title: Net: player names received over the network are not sanitized (control characters, newline into logs and the slot marker)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: all
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-net
+commits: fa0b0a65, 2f9c631b, 5857b6d1
+tests: net_names, unit (make test: net_tests test_name_clean)
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-network-input, docs/06-testing.md#testing-n1-net
 related: BUG-0201, BUG-0087
+switch: net.name_clean
 ---
 
 ## Report
@@ -41,7 +42,16 @@ Not judged exploitable against players in practice (needs a modified peer the vi
 execution, no file outside the Games folder), so not private.
 
 ## Fix
-<!-- not fixed yet -->
+Confirmed on the code (rel/0.7.13 b4ad58b5): session.cpp kept the HELLO name, the WELCOME roster and PLAYER_JOIN
+names as received; the lab FAIL run shows a host and a guest log line made by a name ("planet X" on a line of its
+own) and the host's roster row cut at the newline.
+
+`utf8::clean_text` / `utf8::net_name` (net/utf8.h): one line of valid UTF-8, no C0 / C1 controls, DEL, U+2028 / 2029,
+broken or overlong sequences or surrogates; names at most 24 code points, empty becomes "guest<id>" / "host".
+Applied on every name from another machine: the host's HELLO (before the seen / rejoin / unique-name rules), the
+guest's WELCOME roster and host name, PLAYER_JOIN, version texts (120), the LAN list's DiscoverReply name and info
+(64), the WorldOffer planet name (it goes into the slot marker sporecoop.txt) and the log line of a refused file
+name. Switch `coop.fix net.name_clean off`. Compatible with 0.7.12: its local names are already clean.
 
 ## Fix idea
 Run `utf8::player_name()` on every received name: HELLO on the host (before the uniqueness loop) and every
@@ -49,7 +59,16 @@ Run `utf8::player_name()` on every received name: HELLO on the host (before the 
 `net.name_clean`.
 
 ## Verification
-<!-- not fixed yet -->
+* Lab `net_names` (coop_net_names.py, a scripted guest whose HELLO name holds "\nplanet X\r\n[12:00:00] FAKE
+  LINE", control and broken bytes and 60 letters): FAIL with SPORE_FIX_OFF=net.name_clean, out/lab/20261112-111316-2
+  (host row "[2] Evil", fake lines "planet X" in the host's and Bob's logs); PASS out/lab/20261112-111428 and
+  out/lab/20261112-111524.
+* Unit (make test): net_tests `test_name_clean` (HELLO, WELCOME, PLAYER_JOIN, LAN list, the clean_text rules):
+  FAIL `net_tests --off name_clean` (8 failed checks, out/n1-unit/net_off_name_clean.txt), PASS in make test twice
+  (out/n1-unit/net_pass_1.txt, net_pass_2.txt).
+* The slot marker part (a host name with "\nplanet X"): the guest's roster name is cleaned (unit case "Host\nplanet
+  Evil" -> "Hostplanet Evil"), the planet name of the offer too; a lab host cannot send such a name (its own name
+  is cleaned locally).
 
 ## How to test
 Unit test in tests/validate_tests.cpp (Session with a fake transport): a HELLO with name "A\nB\x01" gives the
@@ -58,3 +77,4 @@ marker has exactly one `planet` line. FAILS on main, PASSES with the fix.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12: fixed on fix/w48-net (0.7.13 N1): names cleaned on receipt; FAIL/PASS lab and unit runs.

@@ -20,6 +20,10 @@
 #include "sporekit_game.hpp"
 #include "tribe.h"
 
+namespace tribe {
+extern bool g_cycle_order_fix; // net.cycle_order (BUG-0612, BUG-0886)
+}
+
 namespace realign {
 
 using namespace skg;
@@ -211,12 +215,9 @@ struct Rows {
     uint32_t host = 0, local = 0, lack = 0, extra = 0, state_off = 0;
 };
 static Rows g_rows[kKinds];
-static uint32_t g_removed[kKinds], g_state_fixed[kKinds], g_rx, g_compares, g_incomplete, g_host_changes;
-static uint16_t g_rx_cycle;
-static std::set<uint8_t> g_rx_chunks;
-static std::vector<std::pair<uint8_t, Obj>> g_rx_objs;
-static uint8_t g_rx_sb;
-static uint32_t g_rx_epoch, g_seen_epoch;
+static uint32_t g_removed[kKinds], g_state_fixed[kKinds], g_rx, g_compares, g_host_changes;
+static PlanetRx g_prx; // BUG-0886: the cycle being received (realign_rule.h)
+static uint32_t g_seen_epoch;
 static bool g_have_epoch, g_pending;
 static std::vector<std::pair<uint8_t, Obj>> g_list; // the last complete host list, compared in tick
 static uint8_t g_list_sb;
@@ -230,8 +231,9 @@ static void guest_reset()
     for (auto& s : g_streak)
         s.clear();
     g_pending = false;
-    g_rx_chunks.clear();
-    g_rx_objs.clear();
+    uint32_t inc = g_prx.incomplete, old = g_prx.older, dup = g_prx.dup;
+    g_prx.reset(); // the counters stay for coop.realign
+    g_prx.incomplete = inc, g_prx.older = old, g_prx.dup = dup;
 }
 
 void on_planet(uint8_t from, net::Reader& r)
@@ -258,23 +260,11 @@ void on_planet(uint8_t from, net::Reader& r)
         objs.push_back({k, o});
     }
     g_rx++;
-    if (cycle != g_rx_cycle || g_rx_chunks.empty()) {
-        if (!g_rx_chunks.empty())
-            g_incomplete++;
-        g_rx_cycle = cycle;
-        g_rx_chunks.clear();
-        g_rx_objs.clear();
-    }
-    g_rx_sb = sb;
-    g_rx_epoch = ep;
-    g_rx_chunks.insert(chunk);
-    g_rx_objs.insert(g_rx_objs.end(), objs.begin(), objs.end());
-    if ((int)g_rx_chunks.size() == chunks) {
-        g_list.swap(g_rx_objs);
+    if (g_prx.add(cycle, chunk, chunks, objs, tribe::g_cycle_order_fix)) {
+        g_list.swap(g_prx.objs);
         g_list_sb = sb;
         g_pending = true;
-        g_rx_chunks.clear();
-        g_rx_objs.clear();
+        g_prx.objs.clear();
         if (!g_have_epoch || ep != g_seen_epoch) { // the host's world changed (or the first list)
             if (g_have_epoch) {
                 g_host_changes++;
@@ -423,7 +413,10 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "realign role=%s villages=%d buildings=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
              is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, (int)g_fix_buildings, g_tx, g_tx_soon, g_rx, g_compares,
-             g_incomplete, g_host_changes);
+             g_prx.incomplete, g_host_changes);
+    s += b;
+    snprintf(b, sizeof b, "realign older_chunks=%u dup_chunks=%u cycle_order=%d (BUG-0886)\n", g_prx.older, g_prx.dup,
+             (int)tribe::g_cycle_order_fix);
     s += b;
     for (uint8_t k = 0; k < kKinds; k++) {
         const Rows& r = g_rows[k];

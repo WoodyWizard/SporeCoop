@@ -2,6 +2,7 @@
 #include "../updater/pack.h"
 #include <algorithm>
 #include <cassert>
+#include <deque>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -29,6 +30,7 @@
 #include "net/shared_ledger.h"
 #include "net/session.h"
 #include "net/ipmask.h"
+#include "net/utf8.h"
 
 using namespace net;
 
@@ -3367,6 +3369,294 @@ static void test_partprops()
     printf("partprops: ok\n");
 }
 
+// ---- 0.7.13 N1: net and session (each FAILS with its switch off: `net_tests --off <name>`, and with --nofix) ----
+
+// a network for one Session: what it sends (with the address) and a queue of datagrams to read (from the address)
+struct FakeNet : Transport {
+    std::deque<std::pair<Endpoint, std::vector<uint8_t>>> in;
+    std::vector<std::pair<Endpoint, std::vector<uint8_t>>> out;
+    uint16_t port = 0;
+    bool open(uint16_t p, std::string*) override { port = p ? p : 50000; return true; }
+    void close() override {}
+    bool send_to(const Endpoint& to, const void* d, size_t n) override
+    {
+        out.push_back({to, std::vector<uint8_t>((const uint8_t*)d, (const uint8_t*)d + n)});
+        return true;
+    }
+    int recv_from(Endpoint& from, void* buf, size_t cap) override
+    {
+        if (in.empty())
+            return 0;
+        auto [ep, d] = std::move(in.front());
+        in.pop_front();
+        size_t n = std::min(cap, d.size());
+        if (n)
+            memcpy(buf, d.data(), n);
+        from = ep;
+        return (int)n;
+    }
+    uint16_t local_port() const override { return port; }
+    size_t sent_to(const Endpoint& e) const
+    {
+        size_t k = 0;
+        for (auto& [to, d] : out)
+            k += to == e;
+        return k;
+    }
+};
+static uint32_t g_fake_ms = 5000;
+static uint32_t fake_ms() { return g_fake_ms; }
+static Endpoint ep4(uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint16_t port)
+{
+    Endpoint e;
+    uint8_t* p = reinterpret_cast<uint8_t*>(&e.ip);
+    p[0] = a; p[1] = b; p[2] = c; p[3] = d;
+    e.port = port;
+    return e;
+}
+// the first datagram of a guest that joins: a real Connection sending its HELLO
+static std::vector<uint8_t> hello_datagram(uint32_t conn, const std::string& name, uint32_t build)
+{
+    Connection c;
+    c.conn_id = conn;
+    Hello h;
+    h.build = build;
+    h.name = name;
+    Writer w;
+    h.write(w);
+    c.send_reliable(MSG_HELLO, w);
+    std::vector<uint8_t> pkt;
+    c.build_packet(g_fake_ms, pkt);
+    return pkt;
+}
+// a datagram with a valid header and no message (what any sender of 31 bytes could make)
+static std::vector<uint8_t> header_datagram(uint32_t conn)
+{
+    Connection c;
+    c.conn_id = conn;
+    Writer w;
+    w.u8(0);
+    c.send_unreliable(MSG_PING, w);
+    std::vector<uint8_t> pkt;
+    c.build_packet(g_fake_ms, pkt);
+    return pkt;
+}
+
+static bool one_clean_line(const std::string& s)
+{
+    for (unsigned char c : s)
+        if (c < 0x20 || c == 0x7F)
+            return false;
+    return utf8::valid(s);
+}
+
+// BUG-0774: a guest's HELLO name, the host's name in WELCOME and a newcomer's in PLAYER_JOIN come as sent (control
+// characters, a newline into the logs and the co-op slot's marker file, broken UTF-8, 255 bytes)
+static void test_name_clean()
+{
+    printf("names from the network are one clean line of at most 24 characters (BUG-0774)\n");
+    CHECK(utf8::clean_text("A\nB\x01\x1b[1m\xC2\x85\xE2\x80\xA8" "C", 24) == "AB[1mC");
+    CHECK(utf8::clean_text("\x80\xC3", 24).empty());              // a stray continuation byte, a cut sequence
+    CHECK(utf8::clean_text("\xC0\xAF" "x", 24) == "x");             // an overlong '/'
+    CHECK(utf8::clean_text("\xED\xA0\x80" "y", 24) == "y");         // a surrogate
+    CHECK(utf8::clean_text("Zoë 🦖 \xEF\xBF\xBD", 24) == "Zoë 🦖 \xEF\xBF\xBD"); // letters, emoji, a real U+FFFD stay
+    CHECK(utf8::count(utf8::clean_text(std::string(300, 'x'), 24)) == 24);
+    Session host, a, b;
+    std::string err;
+    host.build = a.build = b.build = 0x922af7c7;
+    std::vector<std::string> host_log, a_log;
+    host.cb.log = [&](const std::string& s) { host_log.push_back(s); };
+    a.cb.log = [&](const std::string& s) { a_log.push_back(s); };
+    CHECK(host.host(0, "Host\nplanet Evil\x07", err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    CHECK(a.join(addr, "Bob\nplanet X\x01", err));
+    pump(host, a, 300);
+    CHECK(b.join(addr, std::string(60, 'w') + "\r\n", err));
+    pump(host, b, 300);
+    pump(host, a, 200);
+    std::string an = host.name_of(1), bn = host.name_of(2), hn = a.name_of(0), bn_a = a.name_of(2);
+    printf("  host sees '%s', '%s'; guest A sees the host '%s', B '%s'\n", an.c_str(), bn.c_str(), hn.c_str(), bn_a.c_str());
+    CHECK(an == "Bobplanet X");
+    CHECK(utf8::count(bn) == 24 && one_clean_line(bn));
+    CHECK(hn == "Hostplanet Evil");
+    CHECK(bn_a == bn);
+    CHECK(a.name_of(1) == an); // the guest takes its name from the host's roster
+    for (auto* log : {&host_log, &a_log})
+        for (auto& l : *log)
+            CHECK(one_clean_line(l));
+    // the LAN game list: a host's name and info line as any machine of the network sends them
+    Session lan;
+    CHECK(lan.host(kDefaultPort + kDiscoverPorts - 1, "Lan\nHost\x01", err));
+    lan.lobby_info = "Creature\r\n - World";
+    Discovery d;
+    CHECK(d.start());
+    d.targets = {0x0100007F};
+    d.interval_ms = 100;
+    std::vector<Discovery::Game> found;
+    for (int i = 0; i < 200 && found.empty(); i++) {
+        d.update(now_ms());
+        lan.update();
+        d.update(now_ms());
+        found = d.games(now_ms());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(found.size() == 1);
+    if (!found.empty()) {
+        printf("  the LAN list shows '%s' (%s)\n", found[0].info.name.c_str(), found[0].info.info.c_str());
+        CHECK(found[0].info.name == "LanHost" && found[0].info.info == "Creature - World");
+    }
+}
+
+// BUG-0776: a host with its port open to the internet answered a 6-byte discovery query from any address (up to
+// 520 bytes back: a reflector, and the host's name, players and world for any scanner)
+static void test_discovery_source()
+{
+    printf("LAN discovery is answered from local networks only, 20 a second at most (BUG-0776)\n");
+    std::vector<uint32_t> radmin = {ep4(26, 255, 255, 255, 0).ip};
+    CHECK(local_source(ep4(192, 168, 1, 5, 0).ip, {}) && local_source(ep4(10, 1, 2, 3, 0).ip, {}));
+    CHECK(local_source(ep4(127, 0, 0, 1, 0).ip, {}) && local_source(ep4(172, 20, 0, 9, 0).ip, {}));
+    CHECK(local_source(ep4(169, 254, 3, 4, 0).ip, {}) && local_source(ep4(100, 101, 1, 1, 0).ip, {}));
+    CHECK(!local_source(ep4(8, 8, 8, 8, 0).ip, {}) && !local_source(ep4(172, 32, 0, 1, 0).ip, {}));
+    CHECK(!local_source(ep4(26, 1, 2, 3, 0).ip, {}) && local_source(ep4(26, 1, 2, 3, 0).ip, radmin));
+    CHECK(!local_source(ep4(27, 1, 2, 3, 0).ip, radmin));
+    CHECK(!local_source(ep4(8, 8, 8, 8, 0).ip, {ep4(255, 255, 255, 255, 0).ip}));
+    FakeNet net;
+    Session host;
+    host.set_transport(&net);
+    host.clock = fake_ms;
+    std::string err;
+    CHECK(host.host(kDefaultPort, "LanHost", err));
+    host.lobby_info = "Creature - Testworld";
+    std::vector<uint8_t> q(6, 0);
+    uint32_t magic = kDiscoverQuery;
+    memcpy(q.data(), &magic, 4);
+    Endpoint pub = ep4(8, 8, 8, 8, 40001), lan = ep4(192, 168, 1, 5, 40002), vpn = ep4(26, 1, 2, 3, 40003);
+    net.in.push_back({pub, q});
+    net.in.push_back({lan, q});
+    net.in.push_back({vpn, q});
+    host.update();
+    size_t to_pub = net.sent_to(pub), to_lan = net.sent_to(lan), to_vpn_before = net.sent_to(vpn);
+    host.lan_broadcasts = radmin;
+    g_fake_ms += 1000;
+    net.in.push_back({vpn, q});
+    host.update();
+    size_t to_vpn = net.sent_to(vpn) - to_vpn_before;
+    g_fake_ms += 1000;
+    for (int i = 0; i < 200; i++)
+        net.in.push_back({ep4(10, 0, (uint8_t)(i / 250), (uint8_t)(i % 250 + 1), 40100), q});
+    size_t before = net.out.size();
+    host.update(); // reads 200 of them in one frame
+    size_t burst = net.out.size() - before;
+    printf("  answers: internet %zu, LAN %zu, VPN subnet %zu without / %zu with its adapter; 200 queries in a second: %zu\n",
+           to_pub, to_lan, to_vpn_before, to_vpn, burst);
+    CHECK(to_pub == 0);
+    CHECK(to_lan == 1);
+    CHECK(to_vpn_before == 0 && to_vpn == 1);
+    CHECK(burst <= Session::kDiscoverPerSecond);
+    CHECK(host.status().find("refused: discovery=") != std::string::npos);
+}
+
+// BUG-0778: any datagram with a valid header from a new address or port took one of 16 peer slots for 10 s; with
+// 16 of them no player could join or rejoin ("no answer from host")
+static void test_halfopen()
+{
+    printf("junk datagrams and refused HELLOs do not block a join (BUG-0778)\n");
+    std::string err;
+    for (int round = 0; round < 2; round++) {
+        FakeNet net;
+        Session host;
+        host.set_transport(&net);
+        host.clock = fake_ms;
+        host.build = 0x922af7c7;
+        CHECK(host.host(kDefaultPort, "Host", err));
+        for (int i = 0; i < 16; i++) {
+            if (round == 0) // 16 header-only datagrams from 16 ports of one address
+                net.in.push_back({ep4(203, 0, 113, 9, (uint16_t)(30000 + i)), header_datagram(0x1000u + i)});
+            else // 16 HELLOs of a wrong build (refused: half-open until their REJECT is through) from 16 addresses
+                net.in.push_back({ep4(198, 51, 100, (uint8_t)(i + 1), 30000), hello_datagram(0x2000u + i, "x", 0x1234)});
+        }
+        host.update();
+        size_t held = host.peer_count();
+        g_fake_ms += 500;
+        Endpoint guest = ep4(192, 168, 1, 7, 41000);
+        net.in.push_back({guest, hello_datagram(0x77, "Bob", 0x922af7c7)});
+        host.update();
+        bool in = host.players().size() == 2 && host.name_of(1) == "Bob";
+        printf("  %s: %zu peer(s) held, then a real guest: %s\n", round == 0 ? "16 header-only datagrams" : "16 refused HELLOs", held,
+               in ? "joined" : "NOT joined");
+        CHECK(in);
+        CHECK(net.sent_to(guest) >= 1);
+        CHECK(host.peer_count() <= Session::kMaxPeers);
+        if (round == 0)
+            CHECK(held == 0);
+    }
+    // a datagram without a HELLO from a joined guest's address and port with another connection id (spoofed, or late
+    // from an older connection) does not replace the guest
+    FakeNet net;
+    Session host;
+    host.set_transport(&net);
+    host.clock = fake_ms;
+    host.build = 0x922af7c7;
+    CHECK(host.host(kDefaultPort, "Host", err));
+    Endpoint guest = ep4(192, 168, 1, 7, 41000);
+    net.in.push_back({guest, hello_datagram(0x77, "Bob", 0x922af7c7)});
+    host.update();
+    net.in.push_back({guest, header_datagram(0x99)});
+    host.update();
+    CHECK(host.players().size() == 2);
+}
+
+// BUG-0861: a callback that starts a new session while a packet is delivered (here the guest's cb.connected:
+// leave, then host) had the new session closed at the end of the delivery by the old session's deferred leave
+static void test_restart_in_callback()
+{
+    printf("host() / join() inside a delivery callback keep the new session (BUG-0861)\n");
+    std::string err;
+    for (int variant = 0; variant < 3; variant++) {
+        Session host, cli, other;
+        host.build = cli.build = other.build = 0x922af7c7;
+        CHECK(host.host(0, "h", err));
+        CHECK(other.host(0, "o", err));
+        std::string addr = "127.0.0.1:" + std::to_string(host.port()), other_addr = "127.0.0.1:" + std::to_string(other.port());
+        int connected = 0, disc = 0;
+        bool restarted = false;
+        cli.cb.disconnected = [&](const std::string&) { disc++; };
+        cli.cb.connected = [&] {
+            connected++;
+            if (restarted)
+                return;
+            restarted = true;
+            std::string e;
+            if (variant == 0) {
+                cli.leave("callback");
+                CHECK(cli.host(0, "rehosted", e));
+            } else if (variant == 1) {
+                CHECK(cli.host(0, "rehosted", e)); // without a leave first
+            } else {
+                cli.leave("callback");
+                CHECK(cli.join(other_addr, "g", e)); // to another host
+            }
+        };
+        CHECK(cli.join(addr, "g", err));
+        for (int i = 0; i < 80; i++) {
+            host.update();
+            cli.update();
+            other.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        bool ok = variant < 2 ? cli.role() == Role::Host && cli.players().size() == 1
+                              : cli.role() == Role::Client && cli.connected() && other.players().size() == 2;
+        printf("  %s: role %s, connected %d, disconnected %d\n",
+               variant == 0 ? "leave + host" : variant == 1 ? "host" : "leave + join elsewhere",
+               cli.role() == Role::Host ? "host" : cli.role() == Role::Client ? "client" : "none", connected, disc);
+        CHECK(restarted);
+        CHECK(ok);
+        CHECK(disc == 0);
+        // the first host saw the guest go (BYE) and keeps running
+        CHECK(host.players().size() == 1 && host.role() == Role::Host);
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -3379,6 +3669,10 @@ int main(int argc, char** argv)
                                                {"rejoin_token", &g_fix.rejoin_token},
                                                {"addr_label", &g_fix.addr_label},
                                                {"lan_dedup", &g_fix.lan_dedup},
+                                               {"name_clean", &g_fix.name_clean},
+                                               {"lan_only_disc", &g_fix.lan_only_disc},
+                                               {"halfopen_cap", &g_fix.halfopen_cap},
+                                               {"restart_gen", &g_fix.restart_gen},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -3476,6 +3770,10 @@ int main(int argc, char** argv)
     test_diag_compare();
     test_diag_session();
     test_diag_conn_stats();
+    test_name_clean();
+    test_discovery_source();
+    test_halfopen();
+    test_restart_in_callback();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

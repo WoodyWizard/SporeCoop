@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Fixed
+- Network: player names, LAN game names and planet names received from other players are cleaned to one line of
+  printable text (control characters and broken text removed, names cut to 24 characters) before they are shown,
+  logged or written to the co-op save slot (BUG-0774).
+- Network: a host answers "Games on your network" queries only from local networks and virtual LANs, and only a few
+  times a second (BUG-0776).
+- Network: stray packets from unknown senders no longer take the host's connection slots, so a player can always
+  join or rejoin (BUG-0778).
+- World transfer: a received file named like a Windows device (such as con, nul or com1) is refused instead of
+  being written to that device (BUG-0785).
+- SporeKit: a hot reload of a mod destroys its queued tasks outside the task lock, so a task that queues another
+  one on its way out cannot freeze the game (BUG-0860).
+- Network: starting a new session (host or join) from inside the handling of a message no longer has the new
+  session closed right after (BUG-0861).
+- Creature, Tribe and Civilization: the guest's whole-planet comparison no longer loses a list when a late piece of
+  an older list arrives (BUG-0886).
 - Tribe: the music of the dance at the fire pit stops for a guest when the dance ends, also when the guest was in
   an editor at that moment; it used to play on until the guest loaded another world (BUG-0890).
 - Tribe: a baby tribe member grows up on a guest's screen when it grows up in the host's game, also when the guest

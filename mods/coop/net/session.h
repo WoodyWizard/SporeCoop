@@ -73,6 +73,13 @@ public:
     // this session already (its name, or its rejoin token) may always come back. coop.cpp sets both every frame
     int max_players = kMaxPlayers;
     std::function<bool()> join_closed;
+    // BUG-0776, host: the broadcast addresses of this machine's adapters (network byte order, coop.cpp from
+    // adapters::list()): a discovery query from one of their subnets is answered too (a virtual LAN outside the
+    // private ranges)
+    std::vector<uint32_t> lan_broadcasts;
+    static constexpr uint32_t kDiscoverPerSecond = 20; // BUG-0776: discovery answers a second, all senders together
+    static constexpr size_t kMaxPeers = 16;            // host: accepted and half-open peers
+    static constexpr int kHalfOpenPerIp = 4;           // BUG-0778: half-open peers of one address (a NAT: several games)
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -129,6 +136,11 @@ private:
     std::vector<std::string> seen_names_; // host: every name admitted since host() (the late-join rule)
     bool retired(uint32_t conn) const;
     void start_hello(const Endpoint& ep, uint32_t now);
+    void restart_leave();                  // BUG-0861: host() / join(): the old session ends now, also in a delivery
+    void end_session(const char* why);     // leave() without the deferral
+    static bool carries_hello(const uint8_t* data, size_t n); // BUG-0778
+    void make_room(const Endpoint& from);  // BUG-0778
+    bool discovery_answer(const Endpoint& from, uint32_t now); // BUG-0776
     bool poll_lookup(uint32_t now); // false = the session ended or still waits
 
     std::shared_ptr<Lookup> lookup_;
@@ -155,6 +167,12 @@ private:
     bool leave_pending_ = false;
     std::string pending_why_;  // leave() reason
     std::string pending_disc_; // cb.disconnected text after the deferred leave ("" = none)
+    // BUG-0861: changes with every host(), join() and end of a session; a delivery or an update that sees it change
+    // stops working for the old session. zombies_: the old session's peers while their packet is still parsed
+    uint32_t gen_ = 0;
+    std::vector<std::unique_ptr<Peer>> zombies_;
+    uint32_t disc_window_ms_ = 0, disc_in_window_ = 0, disc_answered_ = 0, disc_refused_ = 0; // BUG-0776
+    uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778
 };
 
 } // namespace net

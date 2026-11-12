@@ -25,7 +25,11 @@ COOP_FIX("net.bulk_acks", "BUG-0405", net::g_fix.bulk_acks, "net: a busy receive
 COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
 COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("net.lan_dedup", "BUG-0210", net::g_fix.lan_dedup, "net: a host answering on two addresses is one LAN game");
-COOP_FIX("net.async_resolve", "BUG-0204", net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
+COOP_FIX("net.name_clean", "BUG-0774", net::g_fix.name_clean, "net: player names from the network lose control characters and are cut to 24 characters");
+COOP_FIX("net.lan_only_disc", "BUG-0776", net::g_fix.lan_only_disc, "net: the host answers LAN discovery only from local networks, at most 20 answers a second");
+COOP_FIX("net.halfopen_cap", "BUG-0778", net::g_fix.halfopen_cap, "net: a new peer only for a HELLO, a full peer table evicts the oldest half-open peer");
+COOP_FIX("net.restart_gen", "BUG-0861", net::g_fix.restart_gen, "net: a host / join started inside a message callback is not closed by the old session's deferred leave");
+COOP_FIX("net.async_resolve", "BUG-0204",net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
 
 // updater/ (FIX_SWITCH)
 COOP_FIX("update.dup", "BUG-0089", upd::g_dup_fix, "update: a pack that lists a path twice is refused");
