@@ -82,6 +82,15 @@ COOP_FIX("space.down_clear", "BUG-0228", g_down_clear_fix,
 COOP_FIX("space.down_world", "BUG-0229", g_down_world_fix,
          "space: a disabled state pauses in an editor / adventure and ends without a death in another Space world");
 static uint32_t g_down_world_ends, g_down_owed_cleared, g_down_owed_dropped;
+// BUG-0836: down_tick set the invincible byte every frame on the current own ship, not on the one the state was set
+// on (g_down_ship): a new ship object in the same world (a trip that rebuilds the player's UFO) got the byte, and the
+// end cleared only g_down_ship's, so the new ship stayed invincible until the next load. Now the byte is written only
+// on the recorded ship (or on any while no ship was recorded), and an end of the state that is not on the recorded
+// ship clears it on the current own ship too. `coop.fix space.down_ship_only off`: as 0.7.12.
+static bool g_down_ship_only_fix = true;
+COOP_FIX("space.down_ship_only", "BUG-0836", g_down_ship_only_fix,
+         "space: the disabled state's invincibility is set and cleared on the ship it was set on, not on a new ship");
+static uint32_t g_down_other_ship, g_down_other_cleared;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
@@ -352,7 +361,10 @@ static void down_tick(double now)
         clear_down_invincible();
         return;
     }
-    F<uint8_t>(u, kInvincible) = 1;
+    if (!g_down_ship_only_fix || !g_down_ship.u || down_ship_here())
+        F<uint8_t>(u, kInvincible) = 1;
+    else
+        g_down_other_ship++; // BUG-0836: another ship than the disabled one: not made invincible
     bool close_by = false;
     for (auto& p : helpers_here())
         if (repair_distance(p.pos, ufo_pos(u)) < g_repair_dist)
@@ -374,6 +386,10 @@ static void down_tick(double now)
             g_down_world_ends++;
             H->log(M, SK_INFO, "space: the disabled state ended without a death: not the ship it was set on");
             clear_down_invincible();
+            if (g_down_ship_only_fix && F<uint8_t>(u, kInvincible) && !cinematic_playing()) { // BUG-0836
+                F<uint8_t>(u, kInvincible) = 0;
+                g_down_other_cleared++;
+            }
             return;
         }
         end_down(false);
@@ -1425,6 +1441,14 @@ static std::vector<GiftOwed> g_gifts_owed;
 static bool g_gift_refund_fix = true; // off: K_GIFT_BACK adds at once or drops; add_spice in any stage (0.7.3.0)
 COOP_FIX("space.gift_refund", "BUG-0226", g_gift_refund_fix,
          "space: spice of a gift that comes back outside Space is put back once back in Space");
+// BUG-0828: every gift stays in g_gifts_out (only a failure is answered), and an answer took the OLDEST entry of the
+// same partner, amount and spice: one of an earlier, successful gift, maybe of another Space world, so the refund was
+// kept owed for that world or dropped. Answers come in order: the newest such entry is the one answered, and entries
+// of another Space world go when a new gift is sent. `coop.fix space.gift_match_newest off`: the oldest (0.7.12).
+static bool g_gift_newest_fix = true;
+COOP_FIX("space.gift_match_newest", "BUG-0828", g_gift_newest_fix,
+         "space: a spice gift that comes back is matched to the newest gift of that amount, not an older one");
+static uint32_t g_gift_pruned;
 static bool g_gift_hold, g_gift_noroom; // tests: the receiver keeps gifts unanswered / has no room
 struct GiftHeld {
     uint8_t origin;
@@ -1496,6 +1520,13 @@ int give_spice(int n)
     send(K_GIFT, w);
     g_gifts_sent++;
     if (g_gift_refund_fix) {
+        if (g_gift_newest_fix) { // BUG-0828: gifts of another Space world will not be answered into this one
+            uint32_t e = spaceext::world_epoch();
+            size_t before = g_gifts_out.size();
+            g_gifts_out.erase(std::remove_if(g_gifts_out.begin(), g_gifts_out.end(), [e](const GiftOut& g) { return g.epoch != e; }),
+                              g_gifts_out.end());
+            g_gift_pruned += (uint32_t)(before - g_gifts_out.size());
+        }
         g_gifts_out.push_back({to, k, n, spaceext::world_epoch(), spaceext::world_tag()});
         if (g_gifts_out.size() > 16)
             g_gifts_out.erase(g_gifts_out.begin());
@@ -1652,9 +1683,12 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         return;
     }
     if (kind == K_GIFT_BACK && g_gift_refund_fix) {
-        auto it = std::find_if(g_gifts_out.begin(), g_gifts_out.end(), [&](const GiftOut& g) {
-            return g.to == origin && g.n == n && !memcmp(g.key.v, k.v, sizeof k.v);
-        });
+        auto same = [&](const GiftOut& g) { return g.to == origin && g.n == n && !memcmp(g.key.v, k.v, sizeof k.v); };
+        auto it = std::find_if(g_gifts_out.begin(), g_gifts_out.end(), same);
+        if (g_gift_newest_fix) { // BUG-0828: the newest one
+            auto r = std::find_if(g_gifts_out.rbegin(), g_gifts_out.rend(), same);
+            it = r == g_gifts_out.rend() ? g_gifts_out.end() : std::prev(r.base());
+        }
         if (it == g_gifts_out.end()) {
             g_gift_back_stray++; // a duplicate or a stray answer: nothing was taken for it
             return;
@@ -2338,16 +2372,19 @@ std::string debug(const std::vector<std::string>& a)
         return b;
     }
     if (a[0] == "gift") {
-        snprintf(b, sizeof b, "gifts out=%u owed=%u back_paid=%u back_owed=%u back_dropped=%u stray=%u held=%u",
+        snprintf(b, sizeof b, "gifts out=%u owed=%u back_paid=%u back_owed=%u back_dropped=%u stray=%u held=%u pruned=%u",
                  (unsigned)g_gifts_out.size(), (unsigned)g_gifts_owed.size(), g_gift_back_paid, g_gift_back_owed,
-                 g_gift_back_dropped, g_gift_back_stray, (unsigned)g_gifts_held.size());
+                 g_gift_back_dropped, g_gift_back_stray, (unsigned)g_gifts_held.size(), g_gift_pruned);
         return b;
     }
     if (a[0] == "downstate") { // tests (BUG-0228/0229)
-        snprintf(b, sizeof b, "down=%d left=%.1f owed=%d epoch=%u ship_epoch=%u world_ends=%u owed_cleared=%u owed_dropped=%u away=%d",
+        snprintf(b, sizeof b, "down=%d left=%.1f owed=%d epoch=%u ship_epoch=%u world_ends=%u owed_cleared=%u owed_dropped=%u away=%d"
+                 " ship=%p serial=%u down_ship=%p down_serial=%u inv=%d other_ship=%u other_cleared=%u",
                  (int)g_down, g_down ? g_down_until - H->time_seconds() : 0.0, (int)g_invincible_owed,
                  spaceext::world_epoch(), g_down_ship.epoch, g_down_world_ends, g_down_owed_cleared,
-                 g_down_owed_dropped, (int)spaceext::away());
+                 g_down_owed_dropped, (int)spaceext::away(), u, u && game::object_alive(u) ? game::object_serial(u) : 0u,
+                 g_down_ship.u, g_down_ship.serial, u ? (int)F<uint8_t>(u, kInvincible) : -1, g_down_other_ship,
+                 g_down_other_cleared);
         return b;
     }
     if (a[0] == "seedfix" && a.size() > 1) { // BUG-0123: 0 = one generation state for all threads (tests)
