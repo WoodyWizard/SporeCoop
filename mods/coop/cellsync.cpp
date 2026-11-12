@@ -462,7 +462,8 @@ static void send_ko(uint8_t state, float left, float hold)
 // (modes::cell_is_puppet) is returned. Old (`coop.fix cell.puppet_cell_index off`): the table's pointer.
 static bool g_puppet_cell_fix = true;
 COOP_FIX("cell.puppet_cell_index", "BUG-0823", g_puppet_cell_fix, "cell: the host's own cell is never taken for a partner's cell in the frame of a level rebuild (it got the knockout look or bit for the partner)");
-static uint32_t g_puppet_cell_refused;
+static uint32_t g_puppet_cell_refused, g_puppet_cell_own;
+static uint8_t* avatar();
 static uint8_t* puppet_cell(int id)
 {
     if (!C.puppets)
@@ -473,6 +474,8 @@ static uint8_t* puppet_cell(int id)
                 g_puppet_cell_refused++;
                 return nullptr;
             }
+            if (p.cell && (uint8_t*)p.cell == avatar()) // (tests: the own cell handed out as the partner's)
+                g_puppet_cell_own++;
             return (uint8_t*)p.cell;
         }
     return nullptr;
@@ -5979,8 +5982,9 @@ std::string debug(const std::vector<std::string>& a)
         if (C.puppets)
             for (auto& p : C.puppets())
                 as_puppet |= c && p.cell == c;
-        snprintf(b, sizeof b, "self cell=%p opacity=%.2f hp=%d table_names_it=%d refused=%u", (void*)c, c ? F<float>(c, kOpacity) : -1.f,
-                 c ? F<int>(c, kHp) : -1, (int)as_puppet, g_puppet_cell_refused);
+        snprintf(b, sizeof b, "self cell=%p opacity=%.2f hp=%d table_names_it=%d refused=%u handed_own=%u", (void*)c,
+                 c ? F<float>(c, kOpacity) : -1.f, c ? F<int>(c, kHp) : -1, (int)as_puppet, g_puppet_cell_refused,
+                 g_puppet_cell_own);
         return b;
     }
     if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)

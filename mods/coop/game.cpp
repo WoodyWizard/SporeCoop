@@ -1068,8 +1068,26 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 // the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per
 // frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
 static void swap_ledger_tick();
+// BUG-0882: a detour that lends game state around a call puts its undo into the swap ledger (views' relevance pass, the
+// own creature's scale call); the mod's own call guards (inside a puppet's animation, an effect wrapper, an event,
+// a relayed effect) are false outside every game call, so the frame's tick clears one a caught fault left set (a
+// stuck guard switched its relay off for good). Off (`coop.fix game.lend_ledger off`): no entries, no reset.
+static bool g_lend_ledger_fix = true;
+COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_ledger_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer, the player species changed or a relay of the mod switched off");
+bool lend_ledger_on() { return g_lend_ledger_fix; }
+static uint32_t g_guards_reset;
+static void reset_call_guards()
+{
+    if (!g_lend_ledger_fix)
+        return;
+    if (g_in_puppet_anim || g_in_relay || t_in_anim_fx || t_in_evt)
+        g_guards_reset++;
+    g_in_puppet_anim = g_in_relay = t_in_anim_fx = t_in_evt = false;
+}
+uint32_t call_guards_reset() { return g_guards_reset; }
 void swap_guard_tick()
 {
+    reset_call_guards();
     swap_ledger_tick();
     if (!g_swap_real || !g_swap_guard)
         return;

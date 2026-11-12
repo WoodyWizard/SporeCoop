@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""BUG-0814: a stick or rock a partner carried is let go in the other game when the partner's creature goes.
+"""BUG-0814 (not reproduced; a regression check): a stick or rock a partner carried is let go in the other game when
+the partner's creature goes.
 
 The partner's game shows the carried copy in the hold slot of the carrier's puppet (BUG-0458: the game's
 Creature_HoldObject: held +0x71 = 1, the physics component attached, +0x1F0 = 3). Nothing let go of it when that
@@ -11,8 +12,9 @@ HoldObject, as the carry node calls it: `coop.rules hold`); the host's game must
 its copy. Then the host's game takes the guest's puppet away as on the guest's death (`coop.puppet respawn 4`:
 destroyed now, made again 4 s later). 1.5 s later, in the host's game, the copy must not be held any more (the
 game's own fields: `coop.rules carry`, `last copy ... game_held=0`; the game's destroy clears it by itself), and 5 s
-later it must not hang frozen where the puppet's hand was (the game's destroy leaves it there: lab 20261112-011434).
-SPORE_FIX_OFF=creature.carry_holder must FAIL.
+later it must not hang frozen where the puppet's hand was.
+The ticket's suspicion did not hold: the game's DestroyInstance of the holding puppet clears the hold slot and the
+copy falls or rolls away by itself (0.7.12 code: lab 20261112-011434, 20261112-012019-2): no fix, no switch.
 
   SPORE_LANE=6 python3 tools/tests/coop_carry_holder.py"""
 import math

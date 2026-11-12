@@ -92,14 +92,14 @@ static Sphere g_game_last; // the game's own first sphere at the last pass (diag
 static bool g_on_ours;     // BUG-0882: the game came into the last pass with its vector on g_buf
 
 // BUG-0882 (see h_Relevance): what was lent, for the ledger's undo
-static bool g_lend_fix = true;
-COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer or the player species changed");
+// (the switch is game.lend_ledger in game.cpp)
+#define g_lend_fix (game::lend_ledger_on())
 struct Lent {
     Sphere** v = nullptr;
     Sphere *b = nullptr, *e = nullptr, *cap = nullptr;
 };
 static Lent g_lent;
-bool lend_ledger_on() { return g_lend_fix; }
+bool lend_ledger_on() { return game::lend_ledger_on(); }
 static bool g_test_unwind;
 static uint32_t g_unwound, g_lend_undone;
 static void undo_lend(void* p, uintptr_t)

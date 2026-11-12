@@ -3146,3 +3146,18 @@ BUG-0945, BUG-0946. GOG 2024, tribe fixture, lanes 2 and 5 (probes, then tribe_m
 * ? Not checked: which of the game's own attacks reach 60 hp on a member (an epic's and a rogue's are likely), and
   whether the throw is the fight node's own reaction or the locomotion's (mode +0x2B0 = 3, docs/re/creature.md
   "thrown").
+
+## A removed citizen's block and the mirrors (2026-11-12, fix/w48-freed)
+<a id="tribe-mirror-citizen-reuse"></a>
+
+BUG-0844 (class BUG-0426). GOG 2024, runtime on lanes 6/7 (`coop.tribe reusehunt`, docs/06-testing.md#testing-freed-block-reuse).
+
+* ✔ A citizen removed with its tribe's RemoveMember (vt 0x9C, destroy = 1) is freed later, like a creature
+  (docs/re/creature.md#creature-freed-block-reuse); a member made afterwards in **another** tribe (the guest's player
+  tribe, SpawnMember vt 0x98) got its block in 1 of 8 hunts of 150 frames (12 tries) in one run, 1 of up to 16 in
+  others: rarer than for animals, but real.
+* ✔ object_alive (+0x21) and the object list both accept that new member for the old mirror; only the serial
+  (+0x24) tells it apart. With the old check the guest drove its own new member onto the host's member of the other
+  tribe once the host's states came again (lab 20261112-010419).
+* ✔ The member vector (+0x340) of the live tribes is the safe way to find the tribe that has a citizen
+  (`tribe_holding`); the citizen's owner field (+0x1014) is read only after the citizen is a listed object.

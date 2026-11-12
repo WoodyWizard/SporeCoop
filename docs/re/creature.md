@@ -4151,3 +4151,8 @@ while references to it remain).
   question; 4-7 thousand objects in the creature fixture), kept exact inside the frame by gamefixes' DestroyInstance
   hook (`game::note_destroyed`) and by the serial counter 0x167BE28 (a miss after a CreateInstance walks again);
   `alive(LiveRef)` = listed with the noun and the same serial. `coop.live` prints its counters.
+* ✔ (BUG-0814) A partner's puppet that holds the copy of a rock (Creature_HoldObject: its +0x71 = 1) and is destroyed
+  with DestroyInstance (`coop.puppet respawn`) lets go of it in the game itself: +0x71 is 0 again within 1.5 s and the
+  copy moves (falls or rolls) about 5 m in the next 5 s, with the 0.7.12 code (lab 20261112-011434,
+  20261112-012019-2). The ground radius under the fixture's rock reads ~4.4 m below it (the rock lies on a mound the
+  terrain query does not see): not a measure of "in the air" there.

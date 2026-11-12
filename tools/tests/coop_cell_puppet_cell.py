@@ -9,7 +9,8 @@ had the host's cell as the attacker, the puppet's poison step ran for it.
 
 Two games on the cell fixture. Each round: the guest swims away and the host knocks it out (`coop.pool hurt`), then
 the host dies without a helper (`coop.pool selfhit 50` until its game rebuilds the level: a new own cell). While the
-guest is out, the host's own cell must never get the knockout look (`coop.pool selfstate`: its opacity) and no game
+guest is out, the host's own cell must never get the knockout look (`coop.pool selfstate`: its opacity), the mod's
+lookup of the partner's cell must never hand out the host's own (`handed_own`, the effect lasts one frame) and no game
 faults. The rebuilt cell lands on the puppet's address in some rounds only (BUG-0342: about a third).
 SPORE_FIX_OFF=cell.puppet_cell_index must FAIL.
 
@@ -24,8 +25,8 @@ from twoinst import Checks, start
 
 def selfstate(con):
     out = con.call('coop.pool selfstate')['out']
-    m = re.search(r'cell=(\S+) opacity=([-\d.]+) hp=(-?\d+) table_names_it=(\d) refused=(\d+)', out)
-    return (m.group(1), float(m.group(2)), int(m.group(3)), m.group(4) == '1', int(m.group(5))) if m else None
+    m = re.search(r'cell=(\S+) opacity=([-\d.]+) hp=(-?\d+) table_names_it=(\d) refused=(\d+) handed_own=(\d+)', out)
+    return (m.group(1), float(m.group(2)), int(m.group(3)), m.group(4) == '1', int(m.group(5)), int(m.group(6))) if m else None
 
 
 def puppet_cell(con):
@@ -35,7 +36,7 @@ def puppet_cell(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--rounds', type=int, default=6)
+    ap.add_argument('--rounds', type=int, default=8)
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -83,9 +84,15 @@ def main():
         while time.time() - t2 < 14 and pool(guest)['downed'] == 1:
             time.sleep(0.5)
         time.sleep(4)
-    print(f'  rebuilds {rebuilds}, of them at the guest\'s puppet address {at_puppet}', flush=True)
+    st = selfstate(host)
+    handed = st[5] if st else -1
+    print(f'  rebuilds {rebuilds}, of them at the guest\'s puppet address {at_puppet}; the partner\'s cell asked for '
+          f'and the host\'s own handed out {handed} times, refused {st and st[4]}', flush=True)
     ck(rebuilds >= 1, f'the host\'s level was rebuilt while the guest was out ({rebuilds} times)')
     ck(not looks, f'the host\'s own cell never got the knockout look (rounds: {looks})')
+    # (the knockout look, a bite or the poison step with the host's own cell for the partner's lasts one frame: the
+    # mod's own lookup is counted where it handed the own cell out, `handed_own`)
+    ck(handed == 0, f'the host\'s own cell was never handed out as the partner\'s ({handed})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

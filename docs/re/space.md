@@ -2732,3 +2732,17 @@ BUG-0901 / BUG-0902 / BUG-0900, Ghidra GOG 2024 + runtime lanes 4 / 5:
 * ? Not checked: whether a game keeps its own sculpts and colours when its ship leaves and lands again (the sphere's
   effect list +0x798 is runtime state; the planet's stored terrain is not traced), and whether the effects reach the
   save. A partner who joins (or rejoins) after the hits does not get them (the hold is per running game).
+
+## The allies mirror's planet records over a reload of the world (2026-11-12, fix/w48-freed)
+<a id="space-allies-record-reload"></a>
+
+BUG-0838. GOG 2024, runtime on lanes 6/7 (`coop.space allies civ <PlanetID>`, coop_space_allies_snap.py).
+
+* ✔ A cPlanetRecord the mirror holds a reference to comes back as the **same object** after the host goes to the
+  galaxy menu and loads the same world again (rec 104F47C0 before and after, lab 20261112-011341): our reference keeps
+  it in the game's resource cache and the load takes it from there. Its cCivData vector (+0x15C) is what the unapply
+  left (the mirror's cities taken out).
+* ✔ The mirror unmirrored before the reload (a save on the way to the menu; `allies remove`) kept the cCivData it had
+  added, and the first apply in the new world put that old object back into the record (lab 20261112-011823:
+  15EE6CE8 again); with the snapshots dropped on the galaxy's change it builds new ones (FillPlanet). No crash was
+  seen in either run (no landing on that planet was tried).

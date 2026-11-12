@@ -228,3 +228,4 @@ SporeCoop::TribeMission_RefreshCard ; BUG-0942: the goal card text of a mission 
 SporeCoop::cTribe_PopulationCount ; BUG-0942: see SporeCoop::TribeMission_RefreshCard
 SporeCoop::TribeMissionManager_RemoveMission ; BUG-0942: the goal card of a removed village stays on GOG 2016
 SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (tests only) is off on GOG 2016
+SporeCoop::NounSerialCounter ; BUG-0842: on GOG 2016 game::listed does not see an object made inside the frame before the next frame (no serial counter to notice the creation)

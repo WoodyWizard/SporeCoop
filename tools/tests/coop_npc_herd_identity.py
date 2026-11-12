@@ -11,9 +11,10 @@ Two games on the creature fixture. On the guest, for up to --tries proxies whose
      herd of the guest's own species is made until the game gives it the freed block;
   2. `coop.npc reusehunt p<id> 1 x`: the game destroys the proxy's creature, so the guest makes it again (in its
      species' herd: proxy_herd);
-  3. 2 s later the proxy's creature's herd (the game's +0x1674) must be a herd of its own species
-     (`herd_sp=1` in `coop.npc list`), never the new herd of another species.
-PASS: no proxy was made into another species' herd, and no game faulted.
+  3. within 9 s the proxy must be a creature of the guest's game again, in a herd of its own species (the game's
+     +0x1674: `herd_sp=1` in `coop.npc list`), never in the new herd of another species (the game's Create refuses
+     that one: the host's animal was then gone from the guest's game for good).
+PASS: every such proxy is made again in a herd of its species, and no game faulted.
 SPORE_FIX_OFF=npc.herd_identity must FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_npc_herd_identity.py [--tries 2]"""
@@ -100,10 +101,12 @@ def main():
         _, prox = plist(guest)
         p = prox.get(i) or p
         print(f'  proxy #{i} now: {p and hex(p[1])} in herd {p and hex(p[2])}, herd of its species: {p and p[3]}', flush=True)
-        if p and (p[3] == 0 or p[2] == herd):
+        # (made into the other species' herd, or never made again: the game's Create refuses that herd, so the host's
+        # animal is gone from the guest's game for good)
+        if not p or p[3] == 0 or p[2] == herd:
             wrong.append(i)
     ck(reused >= 1, f'the game gave a freed nest herd\'s block to a new herd ({reused} times)')
-    ck(not wrong, f'no proxy was made into the new herd of another species (wrong: {wrong})')
+    ck(not wrong, f'every proxy was made again in a herd of its own species (not made, or in the other herd: {wrong})')
     print('  guest ' + guest.call('coop.npc')['out'].splitlines()[0][:200], flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()

@@ -446,8 +446,6 @@ bool creature_puppet(const modes::Adapter* a)
 
 void despawn(Remote& r)
 {
-    if (r.puppet && r.puppet_adapter && creature_puppet(r.puppet_adapter))
-        player_rules::puppet_going(r.id, r.puppet); // BUG-0814: a stick or rock it holds here is let go first
     if (r.puppet && r.puppet_adapter) {
         if (creature_puppet(r.puppet_adapter) && !game::creature_listed(r.puppet)) {
             (g_frame_fix ? g_despawns_dropped : g_despawns_unlisted)++;
@@ -494,8 +492,6 @@ void forget_puppets() // world changed or the local player left it (editor, load
     const modes::Adapter* creature = modes::for_mode(modes::kCreature);
     for (auto& [id, r] : g_remotes) {
         if (r.puppet) {
-            if (r.puppet_adapter == creature)
-                player_rules::puppet_going(id, r.puppet); // BUG-0814
             game::puppet_unregister(r.puppet);
             if (r.puppet_adapter == creature && game::creature_listed(r.puppet))
                 g_strays.push_back({r.puppet, game::herd_of(r.puppet), game::species_instance(r.puppet), r.puppet_world,
@@ -4922,7 +4918,6 @@ void setup_callbacks()
         g_ready.erase(id);
         g_lobby_dirty = true;
         cellsync::on_player_leave(id);
-        player_rules::player_left(id); // BUG-0814
         despawn(it->second);
         g_remotes.erase(it);
     };

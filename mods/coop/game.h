@@ -319,6 +319,8 @@ using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
+bool lend_ledger_on();           // BUG-0882 (game.lend_ledger): lent state in the ledger, call guards reset per frame
+uint32_t call_guards_reset();
 void set_swap_guard(bool on);    // tests (off: no undo)
 void debug_swap_fault();         // tests: the next swapped NPC tick returns without its restore
 uint32_t swaps_restored();
