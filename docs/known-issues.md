@@ -2896,3 +2896,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   lanes ran their smokes; a rerun passes.
 * Reproduce: `unit` on two lanes at the same moment (the test hosts on a fixed port of 127.0.0.1).
 * Ticket: BUG-0969
+
+## Civ: wild creatures drift apart between host and guest (2026-11-12, rel/0.7.13)
+<a id="known-civ-wild-creatures"></a>
+
+* What happens: in the Civ stage wild creatures are not synced. Herds move, flee and die separately in each game, so the
+  guest can see (and click) a creature the host's game no longer has there. Since BUG-0970 such an order is not lost.
+* Reproduce: play_civ for ~9 min, compare `coop.census creatures` on both games near a herd.
+* Ticket: BUG-0973
