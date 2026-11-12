@@ -3165,3 +3165,7 @@ BUG-0945, BUG-0946. GOG 2024, tribe fixture, lanes 2 and 5 (probes, then tribe_m
 * Without a join our code made no share save in that time in the earlier runs: since BUG-0508 the return from the City
   Hall editor goes "in place" for a guest in the same Tribe world (tribe_civ_ground 0.7.9 lab 20261106-231404:
   "evolved in place: Bob keeps its world" after the 120 s cinematic hold).
+* ✔ A second FAIL run (lab 20261112-023150): the same fault 0xBCAB07 1.2 s after the join's share save. With the fix
+  the share for the joined guest waited (refused saves) and, before 138a239e, held the vehicle editor's request 15 s
+  (`share_save_due`); now the end of Tribe does not count a share that cannot save (the editor 0.4 s after its vote,
+  lab 20261112-022822).
