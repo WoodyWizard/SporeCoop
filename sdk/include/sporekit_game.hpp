@@ -75,10 +75,18 @@ struct ResourceKey {
     uint32_t instance, type, group;
 };
 
+// BUG-0791 (measurement): readable() calls of this module (one VirtualQuery each, a syscall), and for a cost check
+// readable_extra more VirtualQuery per call (tests compare the frame time with 1 and with 1 + extra queries).
+inline volatile LONG readable_calls = 0;
+inline int readable_extra = 0;
+
 // Basic memory sanity check before dereferencing game pointers from tools.
 inline bool readable(const void* p, size_t n)
 {
     MEMORY_BASIC_INFORMATION mbi;
+    InterlockedIncrement(&readable_calls);
+    for (int i = 0; i < readable_extra; i++)
+        VirtualQuery(p, &mbi, sizeof mbi);
     const uint8_t* a = static_cast<const uint8_t*>(p);
     const uint8_t* end = a + n;
     while (a < end) {
