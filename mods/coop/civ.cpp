@@ -3323,16 +3323,17 @@ static void host_command(uint8_t from, net::Reader& r)
             snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "already the players'");
             return reject();
         }
+        float money = thiscall<float>(a_GetMoney, pc);
         g_capture_for = from;
         if (kind == 6)
             o_CityBuy(city, pol_of(pc), price);
         else
             h_Capture(city, pol_of(pc), type, 0, 0, 0);
         g_capture_for = -1;
-        if (pol_of(city) != pol_of(pc)) {
+        // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
+        if (kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money) {
             net::Writer nw;
-            nw.str8(kind == 6 ? "the city was not bought: not enough money or no trade route in the host's game"
-                              : "your capture was not made in the host's game");
+            nw.str8("the city was not bought: not enough money or no trade route in the host's game");
             C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
             g_city_buys_refused++;
             return reject();
