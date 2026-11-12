@@ -1,20 +1,21 @@
 ---
 id: BUG-0778
 title: Net: 16 half-open peer slots can be held by any sender of a packet header, blocking every join and rejoin
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: all
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-net
+commits: fa0b0a65
+tests: unit (make test: net_tests test_halfopen)
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-network-input, docs/06-testing.md#testing-n1-net
 related: BUG-0030, BUG-0235
+switch: net.halfopen_cap
 ---
 
 ## Report
@@ -34,14 +35,27 @@ Inferred from the code (main e49e1e23), confidence medium (not tried):
 Low severity (a deliberate attacker on an open port); not private.
 
 ## Fix
-<!-- not fixed yet -->
+Confirmed on the code and in the unit FAIL run: 16 header-only datagrams from 16 ports held all 16 slots and a real
+HELLO got no answer.
+
+A datagram from an endpoint without a peer (or with another connection id than its peer) opens a peer only when it
+carries a reliable HELLO that reads (`Session::carries_hello`); else it is dropped and replaces nobody (this also
+keeps a spoofed datagram of a joined guest's address from replacing it). A refused HELLO's peer (waiting for its
+REJECT) goes when its address holds 4 of them or the table holds 16: the oldest first, not retired. Counters in the
+host's coop.status (`no_hello=`, `half_open_evicted=`). Switch `coop.fix net.halfopen_cap off`. Compatibility: a 0.7.12
+guest's first datagram is its HELLO; unchanged.
 
 ## Fix idea
 Make a Peer only for a packet whose first message parses as a HELLO of our protocol; cap unaccepted peers per IP
 (e.g. 2) and, when full, evict the oldest unaccepted peer instead of dropping the newcomer. Switch `net.halfopen_cap`.
 
 ## Verification
-<!-- not fixed yet -->
+* Unit (make test): net_tests `test_halfopen` (16 header-only datagrams, then a real guest; 16 refused HELLOs from 16
+  addresses, then a real guest; a datagram without HELLO from a joined guest's endpoint with another connection id):
+  FAIL `net_tests --off halfopen_cap` (6 failed checks, out/n1-unit/net_off_halfopen_cap.txt), PASS in make test twice
+  (out/n1-unit/net_pass_1.txt, net_pass_2.txt).
+* Lab regression: rejoin_loop, party_creature4, creations_rejoin, smoke on this branch (runs in the branch report).
+* No lab FAIL twin: the flood needs a sender from 16 endpoints during a join; the unit case drives the real Session.
 
 ## How to test
 Unit test (validate_tests, fake transport): 16 header-only packets from 16 ports, then a real HELLO from a 17th
@@ -50,3 +64,4 @@ FAILS on main, PASSES with the fix.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12: fixed on fix/w48-net (0.7.13 N1): a peer only for a HELLO, eviction of refused half-open peers; FAIL/PASS unit runs.
