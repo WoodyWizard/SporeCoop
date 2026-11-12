@@ -42,9 +42,15 @@ void Discovery::update(uint32_t now)
         Writer w;
         w.u32(kDiscoverQuery);
         w.u16(kProtoVersion);
-        for (uint32_t ip : targets)
+        for (uint32_t ip : targets) {
+            if (!ports.empty()) {
+                for (uint16_t port : ports)
+                    sock_.send_to(Endpoint{ip, port}, w.data.data(), w.size());
+                continue;
+            }
             for (uint16_t i = 0; i < kDiscoverPorts; i++)
                 sock_.send_to(Endpoint{ip, (uint16_t)(kDefaultPort + i)}, w.data.data(), w.size());
+        }
     }
     uint8_t buf[512];
     for (int i = 0; i < 64; i++) {

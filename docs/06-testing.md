@@ -6673,6 +6673,10 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
 * `cell_own_load` (BUG-0915): since BUG-0345 / BUG-0638 a choice (choices.ini) holds only in a world recorded for it
   (worlds.ini); the test sets the guest's record (`coop.creations worlds set cell <inst>`), loads the world again
   (`coop.worldfix queue 1 0`) and restores the record at the end.
+* `unit_parallel` (BUG-0969, ~1.5 min, NO_GAME): builds the net tests (build/host/net_tests_par) and runs 3 copies
+  at once, 2 rounds. Native tests that use real sockets must not use a fixed port of the discovery range
+  (kDefaultPort .. +19): the other lanes' games host there and answer a query to 127.0.0.1 within 10-14 ms, and the
+  `unit` of another lane binds the same port. Host on port 0 and point `Discovery::ports` at `port()`.
 
 ## A creature put by a test inside a nest mound: walk_start (2026-11-12, fix/w48-walk)
 <a id="testing-walk-start"></a>
@@ -6715,3 +6719,11 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   there through its game's SetOrder. FAIL with SPORE_FIX_OFF=civ.creature_target (lab 20261112-165013), PASS
   20261112-164915.
 * `coop.census creatures` prints the noun of each row (a citizen 0x18EB4B7 or a wild creature 0x18EB45E).
+* `tribe_hold_guest` (BUG-0968 / BUG-0971, ~5 min): coop_tribe_hold_only.py `--who guest --windows 2`: the guest's
+  chief (simulated by the host) sampled on both games; every host hold over 0.3 s must be the mirror's too. On a miss
+  the test prints both games' rows around it and the guest's `coop.tribe holdtrace <id>` events (S / E start / end
+  received, T / t bound / not (FFFFFFFF: no item), P / D tribe.hold_anim's play / the relay's skipped restart, O / C /
+  M the mirror's own holds, R / r relayed starts, I the idle fix; docs/re/tribe.md#tribe-hold-missed). A host hold
+  still open at a window's end counts for overlaps (a mirror's hold inside it is no hold "of its own"). The change
+  animation 0x02C39200 comes 0.5-1 times in 2 min: `--changes N` (sample until N such holds) needed more than 12 min
+  for 5, so no suite entry uses it. The BUG-0962 cut is checked at < 1.0 s (0.25 s tick: up to 0.85 s by design).

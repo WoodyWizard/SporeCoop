@@ -1303,18 +1303,26 @@ static void test_lead_keep()
 
 static void test_discovery()
 {
-    Session host;
+    // BUG-0969: an ephemeral port, asked alone: a fixed port of the discovery range collided with another lane's unit
+    // run (bind fails) and the range on 127.0.0.1 holds the hosts of games on other test lanes (they answered)
+    // another lane's game hosting in the discovery range of 127.0.0.1 at the same time (its bind may fail when a real
+    // one holds the port: then that one answers instead)
+    Session other;
     std::string err;
-    CHECK(host.host(kDefaultPort + kDiscoverPorts - 1, "LanHost", err));
+    other.host(kDefaultPort + kDiscoverPorts - 1, "OtherLane", err);
+    Session host;
+    CHECK(host.host(0, "LanHost", err));
     host.lobby_info = "Creature - Testworld";
     Discovery d;
     CHECK(d.start());
     d.targets = {0x0100007F}; // 127.0.0.1
+    d.ports = {host.port()};
     d.interval_ms = 100;
     std::vector<Discovery::Game> found;
     for (int i = 0; i < 200 && found.empty(); i++) {
         d.update(now_ms());
         host.update();
+        other.update();
         d.update(now_ms());
         found = d.games(now_ms());
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -1324,7 +1332,7 @@ static void test_discovery()
         CHECK(found[0].info.name == "LanHost");
         CHECK(found[0].info.info == "Creature - Testworld");
         CHECK(found[0].info.players == 1);
-        CHECK(found[0].host.port == kDefaultPort + kDiscoverPorts - 1);
+        CHECK(found[0].host.port == host.port());
     }
     printf("discovery ok\n");
 }
@@ -3486,11 +3494,12 @@ static void test_name_clean()
             CHECK(one_clean_line(l));
     // the LAN game list: a host's name and info line as any machine of the network sends them
     Session lan;
-    CHECK(lan.host(kDefaultPort + kDiscoverPorts - 1, "Lan\nHost\x01", err));
+    CHECK(lan.host(0, "Lan\nHost\x01", err)); // BUG-0969: an ephemeral port, asked alone
     lan.lobby_info = "Creature\r\n - World";
     Discovery d;
     CHECK(d.start());
     d.targets = {0x0100007F};
+    d.ports = {lan.port()};
     d.interval_ms = 100;
     std::vector<Discovery::Game> found;
     for (int i = 0; i < 200 && found.empty(); i++) {
