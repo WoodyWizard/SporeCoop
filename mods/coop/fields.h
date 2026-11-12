@@ -30,6 +30,7 @@ enum FieldId : uint8_t {
     F_MAX_HP = 4, // cCombatant vt 0x58 the maximum health; on a proxy through creature_hp's GetMaxHp hook (npc.cpp, BUG-0710)
     F_ITEM_SCALE = 6, // the scale of the model in a tribe member's hand (the model's transform; tribe.cpp, BUG-0912)
     F_HELD_ITEM = 5, // cCreatureCitizen +0xFFC mCurrentHandheldItem + 1 / the game's attach 0xC250A0 (tribe.cpp, BUG-0906)
+    F_HUNGER = 7,    // cCreatureBase +0xBBC mHunger (0..100) / its clamped setter 0xC0BB30 (tribe.cpp, BUG-0935)
 };
 
 struct Field {
@@ -64,6 +65,7 @@ enum KindId : uint8_t {
     K_CIV_VEHICLE = 8,   // Civ vehicles: the host's by net id, a guest's mirrors (civ.cpp, BUG-0549)
     K_TRIBE_ITEM_SCALE = 10, // the size of what a tribe member holds (tribe.cpp, BUG-0912: its own switch tribe.item_scale)
     K_TRIBE_ITEM = 9,    // what a tribe member holds in its hand (tribe.cpp, BUG-0906: its own switch tribe.held_item)
+    K_TRIBE_HUNGER = 11, // a tribe member's hunger (tribe.cpp, BUG-0935: its own switch tribe.mirror_hunger)
 };
 
 struct Ctx {

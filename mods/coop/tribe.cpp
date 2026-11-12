@@ -183,6 +183,8 @@ struct HMember {
     uint16_t id;
     uint8_t owner;
     uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
+    uint32_t idle_anim = 0; // BUG-0936: the last animation its idle refresh played (its own idle / walk choice)
+    uint32_t hold = 0;      // BUG-0914: the hand's started hold modifier last seen (handle), 0 none
     void* tribe = nullptr; // BUG-0620: the tribe whose member list held it last
     double body_since = 0; // BUG-0620: when it left that list dead (its body), 0: in a list
     uint32_t bt_ticks = 0; // BUG-0531 (diagnostics, `coop.tribe ai`): its behaviour tree's ticks in the host's game
@@ -317,6 +319,14 @@ struct GMember {
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
     const char* not_made = nullptr; // BUG-0685: why no mirror was made for it last time (logged when it changes)
     uint32_t serial = 0;            // BUG-0844: c's cGameData::mID when it was bound
+    float air_agl = 0;              // BUG-0946: the host's member over the host's ground (m), when it was off it
+    double air_at = -1e9;           // and when that came (MSG_NPC_ANIM kind 9)
+    bool air = false;               // placed in the air last frame (drive::air_place)
+    uint32_t hold_anim = 0;         // BUG-0914: the animation the host's member took its item in (kind 11), 0 none
+    double hold_at = -1e9;          // when that came
+    bool hold_bound = false;        // the mirror's hold modifier was started in that animation here
+    uint32_t hold_anim_bound = 0;   // (that animation)
+    uint32_t relayed_anim = 0;      // BUG-0936: the last animation the relay (kinds 2 / 3 / 10) played on it
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
 // BUG-0844 (class BUG-0426): a mirror's citizen was kept across frames and checked by its own memory (object_alive):
@@ -937,6 +947,18 @@ static uint32_t hold_modifier(void* c, bool end)
     return 0;
 }
 static void set_hand(void* c, int item) { thiscall<void>(a_SetHandheldItem, c, item, -1); } // -1: its own hand (+0xFC4)
+// BUG-0914: a member's staff or instrument is held in its hand while the animation it was taken in plays (the kind 5
+// timed modifier the attach 0xC240E0 adds with that animation's handle; #tribe-held-item), else in the resting grip.
+// The host's game takes the item inside its behaviour animations (a chief swinging its staff: `hold=1`); the guest's
+// mirror plays the same animation (the relay) but its hand never takes the item again: the staff stayed upright. The
+// host sends each start of a member's hold with the animation playing then (kind 11: u8 n, n x {u16 id, u32 anim}); a
+// guest attaches the item again on its mirror while it plays that animation (Citizen_SetHandheldItem, its own hand:
+// the modifier is bound to the mirror's animation and ends with it, as on the host), and held_items_tick leaves such
+// a hold to its animation (8 s at most). `coop.fix tribe.mirror_hold off`: nothing sent or done.
+static bool g_mirror_hold_fix = true;
+COOP_FIX("tribe.mirror_hold", "BUG-0914", g_mirror_hold_fix, "tribe: a guest's mirror swings its staff or instrument when the host's member does (it stood with the item in the resting grip)");
+static uint32_t g_hold_sent, g_hold_rx, g_hold_bound;
+constexpr double kHoldBoundMax = 8.0;
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
 {
@@ -958,6 +980,11 @@ static void held_items_tick(double now)
         } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since)
             g_hold_seen[id] = {h, now};
         else if (now - it->second.since >= kHoldMax) {
+            uint32_t cur = 0;
+            if (g_mirror_hold_fix && m.hold_bound && now - m.hold_at < kHoldBoundMax && game::drawn_state(c, nullptr, &cur) &&
+                cur == m.hold_anim_bound)
+                continue; // BUG-0914: taken in the host's animation, it ends with it
+            m.hold_bound = false;
             hold_modifier(c, true);
             g_hold_seen.erase(it);
         }
@@ -1033,6 +1060,32 @@ static void apply_item_scale(void* c, float v)
 }
 static const fields::Field kItemScale{fields::F_ITEM_SCALE, "item_scale", read_item_scale, apply_item_scale, 0.02f};
 static const fields::Field kItemScaleFields[] = {kItemScale};
+
+// BUG-0935: a guest's roster showed every member card red with an empty bar while the host's were well. A member's
+// hunger is cCreatureBase +0xBBC (mHunger, 0..100; +0xBB8 mHungerDelta, -0.28 a second; +0xB90 mHungerDelayTimer). Its
+// update 0xC0D5A0 (cCreatureBase vt, every frame) adds delta x dt and, below 1, has the member starve: TakeDamage of its
+// combatant (+0x5A8 vt 0x18) every frame. The member eats in its behaviour tree (0xC22C40: hunger up, AddHealth, the
+// tribe's food bundles down). A guest's mirror runs no behaviour tree (h_BTTick), so it never ate: its hunger ran down to
+// 0 in about 6 minutes and the game showed the member starving (the card red, the bar empty) and took health off it,
+// which the snapshot put back. Hunger is a replicated field of the members (its own kind and switch), set with the
+// game's clamped setter 0xC0BB30. `coop.fix tribe.mirror_hunger off`: the mirror's own hunger.
+static bool g_hunger_fix = true;
+COOP_FIX("tribe.mirror_hunger", "BUG-0935", g_hunger_fix, "tribe: a guest's mirror of a member is as hungry as the host's member (the roster's cards were red, starving, on the guest)");
+static uintptr_t a_SetHunger;
+static uint32_t g_hunger_sets;
+constexpr uintptr_t kHungerOff = 0xBBC;
+static float read_hunger(void* c) { return has_body(c) ? F<float>(c, kHungerOff) : 100.f; }
+static void apply_hunger(void* c, float v)
+{
+    if (!has_body(c) || !a_SetHunger || !(v >= 0.f && v <= 100.f))
+        return;
+    if (g_hunger_sets++ < 10)
+        H->log(M, SK_INFO, "tribe: member #%u's hunger %.1f -> %.1f as in the host's game (BUG-0935)", member_id(c),
+               F<float>(c, kHungerOff), v);
+    thiscall<void>(a_SetHunger, c, v);
+}
+static const fields::Field kHunger{fields::F_HUNGER, "hunger", read_hunger, apply_hunger, 0.02f};
+static const fields::Field kHungerFields[] = {kHunger};
 
 static int tool_type(void* tool) { return vcall<int>(tool, 0x58 / 4); }
 
@@ -1342,6 +1395,7 @@ static void baby_forget();
 static void save_start();
 static void save_end();
 
+static void on_idle_anim(void* c, uint32_t anim);
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1355,6 +1409,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
                       [] { return active(); }});
     fields::add_kind({fields::K_TRIBE_ITEM_SCALE, "tribe_member_item_scale", &g_item_scale_fix, kItemScaleFields, 1, member_each,
                       member_mirror, [] { return active(); }});
+    fields::add_kind({fields::K_TRIBE_HUNGER, "tribe_member_hunger", &g_hunger_fix, kHungerFields, 1, member_each, member_mirror,
+                      [] { return active(); }});
+    a_SetHunger = H->sym("SporeCoop::Creature_SetHunger");
+    game::set_idle_anim_listener(on_idle_anim); // BUG-0936
     a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
     a_AttachmentOf = H->sym("SporeCoop::Creature_AttachmentOf");
     a_ModifierRemove = H->sym("SporeCoop::CreatureModifiers_Remove");
@@ -1508,8 +1566,118 @@ void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
         g_member_anim_out.push_back({it->second.id, anim, (uint8_t)how, (uint8_t)(a & 0xFF), (int32_t)b});
 }
 
+// BUG-0946 (docs/re/tribe.md#tribe-member-toss): a blow of 60 hp and more throws a member up (about 5 m, over 3 m for
+// 1.3-1.5 s, on the host's game, the fight node's reaction); a guest's mirror keeps its own height (the two games'
+// grounds differ: drive.own_height BUG-0329, tribe.mirror_ground BUG-0444) and stayed on its ground. As the animal
+// proxies (npc.air, BUG-0550): once a cycle the host sends every member it runs that is off its ground for a reason
+// its game knows (drive::body_airborne: not grounded and more than 0.15 m off GetHeightAt; not dead) with its height
+// over the host's ground (MSG_NPC_ANIM kind 9: u8 n, n x {u16 member id, f32 agl}); a guest places that mirror at that
+// height over its own ground (drive::air_place: not walked, not grounded, held through animation starts) while the
+// news is fresh (0.35 s), and lets its game land it after. Older guests ignore the kind (npc.cpp passes 2..8 on).
+// `coop.fix tribe.mirror_air off`: nothing sent or placed (the mirror on its ground).
+static bool g_mirror_air_fix = true;
+COOP_FIX("tribe.mirror_air", "BUG-0946", g_mirror_air_fix, "tribe: a member thrown up by a blow (or otherwise off its ground) on the host is in the air on the guests' screens too");
+static uint32_t g_air_sent, g_air_rx, g_air_placed;
+constexpr double kMirrorAirFresh = 0.35;
+constexpr float kMirrorAirMin = 0.5f; // m over the host's ground: off it whatever the grounded byte says
+static void send_member_air()
+{
+    if (!g_mirror_air_fix)
+        return;
+    std::vector<std::pair<uint16_t, float>> v;
+    for (auto& [c, m] : g_hm) {
+        if (v.size() >= 64 || !kept_alive(c, m.serial, 0x18EB4B7u) || game::is_dead(c))
+            continue;
+        // (a thrown member can keep the grounded byte +0x137 for part of its flight: its height over the ground counts)
+        float agl = drive::over_ground(game::position(c));
+        if (agl > kMirrorAirMin || drive::body_airborne(c))
+            v.push_back({m.id, agl});
+    }
+    if (v.empty())
+        return;
+    net::Writer w;
+    w.u8(9);
+    w.u8((uint8_t)v.size());
+    for (auto& [id, agl] : v) {
+        w.u16(id);
+        w.f32(agl);
+    }
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    g_air_sent += (uint32_t)v.size();
+}
+
+// BUG-0936: same-view pairs differed in the pose of members at rest (one stands, the other sits or crouches at the
+// fire), BUG-0914 in what a staff does. Probe (lane 4, tribe fixture, 5 min, both games' current animation of every
+// player member once a second): 72 % of the pairs the same; the rest mostly the guest's mirror still in a relayed
+// behaviour animation (the idle variants 0x02C39001..3, a gesture 0x04C6CB02) while the host's member, whose tree had
+// cut it short, walked or stood in its idle (0x04866DAB / 0x04866D8E / 0x02481DE5): the relay starts animations and
+// a mirror keeps one until it ends (no tree to cut it); the snapshot (kind 3) sends only behaviour animations. And
+// the host's own idle choices (its idle refresh, Creature_IdleRefresh 0xC148B0) are never relayed. Now the host
+// notes each member's idle refresh plays and once a second sends, for every member whose current animation is not
+// its behaviour animation, that animation with whether its idle refresh chose it (MSG_NPC_ANIM kind 10: u8 n, n x
+// {u16 id, u32 anim, u8 1 idle choice | 2 another start}); a guest whose mirror plays something else (not within 1.5 s
+// of a relayed start, at most every 2 s) ends it: the idle refresh (forced) for an idle choice, so its own game picks
+// idle or walk as its locomotion has it, or the host's animation played for another start. `coop.fix
+// tribe.mirror_idle off`: nothing sent or done (a relayed animation plays to its end).
+static bool g_mirror_idle_fix = true;
+COOP_FIX("tribe.mirror_idle", "BUG-0936", g_mirror_idle_fix, "tribe: a guest's mirror stops a member's animation when the host's member has gone back to its idle or walk (members at rest had other poses)");
+static uint32_t g_idle_sent, g_idle_refreshed, g_idle_played;
+static void on_idle_anim(void* c, uint32_t anim)
+{
+    if (!g_ok || !is_host())
+        return;
+    auto it = g_hm.find(c);
+    if (it != g_hm.end())
+        it->second.idle_anim = anim;
+}
+static uint32_t hold_modifier(void* c, bool end);
+static void send_member_holds()
+{
+    std::vector<std::pair<uint16_t, uint32_t>> v;
+    for (auto& [c, m] : g_hm) {
+        uint32_t h = kept_alive(c, m.serial, 0x18EB4B7u) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
+        uint32_t cur = 0;
+        if (h && h != m.hold && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur)
+            v.push_back({m.id, cur});
+        m.hold = h;
+    }
+    if (v.empty() || !g_mirror_hold_fix)
+        return;
+    net::Writer w;
+    w.u8(11);
+    w.u8((uint8_t)v.size());
+    for (auto& [id, a] : v) {
+        w.u16(id);
+        w.u32(a);
+    }
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    g_hold_sent += (uint32_t)v.size();
+}
+// guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
+static void hold_try(GMember& g, double now)
+{
+    if (!g.hold_anim || now - g.hold_at > 3.0 || !mirror_ok(g) || !has_body(g.c) || !a_SetHandheldItem)
+        return;
+    int item = F<int>(g.c, kHeldItemOff);
+    uint32_t cur = 0;
+    if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim)
+        return;
+    if (!hold_modifier(g.c, false))
+        set_hand(g.c, item); // (the attach adds the hold modifier with the animation playing now)
+    g.hold_bound = true;
+    g.hold_at = now; // (bound: held_items_tick lets it end with the animation)
+    g.hold_anim_bound = g.hold_anim;
+    g.hold_anim = 0;
+    g_hold_bound++;
+}
+
 static void send_member_anims(double now)
 {
+    send_member_holds(); // BUG-0914
     if (!g_mirror_anims_fix) {
         g_member_anim_out.clear();
         return;
@@ -1534,10 +1702,32 @@ static void send_member_anims(double now)
         return;
     g_member_snap_at = now;
     std::vector<std::pair<uint16_t, uint32_t>> v;
+    struct IdleNow {
+        uint16_t id;
+        uint32_t anim;
+        uint8_t how;
+    };
+    std::vector<IdleNow> idle; // BUG-0936
     for (auto& [c, m] : g_hm) {
         uint32_t cur = 0;
         if (m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur && cur == m.bhv_anim)
             v.push_back({m.id, cur});
+        else if (g_mirror_idle_fix && cur && idle.size() < 255 && !game::is_dead(c))
+            idle.push_back({m.id, cur, (uint8_t)(cur == m.idle_anim ? 1 : 2)});
+    }
+    if (!idle.empty()) {
+        net::Writer w;
+        w.u8(10);
+        w.u8((uint8_t)idle.size());
+        for (auto& e : idle) {
+            w.u16(e.id);
+            w.u32(e.anim);
+            w.u8(e.how);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+        g_idle_sent += (uint32_t)idle.size();
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
     for (size_t i = 0; i < v.size(); i += per2) {
@@ -1805,6 +1995,71 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         return;
     }
     double now = H->time_seconds();
+    if (kind == 11) { // BUG-0914: a host member took its item in this animation
+        uint8_t n = r.u8();
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            uint32_t anim = r.u32();
+            if (!r.ok())
+                break;
+            g_hold_rx++;
+            auto it = g_gm.find(id);
+            if (!g_mirror_hold_fix || it == g_gm.end())
+                continue;
+            it->second.hold_anim = anim;
+            it->second.hold_at = now;
+            hold_try(it->second, now);
+        }
+        return;
+    }
+    if (kind == 10) { // BUG-0936: what the host's members play now that is no behaviour animation
+        uint8_t n = r.u8();
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            uint32_t anim = r.u32();
+            uint8_t how = r.u8();
+            if (!r.ok())
+                break;
+            auto it = g_gm.find(id);
+            if (!g_mirror_idle_fix || it == g_gm.end() || !mirror_ok(it->second) || game::is_dead(it->second.c))
+                continue;
+            GMember& g = it->second;
+            uint32_t cur = 0;
+            if (now - g.anim_fix_at < 2.0 || now - g.anim_rx_at < 1.5 || !game::drawn_state(g.c, nullptr, &cur) || cur == anim)
+                continue;
+            // the locomotion's own idle / walk (Creature_ChooseIdleAnim, docs/re/creature.md): started by the animation
+            // system's gait, not by the idle refresh, on the host too; never played as a main animation on a mirror
+            if (anim == 0x02481DE5u || anim == 0x04866D8Eu || anim == 0x04866DABu || anim == 0x04866DD4u)
+                how = 1;
+            if (how == 1 && cur != g.relayed_anim)
+                continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
+            g.anim_fix_at = now;
+            if (how == 1) {
+                game::idle_refresh(g.c, true);
+                g_idle_refreshed++;
+            } else if (game::play_behaviour_anim(g.c, anim, 0, 1, -1)) {
+                g.relayed_anim = anim;
+                g_idle_played++;
+            }
+        }
+        return;
+    }
+    if (kind == 9) { // BUG-0946: the members off their ground on the host
+        uint8_t n = r.u8();
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            float agl = r.f32();
+            if (!r.ok())
+                break;
+            g_air_rx++;
+            auto it = g_gm.find(id);
+            if (it != g_gm.end() && std::isfinite(agl)) {
+                it->second.air_agl = agl;
+                it->second.air_at = now;
+            }
+        }
+        return;
+    }
     uint8_t n = r.u8();
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
@@ -1831,14 +2086,19 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             if (now - g.anim_fix_at < 2.0 || now - g.anim_rx_at < 1.5 || !game::drawn_state(c, nullptr, &cur) || cur == anim)
                 continue;
             g.anim_fix_at = now;
-            if (game::play_behaviour_anim(c, anim, 0, 1, -1))
+            if (game::play_behaviour_anim(c, anim, 0, 1, -1)) {
                 g_anim_snap_played++;
+                g.relayed_anim = anim; // (BUG-0936)
+                hold_try(g, now);      // (BUG-0914)
+            }
             continue;
         }
         g.anim_rx_at = now;
-        if (game::play_behaviour_anim(c, anim, how, a, b))
+        if (game::play_behaviour_anim(c, anim, how, a, b)) {
             g_anim_relay_played++;
-        else
+            g.relayed_anim = anim; // (BUG-0936)
+            hold_try(g, now);      // (BUG-0914: the hold came before the animation)
+        } else
             g_anim_relay_failed++;
     }
 }
@@ -2002,6 +2262,7 @@ static void host_tick(double now)
             }
     }
     send_member_anims(now); // BUG-0569
+    send_member_air();      // BUG-0946
 }
 
 // BUG-0744: a guest's gather order on a loose fruit (cFruit, noun 0x2C9CC91) its game has and the host's has not within
@@ -2364,6 +2625,7 @@ static void* tribe_holding(void* c)
 }
 static void remove_member(void* c)
 {
+    game::air_hold(c, false); // BUG-0946: no hold on a citizen the game frees later
     if (g_member_lifetime_fix && !g_detached.count(c)) {
         void* lt = tribe_holding(c);
         if (!lt) {
@@ -2993,6 +3255,8 @@ static void guest_state(net::Reader& r)
             if (g_member_lifetime_fix && game::object_alive(c))
                 g_mirror_stale++;
             g_gid_of.erase(c);
+            game::air_hold(c, false); // (BUG-0946)
+            g.air = false;
             g.c = c = nullptr;
         }
         if (c || (m.body && !g_join_body_fix)) // (no new mirror for a body before BUG-0665)
@@ -3264,6 +3528,10 @@ static void guest_tick(double now)
             continue;
         g.ds.drawn = game::position(g.c); // coop.track (BUG-0365): where the game drew it this frame
         if (g_fix_ko && g.hp <= 0) {
+            if (g.air) { // (BUG-0946)
+                g.air = false;
+                game::air_hold(g.c, false);
+            }
             if (!game::is_dead(g.c)) {
                 game::set_health(g.c, 0);
                 game::play_death(g.c);
@@ -3282,7 +3550,27 @@ static void guest_tick(double now)
             g_ko_replaced++;
             continue;
         }
-        mirror_drive(g, now);
+        if (g_mirror_air_fix && now - g.air_at < kMirrorAirFresh && g.air_agl > drive::kAirOver &&
+            g.air_agl < drive::g_agl_max) { // BUG-0946: at the host's height over this game's ground
+            net::Vec3 pos, vel;
+            net::Quat rot;
+            double age;
+            mirror_target(g, now, pos, rot, vel, age);
+            float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), gr = game::ground_radius(pos);
+            if (r > 1.f && gr > 0) {
+                float k = (gr + g.air_agl) / r;
+                g.aim = {pos.x * k, pos.y * k, pos.z * k};
+                drive::air_place(g.c, g.aim, rot, vel, g.ds, now);
+                g.air = true;
+                g_air_placed++;
+            }
+        } else {
+            if (g.air) { // (its game lands it)
+                g.air = false;
+                game::air_hold(g.c, false);
+            }
+            mirror_drive(g, now);
+        }
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
             game::set_health(g.c, g.hp);
@@ -4469,6 +4757,9 @@ void on_session_end()
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();
+    for (auto& [id, g] : g_gm) // BUG-0946: no air hold left on a mirror (a pointer compare only)
+        if (g.air)
+            game::air_hold(g.c, false);
     g_gm.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
@@ -4494,6 +4785,9 @@ void on_world_change()
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();
+    for (auto& [id, g] : g_gm) // BUG-0946: no air hold left on a mirror (a pointer compare only)
+        if (g.air)
+            game::air_hold(g.c, false);
     g_gm.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
@@ -5314,6 +5608,16 @@ std::string debug(const std::vector<std::string>& a)
                          H->time_seconds() + atof(a[5].c_str())};
         return "velocity held";
     }
+    // hunger <member id> <v>: tests (BUG-0935), the member's (host) or mirror's (guest) hunger through the game's setter,
+    // as minutes of the game's own hunger update leave it (a guest's mirror that never eats: 0)
+    if (a.size() >= 3 && a[0] == "hunger") {
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c || !has_body(c) || !a_SetHunger)
+            return "no such member";
+        thiscall<void>(a_SetHunger, c, (float)atof(a[2].c_str()));
+        return "hunger " + std::to_string(F<float>(c, kHungerOff)) + " sets=" + std::to_string(g_hunger_sets) +
+               " fix=" + std::to_string((int)g_hunger_fix);
+    }
     if (a.size() >= 3 && a[0] == "sethp" && is_host()) { // sethp <member id> <hp>: tests (BUG-0759), the member's health
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         if (!c)
@@ -5643,24 +5947,29 @@ std::string debug(const std::vector<std::string>& a)
     // vt 0x58 GetCurrentAnimation): host, its members by id (with the tribe index), guest, its mirrors by the host's id
     if (!a.empty() && a[0] == "anims") {
         std::string o;
-        char b[96];
-        auto line = [&](uint16_t id, void* c, uint32_t bhv) {
+        char b[160];
+        auto line = [&](uint16_t id, void* c, uint32_t bhv, uint32_t idle) {
             uint32_t an = 0;
             if (c && game::object_alive(c) && game::drawn_state(c, nullptr, &an)) {
                 net::Vec3 p = game::position(c);
-                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f)\n", id, an, bhv, p.x, p.y, p.z);
+                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f) idle=%08X hold=%d\n", id, an, bhv, p.x, p.y,
+                         p.z, idle, has_body(c) && hold_modifier(c, false) ? 1 : 0);
                 o += b;
             }
         };
         if (is_host()) // bhv: the last animation its behaviour tree started (the game's call, game.cpp's listener)
             for (auto& [c, m] : g_hm)
-                line(m.id, c, m.bhv_anim);
+                line(m.id, c, m.bhv_anim, m.idle_anim);
         else
             for (auto& [id, g] : g_gm)
-                line(id, mirror_ok(g) ? g.c : nullptr, 0);
+                line(id, mirror_ok(g) ? g.c : nullptr, g.relayed_anim, 0);
         return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
-               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
+               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_air_sent) +
+               " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
+               " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
+               "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
+               " bound=" + std::to_string(g_hold_bound) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
                std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) +
@@ -5790,10 +6099,16 @@ static uint32_t bt_node(void* c)
     return ai && skg::readable(ai + 0x1D8, 4) ? *(uint32_t*)(ai + 0x1D8) : 0;
 }
 
+static uint32_t cur_anim(void* c)
+{
+    uint32_t an = 0;
+    return game::drawn_state(c, nullptr, &an) ? an : 0;
+}
+
 std::string list()
 {
     std::string out;
-    char b[400];
+    char b[512];
     void* pt = player_tribe();
     auto tribes = all_tribes();
     for (size_t ti = 0; ti < tribes.size(); ti++) {
@@ -5830,11 +6145,12 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d iscale=%.3f scale=%.3f\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d iscale=%.3f scale=%.3f maxhp=%.1f hunger=%.2f/%.2f/%.2f idle=%08X anim=%08X\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
                      bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c),
-                     F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0, read_item_scale(c), game::scale(c)); // (BUG-0906: what the hand holds,
+                     F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0, read_item_scale(c), game::scale(c), game::max_health(c),
+                     F<float>(c, 0xBBC), F<float>(c, 0xBB8), F<float>(c, 0xB90), F<uint32_t>(c, 0xE3C), cur_anim(c)); // (BUG-0906: what the hand holds,
             // whether a model is attached, 1 while the item is still being taken: not in the resting grip)
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)

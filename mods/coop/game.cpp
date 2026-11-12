@@ -420,10 +420,14 @@ static BehaviourAnimListener g_bhv_listener;
 static int g_idle_depth = 0;
 static uint32_t g_bhv_seen = 0, g_bhv_idle = 0;
 
+static IdleAnimListener g_idle_listener;
 static void bhv_report(void* self, uint32_t id, int how, int a, int b)
 {
-    if (g_idle_depth > 0)
+    if (g_idle_depth > 0) {
         g_bhv_idle++;
+        if (g_idle_listener)
+            g_idle_listener(self, id);
+    }
     else if (g_bhv_listener && !g_in_puppet_anim) {
         g_bhv_seen++;
         g_bhv_listener(self, id, how, a, b);
@@ -450,6 +454,12 @@ static void SK_THISCALL h_IdleRefresh(void* self, int force)
 }
 
 void set_behaviour_anim_listener(BehaviourAnimListener fn) { g_bhv_listener = fn; }
+void set_idle_anim_listener(IdleAnimListener fn) { g_idle_listener = fn; }
+void idle_refresh(void* c, bool force)
+{
+    if (c && o_IdleRefresh)
+        h_IdleRefresh(c, force ? 1 : 0);
+}
 
 bool play_behaviour_anim(void* c, uint32_t anim_id, int how, int a, int b)
 {
