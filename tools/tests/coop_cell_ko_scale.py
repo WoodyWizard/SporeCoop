@@ -7,15 +7,15 @@ G+0x514C about the origin, docs/re/cell.md#cell-world-scale), but the held spot 
 of the knockout's moment: after the change the cell lay 3x (level 1 -> 2) farther from the centre than
 the world around it, far from the partner and the food, and nobody could revive it.
 
-1. Both games play; the guest is 6 m from the host's cell (both idle, nobody helps: the revive needs
-   ~3 m).
+1. Both games play; the guest is 15 m from the host's cell (both idle, nobody helps: the revive needs
+   ~3 m, and a level change brings it 3x nearer).
 2. The guest is knocked out (`coop.pool selfhit 50`: the lethal bite becomes a knockout, its game says
    downed=1).
 3. The host's food goes up until its level changes (the shared total: the guest's world rescales too).
 4. In the GUEST's own game, 4 s after the change, while it is still knocked out: its cell's position
    times its world scale (the place in the world, unchanged by a rescale) is within 1.5 m (in its
    metres) of where it was at the knockout, and the host's cell (the puppet the guest's game draws)
-   is still about 6 m away (not tens).
+   is still about 5 m away (not tens).
 5. The host swims right next to the guest (`coop.pool tp 1 0 <guest id>`, next to the guest's cell as
    the host's game draws it): the guest's own game revives it (downed=0, revives +1) before its 10 s end.
 
@@ -43,7 +43,7 @@ def main():
     ck(wait(lambda: playing(host) and playing(guest), 40), 'both games play (the hatch is over)')
     gm = re.search(r'client id=(\d+)', guest.call('coop.status')['out'])
     gid = gm.group(1) if gm else '1'
-    guest.call('coop.pool tp 6 0')  # 6 m from the host's cell, both still
+    guest.call('coop.pool tp 15 0')  # 15 m from the host's cell (5 m after the rescale: no revive by itself), both still
     time.sleep(3)
     g0 = scalepos(guest)
     print(f'  guest before: {g0}', flush=True)

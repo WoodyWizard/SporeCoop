@@ -4193,3 +4193,45 @@ while references to it remain).
   own_world::elsewhere()); the game's own value comes back otherwise. ✔ Lab: after `coop.dna add 250` in its own
   world the guest's game evolved 21 of 133 nests within 5 s; with the switch off 0 in 40 s (20261112-030351 /
   20261112-031349).
+
+## A partner's creature in the way: Havok's group filter and the Creature hover filter (2026-11-12, fix/w48-cell)
+<a id="creature-partner-pass"></a>
+
+BUG-0913 (the owner's decision of 2026-11-11: with friendly fire off and outside Rivals a player walks through a
+partner's creature and a click goes to the animal behind it). GOG 2024, Ghidra (static; a subagent's queries, the raw
+output is not kept in the repo) and lab lanes 2 / 3 (`coop_creature_partner_pass.py`, suite `partner_pass`).
+Answers the "not found: a per-creature flag that takes one creature out of collision" of #creature-contact-pairs.
+* ~ (static, likely) What stops a creature behind another one is Havok's own collision, not the locomotion. The
+  physics world (made in 0xB5A4E0, hkWorld at 0x167ECD0) gets an `hkGroupFilter` (ctor 0x10C3E80; all layers off with
+  0x10C3E30, then enableCollisionsBetween 0x10C3DF0 for (2,2), (4,4), (8,8), ...; world setCollisionFilter
+  0x1086FE0). Creature pairs do collide: the contact callback 0xD3A450 only skips its own handling of them and the
+  listener slot 0xB570B0 only measures an impulse for sounds / effects (0xB4DB40 -> 0xB4E720).
+* ~ (static) The locomotion's steering (update 0xC441E0, the force list at spatial +0x490, add 0xC44140) has no
+  creature-avoidance force: 0xB499D0 reads cObstacleManager's static obstacles (no creature registers there: no caller
+  of 0xB3D4C0 in the creature code), 0xB49B50 is the herd flocking over the neighbour list spatial +0x278 (0xC42230)
+  and acts only on the same herd (0xC0BD30), 0xB49830 / 0xB494E0 / 0xB4C830 only for +0xB58 bit 9 creatures in mode
+  0x1654C05. ? What [0x167EAE8]+0x20 (which turns 0xB499D0 on) is.
+* ✔ (asm) `hkGroupFilter::isCollisionEnabled(const hkCollidable&, const hkCollidable&)` = **0x10C3F90**
+  (`SporeCoop::Havok_GroupFilter_IsCollisionEnabled`): thiscall, ECX = the filter + 8 (its collidable-collidable
+  interface; vtables 0x14A2970 main, 0x14A2968 at +8), stack `hkBool* out, a, b`, ret 0xC, returns out; it reads
+  +0x1C (the filter info) of both and calls 0x10C3D50 (thiscall(filter, out, infoA, infoB) ret 0xC: the usual
+  system group / subsystem / layer table rule, table at filter +0x1C). Havok asks it when two bodies' boxes start to
+  overlap (a pair that exists already lives on until they part).
+* ✔ (asm, the game's listener 0xB57910) hkCollidable: +0xC the parent (walk to the root), +0x10 the owner offset (a
+  dword added to the collidable: `mov edx,[eax+0x10]; add edx,eax`), +0x18 the broadphase type byte (1 = an entity),
+  +0x1C the filter info; the entity's +0xC is the game object (0xD3A450 takes it as the creature).
+* ✔ (asm) The hover: 0xB38F50 (fastcall(gvm) -> object) casts a ray from the camera through the mouse, collects
+  every model hit {model, t}, asks the mode's filter at cGameViewManager +0x100 (`cdecl bool(HoverHit*)`, calls at
+  0xB39413 / 0xB397D2) for each and skips the refused ones; the best priority, then the nearest, wins (gvm +0x88,
+  vt 0x30 = 0x7A4C60 reads it; the rollover callback +0xFC). Setters 0xB33DF0 (+0xFC) / 0xB33E00 (+0x100), thiscall
+  (gvm, fn) ret 4. The Creature mode's enter 0xD3A7F0 sets +0xFC = 0xD39010 and **+0x100 = 0xD39070**
+  (`SporeCoop::CreatureHoverFilter`), its exit 0xD3C330 clears both. 0xD39070: h+0 the model (+0x60 model id, +0x64
+  the owner; owner vt 0xC(0x17F243B) is the creature: its +0xB54 is read as the AnimatedCreature), h+4 t, h+8 / h+0x14
+  the ray; for a creature a mesh test 0x9B6320 along the ray. The click (message 0x1C38E3B in 0xD35190 ->
+  CreatureClickObject 0xD32FD0) takes the hovered object.
+* Fix `creature.partner_pass` (coop.cpp): once a frame the live partners' puppets (`creature_puppet_live`, not the
+  NPC proxies: `game::is_puppet` would also let the guest walk through the host's animals) and the avatar go into a
+  table the hooks read; the group filter says "no" for the pair {our avatar, a partner's puppet} (compared as the
+  creature or its spatial +0xC0) and the hover filter refuses a partner's puppet in the combat stance
+  (GetAbilityMode != 0), both only in Creature, with friendly fire off and outside Rivals. `coop.partnerpass` prints
+  what they skipped. Accepted: players' creatures can stand inside each other.
