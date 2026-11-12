@@ -57,6 +57,15 @@ static bool over_ground(const net::Vec3& q, float& og)
 static bool g_eggs_fix = true;
 COOP_FIX("nest.eggs", "BUG-0384", g_eggs_fix, "creature: the host's eggs at the NPC nests are shown and eaten on the guests");
 
+// BUG-0896: the host sent its eggs once a second (unreliable). An egg that hatched on the host stood whole on a guest for
+// up to a second while its hatchling (a small creature, half health) already stood there as an NPC: a guest's click
+// or bite at the egg took the hatchling, killed it at once, and the host credited the guest's hunt (+4 DNA, a body at
+// the egg's place). With nest.hatch_now the host looks at the eggs of its last snapshot every frame and sends a
+// snapshot at once when one of them hatched or was eaten; a guest's eat of an egg that is no longer whole is answered
+// with a snapshot at once too. Off: once a second only (0.7.12).
+static bool g_hatch_now_fix = true;
+COOP_FIX("nest.hatch_now", "BUG-0896", g_hatch_now_fix, "creature: an NPC egg that hatches or is eaten on the host is shown so on the guests at once, not up to a second later");
+
 // BUG-0474: the animal nests of the Tribe stage are the same cHerd / cEgg objects, and the guest's game removes its
 // own animals there too (tribe proxies): the host's eggs were missing on every guest. The mirrors run in Tribe too.
 // `coop.fix nest.eggs_tribe off`: Creature only (0.7.3.6).
@@ -278,12 +287,44 @@ static bool savestrip_filter(void* obj, uint32_t noun)
     return false;
 }
 
+// BUG-0896: the eggs of the last snapshot (object, serial, state) and the snapshots sent early for them
+struct SentEgg {
+    game::LiveRef egg; // (the game frees an eaten egg: never read through a raw pointer, BUG-0426 class)
+    int state;
+};
+static std::vector<SentEgg> g_sent_eggs;
+static uint32_t g_early_snaps = 0;
+
+static bool sent_egg_changed()
+{
+    for (auto& e : g_sent_eggs) {
+        void* o = game::live(e.egg);
+        if (!o)
+            return true; // gone (eaten up, the herd removed it)
+        int st = field<int>(o, kEggState);
+        if (st != e.state && (st == 3 || st == 4))
+            return true; // hatched / eaten here
+    }
+    return false;
+}
+
 static void host_tick(double now)
 {
-    if (now - g_last_snap_tx < kSnapInterval)
-        return;
+    bool early = false;
+    if (now - g_last_snap_tx < kSnapInterval) {
+        if (!g_hatch_now_fix || g_sent_eggs.empty() || now - g_last_snap_tx < 0.05 || !sent_egg_changed())
+            return;
+        early = true;
+        g_early_snaps++;
+    }
     g_last_snap_tx = now;
     auto eggs = host_eggs();
+    g_sent_eggs.clear();
+    for (auto& [o, e] : eggs)
+        if (g_sent_eggs.size() < 64)
+            g_sent_eggs.push_back({game::live_ref(o, kEggNoun), (int)e.state});
+    if (early)
+        H->log(M, SK_INFO, "nest: an egg hatched or was eaten: snapshot now (BUG-0896, %u so far)", g_early_snaps);
     for (auto& p : C.sess->players()) {
         if (p.id == 0)
             continue;
@@ -500,6 +541,11 @@ static void on_eat(uint8_t from, net::Reader& r)
             H->log(M, SK_INFO, "nest: player %u ate egg %u", from, id);
             return;
         }
+    // not whole here (hatched, eaten, gone): the guest gets the egg's real state now, not in up to a second (BUG-0896)
+    H->log(M, SK_INFO, "nest: player %u ate egg %u, which is not whole here: refused%s", from, id,
+           g_hatch_now_fix ? ", a snapshot now" : "");
+    if (g_hatch_now_fix)
+        g_last_snap_tx = 0;
 }
 
 
@@ -865,9 +911,9 @@ std::string status()
     int live = 0;
     for (auto& [id, m] : g_mirrors)
         live += mirror_ok(m);
-    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u\n",
+    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u\n",
              (int)g_eggs_fix, (int)g_ground_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
-             g_snaps_tx, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed);
+             g_snaps_tx, g_early_snaps, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed);
     return b;
 }
 
