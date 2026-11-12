@@ -1,4 +1,5 @@
 #include "player_rules.h"
+#include "savestrip.h"
 
 #include <windows.h>
 
@@ -872,6 +873,7 @@ struct UfoMirror {
 static std::vector<UfoMirror> g_ufo_mirrors;
 static double g_ufo_rx_at = -1e9, g_ufo_tx_at = 0, g_ufo_had_at = -1e9;
 static uint32_t g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed;
+static unsigned g_ufo_stripped; // BUG-0817: saves' references to a mirror written as null
 static uintptr_t a_SpawnEventUFO;
 
 static std::string ufo_dump()
@@ -902,8 +904,8 @@ static std::string ufo_dump()
     snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
              g_ufo_ticks, (int)(p2_o_IsEpic != nullptr && p2_ufo_pick_ret != 0));
     char b2[200];
-    snprintf(b2, sizeof b2, "mirror fix=%d mirrors=%u tx=%u rx=%u made=%u gone=%u freed=%u\n", (int)g_ufo_mirror_fix,
-             (unsigned)g_ufo_mirrors.size(), g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed);
+    snprintf(b2, sizeof b2, "mirror fix=%d mirrors=%u tx=%u rx=%u made=%u gone=%u freed=%u stripped=%u\n", (int)g_ufo_mirror_fix,
+             (unsigned)g_ufo_mirrors.size(), g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed, g_ufo_stripped);
     return u.out + b + b2;
 }
 
@@ -948,6 +950,27 @@ static void ufo_place(void* u, const net::Vec3& p, const net::Quat& q)
 }
 
 static constexpr uint32_t kUfoNounM = 0x018EBADCu;
+
+// BUG-0817: the mirror ship is a real type 7 UFO of the guest's game: a save the guest made while it was over the
+// players wrote it like the game's own (only Space had a ship filter, squadron.cpp BUG-0522), and the guest's world
+// had the host's ship back after a solo load (coop_ufo_mirror_save.py). A savestrip filter writes a null reference
+// for it (the noun list skips nulls on load; the mirror is in no other list of the game: it is made by the event's
+// spawn function without an event). `coop.fix creature.ufo_save_strip off`: saved (0.7.12).
+static bool g_ufo_strip_fix = true;
+COOP_FIX("creature.ufo_save_strip", "BUG-0817", g_ufo_strip_fix, "saves: the guest's mirror of the host's UFO is kept out of the guest's saves");
+static bool ufo_save_filter(void* o, uint32_t noun)
+{
+    if (!g_ufo_strip_fix || noun != kUfoNounM || g_ufo_mirrors.empty())
+        return false;
+    for (auto& m : g_ufo_mirrors)
+        if (m.u == o) {
+            if (!g_ufo_stripped++)
+                H->log(M, SK_INFO, "rules: the mirror of the host's UFO is kept out of this save (creature.ufo_save_strip)");
+            return true;
+        }
+    return false;
+}
+
 void tick(double now)
 {
     if (g_carry_fix && (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty()))
@@ -1465,6 +1488,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_GoalEnd = H->sym("SporeCoop::BT_GoalSlotEnd");
     a_IsEpic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
     a_SpawnEventUFO = H->sym("SporeCoop::UFOAbductionEvent_SpawnUFO");
+    savestrip::add_filter(ufo_save_filter); // BUG-0817
     if (uintptr_t a = H->sym("SporeCoop::Creature_HoldObject"))
         H->hook_create(M, (void*)a, (void*)h_Hold, (void**)&o_Hold);
     if (uintptr_t a = H->sym("SporeCoop::Creature_ReleaseObject"))
