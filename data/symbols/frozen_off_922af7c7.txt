@@ -247,3 +247,4 @@ App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothin
 SporeCoop::TribeStage_BabyBornMsg_Ret ; BUG-0824: a purchased member is paired the 0.7.12 way (old behaviour)
 SporeCoop::Creature_SetHunger ; BUG-0935: tribe.mirror_hunger: a guest's mirrors keep their own hunger
 SporeCoop::cTribe_ApplyGroundStamp ; BUG-0947: tribe.village_load_stamp: a village made during play keeps one ground stamp
+SporeCoop::TribeStage_RemoveMemberCard ; BUG-0961: tribe.body_card: a dead member's card stays on a guest's roster (old behaviour)
