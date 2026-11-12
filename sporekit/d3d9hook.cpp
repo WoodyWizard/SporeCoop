@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -17,6 +18,7 @@ typedef HRESULT(WINAPI* CreateDevice_t)(IDirect3D9*, UINT, D3DDEVTYPE, HWND, DWO
 typedef HRESULT(WINAPI* Present_t)(IDirect3DDevice9*, const RECT*, const RECT*, HWND,
                                    const RGNDATA*);
 typedef HRESULT(WINAPI* Reset_t)(IDirect3DDevice9*, D3DPRESENT_PARAMETERS*);
+typedef HRESULT(WINAPI* SetTransform_t)(IDirect3DDevice9*, D3DTRANSFORMSTATETYPE, const D3DMATRIX*);
 typedef HRESULT(WINAPI* SwapPresent_t)(IDirect3DSwapChain9*, const RECT*, const RECT*, HWND,
                                        const RGNDATA*, DWORD);
 
@@ -25,12 +27,15 @@ static CreateDevice_t o_CreateDevice;
 static Present_t o_Present;
 static Reset_t o_Reset;
 static SwapPresent_t o_SwapPresent;
+static SetTransform_t o_SetTransform;
 
 static IDirect3DDevice9* g_dev;
 static HWND g_hwnd;
 static uint64_t g_frame;
 static double g_fps, g_last_t;
 static bool g_in_frame;
+static bool g_view_copied;    // BUG-0948: the viewer was copied for this frame (its first SetTransform(VIEW))
+static uint32_t g_view_sets;  // the game's SetTransform(VIEW) calls (kit.cam)
 
 // ---- BUG-0779: what the player's device and its hooks are, and how far apart the frames are shown ----
 // the module a code address lives in ("d3d9.dll (game folder)", "d3d9.dll (system)", ...)
@@ -296,7 +301,13 @@ void overlay_tris(const float* xy, int n, uint32_t argb)
 }
 
 int world_to_screen_game(const float* w, float* out);
-int world_to_screen(const float* w, float* out) { return world_to_screen_game(w, out); }
+// BUG-0948: inside the overlay pass the labels are projected with the camera the frame was drawn with
+int world_to_screen(const float* w, float* out)
+{
+    if (g_overlay_active && fixed(g_fix_drawncam))
+        return world_to_screen_drawn(w, out);
+    return world_to_screen_game(w, out);
+}
 
 void screen_size(int* w, int* h)
 {
@@ -487,6 +498,7 @@ static void on_frame_begin_present()
             g_dev->GetRenderTarget(0, &old_rt);
             g_dev->SetRenderTarget(0, bb);
             if (SUCCEEDED(g_dev->BeginScene())) {
+                drawn_view_measure();
                 g_overlay_active = true;
                 fire(SK_EV_OVERLAY, g_dev);
                 g_overlay_active = false;
@@ -499,6 +511,8 @@ static void on_frame_begin_present()
     }
     capture_if_requested();
     report_shot_on_present(g_dev); // a report screenshot: this frame with the overlay
+    g_view_copied = false;
+    drawn_view_drop(); // the next frame's draw copies its own
     g_in_frame = false;
 }
 
@@ -548,6 +562,27 @@ const char* frame_source()
 }
 
 void set_frame_source_mode(bool loop) { g_frames_mode = loop ? 1 : 0; }
+
+// BUG-0948: the game's first SetTransform(VIEW) after a Present belongs to drawing the next frame; the viewer then is
+// the camera that frame is drawn with (gamehooks.cpp). One read of the viewer per frame, on the game's thread.
+static HRESULT WINAPI h_SetTransform(IDirect3DDevice9* dev, D3DTRANSFORMSTATETYPE t, const D3DMATRIX* m)
+{
+    if (t == D3DTS_VIEW && dev == g_dev && !g_in_frame && !g_present_depth) {
+        g_view_sets++;
+        if (!g_view_copied && GetCurrentThreadId() == main_thread_id()) {
+            g_view_copied = true;
+            drawn_view_take();
+        }
+    }
+    return o_SetTransform(dev, t, m);
+}
+
+std::string drawn_cam_command(const char* arg)
+{
+    bool reset = arg && !strcmp(arg, "reset");
+    return drawn_view_text(reset) + " view_sets=" + std::to_string(g_view_sets) +
+           (o_SetTransform ? "" : " (SetTransform not hooked)");
+}
 
 static HRESULT WINAPI h_Present(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND w,
                                 const RGNDATA* r)
@@ -613,6 +648,8 @@ static void hook_device(IDirect3DDevice9* dev)
         hook_create(&g_kit_mod, v[17], (void*)h_Present, (void**)&o_Present);
     if (!o_Reset)
         hook_create(&g_kit_mod, v[16], (void*)h_Reset, (void**)&o_Reset);
+    if (!o_SetTransform) // BUG-0948
+        hook_create(&g_kit_mod, v[44], (void*)h_SetTransform, (void**)&o_SetTransform);
     IDirect3DSwapChain9* sc = nullptr;
     if (!o_SwapPresent && SUCCEEDED(dev->GetSwapChain(0, &sc))) {
         void* p = vt(sc)[3];

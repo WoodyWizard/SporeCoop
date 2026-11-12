@@ -650,6 +650,13 @@ static int c_quit(void*, int, const char* const*, SkOut* o)
     return 0;
 }
 
+// kit.cam [reset] (BUG-0948): the copy of the drawn camera and how far the viewer moved by Present
+static int c_kit_cam(void*, int argc, const char* const* argv, SkOut* o)
+{
+    outf(o, "%s\n", drawn_cam_command(argc > 1 ? argv[1] : nullptr).c_str());
+    return 0;
+}
+
 // kit.fix [name [0|1]]: the fix switches (tests show with 0 that they still catch the bug)
 static int c_kit_fix(void*, int argc, const char* const* argv, SkOut* o)
 {
@@ -892,6 +899,7 @@ void register_builtin_commands()
                 nullptr, A);
     command_add(k, "stack.here", "stack.here [n] [all] - main thread call chain, read on the main thread itself",
                 c_stack_here, nullptr, M);
+    command_add(k, "kit.cam", "kit.cam [reset] - the camera the overlay projects with (BUG-0948)", c_kit_cam, nullptr, A);
     command_add(k, "kit.fix", "kit.fix [name [0|1]] - fix switches (tests: 0 = the old behaviour)", c_kit_fix, nullptr, A);
     command_add(k, "kit.test.stackheap", "kit.test.stackheap [stack|hangdump] [hold_ms] - stack dump while the main thread holds the heap (BUG-0050)",
                 c_test_stackheap, nullptr, A);

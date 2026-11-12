@@ -145,6 +145,13 @@ std::string report_shots_text(bool crash);                             // the re
 void overlay_text(int x, int y, uint32_t argb, const char* utf8);
 void overlay_tris(const float* xy, int n, uint32_t argb); // since 0.3.15: n filled triangles (6 floats each)
 int world_to_screen(const float* w, float* out);
+// gamehooks.cpp, BUG-0948: the viewer as the game drew the frame (copied at its first SetTransform(VIEW) after a Present)
+void drawn_view_take();
+void drawn_view_drop();
+void drawn_view_measure();                // the overlay pass: how far the viewer moved since the copy (kit.cam)
+std::string drawn_view_text(bool reset);  // kit.cam
+int world_to_screen_drawn(const float* w, float* out);
+std::string drawn_cam_command(const char* arg); // d3d9hook.cpp: kit.cam [reset]
 void screen_size(int* w, int* h);
 
 // gamehooks.cpp
@@ -299,6 +306,7 @@ extern KitFix g_fix_dialognote; // BUG-0925: a dialog on the main thread is name
 extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (minimized) is not a hang
 extern KitFix g_fix_framelimit; // BUG-0779: a frame limit set by another program is kept, not written back
 extern KitFix g_fix_presentlost; // BUG-0653: a hitch over 2 s is not Present lost (game loop passes without Present needed)
+extern KitFix g_fix_drawncam;  // BUG-0948: the overlay projects with the camera the frame was drawn with
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);
