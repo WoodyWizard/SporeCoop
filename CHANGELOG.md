@@ -3,6 +3,19 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a guest that plays a Cell world of its own while connected (or is still in Cell while the host is already in
+  the Creature stage) gets a living pool again: new cells and food appear, kills drop loot, predators hunt. Before, its
+  pool only emptied (BUG-0797).
+- Cell: the host no longer sends its live cells to a guest that is not in the host's Cell world yet (the menu, the
+  loading screen, the world download, a world of its own); on a slow link they slowed the world transfer (BUG-0809).
+- Creature: the computer creatures' nests evolve again in a world of a guest's own while it is connected (BUG-0803).
+- Creature: in a world of its own a connected guest's game shows its own creations again, not the host's creature of
+  the same id at its nests (BUG-0819).
+- Space: a guest that loads one of its own Space saves while connected keeps that save's cargo hold (tools, spice,
+  cargo); it was replaced by the guest's co-op hold and saved that way (BUG-0816).
+- Space: a guest's own Space save keeps its own stage history (the History bar and the archetype's cards); the host's
+  was written into it (BUG-0818).
+- Votes no longer wait their full 60 seconds for a guest that plays another world and cannot vote (BUG-0801).
 - Civilization: vehicles no longer get faster and faster during sieges ("like flash", GitHub #199). Each new "city
   under attack" alarm took the already boosted speed as the vehicle's normal speed, so the +50 % boost piled up and
   stayed for good (BUG-0771).

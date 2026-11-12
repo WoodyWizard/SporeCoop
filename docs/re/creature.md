@@ -4184,3 +4184,12 @@ while references to it remain).
   brings no UFO noun back (`coop.census` nouns: 018EBADC=1 before the save, none after the load; lab
   20261112-015510, 20261112-015723): the Creature stage does not restore a type 7 ship from a save (BUG-0817,
   not reproduced; the filter `creature.ufo_save_strip` stays).
+## NPC nests evolve in a guest's own Creature world (2026-11-12, fix/w48-own-world)
+<a id="creature-herd-evo-own-world"></a>
+
+* BUG-0803: herd_evo_guard (wsync.cpp, BUG-0668) wrote CreatureGame_HerdEvolveOn = 0 for any connected guest in
+  Creature; in a world of its own MSG_WSTATE is dropped, so nothing evolved its nests and its save kept that. With
+  wsync.herd_evo_own the guard holds the step only while the guest plays the host's world (not
+  own_world::elsewhere()); the game's own value comes back otherwise. ✔ Lab: after `coop.dna add 250` in its own
+  world the guest's game evolved 21 of 133 nests within 5 s; with the switch off 0 in 40 s (20261112-030351 /
+  20261112-031349).

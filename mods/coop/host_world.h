@@ -91,6 +91,28 @@ inline uint32_t host_save_now(uint32_t known, bool has_state, uint32_t st_mode, 
 }
 inline bool announce_world(uint32_t now, uint32_t announced) { return now != 0 && now != announced; }
 
+// O1 of 0.7.13 (BUG-0427's children): the same question asked by the host about one guest, from that guest's latest
+// PlayerState. `peer_elsewhere`: the guest plays another world of the host's stage, exactly what that guest's own
+// classify() says (Other: it ignores the host's votes and gated messages, BUG-0702). `peer_here`: the guest plays
+// the host's stage and world now (not loading it, not in a menu, not elsewhere).
+inline bool peer_elsewhere(bool has_state, uint32_t peer_mode, uint32_t peer_world, uint32_t host_mode, uint32_t host_world)
+{
+    return has_state && classify(true, peer_mode, peer_world, true, host_mode, host_world, 0) == HostWorld::Other;
+}
+inline bool peer_here(bool has_state, uint32_t peer_mode, uint32_t peer_world, uint32_t host_mode, uint32_t host_world)
+{
+    return has_state && peer_mode == host_mode && host_world != 0 && peer_world == host_world;
+}
+
+// BUG-0797: a guest in a gated stage whose host plays another stage (the host already in Creature while this guest is
+// still in Cell, BUG-0638's path; or in Space): nothing of the host's world of this stage comes any more, the guest
+// plays its own (as for Other). Only when the host's state names another stage (not a menu, an editor or a load:
+// those are the "away" rules of coop.cpp host_out_of_stage).
+inline bool host_in_other_stage(bool connected_guest, uint32_t my_mode, bool has_state, uint32_t st_mode)
+{
+    return connected_guest && gated(my_mode) && has_state && st_mode != my_mode && (gated(st_mode) || st_mode == kSpace);
+}
+
 // BUG-0420 (class: world state applied without a world filter): every message type has one class here, so that
 // a new message is never open by default. The switch below has no default: GCC fails the build of coop.dll and of
 // tests/validate_tests.cpp on a MsgType that is not listed (-Werror=switch), which is the "every MSG_ classified"

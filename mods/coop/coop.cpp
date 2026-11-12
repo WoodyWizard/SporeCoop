@@ -84,6 +84,7 @@
 #include "sreport.h"
 #include "space_ext.h"
 #include "host_world.h"
+#include "own_world.h"
 #include "diag_coop.h"
 #include "trace.h"
 #include "view_centres.h"
@@ -1186,6 +1187,52 @@ bool host_absent_for(Absent who)
     bool elsewhere = guest_elsewhere() && (who == Absent::Npc ? g_place_fix : g_world_gate_fix);
     return away || elsewhere;
 }
+
+// O1 of 0.7.13 (own_world.h): the one answer to "is this guest in the host's world right now?" for the modules
+static double g_host_left_since = -1;
+} // namespace (the anonymous one: own_world is called from the other modules)
+namespace own_world {
+bool elsewhere() { return guest_elsewhere(); }
+bool space_other()
+{
+    bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    auto it = g_remotes.find(0);
+    bool has = it != g_remotes.end() && !it->second.buf.empty();
+    return host_world::space_other(guest, g_mode, g_mode == modes::kSpace ? modes::current_world() : 0, has,
+                                   has ? it->second.buf.latest().mode : 0, host_save_known());
+}
+bool host_left()
+{
+    bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    auto it = g_remotes.find(0);
+    bool has = it != g_remotes.end() && !it->second.buf.empty();
+    bool now_left = host_world::host_in_other_stage(guest, g_mode, has, has ? it->second.buf.latest().mode : 0);
+    double t = H->time_seconds();
+    if (!now_left) {
+        g_host_left_since = -1;
+        return false;
+    }
+    if (g_host_left_since < 0)
+        g_host_left_since = t;
+    return t - g_host_left_since >= 2.0;
+}
+static const net::PlayerState* peer_state(uint8_t id)
+{
+    auto it = g_remotes.find(id);
+    return it == g_remotes.end() || it->second.echo || it->second.buf.empty() ? nullptr : &it->second.buf.latest();
+}
+bool peer_here(uint8_t id)
+{
+    const net::PlayerState* s = peer_state(id);
+    return host_world::peer_here(s != nullptr, s ? s->mode : 0, s ? s->world : 0, g_mode, g_world);
+}
+bool peer_elsewhere(uint8_t id)
+{
+    const net::PlayerState* s = peer_state(id);
+    return host_world::peer_elsewhere(s != nullptr, s ? s->mode : 0, s ? s->world : 0, g_mode, g_world);
+}
+} // namespace own_world
+namespace {
 
 // a message of the host's world state a guest elsewhere must not apply (MSG_RES is held inside
 // shared.cpp instead: res.elsewhere). BUG-0420: one class per message type (host_world.h msg_class, a
@@ -2365,6 +2412,13 @@ void drop_vote(const char* why)
         skg::vcall<int>(req, 2); // the vote's reference
 }
 
+// BUG-0801: a guest that plays another world of the host's stage ignores the host's vote (BUG-0702) and never sends
+// MSG_READY: every vote of a 3-4 player session with one guest elsewhere ran into its 60 s timer. The vote counts
+// only the players in the host's world now (own_world::peer_elsewhere: what that guest itself decides). Off: every
+// player of the session (0.7.12).
+static bool g_vote_present_fix = true;
+COOP_FIX("core.vote_present", "BUG-0801", g_vote_present_fix, "core: a vote does not wait for a guest that plays another world");
+static int g_vote_away_last = 0;
 void vote_tick(double now)
 {
     if (!g_vote.active || g_sess.role() != net::Role::Host)
@@ -2391,8 +2445,18 @@ void vote_tick(double now)
             }
         }
     bool all = true;
-    for (auto& p : g_sess.players())
+    int away = 0;
+    for (auto& p : g_sess.players()) {
+        if (p.id != 0 && g_vote_present_fix && own_world::peer_elsewhere((uint8_t)p.id)) {
+            away++; // BUG-0801: plays another world, ignores the vote (BUG-0702): not waited for
+            continue;
+        }
         all &= g_ready.count(p.id) && g_ready[p.id];
+    }
+    if (away != g_vote_away_last) {
+        g_vote_away_last = away;
+        trace::line("vote", "%d player(s) in another world: not waited for (BUG-0801)", away);
+    }
     if (all)
         finish_vote("everybody is ready");
     else if (g_vote.left <= 0)
@@ -5160,12 +5224,18 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host save: known %08X (welcome %08X, followed %08X, heard %u), mine %08X, space_other=%d, announced %08X\n", host_save_known(),
         g_sess.welcome_world(), g_host_save, g_host_save_heard, g_mode == modes::kSpace ? modes::current_world() : 0,
         (int)guest_space_other(), g_world_announced); // BUG-0933
+    SAY("own world: mode %08X world %08X elsewhere=%d space_other=%d host_left=%d\n", g_mode, g_world,
+        (int)own_world::elsewhere(), (int)own_world::space_other(), (int)own_world::host_left()); // O1 (BUG-0427)
     SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u name_tags=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(),
         g_menu_hidden, g_tags_drawn);
+    for (auto& p : g_sess.players()) // tests (BUG-0809): the datagrams sent to each peer so far
+        if (net::Connection* c = p.id != g_sess.my_id() ? g_sess.conn_to(p.id) : nullptr)
+            SAY("net to %u: out_bytes=%llu out_packets=%u\n", (unsigned)p.id, (unsigned long long)c->stats.bytes_sent,
+                c->stats.packets_sent);
     double now = H->time_seconds();
     for (auto& [id, r] : g_remotes) {
         net::PlayerState s;
