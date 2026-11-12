@@ -36,6 +36,7 @@
 #include "space_map.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "own_world.h"
 
 
 using skg::cdecl_call;
@@ -977,6 +978,14 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 // `coop.fix space.keep_items off`: nothing comes back, the rejoined guest has the host's hold (0.7.9).
 static bool g_keep_items_fix = true;
 COOP_FIX("space.keep_items", "BUG-0678", g_keep_items_fix, "space: a guest's own cargo hold comes back when it rejoins or reloads (the host keeps it)");
+// BUG-0816: all of that only while the guest plays the host's Space save. A connected guest that loads a Space save of
+// its own (own_world::space_other) sent that save's hold as a fresh one, the host answered with the co-op hold it kept
+// (K_INV_KEPT) and the guest's game replaced its own save's tools, spice and cargo with it (and the host kept the
+// own save's hold as the guest's co-op one). Off: as 0.7.12.
+static bool g_inv_own_save_fix = true;
+COOP_FIX("space.hold_own_save", "BUG-0816", g_inv_own_save_fix, "space: a guest's own Space save keeps its own cargo hold");
+static uint32_t g_inv_own_held;
+static bool inv_own_save() { return g_inv_own_save_fix && own_world::space_other(); }
 
 struct InvItem {
     uint8_t type = 0; // cSpaceInventoryItem +0x14 (2 tool, 4 trading object / spice, 0/1/5/6 other cargo)
@@ -1402,6 +1411,12 @@ static void inv_tick(double now)
         g_inv_join_seen = true;
         g_inv_join_epoch = spaceext::in_space() ? spaceext::world_epoch() : 0;
     }
+    if (inv_own_save()) { // BUG-0816: a Space save of the guest's own: its hold is nobody else's business
+        g_inv_own_held++;
+        return;
+    }
+    if (g_inv_own_save_fix && spaceext::in_space() && !modes::current_world())
+        return; // BUG-0816: which save this is is not known yet (its hold goes once it is)
     // only the hold of a world loaded from the host since the join (the first one may be the guest's own world)
     uint32_t e = spaceext::world_epoch();
     if (!spaceext::in_space() || !e || e == g_inv_join_epoch || now < g_inv_next)
@@ -1509,7 +1524,9 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
     if (!get_inv(r, v))
         return;
     int failed = 0;
-    if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
+    if (inv_own_save()) // BUG-0816: not applied to a Space save of our own (answered as done: the host stops resending)
+        g_inv_own_held++;
+    else if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
         failed = apply_inv(v);
         if (failed < 0)
             return; // no hold now: the host sends it again
@@ -1559,13 +1576,13 @@ static std::string inv_text(const Inv& v)
 static std::string inv_status()
 {
     std::string s;
-    char b[400];
+    char b[480];
     snprintf(b, sizeof b,
              "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
-             "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u\n",
+             "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u own_save_held=%u\n",
              (int)g_keep_items_fix, (unsigned)g_kept_inv.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
              g_inv_failed, g_inv_removed, g_inv_join_epoch, g_inv_applied_epoch, spaceext::world_epoch(), g_inv_slots_removed,
-             g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch);
+             g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held);
     s += b;
     for (auto& [n, k] : g_kept_inv) {
         snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", n.c_str(), k.id == 0xFF ? -1 : k.id,
