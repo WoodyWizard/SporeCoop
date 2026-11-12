@@ -450,11 +450,6 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("walking to (%.2f %.2f %.2f)\n", q.x, q.y, q.z);
         return 0;
     }
-    if (argc > 1 && !strcmp(argv[1], "mark0")) { // tests (BUG-0964): clear the teleport mark +0xB5D
-        SAY("mark was %d\n", *(uint8_t*)((uint8_t*)av + 0xB5D));
-        *(uint8_t*)((uint8_t*)av + 0xB5D) = 0;
-        return 0;
-    }
     if (argc > 1 && !strcmp(argv[1], "walk")) { // tests (BUG-0964): what the avatar's walk-and-use is doing
         // the behaviour tree's node (AI +0x1D8), its stimuli (AI +8: 8 slots of 0x38, masks +0/+4, sender +0x2C),
         // the timed goal slots (+0xB48 -> 8 x 0x44, template +0x24), the locomotion: desired / standard speed
@@ -1015,7 +1010,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z> | target none|<puppet address>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z> | target none|<puppet address> [any] | walk [raw] | walkto <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);

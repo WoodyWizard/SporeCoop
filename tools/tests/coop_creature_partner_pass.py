@@ -19,7 +19,8 @@ Rounds (one animal each, not of the players' family; the guest is the second hun
    host's creature (the puppet). Judged when the host's creature is within 90 px of the click point and nearer.
 Judged (2026-11-12, fix/w48-pass): a walk that reached the animal (pass) or stopped within 2.5 m of the host's creature
 with nothing else nearer (BUG-0913: fail); a press that never started the walk 6 m behind the host (moved under
-0.3 m: the game's quirk, with the fix on and off, lab 20261112-111650 / -113440 / -113425) or a stop at another
+0.3 m, with the fix on and off, lab 20261112-111650 / -113440 / -113425: the test's gopos had put the guest's creature
+inside a nest mound's collision, BUG-0964; gopos puts it onto the surface since tools.gopos_surface) or a stop at another
 creature is printed, tried again from 4.5 and 8 m behind, and not judged when it happens there too; a walk that
 came within the reach between two samples and bit (the animal lost health in the host's game) counts as reached. A click that took the animal (pass) or the host's creature (fail); one that took
 nothing or another animal along the ray is printed and not judged. More rounds are played until enough are judged.
@@ -186,8 +187,8 @@ def walk_once(host, guest, nid, hid, av, mine, a, d, ln, behind, label):
         behind = da is not None and dha is not None and da > dha + 0.3
         # stopped at the partner: within 2.5 m of the host's creature, behind it (farther from the animal's centre), and
         # nothing else nearer (the BUG-0913 stop is 1.4 m behind it); one that came past it, as near the animal as the
-        # host's creature, was not stopped by it (lab 20261112-122259 r10: gap 1.3, then 1.7 beside it, no bite); a walk that never started (moved under 0.3 m) 6 m behind it is the game's quirk of a press
-        # that does nothing (docs/re/creature.md#creature-partner-pass), another creature in the way is the game's
+        # host's creature, was not stopped by it (lab 20261112-122259 r10: gap 1.3, then 1.7 beside it, no bite); a walk that never started (moved under 0.3 m) 6 m behind it was a creature put inside a nest
+        # mound's collision (docs/re/creature.md#creature-walk-held-in-mound), another creature in the way is the game's
         blocker = ('partner' if dh is not None and dh < 2.5 and (not others or others[0][0] >= dh) and (moved or 0) >= 0.3
                    and behind
                    else 'no start' if moved is not None and moved < 0.3
@@ -299,8 +300,8 @@ def clicks(rounds):
 
 def walks(rounds):
     """the walks judged: the host's creature right at the animal in the way, and the walk reached the animal or stopped
-    at the host's creature (a press that never started the walk 6 m behind it, the game's quirk with the fix on or
-    off, and a stop at another creature are not the partner's)"""
+    at the host's creature (a press that never started the walk 6 m behind it, a creature held inside a nest mound's
+    collision, BUG-0964, and a stop at another creature are not the partner's)"""
     return [x for x in rounds if x[4] and (x[2] or x[6] == 'partner')]
 
 
