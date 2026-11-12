@@ -4379,3 +4379,53 @@ GOG 2024, lab lanes 6 / 7, `coop_creature_partner_pass.py` (BUG-0913). Adds to #
   puppet: 0 between the avatar and the partner's puppet in 6 runs (713-745 of the puppet's with other objects, lab
   20261112-124402, -124417). ? what holds it there (the walk-and-use's arrival or the game's attack position next to
   another creature: not read). The test does not count it as the BUG-0913 stop (that one is behind the partner).
+## What still names a destroyed puppet: cModifiers and the last attacker (2026-11-12, fix/w48-rest)
+<a id="creature-stale-holders"></a>
+
+BUG-0930. GOG 2024, Ghidra (private project), lab lanes 4 / 5 (`coop.staleref`, tools/tests/coop_stale_last_attacker.py).
+Follows #creature-stimulus-attacker and #creature-freed-block-reuse.
+
+* CORRECTION (2026-11-12, fix/w48-rest) of #creature-stimulus-attacker's "AI block +0x694 and +0x6D8, +0x68C": the AI
+  block (`cBehaviorTreeData`, creature +0xB4C) is **0x670** bytes (`GeneralAllocator::new_(0x670, "Simulator/cBehaviorTreeData")`
+  at 0xC1FF71, ctor 0xBCB410; its heap header before +0 reads 0x679); `coop.staleref` assumed 0x700 and named the next
+  heap block. ✔ That block is the creature's **cModifiers** (+0xB48, `new_(0x230, "Simulator/cModifiers")` at 0xC0B797
+  in 0xC0B740, ctor 0xBCA010): AI +0x68C / +0x694 / +0x6D8 = cModifiers +0x14 / +0x1C / +0x60.
+* ✔ cModifiers: 8 slots of 0x44 bytes from +0, then +0x220 the owner (ctor argument), +0x22C the mask of live slots.
+  A slot: data +0x00..+0x1F (handed to its callbacks; seen: +0x10 0xEE3F516E, +0x14 a combatant, +0x18 the owner, +0x1C
+  a creature), +0x20 u16 id, +0x24 / +0x28 keys (-1 = free), +0x2C time left, +0x34 end callback, +0x38 tick callback,
+  +0x3C / +0x40 two references (released with vt 4). Tick `0xBCA4C0` thiscall(mods, float dt) ret 4 (live slots of the
+  mask only: time -= dt, the tick callback, the slot removed 0xBCA1B0 when either says so; called from
+  cCreatureBase::Update 0xC21580), find `0xBCA230` thiscall(mods, key1, key2, ref1, ref2) ret 0x10 (compares values only),
+  clear all `0xBCA150` (on a death 0xC1CB50 and 0xC20027: end callbacks, keys -1, references released, mask 0).
+* ✔ (runtime, lane 4) An NPC fighting the guest's puppet has a live slot {key 3, +0x14 the puppet's combatant, +0x18
+  itself, +0x1C the puppet, +0x3C itself, +0x40 the puppet}; after the puppet's destroy the slot is free (key -1, +0x3C /
+  +0x40 released by the game) and +0x14 / +0x1C keep the old values: stale data of a free slot, read by nobody (above).
+* ✔ The last attacker (combatant +0x28, creature +0x5D0) is a reference: `cCombatant::TakeDamage` 0xBFCF10 takes the
+  new one with the combatant's AddRef (**vt 0x60**) and lets the old one go with its Release (**vt 0x64**). ✔ A creature
+  combatant's vt 4 is no Release: the thunk 0xC06640 jumps to the creature's Write 0xC04380 (`this - 0x5A8`); called
+  with no stream it faulted at 0xC0439F (lab 20261112-134349, a first version of the fix).
+* ✔ (runtime) Right after the game's DestroyInstance of the puppet, the NPC it hit last let go of it (field 0, Release
+  vt 0x64): the block was freed 0.2-0.8 s later in 6 of 6 removals, with the field kept 3 of 3 blocks lived on (count 1)
+  (lab 20261112-135316 / -135318 against 20261112-133753). Fix `npc.stale_last_attacker` (gamefixes.cpp).
+* ~ Creature +0x354 .. +0x370 (a list naming other creatures' +0xC0): rewritten from scan to scan, 4 creatures held a
+  destroyed puppet's +0xC0 there 7 s after its destroy; no fault in 20 removals with the block freed. Not named.
+## The galaxy menu's splash: a step left up by a join from the menu (2026-11-12, fix/w48-rest)
+<a id="creature-menu-splash"></a>
+
+BUG-0938. GOG 2024, Ghidra (private project), lab lanes 4 / 5 (tools/tests/coop_menu_splash.py). Not the intro
+cinematic of #creature-intro-camera / docs/re/tribe.md#tribe-intro-camera.
+
+* ✔ GalaxyGameEntry ([0x16A1344]) +0x204: the splash table, 6 steps of 12 bytes {window id, delay, time shown}:
+  0x0670A3F8 0.1 s, **0x05B82B38** (the legal lines: the "galactic adventures" logo, "Online Interactions Not Rated by
+  the ESRB" 0x05B8BD48 under 0x06776FE0, "(c) 2009 Electronic Arts Inc.") 4.1 s, 0x0670A3F8 0.5 s, 0x05BFDC38 4.5 s,
+  0x05BFDC68 4.5 s, 0x066F3C30 (full screen). Sub-state +0x200 (1 delay, 2 shown, 3 pause, 4 next), +0x1F2 / +0x1F3 /
+  +0x1F4 flags, +0x1EC the intro state (2, 5 intro playing or not started, 6 done).
+* ✔ `SporeCoop::GalaxyGameEntry_SplashTick` 0xDEAC80 shows a step's window (vt 0x7C(1, 1)) and hides it when its
+  time runs out; `GalaxyGameEntry_SplashEnd` 0xDEA510 hides 0x06776FE0 / 0x06776FE1 and deletes the layout. Both only
+  in the menu: a window up at the moment the menu is left stays up in the stage (✔ lab 20261112-140450: the legal lines
+  over Creature play 17 s and more).
+* ✔ The lab's guests reach their menu after the splash (state 2, 0x066F3C30 up for the first ~4 s, the legal lines
+  never drawn in 28 s; the layout deleted ~5 s after the menu's log line): the natural window is the first seconds of
+  a cold game's menu (a player who joins at once).
+* Fix `world.menu_splash` (world.cpp): in a stage, once a second outside the frame, every drawn window of that table
+  (and 0x06776FE0 / 0x06776FE1) is hidden.

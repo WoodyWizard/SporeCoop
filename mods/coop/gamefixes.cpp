@@ -719,6 +719,50 @@ static void forget_avatar_target(void* dying)
         H->log(M, SK_INFO, "game fixes: the avatar's target was %p, destroyed now: cleared (BUG-0918, %u in all)", dying, n);
 }
 
+// BUG-0930: the creature a creature was hit by last is kept at its combatant +0x28 (creature +0x5D0) with a reference.
+// When co-op destroys a partner's puppet in a fight, the NPC it hit last keeps that reference: the destroyed puppet's
+// block lives on (vtables intact, destroyed flag set, count 1) until that NPC is hit by another creature or goes, 25 s
+// and more in the lab (lab lane 2, coop_stale_refs.py --watch). Vanilla never destroys a creature in a fight (corpses
+// stay 60 s). Right after a creature is destroyed, every listed creature whose last attacker it was lets go of it (the
+// reference released, the field null, as a creature never hit has it), so the block is freed with its other references.
+// Old (`coop.fix npc.stale_last_attacker off`): the reference stays until the game replaces it.
+static bool g_last_attacker_fix = true;
+COOP_FIX("npc.stale_last_attacker", "BUG-0930", g_last_attacker_fix,
+         "creature: an NPC lets go of a destroyed partner's puppet that hit it last (its block was kept alive by that NPC for 25 s and more)");
+static std::atomic<unsigned> g_last_attackers_cleared{0};
+constexpr size_t kLastAttackerOff = 0x5A8 + 0x28; // combatant (+0x5A8) +0x28
+
+static void forget_last_attacker(void* dying)
+{
+    struct LA {
+        uint8_t* dying;
+        unsigned n;
+    } la{(uint8_t*)dying, 0};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* la = (LA*)u;
+            if ((noun != kAnimalNoun && noun != kCitizenNoun) || o == la->dying || !readable(o, kLastAttackerOff + 4))
+                return true;
+            uint8_t* a = at<uint8_t*>(o, kLastAttackerOff);
+            if (a < la->dying || a >= la->dying + kCreatureSpan)
+                return true;
+            *(void**)((uint8_t*)o + kLastAttackerOff) = nullptr;
+            // the combatant's own Release (vt 0x64; AddRef 0x60): cCombatant::TakeDamage 0xBFCF10 replaces +0x28 so.
+            // (vt 4 of a combatant is no Release: the thunk 0xC06640 to the creature's Write 0xC04380 faulted)
+            if (readable(a, 4) && readable(*(void**)a, 0x68))
+                ((void(__thiscall*)(void*))(*(void***)a)[0x64 / 4])(a);
+            la->n++;
+            return true;
+        },
+        &la);
+    if (la.n) {
+        unsigned n = g_last_attackers_cleared += la.n;
+        if (n <= 16 || n % 100 < la.n)
+            H->log(M, SK_INFO, "game fixes: %u NPC(s) were last hit by %p, destroyed now: let go (BUG-0930, %u in all)", la.n,
+                   dying, n);
+    }
+}
+
 static DestroyListener g_destroy_listener; // BUG-0623 (civ.cpp, BUG-0539)
 void set_destroy_listener(DestroyListener fn) { g_destroy_listener = fn; }
 static void* g_count_obj; // tests (BUG-0850)
@@ -749,7 +793,7 @@ static bool g_staleref_on;
 struct StaleHit {
     uint32_t noun; // 0: not in a listed object
     uint32_t off;
-    uint8_t kind;  // 0 object, 1 AI block, 2 module, 3 other
+    uint8_t kind;  // 0 object, 1 AI block, 2 module, 3 other, 4 cModifiers (BUG-0930)
     void* first;
     unsigned n;
     char mod[24];
@@ -789,9 +833,14 @@ static int c_staleref(void*, int argc, const char* const* argv, SkOut* out)
         [](void* o, uint32_t noun, void*) {
             bool creature = noun == kAnimalNoun || noun == kCitizenNoun;
             blks.push_back({(uint8_t*)o, creature ? (uint32_t)kCreatureSpan : 0x400u, noun, 0});
+            // BUG-0930: the AI block (cBehaviorTreeData) is 0x670 bytes (GeneralAllocator::new_ at 0xC1FF76); the next
+            // heap block is usually the creature's cModifiers (+0xB48, 0x230 bytes, 0xC0B797): its own kind here
             if (creature && readable(o, kAiOff + 4))
-                if (uint8_t* ai = at<uint8_t*>(o, kAiOff); ai && readable(ai, 0x700))
-                    blks.push_back({ai, 0x700, noun, 1});
+                if (uint8_t* ai = at<uint8_t*>(o, kAiOff); ai && readable(ai, 0x670))
+                    blks.push_back({ai, 0x670, noun, 1});
+            if (creature && readable(o, 0xB48 + 4))
+                if (uint8_t* md = at<uint8_t*>(o, 0xB48); md && readable(md, 0x230))
+                    blks.push_back({md, 0x230, noun, 4});
             return true;
         },
         nullptr);
@@ -851,8 +900,11 @@ static int c_staleref(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "  block now: vt %08X +4 %08X +8 %08X destroyed byte %u, +0xC0 vt %08X +0xC4 %08X, +0x5A8 vt %08X +0x5AC %08X\n",
                       at<uint32_t>(d->at, 0), at<uint32_t>(d->at, 4), at<uint32_t>(d->at, 8), (unsigned)at<uint8_t>(d->at, 0x21),
                       at<uint32_t>(d->at, 0xC0), at<uint32_t>(d->at, 0xC4), at<uint32_t>(d->at, 0x5A8), at<uint32_t>(d->at, 0x5AC));
-    std::sort(hits.begin(), hits.end(), [](const StaleHit& a, const StaleHit& b) { return a.kind != b.kind ? a.kind < b.kind : a.off < b.off; });
-    static const char* kinds[] = {"object", "ai", "module", "other"};
+    static const uint8_t rank[] = {0, 1, 3, 4, 2}; // object, ai, modifiers, module, other
+    std::sort(hits.begin(), hits.end(), [](const StaleHit& a, const StaleHit& b) {
+        return a.kind != b.kind ? rank[a.kind] < rank[b.kind] : a.off < b.off;
+    });
+    static const char* kinds[] = {"object", "ai", "module", "other", "modifiers"};
     unsigned shown = 0;
     for (auto& h : hits) {
         if (h.kind == 3 && shown >= 80)
@@ -885,7 +937,17 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
     }
     if (g_avatar_target_fix && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         forget_avatar_target(obj);
+    bool la = false;
+    if (g_last_attacker_fix && obj && readable(obj, 0x30)) {
+        uint32_t noun = game::noun_id(obj);
+        la = noun == kAnimalNoun || noun == kCitizenNoun;
+    }
     g_destroy_orig(nm, obj);
+    // after the destroy: a reference released before it may be the creature's last one (the game's destroy then ran on
+    // a freed block: a fault at 0xC0439F, lab 20261112-134349); afterwards it frees the block as the game's own
+    // replacement of the last attacker does
+    if (la)
+        forget_last_attacker(obj);
 }
 
 // BUG-0454 (BUG-0371): the host's creature editor crashed three times at RenderWare::Raster::Fill+0x7

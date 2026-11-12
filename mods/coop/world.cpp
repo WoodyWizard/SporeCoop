@@ -939,6 +939,56 @@ static void intro_in_stage_tick()
     }
 }
 
+// BUG-0938: the galaxy menu shows its splash (logos, then the legal lines with "Online Interactions Not Rated by the
+// ESRB") step by step from a table in GalaxyGameEntry (+0x204 + 12 * step: window id, delay, time shown; 0xDEAC80 shows
+// a step's window and hides it when its time is up, 0xDEA510 ends the splash). That update runs only in the menu: a
+// player who joins from the menu while a step is up (the legal lines stand 4.1 s) takes it into the stage, where it
+// stays over the play until the next visit of the menu (a guest's Civ play in the 0.7.12 final check). In a stage the
+// splash's windows are hidden as their own step's end hides them. Off (`coop.fix world.menu_splash off`): as 0.7.12.
+static bool g_splash_fix = true;
+COOP_FIX("world.menu_splash", "BUG-0938", g_splash_fix,
+         "world: the galaxy menu's logos and legal lines left up by a join from the menu are hidden in the stage");
+static uint32_t g_splash_hidden;
+static double g_splash_checked = -100;
+constexpr uint32_t kSplashGroups[2] = {0x06776FE0u, 0x06776FE1u}; // (0xDEA510 hides these two at the splash's end)
+
+static void hide_menu_splash(void*)
+{
+    uintptr_t gp = H->sym("SporeCoop::GalaxyGameEntry_ptr");
+    uint8_t* gge = gp && !IsBadReadPtr((void*)gp, 4) ? *(uint8_t**)gp : nullptr;
+    if (!gge || IsBadReadPtr(gge + 0x204, 6 * 12) || !in_stage(game::mode_id()))
+        return;
+    uint32_t ids[8];
+    for (int k = 0; k < 6; k++)
+        ids[k] = *(uint32_t*)(gge + 0x204 + 12 * k);
+    ids[6] = kSplashGroups[0];
+    ids[7] = kSplashGroups[1];
+    sui::Win root = sui::main_window();
+    for (uint32_t id : ids) {
+        sui::Win w = id ? sui::find(root, id) : nullptr;
+        if (!w || !sui::visible(w))
+            continue;
+        bool shown = true; // drawn: every parent visible too
+        for (sui::Win p = sui::parent(w); p && shown; p = sui::parent(p))
+            shown = sui::visible(p);
+        if (!shown)
+            continue;
+        sui::set_visible(w, false);
+        g_splash_hidden++;
+        H->log(M, SK_INFO, "world: the galaxy menu's splash window %08X was up in the stage (mode %08X): hidden (BUG-0938, %u)",
+               id, game::mode_id(), g_splash_hidden);
+    }
+}
+
+static void menu_splash_tick()
+{
+    double now = H->time_seconds();
+    if (!g_splash_fix || !in_stage(game::mode_id()) || now - g_splash_checked < 1.0)
+        return;
+    g_splash_checked = now;
+    H->run_outside_frame(hide_menu_splash, nullptr); // (UI: outside the frame)
+}
+
 static void install_intro_hook()
 {
     if (uintptr_t a = H->sym("Simulator::cCinematicManager::PlayCinematic"))
@@ -1158,6 +1208,7 @@ void guest_tick()
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
+    menu_splash_tick();
     deferred_tick();
     box_tick();
 }
@@ -1167,6 +1218,7 @@ void tick(net::Session& s)
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
+    menu_splash_tick();
     deferred_tick();
     box_tick();
     if (g_drop_peer_fix) {
@@ -1785,7 +1837,7 @@ std::string status()
         s += b;
     }
     if (g_intros_ended || g_intros_at_once) {
-        snprintf(b, sizeof b, "menu intro ended %u (not started %u)\n", g_intros_ended, g_intros_at_once);
+        snprintf(b, sizeof b, "menu intro ended %u (not started %u), menu splash hidden %u\n", g_intros_ended, g_intros_at_once, g_splash_hidden);
         s += b;
     }
     return s;

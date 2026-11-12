@@ -247,11 +247,31 @@ COOP_FIX("tribe.body_teardown", "BUG-0667", g_body_teardown_fix,
 static uint32_t g_teardown_restored, g_slot_null_skipped;
 // guest: the mirror leaves its tribe's member and selectable lists as the host's body left its own (not selectable, not
 // counted as a member), the object stays until the host's body goes
+// BUG-0961: the host's game takes a dead member's card off the roster (the right edge) through the stage's message
+// listener (0xCD81F0 -> 0xCD51F0: cast to a citizen, the roster's card removal 0xCCBCE0 on the stage's game UI +0x240);
+// a guest's mirror taken out of its tribe here (detach_body) kept its card: the guest's roster showed one member more
+// than its tribe (and the host's) had for as long as the play went on (play_tribe's end frame). The card goes with
+// the body now, as on the host. Old (`coop.fix tribe.body_card off`): the card stays.
+static bool g_body_card_fix = true;
+COOP_FIX("tribe.body_card", "BUG-0961", g_body_card_fix,
+         "tribe: a member that died on the host leaves the guest's roster too (one card more stayed there)");
+static uint32_t g_body_cards;
+static void body_card_off(void* c)
+{
+    static uintptr_t get = H->sym("SporeCoop::cTribeUI_Get"), off = H->sym("SporeCoop::TribeStage_RemoveMemberCard");
+    void* stage = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!g_body_card_fix || !stage || !off || !skg::readable(stage, 0x244) || !F<void*>(stage, 0x240))
+        return;
+    thiscall<void>(off, stage, c);
+    g_body_cards++;
+}
+
 static void detach_body(void* c)
 {
     void* t = F<void*>(c, 0x1014);
     if (!t || g_detached.count(c))
         return;
+    body_card_off(c); // BUG-0961 (while it is still the tribe's member, as the game's message comes)
     for (uintptr_t off : {(uintptr_t)0x340, (uintptr_t)0x354}) {
         void**& b = F<void**>(t, off);
         void**& e = F<void**>(t, off + 4);
@@ -962,6 +982,17 @@ static bool g_mirror_hold_fix = true;
 COOP_FIX("tribe.mirror_hold", "BUG-0914", g_mirror_hold_fix, "tribe: a guest's mirror swings its staff or instrument when the host's member does (it stood with the item in the resting grip)");
 static uint32_t g_hold_sent, g_hold_rx, g_hold_bound;
 constexpr double kHoldBoundMax = 8.0;
+// BUG-0962: the host's hold is the truth for a mirror's hand too. A gesture's own event can take the item on the mirror
+// where the host's member does not take it (lab, the chief's 0x04C6CB02: the mirror held its staff for 1.66 s, the
+// host's member never; the same_view stills showed the staff in the hand on one game and upright on the other). Such a
+// hold (not bound to a host's hold, none of the host's known for the member) ends after kHoldUnsent s instead of
+// BUG-0906's 1.5 s; a hold the host's member also takes comes with the host's start 0.0-0.07 s after the mirror's own
+// (lab) and is bound then. `coop.fix tribe.mirror_hold_only off`: 1.5 s as before.
+static bool g_hold_only_fix = true;
+COOP_FIX("tribe.mirror_hold_only", "BUG-0962", g_hold_only_fix,
+         "tribe: a guest's mirror lets go of an item its own animation took when the host's member did not take it (the staff was in the hand on one game only)");
+constexpr double kHoldUnsent = 0.35;
+static uint32_t g_hold_only_ended;
 static void hold_try(GMember& g, double now);
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
@@ -985,7 +1016,12 @@ static void held_items_tick(double now)
                 g_hold_seen.erase(it);
         } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since)
             g_hold_seen[id] = {h, now};
-        else if (now - it->second.since >= kHoldMax) {
+        else if (g_hold_only_fix && g_mirror_hold_fix && !m.hold_bound && !m.hold_anim &&
+                 now - it->second.since >= kHoldUnsent) { // BUG-0962: no host hold for it
+            hold_modifier(c, true);
+            g_hold_seen.erase(it);
+            g_hold_only_ended++;
+        } else if (now - it->second.since >= kHoldMax) {
             uint32_t cur = 0;
             if (g_mirror_hold_fix && m.hold_bound && now - m.hold_at < kHoldBoundMax && game::drawn_state(c, nullptr, &cur) &&
                 cur == m.hold_anim_bound)
@@ -2024,9 +2060,95 @@ static void on_party(uint8_t kind, net::Reader& r)
     g_party_played++;
 }
 
+// BUG-0960: when every member of the player tribe is knocked out the game-over caption ("Alas! Your population has
+// fallen below the minimum ...") comes on the host only and stands the host's game (busy=cinematic,input_lock,paused)
+// until its player answers it; the guest's game showed nothing and played on against the paused host (its orders and
+// the mirrors' moves waited for a game that stood). Now the host tells the guests while its caption is up
+// (MSG_NPC_ANIM kind 20 {u8 up}, reliable, again every 3 s while up) and a guest's game stands too (the game's own
+// cGameTimeManager::Pause with the reason of the game's own UI modals 0x4BF38A7, docs/re/tribe.md#tribe-game-time-pauses) with a co-op note, until the
+// host's caption is gone (its OK reloads the tribe for everybody), the host's news stops for 10 s, or the stage or the
+// session ends. The guest's own caption is not shown: its OK would reload its own save (BUG-0685).
+// Old (`coop.fix tribe.gameover_wait off`): the guest plays on.
+static bool g_gameover_wait_fix = true;
+COOP_FIX("tribe.gameover_wait", "BUG-0960", g_gameover_wait_fix,
+         "tribe: a guest's game waits (paused, with a note) while the host's game-over caption is up");
+constexpr uint8_t kGameOverKind = 20;
+constexpr uint32_t kGameOverPause = 0x4BF38A7u; // (the game's UI-modal / hint reason; counted: balanced with ours)
+static bool g_go_host_up;       // host: its caption is up (last sent)
+static double g_go_host_sent = -100;
+static bool g_go_paused;        // guest: its game stands for the host's caption (one Pause of ours)
+static double g_go_news = -100; // guest: the host's last "up"
+static uint32_t g_go_sent, g_go_pauses, g_go_resumes;
+static bool player_tribe_out(void* t);
+
+static void* time_manager()
+{
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+static void gameover_pause(bool on, const char* why)
+{
+    static uintptr_t pause = H->sym("Simulator::cGameTimeManager::Pause"),
+                     resume = H->sym("Simulator::cGameTimeManager::Resume");
+    void* tm = time_manager();
+    if (on == g_go_paused || !tm || !pause || !resume)
+        return;
+    thiscall<int>(on ? pause : resume, tm, kGameOverPause);
+    g_go_paused = on;
+    (on ? g_go_pauses : g_go_resumes)++;
+    H->log(M, SK_INFO, "tribe: the host's game-over caption is %s: this game %s (BUG-0960, %s)", on ? "up" : "gone",
+           on ? "waits" : "goes on", why);
+    if (C.feed && C.sess)
+        C.feed(on ? "The tribe is out: waiting for " + C.sess->name_of(0) + " (host) to answer the caption"
+                  : C.sess->name_of(0) + " (host) answered: the game goes on");
+}
+
+// host, every send cycle: its caption is up (the input lock and the stood time in Tribe, entered with the player
+// tribe out: a knocked-out chief may stand up again under the caption, BUG-0922)
+static void gameover_host_tick(double now)
+{
+    if (!g_gameover_wait_fix || !C.sess)
+        return;
+    bool lock = coop_ui::input_lock_now() > 0 && world::time_paused();
+    bool up = g_go_host_up ? lock : lock && player_tribe_out(player_tribe());
+    if (up == g_go_host_up && (!up || now - g_go_host_sent < 3.0))
+        return;
+    g_go_host_up = up;
+    g_go_host_sent = now;
+    net::Writer w;
+    w.u8(kGameOverKind);
+    w.u8(up ? 1 : 0);
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+    g_go_sent++;
+}
+
+// guest, every tick (any mode): the wait ends with the stage, the session or the host's news
+static void gameover_guest_tick(double now)
+{
+    if (!g_go_paused)
+        return;
+    if (!C.sess || !C.sess->connected() || game::mode_id() != modes::kTribe)
+        gameover_pause(false, "the stage or the session ended");
+    else if (now - g_go_news > 10.0)
+        gameover_pause(false, "no news from the host for 10 s");
+}
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
+    if (kind == kGameOverKind) { // BUG-0960
+        bool up = r.u8() != 0;
+        if (!r.ok() || !g_ok || !is_guest())
+            return;
+        if (up)
+            g_go_news = H->time_seconds();
+        if (g_gameover_wait_fix && (!up || game::mode_id() == modes::kTribe))
+            gameover_pause(up, "the host's news");
+        return;
+    }
     if (kind == 8 && g_party_stop_fix && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-0890
         g_party_stops_outside++;
         on_party(kind, r);
@@ -2191,6 +2313,7 @@ static void host_tick(double now)
     if (now - g_last_send < 0.12)
         return;
     g_last_send = now;
+    gameover_host_tick(now); // BUG-0960
     baby_tick(now); // BUG-0671
     void* pt = player_tribe();
     auto tribes = all_tribes();
@@ -4854,6 +4977,8 @@ static void village_stamps_tick(double now)
 void tick(double now)
 {
     tribe_hunt_tick();
+    if (is_guest() || g_go_paused)
+        gameover_guest_tick(now); // BUG-0960 (also outside Tribe: the wait ends there)
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
     village_stamps_tick(now); // BUG-0947
@@ -5146,6 +5271,9 @@ std::string status()
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
     if (!g_last_local.empty())
         out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
+    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960); body cards off %u (BUG-0961); unsent holds ended %u (BUG-0962)\n",
+             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards, g_hold_only_ended);
+    out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
@@ -5157,11 +5285,16 @@ std::string status()
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;
-    for (auto& [o, c] : g_chief) {
-        auto it = g_chief_scale.find(c);
-        char sb[32];
-        snprintf(sb, sizeof sb, " %u:%.2f", o, it != g_chief_scale.end() && it->second > 0 ? game::scale(c) / it->second : 0.f);
-        scales += sb;
+    {
+        game::LiveScope live; // BUG-0919: a chief of the last tick is asked only when the game's list has it now
+        for (auto& [o, c] : g_chief) {
+            auto it = g_chief_scale.find(c);
+            char sb[32];
+            bool ok = !npc::entries_listed() || game::listed(c);
+            snprintf(sb, sizeof sb, ok ? " %u:%.2f" : " %u:gone", o,
+                     ok && it != g_chief_scale.end() && it->second > 0 ? game::scale(c) / it->second : 0.f);
+            scales += sb;
+        }
     }
     snprintf(b, sizeof b,
              "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u mirror_out_passed=%u fix_chiefs=%d "
@@ -6397,9 +6530,10 @@ COOP_FIX("tribe.sync_bodies", "BUG-0664", g_sync_bodies_fix,
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
+    game::LiveScope live; // BUG-0919 (one walk of the object list)
     if (C.sess && C.sess->role() == net::Role::Host) {
         for (auto& [c, h] : g_hm)
-            if (game::object_alive(c) && !(g_sync_bodies_fix && h.body_since != 0))
+            if ((npc::entries_listed() ? game::listed(c) : game::object_alive(c)) && !(g_sync_bodies_fix && h.body_since != 0))
                 v.push_back({"t" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, g] : g_gm)

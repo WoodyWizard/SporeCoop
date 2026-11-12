@@ -794,6 +794,10 @@ def main():
     t0, last_measure, n, ok = time.time(), 0, 0, True
     g.t0 = t0
     try:
+        for p in g.p:  # BUG-0924: each view on its own members first (the start view was a bare slope 21 m away)
+            own = [v['pos'] for v in tribe_state(p.con).values() if v['owner'] == p.pid and v['tribe'] == 'p']
+            if own:
+                p.look(tuple(sum(q[k] for q in own) / len(own) for k in range(3)))
         keyframe('start', 'both tribes at the village, the members on the ground with the same models and paints, the tribe panel in place')
         kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and ok:

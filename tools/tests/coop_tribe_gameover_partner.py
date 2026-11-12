@@ -99,7 +99,7 @@ def main():
             seen = time.time() - t1
         if up and not shot and seen is not None and time.time() - t1 > seen + 1:
             keyframe('caption', 'the host in the game-over caption ("Alas! Your population has fallen below the '
-                     'minimum..."), the guest in play: the caption must be closed by the play within seconds')
+                     'minimum..."), the guest in play: the caption must be closed by the play within seconds', settle=0)
             shot = True
         if int(time.time() - t1) % 3 == 0:
             print(f'    caption {up}: ' + ' '.join(chief_row(host)), flush=True)

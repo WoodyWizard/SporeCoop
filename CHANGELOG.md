@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- Galaxy menu: the Spore logo, the "Online Interactions Not Rated by the ESRB" line and the copyright line no longer
+  stay over the game after joining from the menu right after it came up (BUG-0938).
+- Tribe: while the host's tribe is out and the host's game shows "Alas! Your population has fallen below the
+  minimum", a guest's game waits with a note until the host answers, instead of playing on against a stopped
+  host (BUG-0960).
+- Tribe: a member that dies leaves the roster on the right of a guest's screen too; the guest kept its card for the
+  rest of the play (BUG-0961).
+- Tribe: a guest's copy of a member holds its staff or instrument in the hand only when the member does on the host;
+  in some gestures the copy held it for a second and a half on its own (BUG-0962).
 - Network: player names, LAN game names and planet names received from other players are cleaned to one line of
   printable text (control characters and broken text removed, names cut to 24 characters) before they are shown,
   logged or written to the co-op save slot (BUG-0774).

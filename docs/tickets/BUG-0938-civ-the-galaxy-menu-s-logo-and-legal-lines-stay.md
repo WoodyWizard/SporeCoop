@@ -1,19 +1,19 @@
 ---
 id: BUG-0938
 title: Civ: the galaxy menu's logo and legal lines stay on a guest's screen during play after a join from the menu (campaign_space)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-rest
+commits: d5d96134
+tests: menu_splash, creature_intro_camera
 signature:
-docs:
+docs: docs/re/creature.md#creature-menu-splash
 related: BUG-0626, BUG-0607
 ---
 
@@ -37,19 +37,33 @@ Severity: low to medium (a menu logo over play until the next stage change; a pl
 the menu in Civ or later in this run; the other campaign frames do not show it). Regression of 0.7.12: unknown.
 
 ## Root cause
-Not analysed. Inferred (medium): the menu's intro sequence shows these texts by its own timer about 16 s after
-the menu came up (docs/re/tribe.md#tribe-intro-camera: "GGE_intro" starts ~16 s after the menu even when the
-quick load left it). world.intro_at_once (BUG-0626) keeps the cinematic from starting outside the menu, but the
-text layer of the menu is shown by another path and nothing hides it in a stage. Why only one of two guests with
-the same log line: not known (a difference of a frame between the timer and the mode change).
+Proven (2026-11-12, fix/w48-rest; Ghidra and lab lanes 4 / 5, docs/re/creature.md#creature-menu-splash):
+* The texts are the galaxy menu's splash, not its intro cinematic: GalaxyGameEntry ([0x16A1344]) +0x204 holds a table
+  of 6 steps {window id, delay, time shown}: 0x0670A3F8 (0.1 s), **0x05B82B38 the legal lines (logo "galactic
+  adventures", "Online Interactions Not Rated by the ESRB", "(c) 2009 Electronic Arts Inc.", 4.1 s)**, 0x0670A3F8,
+  0x05BFDC38, 0x05BFDC68, 0x066F3C30. The splash update 0xDEAC80 shows a step's window and hides it when its time is
+  up; 0xDEA510 ends the splash (hides 0x06776FE0 / 0x06776FE1, deletes the layout). Both run only in the menu.
+* Leaving the menu does not hide a step that is up: with the legal lines up (put up as their step does, the game's
+  SetFlag(visible) on 0x05B82B38) and the join right after, the lines stood over the Creature play for the whole test
+  (key frame of out/lab/20261112-140450: the same logo, ESRB and copyright lines as Carol's frame). Carol joined 11 s
+  after her menu came up, inside the splash; Dave's join came at another step.
+* Not BUG-0626's hook: the intro cinematic and its "not started" line are another part of the menu (the guests in the
+  lab reach their menu after the splash: state 2, the legal lines never drawn in 28 s of polling).
 
 ## Fix
-Open.
+mods/coop/world.cpp `menu_splash_tick` / `hide_menu_splash`: once a second in a stage (not the menu, not a load),
+outside the frame, every window of the game's own splash table (and 0x06776FE0 / 0x06776FE1) that is drawn (visible
+with every parent) is hidden as its step's end hides it. The menu shows them again itself on the next visit.
+`coop.status`: "menu splash hidden N". Switch: `coop.fix world.menu_splash off`.
 
 ## Verification
-Open. How to test: a guest that joins 8 to 14 s after its galaxy menu came up (the lab's quick join), then
-`coop.ui find "ESRB"` (or the logo window's visible flag) 30 s into the stage on every game: must find nothing.
-Repeat 10 times: the frame above is 1 of 2 in this run. The key-frame review would catch it only by chance.
+Test `menu_splash` (tools/tests/coop_menu_splash.py, creature fixture, cold): the guest waits for its menu, the legal
+lines are put up, it joins at once; in the stage three times over 20 s the guest's own window tree: no splash window
+drawn (`coop.ui where` through visible parents), the host neither; key frame `stage`.
+FAIL (SPORE_FIX_OFF=world.menu_splash): out/lab/20261112-140450 (0x05B82B38 and 0x06776FE0 drawn at 3, 10, 17 s; the
+key frame shows the logo and the ESRB lines over the creature).
+PASS: out/lab/20261112-140452, out/lab/20261112-141206 (hidden 0.4 s into the stage, the frame clean).
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: the menu splash named (GalaxyGameEntry +0x204), a step left up by a join from the menu hidden in the stage (world.menu_splash), fix/w48-rest.

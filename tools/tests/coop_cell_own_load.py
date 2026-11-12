@@ -14,6 +14,9 @@ Then the host shares its world again (as an evolution or a manual share does): a
 guest's game plays its own cell again (its avatar's model), the host draws the same key for it, and
 the guest still eats.
 
+BUG-0915: the test sets the guest's record of this world (worlds.ini, the per-world rule of BUG-0345 / BUG-0638) and
+loads the world once more before the first checks.
+
 SPORE_FIX_OFF=creations.cell_reapply: the guest keeps the world's cell after the reload (must FAIL).
 SPORE_FIX_OFF=cell.puppet_index: the rebuilt avatar can sit at the old puppet's address and is taken
 for the puppet: its collision pairs are dropped (fails in about a third of the runs: the address).
@@ -90,6 +93,16 @@ def main():
     twoinst.PRESET_CHOICES = {'guest': {'cell': OTHER_CELL}}
     host, guest = start('cell')
     ck = Checks()
+    # BUG-0915: since BUG-0345 / BUG-0638 a guest plays its own (or chosen) cell only in a world it is recorded for
+    # (worlds.ini), else the world's species: the choice alone left the guest in the world's cell (0 own creations on
+    # the test profile). The guest's record for this world is set and the host's world loads once more, so the own
+    # cell comes with a world load, as for a player who played it in this world before (restored at the end).
+    if field(guest.call('coop.creations')['out'], r'avatar model ([0-9A-F]{8})') != OTHER_CELL:
+        print('  guest (this world\'s record):', guest.call(f'coop.creations worlds set cell {OTHER_CELL}')['out'].strip()[-120:],
+              flush=True)
+        print(' ', host.call('coop.worldfix queue 1 0')['out'].strip())
+        time.sleep(3)
+        ck(twoinst.wait_guest_in(host, guest), 'the guest is in the world after the load with its record')
     t0 = time.time()
     while time.time() - t0 < 40:
         gc = guest.call('coop.creations')['out']
@@ -130,6 +143,7 @@ def main():
     ck(puppet == model, f'the host draws the guest with the cell the guest plays ({puppet} / {model})')
     eaten, tried = eat_plants(guest, host)
     ck(tried >= 2 and eaten >= 2, f"after the reload the guest's game still eats plants ({eaten} of {tried})")
+    guest.call('coop.creations worlds set cell 0')  # (BUG-0915: the profile as it was)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

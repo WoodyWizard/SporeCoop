@@ -380,6 +380,7 @@ class Bot(Player):
             return 'no button'
         b = self.rng.choice(usable)
         r = btns[b]
+        sent0 = stat(civ_state(self.c)[2], 'cmds_sent') if self.id else 0  # (a guest's purchases go to the host)
         self.do(f'click {int((r[0] + r[2]) / 2)} {int((r[1] + r[3]) / 2)}')
         t0 = time.time()
         while time.time() - t0 < 6:
@@ -399,6 +400,13 @@ class Bot(Player):
                 # the host has no slot left although this player's button was enabled: it says so
                 self.g.bump('buy_refused')
                 return 'refused by the host (told)'
+            m1 = money(self.hc)
+            sent1 = stat(civ_state(self.c)[2], 'cmds_sent') if self.id else 0
+            if m0 is not None and m1 is not None and m1 < m0 and sent1 == sent0:
+                # BUG-0940: another player's purchase took the shared money between this player's look at the
+                # button and its click; this player's own game refused the click (a guest sent no purchase)
+                self.g.bump('buy_broke')
+                return f'the shared money ran out before the click (money {m0} -> {m1}, nothing sent)'
             self.g.problem(f'{self.name} bought a vehicle in city {ci} (button {b}) and the host made none '
                            f'(money {m0} -> {money(self.hc)})')
             self.g.bump('buy_lost')
@@ -869,6 +877,9 @@ def main():
     capture_max = {}
     owners0 = {i: c['pol'] for i, c in hcit.items()}
     try:
+        tm = time.time()  # BUG-0924: the session's money reaches the guest ~5 s after the gift: the frame after it
+        while time.time() - tm < 10 and abs((money(hc) or 0) - (money(gc) or -1)) > 1:
+            time.sleep(0.5)
         keyframe('start', 'both games in Civilization: the cities and vehicles with their real models (no default cubes), the Civ HUD in place')
         kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and not game.stop:

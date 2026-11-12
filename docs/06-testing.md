@@ -6638,3 +6638,38 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   host's clouds; its hp must stay. Read the guest's hp BEFORE the part is given: its clouds start within 2 s and hit a
   guest 3 m away at once. `--who host` (extended) is a regression check only (the game never hurt the host's avatar
   with a guest's clouds), `--ff` prints the old behaviour. `coop.pool` line `cell_partner_poison:` names the last hit.
+## Tests of B1c: leftovers of 0.7.12 (2026-11-12, fix/w48-rest)
+<a id="testing-w48-rest"></a>
+
+* Key frames wait for the games to settle (BUG-0924, [key frames](#testing-key-frames)): `twoinst.keyframe(...,
+  settle=None)` first waits (at most `SPORE_KEYFRAME_SETTLE` s, default 20; `settle=0`: at once) until no game of the
+  frame reports `busy:` cinematic, paused or loading in `coop.status`, nor an editor mode; a game still busy then is
+  named in the manifest's `extra` (`busy host: editor`), and a wait of 1 s or more too (`waited 6.1 s ...`). Frames
+  meant to show a busy moment pass `settle=0` (tribe_gameover_partner's and tribe_gameover_wait's `caption`,
+  tribe_roster_cards). Each wait polls its own console connections (a bot thread may be using the test's). play_tribe
+  turns each player's view to its own members before its `start` frame (it showed a bare slope 21 m away), play_civ
+  shoots `start` after the session's money reached the guest. Test `keyframe_settle` (the guest's pause menu open
+  6 s while a frame is asked for).
+<a id="testing-civ-buy-race"></a>
+* play_civ `buy` (BUG-0940): a purchase whose click came after another player took the last shared money is counted
+  `buy_broke` (no vehicle, the city still the player's, nothing refused by the host, the money below the price-time
+  value, no purchase sent by a guest: its own game refused the click), not a PROBLEM. `civ_buy_race` makes the race
+  with play_civ's own Bot (a subclass spends the host's money between the bot's look at the button and its click).
+* `stale_last_attacker` (BUG-0930): the NPC the puppet hit last (creature +0x5D0) after `coop.puppet respawn`, and the
+  destroyed block's vtable (0x146A080) read every 0.1 s: freed within 6 s with the fix. `coop.staleref` now sizes the
+  AI block 0x670 and lists the creature's cModifiers block (+0xB48) as its own kind `modifiers`.
+* `menu_splash` (BUG-0938): cold, `twoinst.start(join_at=0.5, before_join=...)`: the guest's menu legal lines are put
+  up (`coop.ui show <window> 1`) and it joins at once; the lab's guests reach their menu after the splash (polled 28 s:
+  never drawn), so the natural moment is not reached by the lab's quick join.
+* `tribe_gameover_wait` (BUG-0960): `coop.tribe pincer <id> <npc> 5000` on every player-tribe member; the host's
+  caption came after 14 s in both runs; `busy: paused` on the guest is the game's own time manager.
+* `tribe_roster_cards` (BUG-0961): the roster's card count is the size of the game UI's map ([0x169B2C8]+0x240 ->
+  +0xA8), compared with `coop.tribe`'s member count on each game.
+* `tribe_hold_only` (BUG-0962): both games' `coop.tribe anims` rows of the host's chief from two threads at ~20 Hz; a
+  hold of the mirror's own = no host hold within 0.3 s of it. One came in the first 120 s window in the runs seen.
+* `creature_far_family` (BUG-0932, a probe): the guest's `coop.npc gopos` 64-88 m from the nest and back, 4 rounds;
+  the host's standing family NPCs (`coop.npc list`, `family`, spd 0) against the guest copies' `at=`; `--host-off 23`
+  puts the host's creature 23 m from the nest first (the report's distance).
+* `cell_own_load` (BUG-0915): since BUG-0345 / BUG-0638 a choice (choices.ini) holds only in a world recorded for it
+  (worlds.ini); the test sets the guest's record (`coop.creations worlds set cell <inst>`), loads the world again
+  (`coop.worldfix queue 1 0`) and restores the record at the end.
