@@ -1064,6 +1064,12 @@ void armada_tick(double t)
 }
 
 // ---- host: the survey ----
+// BUG-0830: a player may join the crew while the contract runs (3-4 players), and a target counted only with EVERY
+// crew member at the star: a late member who stayed home made the contract time out for everybody. Now a target counts
+// with as many crew members there as the contract needs. `coop.fix space.survey_needed off`: every member (0.7.12).
+static bool g_survey_needed_fix = true;
+COOP_FIX("space.survey_needed", "BUG-0830", g_survey_needed_fix,
+         "space contracts: a survey target counts when as many crew members as needed are there, not every member");
 void survey_tick(double dt)
 {
     bool changed = false;
@@ -1074,9 +1080,14 @@ void survey_tick(double dt)
         if (tg.done)
             continue;
         bool all = !g.crew.empty();
+        size_t there = 0;
         for (uint8_t id : g.crew)
             if (star_of_player(id) != tg.star)
                 all = false;
+            else
+                there++;
+        if (g_survey_needed_fix)
+            all = there > 0 && there >= std::min<size_t>(g.needed, g.crew.size());
         g_hold[i] = all ? g_hold[i] + dt : 0;
         if (g_hold[i] >= kHold) {
             tg.done = 1;
