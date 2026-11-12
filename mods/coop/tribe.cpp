@@ -982,6 +982,17 @@ static bool g_mirror_hold_fix = true;
 COOP_FIX("tribe.mirror_hold", "BUG-0914", g_mirror_hold_fix, "tribe: a guest's mirror swings its staff or instrument when the host's member does (it stood with the item in the resting grip)");
 static uint32_t g_hold_sent, g_hold_rx, g_hold_bound;
 constexpr double kHoldBoundMax = 8.0;
+// BUG-0962: the host's hold is the truth for a mirror's hand too. A gesture's own event can take the item on the mirror
+// where the host's member does not take it (lab, the chief's 0x04C6CB02: the mirror held its staff for 1.66 s, the
+// host's member never; the same_view stills showed the staff in the hand on one game and upright on the other). Such a
+// hold (not bound to a host's hold, none of the host's known for the member) ends after kHoldUnsent s instead of
+// BUG-0906's 1.5 s; a hold the host's member also takes comes with the host's start 0.0-0.07 s after the mirror's own
+// (lab) and is bound then. `coop.fix tribe.mirror_hold_only off`: 1.5 s as before.
+static bool g_hold_only_fix = true;
+COOP_FIX("tribe.mirror_hold_only", "BUG-0962", g_hold_only_fix,
+         "tribe: a guest's mirror lets go of an item its own animation took when the host's member did not take it (the staff was in the hand on one game only)");
+constexpr double kHoldUnsent = 0.35;
+static uint32_t g_hold_only_ended;
 static void hold_try(GMember& g, double now);
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
@@ -1005,7 +1016,12 @@ static void held_items_tick(double now)
                 g_hold_seen.erase(it);
         } else if (it == g_hold_seen.end() || it->second.handle != h || now < it->second.since)
             g_hold_seen[id] = {h, now};
-        else if (now - it->second.since >= kHoldMax) {
+        else if (g_hold_only_fix && g_mirror_hold_fix && !m.hold_bound && !m.hold_anim &&
+                 now - it->second.since >= kHoldUnsent) { // BUG-0962: no host hold for it
+            hold_modifier(c, true);
+            g_hold_seen.erase(it);
+            g_hold_only_ended++;
+        } else if (now - it->second.since >= kHoldMax) {
             uint32_t cur = 0;
             if (g_mirror_hold_fix && m.hold_bound && now - m.hold_at < kHoldBoundMax && game::drawn_state(c, nullptr, &cur) &&
                 cur == m.hold_anim_bound)
@@ -5255,8 +5271,8 @@ std::string status()
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
     if (!g_last_local.empty())
         out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
-    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960); body cards off %u (BUG-0961)\n",
-             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards);
+    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960); body cards off %u (BUG-0961); unsent holds ended %u (BUG-0962)\n",
+             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards, g_hold_only_ended);
     out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)

@@ -12,7 +12,7 @@ place its copy has in the guest's game (`at=`, read from the copy itself). Check
 more than 3 m from its copy in two samples 1 s apart or more (the sync-check's rule: 2 checks 3 s apart), and no
 fault.
 
-  SPORE_LANE=4 python3 tools/tests/coop_creature_far_family.py [--rounds 4] [--far 80]
+  SPORE_LANE=4 python3 tools/tests/coop_creature_far_family.py [--rounds 4] [--far 80] [--host-off 23]
 """
 import argparse
 import math
@@ -64,6 +64,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=4)
     ap.add_argument('--far', type=float, default=80.0)
+    ap.add_argument('--host-off', type=float, default=0.0, help='the host stands this far from the nest (the report: 23 m)')
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
@@ -71,6 +72,11 @@ def main():
     fam = family(host)
     nest = avatar_pos(host)
     print(f'  host family {fam}, nest (host) at {nest}', flush=True)
+    if a.host_off:
+        hp = away_point(nest, -a.host_off)
+        host.call('coop.npc gopos %.2f %.2f %.2f' % tuple(hp))
+        time.sleep(8)
+        print(f'  the host {math.dist(avatar_pos(host) or nest, nest):.0f} m from the nest', flush=True)
     rows = host_rows(host)
     fams = [i for i, r in rows.items() if r[2]]
     ck(fams, f'family NPCs on the host ({fams})')
