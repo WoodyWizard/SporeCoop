@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -1932,6 +1933,44 @@ void set_speed(void* c, float speed) { vcall<void>(spatial(c), 0xC4 / 4, speed, 
 
 float scale(void* c) { return vcall<float>(spatial(c), 0x34 / 4); }       // GetScale
 float bounding_radius(void* c) { return vcall<float>(spatial(c), 0x70 / 4); } // GetBoundingRadius
+// GetBoundingBox (spatial vt 0x68, docs/re/tribe.md#tribe-item-size): min x y z, max x y z (BUG-0929)
+// BUG-0929: the highest bone of the creature's current pose, model space (z up, before the creature's scale); -1 when
+// the creature has no animated model. Anim::AnimatedCreature (creature +0xB54) +0x17C -> the model, its bone array
+// +0x2E4..+0x2E8 (700 bytes a bone, docs/re/creature.md), each bone's posed position at +0x10 (runtime 2026-11-12: the
+// fixture's red creature, 24 bones, the head bone at z 0.96-1.00 while it idles, the rest-pose box 1.50 high)
+float posed_top(void* c)
+{
+    if (!c || !skg::readable(c, 0xB58))
+        return -1.f;
+    uint8_t* ac = field<uint8_t*>(c, 0xB54);
+    if (!ac || !skg::readable(ac, 0x180))
+        return -1.f;
+    uint8_t* model = *(uint8_t**)(ac + 0x17C);
+    if (!model || !skg::readable(model, 0x2EC))
+        return -1.f;
+    uint8_t *b0 = *(uint8_t**)(model + 0x2E4), *b1 = *(uint8_t**)(model + 0x2E8);
+    if (!b0 || b1 <= b0 || (b1 - b0) % 700 || (b1 - b0) / 700 > 256 || !skg::readable(b0, (size_t)(b1 - b0)))
+        return -1.f;
+    float top = -1e9f;
+    for (uint8_t* b = b0; b < b1; b += 700) {
+        float z = *(float*)(b + 0x18);
+        if (std::isfinite(z))
+            top = std::max(top, z);
+    }
+    return top > -1e8f ? top : -1.f;
+}
+
+bool bounding_box(void* c, float out[6])
+{
+    const float* b = vcall<const float*>(spatial(c), 0x68 / 4);
+    if (!b || !skg::readable(b, 24))
+        return false;
+    for (int i = 0; i < 6; i++)
+        if (!std::isfinite(b[i]))
+            return false;
+    memcpy(out, b, 24);
+    return true;
+}
 float ground_radius(const net::Vec3& pos)
 {
     static uintptr_t get = H->sym("Simulator::cPlanetModel::Get"), height = H->sym("Simulator::cPlanetModel::GetHeightAt");

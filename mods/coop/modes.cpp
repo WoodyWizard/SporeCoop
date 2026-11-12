@@ -502,7 +502,33 @@ void own_ground_tick(double now)
     g_own_grounded++;
 }
 
-static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
+// BUG-0929: a partner's name tag stood 1 m and more over its creature (the creature fixture's red species: the tag at
+// 2.08 m, the body's top in the picture at 1.07 m): its height came from the bounding radius (1.37 m), and the model's
+// box (spatial vt 0x68) is the rest pose (1.50 m x the scale 1.15, the creature stands crouched lower). On: the
+// highest bone of the creature's current pose (game::posed_top: 0.96-1.00 for that creature) times its scale plus a
+// margin for the head over its bone; the old height when the creature has no posed model. Off: radius * 1.3 + 0.3
+// (0.7.12).
+bool g_tag_height_fix = true;
+COOP_FIX("creature.tag_height", "BUG-0929", g_tag_height_fix, "creature: a partner's name tag stands just over its creature's head (its pose's top), not a metre and more above it");
+static char g_tag_info[256];
+static float creature_tag(void* p)
+{
+    float r = game::bounding_radius(p), old = r * 1.3f + 0.3f, b[6] = {0, 0, 0, 0, 0, 0};
+    float sc = game::scale(p);
+    if (!std::isfinite(sc) || sc < 0.01f)
+        sc = 1.f;
+    bool box = game::bounding_box(p, b);
+    float bone = game::posed_top(p);
+    float top = bone > 0.05f ? bone * sc : -1.f;
+    float h = old;
+    if (g_tag_height_fix && top > 0.f && top < old * 2.f)
+        h = top + 0.4f;
+    snprintf(g_tag_info, sizeof g_tag_info,
+             "tagh fix=%d h=%.2f old=%.2f radius=%.2f scale=%.3f bone_top=%.2f top=%.2f box=%d box_max_z=%.2f",
+             (int)g_tag_height_fix, h, old, r, sc, bone, top, (int)box, b[5]);
+    return h;
+}
+std::string tag_info() { return g_tag_info; }
 
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);

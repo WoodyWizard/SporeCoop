@@ -6549,3 +6549,31 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
 * `tools/pe_version.py --expect X.Y.Z <files>` (BUG-0784, in tools/package.sh): every release binary has a
   VERSIONINFO of the version. `--repro-sha256`: two builds of one commit in different folders give equal values
   (the raw files differ in 10 bytes: two time stamps and the CodeView GUID).
+## Labels and portraits: tag_camera, tag_height, find_layout, hud_portrait (2026-11-12, fix/w48-labels)
+<a id="testing-labels-b1b"></a>
+
+BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture, the guest's screen, ~1-1.5 min each.
+* `tag_camera` (`coop_tag_camera.py --limit 0`, suite full now): see [the camera turn](#testing-labels-camera-turn).
+  The tag's colour is picked first: shots with the name tags off at rest and after a turn each way, the host takes
+  the palette colour (not red, blue or pink) the scene has fewest pixels of, purple and cyan first on a tie
+  (`coop.find color`; put back at the end; orange matched the leaves of a tree the calibration did not see, lab
+  20261112-124933).
+  A guest creature with yellow stripes was read as the yellow tag, the mating call's pink hearts as a pink one. A
+  turn shot counts as over the body when the tag's middle is within the columns of the red creature nearest to it
+  (a close creature is wide: its middle is not where its head is; its columns may have shaded gaps up to 80 px). `kit.cam` (SporeKit) prints how often and how far
+  the live viewer was off the drawn camera; with the fix 120 overlay passes of a run's turns differ, 0 at rest.
+* `tag_height` (`coop_tag_camera.py --turns 0 --gap 0.7`): the gap between the tag's lowest row and the top of the
+  partner's body in the shots at rest, in metres by the game's own projection (`coop.find project` of the partner's
+  point and 1 m over it). The body's top is walked up from the partner's own projected point: a scan down from the
+  tag took the red eyes of a background NPC for the body (an off run passed, lab 20261112-123541). 0.43 m with the
+  fix, 1.04 m without.
+* `find_layout` (`coop_find_layout.py`): made-up partners (`coop.find ghost <id> x y z [name]`) placed with the guest's
+  camera axes and the game's screen ray of a pixel (`coop.cam <x> <y>`): two arrows in one direction, one tag under the
+  minimap (window 0x0190722E), one under a message card (`coop.say` on the host), one just above the bottom bar.
+  `coop.find boxes` lists the labels as drawn and the UI boxes; the shot is checked for the hidden tag's colour inside
+  the minimap. Ghost ids 5 (purple, the colour of id 5 without a table entry), 201, 202, 206, 207.
+* `hud_portrait` (`coop_hud_portrait.py`): `coop.portrait` (same=1: the portrait window's image is the game's image of
+  the avatar's species png) and the portrait's rectangle (`coop.ui where 03D99151`) cut from shots before and after
+  `coop.creations next creature`.
+* FAIL / PASS runs: in the tickets. Pitfall: a lab run with several switches in `SPORE_FIX_OFF` turns them all off for
+  every test of the run; the tickets name runs with only the ticket's switch off.

@@ -4313,3 +4313,28 @@ GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and lanes 6 / 7 (creature fi
   host, and at the host's next nest), so row 11 of wsync (s_nest) starts no migration while the host's state is 1 / 2;
   the guest's starts after the host's claim, compared with the host's new home. ? [0x167EA30] is not the guest
   avatar's position after a `coop.npc gopos` (its home won while it stood at the other nest).
+
+## A creature's posed height and the HUD portrait (2026-11-12, fix/w48-labels)
+<a id="creature-posed-top-portrait"></a>
+
+BUG-0929, BUG-0937. GOG 2024, lane 4.
+* ✔ (runtime) The posed bones: `creature +0xB54` (Anim::AnimatedCreature) `+0x17C` -> model, bone array
+  `+0x2E4 .. +0x2E8`, 700 bytes a bone; each bone's current position in model space (z up, before the creature's scale)
+  is at `+0x10 / +0x14 / +0x18` (they move between two reads 0.7 s apart while it idles). The creature fixture's red
+  species: 24 bones, the highest (the head) at z 0.91-1.02; its top in the picture 1.07 m over its position (projected
+  heights by `coop.find project`), the scale 1.15.
+* ✔ (runtime) The spatial object's box (vt 0x68, min x y z / max x y z) is the rest pose: -0.78 -0.84 0.00 / 0.78
+  0.84 1.50 for that creature (1.73 m with the scale, while it stands 1.07 m high); the bounding radius (vt 0x70) 1.37.
+  Neither is the height a player sees. No world-space box was found in the creature, its AnimatedCreature or the
+  animated model (negative result: scans for triples within 4 m of the position).
+* ✔ (Ghidra) The Creature HUD refresh 0xD2C000 sets the portrait: `GlobalUI_FindWindowByID(0x03D99151)`,
+  `UTFWin::Image::SetBackgroundByKey(window, {avatar +0xB20 -> +0x504, 0x2F7D0004, +0x50C}, -1)` (the avatar's
+  species png); 0xE21E30 / 0xE21E80 (another UI object, its +0xD4 layout) set / clear the same window id with a key of
+  their own. `cCreatureBase::SetSpecies` does not run the refresh: after the mod's body swap the avatar's species key
+  changes (lab: 290225CD -> 290217AC after `coop.creations next creature`) and the portrait stays.
+* ✔ (runtime) The window's drawable is a UTFWin::ImageDrawable (vtable 0x01443248) with its UTFWin::Image at +0x24
+  (that object has the portrait's size 67 x 68 at +0x20 / +0x24); `UTFWin::Image::GetImage` of a key gives the game's
+  one Image of that png, so comparing the two pointers says which picture the window draws (`coop.portrait`).
+* Fixes: `creature.tag_height` (the tag at the highest posed bone x scale + 0.4 m: 1.55 m for that creature instead of
+  2.08 m), `creature.hud_portrait` (twice a second outside the frame: the portrait set to the avatar's species png
+  when the window draws another one).

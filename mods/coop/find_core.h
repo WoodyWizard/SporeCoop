@@ -260,4 +260,93 @@ inline bool map_place(float ex, float ny, float scale, float r_px, float& px, fl
     return true;
 }
 
+// ---- the labels kept apart and off the HUD (BUG-0949) ----
+// Every world label of an overlay pass (a partner's name tag, an arrow with its label, the Tribe / Civ owner tags) is a
+// box in screen pixels. The pass places them in order (the first keeps its place best): each takes the first of its
+// shifts (none, then one step, two steps, ... each way along its slide) whose box stays on the screen and touches
+// neither a label placed before it nor a HUD box (the game's UI windows: the minimap, the bottom bar, the portrait,
+// notification cards, the co-op status block). A label that finds no free place is hidden, and so is a tag whose
+// anchor (the point it stands for) is under a HUD box: its object is behind the HUD.
+struct Box {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+};
+inline bool touch(const Box& a, const Box& b, float pad = 0)
+{
+    return a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
+}
+inline bool inside(float x, float y, const Box& b) { return x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1; }
+
+enum class Slide : uint8_t { Up, Vertical, Horizontal };
+struct LabelIn {
+    Box box;             // where it would be drawn without the layout
+    float ax = 0, ay = 0; // its anchor (tags: the projected point; arrows: the tip)
+    Slide slide = Slide::Up;
+    bool anchor_rule = false; // hide when the anchor is under a HUD box (tags)
+};
+struct LabelOut {
+    float dx = 0, dy = 0;
+    bool hidden = false;
+    int why = 0;         // hidden: 1 anchor under the HUD, 2 no free place
+};
+
+// the shift of try k (0: none; then +1, -1, +2, -2, ... steps; Up: -1, +1, -2, +2 ... (up first))
+inline float shift_of(int k, float step, bool up_first)
+{
+    if (k == 0)
+        return 0;
+    int n = (k + 1) / 2;
+    bool first = k % 2 == 1;
+    float s = n * step;
+    return up_first ? (first ? -s : s) : (first ? s : -s);
+}
+
+inline void layout(const LabelIn* in, int n, const Box* hud, int nhud, int sw, int sh, LabelOut* out, int max_steps = 6,
+                   float pad = 2.f)
+{
+    Box placed[256];
+    int np = 0;
+    for (int i = 0; i < n; i++) {
+        const LabelIn& L = in[i];
+        LabelOut& o = out[i];
+        o = LabelOut{};
+        if (L.anchor_rule)
+            for (int h = 0; h < nhud; h++)
+                if (inside(L.ax, L.ay, hud[h])) {
+                    o.hidden = true;
+                    o.why = 1;
+                }
+        if (o.hidden)
+            continue;
+        float w = L.box.x1 - L.box.x0, hgt = L.box.y1 - L.box.y0;
+        bool horiz = L.slide == Slide::Horizontal;
+        float step = horiz ? w * 0.5f + pad * 2 : hgt + pad * 2;
+        bool found = false;
+        for (int k = 0; k <= max_steps * 2 && !found; k++) {
+            float d = shift_of(k, step, L.slide == Slide::Up);
+            Box b = L.box;
+            if (horiz)
+                b.x0 += d, b.x1 += d;
+            else
+                b.y0 += d, b.y1 += d;
+            if (b.x0 < 0 || b.y0 < 0 || b.x1 > sw || b.y1 > sh)
+                continue;
+            bool free = true;
+            for (int h = 0; h < nhud && free; h++)
+                free = !touch(b, hud[h]);
+            for (int j = 0; j < np && free; j++)
+                free = !touch(b, placed[j], pad);
+            if (free) {
+                found = true;
+                (horiz ? o.dx : o.dy) = d;
+                if (np < 256)
+                    placed[np++] = b;
+            }
+        }
+        if (!found) {
+            o.hidden = true;
+            o.why = 2;
+        }
+    }
+}
+
 } // namespace findx

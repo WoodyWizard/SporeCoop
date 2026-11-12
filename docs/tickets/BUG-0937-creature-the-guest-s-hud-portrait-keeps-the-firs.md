@@ -1,19 +1,19 @@
 ---
 id: BUG-0937
 title: Creature: the guest's HUD portrait keeps the first species after its own creature changed or after the host's evolution in creature.mode host
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-labels
+commits: bcaf0792 a98f2cb7 79858616
+tests: hud_portrait
 signature:
-docs:
+docs: docs/re/creature.md#creature-posed-top-portrait
 related: BUG-0920, BUG-0928, BUG-0923
 ---
 
@@ -36,18 +36,25 @@ Regression of 0.7.12: probably not (the portrait is the game's; before the BUG-0
 black at this frame, so it could not be seen in 20261111-044257).
 
 ## Root cause
-Not analysed. Inferred (medium): the mod swaps the model of the guest's avatar (own creature, or the host's new
-one) without changing what the game takes the portrait from (the player's species thumbnail, made when the stage
-was entered), and nothing asks the HUD to draw it again. The Tribe roster's pictures had a similar source
-(BUG-0921: the creation bundle's PNG).
+Found 2026-11-12 (fix/w48-labels, Ghidra + lane 4): the portrait window 0x03D99151 is set only by the Creature HUD
+refresh 0xD2C000 (`UTFWin::Image::SetBackgroundByKey` with the png {avatar +0xB20 -> +0x504, 0x2F7D0004, +0x50C}).
+The mod's body swaps (`cCreatureBase::SetSpecies` on the avatar) change the avatar's species key (lab: 290225CD ->
+290217AC) and never run that refresh.
 
 ## Fix
-Open.
+Fixed 2026-11-12 (fix/w48-labels), switch `creature.hud_portrait` (hud_portrait.cpp): in Creature, twice a second outside
+the frame, when the window's image (its ImageDrawable +0x24) is not the game's image of the avatar's species png, the
+game's SetBackgroundByKey sets it. Off: as before (0.7.12).
 
 ## Verification
-Open. How to test: appeared_once and one_creature: after the swap compare the HUD portrait of the guest with the
-one of a game that plays that creature from the start (a golden image of the portrait window, or the image key
-the window holds read by `coop.ui`). FAIL today on both.
+`hud_portrait` (`coop_hud_portrait.py`, creature): the guest changes its creature (`coop.creations next creature`);
+within 8 s the window's image is the png of the new species (`coop.portrait` same=1) and the portrait in a shot
+changed (mean difference over 12 of 255; 56 with the fix, 0 without).
+* FAIL (`SPORE_FIX_OFF=creature.hud_portrait`): out/lab/20261112-123755.
+* PASS: out/lab/20261112-122824, out/lab/20261112-123359-2.
+* The creature.mode host case (the host's evolved creature) goes through the same check; one_creature runs in the
+  final check of this branch, not with a portrait assertion.
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: fixed on fix/w48-labels (creature.hud_portrait), hud_portrait FAIL 20261112-123755, PASS 20261112-122824 and 20261112-123359-2.

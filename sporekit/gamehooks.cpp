@@ -1,6 +1,11 @@
 // Game lifecycle hooks and a few game-aware helpers used by the devkit.
 #include "core.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+
 #include "../sdk/include/sporekit_game.hpp"
 
 using namespace skg;
@@ -138,33 +143,121 @@ const char* game_mode_name(uint32_t id)
 // cViewer (IGameModeManager vtable 0x58): +0x00 camera-to-world matrix, rows are
 // right, forward, up, position. cViewer+0x170 -> Camera: viewWindow (half size at
 // distance 1) at +0x5C, D3DVIEWPORT9 at +0x78. See docs/05-re-notes.md.
-int world_to_screen_game(const float* w, float* out)
+struct GameView {
+    float V[16];
+    float vw[2];
+    uint32_t vp[4];
+};
+
+static bool read_view(GameView& g)
 {
     uintptr_t get = sym("App::IGameModeManager::Get");
     if (!get)
-        return 0;
+        return false;
     void* mm = cdecl_call<void*>(get);
-    void* viewer = mm ? vcall<void*>(mm, 0x58 / 4) : nullptr;
-    if (!viewer)
-        return 0;
-    const float* V = (const float*)viewer;
+    if (!mm || !readable(mm, 4) || !readable(*(void**)mm, 0x5C))
+        return false;
+    void* viewer = vcall<void*>(mm, 0x58 / 4);
+    if (!viewer || !readable(viewer, 0x174))
+        return false;
     const float* cam = field<const float*>(viewer, 0x170);
-    if (!cam)
-        return 0;
+    if (!cam || !readable(cam, 0x88))
+        return false;
+    memcpy(g.V, viewer, sizeof g.V);
+    g.vw[0] = cam[0x5C / 4], g.vw[1] = cam[0x60 / 4];
+    memcpy(g.vp, &cam[0x78 / 4], sizeof g.vp);
+    return true;
+}
+
+static int project_view(const GameView& g, const float* w, float* out)
+{
+    const float* V = g.V;
     float d[3] = {w[0] - V[12], w[1] - V[13], w[2] - V[14]};
     float x = d[0] * V[0] + d[1] * V[1] + d[2] * V[2];
     float z = d[0] * V[4] + d[1] * V[5] + d[2] * V[6];
     float y = d[0] * V[8] + d[1] * V[9] + d[2] * V[10];
     if (z < 0.1f)
         return 0;
-    float vwx = cam[0x5C / 4], vwy = cam[0x60 / 4];
-    const uint32_t* vp = (const uint32_t*)&cam[0x78 / 4];
+    float vwx = g.vw[0], vwy = g.vw[1];
+    const uint32_t* vp = g.vp;
     if (vwx <= 0 || vwy <= 0 || !vp[2] || !vp[3])
         return 0;
     float nx = x / (z * vwx), ny = y / (z * vwy);
     out[0] = vp[0] + (nx + 1.f) * 0.5f * vp[2];
     out[1] = vp[1] + (1.f - ny) * 0.5f * vp[3];
     return nx > -1.2f && nx < 1.2f && ny > -1.2f && ny < 1.2f;
+}
+
+int world_to_screen_game(const float* w, float* out)
+{
+    GameView g;
+    if (!read_view(g))
+        return 0;
+    return project_view(g, w, out);
+}
+
+// ---- BUG-0948: the camera the frame was drawn with ----
+// The overlay pass runs in Present after the game drew the frame. While the camera turned, the name tags stood 230 px
+// and more beside their creature or over empty ground: the game draws a frame with the viewer as it was at the frame
+// before's Present (every D3D view matrix it set in a frame was that viewer, lab 2026-11-12 lane 4: kit.cam) and moves
+// the viewer to the next camera step before Present, so the viewer read in the overlay pass is one step ahead of the
+// picture. The viewer is copied at the game's first SetTransform(VIEW) after a Present (d3d9hook.cpp), and the overlay
+// pass projects with that copy. `kit.fix drawncam 0`: the viewer at Present, as before.
+static GameView g_drawn;
+static bool g_drawn_ok;
+static uint64_t g_drawn_takes, g_drawn_frames, g_drawn_moved;
+static float g_drawn_last_px, g_drawn_max_px;
+
+void drawn_view_take()
+{
+    g_drawn_ok = read_view(g_drawn);
+    g_drawn_takes++;
+}
+void drawn_view_drop() { g_drawn_ok = false; }
+
+// at the overlay pass: how far the viewer at Present is from the copy (kit.cam): a point 10 m ahead of the copy and off
+// its middle (the orbit camera looks at the avatar: a point straight ahead stays in the middle), projected with both
+void drawn_view_measure()
+{
+    if (!g_drawn_ok)
+        return;
+    GameView now;
+    if (!read_view(now))
+        return;
+    g_drawn_frames++;
+    const float* V = g_drawn.V;
+    float p[3], a[2] = {0, 0}, b[2] = {0, 0};
+    for (int i = 0; i < 3; i++)
+        p[i] = V[12 + i] + V[4 + i] * 10.f + V[i] * 3.f + V[8 + i] * 2.f;
+    project_view(g_drawn, p, a);
+    if (!project_view(now, p, b) && memcmp(now.V, g_drawn.V, sizeof now.V)) {
+        g_drawn_moved++;
+        g_drawn_last_px = 1e4f;
+        return;
+    }
+    float d = std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
+    g_drawn_last_px = d;
+    if (d > 0.5f)
+        g_drawn_moved++;
+    g_drawn_max_px = std::max(g_drawn_max_px, d);
+}
+
+std::string drawn_view_text(bool reset)
+{
+    char b[320];
+    snprintf(b, sizeof b, "drawncam fix=%d copies=%llu overlay_frames=%llu moved=%llu last_px=%.1f max_px=%.1f have=%d",
+             (int)fixed(g_fix_drawncam), (unsigned long long)g_drawn_takes, (unsigned long long)g_drawn_frames,
+             (unsigned long long)g_drawn_moved, g_drawn_last_px, g_drawn_max_px, (int)g_drawn_ok);
+    if (reset)
+        g_drawn_frames = g_drawn_moved = 0, g_drawn_max_px = 0;
+    return b;
+}
+
+int world_to_screen_drawn(const float* w, float* out)
+{
+    if (!g_drawn_ok)
+        return world_to_screen_game(w, out);
+    return project_view(g_drawn, w, out);
 }
 
 bool cheat_exec(const char* line)

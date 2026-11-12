@@ -1,19 +1,19 @@
 ---
 id: BUG-0949
 title: Find each other: partner arrows and name tags are drawn over each other, over notification cards and over the minimap and the bottom bar (unreadable labels)
-status: open
+status: fixed
 kind: bug
 stage: Core
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-151535
 role: host,guest
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-labels
+commits: a98f2cb7 79858616
+tests: find_layout
 signature:
-docs: docs/08-ui.md#ui-find-each-other
+docs: docs/08-ui.md#ui-label-layout
 related: BUG-0155, BUG-0929
 ---
 
@@ -37,18 +37,24 @@ frames). Regression of 0.7.12: the arrows are from 0.7.10; the chief arrows in T
 players' colours are 0.7.12, so with 3-4 players there are more labels than before. Not compared with 0.7.11 frames.
 
 ## Root cause
-Inferred from the frames, the code not read: each arrow sits where its direction meets the screen edge and each tag
-at the projected point; there is no pass that moves labels apart, keeps them out of the HUD rectangles (the minimap,
-the bottom bar, the notification column) or hides a tag whose point is under the HUD.
+Confirmed in the code (2026-11-12): every tag and arrow was drawn at once where its projection fell
+(coop.cpp on_overlay, draw_owner_tags, draw_civ_tags, find.cpp draw_arrows); nothing knew the other labels or the
+game's UI windows.
 
 ## Fix
-Open.
+Fixed 2026-11-12 (fix/w48-labels), switch `find.layout`: the labels of an overlay pass are queued and placed together
+(findx::layout, docs/08-ui.md#ui-label-layout): apart, off the game's UI windows (read outside the frame twice a second)
+and the co-op status block; a tag whose point is under the HUD is hidden. Off: where each falls (0.7.12).
 
 ## Verification
-Open. How to reproduce: 3-4 players, two partners in nearly the same direction off screen (Tribe: their chiefs
-60-120 m away the same way); a partner whose arrow lands in the top right corner while a notification is up; Civ:
-a partner's vehicles at the bottom left of the view. A test: `coop.find` rows' screen boxes must not intersect each
-other or the HUD boxes (ui_golden could carry a frame with two partners in one direction).
+`find_layout` (`coop_find_layout.py`, creature): made-up partners (`coop.find ghost`) at the places of the report on
+the guest's screen; the labels as drawn (`coop.find boxes`) must touch neither each other nor a UI window, the tags
+under the minimap and a message card hidden, the one over the bottom bar moved, no tag colour in the minimap in the shot.
+* FAIL (`SPORE_FIX_OFF=find.layout`): out/lab/20261112-123659 (the two arrow labels over each other, a tag on the
+  minimap: 95 px of its colour there, a tag on a card, one on the bar).
+* PASS: out/lab/20261112-122824, out/lab/20261112-123359-2.
+* Not tested in a game: Civ unit tags and Tribe member tags (they go through the same `pfind::tag`).
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: fixed on fix/w48-labels (find.layout), find_layout FAIL 20261112-123659, PASS 20261112-122824 and 20261112-123359-2.

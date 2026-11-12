@@ -175,3 +175,25 @@ numbers are the growth).
   same NPCs alive (no change seen in a 4-view run); far placements would change which NPCs the host's game runs.
 * Pitfall: right after a guest's join in Tribe its world is black for some seconds (the name tags are drawn); wait for
   the picture (coop_same_view.py waits for a mean brightness over 25).
+
+## The camera a frame is drawn with: one step behind the viewer at Present (2026-11-12, fix/w48-labels)
+<a id="graphics-drawn-camera"></a>
+
+BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeKit's right-drags of 400 px).
+* ✔ (runtime, `kit.cam` probes) Every D3D view matrix the game sets while it draws a frame
+  (`IDirect3DDevice9::SetTransform(D3DTS_VIEW)`, 20 to 90 calls a frame, the last ones the UI's) has the forward axis
+  (column 3) of the viewer as it was at the previous Present, and of the viewer at the moment of the call: 104 of 104
+  and 110 of 110 frames inside turns. The viewer at the frame's first BeginScene and at its Present is already the
+  next camera step (equal to each other in every frame; 23 to 837 px apart from the drawn camera at a point 10 m
+  ahead while the camera turns, 0 at rest). So the picture of frame N is drawn with the camera of Present N-1, and an
+  overlay pass that reads the viewer at Present N projects one camera step ahead of the picture.
+* ? Where exactly the camera is written between the frame's draw calls and its first BeginScene was not looked for
+  (the draw's SetTransform calls come before the first BeginScene SporeKit sees after a Present).
+* Fix (SporeKit, `kit.fix drawncam`): the viewer (its 0x40 bytes, the camera's view window and viewport) is copied at
+  the game's first SetTransform(VIEW) after a Present, and `world_to_screen` inside the overlay pass projects with the
+  copy (outside the overlay pass it reads the viewer as before). `kit.cam [reset]`: copies, overlay passes, how many
+  passes the live viewer differed from the copy and by how many px (a point 10 m ahead, 3 m right, 2 m up of the
+  copy; the orbit camera looks at the avatar, so a point straight ahead stays in the middle).
+* CORRECTION (2026-11-12, fix/w48-labels) to BUG-0948's "keep the viewer of the moment the game draws (a copy taken in
+  the game's draw ...)": a copy at the first BeginScene after Present is the same as the viewer at Present (no help);
+  the copy has to be taken at the draw's first SetTransform(VIEW).

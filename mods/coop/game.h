@@ -104,6 +104,8 @@ void stop(void* c);
 void set_speed(void* c, float speed);
 float scale(void* c);
 float bounding_radius(void* c);
+bool bounding_box(void* c, float out[6]);
+float posed_top(void* c); // the highest bone of the current pose, model space, before the scale; -1 none (BUG-0929) // spatial vt 0x68: min xyz, max xyz (BUG-0929)
 // the terrain's distance from the planet's centre in the direction of pos (cPlanetModel::GetHeightAt), 0 without a planet
 float ground_radius(const net::Vec3& pos);
 // the surface on pos's radial line as the game's snap finds it (cPlanetModel_SurfacePoint: the terrain or a collision
