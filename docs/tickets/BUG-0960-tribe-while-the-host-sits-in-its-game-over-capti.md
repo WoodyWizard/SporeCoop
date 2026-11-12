@@ -37,7 +37,7 @@ its game waits with a co-op note while the host's caption is up, as the host's g
 mods/coop/tribe.cpp `gameover_host_tick` / `gameover_pause`: the host sends whether its game-over caption is up
 (MSG_NPC_ANIM kind 20 {u8 up}, reliable, again every 3 s while up; up = Tribe, the game's input lock and stood time,
 entered with every player-tribe member knocked out). A guest's game stands with the game's own
-cGameTimeManager::Pause (reason 0x4BF38A7, Civ's planet-won reason, never used in Tribe) and shows "The tribe is out: waiting for <host> (host) to answer the caption"; Resume on the host's "down", 10 s without news, the
+cGameTimeManager::Pause (reason 0x4BF38A7, the game's own UI-modal / hint reason, counted per reason: ours is balanced) and shows "The tribe is out: waiting for <host> (host) to answer the caption"; Resume on the host's "down", 10 s without news, the
 stage's or the session's end. `coop.tribe` status line "tribe game over wait". Switch: `coop.fix tribe.gameover_wait
 off`.
 

@@ -3399,9 +3399,9 @@ and #tribe-guest-game-over.
   cinematic,input_lock,paused`, the guest `busy: -` (it played on) until the host's OK (Enter) bounced it back.
 * ✔ `Simulator::cGameTimeManager::Pause` 0xB32330 / `Resume` 0xB32360: thiscall(tm, uint32 reason id) ret 4; a count per
   reason (+0x68 table through the id map 0x643A00), then 0xB320B0 sets the stood flag +0x48 bit 0 (what `busy: paused`
-  reads). A guest paused with the Civ planet-won reason 0x4BF38A7 stood (`busy: paused`) and ran again on Resume.
+  reads). A guest paused with the reason 0x4BF38A7 stood (`busy: paused`) and ran again on Resume.
 * Fix `tribe.gameover_wait` (tribe.cpp): the host sends its caption state (MSG_NPC_ANIM kind 20 {u8 up}, reliable, every
   3 s while up): up = in Tribe with the input lock and the stood time, entered with the player tribe out; a guest
-  pauses its game with that reason and a co-op note, and resumes on "down", 10 s without news, the stage's or the
+  pauses its game with the UI-modal reason 0x4BF38A7 (#tribe-game-time-pauses) and a co-op note, and resumes on "down", 10 s without news, the stage's or the
   session's end. ✔ Lab: the guest stood 0.0 s after the host's caption was seen and went on 0.5 s after the host was
   back (20261112-140917).

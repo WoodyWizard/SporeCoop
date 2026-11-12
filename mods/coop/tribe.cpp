@@ -247,11 +247,31 @@ COOP_FIX("tribe.body_teardown", "BUG-0667", g_body_teardown_fix,
 static uint32_t g_teardown_restored, g_slot_null_skipped;
 // guest: the mirror leaves its tribe's member and selectable lists as the host's body left its own (not selectable, not
 // counted as a member), the object stays until the host's body goes
+// BUG-0961: the host's game takes a dead member's card off the roster (the right edge) through the stage's message
+// listener (0xCD81F0 -> 0xCD51F0: cast to a citizen, the roster's card removal 0xCCBCE0 on the stage's game UI +0x240);
+// a guest's mirror taken out of its tribe here (detach_body) kept its card: the guest's roster showed one member more
+// than its tribe (and the host's) had for as long as the play went on (play_tribe's end frame). The card goes with
+// the body now, as on the host. Old (`coop.fix tribe.body_card off`): the card stays.
+static bool g_body_card_fix = true;
+COOP_FIX("tribe.body_card", "BUG-0961", g_body_card_fix,
+         "tribe: a member that died on the host leaves the guest's roster too (one card more stayed there)");
+static uint32_t g_body_cards;
+static void body_card_off(void* c)
+{
+    static uintptr_t get = H->sym("SporeCoop::cTribeUI_Get"), off = H->sym("SporeCoop::TribeStage_RemoveMemberCard");
+    void* stage = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!g_body_card_fix || !stage || !off || !skg::readable(stage, 0x244) || !F<void*>(stage, 0x240))
+        return;
+    thiscall<void>(off, stage, c);
+    g_body_cards++;
+}
+
 static void detach_body(void* c)
 {
     void* t = F<void*>(c, 0x1014);
     if (!t || g_detached.count(c))
         return;
+    body_card_off(c); // BUG-0961 (while it is still the tribe's member, as the game's message comes)
     for (uintptr_t off : {(uintptr_t)0x340, (uintptr_t)0x354}) {
         void**& b = F<void**>(t, off);
         void**& e = F<void**>(t, off + 4);
@@ -2029,7 +2049,7 @@ static void on_party(uint8_t kind, net::Reader& r)
 // until its player answers it; the guest's game showed nothing and played on against the paused host (its orders and
 // the mirrors' moves waited for a game that stood). Now the host tells the guests while its caption is up
 // (MSG_NPC_ANIM kind 20 {u8 up}, reliable, again every 3 s while up) and a guest's game stands too (the game's own
-// cGameTimeManager::Pause, the Civ planet-won reason 0x4BF38A7, never used in Tribe) with a co-op note, until the
+// cGameTimeManager::Pause with the reason of the game's own UI modals 0x4BF38A7, docs/re/tribe.md#tribe-game-time-pauses) with a co-op note, until the
 // host's caption is gone (its OK reloads the tribe for everybody), the host's news stops for 10 s, or the stage or the
 // session ends. The guest's own caption is not shown: its OK would reload its own save (BUG-0685).
 // Old (`coop.fix tribe.gameover_wait off`): the guest plays on.
@@ -2037,7 +2057,7 @@ static bool g_gameover_wait_fix = true;
 COOP_FIX("tribe.gameover_wait", "BUG-0960", g_gameover_wait_fix,
          "tribe: a guest's game waits (paused, with a note) while the host's game-over caption is up");
 constexpr uint8_t kGameOverKind = 20;
-constexpr uint32_t kGameOverPause = 0x4BF38A7u; // (Civ's planet-won pause reason, SporeCoop::GameCiv_PlanetWonPause)
+constexpr uint32_t kGameOverPause = 0x4BF38A7u; // (the game's UI-modal / hint reason; counted: balanced with ours)
 static bool g_go_host_up;       // host: its caption is up (last sent)
 static double g_go_host_sent = -100;
 static bool g_go_paused;        // guest: its game stands for the host's caption (one Pause of ours)
@@ -5235,8 +5255,8 @@ std::string status()
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
     if (!g_last_local.empty())
         out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
-    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960)\n",
-             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes);
+    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960); body cards off %u (BUG-0961)\n",
+             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards);
     out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)
