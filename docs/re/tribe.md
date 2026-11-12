@@ -3307,3 +3307,84 @@ BUG-0856. GOG 2024, Ghidra and lab lane 3. Verifies the fork's note in #tribe-fo
 * ✔ (runtime, `tribe_pens`) The player tribe has a pen and an egg pen (+0x19C4, +0x19C8) in both games, on the tribe
   fixture, after the game forms a village and after a guest's rejoin. **Every computer village has both null** in the
   game itself (the fixture's and newly formed ones): null pens there are normal.
+## Mirrors that look like the host's members: hunger, throws, idle poses, the hold of an item (2026-11-12, fix/w48-tribe-mirrors)
+<a id="tribe-mirror-looks"></a>
+
+BUG-0935, BUG-0946, BUG-0936, BUG-0914. GOG 2024, Ghidra (private project) and lanes 4 / 5, tribe fixture. Follows
+#tribe-held-item and #tribe-member-toss. `coop.tribe` rows print `maxhp= hunger=<+0xBBC>/<+0xBB8>/<+0xB90>
+idle=<+0xE3C> anim=<current>`; `coop.tribe anims` rows `idle=` (the host's last idle-refresh play) and `hold=`, and
+the counters `air`, `idle`, `hold`, `hunger_sets`.
+
+* ✔ (Ghidra) **cCreatureBase +0xBBC is mHunger** (0..100; the serializer's names: "mHunger" +0xBBC, "mHungerDelta"
+  +0xBB8, "mHungerDelayTimer" +0xB90). Getter 0xC0BB20, clamped setter `SporeCoop::Creature_SetHunger` 0xC0BB30.
+  The update `SporeCoop::Creature_HungerUpdate` 0xC0D5A0 (a vtable slot, every frame) adds the delta (-0.28 a second
+  at runtime) times dt; below 1 the creature starves: TakeDamage of its combatant (+0x5A8 vt 0x18) every frame. The
+  eat 0xC22C40 (the behaviour tree's, from the tribe's food) raises it with health and takes the tribe's bundles.
+* ✔ (runtime, lane 4, 5 min) The host's members eat (99.8 after 4 min), a guest's mirror never does (30.3 then; 0 in
+  about 6 min): the roster card of a starving member is red with an empty bar (BUG-0935: the guest's cards red after
+  minutes of play, the host's well). The mirror's own starvation blows are undone by the snapshot's health.
+* Fix `tribe.mirror_hunger`: hunger is a replicated field (kind `tribe_member_hunger` 11, field 7), applied with the
+  setter when the mirror differs by 2 %. Lab: the guest's own update had its mirrors at 65-67 when the host's ate
+  (100): "member #1's hunger 66.1 -> 99.9 as in the host's game".
+* ✔ (runtime) A thrown member (#tribe-member-toss) can keep the grounded byte +0x137 for part of its flight, so the
+  host sends every member more than 0.5 m over its ground (or `drive::body_airborne`) with that height (MSG_NPC_ANIM
+  kind 9 {u16 id, f32 agl} once a cycle). Fix `tribe.mirror_air`: a guest places the mirror at that height over its
+  own ground (drive::air_place, as npc.air) while the news is under 0.35 s old. A member floating on deep water
+  (15.2 m over the sea bed) is sent too and lands on the guest's water as before.
+* ✔ (runtime, lane 4/5, `coop.tribe anims` of both games twice a second) The animations of members at rest: the
+  relay (BUG-0569) starts the host's behaviour animations on the mirrors, the idle refresh (Creature_IdleRefresh,
+  plays its idle / walk choice; never relayed) is each game's own. A behaviour animation the host's tree cuts short
+  (the idle variants 0x02C39001..3, the gestures 0x04C6CB02 / 05, the work 0x03CDACC0) went on to its end on the
+  mirror while the host's member already stood (0x02481DE5) or walked (0x04866DAB / 0x04866D8E): with the host in its
+  own idle choice, the mirror played the same or its own idle / walk in 30 % of the samples (probe, 3 min). The BT's
+  idle override +0xE3C was -1 on every member sampled.
+* Fix `tribe.mirror_idle`: the host notes the idle refresh's plays per member (game.cpp's idle listener) and once a
+  second sends what each member plays that is not its behaviour animation (kind 10 {u16 id, u32 anim, u8 1 idle
+  choice | 2 another start}); a guest mirror that plays something else ends it (not within 1.5 s of a relayed start,
+  at most every 2 s): its own idle refresh (forced) for an idle choice, else the host's animation; the locomotion's
+  idle / walk ids are never played as main animations. Same samples: 96 % (tribe_mirror_idle).
+* ✔ (runtime) The host's members take their item into the hand inside behaviour animations (`hold=1`: the chief's
+  gestures 0x04C6CB02 / 05, work 0x03CDACC0, 0x02DF4B12, 0x066E50FC, the change 0x02C39200), each for 0.5-2 s. A
+  mirror plays the animation through the relay, but only some take the item themselves (the change animation's
+  event); for the chief's gestures the mirror's staff stayed in the resting grip (BUG-0914).
+* Fix `tribe.mirror_hold`: the host sends each new hold of a member (a new kind 5 modifier handle) with the animation
+  playing (kind 11 {u16 id, u32 anim}, unreliable, every hold again once a second) and each end (anim 0, reliable);
+  the guest attaches the item again (Citizen_SetHandheldItem) while its mirror plays that animation (also right after
+  the relay starts it, and four times a second while a hold is pending), so the modifier is bound to that animation
+  and ends with it or with the host's end; held_items_tick (BUG-0906's 1.5 s end) leaves such a hold alone for up to
+  8 s while the animation plays.
+* ✔ (lab) The rate of natural holds the mirror shares is no measure: with the fix off 60-70 % of the host's holds had
+  the mirror holding in the same animation (the work 0x03CDACC0 and the change 0x02C39200 take the item at their own
+  events on the mirror too), 78-80 % on. The chief's staff in its gestures: 0 of 3 off, 3 of 3 on (`coop.tribe hand`
+  rounds); key frames: upright in the resting grip on the guest off, in the hand on both on.
+* ? The mirror's staff angle in the hand is the mirror's animation phase, not always the host's (the relay starts the
+  same animation 0.1-0.3 s later).
+## A village's second ground stamp, and the game over with a chief standing up (2026-11-12, fix/w48-tribe-mirrors)
+<a id="tribe-village-load-stamp"></a>
+
+BUG-0947, BUG-0922. GOG 2024, Ghidra (private project) and lane 5, tribe fixture (tribe_form_ground_rejoin,
+tribe_gameover_partner).
+
+* CORRECTION (2026-11-12, fix/w48-tribe-mirrors) to #tribe-terrain-stamps and the BUG-0332 / BUG-0947 notes: the
+  `from 0x...` callers that `coop.terrain` and the `terrain:` log lines printed were 0x400000 too high (terrain_diag's
+  caller_of added the image base's shift once more). "0x0109DFBF" is 0x00C9DFBF, "0x01091981" 0x00C91981, "0x010DDDEF"
+  0x00CDDDEF, "0x0106AD74" 0x00C6AD74 (Ghidra put the old values inside Havok code). Fixed; the stamp lists and ids
+  of those notes stand.
+* ✔ (Ghidra) A village has two ground stamps: `SporeCoop::TribeVillage_FormStamp` 0xC9DEE0 (obj +0x248 the id, the prop
+  list of obj+0x34's vt 0xAC +0x90: the "0x0109DFBF" one, made with every village) and the tribe's own
+  `SporeCoop::cTribe_ApplyGroundStamp` 0xC91890 (cTribe +0x19D4 the id, the prop list +0x2D4, key 535DC193 / 2BE764E2
+  at runtime: about 50 m wide), applied only when +0x19D4 is 0, from 0xC996E0 (a load) and 0xC9A290 (the live Creature
+  -> Tribe change). The NPC tribe controller's forming and SpawnNpcTribe never call it.
+* ✔ (lab 20261112-094334, -100542) So the games that saw a village made had one stamp there, a game that loaded the
+  world later two: a guest's rejoin had the ground 50 m round a village the host formed 7.95 m off (10 and 25 m: 0.00
+  / 0.09), its list one entry longer (the tribe's stamp, id 1888182615). The same stamp applied live by hand on the host
+  (`coop.terrain stamp <the village's first stamp> 535DC193 2BE764E2`) got the same id and made both grounds equal at
+  every point (0.00 m): unlike BUG-0332's stamps, this one renders live as a load renders it. `coop.tribe` tribe lines
+  print `stamp=` (+0x19D4).
+* Fix `tribe.village_load_stamp`: every game in Tribe calls 0xC91890 for a tribe whose +0x19D4 is 0 a second after it
+  appeared (the live change makes it itself right after the village). A host's own later load then adds nothing either.
+* ✔ (lab, tribe_gameover_partner) The game-over caption needs every member of the player tribe down: the host's own
+  members and chief knocked out while the guest's live brought none in 80 s. A knocked-out chief stands up again about
+  95 s after its fall with full health (hp 168, dead 0), also while the caption is up; the caption stays until OK. In
+  play_tribe the chief had fallen first, the rest 90 s later: the chief stood up 3 s into the caption, and the play's
+  "no member with health" rule never pressed OK (BUG-0922, a test rule; the guest playing on meanwhile: BUG-0960).

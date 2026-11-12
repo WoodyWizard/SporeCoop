@@ -137,6 +137,12 @@ void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
 // Called after the play, not for plays of the mod (play_animation, play_behaviour_anim).
 using BehaviourAnimListener = void (*)(void* creature, uint32_t anim_id, int how, int a, int b);
 void set_behaviour_anim_listener(BehaviourAnimListener fn);
+// BUG-0936: the idle refresh's own plays (Creature_IdleRefresh's choice: idle, walk, the BT's idle override), which the
+// behaviour listener leaves out; tribe.cpp notes them per member (the host) to tell its idle from a behaviour animation
+using IdleAnimListener = void (*)(void* creature, uint32_t anim_id);
+void set_idle_anim_listener(IdleAnimListener fn);
+// BUG-0936: the game's idle refresh on c (force: also when the choice is the current animation), as its update does
+void idle_refresh(void* c, bool force);
 bool play_behaviour_anim(void* c, uint32_t anim_id, int how, int a, int b); // how 2 is played as 1
 void behaviour_anim_counts(uint32_t* seen, uint32_t* idle);
 

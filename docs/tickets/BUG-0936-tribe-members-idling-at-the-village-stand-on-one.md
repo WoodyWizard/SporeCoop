@@ -1,19 +1,19 @@
 ---
 id: BUG-0936
 title: Tribe: members idling at the village stand on one game while they crouch or sit at the fire on the other (same-view pairs differ in pose, in both directions)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: 
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-tribe-mirrors
+commits: 6fc65d20
+tests: tribe_mirror_idle
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-mirror-looks, docs/06-testing.md#testing-tribe-mirror-looks
 related: BUG-0914, BUG-0569, BUG-0889
 ---
 
@@ -37,20 +37,29 @@ a few seconds of one animation cannot be told from another animation). Regressio
 final check's review (20261111-044257) wrote that the Tribe pairs agree apart from BUG-0914.
 
 ## Root cause
-Not analysed. Observed: the difference goes both ways (the guest shows a sit the host does not, the host shows a
-crouch the guest does not) and touches the host's member as well as the guest's chief.
-Inferred (medium): the idle animations of a member at rest (sit or warm at the fire, look around) are picked by
-each game for itself, or are not part of what tribe.mirror_anims relays (BUG-0569 relays behaviour animations;
-BUG-0914 already asks whether idle animations with an item are carried). Probably the same cause as BUG-0914;
-kept apart because here no item is involved and the guest's own chief differs on the host too.
+Proven (lab, `coop.tribe anims` of both games twice a second). The relay (BUG-0569) starts the host's behaviour
+animations on the mirrors and a mirror keeps each until it ends: it has no behaviour tree to cut it short. The host's
+members' trees cut their idle variants (0x02C39001..3: sitting / crouching at the fire), gestures (0x04C6CB02) and
+work short and the members stood (0x02481DE5) or walked (0x04866DAB / 0x04866D8E) again by their own idle refresh,
+which was never relayed: with the host's member in its own idle choice, the guest's mirror stood or walked too in
+only 30 % (probe) / 62 % (test, fix off) of the samples. The BT's idle override +0xE3C was -1 on every member (not
+it). Both directions of the report follow: a mirror still sitting where the host's member stands, and a member that
+the host's game set into a pose after the mirror's relayed one ended (the snapshot relayed behaviour animations
+only).
 
 ## Fix
-Open.
+`tribe.mirror_idle`: the host notes each member's idle-refresh plays (game.cpp's idle listener) and once a second sends
+what every member plays that is not its behaviour animation, with whether it is its idle choice (MSG_NPC_ANIM kind 10);
+a guest mirror playing something else ends it (not within 1.5 s of a relayed start, at most every 2 s per mirror):
+the game's idle refresh (forced) for an idle choice, the host's animation for another start (never the locomotion's
+idle / walk ids).
 
 ## Verification
-Open. How to test: same_view_tribe with the members at rest by the fire for 60 s: sample the game's current
-animation id of each member on both games every second (the read tribe_held_item / BUG-0569's test uses) and
-require the same id within 1 s for 90 % of the samples, the facing within 30 degrees.
+Test `tools/tests/coop_tribe_mirror_idle.py --part idle` (suite `tribe_mirror_idle`): samples where the host's member
+is in its own idle choice; the mirror must play it or its own idle / walk in 80 %; key frame `rest` of kind sameview.
+* FAIL with `SPORE_FIX_OFF=tribe.mirror_idle`: out/lab/20261112-092953 (62 %).
+* PASS: out/lab/20261112-090616 (96 %), out/lab/20261112-094544 (99 %).
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: fixed (fix/w48-tribe-mirrors): the host's idle choices relayed.

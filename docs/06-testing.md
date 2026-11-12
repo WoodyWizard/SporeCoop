@@ -6468,3 +6468,38 @@ nanvel <s> [id|-1] [air]` (host: the NPC states sent carry a NaN velocity, optio
 * The campaign (coop_campaign.py, every stage change) checks that the spacecraft (96B24187) and City Hall (99E92F05)
   editors come up within 15 s of their vote (BUG-0855): an `editor` finding otherwise. Creature's editors are not
   checked (they may wait for a cinematic, BUG-0404). campaign_space with `core.editor_own_pause` off: 61 s, FAIL.
+## Tribe mirrors' looks: hunger, throws, poses, the hold; play_tribe's game-over rule (2026-11-12, fix/w48-tribe-mirrors)
+<a id="testing-tribe-mirror-looks"></a>
+
+docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
+
+* `tribe_mirror_hunger` (BUG-0935): the guest sets its mirrors' hunger to 0 (`coop.tribe hunger <id> 0`: the game's
+  setter, what minutes of its own update leave) and the host one member's to 40; the `hunger=` of the `coop.tribe`
+  rows must agree within 3 after 5 s. Key frame `roster`. `SPORE_FIX_OFF=tribe.mirror_hunger` fails.
+* `tribe_member_air` (BUG-0946 added): after blows of 60 / 100 / 140 on the host's leader the guest's mirror must be
+  over 2.5 m over its own ground after 2 of the 3 (sampled ~4 times a second through the console: the top is often
+  missed, 2.0-4.9 m seen with the fix, 0.04 m without); key frame `toss` of kind sameview 0.75 s after the second blow.
+  `SPORE_FIX_OFF=tribe.mirror_air` fails. The water part keeps its allowed monitor finding (BUG-0945).
+* `tribe_mirror_idle` / `tribe_mirror_hold` (coop_tribe_mirror_idle.py --part idle | hold; BUG-0936 / BUG-0914): 120 s
+  of `coop.tribe anims` on both games twice a second with 4 more members. idle: samples where the host's member is in
+  its own idle choice (the same animation two samples in a row) and the mirror plays it or a locomotion idle / walk.
+  hold: the natural holds are only printed (the mirror's own game takes the item itself in the work and change
+  animations: 60-70 % "held" with the fix off, 78-80 % on: no measure); the check is three rounds of the host's chief
+  taking its staff (`coop.tribe hand <id> <item>`, its item or 17, the game's attach; or a gesture holding it already)
+  and putting it back (`hand <id> end`): the guest's copy must hold it within 4 s of each take (0 of 3 with the fix off)
+  and be back in the grip (or hold it as the host does) within 3.5 s of each end. Key frames `rest` (16 m from the village), `swing` (12 m from the chief
+  in a natural hold) and `hold` (10 m, in the first round: the staff forward on both screens; upright on the guest
+  with the fix off). The chief may have put its staff away (item 0) for minutes: the test gives it the staff.
+* `tribe_gameover_partner` (BUG-0922): the host's own members knocked out (5000 hp blows) while the guest's live: no
+  caption on the host (the game counts the guest's members, 20 s); then the guest's members too, with 100 hp blows;
+  the caption must be closed by play_tribe's rule (`play_tribe.GameOver`, the caption `coop.ui find "Alas"` up 3 s)
+  within 25 s. `PLAY_TRIBE_OLD_GAMEOVER=1` is the rule before (no member of the player tribe with hp > 0 for 15 s).
+  play_tribe itself now presses OK on the caption, closes one left at the end before its `end` key frame and checks
+  that the host never sat in the caption for 25 s.
+* `tribe_form_ground_rejoin` (coop_tribe_form_ground.py --rejoin; BUG-0947): the host's game forms an NPC village, the
+  guest makes its copy live, then leaves and joins again (it loads the host's world with the village) and the two
+  grounds round the village are compared again (limit 0.5 m; 7.95 m on the 50 m ring with the fix off). On a
+  difference it prints the stamps within 80 m on both (`coop.terrain list`), the guest's extra ones' prop keys
+  (`coop.terrain raw`) and the grounds after the host applied that stamp live (`coop.terrain stamp <template id>
+  <key instance> <key group>`, new). `SPORE_FIX_OFF=tribe.village_load_stamp` fails.
+* `coop.terrain` callers (`from 0x...`) are GOG 2024 VAs now; before 2026-11-12 they were 0x400000 too high.
