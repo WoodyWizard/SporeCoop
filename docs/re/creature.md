@@ -4204,3 +4204,58 @@ click or bite there takes the hatchling: it dies at once, its body lies at the e
 guest's hunt (+N DNA "from X's hunt"). ✔ An eat of an egg never pays DNA and a hit on an egg sends nothing. Since
 nest.hatch_now the host checks the eggs of its last snapshot every frame and sends a snapshot at once on a hatch /
 eat / removal (`coop.nest` early=N).
+
+## Package C2 of 0.7.13: flock, social games, editor flags, DNA, eggs, drivers, attackers (2026-11-12, fix/w48-creature)
+<a id="creature-c2-audit-0713"></a>
+
+BUG-0800, 0808, 0811, 0815, 0829, 0831, 0833, 0788, 0790, 0881, 0893, 0894 (the Creature findings of the 0.7.13 audit).
+GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and lanes 6 / 7 (creature fixture).
+
+* ✔ (Ghidra) `SummonEvent_Update` 0xD512A0 has two branches. While the event runs (the flag 0x614A7EA of its prop list
+  0 and its duration +0x2C left) it only gives each member the hearts 0x6A17B05A. At its end (the flag set or the
+  duration over) it posts `BT_PostStimulus(0, 4, FLT_MAX, avatar)` ("follow") to each member, and lets go (+0x135 = 0,
+  +0xF90 = 0, herd flag bit 0 off) a member over 100 m from the avatar, or over 50 m when its spatial vt 0x48 is false.
+  The members are in the members' list of the event's herd (0xD4CEC0(0x609F2F8, 0x52AA6117) +0x40..+0x44).
+* ✔ (runtime, lab 20261112-072224 / -073101) The Drama Manager runs the same summon event object again: the guest's
+  relayed flock and the host's own later one had the same event pointer; the mod's swap (BUG-0736) ran on the host's
+  own event (its `updates` counter grew) with `creature.flock_forget` off, not with it on. ✔ (runtime) a summoned flock
+  leaves the pack when its event ends, also on the host's own event with the fix (lab 20261112-073116): Summon Flock is
+  a flock for the event's time, not for good. The event runs 115-165 s.
+* ✔ (Ghidra) `Editors::EditorRequest::Submit` 0x5A92C0 always returns 1: it posts the request (0xB03BC30C) and a mode
+  switch message (0xE11332, to the editor mode 0xDBDBA1), sets the cursor and an achievement flag. Only the mod's
+  h_Submit refuses a request (a held vote, the BUG-0720 test capture, the settling avatar). So the editor of a submitted
+  request opens by the posted message, never in the Submit call (BUG-0811).
+* ✔ (Ghidra) `cLocomotiveObject::MoveTo` 0xC435F0 (creature spatial vt 0xE0) ends at 0xC437C8 with
+  vt 0xCC GetStandardSpeed (0xC42080: `fld [ecx+0x1E4]`) and vt 0xC4 SetDesiredSpeed(that, 0) (0xC437E3), on every path.
+  Creature spatial vtable 0x1469EC0: +0xC4 0xC11570 SetDesiredSpeed thiscall(spatial, float, int) ret 8 writes
+  +0x1E0 = speed (x1.5 when +0xA98 bit 8 or 9) and +0xED8 = 0xC0D1B0(speed); +0xC8 0xC41EA0; +0xCC 0xC42080.
+* ✔ (Ghidra) The combatant vt 0x0C is the owner conversion in every class (BUG-0790): creature 0x1469E30 and citizen
+  0x146AAB0 -> 0xC0BFC0 `lea eax,[ecx-0x5A8]`; vehicle 0x1474CE8 and UFO 0x146BB48 -> 0xC3BDB0 `[ecx-0x508]`; turret
+  0x1466C28 -> 0xBCD080 `[ecx-0x588]`; tribe hut (vtable start 0x1474318) -> 0xBCD230 `[ecx-0x120]`. ~ The UFO
+  combatant vtable of space.md section 0 (0x146C660) is the GOG 2016 one; GOG 2024's is 0x146BB48 (+0x18
+  cGameDataUFO::TakeDamage 0xC3CEC0).
+* ✔ (Ghidra) `CreatureAbilityHit` 0xC20390, the player-species row of #creature-player-species-callers: when the
+  attacker's vt 0xD0 IsPlayerSpecies is false and 0xAC8010(attacker, 0x18EB45E) (the noun check: a cCreatureAnimal)
+  and 0xC046F0(attacker) (`mov eax,[ecx+0x1674]`, mHerd: the creature's herd, not an archetype) is set, the damage is
+  multiplied by the float at herd +0x158.
+* ✔ (Ghidra) `cHerd_ResizeEggs` 0xC6E8B0 (grow): CreateInstance(0x2A034CD), AddRef, egg +0x1F4 = the herd (AddRef),
+  the egg into mEggs (AddRef), the local Release; (shrink): mpHerd +0x1F4 and mpToHatch +0x218 released and cleared,
+  then DestroyInstance. The cEgg constructor 0xC6A410 writes the vtable 0x14719B0 (refcount at +8, DefaultRefCounted).
+* ✔ (runtime, BUG-0833) A guest's mirror egg holds ~19 references while it lives. After a world load (`coop.share`) a
+  destroyed mirror egg (+0x21 set, its serial kept) still has 4 references 10 s later with the mod's one, 3 without:
+  the game itself keeps 3 on a destroyed egg (not looked into which). Before the fix (`nest.mirror_epoch`) the mod's
+  reference and the herd's were never given back. The epoch change comes before the load destroys the old objects: the
+  fix found the mirrors still listed and removed them itself (`coop.nest` epoch_removed=2, lab 20261112-080250).
+* ✔ (runtime, BUG-0815) A mate the game picked put 11.0 m from the nest after the Mating Call and clicked still mated:
+  the egg cinematic B6A1DBE1 3 s and 8 s later (lab 20261112-080250, -081738). The fork's reply radius of ~9.7 m
+  (0xD7DAB0) did not stall it on our build. The game walks the picked mate (node 0x925B6B01) back towards the nest:
+  11 m -> 3 to 5 m within 2 s.
+* ✔ (Ghidra) `CreatureGame_NestHerdFor` 0xD40AF0: with 0 it returns the avatar's herd when its brain range
+  (+0x120..+0x124) holds the level [0x169E370]; otherwise (and always with 1) the herd of the player species (+0xA4 =
+  the species manager's) with a nest (+0x160) whose range holds the level, in the same region (0xB886E0 of the
+  position) and nearest to the point [0x167EA30]; none: the avatar's herd. ✔ (runtime, BUG-0881, lab 20261112-081722)
+  on the creature fixture both games have 13 nests of the player species, all with range 0..5 and level 1; the host's
+  home gets 5..-1 from its AfterEditor. The guest's NestHerdFor(1) was its own home at 10 places (0 to 600 m from the
+  host, and at the host's next nest), so row 11 of wsync (s_nest) starts no migration while the host's state is 1 / 2;
+  the guest's starts after the host's claim, compared with the host's new home. ? [0x167EA30] is not the guest
+  avatar's position after a `coop.npc gopos` (its home won while it stood at the other nest).

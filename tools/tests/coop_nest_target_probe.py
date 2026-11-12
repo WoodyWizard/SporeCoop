@@ -62,7 +62,7 @@ def species_nests(con):
     out = []
     for m in re.finditer(r'herd (\S+) arch=\S+ species=(\S+) nest=(\S+) .*?home=\((\S+) (\S+) (\S+)\)',
                          con.call('coop.npc archless all')['out']):
-        if m.group(3) in ('00000000', '(nil)') or not sp or int(m.group(2), 16) != sp:
+        if m.group(3) in ('00000000', '(nil)') or not sp or int(m.group(2).split('/')[0], 16) != sp:
             continue
         h = int(m.group(1), 16)
         out.append((hex(h), tuple(round(float(v)) for v in m.group(4, 5, 6)), s32(u32(con, h + 0x120)),

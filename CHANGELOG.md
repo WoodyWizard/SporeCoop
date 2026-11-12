@@ -11,6 +11,16 @@
 - Creature: the computer creatures' nests evolve again in a world of a guest's own while it is connected (BUG-0803).
 - Creature: in a world of its own a connected guest's game shows its own creations again, not the host's creature of
   the same id at its nests (BUG-0819).
+- Creature: a guest that leaves the game in the middle of a social game no longer keeps the social meter on its
+  screen (BUG-0808).
+- Creature: when a guest leaves in the middle of a social game, the host's creature stops that game; it went on with
+  its prompts and then played the failure reaction (BUG-0831).
+- Creature: DNA a guest earns while the host is away (in the menu or loading) moves the guest's evolution bar once, as
+  on the host; on a slow connection it could move it twice (BUG-0829).
+- Creature: a hit by a UFO, a vehicle, a city turret or a tribe hut on a player's creature is credited to the right
+  attacker; the mod read a wrong object as the attacker, for the pack's defence among others (BUG-0790).
+- Creature: a guest's game no longer keeps the copies of the host's nest eggs in memory after a world load or a
+  change of its creature (BUG-0833).
 - Space: a guest that loads one of its own Space saves while connected keeps that save's cargo hold (tools, spice,
   cargo); it was replaced by the guest's co-op hold and saved that way (BUG-0816).
 - Space: a guest's own Space save keeps its own stage history (the History bar and the archetype's cards); the host's
