@@ -25,6 +25,11 @@ struct Fixes {
     bool lan_dedup = true; // BUG-0210: a host answering on two addresses is one LAN game (DiscoverReply id)
     // 0.7.5
     bool bulk_acks = true; // BUG-0405: an ack every 48 packets received; resend only on a later ack or a long silence
+    // 0.7.13 (N1)
+    bool name_clean = true;     // BUG-0774: names from the network lose control characters and are cut to kNameMax
+    bool lan_only_disc = true;  // BUG-0776: LAN discovery is answered only from local networks, rate limited
+    bool halfopen_cap = true;   // BUG-0778: a new peer only for a HELLO; a full table evicts the oldest half-open peer
+    bool restart_gen = true;    // BUG-0861: host() / join() inside a delivery callback is not torn down by the old deferred leave
 };
 inline Fixes g_fix;
 
