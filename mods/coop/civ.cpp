@@ -331,6 +331,7 @@ struct HV {
     uint16_t id;
     uint8_t owner;
     uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
+    uint32_t serial = 0; // BUG-0951: its cGameData::mID then (a reused address of the same nation too)
 };
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
 static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
@@ -397,9 +398,28 @@ struct GV {
     float pushed = 0, pushed_max = 0, err = 0;
     double pushed_at = 0;
     float host_top = -1.f; // BUG-0787: the host vehicle's top speed from the last snapshot, -1 = not sent
+    uint32_t serial = 0;   // BUG-0951: v's cGameData::mID when it was bound
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
+// BUG-0951 (class BUG-0426, as BUG-0844 for the Tribe mirrors): a mirror's vehicle was kept across frames and checked by
+// its own memory (object_alive). The game frees a destroyed vehicle later and gives the block to the next vehicle it
+// makes (the guest's own civ's, another mirror). While the host's states paused (its editors) the mirror stayed bound
+// to the address; when they came again the guest drove the new vehicle as the host's one (and the cycle's end removed
+// whatever stood at the address). Now a mirror's vehicle is used only while it is the object bound (the object list of
+// the frame and its serial). Old (`coop.fix civ.mirror_lifetime off`): object_alive.
+static bool g_veh_lifetime_fix = true;
+COOP_FIX("civ.mirror_lifetime", "BUG-0951", g_veh_lifetime_fix, "civ: a guest never drives or removes a vehicle of its own game that the game built where a removed copy of a host's vehicle was");
+static uint32_t g_veh_stale;
+static bool gv_ok(const GV& g)
+{
+    if (!g.v)
+        return false;
+    if (!g_veh_lifetime_fix)
+        return game::object_alive(g.v);
+    return game::alive(game::LiveRef{g.v, g.serial, 0x18C6DE8u}); // (the vehicle noun)
+}
+static bool g_veh_hold; // tests (BUG-0951): the guest ignores the host's vehicle states (as during the host's editor)
 
 static std::unordered_set<uint16_t> g_cycle_ids;
 static net::CycleTracker g_cyc;                    // the cycle being received and its chunks (BUG-0612)
@@ -971,7 +991,7 @@ static void release_copy(Shot& s)
     if (!g_fix_shot_release || !a_ToolMouseUp || s.kind != 1)
         return;
     auto g = g_gv.find(s.id);
-    void* o = g == g_gv.end() ? nullptr : g->second.v;
+    void* o = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
     if (!o || !exists(o) || F<uint8_t>(o, kVDead))
         return;
     void* tool = weapon_of((uint8_t*)o + kVCombatant);
@@ -1027,7 +1047,7 @@ static void guest_fire(double now)
         void* comb = nullptr;
         if (s.kind == 1) {
             auto g = g_gv.find(s.id);
-            o = g == g_gv.end() ? nullptr : g->second.v;
+            o = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
             if (o && (!exists(o) || F<uint8_t>(o, kVDead)))
                 o = nullptr;
             comb = o ? (uint8_t*)o + kVCombatant : nullptr;
@@ -1051,7 +1071,7 @@ static void guest_fire(double now)
         void* t = nullptr;
         if (s.tkind == 1) {
             auto g = g_gv.find(s.tid);
-            t = g == g_gv.end() ? nullptr : g->second.v;
+            t = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
             if (t && (!exists(t) || F<uint8_t>(t, kVDead)))
                 t = nullptr;
         } else if (s.tkind == 3)
@@ -2387,7 +2407,7 @@ static std::unordered_set<void*> g_veh_live;
 static void* veh_mirror(uint16_t id)
 {
     auto it = g_gv.find(id);
-    if (it == g_gv.end() || !it->second.v)
+    if (it == g_gv.end() || !it->second.v || (g_veh_lifetime_fix && !gv_ok(it->second))) // (BUG-0951)
         return nullptr;
     if (H->frame_index() != g_veh_live_frame) {
         g_veh_live_frame = H->frame_index();
@@ -2698,7 +2718,7 @@ static std::string push_probe()
         return "probe on";
     void* v = nullptr;
     for (auto& [id, g] : g_gv)
-        if (g.v && game::object_alive(g.v)) {
+        if (gv_ok(g)) {
             v = g.v;
             break;
         }
@@ -2972,6 +2992,10 @@ static void host_tick(double now)
         // a vehicle of another world (or another nation) at an address we knew: assigned anew
         bool gone = !alive.count(it->first);
         bool other = !gone && g_fix_world && pol_of(it->first) != it->second.pol;
+        if (!gone && !other && g_veh_lifetime_fix && it->second.serial && game::object_serial(it->first) != it->second.serial) {
+            other = true; // BUG-0951: another vehicle of the same nation at the address: a new id and owner
+            g_veh_stale++;
+        }
         if (gone || other) {
             g_hv_by_id.erase(it->second.id);
             it = g_hv.erase(it);
@@ -3002,7 +3026,7 @@ static void host_tick(double now)
                 owner = 0;
         }
         uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154: never a live id, never 0
-        g_hv[v] = {id, owner, pol_of(v)};
+        g_hv[v] = {id, owner, pol_of(v), game::object_serial(v)};
         g_hv_by_id[id] = v;
     }
     g_cycle++;
@@ -3325,7 +3349,7 @@ static void host_command(uint8_t from, net::Reader& r)
         void* v = host_buy(city, loco);
         if (v && !g_hv.count(v)) {
             uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154 (this one could hand out 0)
-            g_hv[v] = {id, from, pol_of(v)};
+            g_hv[v] = {id, from, pol_of(v), game::object_serial(v)};
             g_hv_by_id[id] = v;
         }
         g_pending_owner = -1;
@@ -4094,7 +4118,7 @@ static void guest_state(net::Reader& r)
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
         // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
-        bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
+        bool alive_v = v && gv_ok(g) && !F<uint8_t>(v, kVDead); // (BUG-0951)
         float top = alive_v ? F<float>(v, 0x218) : 0.f;
         g.host_top = -1.f;
         if (tops) {
@@ -4115,8 +4139,11 @@ static void guest_state(net::Reader& r)
         if (g_extrap_fix && net::g_lead_fix)
             g.est.max_ahead = kVehLead;
         g.est.update(m.pos, now, sent);
-        if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
-            g_gv_of.erase(v);
+        if (v && (!gv_ok(g) || F<uint8_t>(v, kVDead))) { // (BUG-0951: also another vehicle at its address)
+            if (g_veh_lifetime_fix && game::object_alive(v) && g_gv_of.count(v) && g_gv_of[v] == id)
+                g_veh_stale++;
+            if (g_gv_of.count(v) && g_gv_of[v] == id)
+                g_gv_of.erase(v);
             g.v = v = nullptr;
             g.listed = false;
         }
@@ -4151,6 +4178,7 @@ static void guest_state(net::Reader& r)
         if (!v)
             continue;
         g.v = v;
+        g.serial = game::object_serial(v);
         g.listed = false;
         g_gv_of[v] = id;
     }
@@ -4167,7 +4195,7 @@ static void guest_state(net::Reader& r)
     }
     for (auto it = g_gv.begin(); it != g_gv.end();) {
         if (!g_cycle_ids.count(it->first)) {
-            if (it->second.v && game::object_alive(it->second.v) && !F<uint8_t>(it->second.v, kVDead)) {
+            if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead)) { // (BUG-0951)
                 if (hold_removal(it->second.v)) { // BUG-0493: removed when the planner (or a cinematic) lets it go
                     g_kill_later.insert(it->second.v);
                     g_planner_kills_held++;
@@ -4176,7 +4204,8 @@ static void guest_state(net::Reader& r)
                     g_removed++;
                 }
             }
-            g_gv_of.erase(it->second.v);
+            if (g_gv_of.count(it->second.v) && g_gv_of[it->second.v] == it->first) // (BUG-0951: not another mirror's)
+                g_gv_of.erase(it->second.v);
             it = g_gv.erase(it);
         } else
             ++it;
@@ -4226,7 +4255,7 @@ static void guest_tick(double now)
     const double fdt = std::min(std::max(now - last_tick, 0.0), 0.1);
     last_tick = now;
     for (auto& [id, g] : g_gv) {
-        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0) {
+        if (!gv_ok(g) || now - g.seen > 3.0) { // (BUG-0951)
             g.has_put = false;
             continue;
         }
@@ -4315,8 +4344,63 @@ static void prune_gone()
     }
 }
 
+// tests (BUG-0951, class BUG-0426): mirror <id>'s vehicle is removed by the game (the disband path, kill_local: no
+// bookkeeping of ours, the mirror still names it), then once a frame a vehicle of the same purpose and locomotion is
+// made for this guest's own civilization (the game's own design), 40 m away, removed again unless it is at the freed
+// address, until the game gives it that block
+struct VehHunt {
+    uint8_t* target = nullptr;
+    uint16_t id = 0;
+    int left = 0, tries = 0, purpose = 0, loco = 0;
+    net::Vec3 at{};
+    void* hit = nullptr;
+    uint32_t hit_serial = 0;
+};
+static VehHunt g_vh;
+static void veh_hunt_tick()
+{
+    if (g_vh.left <= 0 || !g_vh.target)
+        return;
+    g_vh.left--;
+    void* civ = player_civ();
+    if (!civ || !a_CreateVehicle)
+        return;
+    float p[3] = {g_vh.at.x, g_vh.at.y, g_vh.at.z};
+    g_applying = true;
+    void* v = thiscall<void*>(a_CreateVehicle, civ, g_vh.purpose, g_vh.loco, 0u, 0u, 0u, (const float*)p, 0);
+    g_applying = false;
+    g_vh.tries++;
+    if (!v)
+        return;
+    if ((uint8_t*)v == g_vh.target) {
+        g_vh.hit = v;
+        g_vh.hit_serial = game::object_serial(v);
+        g_vh.left = 0;
+        H->log(M, SK_INFO, "civ reuse: the freed vehicle address %p holds a new vehicle of this guest's civilization "
+               "(serial %u, try %d)", v, g_vh.hit_serial, g_vh.tries);
+        return;
+    }
+    kill_local(v);
+}
+static std::string veh_hunt_status()
+{
+    char b[400];
+    bool l = g_vh.hit && game::listed(g_vh.hit, 0x18C6DE8u) && game::object_serial(g_vh.hit) == g_vh.hit_serial;
+    net::Vec3 q = l ? veh_pos(g_vh.hit) : net::Vec3{};
+    auto it = g_gv.find(g_vh.id);
+    net::Vec3 want = it != g_gv.end() ? it->second.pos : net::Vec3{};
+    auto gi = l ? g_gv_of.find(g_vh.hit) : g_gv_of.end();
+    snprintf(b, sizeof b, "civ reuse target=%p mirror=%u left=%d tries=%d hit=%p alive=%d dead=%d own_civ=%d pos=(%.2f %.2f %.2f) "
+             "host_vehicle=(%.2f %.2f %.2f) bound_as=%d stale=%u\n", (void*)g_vh.target, g_vh.id, g_vh.left, g_vh.tries,
+             g_vh.hit, (int)l, l ? (int)F<uint8_t>(g_vh.hit, kVDead) : -1,
+             (int)(l && player_civ() && pol_of(g_vh.hit) == pol_of(player_civ())), q.x, q.y, q.z, want.x, want.y, want.z,
+             gi != g_gv_of.end() ? (int)gi->second : -1, g_veh_stale);
+    return b;
+}
+
 void tick(double now)
 {
+    veh_hunt_tick();
     if (g_ok && C.sess && C.sess->connected())
         space_tick(now); // BUG-0766 / BUG-0884
     if (!active())
@@ -4622,7 +4706,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             guest_turrets(peek);
         else if (peek.ok() && chunk == kTribeChunk && chunks == 0) // BUG-0539: old tribe villages
             guest_tribes(peek);
-        else
+        else if (!g_veh_hold) // (tests, BUG-0951: `coop.civ vehhold`)
             guest_state(r);
     }
     else if (type == net::MSG_CIV_CMD && is_host())
@@ -4868,7 +4952,7 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
                 fn("vehicle", hv.id, hv.owner, veh_pos(v), user);
     } else {
         for (auto& [id, g] : g_gv)
-            if (g.v && g.owner != 0xFE && game::object_alive(g.v))
+            if (g.owner != 0xFE && gv_ok(g)) // (BUG-0951)
                 fn("vehicle", id, g.owner, veh_pos(g.v), user);
     }
 }
@@ -4975,7 +5059,7 @@ static void* local_vehicle(uint16_t id)
         return it == g_hv_by_id.end() ? nullptr : it->second;
     }
     auto it = g_gv.find(id);
-    return it == g_gv.end() ? nullptr : it->second.v;
+    return it == g_gv.end() || !gv_ok(it->second) ? nullptr : it->second.v; // (BUG-0951)
 }
 
 bool near_vehicle(const net::Vec3& p, float radius)
@@ -5013,6 +5097,36 @@ std::vector<net::Vec3> local_positions()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() >= 2 && a[0] == "vehhold" && is_guest()) { // vehhold 1|0: tests (BUG-0951), the host's vehicle states
+        g_veh_hold = atoi(a[1].c_str()) != 0;               // are not taken (as while the host is in an editor)
+        return std::string("vehicle states ") + (g_veh_hold ? "held" : "taken") + "\n";
+    }
+    if (a.size() >= 1 && a[0] == "reusehunt" && is_guest()) { // reusehunt [npc|<mirror id> [frames]]: BUG-0951 (tests)
+        if (a.size() < 2)
+            return veh_hunt_status();
+        // npc: the first live mirror of another civilization than this guest's (the new vehicle is made for the guest's
+        // own civilization: it is never bound to that host vehicle by its kind)
+        auto it = g_gv.find((uint16_t)atoi(a[1].c_str()));
+        void* pc = player_civ();
+        if (a[1] == "npc")
+            for (it = g_gv.begin(); it != g_gv.end(); ++it)
+                if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead) && H->time_seconds() - it->second.seen < 1.0 &&
+                    (!pc || pol_of(it->second.v) != pol_of(pc)) && !g_kill_later.count(it->second.v))
+                    break;
+        if (it == g_gv.end() || !gv_ok(it->second))
+            return "no live mirror\n";
+        void* v = it->second.v;
+        g_vh = VehHunt{};
+        g_vh.target = (uint8_t*)v;
+        g_vh.id = it->first;
+        g_vh.purpose = F<int>(v, kVPurpose);
+        g_vh.loco = F<int>(v, kVLoco);
+        g_vh.at = veh_pos(v);
+        g_vh.at.x += 40.f;
+        g_vh.left = a.size() > 2 ? atoi(a[2].c_str()) : 150;
+        kill_local(v); // the game's removal: the mirror still names it
+        return "mirror's vehicle removed by the game; " + veh_hunt_status();
+    }
     if (a.size() >= 3 && a[0] == "fix") { // fix boost|world 0|1: the code before BUG-0040 / BUG-0059 (tests)
         bool on = atoi(a[2].c_str()) != 0;
         if (a[1] == "boost")
@@ -5852,7 +5966,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     double now = H->time_seconds();
     char k[8];
     for (auto& [id, g] : g_gv) {
-        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
+        if (!gv_ok(g) || now - g.seen > 3.0) // (BUG-0951)
             continue;
         snprintf(k, sizeof k, "w%u", (unsigned)id);
         fn(k, g.est.at(now, net::g_lead_fix ? net::g_one_way : 0.03), user);
