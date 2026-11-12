@@ -28,7 +28,7 @@
 - Creature and Tribe: a guest's game could crash, or move one of its own animals as if it were the host's, when its
   game had just removed a copy of a host animal and built a new animal in the same place in memory (the mod now
   checks every kept animal against the game's object list and its serial number; it also covers Tribe now)
-  (BUG-0842, BUG-0426).
+  (BUG-0842).
 - Tribe: a guest could move a member of another tribe as the host's member, or remove it, when the game reused the
   memory of a removed copy (for example after the host was in an editor); the crash the PandizeLive fork reported
   here (BUG-0844).
