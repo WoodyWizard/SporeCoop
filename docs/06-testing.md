@@ -6706,3 +6706,11 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   both games of a lane at once; the game goes on. Seen in 2 recorded runs (20261101-143943, 20261112-135150).
   `Checks.faults` (twoinst.py) lets a game pass whose only faults are this signature and prints it without the
   "total faults: N" the lab counts; `SPORE_BOOT_FAULT_STRICT=1` counts it again. tools_selftest `bootfault`.
+* `tribe_hold_guest` (BUG-0968 / BUG-0971, ~5 min): coop_tribe_hold_only.py `--who guest --windows 2`: the guest's
+  chief (simulated by the host) sampled on both games; every host hold over 0.3 s must be the mirror's too. On a miss
+  the test prints both games' rows around it and the guest's `coop.tribe holdtrace <id>` events (S / E start / end
+  received, T / t bound / not (FFFFFFFF: no item), P / D tribe.hold_anim's play / the relay's skipped restart, O / C /
+  M the mirror's own holds, R / r relayed starts, I the idle fix; docs/re/tribe.md#tribe-hold-missed). A host hold
+  still open at a window's end counts for overlaps (a mirror's hold inside it is no hold "of its own"). The change
+  animation 0x02C39200 comes 0.5-1 times in 2 min: `--changes N` (sample until N such holds) needed more than 12 min
+  for 5, so no suite entry uses it. The BUG-0962 cut is checked at < 1.0 s (0.25 s tick: up to 0.85 s by design).
