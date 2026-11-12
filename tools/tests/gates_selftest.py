@@ -320,6 +320,13 @@ def field_cases(tmp):
     check(got == {'ground'}, f'monitor: ground: agl_hold=0 (the rule before BUG-0945) fails the thrown members ({got})')
     got = scenario(tmp, 'f_php', *aligned_pair(host_sees=' puppet_hp=10/10', g=dict(hp=4), hs=dict(hp=4)))
     check(got == {'puppet_hp'}, f'monitor: puppet_hp: the guest at 4/10, its creature on the host full ({got})')
+    # BUG-0953: the puppet off its player's health in opposite directions on the lines in a row (the state lag at a
+    # revive, then at the killing blow) is no puppet keeping a wrong health; php_same_way 0 (the rule before) fails it
+    flip = lambda k: f' puppet_hp={0 if k % 2 else 10}/10'  # noqa: E731
+    got = scenario(tmp, 'f_php_flip', *aligned_pair(host_sees=flip, g=dict(hp=5), hs=dict(hp=5)))
+    check(not got, f'monitor: puppet_hp: lines off in opposite directions are the lag at health jumps ({got})')
+    got = scenario(tmp, 'f_php_flip_old', *aligned_pair(host_sees=flip, g=dict(hp=5), hs=dict(hp=5)), dict(php_same_way=0))
+    check(got == {'puppet_hp'}, f'monitor: puppet_hp: php_same_way 0 judges them as before ({got})')
     h, g = aligned_pair()
     h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded")
     g.append("12:00:00.000 [s 33.1] [INF] coop: damage: 1 hit by proxy owner=npc posse=? amount=2.5 from the host")
