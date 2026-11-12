@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, campaign)
 role: host
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12c
 commits: 442a5678
 tests: tribe_member_air (coop_tribe_member_air.py), gates_selftest (f_tribe_hang, f_tribe_toss, f_tribe_toss_old)
@@ -93,3 +93,4 @@ No change of the game's behaviour; the mod measures and the rule is precise.
 - 2026-11-11: opened; the cause in that run narrowed down but not proven; log lines, agl_held and the precise rule
   (fix/w47-final12c).
 - 2026-11-11 (fix/w47-final12d): tribe_member_air no longer relies on the member staying on the water by itself (the test only).
+- 2026-11-11: released in 0.7.12.

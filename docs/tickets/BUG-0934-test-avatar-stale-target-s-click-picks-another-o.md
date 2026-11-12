@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check 2 of 0.7.12, avatar_stale_target (lab 20261111-090547)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12b
 commits: 340bd402
 tests: avatar_stale_target
@@ -51,3 +51,4 @@ rounds and at least 2 of them by a real click. `STALE_TARGET_MISS=1` makes every
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-final12b (the test's setup).
+- 2026-11-11: released in 0.7.12.

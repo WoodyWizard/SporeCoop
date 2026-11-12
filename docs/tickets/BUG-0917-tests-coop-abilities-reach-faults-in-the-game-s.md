@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-lab-memory lab out/lab/20261111-002733 (campaign, lane 9)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-target-gap
 commits: bb0c7737, 5dc9698c, 0d586e59
 tests: avatar_stale_target, play_creature, long_creature_short, campaign, long_creature
@@ -119,3 +119,4 @@ team out/lab/20261111-035316, avatar_stale_target out/lab/20261111-035408. The c
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-target-gap: the caller was the test command; the command and `coop.npc list` check the object list; BUG-0918 (the game path) and BUG-0919 (the audit's rest) opened.
+- 2026-11-11: released in 0.7.12.

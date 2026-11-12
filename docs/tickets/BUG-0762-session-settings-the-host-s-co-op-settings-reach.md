@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: Discord suggestions 2026-10-31..11-04 (M0ng0r: shared healing should be optional), docs/plan-0.7.12.md F3
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-settings
 commits: 51a4bafd, b876712c
 tests: settings, cell_coop, play_cell, dna_pace, dna_pace_cell, team
@@ -46,3 +46,4 @@ both games). Unit tests: tests/validate_tests.cpp test_settings.
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: framework and the two settings on feat/w46-settings.
+- 2026-11-11: released in 0.7.12.

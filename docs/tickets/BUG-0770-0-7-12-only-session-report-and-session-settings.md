@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: 0.7.12 (rel/0.7.12, unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2
 commits: dbb4498b
 tests: sreport_leave
@@ -73,3 +73,4 @@ on it must not say "the host's table" and dna_pace is its own value. FAILS on re
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-b2 (end_session resets both modules; test sreport_leave).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: tribe_held_item key frames, lab 20261110-214352
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-tribe-looks-2
 commits: 0c9dc172
 tests: tribe_held_item
@@ -50,3 +50,4 @@ mirror's item model the way the attach does. Switch `coop.fix tribe.item_scale o
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-tribe-looks-2 (tribe.item_scale).
+- 2026-11-11: released in 0.7.12.

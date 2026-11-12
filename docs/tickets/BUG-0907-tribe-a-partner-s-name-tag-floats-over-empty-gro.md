@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: same_view_tribe and play_tribe key frames, lab 20261110-201619
 role: both
 versions: 0.7.11.2 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-tribe-looks
 commits: 679037b0
 tests: tribe_name_tags, same_view_tribe, play_tribe
@@ -47,3 +47,4 @@ by that game's camera), the chief labelled; a key frame of kind sameview.
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-tribe-looks (tribe.pointer_tag).
+- 2026-11-11: released in 0.7.12.

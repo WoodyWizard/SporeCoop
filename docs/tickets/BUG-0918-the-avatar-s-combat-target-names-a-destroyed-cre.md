@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: found by analysis of BUG-0917 (lab 20261111-030815)
 role: host,guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-target-gap
 commits: 5dc9698c
 tests: avatar_stale_target
@@ -66,3 +66,4 @@ team out/lab/20261111-035316, avatar_stale_target out/lab/20261111-035408. The c
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-target-gap (game.avatar_stale_target).
+- 2026-11-11: released in 0.7.12.

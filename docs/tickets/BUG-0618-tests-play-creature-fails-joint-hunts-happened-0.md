@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: rel/0.7.9 integration run out/lab/20261106-040221 (fix/w45-int2)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-play-bots
 commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711, e6158137, 8b46435b, 5a0f08ed, 29f42cd6
 tests: play_creature
@@ -109,3 +109,4 @@ Earlier: no-fail-run: a flaky bot outcome, not reproduced in 3 runs on lane 3 (0
   showed (2). FAIL (the old bot): 20261110-210848 #2 and the three runs above.
   PASS (the new bot) 7 of 7: out/lab/20261110-220532 #1-#3 (+29, +66, +42 joint hits) and out/lab/20261110-223754 #1-#4
   (+43, +19, +37, +24); kills by both players 8-13 a run. Also found: BUG-0913 (open).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: plan-0.7.12 F5 (Discord: Sterben, Lucas4001MC)
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-settings-all
 commits: 6efaacb0, d36b281b, b589db32, 21ed8a20
 tests: one_creature
@@ -43,3 +43,4 @@ PASS out/lab/20261110-190544; FAIL (SPORE_FIX_OFF=settings.all: creature.mode re
 ## History
 - 2026-11-08: opened.
 - 2026-11-10: wired, tested on lanes 6/7 (PASS and FAIL runs below), fixed (unreleased).
+- 2026-11-11: released in 0.7.12.

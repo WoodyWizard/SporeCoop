@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: same_view_tribe key frames, lab 20261110-201619
 role: guest
 versions: 0.7.11.2 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-tribe-looks
 commits: a5b39cc1
 tests: tribe_held_item, tribe_tools, same_view_tribe
@@ -66,3 +66,4 @@ The test also asks for the resting grip on the guest (`hold=0`, kept for 8 s).
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-tribe-looks (tribe.held_item).
+- 2026-11-11: released in 0.7.12.

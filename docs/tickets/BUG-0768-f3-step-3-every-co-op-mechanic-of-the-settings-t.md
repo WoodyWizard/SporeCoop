@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: plan-0.7.12 F3 (Discord suggestions 2026-10-31..11-04)
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-settings-all
 commits: 6efaacb0, d36b281b, b589db32, 7c689797, 1a87b3db
 tests: settings_cell, settings_creature, settings_tribe, settings_civ, settings_space, switch_vote_off, editor_now_off, tribe_duet_off, ui, net_tests test_join_rules
@@ -58,3 +58,4 @@ Lanes 6/7, GOG 2024, SPORE_DETECTOR=20, --retry 0 (FAIL runs: SPORE_FIX_OFF=sett
 ## History
 - 2026-11-08: opened.
 - 2026-11-10: wired, tested on lanes 6/7 (PASS and FAIL runs below), fixed (unreleased).
+- 2026-11-11: released in 0.7.12.

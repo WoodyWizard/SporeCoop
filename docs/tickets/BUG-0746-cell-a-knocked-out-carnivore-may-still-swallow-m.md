@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: G4 static analysis for BUG-0293 (docs/re/cell.md#cell-eat-gate)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-tribe
 commits: 7773ebff, 9ff02322
 tests: cell_ko_food
@@ -54,3 +54,4 @@ shared food on both games must not grow.
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-b1-tribe): reproduced (FAIL with the switch off), fixed with cell.ko_no_swallow, 2 PASS.
+- 2026-11-11: released in 0.7.12.

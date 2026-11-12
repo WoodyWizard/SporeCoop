@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: Discord suggestions 2026-10-31..11-04 (Comfortable bug reports), docs/plan-0.7.12.md F4
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-session-report
 commits: 04061890, c941e143, 2eb251bc
 tests: session_report, unit (validate_tests test_sreport, fuzz_decoders fuzz_sreport)
@@ -53,3 +53,4 @@ round). `make test` passes.
 
 ## History
 - 2026-11-08: opened; implemented on feat/w46-session-report (F4 of 0.7.12).
+- 2026-11-11: released in 0.7.12.

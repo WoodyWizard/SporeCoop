@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: 0.7.12 final check, lab 20261111-044257 campaign (lane 2): FINDING Dave:coverage
 role: guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12
 commits: de35e50a
 tests: cell_host_paused
@@ -60,3 +60,4 @@ campaign measures it.
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: root cause (stale view centres while the host stands), fixed on fix/w47-final12 (cell.send_centres).
+- 2026-11-11: released in 0.7.12.

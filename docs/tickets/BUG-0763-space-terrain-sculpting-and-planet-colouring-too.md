@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-b1-space (BUG-0749 exploration, 2026-11-08)
 role: 
 versions: 0.7.11 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2-space
 commits: f0808b2d
 tests: tools/tests/coop_space_sculpt_tool.py
@@ -53,3 +53,4 @@ ground; asserts the guest's GetHeightAt at the spot and around it, and the guest
 ## History
 - 2026-11-08: opened.
 - 2026-11-10: fixed on fix/w47-b2-space (sculpting message + SetColors relayed; switch space.terra_sculpt).
+- 2026-11-11: released in 0.7.12.

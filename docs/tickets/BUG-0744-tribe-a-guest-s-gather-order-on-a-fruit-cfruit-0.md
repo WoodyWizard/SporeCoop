@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: G4 analysis: play_tribe w46-k4-bodies out/lab/20261108-020506-2
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-tribe
 commits: 486ed7d1
 tests: tribe_fruit_order, play_tribe
@@ -56,3 +56,4 @@ the member walk 2 m nearer.
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-b1-tribe): reproduced with a new test (FAIL with the switch off), fixed with tribe.fruit_order, 2 PASS.
+- 2026-11-11: released in 0.7.12.

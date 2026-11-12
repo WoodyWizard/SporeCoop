@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: owner request 2026-11-10
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w47-visual
 commits: 61565949, 6cda5847, 14900753
 tests: tools/tests/visual_selftest.py (make test), ui_golden, same_view, same_view_tribe; key frames in the play_*, campaign and feature tests
@@ -47,3 +47,4 @@ Not a bug: almost every check reads console state; only a few tests look at pixe
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-11: released in 0.7.12.

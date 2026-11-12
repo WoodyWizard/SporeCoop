@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-b2 (BUG-0884 test, 2026-11-10)
 role: guest
 versions: 0.7.11.1 and earlier (since BUG-0751)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-colony
 commits: 1cfd4d5f
 tests: space_planner_miss
@@ -61,3 +61,4 @@ clicks), drags the house tile onto a taken plot; the guest's planner must have a
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-colony (the guest's send waits for the planner's close; switch civ.space_planner_closed; test space_planner_miss).
+- 2026-11-11: released in 0.7.12.

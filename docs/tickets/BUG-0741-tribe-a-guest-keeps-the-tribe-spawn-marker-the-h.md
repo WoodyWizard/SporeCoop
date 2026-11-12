@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-g4-tests BUG-0489 analysis (Ghidra)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-tribe
 commits: 5c6fd384
 tests: tribe_copy_marker
@@ -68,3 +68,4 @@ marker count as the host.
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-b1-tribe): reproduced with a new test (FAIL with the switch off), fixed with tribe.copy_marker, 2 PASS.
 - 2026-11-11 (fix/w47-final12d): the test's race with the controller's forming pace fixed (the test only); the fix is unchanged.
+- 2026-11-11: released in 0.7.12.

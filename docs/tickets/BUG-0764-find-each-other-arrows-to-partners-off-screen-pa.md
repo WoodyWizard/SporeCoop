@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: Discord suggestions 2026-10-31..11-04 (Sterben, M0ng0r: arrows to partners, partners on the map), docs/plan-0.7.12.md F2
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-partner-arrows
 commits: 7b08921b, 7995da26, 76477f2c, a0457e7c, 11d74ec1, e7411236, 9f1f1759, eb8aaaa9, 44a73ce2, 6dda6833
 tests: find_partners, find_partners_tribe, find_partners_cell, find_partners_civ, find_partners_space
@@ -52,3 +52,4 @@ arrow), the minimap showed no partner, and players had no colour (name tags gree
 ## History
 - 2026-11-08: opened.
 - 2026-11-08: implemented on feat/w46-partner-arrows (F2 of 0.7.12).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: guest
 versions: 0.7.10, 0.7.11 (and before: BUG-0643)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-roster-portraits
 commits: 5c49c9f0
 tests: roster_portraits
@@ -78,3 +78,4 @@ the guest's screen shows the roster, no slot is white (host too).
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed in fix/w47-roster-portraits (creations.bundle_png).
+- 2026-11-11: released in 0.7.12.

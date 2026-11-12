@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-getfilecount lab 20261111-131344-2
 role: 
 versions: tests only
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-getfilecount
 commits: 698fac83
 tests: tribe_bounce_world, realign_tribe
@@ -43,3 +43,4 @@ tribe_bounce_goal). No game code.
 ## History
 - 2026-11-11: opened.
 - 2026-11-11 (fix/w47-getfilecount): found while reproducing BUG-0942, fixed in the test.
+- 2026-11-11: released in 0.7.12.

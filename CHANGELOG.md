@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-11-11
+
 A feature update built from the players' suggestions: a new co-op window, session settings chosen by the host,
 arrows and minimap marks to find each other, player colours, and one report for the whole session.
 

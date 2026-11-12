@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-space
 commits: 3fe2518f
 tests: space_planner_build
@@ -61,3 +61,4 @@ not get it (BUG-0766).
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-space): test written (plot freed by the game's DestroyBuilding); it showed the host never got the building; fixed behind civ.space_planner_send; limit BUG-0766.
 - 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: only guest -> host is covered; the host's Space planner buildings and the ones it builds for a guest are not relayed (civ.cpp:1447 returns outside Civ); new ticket BUG-0884.
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: fix/w46-b1-space (BUG-0751, 2026-11-08)
 role: 
 versions: 0.7.11 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2
 commits: 8b6a60dd aca22a9c
 tests: space_planner_away
@@ -53,3 +53,4 @@ before, so the test frees a plot on the host again; the host's city must get the
 ## History
 - 2026-11-08: opened.
 - 2026-11-10: fixed on fix/w47-b2 (the host keeps the building until its ship is there; test space_planner_away). Found on the way: BUG-0901.
+- 2026-11-11: released in 0.7.12.

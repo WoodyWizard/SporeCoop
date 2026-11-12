@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: lab 20261108-114435 tribe_conquer_orders (rel/0.7.11 75365a87, lane 4)
 role: host
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-tribe
 commits: 555c2ae4
 tests: tribe_conquer_orders
@@ -56,3 +56,4 @@ cinematic that plays).
 ## History
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-b1-tribe): a test problem (a hut at 0.25-0.5 taken as fallen, raiders leaving the raid); the test waits for the game's state 2 and sends stalled raiders again; 4 PASS.
+- 2026-11-11: released in 0.7.12.

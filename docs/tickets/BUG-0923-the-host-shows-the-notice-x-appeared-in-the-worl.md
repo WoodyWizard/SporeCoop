@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: host
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-roster-portraits
 commits: 9630ed89
 tests: appeared_once
@@ -60,3 +60,4 @@ world".
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed in fix/w47-roster-portraits (notify.appeared_once).
+- 2026-11-11: released in 0.7.12.

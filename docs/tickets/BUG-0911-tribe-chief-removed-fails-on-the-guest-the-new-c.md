@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-tribe-looks, lab 20261110-210722 and 20261110-211149
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-tribe-looks-2
 commits: da7bf994
 tests: tribe_chief_removed
@@ -48,3 +48,4 @@ and of the other player's chief with the host's game (3 %). No change of the mod
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-tribe-looks-2 (the test).
+- 2026-11-11: released in 0.7.12.

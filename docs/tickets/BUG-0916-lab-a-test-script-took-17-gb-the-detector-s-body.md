@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: the final check of 0.7.12 (rel/0.7.12 lab out/lab/20261111-000117, 4 lanes)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-lab-memory
 commits: a0630fc8, 2531050f
 tests: campaign, campaign_ct, campaign_short
@@ -87,3 +87,4 @@ All on lanes 9 / 10 of fix/w47-lab-memory, `SPORE_DETECTOR=20`, each run beside 
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: cause measured, fixed with the lab's guard (fix/w47-lab-memory).
+- 2026-11-11: released in 0.7.12.

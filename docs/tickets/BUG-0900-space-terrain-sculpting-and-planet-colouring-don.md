@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-b2-space (BUG-0763, 2026-11-10)
 role: both
 versions: 0.7.12 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-colony
 commits: 82b16f99
 tests: space_sculpt_away
@@ -63,3 +63,4 @@ raises the ground twice and colours the planet with real clicks, the guest lands
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-colony (a partner's hits for another planet kept and done on landing; switch space.sculpt_hold; test space_sculpt_away).
+- 2026-11-11: released in 0.7.12.

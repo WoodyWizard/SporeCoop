@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-one-creature-black
 commits: a9206649
 tests: one_creature
@@ -96,3 +96,4 @@ game's own request (`coop.vote mate`), and checks that the guest's creature walk
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-one-creature-black (core.evo_flag_clear); the step is the refused request, not the body swap.
+- 2026-11-11: released in 0.7.12.

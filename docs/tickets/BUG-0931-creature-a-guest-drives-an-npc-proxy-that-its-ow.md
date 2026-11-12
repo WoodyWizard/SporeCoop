@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-final12 lab 20261111-071518 long_creature (lane 3), the guest
 role: guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12
 commits: fb8b2e2f
 tests: proxy_ghost, long_creature
@@ -46,3 +46,4 @@ Test `proxy_ghost` (tools/tests/coop_proxy_ghost.py, lane 5): three proxies in t
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-final12 (npc.proxy_listed_now).
+- 2026-11-11: released in 0.7.12.

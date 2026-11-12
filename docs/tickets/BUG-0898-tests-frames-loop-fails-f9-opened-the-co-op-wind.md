@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: 0.7.12 integration run 20261108-170205 lane 5
 role: 
 versions: 0.7.12 (rel/0.7.12, unreleased; the test)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2
 commits: 8fa8f163
 tests: frames_loop
@@ -44,3 +44,4 @@ No mod change (a test fix): no switch; the FAIL run is the integration run befor
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: cause found (an earlier test's report question left the window open), test fixed on fix/w47-b2.
+- 2026-11-11: released in 0.7.12.

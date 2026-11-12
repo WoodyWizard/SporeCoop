@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-tribe
 commits: 7e502373, 9e9f8685
 tests: tribe_duet
@@ -75,3 +75,4 @@ owners perform for the same village and the mini-game's progress rises over 20 %
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-tribe): instruments taken by both players' members (buy + grab); the social order (CitizenAction 9) gives the gift node, never the performance: no test yet; tribe.duet switch, coop.tribe duet / act_obj added.
 - 2026-11-08 (fix/w46-b1-tribe): the performance starts with CitizenAction 26 on a village member (social-mode right-click); test tribe_duet written, FAIL with tribe.duet off, 2 PASS.
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: 0.7.12 final check, lab 20261111-044257 long_creature (lane 3)
 role: host
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12
 commits: 65d55a4b
 tests: herd_help_stale, long_creature
@@ -69,3 +69,4 @@ The long sessions and the area's tests: see History.
 - 2026-11-11: opened.
 - 2026-11-11: root cause (the attacker field +0x10 of the herd's "attacked" stimuli), fixed on fix/w47-final12 (npc.stale_attacker).
 - 2026-11-11: runs with the fix (fix/w47-final12, `SPORE_DETECTOR=20`). Build 65d55a4b: long_creature_short x3 out/lab/20261111-071520 (OK), the area out/lab/20261111-071522 (11/11: npc_lost_target, creature, creature_kills, avatar_stale_target, team, dialog_note, keepalive_stall, cell tests), campaign_short out/lab/20261111-071826 (OK), long_creature out/lab/20261111-071518: the session survived (46 min, no stop of the host), failed on the guest's BUG-0931 and one sync-check (BUG-0932). Build fb8b2e2f (with BUG-0931): long_creature out/lab/20261111-080711 (lane 3, 45.6 min, OK) and out/lab/20261111-080715 (lane 2, OK), long_creature_short x3 out/lab/20261111-080713 (OK), the area + play_creature + campaign_short out/lab/20261111-080717 (9/9).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: 0.7.12 (rel/0.7.12, unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2
 commits: dbb4498b
 tests: sreport_leave
@@ -59,3 +59,4 @@ under 1 s and no guest times out. FAILS before, PASSES after.
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: measured (0-3 ms for 1.2 MB) and fixed on fix/w47-b2 (worker thread; test sreport_leave part E).
+- 2026-11-11: released in 0.7.12.

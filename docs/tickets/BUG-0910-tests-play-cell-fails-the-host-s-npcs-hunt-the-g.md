@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: rel/0.7.12 lab out/lab/20261110-200504 (lane 9)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-play-bots
 commits: 8b46435b, 6aef369f, 3b53e9b2, ab2e9a2f
 tests: play_cell
@@ -62,3 +62,4 @@ the end food check read a moving total once (20261110-222127 #1, 210 / 204). The
 - 2026-11-10: opened.
 - 2026-11-10 (fix/w47-play-bots): the ratio replaced by a controlled trial; twin switch `cell.puppet_level`; warm
   counters and the end food check of play_cell; 10 of 10 runs pass the check, the fix-off run fails it.
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-final12b lab 20261111-113158, campaign (lane 2), Bob
 role: guest
 versions: 0.7.7 - 0.7.11.2
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-getfilecount
 commits: 698fac83
 tests: tribe_bounce_goal (coop_tribe_bounce_goal.py)
@@ -94,3 +94,4 @@ game: no new fault (`exc`), the current mission is none or on a village of the h
 ## History
 - 2026-11-11: opened.
 - 2026-11-11 (fix/w47-getfilecount): analysed (Ghidra), reproduced (tribe_bounce_goal), fixed: realign.village_goal. Old path (0.7.7), not a 0.7.12 regression.
+- 2026-11-11: released in 0.7.12.

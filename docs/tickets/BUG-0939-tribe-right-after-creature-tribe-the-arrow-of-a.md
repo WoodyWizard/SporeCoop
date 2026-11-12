@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: host
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-arrow-origin
 commits: 5a8f6015
 tests: find_partners_tribe, find_partners, find_partners_cell, find_partners_civ, find_partners_space
@@ -75,3 +75,4 @@ chief and the host must have the row and the blip there.
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-arrow-origin (find.placed).
+- 2026-11-11: released in 0.7.12.

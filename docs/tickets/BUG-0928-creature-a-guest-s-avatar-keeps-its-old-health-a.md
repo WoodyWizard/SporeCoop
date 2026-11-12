@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257 (BUG-0920's side note)
 role: guest
 versions: 0.7.3 and later
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-one-creature-black
 commits: a9206649
 tests: one_creature
@@ -44,3 +44,4 @@ its new body after the swap" (steps 2 and 4), read from `coop.avatar`.
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-one-creature-black (creations.swap_health).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check 2 of 0.7.12, campaign (lab 20261111-090547)
 role: guest
 versions: 0.7.11, 0.7.11.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12b
 commits: 340bd402
 tests: space_save_change (coop_space_save_change.py); space_own_save; validate_tests (host_world host_save_now, announce_world)
@@ -73,3 +73,4 @@ the game's own money on both machines after the host earns 5000 and after the gu
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-final12b (res.space_save_follow).
+- 2026-11-11: released in 0.7.12.

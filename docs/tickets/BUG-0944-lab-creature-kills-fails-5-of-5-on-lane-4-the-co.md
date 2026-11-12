@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, 20261111-170604)
 role: guest
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12c
 commits: 6d0b109a
 tests: creature_kills (coop_creature_kills.py; twin KILLS_BLIND_STANCE=1), family_attack
@@ -74,3 +74,4 @@ is in); play_creature plays for minutes and clicks the stances many times.
 ## History
 - 2026-11-11: opened; found to be the lane's longer stage-entry pause and the test's unchecked click; fixed in the
   test (fix/w47-final12c).
+- 2026-11-11: released in 0.7.12.

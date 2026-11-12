@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2-space
 commits: 63288d47
 tests: tools/tests/coop_space_terra_elsewhere.py
@@ -54,3 +54,4 @@ Atmosphere Generator with real clicks; the host's record of the planet by Planet
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0749. Severity medium, confidence high.
 - 2026-11-10: fixed on fix/w47-b2-space (record values sent instead of deltas; switch space.terra_elsewhere).
+- 2026-11-11: released in 0.7.12.

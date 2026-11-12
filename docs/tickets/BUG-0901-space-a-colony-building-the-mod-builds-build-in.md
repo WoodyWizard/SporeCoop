@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-b2 (BUG-0766 test, 2026-11-10)
 role: both
 versions: 0.7.11 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-colony
 commits: 53efd4bc
 tests: space_city_keep
@@ -66,3 +66,4 @@ in that plot cannot pass for it).
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on fix/w47-colony (the city's data written after the mod's colony building; switch civ.space_city_data; test space_city_keep).
+- 2026-11-11: released in 0.7.12.

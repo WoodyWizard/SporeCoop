@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: docs/w47-readme-0712 (README shots, lane 2, 2026-11-10)
 role: both
 versions: 0.7.12 (rel/0.7.12, unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: docs/w47-readme-0712
 commits: bc841b97
 tests: ui (tools/tests/coop_ui.py)
@@ -36,3 +36,4 @@ PASS: lab 20261110-204029 (lane 2).
 ## History
 - 2026-11-10: opened.
 - 2026-11-10: fixed on docs/w47-readme-0712 (coordinator follow-up of the README pictures).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: BUG-0199 (fix/w46-g4b-coverage, 2026-11-08)
 role: 
 versions: 0.7.10 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w46-b1-space
 commits: 879f3063
 tests: space_npc_mission
@@ -54,3 +54,4 @@ by the reward. Switch for the broken variant: `res.guest_send` (BUG-0199's twin)
 - 2026-11-08: opened.
 - 2026-11-08 (fix/w46-g4b-coverage): opened as a child of BUG-0199 after an attempt with a run (recipe and blocker above).
 - 2026-11-08 (fix/w46-b1-space): the intro-mission blocker understood; test written (no mod change).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-b2
 commits: 8b6a60dd aca22a9c 3946ad47
 tests: space_planner_host
@@ -59,3 +59,4 @@ get it.
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0751. Severity medium, confidence medium.
 - 2026-11-10: fixed on fix/w47-b2 (the host relays its Space colony buildings; test space_planner_host).
 - 2026-11-10: the relay waits for the planner to close with the building (3946ad47); BUG-0902 opened for the guest side.
+- 2026-11-11: released in 0.7.12.

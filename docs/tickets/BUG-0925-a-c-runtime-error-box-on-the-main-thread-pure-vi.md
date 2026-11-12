@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: 0.7.12 final check, lab 20261111-044257 long_creature
 role: host,guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: fix/w47-final12
 commits: de092fa1
 tests: dialog_note
@@ -56,3 +56,4 @@ Test `dialog_note` (tools/tests/coop_dialog_note.py, lane 5): `kit.test.dialog 6
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: fixed on fix/w47-final12 (kit.fix dialognote).
+- 2026-11-11: released in 0.7.12.

@@ -8,7 +8,7 @@ reported: 2026-11-08
 source: Discord suggestions 2026-10-31..11-04 (Restyle coop menu), docs/plan-0.7.12.md F1
 role: all
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.12
 branch: feat/w46-coop-window
 commits: ea0f5a5b, d07c2f08, 2294d3df, 245f4017
 tests: ui, ui_status, tod_early, ui_explain, window_layout
@@ -49,3 +49,4 @@ last of nine buttons at a 36 px pitch).
 
 ## History
 - 2026-11-08: opened; implemented on feat/w46-coop-window (F1 of 0.7.12).
+- 2026-11-11: released in 0.7.12.
