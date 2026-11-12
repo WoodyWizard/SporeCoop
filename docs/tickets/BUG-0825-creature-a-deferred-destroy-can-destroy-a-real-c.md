@@ -35,7 +35,7 @@ Test: during a cinematic queue a puppet's destroy, destroy it with destroy_untra
 ## Verification
 Test `defer_identity` (tools/tests/coop_defer_identity.py).
 * FAIL (SPORE_FIX_OFF=npc.defer_identity): out/lab/20261112-011014 (the creature at the freed block was destroyed at the cinematic's end).
-* PASS: out/lab/20261112-010824-2 (it lives).
+* PASS: out/lab/20261112-010824-2, out/lab/20261112-014310 (it lives). (A run without a reuse in its rounds fails its first check: out/lab/20261112-013003; the test tries 6 rounds since.)
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
