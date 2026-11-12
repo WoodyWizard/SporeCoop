@@ -647,6 +647,7 @@ def test_mergelogs():
     sys.path.insert(0, os.path.join(ROOT, 'tools'))
     import io
     import contextlib
+    import re
     import merge_logs
     host = ('10:00:00.000 [INF] coop: before any session\n'
             '10:00:01.000 [s 0.000] [INF] coop: clock: session clock started\n'
@@ -1041,11 +1042,47 @@ def test_symlist():
     check(all(n in bat for n in shipped), 'uninstall.bat names every data/symbols/*.sym')
 
 
+def test_bootfault():
+    """BUG-0967: Checks.faults lets only the game's boot audio fault 0x011ECE4F pass, printed without the count the
+    lab reads; any other fault (also next to it) fails as before"""
+    import contextlib
+    import re
+    import io
+    sys.path.insert(0, os.path.join(ROOT, 'tools', 'tests'))
+    import twoinst
+    boot = '  0xC0000005 x1 at 0x011ECE4F GetTickCount_0+0x61F data=0x00000120 tid=220 (main)'
+    other = '  0xC0000005 x1 at 0x00C0DB23 ? data=0x00000004 tid=220 (main)'
+
+    class Con:
+        def __init__(self, out):
+            self.out = out
+
+        def call(self, cmd):
+            return {'out': self.out}
+
+    for out, want_ok, what in (('total faults: 1\n' + boot, True, 'the boot audio fault alone'),
+                               ('total faults: 2\n' + boot + '\n' + other, False, 'with another fault'),
+                               ('total faults: 1\n' + other, False, 'another fault alone'),
+                               ('total faults: 0', True, 'no fault')):
+        ck = twoinst.Checks.__new__(twoinst.Checks)
+        ck.ok = True
+        buf = io.StringIO()
+        saved = list(twoinst.Monitor.events), list(twoinst.FIXTURE_BAD)
+        twoinst.Monitor.events[:] = []
+        twoinst.FIXTURE_BAD[:] = []
+        with contextlib.redirect_stdout(buf):
+            ck.faults(host=Con(out))
+        twoinst.Monitor.events[:], twoinst.FIXTURE_BAD[:] = saved
+        counted = re.search(r'\bfaults: total faults: (\d+)', buf.getvalue())
+        check(ck.ok == want_ok, f'faults check, {what}: ok={ck.ok}')
+        check(want_ok == (not counted or counted.group(1) == '0'), f'faults line the lab reads, {what}')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
           'worldstate': test_worldstate, 'testlint': test_testlint,
-          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist}
+          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist, 'bootfault': test_bootfault}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:
