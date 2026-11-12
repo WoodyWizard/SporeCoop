@@ -3146,3 +3146,22 @@ BUG-0945, BUG-0946. GOG 2024, tribe fixture, lanes 2 and 5 (probes, then tribe_m
 * ? Not checked: which of the game's own attacks reach 60 hp on a member (an epic's and a rogue's are likely), and
   whether the throw is the fight node's own reaction or the locomotion's (mode +0x2B0 = 3, docs/re/creature.md
   "thrown").
+
+## A save in the end of Tribe faults in the serializer (2026-11-12, fix/w48-saves)
+<a id="tribe-graduation-save"></a>
+
+* ✔ (runtime, lab 20261112-021437, `tribe.graduation_save` off) Back from the City Hall editor (the player tribe
+  without its food mat, `tribe::stage_end`), a guest that joins makes the host post a share save 5.5 s into the
+  stage; 1.2 s later the host's game faulted: `0xC0000005 at 0x00BCAB07` (data 0x60C), the address the fork
+  PandizeLive/SporeCoop-Lineages saw (its canonical 0xBCAB07, BUG-0849). The game's exception handler kept the game
+  running, no saved box came ("no saved box 10013 ms after the save: sharing anyway") and the slot got one more file
+  (11 instead of 10): a half-written save went to the guest. In Civ after it, four share saves in a row wrote nothing
+  ("no saved box and no file written", the game's save name 'snapshot.spo'); the guest got the world only by
+  "sharing anyway" 43 s later.
+* Rule (coop.cpp `tribe_graduating`): no share and no share save while the game is in Tribe and either
+  `tribe::stage_end()` or the last editor request was one of the end of Tribe (City Hall 0x99E92F05, vehicles
+  0xF670AA43 / 0x9AD7D4AA / 0x7CB21BAD); the return from those editors is not an evolution. The request id is
+  forgotten on a load, the menu or another stage.
+* Without a join our code made no share save in that time in the earlier runs: since BUG-0508 the return from the City
+  Hall editor goes "in place" for a guest in the same Tribe world (tribe_civ_ground 0.7.9 lab 20261106-231404:
+  "evolved in place: Bob keeps its world" after the 120 s cinematic hold).

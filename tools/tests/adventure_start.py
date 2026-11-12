@@ -12,6 +12,13 @@ import lane  # noqa: E402
 STEPS = [(92, 246, 300), (566, 542, 300), (892, 496, 90), (1070, 626, 150), (1074, 506, 60), (1072, 626, 200)]
 
 
+def click(c, x, y):
+    """hover first: the menu's Galactic Adventures entry ignored a click without it (2026-11-12)"""
+    c.call(f'move {x} {y}')
+    time.sleep(0.4)
+    c.call(f'click {x} {y}')
+
+
 def main():
     inst = int(sys.argv[sys.argv.index('-i') + 1]) if '-i' in sys.argv else lane.HOST
     c = Console(inst)
@@ -20,8 +27,16 @@ def main():
             break
         time.sleep(1)
     c.call('wait.frames 1300 90000')
+    # the menu's intro cinematic hides the menu for longer than 1300 frames at a high frame rate (2026-11-12):
+    # the menu's own "Galactic Adventures" entry must be shown first
+    for _ in range(90):
+        if 'id=' in c.call('coop.ui find "Galactic Adventures"').get('out', '') and \
+                'menu intro' not in c.call('coop.status').get('out', ''):
+            break
+        time.sleep(1)
+    c.call('wait.frames 60 30000')
     for x, y, f in STEPS:
-        c.call(f'click {x} {y}')
+        click(c, x, y)
         c.call(f'wait.frames {f} 60000')
     t0 = time.time()
     retry = time.time() + 40
@@ -33,7 +48,7 @@ def main():
             return 0
         if 'GalaxyGameEntry' in mode and time.time() > retry:  # a click was lost: redo the captain panel
             for x, y, f in STEPS[2:]:
-                c.call(f'click {x} {y}')
+                click(c, x, y)
                 c.call(f'wait.frames {f} 60000')
             retry = time.time() + 40
         time.sleep(2)

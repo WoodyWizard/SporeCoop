@@ -6127,3 +6127,33 @@ were the test. No change of the mod.
   20 s; `coop.bodyrec` on both games, the copy against the host's vehicle at the same moment over the frames where it
   drives over 30 m/s. body_trail.analyse() skips speeds over 60 m/s: the test has its own interpolation.
   `SPORE_FIX_OFF=civ.vel_cap_host` fails (p50 4.9 m, p90 6.8 m; with the fix 0.7-0.9 / 1.8-2.3 m).
+
+## World share and saves: the saved box, the share's files, adventures, the end of Tribe (2026-11-12, fix/w48-saves)
+<a id="testing-saves-w48"></a>
+
+* `coop_saved_box.py` (creature, warm, ~1 min each): `--case question` (suite `saved_box_question`, BUG-0846): the
+  pause menu's "Do you want to save your game?" open (Esc, Exit to Main Menu), then `coop.save`; the question must
+  still be open 12 s later and the real saved box must have come and gone; then a second `coop.save` under a held box
+  (`coop.save hold`) must be refused. `--case cursor` (`saved_box_cursor`, BUG-0804): after the box closed, the new
+  SporeKit console command `cursor` (GetCursorPos as the game gets it) every 0.2 s for 7 s; the OK's point may be read
+  for at most 1 s. `--case video` (`saved_box_offscreen`, BUG-0806): `Renderer_SetVideoMode` 800x600, `coop.save`, the
+  box must close within 10 s; the mode goes back to 1440x1080 at the end. Twins: `world.saved_box_only`,
+  `world.saved_box_cursor`, `world.saved_box_offscreen`.
+* Moving a box with `coop.ui area <win> x1 y1 x2 y2` past the window's edge is no reproduction of an off-screen OK:
+  a click outside the client area still hits the UI under Wine. A real video mode change is
+  (docs/re/creature.md#creature-saved-box-kinds).
+* `win_unit` has `test_staged_move` (BUG-0848: `slotfs::g_test_before_move` holds a file in the staged folder and
+  `g_test_move_denied_until` makes the move fail with ERROR_ACCESS_DENIED for 150 ms, as Windows does; Wine itself
+  moves a folder with an open file) and `test_share_collect` (BUG-0847: a slot file held with share mode 0, error 32
+  under Wine). `SPORE_FIX_OFF=world.staged_move` / `world.share_complete` (win_unit.py maps them to `--old-move` /
+  `--old-collect`).
+* `coop_ufo_mirror_save.py` (suite `ufo_mirror_save`, BUG-0817): the guest saves under the host's drama UFO mirror,
+  leaves, loads its own slot alone (the slot is the one whose `<planet>.spo` was written: a received slot's
+  `lastSave.pld` is the host's copy and is not rewritten by the guest's save). A guard: it passes with the filter off
+  too.
+* `coop_adventure_save.py` (suite `adventure_save`, BUG-0854, one game, cold, ~4 min): the tutorial adventure
+  (adventure_start.py, which now hovers before each click and waits for the menu after its intro), then `coop.save`
+  and `coop.menu` must be refused and the game stay in Scenario with no fault.
+* `coop_tribe_civ.py --rejoin` (suite `tribe_civ_rejoin`, BUG-0849, ~12 min): the guest leaves and joins again right
+  after the host's City Hall editor; the host's planet file in its slot (`<planet>.spo`) is sampled until the host is
+  in Civ: no write after the City Hall editor's end.

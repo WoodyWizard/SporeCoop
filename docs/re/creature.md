@@ -4117,3 +4117,32 @@ BUG-0926 (the 0.7.12 final check's long_creature host: runtime error R6025). GOG
   block in writable memory, grouped by holder (a listed object + offset, a creature's AI block + offset, a module's
   data, elsewhere) and the block's state now. The scan stops the game for ~7 s. Our own `game::g_dmglog` (a log
   ring) shows up as a module holder: records only.
+
+## The game's message box: the saved box and its look-alikes, the mouse after the click (2026-11-12, fix/w48-saves)
+<a id="creature-saved-box-kinds"></a>
+
+* ✔ (runtime, lab tree dump, Creature) The window 0x06318E78 is the game's message-box layout. The "game saved" box:
+  caption 0x01510D08 "The game on planet <name> is saved.", frame 0x05822D40 (offset -88 -112), one button
+  **0xFFFFFFF1** (OK, command 0xFFFFFFF2) at (959, 589, 1001, 631) on a 1440x1080 screen. The pause menu's "Do you
+  want to save your game?" (Exit to Main Menu): the same window id, caption and frame, buttons **0x05107B17** Don't
+  Save, **0x05107B19** Cancel, **0x05107B1A** Save, no 0xFFFFFFF1. The Civ specialty question uses 0x05107B19 /
+  0x05107B1A too (fork, not seen by us). Rule (world.cpp `is_saved_box`, BUG-0846): the saved box = a visible
+  0x06318E78 with a visible 0xFFFFFFF1 and none of 0x05107B17..0x05107B1A.
+* ✔ A save posted while the question is up is written; its saved box comes ~2 s later over the question and the mod's
+  click on its OK closes only the saved box (the question stays). Before BUG-0846 the watcher took the question for
+  the box at once, its Enter answered the question, the watch stopped when the question closed, and the real saved
+  box stayed up with the game paused under it (lab 20261112-014220).
+* ✔ A posted Enter goes to the topmost modal box (it answered the question; it confirms a saved box).
+* ✔ After the game's video mode goes to 800x600 (`Renderer_SetVideoMode`, as the options do) the UI stays laid out
+  for 1440x1080: the saved box's OK is at (959..1001, 589..631), outside the 800x600 client area, and a click there
+  hits nothing (lab 20261112-014918). A box only moved past the edge with `coop.ui area` (screen still 1440x1080) is
+  still hit by a click at its point outside the client area under Wine: no reproduction of BUG-0806 that way.
+* ✔ SporeKit's virtual cursor: after `click x y` the hooked GetCursorPos answers (x, y) until 5 s without input
+  (vcursor_tick); the game read the saved box's OK point for 4.8 s after the box closed (lab 20261112-014119).
+  `click x y left release` drops it 2 frames after the button-up; console `cursor` prints what GetCursorPos gives the
+  game (`virtual=0|1 x= y=` in client coordinates).
+* Saves of a guest while the host's drama UFO mirror (BUG-0558) is up: the save's serializer is asked about the
+  mirror (the savestrip filter was called twice per save), but a solo load of a save made with it (filter off)
+  brings no UFO noun back (`coop.census` nouns: 018EBADC=1 before the save, none after the load; lab
+  20261112-015510, 20261112-015723): the Creature stage does not restore a type 7 ship from a save (BUG-0817,
+  not reproduced; the filter `creature.ufo_save_strip` stays).

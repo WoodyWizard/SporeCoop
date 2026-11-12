@@ -50,3 +50,13 @@ Co-op adventures as a feature: BUG-0793; the shared editor: BUG-0863.
   float at 0x16C8944 (10.0), the 1024 limits at 0xF44267 / 0xF444DE / 0xF46326.
 * ? Memory: big adventures reach about 1955 / 2047 MiB and then crash on a null allocation before a native write at
   0x9AC8E0 (Large Address Aware idea: BUG-0862).
+
+## The mod's saves and quit message in an adventure (2026-11-12, fix/w48-saves)
+<a id="adventure-mod-saves"></a>
+
+* BUG-0854: `world::save_game` and `world::post_quit_to_menu` (coop.save, coop.menu, the quit before a load) refuse
+  in kScenario (`world.adventure_saves`); the player leaves an adventure through its own menu. Shares are never made
+  in an adventure (the adapter owns its worlds) and a load from an adventure goes through load_now.
+* The tutorial adventure from the galaxy menu: `tools/tests/adventure_start.py` (clicks for 1440x1080). The menu's
+  intro hides the menu for more than its 1300 frames at a high frame rate: the script now waits for the menu's
+  "Galactic Adventures" entry and the end of the intro first.

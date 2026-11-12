@@ -12,6 +12,22 @@
   nations' vehicles, the attacking army included (BUG-0876).
 - Civilization: a guest sees a fast host vehicle right where it is, not several metres behind it (a vehicle over twice
   as fast as the guest's copy of it, for example a boosted one) (BUG-0787).
+- Saves: when the mod saved while one of the game's questions was open (the pause menu's "Do you want to save your
+  game?", the captured city's specialty question in Civilization), it answered that question with Enter and then left
+  the real "game saved" box open with the game paused. The mod now confirms only the "game saved" box and leaves
+  questions to the player (BUG-0846).
+- Saves: after the mod confirms the "game saved" box the game follows your real mouse again at once; it kept reading
+  the box's OK button as the mouse position for about 5 seconds (BUG-0804).
+- Saves: the "game saved" box is also confirmed when its OK button lies outside the game window (after the
+  resolution was lowered); it stayed open and the host's game stood still (BUG-0806).
+- Sharing the world: a save file the host's PC cannot read at that moment (a virus scanner holds it) no longer
+  makes the guest load an incomplete world; the share fails and is tried again (BUG-0847).
+- Sharing the world on Windows: storing the received world no longer fails with "error 5" when a scanner looks at
+  the new files for a moment; the move is tried again for a second and a half (BUG-0848).
+- Tribe to Civilization: the host's game no longer saves for a joining player between the City Hall and the vehicle
+  editors, while the game takes the village down; the world is sent in the Civilization stage (BUG-0849).
+- Galactic Adventures: the mod no longer saves the campaign or posts its quit to the main menu while an adventure is
+  played (BUG-0854).
 
 ## [0.7.12] - 2026-11-11
 

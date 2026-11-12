@@ -471,9 +471,20 @@ static uint64_t newest_write(const std::wstring& dir, int depth = 0)
     return best;
 }
 
+// BUG-0854: an adventure started from the galaxy menu (Galactic Adventures) has no campaign home planet; the
+// campaign save (and the quit message, which saves first) read it as null: the fork's games faulted at
+// cStarManager::GetPlanetRecord+0x2D. The adventure has its own menu to leave it; the mod neither saves nor posts
+// the quit there (shares are not made in adventures, a load from one goes through load_now). Off: allowed (0.7.12).
+static bool g_adventure_fix = true;
+COOP_FIX("world.adventure_saves", "BUG-0854", g_adventure_fix, "world: no campaign save and no quit message from the mod while an adventure is played");
+
 bool save_game(std::string& err)
 {
     using namespace skg;
+    if (g_adventure_fix && game::mode_id() == modes::kScenario) {
+        err = "finish or quit the adventure in its own menu before saving the campaign";
+        return false;
+    }
     // A save written while the game switches modes does not load again: the host's save for a
     // world share went into the game's message queue on the frame its evolution vote ended, the
     // editor opened while it was written, and the save (no cVisiblePlanet, extra rocks and
@@ -986,8 +997,12 @@ bool end_cinematic(const char* where)
 }
 
 // the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
-static bool post_quit_to_menu(std::string& err)
+bool post_quit_to_menu(std::string& err)
 {
+    if (g_adventure_fix && game::mode_id() == modes::kScenario) { // BUG-0854
+        err = "leave the adventure through its own menu";
+        return false;
+    }
     uintptr_t get = H->sym("App::IMessageManager::Get");
     void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
     if (!mm) {
