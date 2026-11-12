@@ -1557,6 +1557,7 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
             w.u8((uint8_t)ci);
             w.u32(noun);
             w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
+            w.f32(vcall<float>(b, 0x5C / 4)); // BUG-0807: its price (GetCost), paid in this planner
             send_cmd(w);
         }
     }
@@ -2842,8 +2843,23 @@ struct HeldBuild {
     void* city;
     uint32_t noun;
     net::Vec3 pos;
+    float paid = 0; // BUG-0807: what the guest paid for it in its planner
 };
 static std::vector<HeldBuild> g_held_builds;
+// BUG-0807: "the money is gone and the building disappears". A guest pays a building in its own planner (the shared
+// money), and the host builds the same one (CMD_BUILD). When the host's game cannot build it (no free slot left: the
+// host's own building took it in the same moment; the city is another player's now; its model is missing here), the
+// host only counted a rejected command, the guest's reconcile then demolished the guest's building as an extra one and
+// the price stayed paid. Now the guest sends what it paid (a float after the place; an older guest sends nothing) and
+// the host gives that back to the shared money (at most kRefundMax) and tells the guest why.
+// `coop.fix civ.build_refund off`: the old rejection (no refund, no notice).
+static bool g_fix_build_refund = true;
+COOP_FIX("civ.build_refund", "BUG-0807", g_fix_build_refund, "civ: a guest's building the host's game cannot build gives its price back to the shared money, with a notice");
+static constexpr float kRefundMax = 100000.f;
+static uint32_t g_build_refunds;
+static float g_build_refunded;
+static void refund_build(uint8_t from, float paid, const char* why);
+static const char* g_build_fail = ""; // why the last build_in_city failed
 // BUG-0602 diagnostics: the layout slot a building is in (-1: none) and the distance from p to the nearest slot
 static int slot_of(void* city, void* b, const net::Vec3& p, float* nearest, void** occ)
 {
@@ -2953,18 +2969,44 @@ static void host_send_building_hp(size_t ci, void* city, double now)
     g_hp_tx++;
 }
 
+static void refund_build(uint8_t from, float paid, const char* why)
+{
+    if (!g_fix_build_refund || !C.sess || from == C.sess->my_id())
+        return;
+    void* pc = player_civ();
+    float back = std::isfinite(paid) ? std::min(std::max(paid, 0.f), kRefundMax) : 0.f;
+    if (pc && back > 0 && o_AddMoney) {
+        o_AddMoney(pc, back, 0); // the shared money (no difficulty multiplier)
+        g_build_refunds++;
+        g_build_refunded += back;
+    }
+    char t[200];
+    snprintf(t, sizeof t, "the host's game could not build your building (%s)%s", why && *why ? why : "refused",
+             back > 0 ? ": its price is back in the shared money" : "");
+    net::Writer nw;
+    nw.str8(t);
+    C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+    H->log(M, SK_INFO, "civ: building of player %u not built here (%s): %.0f back to the money (BUG-0807)", (unsigned)from,
+           why ? why : "", back);
+}
+
 static void host_tick(double now)
 {
     if (!g_held_builds.empty() && !planner_city()) {
         auto held = std::move(g_held_builds);
         g_held_builds.clear();
         auto cities = all_cities();
-        for (auto& h : held)
-            if (std::find(cities.begin(), cities.end(), h.city) != cities.end()) {
+        for (auto& h : held) {
+            bool listed = std::find(cities.begin(), cities.end(), h.city) != cities.end();
+            void* b = nullptr;
+            if (listed) {
                 g_build_from = h.from;
-                build_in_city(h.city, h.noun, h.pos, false);
+                b = build_in_city(h.city, h.noun, h.pos, false);
                 g_build_from = -1;
             }
+            if (!b)
+                refund_build(h.from, h.paid, listed ? g_build_fail : "the city is gone"); // BUG-0807
+        }
     }
     trade_tick(now);
     boost_tick(now);
@@ -3202,7 +3244,6 @@ static uint32_t g_build_orphans;
 static bool g_fix_build_money = true;
 COOP_FIX("civ.build_money", "BUG-0613", g_fix_build_money,
          "civ: a building the mod pays for is not built when the money does not cover it (money never below 0)");
-static const char* g_build_fail = "";
 // build `noun` in `city` at the free slot nearest to `pos` (the game's planner sequence)
 static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
 {
@@ -3373,10 +3414,15 @@ static void host_command(uint8_t from, net::Reader& r)
         p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
         uint8_t co = city ? owner_of_city(city) : 0xFF;
-        if (!r.ok() || !city || (co != from && co != kShared))
+        float paid = r.ok() && r.left() >= 4 ? r.f32() : 0.f; // BUG-0807 (an older guest: nothing)
+        if (!r.ok())
             return reject();
+        if (!city || (co != from && co != kShared)) {
+            refund_build(from, paid, !city ? "the city is not in the host's game" : "the city belongs to another player now");
+            return reject();
+        }
         if (planner_holds(city)) {
-            g_held_builds.push_back({from, city, noun, p});
+            g_held_builds.push_back({from, city, noun, p, paid});
             g_planner_held++;
             g_cmds_done++;
             return;
@@ -3384,8 +3430,10 @@ static void host_command(uint8_t from, net::Reader& r)
         g_build_from = from; // the guest already has it
         void* b = build_in_city(city, noun, p, false); // the guest paid in its planner (shared money)
         g_build_from = -1;
-        if (!b)
+        if (!b) {
+            refund_build(from, paid, g_build_fail);
             return reject();
+        }
     } else if (kind == 6 /* CMD_BUYCITY, BUG-0877 */ || kind == 7 /* CMD_CAPTURE, BUG-0878 */) {
         uint8_t ci = r.u8();
         float price = kind == 6 ? r.f32() : 0.f;
@@ -4899,10 +4947,11 @@ std::string status()
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
                  g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_incomplete, g_cyc.older, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
-    char pl[200];
-    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d\n",
+    char pl[260];
+    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d build_refunds=%u/%.0f\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
-             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
+             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met,
+             g_build_refunds, g_build_refunded);
     char sh[320];
     snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u stops=%u released=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
@@ -5566,19 +5615,24 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t noun = a[2] == "factory" ? 0x18EA2CC : a[2] == "fun" ? 0x1A56ABA : 0x18EB106;
         net::Vec3 p = city_pos(city);
         if (is_guest()) {
+            float paid = 0;
             auto send = [&] {
                 net::Writer w;
                 w.u8(CMD_BUILD);
                 w.u8((uint8_t)ci);
                 w.u32(noun);
                 w.f32(p.x); w.f32(p.y); w.f32(p.z);
+                w.f32(paid); // BUG-0807
                 send_cmd(w);
             };
             if (!g_fix_build_money) // BUG-0613 off: sent before the guest knows it can pay
                 send();
+            void* pc = player_civ();
+            float m0 = pc ? thiscall<float>(a_GetMoney, pc) : 0.f;
             g_applying = true; // the guest's own copy, as its planner would place it
             void* b = build_in_city(city, noun, p, true);
             g_applying = false;
+            paid = b && pc ? std::max(0.f, m0 - thiscall<float>(a_GetMoney, pc)) : 0.f;
             if (g_fix_build_money && b)
                 send(); // only what the guest could build and pay for
             return b ? "built locally, sent to the host" : g_build_fail;
