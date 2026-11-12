@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.12 - 0.7.13
 fixed_in: unreleased
 branch: fix/w48-rest
-commits: fd4b65ab
+commits: fd4b65ab, fcaec2b8, 6507e5fc
 tests: tribe_gameover_wait, tribe_gameover_partner
 signature:
 docs: docs/re/tribe.md#tribe-gameover-wait

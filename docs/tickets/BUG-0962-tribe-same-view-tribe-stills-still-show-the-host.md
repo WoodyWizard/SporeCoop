@@ -45,8 +45,8 @@ binds it). Switch: `coop.fix tribe.mirror_hold_only off`.
 Test `tribe_hold_only` (tools/tests/coop_tribe_hold_only.py, tribe fixture): the host's chief sampled on both games
 (~20 Hz, up to 3 x 120 s until the mirror took its item by its own animation): such holds end within 0.8 s, the
 host's holds are the mirror's too.
-FAIL (SPORE_FIX_OFF=tribe.mirror_hold_only): FAIL_0962.
-PASS: PASS1_0962, PASS2_0962.
+FAIL (SPORE_FIX_OFF=tribe.mirror_hold_only): out/lab/20261112-143201 (holds of the mirror's own of 1.52 and 1.8 s).
+PASS: out/lab/20261112-143653, out/lab/20261112-144021 (such holds 0.54-0.71 s). A first PASS run, out/lab/20261112-143651, failed the test's side check on a host hold open at the window's start (57 s, not comparable) and on a 0.54 s change-animation hold (0x02C39200) the mirror's samples did not show (not seen in the two later runs; a sampling gap or a lost hold: not known). The test skips holds open at the window's start and counts overlapping holds since.
 
 ## History
 - 2026-11-12: opened.

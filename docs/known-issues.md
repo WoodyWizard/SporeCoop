@@ -2645,7 +2645,8 @@ fix idea, test in the ticket); "suspected" ones need a reproduction first.
   `coop.status` in Creature, `coop.social`, `coop.dna`, `coop.cam`, the other forms of `coop.abilities`.
 * Not checked: `coop.uistate`, civ::for_each_target, spacecoop::nav_entries.
 * Next steps: the same one-pass check against `game::for_each_object` in sync_entries and the tribe status.
-* Ticket: BUG-0919.
+* Ticket: BUG-0919. FIXED 2026-11-12 (fix/w48-rest, `npc.entries_listed`): reproduced for the Tribe status (a drop and
+  the status in the same pump); the entries and the status ask the game's object list.
 
 ## Key-frame review of the 0.7.12 final check (2026-11-11, plan/w47-frames)
 <a id="known-keyframes-0712"></a>
@@ -2663,7 +2664,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * The host shows "X appeared in the world" twice within 0.4 s at a join (cosmetic). Ticket: BUG-0923.
   Fixed 2026-11-11 (fix/w47-roster-portraits, notify.appeared_once).
 * Tests: seven key frames are shot in an editor, a cinematic or a pause menu, or with the camera on a bare slope.
-  Ticket: BUG-0924.
+  Ticket: BUG-0924. FIXED 2026-11-12 (fix/w48-rest): key frames wait for the games to settle (docs/06-testing.md#testing-w48-rest).
 
 ## Creature: a partner's name tag floats well over a low, long creature (2026-11-11, fix/w47-one-creature-black)
 <a id="issue-creature-tag-height"></a>
@@ -2692,7 +2693,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: docs/re/creature.md#creature-stimulus-attacker (the holders, the block's lifetime).
 * Not checked: what the fields are, who reads them.
 * Next steps: name the writers in Ghidra, clear the fields in the destroy hook (mods/coop/gamefixes.cpp).
-* Ticket: BUG-0930
+* Ticket: BUG-0930. FIXED 2026-11-12 (fix/w48-rest, `npc.stale_last_attacker`): the "ai" holders were the creature's
+  cModifiers (free slots' stale data, never read); the last attacker's reference kept the block alive and is released
+  now (docs/re/creature.md#creature-stale-holders).
 ## Seen in the key frames of the second 0.7.12 final check (2026-11-11, plan/w47-frames2)
 <a id="issue-frames2-0712"></a>
 
@@ -2705,7 +2708,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   host's evolution in creature.mode host (one_creature). Ticket: BUG-0937 (fixed on fix/w48-labels, unreleased:
   `creature.hud_portrait`, docs/re/creature.md#creature-posed-top-portrait)
 * Civ: the galaxy menu's logo and legal lines over the play of a guest that joined 11 s after its menu came up
-  (campaign_space, seen once). Ticket: BUG-0938
+  (campaign_space, seen once). Ticket: BUG-0938. FIXED 2026-11-12 (fix/w48-rest, `world.menu_splash`,
+  docs/re/creature.md#creature-menu-splash)
 * Tribe: right after Creature -> Tribe the host draws an arrow "504 m" to the planet's centre for a guest that has
   no chief yet (campaign, one frame). Ticket: BUG-0939
 * (2026-11-11, fix/w47-arrow-origin) BUG-0939 fixed: a partner without a place in this world (no chief yet and its
@@ -2722,7 +2726,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   guest's own game refused the click for lack of money and nothing was sent (a race the bot's check does not know).
 * Not checked: the guest's button state and money at the click.
 * Next steps: play_civ `buy` counts "the money ran out meanwhile" by the guest's own money and `cmds_sent`.
-* Ticket: BUG-0940
+* Ticket: BUG-0940. FIXED 2026-11-12 (fix/w48-rest): the race made on purpose (civ_buy_race): the guest's own game refuses
+  the click, nothing is sent or lost; play_civ counts it as buy_broke.
 
 ## Space: a connected guest is not taken along when the host loads another Space save (2026-11-11, fix/w47-final12b)
 <a id="issue-space-load-not-followed"></a>
