@@ -3240,3 +3240,35 @@ BUG-0955, BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 7 (tribe_mirror_l
   destroyed flag is seen before the free; they keep the serial now anyway (`tribe.kept_refs`).
 * ✔ The HUD's target ring map is keyed by the target's serial (+0x24, `ring_shown`): a ring drawn for a new object
   at the old address would be keyed by the new one's.
+## Whose purchase a baby is: the hut effect in every game (2026-11-12, fix/w48-tribe-civ)
+<a id="tribe-baby-buyer"></a>
+
+BUG-0824. GOG 2024, lab lane 2 (tribe fixture), follows #tribe-guest-baby.
+* ✔ (runtime, `coop.effects log on`, lab 20261112-084158) A left click on the own hut starts the world effect
+  **0xDB6F2233** at the hut (the "sent world id" of the clicking game); the world effects relay plays it in every
+  partner's game. The stage's message 0x63BBC42 (TribeStage_BabyBorn) follows **5.16-5.20 s** after the effect's start
+  in every game that plays it, the own and the relayed copy alike: every game makes one baby per purchase of any
+  player. The baby is born ~10 m from the effect's place (effect (408.7 -23.3 298.5), baby (407.9 -14.0 300.9)).
+* ✔ (Ghidra asm) The message handler 0xCD81F0 is thiscall(stage, uint32 id, void* data) ret 8; for 0x63BBC42 it
+  copies the place from `[data+0x28]+4..+0x10` and calls 0xCD74A0 at 0xCD8ECE (return 0xCD8ED3,
+  `SporeCoop::TribeStage_BabyBornMsg_Ret`). `data` is a message on the main thread's stack (0x12D1C4 in every call);
+  `[data+0x28]` is a heap Transform (first dword 0x00010006: flags 6, counter 1), not inside the effect object
+  (it is not within 0x400 bytes of any effect the relay created): the message does not say which effect sent it.
+* ✔ (runtime) The game's effect creators report one hut effect twice (the same object in two hooks in one frame).
+* Consequence before the fix (lab 20261112-083858): a guest's game took the host's relayed purchase for its own
+  (tribe.guest_baby sent CMD_BABY) and the host paired its own baby with that ask: every member the host bought was
+  the guest's. Fix `tribe.baby_pair`: each game notes the hut effects that start in it with their player (effects'
+  world-start observer) and gives each baby of the message the oldest noted purchase.
+## A mirror made in the middle of a baby's growth (2026-11-12, fix/w48-tribe-civ)
+<a id="tribe-mirror-grow"></a>
+
+BUG-0857. GOG 2024, Ghidra and lab lane 2. Verifies the fork's note in #tribe-fork-graduation-notes.
+* ✔ (Ghidra) cCreatureCitizen vtable 0x146AD00 slot 0x78 = **0xC248C0 GrowUp** (fastcall/thiscall, plain ret). It
+  calls the base 0xC223A0 (sets **+0xB34 = 1**, the adult's model and scale, health scaled to the new maximum,
+  +0xBD = 1), then for a citizen of a tribe (+0x1014) adds it to the tribe's selectable members (0xC95E50), its colour,
+  the TribeUI's member list (vt 0x6C), for the player tribe the event log line 0x11C9AD29/0x182CD6CE, a BT stimulus
+  0x200; destroys the baby's extra object +0x1030 and plays effect 0x3A616FEE/0x715FB4A7. No caller in the code: it
+  is reached through the vtable only.
+* ✔ (runtime, lab 20261112-090138-2) A baby grows up 57-59 s after SpawnMember(0). A guest that rejoins 12 s after the
+  birth has its mirror made again as a baby whose own timer starts then: it grew up 6 s after the host's. With
+  `tribe.mirror_grow` the bound mirror is grown through vt 0x78 in the snapshot that says adult (the same second).

@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a baby tribe member grows up on a guest's screen when it grows up in the host's game, also when the guest
+  joined or came back while the baby was growing; it stayed a baby there for a while longer (BUG-0857).
+- Tribe: a tribe member the host buys at the hut is the host's. Before, every member the host bought went to a guest,
+  and when a guest bought one in the same moment both could end up with the guest (BUG-0824).
+- Civilization: a building a guest pays for in its city planner that the host's game cannot build (for example the last
+  plot was just taken by the host's own building) gives its price back to the shared money, and the guest is told why;
+  before, the money was lost and the building disappeared (BUG-0807).
 - Cell: a player knocked out while a level change rescales the pool stays where it lay, next to the partner who can
   revive it; it was held far out in the pool (BUG-0798).
 - Cell: a knocked-out cell no longer makes poison clouds that hurt and kill creatures for its owner while it is down

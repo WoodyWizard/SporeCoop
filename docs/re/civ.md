@@ -1627,3 +1627,14 @@ BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 6 (`coop.civ reusehunt`, do
   list, pointers only) drops a mirror whose vehicle left the list, which happens at the removal, before the free; the
   new vehicle at the block is then a vehicle the host has not and the guest's cycle removes it (both with
   `civ.mirror_lifetime` on and off). prune_gone runs only while the Civ mode is active.
+## A guest's build the host cannot make (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-build-refund"></a>
+
+BUG-0807. GOG 2024, lab lane 2 (civ fixture).
+* ✔ (runtime) The players' city of the civ fixture has 11 building plots (`coop.civ slots 0`); a house costs 1600 at
+  every count (10 houses in a row, each 1600).
+* ✔ (runtime, a 300 ms link) A guest's build of the last plot that reaches the host after the host's own build of it:
+  the guest's game built it and paid (its copy of the city still had the plot), the host's build_in_city failed with
+  "no free slot" (SnapToSlot), and the guest's copy was demolished by the reconcile: 3200 spent for one house before
+  `civ.build_refund` (lab 20261112-085815), 1600 with it (20261112-085612).
+* CMD_BUILD carries the paid price as a float after the place since 0.7.13 (the host reads it only when present).
