@@ -32,6 +32,7 @@ struct State {
     uint32_t grounded = 0;   // BUG-0399: put out of the ground (step with ground)
     float grounded_from = 0; // BUG-0399: how far over (negative: under) the ground it was then (m)
     float last_err = 0, last_speed = 0;
+    float last_want_speed = 0; // BUG-0788 tests: the speed the last catch-up walk of step asked for
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
     bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
@@ -220,8 +221,11 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
         net::Vec3 tgt{pos.x + vel.x * 0.25f, pos.y + vel.y * 0.25f, pos.z + vel.z * 0.25f};
         float want_sp = std::min((sp > 0.5f ? sp : 2.f) + err * 1.2f, std::max(sp, 2.f) * 2.5f);
         if (now - ds.last_cmd > 0.1 || net::dist(tgt, ds.last_target) > 1.f) {
+            // (BUG-0788: MoveTo ends with SetDesiredSpeed(standard), so this speed is lost; the order does not matter:
+            // the game sets a puppet's desired speed again every frame, docs/re/creature.md#creature-c2-audit-0713)
             game::set_speed(p, want_sp);
             game::move_to(p, tgt, 0.3f);
+            ds.last_want_speed = want_sp;
             ds.last_cmd = now;
             ds.last_target = tgt;
         }

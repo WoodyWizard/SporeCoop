@@ -7084,6 +7084,30 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "speedset")) { // tests (BUG-0788): SetDesiredSpeed on each Creature
+                           for (auto& [id, r] : g_remotes) { // puppet now, and +0x1E0 read right after it (same frame)
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               uint8_t* sp = (uint8_t*)r.puppet + game::kSpatialOff;
+                               float before = *(float*)(sp + 0x1E0);
+                               game::set_speed(r.puppet, (float)atof(argv[2]));
+                               SAY("puppet %u desired %.2f -> %.2f (standard %.2f)\n", id, before, *(float*)(sp + 0x1E0),
+                                   *(float*)(sp + 0x1E4));
+                           }
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "speed")) { // tests (BUG-0788): the game's speeds of each Creature puppet
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               uint8_t* sp = (uint8_t*)r.puppet + game::kSpatialOff; // cLocomotiveObject
+                               net::Vec3 v = game::velocity(r.puppet);
+                               SAY("puppet %u desired=%.2f standard=%.2f vel=%.2f want=%.2f err=%.2f kinematic=%d\n", id,
+                                   *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), drive::speed(v), r.drv.last_want_speed,
+                                   r.drv.last_err, (int)r.drv.kinematic);
+                           }
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "hp")) { // tests (BUG-0697): the game's health of each ship puppet
                            for (auto& [id, r] : g_remotes)
                                SAY("puppet %u %s\n", id, modes::space_puppet_hp(r.puppet).c_str());
