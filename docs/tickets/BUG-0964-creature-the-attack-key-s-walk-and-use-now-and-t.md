@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-walk
-commits: 18a57a2a, d71d5660
+commits: 18a57a2a, d71d5660, 79de1e01
 tests: walk_start, walk_start_solo, walk_start_walkin, partner_pass
 signature:
 docs: docs/re/creature.md#creature-partner-pass-rel, docs/re/creature.md#creature-walk-held-in-mound, docs/06-testing.md#testing-walk-start

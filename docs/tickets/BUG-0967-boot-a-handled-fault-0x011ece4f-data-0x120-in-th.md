@@ -10,8 +10,8 @@ role: host, guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-walk
-commits:
-tests: tools_selftest bootfault
+commits: 79de1e01
+tests: tools/tests/tools_selftest.py (make test, check bootfault)
 signature: dc04aee5:0x011ECE4F read [edi+0x120], edi null (FUN_011ECE30, audio init at boot)
 docs: docs/06-testing.md#testing-boot-audio-fault
 related: BUG-0964
