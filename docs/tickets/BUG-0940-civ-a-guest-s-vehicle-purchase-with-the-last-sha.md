@@ -53,7 +53,7 @@ click") instead of a PROBLEM. A purchase sent and lost stays a PROBLEM. Test-onl
 Test `civ_buy_race` (tools/tests/coop_civ_buy_race.py, civ fixture): a control purchase with money, then twice the
 race; on the games' own state: no vehicle, money 0 on both, nothing sent; and the bot's verdict.
 FAIL (play_civ before the fix, 6a50d72a): out/lab/20261112-134053 (both races "lost", the PROBLEM line).
-PASS: out/lab/20261112-134351, PASS2_0940.
+PASS: out/lab/20261112-134351, out/lab/20261112-141549.
 
 ## History
 - 2026-11-11: opened.

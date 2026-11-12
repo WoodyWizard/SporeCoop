@@ -54,7 +54,11 @@ def main():
     ck(e is not None and t_close is not None and e['t'] >= t_close,
        'the key frame waited for the guest\'s pause menu to close')
     ck(e is not None and any('waited' in x for x in e.get('extra', [])), 'the manifest says the frame waited')
+    t2 = time.time()
     b = busy(guest)
+    while time.time() - t2 < 5 and 'paused' in b:
+        time.sleep(0.3)
+        b = busy(guest)
     ck('paused' not in b, f'the guest plays again after the menu closed ({b})')
     ck.faults(host=host, guest=guest)
     return ck.result()

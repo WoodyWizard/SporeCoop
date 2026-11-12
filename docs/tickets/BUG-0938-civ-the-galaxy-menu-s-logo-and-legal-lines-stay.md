@@ -62,7 +62,7 @@ lines are put up, it joins at once; in the stage three times over 20 s the guest
 drawn (`coop.ui where` through visible parents), the host neither; key frame `stage`.
 FAIL (SPORE_FIX_OFF=world.menu_splash): out/lab/20261112-140450 (0x05B82B38 and 0x06776FE0 drawn at 3, 10, 17 s; the
 key frame shows the logo and the ESRB lines over the creature).
-PASS: out/lab/20261112-140452, PASS2_0938 (hidden 0.4 s into the stage, the frame clean).
+PASS: out/lab/20261112-140452, out/lab/20261112-141206 (hidden 0.4 s into the stage, the frame clean).
 
 ## History
 - 2026-11-11: opened.

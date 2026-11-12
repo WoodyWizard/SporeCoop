@@ -37,8 +37,7 @@ its game waits with a co-op note while the host's caption is up, as the host's g
 mods/coop/tribe.cpp `gameover_host_tick` / `gameover_pause`: the host sends whether its game-over caption is up
 (MSG_NPC_ANIM kind 20 {u8 up}, reliable, again every 3 s while up; up = Tribe, the game's input lock and stood time,
 entered with every player-tribe member knocked out). A guest's game stands with the game's own
-cGameTimeManager::Pause (reason 0x4BF38A7, Civ's planet-won reason, never used in Tribe) and shows "<host>'s tribe is
-out: the game waits until <host> (host) answers the caption ..."; Resume on the host's "down", 10 s without news, the
+cGameTimeManager::Pause (reason 0x4BF38A7, Civ's planet-won reason, never used in Tribe) and shows "The tribe is out: waiting for <host> (host) to answer the caption"; Resume on the host's "down", 10 s without news, the
 stage's or the session's end. `coop.tribe` status line "tribe game over wait". Switch: `coop.fix tribe.gameover_wait
 off`.
 
@@ -47,7 +46,7 @@ Test `tribe_gameover_wait` (tools/tests/coop_tribe_gameover_wait.py, tribe fixtu
 out on the host; the guest's game time stands within 6 s of the host's caption (`busy: paused`, the game's time
 manager) and no caption of its own; key frame `caption`; the host's Enter: back in Tribe, the guest's time runs again.
 FAIL (SPORE_FIX_OFF=tribe.gameover_wait): out/lab/20261112-141204 (the guest `busy: -` under the host's caption).
-PASS: out/lab/20261112-140917, PASS2_0960.
+PASS: out/lab/20261112-140917, out/lab/20261112-141335.
 
 ## History
 - 2026-11-12: opened.

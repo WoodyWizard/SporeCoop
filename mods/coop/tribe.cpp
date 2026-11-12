@@ -2064,9 +2064,8 @@ static void gameover_pause(bool on, const char* why)
     H->log(M, SK_INFO, "tribe: the host's game-over caption is %s: this game %s (BUG-0960, %s)", on ? "up" : "gone",
            on ? "waits" : "goes on", why);
     if (C.feed && C.sess)
-        C.feed(on ? C.sess->name_of(0) + "'s tribe is out: the game waits until " + C.sess->name_of(0) +
-                        " (host) answers the caption, then the tribe comes back for everybody"
-                  : C.sess->name_of(0) + " (host) answered the caption: the game goes on");
+        C.feed(on ? "The tribe is out: waiting for " + C.sess->name_of(0) + " (host) to answer the caption"
+                  : C.sess->name_of(0) + " (host) answered: the game goes on");
 }
 
 // host, every send cycle: its caption is up (the input lock and the stood time in Tribe, entered with the player
