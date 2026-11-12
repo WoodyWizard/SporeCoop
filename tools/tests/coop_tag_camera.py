@@ -53,7 +53,7 @@ def tag_colour(con):
     return (v >> 16) & 255, (v >> 8) & 255, v & 255
 
 
-def measure(png, colour):
+def measure(png, colour, origin=None):
     """{'tag': (x, y) | None, 'body': x | None, 'n': (tag px, body px)} of a shot; None without Pillow / a picture.
     The HUD (the status block top right, the bars at the bottom) and where the arrows' labels are (the 130 px at the
     left and right edges, the 330 px at the bottom) are left out."""
@@ -111,15 +111,21 @@ def measure(png, colour):
             # under it too (8 of the next 12: stray red pixels of the background do not count)
             tag_bottom = max(y for y in range(by, by + 30) if any(abs(x - tx) < 120 for x in rows.get(y, ())))
             top = None
-            if span:
-                x0, x1 = max(span[0], tx - 80, 0), min(span[1], tx + 80, w - 1)
-                redrow = {}
-                for y in range(tag_bottom + 1, min(h - 200, tag_bottom + 440)):
-                    redrow[y] = sum(1 for x in range(x0, x1 + 1) if red(x, y)) >= 4
-                for y in range(tag_bottom + 1, min(h - 212, tag_bottom + 428)):
-                    if redrow.get(y) and sum(1 for k in range(1, 13) if redrow.get(y + k)) >= 8:
-                        top = y
+            if origin:  # from the partner's own point (its feet, projected by the game's camera) upwards: the rows
+                # with red within 70 px of it, gaps of up to 8 rows; the last one is the top of that creature
+                ox, oy = int(origin[0]), int(origin[1])
+                found, last, gap = False, None, 0
+                for y in range(min(h - 1, oy + 10), max(0, oy - 420), -1):
+                    n = sum(1 for x in range(max(0, ox - 70), min(w, ox + 70)) if red(x, y))
+                    if n >= 3:
+                        found, last, gap = True, y, 0
+                    elif found:
+                        gap += 1
+                        if gap > 8:
+                            break
+                    elif y < oy - 120:
                         break
+                top = last
             return {'tag': (tx, by), 'body': bx[len(bx) // 2] if len(bx) >= 40 else None, 'n': (len(xs), len(bx)),
                     'span': span if len(bx) >= 40 else None, 'tag_bottom': tag_bottom, 'body_top': top}
     except OSError:
@@ -177,28 +183,30 @@ def pick_colour(host, guest, W, H, drag):
 
 
 def px_per_metre(con):
-    """screen px per metre of height at the partner: its position and 1 m over it (the planet's up) projected by this
-    game's camera (`coop.find labels`, `coop.find project`)"""
+    """(screen px per metre of height at the partner, its point on the screen): its position and 1 m over it (the
+    planet's up) projected by this game's camera (`coop.find labels`, `coop.find project`); None when not known"""
     m = re.search(r'label kind=player .*pos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)', con.call('coop.find labels').get('out') or '')
     if not m:
         return None
     p = [float(v) for v in m.groups()]
     r = sum(v * v for v in p) ** 0.5 or 1.0
     ys = []
+    xs = []
     for h in (0.0, 1.0):
         q = [p[i] + p[i] / r * h for i in range(3)]
-        mm = re.search(r'sy=(-?[\d.]+)', con.call('coop.find project %.3f %.3f %.3f' % tuple(q)).get('out') or '')
+        mm = re.search(r'sx=(-?[\d.]+) sy=(-?[\d.]+)', con.call('coop.find project %.3f %.3f %.3f' % tuple(q)).get('out') or '')
         if not mm:
             return None
-        ys.append(float(mm.group(1)))
-    return abs(ys[0] - ys[1]) or None
+        xs.append(float(mm.group(1)))
+        ys.append(float(mm.group(2)))
+    return (abs(ys[0] - ys[1]) or None), (xs[0], ys[0])
 
 
-def shoot(con, name, colour):
+def shoot(con, name, colour, origin=None):
     png = os.path.join(lane.out_dir('shots'), name + '.png')
     if not con.call('shot ' + png).get('ok'):
         return None, None
-    m = measure(png, colour)
+    m = measure(png, colour, origin)
     out = png
     if frames is not None:
         d = frames.frames_dir(lane.out_dir())
@@ -265,8 +273,10 @@ def main():
         return ck.result()
     print('  ' + (guest.call('kit.cam reset').get('out') or 'kit.cam: none (an old SporeKit)').strip(), flush=True)
     rest, gaps = [], []
+    pm = px_per_metre(guest)
+    ppm, origin = pm if pm else (None, None)
     for i in range(3):
-        m, p = shoot(guest, f'tagcam_still_{i + 1}', colour)
+        m, p = shoot(guest, f'tagcam_still_{i + 1}', colour, origin)
         if m and m['tag'] and m['body'] is not None:
             rest.append(m['tag'][0] - m['body'])
         if m and m.get('body_top') is not None:
@@ -276,10 +286,9 @@ def main():
               f'{m.get("body_top") if m else "-"} -> {p}', flush=True)
         time.sleep(0.4)
     print('  ' + (guest.call('coop.find tagh').get('out') or '').strip(), flush=True)
-    ppm = px_per_metre(guest)
     gap_m = sorted(gaps)[len(gaps) // 2] / ppm if gaps and ppm else None
     print(f'  BUG-0929: the tag\'s lowest row is {gaps} px over the top of the body; {ppm or 0:.1f} px a metre there '
-          f'(the game\'s camera at the partner) -> {gap_m if gap_m is None else round(gap_m, 2)} m', flush=True)
+          f'(the game\'s camera at the partner, its point at {origin}) -> {gap_m if gap_m is None else round(gap_m, 2)} m', flush=True)
     if a.gap >= 0:
         ck(gap_m is not None and gap_m <= a.gap,
            f'camera at rest: the tag stands just over its creature, not up in the air ({gap_m} m between the tag and the '
