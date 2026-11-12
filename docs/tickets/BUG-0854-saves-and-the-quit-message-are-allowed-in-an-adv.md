@@ -53,7 +53,7 @@ post_quit_to_menu. Switch `coop.fix world.adventure_saves off` = 0.7.12.
 coop.menu.
 * FAIL: out/lab/20261112-023031 (`SPORE_FIX_OFF=world.adventure_saves`, lane 2): both posted, 2 faults at
   GetPlanetRecord+0x2D.
-* PASS: out/lab/20261112-022831 (lane 2): both refused, the game stays in Scenario, 0 faults.
+* PASS: out/lab/20261112-022831 (lane 2), out/lab/20261112-024053 (lane 3): both refused, the game stays in Scenario, 0 faults.
 adventure_start.py had stopped working (the menu intro outlasted its 1300 frames and the menu entry ignored a click
 without hover); fixed on the way.
 

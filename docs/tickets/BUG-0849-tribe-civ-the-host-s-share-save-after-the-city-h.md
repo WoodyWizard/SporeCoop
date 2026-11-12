@@ -69,7 +69,7 @@ matching was not needed: the game's own stage_end sign and the request id are en
 Hall editor; the host's slot files are sampled until the vehicle editor opens; faults; the guest must reach Civ.
 * FAIL: out/lab/20261112-021437 and out/lab/20261112-023150 (`SPORE_FIX_OFF=tribe.graduation_save`, lane 3): the
   fault at 0xBCAB07, a write into the slot 6 s after the City Hall editor, the guest left in Tribe.
-* PASS: out/lab/20261112-022822 (lane 3): no write, no fault, the vehicle editor 0.4 s after its vote, the guest in
+* PASS: out/lab/20261112-022822, out/lab/20261112-024053 (lane 3): no write, no fault, the vehicle editor 0.4 s after its vote, the guest in
   Civ. (Run 20261112-022253 with the first version of the fix: no fault, but the vehicle editor held 15 s: fixed in
   138a239e.)
 

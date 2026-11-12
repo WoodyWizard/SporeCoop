@@ -52,7 +52,7 @@ BUG-0846) is confirmed with a posted Enter (it goes to the topmost modal box), l
 ## Verification
 `saved_box_offscreen` (coop_saved_box.py --case video): 800x600, coop.save, the box must close within 10 s.
 * FAIL: out/lab/20261112-014918 (`SPORE_FIX_OFF=world.saved_box_offscreen`, lane 3): the box stayed up 10 s.
-* PASS: out/lab/20261112-014833 and the final runs: closed by Enter.
+* PASS: out/lab/20261112-014833, out/lab/20261112-024053 (lane 3): closed by Enter.
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).

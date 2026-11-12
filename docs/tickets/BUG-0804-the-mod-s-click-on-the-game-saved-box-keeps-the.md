@@ -60,7 +60,7 @@ GetCursorPos gives the game). The mod's click on the saved box's OK uses `releas
 `saved_box_cursor` (coop_saved_box.py --case cursor): `cursor` every 0.2 s for 7 s after the box closed.
 * FAIL: out/lab/20261112-014119 (`SPORE_FIX_OFF=world.saved_box_cursor`, lane 3): the game read the OK point (980, 610)
   until 4.8 s after the box closed.
-* PASS: out/lab/20261112-014220-2 and the final runs: never after the box closed (0.0 s).
+* PASS: out/lab/20261112-014220-2, out/lab/20261112-024053 (lane 3): never after the box closed (0.0 s).
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).

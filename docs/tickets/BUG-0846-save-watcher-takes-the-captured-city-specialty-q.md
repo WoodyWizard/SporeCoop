@@ -75,7 +75,7 @@ counted, "box seen" is a written save again.
 game?" open, then coop.save.
 * FAIL: out/lab/20261112-014220 (`SPORE_FIX_OFF=world.saved_box_only`, lane 2): the question was gone 0.03 s after the
   save (the mod's Enter answered it), the real saved box came 2 s later and stayed up (the game paused) for 12 s.
-* PASS: out/lab/20261112-014019 and the final runs: the question still open after 12 s, the saved box confirmed, a
+* PASS: out/lab/20261112-014019, out/lab/20261112-024053 (lane 3): the question still open after 12 s, the saved box confirmed, a
   second save under a held box refused.
 Proven with the pause-menu question; the Civ specialty question is covered by the same rule (its ids from the fork,
 not seen by us).

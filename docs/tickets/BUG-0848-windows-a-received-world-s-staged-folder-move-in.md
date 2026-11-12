@@ -57,7 +57,7 @@ ERROR_ACCESS_DENIED for 150 ms (`slotfs::g_test_move_denied_until`: Wine renames
 the Windows refusal is injected), then a permanent refusal (fails with error 5, the old world whole, nothing staged
 left).
 * FAIL: out/lab/20261112-013042 (`SPORE_FIX_OFF=world.staged_move`, lane 2): the 150 ms lock failed the write.
-* PASS: out/lab/20261112-012955 (stored after 1 retry; permanent lock refused with error 5).
+* PASS: out/lab/20261112-012955, out/lab/20261112-024053 (stored after 1 retry; permanent lock refused with error 5).
 Proven on Wine with the injected error; the Windows behaviour itself (error 5 on a brief scanner handle) is the fork's
 observation.
 

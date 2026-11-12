@@ -60,7 +60,7 @@ whose files or bytes do not all arrive. Switch `coop.fix world.share_complete of
 ## Verification
 win_unit `test_share_collect`: a slot file held with share mode 0 (Wine: error 32).
 * FAIL: out/lab/20261112-013127 (`SPORE_FIX_OFF=world.share_complete`, lane 2): collect succeeded without the file.
-* PASS: out/lab/20261112-012955 (lane 2) and the final runs (see History): refused, 0 files, the reason names sub/x.pkp.
+* PASS: out/lab/20261112-012955 (lane 2), out/lab/20261112-024053 (lane 3): refused, 0 files, the reason names sub/x.pkp.
 Observed in the lab: the mechanism (a held file was dropped silently). Not measured: how often players' scanners hold a
 save file at share time.
 
