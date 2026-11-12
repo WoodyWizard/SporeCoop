@@ -22,6 +22,9 @@ public:
     // where queries go (network byte order IPs): 255.255.255.255 and 127.0.0.1 by default
     std::vector<uint32_t> targets;
     uint32_t interval_ms = 1500;
+    // the ports asked on every target; empty = kDefaultPort .. +kDiscoverPorts-1 (BUG-0969: the unit test asks only
+    // its own ephemeral port, so the games of other test lanes on 127.0.0.1 do not answer it)
+    std::vector<uint16_t> ports;
 
     bool start();
     void stop();
