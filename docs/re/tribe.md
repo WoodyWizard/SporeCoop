@@ -3405,3 +3405,34 @@ and #tribe-guest-game-over.
   pauses its game with the UI-modal reason 0x4BF38A7 (#tribe-game-time-pauses) and a co-op note, and resumes on "down", 10 s without news, the stage's or the
   session's end. ✔ Lab: the guest stood 0.0 s after the host's caption was seen and went on 0.5 s after the host was
   back (20261112-140917).
+## The roster's cards: the game UI's map, taken off by the stage's listener (2026-11-12, fix/w48-rest)
+<a id="tribe-roster-cards"></a>
+
+BUG-0961. GOG 2024, Ghidra and lab lanes 4 / 5 (tools/tests/coop_tribe_roster_cards.py). Follows #tribe-member-body.
+
+* ✔ The roster (the member cards on the right edge) is the stage game UI's map ([cTribeUI_Get 0x169B2C8]+0x240 = the
+  TribeGameUI, +0x98 an EASTL map citizen -> card window, begin +0x9C, **size +0xA8**); its update 0xCCC7C0 walks it
+  every frame (health bar 0x3D99184, hunger 0x3D99162, the activity icon from the node 0xCCA550). ✔ Runtime: the size
+  equals the player tribe's members at the start (5 / 5 on both).
+* ✔ A card leaves through `SporeCoop::TribeStage_RemoveMemberCard` 0xCD51F0 (thiscall(stage, obj) ret 4: cast to a
+  citizen 0x4F176642, then `TribeRoster_RemoveCard` 0xCCBCE0 on [stage+0x240]), called by the stage's message listener
+  0xCD81F0 when a member goes, and from the BT node 0xDA78C0. cTribe_RemoveMember 0xC96070 itself does not touch it;
+  `TribeHud_ptr` 0x169B41C is a text helper (+0xC a text, +0x14 a citizen for the event log), not the roster.
+* ✔ (lab) Two members killed on the host: the host's roster 3 cards / 3 members, the guest's 5 / 3 for 20 s and more:
+  detach_body (BUG-0620) edits the tribe's lists and never told the roster. ✔ detach_body's own list edit releases no
+  reference while the game's removal (0xC952E0 on +0x340: vt 4, 0xC95280 on +0x354: vt 0xC0) does.
+* Fix `tribe.body_card`: detach_body calls 0xCD51F0 for the mirror first (lab: 3 / 3 on both).
+
+## A mirror's own hold of its item (2026-11-12, fix/w48-rest)
+<a id="tribe-hold-only"></a>
+
+BUG-0962. Lab lane 5 (tools/tests/coop_tribe_hold_only.py; the host's chief in `coop.tribe anims` on both games at
+~20 Hz). Follows #tribe-mirror-looks.
+
+* ✔ With tribe.mirror_hold the host's holds reach the mirror 0.0-0.07 s after the host's start and end within 0.02 s
+  (3 of 3 in 120 s); the hold state of the chief agrees in 1967 of 1990 samples, the animation in 1795.
+* ✔ The difference: in the gesture 0x04C6CB02, played by both, the mirror's own animation event took the staff while
+  the host's member did not (1.66 s, BUG-0906's 1.5 s settle and the 0.25 s tick); after a gesture the host ended
+  (it stood, 0x02481DE5) the mirror played 0x04C6CB05 again for 0.2 s and held for 0.15 s. Phase is under 0.1 s.
+* Fix `tribe.mirror_hold_only`: a hold of the mirror not bound to a host's hold, with none of the host's pending,
+  ends after 0.35 s.
