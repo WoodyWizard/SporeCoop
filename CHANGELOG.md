@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Civilization: vehicles no longer get faster and faster during sieges ("like flash", GitHub #199). Each new "city
+  under attack" alarm took the already boosted speed as the vehicle's normal speed, so the +50 % boost piled up and
+  stayed for good (BUG-0771).
+- Civilization: a boosted vehicle gets its normal speed back when the mod stops tracking it while it still exists,
+  instead of keeping the +50 % for good (BUG-0773).
+- Civilization: the "city under attack" speed boost goes only to the players' vehicles, no longer to computer
+  nations' vehicles, the attacking army included (BUG-0876).
+- Civilization: a guest sees a fast host vehicle right where it is, not several metres behind it (a vehicle over twice
+  as fast as the guest's copy of it, for example a boosted one) (BUG-0787).
+
 ## [0.7.12] - 2026-11-11
 
 A feature update built from the players' suggestions: a new co-op window, session settings chosen by the host,
