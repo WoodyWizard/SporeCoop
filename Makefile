@@ -107,25 +107,48 @@ ifneq ($(SKIP_SANITIZERS),1)
 	@test -f $(SAN_STAMP) || tools/sanitizer_probe.sh "$(HOSTCXX)" $(B)/host $(SAN_STAMP)
 endif
 
-# native Linux unit tests for portable netcode
+# native Linux unit tests for portable netcode. The parts below are independent and mostly wait (sessions over
+# localhost UDP, the lab self-test's fake runs): `make test` runs them at once (TEST_JOBS, output per part as it ends;
+# docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
+TEST_JOBS ?= 8
+NET_SHARDS ?= 8
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools
+ifneq ($(SKIP_SANITIZERS),1)
+UNIT_PARTS += test-asan test-tsan unit-fuzz
+endif
+.PHONY: $(UNIT_PARTS) unit-parts
 test: sanitizer-probe
 	@mkdir -p $(B)/host
 ifeq ($(SKIP_SANITIZERS),1)
 	@echo "WARNING: SKIP_SANITIZERS=1: the ASan/UBSan/TSan tests are NOT RUN"
 endif
+	@$(MAKE) --no-print-directory -j$(TEST_JOBS) -Otarget unit-parts
+ifeq ($(SKIP_SANITIZERS),1)
+	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
+endif
+	@echo "make test: all parts passed ($(UNIT_PARTS))"
+
+unit-parts: $(UNIT_PARTS)
+
+unit-net:
+	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
-	$(B)/host/net_tests
+	python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
+
+unit-lab:
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
 	python3 tools/tests/dash_selftest.py
-ifneq ($(SKIP_SANITIZERS),1)
-	$(MAKE) --no-print-directory test-asan
-	$(MAKE) --no-print-directory test-tsan
+
+unit-fuzz: sanitizer-probe
+	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_decoders mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/fuzz_decoders
-endif
+
+unit-cpp: sanitizer-probe
+	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
@@ -136,33 +159,34 @@ endif
 	$(B)/host/space_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
-	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg
 	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
 	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.cpp mods/coop/net/*.h updater/*.cpp updater/*.h)
+
+unit-lint:
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
+
+unit-tools:
 	python3 tools/tests/tools_selftest.py
 	python3 tools/tests/visual_selftest.py
 	python3 tools/tests/state_fields_check.py
 	python3 tools/tests/test_lint.py
-ifeq ($(SKIP_SANITIZERS),1)
-	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
-endif
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
 test-asan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
-	@# --nofix: every fix test runs to the end and fails (BUG-0214: it used to abort at test_dbbf_wrap)
-	@ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan --nofix > $(B)/host/net_tests_nofix.txt 2>&1; \
-	  rc=$$?; tail -n 1 $(B)/host/net_tests_nofix.txt | grep -q '^FAILED (' && [ $$rc = 1 ] \
-	  || { tail -n 20 $(B)/host/net_tests_nofix.txt; echo "net_tests_asan --nofix: expected FAILs to the end (exit $$rc)"; exit 1; }
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests_asan
+	@# --nofix: every fix test runs to the end and fails (BUG-0214: it used to abort at test_dbbf_wrap); every shard
+	@# must reach its end, the FAILs counted over all of them
+	@ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tools/tests/shards.py $(NET_SHARDS) \
+	  $(B)/host/net_tests_asan --nofix --expect-fail --out $(B)/host/net_tests_nofix.txt \
+	  || { echo "net_tests_asan --nofix: expected FAILs to the end"; exit 1; }
 	@# the decoder bounds fixes' off side reads out of bounds: ASan must stop it (BUG-0208, BUG-0047)
 	@! ASAN_OPTIONS=detect_leaks=0 $(B)/host/net_tests_asan --old-dbbf > $(B)/host/net_tests_old_dbbf.txt 2>&1 \
 	  && grep -q 'AddressSanitizer' $(B)/host/net_tests_old_dbbf.txt || { echo "net_tests_asan --old-dbbf: ASan did not report"; exit 1; }

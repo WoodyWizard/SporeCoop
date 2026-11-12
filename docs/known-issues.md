@@ -2896,3 +2896,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   lanes ran their smokes; a rerun passes.
 * Reproduce: `unit` on two lanes at the same moment (the test hosts on a fixed port of 127.0.0.1).
 * Ticket: BUG-0969
+* Fixed (unreleased, feat/lab-speed, 2026-11-12): the test hosts on a free port of the discovery range under its own
+  process's name and counts only that game (docs/06-testing.md#testing-lab-speed).

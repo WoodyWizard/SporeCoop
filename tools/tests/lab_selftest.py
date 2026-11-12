@@ -727,23 +727,41 @@ def mem_cases(tree, tmp):
         lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
 
 
+CASES = ('lab_cases', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case', 'gate_cases',
+         'watch_cases', 'interrupt_cases')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tree', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    ap.add_argument('--case', action='append', help='only these case groups (repeatable), in this process')
+    ap.add_argument('--serial', action='store_true', help='every case group in this process, one after the other')
     a = ap.parse_args()
     tree = os.path.abspath(a.tree)
     print(f'lab self-test of {tree}', flush=True)
-    with tempfile.TemporaryDirectory(prefix='labselftest-') as tmp:
-        lab_cases(tree, tmp)
-        worktree_case(tree, tmp)
-        game_log_case(tree, tmp)
-        kill_case(tree, tmp)
-        mem_cases(tree, tmp)
-        same_second_case(tree, tmp)
-        gate_cases(tree, tmp)
-        watch_cases(tree, tmp)
-        interrupt_cases(tree, tmp)
-    print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
+    if a.case or a.serial:
+        with tempfile.TemporaryDirectory(prefix='labselftest-') as tmp:
+            for name in a.case or CASES:
+                globals()[name](tree, tmp)
+        print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
+        return 0 if not FAILS else 1
+    # feat/lab-speed: the case groups are independent (each its own scratch folder, lab module and fake lane
+    # paths), most of their time is waiting: each in its own process at once (87 s -> ~31 s, the longest group);
+    # their output in the usual order
+    procs = [(name, subprocess.Popen([sys.executable, os.path.abspath(__file__), '--tree', tree, '--case', name],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+             for name in CASES]
+    bad = []
+    for name, p in procs:
+        out = p.communicate()[0]
+        body = [ln for ln in out.splitlines() if not ln.startswith('lab self-test of ')]
+        if not body or not body[-1].startswith('RESULT: OK') or p.returncode:
+            bad.append(name)
+        print('\n'.join(ln for ln in body if not ln.startswith('RESULT:')), flush=True)
+        if p.returncode and (not body or not body[-1].startswith('RESULT:')):
+            print(f'  FAIL {name}: the case group ended with exit {p.returncode} and no RESULT line')
+    FAILS.extend(bad)
+    print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)}: {", ".join(bad)})')
     return 0 if not FAILS else 1
 
 
