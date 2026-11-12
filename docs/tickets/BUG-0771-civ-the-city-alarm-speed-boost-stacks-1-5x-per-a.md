@@ -1,19 +1,19 @@
 ---
 id: BUG-0771
 title: Civ: the city-alarm speed boost stacks (1.5x per alarm at the boost's end), vehicles drive faster and faster during sieges
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-10
 source: GitHub #199
 role: host
 versions: 0.7.10.1
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs: docs/re/civ.md#civ-boost-stacking
+fixed_in: unreleased
+branch: fix/w48-civ-speed
+commits: 69eecd6d, 942fa887, 1342d697
+tests: civ_boost_stack
+signature: a vehicle +0x218 over 1.5x its own speed after alarms; civ(host) boosts= high in long sieges
+docs: docs/re/civ.md#civ-boost-stacking, docs/re/civ.md#civ-boost-measured, docs/06-testing.md#testing-civ-speed
 related: BUG-0040, BUG-0222, BUG-0773, BUG-0186
 ---
 
@@ -54,5 +54,23 @@ fix (`coop.fix civ.boost_base off`, or main) the speed reaches base x 1.5^6: FAI
 hook: an NPC siege of 3-5 min (as in coop_civ_siege_npc) with the same assertion and the guest's vehicle speed from
 positions <= 1.5 x top speed.
 
+## Fix
+civ.cpp h_OnAttacked: the boost entry is made with `try_emplace`; the vehicle's own speed (and its nation) is read
+only when the entry is new. Re-arming an entry only moves `until`, also an entry whose boost has just run out and that
+boost_tick has not restored yet. Switch `coop.fix civ.boost_base off` = 0.7.12 (re-read when `until < now`).
+
+## Verification
+Test `civ_boost_stack` (tools/tests/coop_civ_boost_stack.py) step 2: five alarms at the boost's end
+(`coop.civ alarm <city> expire`), the game's +0x218 read with mem.read, then the host orders the vehicle 400 m away
+and the guest's copy's speed is measured from its positions on the guest's game.
+* FAIL: out/lab/20261112-003101 (`SPORE_FIX_OFF=civ.boost_base`, lane 2): +0x218 11.39x its own after six alarms,
+  the guest saw the vehicle at 225.2 m/s (limit 39.3), 22 s after the last alarm it kept 145.17 (own 19.12).
+* PASS: out/lab/20261112-002848, out/lab/20261112-003341, out/lab/20261112-003838 (1.50x, 29-30 m/s on the guest,
+  back to 19.12).
+Proven: the mechanism (an alarm in that order stacks x1.5 each time and the speed stays). Inferred, not measured: that
+a real siege hits that order (cooldown and boost both 20 s, OnAttacked runs on every hit in the game's update before
+the mod's frame tick); no NPC-army siege was run for it.
+
 ## History
 - 2026-11-10: opened.
+- 2026-11-12: fixed on fix/w48-civ-speed (civ.boost_base), FAIL 20261112-003101, PASS 20261112-002848 / -003341 / -003838.

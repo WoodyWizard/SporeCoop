@@ -1,19 +1,19 @@
 ---
 id: BUG-0773
 title: Civ: a boosted vehicle that drops out of the host's vehicle table keeps its 1.5x speed for good (no restore)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan), GitHub #199
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs: docs/re/civ.md#civ-boost-stacking
+fixed_in: unreleased
+branch: fix/w48-civ-speed
+commits: 69eecd6d, 942fa887, 1342d697
+tests: civ_boost_stack
+signature: a vehicle keeps 1.5x +0x218 after its boost entry was dropped
+docs: docs/re/civ.md#civ-boost-stacking, docs/re/civ.md#civ-boost-measured, docs/06-testing.md#testing-civ-speed
 related: BUG-0771, BUG-0040, BUG-0223
 ---
 
@@ -41,5 +41,23 @@ In `coop_civ_boost_stack.py`: boost a vehicle (`coop.civ alarm 0`), then take it
 to another nation or a test command `coop.civ hv drop <id>`), and run `coop.civ world_change` (the test path of
 on_world_change). Assert the vehicle's +0x218 is back to its base within 1 s. Main keeps 1.5x: FAIL.
 
+## Fix
+civ.cpp: boost_tick (an entry whose vehicle left `g_hv`) and clear_coop_tables (now also called with restoring
+from on_world_change) write the own speed back when `boost_ours`: the vehicle is in the game's vehicle list now, of
+the nation it had when boosted, and +0x218 is still exactly `orig x 1.5` (the value the mod wrote), so after a real
+load nothing is written into a new vehicle at a reused address. Switch `coop.fix civ.boost_restore off` = 0.7.12.
+Found while testing: in normal play a living vehicle is never missing from `g_hv` at boost_tick time (it is pruned and
+re-listed in the same 0.1 s step after boost_tick); the leak needs the tables cleared while the vehicles live (a false
+world change, BUG-0223 class).
+
+## Verification
+Test `civ_boost_stack` step 3: an alarm, then (a) `coop.civ hvdrop <id>` (out of the host's table), (b)
+`coop.civ world_change` (on_world_change while the world stays); +0x218 must be the own speed 1 s later.
+* FAIL: out/lab/20261112-004150 (`SPORE_FIX_OFF=civ.boost_restore`, lane 3, only step 3 fails: 28.68 kept, own 19.12),
+  also out/lab/20261112-003336.
+* PASS: out/lab/20261112-002848, out/lab/20261112-003341, out/lab/20261112-003838 (19.12, `restored=1` / `=2`).
+Proven with the forced paths; a real false world change with boosted vehicles was not reproduced.
+
 ## History
 - 2026-11-10: opened.
+- 2026-11-12: fixed on fix/w48-civ-speed (civ.boost_restore), FAIL 20261112-004150, PASS 20261112-002848 / -003341 / -003838.
