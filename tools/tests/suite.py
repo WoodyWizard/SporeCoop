@@ -619,6 +619,7 @@ add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
+add('space_colony_crash', P + 'coop_space_colony_rejoin.py --crash', minutes=6, fixture='space')  # the same after a crash rejoin that keeps the player id (BUG-0810; SPORE_FIX_OFF=space.kept_leave fails)
 add('space_items_rejoin', P + 'coop_space_items_rejoin.py', minutes=5, fixture='space')  # a guest's own cargo hold is its own again after it rejoins, never the host's (BUG-0678; SPORE_FIX_OFF=space.keep_items fails)
 add('space_items_limits', P + 'coop_space_items_limits.py', minutes=6, fixture='space')  # a guest's own hold survives a host restart, keeps what changed while away, its own slots and artifact cargo (BUG-0679; SPORE_FIX_OFF=space.keep_items_local / space.keep_items_slots / space.keep_items_cargo fail)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
@@ -657,6 +658,7 @@ add('space_mirror_model', P + 'coop_space_mirror_model.py', warm=True, minutes=3
 add('space_armada_return', P + 'coop_space_armada_return.py', minutes=8, fixture='space')  # an armada wave resumes its raid after the host's return (BUG-0046; --without-fix fails); a resumed wave's ships are tough, a raid without ships is not a won wave (BUG-0227; SPORE_FIX_OFF=contracts.wave_resume fails)
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
+add('space_rival_away', P + 'coop_space_rival_away.py', minutes=4, fixture='space')  # rivals: a guest's own budget is not reset to the host's copy after an editor trip (BUG-0813; SPORE_FIX_OFF=space.rival_budget_world fails)
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (SPORE_FIX_OFF=game.ufo_model fails)
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
