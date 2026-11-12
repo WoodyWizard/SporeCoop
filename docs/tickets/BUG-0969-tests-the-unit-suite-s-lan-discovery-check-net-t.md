@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lab-speed
-commits:
+commits: 521139e3 (free port, own name)
 tests: unit
 signature:
 docs:
