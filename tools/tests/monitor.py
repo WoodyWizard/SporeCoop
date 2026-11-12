@@ -98,7 +98,7 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0,
-                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
+                php_n=2, php_same_way=1, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
                 drawn_scale=1, drawn_age=1.0)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
@@ -672,8 +672,22 @@ class PuppetHp(Hook):
                 # a player's own hp above its max is a test's invulnerability (`coop.team hp 1000`): the puppet
                 # carries the partner's health capped at the max, which is what the game can show
                 own = min(o['hp'], o['maxhp'])
+                p['_php_sign'] = 0 if abs(o['maxhp'] - mx) > 0.5 else (1 if own > hp else -1)
                 return abs(o['maxhp'] - mx) > 0.5 or abs(own - hp) > max(self.c['hp_abs'], o['maxhp'] * 0.1)
-            for a, b in self.runs(lst, bad, self.c['php_n'], None):
+            # BUG-0953: the lines in a row must be off the same way (the puppet steadily over, or under, its player's
+            # own health, or another max). Two lines of the ~0.15 s state lag right at a jump of the player's health
+            # (a revive 20 ms before one line, the killing blow 9 ms before the next: long_creature 20261112-013858)
+            # are off in opposite directions and are not a puppet that keeps a wrong health.
+            prev = [None]
+
+            def bad_same(p):
+                if not bad(p):
+                    prev[0] = None
+                    return False
+                same = prev[0] is None or prev[0] == p['_php_sign']
+                prev[0] = p['_php_sign']
+                return same
+            for a, b in self.runs(lst, bad_same if self.c['php_same_way'] else bad, self.c['php_n'], None):
                 subj, o = b['_php']
                 out.append((viewer, f'{viewer} shows {subj}\'s creature at {b["puppet_hp"][0]:.0f}/{b["puppet_hp"][1]:.0f}, '
                                     f'{subj}\'s own game {o["hp"]:.0f}/{o["maxhp"]:.0f} (s {b["t"]:.0f})',

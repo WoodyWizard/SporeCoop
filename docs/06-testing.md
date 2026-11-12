@@ -6322,3 +6322,23 @@ two-game tests of ~1-2 min after the games are up unless said otherwise.
   (cdecl float(int kind, creature*)): harmless while the stack slot held 0, a fault at 0xD38A56 and both play_creature
   bots hung once other code changed the stack (BUG-0957, fixed). A test command that calls the game is checked against
   the disassembly like mod code.
+## Freed blocks, round 2: the scenario until it happened, hooks for Civ, the monitor's puppet health (2026-11-12, fix/w48-freed2)
+<a id="testing-freed2-w48"></a>
+
+* `defer_identity` (BUG-0825): the queued puppet's block came back in about 1 of 3 rounds (a run of 6 rounds of 150
+  frames had none in half the runs: rel/0.7.13 20261112-031338, 20261112-041619 #2). Now a hunt is 300 frames and a
+  round without a reuse is inconclusive: the test plays another, up to 16 rounds within 9 minutes (`--tries`,
+  `--minutes`); the hits came in rounds 2-3 (lab 20261112-045530-2). The misses of a hunt made during the cinematic
+  are queued by the deferred destroy anyway (the host's `deferred=` grows by ~250 a round), so they do not go back to
+  the game before the cinematic ends either.
+* `coop.npc reusehunt ... k`: the misses stay alive until the hunt ends (then destroyed); `e<N>`: a try every N frames;
+  `coop.npc reusehunt` prints `kept=`.
+* `coop.civ vehhold 1|0` (guest): the host's vehicle states are not taken (as during the host's editors).
+  `coop.civ reusehunt npc|any|<mirror id> [frames]` (guest): the game removes a mirror's vehicle (kill_local), then
+  once a frame a vehicle of its kind is made for the guest's own civilization 40 m away until one gets the block (it
+  came back on try 2 in 3 of 4 rounds); `coop.civ reusehunt` alone prints the hit, its place and `bound_as=`. Test
+  `civ_mirror_lifetime` (BUG-0951): a regression guard, it passes with the switch off too (prune_gone).
+* `npc_herd_identity` takes no body (` DEAD` in the list) as a candidate: a body the guest's game removed is not made
+  again by design (BUG-0383), which BUG-0952 was.
+* Monitor `puppet_hp` (BUG-0953): the two lines in a row must be off the same way; lines at a revive and at the killing
+  blow (the state lag of ~0.15 s, opposite directions) are no violation. `php_same_way=0`: the rule before.

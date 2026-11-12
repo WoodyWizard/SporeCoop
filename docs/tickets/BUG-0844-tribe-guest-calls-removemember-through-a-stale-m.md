@@ -14,7 +14,7 @@ commits: 570ee491
 tests: tribe_mirror_lifetime
 signature: fork: coop RVA 1889AE in tribe.cpp remove_member, called by guest_tick and tick; owner field garbage
 docs: docs/re/tribe.md#tribe-mirror-citizen-reuse, docs/06-testing.md#testing-freed-block-reuse
-related: BUG-0426, BUG-0685
+related: BUG-0426, BUG-0685, BUG-0955
 ---
 
 ## Report
@@ -54,3 +54,4 @@ Test `tribe_mirror_lifetime` (tools/tests/coop_tribe_mirror_lifetime.py): up to 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: fixed on fix/w48-freed (tribe.mirror_member_lifetime).
+- 2026-11-12: fix/w48-freed2: nine other users of a mirror's citizen still asked object_alive (faults on rel/0.7.13 in tribe_mirror_lifetime): BUG-0955; the test plays rounds until a reuse within 6 min.

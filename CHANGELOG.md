@@ -45,6 +45,12 @@
 - Tribe: a guest could move a member of another tribe as the host's member, or remove it, when the game reused the
   memory of a removed copy (for example after the host was in an editor); the crash the PandizeLive fork reported
   here (BUG-0844).
+- Tribe: a guest's game no longer faults when the game frees a copy of a host's member while the host's states pause
+  (for example during the host's editor): the sizes, animations, held items and effects sent for that member no longer
+  reach the freed copy (BUG-0955).
+- Tribe and Civilization: the attack ring, the epic animal, the babies, the host's member and vehicle tables and a
+  guest's vehicle copies now check that a kept object is still the same one, not another object the game built in its
+  place (BUG-0951).
 - Creature: a host's hit, an animal's social prompt or animation could reach a copy of an animal the guest's game
   had just removed; the removed animal was left in other animals' memory and could crash the game seconds later
   (BUG-0805).

@@ -32,7 +32,8 @@ def plist(con):
     for line in out.splitlines():
         m = re.match(r'\s*#(\d+) species=(\S+) spawned .*?rx=(\d+)/s .*?ptr=(\S+) herd=([0-9A-Fa-f]+).*?herd_sp=(-?\d)', line)
         if m:
-            prox[int(m.group(1))] = (m.group(2), int(m.group(4), 16), int(m.group(5), 16), int(m.group(6)), int(m.group(3)))
+            prox[int(m.group(1))] = (m.group(2), int(m.group(4), 16), int(m.group(5), 16), int(m.group(6)), int(m.group(3)),
+                                     ' DEAD ' in line)
     return nests, prox
 
 
@@ -63,10 +64,12 @@ def main():
     for i, p in prox.items():
         by_sp.setdefault(p[0], set()).add(p[2])
     family = set(int(m.group(1), 16) for m in re.finditer(r'herd=([0-9A-Fa-f]+) .*?fam=1', guest.call('coop.npc list')['out']))
-    # (only proxies the host sends states for now: one without states is not made again whatever its herd)
-    cand = [i for i, p in sorted(prox.items()) if p[2] not in nests and p[2] not in family and len(by_sp[p[0]]) == 1 and p[4] >= 5]
-    cand += [i for i, p in sorted(prox.items()) if p[2] in nests and by_sp[p[0]] == {p[2]} and i not in cand]
-    cand += [i for i, p in sorted(prox.items()) if p[2] in nests and i not in cand]
+    # (only proxies the host sends states for now: one without states is not made again whatever its herd; and no
+    # body: a body the guest's game removed is not made again, BUG-0383's rule; BUG-0952 was a body picked here)
+    live = {i: p for i, p in prox.items() if not p[5]}
+    cand = [i for i, p in sorted(live.items()) if p[2] not in nests and p[2] not in family and len(by_sp[p[0]]) == 1 and p[4] >= 5]
+    cand += [i for i, p in sorted(live.items()) if p[2] in nests and by_sp[p[0]] == {p[2]} and i not in cand]
+    cand += [i for i, p in sorted(live.items()) if p[2] in nests and i not in cand]
     print(f'  candidates {cand}: herds by species {dict((k, sorted(hex(h) for h in v)) for k, v in by_sp.items())}, '
           f'nest herds {sorted(hex(h) for h in nests)}', flush=True)
     ck(cand, f'the guest has proxies in herds it cached ({len(cand)} of {len(prox)}, {len(nests)} nest herds)')
@@ -102,6 +105,10 @@ def main():
         _, prox = plist(guest)
         p = prox.get(i) or p
         print(f'  proxy #{i} now: {p and hex(p[1])} in herd {p and hex(p[2])}, herd of its species: {p and p[3]}', flush=True)
+        if not p:  # (BUG-0952: what the list holds for it, and the npc counters)
+            raw = [ln.strip()[:400] for ln in guest.call('coop.npc list')['out'].splitlines() if ln.strip().startswith(f'#{i} ')]
+            print(f'  proxy #{i} list line: {raw}', flush=True)
+            print('  guest ' + guest.call('coop.npc')['out'].splitlines()[0][:400], flush=True)
         # (made into the other species' herd, or never made again: the game's Create refuses that herd, so the host's
         # animal is gone from the guest's game for good)
         if not p or p[3] == 0 or p[2] == herd:

@@ -2812,6 +2812,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: docs/re/creature.md#creature-freed-block-reuse (a block comes back within 0.3-1.3 s).
 * Next steps: `game::LiveRef` at each site, a lint against `object_alive` on stored pointers.
 * Ticket: BUG-0951
+* Fixed on fix/w48-freed2 (2026-11-12): checked per site (BUG-0951's six groups); the reachable ones were the Tribe
+  mirrors' other users (BUG-0955); the kept tables and references keep the serial now (`tribe.kept_refs`,
+  `civ.mirror_lifetime`).
 ## Fixed on fix/w48-saves (2026-11-12): saves and the world share
 <a id="issue-saves-w48-fixed"></a>
 

@@ -3214,3 +3214,29 @@ BUG-0844 (class BUG-0426). GOG 2024, runtime on lanes 6/7 (`coop.tribe reusehunt
   the share for the joined guest waited (refused saves) and, before 138a239e, held the vehicle editor's request 15 s
   (`share_save_due`); now the end of Tribe does not count a share that cannot save (the editor 0.4 s after its vote,
   lab 20261112-022822).
+## Mirror citizens: the other users of a kept mirror, and the host's member table (2026-11-12, fix/w48-freed2)
+<a id="tribe-mirror-other-users"></a>
+
+BUG-0955, BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 7 (tribe_mirror_lifetime) and code read. Follows
+#tribe-mirror-citizen-reuse.
+
+* ✔ BUG-0844's fix checked the mirror's citizen in guest_state, guest_tick and the snapshot's end only. The other
+  users of `g_gm[id].c` still asked `object_alive`: the field replication (`member_mirror`: scale and leader), the
+  behaviour animation relay (MSG_NPC_ANIM kinds 2 / 3), the held items, `mirror_of` (mirror_fx's effects), the ring's
+  selected member, `for_each_tracked` / `for_each_diag` and the sync-check. In the test's statehold (the host's states
+  paused, as in its editors) a freed mirror citizen kept getting fields and animations: the guest's game caught
+  `0xC0000005 at coop+0x13E88F` (`game::object_scale` -> `game::cast` vcall on the freed block) and in the same frame
+  run `SporeCoop::CreaturePlayAnim+0x4F` with the same object (esi 1E1684C0), then 4 more cut-off frames 0.25 s
+  apart (lab rel/0.7.13 20261112-041619-2 #3, 6 faults); another run faulted executing the freed block's vtable from
+  UTFWin paint (0x24D2F858, 10 faults, 20261112-031338). Now all of them ask `mirror_ok` (listed + serial).
+* ✔ (code read) The host's member table `g_hm` is keyed by the citizen pointer and rebuilt from the live tribes'
+  member vectors every cycle (0.12 s); a member the game removes leaves its vector in that call and is destroyed
+  (+0x21) 10-40 frames before it is freed, so the next cycle drops it. Only a new citizen at a freed member's address
+  before that (the host paused in between) took the old id and owner; the entry now keeps the serial and such a
+  citizen is a new member (`tribe.kept_refs`). The dead bodies' branch (BUG-0620) asks the same.
+* ✔ (code read) `g_detached` (the bodies taken out of their tribe on a guest) is exact: the citizen teardown hook
+  erases an entry before the game frees it. The target ring (`g_ring`, up to 120 s), the epic (`g_epic`) and the
+  babies the host's game made (`g_baby_made`) are asked in every frame (the HUD's update, epic_tick) or once: the
+  destroyed flag is seen before the free; they keep the serial now anyway (`tribe.kept_refs`).
+* ✔ The HUD's target ring map is keyed by the target's serial (+0x24, `ring_shown`): a ring drawn for a new object
+  at the old address would be keyed by the new one's.
