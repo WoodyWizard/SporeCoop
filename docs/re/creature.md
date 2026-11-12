@@ -4235,3 +4235,16 @@ Answers the "not found: a per-creature flag that takes one creature out of colli
   creature or its spatial +0xC0) and the hover filter refuses a partner's puppet in the combat stance
   (GetAbilityMode != 0), both only in Creature, with friendly fire off and outside Rivals. `coop.partnerpass` prints
   what they skipped. Accepted: players' creatures can stand inside each other.
+* ✔ (runtime, lab lanes 2 / 3, `coop_creature_partner_pass.py`) With the hooks on, the guest's game skipped 4-9
+  collision pairs of its creature with the host's (`coop.partnerpass pairs_skipped=`), and its hover filter refused the
+  host's creature hundreds of times a minute in the combat stance (it is asked every frame for every object under the
+  cursor). The click from behind the host's creature (within 90 px of the animal on the screen) took the animal in
+  every round (3 of 3, 4 of 4: lab 20261112-073356, -073855); with the switch off it took the host's creature (0 of 1,
+  0 of 2, 0 of 3: 20261112-073905, -072859, -071805).
+* ✔ (runtime) The walk: with the host's creature 1.0-1.5 m from the animal's centre and on the guest's way, the guest's
+  walk-and-use stopped at gap 1.4 m (the bite reaches 1.0) for the 12 s watched (2 of 3 such rounds, switch off, lab
+  20261112-072859); with the hooks it reached the animal (gap 0.2-1.0, 20261112-072849, -073356, -073855). With the
+  host's creature 2.5 m from the animal the walk went round it in both builds (it is not in the last metre of the way).
+* ~ A press of the attack key now and then does not start the walk-and-use at all (gap unchanged for 12 s), with the
+  switch on or off; a second press does (the test presses again).
+* ✔ `coop.find rivals 1` and friendly fire on (`all.friendly_fire`) switch the skipping off (`coop.partnerpass on=0`).
