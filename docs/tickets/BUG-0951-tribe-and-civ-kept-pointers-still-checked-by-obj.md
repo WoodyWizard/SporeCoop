@@ -64,7 +64,8 @@ with `coop.npc reusehunt` / `coop.tribe reusehunt` (docs/06-testing.md#testing-f
 ## Fix
 mods/coop/tribe.cpp: `tribe.kept_refs` (`kept_alive`: listed + serial) for the host's member table (a changed serial
 is a new member, the bodies' branch asks it), the target ring, the epic, the babies. mods/coop/civ.cpp:
-`civ.mirror_lifetime` (`gv_ok`) for every use of a guest's mirror vehicle (state, drive, the cycle's removals, shots,
+`civ.mirror_lifetime` (`gv_ok`: the serial bound with it; read from the vehicle, not the object list, since a vehicle
+the mod just made can join the list later and prune_gone already drops removed ones) for every use of a guest's mirror vehicle (state, drive, the cycle's removals, shots,
 trackers, `veh_mirror` / `local_vehicle`) and a serial in the host's vehicle table. Test hooks `coop.civ vehhold`,
 `coop.civ reusehunt`. The lint against `object_alive` on stored pointers is not done: group 1 uses it legitimately
 on fresh pointers and a lint cannot tell them apart.
@@ -80,3 +81,4 @@ shared mechanism, group 2's reachable failures are BUG-0955.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed on fix/w48-freed2 (refactor per group; reachable failures in BUG-0955).
+- 2026-11-12: play_civ on fix/w48-freed2 lost more guest orders once (31 %, out/lab/20261112-061048; 24 % in 20261112-062447, rel/0.7.13 18 % in 20261112-063357, 26 % on fix/w48-civ-speed before): gv_ok no longer asks the object list (a just-made mirror), see the next runs.

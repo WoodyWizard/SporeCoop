@@ -418,7 +418,10 @@ static bool gv_ok(const GV& g)
         return false;
     if (!g_veh_lifetime_fix)
         return game::object_alive(g.v);
-    return game::alive(game::LiveRef{g.v, g.serial, 0x18C6DE8u}); // (the vehicle noun)
+    // the serial in the vehicle's own memory, not the object list: a vehicle the mod just made may join the list later,
+    // and prune_gone (the game's vehicle list, every Civ frame) drops one the game removed before it is freed; what is
+    // left is another vehicle at the address, which has another serial
+    return game::object_alive(g.v) && game::object_serial(g.v) == g.serial;
 }
 static bool g_veh_hold; // tests (BUG-0951): the guest ignores the host's vehicle states (as during the host's editor)
 
