@@ -2229,3 +2229,17 @@ BUG-0892. Lab lane 3, cell fixture (`coop_cell_parts_attack.py --part poison`).
 * CORRECTION (2026-11-12, fix/w48-small, BUG-0892): "with the poison values written into a model's data ... it lost
   nothing (lab 20261108-044202)" (#cell-electric-attack) is superseded for the damage: the creature then stood next to
   the clouds and never touched one; on a cloud it loses health.
+## A partner's poison clouds and a player's cell (2026-11-12, fix/w48-pass)
+<a id="cell-partner-poison"></a>
+
+BUG-0958, GOG 2024, lab lane 7 (`coop_cell_partner_poison.py`). Answers the "Not checked" of #cell-c1-0713.
+* ✔ (runtime) A cloud's hit on a cell is DamageCell type 3 with the cloud cell as the attacker. A guest's own game
+  calls it for its avatar and the mirror of a host's cloud (the guest's own collision step; the mirror is passive, its
+  +0x110 is 0 on the guest): 18 hits in 11 s on 10 clouds, hp 4 -> 1 and knocked out (lab 20261112-115819).
+* ✔ (runtime) The host's game never called DamageCell for its own avatar and a guest's cloud (made for the puppet
+  with the avatar index lent, so +0x110 is set): 0 hits on 10 such clouds (20261112-120150). So the game spares its
+  avatar from +0x110 clouds by itself; ? where (not read: the contact step or the cloud's own update).
+* `cell.partner_poison` (cellsync.cpp): MSG_CELL_STATE carries +0x110 as flag 4 of a cell (the flags byte: 1 dying,
+  2 dead); a guest's mirror keeps it (`Mirror::product`) and DamageCell of the own avatar by a poison mirror with it
+  is refused while friendly fire is off outside Rivals; on the host the cells a partner's puppet's cloud maker added
+  (h_Cloud, a before / after pass over the pool) are refused the same way. `coop.pool`: `cell_partner_poison:`.

@@ -29,6 +29,8 @@
 #include "fixes.h"
 #include "trace.h"
 #include "own_world.h"
+#include "find.h"
+#include "space_ext.h"
 
 void coop_module_of(uintptr_t a, char* out, size_t cap); // debug.cpp (RE, BUG-0355)
 
@@ -134,6 +136,7 @@ struct Mirror {
     int hp = 6;
     double seen = 0;
     float scale = 0; // the host's world scale G+0x514C of the sample (0: an older host without it)
+    bool product = false; // BUG-0958: a player's product on the host (+0x110: a poison cloud), state flag 4
 };
 static std::unordered_map<uint32_t, Mirror> g_mirrors;   // host index -> mirror
 static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host index
@@ -270,6 +273,10 @@ static cell_logic::Once g_kill_sent(10.0), g_kill_applied(10.0);
 // comes with its state within ~1 s). Off: 0.7.12.
 static bool g_fix_kill_refused = true;
 COOP_FIX("cell.kill_refused", "BUG-0821", g_fix_kill_refused, "cell: a guest's kill the host refused or the game spared does not block that creature's next kills for 10 s");
+// BUG-0959: the host's trace line for a knocked-out guest's kill said "applied" and the next line refused it (a support
+// log read as if the creature had been killed). Now it says "refused (knocked out)". Diagnostics only. Off: 0.7.12.
+static bool g_fix_ko_trace = true;
+COOP_FIX("cell.ko_trace", "BUG-0959", g_fix_ko_trace, "cell: the host's trace names a knocked-out guest's refused kill as refused, not applied");
 static uint32_t g_kills_resent; // tests: a guest's kill sent again after the host left the creature alive
 // guest: whether a lethal bite of mirror `hidx` goes out (false: sent already, the host's answer is on its way)
 static bool kill_send_first(uint32_t hidx, double now)
@@ -882,6 +889,24 @@ static void puppet_poison(float dt)
         g_puppet_poison_steps++;
     }
 }
+// BUG-0958: a partner's poison clouds hurt and knocked out another player's cell while friendly fire was off (lab
+// 20261112-070110, -062128): the host's game makes every player's clouds (its own avatar's, and a guest's through
+// puppet_poison, BUG-0716) and they are mirrored to the guests like any cell; a guest's own game then ran the cloud
+// mirror's contact with its own cell (DamageCell, victim = the avatar), and the host's game the contact of a guest's
+// cloud with the host's avatar. Now, with friendly fire off and outside Rivals, DamageCell of a player's own cell by a
+// partner's poison cloud is refused: on a guest a mirror the host marks as a player's product (state flag 4, +0x110),
+// on the host a cloud its game made for a partner's puppet (noted in h_Cloud). The own clouds and the NPCs' are as
+// before. Friendly fire on or Rivals: as 0.7.12. `coop.fix cell.partner_poison off`: as 0.7.12.
+static bool g_fix_partner_poison = true;
+COOP_FIX("cell.partner_poison", "BUG-0958", g_fix_partner_poison, "cell: with friendly fire off a partner's poison clouds do not hurt a player's cell");
+static uint32_t g_partner_poison_refused, g_partner_poison_taken; // tests: refused / taken (switch off, ff, Rivals)
+static std::unordered_set<uint32_t> g_partner_clouds; // host: cells its game made as clouds of a partner's puppet
+static char g_own_hit_last[160] = "-";                // tests: the last hit our cell took (attacker kind, origin, type)
+static bool players_hurt_each_other()
+{
+    return settings::on(settings::kFriendlyFire) || spaceext::rivals() || pfind::g_test_rivals;
+}
+static const char* kind_of(uint8_t* c);
 static bool own_product(uint8_t* att) { return att && att != avatar() && F<uint8_t>(att, 0x110) && !modes::cell_is_puppet(att); }
 static void note_foreign_hit(uint8_t* att)
 {
@@ -925,7 +950,23 @@ static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
         return;
     }
     uint32_t live0 = G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0;
+    // BUG-0958 (host): the cells this cloud of a partner's puppet adds are that partner's
+    bool partner = g_fix_partner_poison && is_host() && in_cell() && maker && modes::cell_is_puppet(maker);
+    std::unordered_set<uint32_t> before;
+    if (partner)
+        for_each_cell([&](uint8_t*, uint32_t idx) { before.insert(idx); });
     o_Cloud(maker, size, at);
+    if (partner) {
+        if (g_partner_clouds.size() > 1024) // (stale entries: their slots hold other cells now)
+            for (auto it = g_partner_clouds.begin(); it != g_partner_clouds.end();) {
+                uint8_t* c = modes::cell_at(*it);
+                it = c && F<uint8_t>(c, 0x110) ? std::next(it) : g_partner_clouds.erase(it);
+            }
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (!before.count(idx) && c != maker)
+                g_partner_clouds.insert(idx);
+        });
+    }
     if (in_cell() && maker && modes::cell_is_puppet(maker)) {
         g_puppet_clouds++; // host (BUG-0716): a partner's cloud (puppet_poison, or the game's own poison step)
     }
@@ -1053,6 +1094,26 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     if (is_host() && victim && C.puppet_owner && C.puppet_owner(victim) > 0) {
         g_puppet_hits_dropped++;
         return false;
+    }
+    if (victim && victim == avatar() && attacker && attacker != victim) {
+        // BUG-0958: a partner's poison cloud (a mirror of the host's that is a player's product, or on the host a
+        // cloud of a partner's puppet) never hurts our cell while players do not hurt each other
+        auto am = is_guest() ? g_host_of.find(F<uint32_t>(attacker, 0)) : g_host_of.end();
+        auto mm = am != g_host_of.end() ? g_mirrors.find(am->second) : g_mirrors.end();
+        bool mirror_product = mm != g_mirrors.end() && mm->second.product;
+        bool partner_cloud = is_host() && g_partner_clouds.count(F<uint32_t>(attacker, 0)) && F<uint8_t>(attacker, 0x110);
+        const char* k = kind_of(attacker);
+        snprintf(g_own_hit_last, sizeof g_own_hit_last, "%s c%u type=%d %s%s hp=%d", k, F<uint32_t>(attacker, 0), type,
+                 am != g_host_of.end() ? "mirror" : modes::cell_is_puppet(attacker) ? "puppet" : "local",
+                 mirror_product || partner_cloud ? " partner_product" : F<uint8_t>(attacker, 0x110) ? " own_product" : "",
+                 F<int>(victim, kHp));
+        if ((mirror_product || partner_cloud) && !strcmp(k, "poison")) {
+            if (g_fix_partner_poison && !players_hurt_each_other()) {
+                g_partner_poison_refused++;
+                return false;
+            }
+            g_partner_poison_taken++;
+        }
     }
     if (is_guest() && victim) {
         auto it = g_host_of.find(F<uint32_t>(victim, 0));
@@ -3556,7 +3617,8 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             w.f32(v[0]); w.f32(v[1]);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
-            w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
+            // flag 4 (BUG-0958): a player's product (+0x110, the clouds of a player's poison part; older guests ignore it)
+            w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0)));
         }
         w.f32(world_scale()); // BUG-0511: the scale these poses are in (a guest without the field stops before it)
         C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
@@ -3631,6 +3693,7 @@ static void guest_state(net::Reader& r)
         g_cycle_seen.insert(hidx);
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
+        m.product = (flags & 4) != 0; // BUG-0958
         m.scale = g_fix_world_scale ? host_scale : 0.f; // the pose stays in the host's scale; drawn in ours
         size *= k;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
@@ -3989,6 +4052,7 @@ static void forget_mirrors()
     g_rounds.reset();
     g_kill_sent.reset();
     g_kill_applied.reset();
+    g_partner_clouds.clear(); // BUG-0958
     g_eaten.reset();
 }
 
@@ -4432,13 +4496,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                                          : !g_kill_applied.first(idx, H->time_seconds(), g_fix_kill_once));
         if (again)
             g_kills_dup_refused++;
+        // BUG-0714 / BUG-0509: a kill of a knocked-out guest is refused below
+        bool ko = kind != ACT_GONE && alive && !again && g_fix_guest_hit_game && g_fix_ko_no_bite && guest_knocked_out(from);
         if (kind == ACT_GONE)
             trace::ev("eat", c ? "from applied" : food ? "from late" : "from gone", "from %u gone c%u (%s) food=%d %s meal=%u: %s",
                       from, idx, what, food, plant ? "plant" : "meat", e.meal,
                       c ? "applied" : food ? "refused (eaten first / not here): points taken back" : "not here, no points");
         else
-            trace::ev("eat", "from kill", "from %u kill c%u (%s): %s", from, idx, what,
-                      again ? "refused (killed here already)" : alive ? "applied" : "refused (gone or dying here)");
+            trace::ev("eat", ko && g_fix_ko_trace ? "from kill ko" : "from kill", "from %u kill c%u (%s): %s", from, idx, what,
+                      cell_logic::kill_word(again, alive, ko && g_fix_ko_trace));
         if (kind == ACT_GONE) {
             if (c) {
                 g_eats_in++;
@@ -4451,7 +4517,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 g_eats_late++;
                 g_food_sent = -1;
             }
-        } else if (alive && !again && g_fix_guest_hit_game && g_fix_ko_no_bite && guest_knocked_out(from)) {
+        } else if (ko) {
             g_ko_hits_refused++; // BUG-0714: a lethal bite or kill of a knocked-out guest, as MSG_CELL_HIT (BUG-0509)
             trace::ev("bite", "refused ko", "from %u kill c%u refused: that player is knocked out", from, idx);
         } else if (alive && !again) {
@@ -6492,7 +6558,11 @@ std::string status()
     char c1[200]; // 0.7.13 C1 (BUG-0798, 0799, 0821, 0827, 0835, 0792)
     snprintf(c1, sizeof c1, "cell_c1: down_scale=%.4g ko_clouds_blocked=%u kills_resent=%u swallows_marked=%u spawn_slot=%d\n",
              g_downed ? g_down_scale : 0.f, g_ko_clouds_blocked, g_kills_resent, g_swallows_marked, g_spawn_slot);
-    return b + std::string(d) + t + j + o + sc + c1;
+    char pp[320]; // BUG-0958
+    snprintf(pp, sizeof pp, "cell_partner_poison: fix=%d hurt_each_other=%d refused=%u taken=%u partner_clouds=%u last_hit=%s\n",
+             (int)g_fix_partner_poison, (int)players_hurt_each_other(), g_partner_poison_refused, g_partner_poison_taken,
+             (unsigned)g_partner_clouds.size(), g_own_hit_last);
+    return b + std::string(d) + t + j + o + sc + c1 + pp;
 }
 
 std::vector<syncdbg::Entry> sync_entries()

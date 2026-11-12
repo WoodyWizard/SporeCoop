@@ -49,6 +49,9 @@
   revive it; it was held far out in the pool (BUG-0798).
 - Cell: a knocked-out cell no longer makes poison clouds that hurt and kill creatures for its owner while it is down
   (BUG-0799).
+- Cell: a partner's poison clouds no longer hurt or knock out another player's cell while friendly fire is off
+  (BUG-0958).
+- Cell: the host's support log no longer says a knocked-out guest's refused kill was applied (BUG-0959).
 - Cell: a guest's bite that the host refused or that did not kill no longer keeps that creature from being killed by
   any guest for the next 10 seconds (BUG-0821).
 - Cell: a creature a guest swallows whole is gone in the host's game too; it lived on there and could be eaten again

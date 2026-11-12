@@ -60,6 +60,11 @@ def main():
     st = host_cell(host, key)
     print(f'  host: {st.strip()[:200]}', flush=True)
     ck(not dead(st), f'2. the knocked-out guest\'s kill is refused: the creature lives in the host\'s game (hp {num(st, "hp")})')
+    # BUG-0959: the host's trace line for that kill says it was refused (not "applied")
+    kl = [x.strip() for x in host.call('log 200')['out'].splitlines() if f'kill {key} (' in x]
+    print('  host log (the refused kill): ' + ' | '.join(x[-110:] for x in kl)[:400], flush=True)
+    ck(kl and not any(x.endswith(': applied') for x in kl) and any('refused (knocked out)' in x for x in kl),
+       '2. the host\'s trace says the knocked-out guest\'s kill was refused (not "applied", BUG-0959)')
     if dead(st) or not down:
         return ck.result()
     t_ref = time.time()

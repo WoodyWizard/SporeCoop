@@ -2856,6 +2856,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   (inferred). docs/re/cell.md#cell-c1-0713.
 * Not checked: the guest's clouds (made by the host for its puppet) on the host's cell.
 * Ticket: BUG-0958
+* Fixed (unreleased, fix/w48-pass, 2026-11-12): cell.partner_poison; the guest's clouds never hurt the host's cell
+  (the game spares its avatar from them). docs/re/cell.md#cell-partner-poison.
 
 ## Cell: the host's trace calls a refused kill "applied" (2026-11-12, test: fix/w48-cell)
 <a id="issue-cell-kill-trace"></a>
@@ -2863,6 +2865,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * What happens: the support trace's eat line says "applied" for a knocked-out guest's kill that the next line refuses.
 * Reproduce: `coop_cell_kill_refused.py`, the host's game log.
 * Ticket: BUG-0959
+* Fixed (unreleased, fix/w48-pass, 2026-11-12): the line says "refused (knocked out)" (cell.ko_trace).
 * Fixed (unreleased, fix/w48-new, 2026-11-12): a destroyed window in the window manager's list of modal windows that
   PopModal made the modal one (game.dead_modal_list); no report because Wine cannot dispatch a fault with esp outside
   the stack (kit.fix offstack writes one now). docs/re/space.md#space-modal-list-crash.
+
+## Creature: the attack key sometimes does nothing; a stop beside the partner without a bite (2026-11-12, test: fix/w48-pass)
+<a id="issue-creature-walk-use-stuck"></a>
+
+* What happens: (a) after the attack key the guest's creature does not move toward its target at all, also on further
+  presses (12 s); (b) with friendly fire off, coming past the partner's creature it stops beside it 1.4-2 m from the
+  animal and does not bite.
+* Reproduce: `coop_creature_partner_pass.py` prints them ("stopped by: no start", "beside the partner"), about 1
+  round in 5 for (a) and 1 in 15 for (b). docs/re/creature.md#creature-partner-pass-rel.
+* Ticket: BUG-0964, BUG-0965

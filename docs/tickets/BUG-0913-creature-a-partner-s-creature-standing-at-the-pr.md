@@ -13,7 +13,7 @@ branch: fix/w48-cell
 commits: f6d5a6b2
 tests: partner_pass, partner_pass_ff, play_creature (the bots walk around)
 signature:
-docs: docs/re/creature.md#creature-partner-pass, docs/re/creature.md#creature-walk-and-use-blocked, docs/re/creature.md#creature-combat-click-target
+docs: docs/re/creature.md#creature-partner-pass, docs/re/creature.md#creature-partner-pass-rel, docs/re/creature.md#creature-walk-and-use-blocked, docs/re/creature.md#creature-combat-click-target
 related: BUG-0618
 ---
 
@@ -60,3 +60,15 @@ reach the bite's reach), then clicks the animal from behind (the game's target m
 - 2026-11-10: opened.
 - 2026-11-11: the owner decided: fix in 0.7.13 (walk through the partner and click through it while friendly fire is off; unchanged with friendly fire on and in Rivals), docs/plan-0.7.13.md "Owner decisions (2026-11-11)".
 - 2026-11-12 (fix/w48-cell): fixed (creature.partner_pass: Havok group filter and the hover filter), FAIL and PASS runs in Verification.
+- 2026-11-12 (fix/w48-pass): partner_pass failed on rel/0.7.13 (lab 20261112-094823, -105829). Not a regression: the
+  rel/0.7.13 commit right after the fix/w48-cell merge (6d8a917f) failed it too (4 of 7: lab 20261112-111650,
+  -113440); the test had been lucky on its branch. The failures were the game's own: a press that never moves the
+  avatar (desired speed 4.75, moved 0 m), a bite between two samples after which the animal stepped back, another
+  animal in the way, a click that missed the walking animal (docs/re/creature.md#creature-partner-pass-rel). The test
+  now judges a walk by what stopped it (the partner's creature within 2.5 m and nothing nearer: fail; a press that
+  never started or another creature: tried again from 4.5 / 8 m, not judged), counts a landed bite as reached,
+  aims and clicks again when the target click missed, and waits until the guest draws the host where it is after a
+  long jump. Its checks are unchanged: the click on the animal, never the partner, and the walk not stopped by the
+  partner. With the final test: FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-130029 (click on the
+  partner 2 of 2), also 20261112-114751 (0 of 3); PASS 8 of 8 on lanes 6 / 7: 20261112-124402 (3 of 3), -124417
+  (3 of 3), -130600, -130741; partner_pass_ff 20261112-130044.

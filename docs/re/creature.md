@@ -4353,3 +4353,29 @@ BUG-0837. Follows #creature-c1b030-two-names.
   the function by that name. Its relay K_VOICE replays the host's +0xBB1 changes on a guest's proxies with force = 1:
   a forced sneak, as the host's NPC showed it (the host sends only the changes its own game made).
 
+## The partner pass test on rel/0.7.13: what else stops a walk-and-use (2026-11-12, fix/w48-pass)
+<a id="creature-partner-pass-rel"></a>
+
+GOG 2024, lab lanes 6 / 7, `coop_creature_partner_pass.py` (BUG-0913). Adds to #creature-partner-pass.
+* ✔ (runtime) partner_pass failing on rel/0.7.13 (lab 20261112-094823, -105829) was not a regression of the merges
+  after fix/w48-cell: the rel/0.7.13 commit right after that merge (6d8a917f) failed it as well, 4 of 7 (lab
+  20261112-111650 lane 6: 1 of 4; 20261112-113440 lane 7: 3 of 3), the head (b4ad58b5) 6 of 7 (-111710, -113425).
+  The failing rounds were never a stop at the partner's creature with the fix on but three things of the game:
+* ✔ (runtime) A press of the attack key 6 m behind the host's creature that never moves the avatar (moved 0.0 m in
+  12 s, 4 presses) although the game wants it to walk: the avatar's cLocomotiveObject desired speed (spatial +0x1E0)
+  4.75, the gap to the target unchanged (lab 20261112-120457 r9). Seen with the fix on and off and at the same herd
+  in most runs (the first small animal after the big ones); ? why it cannot move from that spot (terrain or an
+  object there: not read). With the switch off the same happened in the fix/w48-cell runs (20261112-074338 r9).
+* ✔ (runtime) The walk comes within the bite's reach between two samples, bites, and the animal steps back from the
+  bite: gap 1.1 -> 1.4-2.0 with the host's creature 1.6-2.0 m from the avatar (lab 20261112-114736 r10, -120457 r10).
+  It reads like the BUG-0913 stop but the bite landed (the animal's health in the host's game went down); the BUG-0913
+  stop with the switch off approaches monotonically and holds at 1.4 (20261112-072859, -071805).
+* ✔ (runtime) A walk stopped by another animal of the herd (1.2 m from the avatar, nearer than the host's creature).
+* ~ The click on the animal from its other side (to make it the target) misses now and then (target 0, key 1 status
+  3): the animal walks on between the aim and the click; a second aimed click takes it.
+* ~ (runtime) A walk that came past the host's creature to gap 1.1-1.3 and then stood 1.4-2.0 from the animal beside
+  it without a bite (lab 20261112-114736 r10, -122259 r10): not a Havok pair. `coop.partnerpass phantom_pairs=` counts
+  the pairs of a phantom (broadphase type 2, its userData at +0xC as an entity's) with the avatar or a partner's
+  puppet: 0 between the avatar and the partner's puppet in 6 runs (713-745 of the puppet's with other objects, lab
+  20261112-124402, -124417). ? what holds it there (the walk-and-use's arrival or the game's attack position next to
+  another creature: not read). The test does not count it as the BUG-0913 stop (that one is behind the partner).

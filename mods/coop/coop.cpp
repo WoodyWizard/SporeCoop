@@ -634,6 +634,20 @@ static void* collidable_object(uint8_t* c)
     uint8_t* entity = c + *(int32_t*)(c + 0x10);
     return *(void**)(entity + 0xC);
 }
+// tests (BUG-0913 on rel/0.7.13): the pairs of a non-entity collidable (broadphase type 2, a phantom: hkpWorldObject,
+// its userData at +0xC as an entity's) with the avatar or a partner's puppet, which the rule above lets through
+static uint32_t g_pass_phantom_pairs, g_pass_phantom_own, g_pass_phantom_partner;
+static void* collidable_phantom(uint8_t* c)
+{
+    if (!c)
+        return nullptr;
+    while (*(uint8_t**)(c + 0xC))
+        c = *(uint8_t**)(c + 0xC);
+    if (c[0x18] != 2)
+        return nullptr;
+    uint8_t* wo = c + *(int32_t*)(c + 0x10);
+    return *(void**)(wo + 0xC);
+}
 using CollEnabled_t = uint8_t*(SK_THISCALL*)(void*, uint8_t*, uint8_t*, uint8_t*);
 static CollEnabled_t o_CollEnabled;
 static uint8_t* SK_THISCALL h_CollEnabled(void* self, uint8_t* out, uint8_t* a, uint8_t* b)
@@ -643,6 +657,13 @@ static uint8_t* SK_THISCALL h_CollEnabled(void* self, uint8_t* out, uint8_t* a, 
         void *oa = collidable_object(a), *ob = collidable_object(b);
         bool own_a = pass_is(av, oa), own_b = pass_is(av, ob);
         g_pass_seen_own += own_a || own_b;
+        if (void* pa = !oa ? collidable_phantom(a) : nullptr; pa || (!ob && collidable_phantom(b))) {
+            void* ph = pa ? pa : collidable_phantom(b);
+            void* other = pa ? ob : oa;
+            g_pass_phantom_pairs++;
+            g_pass_phantom_own += (pass_is(av, ph) && pass_partner(other)) || (pass_partner(ph) && pass_is(av, other));
+            g_pass_phantom_partner += pass_partner(ph) || pass_partner(other);
+        }
         if ((own_a && pass_partner(ob)) || (own_b && pass_partner(oa))) {
             g_pass_pairs++;
             *out = 0;
@@ -7580,9 +7601,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        int n = 0;
                        for (void* p : g_pass_puppets)
                            n += p != nullptr;
-                       SAY("fix=%d on=%d puppets=%d pairs_skipped=%u own_pairs_seen=%u hover_skipped=%u ff=%d",
+                       SAY("fix=%d on=%d puppets=%d pairs_skipped=%u own_pairs_seen=%u hover_skipped=%u ff=%d "
+                           "phantom_pairs=%u/%u/%u",
                            (int)g_partner_pass_fix, (int)g_pass_on, n, g_pass_pairs, g_pass_seen_own, g_pass_hover_skipped,
-                           (int)settings::on(settings::kFriendlyFire));
+                           (int)settings::on(settings::kFriendlyFire), g_pass_phantom_pairs, g_pass_phantom_own,
+                           g_pass_phantom_partner);
                        return 0;
                    },
                    nullptr, MT);
