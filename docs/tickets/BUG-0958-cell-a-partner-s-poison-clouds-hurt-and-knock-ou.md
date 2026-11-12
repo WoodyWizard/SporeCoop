@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-pass
-commits: a52c61de
+commits: a52c61de, febc5c8e
 tests: cell_partner_poison, cell_partner_poison_host, cell_partner_poison_ff
 signature:
 docs: docs/re/cell.md#cell-c1-0713, docs/re/cell.md#cell-partner-poison
