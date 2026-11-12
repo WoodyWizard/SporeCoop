@@ -105,18 +105,22 @@ def main():
                         if len(f) > 7 and f[0] == 's' and math.dist(tuple(map(float, f[4:7])), at) < 80:
                             near[who].append(f)
                             print(f'    {who} stamp: {ln.strip()[:150]}', flush=True)
+                # the guest's stamps the host has not (by id): the stamp its load added to the village; the same stamp
+                # applied live on the host (its prop key, the host's village stamp's transform)
+                hids = {f[3] for f in near['host']}
+                tmpl = [f[3] for f in near['host'] if math.dist(tuple(map(float, f[4:7])), at) < 2]
                 for f in near['guest']:
-                    if f[1] == '770':
-                        print('    guest reapply:', guest.call(f'coop.terrain reapply {f[2]} {f[2]}')['out'].strip()[:200],
+                    if f[3] in hids or not tmpl:
+                        continue
+                    raw = guest.call(f'coop.terrain raw {f[3]}')['out']
+                    key = dict(re.findall(r'^\+(98|A0) ([0-9A-F]{8})', raw, re.M))
+                    print(f'    the guest\'s extra stamp {f[3]}: key {key}', flush=True)
+                    if '98' in key and 'A0' in key:
+                        print('    host:', host.call(f'coop.terrain stamp {tmpl[-1]} {key["98"]} {key["A0"]}')['out'].strip(),
                               flush=True)
-                time.sleep(4)
+                time.sleep(5)
                 w = compare(host, guest, [(dd, q) for dd, q in pts if dd <= 50])
-                print('  after the guest re-stamped them live: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
-                      flush=True)
-                print('    guest:', guest.call('coop.terrain rebuild')['out'].strip()[:120], flush=True)
-                time.sleep(6)
-                w = compare(host, guest, [(dd, q) for dd, q in pts if dd <= 50])
-                print('  after a rebuild on the guest: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
+                print('  after the host stamped it live too: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
                       flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()

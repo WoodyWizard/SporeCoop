@@ -326,6 +326,7 @@ struct GMember {
     double hold_at = -1e9;          // when that came
     bool hold_bound = false;        // the mirror's hold modifier was started in that animation here
     uint32_t hold_anim_bound = 0;   // (that animation)
+    double hold_end_at = -1e9;      // the host's last end (reliable): an older start overtaking it is no new hold
     uint32_t relayed_anim = 0;      // BUG-0936: the last animation the relay (kinds 2 / 3 / 10) played on it
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
@@ -2031,11 +2032,14 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             if (!anim) { // the host's member put the item back into the grip: so does a mirror that took it for it
                 GMember& g = it->second;
                 g.hold_anim = 0;
+                g.hold_end_at = now;
                 if (g.hold_bound && mirror_ok(g) && has_body(g.c))
                     hold_modifier(g.c, true);
                 g.hold_bound = false;
                 continue;
             }
+            if (now - it->second.hold_end_at < 0.4)
+                continue; // (an unreliable start sent before the end, arriving after it)
             it->second.hold_anim = anim;
             it->second.hold_at = now;
             hold_try(it->second, now);

@@ -157,11 +157,15 @@ def main():
                 x = anims(host).get(lead)
                 hand = host.call(f'coop.tribe hand {lead}')['out']
                 item = re.search(r'item=(\d+)', hand)
-                if not x or not item or int(item.group(1)) <= 0 or x['hold']:
+                if not x or not item:
                     print(f'    try {k}: not now (anim {x and x["anim"]} hold {x and x["hold"]}; {hand.strip()[:90]})', flush=True)
                     time.sleep(3)
                     continue
-                host.call(f'coop.tribe hand {lead} {item.group(1)}')
+                if not x['hold']:  # (holding already: its own behaviour took it, e.g. a long gesture)
+                    # its item, or the chief's staff (0x11) when its game has put it away (#tribe-held-item)
+                    host.call(f'coop.tribe hand {lead} {int(item.group(1)) or 17}')
+                    if not int(item.group(1)):
+                        time.sleep(1.0)  # (the item field reaches the mirror twice a second)
                 time.sleep(1.5)
                 x, y = anims(host).get(lead), anims(guest).get(lead)
                 if not x or not x['hold']:
@@ -177,13 +181,14 @@ def main():
                              f'screens, not upright in the resting grip on the guest', kind='sameview')
                 host.call(f'coop.tribe hand {lead} end')
                 time.sleep(1.5)
-                y2 = anims(guest).get(lead)
-                back += bool(y2 and not y2['hold'])
+                x2, y2 = anims(host).get(lead), anims(guest).get(lead)
+                back += bool(y2 and y2['hold'] == bool(x2 and x2['hold']))  # (the host's game may take it again at once)
                 print(f'    round {k}: host anim {x["anim"]} hold 1; guest anim {y and y["anim"]} hold {y and y["hold"]}; '
-                      f'after the host\'s end: guest hold {y2 and y2["hold"]}', flush=True)
+                      f'after the host\'s end: host hold {x2 and x2["hold"]}, guest hold {y2 and y2["hold"]}', flush=True)
             ck(rounds >= 2, f'the host\'s chief held its staff in its animation ({rounds} rounds >= 2)')
             ck(rounds and follow == rounds, f'the guest\'s copy of the chief held it in the hand too ({follow} of {rounds})')
-            ck(rounds and back == rounds, f'and put it back into the grip when the host\'s did ({back} of {rounds})')
+            ck(rounds and back == rounds, f'and put it back into the grip when the host\'s did, or held it on when the host\'s game '
+               f'took it again ({back} of {rounds})')
     finally:
         for con in (host, guest):
             con.call('coop.view off')
