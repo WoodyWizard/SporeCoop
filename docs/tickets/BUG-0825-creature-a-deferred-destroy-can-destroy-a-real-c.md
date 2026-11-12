@@ -10,7 +10,7 @@ role: host
 versions: 0.7.11.1
 fixed_in: unreleased
 branch: fix/w48-freed
-commits: 1e58b7e0
+commits: 1e58b7e0 f9a88f86
 tests: defer_identity
 signature:
 docs: docs/re/creature.md#creature-freed-block-reuse
@@ -36,7 +36,13 @@ Test: during a cinematic queue a puppet's destroy, destroy it with destroy_untra
 Test `defer_identity` (tools/tests/coop_defer_identity.py).
 * FAIL (SPORE_FIX_OFF=npc.defer_identity): out/lab/20261112-011014 (the creature at the freed block was destroyed at the cinematic's end).
 * PASS: out/lab/20261112-010824-2, out/lab/20261112-014310 (it lives). (A run without a reuse in its rounds fails its first check: out/lab/20261112-013003; the test tries 6 rounds since.)
+* fix/w48-freed2 (the reuse is the game's chance: no reuse in 6 rounds of 150 frames in half the runs, rel/0.7.13
+  20261112-031338, 20261112-041619 #2): a round without a reuse is inconclusive and the test plays another (300-frame
+  hunts, up to 16 rounds within 9 min). PASS 10 of 10: out/lab/20261112-045530-2 (3), out/lab/20261112-050123-2 (7);
+  FAIL with SPORE_FIX_OFF=npc.defer_identity: out/lab/20261112-050957 (2 of 2, the creature at the freed block
+  destroyed with the queue).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12: fixed on fix/w48-freed (npc.defer_identity).
+- 2026-11-12: fix/w48-freed2: the test retries the scenario until the reuse happened (10/10 with the fix).

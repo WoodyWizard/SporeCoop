@@ -402,12 +402,13 @@ struct GV {
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
-// BUG-0951 (class BUG-0426, as BUG-0844 for the Tribe mirrors): a mirror's vehicle was kept across frames and checked by
-// its own memory (object_alive). The game frees a destroyed vehicle later and gives the block to the next vehicle it
-// makes (the guest's own civ's, another mirror). While the host's states paused (its editors) the mirror stayed bound
-// to the address; when they came again the guest drove the new vehicle as the host's one (and the cycle's end removed
-// whatever stood at the address). Now a mirror's vehicle is used only while it is the object bound (the object list of
-// the frame and its serial). Old (`coop.fix civ.mirror_lifetime off`): object_alive.
+// BUG-0951 (class BUG-0426, as BUG-0844 for the Tribe mirrors): a mirror's vehicle is kept across frames and was checked
+// by its own memory (object_alive). The game frees a removed vehicle later and gives the block to the next vehicle it
+// makes (2 tries in the lab, civ_mirror_lifetime). prune_gone (every Civ frame: the game's vehicle list) drops a mirror
+// whose vehicle left the list before it is freed, so the old check was not reached (the test passes with the switch
+// off too: lab 20261112-050242); outside the Civ mode prune_gone does not run. Now a mirror's vehicle is used only
+// while it is the object bound (the object list and its serial), and the host's table gives a new vehicle at a known
+// address of the same nation a new id. Old (`coop.fix civ.mirror_lifetime off`): object_alive.
 static bool g_veh_lifetime_fix = true;
 COOP_FIX("civ.mirror_lifetime", "BUG-0951", g_veh_lifetime_fix, "civ: a guest never drives or removes a vehicle of its own game that the game built where a removed copy of a host's vehicle was");
 static uint32_t g_veh_stale;
@@ -5108,13 +5109,19 @@ std::string debug(const std::vector<std::string>& a)
         // own civilization: it is never bound to that host vehicle by its kind)
         auto it = g_gv.find((uint16_t)atoi(a[1].c_str()));
         void* pc = player_civ();
-        if (a[1] == "npc")
-            for (it = g_gv.begin(); it != g_gv.end(); ++it)
-                if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead) && H->time_seconds() - it->second.seen < 1.0 &&
-                    (!pc || pol_of(it->second.v) != pol_of(pc)) && !g_kill_later.count(it->second.v))
-                    break;
-        if (it == g_gv.end() || !gv_ok(it->second))
-            return "no live mirror\n";
+        // (the new vehicle is made 40 m away: farther than the 25 m a mirror binds a local vehicle of its kind by)
+        if (a[1] == "npc" || a[1] == "any")
+            for (int pass = a[1] == "npc" ? 0 : 1; pass < 2 && it == g_gv.end(); pass++)
+                for (it = g_gv.begin(); it != g_gv.end(); ++it)
+                    if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead) && H->time_seconds() - it->second.seen < 1.0 &&
+                        (pass || !pc || pol_of(it->second.v) != pol_of(pc)) && !g_kill_later.count(it->second.v))
+                        break;
+        if (it == g_gv.end() || !gv_ok(it->second)) {
+            char b[120];
+            snprintf(b, sizeof b, "no live mirror (%u mirrors, %u vehicles in the game)\n", (unsigned)g_gv.size(),
+                     (unsigned)all_vehicles().size());
+            return b;
+        }
         void* v = it->second.v;
         g_vh = VehHunt{};
         g_vh.target = (uint8_t*)v;

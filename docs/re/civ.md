@@ -1614,3 +1614,16 @@ lanes 4 / 5, fixture civ_npc.
 * ? Not checked: a religious conversion's capture (Convert, no hit: credited by g_siege or the nearest vehicle); the
   owners after a host's load (on_world_change clears g_city_owner, every city is dealt anew: captures are not kept
   across loads, BUG-0950).
+## Mirror vehicles: a freed vehicle's block (2026-11-12, fix/w48-freed2)
+<a id="civ-mirror-vehicle-reuse"></a>
+
+BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 6 (`coop.civ reusehunt`, docs/06-testing.md#testing-freed2-w48).
+
+* ✔ A vehicle removed by the disband path (0xCAA7B0, `kill_local`) is freed later and its block goes to the next
+  vehicle the game makes: `cCivilization::CreateVehicle` of the same purpose and locomotion for another civilization
+  (the guest's own, the game's generated design, key 0) got it on the 2nd try in 3 of 4 hunts (lab 20261112-050123,
+  20261112-050242).
+* ✔ A guest's mirror does not follow it even with object_alive: `prune_gone` (every Civ frame, the game's vehicle
+  list, pointers only) drops a mirror whose vehicle left the list, which happens at the removal, before the free; the
+  new vehicle at the block is then a vehicle the host has not and the guest's cycle removes it (both with
+  `civ.mirror_lifetime` on and off). prune_gone runs only while the Civ mode is active.

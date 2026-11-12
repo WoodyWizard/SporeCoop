@@ -15,7 +15,8 @@ Two games on the civ fixture. On the guest, up to --tries times:
      stands where the host's vehicle is; left alone, it stays where it was made (or the guest's rules remove it: a
      vehicle the host has not).
 PASS: the guest's new vehicle at a freed mirror's address is never moved onto the host's vehicle, and no game
-faulted. SPORE_FIX_OFF=civ.mirror_lifetime must FAIL.
+faulted. A regression guard: with SPORE_FIX_OFF=civ.mirror_lifetime it passes too (lab 20261112-050242), since
+civ.cpp's prune_gone drops a mirror whose vehicle left the game's vehicle list in every Civ frame, before the free.
 
   SPORE_LANE=6 python3 tools/tests/coop_civ_mirror_lifetime.py [--tries 1]"""
 import argparse

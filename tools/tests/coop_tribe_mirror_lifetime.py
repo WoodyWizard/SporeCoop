@@ -43,14 +43,18 @@ def hunt(con):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tries', type=int, default=1)
-    ap.add_argument('--rounds', type=int, default=16)
+    # BUG-0955 follow-up: 1 run in 10 had no reuse in 16 rounds (lab 20261112-050512 #6): a round without one is
+    # inconclusive, the test plays more, up to --rounds within --minutes
+    ap.add_argument('--rounds', type=int, default=40)
+    ap.add_argument('--minutes', type=float, default=6)
     a = ap.parse_args()
+    t_end = time.time() + a.minutes * 60
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(10)
     reused, wrong = 0, []
     for _ in range(a.rounds):
-        if reused >= a.tries:
+        if reused >= a.tries or time.time() > t_end:
             break
         guest.call('coop.tribe statehold 1')
         out = guest.call('coop.tribe reusehunt npc 150')['out'].strip()
