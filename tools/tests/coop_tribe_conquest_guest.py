@@ -85,8 +85,10 @@ def main():
             for mid in raiders:
                 host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % ((mid,) + hp + (HUT,)))
             last_change = time.time()
+        if cut and h is not None and h > 10:
+            cut = False  # the village mended it: cut again when raiders are at it
         if not cut and len(nearby) >= max(1, len(raiders) // 2):
-            print('  cut: ' + host.call('coop.tribe huthp %.2f %.2f %.2f 40' % hp)['out'].strip(), flush=True)
+            print('  cut: ' + host.call('coop.tribe huthp %.2f %.2f %.2f 2' % hp)['out'].strip(), flush=True)
             cut = True
     if not ck(fell is not None, f"the raid ended the hut in the host's game ({fell and round(fell)} s)"):
         ck.faults(host=host, guest=guest)

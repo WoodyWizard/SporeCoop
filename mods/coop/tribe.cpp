@@ -4984,7 +4984,14 @@ std::string debug(const std::vector<std::string>& a)
     }
     // order <member id> <action> <x> <y> <z>: test setup (BUG-0531, host), the member's DoAction as an order gives it:
     // 4 walks there, 2 gathers the tree there, others take the object of this game nearest there (8 m)
-    if (a.size() >= 6 && a[0] == "order" && is_host()) {
+    // (on a guest while the host is away too: its own game runs its members then, BUG-0879 tests)
+    if (!a.empty() && a[0] == "conquests") { // BUG-0879 / BUG-0777 counters
+        char b[160];
+        snprintf(b, sizeof b, "conquests fix=%d sent=%u done=%u refused=%u local_play=%d\n", (int)g_away_conquest_fix, g_conquests_sent,
+                 g_conquests_done, g_conquests_refused, (int)local_play());
+        return b;
+    }
+    if (a.size() >= 6 && a[0] == "order" && (is_host() || local_play())) {
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         int action = atoi(a[2].c_str());
         net::Vec3 p{(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
@@ -5006,7 +5013,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     // huthp <x> <y> <z> <hp>: tests (BUG-0531, host), the health of the hut within 10 m of the point (cCombatant at
     // +0x120, docs/re/tribe.md): a raid then ends in a few blows
-    if (a.size() >= 5 && a[0] == "huthp" && is_host()) {
+    if (a.size() >= 5 && a[0] == "huthp" && (is_host() || local_play())) {
         net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
         void* h = game::find_object(0x01E4DAAE, p, 10.f);
         if (!h || !skg::readable(h, 0x160))
