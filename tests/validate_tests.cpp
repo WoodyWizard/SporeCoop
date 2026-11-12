@@ -19,6 +19,12 @@
 #include "net/held_cmds.h"
 #include "net/sreport.h"
 #include <string>
+#include <deque>
+#include <functional>
+
+#include "world_path.h"
+#include "realign_rule.h"
+#include "../../sporekit/task_drop.h"
 
 using namespace net;
 
@@ -746,6 +752,128 @@ static void test_sreport()
     CHECK(!q3.read(rd2));
 }
 
+// BUG-0785: a received world's file name that Windows opens as a device (con, nul, com1, lpt1.spo)
+static void test_world_path()
+{
+    printf("received file names: no device names (BUG-0785)\n");
+    const bool fix = !g_nofix;
+    using world_path::safe_rel;
+    for (const char* bad : {"con", "Planets/nul.spo", "COM1.txt", "lpt9", "aux.dat", "Prn", "conin$", "CONOUT$.x", "con .txt",
+                            "com\xC2\xB9", "Planets/LPT\xC2\xB3.spo", "nul.tar.gz"})
+        CHECK(!safe_rel(bad, fix));
+    for (const char* good : {"console.spo", "Planets/Bob's World!.spo", "com10.txt", "lpt.txt", "comma", "nullified.spo", "aux2",
+                             "Game0/x.package", "connie"})
+        CHECK(safe_rel(good, fix));
+    // what safe_rel refused before stays refused
+    for (const char* bad : {"", "../x", "a/./b", "a//b", "C:x", "a.", "a ", "x?", "a/b/c/d/e", "f:stream"})
+        CHECK(!safe_rel(bad, fix) && !safe_rel(bad, false));
+}
+
+// BUG-0886: realign's planet list in chunks: a late chunk of an older cycle, duplicates
+static void test_planet_rx()
+{
+    printf("realign planet list: a late chunk of an older cycle (BUG-0886)\n");
+    const bool fix = !g_nofix;
+    using realign::PlanetRx;
+    auto part = [](uint8_t kind, float x) {
+        realign::Obj o;
+        o.x = x;
+        return std::vector<PlanetRx::Item>{{kind, o}};
+    };
+    PlanetRx rx;
+    CHECK(!rx.add(5, 0, 3, part(0, 50), fix));
+    CHECK(!rx.add(5, 1, 3, part(0, 51), fix));
+    bool late = rx.add(4, 2, 3, part(0, 42), fix); // the last chunk of cycle 4, late
+    CHECK(!late);
+    bool done = rx.add(5, 2, 3, part(0, 52), fix);
+    printf("  cycle 5 after a late chunk of cycle 4: %s, %zu objects, older=%u incomplete=%u\n", done ? "complete" : "NOT complete",
+           rx.objs.size(), rx.older, rx.incomplete);
+    CHECK(done && rx.objs.size() == 3);
+    if (done)
+        CHECK(rx.objs[0].second.x == 50 && rx.objs[2].second.x == 52);
+    CHECK(rx.older == 1 && rx.incomplete == 0);
+    // a one-chunk older cycle never becomes the list
+    PlanetRx r2;
+    CHECK(!r2.add(9, 0, 2, part(1, 90), fix));
+    bool old_one = r2.add(8, 0, 1, part(1, 80), fix);
+    CHECK(!old_one);
+    CHECK(r2.add(9, 1, 2, part(1, 91), fix) && r2.objs.size() == 2);
+    // a chunk seen twice and a late duplicate of a complete cycle add nothing; the next cycle starts clean
+    PlanetRx r3;
+    CHECK(!r3.add(1, 0, 2, part(2, 10), fix));
+    CHECK(!r3.add(1, 0, 2, part(2, 10), fix));
+    CHECK(r3.add(1, 1, 2, part(2, 11), fix) && r3.objs.size() == 2);
+    r3.objs.clear();
+    CHECK(!r3.add(1, 1, 2, part(2, 11), fix));
+    CHECK(!r3.add(2, 0, 1, {}, fix) || r3.objs.empty());
+    CHECK(r3.incomplete == 0);
+    // the counter wraps
+    PlanetRx r4;
+    CHECK(!r4.add(0xFFFF, 0, 2, part(0, 1), fix));
+    CHECK(!r4.add(0, 0, 2, part(0, 2), fix));
+    CHECK(!r4.add(0xFFFF, 1, 2, part(0, 3), fix));
+    CHECK(r4.add(0, 1, 2, part(0, 4), fix) && r4.objs.size() == 2 && r4.objs[1].second.x == 4);
+}
+
+// BUG-0860: drop_tasks_in destroyed the queued tasks of an unloading mod under g_task_mu; a capture whose destructor
+// queues a task (run_on_main locks the same non-recursive mutex) deadlocked. A mutex that records a lock taken while
+// it is held by the same caller stands in for the deadlock.
+struct ProbeMutex {
+    bool held = false;
+    int self_locks = 0;
+    void lock()
+    {
+        if (held)
+            self_locks++; // a real std::mutex: the thread waits for itself for ever
+        held = true;
+    }
+    void unlock() { held = false; }
+};
+struct ProbeTask {
+    std::function<void()> fn;
+    const void* code = nullptr;
+};
+static void test_task_drop()
+{
+    printf("tasks of an unloaded mod are destroyed outside the task lock (BUG-0860)\n");
+    const bool fix = !g_nofix;
+    ProbeMutex mu;
+    std::deque<ProbeTask> main_q, out_q;
+    int queued_by_dtor = 0;
+    struct Requeue { // a capture that queues a task when it is destroyed
+        ProbeMutex* mu;
+        std::deque<ProbeTask>* q;
+        int* n;
+        bool live = true;
+        Requeue(ProbeMutex* m, std::deque<ProbeTask>* qq, int* nn) : mu(m), q(qq), n(nn) {}
+        Requeue(Requeue&& o) noexcept : mu(o.mu), q(o.q), n(o.n), live(o.live) { o.live = false; }
+        Requeue(const Requeue& o) : mu(o.mu), q(o.q), n(o.n), live(false) {}
+        ~Requeue()
+        {
+            if (!live)
+                return;
+            std::lock_guard<ProbeMutex> lk(*mu);
+            q->push_back({[] {}, nullptr});
+            (*n)++;
+        }
+    };
+    static const char mod_code[16] = {}, other_code[4] = {};
+    {
+        Requeue rq(&mu, &main_q, &queued_by_dtor);
+        auto holder = std::make_shared<Requeue>(std::move(rq));
+        main_q.push_back({[holder] {}, mod_code + 4});
+    }
+    out_q.push_back({[] {}, mod_code + 8});
+    main_q.push_back({[] {}, other_code});
+    auto lo = (uintptr_t)mod_code, hi = lo + sizeof mod_code;
+    size_t n = sk::drop_tasks(mu, {&main_q, &out_q}, [&](const ProbeTask& t) { return (uintptr_t)t.code >= lo && (uintptr_t)t.code < hi; },
+                              fix);
+    printf("  dropped %zu, a destructor queued %d task(s), locks taken while held %d\n", n, queued_by_dtor, mu.self_locks);
+    CHECK(n == 2);
+    CHECK(mu.self_locks == 0);
+    CHECK(queued_by_dtor == 1 && main_q.size() == 2 && out_q.empty());
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -764,6 +892,9 @@ int main(int argc, char** argv)
     test_players();
     test_give_target();
     test_sreport();
+    test_world_path();
+    test_planet_rx();
+    test_task_drop();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

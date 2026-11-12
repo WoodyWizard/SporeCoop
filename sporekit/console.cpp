@@ -6,6 +6,7 @@
 #include <ws2tcpip.h>
 
 #include "core.h"
+#include "task_drop.h"
 
 #include <deque>
 #include <map>
@@ -99,18 +100,9 @@ void pump_outside_tasks()
 // postponed while a message was dispatched inside Present) would then call into unmapped memory
 size_t drop_tasks_in(uintptr_t lo, uintptr_t hi)
 {
-    std::lock_guard<std::mutex> lk(g_task_mu);
-    size_t n = 0;
-    for (auto* q : {&g_tasks, &g_out_tasks})
-        for (auto it = q->begin(); it != q->end();) {
-            uintptr_t c = (uintptr_t)it->code;
-            if (c >= lo && c < hi) {
-                it = q->erase(it);
-                n++;
-            } else
-                ++it;
-        }
-    return n;
+    // BUG-0860: the dropped tasks are destroyed after g_task_mu is unlocked (task_drop.h); `kit.fix taskdrop 0`: under it
+    return drop_tasks(g_task_mu, {&g_tasks, &g_out_tasks},
+                      [&](const Task& t) { return (uintptr_t)t.code >= lo && (uintptr_t)t.code < hi; }, fixed(g_fix_taskdrop));
 }
 
 struct DelayedTask {

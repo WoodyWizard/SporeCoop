@@ -3484,6 +3484,27 @@ static void test_name_clean()
     for (auto* log : {&host_log, &a_log})
         for (auto& l : *log)
             CHECK(one_clean_line(l));
+    // the LAN game list: a host's name and info line as any machine of the network sends them
+    Session lan;
+    CHECK(lan.host(kDefaultPort + kDiscoverPorts - 1, "Lan\nHost\x01", err));
+    lan.lobby_info = "Creature\r\n - World";
+    Discovery d;
+    CHECK(d.start());
+    d.targets = {0x0100007F};
+    d.interval_ms = 100;
+    std::vector<Discovery::Game> found;
+    for (int i = 0; i < 200 && found.empty(); i++) {
+        d.update(now_ms());
+        lan.update();
+        d.update(now_ms());
+        found = d.games(now_ms());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(found.size() == 1);
+    if (!found.empty()) {
+        printf("  the LAN list shows '%s' (%s)\n", found[0].info.name.c_str(), found[0].info.info.c_str());
+        CHECK(found[0].info.name == "LanHost" && found[0].info.info == "Creature - World");
+    }
 }
 
 // BUG-0776: a host with its port open to the internet answered a 6-byte discovery query from any address (up to

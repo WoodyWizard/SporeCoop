@@ -31,13 +31,14 @@ KitFix g_fix_faultstorm{"faultstorm", "one fault the game catches over and over 
 KitFix g_fix_dialognote{"dialognote", "a dialog on the main thread that stops the frames (the C runtime's error box) is logged with its text and the thread's stack, a runtime box writes a report (BUG-0925)", 1};
 KitFix g_fix_offstack{"offstack", "a fault whose stack pointer is outside its thread's stack (Windows and Wine cannot dispatch it, the game ends at once) writes its crash report from the fault logger (BUG-0956)", 1};
 KitFix g_fix_framelimit{"framelimit", "a frame limit another program or the game sets (kFrameLimitMS) is kept, not written back to the first frame's value (BUG-0779)", 1};
+KitFix g_fix_taskdrop{"taskdrop", "the tasks of an unloaded mod are destroyed after the task lock is released: a capture whose destructor queues a task does not deadlock (BUG-0860)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
                                        &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark,
                                        &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
                                        &g_fix_exitwait, &g_fix_hookorig, &g_fix_hookfirst, &g_fix_initfail, &g_fix_hangloop, &g_fix_longout,
-                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack}; }
+                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop}; }
 
 KitFix* kit_fix_find(const char* name)
 {
