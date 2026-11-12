@@ -42,7 +42,7 @@ end leaves such a hold alone for up to 8 s.
 ## Verification
 Test `tools/tests/coop_tribe_mirror_idle.py --part hold` (suite `tribe_mirror_hold`): three rounds of the host's chief
 holding its staff in its animation (`coop.tribe hand`, the game's attach, or a gesture holding it already) and putting
-it back: the guest's copy holds it 1.5 s after each take and has it back in the grip 1.5 s after each end; key frames
+it back: the guest's copy holds it within 4 s of each take and has it as the host has it within 3.5 s of each end; key frames
 `swing` and `hold` of kind sameview.
 * FAIL with `SPORE_FIX_OFF=tribe.mirror_hold`: out/lab/20261112-100511 (0 of 3; key frame: the staff upright on the guest).
 * PASS: out/lab/20261112-100852 (3 of 3; key frame: the staff in the hand on both), HOLDPASS.

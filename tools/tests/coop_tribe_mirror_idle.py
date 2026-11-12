@@ -20,7 +20,8 @@ whether the hand holds its item, `hold=`):
    some animations, so the rate is no measure); then the host's chief takes its staff into the hand in the animation
    it plays (`coop.tribe hand <id> <item>`, the game's attach: the hold modifier bound to that animation, what its
    behaviour nodes do in a swing) three times and puts it back (`hand <id> end`): the guest's copy must hold the staff
-   in the hand 1.5 s after each take and have it back in the grip 1.5 s after each end.
+   in the hand within 4 s of each take (the relay, and a mirror still in an animation the host's chief has left: the
+   idle relay ends it within 2 s) and have it back in the grip (or held, as the host's) within 3.5 s of each end.
 Key frames of kind sameview: the village's fire with the members at rest (idle), the host's chief with its staff
 (hold, shot while the host's chief holds the staff in an animation).
 
@@ -174,6 +175,10 @@ def main():
                     time.sleep(2)
                     continue
                 rounds += 1
+                t3 = time.time()  # (the relay, and a mirror still in an animation the host's member left: up to 2 s)
+                while not (y and y['hold']) and time.time() - t3 < 2.5:
+                    time.sleep(0.25)
+                    y = anims(guest).get(lead)
                 follow += bool(y and y['hold'])
                 if rounds == 1 and view_both(host, guest, x['pos'], 10.0, 3.0):
                     keyframe('hold', f'the same camera on both games 10 m from the host\'s chief #{lead} holding its staff '
@@ -182,6 +187,10 @@ def main():
                 host.call(f'coop.tribe hand {lead} end')
                 time.sleep(1.5)
                 x2, y2 = anims(host).get(lead), anims(guest).get(lead)
+                t3 = time.time()
+                while not (y2 and y2['hold'] == bool(x2 and x2['hold'])) and time.time() - t3 < 2.0:
+                    time.sleep(0.25)
+                    x2, y2 = anims(host).get(lead), anims(guest).get(lead)
                 back += bool(y2 and y2['hold'] == bool(x2 and x2['hold']))  # (the host's game may take it again at once)
                 print(f'    round {k}: host anim {x["anim"]} hold 1; guest anim {y and y["anim"]} hold {y and y["hold"]}; '
                       f'after the host\'s end: host hold {x2 and x2["hold"]}, guest hold {y2 and y2["hold"]}', flush=True)

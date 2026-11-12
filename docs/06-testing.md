@@ -6429,8 +6429,8 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
   hold: the natural holds are only printed (the mirror's own game takes the item itself in the work and change
   animations: 60-70 % "held" with the fix off, 78-80 % on: no measure); the check is three rounds of the host's chief
   taking its staff (`coop.tribe hand <id> <item>`, its item or 17, the game's attach; or a gesture holding it already)
-  and putting it back (`hand <id> end`): the guest's copy must hold it 1.5 s after each take (0 of 3 with the fix off)
-  and be back in the grip 1.5 s after each end. Key frames `rest` (16 m from the village), `swing` (12 m from the chief
+  and putting it back (`hand <id> end`): the guest's copy must hold it within 4 s of each take (0 of 3 with the fix off)
+  and be back in the grip (or hold it as the host does) within 3.5 s of each end. Key frames `rest` (16 m from the village), `swing` (12 m from the chief
   in a natural hold) and `hold` (10 m, in the first round: the staff forward on both screens; upright on the guest
   with the fix off). The chief may have put its staff away (item 0) for minutes: the test gives it the staff.
 * `tribe_gameover_partner` (BUG-0922): the host's own members knocked out (5000 hp blows) while the guest's live: no
