@@ -14,14 +14,18 @@ On one NPC creature (the one nearest the guest):
   4. both flags off: the guest's bite hurts it again.
 The NPC's hp is read in the host's game (`coop.pool cell`).
 
-SPORE_CELL_FIX=0 switches the fix off on the host (`coop.pool fix guestbite 0`): the run that must FAIL.
+SPORE_CELL_FIX=0 switches the fix off on the host (`coop.pool fix guestbite 0`) and, since BUG-0714 made the host
+replay a guest's bite through the game's own Bite / DamageCell (cell.guest_hit_game, whose gates spare these cells by
+themselves), also cell.guest_hit_game: the hand-made path with the old gate, the run that must FAIL (BUG-0888).
 
 BUG-0240: DamageCell's IsDamageable (0xE52940) also wants the resource's cell type 2 (solid) and an
 AI type other than 0 (meat). On a non-solid cell (a plant, given hp to lose) and on meat when one
 is there (`coop.pool kill <key> anyhit`, DamageCell on a cell of any kind):
   5. the host's own bite takes nothing (the game's rule);
   6. the guest's bite takes nothing in the host's game.
-SPORE_FIX_OFF=pool.guestbite_type must FAIL at 6.
+SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type must FAIL at 6 (BUG-0888: pool.guestbite_type alone is only
+read on the hand-made path and passes, lab 20261112-115921; with cell.guest_hit_game too it fails, 20261112-115922).
+With every switch on the game's own DamageCell decides (cell.guest_hit_game): the default path.
 """
 import os
 import re
@@ -47,6 +51,8 @@ def main():
     try:
         out = host.call(f'coop.pool fix guestbite {fix}')['out']
         ck(f'guestbite={fix}' in out, f'fix set to {fix}: {out.strip()}')
+        if fix == '0':  # BUG-0888: the gate is on the hand-made path only (the default replays through the game)
+            print('  SPORE_FIX_OFF: ' + host.call('coop.fix cell.guest_hit_game off')['out'].strip(), flush=True)
         time.sleep(3)
         # an NPC with enough hp for a few bites: the nearest creature of the guest
         for _ in range(10):
@@ -139,6 +145,8 @@ def main():
             host.call(f'coop.pool npcflag {key} spare 0')
             host.call(f'coop.pool npcflag {key} invuln 0')
         host.call('coop.pool fix guestbite 1')
+        if fix == '0':
+            host.call('coop.fix cell.guest_hit_game on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
