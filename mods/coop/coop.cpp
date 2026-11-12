@@ -3671,6 +3671,7 @@ static void apply_startup_off()
 void on_frame(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
+    game::LiveScope live_scope;  // BUG-0426: the object list of this frame (game::listed) holds in here
     double now = H->time_seconds();
     g_last_frame = now;
     support::tick(now); // first: its frame timing (FPS, hitches) and the session clock

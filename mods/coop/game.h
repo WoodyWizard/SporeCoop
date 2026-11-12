@@ -371,6 +371,12 @@ LiveRef live_ref(void* obj, uint32_t noun = 0); // {} unless obj is listed (with
 bool alive(const LiveRef& r);                    // r.p is listed with r.noun now and is the same object (serial)
 inline void* live(const LiveRef& r) { return alive(r) ? r.p : nullptr; }
 void note_destroyed(void* obj); // gamefixes' DestroyInstance hook, before the game destroys obj
+// the mod's frame tick (coop.cpp on_frame): listed() keeps its walk only inside it; elsewhere (our hooks inside the
+// game's update, where the game may free objects without DestroyInstance) every question walks the list
+struct LiveScope {
+    LiveScope();
+    ~LiveScope();
+};
 void note_created();            // the mod made an object: the next miss walks the list again
 std::string live_status();      // coop.live (tests)
 bool listed_exact();            // listed() is kept exact inside a frame (its fix on, the destroy hook in)

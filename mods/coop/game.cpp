@@ -2141,6 +2141,7 @@ static std::unordered_map<const void*, uint32_t> g_live; // object -> noun
 static uint64_t g_live_frame = ~0ull;
 static uint32_t g_live_counter = 0, g_live_epoch = ~0u;
 static bool g_live_dirty = true;
+static int g_live_scope; // LiveScope depth: inside the mod's frame tick
 static uint32_t g_live_walks, g_live_rewalks, g_live_destroys, g_live_hits, g_live_misses;
 static const uint32_t* serial_counter()
 {
@@ -2187,7 +2188,11 @@ bool listed(const void* obj, uint32_t noun)
     if (!obj || !g_ready)
         return false;
     // (no destroy hook: a destroy inside the frame would not be seen, so every question walks the list)
-    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !g_main_tid.load() || !fx_main_thread())
+    // only inside the mod's own frame tick (LiveScope): there no game update runs between the walk and the question.
+    // In the game's update (our hooks) the game may tear objects down without DestroyInstance (a world's end) after
+    // the walk: there every question walks the list as before.
+    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !g_main_tid.load() || !fx_main_thread() ||
+        !g_live_scope)
         return scan_listed(obj, noun);
     uint64_t f = H->frame_index();
     uint32_t ep = world_epoch();
@@ -2233,6 +2238,12 @@ void note_destroyed(void* obj)
         g_live_destroys++;
 }
 void note_created() { g_live_dirty = true; }
+LiveScope::LiveScope()
+{
+    if (!g_live_scope++)
+        g_live_dirty = true; // (a game update ran since the last scope: walk again on the first question)
+}
+LiveScope::~LiveScope() { g_live_scope--; }
 bool listed_exact() { return g_listed_frame_fix && gamefixes::destroy_hooked(); }
 std::string live_status()
 {
