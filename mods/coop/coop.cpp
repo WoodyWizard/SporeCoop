@@ -5869,6 +5869,13 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
         return ok ? 0 : 1;
     }
+    if (argc > 5 && !strcmp(argv[1], "place")) { // host (tests, BUG-0815): NPC #id put at x y z (the game's teleport)
+        void* c = npc::host_npc((uint16_t)atoi(argv[2]));
+        if (c)
+            game::teleport(c, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])}, game::orientation(c));
+        SAY(c ? "npc placed" : "no such npc");
+        return c ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "hosthit")) { // host avatar hits host NPC #id
         bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 ? (float)atof(argv[4]) : 0.f);
         SAY(ok ? "host hit applied" : "no such npc");
