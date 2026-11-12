@@ -13,6 +13,7 @@
 #include "cellsync.h"
 #include "civ.h"
 #include "fixes.h"
+#include "own_world.h"
 #include "game.h"
 #include "modes.h"
 #include "net/protocol.h"
@@ -1166,6 +1167,19 @@ static std::string f_herd_evo(const Entry& e)
 }
 // the guest's own evolution step: the tuning bool CreatureGame_HerdEvolveOn read by 0xD45A41 is 0 while this game is a
 // guest in Creature with the row on; the game's value comes back otherwise (it is written once by the tuning load 0xD3D979)
+// BUG-0803: the step is off only while the guest plays the host's world: in a Creature world of its own (joined from
+// its own game, or loaded one while connected: own_world::elsewhere) no host value replaces it (MSG_WSTATE is dropped
+// there) and its nests never evolved, its save kept that. Off: off for any connected guest in Creature (0.7.12).
+static bool g_herd_evo_own_fix = true;
+COOP_FIX("wsync.herd_evo_own", "BUG-0803", g_herd_evo_own_fix,
+         "wsync: a guest's NPC nests evolve in a Creature world of its own");
+// BUG-0818: no row of the host's Space save is applied while this guest plays a Space save of its own
+// (own_world::space_other): the "stages" row wrote the host's stage history (cPlayer +0x10FC..) into it, and the
+// game saved it. Off: applied in any Space save (0.7.12).
+static bool g_space_own_fix = true;
+COOP_FIX("wsync.space_own", "BUG-0818", g_space_own_fix,
+         "wsync: a guest in a Space save of its own keeps its own stage history");
+static unsigned g_space_own_held;
 static void herd_evo_guard()
 {
     uintptr_t a = S("SporeCoop::CreatureGame_HerdEvolveOn");
@@ -1173,7 +1187,7 @@ static void herd_evo_guard()
         return;
     uint8_t* b = (uint8_t*)a;
     bool off = g_herd_evo_fix && C.sess && C.sess->connected() && C.sess->role() == net::Role::Client &&
-               game::mode_id() == modes::kCreature;
+               game::mode_id() == modes::kCreature && !(g_herd_evo_own_fix && own_world::elsewhere());
     if (off) {
         if (!herd_evo_saved) {
             herd_evo_orig = *b;
@@ -1514,6 +1528,12 @@ static void guest_tick(double now)
     g_check_at = now;
     uint32_t mode = game::mode_id();
     bool playing = !C.playing || C.playing();
+    if (mode == modes::kSpace && g_space_own_fix && own_world::space_other()) {
+        g_space_own_held++; // BUG-0818
+        for (auto& g : g_guest)
+            g.matched = false;
+        return;
+    }
     for (int i = 0; i < kNRows; i++) {
         const Row& r = kRows[i];
         GuestRow& g = g_guest[i];
@@ -1613,8 +1633,8 @@ std::string status()
                  g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
         out += b;
     }
-    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u herd_evo_set=%u\n", g_rel_stuck, g_tfood_adds,
-             g_parts_fixed, g_mig_started, g_herd_evo_set);
+    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u migrations_started=%u herd_evo_set=%u space_own_held=%u\n", g_rel_stuck, g_tfood_adds,
+             g_parts_fixed, g_mig_started, g_herd_evo_set, g_space_own_held);
     out += b;
     snprintf(b, sizeof b, "spot records %u made, markers placed %u released %u missed %u (BUG-0740)\n", (unsigned)g_spot_made,
              g_marker_placed, g_marker_released, g_marker_missed);
