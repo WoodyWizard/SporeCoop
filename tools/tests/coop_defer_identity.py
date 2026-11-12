@@ -13,7 +13,7 @@ of its species next to the avatar until the game gives one the freed block). Whe
 creature at that address must still live (the game's object list, its serial).
 SPORE_FIX_OFF=npc.defer_identity must FAIL.
 
-  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 3]"""
+  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 6]"""
 import argparse
 import re
 import time
@@ -32,7 +32,7 @@ def hunt(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--tries', type=int, default=3)
+    ap.add_argument('--tries', type=int, default=6)
     a = ap.parse_args()
     host, guest = start()
     ck = Checks()

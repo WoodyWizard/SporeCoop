@@ -7,8 +7,6 @@
   game had just removed a copy of a host animal and built a new animal in the same place in memory (the mod now
   checks every kept animal against the game's object list and its serial number; it also covers Tribe now)
   (BUG-0842, BUG-0426).
-- Creature: a guest's copy of a host animal could be put into a herd of another species that the game had built
-  where the species' herd was (the animal was then never shown again) (BUG-0843).
 - Tribe: a guest could move a member of another tribe as the host's member, or remove it, when the game reused the
   memory of a removed copy (for example after the host was in an editor); the crash the PandizeLive fork reported
   here (BUG-0844).
@@ -19,7 +17,6 @@
   partner's animation on its cell or its Tribe marker around a stage change (BUG-0796).
 - Creature: an animal of the world could disappear when a cinematic ended, if the game had put it where a partner's
   old creature waited to be removed (BUG-0825).
-- Cell: in the frame of a level rebuild the host's own cell could be taken for a partner's cell (BUG-0823).
 - Space: after the host loaded its world again, a partner's colony shown as an allied empire could bring the old
   world's cities into the planet of the new one (BUG-0838).
 - Creature: an error caught inside the game's world-relevance pass or the own creature's size update could leave

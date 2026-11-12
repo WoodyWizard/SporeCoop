@@ -2795,3 +2795,16 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   (campaign_short play-cell, Bob), 019 (campaign_short play-creature, host), 036 (play_civ end, host).
 * Next steps: a layout pass for the labels and HUD rectangles they keep out of.
 * Ticket: BUG-0949
+
+## Tribe and Civ: kept pointers checked by the object's own memory (2026-11-12, fix/w48-freed)
+<a id="issue-tribe-civ-kept-pointers"></a>
+
+* What happens: nothing seen yet; about 60 places in tribe.cpp and civ.cpp keep a game pointer across frames (chiefs,
+  the target ring, the epic, held tools, vehicle and city tables) and check it with `object_alive`, which a freed
+  block or a new object of the same type at that address passes (the class of BUG-0842 / BUG-0844, which crashed
+  players' games).
+* Reproduce: not tried per site; the tools are `coop.npc reusehunt` / `coop.tribe reusehunt`
+  (docs/06-testing.md#testing-freed-block-reuse).
+* Known: docs/re/creature.md#creature-freed-block-reuse (a block comes back within 0.3-1.3 s).
+* Next steps: `game::LiveRef` at each site, a lint against `object_alive` on stored pointers.
+* Ticket: BUG-0951
