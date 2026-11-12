@@ -6577,3 +6577,43 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   `coop.creations next creature`.
 * FAIL / PASS runs: in the tickets. Pitfall: a lab run with several switches in `SPORE_FIX_OFF` turns them all off for
   every test of the run; the tickets name runs with only the ticket's switch off.
+## Package P1 / G1 of 0.7.13: tool fixes, tests that judge the game, two captains in one adventure (2026-11-12, fix/w48-small)
+<a id="testing-p1-g1"></a>
+
+* `kit_stackvm` (`kit_freeze.py --case stackvm`, BUG-0880, one game at the menu, 20 s): `kit.test.stackvm 300 5000`
+  takes 300 stack snapshots of the main thread while it allocates, protects and frees 64 KB blocks for 5 s (Wine's
+  virtual memory lock); every snapshot must come back within 2 s, `vq_suspended=0` (VirtualQuery calls made while the
+  main thread was suspended), frames go on. `SPORE_FIX_OFF=stackvq` fails on the count (600 calls); the hang itself did
+  not happen in 300 snapshots under Wine (the count is the structural check the ticket allowed).
+* `kit_wheel` (`--case wheel`, BUG-0859): Shift / Ctrl held by `key shift down` then `wheel`: the game window's procedure
+  gets MK_SHIFT / MK_CONTROL in WM_MOUSEWHEEL (`kit.test.wheel`: the last wheel message the subclassed window procedure
+  saw). `SPORE_FIX_OFF=wheelmk` fails.
+* `ui_bad_arg` (`coop_ui_bad_arg.py`, BUG-0812, one game at the menu): window addresses still work, a control id is
+  its window, numbers no window of the tree has (the menu has a window with control id 00000010: the test takes only
+  numbers absent from `coop.ui tree 40 all`) answer "no window", no fault. `SPORE_FIX_OFF=core.ui_window_arg` crashes
+  the game at the first control id (a crash report: the expected FAIL).
+* `census_leave` (`coop_census_leave.py`, BUG-0885, creature, warm): the guest posts the quit to the galaxy menu
+  (`coop.menu`) and asks `coop.census all` until its mode changes: every census in that window must list 0 objects
+  (`st phase changing=1`; the header now has `gamemode=` and `leaving=`). The window is about one census long (a full
+  census of 789 rows takes most of it). `SPORE_FIX_OFF=census.census_live` fails.
+* `tribe_guest_eat` (`coop_tribe_guest_eat.py`, BUG-0889, tribe, ~1.2 min): the guest's member (owner = its id in the
+  host's `coop.tribe` rows) made hungry in the host's game (`coop.tribe hunger <id> 15`) eats there by itself within
+  ~16 s; the guest's mirror must be as hungry before the meal and as fed after it, and play the meal's animation (the
+  host's member's `bhv=` while its hunger rose). `SPORE_FIX_OFF=tribe.mirror_anims,tribe.mirror_hunger` fails.
+* `social_console` (BUG-0891): the social abilities' animations come from the game (`coop.social abil -1` prints
+  `anim=`, GetAnimationID(0)); the guest's avatar and the host's puppet of it (`coop.npc cur` prints `cur avatar` and
+  `cur p<id>`) must play none of them while the cheat console is open and one after it closed (a social ability cools
+  down: the press is repeated). `SPORE_FIX_OFF=social.text` fails (the ability plays on both games).
+* `cell_guest_bite` (BUG-0888): `SPORE_FIX_OFF=pool.guestbite_type` alone passes (the switch is read on the hand-made
+  path only); `SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type` fails at the rock and the meat; SPORE_CELL_FIX=0
+  now also switches cell.guest_hit_game off.
+* `adventure_duo` (`coop_adventure_duo.py`, BUG-0845 / BUG-0789, cold, ~4 min): host and guest join at the galaxy menu,
+  the guest starts the tutorial adventure first, then the host. Each game plays its own copy of the adventure (the
+  scenario resource key differs, so the place ids differ and no puppet is made): the test gives both one place id
+  (`coop.adventure place <hex>`) for the fork's case, a partner's captain as a puppet in the scenario. The intro card
+  holds the play state at 1 until Enter (then 3); `coop.adventure act 1` (JumpToAct) then changes the act on both. The
+  sky: the host's captain put 200 m away moved its sky by about 14 degrees; the guest's must stay its own
+  (`SPORE_FIX_OFF=wsync.tod,wsync.adventure_sky` fails: 0.0 degrees from the host's). `adventure_duo_host_first`: the
+  host enters first.
+* `perf_readable` (`perf_readable.py`, BUG-0791, extended, `_tribe`, `_civ_npc`): readable() calls a frame and their cost
+  (`coop.perf readable`, `extra <n>` more VirtualQuery per call); fails when readable() takes 5 % of the frame.

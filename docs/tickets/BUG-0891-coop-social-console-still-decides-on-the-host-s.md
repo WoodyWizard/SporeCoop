@@ -1,19 +1,19 @@
 ---
 id: BUG-0891
 title: coop_social_console still decides on the host's acts_in counter, not on what the games play
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-small
+commits: b78132b3 3156086b
+tests: social_console
 signature:
-docs:
+docs: docs/06-testing.md#testing-p1-g1
 related: BUG-0149, BUG-0215, BUG-0713
 ---
 
@@ -33,11 +33,12 @@ Assert the game's state on both machines: the guest avatar's current animation i
 With `coop.social textfix off` the new animation assertion must FAIL (the avatar plays the ability while the console is open); with the fix it must PASS. Both run directories go in the ticket.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+No mod change for players (a test fix). social_console now judges what the games play: `coop.npc cur` also prints the own avatar (`cur avatar`) and every partner's puppet (`cur p<id>`) with the game's current animation (vt 0x58); `coop.social abil` prints each ability's animation (`anim=`, cCreatureAbility::GetAnimationID(0)). The test samples the guest's avatar and the host's puppet of it every 0.1 s while the cheat console is open and after it closed: none of the social abilities' animations may play while it is open, one must play on both games after it closed (the press is repeated while the ability cools down). acts_in is printed only. Twin: SPORE_FIX_OFF=social.text (= `coop.social textfix off`, `--without-fix`).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL with SPORE_FIX_OFF=social.text: out/lab/20261112-123648 (the social ability's animation 042A1CAF played on the guest's avatar and on the host's puppet while the console was open).
+* PASS: out/lab/20261112-123811 (042A1CAF only after the close, on both games), out/lab/20261112-123930.
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0215. Severity low, confidence high.
+- 2026-11-12 (fix/w48-small): fixed: the test asserts the games' animations; FAIL / PASS runs.

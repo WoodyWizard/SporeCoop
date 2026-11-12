@@ -9,6 +9,7 @@
 #include <cstring>
 #include <map>
 
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
@@ -131,6 +132,14 @@ static void all_rows(AllQ& q)
         &q);
 }
 
+// BUG-0885: the same guard as coop.wstate's (BUG-0605, census.wstate_live): while the game's mode is not the frame's
+// (a stage change: Civ -> Space frees civilizations and vehicles before the mode changes) or the stage is being left
+// (the galaxy menu: the avatar and the lists are freed before the mode changes) the census reads no list and prints
+// `st phase changing=1` with 0 objects (worlddiff takes an empty census for "loading"). The header names the game's
+// own mode and the leaving flag (`gamemode= leaving=`). `coop.fix census.census_live off`: read anyway (0.7.12).
+static bool g_census_live_fix = true;
+COOP_FIX("census.census_live", "BUG-0885", g_census_live_fix, "detector: coop.census reads nothing while the game changes or leaves its stage (freed objects)");
+
 static int c_census(void*, int argc, const char* const* argv, SkOut* out)
 {
     bool all = argc >= 2 && !strcmp(argv[1], "all");
@@ -144,8 +153,16 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         C.place(mode, world);
     bool conn = C.sess && C.sess->connected();
     const char* role = !conn ? "none" : C.sess->role() == net::Role::Host ? "host" : "guest";
-    SAY("census v1 role=%s me=%u mode=%s modeid=%08X world=%08X t=%.1f\n", role, conn ? C.sess->my_id() : 0,
-        modes::mode_name(mode), mode, world, H->time_seconds());
+    uint32_t game_mode = game::mode_id();
+    bool leaving = game::leaving_stage();
+    SAY("census v1 role=%s me=%u mode=%s modeid=%08X world=%08X t=%.1f gamemode=%08X leaving=%d\n", role,
+        conn ? C.sess->my_id() : 0, modes::mode_name(mode), mode, world, H->time_seconds(), game_mode, (int)leaving);
+    bool planet = mode == modes::kCell || mode == modes::kCreature || mode == modes::kTribe || mode == modes::kCiv ||
+                  mode == modes::kSpace;
+    if (g_census_live_fix && planet && (game_mode != mode || leaving)) {
+        SAY("st phase changing=1\nend objects=0\n");
+        return 0;
+    }
     std::vector<Row> rows;
     // `creatures`: the creature rows in any mode, the citizens (tribe members) too (tests: the creatures in a camera's
     // picture in Tribe, docs/06-testing.md#testing-same-view)

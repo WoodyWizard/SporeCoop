@@ -17,6 +17,12 @@
   hooksplit  BUG-0403: 1000 functions whose first 5 bytes are five instructions are hooked for the
              first time while 3 threads call them: no thread runs the jmp's bytes as code (no wrong
              result, no fault, the game lives)
+  stackvm    BUG-0880: 300 stack snapshots of the main thread while it allocates, protects and frees 64 KB
+             blocks for 5 s (Wine's virtual memory lock): every snapshot comes back, no VirtualQuery ran while
+             the main thread was suspended (`vq_suspended=` of kit.test.stackvm), frames go on
+  wheel      BUG-0859: the virtual mouse wheel with Shift / Ctrl held (`key shift down`): the game's window
+             procedure gets WM_MOUSEWHEEL with MK_SHIFT / MK_CONTROL in its wParam (`kit.test.wheel`), a
+             plain wheel without them
 
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   SPORE_FIX_OFF=<kit fix>[,...]  the same for the cases of those fixes only (the lab's twin runs,
@@ -40,7 +46,7 @@ GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
        'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark',
-       'hooknew': 'hookorig', 'hooksplit': 'hookfirst'}
+       'hooknew': 'hookorig', 'hooksplit': 'hookfirst', 'stackvm': 'stackvq', 'wheel': 'wheelmk'}
 CASES = list(FIX)
 
 
@@ -128,6 +134,38 @@ def run_case(ck, case):
            'all 1000 new hooks made (the game answered)')
         ck(m is not None and m.group(1) == '0',
            f'no call ran the jmp\'s bytes as code ({m.group(1) if m else "no answer"} wrong results)')
+    elif case == 'stackvm':
+        r, dt = timed('kit.test.stackvm 300 5000', 60)
+        print(f'  stackvm: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
+        m = re.search(r'(\d+) of (\d+) snapshots, slowest (\d+) ms, vq_suspended=(\d+)', r['out']) if r else None
+        ck(m is not None and m.group(1) == m.group(2), f'every stack snapshot came back ({dt:.1f} s)')
+        ck(m is not None and int(m.group(3)) < 2000, f'no snapshot took 2 s or more ({m.group(3) if m else "?"} ms)')
+        ck(m is not None and m.group(4) == '0',
+           f'no VirtualQuery while the main thread was suspended ({m.group(4) if m else "?"} calls)')
+    elif case == 'wheel':
+        def wheel(keys):
+            for k in keys:
+                timed(f'key {k} down', 10)
+            time.sleep(0.3)
+            n0 = re.search(r'n=(\d+)', timed('kit.test.wheel', 10)[0]['out']).group(1)
+            timed('wheel 720 540 1', 10)
+            r = None
+            for _ in range(20):
+                time.sleep(0.2)
+                r = timed('kit.test.wheel', 10)[0]
+                if re.search(r'n=(\d+)', r['out']).group(1) != n0:
+                    break
+            for k in keys:
+                timed(f'key {k} up', 10)
+            time.sleep(0.3)
+            print(f'  wheel with {keys or "no key"}: {r["out"].strip()}')
+            return r['out']
+        out = wheel(['shift'])
+        ck('shift=1' in out and 'ctrl=0' in out, 'Shift + wheel: the game\'s window gets MK_SHIFT')
+        out = wheel(['ctrl'])
+        ck('ctrl=1' in out and 'shift=0' in out, 'Ctrl + wheel: the game\'s window gets MK_CONTROL')
+        out = wheel([])
+        ck('keys=0x0000' in out, 'a plain wheel carries no key flag')
     ok, how = frames_go_on()
     ck(ok, f'after {case}: frames go on ({how})')
     time.sleep(1)

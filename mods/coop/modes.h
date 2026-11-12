@@ -63,6 +63,10 @@ bool rts_marker_moving(const Adapter* a, void* e, double within);
 // `ptr_still=` (BUG-0416: the monitor judges a partner's copy only of a pointer that stood still)
 double rts_marker_still(const Adapter* a, void* e);
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
+// tests (BUG-0845): the adventure's resource key (instance, group) the place id is made of; a place id forced for every
+// adventure (0: off) so that two games in their own copies of one adventure count as the same place (puppets)
+bool adventure_key(uint32_t& instance, uint32_t& group);
+void adventure_force_place(uint32_t id);
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)
 void world_name_tick(); // once per frame: current_world_name() follows the game (BUG-0258)

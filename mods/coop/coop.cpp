@@ -1196,6 +1196,14 @@ bool host_elsewhere(bool unknown = false)
     return ls.mode == g_mode && !same_place(ls);
 }
 
+// BUG-0789: an adventure (kScenario) lights its planet itself: the time-of-day object's orientation is computed from
+// the clock AND the captain's position (fork RE, docs/re/adventure.md#adventure-ga-fork), so the host's is wrong for
+// another captain. The host sends no MSG_WORLD_TIME from an adventure and a guest in one applies none (the wsync sky
+// row is not in play in kScenario either). `coop.fix wsync.adventure_sky off` (with wsync.tod off): the legacy
+// packet in an adventure as before.
+static bool g_adventure_sky_fix = true;
+COOP_FIX("wsync.adventure_sky", "BUG-0789", g_adventure_sky_fix, "wsync: in an adventure each game keeps its own sky (no host time of day sent or applied)");
+static bool adventure_sky_own(uint32_t mode) { return g_adventure_sky_fix && mode == modes::kScenario; }
 // BUG-0231: a guest in another world of the host's Civ or Tribe stage applied the host's vehicle,
 // city and alarm state to its own planet (bound and drove its own vehicles as mirrors, killed the
 // rest, founded cities up to the host's count) and its Tribe/Civ AI and orders stood still
@@ -4036,7 +4044,9 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host && now - g_last_time_sync > 1.0) {
         g_last_time_sync = now;
         net::Quat q;
-        if (game::time_of_day(q)) {
+        if (adventure_sky_own(game::mode_id())) {
+            // BUG-0789: an adventure's sky is its own (no MSG_WORLD_TIME from an adventure)
+        } else if (game::time_of_day(q)) {
             net::Writer w;
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             for (auto& p : g_sess.players())
@@ -4987,7 +4997,8 @@ void setup_callbacks()
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
             net::Quat q;
             q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
-            if (r.ok() && game::avatar() && !wsync::owns_time_of_day()) // BUG-0579: else the wsync row
+            if (r.ok() && game::avatar() && !wsync::owns_time_of_day() && // BUG-0579: else the wsync row
+                !adventure_sky_own(game::mode_id()))                       // BUG-0789
                 game::set_time_of_day(q);
             return;
         }
@@ -7485,6 +7496,75 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id|due] - (re)send the host world (save) to guests (due: tests, as after an evolution)", c_share,
+                   nullptr, MT);
+    H->command_add(M, "coop.perf", "coop.perf readable [extra <n>] - tests (BUG-0791): readable() calls per frame since the last ask, their cost (us per call); extra: n more VirtualQuery per call",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       static LONG s_calls;
+                       static uint64_t s_frame;
+                       static double s_t;
+                       if (argc > 3 && !strcmp(argv[2], "extra"))
+                           skg::readable_extra = atoi(argv[3]);
+                       LONG c = skg::readable_calls;
+                       uint64_t f = H->frame_index();
+                       double t = H->time_seconds();
+                       double frames = (double)(f - s_frame), secs = t - s_t;
+                       // the cost of one call on a heap block and a stack address (the main thread's own pointers)
+                       static int s_heap[16];
+                       LARGE_INTEGER q0, q1, qf;
+                       QueryPerformanceFrequency(&qf);
+                       QueryPerformanceCounter(&q0);
+                       int ok = 0;
+                       for (int i = 0; i < 2000; i++)
+                           ok += skg::readable(&s_heap[i & 15], 4);
+                       QueryPerformanceCounter(&q1);
+                       double us = (double)(q1.QuadPart - q0.QuadPart) * 1e6 / (double)qf.QuadPart / 2000.0;
+                       SAY("readable calls=%ld since=%ld frames=%.0f secs=%.1f per_frame=%.1f fps=%.1f us_per_call=%.3f extra=%d ok=%d\n",
+                           (long)c, (long)(c - s_calls), frames, secs, frames > 0 ? (c - s_calls) / frames : 0.0,
+                           secs > 0 ? frames / secs : 0.0, us, skg::readable_extra, ok);
+                       s_calls = skg::readable_calls; // (the 2000 calls of the benchmark not counted for the next ask)
+                       s_frame = f;
+                       s_t = t;
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.adventure", "coop.adventure [act <n> | place <hex>] - tests (BUG-0845): the adventure's play mode (state, act, resource key, place id); act: the game's JumpToAct; place: one place id for every adventure (0 off)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       static uintptr_t smp = H->sym("App::cScenarioMode::ptr"), jump = H->sym("SporeCoop::ScenarioPlay_JumpToAct");
+                       void* sm = smp && game::mode_id() == modes::kScenario ? *(void**)smp : nullptr;
+                       void* pm = sm && skg::readable(sm, 0x7C) ? skg::field<void*>(sm, 0x78) : nullptr; // cScenarioPlayMode
+                       if (argc > 2 && !strcmp(argv[1], "place") && !pm) { // (also before the adventure starts)
+                           modes::adventure_force_place((uint32_t)strtoul(argv[2], nullptr, 16));
+                           SAY("adventure place forced to %s\n", argv[2]);
+                           return 0;
+                       }
+                       if (!pm || !skg::readable(pm, 0xBC)) {
+                           SAY("no adventure");
+                           return 1;
+                       }
+                       uint32_t ki = 0, kg = 0;
+                       modes::adventure_key(ki, kg);
+                       SAY("adventure playmode=%p state=%d act=%d key=%08X/%08X place=%08X\n", pm, skg::field<int>(pm, 0x90),
+                           skg::field<int>(pm, 0xB8), ki, kg, modes::current_place(modes::for_mode(modes::kScenario)));
+                       if (argc > 2 && !strcmp(argv[1], "place")) { // tests: one place id for every adventure (0: off)
+                           modes::adventure_force_place((uint32_t)strtoul(argv[2], nullptr, 16));
+                           SAY("adventure place forced to %s\n", argv[2]);
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "act") && jump) {
+                           static int s_act;
+                           s_act = atoi(argv[2]);
+                           // (the act's change rebuilds the cast, the goals' UI and the camera: outside the frame)
+                           H->run_outside_frame(
+                               [](void*) {
+                                   void* sm2 = game::mode_id() == modes::kScenario ? *(void**)smp : nullptr;
+                                   void* pm2 = sm2 ? skg::field<void*>(sm2, 0x78) : nullptr;
+                                   if (pm2)
+                                       skg::thiscall<void>(jump, pm2, s_act);
+                               },
+                               nullptr);
+                           SAY("jump to act %d queued", s_act);
+                       }
+                       return 0;
+                   },
                    nullptr, MT);
     H->command_add(M, "coop.leaving", "coop.leaving - tests (BUG-0264): the avatar while the game leaves a stage for the galaxy menu",
                    [](void*, int, const char* const*, SkOut* out) {

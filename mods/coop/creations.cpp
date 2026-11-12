@@ -20,6 +20,7 @@
 #include "fixes.h"
 #include "own_world.h"
 #include "content_packs.h"
+#include "model_paint.h"
 #include "net/partprops.h"
 #include "trace.h"
 #include "settings.h"
@@ -973,7 +974,6 @@ static unsigned substitute_parts(std::vector<dbpf::Record>& recs, ModelKind k, c
 static bool g_paint_fix = true;
 COOP_FIX("creations.paint_substitute", "BUG-0369", g_paint_fix, "creations: on a game without Creepy & Cute a creature's pack paints are shown as similar base game paints");
 static unsigned g_paints_substituted;
-constexpr size_t kBemEffects = 26; // the unpacked header: base, coat, detail effect ids from here
 
 static uint32_t paint_substitute_of(uint32_t id)
 {
@@ -983,44 +983,16 @@ static uint32_t paint_substitute_of(uint32_t id)
 }
 
 // the three skin effect ids of a model record and where each is written (packed offset and length);
-// false when the header is too short or an id is not written byte by byte (a run)
-static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3])
+// false when the header is too short. BUG-0852: an id inside a byte run (a model whose coat and detail are 0, `00 FE
+// 07`) is read too: patch[k] tells whether layer k can be rewritten in place. Before, such a model was skipped whole
+// (its base paint never checked or substituted). `coop.fix creations.paint_runs off`: the strict reader (0.7.12).
+static bool g_paint_runs_fix = true;
+COOP_FIX("creations.paint_runs", "BUG-0852", g_paint_runs_fix, "creations: the paints of a model whose paint bytes are run-packed are checked and substituted too");
+static unsigned g_paints_in_run; // unknown paints inside a run: not patched in place (the creation is refused instead)
+static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3] = nullptr)
 {
-    size_t dec = 0, p = 0;
-    size_t first[12] = {}, last[12] = {};
-    uint8_t val[12] = {};
-    while (p < m.size() && dec < kBemEffects + 12) {
-        size_t start = p;
-        uint8_t b = m[p];
-        if (b == 0xFE) {
-            if (p + 1 >= m.size())
-                return false;
-            if (m[p + 1] != 0) { // a run: n more of the byte before
-                size_t n = m[p + 1];
-                if (dec + n > kBemEffects && dec < kBemEffects + 12)
-                    return false;
-                dec += n;
-                p += 2;
-                continue;
-            }
-            p += 2;
-        } else
-            p++;
-        if (dec >= kBemEffects) {
-            first[dec - kBemEffects] = start;
-            last[dec - kBemEffects] = p;
-            val[dec - kBemEffects] = b;
-        }
-        dec++;
-    }
-    if (dec < kBemEffects + 12)
-        return false;
-    for (int k = 0; k < 3; k++) {
-        eff[k] = val[4 * k] | val[4 * k + 1] << 8 | val[4 * k + 2] << 16 | (uint32_t)val[4 * k + 3] << 24;
-        at[k] = first[4 * k];
-        len[k] = last[4 * k + 3] - first[4 * k];
-    }
-    return true;
+    bool p3[3];
+    return model_paint::effects(m, eff, at, len, patch ? patch : p3, g_paint_runs_fix);
 }
 
 static bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }
@@ -1099,7 +1071,8 @@ static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::st
     for (auto& r : recs) {
         uint32_t eff[3];
         size_t at[3], len[3];
-        if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
+        bool patch[3];
+        if (r.key.type != kBem || !model_effects(r.data, eff, at, len, patch))
             continue;
         for (int k = 0; k < 3; k++) {
             if (!eff[k])
@@ -1107,6 +1080,12 @@ static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::st
             bool unknown = g_unknown_fix ? !paint_known(eff[k]) : (is_cc_paint(eff[k]) && !cc);
             if (!unknown)
                 continue;
+            if (!patch[k]) { // BUG-0852: inside a run: no byte to rewrite (unknown_paint_ids refuses the creation)
+                g_paints_in_run++;
+                H->log(M, SK_INFO, "creations: %s: paint layer %d (%08X) is run-packed: not substituted in place", whose.c_str(), k,
+                       eff[k]);
+                continue;
+            }
             uint32_t sub = paint_substitute_of(eff[k]);
             if (sub && !paint_known(sub))
                 sub = 0;
@@ -3568,8 +3547,8 @@ std::string debug(const std::vector<std::string>& a)
             }
         }
         char b[120];
-        snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u\n", cc, unknown, (int)have_creepy_cute(),
-                 g_paints_substituted);
+        snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u in_run=%u\n", cc, unknown, (int)have_creepy_cute(),
+                 g_paints_substituted, g_paints_in_run);
         return out + b;
     }
     if (a.size() >= 2 && a[0] == "speciesof") { // speciesof <hex crt instance>: the species profile the game gives for that key (tests, BUG-0200)

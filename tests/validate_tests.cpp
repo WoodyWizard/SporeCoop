@@ -24,6 +24,7 @@
 
 #include "world_path.h"
 #include "realign_rule.h"
+#include "model_paint.h"
 #include "../../sporekit/task_drop.h"
 
 using namespace net;
@@ -915,6 +916,64 @@ static void test_task_drop()
     CHECK(queued_by_dtor == 1 && main_q.size() == 2 && out_q.empty());
 }
 
+// BUG-0852 (BUG-0727's untried case): a creature model whose coat and detail layers are 0 is written with a byte run
+// across them (`00 FE 07`, as a landfall creature that kept its Cell paint): the paint reader must still give the base
+// paint (the content check and the substitution see it) and say that only the base layer can be patched in place.
+// --nofix: the strict reader of 0.7.12, which skipped the whole model.
+static void test_model_paint_runs()
+{
+    const bool fix = !g_nofix;
+    auto rd = [&](const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3]) {
+        return model_paint::effects(m, eff, at, len, patch, fix);
+    };
+    const uint32_t base = 0x1EC77519; // Creepy & Cute: Frankenstein Monster Theme (a base layer paint)
+    std::vector<uint8_t> m;
+    for (int i = 0; i < 26; i++)
+        m.push_back((uint8_t)(0x10 + i)); // the header before the paints, written byte by byte
+    for (int i = 0; i < 4; i++)
+        m.push_back((uint8_t)(base >> (8 * i)));
+    m.push_back(0x00); // coat byte 0, then 7 more zeros: the rest of coat and all of detail
+    m.push_back(0xFE);
+    m.push_back(0x07);
+    for (int i = 0; i < 20; i++)
+        m.push_back((uint8_t)(0x40 + i)); // the rest of the model
+    uint32_t eff[3] = {};
+    size_t at[3] = {}, len[3] = {};
+    bool patch[3] = {};
+    bool ok = rd(m, eff, at, len, patch);
+    CHECK(ok); // the 0.7.12 reader gave up here
+    CHECK(eff[0] == base && eff[1] == 0 && eff[2] == 0);
+    CHECK(patch[0] && !patch[1] && !patch[2]);
+    CHECK(at[0] == 26 && len[0] == 4);
+    // an unknown base paint inside a run (its last byte repeated into the coat) is read but not patchable
+    std::vector<uint8_t> r;
+    for (int i = 0; i < 26; i++)
+        r.push_back((uint8_t)(0x10 + i));
+    r.insert(r.end(), {0x19, 0x75, 0x75, 0xFE, 0x05}); // 19 75 75 75 | 75 75 75 75 (the coat 0x75757575)
+    r.insert(r.end(), {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08});
+    ok = rd(r, eff, at, len, patch);
+    CHECK(ok);
+    CHECK(eff[0] == 0x75757519u && eff[1] == 0x75757575u && eff[2] == 0x04030201u);
+    CHECK(!patch[0] && !patch[1] && patch[2]);
+    // a model written byte by byte reads the same with both readers, every layer patchable
+    std::vector<uint8_t> p;
+    for (int i = 0; i < 26; i++)
+        p.push_back((uint8_t)(0x10 + i));
+    for (int i = 0; i < 12; i++)
+        p.push_back((uint8_t)(0xA0 + i));
+    p.push_back(0xFE); // a literal 0xFE (FE 00) after the paints
+    p.push_back(0x00);
+    uint32_t e2[3];
+    size_t a2[3], l2[3];
+    bool p2[3];
+    CHECK(model_paint::effects_strict(p, e2, a2, l2) && rd(p, eff, at, len, patch));
+    CHECK(eff[0] == e2[0] && eff[1] == e2[1] && eff[2] == e2[2] && patch[0] && patch[1] && patch[2]);
+    // a header shorter than the paints and a run with no byte before it are no model
+    std::vector<uint8_t> shortm(m.begin(), m.begin() + 30), lead{0xFE, 0x10};
+    CHECK(!rd(shortm, eff, at, len, patch));
+    CHECK(!model_paint::effects_read(lead, eff, at, len, p2));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -937,6 +996,7 @@ int main(int argc, char** argv)
     test_world_path();
     test_planet_rx();
     test_task_drop();
+    test_model_paint_runs();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

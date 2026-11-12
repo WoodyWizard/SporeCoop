@@ -28,7 +28,7 @@ COOP_FIX("mirror.fx", "BUG-0600", g_fix,
 
 enum Kind : uint8_t {
     K_EFFECT = 0, // {u8 space, u16 id, u8 stop, u8 pool (1, 2: keyed start; 3: one-shot at a bone; 0: stop), u32 effect, u32 key}
-    K_VOICE = 1,  // {u8 space, u16 id, u8 enter}: SporeCoop::Creature_CombatVoice (the growl 0xC881120E / the sigh 0x529FEC69)
+    K_VOICE = 1,  // {u8 space, u16 id, u8 enter}: SporeCoop::CreatureSetSneaking (the start sound 0xC881120E / the end sound 0x529FEC69; BUG-0837)
     K_SPRINT = 2, // {u8 space, u16 id, u8 on}: SporeCoop::Creature_SetSprint (its Update makes the sprint effect E55DC391)
 };
 enum Space : uint8_t { S_NPC = 0, S_MEMBER = 1 };
@@ -150,8 +150,11 @@ void on_creature_effect(void* c, const game::EffectEvent& ev)
     send(K_EFFECT, w, ev.pool != 3); // a one-shot is worth nothing late; starts and stops are a pair
 }
 
-// SporeCoop::Creature_CombatVoice 0xC1B030: thiscall(creature, bool enter, bool force) ret 8; the in-combat byte +0xBB1
-// says whether the voice played (it plays once per change)
+// SporeCoop::CreatureSetSneaking 0xC1B030: thiscall(creature, bool on, bool force) ret 8; its byte +0xBB1 says whether
+// the start sound played (it plays once per change). BUG-0837: the same function as the sneak setter (once named
+// Creature_CombatVoice here): the replay on a guest's proxy passes force = 1, which skips the sneak ability check, so
+// a replayed "voice" is a forced sneak (alpha eased to 0.2 by 0xC1CF30). The host sends only a change of +0xBB1 its own
+// game made, so the proxy shows what the host's NPC shows.
 using Voice_t = void(SK_THISCALL*)(void*, bool, bool);
 static Voice_t o_Voice;
 // SporeCoop::Creature_SetSprint 0xC1AE70: thiscall(creature, bool on) ret 4; the sprint bit is +0xFA4 & 0x20
@@ -275,7 +278,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = ctx;
-    if (uintptr_t a = H->sym("SporeCoop::Creature_CombatVoice"))
+    if (uintptr_t a = H->sym("SporeCoop::CreatureSetSneaking"))
         H->hook_create(M, (void*)a, (void*)h_Voice, (void**)&o_Voice);
     if (uintptr_t a = H->sym("SporeCoop::Creature_SetSprint"))
         H->hook_create(M, (void*)a, (void*)h_Sprint, (void**)&o_Sprint);

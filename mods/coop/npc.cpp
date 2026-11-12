@@ -855,6 +855,24 @@ std::string current_anims()
     else
         for (auto& [id, px] : g_proxies)
             line(id, px.c);
+    // BUG-0891: the own avatar and the partners' puppets the same way (`cur avatar` / `cur p<id>`): what a social
+    // ability plays on each game
+    auto named = [&](const char* name, void* c) {
+        uint32_t a = 0;
+        net::Vec3 m;
+        if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
+            snprintf(b, sizeof b, "cur %s anim=%08X\n", name, a);
+            out += b;
+        }
+    };
+    named("avatar", game::avatar());
+    if (C.sess && C.puppet_of)
+        for (auto& p : C.sess->players())
+            if (p.id != C.sess->my_id()) {
+                char nm[8];
+                snprintf(nm, sizeof nm, "p%u", (unsigned)p.id);
+                named(nm, C.puppet_of(p.id));
+            }
     return out;
 }
 

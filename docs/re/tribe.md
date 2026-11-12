@@ -1828,6 +1828,7 @@ the first four return addresses into the game's code: the creator of every effec
   * 0xC881120E (into a fight) / 0x529FEC69 (out of it) = `SporeCoop::Creature_CombatVoice` 0xC1B030 (+0xBB1 the
     in-combat byte), called by the fight node 0xD69540 and the TakeDamage of animals and citizens.
     CORRECTION (2026-11-10, plan/w47-cellcreature, BUG-0837): 0xC1B030 is CreatureSetSneaking (docs/re/creature.md#creature-c1b030-two-names); +0xBB1 is the sneak byte, force = 1 forces the sneak.
+    CORRECTION (2026-11-12, fix/w48-small, BUG-0837): decided: the name is `SporeCoop::CreatureSetSneaking` (the only one in the .sym now; mirror_fx.cpp hooks it by that name); "combat voice", "into a fight" and "in-combat byte" above are superseded: the two sounds are the sneak's start and end, +0xBB1 is the sneak flag (docs/re/creature.md#creature-c1b030-decided).
   * 0xCE5F2ED0 = effect 0xA231DA2F of 0xCCBE90 (~ the tribe UI's order marker at the target: the effect id is picked by
     the order kind and the camera distance band): the ordering player's own feedback, not a member's.
   * other pool effects of the members (no sound in these runs): 0x8ADA6617 (pool 1 on the NPC chief, from 0xC2103D),
@@ -3388,3 +3389,19 @@ tribe_gameover_partner).
   95 s after its fall with full health (hp 168, dead 0), also while the caption is up; the caption stays until OK. In
   play_tribe the chief had fallen first, the rest 90 s later: the chief stood up 3 s into the caption, and the play's
   "no member with health" rule never pressed OK (BUG-0922, a test rule; the guest playing on meanwhile: BUG-0960).
+
+## A guest's member eats in the host's game (2026-11-12, fix/w48-small)
+<a id="tribe-guest-eat"></a>
+
+BUG-0889 (the report behind BUG-0573). Lab lane 3, tribe fixture (`tools/tests/coop_tribe_guest_eat.py`).
+* ✔ (runtime) The host's game feeds a member the guest owns (members are dealt round-robin: owner = the guest's id in
+  the host's `coop.tribe` rows) by itself: set to hunger 15 with the game's setter and given no order, its own tree ate
+  within 15.6-17.3 s (hunger 15 -> 100; the fixture's tribe has food 70). The meal's animations seen on the host's
+  member: 02796B38, 060212DC / 060212CE (its `bhv=`).
+* ✔ A guest's mirror runs no tree (h_BTTick), so it eats only in the host's game; the guest sees the meal through
+  tribe.mirror_anims (the animation) and tribe.mirror_hunger (the value). With both off the guest's mirror played none
+  of the meal's animations and kept its own hunger (lab 20261112-122726).
+* CORRECTION (2026-11-12, fix/w48-small, BUG-0889): BUG-0573's cause ("the guest's tribe has the host's food bundles
+  again, so its members' hunger AI finds food") is superseded: no hunger AI runs on a guest; the report's members that
+  "do not eat on their own" were the guest's view of them (no eating animation before BUG-0569, a hunger running down
+  in the guest's own game before BUG-0935).

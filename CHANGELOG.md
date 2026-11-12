@@ -187,6 +187,11 @@
   is missing, say which file they could not remove instead of "removed", delete only SporeCoop's own symbol files,
   and uninstall.bat no longer puts an old backup over a steam_api.dll that Steam or GOG restored (BUG-0851).
 - Tests: the setup test that closes the window after an install no longer fails now and then (BUG-0853).
+- Creature: a creature with only a base paint (no coat and no detail layer) is checked for paints the other game does
+  not have, like any other creature: a Creepy & Cute base paint now shows as a similar base game paint on a game
+  without that pack instead of another colour (BUG-0852).
+- The mod's hang diagnostics (the stack dump made when the game stops drawing) no longer risk turning a short stall
+  into a freeze for good under Wine on Linux (BUG-0880).
 
 ### Changed
 - Creature: while friendly fire is off (and outside Rivals) a player walks through a partner's creature and a click

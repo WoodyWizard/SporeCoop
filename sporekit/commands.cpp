@@ -713,6 +713,69 @@ static int c_test_stackheap(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+// kit.test.stackvm [rounds] [ms]: the main thread allocates and frees 64 KB blocks (VirtualAlloc / VirtualFree:
+// Wine's virtual memory lock) for <ms> while this thread takes <rounds> stack snapshots of it, as `stack`, `hangdump`
+// and the watchdog do (BUG-0880). Prints the slowest snapshot and how many VirtualQuery calls ran while the main
+// thread was suspended (0 with kit.fix stackvq; the old loop makes one per stack region).
+static int c_test_stackvm(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int rounds = argc > 1 ? atoi(argv[1]) : 300;
+    int ms = argc > 2 ? atoi(argv[2]) : 5000;
+    static ThreadSnap snap;
+    static std::mutex mu;
+    std::lock_guard<std::mutex> lk(mu);
+    HANDLE started = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    static volatile LONG allocs;
+    allocs = 0;
+    run_on_main([started, ms] {
+        SetEvent(started);
+        DWORD t0 = GetTickCount();
+        while (GetTickCount() - t0 < (DWORD)ms) {
+            void* p = VirtualAlloc(nullptr, 0x10000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            if (p) {
+                DWORD old;
+                VirtualProtect(p, 0x1000, PAGE_READONLY, &old);
+                VirtualFree(p, 0, MEM_RELEASE);
+            }
+            InterlockedIncrement(&allocs);
+        }
+    });
+    if (WaitForSingleObject(started, 30000) != WAIT_OBJECT_0) {
+        CloseHandle(started);
+        outf(o, "the main thread did not start the allocation loop");
+        return 1;
+    }
+    CloseHandle(started);
+    DWORD worst = 0;
+    int done = 0, vq = 0, nmin = 1 << 30, nmax = 0;
+    for (int i = 0; i < rounds; i++) {
+        DWORD t0 = GetTickCount();
+        std::string why;
+        if (!thread_snapshot(main_thread_id(), snap, &why))
+            break;
+        DWORD dt = GetTickCount() - t0;
+        worst = dt > worst ? dt : worst;
+        vq += snap.vq_suspended;
+        nmin = snap.n < nmin ? snap.n : nmin;
+        nmax = snap.n > nmax ? snap.n : nmax;
+        done++;
+        Sleep((DWORD)(ms / (rounds > 0 ? rounds : 1)));
+    }
+    outf(o, "stackvm: %d of %d snapshots, slowest %lu ms, vq_suspended=%d, words %d..%d, main allocs=%ld, stackvq=%d\n",
+         done, rounds, worst, vq, done ? nmin : 0, nmax, (long)allocs, (int)fixed(g_fix_stackvq));
+    return 0;
+}
+
+// kit.test.wheel: the last WM_MOUSEWHEEL the game's window procedure got: its key flags and delta (BUG-0859)
+static int c_test_wheel(void*, int, const char* const*, SkOut* o)
+{
+    uint32_t wp = 0, n = 0;
+    wheel_seen(wp, n);
+    outf(o, "wheel n=%u keys=0x%04X delta=%d shift=%d ctrl=%d lbutton=%d rbutton=%d", n, wp & 0xFFFF, (int)(short)(wp >> 16),
+         (wp & MK_SHIFT) ? 1 : 0, (wp & MK_CONTROL) ? 1 : 0, (wp & MK_LBUTTON) ? 1 : 0, (wp & MK_RBUTTON) ? 1 : 0);
+    return 0;
+}
+
 static int c_test_fault(void* user, int, const char* const*, SkOut* o)
 {
     int which = (int)(intptr_t)user;
@@ -903,6 +966,9 @@ void register_builtin_commands()
     command_add(k, "kit.fix", "kit.fix [name [0|1]] - fix switches (tests: 0 = the old behaviour)", c_kit_fix, nullptr, A);
     command_add(k, "kit.test.stackheap", "kit.test.stackheap [stack|hangdump] [hold_ms] - stack dump while the main thread holds the heap (BUG-0050)",
                 c_test_stackheap, nullptr, A);
+    command_add(k, "kit.test.stackvm", "kit.test.stackvm [rounds] [ms] - stack snapshots while the main thread allocates and frees virtual memory (BUG-0880)",
+                c_test_stackvm, nullptr, A);
+    command_add(k, "kit.test.wheel", "kit.test.wheel - the last mouse wheel message the game's window got (BUG-0859)", c_test_wheel, nullptr, A);
     command_add(k, "kit.test.logfault", "kit.test.logfault - a fault inside the log's lock (BUG-0115)", c_test_fault,
                 (void*)0, M);
     command_add(k, "kit.test.excfault", "kit.test.excfault - a fault inside the exception logger's lock (BUG-0115)",

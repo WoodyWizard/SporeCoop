@@ -1370,3 +1370,18 @@ cell). Lab lanes 2 / 3, `coop_cell_meta_only.py`.
   (records_from_game {instance, bem, group}), else from the kept records (BUG-0370), else the bundle has no records
   and is not sent; apply() refuses a bundle with records but without its own model (`coop.creations`: `meta_only:
   fix= filled= waits= refused=`; log "came without its model ... (BUG-0802)").
+
+## Paint ids inside byte runs (2026-11-12, fix/w48-small)
+<a id="creations-paint-runs"></a>
+
+BUG-0852 (BUG-0727's untried case). Code fact, no runtime model of ours has it.
+* ✔ (code) A creature model record (bem) is byte-run packed: `FE n` = the byte before, n more times; `FE 00` = the
+  byte 0xFE. The three skin effect ids (base, coat, detail) are the dwords at byte 26 of the unpacked header. A model
+  whose coat and detail are 0 is written `<base id> 00 FE 07` (one zero, then seven more): the paint reader of 0.7.12
+  gave up on any run inside the 12 bytes and the model's base paint was never checked or substituted.
+* ✔ `mods/coop/model_paint.h`: `effects_read` decodes the runs and tells per layer whether its four bytes are written
+  byte by byte (only such a layer can be rewritten in place: the substitute has the same encoded length); a layer
+  inside a run is read, not patched (`creations.paint_runs`). A run with no byte before it, or a header shorter than
+  38 unpacked bytes, is no model.
+* ~ A layer whose id has a byte equal to its neighbour across the boundary (`19 75 75 FE 05`) is also run-packed by
+  the game's writer (inferred from the format, not seen in a real model).

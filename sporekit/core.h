@@ -258,6 +258,7 @@ void exceptions_clear();
 // focus.cpp
 void focus_install_hooks();
 void focus_attach_window(void* hwnd);
+void wheel_seen(uint32_t& wparam, uint32_t& count); // tests (BUG-0859): the last WM_MOUSEWHEEL the game's window got
 bool background_mode();
 void set_background_mode(bool on);
 void vcursor_set(int x, int y); // client coords, activates the virtual cursor
@@ -309,6 +310,8 @@ extern KitFix g_fix_framelimit; // BUG-0779: a frame limit set by another progra
 extern KitFix g_fix_presentlost; // BUG-0653: a hitch over 2 s is not Present lost (game loop passes without Present needed)
 extern KitFix g_fix_drawncam;  // BUG-0948: the overlay projects with the camera the frame was drawn with
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
+extern KitFix g_fix_stackvq;   // BUG-0880: no VirtualQuery while a thread is suspended (stack bounds from its TEB first)
+extern KitFix g_fix_wheelmk;   // BUG-0859: the virtual wheel carries the held keys and buttons (MK_SHIFT, MK_CONTROL, ...)
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);
 std::vector<KitFix*> kit_fixes();
@@ -333,6 +336,7 @@ struct ThreadSnap {
     CONTEXT c;
     uint32_t esp;
     int n; // dwords copied from esp up
+    int vq_suspended; // BUG-0880: VirtualQuery calls made while the thread was suspended (0 with kit.fix stackvq)
     uint32_t words[4096];
 };
 // suspends tid, copies, resumes; false (and why) for the calling thread itself or a failure.

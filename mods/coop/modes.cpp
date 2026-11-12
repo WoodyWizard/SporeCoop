@@ -532,17 +532,28 @@ std::string tag_info() { return g_tag_info; }
 
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);
-static uint32_t adventure_place()
+static uint32_t g_adventure_forced = 0;
+void adventure_force_place(uint32_t id) { g_adventure_forced = id; }
+bool adventure_key(uint32_t& inst, uint32_t& group)
 {
     uintptr_t p = S2("App::cScenarioMode::ptr");
     uint8_t* sm = p ? *(uint8_t**)p : nullptr;
     if (!sm || !skg::readable(sm, 0xD0))
-        return 0;
+        return false;
     uint8_t* data = *(uint8_t**)(sm + 0x74);
     uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
     if (!res || !skg::readable(res, 0x14))
+        return false;
+    inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
+    return true;
+}
+static uint32_t adventure_place()
+{
+    uint32_t inst, group;
+    if (!adventure_key(inst, group))
         return 0;
-    uint32_t inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
+    if (g_adventure_forced)
+        return g_adventure_forced;
     return (inst ^ (group * 0x9E3779B1u)) | 1u;
 }
 

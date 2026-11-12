@@ -57,8 +57,37 @@ static DWORD loader_lock_owner()
 }
 
 // While a thread is suspended nothing may allocate or take a lock it might hold: the heap's (the
-// main thread allocates all the time), the loader's, the log's. Only GetThreadContext, VirtualQuery
-// and copies into the caller's buffer run before the resume; names and text come after (BUG-0050).
+// main thread allocates all the time), the loader's, the log's. Only GetThreadContext and copies into
+// the caller's buffer run before the resume; names and text come after (BUG-0050).
+// BUG-0880: not VirtualQuery either. Under Wine NtQueryVirtualMemory takes the process's virtual memory
+// lock, which the suspended thread may hold (inside VirtualAlloc / VirtualProtect / a heap growth): the
+// caller then waits for ever and never resumes it (the MinHook freeze of docs/05-re-notes.md). The stack's
+// bounds come from the thread's TEB (StackBase +4, StackLimit +8, via NtQueryInformationThread) before
+// the suspend; while suspended only [esp, StackBase) is copied. `kit.fix stackvq 0`: the VirtualQuery loop.
+typedef LONG(NTAPI* NtQIT_t)(HANDLE, int, void*, ULONG, ULONG*);
+struct ThreadBasicInfo {
+    LONG exit;
+    void* teb;
+    void* pid;
+    void* tid;
+    ULONG_PTR affinity;
+    LONG prio, base;
+};
+static bool stack_bounds(HANDLE t, uintptr_t& base, uintptr_t& limit)
+{
+    static NtQIT_t q = (NtQIT_t)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread");
+    ThreadBasicInfo bi{};
+    if (!q || q(t, 0 /* ThreadBasicInformation */, &bi, sizeof bi, nullptr) < 0 || !bi.teb)
+        return false;
+    uintptr_t w[2] = {}; // (a copy that cannot fault: the thread may end meanwhile; before the suspend)
+    SIZE_T got = 0;
+    if (!ReadProcessMemory(GetCurrentProcess(), (const uint8_t*)bi.teb + 4, w, sizeof w, &got) || got != sizeof w)
+        return false;
+    base = w[0];
+    limit = w[1];
+    return base > limit;
+}
+
 bool thread_snapshot(DWORD tid, ThreadSnap& s, std::string* why, void (*while_suspended)(void*), void* ctx)
 {
     s.n = 0;
@@ -67,12 +96,16 @@ bool thread_snapshot(DWORD tid, ThreadSnap& s, std::string* why, void (*while_su
             *why = "cannot read the stack of the calling thread itself (use stack.here)";
         return false;
     }
-    HANDLE t = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, tid);
+    HANDLE t = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
     if (!t) {
         if (why)
             *why = "OpenThread failed";
         return false;
     }
+    s.vq_suspended = 0;
+    const bool no_vq = fixed(g_fix_stackvq);
+    uintptr_t sbase = 0, slimit = 0;
+    bool teb = no_vq && stack_bounds(t, sbase, slimit);
     if (SuspendThread(t) == (DWORD)-1) {
         CloseHandle(t);
         if (why)
@@ -85,8 +118,17 @@ bool thread_snapshot(DWORD tid, ThreadSnap& s, std::string* why, void (*while_su
     s.esp = s.c.Esp;
     const uint32_t* sp = (const uint32_t*)s.esp;
     const int cap = (int)(sizeof s.words / sizeof s.words[0]);
-    while (s.n < cap) {
+    if (no_vq) {
+        // the TEB's bounds only: an esp outside [StackLimit, StackBase) (no TEB, a fiber) copies nothing
+        if (teb && s.esp >= slimit && s.esp < sbase && !(s.esp & 3)) {
+            uintptr_t words = (sbase - s.esp) / 4;
+            s.n = (int)(words < (uintptr_t)cap ? words : (uintptr_t)cap);
+            memcpy(s.words, sp, (size_t)s.n * 4);
+        }
+    }
+    while (!no_vq && s.n < cap) {
         MEMORY_BASIC_INFORMATION mbi;
+        s.vq_suspended++;
         const uint32_t* p = sp + s.n;
         if (!VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
             (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) || !mbi.Protect)

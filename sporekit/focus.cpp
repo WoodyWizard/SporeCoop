@@ -49,8 +49,20 @@ static BOOL WINAPI h_GetCursorPos(LPPOINT p)
     return o_GetCursorPos(p);
 }
 
+// tests (BUG-0859): the last WM_MOUSEWHEEL the game's window procedure got (wParam), and how many
+static std::atomic<uint32_t> g_wheel_wp{0}, g_wheel_n{0};
+void wheel_seen(uint32_t& wp, uint32_t& n)
+{
+    wp = g_wheel_wp;
+    n = g_wheel_n;
+}
+
 static LRESULT CALLBACK h_WndProc(HWND w, UINT m, WPARAM wp, LPARAM lp)
 {
+    if (m == WM_MOUSEWHEEL) {
+        g_wheel_wp = (uint32_t)wp;
+        g_wheel_n++;
+    }
     if (m == WM_SK_PUMP) {
         pump_main_tasks();
         return 0;
