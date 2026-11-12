@@ -6107,3 +6107,39 @@ were the test. No change of the mod.
   to stay put reads its node first (`coop.tribe`, `bt=`), polls that it is still there, and puts it again when it
   left; it does not sleep and hope.
 
+
+## Freed objects for real: reuse hunts and the L1 tests (2026-11-12, fix/w48-freed)
+<a id="testing-freed-block-reuse"></a>
+
+A use of a freed object is caught by a test only when the game really frees the object and, for the identity
+bugs, really gives its block to another object (docs/re/creature.md#creature-freed-block-reuse: a destroyed
+creature is freed 10-40 frames later, the next creature of its species takes the block).
+
+* `coop.npc reusehunt <hex address | p<proxy id> | puppet> [frames] [flags]` (any role) starts a hunt: `x` = the
+  game destroys the object first (DestroyInstance, no bookkeeping of ours); then once a frame a creature of the
+  target's species is made next to the avatar (`a`: of the avatar's species; `h`: in the target's herd; `b<N>`: N a
+  frame; `n <k>`: k tries in this call; `r`: Create with its reuse flag; `H`: the target is a herd and the tries
+  are herds of the avatar's species). A miss is destroyed again at once. `coop.npc reusehunt` alone: `hit=` (the
+  address came back), `hit alive=` (it is still that new object: the list and its serial), its position, whether
+  the mod treats it as a proxy. Cost: one creature a frame; a 150-frame hunt is ~5 s. About a third of the hunts on
+  creatures hit within 150 frames: the tests loop over several targets and need one hit.
+* `coop.tribe reusehunt any|npc|<mirror id> [frames]` (Tribe guest): the game removes a mirror's citizen
+  (RemoveMember with destroy), then members are made in the guest's player tribe until one gets the block (1 hit in
+  8 hunts in one run, so the test loops 16 rounds).
+* `coop.npc settle <s>` (guest): the npc tick waits as after an avatar change; the window in which the mod does not
+  look at its proxies (the fork's held death caption). `coop.npc handlerkill <id> damage|prompt`: the game destroys
+  a proxy's creature and a host message about it is handled in the same call. `coop.puppet gamekillfx <pool> <id>
+  <key> [n]`: the same for a partner's puppet and its effect messages. `coop.overlay animrx <player> <anim> [n]`: a
+  partner's MSG_ANIM as the handler gets it, whatever the puppet is.
+* `coop.live`: the object list of the frame (game::listed): walks, rewalks after a creation, destroys seen, hits.
+  `coop.views unwind` / `coop.hp scaleunwind`: the next relevance pass / the own scale call leaves like a caught fault
+  (BUG-0882); `coop.views` prints `on_our_buffer=`, `coop.hp species` what the game's PlayerSpecies answers.
+* Tests: proxy_identity, proxy_identity_tribe (BUG-0842), npc_herd_identity (BUG-0843), tribe_mirror_lifetime
+  (BUG-0844), npc_handler_live (BUG-0805), effect_puppet_gone (BUG-0795), anim_not_creature(_tribe) (BUG-0796),
+  carry_holder (BUG-0814), defer_identity (BUG-0825), cell_puppet_cell (BUG-0823), space_allies_snap (BUG-0838),
+  lend_ledger (BUG-0882).
+* Pitfalls: the hunts make and destroy hundreds of creatures; the monitor's proxy rule and the sync-check see the
+  held or removed copies (the suite entries allow them by kind). `coop.staleref` stops the game ~7 s (a hitch,
+  allowed); after it the guest's proxies are made again (stale drop): read the proxy list again before the next
+  step. With the old code, the faults in the mod's audits of freed proxies (game::cast) and a guest's heap
+  corruption were what failed, not only the checks.

@@ -4,8 +4,8 @@ one (Space, host).
 
 A mirror unmirrored before the reload (a save on the way to the galaxy menu; here `allies remove`, the same unapply)
 kept its snapshots: the old world's cPlanetRecord and the cCivData it had added there. The first apply in the new
-world released the old record (our reference was its last: it went, with its cities) and added the kept cCivData
-pointers into the new world's record of that planet.
+world added the kept cCivData pointers into the new world's record of that planet (the record object itself comes
+back from the game's resource cache: our reference keeps it there).
 
 The host on the space fixture mirrors an empire ("Zed", `allies fake`, the code path of a partner's colony) on a free
 planet, unmirrors it (`allies remove`), goes to the galaxy menu and loads the fixture again, then applies the mirror
@@ -58,7 +58,9 @@ def main():
     (rec2, civ2), out = civ(host, p)
     print(f'  after the apply: {out.strip()}', flush=True)
     old = [c for c in civ2 if c in civ0 and c not in civ1]
-    ck(rec2 and rec2 != rec0, f'the new world has a record of its own for the planet ({rec0} -> {rec2})')
+    # (the record object is the same one after the reload, lab 20261112-011341: our reference keeps it in the game's
+    # resource cache and the load takes it from there; its cities are what the load left in it)
+    print(f'  the planet\'s record {rec0} -> {rec2} (the same object: {rec0 == rec2})', flush=True)
     ck(not old, f'the new world\'s record holds none of the old world\'s cities ({old})')
     time.sleep(20)
     sp(host, 'allies drop')

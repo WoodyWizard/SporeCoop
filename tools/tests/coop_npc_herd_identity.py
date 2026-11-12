@@ -89,10 +89,16 @@ def main():
             continue
         reused += 1
         print(f'  herd {herd:08X}: a herd of another species has its block now (try {h["tries"]})', flush=True)
+        # (a herd's destroy takes its members with it: the proxy is made again by itself; else the game destroys it)
         print('  ' + guest.call(f'coop.npc reusehunt p{i} 1 x')['out'].strip().splitlines()[0], flush=True)
-        time.sleep(2.5)
+        t2, p = time.time(), None
+        while time.time() - t2 < 8 and not p:
+            time.sleep(1.0)
+            _, prox = plist(guest)
+            p = prox.get(i)
+        time.sleep(1.0)
         _, prox = plist(guest)
-        p = prox.get(i)
+        p = prox.get(i) or p
         print(f'  proxy #{i} now: {p and hex(p[1])} in herd {p and hex(p[2])}, herd of its species: {p and p[3]}', flush=True)
         if p and (p[3] == 0 or p[2] == herd):
             wrong.append(i)
