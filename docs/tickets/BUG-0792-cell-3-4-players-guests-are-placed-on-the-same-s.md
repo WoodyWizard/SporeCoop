@@ -1,19 +1,19 @@
 ---
 id: BUG-0792
 title: Cell, 3-4 players: guests are placed on the same spot after a load or a knockout respawn
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-10
 source: fork nvstlex/SporeCoopNVST nvst/rivals-foundation 64471660, 3af94028, a4a99f94
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-cell
+commits: 3e554da8
+tests: cell_spawn_slots, cell_tests player_spawn_slots
 signature:
-docs:
+docs: docs/re/cell.md#cell-c1-0713
 related: BUG-0352
 ---
 
@@ -23,10 +23,11 @@ host + (2.5, 1) and after a knockout respawn at partner + (2, 1): two guests lan
 respawning guest can anchor to another guest instead of the host, so positions drift.
 
 ## Root cause
-Observed in our code (confidence high for the placement, impact inferred): `mods/coop/cellsync.cpp:571-572`
-(downed_tick respawn: `nearest_partner(1e9f, &at, nullptr, true)` then `at + (2, 1)`), `cellsync.cpp:3585-3592`
-(join_after_load: nearest partner, `g_join_to = at + (2.5, 1)`), and join_partner (`cellsync.cpp:6300`). The offset is the
-same for every guest and the anchor is the nearest partner (any player). BUG-0352 fixed the two-player case only.
+Observed (lab 20261112-065700, `cell.spawn_slots` off, three players): Bob and Carol knocked out side by side 60 m
+from the host respawned 2.3 m apart (both at host + (2, 1)); after the host's save and share both guests' cells stayed
+at the pool's start 0.01-0.02 m apart: each one's nearest partner was the other guest, within the 15 m that
+join_after_load takes for "joined", so neither moved. Code: downed_tick (respawn at the nearest helper + (2, 1)),
+join_after_load and join_partner (nearest partner + (2.5, 1)).
 
 ## Fix idea
 From the fork (nvstlex/SporeCoopNVST nvst/rivals-foundation 64471660, 3af94028, a4a99f94, c4056b03, 03483893, dbeaf991); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -44,7 +45,20 @@ guest's game read both guest cells' positions. FAIL: the two guest cells are wit
 4 m apart, each at its own slot around the host.
 
 ## Fix
+cell_logic.h `player_spawn_offset(id, radius)` (radius 4 m clamped 3..20; the host at the anchor, guests 1-3 at 0 /
+120 / 240 degrees, later ids on wider rings) and cellsync.cpp `spawn_spot`: a guest goes to its slot around the
+HOST's cell (a respawn falls back to the old rule when the host is not here or knocked out; a load waits for the
+host's cell), and join_after_load also moves a guest that has another player's cell within 2 m. The idea came from
+the fork (NOT FINAL there), re-implemented. Switch `coop.fix cell.spawn_slots off` (0.7.12). Not taken: the fork's
+forced placement on joining an open session (join_after_load covers it).
+
 ## Verification
+`coop_cell_spawn_slots.py` (suite `cell_spawn_slots`, 3 players in one lane, ~1.5 min) and the unit test
+`tests/cell_tests.cpp player_spawn_slots`: both guests knocked out 60 m away respawn; then a save and share reloads
+both. In each guest's own game its cell and the other guest's must be over 4 m apart, both within 15 m of the host.
+* FAIL with `SPORE_FIX_OFF=cell.spawn_slots`: lab 20261112-065700 (2.3 m after the respawn, 0.01 m after the load).
+* PASS: lab 20261112-064328, 20261112-071436.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12 (fix/w48-cell): fixed (cell.spawn_slots), FAIL and PASS runs in Verification.

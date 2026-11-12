@@ -6342,3 +6342,52 @@ two-game tests of ~1-2 min after the games are up unless said otherwise.
   again by design (BUG-0383), which BUG-0952 was.
 * Monitor `puppet_hp` (BUG-0953): the two lines in a row must be off the same way; lines at a revive and at the killing
   blow (the state lag of ~0.15 s, opposite directions) are no violation. `php_same_way=0`: the rule before.
+## Cell C1 and the partner pass: tests of 0.7.13 (2026-11-12, fix/w48-cell)
+<a id="testing-cell-c1"></a>
+
+Tests of package C1 (docs/plan-0.7.13.md), each with its twin switch (`SPORE_FIX_OFF=<switch>` must FAIL), ~1 min each
+on a warm-free lane (30 s of start):
+* `cell_ko_scale` (`coop_cell_ko_scale.py`, BUG-0798, `cell.down_scale`): the guest knocked out 15 m from the host,
+  the host's food crosses a level line; the guest's own position times its world scale (`coop.pool scalepos`) must
+  stay put, then the host next to it revives it. A level change divides every distance by 3 (level 1 -> 2): two cells
+  6 m apart are 2 m apart after it, inside the revive distance (~3 m): start farther apart or the revive comes by itself.
+* `cell_ko_poison` / `_guest` (`coop_cell_ko_poison.py --who host|guest`, BUG-0799, `cell.ko_no_poison`): the poison
+  part is grafted (`coop.pool borrow poison graft [p<id>]`); the host's avatar and the guest's puppet share the
+  fixture's model data, so BOTH make clouds once one has the graft: count by maker (`coop.pool borrow status x p<id>`
+  `clouds_made=` own avatar / `puppet_clouds=` partners', the game's cloud maker calls) and by distance (clouds within
+  3 m of the knocked-out cell). Keep the other player invulnerable and far (`coop.pool invulnfor`): the clouds knocked
+  the guest out in one run, then the host had no helper and died instead of a knockout.
+* `cell_kill_refused` (BUG-0821, `cell.kill_refused`): a knocked-out guest's lethal bite in flight (`coop.pool sendact
+  c<key> break`) is refused, the host revives the guest at once (`coop.pool tp 1 0 <id>`), then the guest's real
+  lethal bite (`coop.pool kill c<key>`, hp 1 given by `npcflag` only then: a creature with hp 1 is eaten by NPCs)
+  must kill it in the host's game. A guest's ACT_BREAK is replayed with the damage raised to the host's hp
+  (guest_attack): a host creature with more hp than the mirror showed still dies, so "the game spares it" cannot be
+  made with hp alone.
+* `cell_swallow_gone` (BUG-0827, `cell.swallow_gone`): `coop.pool swallow c<key> 10` on a host creature next to the
+  guest; the creature must be gone in the host's game within 6 s.
+* `cell_poison_touch` (BUG-0835, `cell.poison_not_eaten`): the host's grafted clouds, the guest put onto each new one
+  (`coop.pool swimto c<key> tp 0`); 0.8 s later the cloud must still be in the host's game (a quarter may end by
+  themselves).
+* `cell_spawn_slots` (BUG-0792, `cell.spawn_slots`, three players in one lane, ~1.5 min, `multi`): both guests
+  knocked out 60 m away respawn next to the host; then a save and share reloads both guests. Each guest's own game
+  compares its cell with the other guest's (`coop.pool scalepos p<id>`).
+* `cell_meta_only` (BUG-0802, `creations.meta_only`): `coop.creations sendmeta cell [n]` sends our cell's bundle with
+  its metadata record only (what a 0.7.12 guest sent after renaming a cell whose model is elsewhere). The fixture's
+  cell (4DA56CA5) is the same key in both profiles: its bundle has 0 records (everybody has it).
+* `cell_puppet_stops` (BUG-0887, `drive.cell_fall`, SPORE_NET=player): `coop.bodyrec start kinds p` records the
+  players' cells only (a Cell pool's mirrors are hundreds of rows a frame: the 400 000-row buffer held 16 s). A cell's
+  stop is soft (it slows down over ~1 s and drifts at 0.2-0.4 m/s), so the test turns it back and forth and measures
+  how far the host's copy is AHEAD of the guest's own cell along the way it swam 0.25 s before.
+* `partner_pass` (BUG-0913, `creature.partner_pass`, creature fixture, ~4 min): per animal (not of the players'
+  family: the nest's own species, `fam=1` in the guest's `coop.npc list`, gives key 1 status 12) the host's creature is
+  put 1 m from its centre (`coop.npc gonpc <id> 1.0`); the guest takes the animal as its target from the animal's
+  other side (a real click: there the host's creature is behind it, so the target is set with the fix or without),
+  then is put 6 m behind the host's creature on the line through it (`coop.npc gopos`) and presses the attack key
+  (real input; pressed again when the walk did not start: a press now and then does nothing in both builds): the
+  game's gap (`coop.abilities reach`) must come within the bite's reach. Then from behind again, the camera turned to
+  the animal (right-drag), a real click on the animal: the game's target field (+0xE7C = creature + 0x5A8). Judged:
+  walks with the host's creature under 1.8 m from the animal's centre and under 0.5 m off the way; clicks with it
+  within 90 px of the click point and nearer. The geometry matters: with the host's creature 2.5 m from the animal
+  the guest's walk goes round it in both builds; at 1.0-1.5 m it stops 1.4 m short behind it (fix off). Before
+  the judged part: `coop.find rivals 1` and (`--ff`) friendly fire on must switch the skipping off.
+  `coop_avatar_stale_target.py` switches `creature.partner_pass` off on the host: it needs a click on the partner.

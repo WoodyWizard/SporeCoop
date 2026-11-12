@@ -1351,3 +1351,22 @@ BUG-0921, BUG-0923.
   speciesof <key>` shows `own_world <n>` (aliases undone so far). ✔ Lab: in its own world the guest's game gives its
   own creation (key 290229B9, bem 9B6134E2) for the host's TigerHorse id; with the switch off the host's (key
   7D851520, bem 6E1A058F, aliased 1) (20261112-030351 / 20261112-031303).
+
+## A creation bundle without its model (2026-11-12, fix/w48-cell)
+<a id="creations-meta-only"></a>
+
+BUG-0802 (from the fork PandizeLive/SporeCoop-Lineages: the host faulted at 0xE83EC8 after a guest renamed an imported
+cell). Lab lanes 2 / 3, `coop_cell_meta_only.py`.
+* From the fork, not seen by us: a free rename in the editor of a creation whose model (bem 0x1A99B06B) is not in the
+  player's EditorSaves (a partner's or an imported cell played as its own) saves only a new metadata record
+  (0x030BDEE3) there; the model stays in the package it came from.
+* ✔ (runtime, lab 20261112-065557, `creations.meta_only` off) A bundle with records but no model (`coop.creations
+  sendmeta cell`: our cell's metadata record only) is registered by the receiver as the player's creation under a key
+  of its own (here 7C8C6430): a key without a model, which CreateCellObject resolves when it builds that player's cell
+  (the fork's fault). In the 10 s of the test the host's game did not rebuild the guest's puppet from it (no fault).
+* ✔ The fixture's cell (4DA56CA5) is the same key in the host's and the guest's profile: its bundle has 0 records
+  ("everybody has it"), so a lab rename test needs a cell that is in one profile only.
+* Fix `creations.meta_only`: make_bundle takes the model of a metadata-only bundle from the game's resources
+  (records_from_game {instance, bem, group}), else from the kept records (BUG-0370), else the bundle has no records
+  and is not sent; apply() refuses a bundle with records but without its own model (`coop.creations`: `meta_only:
+  fix= filled= waits= refused=`; log "came without its model ... (BUG-0802)").

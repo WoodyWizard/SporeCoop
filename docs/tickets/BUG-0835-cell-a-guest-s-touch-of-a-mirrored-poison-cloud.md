@@ -1,7 +1,7 @@
 ---
 id: BUG-0835
 title: Cell: a guest's touch of a mirrored poison cloud counts as eating it, so the host's cloud ends early (suspected)
-status: open
+status: not-reproduced
 kind: desync
 stage: Cell
 reported: 2026-11-10
@@ -9,11 +9,11 @@ source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w48-cell
+commits: 3e554da8, e272f8c5
+tests: cell_poison_touch
 signature:
-docs: 
+docs: docs/re/cell.md#cell-c1-0713
 related: BUG-0716 BUG-0636
 ---
 
@@ -21,10 +21,16 @@ related: BUG-0716 BUG-0636
 No player report. Suspected: a guest swimming through a mirrored poison cloud (an NPC's, the host's, or its own relayed one) makes the host remove that cloud.
 
 ## Root cause
-Code reading (line numbers of main e49e1e23 = 0.7.11.1): h_Destroy (cellsync.cpp:1144-1174) treats any DestroyCell of a mirror touched in the last 1 s as eaten and sends ACT_GONE; the host then calls o_Destroy(idx) (4159). The guest's visibility step (return address 0xE78C37, docs/re/cell.md) destroys poison cells outside its active area every frame; once the avatar had a pair with one (g_touched, h_Pair 1549) the next such destroy is sent as eaten. Not known: whether mirrors (group -1) and the avatar form pairs with clouds. Confidence: low-medium.
+Not reproduced (lab 20261112-065459, the code without a fix; and 20261112-062148 / -063438 with the guard tried): the
+host's cell got a poison part (`coop.pool borrow poison graft`), the guest was put right onto 12 of the host's new
+clouds as its game mirrored them (`coop.pool swimto c<key> tp 0`); 0 of 12 ended early in the host's game and the
+guest's `coop.pool why` listed no destroy of any mirror at all: the guest's game never destroys a mirrored poison
+cloud (the cull at 0xE78C37 removes the guest's OWN clouds, BUG-0716, not the mirrors), so the suspected ACT_GONE is
+never sent.
 
 ## Fix
-Not fixed yet.
+None. The guard tried (never count a poison cell or the cull's destroy as eaten, `cell.poison_not_eaten`, commit
+3e554da8) was taken out again (e272f8c5): a fix whose test cannot fail proves nothing.
 
 ## Fix idea
 In h_Destroy never count the poison-cull return address or type-5 (poison) cells as eaten.
@@ -33,7 +39,9 @@ In h_Destroy never count the poison-cull return address or type-5 (poison) cells
 Host `coop.pool borrow poison graft`, guest swims through the host's clouds; guest `coop.pool why` must show no touched destroy from 0xE78C37 sent as gone, host no 'gone ... applied' on poison cells.
 
 ## Verification
-Not fixed yet.
+no-fail-run: not reproducible; `coop_cell_poison_touch.py` (suite `cell_poison_touch`, extended) stays as a
+regression test: it passes on the code without a fix (lab 20261112-065459).
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
+- 2026-11-12 (fix/w48-cell): not reproduced (12 touched clouds, no mirror destroyed), the tried guard taken out.

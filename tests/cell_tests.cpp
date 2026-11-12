@@ -256,6 +256,27 @@ static void once()
     CHECK(o.at.size() <= 512); // bounded: old entries pruned
 }
 
+// BUG-0792: 3-4 players placed around the host: one spot each, at the radius, the host at the anchor
+static void player_spawn_slots()
+{
+    float x[4], y[4];
+    for (int id = 0; id < 4; id++)
+        player_spawn_offset(id, 4.f, &x[id], &y[id]);
+    CHECK(x[0] == 0.f && y[0] == 0.f);
+    for (int a = 1; a < 4; a++) {
+        CHECK(std::fabs(std::hypot(x[a], y[a]) - 4.f) < 1e-3f);
+        for (int b = a + 1; b < 4; b++)
+            CHECK(std::hypot(x[a] - x[b], y[a] - y[b]) > 6.f); // 4 x sqrt(3) apart
+    }
+    float u, v;
+    player_spawn_offset(1, NAN, &u, &v);
+    CHECK(std::isfinite(u) && std::fabs(u - 4.f) < 1e-3f);
+    player_spawn_offset(2, 100.f, &u, &v);
+    CHECK(std::hypot(u, v) <= 20.001f);
+    player_spawn_offset(4, 4.f, &u, &v); // a fifth player: the next ring, not on guest 1's spot
+    CHECK(std::hypot(u - x[1], v - y[1]) > 1.f);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -263,6 +284,7 @@ int main(int argc, char** argv)
             g_meals_trim = false; // the 0.7.3.0 code: meals_old_host must fail
     slots();
     spawn_slot();
+    player_spawn_slots();
     rounds();
     meals();
     meals_old_host();

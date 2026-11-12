@@ -291,4 +291,22 @@ struct Once {
     void reset() { at.clear(); }
 };
 
+// BUG-0792: the spot of session player `id` next to the spawn anchor (the host's cell), so that 3-4 players placed
+// after a load or a knockout respawn do not land on one spot: the host (0) at the anchor, guests 1-3 on a ring of
+// `radius` at 0, 120 and 240 degrees, later ids on wider rings. Radius clamped to 3..20 (not finite: 4).
+inline void player_spawn_offset(int id, float radius, float* dx, float* dy)
+{
+    if (!(radius == radius) || radius > 1e6f || radius < -1e6f)
+        radius = 4.f;
+    radius = radius < 3.f ? 3.f : radius > 20.f ? 20.f : radius;
+    *dx = *dy = 0.f;
+    if (id <= 0)
+        return;
+    int slot = (id - 1) % 3, ring = (id - 1) / 3;
+    float r = radius * (1.f + 0.5f * (float)ring);
+    static const float kC[3] = {1.f, -0.5f, -0.5f}, kS[3] = {0.f, 0.8660254f, -0.8660254f};
+    *dx = r * kC[slot];
+    *dy = r * kS[slot];
+}
+
 } // namespace cell_logic

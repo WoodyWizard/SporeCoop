@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a player knocked out while a level change rescales the pool stays where it lay, next to the partner who can
+  revive it; it was held far out in the pool (BUG-0798).
+- Cell: a knocked-out cell no longer makes poison clouds that hurt and kill creatures for its owner while it is down
+  (BUG-0799).
+- Cell: a guest's bite that the host refused or that did not kill no longer keeps that creature from being killed by
+  any guest for the next 10 seconds (BUG-0821).
+- Cell: a creature a guest swallows whole is gone in the host's game too; it lived on there and could be eaten again
+  (BUG-0827).
+- Cell: with three or four players the guests come back after a load or a knockout on spots of their own around the
+  host, not on top of each other (BUG-0792).
+- Cell: renaming a cell whose model came from elsewhere (a partner's or an imported cell) no longer crashes the host;
+  the new name goes out with the model, and a cell without its model is not built (BUG-0802).
 - Cell: a guest that plays a Cell world of its own while connected (or is still in Cell while the host is already in
   the Creature stage) gets a living pool again: new cells and food appear, kills drop loot, predators hunt. Before, its
   pool only emptied (BUG-0797).
@@ -110,6 +122,11 @@
 - Creature: an NPC egg that hatches or is eaten in the host's game is shown so on the guests at once, not up to a
   second later. A guest's click at an egg that had already hatched on the host hit the hatchling inside it: a small
   body lay where the egg was and the host counted it as the guest's hunt (BUG-0896).
+
+### Changed
+- Creature: while friendly fire is off (and outside Rivals) a player walks through a partner's creature and a click
+  in the combat stance goes to the animal behind it; the partner's creature no longer stops the second hunter short of
+  the prey. With friendly fire on nothing changes; players' creatures can now stand inside each other (BUG-0913).
 
 ## [0.7.12] - 2026-11-11
 

@@ -564,6 +564,94 @@ void* creature_puppet_live(uint8_t id)
     return p && game::creature_listed(p) ? p : nullptr;
 }
 
+// ---- BUG-0913: a partner's creature does not block the way nor take the attack click while friendly fire is off ----
+// The second player to attack an animal the partner fights stopped 2 m short behind the partner's creature (its
+// puppet here, held at the partner's place) and its attack key did nothing; a click on the animal picked the partner
+// in front of it (the attack key then does nothing: status 12). Owner's decision 2026-11-11 (docs/plan-0.7.13.md):
+// while friendly fire is off and outside Rivals, in Creature,
+// (a) Havok's collision filter (hkGroupFilter::isCollisionEnabled 0x10C3F90, asked when two bodies' boxes start to
+//     overlap) says no for the pair of our avatar and a partner's puppet: we walk through it
+//     (docs/re/creature.md#creature-partner-pass);
+// (b) the Creature mode's hover filter 0xD39070 (cdecl bool(HoverHit*), asked for every object under the cursor
+//     ray) refuses a partner's puppet in the combat stance: the hover and the click take the object behind it.
+// With friendly fire on or in Rivals nothing changes. Accepted: players' creatures can stand inside each other.
+// Off: 0.7.12.
+static bool g_partner_pass_fix = true;
+COOP_FIX("creature.partner_pass", "BUG-0913", g_partner_pass_fix, "creature: with friendly fire off a player walks through a partner's creature and a click goes to the animal behind it");
+// what the hooks read (they may run inside Havok's step): written once a frame by partner_pass_tick
+static void* volatile g_pass_avatar;
+static void* volatile g_pass_puppets[8];
+static volatile bool g_pass_on;
+static uint32_t g_pass_pairs, g_pass_hover_skipped, g_pass_seen_own; // tests (coop.status)
+static uintptr_t a_AbilityModeCore;
+static void partner_pass_tick()
+{
+    bool on = g_partner_pass_fix && g_mode == modes::kCreature && g_sess.connected() &&
+              !settings::on(settings::kFriendlyFire) && !(spaceext::rivals() || pfind::g_test_rivals);
+    size_t n = 0;
+    if (on)
+        for (auto& [id, r] : g_remotes)
+            if (n < 8 && r.puppet && !r.echo)
+                if (void* p = creature_puppet_live(id))
+                    g_pass_puppets[n++] = p;
+    for (size_t i = n; i < 8; i++)
+        g_pass_puppets[i] = nullptr;
+    g_pass_avatar = on ? game::avatar() : nullptr;
+    g_pass_on = on && n > 0;
+}
+// o is the creature (its base pointer, as the casts give it) or its spatial part (+0xC0)
+static bool pass_is(void* who, void* o) { return who && o && (o == who || o == (char*)who + 0xC0); }
+static bool pass_partner(void* o)
+{
+    for (void* p : g_pass_puppets)
+        if (pass_is(p, o))
+            return true;
+    return false;
+}
+// the game object of a Havok collidable: the root's owner (broadphase type 1 = an entity), its userData (+0xC)
+static void* collidable_object(uint8_t* c)
+{
+    if (!c)
+        return nullptr;
+    while (*(uint8_t**)(c + 0xC))
+        c = *(uint8_t**)(c + 0xC);
+    if (c[0x18] != 1)
+        return nullptr;
+    uint8_t* entity = c + *(int32_t*)(c + 0x10);
+    return *(void**)(entity + 0xC);
+}
+using CollEnabled_t = uint8_t*(SK_THISCALL*)(void*, uint8_t*, uint8_t*, uint8_t*);
+static CollEnabled_t o_CollEnabled;
+static uint8_t* SK_THISCALL h_CollEnabled(void* self, uint8_t* out, uint8_t* a, uint8_t* b)
+{
+    if (g_pass_on && out && a && b) {
+        void* av = g_pass_avatar;
+        void *oa = collidable_object(a), *ob = collidable_object(b);
+        bool own_a = pass_is(av, oa), own_b = pass_is(av, ob);
+        g_pass_seen_own += own_a || own_b;
+        if ((own_a && pass_partner(ob)) || (own_b && pass_partner(oa))) {
+            g_pass_pairs++;
+            *out = 0;
+            return out;
+        }
+    }
+    return o_CollEnabled(self, out, a, b);
+}
+using HoverFilter_t = bool(SK_CDECL*)(void**);
+static HoverFilter_t o_HoverFilter;
+static bool SK_CDECL h_HoverFilter(void** hit)
+{
+    if (g_pass_on && hit && hit[0] && a_AbilityModeCore && skg::cdecl_call<int>(a_AbilityModeCore) != 0) {
+        void* owner = *(void**)((uint8_t*)hit[0] + 0x64);
+        void* obj = owner ? skg::vcall<void*>(owner, 0xC / 4, 0x17F243Bu) : nullptr; // the hover filter's own cast
+        if (pass_partner(obj)) {
+            g_pass_hover_skipped++;
+            return false; // the next object along the ray (the animal behind the partner)
+        }
+    }
+    return o_HoverFilter(hit);
+}
+
 void* puppet_now(const Remote& r)
 {
     if (!r.puppet || !r.puppet_adapter || !modes::stale_fix)
@@ -812,6 +900,7 @@ struct BodyRow {
 };
 static std::deque<BodyRow> g_bodyrec;
 static bool g_bodyrec_on = false, g_bodyrec_diag = false;
+static std::string g_bodyrec_kinds; // `coop.bodyrec start kinds <chars>`: only keys starting with one of them (Cell: p)
 static constexpr size_t kBodyRecMax = 400000;
 
 static void bodyrec_tick(double now)
@@ -819,6 +908,8 @@ static void bodyrec_tick(double now)
     if (!g_bodyrec_on || !g_sess.connected())
         return;
     for (auto& e : sync_all()) {
+        if (!g_bodyrec_kinds.empty() && (e.key.empty() || g_bodyrec_kinds.find(e.key[0]) == std::string::npos))
+            continue;
         BodyRow r{};
         r.t = now;
         snprintf(r.key, sizeof r.key, "%s", e.key.c_str());
@@ -848,6 +939,7 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
         g_bodyrec.clear();
         g_bodyrec_on = true;
         g_bodyrec_diag = argc > 2 && !strcmp(argv[2], "diag");
+        g_bodyrec_kinds = argc > 3 && !strcmp(argv[2], "kinds") ? argv[3] : ""; // tests (BUG-0887): a Cell pool is hundreds of rows a frame
     } else if (!strcmp(a, "stop"))
         g_bodyrec_on = false;
     else if (!strcmp(a, "dump")) { // dump [from] [n]: t key x y z (t: absolute s)
@@ -3827,6 +3919,7 @@ void on_frame(void*, int, void*)
         g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
     host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
     g_sess.update();
+    partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame
     lobby_tick(now);
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
         int rtt = g_sess.rtt_of(0);
@@ -7279,6 +7372,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.partnerpass", "coop.partnerpass - tests (BUG-0913): the partners' creatures we walk and click through",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       int n = 0;
+                       for (void* p : g_pass_puppets)
+                           n += p != nullptr;
+                       SAY("fix=%d on=%d puppets=%d pairs_skipped=%u own_pairs_seen=%u hover_skipped=%u ff=%d",
+                           (int)g_partner_pass_fix, (int)g_pass_on, n, g_pass_pairs, g_pass_seen_own, g_pass_hover_skipped,
+                           (int)settings::on(settings::kFriendlyFire));
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.cellgone", "coop.cellgone - tests (BUG-0271): cell reads refused once the game freed the cell pool",
                    [](void*, int, const char* const*, SkOut* out) {
                        const auto& c = modes::cell_gone_stats();
@@ -7297,6 +7401,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
+    a_AbilityModeCore = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-0913
+    if (uintptr_t a = H->sym("SporeCoop::Havok_GroupFilter_IsCollisionEnabled"))
+        H->hook_create(M, (void*)a, (void*)h_CollEnabled, (void**)&o_CollEnabled);
+    if (uintptr_t a = H->sym("SporeCoop::CreatureHoverFilter"))
+        H->hook_create(M, (void*)a, (void*)h_HoverFilter, (void**)&o_HoverFilter);
     *(int32_t*)(g_blank_e84 + 0x32C) = -1;
     if (uintptr_t a = H->sym("Simulator::CreatureStageEventHandler"))
         H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);

@@ -139,6 +139,9 @@ def main():
     host, guest = start()
     ck = Checks()
     time.sleep(2)
+    # BUG-0913: with friendly fire off a click no longer picks the partner's creature (creature.partner_pass): this
+    # test needs the old pick (the partner as the target is what it removes)
+    print('  host: ' + host.call('coop.fix creature.partner_pass off')['out'].strip(), flush=True)
     host.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
     time.sleep(0.3)
     taken = by_click = used_removed = asked = keys = 0

@@ -2166,3 +2166,49 @@ BUG-0927. GOG 2024, lab lanes 2 and 5.
   then 6-10 within 80 m and a cell pool of up to 167 (lab 20261112-025009). Tests wait 35 s before they count.
 * ✔ BUG-0809: the host's per-guest send of MSG_CELL_STATE (host_tick) now skips a guest whose latest state is not
   the host's Cell world (own_world::peer_here); the food total (MSG_CELL_FOOD, reliable, every 2 s) still goes.
+
+## Package C1 of 0.7.13: the knockout spot, poison, the kill ledger, swallows, spawn slots (2026-11-12, fix/w48-cell)
+<a id="cell-c1-0713"></a>
+
+GOG 2024, lab lanes 2 / 3 (tests in docs/06-testing.md#testing-cell-c1). BUG-0798, 0799, 0821, 0827, 0835, 0792, 0887.
+* ✔ (runtime, BUG-0798) The knockout's hold (`downed_tick` -> stop_at every frame) kept the spot in the metres of the
+  knockout's moment: after a level change in the 10 s the guest's cell lay at (115.7 101.1) in a world of scale 1.5
+  where it had been at scale 0.5 (102 m from its place in the world, 106 m from the host; lab 20261112-065614). With
+  `cell.down_scale` the spot is kept with its scale and drawn as `spot x scale_then / scale_now` (pos x G+0x514C is
+  what a rescale keeps, #cell-world-scale): 0.00-0.05 m off, revived by the host (20261112-064328). A level change
+  divides every distance by 3 (level 1 -> 2): cells 6 m apart are 2 m apart after it, inside the revive distance.
+* ✔ (runtime, BUG-0799) The poison step calls the cloud maker (Cell_PoisonCloud 0xE76660) for a knocked-out cell as
+  for a live one (hp 1 is alive): the host's knocked-out avatar made 18 clouds in 8 s (lab 20261112-065846, fix off).
+  With the cloud refused the step asks again every frame (600-900 refused calls in 8-10 s): its accumulator is reset
+  only by a cloud. The host's game also runs the poison step for a partner's puppet by itself, not only through
+  puppet_poison (BUG-0716): with puppet_poison skipped for the knocked-out guest the puppet still made clouds (lab
+  20261112-064328) once the grafted model data was shared with it (the fixture's host and guest cells have the same
+  model 4DA56CA5: a graft into one is in both). `cell.ko_no_poison` refuses the cloud in h_Cloud for our knocked-out
+  avatar and for a knocked-out partner's puppet (found by its slot, puppet_cell), and skips puppet_poison for it.
+* ✔ (code + runtime, BUG-0821) A guest's ACT_BREAK is replayed through Bite with the damage raised to the host's hp
+  (guest_attack: `dmg = max(dmg, hp)`): the host's hp never spares a lethal bite; Bite's other gates do (+0x17C lock,
+  BreakOrSwallow's states 7 / 8 / 9). The host's trace says "from N kill cK: applied" also for a kill it then refuses
+  for the knockout (the eat line comes before the knockout check). `cell.kill_refused`: g_kill_applied records a
+  kill only when the cell is dying after it (dying, dead, hp 0 or state 7 / 8 / 9); a guest drops its "kill sent"
+  entry and sends again when the creature still lives 2 s after its last send.
+* ✔ (runtime, BUG-0827) SwallowWhole 0xE7D880 (the only call 0xE7DBBF: cdecl, 3 arguments, `add esp,0xC`) of a cell
+  with a model plays "cell_death_eaten" (animation 9, its length as the event time) and posts event 7, whose handler
+  destroys the cell (the guest's `coop.pool why`: return address 0xE7B468); a guest's swallowed mirror was destroyed
+  ~1.1 s after the swallow, past the 1 s touch window, so in 1 of 3 swallows no ACT_GONE went out and the host's
+  creature lived on (lab 20261112-065805, fix off). `cell.swallow_gone` (h_Swallow, guest): a mirror our avatar
+  swallows is marked and its destroy in the next 10 s counts as eaten.
+* ✔ (runtime, BUG-0835, not reproduced) A guest's game never destroyed a mirror of the host's poison clouds, touched or
+  not (`coop.pool why`: none after 12 clouds the guest was put onto, lab 20261112-065459): the cull at 0xE78C37 that
+  destroys the guest's OWN clouds (#cell-electric-attack) does not reach the mirrors, so no ACT_GONE goes out for
+  them. The guard tried (never count a poison cell as eaten) was taken out.
+* ✔ (runtime, BUG-0792) Three players: two guests knocked out side by side far from the host respawned 2.3 m apart
+  (both at host + (2, 1)), and after a load both stayed at the pool's start 0.01-0.02 m apart (each one's nearest
+  partner was the other guest, within the 15 m that counts as "joined"; lab 20261112-065700).
+  `cell.spawn_slots`: a guest goes to its own slot around the HOST's cell (cell_logic::player_spawn_offset: radius 4 m,
+  guests 1-3 at 0 / 120 / 240 degrees); after a load it waits for the host's cell (not another guest's) and also
+  moves when another player's cell is within 2 m of it.
+* ✔ (runtime, BUG-0887, not reproduced) Over the player network (250 ms spikes every 7 s) a guest's cell swimming back
+  and forth was never drawn ahead of itself in the host's game (at most 0.03 m in 1351 rows, without and with the
+  Creature fall-off in Cell, lab 20261112-065254 / -065045): a cell slows down over ~1 s and the state's velocity is
+  the cell's +0x90 (? small for the soft-body avatar: inferred, not read), so the 0.25 s of extrapolation adds
+  nothing visible. The switch tried (drive.cell_fall) was taken out.

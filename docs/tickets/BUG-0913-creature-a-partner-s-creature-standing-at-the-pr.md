@@ -1,19 +1,19 @@
 ---
 id: BUG-0913
 title: Creature: a partner's creature standing at the prey blocks the game's walk-and-attack (the second attacker stops 2 m short and its attack key does nothing)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-10
 source: fix/w47-play-bots, lab lane 9, 2026-11-10 (play_creature's joint hunts)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests: play_creature (the bots walk around)
+fixed_in: unreleased
+branch: fix/w48-cell
+commits: f6d5a6b2
+tests: partner_pass, partner_pass_ff, play_creature (the bots walk around)
 signature:
-docs: docs/re/creature.md#creature-walk-and-use-blocked, docs/re/creature.md#creature-combat-click-target
+docs: docs/re/creature.md#creature-partner-pass, docs/re/creature.md#creature-walk-and-use-blocked, docs/re/creature.md#creature-combat-click-target
 related: BUG-0618
 ---
 
@@ -26,22 +26,37 @@ left click on the animal often picks the partner's creature instead (it stands i
 nothing either (ability status 12). The player has to walk around the partner by hand.
 
 ## Root cause
-Observed (lab lane 9, out/hunt_probe1.txt and out/hunt_probe2.txt of fix/w47-play-bots, 2026-11-10): the stop
-behind the partner and the dead key as above; after a walk to one side (a click on the ground) the next key press
-reaches the animal. Inferred, not checked: the game's creatures do not walk through each other and the game's
-walk-and-use goal (0x20) takes the straight way; the partner's puppet is held at the partner's place by the mod's
-drive, so it does not give way as a creature of the game might. Not checked: whether an NPC or a pack member of the
-game in the way stops the walk the same way (then it is the game's own behaviour and only the click is ours).
+Observed (lab, `creature.partner_pass` off, `coop_creature_partner_pass.py`): (a) with the host's creature 1.0-1.5 m from
+an animal and on the guest's way to it, the guest's walk-and-use (attack key) stopped at gap 1.4 m behind it for 12 s
+(2 of 3 such rounds, 20261112-072859); (b) a click on the animal from behind the host's creature took the host's
+creature as the target (+0xE7C = its puppet + 0x5A8) in every judged round (20261112-073905, -072859, -071805).
+Static (Ghidra, docs/re/creature.md#creature-partner-pass): the stop is Havok's own collision between the two
+creatures (the world's hkGroupFilter, isCollisionEnabled 0x10C3F90; the locomotion has no creature avoidance), and
+the click takes the hovered object, chosen by the hover update 0xB38F50 through the Creature mode's filter 0xD39070.
 
 ## Fix
-None yet (not part of the test task that found it). Ideas: the local player's walk-and-use ignores partners'
-puppets as obstacles; a click in the combat stance does not pick a partner's creature while friendly fire is off.
-The test bots walk around the partner now (play_creature.py, BUG-0618).
+coop.cpp `creature.partner_pass` (the owner's decision of 2026-11-11): in Creature, with friendly fire off and outside
+Rivals (`settings::kFriendlyFire`, `spaceext::rivals() || pfind::g_test_rivals`), (a) a hook on
+hkGroupFilter::isCollisionEnabled (`SporeCoop::Havok_GroupFilter_IsCollisionEnabled`) answers "no" for the pair of
+our avatar and a live partner's puppet (`creature_puppet_live`; NPC proxies stay solid), and (b) a hook on the hover
+filter (`SporeCoop::CreatureHoverFilter`) refuses a partner's puppet in the combat stance, so the hover and the click
+take the next object along the ray. The puppets and the avatar are copied once a frame into a table the hooks read
+(they may run inside Havok's step). `coop.partnerpass` prints what was skipped. Accepted (owner): players' creatures
+can stand inside each other. `coop_avatar_stale_target.py` switches the fix off (it needs a click on the partner).
+Switch `coop.fix creature.partner_pass off` (0.7.12).
 
 ## Verification
-Reproduce: two games on the creature fixture, both in the combat stance; the host clicks an animal and presses 1
-(walks up, bites), the guest clicks the same animal from the host's side and presses 1: it stops 2 m short.
+`coop_creature_partner_pass.py` (suite `partner_pass`, creature fixture, ~4 min; `partner_pass_ff`: friendly fire on,
+the skipping off): rounds at animals not of the players' family; the host's creature 1 m from the animal; the guest
+targets the animal from its other side, is put 6 m behind the host's creature and presses the attack key (must
+reach the bite's reach), then clicks the animal from behind (the game's target must be the animal). Also
+`coop.find rivals 1` must switch the skipping off.
+* FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-072859 (click 0 of 2, the walk stopped 1.4 m short in
+  2 rounds), 20261112-073905 (click 0 of 1), 20261112-071805 (click 0 of 3).
+* PASS: lab 20261112-073356, 20261112-073855 (clicks 3 of 3 / 4 of 4 on the animal, walks 2 of 2 reached), 20261112-074338
+  (with play_creature, settings_creature, avatar_stale_target, partner_pass_ff).
 
 ## History
 - 2026-11-10: opened.
 - 2026-11-11: the owner decided: fix in 0.7.13 (walk through the partner and click through it while friendly fire is off; unchanged with friendly fire on and in Rivals), docs/plan-0.7.13.md "Owner decisions (2026-11-11)".
+- 2026-11-12 (fix/w48-cell): fixed (creature.partner_pass: Havok group filter and the hover filter), FAIL and PASS runs in Verification.

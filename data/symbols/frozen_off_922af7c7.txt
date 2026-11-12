@@ -238,3 +238,6 @@ SporeCoop::MapU32Int_EventCounts_At ; BUG-0786: the space feature badges is off 
 SporeCoop::MapU32Int_StageMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
 SporeCoop::RbTree_FreeNodes ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
 SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+Simulator::Cell::SwallowWhole ; BUG-0827: a host cell a guest swallows whole is not marked as eaten (old behaviour)
+SporeCoop::Havok_GroupFilter_IsCollisionEnabled ; BUG-0913: a partner's creature still blocks the way (old behaviour)
+SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still picks a partner's creature (old behaviour)
