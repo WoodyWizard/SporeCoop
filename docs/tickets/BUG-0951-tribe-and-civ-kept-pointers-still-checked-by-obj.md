@@ -20,7 +20,7 @@ related: BUG-0426, BUG-0844, BUG-0842
 ## Report
 Found while fixing package L1 of 0.7.13 (fix/w48-freed); no player report. The L1 fixes moved the NPC proxies, the
 nest herds, the Tribe mirrors, the deferred destroys, the effect and animation handlers to `game::LiveRef`
-(the object list of the frame + the serial, docs/re/creature.md#creature-freed-block-reuse). About 100 other
+(the object list of the frame + the serial, docs/re/creature.md#creature-freed-block-reuse). About 60 other
 `object_alive(<kept pointer>)` checks in tribe.cpp and civ.cpp (the ones BUG-0426 lists: tribe.cpp chiefs, the target
 ring, the epic, held tools; civ.cpp vehicle and city tables) still read the kept object's own memory, which cannot
 tell a freed block or a new object of the same type at that address (a creature's block comes back within 0.3-1.3 s,
