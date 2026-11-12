@@ -41,6 +41,7 @@ count as the guest's colony, so the host's K_SPICE wrote 0.0 into the guest's re
 system (`allies colonize`), its colony stores 40 per city (`colonyspice set`), 30 s.
 * FAIL with `SPORE_FIX_OFF=space.colony_spice_mirror`: lab 20261112-034846 ([40.0, 40.0] -> [0.0, 0.0]).
 * PASS: lab 20261112-034405 (40.0 / 40.0 after 30 s; the host's mirror 0.0 / 0.0).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

@@ -44,6 +44,7 @@ its game is killed (SIGKILL: the rejoin token stays) and started again at once, 
 * FAIL with `SPORE_FIX_OFF=space.kept_leave`: lab 20261112-032648 (the rejoined guest's planet 01460035 tech 1, no
   civ; host `kept ... sent=0`, then `colonies=0`).
 * PASS: lab 20261112-032653 (`left=1 sent=1 done=1`, the colony tech 5 with the guest's pol again).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

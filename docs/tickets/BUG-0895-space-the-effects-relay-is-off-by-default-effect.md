@@ -48,6 +48,7 @@ games, the relay under 1 % of the main thread. Switch `coop.fix effects.space of
   fault).
 * Not done: a weapon shot or a tool effect fired by a player's own input (the workload uses the game's last created
   effect id, as the other stages' party tests do).
+* PASS again: lab 20261112-035922; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0451. Severity low, confidence medium.

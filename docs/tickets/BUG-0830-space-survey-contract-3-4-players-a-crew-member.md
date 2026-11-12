@@ -40,6 +40,7 @@ Carol at home, nobody paid. Switch `coop.fix space.survey_needed off` (0.7.12).
 and Bob accept (active), Carol accepts late and stays home, Alice and Bob jump there.
 * FAIL with `SPORE_FIX_OFF=space.survey_needed`: lab 20261112-035132 (`active` on all three after 90 s, +0 money).
 * PASS: lab 20261112-035023 (done on all three, +15000 once in every game, the reward tool).
+* PASS again: lab 20261112-035922; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

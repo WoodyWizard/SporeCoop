@@ -43,6 +43,7 @@ home system and back (its game collects the home colony), the host `away 0`, 12 
 * FAIL with `SPORE_FIX_OFF=space.colony_spice_away`: lab 20261112-034610 (the guest's colony 0.7 -> 10.8 again, the
   host's 10.8).
 * PASS: lab 20261112-034131 (the guest 0.7 -> 0.7, the host 10.8 -> 0.7, `queued=1 late=1`).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

@@ -45,6 +45,7 @@ switch off) to 1: the second and third colonies stand for the 49th and later. Th
   FAIL run (20261112-034947) failed for the wrong reason: the test listing used the cap too and showed one colony;
   the listing is uncapped since 52f5971d.
 * PASS: lab 20261112-035834 (30.0 on the guest).
+* PASS again: lab 20261112-035922; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

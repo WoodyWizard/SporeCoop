@@ -45,6 +45,7 @@ know (type 0, key 0DEC0826) is added to its record, it joins again: the restore 
 * PASS: lab 20261112-034256 (the item still in the record, the host keeps 10 = 9 + 1).
 * Not run: a real failure (spice without a free slot, an animal from another galaxy); the path after apply_inv is the
   same.
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

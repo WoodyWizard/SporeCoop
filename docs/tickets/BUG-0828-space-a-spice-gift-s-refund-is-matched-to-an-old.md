@@ -41,6 +41,7 @@ owed for game A: game B's hold 20 instead of 30. Switch `coop.fix space.gift_mat
 slot made at the start), the guest `gift noroom 1`, the host gives 10 again.
 * FAIL with `SPORE_FIX_OFF=space.gift_match_newest`: lab 20261112-035038 (game B's hold 20, not 30).
 * PASS: lab 20261112-034615 (30 again, `back_paid=1 pruned=1`).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

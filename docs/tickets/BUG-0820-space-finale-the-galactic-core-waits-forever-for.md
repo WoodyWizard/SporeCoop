@@ -42,6 +42,7 @@ star in the Grox zone, zone 2) was listed as missing. Switch `coop.fix space.fin
 the core and zooms in (`finale enter`).
 * FAIL with `SPORE_FIX_OFF=space.finale_entered`: lab 20261112-033047 (the guest `entered=0 waiting=1`).
 * PASS: lab 20261112-033051 (the guest enters the core).
+* PASS again: lab 20261112-035922; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

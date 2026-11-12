@@ -55,3 +55,4 @@ Atmosphere Generator with real clicks; the host's record of the planet by Planet
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0749. Severity medium, confidence high.
 - 2026-11-10: fixed on fix/w47-b2-space (record values sent instead of deltas; switch space.terra_elsewhere).
 - 2026-11-11: released in 0.7.12.
+- 2026-11-12: listed in the 0.7.13 package S1; already fixed in 0.7.12. space_terra_elsewhere passes again on fix/w48-space (lab 20261112-041012). The untested case named in Verification was not run.

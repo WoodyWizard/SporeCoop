@@ -40,6 +40,7 @@ off` (0.7.12). `coop.space trade`: `sales_owed=<waiting>/<owed>/<paid>/<dropped>
 2`: added, no answer), `trade away 1`, leaves, `trade away 0`.
 * FAIL with `SPORE_FIX_OFF=trade.sale_owed`: lab 20261112-035215 (the guest's game money stays 100000).
 * PASS: lab 20261112-034734 (100000 + 149940 once, `sales_owed=1/1/0/0` before the return).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).

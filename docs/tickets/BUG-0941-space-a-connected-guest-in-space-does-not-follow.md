@@ -58,6 +58,7 @@ host's slot Game9 (the same planet name), the host goes to the galaxy menu and l
   `...\games\game1\madas.spo` before and after; host `load shares 0`).
 * PASS: lab 20261112-034012 (the guest's game went to the galaxy menu and loaded the received world, now
   `...\games\game2\madas.spo`; host `load shares 1`; the guest in the host's world).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-11: opened.
