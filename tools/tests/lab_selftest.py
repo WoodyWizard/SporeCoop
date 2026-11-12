@@ -39,6 +39,7 @@ Cases (ticket):
                 "the test script used N MB"; a small one passes with its peak in the result (BUG-0916)
   mem_gate      the memory gate: a 4-game test waits while MemAvailable is short and starts when it is back; the
                 games of a test just started count; with nothing running it fails as not started after the wait
+  quick         lab.py run --quick: the quick entry's shortened command, marked quick, not counted by labcov
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -612,6 +613,52 @@ def same_second_case(tree, tmp):
                   f'({runs})')
 
 
+def quick_case(tree, tmp):
+    """lab.py run --quick (docs/06-testing.md#testing-lab-speed): a test with a quick entry runs its shortened command
+    (the flag's value replaced, or appended), is marked quick in results.json and summary.md and gets SPORE_LAB_QUICK=1;
+    the others run as they are; labcov does not count the quick result as a run of the test (release rule)"""
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import lab
+    import labcov
+    import suite
+    root = os.path.join(tmp, 'quick')
+    os.makedirs(os.path.join(root, 'game', 'SporebinEP1', 'mods', 'logs'))
+    git(root, 'init', '-q', '-b', 'main')
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+    lab.ROOT = root
+    lab.preflight = lambda: True
+    lab.ensure_lanes = lambda n: None
+    lab.spore = lambda *a, **k: subprocess.CompletedProcess(a, 0, '', '')
+    lab.lane_game = lambda lane: os.path.join(root, 'game')
+    lab.lane_alive = lambda lane: {2 * lane - 1: False, 2 * lane: False}
+    py = f'{sys.executable} -c "import os, sys; print(sys.argv[1:], os.environ.get(\'SPORE_LAB_QUICK\')); print(\'RESULT: OK\')"'
+    suite.T[:] = []
+    suite.add('longplay', py + ' --minutes 10 --seed 1', ('smoke',), quick={'--minutes': 3, '--rounds': 2})
+    suite.add('plain', py + ' --minutes 10', ('smoke',))
+    check(suite.quick_cmd(suite.T[0]).endswith('--minutes 3 --seed 1 --rounds 2') and
+          suite.quick_cmd(suite.T[1]) == suite.T[1]['cmd'], 'quick_cmd: the flag replaced, a missing one appended, '
+          'a test without quick unchanged')
+    a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip=','.join(str(n) for n in range(1, LANE)),
+                           lanes=1, no_build=True, cold=False, retry=0, quick=True)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = lab.cmd_run(a)
+    base = os.path.join(root, 'out', 'lab')
+    run = [d for d in sorted(os.listdir(base)) if os.path.isdir(os.path.join(base, d))][-1]
+    data = json.load(open(os.path.join(base, run, 'results.json')))
+    res = {r['name']: r for r in data['results']}
+    log = open(os.path.join(base, run, 'longplay.log')).read()
+    plain = open(os.path.join(base, run, 'plain.log')).read()
+    summary = open(os.path.join(base, run, 'summary.md')).read()
+    check(rc == 0 and data.get('quick') and res['longplay'].get('quick') and not res['plain'].get('quick'),
+          'quick: the run and the shortened test are marked quick, the other test is not')
+    check("'--minutes', '3'" in log and "'--rounds', '2'" in log and "] 1" in log and "'--minutes', '10'" in plain and '] 0' in plain,
+          'quick: the shortened command ran with SPORE_LAB_QUICK=1, the other test unchanged with SPORE_LAB_QUICK=0')
+    check('| longplay | ok (quick) |' in summary and 'QUICK run' in summary, 'quick: summary.md says so')
+    runs = labcov.runs_by_test([base])
+    check('longplay' not in runs and 'plain' in runs,
+          'quick: labcov does not count a quick result as a run of the test (the release rule wants the full one)')
+
+
 def kill_case(tree, tmp):
     """lab.py kill's lane selection, with the stubbed spore recording its calls (BUG-0253)"""
     sys.path.insert(0, os.path.join(tree, 'tools'))
@@ -727,7 +774,7 @@ def mem_cases(tree, tmp):
         lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
 
 
-CASES = ('lab_cases', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case', 'gate_cases',
+CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case', 'gate_cases',
          'watch_cases', 'interrupt_cases')
 
 

@@ -857,7 +857,10 @@ def main():
     for p in g.p:
         tot = p.orders['ok'] + p.orders['lost'] + p.orders['idle']
         ck(p.orders['lost'] == 0, f'{p.name}: no order lost ({p.orders["lost"]} of {tot})')
-        ck(tot >= 10, f'{p.name}: gave orders through real clicks ({tot})')
+        # 10 orders in a played session of 10 min; a quick run (lab.py --quick, docs/06-testing.md#testing-lab-speed)
+        # wants one per 40 s of play, at least 4: the order pace alone gives one per ORDER_EVERY (30 s)
+        need = min(10, max(4, int(played / 40)))
+        ck(tot >= need, f'{p.name}: gave orders through real clicks ({tot} >= {need})')
         ck(p.orders['ok'] >= 0.7 * tot, f'{p.name}: the members act on the orders ({p.orders})')
     ck(counter(st1, 'rejected') == g.rejected0,
        f'the host rejected no guest order ({counter(st1, "rejected") - g.rejected0}: {g.rejections[:3]})')

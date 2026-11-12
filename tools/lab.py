@@ -7,6 +7,8 @@
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
   lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
   lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
+  lab.py run nightly --quick           intermediate runs: the long play scenarios shortened (suite.py quick=,
+                                       docs/06-testing.md#testing-lab-speed); never for the release rule
   lab.py coverage [--days 7]           every suite test with its last run (main + worktrees), never-run ones
   lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
   lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
@@ -489,6 +491,8 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1',
                # the test's key frames go into the run folder (twoinst.keyframe, docs/06-testing.md#testing-key-frames)
                SPORE_LAB_RUN=os.path.abspath(logdir), SPORE_LAB_TEST=t['name'] + suffix)
+    # a quick run's shortened test knows it (docs/06-testing.md#testing-lab-speed); every other test runs full length
+    env['SPORE_LAB_QUICK'] = '1' if t.get('quick_run') else '0'
     if t.get('monitor') is not None:  # the invariant monitor's settings (tools/tests/monitor.py)
         env['SPORE_MONITOR'] = t['monitor'] if isinstance(t['monitor'], str) else json.dumps(t['monitor'])
     log = os.path.join(logdir, t['name'] + suffix + '.log')
@@ -566,6 +570,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
         lab_fails.append(f'LOAD lab: the headless Xwayland used {xwl["peak"]:.0%} of a core in the busiest {XW_STEP:.0f} s '
                          f'({xwl["avg"]:.0%} on average): saturated, the fps of this run are the machine\'s (BUG-0663)')
     return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok, xwayland=xwl, load=load,
+                quick=bool(t.get('quick_run')),
                 mem={k: v for k, v in mem.items() if k != 'over'},
                 harness=(not has_result or 'Traceback' in text) and not lab_fails,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
@@ -600,6 +605,10 @@ def new_run_dir(branch=None, now=None):
 def cmd_run(a):
     tree = worktree(a.branch) if a.branch else ROOT
     tests = suite.select(a.tests)
+    quick = getattr(a, 'quick', False) or os.environ.get('SPORE_LAB_QUICK') == '1'
+    if quick:  # docs/06-testing.md#testing-lab-speed: shorter play scenarios, marked in the results (labcov skips them)
+        tests = [dict(t, cmd=suite.quick_cmd(t), quick_run=True, minutes=max(2, t['minutes'] // 2)) if t.get('quick') else t
+                 for t in tests]
     if a.repeat > 1:  # hunting a flaky bug: the same tests many times
         tests = [dict(t, name=f'{t["name"]}#{k + 1}') for k in range(a.repeat) for t in tests]
     run_id, logdir = new_run_dir(a.branch)
@@ -633,7 +642,8 @@ def cmd_run(a):
         except Exception:  # noqa: BLE001
             return False
     os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 11) if _free(n)), ''))
-    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})')
+    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})'
+          + (f'; QUICK: {sum(bool(t.get("quick_run")) for t in tests)} shortened' if quick else ''))
     if not a.no_build:
         build(tree)
     ensure_lanes(a.lane_ids)
@@ -837,13 +847,19 @@ def cmd_run(a):
     os.replace(tmp_hist, hist_path)
     fcntl.flock(hist_lock, fcntl.LOCK_UN)
     hist_lock.close()
-    json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok, results=results),
+    json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok,
+                   quick=quick, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
     lines = [f'# lab run {run_id}', '', f'{tree_branch} {head} - {len(results)} tests, {a.lanes} lanes, '
-             f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '', '| test | result | lane | s | start |', '|---|---|---|---|---|']
+             f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '']
+    if quick:
+        lines += ['**QUICK run** (`--quick`): tests marked (quick) ran shortened; they do not count for the release rule '
+                  '(docs/06-testing.md#testing-lab-speed).', '']
+    lines += ['| test | result | lane | s | start |', '|---|---|---|---|---|']
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
         res = 'skip' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
-        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""}{" (load)" if r.get("load") else ""} | {r["lane"]} '
+        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""}{" (load)" if r.get("load") else ""}'
+                     f'{" (quick)" if r.get("quick") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
     mems = [r for r in results if (r.get('mem') or {}).get('script_rss_mb') or (r.get('mem') or {}).get('games_rss_mb')]
     if mems:  # docs/06-testing.md#testing-lab-memory
@@ -902,6 +918,8 @@ def main():
     r.add_argument('--no-build', action='store_true')
     r.add_argument('--retry', type=int, default=1)
     r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt)')
+    r.add_argument('--quick', action='store_true', help='the long play scenarios shortened (suite.py quick=; also '
+                   'SPORE_LAB_QUICK=1): intermediate runs only, the release rule does not count them')
     ln = sub.add_parser('lanes')
     ln.add_argument('n', type=int)
     rl = sub.add_parser('reload')

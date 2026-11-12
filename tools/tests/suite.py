@@ -24,6 +24,9 @@
             {'census_period': 60} to poll coop.census; 'off': no monitor), passed as SPORE_MONITOR
   allow     log gate findings this test may have, each allow(gate, ticket, reason, ...) with a ticket
             id and a reason: printed as "allowed" in the result, never silent
+  quick     {flag: value} for a quick run (`lab.py run --quick`, docs/06-testing.md#testing-lab-speed): the long play
+            scenarios with a shorter play time that still runs each of their checks once; full length stays the
+            default and the only one the release rule counts
   uses_free_lane  the test plays on SPORE_FREE_LANE (outside the run), takes that lane's lock
             (<lab folder>/.update_check-lane<N>.lock) and prints `LAB-WATCH lane=<N> since=<unix time>`
             once it holds it: the lab watches that lane for crash / hang reports and dead games from
@@ -48,7 +51,7 @@ ALLOW_ALL = [
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
-        uses_free_lane=False, timeout=None, gates=None, allow=(), monitor=None):
+        uses_free_lane=False, timeout=None, gates=None, allow=(), monitor=None, quick=None):
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
@@ -59,7 +62,19 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture, reports=reports,
                   uses_free_lane=uses_free_lane, timeout=timeout, gates=gates, allow=list(allow),
-                  monitor=monitor))
+                  monitor=monitor, quick=quick))
+
+
+def quick_cmd(t):
+    """the command of a test in a quick run (`lab.py run --quick`, docs/06-testing.md#testing-lab-speed): its `quick`
+    entry {flag: value} replaces the value of each flag in the command (appended when the command has none); the
+    command itself for a test without one"""
+    import re
+    cmd = t['cmd']
+    for flag, v in (t.get('quick') or {}).items():
+        pat = re.escape(flag) + r'[ =]\S+'
+        cmd = re.sub(pat, f'{flag} {v}', cmd, count=1) if re.search(pat, cmd) else f'{cmd} {flag} {v}'
+    return cmd
 
 
 def games(t):
@@ -678,7 +693,7 @@ add('editor_after_swap', P + 'coop_editor_after_swap.py', minutes=5)  # BUG-0318
 add('editor_after_load', P + 'coop_editor_after_swap.py --no-swap', minutes=5)  # BUG-0318: the same without an avatar swap (only the loaded world's new avatar)
 add('ability_bar', P + 'coop_ability_bar.py', minutes=5)  # a guest's ability bar holds its own creature's abilities after the swap, keys do not fault (BUG-0358; SPORE_FIX_OFF=creations.ability_bar fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
-add('play_civ', P + 'play_civ.py --minutes 10', ('nightly', 'detector'), minutes=13, fixture='civ_npc')
+add('play_civ', P + 'play_civ.py --minutes 10', ('nightly', 'detector'), minutes=13, fixture='civ_npc', quick={'--minutes': 4})
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
@@ -788,21 +803,21 @@ add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), 
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):
     add(f'chaos_{st}_long', P + f'coop_chaos.py --fixture {st} --minutes {m}', ('nightly',), minutes=m + 1)
 # two bots PLAY the Cell stage together (real input: swim, eat, flee, revive), sync / food / regression checks
-add('play_cell', P + 'play_cell.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='cell')
+add('play_cell', P + 'play_cell.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='cell', quick={'--minutes': 3, '--start-food': 150})
 # played like people play (real input, measurements; docs/stability/creature.md)
 add('puppet_far_jump', P + 'coop_puppet_far_jump.py', warm=True, minutes=5)  # BUG-0658: the guest's avatar jumps 500-1000 m (coop.abilities goto, the tour) with its captions closed as a player does: the host draws its puppet on its ground where the guest is
 add('puppet_far_jump_caption', P + 'coop_puppet_far_jump.py --keep-caption', ('extended',), warm=True, minutes=5, gates={'off': ('monitor',)})  # BUG-0658: the same with a caption holding the guest's game (the tours): FAILS at hop 2 by design (the guest's avatar is not simulated inside the collision, the host's copy is lifted 5.3 m)
 add('creature_family_eggs', P + 'coop_creature_family_eggs.py', warm=True, minutes=4)  # BUG-0660: eggs a member of the players' family herd lays on the host lie in the guest's nest too (SPORE_FIX_OFF=nest.eggs_family fails)
 add('creature_family_eggs_die', P + 'coop_creature_family_eggs.py --die', warm=True, minutes=4)  # BUG-0660: after the host's respawn at the nest the nest has the same eggs on both games
-add('play_creature', P + 'play_creature.py --minutes 10', ('nightly', 'detector'), minutes=12)
+add('play_creature', P + 'play_creature.py --minutes 10', ('nightly', 'detector'), minutes=12, quick={'--minutes': 5})
 # games played by bots through real input for many minutes (docs/stability/<stage>.md)
-add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='tribe')
+add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='tribe', quick={'--minutes': 5})
 # the same tests over a bad network between guest and host (tools/tests/netem.py)
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
     add(f'{name}_mobile', 'SPORE_NET=mobile ' + P + cmd, ('nightly',), minutes=4)
 # the Space stage played by two bots with real input (docs/stability/space.md)
-add('play_space', P + 'play_space.py --minutes 12', ('nightly', 'detector'), minutes=14)
+add('play_space', P + 'play_space.py --minutes 12', ('nightly', 'detector'), minutes=14, quick={'--minutes': 5})
 add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe --minutes 5', ('nightly',),
     minutes=6)
 
@@ -887,9 +902,9 @@ add('cell_spare', P + 'coop_cell_spare.py', minutes=6)  # a crowd of cells on bo
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
 # the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)
 add('campaign', P + 'coop_campaign.py --minutes 8', ('campaign',), minutes=150,
-    timeout=5 * 3600)
+    timeout=5 * 3600, quick={'--minutes': 3})
 add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign', 'detector'),
-    minutes=25, timeout=3600)
+    minutes=25, timeout=3600, quick={'--minutes': 2})
 # BUG-0276: the guests get the host's world after a live stage change with four players (the share
 # save posted in the first frames of Tribe / of the solar system); a stuck finding is the bug.
 # A timing race: FAIL with SPORE_FIX_OFF=world.share_settle_reset in about 1 of 3 games (--repeat)
@@ -898,7 +913,7 @@ add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes
 # BUG-0685: the Tribe stage of the campaign with four players, its play and its raids up to Civ (the stage where a
 # guest's mirror of the host's tribe leader went missing in the whole campaign)
 add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', (),
-    minutes=45, timeout=3600)
+    minutes=45, timeout=3600, quick={'--minutes': 2})
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran
@@ -918,7 +933,8 @@ for _st, _fx in (('cell', 'cell'), ('creature', 'creature'), ('tribe', 'tribe'),
 # D0 (docs/plan-0.7.7.md): 40 min of play with the guest's death, an editor, the main menu, a restart of its game
 # and a rejoin, the detector all along (docs/06-testing.md#testing-long-session); fails on faults / crashes only
 for _st in ('creature', 'tribe'):
-    add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, timeout=4800, fixture=_st)
+    add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, timeout=4800, fixture=_st,
+        quick={'--minutes': 6})
     add(f'long_{_st}_short', P + f'coop_long_session.py --stage {_st} --minutes 6', ('detector',), minutes=20, fixture=_st)
 
 # BUG-0631 / BUG-0621: the address space census over a played session (docs/06-testing.md#testing-mem-census)

@@ -374,11 +374,28 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--minutes', type=float, default=10)
     ap.add_argument('--seed', type=int, default=None)
+    # a quick run (lab.py --quick, docs/06-testing.md#testing-lab-speed): 3 min of play stay at level 1, where the host's
+    # game has no hunters near the players and the hunt trial (BUG-0910) finds none to try; the food a 10 min run
+    # reaches (126-264: level 2-3) given at the start puts the play and the trial where the long run has them
+    ap.add_argument('--start-food', type=int, default=0)
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  play cell: {a.minutes} min, seed {seed}', flush=True)
     host, guest = start('cell')
     ck = Checks()
+    if a.start_food:
+        before = pool(host)['food']
+        host.call(f'coop.pool food {a.start_food}')
+        t1 = time.time()
+        while time.time() - t1 < 20:
+            time.sleep(1)
+            fh, fg = pool(host)['food'], pool(guest)['food']
+            if fh is not None and fh == fg and fh >= (before or 0) + a.start_food // 2:
+                break
+        time.sleep(6)  # the level change and its world scale on both games
+        lv = [re.search(r'\blevel=(\d+)', pool(c)['raw']) for c in (host, guest)]
+        print(f'  start food +{a.start_food}: food {pool(host)["food"]} / {pool(guest)["food"]}, level '
+              + ' / '.join(m.group(1) if m else '?' for m in lv), flush=True)
     rng = random.Random(seed)
     P = [Player('host', host, 0, 1, random.Random(rng.random())), Player('guest', guest, 1, 0, random.Random(rng.random()))]
     t0 = time.time()
@@ -542,7 +559,9 @@ def main():
               f'max {max(pl or [0]):.2f}', flush=True)
         ck(c and pct(c, .9) <= 0.6, f'cells in sync on the guest (p90 {pct(c, .9):.3f} m)')
         ck(pl and pct(pl, .9) <= 1.5, f'players in sync (p90 {pct(pl, .9):.2f} m)')
-        ck(len(partner_missing) <= max(1, len(hist) // 10),
+        # one miss in ten looks; at least 2 allowed (a quick run of 3 min has ~18 measures: one miss was the whole
+        # budget there; 10 min allow 6 as before, docs/06-testing.md#testing-lab-speed)
+        ck(len(partner_missing) <= max(2, len(hist) // 10),
            f'each sees the partner ({len(partner_missing)} misses in {2 * len(hist)} looks: {partner_missing[:6]})')
         print(f'  damage taken: host {hs["damage_taken"]} hp in {hs["bites_taken"]} bites, guest {gs["damage_taken"]} hp in '
               f'{gs["bites_taken"]} bites', flush=True)
