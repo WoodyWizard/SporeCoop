@@ -178,6 +178,13 @@ starts, and the *Co-op* window offers an **Update** button (`[update] check=0` i
 turns the check off). The setup updates and uninstalls too. Prefer files? The release zip has
 `install.bat` / `uninstall.bat`.
 
+**Antivirus warnings:** some antivirus programs flag the setup or the loader DLL as a threat. These are
+false positives of heuristics (the loader replaces `steam_api.dll` and the setup downloads files);
+every release is built by GitHub Actions from this source, with `SHA256SUMS.txt` and signed build
+provenance (`gh attestation verify <file> --repo WoodyWizard/SporeCoop`). How to check your files and
+install without the setup: [Antivirus warnings and verifying a release](docs/INSTALL.md#install-antivirus);
+what each file does: [SECURITY.md](SECURITY.md).
+
 The full guide (checking your game build, Linux, installing by hand, the internet, updating,
 uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 

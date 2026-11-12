@@ -6523,3 +6523,29 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
 * Not on game instances, on purpose: LAN discovery from the internet, the half-open flood and a restart inside a
   callback need addresses or callbacks a lab lane cannot make; a late realign chunk needs a reordering the lab's
   netem does not give on demand. The unit cases drive the real Session / receiver code.
+
+## Trust and install: uninstall, the setup close race, version resources, LAA (2026-11-12, fix/w48-trust)
+<a id="testing-trust-install"></a>
+
+* `win_unit` without a lane: `SPORE_WIN_UNIT_PREFIX=build/wineprefix python3 tools/tests/win_unit.py [--old-...]` runs
+  `build/win_tests.exe` with a Bottles runner's wine (soda-11.0-10, or `SPORE_WINE=<binary>`) in a private prefix
+  under the repository (~3 min the first time, the prefix is made on the fly; ~1.5 min later). No game, no lane,
+  no Bottles: for installer and updater packages that need no lab.
+* `test_uninstall` (BUG-0851, `--old-uninstall`, setup `/olduninstall`): (a) loader missing, `steam_api_orig.dll`
+  there: the game's file comes back; (b) `mods\coop.dll` held open: failure naming it, the next try succeeds;
+  (c) a player's `mine.sym` survives; (d) the update lock held by another thread: refused, nothing changed;
+  (e) no `steam_api_orig.dll`: refused, nothing removed; (f) a half removed install still offers Uninstall.
+* `test_uninstall_bat` (BUG-0851, `--ubat`; `--old-uninstall` runs the uninstall.bat of 572c8e68): a
+  `steam_api.dll` Steam put back stays, `mods\coop.dll` goes, with and without `SporeCoopSetup.exe` next to it.
+  Wine's `findstr` misses a string inside one long binary "line": the loader carries its tag as a line of its own
+  (`\r\nsporekit-loader (SporeCoop)\r\n`, loader.c) for uninstall.bat. Wine's `fc` has no `/b` (exit 2 always).
+* `test_setup_close` (BUG-0853, `--old-closewait`): `SPORECOOP_SETUP_TEST_DONE_DELAY=2000` holds the setup's
+  WM_DONE 2 s after the last file; the test waits for the Close button to be enabled again before its final
+  WM_CLOSE. The old wait (all files new, then one WM_CLOSE) now always fails (`CHECK(ended)`).
+* `tools_selftest.py laa` (BUG-0862, `SELFTEST_LAA=<old copy>`): tools/laa.py on a fake PE32; checked by hand on a
+  copy of the GOG 2024 exe: 2 bytes change (Characteristics 0x0102 -> 0x0122, checksum 0x017c5d61 -> 0x017c5d81),
+  `code_sha256` stays 5a8267b2..., restore gives dc04aee5... again. The PE checksum code matches Wine's notepad.exe.
+* `tools_selftest.py symlist` (BUG-0851): `upd::kSymbolFiles` and uninstall.bat name every `data/symbols/*.sym`.
+* `tools/pe_version.py --expect X.Y.Z <files>` (BUG-0784, in tools/package.sh): every release binary has a
+  VERSIONINFO of the version. `--repro-sha256`: two builds of one commit in different folders give equal values
+  (the raw files differ in 10 bytes: two time stamps and the CodeView GUID).

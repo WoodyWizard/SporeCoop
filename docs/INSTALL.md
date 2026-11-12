@@ -176,8 +176,51 @@ the release's `SHA256SUMS.txt` either way.
 5. Start SPORE as usual (from GOG Galaxy or the desktop shortcut).
 
 Some antivirus programs warn about a replaced `steam_api.dll`: that file is the SporeCoop
-loader. Its source is in this repository (`loader/loader.c`); the release is built by
-GitHub Actions from that source.
+loader. See [Antivirus warnings and verifying a release](#install-antivirus).
+
+### Antivirus warnings and verifying a release
+<a id="install-antivirus"></a>
+
+Some antivirus programs (on VirusTotal about 10 of 70, among them Microsoft Defender's
+machine-learning detection `Wacatac.B!ml`, Bitdefender, 360 Total Security) flag `SporeCoopSetup.exe`,
+`steam_api.sporekit.dll` or the release zip (GitHub #200, #201). These are **false positives** of
+heuristics: SporeCoop does what such heuristics look for, openly and for a reason:
+
+| What SporeCoop does | Why |
+|---|---|
+| Its loader takes the name `steam_api.dll` and keeps the game's file as `steam_api_orig.dll` ("DLL side-loading") | Spore loads `steam_api.dll` at start: the loader forwards every Steam call to the original and loads SporeKit. This is how the mod gets into the game. |
+| `sporekit.dll` and `coop.dll` hook game and Direct3D functions (MinHook) | That is what a game mod is: co-op needs the game's own functions. |
+| `coop.dll` opens network sockets | The co-op connection to the other players (UDP 47810) and LAN discovery. |
+| The setup and the in-game update download a file from GitHub and replace DLLs | Updates come only from this repository's GitHub releases and are checked against the release's `SHA256SUMS.txt` before anything is written. |
+| The setup can restart itself as administrator | Only when Windows refuses to write into the game folder (`C:\Program Files (x86)`), and only after you say yes. |
+| The files are not code-signed | A code-signing certificate is not free; signing is planned. |
+
+The source of every file is in this repository and every release is built by GitHub Actions from the
+tag (the [workflow](../.github/workflows/build.yml)): nobody uploads binaries by hand. What each file is
+and does: [SECURITY.md](../SECURITY.md).
+
+**Check that your files are the released ones:**
+
+1. **Hashes:** each release has `SHA256SUMS.txt`. On Windows (PowerShell):
+   `Get-FileHash .\SporeCoopSetup.exe -Algorithm SHA256`; on Linux: `sha256sum SporeCoopSetup.exe`.
+   The value must be the one in `SHA256SUMS.txt`.
+2. **Build provenance** (releases after 0.7.12): GitHub signs a record of which workflow run built each
+   file from which commit. With the [GitHub CLI](https://cli.github.com/):
+   `gh attestation verify SporeCoopSetup.exe --repo WoodyWizard/SporeCoop`. This works for the zip, the
+   pack, the setup and the three DLLs inside the zip (`steam_api.sporekit.dll`, `sporekit.dll`,
+   `mods\coop.dll`). The release page on GitHub links the attestations too.
+3. **File details:** releases after 0.7.12 carry version information (Explorer: right-click > Properties >
+   Details): product SporeCoop, the version, a description and the original file name.
+4. **Build it yourself** (Linux, llvm-mingw `20261006` as in the workflow, see [Building from source](../README.md#building-from-source)): `make` and
+   `tools/package.sh` on the release tag. The binaries differ only in the link time stamp and the debug
+   record's id; `tools/pe_version.py --repro-sha256 <file>` hashes a file without those fields, so your
+   build and the released file (stripped like `tools/package.sh` does) give the same value.
+
+**Install without the setup:** if your antivirus blocks `SporeCoopSetup.exe`, use the zip and
+`install.bat` (*With install.bat* above): a plain batch file you can read in Notepad before you run it.
+Your antivirus may still flag the DLLs; then add an exception for the `SporebinEP1` folder only after
+checking the hashes, or report the file to your antivirus vendor as a false positive (most have a form
+for it). Please do not turn your antivirus off.
 
 ## 4. Install on Linux (Wine, Bottles, Lutris, Proton)
 
@@ -279,8 +322,14 @@ your `mods\coop.ini` and `mods\sporekit.ini` (name, last address, `[update] chec
 never installs its older version over a newer one without asking (the button then says **Install
 older x.y.z**; silent mode `SporeCoopSetup.exe /S` needs `/downgrade` for that).
 
-**Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
-removes `sporekit.dll` and `Data\SporeCoop.package`; delete the `mods` folder too if you like.
+**Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back
+(also when an antivirus removed the loader) and removes `sporekit.dll`, `mods\coop.dll`, SporeCoop's
+symbol files and `Data\SporeCoop.package`; your settings and logs in `mods` stay, delete the `mods`
+folder too if you like. Since 0.7.13 it stops without changing anything while an update runs, when
+`steam_api_orig.dll` is missing (verify the game files in Steam / GOG Galaxy first) or when the game
+still holds a file, and it names a file it could not remove (close Spore and press Uninstall again).
+`uninstall.bat` runs `SporeCoopSetup.exe` when it lies next to it, and otherwise never puts
+`steam_api_orig.dll` over a `steam_api.dll` that is not SporeCoop's loader (for example one Steam put back).
 By hand: delete `steam_api.dll`, rename `steam_api_orig.dll` back to `steam_api.dll`, delete
 `sporekit.dll`, `mods\` and `..\Data\SporeCoop.package`.
 
@@ -339,3 +388,23 @@ undoes a frame cap another mod or program sets.
   `d3d9.maxFrameRate = 30` (a cap); the lab checked that DXVK's cap holds with SporeKit and the mod.
 * Without vsync, the tearing goes away only with the program that lifted the cap removed (Spore ModAPI or the mod
   that unlocks the frame rate) or its frame cap set.
+
+### Out of memory in big worlds: Large Address Aware (optional)
+<a id="install-laa"></a>
+
+Spore is a 32-bit program and gets 2 GB of address space. Very big worlds and adventures can run out of it (a
+crash on a failed allocation, BUG-0631, BUG-0621). The *Large Address Aware* flag in `SporeApp.exe`'s header lets
+it use 4 GB on 64-bit Windows and under Wine. SporeCoop never sets it by itself. If you want it, `tools/laa.py` in
+the [repository](https://github.com/WoodyWizard/SporeCoop) (Python 3, close Spore first) does it with a verified
+backup (BUG-0862):
+
+```
+python3 tools/laa.py status  "SPORE/SporebinEP1/SporeApp.exe"
+python3 tools/laa.py set     "SPORE/SporebinEP1/SporeApp.exe"   # backup: SporeApp.exe.pre-laa (+ .sha256)
+python3 tools/laa.py restore "SPORE/SporebinEP1/SporeApp.exe"   # the original back, checked by its hash
+```
+
+It changes only the flag and the header checksum; SporeCoop finds its addresses for such an exe as before (by its
+`code_sha256`, section 2), and the setup then says "same code as the GOG 2024 build". The Steam exe (with Steam's
+DRM wrapper) is refused unless you add `--force`. Not tested in long co-op sessions yet: if the game misbehaves,
+`restore` and send a report.
