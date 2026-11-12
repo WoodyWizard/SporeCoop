@@ -1799,6 +1799,24 @@ std::string objects_near(const net::Vec3& pos, float r, void* self, int max_n)
     return out.empty() ? "none" : out;
 }
 
+// BUG-0894: the host's NPC and Tribe member snapshots carry a velocity that the drivers write raw into the body
+// (kVelOff) or turn into SetDesiredSpeed: a NaN / Inf there (the BUG-0292 class) moved the proxy to a NaN position, and
+// pose_refused guards only positions and rotations. Such a velocity is taken as 0 where the snapshot is received.
+// `coop.fix game.finite_vel off`: as received (0.7.11).
+static bool g_finite_vel_fix = true;
+COOP_FIX("game.finite_vel", "BUG-0894", g_finite_vel_fix, "creature / tribe: a NaN or Inf velocity in the host's NPC or member snapshot is taken as 0, never written into a body");
+static uint32_t g_vel_zeroed = 0;
+uint32_t vel_zeroed() { return g_vel_zeroed; }
+net::Vec3 finite_vel(const net::Vec3& v)
+{
+    if (!g_finite_vel_fix || (std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
+                              std::fabs(v.x) < 1e4f && std::fabs(v.y) < 1e4f && std::fabs(v.z) < 1e4f))
+        return v;
+    if (g_vel_zeroed++ < 5 && H)
+        H->log(M, SK_WARN, "a snapshot velocity (%g %g %g) is not finite: taken as 0 (BUG-0894)", v.x, v.y, v.z);
+    return {};
+}
+
 bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
 {
     return pose_refused(&pos, &rot) || pose_refused(&vel, nullptr);
