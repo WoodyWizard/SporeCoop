@@ -2884,3 +2884,15 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `coop_creature_partner_pass.py` prints them ("stopped by: no start", "beside the partner"), about 1
   round in 5 for (a) and 1 in 15 for (b). docs/re/creature.md#creature-partner-pass-rel.
 * Ticket: BUG-0964, BUG-0965
+* Fixed (unreleased, fix/w48-walk, 2026-11-12): not a player bug. The test's `coop.npc gopos` put the guest's creature
+  at the terrain's height under a nest mound; inside the mound's collision Havok held it in every direction (a), also
+  after a few steps toward the animal (b). gopos puts the point onto the game's surface (tools.gopos_surface); test
+  walk_start. docs/re/creature.md#creature-walk-held-in-mound.
+
+## Tests: unit's LAN discovery check can fail while another lane runs unit (2026-11-12, test: fix/w48-walk)
+<a id="issue-unit-discovery-parallel"></a>
+
+* What happens: `unit` fails in tests/net_tests.cpp test_discovery (`found.size() == 1`) once in a smoke while other
+  lanes ran their smokes; a rerun passes.
+* Reproduce: `unit` on two lanes at the same moment (the test hosts on a fixed port of 127.0.0.1).
+* Ticket: BUG-0969

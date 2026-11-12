@@ -6673,3 +6673,32 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
 * `cell_own_load` (BUG-0915): since BUG-0345 / BUG-0638 a choice (choices.ini) holds only in a world recorded for it
   (worlds.ini); the test sets the guest's record (`coop.creations worlds set cell <inst>`), loads the world again
   (`coop.worldfix queue 1 0`) and restores the record at the end.
+
+## A creature put by a test inside a nest mound: walk_start (2026-11-12, fix/w48-walk)
+<a id="testing-walk-start"></a>
+
+* Pitfall (BUG-0964): a creature put at GetHeightAt near a nest (or on a rock's spot) is inside the mound's collision
+  and Havok holds it in every direction: the attack key, a click on the ground, any WalkTo do nothing, for as long as
+  it stays there (also after another teleport to the same place). It looked like "a press of the attack key that
+  never starts the walk" in partner_pass (about 1 round in 5). `coop.npc gopos` puts the point onto the game's
+  surface now (`tools.gopos_surface`; the median of five samples 1.2 m apart: the surface's ray cast hits creatures); a test that teleports with its own command (`coop.abilities put`,
+  `goto`, game::teleport) near a nest must do the same (lift the creature, it falls onto the mound).
+* `coop_creature_walk_start.py` (suite `walk_start`, ~3 min; `walk_start_solo`: the host's game alone, no session;
+  `walk_start_walkin`: no teleport, the game walks the creature to each point, every fix off, extended): animals near
+  the fixture's herds, the avatar put 6 m from each, the target set (`coop.abilities target <ptr> any`), the attack key:
+  the avatar must move in its own game every time. A held press prints `coop.abilities walk raw`'s node, steering,
+  nest and surface lines, a plain walk to the side / back / ahead (`coop.abilities walkto`) and a 2 m lift.
+  `SPORE_FIX_OFF=tools.gopos_surface` fails (4 of 16, lab 20261112-143501).
+* `coop.abilities walk` reads the game's view of a walk: behaviour node (ai +0x1D8), stimuli, the locomotion's request
+  and speeds, the facing's cos to the goal; `raw` adds the steering (Locomotion_Steer called once), objects within
+  5 m, the nearest nest with the terrain and surface radius, and the creature's dwords +0..+0x1700 (diff a held and a
+  walking creature: only position and velocity differed).
+
+## A handled fault of the game's audio init at boot (2026-11-12, fix/w48-walk)
+<a id="testing-boot-audio-fault"></a>
+
+* BUG-0967: `0xC0000005 at 0x011ECE4F (data 0x00000120)` right after `App::cSporeApp::Init -> 1`, before the galaxy
+  menu, in the game's own audio init (FUN_011ECE30 with a null third argument; the rw::audio core, Snd9Service), in
+  both games of a lane at once; the game goes on. Seen in 2 recorded runs (20261101-143943, 20261112-135150).
+  `Checks.faults` (twoinst.py) lets a game pass whose only faults are this signature and prints it without the
+  "total faults: N" the lab counts; `SPORE_BOOT_FAULT_STRICT=1` counts it again. tools_selftest `bootfault`.
