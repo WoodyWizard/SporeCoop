@@ -994,6 +994,18 @@ void notice(const std::string& text, int from); // feed + chat log on every play
 // its NPCs again, npc.cpp) and keeps the DNA it earns; the DNA goes to the host's pool when the
 // host is back (the host's total would otherwise undo it).
 bool g_host_away = false;
+// BUG-0829: the DNA a guest earned while the host was away is in its game already (the bar moved) and goes to the host
+// at the away end. A host total sent before the host added it (the 2 s resend, a change of the host's own) arrived after
+// it: the guest's DNA went down to it (SetEvolutionPoints, the bar stays) and up again with the next total
+// (AddEvolutionPoints: the bar moved a second time, the guest's bar ahead of the host's by that DNA). Now, after the
+// away end, a total without the host's "earned by this player" cause is not applied until one with it came (at most
+// kSoloAwait s). `coop.fix core.solo_await off`: every total applied (0.7.11).
+static bool g_solo_await_fix = true;
+COOP_FIX("core.solo_await", "BUG-0829", g_solo_await_fix, "creature: DNA a guest earned while the host was away moves its evolution bar once (older host totals are not applied over it)");
+static float g_solo_await = 0;          // the solo DNA sent at the away end, its total not seen yet
+static double g_solo_await_until = 0;
+static constexpr double kSoloAwait = 5.0;
+static uint32_t g_solo_stale_totals = 0; // tests: host totals older than the solo DNA, not applied
 double g_host_away_since = -1;
 float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
@@ -1405,6 +1417,10 @@ void host_away_tick(double now)
         w.f32(g_solo_dna);
         g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
         g_dna_fwd++;
+        if (g_solo_await_fix) { // BUG-0829: the host's totals until the one that pays it are older than it
+            g_solo_await = g_solo_dna;
+            g_solo_await_until = now + kSoloAwait;
+        }
     }
     std::string dna = g_solo_dna >= 1 ? ": your " + std::to_string((int)g_solo_dna) + " DNA go to the pack" : "";
     if (end == dna_route::SoloEnd::SendBack)
@@ -4554,9 +4570,14 @@ void end_session(EndPath path, bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_solo_await = 0; // BUG-0829
     g_pace_heard = 1; // BUG-0510
     g_pace_carry.reset();
     g_dna_spend_owed = 0; // BUG-0466
+    if (g_own_editor_flags_fix && !(game::mode_id() == modes::kEdit || game::mode_id() == modes::kEditor)) {
+        g_own_editor = false; // BUG-0811: (in an editor its result still comes, and charges, as in a game of one)
+        g_own_editor_charge_due = false;
+    }
     g_dna_out.clear();
     g_dna_notices.clear();
     g_state_mode_override = 0; // tests
@@ -4772,6 +4793,22 @@ void setup_callbacks()
                 dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
             } else
                 dna_pace_heard(1);
+            if (r.ok() && g_solo_await > 0) { // BUG-0829
+                bool paid = false;
+                for (auto& p : parts)
+                    paid = paid || (p.cause == dna_ledger::Cause::Earned && p.player == g_sess.my_id() &&
+                                    p.amount >= g_solo_await * 0.5f);
+                if (paid || H->time_seconds() > g_solo_await_until)
+                    g_solo_await = 0;
+                else if (!g_host_away && dna_route::host_total(false, false, game::avatar() != nullptr) == dna_route::Total::Apply) {
+                    g_solo_stale_totals++;
+                    LOG("dna: host total %.0f before it added the %.0f DNA earned here while it was away: not applied (BUG-0829)",
+                        total, g_solo_await);
+                    for (auto& p : parts)
+                        dna_note(p, g_sess.my_id());
+                    return;
+                }
+            }
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
                 if (g_dna_spend_fix)
@@ -5248,7 +5285,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
-    SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("host_away=%d (times %u) solo_dna=%.1f solo_stale_totals=%u\n", (int)g_host_away, g_host_away_count, g_solo_dna,
+        g_solo_stale_totals);
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
         (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
         g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
