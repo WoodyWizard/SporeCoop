@@ -4193,3 +4193,14 @@ while references to it remain).
   own_world::elsewhere()); the game's own value comes back otherwise. ✔ Lab: after `coop.dna add 250` in its own
   world the guest's game evolved 21 of 133 nests within 5 s; with the switch off 0 in 40 s (20261112-030351 /
   20261112-031349).
+
+## The hatch of an NPC egg on a guest (2026-11-12, fix/w48-reports)
+<a id="creature-egg-hatch-window"></a>
+
+BUG-0896. ✔ The hatchling of a host egg reaches a guest as an NPC proxy about 0.07-0.1 s after the hatch (the NPC
+stream); the egg mirror followed the host's state only with the 1 Hz egg snapshot (nest.cpp host_tick): up to ~0.9 s
+of a whole, highlighted egg with the hatchling (half health) standing in it on the guest (lab 20261112-052254). A
+click or bite there takes the hatchling: it dies at once, its body lies at the egg's place and the host credits the
+guest's hunt (+N DNA "from X's hunt"). ✔ An eat of an egg never pays DNA and a hit on an egg sends nothing. Since
+nest.hatch_now the host checks the eggs of its last snapshot every frame and sends a snapshot at once on a hatch /
+eat / removal (`coop.nest` early=N).

@@ -2816,3 +2816,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   brief lock), BUG-0849 (a share save in the end of Tribe: reproduced as the fault at 0xBCAB07), BUG-0854 (saves and
   the quit in an adventure: reproduced at GetPlanetRecord+0x2D). The entries above that name them are history.
 * Not reproduced: BUG-0817 (the guest's UFO mirror does not come back from a Creature save).
+
+## Space: a guest that earned a badge faults when it loads the host's world at a rejoin from the same game (2026-11-12, test, fix/w48-reports)
+<a id="issue-space-badge-rejoin-fault"></a>
+
+* What happens: the guest earns a badge, leaves, joins again from the same running game; 4 ms into its load of the
+  host's world (slot Game2) it faults at a changing address outside the exe (0xC0000005 / 0xC0000096 / 0xC000001D,
+  edx=0x00420065) and dies without a crash report. With space.keep_badges on and off.
+* Reproduce: `BADGES_RESTART=0 SPORE_DETECTOR=20 python3 tools/lab.py run space_badges_rejoin --lane 4 --retry 0`
+  (9 of 10 runs).
+* Known: not with the guest's game restarted before the rejoin; not for a host that earned a badge and loads its own
+  save; not without an earned badge (space_items_rejoin). Inferred: something made at the badge's earning (its
+  caption, card or event log entry) is used after the old Space world is gone.
+* Next steps: why no crash report is written; the same in a solo game.
+* Ticket: BUG-0956

@@ -6237,3 +6237,51 @@ creature is freed 10-40 frames later, the next creature of its species takes the
 * `own_space` (fixture space, ~2 min): spice A x7 in the co-op hold, then the guest's own save keeps its hold for
   25 s (`coop.space trade inv`, BUG-0816) and its stage traits while the host's change (`coop.wsync stage 0 <hex>`,
   `coop.wsync dump`, BUG-0818).
+
+## An egg the guest eats or hits (2026-11-12, fix/w48-reports)
+<a id="testing-nest-egg-hunt"></a>
+
+* `nest_egg_hunt` (coop_nest_egg_hunt.py, fixture creature, ~4 min, BUG-0896): the nest's herd lays three eggs
+  (`coop.nest target` / `respawn`), then `coop.nest respawn <herd> 99999999` so no new egg is laid while the test runs
+  (a new egg is not the hatchling it looks for). Step 2: the guest eats a mirror; the host's herd members
+  (`coop.nest herd`: pointer, hp, dead, position) within 5 m of the egg, `coop.dna`, the host log's `dna: ...
+  cause=hunt` lines and the "'s hunt" toasts must not change. Step 3: `coop.nest hatch <host egg> 1000`, the guest
+  eats 0.5 s later: one outcome on both games. Step 4: `coop.nest hatch <host egg> 100` right after the host's `snaps_tx` (coop.nest) went up (the hatch just after a 1 Hz snapshot: 0.91 s window without nest.hatch_now, 0.12 s at a random phase), the guest polled every 0.1 s
+  (`coop.npc list` spawned proxies within 1.5 m, `coop.nest objs` the mirror's state): the time it shows the hatchling
+  inside an intact mirror (the window where a click at the egg hits the hatchling).
+* A hunt notice on the host ("+N DNA from X's hunt") comes only from a lethal MSG_DAMAGE_REQ of that guest on a host
+  NPC (npc.cpp, dna_ledger::g_credit, 2.5 s); an egg's eat never gives one. Read it as "the guest's hit killed a
+  creature", not "an egg paid DNA".
+
+## Frame cap, wrapper, notes for the player, names, badges (2026-11-12, fix/w48-reports)
+<a id="testing-frame-cap"></a>
+
+* `kit_frame_limit` (warm, creature, ~1 min, BUG-0779): `mem.ptr App::FrameLimit_ptr 0x3C 0xB0` is the game's
+  kFrameLimitMS; `mem.write` 50 ms into it on the host ("another program"), then `frame.interval reset` /
+  `frame.interval` (the Present interval statistic of SporeKit) over 10 s: 48.9 ms with the fix,
+  `SPORE_FIX_OFF=kit.framelimit` written back to 16 ms (14.3 ms). The GOG 2024 lab games' own value is 16 ms (60
+  fps), not 33 (docs/02-modkit.md#modkit-frame-limit).
+* `kit_wrapper_cap` (cold, ~3 min, BUG-0779): copies the bottle's 32-bit DXVK d3d9.dll (syswow64) into the lane's
+  SporebinEP1 with a dxvk.conf `d3d9.maxFrameRate = 30` and `[sporekit] frame_ms=0`; measures SporeKit alone (`[mods]
+  load=none`), SporeKit + coop in the menu, both games hosting (33.3 ms each), a control without dxvk.conf (4.1 ms,
+  245 fps) and `[sporekit] vsync=1` (the log line; 16.9 ms on the 60 Hz headless display). It puts the folder and
+  sporekit.ini back in a `finally`; it refuses to run when the lane already has a d3d9.dll or dxvk.conf.
+* `env_notes` (creature, ~1.5 min, BUG-0782 / BUG-0779): build/test/rtsshooks.dll (tests/dll/stand_in.c, built by
+  `make`) copied into the game folder and loaded by `kit.test.loadlib rtsshooks.dll`: `other hooks` names RivaTuner,
+  `env` has the `advice:` line, a toast within 15 s; kFrameLimitMS 0 on the host: the uncapped notice at the next
+  minute line (the host ran 62-70 fps with two games on the machine). `SPORE_FIX_OFF=core.rtss_note` /
+  `core.uncapped_note`: no toast.
+* `name_nonlatin` (creature, ~5 min, BUG-0897): the guest's name typed into the name step (`coop.uistate first`,
+  `text` = WM_CHAR, Cyrillic passes), then coop.ini written as UTF-8 and as cp1251 before a cold start of both games
+  and `coop.name reload` (the lab's join names the guest Bob). The host's roster (`coop.status` `version <id>
+  '<name>'`), lobby rows (the window must be opened and refreshed: a closed window keeps the rows of its last
+  refresh) and the join toast. Wine's ANSI page is 1252: a cp1251 file reads as other letters (`Îëüãà`), on a
+  Russian Windows as the name. A hand edit of coop.ini while the game runs is read wrongly after SporeKit converted
+  the file in that run (it remembers the file as UTF-16): edit settings files with the game closed. Quitting the
+  guest's game (`quit`) during a test once took the host's game of the same bottle with it.
+* `space_badges_rejoin` (space, ~2 min, BUG-0786): `coop.space badges` (rank, every `badge <id> <state>`, `stage`,
+  `event <k> <n>`), `badges event 2 60` (AddToBadgeProgress: the game's own Update then gives the badges whose
+  counters are met), `badges give <id>` (GiveBadge), `badges kept` on the host. The guest's game is closed and
+  started again between its leave and its join (BADGES_RESTART=1, default): a rejoin from the same game faults at the
+  load after a badge was earned (BUG-0956). The game goes on with a badge chain by itself after the restore (B8E0B054
+  4 -> 2, 055 2 -> 1, 056 1 -> 0): the test compares the earned set (state < 2), not every state.

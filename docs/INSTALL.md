@@ -299,6 +299,8 @@ Stuck? Ask in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
 | The update or the setup says **the server answered 502 / 503 / 504** or **the download broke off** | A passing problem of GitHub's download server. Since 0.7.11 SporeCoop tries again by itself (3 attempts, the message ends with "after 3 attempts" when all failed); wait a minute and press **Try again** in the co-op window, or run the setup again. |
 | The setup says **GitHub not reachable** or **the server answered 403** | GitHub limits requests per IP address (VPNs and shared networks hit it). Versions after 0.7.3.3 fall back to the release page; if that fails too, wait an hour or turn the VPN off, or install by hand: download `SporeCoop-<version>.zip` from the [releases](https://github.com/WoodyWizard/SporeCoop/releases/latest), extract it into `SporebinEP1` and run `install.bat` (section 3, *With install.bat*). The release zip also has a `SporeCoopSetup.exe` that installs the pack next to it without the internet. |
 | No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. If it says `WATCHDOG (no frames` while the game draws, another overlay (Steam, Discord, RivaTuner) keeps the frames from SporeKit: update to 0.7.2 or newer, which then takes the frames from the game loop. |
+| The game crashes at start while **RivaTuner / MSI Afterburner** runs | See [Crash at start with RivaTuner](#install-rtss): an RTSS profile for SporeApp.exe with *Application detection level* None, or close RTSS. |
+| The picture **tears** (screen tearing) | See [The picture tears](#install-tearing): `vsync=1` in `mods\sporekit.ini`, or vsync in the driver. |
 | The game does not start after installing | Run `uninstall.bat`, start the game once without the mod, then install again. An antivirus may have removed `steam_api.dll` or `sporekit.dll`: restore them or add an exception. |
 | *Games on your network* stays empty | Both PCs must be on the same network or VPN; allow SporeApp.exe in the firewall (private networks). Type the host's address or host name into the address field of *Join a game* instead (port 47810 when you type none). |
 | Join fails or times out | The host's UDP 47810 must be reachable (VPN or port forwarding). Every player needs the same SporeCoop version. |
@@ -306,3 +308,34 @@ Stuck? Ask in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
 | The game crashed or froze | Since 0.7.2.1 SporeCoop packs a report by itself when the game crashes, freezes for 30 s or closes right after an error: `mods\logs\SporeCoop-report-<date-time>.zip`, and the next start of the game tells you its name. Send that one file in an [issue](https://github.com/WoodyWizard/SporeCoop/issues). (Inside: the crash report `crash-<date-time>.txt` and its `.dmp`, the logs; the logs of the last 10 runs stay in `mods\logs\previous\`.) |
 | Something else | In the co-op window (F9) or the game's pause menu (Esc) press **Report a problem**: it packs everything into one file, `mods\logs\SporeCoop-report-<date-time>.zip` (a report with your game build, Windows / Wine, memory, graphics card, other overlays and the co-op session; the logs of this and the last runs; the newest crash reports; the mod settings), and opens the folder with it selected. Send that one file (from host and guest) in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) and say what you did. Your player name is in it; the address you last joined is not. The window's bottom line and the main menu show your SporeCoop version. |
 | Something goes wrong while you play (only one of you can eat, a partner looks wrong, things out of sync) | Type `/bug <what you see>` into the co-op window's chat (F9) right when it happens, e.g. `/bug only I can eat`. The game says "marked for the report" and every player's log gets a line with your text and the moment, so we find that moment in all the logs. Then press **Report a problem** (each player) and send the files. |
+
+### Crash at start with RivaTuner / MSI Afterburner
+<a id="install-rtss"></a>
+
+RivaTuner Statistics Server (RTSS, it comes with MSI Afterburner) puts its overlay into games by hooking Direct3D, the
+same functions SporeKit hooks; players reported Spore crashing at start while it ran (BUG-0782). Since 0.7.13 the game
+tells you when RTSS is hooked in, and a crash report names it with this advice:
+
+1. In RivaTuner, press **Add** and choose `SporebinEP1\SporeApp.exe`, then set **Application detection level** to
+   **None** for that profile (RTSS then leaves Spore alone; Afterburner's own monitoring keeps working elsewhere).
+2. Or close RivaTuner and MSI Afterburner (also from the tray) before you start Spore.
+3. If you want its overlay in Spore, try **Use Microsoft Detours API hooking** in the profile's settings instead, and
+   send a report (**Report a problem**) when it still crashes.
+
+### The picture tears (screen tearing)
+<a id="install-tearing"></a>
+
+Spore asks Direct3D for no vsync (seen in every log: `CreateDevice asks for: ... interval=0x80000000 (immediate: no
+vsync)`), and its own frame cap (the game property kFrameLimitMS, 16 ms per frame in the GOG 2024 / Steam game) only
+limits how often the tear shows (BUG-0779). It shows much more when something lifts that cap (the game then runs at
+80-140 fps): a mod (for example a Spore ModAPI mod), a d3d9 wrapper next to `SporeApp.exe` (DXVK's `d3d9.dll`,
+ReShade) or a driver profile. Since 0.7.13 the game tells you when it runs without its cap, and SporeKit no longer
+undoes a frame cap another mod or program sets.
+
+* Turn vsync on: add `vsync=1` under `[sporekit]` in `SporebinEP1\mods\sporekit.ini` and start the game again (the log
+  then says `vsync: [sporekit] vsync=1: presentation interval 0x1`). Or force vsync for SporeApp.exe in the graphics
+  driver's settings (NVIDIA Control Panel, AMD Software).
+* With DXVK as `d3d9.dll` in the game folder: `dxvk.conf` next to it can set `d3d9.presentInterval = 1` (vsync) or
+  `d3d9.maxFrameRate = 30` (a cap); the lab checked that DXVK's cap holds with SporeKit and the mod.
+* Without vsync, the tearing goes away only with the program that lifted the cap removed (Spore ModAPI or the mod
+  that unlocks the frame rate) or its frame cap set.

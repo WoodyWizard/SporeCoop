@@ -318,7 +318,18 @@ At the start (the log's `files:` lines, after the GPU line) and in the report's 
 
 Names, sizes and dates only (no file is read), at most 12 per list. The size check knows the GOG
 2024 build's 12 base packages and its exe; for other builds it says so. `other hooks:` (overlays,
-wrappers, ModAPI DLLs loaded in the game) is on the GPU line and in `== Environment`.
+wrappers, ModAPI DLLs loaded in the game) is on the GPU line and in `== Environment`. With RivaTuner / MSI
+Afterburner (RTSSHooks.dll) the environment has an `advice:` line (an RTSS profile for SporeApp.exe with Application
+detection level None, docs/INSTALL.md#install-rtss) and the log a WARN; the player gets a notice once per start
+(BUG-0782).
+
+Frames and the device (BUG-0779, docs/02-modkit.md#modkit-frame-limit): `CreateDevice asks for:` / `device Reset asks
+for:` (size, windowed, the presentation interval: the game asks for `0x80000000 (immediate: no vsync)`, refresh, swap
+effect, back buffers), `d3d9: Present at ... in d3d9.dll (system | game folder)` (a wrapper next to the exe: `game
+folder`; `starts with a jump into <module>`: another program hooked it before SporeKit), `frame limit: the game's own
+16 ms (kFrameLimitMS) at frame 1` (0 = no cap: something lifted it), `frame limit: set to N ms by another program or
+the game`, and once a minute `frames: present interval mean / p50 / p95 / max ... this minute`. A run of 80+ fps
+with frame limit 0 and vsync off tears: the answer is docs/INSTALL.md#install-tearing (`vsync=1`).
 
 ### The session summary
 <a id="reporting-support-summary"></a>

@@ -1,7 +1,7 @@
 ---
 id: BUG-0897
 title: A guest with a name that is not in Latin letters is called Player in the host's notices (suspected, need info)
-status: open
+status: not-reproduced
 kind: bug
 stage: All
 reported: 2026-11-10
@@ -9,11 +9,11 @@ source: owner, watching a player's recording 2026-11-10
 role: guest
 versions: 
 fixed_in:
-branch:
+branch: fix/w48-reports
 commits:
-tests:
+tests: name_nonlatin
 signature:
-docs:
+docs: docs/06-testing.md#testing-frame-cap
 related: BUG-0896, BUG-0142, BUG-0245, BUG-0774
 ---
 
@@ -44,5 +44,22 @@ events (SporeKit input, a Cyrillic layout), written into coop.ini as UTF-8, and 
 the lobby row (`coop.uistate`), `coop.players`, and the text of a DNA notice after the guest's kill must show that
 name, not "Player" or "guestN". Must fail on the path that is broken.
 
+## Verification (2026-11-12, fix/w48-reports)
+Test `name_nonlatin` (coop_name_nonlatin.py, lane 5): the guest gets a Cyrillic name three ways and joins the host
+with it; on the host the session's player list, the lobby row and the join notice ("<name> joined the pack", the
+same `name_of` the DNA notices use) name it so, never "Player":
+* typed into the co-op window's name step (WM_CHAR, as the game's text input; the field holds 'Иван Петров', Continue
+  saves it): the host shows 'Иван Петров';
+* coop.ini written as UTF-8 before the games start (SporeKit converts it at the mod's start): 'Пётр';
+* coop.ini as cp1251: read in the system's ANSI code page (Wine 1252 in the lab: 'Îëüãà'; a Russian Windows reads
+  cp1251 as the name); not lost.
+PASS: lab 20261112-050545-2. No path loses a non-Latin name. Side findings (no player impact): a hand edit of
+coop.ini while the game runs is read wrongly once SporeKit converted the file in that run (it remembers the
+encoding per run: edit with the game closed); a closed co-op window keeps the lobby rows of its last refresh.
+Conclusion: the guest of the recording most likely never typed a name (before 0.7.12 the window did not ask for one
+at the first start; 0.7.12 does, BUG-0765), so the host showed the default "Player". Closed as not reproduced; reopen
+with a report archive of such a session (its log lines `player N '<name>' joined`).
+
 ## History
 - 2026-11-10: opened from the owner's observation; no logs for the session.
+- 2026-11-12: test name_nonlatin (typed, coop.ini UTF-8, cp1251): the name reaches the host every way; not reproduced (fix/w48-reports).

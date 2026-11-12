@@ -2758,3 +2758,72 @@ BUG-0838. GOG 2024, runtime on lanes 6/7 (`coop.space allies civ <PlanetID>`, co
   +0x10FC..+0x110C) wrote the host's stage history into a guest's own Space save. wsync's guest tick applies no row in
   Space while own_world::space_other() (wsync.space_own). Lab: the host's stage 0 trait set to A5656E84, the guest's
   own save kept 00000000 for 10 s (20261112-025609).
+
+## Badges and the rank (2026-11-12, fix/w48-reports)
+<a id="space-badges"></a>
+
+BUG-0786 (a guest's badges and captain rank are the host's after every (re)join). GOG 2024 (dc04aee5), Ghidra
+(static only, not yet seen at runtime); the symbols are in overrides_dc04aee5.sym (`SporeCoop::BadgeManager_*`).
+Layout from the ModAPI SDK (cBadgeManager.h, cSimulatorSpaceGame.h), checked against the code below.
+
+* ✔ The badge manager (`cBadgeManager`, TYPE 0x2CB0EDE, size 0xC0) is `cSimulatorSpaceGame +0x70` (next to the
+  cargo hold `+0x40`): `cSimulatorSpaceGame::Get` 0x1002A70, then the shared getter 0xBFC730 `mov eax,[ecx+0x70]`
+  (the .sym calls it GetPlayerTribe: identical-code folding). Primary vtable 0x14942A4 (+0x10 Update 0xFE6320, +0x14
+  the name "Badge Manager"), the serializable interface at +8 with vtable 0x1494280 (+0x10 Write 0xFE3C30, +0x14 Read
+  0xFE4090). Constructor 0xFE4E30.
+* ✔ Fields (eastl::map = 0x1C bytes: +0 compare, +4 anchor {right, left = begin, parent = root, colour}, +0x14
+  size; a node: +0 right / +4 left / +8 parent, +0x10 key, +0x14 value; in-order next 0x921810):
+  * +0x10 `mBadges` map<badge id, PropertyList> (the `space_badges~` files, group 0x2CB089D), built by the ctor;
+    static data, never saved.
+  * +0x2C `mBadgeMap` map<badge id, state>: absent = locked (a badge whose prerequisite, property 0x36C4148, is not
+    earned), **1 = earned** (GiveBadge), 2 = available (the ctor for badges without a prerequisite, GiveBadge for
+    the ones this badge unlocks), 3 = available with the property 0x4A310D1 set (? hidden). States < 2 count as
+    earned (GetRank, GetBadgeProgress); ? a state 0 was not seen written.
+  * +0x48 `mStageMap` map<badge id, int>: the rank + 1 at which a non-rank badge was earned (GiveBadge).
+  * +0x64 `mEventCounts` map<BadgeManagerEvent, int>: the counters the requirements read (ModAPI enum: 0 planets
+    colonized, 2 stars explored, 0xB rares, 0xC badge points, 0x1D Joker, ...); AddToBadgeProgress adds to them.
+  * +0x80 a hash_map (? 0xFE45E0 reads its buckets +0x84 / +0x88), +0xA0 byte: Update gives no badge while set
+    (? who sets it), +0xA4 `mCurrentBadgeCard` (the tracked badge, SetCurrentCard 0xFE3CB0), +0xA8 time summed by
+    Update (not saved), +0xAC a LocalizedString ("badge points").
+* ✔ The **captain rank** is not stored: GetRank 0xFE4290 = 1 + the index of the highest rank badge (table
+  0x149421C: 0x58B78701..0x58B78709, 0xA9E986A3 = ranks 1..10) whose mBadgeMap state is < 2; 0 without one. Its
+  rewards come with the rank badge itself in GiveBadge: the tools of the badge's property 0x2CB2281 go into the cargo
+  hold (LoadTool + inventory AddItem), the SPG_MasterBadge cinematic, the badge points (0x43333DD) into event 0xC.
+  So keeping mBadgeMap keeps the rank; the reward tools are hold items (space.keep_items keeps those).
+* ✔ Badges are earned by Update 0xFE6320 (the manager's vt +0x10, every frame of Space; nothing while a comm
+  screen, a cinematic or the pause is up): an available badge (2 / 3) whose requirements (property 0x2CC641B, each
+  a key read by GetEventCount 0xFE5440: mEventCounts, or the empire's colony count 0x6F7F0ED) are all met is given.
+* ✔ **Saved with the Space world**: Write 0xFE3C30 / Read 0xFE4090 with the attribute table 0x15B42F8 (filled by
+  0x1394F40): `mBadgeMap` 0x361B61B, `mEventCounts` 0x361B697, `mStageMap` 0x5EE5002, `mCurrentBadgeCard` 0x63A6AB5.
+  Read frees mBadgeMap and mEventCounts first (RbTree_FreeNodes 0x10212D0 + the anchor reset, below) and then reads
+  them; mStageMap is read on top of what is there. A guest loading the host's share save therefore gets the host's
+  badges, counters and rank, exactly like the hold (#space-kept-hold).
+* ✔ Writing a map as the game does: `RbTree_FreeNodes(map, root)` (thiscall, ret 4) then `map+4 = map+8 = map+4`
+  (anchor), `map+0xC = 0`, byte `map+0x10 = 0`, `map+0x14 = 0` (the Read's own steps, 0xFE40C6..0xFE40E9), then
+  operator[] per key: 0xBAE030 on +0x2C, 0x643A00 on +0x48, 0xDE75E0 on +0x64 (thiscall(map, const key*) ret 4 ->
+  int* value, inserts 0 when absent, GeneralAllocator nodes). `AddToBadgeProgress(mgr, any event, 0)` afterwards
+  posts 0x38CF2FB (badge progress changed) and refreshes the badge card: a refresh by the game's own path.
+* ~ The cheat note 0xC77E30 (cPlayer block, once per game: byte +0x11F0) adds 1 to event 0x1D (Joker) and calls the
+  manager's Update(1, 0) with the text "Hey, you just cheated! ... no longer earn any badges". ? Whether anything else
+  blocks badges after a cheat was not found (Update checks only +0xA0). Tests that need a badge call GiveBadge.
+* ? A developer badge cheat (ArgScript 0x1024A10 with the help text "Debug cheats for Badge ... colonize <num> ...")
+  calls GiveBadge and 0xFE45E0; like `space` and `raid` (9.3) it is probably not registered in the release build.
+
+Fix design (BUG-0786, as space.keep_items, BUG-0678 / 0679): the guest sends its three maps and the card (a new
+module, kinds 85..87: BADGES / BADGES_KEPT / BADGES_DONE, the hold's protocol) when they change; the host keeps them per
+player name for its Space world; a fresh table of a player it kept one for is the host's copy and the kept one goes
+back; the guest writes it with the steps above (outside the frame, before the 2 s the hold waits, so Update does not
+give badges from the host's counters meanwhile) and keeps its own record next to the hold record. Switch
+`space.keep_badges`.
+
+Runtime (2026-11-12, fix/w48-reports, lane 4/5, GOG 2024):
+* ✔ The `space` fixture has 144 entries in mBadgeMap and 29 counters; states 0, 1, 2 and 4 seen (4 on badges of a
+  chain not reached yet, for example B8E0B054 while B8E0B056 is earned). `event 2 += 60` made Update give B8E0B056
+  (state 1) within 2 s; after a restore of the tables the game went on with the chain by itself (B8E0B055 earned,
+  B8E0B056 state 0, B8E0B054 state 2): state 0 = earned and followed by the next badge of its chain (GetRank counts
+  states < 2 as earned).
+* ✔ Writing the three maps the Read's way (free, reset the anchor, operator[] per key, then AddToBadgeProgress(0xC, 0))
+  works: the rejoined guest's earned badges and counters are its own again (space.keep_badges); the host's copy is
+  untouched.
+* ✔ A host that earned a badge and loads its own save again: no fault. A guest that earned one and loads the host's
+  world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/known-issues.md#issue-space-badge-rejoin-fault).

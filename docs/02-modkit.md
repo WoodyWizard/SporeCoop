@@ -364,3 +364,49 @@ thread then runs the jmp's operand bytes as code.
   `frames.source loop` (tests) is not gated. Switch `kit.fix presentlost 0`: the time alone (SporeKit 0.3.11).
 * Test `kit_present_hitch` (FAIL with SPORE_FIX_OFF=kit.presentlost: 3 WARN lines after three 2.6 s frames, lab
   20261107-114245; PASS: none, the frames stay on Present, lab 20261107-114514).
+
+## The frame limit, the device's present parameters and other programs' hooks (2026-11-12, fix/w48-reports)
+<a id="modkit-frame-limit"></a>
+
+BUG-0779 (screen tearing with Spore ModAPI and a d3d9 wrapper), BUG-0782 (crashes at start with RivaTuner).
+
+* ✔ The game's frame cap is the property **kFrameLimitMS** (id 44 = 0x2C of the AppProperties list; ModAPI SDK
+  `App::SPPropertyIDs`, "the main loop will always take at least this long"): `[[App::FrameLimit_ptr]+0x3C]+0xB0`
+  (App::FrameLimit_ptr 0x015FD918 is ModAPI's `AppProperties_ptr`). **16 ms (60 fps) in the GOG 2024 lab games**, read
+  at frame 1 on every lane (`frame limit: the game's own 16 ms (kFrameLimitMS) at frame 1`).
+  CORRECTION (2026-11-12, fix/w48-reports): "the game caps itself at 30 fps (33 ms)" (focus.cpp, docs/06-testing.md
+  6.x) is not what the GOG 2024 game does: its value is 16 ms; the lab games ran at 57-67 fps by the Present interval.
+* ✔ SporeKit read that value once (first frame) and wrote it back every 10 frames: a value set later by anybody (a
+  mod, a frame limiter, the game) was undone within 10 frames (kit_frame_limit with `kit.fix framelimit 0`: a 50 ms
+  limit written by `mem.write` went back to 16 ms, 14.3 ms intervals). Since the SporeKit after 0.3.15 a value SporeKit did not write is
+  taken as the game's own and kept (`frame limit: set to 50 ms by another program or the game (was 16 ms): kept`);
+  `frame.limit` / `[sporekit] frame_ms` still win. `kit.fix framelimit 0`: the old write-back.
+* ✔ **The game asks for no vsync**: `CreateDevice asks for: 640x480 windowed=1 interval=0x80000000 (immediate: no
+  vsync) refresh=0 Hz swap effect=3 back buffers=1`, the same at every Reset (1440x1080 windowed). Tearing is the
+  game's own behaviour at any frame rate; a lifted cap makes it worse. `[sporekit] vsync = 1` sets
+  PresentationInterval ONE at CreateDevice and every Reset (`vsync: [sporekit] vsync=1: presentation interval 0x1
+  instead of the game's 0x80000000`; the lab game then ran at 59 fps on the 60 Hz headless display), 0 IMMEDIATE,
+  -1 (default) the game's.
+* ✔ Logged now (sporekit.log): the present parameters at CreateDevice and Reset (`... asks for: WxH windowed interval
+  refresh swap effect back buffers`), the module of each hooked d3d9 function before the hook (`d3d9: Present at
+  79C19DD0 in d3d9.dll (system)`, or `(game folder)` for a wrapper next to SporeApp.exe; `, starts with a jump into
+  <module>` when another program hooked it first: a `jmp rel32`, `jmp [abs]` or `push; ret` as its first
+  instruction), once a minute `frames: present interval mean / p50 / p95 / max over N frames (fps) this minute; frame
+  limit X ms (the game's own Y ms)`. Console: `frame` adds `limit= own= changes=`, `frame.interval [reset]` gives the
+  statistic since the last reset (tests).
+* ✔ A d3d9 wrapper's limiter is not lost under SporeKit's hooks: the lab's DXVK 3.1.1 32-bit d3d9.dll (7 856 142
+  bytes = the 7672 KB d3d9.dll of the BUG-0779 player's report) in the game folder with `d3d9.maxFrameRate = 30` and the
+  game's own cap lifted: 33.3 ms Present intervals with SporeKit alone, with coop, and on both games of a session
+  (kit_wrapper_cap); 4.1 ms without dxvk.conf. SporeKit hooks the game-folder DLL's functions (inline, MinHook); the
+  wrapper's own Present runs inside the original.
+* ✔ Spore ModAPI (Spore-Community/Spore-ModAPI, read 2026-11-12, data only): no d3d9 hook, no frame limit or
+  main-loop timing of its own; its injector (ModAPI Launcher) starts the game suspended and loads the mod DLLs from
+  a detour of the game's allocator init (before the game's main init). A ModAPI mod (an "mLib") can set
+  kFrameLimitMS or detour the game's RenderUtils (SetPresentationParameters 0x11F7D30, CreateDevice 0x11F86B0, March
+  2017 addresses) itself: that is where a "30 fps lock" with ModAPI comes from, and what SporeKit's write-back undid.
+* The mod tells the player (diag_stats.cpp, once per start, `coop.diag` line `env:`): RTSSHooks.dll loaded
+  (core.rtss_note, BUG-0782; SporeKit adds an `advice:` line to `env` and every crash report and a WARN after the
+  device), the game without its cap (kFrameLimitMS under 10 ms) at 50 fps or more over a minute (core.uncapped_note,
+  BUG-0779). Advice for players: docs/INSTALL.md#install-rtss, docs/INSTALL.md#install-tearing.
+* Tests: `kit.test.loadlib <file>` loads a DLL from the game folder (build/test/rtsshooks.dll is a do-nothing DLL,
+  tests/dll/stand_in.c).
