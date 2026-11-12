@@ -1016,6 +1016,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 
 void tick(double now)
 {
+    if (game::lend_ledger_on()) // BUG-0882: outside every goal update (a fault inside one left it set)
+        g_goal = nullptr;
     if (!C.sess || !game::in_creature_stage() || !game::avatar())
         return;
     if (is_host() && !g_goal_owed.empty()) { // BUG-0205: rewards that came while we had no creature

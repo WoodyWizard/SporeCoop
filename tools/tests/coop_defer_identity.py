@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""BUG-0825: a creature the game built where a copy waiting for the end of a cinematic was is never destroyed with it.
+
+`game::destroy_creature` keeps creatures of ours until the running cinematic is over (BUG-0018) and destroyed the
+queued address when it ended if a creature was listed there. The game may free the queued creature meanwhile and
+give its block to the next creature it makes (an NPC of the world); that NPC then went at the cinematic's end, and
+counted as a puppet (no AI) while queued.
+
+Host on the creature fixture plays CRG_ClaimNest (its caption keeps it running) and the guest picks another creation
+(`coop.creations next creature`): the host builds a new puppet and queues the old one's destroy. Then the host's game
+destroys the queued puppet itself (`coop.npc reusehunt <old> 150 x`: DestroyInstance, then once a frame a creature
+of its species next to the avatar until the game gives one the freed block). When the cinematic is over the new
+creature at that address must still live (the game's object list, its serial).
+SPORE_FIX_OFF=npc.defer_identity must FAIL.
+
+  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 6]"""
+import argparse
+import re
+import time
+
+from coop_cinematic_puppet import CLAIM, cinematic, eax, puppet, wait
+from twoinst import Checks, start
+
+
+def hunt(con):
+    out = con.call('coop.npc reusehunt')['out']
+    m = re.search(r'left=(-?\d+) tries=(\d+) .*?hit=([0-9A-Fa-f]+)', out)
+    a = re.search(r'hit alive=(\d)', out)
+    return ({'left': int(m.group(1)), 'tries': int(m.group(2)), 'hit': int(m.group(3), 16)} if m else
+            {'left': 0, 'tries': 0, 'hit': 0}) | {'alive': bool(a and a.group(1) == '1')}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--tries', type=int, default=6)
+    a = ap.parse_args()
+    host, guest = start()
+    ck = Checks()
+    reused, gone = 0, 0
+    for k in range(a.tries):
+        old = wait(lambda: puppet(host), 20)
+        cm = eax(host, 'Simulator::cCinematicManager::Get cdecl')
+        host.call(f'call Simulator::cCinematicManager::PlayCinematic thiscall {cm:#x} s:CRG_ClaimNest 1 1 0 0 0')
+        if not wait(lambda: cinematic(host) == CLAIM, 10):
+            print('  the cinematic did not start', flush=True)
+            continue
+        guest.call('coop.creations next creature')
+        new = wait(lambda: (lambda p: p if p and p != old else 0)(puppet(host)), 30)
+        st = re.search(r'deferred=(\d+) done_after=(\d+) pending=(\d+)', host.call('coop.npc')['out'])
+        print(f'  round {k + 1}: old puppet {old and hex(old)}, new {new and hex(new)}, host {st and st.group(0)}', flush=True)
+        if new and st and int(st.group(3)) > 0 and cinematic(host) == CLAIM:
+            print('  host: ' + host.call(f'coop.npc reusehunt {old:X} 150 x')['out'].strip().splitlines()[0], flush=True)
+            h = hunt(host)
+            t1 = time.time()
+            while time.time() - t1 < 8 and not h['hit'] and h['left'] > 0 and cinematic(host) == CLAIM:
+                time.sleep(0.25)
+                h = hunt(host)
+            playing = cinematic(host) == CLAIM
+            print(f'  round {k + 1}: reuse {h} while the cinematic plays: {playing}', flush=True)
+            if h['hit'] and playing:
+                reused += 1
+                t0 = time.time()
+                while time.time() - t0 < 40 and cinematic(host):
+                    host.call('key enter')
+                    time.sleep(2)
+                time.sleep(2)
+                h = hunt(host)
+                print(f'  round {k + 1}: after the cinematic the creature at the freed block lives: {h["alive"]}', flush=True)
+                gone += not h['alive']
+        t0 = time.time()
+        while time.time() - t0 < 40 and cinematic(host):
+            host.call('key enter')
+            time.sleep(2)
+        if reused >= 1:
+            break
+    ck(reused >= 1, f'the game gave a queued puppet\'s block to a new creature during the cinematic ({reused} times)')
+    ck(reused and not gone, f'that creature still lives when the cinematic is over (destroyed with the queue: {gone})')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

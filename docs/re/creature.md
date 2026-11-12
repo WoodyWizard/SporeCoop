@@ -4117,3 +4117,42 @@ BUG-0926 (the 0.7.12 final check's long_creature host: runtime error R6025). GOG
   block in writable memory, grouped by holder (a listed object + offset, a creature's AI block + offset, a module's
   data, elsewhere) and the block's state now. The scan stops the game for ~7 s. Our own `game::g_dmglog` (a log
   ring) shows up as a module holder: records only.
+
+## Freed blocks and the next object at their address (2026-11-12, fix/w48-freed)
+<a id="creature-freed-block-reuse"></a>
+
+BUG-0842, BUG-0843, BUG-0825, BUG-0805 (class BUG-0426). GOG 2024, runtime on lanes 6/7 (`coop.npc reusehunt`, see
+docs/06-testing.md#testing-freed-block-reuse). Follows #creature-stimulus-attacker (a destroyed creature lives on
+while references to it remain).
+
+* ✔ A creature destroyed with `cGameNounManager::DestroyInstance` is not freed in that call: 60 creations of its
+  species right after the destroy, in the same console call (no frame between), never got its block; bursts of 30
+  and 60 creations in the first frame after it did not either. The game frees it in a later frame (when its last
+  reference goes) and the next creature **of the same species** gets the block: with one creation a frame (each
+  miss destroyed again at once) the freed proxy's or puppet's address came back after 8-37 creations (0.3-1.3 s),
+  in about a third of the 150-frame hunts on a guest's proxies and in 1 of 1 on a host's puppet (lab 20261112,
+  exp1/exp5 and the proxy_identity runs). A creature of another species (the avatar's) never got it (200 tries);
+  `cCreatureAnimal::Create` with its reuse flag did not get it sooner.
+* ✔ So a pointer kept across frames meets three states: (1) destroyed, not freed (mbIsDestroyed +0x21 set, the
+  memory still the creature's): 10-40 frames; (2) freed (garbage: our per-frame audits called its vtables, caught
+  faults in `game::cast`, and a guest crashed with a corrupted heap in MallocInternal when the mod went on using it,
+  lab 20261112-004057 / -005401); (3) another creature of that species at the same address, mbIsDestroyed clear,
+  listed in the object list. Neither +0x21 nor the object list tells (3) from the object the mod made; the serial
+  (cGameData::mID +0x24, docs/re/space.md#space-object-serial) does.
+* ✔ Herds: a nest herd destroyed with DestroyInstance gives its block to a new herd of **another** species
+  (`CreateHerd`) after 3-63 creations (2 of 3 hunts): the herd's own fields then read the other species
+  (+0xA4). The guest's nest-herd cache was refreshed from its own NPCs of the species (the update filter, every
+  frame such an NPC exists) before the next proxy was made in all six hunts of two runs: the stale entry was not
+  asked there (BUG-0843's window needs a species whose NPCs are all gone).
+* ✔ A guest's avatar keeps its address through its death, the death caption and the respawn (`coop.avatar` every
+  0.5 s): the "avatar is null while dead" window of the fork's build (BUG-0842's report) is not ours; the guest's
+  npc tick does not stop then.
+* ✔ `game::listed(obj, noun)` / `game::LiveRef` (game.h): the object list walked once a frame (on the first
+  question; 4-7 thousand objects in the creature fixture), kept exact inside the frame by gamefixes' DestroyInstance
+  hook (`game::note_destroyed`) and by the serial counter 0x167BE28 (a miss after a CreateInstance walks again);
+  `alive(LiveRef)` = listed with the noun and the same serial. `coop.live` prints its counters.
+* ✔ (BUG-0814) A partner's puppet that holds the copy of a rock (Creature_HoldObject: its +0x71 = 1) and is destroyed
+  with DestroyInstance (`coop.puppet respawn`) lets go of it in the game itself: +0x71 is 0 again within 1.5 s and the
+  copy moves (falls or rolls) about 5 m in the next 5 s, with the 0.7.12 code (lab 20261112-011434,
+  20261112-012019-2). The ground radius under the fixture's rock reads ~4.4 m below it (the rock lies on a mound the
+  terrain query does not see): not a measure of "in the air" there.

@@ -19,6 +19,9 @@ struct Ctx {
     net::Session* sess = nullptr;
     // creature that represents player `id` locally (host: guest puppet), or nullptr
     std::function<void*(uint8_t id)> puppet_of;
+    // BUG-0426 class (L1): player id's Creature puppet only while it is the live object made for it (listed, its serial,
+    // this frame's world); a Cell cell, a Tribe marker, a freed or reused one: null
+    std::function<void*(uint8_t id)> puppet_live;
     // last known world position of player `id`; false if not in the world
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
     // the latest state of player `id` says it is dead (death caption, respawn)
@@ -103,6 +106,13 @@ std::string debug_forget(uint16_t id);
 // guest (tests, BUG-0850): the game destroys proxy <id> by itself (DestroyInstance, no bookkeeping of ours), then the
 // proxy is dropped before the next npc tick (as a despawn or the stale drop in the same frame); counts DestroyInstance
 std::string debug_gamekill(uint16_t id);
+std::string debug_settle(double s); // tests (BUG-0842): the guest's npc tick waits s seconds, as after an avatar change
+// tests (BUG-0426 class): a freed address given to a new creature (npc.cpp ReuseHunt); proxy <id>'s creature
+std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tries = 0, int burst = 1, void* herd = nullptr,
+                             const net::Vec3* at = nullptr, bool herds = false, bool pool = false);
+std::string debug_reuse_status();
+void* debug_proxy_creature(uint16_t id);
+uint32_t handler_dropped(); // BUG-0805: handler calls that met a proxy whose creature is not the live one it made
 std::string resync_status();
 std::string tuning_status();
 void set_anim_quiet(float s); // tests: the snapshot waits this long after a start (BUG-0464)

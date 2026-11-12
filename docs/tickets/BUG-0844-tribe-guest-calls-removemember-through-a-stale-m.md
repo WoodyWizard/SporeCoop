@@ -1,19 +1,19 @@
 ---
 id: BUG-0844
 title: Tribe guest calls RemoveMember through a stale mirror citizen (object_alive passes on freed memory)
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9051
 role: guest
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-freed
+commits: 570ee491
+tests: tribe_mirror_lifetime
 signature: fork: coop RVA 1889AE in tribe.cpp remove_member, called by guest_tick and tick; owner field garbage
-docs:
+docs: docs/re/tribe.md#tribe-mirror-citizen-reuse, docs/06-testing.md#testing-freed-block-reuse
 related: BUG-0426, BUG-0685
 ---
 
@@ -23,13 +23,7 @@ guest crashed when the host briefly came back to Tribe from the vehicle editor d
 in remove_member: the cached citizen passed object_alive but its owner tribe pointer was garbage.
 
 ## Root cause
-* Observed (code): tribe.cpp:2118 remove_member reads the citizen's owner (kOwnerTribeOff) and calls the owner's
-  RemoveMember (vt 0x9C) with no check that the citizen is still a member of a live tribe.
-* Observed: the snapshot end removes members the host no longer has with `if (it->second.c &&
-  game::object_alive(it->second.c)) remove_member(...)` (tribe.cpp:2680); guest_state keeps `g.c` across frames and only
-  checks object_alive (tribe.cpp:2614); members() (tribe.cpp:77) also filters with object_alive.
-* Inferred: confidence medium-high (same pattern as the fork's crash; the trigger, native member removal while the
-  host is in an editor, exists in our Tribe -> Civ). BUG-0426 lists these sites.
+Observed at runtime (fix/w48-freed, 2026-11-12): a citizen the game removed (RemoveMember with destroy) is freed later and its block goes to the next citizen the game makes, of any tribe (`coop.tribe reusehunt`: the guest's player tribe got a removed NPC-tribe mirror's block). While the host's states paused (`coop.tribe statehold`, as during the host's editor at graduation: the fork's report) the mirror stayed bound to the address; object_alive (+0x21 of that block) passed for the new citizen, so when the states came again the guest drove the guest's own new member as the host's member of the other tribe (lab 20261112-010419, mirror #7). remove_member read the owner tribe from the citizen's memory (the fork's crash on a freed block). Confidence: high.
 
 ## Fix idea
 From the fork (PandizeLive/SporeCoop-Lineages PR #196, BUG-9051, switch tribe.mirror_member_lifetime); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -50,10 +44,13 @@ guest's snapshot end run for 90 s; then the host returns and the stage continues
 member count matches the host. FAIL on main, PASS with the fix (switch off = FAIL).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+mods/coop/tribe.cpp: a mirror records its citizen's serial when it is bound; `mirror_ok` (game::alive: listed as a citizen with that serial) replaces object_alive in guest_state, guest_tick and the snapshot's end; remove_member calls RemoveMember only on a live tribe that has the citizen in its member vector (`tribe_holding`), else the citizen is only forgotten. Switch: `coop.fix tribe.mirror_member_lifetime off`. Test hook: `coop.tribe reusehunt any|npc|<id> [frames]`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+Test `tribe_mirror_lifetime` (tools/tests/coop_tribe_mirror_lifetime.py): up to 16 rounds of statehold + the game's removal of an NPC-tribe mirror's citizen + a reuse hunt in the guest's player tribe.
+* FAIL (SPORE_FIX_OFF=tribe.mirror_member_lifetime): out/lab/20261112-010419 (the guest's new member at the freed block was driven onto the host's member #7).
+* PASS: out/lab/20261112-012019 (the reused block was seen and the mirror made again, stale=1; no faults), out/lab/20261112-013003.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12: fixed on fix/w48-freed (tribe.mirror_member_lifetime).

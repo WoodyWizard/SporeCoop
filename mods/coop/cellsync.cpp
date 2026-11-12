@@ -454,13 +454,30 @@ static void send_ko(uint8_t state, float left, float hold)
     g_ko_sent = H->time_seconds();
 }
 
+// BUG-0823 (class BUG-0426, as BUG-0342): the partner's puppet cell as the remote table holds it. A level rebuild (the
+// host's death without a helper, an own-cell apply) frees every cell and makes the own avatar first, often at the
+// address a puppet had; the remote loop drops that puppet only after cellsync::tick and the frame's messages, so in
+// that frame the host's own cell was taken for the partner's (the knockout look, a guest's bite with the host's cell
+// as the attacker, the puppet's poison step). Now only a cell that is still that puppet by its pool index
+// (modes::cell_is_puppet) is returned. Old (`coop.fix cell.puppet_cell_index off`): the table's pointer.
+static bool g_puppet_cell_fix = true;
+COOP_FIX("cell.puppet_cell_index", "BUG-0823", g_puppet_cell_fix, "cell: the host's own cell is never taken for a partner's cell in the frame of a level rebuild (it got the knockout look or bit for the partner)");
+static uint32_t g_puppet_cell_refused, g_puppet_cell_own;
+static uint8_t* avatar();
 static uint8_t* puppet_cell(int id)
 {
     if (!C.puppets)
         return nullptr;
     for (auto& p : C.puppets())
-        if (p.id == id)
+        if (p.id == id) {
+            if (g_puppet_cell_fix && p.cell && !modes::cell_is_puppet(p.cell)) {
+                g_puppet_cell_refused++;
+                return nullptr;
+            }
+            if (p.cell && (uint8_t*)p.cell == avatar()) // (tests: the own cell handed out as the partner's)
+                g_puppet_cell_own++;
             return (uint8_t*)p.cell;
+        }
     return nullptr;
 }
 
@@ -5957,6 +5974,18 @@ std::string debug(const std::vector<std::string>& a)
             return "own cell NaN (all fields)\n";
         }
         return "own cell NaN\n";
+    }
+    if (!a.empty() && a[0] == "selfstate") { // tests (BUG-0823): the own cell's address, opacity and whether a puppet sits there
+        uint8_t* c = avatar();
+        char b[200];
+        bool as_puppet = false;
+        if (C.puppets)
+            for (auto& p : C.puppets())
+                as_puppet |= c && p.cell == c;
+        snprintf(b, sizeof b, "self cell=%p opacity=%.2f hp=%d table_names_it=%d refused=%u handed_own=%u", (void*)c,
+                 c ? F<float>(c, kOpacity) : -1.f, c ? F<int>(c, kHp) : -1, (int)as_puppet, g_puppet_cell_refused,
+                 g_puppet_cell_own);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)
         hurt_avatar(atoi(a[1].c_str()), 4);

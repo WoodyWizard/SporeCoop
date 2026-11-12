@@ -1,19 +1,19 @@
 ---
 id: BUG-0825
 title: Creature: a deferred destroy can destroy a real creature at a reused address (no serial check) (suspected)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-freed
+commits: 1e58b7e0
+tests: defer_identity
 signature:
-docs: 
+docs: docs/re/creature.md#creature-freed-block-reuse
 related: BUG-0018 BUG-0066 BUG-0426
 ---
 
@@ -21,10 +21,10 @@ related: BUG-0018 BUG-0066 BUG-0426
 No player report. Suspected: a creature of ours queued for destruction during a cinematic, freed by the game meanwhile and replaced by a new NPC at the same address, gets that NPC destroyed when the cinematic ends; until then the NPC counts as a puppet (no AI, stripped from saves).
 
 ## Root cause
-Observed in the code (line numbers of main e49e1e23 = 0.7.11.1): game.cpp destroy_deferred_tick (1611-1617) destroys a queued pointer that is merely still listed as a creature; no object serial, no 'still ours' check; while queued it stays in g_puppets (npc.deferpuppet), so is_puppet() is true for whatever object lives there. Confidence: low (needs the game to free it within the cinematic).
+Observed at runtime (fix/w48-freed, 2026-11-12): the host queues the old puppet's destroy while CRG_ClaimNest plays (the guest switches its creation); the host's game destroys the queued puppet itself and a new creature of that species gets the block (`coop.npc reusehunt <old> 150 x`). When the cinematic ended, destroy_deferred_tick destroyed that new creature (it was a listed creature at the queued address; lab 20261112-011014).
 
 ## Fix
-Not fixed yet.
+mods/coop/game.cpp: the queue keeps the serial; in every frame (also during the cinematic) an entry whose object is not the one queued (game::alive) is dropped and unregistered as a puppet. Switch: `coop.fix npc.defer_identity off`.
 
 ## Fix idea
 Record game::object_serial when queueing and compare it before the destroy (and in is_puppet for queued entries).
@@ -33,7 +33,10 @@ Record game::object_serial when queueing and compare it before the destroy (and 
 Test: during a cinematic queue a puppet's destroy, destroy it with destroy_untracked, spawn a console NPC at the same address (repeat until reused); after the cinematic the NPC must live (fix) vs destroyed (main).
 
 ## Verification
-Not fixed yet.
+Test `defer_identity` (tools/tests/coop_defer_identity.py).
+* FAIL (SPORE_FIX_OFF=npc.defer_identity): out/lab/20261112-011014 (the creature at the freed block was destroyed at the cinematic's end).
+* PASS: out/lab/20261112-010824-2, out/lab/20261112-014310 (it lives). (A run without a reuse in its rounds fails its first check: out/lab/20261112-013003; the test tries 6 rounds since.)
 
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
+- 2026-11-12: fixed on fix/w48-freed (npc.defer_identity).

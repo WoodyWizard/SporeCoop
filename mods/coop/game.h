@@ -75,7 +75,7 @@ void* species_profile(void* c);
 // Every creature must belong to a herd: game code calls GetHerd() on neighbours
 // without a null check (0xD41A20 -> 0xC046B0, see docs/05-re-notes.md).
 void* avatar_herd();
-void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
+void* spawn_creature(const net::Vec3& pos, void* species, void* herd, bool reuse = false); // reuse: Create's pool flag (tests)
 // cGameNounManager::DestroyInstance; a creature (cCreatureAnimal) is kept until the running
 // cinematic is over (it may be one of its actors), destroy_deferred_tick() removes it then
 void destroy_creature(void* c);
@@ -319,6 +319,8 @@ using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
+bool lend_ledger_on();           // BUG-0882 (game.lend_ledger): lent state in the ledger, call guards reset per frame
+uint32_t call_guards_reset();
 void set_swap_guard(bool on);    // tests (off: no undo)
 void debug_swap_fault();         // tests: the next swapped NPC tick returns without its restore
 uint32_t swaps_restored();
@@ -349,6 +351,35 @@ const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO
 
 // `c` is still a live cCreatureAnimal of the world (compares pointers only: safe on a freed one)
 bool creature_listed(void* c);
+
+// ---- the liveness of a stored pointer (BUG-0426 class, package L1 of 0.7.13) ----
+// A pointer kept from an earlier frame (or from before a game call) may name an object the game freed since, or a new
+// object the game built at the same address. Its own memory says nothing (mbIsDestroyed +0x21 of a freed block can
+// read 0 again, BUG-0842 / BUG-0843 / BUG-0844). The truth is the game's object list (cGameNounManager +0x78) and the
+// object's serial (cGameData::mID +0x24, ++ in CreateInstance only, docs/re/space.md#space-object-serial).
+// listed(): one walk of the list per frame (on the first question of the frame), kept exact inside the frame by
+// gamefixes' DestroyInstance hook (an object destroyed now leaves the set) and by the serial counter (a miss after a
+// CreateInstance of this frame walks the list again). Compares pointers only: safe on a freed one.
+bool listed(const void* obj, uint32_t noun = 0); // in the list now (noun 0: any noun) and not destroyed
+struct LiveRef {
+    void* p = nullptr;
+    uint32_t serial = 0; // its cGameData::mID when it was taken
+    uint32_t noun = 0;
+    explicit operator bool() const { return p != nullptr; }
+};
+LiveRef live_ref(void* obj, uint32_t noun = 0); // {} unless obj is listed (with that noun) now
+bool alive(const LiveRef& r);                    // r.p is listed with r.noun now and is the same object (serial)
+inline void* live(const LiveRef& r) { return alive(r) ? r.p : nullptr; }
+void note_destroyed(void* obj); // gamefixes' DestroyInstance hook, before the game destroys obj
+// the mod's frame tick (coop.cpp on_frame): listed() keeps its walk only inside it; elsewhere (our hooks inside the
+// game's update, where the game may free objects without DestroyInstance) every question walks the list
+struct LiveScope {
+    LiveScope();
+    ~LiveScope();
+};
+void note_created();            // the mod made an object: the next miss walks the list again
+std::string live_status();      // coop.live (tests)
+bool listed_exact();            // listed() is kept exact inside a frame (its fix on, the destroy hook in)
 // diagnostics (coop.npc herds): every herd, and the creatures of herds without a nest
 std::string herds_dump();
 std::string herd_nulls_status(); // BUG-0256: null herd members taken out before Herd_Update

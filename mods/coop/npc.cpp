@@ -222,6 +222,7 @@ void debug_next_id(uint16_t id) { g_next_id = id; }
 // ------------------------------------------------------------------ guest side
 struct Proxy {
     void* c = nullptr;
+    uint32_t serial = 0; // BUG-0842: c's cGameData::mID when the proxy made it (another object at c's address: not it)
     game::Key key{};
     uint8_t flags = 0;
     float health = 0, max_health = 0;
@@ -301,6 +302,7 @@ static void log_hit(uint8_t victim, void* attacker, float amount, const char* ho
 // the nest (social games, epic flag, DNA worth need it; docs/re/creature.md 8), and the species
 // still has its creatures where the game counts them
 static std::map<uint64_t, void*> g_local_herds;
+static std::unordered_map<void*, uint32_t> g_herd_serial; // BUG-0843: herd -> its cGameData::mID when cached
 static uint32_t g_proxies_in_nest = 0;
 static uint64_t herd_key(const game::Key& k) { return ((uint64_t)k.group << 32) | k.instance; }
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
@@ -380,8 +382,12 @@ static bool update_filter(void* c)
     if (g_leave_locals_fix && g_proxies.empty() && C.host_here && !C.host_here()) // BUG-0412: the host is not here yet
         return true;
     if (void* h = game::herd_of(c))
-        if (h != game::avatar_herd())
-            g_local_herds[herd_key(game::species_key(c))] = h;
+        if (h != game::avatar_herd()) {
+            void*& slot = g_local_herds[herd_key(game::species_key(c))];
+            if (slot != h || !g_herd_serial.count(h)) // (a live NPC's herd, in its update: its serial is the herd's)
+                g_herd_serial[h] = game::object_serial(h);
+            slot = h;
+        }
     g_kill.push_back(c); // a local NPC: the host owns NPCs
     return false;
 }
@@ -472,12 +478,13 @@ static void npc_each(void (*cb)(uint16_t, void*, void*), void* u)
     }
 }
 
+static void* handler_c(const Proxy& px);
 static void* npc_mirror(uint16_t id)
 {
     auto it = g_proxies.find(id);
     if (it == g_proxies.end() || !it->second.c || game::is_destroyed(it->second.c))
         return nullptr;
-    return it->second.c;
+    return handler_c(it->second); // BUG-0805
 }
 
 // ------------------------------------------------------------------ BUG-0487: resync of unknown ids (G5)
@@ -1667,6 +1674,29 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     }
 }
 
+// BUG-0843 (class BUG-0426): the nest herd cached per species (g_local_herds, learnt from the guest's own NPCs) and the
+// herds made for proxies (g_herds) were reused while `object_alive` said so: that reads the herd's own memory, so a
+// herd the game destroyed and freed (its nest gone, a migration, the world's last member of the species gone) and
+// whose block a new herd took (another species' herd: CreateHerd gives the block back within frames) still passed,
+// and the next proxy of the species was made into that other herd (another species' herd: its AI, its nest, its
+// save). Now a cached herd is used only while it is the same object in the game's list (noun, serial) and of the
+// species; else the noun list is searched again. Old (`coop.fix npc.herd_identity off`): object_alive.
+static bool g_herd_identity_fix = true;
+COOP_FIX("npc.herd_identity", "BUG-0843", g_herd_identity_fix, "creature: a guest's copy of a host animal is never put into another herd that the game built where the species' herd was");
+static uint32_t g_herd_stale;
+static void note_herd(void* h)
+{
+    if (g_herd_serial.size() > 512)
+        g_herd_serial.clear();
+    g_herd_serial[h] = game::object_serial(h);
+}
+static bool herd_is(void* h, void* species)
+{
+    auto it = g_herd_serial.find(h);
+    return it != g_herd_serial.end() && game::alive(game::LiveRef{h, it->second, game::kHerdNoun}) &&
+           game::herd_species(h) == species;
+}
+
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
     void* species_nest = species;
@@ -1682,10 +1712,12 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     uint64_t hk = herd_key({hkey.instance, hkey.type, hkey.group});
     auto lh = g_local_herds.find(hk);
     if (lh != g_local_herds.end()) {
-        if (game::object_alive(lh->second)) {
+        if (g_herd_identity_fix ? herd_is(lh->second, species_nest) : game::object_alive(lh->second)) {
             g_proxies_in_nest++;
             return lh->second;
         }
+        if (g_herd_identity_fix)
+            g_herd_stale++;
         g_local_herds.erase(lh);
     }
     // not seen on a local NPC yet (proxies made before the game's NPCs ran an update): the nest
@@ -1706,18 +1738,53 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
         &f);
     if (f.found) {
         g_local_herds[hk] = f.found;
+        note_herd(f.found);
         g_proxies_in_nest++;
         return f.found;
     }
     auto it = g_herds.find(hk);
-    if (it != g_herds.end())
-        return it->second;
+    if (it != g_herds.end()) {
+        if (!g_herd_identity_fix || herd_is(it->second, species))
+            return it->second;
+        g_herd_stale++;
+        g_herds.erase(it);
+    }
     void* h = game::create_herd(pos, species);
-    if (h)
+    if (h) {
         g_herds[hk] = h;
+        note_herd(h);
+    }
     return h;
 }
 
+// BUG-0842 (see check_identity)
+static bool g_proxy_identity_fix = true;
+COOP_FIX("npc.proxy_identity", "BUG-0842", g_proxy_identity_fix, "creature, tribe: a guest never drives or destroys another creature that the game built where a removed animal's copy was");
+static uint32_t g_identity_retired;
+// the proxy's creature is the object it made, now (the object list of this frame and the serial)
+static bool px_alive(const Proxy& px) { return px.c && game::alive(game::LiveRef{px.c, px.serial, 0x18EB45Eu}); }
+// ... (npc.proxy_identity off: it is set)
+static bool px_live(const Proxy& px) { return px.c && (!g_proxy_identity_fix || px_alive(px)); }
+// BUG-0805 (class BUG-0426): the message handlers (the host's hit on the guest with a proxy as the attacker, the
+// social prompt and result, the NPC's animations and fight effects, a body's meat) took the proxy's creature as it
+// was stored: in the frame after the guest's own game removed it (or in the frames before it was freed and given to
+// another creature) they handed a destroyed creature to TakeDamage (the pack's stimulus sender, BUG-0453 class), to
+// CreaturePlayAnim or to an effect; guest_tick forgets such a proxy only after the messages of the frame. Now every
+// handler takes the creature only while it is the live object the proxy made. Old (`coop.fix npc.handler_live off`):
+// the stored pointer (with mbIsDestroyed in some of them).
+static bool g_handler_live_fix = true;
+COOP_FIX("npc.handler_live", "BUG-0805", g_handler_live_fix, "creature: a host's hit, a social prompt or an animal's animation is never given to a copy of an animal the guest's game has just removed");
+static uint32_t g_handler_dropped;
+static void* handler_c(const Proxy& px)
+{
+    if (!g_handler_live_fix)
+        return px.c;
+    if (px.c && !px_alive(px)) {
+        g_handler_dropped++;
+        return nullptr;
+    }
+    return px.c;
+}
 static void destroy_proxy(uint16_t id)
 {
     auto it = g_proxies.find(id);
@@ -1725,7 +1792,11 @@ static void destroy_proxy(uint16_t id)
         return;
     if (it->second.c) {
         g_proxy_of.erase(it->second.c);
-        if (game::is_destroyed(it->second.c)) { // the game removed it already: only forget it
+        // BUG-0842: not the object the proxy made (freed, another one at its address): only forget it, no call on it
+        if (g_proxy_identity_fix && !game::alive(game::LiveRef{it->second.c, it->second.serial, 0x18EB45Eu})) {
+            game::puppet_unregister(it->second.c);
+            g_identity_retired++;
+        } else if (game::is_destroyed(it->second.c)) { // the game removed it already: only forget it
             game::puppet_unregister(it->second.c);
             if (!g_destroy_once_fix) // BUG-0850 off: 0.7.11.1, a second DestroyInstance of the destroyed proxy
                 game::destroy_creature(it->second.c);
@@ -1795,6 +1866,44 @@ static void check_listed()
 // (at most 0.1 s) along the target's velocity. Off: on the target (0.7.10).
 static bool g_place_now_fix = true;
 COOP_FIX("npc.place_now", "BUG-0757", g_place_now_fix, "creature, tribe: a walking animal's copy is placed where the host has it when the frame is drawn, not a frame behind");
+// BUG-0842: a cached proxy pointer was checked by its own memory (mbIsDestroyed, BUG-0300's list check once a second,
+// BUG-0931's in every frame in Creature only) and by its address: the game frees a destroyed creature some frames
+// later (its last reference goes, 10-40 frames in the lab) and gives the block to the next creature of that species
+// (lab: 8-11 creations). Where the mod did not look in that time (the second after an avatar or world change, the
+// fork's held death caption, Tribe at any time, a proxy without states), the next frame drove the new creature as the
+// host's animal, or the stale drop below destroyed it (another proxy, an animal of the guest's world). Now, before the
+// stale drop and the driving, in Creature and Tribe: a proxy whose creature is not the object it made (game::listed and
+// the serial) is forgotten without a call on it and made again; an empty list (between worlds) retires them all.
+// Old (`coop.fix npc.proxy_identity off`): the address and the mbIsDestroyed byte, the list check in Creature only.
+// (g_proxy_identity_fix, g_identity_retired: above destroy_proxy)
+static double g_settle_s = 1.0, g_test_settle_until = 0; // tests (BUG-0842): `coop.npc settle <s>`
+static void check_identity()
+{
+    for (auto& [id, px] : g_proxies) {
+        if (!px.c)
+            continue;
+        game::LiveRef r{px.c, px.serial, 0x18EB45Eu};
+        if (game::alive(r))
+            continue;
+        g_identity_retired++;
+        H->log(M, SK_WARN, "npc %u: the proxy's creature %p is not the one it made any more (gone or another object there, "
+               "key %08X): made again (npc.proxy_identity)", id, px.c, px.key.instance);
+        g_proxy_of.erase(px.c);
+        game::puppet_unregister(px.c);
+        px.c = nullptr;
+        px.serial = 0;
+        px.drv = drive::State{};
+        g_proxy_lost++;
+    }
+}
+std::string debug_settle(double s)
+{
+    g_test_settle_until = H->time_seconds() + s;
+    char b[120];
+    snprintf(b, sizeof b, "npc tick waits %.1f s (as after an avatar change); identity checks so far %u\n", s, g_identity_retired);
+    return b;
+}
+
 static double g_frame_dt = 0, g_frame_last = 0;
 static void guest_tick(double now)
 {
@@ -1825,8 +1934,12 @@ static void guest_tick(double now)
         s_epoch = epoch;
         s_av_t0 = now;
     }
-    if (now - s_av_t0 < 1.0)
+    if (now - s_av_t0 < g_settle_s || now < g_test_settle_until)
         return;
+    // BUG-0842 (npc.proxy_identity): every proxy's creature is checked against the object list and its serial first, in
+    // Creature and Tribe, before the stale drop below destroys anything and before anything is driven
+    if (g_proxy_identity_fix)
+        check_identity();
     // A proxy the host stopped sending states for while it sends them for the others is not an
     // NPC of the host any more (its id belongs to a world the host has left: before 2026-10-25 the
     // host renumbered its NPCs after its editor or a load without a despawn, and the guest kept
@@ -1896,6 +2009,7 @@ static void guest_tick(double now)
                 continue;
             }
             game::puppet_register(px.c); // no local AI
+            px.serial = game::object_serial(px.c);
             g_proxy_of[px.c] = id;
             px.ever = true;
             px.tuning_set = 0; // (a new creature: its own Create's tuning)
@@ -2220,7 +2334,7 @@ static void away_snapshot(double now)
     s_last = now;
     std::vector<AwaySnap> v;
     for (auto& [id, px] : g_proxies) {
-        if (!px.c || px.killed || !game::object_alive(px.c) || game::is_dead(px.c) || game::destroy_pending(px.c))
+        if (!px_live(px) || px.killed || !game::object_alive(px.c) || game::is_dead(px.c) || game::destroy_pending(px.c))
             continue;
         void* h = game::herd_of(px.c);
         if (!h || !game::herd_nest(h)) // a herd of our own: no nest of the game to go on in
@@ -2370,8 +2484,10 @@ static void puppet_tuning_tick(double now)
     }
 }
 
+static void reuse_tick();
 void tick(double now)
 {
+    reuse_tick();
     tick_frame(now);
     puppet_tuning_tick(now);
     if (g_kill_clear)
@@ -2567,7 +2683,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (kind == 0 && is_guest()) { // the host's meat of the body: the proxy shows it when it is less
                 g_meat_rx++;
                 auto f = g_proxies.find(id);
-                if (f == g_proxies.end() || !f->second.c || !f->second.killed || !game::is_dead(f->second.c))
+                if (f == g_proxies.end() || !handler_c(f->second) || !f->second.killed || !game::is_dead(f->second.c))
                     continue;
                 Proxy& px = f->second;
                 auto e = g_meat_eaten.find(id); // (bites not sent yet are not in the host's value)
@@ -2607,7 +2723,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     continue;
                 Proxy& px = it->second;
                 uint32_t cur = 0;
-                if (!px.c || game::is_destroyed(px.c) || now - px.anim_fix_at < 2.0 || now - px.anim_rx_at < g_anim_snap_quiet ||
+                if (!px_live(px) || game::is_destroyed(px.c) || now - px.anim_fix_at < 2.0 || now - px.anim_rx_at < g_anim_snap_quiet ||
                     !game::drawn_state(px.c, nullptr, &cur) || cur == anim)
                     continue;
                 px.anim_fix_at = now; // (at most every 2 s: never restarts an animation that will not take)
@@ -2630,7 +2746,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (!g_anims_fix)
                 continue;
             auto it = g_proxies.find(id);
-            void* c = it == g_proxies.end() ? nullptr : it->second.c;
+            void* c = it == g_proxies.end() ? nullptr : handler_c(it->second); // BUG-0805
             if (!c || it->second.killed || game::is_destroyed(c) || game::is_dead(c)) {
                 g_anims_noproxy++;
                 continue;
@@ -2669,7 +2785,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* npc = it->second;
         if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
-        void* attacker = C.puppet_of(from);
+        // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
+        void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
         // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
@@ -2697,8 +2814,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 if (!av || game::mode_id() != modes::kCreature)
                     return;
                 float dmg = teamplay::on_own_damage(av, d.damage);
-                log_hit(0, C.puppet_of ? C.puppet_of(from) : nullptr, dmg, "friendly fire from a guest", true);
-                game::apply_damage(av, dmg, d.type, C.puppet_of ? C.puppet_of(from) : nullptr);
+                void* by = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of ? C.puppet_of(from) : nullptr;
+                log_hit(0, by, dmg, "friendly fire from a guest", true);
+                game::apply_damage(av, dmg, d.type, by); // (BUG-0805: a live puppet or none)
                 g_pvp_in++;
             } else if (d.player != from && net::is_player(*C.sess, d.player)) {
                 net::Writer w;
@@ -2716,7 +2834,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* attacker = nullptr;
         auto it = g_proxies.find(d.attacker);
         if (it != g_proxies.end())
-            attacker = it->second.c;
+            attacker = handler_c(it->second); // BUG-0805
         if (player_rules::guest_drops_air_hit(av, attacker, d.ability)) { // BUG-0555: in the air in this game
             log_hit(C.sess->my_id(), attacker, 0, "from the host, dropped (creature.air_immune)", true);
             break;
@@ -2989,14 +3107,19 @@ std::string list()
             net::Vec3 at = pc ? game::position(pc) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
                      "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
-                     " game_dead=%d impressed=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
+                     " game_dead=%d impressed=%d herd_sp=%d fam=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
                      id, px.key.instance, pc ? "spawned" : "pending", pc ? game::health(pc) : 0.f,
                      pc ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
                      px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, pc ? drive::over_ground(at) : 0.f,
                      have ? drive::over_ground(st.pos) : 0.f, px.made_agl, px.drv.grounded, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
                      pc ? drive::speed(game::velocity(pc)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
                      px.drv.nudges, pc ? (int)game::is_puppet(pc) : -1, pc, pc ? game::herd_of(pc) : nullptr, body_print(pc),
-                     pc ? (int)game::is_dead(pc) : -1, pc ? (int)game::impressed(pc) : -1);
+                     pc ? (int)game::is_dead(pc) : -1, pc ? (int)game::impressed(pc) : -1,
+                     // BUG-0843: its herd (the game's +0x1674) is a listed herd of its own species (1), of another (0)
+                     pc && game::herd_of(pc) && live.count(game::herd_of(pc))
+                         ? (int)(game::herd_species(game::herd_of(pc)) == game::species_profile(pc))
+                         : -1,
+                     pc && game::herd_of(pc) && game::herd_of(pc) == game::avatar_herd() ? 1 : 0);
             out += b;
         }
     }
@@ -3141,7 +3264,7 @@ namespace npc {
 void* proxy(uint16_t id)
 {
     auto it = g_proxies.find(id);
-    return it == g_proxies.end() ? nullptr : it->second.c;
+    return it == g_proxies.end() ? nullptr : handler_c(it->second); // BUG-0805 (social's prompt and result)
 }
 
 bool proxy_in_host_pack(void* c)
@@ -3200,6 +3323,116 @@ bool debug_recruit(uint16_t id)
     static uintptr_t get = H->sym("SporeCoop::cPosseSimulator_Get"), add = H->sym("SporeCoop::cPosseSimulator_AddMember");
     void* posse = get && add ? skg::cdecl_call<void*>(get) : nullptr;
     return posse && skg::thiscall<bool>(add, posse, it->second);
+}
+
+// tests (BUG-0426 class, L1 of 0.7.13): an address the game freed is given to a new object. `reuse <ptr> [frames]
+// [species]`: from now on, once per frame, a creature of `species` (default: the one the target had; then the avatar's)
+// is made in a herd of its own next to the avatar; one at the target's address stays (the reuse), any other is
+// destroyed again at once (so its block goes back too). Ends at the reuse or after `frames` frames.
+struct ReuseHunt {
+    uint8_t* target = nullptr;
+    void* species = nullptr;
+    int left = 0, tries = 0, unlisted_at = -1;
+    void* hit = nullptr;
+    uint32_t hit_serial = 0;
+    uint64_t hit_frame = 0;
+    int burst = 1;          // creatures made per tick
+    bool herds = false;     // the tries are herds (CreateHerd), not creatures
+    bool pool = false;      // Create with its reuse flag (a pooled creature of the species)
+    void* herd = nullptr;   // the herd they are made in (null: a herd of their own each)
+    net::Vec3 at{};         // where (without an avatar: Tribe)
+    std::vector<void*> made;
+};
+static ReuseHunt g_reuse;
+static void reuse_tick()
+{
+    if (g_reuse.left <= 0 || !g_reuse.target)
+        return;
+    g_reuse.left--;
+    if (g_reuse.unlisted_at < 0 && !game::listed(g_reuse.target))
+        g_reuse.unlisted_at = g_reuse.tries;
+    void* av = game::avatar();
+    void* sp = g_reuse.species ? g_reuse.species : av ? game::species_profile(av) : nullptr;
+    if (!sp)
+        return;
+    net::Vec3 p = av ? game::position(av) : g_reuse.at;
+    p.x += 6.f;
+    std::vector<void*> miss;
+    // burst: up to `burst` creatures in this one tick (the misses stay until the end of it, so each takes a new block)
+    for (int k = 0; k < std::max(1, g_reuse.burst) && !g_reuse.hit; k++) {
+        void* herd = g_reuse.herd ? g_reuse.herd : game::create_herd(p, sp);
+        void* c = g_reuse.herds ? herd : herd ? game::spawn_creature(p, sp, herd, g_reuse.pool) : nullptr; // (herds: the herd is the try)
+        g_reuse.tries++;
+        if (!c)
+            break;
+        if ((uint8_t*)c == g_reuse.target) {
+            g_reuse.hit = c;
+            g_reuse.hit_serial = game::object_serial(c);
+            g_reuse.hit_frame = H->frame_index();
+            g_reuse.left = 0;
+            if (g_console_npc_fix && !g_reuse.herds)
+                g_console_npcs.insert(c);
+            H->log(M, SK_INFO, "npc reuse: the freed address %p holds a new %s now (serial %u, try %d)", c,
+                   g_reuse.herds ? "herd" : "creature",
+                   g_reuse.hit_serial, g_reuse.tries);
+            break;
+        }
+        miss.push_back(c);
+    }
+    for (void* c : miss) {
+        if (g_reuse.made.size() < 8)
+            g_reuse.made.push_back(c);
+        game::destroy_untracked(c);
+    }
+}
+std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tries, int burst, void* herd,
+                             const net::Vec3* at, bool herds, bool pool)
+{
+    g_reuse = ReuseHunt{};
+    g_reuse.target = (uint8_t*)target;
+    g_reuse.left = frames;
+    g_reuse.species = species;
+    g_reuse.burst = burst;
+    g_reuse.herd = herd;
+    g_reuse.herds = herds;
+    g_reuse.pool = pool;
+    if (at)
+        g_reuse.at = *at;
+    // now_tries > 0: the tries in this call (between two frames: no tick of ours sees the freed address before)
+    for (int i = 0; i < now_tries && g_reuse.left > 0; i++) {
+        g_reuse.left++; // (reuse_tick counts a frame)
+        reuse_tick();
+    }
+    char b[160];
+    snprintf(b, sizeof b, "reuse hunt for %p: %d frames, species %p\n", target, frames, species);
+    return b;
+}
+uint32_t handler_dropped() { return g_handler_dropped; }
+void* debug_proxy_creature(uint16_t id)
+{
+    auto it = g_proxies.find(id);
+    return it == g_proxies.end() ? nullptr : it->second.c;
+}
+std::string debug_reuse_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "reuse target=%p left=%d tries=%d unlisted_at=%d hit=%p serial=%u hit_frame=%llu frame=%llu listed_now=%d\n",
+             (void*)g_reuse.target, g_reuse.left, g_reuse.tries, g_reuse.unlisted_at, g_reuse.hit, g_reuse.hit_serial,
+             (unsigned long long)g_reuse.hit_frame, (unsigned long long)H->frame_index(), (int)game::listed(g_reuse.target));
+    std::string s = b;
+    if (g_reuse.hit && !g_reuse.herds) { // the new object at the freed address: what the game does with it now
+        bool l = game::listed(g_reuse.hit, 0x18EB45Eu) && game::object_serial(g_reuse.hit) == g_reuse.hit_serial;
+        net::Vec3 q = l ? game::position(g_reuse.hit) : net::Vec3{};
+        auto pi = l ? g_proxy_of.find(g_reuse.hit) : g_proxy_of.end();
+        snprintf(b, sizeof b, "hit alive=%d pos=(%.2f %.2f %.2f) puppet=%d as_proxy=%d\n", (int)l, q.x, q.y, q.z,
+                 (int)(l && game::is_puppet(g_reuse.hit)), pi != g_proxy_of.end() ? (int)pi->second : -1);
+        s += b;
+    }
+    for (void* m : g_reuse.made) {
+        snprintf(b, sizeof b, "  made %p\n", m);
+        s += b;
+    }
+    return s;
 }
 
 // host: an NPC of the given species (crt instance) a few metres from the avatar, in a herd of its
@@ -3345,7 +3578,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     char k[8];
     const double now = H->time_seconds();
     for (auto& [id, px] : g_proxies)
-        if (px.c && px.diag_have && game::object_alive(px.c) && !px.killed) {
+        if (px_live(px) && px.diag_have && game::object_alive(px.c) && !px.killed) {
             snprintf(k, sizeof k, "q%u", (unsigned)id);
             fn(k, px.diag_want, user);
             if (!px.buf.empty()) { // u<id>: M1's raw lead now (const: no late_time, no smoothing; changes no state)
@@ -3364,7 +3597,7 @@ std::vector<syncdbg::Entry> sync_entries()
                 v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, px] : g_proxies)
-            if (px.c && game::object_alive(px.c) && !px.killed)
+            if (px_live(px) && game::object_alive(px.c) && !px.killed)
                 v.push_back({"n" + std::to_string(id), game::position(px.c), game::orientation(px.c)});
     }
     return v;
@@ -3451,7 +3684,7 @@ void monitor_tick(double now)
         auto& a = g_audit[id];
         a.seen = now;
         net::PlayerState s;
-        if (!px.c || px.killed || game::is_destroyed(px.c) || !game::object_alive(px.c) ||
+        if (!px_live(px) || px.killed || game::is_destroyed(px.c) || !game::object_alive(px.c) ||
             game::destroy_pending(px.c) || game::is_dead(px.c) || !px.buf.sample(now, s) || (s.flags & net::NF_DEAD)) {
             a.under_since = a.off_since = -1;
             continue;
@@ -3491,7 +3724,7 @@ void monitor_tick(double now)
             float near_d = 1e9f;
             uint16_t near_id = 0;
             for (auto& [oid, ox] : g_proxies)
-                if (oid != id && ox.c && !ox.killed && game::object_alive(ox.c)) {
+                if (oid != id && px_live(ox) && !ox.killed && game::object_alive(ox.c)) {
                     float d = net::dist(game::position(ox.c), p);
                     if (d < near_d) {
                         near_d = d;

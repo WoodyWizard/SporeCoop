@@ -568,6 +568,9 @@ struct Carried {        // the partner's copy of an object a player carries (or 
     bool dropped = false; // the player let go of it: released here at its first rest point
 };
 static std::map<uint8_t, Carried> g_carried; // player id -> its object here
+// BUG-0814 (not reproduced, docs/re/creature.md#creature-freed-block-reuse): the game's destroy of a holding puppet
+// releases its hold slot and the copy falls; `coop.rules carry` shows the last copy held for each player (tests)
+static std::map<uint8_t, std::pair<void*, uint32_t>> g_last_copy; // tests: player -> (object, noun) last held here
 struct Thrown {          // this game's own object after the own creature let go of it: watched until it rests
     void* obj = nullptr;
     uint32_t noun = 0;
@@ -790,6 +793,7 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
             cr.obj = o;
             cr.noun = noun;
             cr.held = true;
+            g_last_copy[player] = {o, noun};
             g_hold_done++;
         } else {
             g_hold_nocopy++;
@@ -846,6 +850,20 @@ static std::string carry_dump()
         if (cr.obj && obj_listed(cr.obj, cr.noun))
             game::object_position(cr.obj, p);
         snprintf(b, sizeof b, "copy of player %u obj=%p held=%d pos=(%.1f %.1f %.1f)\n", id, cr.obj, (int)cr.held, p.x, p.y, p.z);
+        out += b;
+    }
+    // BUG-0814 (tests): the last copy held for each player, also after its carry state ended: the game's own fields
+    // (the held object +0x71: 1 = held by a creature; its physics component 0x116DD1B +0x1F0: 3 = attached)
+    for (auto& [id, lc] : g_last_copy) {
+        bool l = obj_listed(lc.first, lc.second);
+        void* sp = l ? game::cast(lc.first, 0x1186577) : nullptr;
+        void* ph = l ? game::cast(lc.first, 0x116DD1B) : nullptr;
+        net::Vec3 q{};
+        if (l)
+            game::object_position(lc.first, q);
+        snprintf(b, sizeof b, "last copy of player %u obj=%p listed=%d game_held=%d phys=%d pos=(%.1f %.1f %.1f)\n",
+                 id, lc.first, (int)l, sp && skg::readable((uint8_t*)sp + 0x71, 1) ? (int)*((uint8_t*)sp + 0x71) : -1,
+                 ph && skg::readable((uint8_t*)ph + 0x1F0, 4) ? *(int*)((uint8_t*)ph + 0x1F0) : -1, q.x, q.y, q.z);
         out += b;
     }
     snprintf(b, sizeof b, "carry fix=%d hold_tx=%u hold_rx=%u done=%u nocopy=%u drop_tx=%u drop_rx=%u put_tx=%u put_rx=%u "

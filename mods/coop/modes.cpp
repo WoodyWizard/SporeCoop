@@ -112,8 +112,9 @@ static bool creature_alive(void* p)
         return true;
     uint64_t f = g_host_for_modes ? g_host_for_modes->frame_index() : 0;
     auto it = g_puppet_serials.find(p);
-    if (it != g_puppet_serials.end() && it->second.frame == f && f)
-        return true; // checked this frame
+    // checked this frame (BUG-0795: not when game::listed answers, which sees a destroy inside the frame too)
+    if (it != g_puppet_serials.end() && it->second.frame == f && f && !game::listed_exact())
+        return true;
     bool ok = game::creature_listed(p) && (it == g_puppet_serials.end() || !it->second.serial ||
                                            game::object_serial(p) == it->second.serial);
     if (!ok) {

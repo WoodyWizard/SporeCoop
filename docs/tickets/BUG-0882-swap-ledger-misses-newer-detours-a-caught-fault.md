@@ -1,19 +1,19 @@
 ---
 id: BUG-0882
 title: Swap ledger misses newer detours: a caught fault in the relevance pass leaves the game's sphere vector on our static buffer, one in the creature scale call leaves the player-species override set
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-freed
+commits: 1e58b7e0
+tests: lend_ledger
 signature:
-docs:
+docs: docs/06-testing.md#testing-freed-block-reuse
 related: BUG-0110, BUG-0280, BUG-0800
 ---
 
@@ -25,11 +25,7 @@ BUG-0110's premise holds: the game's own handler catches faults inside a call (l
 Severity: medium. Confidence: medium.
 
 ## Root cause
-* Observed (code): mods/coop/view_centres.cpp:116-122, `v[0] = g_buf; v[1] = ...; v[2] = g_buf + kMaxSpheres;` then `o_Relevance(...)`, then `v[0] = b; v[1] = e; v[2] = cap;`, with no ledger entry. The next h_Relevance copies from b == g_buf and "restores" g_buf again, so it never recovers.
-* Observed (code): mods/coop/creature_hp.cpp:135-137, `g_ps_override = sp; o_Scale(...); g_ps_override = nullptr;`; after an unwind h_PlayerSpecies (creature_hp.cpp:118-122) returns the stale override on every call, and h_Scale itself bails out on `g_ps_override` (line 127) for good.
-* Observed (code): the same pattern for mod-only guards: game.cpp:737 (`t_in_anim_fx`), game.cpp:778 (`t_in_evt`), game.cpp:933 (`g_in_relay`), social.cpp:344-349 (`g_goal`); a stuck guard silently switches off its relay or goal attribution.
-* Observed (code): swap_open is called only at cellsync.cpp:723, 2514; civ.cpp:1772; coop.cpp:1456, 1509.
-* Inferred: Relevance_Update walks creatures and herds, a path where caught faults on stale objects are plausible (medium); the heap corruption needs the game to grow or free the vector afterwards (medium-low).
+Observed with the unwind injection (fix/w48-freed, 2026-11-12): after a relevance pass with partners that left like a caught fault (`coop.views unwind`), the game came into every later pass with its sphere vector on the mod's static buffer (`coop.views`: on_our_buffer=1); after the own creature's scale call left so (`coop.hp scaleunwind`), the game's PlayerSpecies answered the guest's own species for good (lab 20261112-010920). The mod-only call guards (inside a puppet's animation, an effect wrapper, an event, a relayed effect; social's goal) had the same pattern.
 
 ## Fix idea
 Open a ledger entry around both calls (h_Relevance: restore v[0..2] to the game's own pointers; h_Scale: clear g_ps_override) and let swap_guard_tick undo them like the others; reset the mod-only guards in the same per-frame tick. One shared helper ("lend X for one call") closes the class; the drama.cpp swap (BUG-0800) could use it too. Twin switch: npc.swapguard already turns the per-frame undo off.
@@ -38,11 +34,13 @@ Open a ledger entry around both calls (h_Relevance: restore v[0..2] to the game'
 Extend `coop.npc swapfault` (e.g. `swapfault relevance|scale`) so the next h_Relevance / h_Scale returns without its restore, the state a caught fault leaves. Host in Creature with a guest far away: after one frame the game's mgr+0x20 begin pointer must not equal g_buf (expose it in `coop.views`), the game's PlayerSpecies call must return the host's own species, and the guest's nearby nest members must stay present on the guest's game (the BUG-0280 assertion). Must FAIL with `SPORE_FIX_OFF=npc.swapguard` and PASS with the fix; no crash report on either game.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+mods/coop/view_centres.cpp: the lend of the sphere vector is a swap-ledger entry (undo: the game's pointers back while the vector is still on our buffer); mods/coop/creature_hp.cpp: the player species override is one (swap_undo_ptr_if); mods/coop/game.cpp: the frame's swap guard also clears the mod's call guards, social::tick its goal. Switch: `coop.fix game.lend_ledger off` (no entries, no reset).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `lend_ledger` (tools/tests/coop_lend_ledger.py).
+* FAIL (SPORE_FIX_OFF=game.lend_ledger): out/lab/20261112-010920, out/lab/20261112-013136 (with the call guards: PlayerSpecies still the guest's own species; the game's vector on the mod's buffer).
+* PASS: out/lab/20261112-010824-2, out/lab/20261112-013003.
 
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0110. Severity medium, confidence medium.
+- 2026-11-12: fixed on fix/w48-freed (game.lend_ledger); a fault inside these calls is injected, not made by the game (`coop.views unwind`, `coop.hp scaleunwind`), as BUG-0110's tests do.

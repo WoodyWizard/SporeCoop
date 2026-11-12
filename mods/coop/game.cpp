@@ -12,6 +12,8 @@
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
+#include "gamefixes.h"
+#include <unordered_map>
 
 using namespace skg;
 
@@ -1066,8 +1068,26 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 // the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per
 // frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
 static void swap_ledger_tick();
+// BUG-0882: a detour that lends game state around a call puts its undo into the swap ledger (views' relevance pass, the
+// own creature's scale call); the mod's own call guards (inside a puppet's animation, an effect wrapper, an event,
+// a relayed effect) are false outside every game call, so the frame's tick clears one a caught fault left set (a
+// stuck guard switched its relay off for good). Off (`coop.fix game.lend_ledger off`): no entries, no reset.
+static bool g_lend_ledger_fix = true;
+COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_ledger_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer, the player species changed or a relay of the mod switched off");
+bool lend_ledger_on() { return g_lend_ledger_fix; }
+static uint32_t g_guards_reset;
+static void reset_call_guards()
+{
+    if (!g_lend_ledger_fix)
+        return;
+    if (g_in_puppet_anim || g_in_relay || t_in_anim_fx || t_in_evt)
+        g_guards_reset++;
+    g_in_puppet_anim = g_in_relay = t_in_anim_fx = t_in_evt = false;
+}
+uint32_t call_guards_reset() { return g_guards_reset; }
 void swap_guard_tick()
 {
+    reset_call_guards();
     swap_ledger_tick();
     if (!g_swap_real || !g_swap_guard)
         return;
@@ -1494,14 +1514,14 @@ void* avatar_herd()
     return nm ? field<void*>(nm, kNounAvatarHerdOff) : nullptr;
 }
 
-void* spawn_creature(const net::Vec3& pos, void* species, void* herd)
+void* spawn_creature(const net::Vec3& pos, void* species, void* herd, bool reuse)
 {
     if (!g_ready || !species || !herd)
         return nullptr;
     Vector3 p{pos.x, pos.y, pos.z};
     // static cCreatureAnimal* Create(const Vector3&, cSpeciesProfile*, int age,
     //                                cHerd*, bool isAvatar, bool reuse)   (cdecl)
-    return cdecl_call<void*>(a_CreatureCreate, &p, species, 1, herd, 0, 0);
+    return cdecl_call<void*>(a_CreatureCreate, &p, species, 1, herd, 0, reuse ? 1 : 0);
 }
 
 // A cinematic of the creature stage (CRG_ClaimNest, CRG_SpeciesMigrate, ...) takes creatures as
@@ -1526,8 +1546,21 @@ static WorldToken world_now()
     void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
     return {nm ? field<void*>(nm, kNounAvatarOff) : nullptr, world_epoch()};
 }
-static std::vector<std::pair<void*, WorldToken>> g_destroy_later; // creature, world when queued
-static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
+struct LaterDestroy {
+    void* first;           // the creature
+    WorldToken second;     // the world when queued
+    uint32_t serial = 0;   // BUG-0825: its cGameData::mID when queued
+};
+static std::vector<LaterDestroy> g_destroy_later;
+static uint32_t g_destroys_deferred = 0, g_destroys_late = 0, g_destroys_not_same = 0;
+// BUG-0825 (class BUG-0426): a creature of ours queued for destruction during a cinematic was destroyed when the
+// cinematic ended if its address was still a listed creature; the game may have freed it meanwhile and built another
+// creature there (an NPC of the world: the block comes back within frames), which then went too, and counted as a
+// puppet (no AI, stripped from saves) while queued. Now the queue keeps the serial: an entry whose object is not the
+// one queued is dropped (and is no puppet of ours) in every frame, also during the cinematic.
+// Old (`coop.fix npc.defer_identity off`): the address.
+static bool g_defer_identity_fix = true;
+COOP_FIX("npc.defer_identity", "BUG-0825", g_defer_identity_fix, "creature: a creature that the game built where a copy waiting for the end of a cinematic was is never destroyed with it");
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 COOP_FIX("npc.cinedefer", "BUG-0018", g_destroy_defer, "creature: creatures removed during a cinematic go when it is over");
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
@@ -1563,7 +1596,7 @@ void destroy_creature(void* c)
     if (defer) {
         if (destroy_pending(c))
             return;
-        g_destroy_later.push_back({c, world_now()});
+        g_destroy_later.push_back({c, world_now(), object_serial(c)});
         g_destroys_deferred++;
         return;
     }
@@ -1603,12 +1636,23 @@ void destroy_deferred_tick()
             it = g_destroy_later.erase(it);
         } else
             ++it;
+    if (g_defer_identity_fix) // BUG-0825: freed meanwhile, or another creature at its address: not ours any more
+        for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
+            if (!alive(LiveRef{it->first, it->serial, 0x18EB45Eu})) {
+                H->log(M, SK_INFO, "deferred destroy of %p dropped: not the creature queued any more (npc.defer_identity)",
+                       it->first);
+                puppet_unregister(it->first);
+                g_destroys_not_same++;
+                it = g_destroy_later.erase(it);
+            } else
+                ++it;
     if (g_destroy_later.empty() || cinematic_running())
         return;
     auto later = std::move(g_destroy_later);
     g_destroy_later.clear();
     void* nm = cdecl_call<void*>(a_NounGet);
-    for (auto& [c, queued_in] : later) {
+    for (auto& d : later) {
+        void* c = d.first;
         puppet_unregister(c);
         if (!creature_listed(c) || !nm)
             continue;
@@ -1620,8 +1664,8 @@ void destroy_deferred_tick()
 std::string destroy_deferred_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "destroys during cinematics: deferred=%u done_after=%u pending=%u", g_destroys_deferred,
-             g_destroys_late, (unsigned)g_destroy_later.size());
+    snprintf(b, sizeof b, "destroys during cinematics: deferred=%u done_after=%u pending=%u not_same=%u", g_destroys_deferred,
+             g_destroys_late, (unsigned)g_destroy_later.size(), g_destroys_not_same);
     return b;
 }
 
@@ -2089,8 +2133,131 @@ void puppet_unregister(void* c)
 bool is_puppet(void* c) { return std::find(g_puppets.begin(), g_puppets.end(), c) != g_puppets.end(); }
 const std::vector<void*>& puppets() { return g_puppets; }
 
+// ---- the object list of this frame (BUG-0426 class, L1 of 0.7.13; game.h listed / LiveRef) ----
+// `coop.fix game.listed_frame off`: every listed() walks the whole list (the 0.7.12 creature_listed), nothing kept.
+static bool g_listed_frame_fix = true;
+COOP_FIX("game.listed_frame", "BUG-0426", g_listed_frame_fix, "all: one walk of the game's object list per frame answers whether a kept pointer is still a live object (kept exact by the game's destroys)");
+static std::unordered_map<const void*, uint32_t> g_live; // object -> noun
+static uint64_t g_live_frame = ~0ull;
+static uint32_t g_live_counter = 0, g_live_epoch = ~0u;
+static bool g_live_dirty = true;
+static int g_live_scope; // LiveScope depth: inside the mod's frame tick
+static uint32_t g_live_walks, g_live_rewalks, g_live_destroys, g_live_hits, g_live_misses;
+static const uint32_t* serial_counter()
+{
+    // cGameNounManager::CreateInstance: `inc [0x167BE28]; mov [esi+0x24],eax` (docs/re/space.md#space-object-serial)
+    static const uint32_t* p = H ? (const uint32_t*)H->sym("SporeCoop::NounSerialCounter") : nullptr;
+    return p;
+}
+static void live_walk()
+{
+    g_live.clear();
+    for_each_object(
+        [](void* o, uint32_t noun, void*) {
+            if (object_alive(o))
+                g_live[o] = noun;
+            return true;
+        },
+        nullptr);
+    const uint32_t* sc = serial_counter();
+    g_live_counter = sc ? *sc : 0;
+    g_live_frame = H ? H->frame_index() : 0;
+    g_live_dirty = false;
+    g_live_walks++;
+}
+static bool scan_listed(const void* c, uint32_t noun)
+{
+    struct F {
+        const void* c;
+        uint32_t noun;
+        bool found;
+    } f{c, noun, false};
+    for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            auto* f = (F*)u;
+            if (o != f->c)
+                return true;
+            f->found = (!f->noun || n == f->noun) && object_alive(o);
+            return false;
+        },
+        &f);
+    return f.found;
+}
+bool listed(const void* obj, uint32_t noun)
+{
+    if (!obj || !g_ready)
+        return false;
+    // (no destroy hook: a destroy inside the frame would not be seen, so every question walks the list)
+    // only inside the mod's own frame tick (LiveScope): there no game update runs between the walk and the question.
+    // In the game's update (our hooks) the game may tear objects down without DestroyInstance (a world's end) after
+    // the walk: there every question walks the list as before.
+    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !g_main_tid.load() || !fx_main_thread() ||
+        !g_live_scope)
+        return scan_listed(obj, noun);
+    uint64_t f = H->frame_index();
+    uint32_t ep = world_epoch();
+    if (f != g_live_frame || ep != g_live_epoch || g_live_dirty) {
+        live_walk();
+        g_live_epoch = ep;
+    }
+    auto it = g_live.find(obj);
+    if (it == g_live.end()) {
+        const uint32_t* sc = serial_counter();
+        if (sc && *sc != g_live_counter) { // made by the game in this frame: walk again
+            live_walk();
+            g_live_rewalks++;
+            it = g_live.find(obj);
+        }
+    }
+    if (it == g_live.end()) {
+        g_live_misses++;
+        return false;
+    }
+    // listed in this frame and not destroyed through the hook since: its memory is the object's
+    if ((noun && it->second != noun) || field<uint8_t>((void*)obj, 0x21)) {
+        g_live_misses++;
+        return false;
+    }
+    g_live_hits++;
+    return true;
+}
+LiveRef live_ref(void* obj, uint32_t noun)
+{
+    LiveRef r;
+    if (!listed(obj, noun))
+        return r;
+    r.p = obj;
+    r.serial = object_serial(obj);
+    r.noun = noun;
+    return r;
+}
+bool alive(const LiveRef& r) { return r.p && listed(r.p, r.noun) && object_serial(r.p) == r.serial; }
+void note_destroyed(void* obj)
+{
+    if (g_live.erase(obj))
+        g_live_destroys++;
+}
+void note_created() { g_live_dirty = true; }
+LiveScope::LiveScope()
+{
+    if (!g_live_scope++)
+        g_live_dirty = true; // (a game update ran since the last scope: walk again on the first question)
+}
+LiveScope::~LiveScope() { g_live_scope--; }
+bool listed_exact() { return g_listed_frame_fix && gamefixes::destroy_hooked(); }
+std::string live_status()
+{
+    char b[240];
+    snprintf(b, sizeof b, "listed: fix=%d hooked=%d counter=%d objects=%u walks=%u rewalks=%u destroys=%u hits=%u misses=%u",
+             (int)g_listed_frame_fix, (int)gamefixes::destroy_hooked(), (int)(serial_counter() != nullptr),
+             (unsigned)g_live.size(), g_live_walks, g_live_rewalks, g_live_destroys, g_live_hits, g_live_misses);
+    return b;
+}
+
 bool creature_listed(void* c)
 {
+    if (g_listed_frame_fix)
+        return listed(c, 0x18EB45Eu);
     struct F {
         void* c;
         bool found;
