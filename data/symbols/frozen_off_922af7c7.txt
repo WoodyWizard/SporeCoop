@@ -238,3 +238,6 @@ SporeCoop::MapU32Int_EventCounts_At ; BUG-0786: the space feature badges is off 
 SporeCoop::MapU32Int_StageMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
 SporeCoop::RbTree_FreeNodes ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
 SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+UTFWin::cWindowManager::PopModal ; BUG-0956: game fixes: no guard against a destroyed window in the list of modal windows on GOG 2016
+App::MessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016

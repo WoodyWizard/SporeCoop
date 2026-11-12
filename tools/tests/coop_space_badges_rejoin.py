@@ -86,6 +86,8 @@ def main():
     time.sleep(3)
     no_movie(guest)
     no_movie(host)
+    if os.environ.get('BADGES_LISTENERS'):  # BUG-0956 (RE): the game's listeners of the mode change
+        print('  guest listeners at the start:\n' + guest.call('coop.msglisteners')['out'], flush=True)
     hr0, hb0, he0 = badges(host)
     gr0, gb0, ge0 = badges(guest)
     print(f'  start: host rank {hr0}, {len(hb0)} badges; guest rank {gr0}, {len(gb0)} badges', flush=True)
@@ -136,6 +138,8 @@ def main():
     # 2. leave and join again. RESTART=1 (the default): the guest's game is closed and started again in between (a
     # rejoin after a crash or a restart); RESTART=0: it joins from the same game, whose load of the host's world
     # then faults after a badge was earned (BUG-0956, with space.keep_badges on and off)
+    if os.environ.get('BADGES_LISTENERS'):
+        print('  guest listeners before it leaves:\n' + guest.call('coop.msglisteners')['out'], flush=True)
     guest.call('coop.leave')
     time.sleep(4)
     if RESTART:
@@ -147,6 +151,20 @@ def main():
     else:
         e0 = epoch(guest)
     guest.call(lane.JOIN)
+    if os.environ.get('BADGES_LISTENERS'):  # in the galaxy menu, before the load
+        last = ''
+        for _ in range(200):
+            try:
+                if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+                    o = guest.call('coop.msglisteners')['out']
+                    if o != last:
+                        print('  guest listeners in the menu:\n' + o, flush=True)
+                        last = o
+                elif last:
+                    break
+            except OSError:
+                break
+            time.sleep(0.1)
     loaded = wait(lambda: epoch(guest) > e0 and 'Space' in guest.call('game.mode')['out'], 180, 2)
     ck(loaded is not None, f'the guest loaded the host\'s world again (Space world {e0} -> {epoch(guest)})')
     ck(wait_guest_in(host, guest, timeout=120), 'the guest is back in the host\'s world')
