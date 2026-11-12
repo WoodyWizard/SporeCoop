@@ -347,6 +347,8 @@ struct GMember {
     double hold_at = -1e9;          // when that came
     bool hold_bound = false;        // the mirror's hold modifier was started in that animation here
     uint32_t hold_anim_bound = 0;   // (that animation)
+    int hold_item = 0;              // BUG-0971: the item the host's member holds in that hold (kind 12), 0 unknown
+    double hold_play_at = -1e9;     // BUG-0968: when hold_try last started the host's hold animation on the mirror
     double hold_end_at = -1e9;      // the host's last end (reliable): an older start overtaking it is no new hold
     uint32_t relayed_anim = 0;      // BUG-0936: the last animation the relay (kinds 2 / 3 / 10) played on it
 };
@@ -992,6 +994,28 @@ static bool g_hold_only_fix = true;
 COOP_FIX("tribe.mirror_hold_only", "BUG-0962", g_hold_only_fix,
          "tribe: a guest's mirror lets go of an item its own animation took when the host's member did not take it (the staff was in the hand on one game only)");
 constexpr double kHoldUnsent = 0.35;
+// BUG-0971: the change animation 0x02C39200 (Citizen's animated change 0xC255E0) is where a member takes an item into
+// its hand (or another one): the host's member has it at the animation's event, the hold starts with it, and the
+// mirror's item (the replicated field, a few frames later) is still 0 or the old one when the host's start comes:
+// hold_try found no item and the mirror played the change empty-handed (lab: `coop.tribe holdtrace`, the start came
+// 0.1-0.3 s after the host's hold began, the mirror's item 0 until it ended). The host sends the item with the start
+// (kind 12: kind 11's entries + u8 item) and the mirror takes that item. `coop.fix tribe.hold_item off`: kind 11, the
+// mirror's own item.
+static bool g_hold_item_fix = true;
+COOP_FIX("tribe.hold_item", "BUG-0971", g_hold_item_fix,
+         "tribe: a guest's mirror takes the item the host's member takes in its change animation (it played the change with the hand empty)");
+static uint32_t g_hold_item_sets;
+// BUG-0968: a host's hold whose animation the mirror does not play could never bind (hold_try waits for the mirror to
+// play it): lab, `coop.tribe holdtrace` of the guest's chief: the host went from its gesture 0x04C6CB02 straight into
+// the change 0x02C39200 and held, the relay brought no start of it (or the mirror's gesture went on), and every start
+// (again once a second) found the mirror in the gesture until the host's end; the same_view still showed the host's
+// chief with the torch raised in its hand and the guest's copy in another pose without it. The host's start says what
+// its member plays now: a mirror that plays another animation starts that one (at most once a second) and binds the
+// hold to it. `coop.fix tribe.hold_anim off`: it waits for the relay as before.
+static bool g_hold_anim_fix = true;
+COOP_FIX("tribe.hold_anim", "BUG-0968", g_hold_anim_fix,
+         "tribe: a guest's mirror plays the animation the host's member holds its item in when it played another one (the chief raised its torch on one game only)");
+static uint32_t g_hold_anim_plays;
 static uint32_t g_hold_only_ended;
 static void hold_try(GMember& g, double now);
 // tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
@@ -1700,6 +1724,7 @@ static uint32_t hold_modifier(void* c, bool end);
 static void send_member_holds()
 {
     std::vector<std::pair<uint16_t, uint32_t>> v, ends;
+    std::vector<uint8_t> items; // BUG-0971: v's items
     static double again_at; // once a second every hold again (a mirror that played the animation later, a lost start)
     double now = H->time_seconds();
     bool again = now - again_at >= 1.0 || now < again_at;
@@ -1708,8 +1733,11 @@ static void send_member_holds()
     for (auto& [c, m] : g_hm) {
         uint32_t h = kept_alive(c, m.serial, 0x18EB4B7u) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
         uint32_t cur = 0;
-        if (h && (h != m.hold || again) && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur)
+        if (h && (h != m.hold || again) && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur) {
             v.push_back({m.id, cur});
+            int it = F<int>(c, kHeldItemOff);
+            items.push_back((uint8_t)(it > 0 && it <= 0x17 ? it : 0));
+        }
         else if (!h && m.hold && ends.size() < 64)
             ends.push_back({m.id, 0}); // the hold ended (the item back in the resting grip)
         m.hold = h;
@@ -1721,11 +1749,14 @@ static void send_member_holds()
         if (list.empty())
             continue;
         net::Writer w;
-        w.u8(11);
+        bool with_item = !reliable && g_hold_item_fix; // (BUG-0971: starts carry the item)
+        w.u8(with_item ? 12 : 11);
         w.u8((uint8_t)list.size());
-        for (auto& [id, a] : list) {
-            w.u16(id);
-            w.u32(a);
+        for (size_t k = 0; k < list.size(); k++) {
+            w.u16(list[k].first);
+            w.u32(list[k].second);
+            if (with_item)
+                w.u8(items[k]);
         }
         for (auto& p : C.sess->players())
             if (p.id != 0) {
@@ -1743,13 +1774,28 @@ static void hold_try(GMember& g, double now)
     if (!g.hold_anim || now - g.hold_at > 3.0 || !mirror_ok(g) || !has_body(g.c) || !a_SetHandheldItem)
         return;
     int item = F<int>(g.c, kHeldItemOff);
+    bool other_item = g_hold_item_fix && g.hold_item > 0 && item != g.hold_item; // BUG-0971
+    if (other_item)
+        item = g.hold_item;
     uint32_t cur = 0;
+    if (g_hold_anim_fix && item > 0 && game::drawn_state(g.c, nullptr, &cur) && cur != g.hold_anim && now - g.hold_at < 0.5 &&
+        now - g.hold_play_at >= 1.0 && !game::is_dead(g.c)) { // BUG-0968: the host's member plays it now
+        g.hold_play_at = now;
+        if (game::play_behaviour_anim(g.c, g.hold_anim, 0, 1, -1)) {
+            g.relayed_anim = g.hold_anim;
+            g.anim_rx_at = now; // (as a relayed start: the idle fix leaves it alone for 1.5 s)
+            g_hold_anim_plays++;
+            hold_ev(member_id(g.c), 'P', g.hold_anim, cur);
+        }
+    }
     if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim) {
         hold_ev(member_id(g.c), 't', g.hold_anim, item <= 0 ? 0xFFFFFFFFu : cur);
         return;
     }
-    hold_ev(member_id(g.c), 'T', cur, hold_modifier(g.c, false) ? 1 : 0);
-    if (!hold_modifier(g.c, false)) {
+    hold_ev(member_id(g.c), 'T', cur, (hold_modifier(g.c, false) ? 1 : 0) | (other_item ? 2 : 0) | (uint32_t)item << 8);
+    if (other_item || !hold_modifier(g.c, false)) {
+        if (other_item)
+            g_hold_item_sets++;
         // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
         // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
         float sc = read_item_scale(g.c);
@@ -2186,11 +2232,12 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         return;
     }
     double now = H->time_seconds();
-    if (kind == 11) { // BUG-0914: a host member took its item in this animation
+    if (kind == 11 || kind == 12) { // BUG-0914: a host member took its item in this animation (12: and which, BUG-0971)
         uint8_t n = r.u8();
         for (int i = 0; i < n && r.ok(); i++) {
             uint16_t id = r.u16();
             uint32_t anim = r.u32();
+            int item = kind == 12 ? r.u8() : 0;
             if (!r.ok())
                 break;
             g_hold_rx++;
@@ -2211,6 +2258,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
                 continue; // (an unreliable start sent before the end, arriving after it)
             it->second.hold_anim = anim;
             it->second.hold_at = now;
+            it->second.hold_item = item;
             hold_try(it->second, now);
         }
         return;
@@ -2237,6 +2285,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             if (how == 1 && cur != g.relayed_anim)
                 continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
             g.anim_fix_at = now;
+            hold_ev(id, 'I', anim, cur); // (tests: the mirror's animation ended for the host's idle / other start)
             if (how == 1) {
                 game::idle_refresh(g.c, true);
                 g_idle_refreshed++;
@@ -2297,8 +2346,13 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             continue;
         }
         g.anim_rx_at = now;
-        hold_ev(id, 'R', anim, kind);
-        if (game::play_behaviour_anim(c, anim, how, a, b)) {
+        bool played = game::play_behaviour_anim(c, anim, how, a, b);
+        {
+            uint32_t now_cur = 0;
+            game::drawn_state(c, nullptr, &now_cur);
+            hold_ev(id, played ? 'R' : 'r', anim, now_cur); // (tests: what the mirror plays right after)
+        }
+        if (played) {
             g_anim_relay_played++;
             g.relayed_anim = anim; // (BUG-0936)
             hold_try(g, now);      // (BUG-0914: the hold came before the animation)
@@ -6358,7 +6412,7 @@ std::string debug(const std::vector<std::string>& a)
                " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
                "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
-               " bound=" + std::to_string(g_hold_bound) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
+               " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
                std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
