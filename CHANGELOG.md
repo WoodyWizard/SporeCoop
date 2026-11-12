@@ -3,8 +3,6 @@
 ## [Unreleased]
 
 ### Fixed
-- Co-op votes: a player who pressed I'm ready and left while still in the menu or loading no longer leaves that
-  flag to the next player who joins; the vote waits for the newcomer (BUG-0772).
 - Network: player names, LAN game names and planet names received from other players are cleaned to one line of
   printable text (control characters and broken text removed, names cut to 24 characters) before they are shown,
   logged or written to the co-op save slot (BUG-0774).

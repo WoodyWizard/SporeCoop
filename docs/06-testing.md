@@ -6481,7 +6481,8 @@ nanvel <s> [id|-1] [air]` (host: the NPC states sent carry a NaN velocity, optio
   held: the deadlock without hanging the test). All fail with `validate_tests --nofix`.
 * Lab `vote_leaver` (coop_vote_leaver.py, warm, ~3 min): two scripted guests (coop_net_robust.Peer, they never send a
   player state) on the host of a two-game session; the first presses ready and leaves, the second gets its id; the
-  vote must wait for it (`SPORE_FIX_OFF=vote.ready_forget` fails). Lab `net_names` (coop_net_names.py): a scripted
+  vote must wait for it. A regression test: it passes on 0.7.12 too (BUG-0772 not reproduced: the host's
+  player_join makes the Remote, so player_leave erases the flag; lab 20261112-111316). Lab `net_names` (coop_net_names.py): a scripted
   guest with a newline, control and broken bytes in its HELLO name; the host's roster row and both games' logs
   (`SPORE_FIX_OFF=net.name_clean` fails). `coop_net_robust.Peer(name)` takes bytes for a raw name.
 * Not on game instances, on purpose: LAN discovery from the internet, the half-open flood and a restart inside a
