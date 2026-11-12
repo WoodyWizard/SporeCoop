@@ -59,7 +59,7 @@ never run. In most runs the vectored handlers still ran (SporeKit's fault logger
 
 ## Verification
 * dead_modal_list (the state put in directly, then the game's PopModal): FAIL lab 20261112-072743 (lane 5,
-  SPORE_FIX_OFF=game.dead_modal_list: the guest faults at 0x65), PASS lab 20261112-072746 (lane 4).
+  SPORE_FIX_OFF=game.dead_modal_list: the guest faults at 0x65), PASS lab 20261112-072746 (lane 4) and 20261112-074718 (lane 5).
 * The real game, `BADGES_RESTART=0 space_badges_rejoin`: SPORE_FIX_OFF=game.dead_modal_list FAIL 4 of 4 (lab
   20261112-073016-2, -073122, -073232, -073337, lane 5; the last three with the crash report of kit.fix offstack);
   with the fix PASS 4 of 4 (lab 20261112-073016, -073127, -073239, -073346, lane 4), each with the guard's line "a

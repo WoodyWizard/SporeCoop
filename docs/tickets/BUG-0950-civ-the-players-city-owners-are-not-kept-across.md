@@ -40,7 +40,7 @@ nothing is dealt anew. In memory only: a restart of the host's game or a new ses
 
 ## Verification
 * civ_owners_reload: FAIL lab 20261112-072252 (lane 5, SPORE_FIX_OFF=civ.owners_kept: "the city at (-295, 406, -69) is
-  still player 0's on both games (host 1, guest 1)"), PASS lab 20261112-070917 (lane 5).
+  still player 0's on both games (host 1, guest 1)"), PASS lab 20261112-070917 and 20261112-074718 (lane 5).
 
 ## History
 - 2026-11-12: opened.
