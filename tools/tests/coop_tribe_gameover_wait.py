@@ -45,10 +45,15 @@ def main():
         return ck.result()
     print(f'  before: host busy {busy(host)}, guest busy {busy(guest)}', flush=True)
     t0 = time.time()
-    while time.time() - t0 < 90 and not caption_up(host):
+    k = 0
+    while time.time() - t0 < 120 and not caption_up(host):
         hs = tribe_state(host)
-        for i in [i for i in members if i in hs and hs[i]['hp'] > 0]:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 5000')
+        alive = [i for i in members if i in hs and hs[i]['hp'] > 0]
+        for i in alive:
+            out = host.call(f'coop.tribe pincer {i} {enemy[0]} 5000')['out'].strip()
+            if k % 8 == 0:
+                print(f'    {time.time() - t0:3.0f} s: #{i} hp {hs[i]["hp"]:.1f}: {out[:90]}', flush=True)
+        k += 1
         time.sleep(1.5)
     t_cap = time.time()
     up = caption_up(host)
