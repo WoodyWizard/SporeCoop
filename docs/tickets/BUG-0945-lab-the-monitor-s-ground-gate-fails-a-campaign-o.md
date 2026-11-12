@@ -10,7 +10,7 @@ role: host
 versions: 0.7.12
 fixed_in: unreleased
 branch: fix/w47-final12c
-commits:
+commits: 442a5678
 tests: tribe_member_air (coop_tribe_member_air.py), gates_selftest (f_tribe_hang, f_tribe_toss, f_tribe_toss_old)
 signature:
 docs: docs/re/tribe.md#tribe-member-toss, docs/06-testing.md#testing-monitor-tribe-air

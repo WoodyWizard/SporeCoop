@@ -67,6 +67,9 @@ is in); play_creature plays for minutes and clicks the stances many times.
   without the twin: 20261111-171903 (lane 4, HEAD), 20261111-172725-at-94ca59ab (lane 4, the code that passed in the
   morning), rel/0.7.12 20261111-151535 and 20261111-170604 (4 of 4).
 * PASS: 20261111-173009 (lane 4, 5 of 5), 20261111-173012 (lane 3, with family_attack).
+* The area's tests with the same code: 20261111-180402 (play_creature, npc_lost_target, herd_help_stale,
+  avatar_stale_target, family_attack on lanes 3-5: 5 of 5), 20261111-182544 (play_creature on lane 4, creature_kills on
+  lane 5, with the final build).
 
 ## History
 - 2026-11-11: opened; found to be the lane's longer stage-entry pause and the test's unchecked click; fixed in the
