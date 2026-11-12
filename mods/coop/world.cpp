@@ -64,7 +64,8 @@ struct In {
 
 // A received world comes from another player's machine: only plain relative names inside the
 // save slot, sane sizes (a save slot is a few MB; a Space save with many systems stays far below)
-constexpr uint32_t kMaxWorldBytes = 128u << 20, kMaxWorldFiles = 2048;
+using slotfs::kMaxWorldBytes; // (slotfs.h: 128 MB, 2048 files; the host's collect checks them too, BUG-0847)
+using slotfs::kMaxWorldFiles;
 
 static bool safe_rel(const std::string& rel)
 {
@@ -116,50 +117,6 @@ static std::wstring widen(const std::string& s)
     std::wstring w(n, 0);
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
     return w;
-}
-
-static bool read_file(const std::wstring& p, std::vector<uint8_t>& out)
-{
-    FILE* f = _wfopen(p.c_str(), L"rb");
-    if (!f)
-        return false;
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    out.resize(n > 0 ? n : 0);
-    bool ok = n <= 0 || fread(out.data(), 1, n, f) == (size_t)n;
-    fclose(f);
-    return ok;
-}
-
-static void collect(const std::wstring& root, const std::wstring& rel, std::vector<File>& out)
-{
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((root + L"\\" + rel + L"*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE)
-        return;
-    do {
-        std::wstring n = fd.cFileName;
-        if (n == L"." || n == L"..")
-            continue;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            collect(root, rel + n + L"\\", out);
-        } else {
-            File f;
-            std::wstring r = rel + n;
-            if (r == L"sporecoop.txt")
-                continue;
-            if (!read_file(root + L"\\" + r, f.data))
-                continue;
-            std::string s = narrow(r);
-            for (auto& c : s)
-                if (c == '\\')
-                    c = '/';
-            f.rel = s;
-            out.push_back(std::move(f));
-        }
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
 }
 
 // newest Games\Game* folder = the slot the host played/saved last
@@ -625,8 +582,11 @@ COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received w
 COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
 COOP_FIX("world.write_check", "BUG-0105", slotfs::g_write_fix, "world: a world whose files could not be written is not loaded");
 COOP_FIX("world.slot_fallback", "BUG-0254", slotfs::g_fallback_fix, "world: a slot that cannot be replaced (a file in use) gives way to another slot");
+COOP_FIX("world.staged_move", "BUG-0848", slotfs::g_staged_move_fix, "world: the received world's final folder move is tried again for 1.5 s when a file in it is held for a moment (Windows error 5 / 32)");
+COOP_FIX("world.share_complete", "BUG-0847", slotfs::g_collect_fix, "world: a share whose save files cannot all be read completely fails and is tried again (off: the unreadable files are left out)");
 COOP_FIX("world.tmp_cleanup", "BUG-0254", slotfs::g_cleanup_fix, "world: leftovers of interrupted world writes are tidied (under a mutex)");
 static unsigned g_share_saves;         // saves posted for shares (tests)
+static unsigned g_collect_failures;    // tests (BUG-0847): shares refused because a save file could not be read
 // BUG-0284: the game's own reset for the galaxy menu (0xB32C30) clears the player's record
 // (SpacePlayerData: empire id, cached cEmpire*, colonies) before it reads the slot's stars. A game
 // fault while the stage was left (a tribe citizen's WalkTo, handled by the game's own exception
@@ -702,7 +662,16 @@ bool share_now(uint8_t peer, std::string& err)
     }
     Out o;
     o.peer = peer;
-    collect(slot, L"", o.files);
+    // BUG-0847: a file that cannot be read completely (Windows: held by a scanner, or still being
+    // written) fails the share; the caller tries again (coop.cpp, BUG-0231) instead of the guest
+    // loading the slot without it
+    std::string cerr;
+    if (!slotfs::collect(slot, o.files, cerr)) {
+        H->log(M, SK_WARN, "world: not sharing %s with player %u: %s", narrow(slot).c_str(), peer, cerr.c_str());
+        g_collect_failures++;
+        err = cerr;
+        return false;
+    }
     if (o.files.empty()) {
         err = "save folder is empty";
         return false;
@@ -1538,6 +1507,17 @@ static void finish(const std::string& host_name)
         g_in = In{};
         return;
     }
+    // BUG-0847: every file of the offer, in full (the checksum covers only what arrived)
+    uint64_t got = 0;
+    for (auto& [i, f] : g_in.files)
+        got += f.data.size();
+    if (slotfs::g_collect_fix && (g_in.files.size() != g_in.offer.file_count || got != g_in.offer.total_size)) {
+        H->log(M, SK_WARN, "world: the world from %s is incomplete: %u of %u files, %llu of %u bytes", host_name.c_str(),
+               (unsigned)g_in.files.size(), (unsigned)g_in.offer.file_count, (unsigned long long)got, g_in.offer.total_size);
+        g_feed("world transfer failed: the world is incomplete");
+        g_in = In{};
+        return;
+    }
     std::vector<std::string> rels;
     for (auto& [i, f] : g_in.files) {
         if (!safe_rel(f.rel)) { // checked on arrival already; never write outside the slot
@@ -1699,6 +1679,9 @@ std::string status()
              g_settle_waits, g_stale_saves); // tests (BUG-0276)
     s += b;
     snprintf(b, sizeof b, "shares saved again (written on a planet) %u\n", g_planet_saves); // tests (BUG-0357)
+    s += b;
+    snprintf(b, sizeof b, "shares refused (a save file unreadable) %u, staged moves tried again %u\n", g_collect_failures,
+             slotfs::g_move_retries); // tests (BUG-0847, BUG-0848)
     s += b;
     snprintf(b, sizeof b, "stale menu player cleared %u\n", g_menu_player_cleared); // tests (BUG-0284)
     s += b;
