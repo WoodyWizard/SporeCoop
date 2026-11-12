@@ -400,10 +400,21 @@ static int c_text(void*, int argc, const char* const* argv, SkOut* o)
 
 static int c_click(void*, int argc, const char* const* argv, SkOut* o)
 {
-    NEED(3, "click <x> <y> [left|right|middle]");
+    NEED(3, "click <x> <y> [left|right|middle] [release]");
     int b = argc > 3 ? (!strcmp(argv[3], "right") ? 1 : (!strcmp(argv[3], "middle") ? 2 : 0)) : 0;
-    bool ok = input_click(atoi(argv[1]), atoi(argv[2]), b);
+    bool release = argc > 4 && !strcmp(argv[4], "release"); // BUG-0804: the real mouse again after the click
+    bool ok = input_click(atoi(argv[1]), atoi(argv[2]), b, release);
     outf(o, ok ? "clicked" : "failed");
+    return ok ? 0 : 1;
+}
+
+// tests (BUG-0804): the mouse position the game reads (GetCursorPos as hooked), client coordinates
+static int c_cursor(void*, int, const char* const*, SkOut* o)
+{
+    int x = 0, y = 0;
+    bool virt = false;
+    bool ok = vcursor_state(x, y, virt);
+    outf(o, "virtual=%d x=%d y=%d", virt ? 1 : 0, x, y);
     return ok ? 0 : 1;
 }
 
@@ -848,7 +859,8 @@ void register_builtin_commands()
     command_add(k, "text", "text <string> - WM_CHAR input", c_text, nullptr, A);
     command_add(k, "window", "window [x y | test] - game window position (move it)", c_window, nullptr,
                 SK_CMD_OUTSIDE_FRAME);
-    command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
+    command_add(k, "click", "click <x> <y> [left|right|middle] [release]", c_click, nullptr, A);
+    command_add(k, "cursor", "cursor - where the game reads the mouse: virtual=0|1 x y (client)", c_cursor, nullptr, A);
     command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
     command_add(k, "button", "button <x> <y> <down|up> [left|right|middle] - press and hold / release", c_button,
                 nullptr, A);

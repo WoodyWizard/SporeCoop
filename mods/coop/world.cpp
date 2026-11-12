@@ -310,10 +310,73 @@ COOP_FIX("world.box_aside", "BUG-0599", g_box_aside_fix, "world: the co-op windo
 // the box's OK button (the check mark, control id 0xFFFFFFF1, 2026-10-23 tree dump)
 constexpr uint32_t kSavedBoxOk = 0xFFFFFFF1;
 
+// BUG-0846: 0x06318E78 is the game's message-box layout, not only the saved box: the pause menu's
+// "Do you want to save your game?" (Don't Save 0x05107B17, Cancel 0x05107B19, Save 0x05107B1A, no OK;
+// lab tree dump 2026-11-12) and the Civ captured-city specialty question (0x05107B19 / 0x05107B1A,
+// from the fork) use it too. The watcher took the first one it saw for the saved box: it posted Enter
+// on the question (the question was answered for the player) and counted the save as written, then
+// stopped watching when the question closed, and the real saved box stayed up with the game paused
+// (coop_saved_box.py --case question). Now a box counts only with its OK and none of the choice
+// buttons, the watch goes on while a saved box is up, and no new save is posted under an old box.
+// Off: any visible 0x06318E78 (0.7.12).
+static bool g_saved_box_fix = true;
+COOP_FIX("world.saved_box_only", "BUG-0846", g_saved_box_fix, "world: only the game saved box (its OK, no choice buttons) is confirmed and counts for a save, not the game's questions of the same window");
+// BUG-0804: the click on the box's OK kept SporeKit's virtual cursor at the OK point for 5 s (the
+// game read the mouse there: a Cell steered to it). Off: the 5 s (0.7.12).
+static bool g_box_cursor_fix = true;
+COOP_FIX("world.saved_box_cursor", "BUG-0804", g_box_cursor_fix, "world: the mod's click on the game saved box gives the mouse back to the player right after the click");
+// BUG-0806: an OK button outside the game window (the box placed past the edge) was clicked every
+// second for the whole watch and never hit; the click command still succeeded, so Enter never came.
+// Now an OK outside the client area is confirmed with Enter (the box is the modal window then).
+// Off: the useless click (0.7.12).
+static bool g_box_offscreen_fix = true;
+COOP_FIX("world.saved_box_offscreen", "BUG-0806", g_box_offscreen_fix, "world: a game saved box whose OK is outside the game window is confirmed with Enter");
+
+static bool g_saved_box_visible; // the last look saw a saved box up (BUG-0846)
+static unsigned g_box_questions; // tests: looks that found a question of the same window, left alone
+static unsigned g_box_enters;    // tests: Enters posted for an OK outside the window (BUG-0806)
+
+static void all_visible(sui::Win w, uint32_t id, std::vector<sui::Win>& out, int depth = 0)
+{
+    if (!w || depth > 12 || !sui::visible(w))
+        return;
+    if (sui::control_id(w) == id) {
+        out.push_back(w);
+        return;
+    }
+    for (sui::Win c : sui::children(w))
+        all_visible(c, id, out, depth + 1);
+}
+
+static bool is_saved_box(sui::Win box)
+{
+    if (!first_visible(box, kSavedBoxOk))
+        return false;
+    for (uint32_t id = 0x05107B17; id <= 0x05107B1A; id++)
+        if (first_visible(box, id))
+            return false;
+    return true;
+}
+
+static sui::Win find_saved_box()
+{
+    if (!g_saved_box_fix)
+        return first_visible(sui::main_window(), kSavedBoxId);
+    std::vector<sui::Win> boxes;
+    all_visible(sui::main_window(), kSavedBoxId, boxes);
+    for (sui::Win b : boxes)
+        if (is_saved_box(b))
+            return b;
+    if (!boxes.empty() && !g_box_questions++)
+        H->log(M, SK_INFO, "world: a question of the game (window 0x06318E78 without its OK) is up: not the saved box, left to the player");
+    return nullptr;
+}
+
 static void box_task(void*)
 {
     g_box_task = false;
-    sui::Win box = first_visible(sui::main_window(), kSavedBoxId);
+    sui::Win box = find_saved_box();
+    g_saved_box_visible = box != nullptr;
     if (!box) {
         if (g_box_seen_at) // confirmed and closed: stop watching (a later Enter hit other menus)
             g_box_watch_until = 0;
@@ -324,6 +387,8 @@ static void box_task(void*)
         H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
                (unsigned long long)(now - g_saved_at));
     g_box_seen_at = now;
+    if (g_saved_box_fix) // watched while it is up (a box that outlives the 30 s is still confirmed)
+        g_box_watch_until = std::max(g_box_watch_until, now + 5000);
     if (g_box_hold) {
         g_box_watch_until = now + 30000;
         return;
@@ -337,13 +402,23 @@ static void box_task(void*)
     // 2026-10-23: both 3-4 s after such an Enter).
     if (sui::Win ok = first_visible(box, kSavedBoxOk)) {
         sui::Rect r = sui::screen_rect(ok);
-        char cmd[64];
-        snprintf(cmd, sizeof cmd, "click %d %d", (int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2));
-        mouse::own_click((int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2)); // BUG-0551: not the player's click
-        if (g_box_aside_fix && coop_ui::step_aside((int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2), 0.6))
-            H->log(M, SK_INFO, "world: the co-op window steps aside for the click on the game saved box");
-        if (H->command_exec(cmd, nullptr) == 0)
-            return;
+        int x = (int)((r.x1 + r.x2) / 2), y = (int)((r.y1 + r.y2) / 2);
+        RECT cr{};
+        HWND gw = (HWND)H->game_window();
+        if (g_box_offscreen_fix && gw && GetClientRect(gw, &cr) && (x < cr.left || y < cr.top || x >= cr.right || y >= cr.bottom)) {
+            if (!g_box_enters)
+                H->log(M, SK_WARN, "world: the game saved box's OK (%d, %d) is outside the window (%ld x %ld): confirming it with Enter",
+                       x, y, (long)cr.right, (long)cr.bottom);
+            g_box_enters++;
+        } else {
+            char cmd[64];
+            snprintf(cmd, sizeof cmd, g_box_cursor_fix ? "click %d %d left release" : "click %d %d", x, y);
+            mouse::own_click(x, y); // BUG-0551: not the player's click
+            if (g_box_aside_fix && coop_ui::step_aside(x, y, 0.6))
+                H->log(M, SK_INFO, "world: the co-op window steps aside for the click on the game saved box");
+            if (H->command_exec(cmd, nullptr) == 0)
+                return;
+        }
     }
     if (HWND w = (HWND)H->game_window()) {
         PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
@@ -407,6 +482,11 @@ bool save_game(std::string& err)
     // or a mode switch is pending.
     if (const char* why = g_save_blocker ? g_save_blocker() : nullptr) {
         err = why;
+        return false;
+    }
+    // BUG-0846: the previous save's box is still up: a new save would take it for its own confirmation
+    if (g_saved_box_fix && g_saved_box_visible) {
+        err = "waiting for the previous save's \"game saved\" box to close";
         return false;
     }
     uintptr_t get = H->sym("App::IMessageManager::Get");
@@ -1679,6 +1759,9 @@ std::string status()
              g_settle_waits, g_stale_saves); // tests (BUG-0276)
     s += b;
     snprintf(b, sizeof b, "shares saved again (written on a planet) %u\n", g_planet_saves); // tests (BUG-0357)
+    s += b;
+    snprintf(b, sizeof b, "saved box: questions left alone %u, Enters for an OK outside the window %u\n", g_box_questions,
+             g_box_enters); // tests (BUG-0846, BUG-0806)
     s += b;
     snprintf(b, sizeof b, "shares refused (a save file unreadable) %u, staged moves tried again %u\n", g_collect_failures,
              slotfs::g_move_retries); // tests (BUG-0847, BUG-0848)
