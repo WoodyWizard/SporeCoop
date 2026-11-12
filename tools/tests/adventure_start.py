@@ -8,8 +8,9 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from sporectl import Console  # noqa: E402
 import lane  # noqa: E402
+import uifind  # noqa: E402
 
-STEPS = [(92, 246, 300), (566, 542, 300), (892, 496, 90), (1070, 626, 150), (1074, 506, 60), (1072, 626, 200)]
+STEPS = [(566, 542, 300), (892, 496, 90), (1070, 626, 150), (1074, 506, 60), (1072, 626, 200)]
 
 
 def click(c, x, y):
@@ -34,7 +35,12 @@ def main():
                 'menu intro' not in c.call('coop.status').get('out', ''):
             break
         time.sleep(1)
-    c.call('wait.frames 60 30000')
+    time.sleep(3)
+    # the menu entry by its caption, hovered and clicked like a player (uifind.press clicks again when nothing
+    # happened); then the Galactic Adventures screen's play button and the captain panel by their places
+    if not uifind.press(c, 'Galactic Adventures', timeout=20):
+        print('FAILED: the menu entry Galactic Adventures did not react')
+    c.call('wait.frames 300 60000')
     for x, y, f in STEPS:
         click(c, x, y)
         c.call(f'wait.frames {f} 60000')

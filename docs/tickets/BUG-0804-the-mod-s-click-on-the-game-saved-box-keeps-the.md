@@ -1,19 +1,19 @@
 ---
 id: BUG-0804
 title: The mod's click on the game saved box keeps the virtual cursor on the OK button for 5 s: the player loses the mouse after every save
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9101 (commit 39cdca69, lineages41-dev)
 role: host guest
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-saves
+commits: cf952855
+tests: saved_box_cursor
 signature: SporeKit GetCursorPos answers the OK button's point for ~5 s after "the game saved box is up"
-docs: docs/06-testing.md
+docs: docs/re/creature.md#creature-saved-box-kinds, docs/06-testing.md#testing-saves-w48
 related: BUG-0599, BUG-0551
 ---
 
@@ -50,5 +50,18 @@ virtual=1 for ~5 s after the box was confirmed. PASS after: virtual=1 only durin
 Switch off: the old 5 s window returns. Also a real-mouse check in Cell (the cell follows the real pointer at
 once after the box closes).
 
+## Fix
+SporeKit: `click <x> <y> [left|right|middle] [release]`: with `release` the virtual cursor is dropped 2 frames after
+the button-up (vcursor_release, not while a button is held); new console command `cursor` (what the hooked
+GetCursorPos gives the game). The mod's click on the saved box's OK uses `release`. Switch
+`coop.fix world.saved_box_cursor off` = the plain click (5 s).
+
+## Verification
+`saved_box_cursor` (coop_saved_box.py --case cursor): `cursor` every 0.2 s for 7 s after the box closed.
+* FAIL: out/lab/20261112-014119 (`SPORE_FIX_OFF=world.saved_box_cursor`, lane 3): the game read the OK point (980, 610)
+  until 4.8 s after the box closed.
+* PASS: out/lab/20261112-014220-2 and the final runs: never after the box closed (0.0 s).
+
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
+- 2026-11-12: fixed on fix/w48-saves (world.saved_box_cursor), FAIL 20261112-014119, PASS 20261112-014220-2.

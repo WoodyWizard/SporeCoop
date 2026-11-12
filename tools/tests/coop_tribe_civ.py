@@ -204,7 +204,7 @@ def main():
     end_writes = []
     while time.time() - t0 < 300 and 'Civ' not in mode(host):
         m = mode(host)
-        if t_cityhall and 'Civ' not in m and newest_write(pf) > t_cityhall:
+        if t_cityhall and editors < 2 and 'Editor' not in m and newest_write(pf) > t_cityhall:
             end_writes.append(newest_write(pf) - t_cityhall)
         if 'Editor' in m:
             editors += 1
@@ -221,7 +221,8 @@ def main():
             wait(lambda: 'Editor' not in mode(host), 20)
             if editors == 1 and not checked_end and 'Tribe' in mode(host):
                 checked_end = True
-                t_cityhall = time.time()
+                time.sleep(3)  # (the game writes into the slot itself when the City Hall editor ends)
+                t_cityhall = max(time.time(), newest_write(pf) + 0.5)
                 print(f'  back from the City Hall editor; the host\'s slot last written {t_cityhall - newest_write(pf):.0f} s '
                       'ago', flush=True)
                 if rejoin:
@@ -244,8 +245,9 @@ def main():
     t_civ = time.time()
     ck('Civ' in mode(host), 'the host reaches the Civ stage (%s)' % mode(host).strip())
     if rejoin and t_cityhall:
-        # the planet file as the game wrote it, sampled while the host was not in Civ yet: a save in the end of
-        # Tribe (the guest's join) is a write after the City Hall editor's end (the Civ share save comes in Civ)
+        # the slot's files, sampled from the City Hall editor's end until the vehicle editor opens: a save then (the
+        # guest's join) is a write after the City Hall editor's end. (The game itself writes into the slot when the
+        # vehicle editor ends, lab 20261112-022253: not sampled.)
         print(f'  writes into the host\'s slot seen in the end of Tribe: {sorted(set(round(w) for w in end_writes))} s '
               f'after the City Hall editor; Civ at {t_civ - t_cityhall:+.0f} s', flush=True)
         ck(not end_writes, 'no save into the host\'s slot in the end of Tribe (the joined guest gets the world in Civ)')

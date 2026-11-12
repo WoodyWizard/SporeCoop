@@ -1,19 +1,19 @@
 ---
 id: BUG-0846
 title: Save watcher takes the captured-city specialty question (same window id 0x06318E78) for the saved box, presses Enter on it and shares an unwritten save
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9057
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-saves
+commits: cf952855
+tests: saved_box_question
 signature: window 0x06318E78 without OK button 0xFFFFFFF1; buttons 0x05107B19 / 0x05107B1A
-docs: docs/re/civ.md#civ-shared-message-box
+docs: docs/re/creature.md#creature-saved-box-kinds, docs/re/civ.md#civ-shared-message-box, docs/06-testing.md#testing-saves-w48
 related: BUG-0276, BUG-0599
 ---
 
@@ -62,10 +62,24 @@ guest's capture count / city owners equal the host's after load. FAIL on main (E
 with the fix (switch off = FAIL).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+world.cpp box_task: a visible 0x06318E78 counts as the saved box only with a visible OK 0xFFFFFFF1 and none of the
+choice buttons 0x05107B17..0x05107B1A (the pause menu's question: Don't Save / Cancel / Save; the Civ specialty
+question: 0x05107B19 / 0x05107B1A); a question is left to the player (no click, no Enter, not counted as the save's
+confirmation). The watch goes on while a saved box is up; save_game refuses while the previous save's box is up
+("waiting for the previous save's ..."), so an old box never confirms a new save. Switch
+`coop.fix world.saved_box_only off` = 0.7.12. The BUG-0276 freshness check was left as it is: with only the real box
+counted, "box seen" is a written save again.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+`saved_box_question` (coop_saved_box.py --case question, creature): the pause menu's "Do you want to save your
+game?" open, then coop.save.
+* FAIL: out/lab/20261112-014220 (`SPORE_FIX_OFF=world.saved_box_only`, lane 2): the question was gone 0.03 s after the
+  save (the mod's Enter answered it), the real saved box came 2 s later and stayed up (the game paused) for 12 s.
+* PASS: out/lab/20261112-014019 and the final runs: the question still open after 12 s, the saved box confirmed, a
+  second save under a held box refused.
+Proven with the pause-menu question; the Civ specialty question is covered by the same rule (its ids from the fork,
+not seen by us).
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12: fixed on fix/w48-saves (world.saved_box_only), FAIL 20261112-014220, PASS 20261112-014019.

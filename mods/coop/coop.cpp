@@ -1745,7 +1745,9 @@ unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one
 
 // a save for a world share is under way or due (a share that waits for its save: the editor lets
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
-bool share_save_due() { return world::save_busy() || world::save_pending(); }
+// (BUG-0849: not in the end of Tribe: no share save can be made there, the vehicle editor must not wait 15 s for one)
+static bool tribe_graduating();
+bool share_save_due() { return (world::save_busy() || world::save_pending()) && !tribe_graduating(); }
 
 // BUG-0560: the Cell stage's request (0xE84600) submits and then posts the editor's DNA budget (message 0x90A03FDF,
 // +8 = DNAForFood(food) - spent); the editor's listener takes it only after it entered (cEditor::OnEnter registers
