@@ -76,7 +76,20 @@ No change of the game's behaviour; the mod measures and the rule is precise.
   without a break", allowed for the test; three blows: named, each down after 1.3-1.5 s).
 * Not verified: that the campaign's four lines were throws. The next run that has them prints the member, its node
   and its air time; a member up for 5 s and more still fails the gate.
+* 2026-11-11 (fix/w47-final12d), tribe_member_air failed 3 of 5 on lane 3 (rel/0.7.12 lab 20261111-204713-2) and in
+  the full check (20261111-185533) with `agl_held` of 2.4-3.0 s on its only line: the test, not the counter. The
+  member did not stay: put onto the water in the node 0x05524115 it swam back to the land after 6.8-14.8 s (the log's
+  "down again after 6.8 / 7.2 / 10.2 / 14.8 s" in the four failing runs; 26.9-27.2 s with the idle node 0x04601D70 in
+  the four passing ones), so there was one trace mark, 2.4-3.0 s after the put, or two with only the second over 5 s.
+  The counter agrees with the log in every run: it is per member, does not reset while the member is up, and the
+  trace samples the same members. The test now waits for the idle node, polls that the member is still up, and
+  brings it home and puts it again (up to three times) when it left. PASS 15 of 15 (fix/w47-final12d lab
+  20261111-210637, lane 3; 7 of them needed the second put: the member left within 2 s) with the monitor's finding
+  "15.18 m over the ground ... up for 23 s without a break" allowed in each, and 5 of 5 (20261111-213703, lane 2).
+  The monitor's rule, the mod and gates_selftest (f_tribe_hang, f_tribe_toss, f_tribe_toss_old, in `make test`) are
+  unchanged. docs/06-testing.md#testing-tribe-form-pace-and-water.
 
 ## History
 - 2026-11-11: opened; the cause in that run narrowed down but not proven; log lines, agl_held and the precise rule
   (fix/w47-final12c).
+- 2026-11-11 (fix/w47-final12d): tribe_member_air no longer relies on the member staying on the water by itself (the test only).

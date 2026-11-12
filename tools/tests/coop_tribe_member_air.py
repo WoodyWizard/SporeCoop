@@ -11,7 +11,10 @@ member's stay over 3 m (`tribe: member #.. is .. m over the ground ...` and `...
 2. Blows the host's leader lives through (`coop.tribe pincer`, the combatant's TakeDamage as a real blow: 60, 100,
    140 hp): each throws it over 3 m; the log has the member, its node, and "down again" after less than 5 s.
    Printed, not asserted: where the guest's mirror is meanwhile (BUG-0946: the guests do not see the throw).
-1. A member put into deep water floats on it, 10 m and more over the sea bed (the terrain), and stays: the host's
+1. A member put into deep water while it idles (node 0x04601D70; one with somewhere to go, node 0x05524115 or just
+   out of it, swims back to the land within 2-15 s: the test waits for the idle node and tries again, up to three
+   times, when the member left) floats on it, 10 m and
+   more over the sea bed (the terrain), and stays: the host's
    trace lines then carry agl_hi over 3 m with agl_held of 5 s and more, twice in a row. That is what the monitor's
    ground rule fails on: the suite allows that finding for this test (allow monitor BUG-0945), so the lab's gate
    line "allowed gate monitor: ... over the ground" in the run is part of the proof.
@@ -27,6 +30,7 @@ from twoinst import Checks, game_runs, start
 OVER = re.compile(r'\[s ([\d.]+)\].*tribe: member #(\d+) of player (\d+) is ([\d.]+) m over the ground.*?: (bt=\w+ .*)$')
 DOWN = re.compile(r'\[s ([\d.]+)\].*tribe: member #(\d+) of player (\d+) is down again \(or gone\) after ([\d.]+) s over 3 m, '
                   r'highest ([\d.]+) m')
+IDLE = '04601D70'  # the idle node (docs/re/tribe.md#tribe-member-toss)
 TRACE = re.compile(r'\[s ([\d.]+)\].*coop: trace: host .* agl=(-?[\d.]+) agl_hi=(-?[\d.]+)(?: agl_held=([\d.]+))?')
 
 
@@ -37,7 +41,8 @@ def members(con):
             tribe = 'p' if '(player)' in line else 'n'
         m = re.match(r'\s+#(\d+) \S+ owner=(-?\d+) .*hp=([\d.]+) pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\).*leader=(\d)', line)
         if m and tribe == 'p' and m.group(1) != '0':
-            out[int(m.group(1))] = dict(owner=int(m.group(2)), hp=float(m.group(3)),
+            bt = re.search(r' bt=(\w+)', line)
+            out[int(m.group(1))] = dict(owner=int(m.group(2)), hp=float(m.group(3)), bt=bt.group(1) if bt else '',
                                         pos=tuple(float(m.group(i)) for i in (4, 5, 6)), leader=m.group(7) == '1')
     return out
 
@@ -93,20 +98,48 @@ def main():
     p, g, d = deep_water(host, c) if c else (None, 0.0, 0)
     if not ck(p is not None, f'deep water near the village ({d} m off, the sea bed at {g:.1f} m)'):
         return ck.result()
-    mark = log_mark(host)
-    print(f'  #{lead} onto the water:', host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *p))['out'][:60], flush=True)
-    up, t0 = 0.0, time.time()
-    while up <= 3 and time.time() - t0 < 10:  # it rises from the sea bed to the surface
-        time.sleep(1)
-        h = members(host).get(lead)
-        up = ground(host, h['pos'])[1] if h else 0.0
+    # The member stays on the water when it has nowhere to go: from the node 0x05524115 (after a delivery or a rest)
+    # it swims back to the land within 7-15 s, before two trace marks (4 runs of 4, lab 20261111-204713-2, -185533),
+    # and right after that node has turned into the idle one (0x04601D70) it still left within 2 s (7 runs of 15,
+    # lab 20261111-210637); idle for a while it floats for 27 s and more. So: put it there when it idles, watch
+    # that it is still up, and bring it home and try again when it left.
+    up, held, stays = 0.0, [], []
+    for attempt in range(3):
+        t0, node = time.time(), ''
+        while time.time() - t0 < 30:
+            node = members(host).get(lead, {}).get('bt', '')
+            if node == IDLE:
+                break
+            time.sleep(1)
+        mark = log_mark(host)
+        print(f'  #{lead} (node {node}, after {time.time() - t0:.0f} s) onto the water:',
+              host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *p))['out'][:60], flush=True)
+        up, t0 = 0.0, time.time()
+        while up <= 3 and time.time() - t0 < 10:  # it rises from the sea bed to the surface
+            time.sleep(1)
+            h = members(host).get(lead)
+            up = ground(host, h['pos'])[1] if h else 0.0
+        gm = members(guest).get(lead)
+        print(f'    the member floats {up:.1f} m over the sea bed on the host; the guest\'s mirror: '
+              f'{ground(guest, gm["pos"])[1] if gm else -1:.1f} m over its sea bed', flush=True)
+        t0, now = time.time(), up
+        while now > 3 and time.time() - t0 < 32:  # two trace marks (10 s apart) with 5 s and more behind them
+            time.sleep(1)
+            lines = log_since(host, mark)
+            held = [(float(m.group(3)), float(m.group(4))) for m in map(TRACE.search, lines) if m and m.group(4) is not None]
+            stays = [x for x in held if x[0] > 3 and x[1] >= 5.0]
+            if len(stays) >= 2:
+                break
+            h = members(host).get(lead)
+            now = ground(host, h['pos'])[1] if h else 0.0
+        if len(stays) >= 2:
+            break
+        h = members(host).get(lead, {})
+        print(f'    it left the water after {time.time() - t0:.0f} s (node {h.get("bt")}, {now:.1f} m over the ground; '
+              f'trace {held}): home and again', flush=True)
+        host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *ms[lead]['pos']))
+        time.sleep(5)
     ck(up > 3, f'the member floats {up:.1f} m over the sea bed on the host')
-    gm = members(guest).get(lead)
-    print(f'    the guest\'s mirror: {ground(guest, gm["pos"])[1] if gm else -1:.1f} m over its sea bed', flush=True)
-    time.sleep(26)  # two trace marks and more
-    lines = log_since(host, mark)
-    held = [(float(m.group(3)), float(m.group(4))) for m in map(TRACE.search, lines) if m and m.group(4) is not None]
-    stays = [x for x in held if x[0] > 3 and x[1] >= 5.0]
     ck(len(stays) >= 2, f'the host\'s trace lines say a member stays up: agl_hi / agl_held {held}')
     host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *ms[lead]['pos']))  # home again
     time.sleep(12)  # past the next trace mark: the lines of part 2 start on the ground
