@@ -6468,3 +6468,24 @@ nanvel <s> [id|-1] [air]` (host: the NPC states sent carry a NaN velocity, optio
 * The campaign (coop_campaign.py, every stage change) checks that the spacecraft (96B24187) and City Hall (99E92F05)
   editors come up within 15 s of their vote (BUG-0855): an `editor` finding otherwise. Creature's editors are not
   checked (they may wait for a cinematic, BUG-0404). campaign_space with `core.editor_own_pause` off: 61 s, FAIL.
+
+## partner_pass judges what stopped a walk; cell_coop stops the host first; cell_partner_poison (2026-11-12, fix/w48-pass)
+<a id="testing-partner-pass-judged"></a>
+
+* `partner_pass` (BUG-0913) had passed on its branch by luck: the same build failed it 4 of 7 on lanes 6 / 7 (lab
+  20261112-111650, -113440). Its walk check now says why a walk did not reach the animal: stopped within 2.5 m of the
+  host's creature with nothing nearer is the BUG-0913 stop (fail); a press that never moves the avatar (the game's
+  quirk, desired speed > 0 and moved 0 m) or a stop at another animal is tried again from 4.5 and 8 m behind the
+  host and not judged if it happens there too; a bite that landed between two samples (the animal's health in the
+  host's game went down) counts as reached. A click that took nothing or another animal is not judged (one on the
+  partner fails). The target click from the animal's other side is aimed and sent up to 3 times, the stance set with
+  `twoinst.set_stance`, and after a long jump of the host the test waits until the guest draws it there (the monitor's
+  `drawn` gate caught a 90 m jump once). docs/re/creature.md#creature-partner-pass-rel.
+* `cell_coop`: the host's cell is stopped (`coop.pool goto 0 0`) before the guest is put 9 m away for the knockout. Its
+  last test swim (+18 +18 at ~2.4 m/s) went on, and once it passed 3.1 m from the guest and revived it 2.0 s after the
+  knockout, before the check read `downed` (lab 20261112-094823: "a lethal bite knocks the guest out (downed 0, hp 4)").
+  A flake of the test, not a C1 regression (the guest's game logged the knockout, then "Alice revived Bob").
+* `cell_partner_poison` (BUG-0958, ~1 min): the host's cell gets the poison part, the guest is put onto 10 of the
+  host's clouds; its hp must stay. Read the guest's hp BEFORE the part is given: its clouds start within 2 s and hit a
+  guest 3 m away at once. `--who host` (extended) is a regression check only (the game never hurt the host's avatar
+  with a guest's clouds), `--ff` prints the old behaviour. `coop.pool` line `cell_partner_poison:` names the last hit.

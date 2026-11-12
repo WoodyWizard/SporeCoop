@@ -2212,3 +2212,18 @@ GOG 2024, lab lanes 2 / 3 (tests in docs/06-testing.md#testing-cell-c1). BUG-079
   Creature fall-off in Cell, lab 20261112-065254 / -065045): a cell slows down over ~1 s and the state's velocity is
   the cell's +0x90 (? small for the soft-body avatar: inferred, not read), so the 0.25 s of extrapolation adds
   nothing visible. The switch tried (drive.cell_fall) was taken out.
+
+## A partner's poison clouds and a player's cell (2026-11-12, fix/w48-pass)
+<a id="cell-partner-poison"></a>
+
+BUG-0958, GOG 2024, lab lane 7 (`coop_cell_partner_poison.py`). Answers the "Not checked" of #cell-c1-0713.
+* ✔ (runtime) A cloud's hit on a cell is DamageCell type 3 with the cloud cell as the attacker. A guest's own game
+  calls it for its avatar and the mirror of a host's cloud (the guest's own collision step; the mirror is passive, its
+  +0x110 is 0 on the guest): 18 hits in 11 s on 10 clouds, hp 4 -> 1 and knocked out (lab 20261112-115819).
+* ✔ (runtime) The host's game never called DamageCell for its own avatar and a guest's cloud (made for the puppet
+  with the avatar index lent, so +0x110 is set): 0 hits on 10 such clouds (20261112-120150). So the game spares its
+  avatar from +0x110 clouds by itself; ? where (not read: the contact step or the cloud's own update).
+* `cell.partner_poison` (cellsync.cpp): MSG_CELL_STATE carries +0x110 as flag 4 of a cell (the flags byte: 1 dying,
+  2 dead); a guest's mirror keeps it (`Mirror::product`) and DamageCell of the own avatar by a poison mirror with it
+  is refused while friendly fire is off outside Rivals; on the host the cells a partner's puppet's cloud maker added
+  (h_Cloud, a before / after pass over the pool) are refused the same way. `coop.pool`: `cell_partner_poison:`.

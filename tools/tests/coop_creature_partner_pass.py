@@ -17,6 +17,12 @@ Rounds (one animal each, not of the players' family; the guest is the second hun
 3. From behind the host's creature again, the camera turned to the animal (right-drag), a real click on the animal:
    the game's target field of the guest's avatar (+0xE7C, creature + 0x5A8) must name the animal (its proxy), not the
    host's creature (the puppet). Judged when the host's creature is within 90 px of the click point and nearer.
+Judged (2026-11-12, fix/w48-pass): a walk that reached the animal (pass) or stopped within 2.5 m of the host's creature
+with nothing else nearer (BUG-0913: fail); a press that never started the walk 6 m behind the host (moved under
+0.3 m: the game's quirk, with the fix on and off, lab 20261112-111650 / -113440 / -113425) or a stop at another
+creature is printed, tried again from 4.5 and 8 m behind, and not judged when it happens there too; a walk that
+came within the reach between two samples and bit (the animal lost health in the host's game) counts as reached. A click that took the animal (pass) or the host's creature (fail); one that took
+nothing or another animal along the ray is printed and not judged. More rounds are played until enough are judged.
 Before: `coop.find rivals 1` (and with --ff friendly fire on) must switch the skipping off (`coop.partnerpass on=0`).
 SPORE_FIX_OFF=creature.partner_pass must FAIL (the click takes the host's creature, or the walk stops behind it).
 --ff: the same with friendly fire on (all.friendly_fire): the old behaviour is kept; printed only.
@@ -32,7 +38,7 @@ import time
 from coop_creature_kills import read
 from coop_sync import sample, seg_dist
 import settings_lib as sl
-from twoinst import Checks, shot, start
+from twoinst import Checks, ability_mode, set_stance, shot, start
 
 W, H = 1440, 1080
 BEHIND = 6.0
@@ -127,11 +133,86 @@ def host_engage(host, nid):
     return (round(math.dist(a, h), 2), True) if a and h and math.dist(a, h) < 3.0 else (None, False)
 
 
+def walk_once(host, guest, nid, hid, av, mine, a, d, ln, behind, label):
+    """the attack key pressed from `behind` m behind the host's creature on the line through it: (reached, gaps,
+    what stopped it, the host's creature's distance off the way, the target still the animal)"""
+    place(guest, [x + c / ln * (ln + behind) for x, c in zip(a, d)])
+    gs = sample(guest)
+    me, hp, an = ((gs.get(k) or (None,))[0] for k in (f'p{hid}', 'p0', f'n{nid}'))
+    path = seg_dist(hp, me, an) if me and hp and an else None
+    in_path = path is not None and path < 1.0
+    tg, still = target_is(guest, av, mine)
+    now_ptr = npcs(guest).get(nid, {}).get('ptr', 0)
+    print(f'    key 1 before: {reach(guest)} (target still the animal: {still}; the host\'s creature '
+          f'{path if path is None else round(path, 2)} m off the way; stance {ability_mode(guest)}, the animal\'s proxy '
+          f'{mine:08X} now {now_ptr:08X})', flush=True)
+    hp_before = npcs(host).get(nid, {}).get('hp')  # (the animal's health in the host's game: did a bite land)
+    guest.call('key 1')  # the attack key (1): the game's walk-and-use
+    reached, gaps, t0, presses, bitten = False, [], time.time(), 1, False
+    while time.time() - t0 < 12:
+        tr, gap, rch, kst = reach(guest)
+        if gap is not None:
+            gaps.append(round(gap, 1))
+            if gap <= rch:
+                reached = True
+                break
+            # (a press now and then does not start the walk at all, with or without the fix: a player presses again;
+            # stopped behind the partner, "every further press does nothing", BUG-0913)
+            if presses < 4 and time.time() - t0 > 1.5 * presses and len(gaps) > 12 and abs(gaps[-1] - gaps[-13]) < 0.05:
+                guest.call('key 1')
+                presses += 1
+        time.sleep(0.1)
+    if not reached:
+        # the walk came within the bite's reach between two samples (~0.3 s, 1 m at its speed), the walk-and-use bit
+        # and the animal stepped back from the bite (gap 1.1 -> 1.4-2.0 with the partner 1.6-2.0 m away, lab
+        # 20261112-114736): the bite landed when the animal lost health in the host's game
+        hp_after = npcs(host).get(nid, {}).get('hp')
+        bitten = hp_before is not None and hp_after is not None and hp_after < hp_before
+        print(f'    the animal\'s health in the host\'s game {hp_before} -> {hp_after}: bitten {bitten}', flush=True)
+        reached = bitten
+    print(f'  [{label}] (a) the guest\'s walk-and-use from {behind} m behind the host: gaps {gaps[::8]} -> reached {reached} '
+          f'({time.time() - t0:.1f} s, {presses} press(es)); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
+    blocker = None
+    if not reached:  # what stopped it: the partner's creature (BUG-0913), or something else (not judged)
+        gs = sample(guest)
+        me2, hp2 = (gs.get(f'p{hid}') or (None,))[0], (gs.get('p0') or (None,))[0]
+        others = sorted((round(math.dist(me2, v[0]), 1), k) for k, v in gs.items()
+                        if me2 and k.startswith('n') and k != f'n{nid}')
+        moved = round(math.dist(me, me2), 1) if me and me2 else None
+        dh = round(math.dist(me2, hp2), 1) if me2 and hp2 else None
+        an2 = (gs.get(f'n{nid}') or (None,))[0]
+        # (from the animal's centre: the avatar and the host's creature; BUG-0913's stop is behind the host's creature)
+        da, dha = (round(math.dist(x, an2), 1) if x and an2 else None for x in (me2, hp2))
+        behind = da is not None and dha is not None and da > dha + 0.3
+        # stopped at the partner: within 2.5 m of the host's creature, behind it (farther from the animal's centre), and
+        # nothing else nearer (the BUG-0913 stop is 1.4 m behind it); one that came past it, as near the animal as the
+        # host's creature, was not stopped by it (lab 20261112-122259 r10: gap 1.3, then 1.7 beside it, no bite); a walk that never started (moved under 0.3 m) 6 m behind it is the game's quirk of a press
+        # that does nothing (docs/re/creature.md#creature-partner-pass), another creature in the way is the game's
+        blocker = ('partner' if dh is not None and dh < 2.5 and (not others or others[0][0] >= dh) and (moved or 0) >= 0.3
+                   and behind
+                   else 'no start' if moved is not None and moved < 0.3
+                   else f'beside the partner (from the animal {da} m, the host\'s creature {dha} m)' if dh is not None and dh < 2.5
+                   else f'other {others[:1]}')
+        sp = read(guest, av + 0xC0 + 0x1E0, 8) if av else b''  # cLocomotiveObject desired / standard speed
+        desired = round(struct.unpack('<f', sp[:4])[0], 2) if len(sp) == 8 else None
+        print(f'    not reached: desired speed {desired} (the game still walks it when > 0), moved {moved} m, the host\'s creature {dh} m away, nearest others {others[:3]}, '
+              f'stance {ability_mode(guest)}, key 1 {reach(guest)} -> stopped by: {blocker}', flush=True)
+    return reached, gaps, blocker, path, still
+
+
 def one_round(host, guest, nid, hid, label):
     """one animal the host fights: (front, click_ok, reached, on_partner, walk judged, closest gap)"""
     guest.call('coop.abilities target none')  # (no target left from the round before)
     hg, engaged = host_engage(host, nid)
+    if not engaged:  # (the host's walk to it ended short: once more)
+        hg, engaged = host_engage(host, nid)
     print(f'  [{label}] the host\'s creature at animal n{nid}: {hg} m from its centre', flush=True)
+    t1 = time.time()  # (after a long jump of the host: the guest's picture of it catches up first, ~10 s for 90 m)
+    while time.time() - t1 < 15:
+        hh, gh = (sample(host).get('p0') or (None,))[0], (sample(guest).get('p0') or (None,))[0]
+        if not hh or not gh or math.dist(hh, gh) < 1.5:
+            break
+        time.sleep(0.5)
     if not engaged:
         return None
     gs = sample(guest)  # the animal (its proxy) and the host's creature (its puppet) as the guest's game has them
@@ -150,16 +231,19 @@ def one_round(host, guest, nid, hid, label):
     # 1. the target from the animal's other side (the host's creature behind it there: the click takes the animal
     # with the fix or without, so the walk is judged on its own)
     place(guest, [x - c * 6.0 + sc * 1.5 for x, c, sc in zip(a, u, side)])
-    guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance
-    time.sleep(0.5)
-    o = aim(guest, key)
-    if not o:
-        print(f'  [{label}] the animal is not on the guest\'s screen (from its other side)', flush=True)
-        return None
-    guest.call(f'click {o[1]} {o[2] - 15}')
-    time.sleep(0.5)
-    tg, ok = target_is(guest, av, mine)
-    st = reach(guest)
+    set_stance(guest, 'combat')
+    tg, ok, st = None, False, (None, None, 1.0, None)
+    for dy in (15, 0, 30):  # (a click that missed the animal, which walks on: aimed and clicked again, as a player does)
+        o = aim(guest, key)
+        if not o:
+            print(f'  [{label}] the animal is not on the guest\'s screen (from its other side)', flush=True)
+            return None
+        guest.call(f'click {o[1]} {o[2] - dy}')
+        time.sleep(0.5)
+        tg, ok = target_is(guest, av, mine)
+        st = reach(guest)
+        if ok:
+            break
     if not ok or st[3] != 0:  # (status 12: an animal of the players' own family: it may not be attacked)
         print(f'  [{label}] the guest\'s target from the other side {tg or 0:08X} (animal {ok}), key 1 {st}: not a round', flush=True)
         return None
@@ -168,31 +252,12 @@ def one_round(host, guest, nid, hid, label):
     a, h = (gs.get(f'n{nid}') or (None,))[0], (gs.get('p0') or (None,))[0]
     d = [y - x for x, y in zip(a, h)]
     ln = math.sqrt(sum(c * c for c in d)) or 1
-    place(guest, [x + c / ln * (ln + BEHIND) for x, c in zip(a, d)])
-    gs = sample(guest)
-    me, hp, an = ((gs.get(k) or (None,))[0] for k in (f'p{hid}', 'p0', f'n{nid}'))
-    path = seg_dist(hp, me, an) if me and hp and an else None
-    in_path = path is not None and path < 1.0
-    tg, still = target_is(guest, av, mine)
-    print(f'    key 1 before: {reach(guest)} (target still the animal: {still}; the host\'s creature '
-          f'{path if path is None else round(path, 2)} m off the way)', flush=True)
-    guest.call('key 1')  # the attack key (1): the game's walk-and-use
-    reached, gaps, t0, presses = False, [], time.time(), 1
-    while time.time() - t0 < 12:
-        tr, gap, rch, kst = reach(guest)
-        if gap is not None:
-            gaps.append(round(gap, 1))
-            if gap <= rch:
-                reached = True
-                break
-            # (a press now and then does not start the walk at all, with or without the fix: a player presses again;
-            # stopped behind the partner, "every further press does nothing", BUG-0913)
-            if presses < 4 and time.time() - t0 > 1.5 * presses and len(gaps) > 5 and abs(gaps[-1] - gaps[-6]) < 0.05:
-                guest.call('key 1')
-                presses += 1
-        time.sleep(0.25)
-    print(f'  [{label}] (a) the guest\'s walk-and-use from behind the host: gaps {gaps[::4]} -> reached {reached} '
-          f'({time.time() - t0:.1f} s, {presses} press(es)); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
+    # (a press that never started the walk, or a stop at another creature, is not the partner's: tried again from
+    # another distance, 3 times at most)
+    for behind in (BEHIND, 4.5, 8.0):
+        reached, gaps, blocker, path, still = walk_once(host, guest, nid, hid, av, mine, a, d, ln, behind, label)
+        if reached or blocker == 'partner' or not still:
+            break
     # judged: the host's creature right at the animal (under 1.8 m from its centre) and on the guest's way to it
     walk = bool(still and path is not None and path < 0.5 and hg is not None and hg < 1.8)
     # 3. (b) the click: from behind the host again, the camera on the animal, a click on it
@@ -200,7 +265,7 @@ def one_round(host, guest, nid, hid, label):
     place(guest, [x + c / ln * (ln + BEHIND) for x, c in zip(a, d)])
     o = aim(guest, key)
     if not o:
-        return False, None, reached, False, walk, min(gaps) if gaps else None
+        return False, None, reached, False, walk, min(gaps) if gaps else None, blocker
     t = targets(guest)
     pp = t.get('p0')
     gs = sample(guest)
@@ -210,11 +275,28 @@ def one_round(host, guest, nid, hid, label):
     guest.call(f'click {o[1]} {o[2] - 15}')
     time.sleep(0.5)
     tg, on_animal = target_is(guest, av, mine)
+    now_ptr = npcs(guest).get(nid, {}).get('ptr', 0)
+    if not on_animal:  # (diagnostics: which object the click took)
+        print(f'    click took {tg or 0:08X}: the animal\'s proxy {mine:08X} now {now_ptr:08X}, stance {ability_mode(guest)}; '
+              + ' '.join(f'#{k}={v["ptr"]:08X}' for k, v in npcs(guest).items() if tg and v['ptr'] + 0x5A8 == tg), flush=True)
     on_partner = bool(pup and tg == pup + 0x5A8)
     print(f'  [{label}] (b) animal at {o}, the host\'s creature on the guest\'s screen {pp} (in front: {front}); target '
           f'+0xE7C={tg or 0:08X}: animal {on_animal}, partner {on_partner}', flush=True)
     shot(guest, f'partner_pass_{label}')
-    return front, on_animal, reached, on_partner, walk, min(gaps) if gaps else None
+    return front, on_animal, reached, on_partner, walk, min(gaps) if gaps else None, blocker
+
+
+def clicks(rounds):
+    """the clicks judged: the host's creature in front of the animal and the click took the animal or the host's
+    creature (a click that took nothing or another animal along the ray is the game's pick, not the partner's)"""
+    return [x for x in rounds if x[0] and (x[1] or x[3])]
+
+
+def walks(rounds):
+    """the walks judged: the host's creature right at the animal in the way, and the walk reached the animal or stopped
+    at the host's creature (a press that never started the walk 6 m behind it, the game's quirk with the fix on or
+    off, and a stop at another creature are not the partner's)"""
+    return [x for x in rounds if x[4] and (x[2] or x[6] == 'partner')]
 
 
 def main():
@@ -245,7 +327,7 @@ def main():
     used, rounds = set(), []
     try:
         for r in range(a.rounds + 14):
-            if sum(1 for x in rounds if x[0]) >= 2 and sum(1 for x in rounds if x[4]) >= 3 and len(rounds) >= a.rounds:
+            if len(clicks(rounds)) >= 2 and len(walks(rounds)) >= 3 and len(rounds) >= a.rounds:
                 break
             cand = sorted((v['dist'], k) for k, v in npcs(host).items()
                           if not v['dead'] and k not in used and v['dist'] < 120 and v.get('species') not in family)
@@ -261,11 +343,12 @@ def main():
     finally:
         if a.ff:
             sl.force(host, [guest], 'all.friendly_fire', 'off')
-    front = [x for x in rounds if x[0]]
-    way = [x for x in rounds if x[4]]  # the host in the way, the target an animal it may attack: the walk is judged
-    print(f'  rounds: {len(rounds)}, with the host in front of the animal: {len(front)}; '
-          f'click on the animal {sum(1 for x in front if x[1])}, on the partner {sum(1 for x in front if x[3])}, '
-          f'reached {sum(1 for x in front if x[2])}', flush=True)
+    front, way = clicks(rounds), walks(rounds)
+    print(f'  rounds: {len(rounds)}, with the host in front of the animal: {sum(1 for x in rounds if x[0])}, its click judged '
+          f'{len(front)}: on the animal {sum(1 for x in front if x[1])}, on the partner {sum(1 for x in front if x[3])}; '
+          f'walks judged {len(way)}, reached {sum(1 for x in way if x[2])}; not judged: clicks on something else '
+          f'{sum(1 for x in rounds if x[0] and x not in front)}, walks stopped by something else '
+          f'{[x[6] for x in rounds if x[4] and x not in way]}', flush=True)
     if a.ff:
         print('  (friendly fire on: the old behaviour, not judged)', flush=True)
     else:
