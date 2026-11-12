@@ -4426,3 +4426,12 @@ the attack key that never moves the avatar).
   called once), the objects within 5 m (noun@distance/cos), the nearest nest with the radius of the terrain and the
   surface, and the creature's dwords. `coop.abilities walkto x y z` walks the avatar with the game's WalkTo,
   `target <ptr> any` takes any listed creature as the combat target (the game's SetTarget).
+* ✔ (runtime, BUG-0965) A walk that started and then stood is the same hold: partner_pass with the switch off, the
+  herd at the nest of radius 506.25 (r9; the old BUG-0965 rounds r10 were at that herd too): walked 0.5 m and stood
+  2.0 m from the nest's centre, 0.65 m under the surface, a plain walk 2 m to the side and back moved it 0.0 m (lab
+  20261112-145911, -145911-2). A creature stopped by another creature in the way can walk to the side or back
+  (partner_pass prints that test now). Not the partner (BUG-0913's hooks, no phantom pair, no creature in the steering).
+* CORRECTION (2026-11-12, fix/w48-walk): #creature-partner-pass "~ A press of the attack key now and then does not
+  start the walk-and-use at all" and #creature-partner-pass-rel "? why it cannot move from that spot" and "? what holds
+  it there": the test's gopos had put the creature inside a nest mound's collision (above); with tools.gopos_surface
+  none of them happened again in the branch's runs.
