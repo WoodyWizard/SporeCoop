@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "fixes.h"
 #include "sporekit_game.hpp"
 
 using skg::thiscall;
@@ -499,6 +500,36 @@ void remove_handler(Win w, void* h)
 
 // ---------------- devkit ----------------
 namespace {
+// BUG-0812: `coop.ui show|btn|font|caption|area|align|tree <hex>` took the number as a window and called its
+// vtable: a control id (06318E78) or any other number was a wild pointer and the game faulted. The number is
+// a window only when the live UI tree has a window at that address; else the first window with that control
+// id; else nothing ("no window"). `coop.fix core.ui_window_arg off`: the number as it is (before).
+static bool g_ui_arg_fix = true;
+COOP_FIX("core.ui_window_arg", "BUG-0812", g_ui_arg_fix, "ui: coop.ui takes a window by its address or control id only when the UI tree has it (a wrong number faulted the game)");
+Win arg_win(const char* text, SkOut* out)
+{
+    uintptr_t v = strtoul(text, nullptr, 16);
+    if (!g_ui_arg_fix)
+        return (Win)v;
+    Win by_id = nullptr;
+    std::vector<Win> stack{main_window()};
+    for (int n = 0; !stack.empty() && n < 50000; n++) {
+        Win w = stack.back();
+        stack.pop_back();
+        if (!w)
+            continue;
+        if ((uintptr_t)w == v)
+            return w;
+        if (!by_id && control_id(w) == (uint32_t)v)
+            by_id = w;
+        for (Win c : children(w))
+            stack.push_back(c);
+    }
+    if (!by_id)
+        H->out_printf(out, "no window %08X (no window of the UI tree has that address or control id)\n", (unsigned)v);
+    return by_id;
+}
+
 int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string sub = argc > 1 ? argv[1] : "tree";
@@ -570,7 +601,9 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         return w ? 0 : 1;
     }
     if (sub == "btn" && argc > 2) { // button properties
-        Win w = (Win)strtoul(argv[2], nullptr, 16);
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
         void* b = as_button(w);
         if (!b) {
             H->out_printf(out, "not a button");
@@ -587,7 +620,8 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (sub == "align" && argc > 3) { // experiments: a button's caption alignment (+0x3C) and type (+0x1C)
-        void* b = as_button((Win)strtoul(argv[2], nullptr, 16));
+        Win w = arg_win(argv[2], out);
+        void* b = w ? as_button(w) : nullptr;
         if (!b)
             return 1;
         if (argc > 4)
@@ -596,25 +630,39 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (sub == "area" && argc > 6) { // experiments: a window's area (parent coordinates)
-        set_area((Win)strtoul(argv[2], nullptr, 16), {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_area(w, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
                                                        (float)atof(argv[6])});
         return 0;
     }
     if (sub == "caption" && argc > 3) { // experiments: a window's caption (glyph widths: docs/08-ui.md#ui-text-width)
-        set_caption((Win)strtoul(argv[2], nullptr, 16), argv[3]);
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_caption(w, argv[3]);
         return 0;
     }
     if (sub == "font" && argc > 3) {
-        set_font((Win)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16));
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_font(w, (uint32_t)strtoul(argv[3], nullptr, 16));
         return 0;
     }
     if (sub == "show" && argc > 2) {
-        set_visible((Win)strtoul(argv[2], nullptr, 16), argc < 4 || atoi(argv[3]));
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_visible(w, argc < 4 || atoi(argv[3]));
         return 0;
     }
     int depth = argc > 2 ? atoi(argv[2]) : 4;
     bool all = argc > 3 && !strcmp(argv[3], "all");
-    Win root = argc > 4 ? (Win)strtoul(argv[4], nullptr, 16) : main_window();
+    Win root = argc > 4 ? arg_win(argv[4], out) : main_window();
+    if (!root)
+        return 1;
     std::string s = dump(root, depth, !all);
     if (s.size() > 60000)
         s.resize(60000);
