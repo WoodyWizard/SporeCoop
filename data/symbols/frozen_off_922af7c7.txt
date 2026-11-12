@@ -231,3 +231,10 @@ SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (test
 SporeCoop::cCity_Buy ; BUG-0877: a guest's purchase of a city is not sent to the host (old behaviour)
 SporeCoop::cTribe_SetConquered ; BUG-0777: a guest's village without a standing hut is not set conquered
 SporeCoop::NounSerialCounter ; BUG-0842: on GOG 2016 game::listed does not see an object made inside the frame before the next frame (no serial counter to notice the creation)
+SporeCoop::BadgeManager_GetRank ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::BadgeManager_GiveBadge ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_BadgeMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_EventCounts_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_StageMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::RbTree_FreeNodes ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)

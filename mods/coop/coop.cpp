@@ -5311,7 +5311,13 @@ int c_name(void*, int argc, const char* const* argv, SkOut* out)
         SAY("name: %s (cannot change it in a session; leave first)", g_name.c_str());
         return 1;
     }
-    if (argc > 1)
+    if (argc > 1 && !strcmp(argv[1], "reload")) { // tests (BUG-0897): [coop] name of coop.ini, as at the start
+        char nm[256];
+        H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
+        g_name = utf8::player_name(nm);
+        if (g_name.empty())
+            g_name = "Player";
+    } else if (argc > 1)
         g_name = utf8::player_name(argv[1]);
     SAY("name: %s", g_name.c_str());
     return 0;

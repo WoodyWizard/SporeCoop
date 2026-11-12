@@ -93,6 +93,17 @@
 - Space: the effects of a player's ship (world effects) now show on the partners' screens (BUG-0895).
 - Space: when the host loads another Space save, the connected guests follow it into that game instead of playing on
   in the old one (BUG-0941).
+- Space: a guest that leaves and joins again keeps its own badges and captain rank (and the counters the badges
+  need); before, it got the host's badges back with the host's world (BUG-0786).
+- Screen tearing: SporeKit no longer undoes a frame cap that another mod or program sets for Spore (it wrote the
+  game's own cap back every few frames). The game now tells you once when it runs without its frame cap, and
+  `vsync=1` under `[sporekit]` in `mods\sporekit.ini` turns on vsync: Spore itself asks for none. See
+  docs/INSTALL.md, "The picture tears" (BUG-0779).
+- RivaTuner / MSI Afterburner: the game tells you when RivaTuner is hooked into Spore and how to keep it out if Spore
+  crashes at start; crash reports name it with the same advice, and docs/INSTALL.md has a section on it (BUG-0782).
+- Creature: an NPC egg that hatches or is eaten in the host's game is shown so on the guests at once, not up to a
+  second later. A guest's click at an egg that had already hatched on the host hit the hatchling inside it: a small
+  body lay where the egg was and the host counted it as the guest's hunt (BUG-0896).
 
 ## [0.7.12] - 2026-11-11
 

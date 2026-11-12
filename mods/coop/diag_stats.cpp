@@ -337,6 +337,87 @@ static void reset_counters()
 }
 
 // ---------------- the frame ----------------
+// ---------------- programs on the player's PC that change the game (notes for the player) ----------------
+// BUG-0782: RivaTuner Statistics Server (MSI Afterburner) injects RTSSHooks.dll and hooks the same d3d9 functions as
+// SporeKit; players reported crashes at start with it running. Its DLL is named in the log and the reports; with
+// core.rtss_note the player is also told, once per start, how to keep it out of Spore. Off: the log line only (0.7.12).
+static bool g_fix_rtss_note = true;
+COOP_FIX("core.rtss_note", "BUG-0782", g_fix_rtss_note, "core: when RivaTuner / MSI Afterburner hooks the game, the player is told (once per start) how to keep it out of Spore");
+// BUG-0779: the game runs without its frame limit (kFrameLimitMS 0, or under 10 ms: its own is 16) at a high
+// frame rate: that is what a player saw tear (82-138 fps, a d3d9 wrapper and Spore ModAPI present). With
+// core.uncapped_note the player is told once per start what changed it and how to get a steady picture back.
+// Off: the log line only (0.7.12).
+static bool g_fix_uncapped_note = true;
+COOP_FIX("core.uncapped_note", "BUG-0779", g_fix_uncapped_note, "core: when the game runs without Spore's frame cap for a minute, the player is told (once per start) that another program lifted it and how to stop the tearing");
+static bool g_rtss_told = false, g_uncapped_told = false;
+static uint32_t g_env_notes = 0; // notes shown (tests)
+
+static const wchar_t* rtss_dll()
+{
+    for (const wchar_t* n : {L"RTSSHooks.dll", L"RTSSHooks64.dll"})
+        if (GetModuleHandleW(n))
+            return n;
+    return nullptr;
+}
+
+// kFrameLimitMS now (AppProperties id 44; docs/02-modkit.md#modkit-frame-limit), -1 when not readable
+static int frame_limit_ms()
+{
+    uintptr_t p = g_H->sym("App::FrameLimit_ptr");
+    uint8_t* app = p ? *(uint8_t**)p : nullptr;
+    uint8_t* cfg = app ? *(uint8_t**)(app + 0x3C) : nullptr;
+    return cfg ? *(int*)(cfg + 0xB0) : -1;
+}
+
+static void env_second(double now)
+{
+    static double next_rtss = 10; // RTSS may inject after the start: looked for every 10 s
+    if (!g_rtss_told && now >= next_rtss) {
+        next_rtss = now + 10;
+        if (const wchar_t* d = rtss_dll()) {
+            g_rtss_told = true;
+            SWARN("env: %ls is loaded (RivaTuner Statistics Server / MSI Afterburner): it hooks the game's Direct3D "
+                  "like SporeKit; if Spore crashes at start, give SporeApp.exe an RTSS profile with Application "
+                  "detection level None, or close RTSS (docs/INSTALL.md#install-rtss) (BUG-0782)", d);
+            if (g_fix_rtss_note && g_P.feed) {
+                g_env_notes++;
+                g_P.feed("RivaTuner / MSI Afterburner is hooked into Spore. If Spore crashes at start, set "
+                         "\"Application detection level\" to None for SporeApp.exe in RivaTuner, or close it");
+            }
+        }
+    }
+}
+
+static void env_minute(int avg_fps)
+{
+    if (g_uncapped_told)
+        return;
+    int ms = frame_limit_ms();
+    if (ms < 0 || ms >= 10 || avg_fps < 50)
+        return; // capped (the game's own 16 ms, a limit another program set) or not fast anyway
+    g_uncapped_told = true;
+    SWARN("env: the game runs without Spore's frame limit: %d fps, kFrameLimitMS %d ms (Spore's own 16); a mod or "
+          "program lifted it; with vsync off the picture tears (docs/INSTALL.md#install-tearing) (BUG-0779)",
+          avg_fps, ms);
+    if (g_fix_uncapped_note && g_P.feed) {
+        g_env_notes++;
+        char b[300];
+        snprintf(b, sizeof b,
+                 "Spore runs at %d fps without its frame cap (another mod or program lifted it). If the picture "
+                 "tears, turn on vsync in mods\\sporekit.ini (vsync=1) or a frame cap in that program",
+                 avg_fps);
+        g_P.feed(b);
+    }
+}
+
+std::string env_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "env: notes %u, rtss %s, frame limit %d ms\n", g_env_notes, rtss_dll() ? "loaded" : "no",
+             frame_limit_ms());
+    return b;
+}
+
 static double g_minute_at = -1, g_mem_at = -1e9;
 
 void stats_tick(double now)
@@ -347,6 +428,7 @@ void stats_tick(double now)
     if (now - g_net_sec >= 1.0) {
         bool minute = g_minute_at >= 0 && now - g_minute_at >= 60;
         net_second(now, minute);
+        env_second(now);
         g_net_sec = now;
         if (g_minute_at < 0)
             g_minute_at = now;
@@ -363,6 +445,7 @@ void stats_tick(double now)
             int avg = (int)(g_min_frames / (now - g_min_start) + 0.5);
             if (fps >= 0 && (g_c.min_fps < 0 || fps < g_c.min_fps))
                 g_c.min_fps = fps;
+            env_minute(avg);
             int fr = g_mem_free_mb, bl = g_mem_block_mb;
             if (fr >= 0 && (g_c.min_free_mb < 0 || fr < g_c.min_free_mb))
                 g_c.min_free_mb = fr;
@@ -408,6 +491,7 @@ std::string stats_status()
              (int)g_mem_total_mb, (int)g_mem_block_mb, (int)g_mem_regions, g_mem_walk_us / 1000.0,
              g_cost_frames ? g_cost_sum / g_cost_frames * 1000 : 0.0, (unsigned long long)g_cost_frames, g_cost_max * 1000);
     std::string s = b;
+    s += env_status();
     for (auto& [id, n] : g_net) {
         snprintf(b, sizeof b, "net: player %u rtt %d ms, usual %.0f, max loss %.1f%%, silent %u ms\n", id, n.last_rtt,
                  n.usual_rtt, n.max_loss, n.last_silent);

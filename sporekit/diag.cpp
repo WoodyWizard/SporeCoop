@@ -189,7 +189,13 @@ std::string diag_env()
          std::to_string(GetCurrentProcessId()) + "\n";
     s += memory_text() + "\n";
     s += (g_gpu.empty() ? std::string("GPU: not read yet") : g_gpu) + "\n";
-    s += "other hooks: " + foreign_hooks() + "\n";
+    std::string fh = foreign_hooks();
+    s += "other hooks: " + fh + "\n";
+    // BUG-0782: crashes at start reported with RivaTuner / MSI Afterburner running: the report says what to try
+    if (fh.find("RivaTuner") != std::string::npos)
+        s += "advice: RivaTuner Statistics Server (MSI Afterburner) hooks the game's Direct3D like SporeKit. If Spore "
+             "crashes at start, give SporeApp.exe a profile in RivaTuner with \"Application detection level\" None "
+             "(or close RivaTuner and Afterburner) and try again (docs/INSTALL.md#install-rtss)\n";
     s += "game mode: " + std::string(game_mode_name(game_mode_id())) + ", frame " + std::to_string(frame_index()) +
          ", up " + std::to_string((int)now_seconds()) + " s\n";
     std::string mods;
@@ -1125,7 +1131,12 @@ void diag_after_device()
     if (once)
         return;
     once = true;
-    logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), foreign_hooks().c_str());
+    std::string fh = foreign_hooks();
+    logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), fh.c_str());
+    if (fh.find("RivaTuner") != std::string::npos) // BUG-0782
+        logf(&g_kit_mod, SK_WARN, "RivaTuner / MSI Afterburner hooks the game's Direct3D like SporeKit; if Spore "
+                                  "crashes at start, give SporeApp.exe an RTSS profile with Application detection "
+                                  "level None, or close RTSS (docs/INSTALL.md#install-rtss)");
     // other mods, extra packages, changed game files (docs/REPORTING.md#reporting-support-environment)
     const std::string& f = diag_files_text();
     for (size_t i = 0; i < f.size();) {

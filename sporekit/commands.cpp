@@ -112,7 +112,8 @@ static int c_info(void*, int, const char* const*, SkOut* o)
 
 static int c_frame(void*, int, const char* const*, SkOut* o)
 {
-    outf(o, "frame=%llu fps=%.1f", (unsigned long long)frame_index(), fps());
+    outf(o, "frame=%llu fps=%.1f limit=%d own=%d changes=%u", (unsigned long long)frame_index(), fps(),
+         frame_limit_now(), frame_limit_own(), frame_limit_changes());
     return 0;
 }
 
@@ -843,6 +844,12 @@ void register_builtin_commands()
                 },
                 nullptr, A);
     command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
+    command_add(k, "frame.interval", "frame.interval [reset] - Present interval statistic since the last reset (BUG-0779)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    outf(out, "%s", present_intervals(argc > 1 && !strcmp(argv[1], "reset")).c_str());
+                    return 0;
+                },
+                nullptr, A);
     command_add(k, "wait.frames", "wait.frames <n> [timeout_ms]", c_wait_frames, nullptr, W);
     command_add(k, "log", "log [n] - last log lines", c_log, nullptr, A);
     command_add(k, "sym", "sym <name|addr> - resolve", c_sym, nullptr, A);
@@ -902,6 +909,17 @@ void register_builtin_commands()
                 c_test_dialog, nullptr, W);
     command_add(k, "kit.test.hang", "kit.test.hang [ms] - block the main thread on its next frame (a real hang, BUG-0347)",
                 c_test_hang, nullptr, A);
+    command_add(k, "kit.test.loadlib", "kit.test.loadlib <file> - load a DLL from the game folder (tests: a stand-in for another program's hooks DLL, BUG-0782)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc < 2 || strpbrk(argv[1], "\\/:"))
+                        return 1; // a file name in the game folder only
+                    std::wstring p = game_dir() + L"\\" + widen(argv[1]);
+                    HMODULE m = LoadLibraryW(p.c_str());
+                    outf(out, "%s: %p (error %lu); other hooks: %s", argv[1], (void*)m, m ? 0ul : GetLastError(),
+                         foreign_hooks().c_str());
+                    return m ? 0 : 1;
+                },
+                nullptr, M);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
     command_add(k, "frames.source", "frames.source [auto|loop] - where frames come from (loop: ignore Present, tests)",
                 c_frames_source, nullptr, A);

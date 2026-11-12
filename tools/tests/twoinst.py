@@ -399,7 +399,7 @@ KEEP_HOLDS = [False]
 
 def forget_holds():
     for d in (lane.HOST_DIR, lane.GUEST_DIR):
-        subprocess.run(['rm', '-rf', d + '/SporeCoop/holds'])
+        subprocess.run(['rm', '-rf', d + '/SporeCoop/holds', d + '/SporeCoop/badges'])  # (badges: BUG-0786)
 
 
 def forget_settings():

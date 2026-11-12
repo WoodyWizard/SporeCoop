@@ -21,7 +21,7 @@ COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildca
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
 .PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test sanitizer-probe
-all: loader sporekit coop res setup
+all: loader sporekit coop res setup $(B)/test/rtsshooks.dll
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
@@ -29,6 +29,11 @@ res: $(B)/SporeCoop.package
 $(B)/SporeCoop.package: tools/mkpackage.py $(UI_PNG)
 	@mkdir -p $(B)
 	python3 tools/mkpackage.py $@ $(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f))
+
+# tests: a do-nothing DLL under another program's name (BUG-0782, coop_rtss_note.py)
+$(B)/test/rtsshooks.dll: tests/dll/stand_in.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -shared -o $@ $<
 
 loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll

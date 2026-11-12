@@ -338,7 +338,9 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
                        k.owner ? (unsigned)(tc - (uint8_t*)k.owner) : 0u);
             }
         }
-        float sc = scale_f ? ((float(__cdecl*)(int))scale_f)(0) : 1.f;
+        // BUG-0957: cdecl float(int kind, creature*): the creature is the second argument (its +0xE84 object's +0x358
+        // scale); called with the kind alone, the function read the caller's stack as the creature and faulted
+        float sc = scale_f ? ((float(__cdecl*)(int, void*))scale_f)(0, av) : 1.f;
         int n = skg::vcall<int>(av, 0xB0 / 4);
         for (int i = 0; i < n && i < 64; i++) {
             uint8_t* a = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
