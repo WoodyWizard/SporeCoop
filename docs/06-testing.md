@@ -6153,3 +6153,22 @@ BUG-0875, BUG-0775, BUG-0877, BUG-0878, BUG-0777, BUG-0879. Each test reads the 
   (`coop.tribe order` and `huthp` work on a guest while the host is away), then the host loads the same save (an NPC
   tribe made by `coop.tribe npc_tribe` is not in the save: the fixture's own village is used). Twin
   `tribe.away_conquest`; `coop.tribe conquests` prints sent / done / refused.
+
+## A guest in a world of its own: own_cell, own_creature, own_space (2026-11-12, fix/w48-own-world)
+<a id="testing-own-world"></a>
+
+* `tools/tests/own_world.py load_own(guest, planet, name, mode_word)`: the guest (still connected) copies the newest
+  `<planet>` of its Games folder into Game9 under another name and loads it with `coop.worldfix autoload 0`; only the
+  test profile's copy is touched. A Cell / Creature load is seen by the world id (`coop.status` line `own world:`),
+  a Space one by `space_other=1` (in Space the world id is the star system and stays the same).
+* `own_cell` (fixture cell, ~3 min): the host's bytes to the guest (`coop.status` `net to <id>: out_bytes=`) in its
+  world and in the guest's own (BUG-0809, cell.send_here: 238 KB/s -> 2.6 KB/s); the guest's own creature cells
+  (`coop.pool npcs 80`, mirror=0) in the last 25 s of 60 s (BUG-0797, cell.solo_elsewhere: 0 without the fix). The
+  game fills the own pool 20-40 s after the solo start: never count earlier.
+* `own_creature` (fixture creature, ~8 min, the guest restarts with colliding My Creations as nest_species): in its
+  own world `coop.creations speciesof 290229B9` is the guest's own bem, not aliased (BUG-0819); the host's `coop.vote
+  test` ends in under 10 s (BUG-0801; off: the 60 s timer); `coop.dna add 250` on the guest evolves its own nests
+  (`coop.nest evolve` gen, BUG-0803).
+* `own_space` (fixture space, ~2 min): spice A x7 in the co-op hold, then the guest's own save keeps its hold for
+  25 s (`coop.space trade inv`, BUG-0816) and its stage traits while the host's change (`coop.wsync stage 0 <hex>`,
+  `coop.wsync dump`, BUG-0818).

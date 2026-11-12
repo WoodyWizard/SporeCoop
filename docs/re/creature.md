@@ -4117,3 +4117,11 @@ BUG-0926 (the 0.7.12 final check's long_creature host: runtime error R6025). GOG
   block in writable memory, grouped by holder (a listed object + offset, a creature's AI block + offset, a module's
   data, elsewhere) and the block's state now. The scan stops the game for ~7 s. Our own `game::g_dmglog` (a log
   ring) shows up as a module holder: records only.
+
+## NPC nests evolve in a guest's own Creature world (2026-11-12, fix/w48-own-world)
+<a id="creature-herd-evo-own-world"></a>
+
+* BUG-0803: herd_evo_guard (wsync.cpp, BUG-0668) wrote CreatureGame_HerdEvolveOn = 0 for any connected guest in
+  Creature; in a world of its own MSG_WSTATE is dropped, so nothing evolved its nests and its save kept that. With
+  wsync.herd_evo_own the guard holds the step only while the guest plays the host's world (not
+  own_world::elsewhere()); the game's own value comes back otherwise.

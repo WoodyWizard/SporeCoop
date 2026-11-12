@@ -257,3 +257,28 @@ there** (the DNA owed queue of BUG-0151 / BUG-0233, the Space gifts of BUG-0225 
 * Test hooks: `coop.res block <s>` (the resources read as unavailable: what a load or the menu gives), `coop.res away
   <s> [<name> <change>]` (the shared tick sees an editor's mode, then the change in the first frame back),
   `coop.space contracts result <money> <tool>` and `coop.space contracts clock`.
+
+## A guest in its own world: one check for every module (2026-11-12, fix/w48-own-world)
+<a id="host-centric-own-world"></a>
+
+O1 of 0.7.13 (children of BUG-0427): several modules applied the host's world, or held a guest to the host's rules,
+while the guest played a world of its own (joined from its own game, or loaded a save of its own while connected).
+`mods/coop/own_world.h` is now the one answer, defined in coop.cpp on top of host_world.h (unit-tested in
+tests/validate_tests.cpp):
+
+* guest side: `elsewhere()` (a gated stage, host_world::classify Other), `space_other()` (another Space save than the
+  host's, both known; not switched by res.space_save), `host_left()` (a gated stage whose host plays another stage,
+  Creature / Space while we are still in Cell, for 2 s);
+* host side: `peer_here(id)` (the guest's latest state is the host's stage and world) and `peer_elsewhere(id)` (what
+  that guest's own classify() says: it ignores the host's votes and gated messages).
+
+Users, each with its own switch: cellsync (cell.solo_elsewhere BUG-0797, cell.send_here BUG-0809), wsync
+(wsync.herd_evo_own BUG-0803, wsync.space_own BUG-0818), space_trade (space.hold_own_save BUG-0816), creations
+(creations.alias_own_world BUG-0819), the vote (core.vote_present BUG-0801). `coop.status` prints
+`own world: mode .. world .. elsewhere= space_other= host_left=`.
+
+* ✔ In Space g_world is the place (the star system), not the save: a guest that loads its own Space save keeps the
+  same world id (80460035 before and after in the lab); only `space_other` tells the saves apart.
+* ✔ Measured (lab 20261112-025009): the host sent a guest in its Cell world 238 KB/s; with the guest in a Cell world
+  of its own and cell.send_here on, 2.6 KB/s (states, pings, the 2 s food total). With the switch off the host sends
+  the full live Cell state to a guest that drops it at dispatch.

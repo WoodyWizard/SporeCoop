@@ -1340,3 +1340,12 @@ BUG-0921, BUG-0923.
   partner leaves our place). A guest that joins again in the same host session sends the same bundle id: no
   rebuild, one notice. A guest that only leaves and joins (its game still in its copy of the world) is shown at
   once and again after its load: two notices 8 s apart, a real hide and show, kept.
+
+## The species alias is the host's world's only (2026-11-12, fix/w48-own-world)
+<a id="creations-alias-own-world"></a>
+
+* BUG-0819: alias_tick (BUG-0200) made the guest's species manager answer the host's keys with the host's creation
+  whenever the guest was connected, also in a world of its own. With creations.alias_own_world every alias is undone
+  (the slot gets the profile it had before; null: the game builds the guest's own on the next lookup) while
+  own_world::elsewhere() or space_other(), and set again when the guest plays the host's world. `coop.creations
+  speciesof <key>` shows `own_world <n>` (aliases undone so far).

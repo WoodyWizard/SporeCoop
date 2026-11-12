@@ -2153,3 +2153,16 @@ BUG-0927. GOG 2024, lab lanes 2 and 5.
   every tick (`cell.send_centres`).
 * A guest that swims out of the area the host populated before it stood finds open water until the host plays
   again (the tile pass is the game's): not changed.
+
+## A guest in another Cell world plays its own pool (2026-11-12, fix/w48-own-world)
+<a id="cell-own-world-pool"></a>
+
+* ✔ BUG-0797: the guest-side hooks h_Populate (returns 0), h_SpawnLoot (returns) and h_Pair (drops pairs without the
+  avatar) are gated only by "a guest in Cell and not solo"; solo came from g_host_away (the host in the menu, an
+  editor or a load). A guest in a Cell world of its own (or still in Cell while the host is in Creature) had a pool
+  with 0 own creature cells within 80 m for 60 s (lab 20261112-025524). With cell.solo_elsewhere the solo state also
+  starts on own_world::elsewhere() / host_left() (docs/re/host-centric.md#host-centric-own-world).
+* ✔ The game fills the own pool slowly after the solo start: the guest's game had 0 creatures in the first ~20 s,
+  then 6-10 within 80 m and a cell pool of up to 167 (lab 20261112-025009). Tests wait 35 s before they count.
+* ✔ BUG-0809: the host's per-guest send of MSG_CELL_STATE (host_tick) now skips a guest whose latest state is not
+  the host's Cell world (own_world::peer_here); the food total (MSG_CELL_FOOD, reliable, every 2 s) still goes.

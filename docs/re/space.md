@@ -2732,3 +2732,16 @@ BUG-0901 / BUG-0902 / BUG-0900, Ghidra GOG 2024 + runtime lanes 4 / 5:
 * ? Not checked: whether a game keeps its own sculpts and colours when its ship leaves and lands again (the sphere's
   effect list +0x798 is runtime state; the planet's stored terrain is not traced), and whether the effects reach the
   save. A partner who joins (or rejoins) after the hits does not get them (the hold is per running game).
+
+## A guest's own Space save: no co-op hold, no host rows (2026-11-12, fix/w48-own-world)
+<a id="space-own-save-hold"></a>
+
+* ✔ BUG-0816: inv_tick (space_trade.cpp) took every Space world after the join one as "loaded from the host": a
+  connected guest that loaded a save of its own sent that hold as fresh, the host answered with the kept co-op hold
+  (K_INV_KEPT) and apply_inv put it into the own save; the host also stored the own save's hold as the guest's. With
+  space.hold_own_save the guest sends no hold and applies none while own_world::space_other() (and waits while its
+  save is not known yet); a K_INV_KEPT that arrives there is acknowledged (K_INV_DONE) so the host stops resending.
+* ✔ BUG-0818: MSG_WSTATE is not dropped in Space (not a gated stage), so the wsync "stages" row (cPlayer
+  +0x10FC..+0x110C) wrote the host's stage history into a guest's own Space save. wsync's guest tick applies no row in
+  Space while own_world::space_other() (wsync.space_own). Lab: the host's stage 0 trait set to A5656E84, the guest's
+  own save kept 00000000 for 10 s (20261112-025609).
