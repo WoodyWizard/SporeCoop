@@ -28,6 +28,7 @@ own editor counts as in the same world), so no world is sent and the BUG-0074 ch
 the guest is in its editor, then is dropped at its Leave) never gets a world. Inferred: a stale test, not a bug of the
 mod; the test needs a share that is not in place (for example `SPORE_FIX_OFF=world.evolve_in_place` inside the test
 for that part, or a guest in another world). Not caused by fix/w48-saves (the in-place decision is untouched).
+Confirmed: with `SPORE_FIX_OFF=world.evolve_in_place` world_queue passes on fix/w48-saves (lab 20261112-030856, lane 2).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
