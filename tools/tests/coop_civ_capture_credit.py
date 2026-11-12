@@ -5,9 +5,10 @@ Discord 2026-11-09 ("when a friend is attacking an enemy, their settlement is ca
 same in reverse"): the host's capture hook gave a captured city to the player whose vehicle was NEAREST the city,
 not to the player whose vehicles took it.
 
-1. Two games on civ_npc; the host spawns two military land vehicles and gives them to the guest (`coop.give`), and
-   one economic vehicle of its own that it drives next to the nearest NPC city's hall.
-2. The other buildings of that city are cut to 5 hp on the host (`coop.civ bhp`) so the siege ends in minutes.
+1. Two games on civ_npc; the host spawns three military land vehicles and gives them to the guest (`coop.give`), and
+   drives the fixture's own vehicle (the host's) next to the nearest NPC city's hall.
+2. The other buildings of that city are cut to 5 hp on the host (`coop.civ bhp`) and the guest's vehicles kept at
+   their health (`coop.civ vhp`) so the siege ends in minutes.
 3. The guest's real attack: it selects its vehicles, clicks the city and the crosshair of the city menu.
 4. Up to 5 min: the game's own siege (the vehicles' shots, the buildings falling, the hall's capture meter) takes the
    city. Then on both games: the city's political id is the player civilization's and its owner is the guest (1).
@@ -29,6 +30,14 @@ def veh_ids(con):
         if m and m.group(1) != '0':
             out.add(int(m.group(1)))
     return out
+
+
+def veh_hp(con, i):
+    for ln in con.call('coop.civ')['out'].splitlines():
+        m = re.match(rf'\s+veh #{i} .* hp=([-\d.]+) ', ln)
+        if m:
+            return float(m.group(1))
+    return None
 
 
 def attack(guest, p, ids, pos):
@@ -58,18 +67,18 @@ def main():
     tgt = min(npc, key=lambda i: dist(hc[i]['pos'], hc[cap[0]]['pos']))
     tpos = hc[tgt]['pos']
     before = veh_ids(host)
-    for _ in range(2):
+    for _ in range(3):
         print('  host:', host.call(f'coop.civ spawnveh {cap[0]} 0 0')['out'].strip(), flush=True)
     time.sleep(2)
     ids = sorted(veh_ids(host) - before)
     for i in ids:
         host.call(f'coop.civ select {i} 1')
     print('  host:', host.call('coop.give 1')['out'].strip(), flush=True)
-    before = veh_ids(host)
-    print('  host:', host.call(f'coop.civ spawnveh {cap[0]} 2 0')['out'].strip(), flush=True)
     time.sleep(2)
-    mine = sorted(veh_ids(host) - before)
-    ck(len(ids) == 2 and mine, f"the guest's vehicles {ids}, the host's {mine}")
+    _, hv = civ(host)
+    mine = sorted(i for i in before if i in hv and hv[i]['owner'] == 0)[:1]  # the fixture's own vehicle, the host's
+    full = {i: veh_hp(host, i) for i in ids}
+    ck(len(ids) == 3 and mine, f"the guest's vehicles {ids} (hp {full}), the host's {mine}")
     cp = hc[cap[0]]['pos']
     d = dist(tpos, cp) or 1
     near = tuple(t + (c - t) / d * 12 for t, c in zip(tpos, cp))  # 12 m from the hall, on the side of the capital
@@ -84,6 +93,9 @@ def main():
         h, hv = civ(host)
         if h.get(tgt, {}).get('player'):
             break
+        for i in ids:  # the besiegers live through it (the city's defence would end them before the capture)
+            if full.get(i):
+                host.call(f'coop.civ vhp {i} {full[i]:.0f}')
         if time.time() - last > 45:  # the vehicles turned to other targets: the order again
             last = time.time()
             host.call(f'coop.civ bhp {tgt} 5')

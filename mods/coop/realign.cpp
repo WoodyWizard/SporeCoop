@@ -40,6 +40,17 @@ static bool g_fix_buildings = true;
 COOP_FIX("realign.buildings", "BUG-0567 BUG-0566", g_fix_buildings,
          "tribe: a hut's and a tool's health on a guest is the host's (no broken building of the old world)");
 
+// BUG-0777: a village the host's game conquered was conquered there only: the guest's realign kept its hut at 1 hp
+// at least ("never 0"), so the guest's game never ran the defeat (the village's conquered flag, the goal mission's
+// end, the dead hut). The rows now carry the hut's dead state and the village's conquered flag (Obj.fl bit 1), and a
+// hut dead on the host takes the game's own killing blow here (tribe::fell_hut). `coop.fix realign.hut_fall off`:
+// the hut kept at 1 hp (0.7.12).
+static bool g_fix_hut_fall = true;
+COOP_FIX("realign.hut_fall", "BUG-0777", g_fix_hut_fall,
+         "tribe: a village the host's game conquered is conquered in the guest's game too (its hut falls there)");
+static uint32_t g_huts_felled;
+constexpr uint8_t kFlDown = 2; // a hut: dead (cCombatant +0x34 == 2); a village: conquered (cTribe +0x556)
+
 constexpr uint8_t kStCreature = 1, kStTribe = 2, kStCiv = 4;
 constexpr uintptr_t kHp = 0x120 + 0x38, kMaxHp = 0x120 + 0x2C; // huts / tools: cCombatant at +0x120 (docs/re/tribe.md)
 
@@ -114,9 +125,10 @@ static std::vector<Local> collect(uint8_t sb)
                     break;
                 l.o.x = p.x, l.o.y = p.y, l.o.z = p.z;
                 if (k == kVillage)
-                    l.o.fl = o == u->pt ? kFlPlayer : 0;
+                    l.o.fl = (o == u->pt ? kFlPlayer : 0) | (skg::readable(o, 0x557) && field<uint8_t>(o, 0x556) ? kFlDown : 0);
                 else if (k == kHut && skg::readable(o, 0x234))
-                    l.o.fl = field<void*>(o, 0x230) == u->pt && u->pt ? kFlPlayer : 0; // the hut's tribe (docs/re/tribe.md)
+                    l.o.fl = (field<void*>(o, 0x230) == u->pt && u->pt ? kFlPlayer : 0) | // the hut's tribe (docs/re/tribe.md)
+                             (field<int>(o, 0x120 + 0x34) == 2 ? kFlDown : 0);
                 else if (k == kTool && skg::readable(o, 0x1FC))
                     l.o.fl = field<void*>(o, 0x1F8) == u->pt && u->pt ? kFlPlayer : 0;
                 if (kDefs[k].health)
@@ -303,6 +315,20 @@ static void compare(double now)
         rw = Rows{(uint32_t)h.size(), (uint32_t)l.size(), (uint32_t)m.lack.size(), (uint32_t)m.extra.size(), 0};
         // the state of bound pairs
         for (auto& [hi, li] : m.bound) {
+            if (k == kVillage && g_fix_hut_fall && (h[hi].fl & kFlDown) && !(l[li].fl & kFlDown)) { // BUG-0777
+                if (tribe::conquer_village(lp[li]->p) > 0 && g_huts_felled++ < 8)
+                    H->log(M, SK_INFO, "realign: the village at (%.0f %.0f %.0f) was conquered in the host's game: here too (BUG-0777)",
+                           l[li].x, l[li].y, l[li].z);
+                continue;
+            }
+            if (k == kHut && g_fix_hut_fall && (h[hi].fl & kFlDown) && !(l[li].fl & kFlDown)) { // BUG-0777
+                if (tribe::fell_hut(lp[li]->p) > 0 && g_huts_felled++ < 8)
+                    H->log(M, SK_INFO, "realign: the hut at (%.0f %.0f %.0f) fell in the host's game: it falls here (BUG-0777)", l[li].x,
+                           l[li].y, l[li].z);
+                continue;
+            }
+            if (k == kHut && g_fix_hut_fall && (l[li].fl & kFlDown))
+                continue; // a dead hut takes no health (its fall is the game's; BUG-0879 when the host's still stands)
             if (!kDefs[k].health || !state_off(h[hi].st, l[li].st))
                 continue;
             rw.state_off++;
@@ -393,6 +419,8 @@ std::string status()
 {
     std::string s;
     char b[256];
+    snprintf(b, sizeof b, "realign hut_fall=%d huts_felled=%u\n", (int)g_fix_hut_fall, g_huts_felled);
+    s += b;
     snprintf(b, sizeof b, "realign role=%s villages=%d buildings=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
              is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, (int)g_fix_buildings, g_tx, g_tx_soon, g_rx, g_compares,
              g_incomplete, g_host_changes);

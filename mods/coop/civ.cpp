@@ -5106,6 +5106,14 @@ std::string debug(const std::vector<std::string>& a)
             }
         return std::to_string(n) + " buildings at " + std::to_string((int)hp) + " hp";
     }
+    // vhp <id> <hp>: that vehicle's health (host; tests, BUG-0775: the besiegers live through the siege)
+    if (a.size() >= 3 && a[0] == "vhp" && is_host()) {
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v))
+            return "no such vehicle";
+        F<float>(v, kVHp) = std::max(1.f, (float)atof(a[2].c_str()));
+        return "hp " + std::to_string((int)F<float>(v, kVHp));
+    }
     // buycity <city> [price]: the game's purchase of a city for the player civilization, as FinishBuyCity makes it
     // (cCity buy 0xBE99A0; 0 = the game's GetBuyPrice) (tests, BUG-0877)
     if (a.size() >= 2 && a[0] == "buycity") {

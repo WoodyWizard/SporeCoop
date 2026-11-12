@@ -2682,6 +2682,56 @@ int remove_village(void* t)
     return 1;
 }
 
+// BUG-0777: a hut the host's game saw fall falls in this guest's game too, through the game's own blow (the hut's
+// combatant TakeDamage vt 0x18, its remaining health and a little more, the attacker a member of the player tribe):
+// the game's own defeat follows (the death message, the village's conquered flag +0x556, the goal mission's end).
+// 1 dealt, 0 nothing to do, -1 not now (a cinematic plays).
+int fell_hut(void* hut)
+{
+    if (!hut || !is_guest() || game::mode_id() != modes::kTribe || !skg::readable(hut, 0x160))
+        return 0;
+    if (F<int>(hut, 0x120 + 0x34) == 2)
+        return 0;
+    if (game::cinematic_playing())
+        return -1;
+    void* pt = player_tribe();
+    void* att = nullptr;
+    if (pt)
+        for (void* c : members(pt))
+            if (is_citizen(c) && !game::is_dead(c)) {
+                att = c;
+                break;
+            }
+    static const float zero[3] = {0, 0, 0}; // the hit direction must not be null
+    float hp = F<float>(hut, 0x120 + 0x38);
+    vcall<int>((uint8_t*)hut + 0x120, 0x18 / 4, hp + 10.f, 0xFFFFFFFFu, 0, zero, att ? (uint8_t*)att + 0x5A8 : nullptr);
+    H->log(M, SK_INFO, "tribe: a hut the host's game saw fall falls here (health %.1f, attacker %p): state %d (BUG-0777)", hp, att,
+           F<int>(hut, 0x120 + 0x34));
+    return 1;
+}
+
+// BUG-0777: a village the host's game conquered: its hut falls here (fell_hut); a village without a standing hut
+// gets the game's own conquered flag (cTribe_SetConquered: +0x556, its view effect, its food bundles go), which the
+// goal mission's update (0xC2F750) reads to end the mission. 1 done, 0 nothing to do, -1 not now.
+int conquer_village(void* t)
+{
+    if (!t || !is_guest() || game::mode_id() != modes::kTribe || t == player_tribe() || !skg::readable(t, 0x557))
+        return 0;
+    if (F<uint8_t>(t, 0x556))
+        return 0;
+    void* hut = skg::readable(t, 0x36C) ? F<void*>(t, 0x368) : nullptr;
+    if (hut && skg::readable(hut, 0x160) && F<int>(hut, 0x120 + 0x34) != 2)
+        return fell_hut(hut);
+    static uintptr_t a_SetConquered = H->sym("SporeCoop::cTribe_SetConquered");
+    if (!a_SetConquered)
+        return 0;
+    if (game::cinematic_playing())
+        return -1;
+    thiscall<void>(a_SetConquered, t, 1);
+    H->log(M, SK_INFO, "tribe: the village %p the host's game conquered is conquered here (hut %p) (BUG-0777)", t, hut);
+    return 1;
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
