@@ -119,6 +119,8 @@ bool input_move(int x, int y)
     return true;
 }
 
+WORD wheel_keys();
+
 bool input_wheel(int x, int y, int notches)
 {
     HWND w = (HWND)game_window();
@@ -131,9 +133,25 @@ bool input_wheel(int x, int y, int notches)
     short delta = notches < 0 ? -WHEEL_DELTA : WHEEL_DELTA;
     for (int i = 0; i < n && i < 100; i++)
         run_after_frames(2 + i * 2, [w, delta, pt] {
-            PostMessageW(w, WM_MOUSEWHEEL, MAKEWPARAM(0, delta), MAKELPARAM(pt.x, pt.y));
+            PostMessageW(w, WM_MOUSEWHEEL, MAKEWPARAM(wheel_keys(), delta), MAKELPARAM(pt.x, pt.y));
         });
     return true;
+}
+
+// BUG-0859: the keys and buttons a test holds (input_key down, press) at the moment of the wheel notch, as
+// Windows puts them into WM_MOUSEWHEEL's low word: Shift / Ctrl + wheel in an editor scales a part instead of
+// zooming. `kit.fix wheelmk 0`: always 0 (before).
+WORD wheel_keys()
+{
+    if (!fixed(g_fix_wheelmk))
+        return 0;
+    WORD k = 0;
+    k |= g_vkdown[VK_SHIFT] || g_vkdown[VK_LSHIFT] || g_vkdown[VK_RSHIFT] ? MK_SHIFT : 0;
+    k |= g_vkdown[VK_CONTROL] || g_vkdown[VK_LCONTROL] || g_vkdown[VK_RCONTROL] ? MK_CONTROL : 0;
+    k |= g_vkdown[VK_LBUTTON] ? MK_LBUTTON : 0;
+    k |= g_vkdown[VK_RBUTTON] ? MK_RBUTTON : 0;
+    k |= g_vkdown[VK_MBUTTON] ? MK_MBUTTON : 0;
+    return k;
 }
 
 bool input_click(int x, int y, int button, bool release_cursor)
