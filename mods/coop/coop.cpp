@@ -5172,12 +5172,18 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host save: known %08X (welcome %08X, followed %08X, heard %u), mine %08X, space_other=%d, announced %08X\n", host_save_known(),
         g_sess.welcome_world(), g_host_save, g_host_save_heard, g_mode == modes::kSpace ? modes::current_world() : 0,
         (int)guest_space_other(), g_world_announced); // BUG-0933
+    SAY("own world: mode %08X world %08X elsewhere=%d space_other=%d host_left=%d\n", g_mode, g_world,
+        (int)own_world::elsewhere(), (int)own_world::space_other(), (int)own_world::host_left()); // O1 (BUG-0427)
     SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u name_tags=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(),
         g_menu_hidden, g_tags_drawn);
+    for (auto& p : g_sess.players()) // tests (BUG-0809): the datagrams sent to each peer so far
+        if (net::Connection* c = p.id != g_sess.my_id() ? g_sess.conn_to(p.id) : nullptr)
+            SAY("net to %u: out_bytes=%llu out_packets=%u\n", (unsigned)p.id, (unsigned long long)c->stats.bytes_sent,
+                c->stats.packets_sent);
     double now = H->time_seconds();
     for (auto& [id, r] : g_remotes) {
         net::PlayerState s;
