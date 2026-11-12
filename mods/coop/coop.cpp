@@ -1086,6 +1086,18 @@ void notice(const std::string& text, int from); // feed + chat log on every play
 // its NPCs again, npc.cpp) and keeps the DNA it earns; the DNA goes to the host's pool when the
 // host is back (the host's total would otherwise undo it).
 bool g_host_away = false;
+// BUG-0829: the DNA a guest earned while the host was away is in its game already (the bar moved) and goes to the host
+// at the away end. A host total sent before the host added it (the 2 s resend, a change of the host's own) arrived after
+// it: the guest's DNA went down to it (SetEvolutionPoints, the bar stays) and up again with the next total
+// (AddEvolutionPoints: the bar moved a second time, the guest's bar ahead of the host's by that DNA). Now, after the
+// away end, a total without the host's "earned by this player" cause is not applied until one with it came (at most
+// kSoloAwait s). `coop.fix core.solo_await off`: every total applied (0.7.11).
+static bool g_solo_await_fix = true;
+COOP_FIX("core.solo_await", "BUG-0829", g_solo_await_fix, "creature: DNA a guest earned while the host was away moves its evolution bar once (older host totals are not applied over it)");
+static float g_solo_await = 0;          // the solo DNA sent at the away end, its total not seen yet
+static double g_solo_await_until = 0;
+static constexpr double kSoloAwait = 5.0;
+static uint32_t g_solo_stale_totals = 0; // tests: host totals older than the solo DNA, not applied
 double g_host_away_since = -1;
 float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
@@ -1497,6 +1509,10 @@ void host_away_tick(double now)
         w.f32(g_solo_dna);
         g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
         g_dna_fwd++;
+        if (g_solo_await_fix) { // BUG-0829: the host's totals until the one that pays it are older than it
+            g_solo_await = g_solo_dna;
+            g_solo_await_until = now + kSoloAwait;
+        }
     }
     std::string dna = g_solo_dna >= 1 ? ": your " + std::to_string((int)g_solo_dna) + " DNA go to the pack" : "";
     if (end == dna_route::SoloEnd::SendBack)
@@ -1737,6 +1753,12 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 // (docs/re/creations.md 7).
 bool g_own_editor = false; // the own editor was requested and the player has not left it yet
 static bool g_own_editor_charge_due = false; // BUG-0466: the own editor opened; its result charges once
+// BUG-0811: a refused Submit cleared g_own_editor but left the price due (the next editor result without the evolution
+// tag was charged as the own editor's), and the session end reset neither (the next editor of a later session waived the
+// part-list error). The game's own Submit (0x5A92C0) always returns 1: only the mod's hook refuses (its test capture),
+// so this is hardening. `coop.fix creations.own_editor_flags off`: as 0.7.11.
+static bool g_own_editor_flags_fix = true;
+COOP_FIX("creations.own_editor_flags", "BUG-0811", g_own_editor_flags_fix, "creature: a refused own editor request or the session end leaves no own-editor price or part waiver for a later editor");
 using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*, int);
 BlockingErrors_t o_BlockingErrors;
 unsigned g_part_list_waivers; // tests: how often the part-list error was waived
@@ -1861,8 +1883,11 @@ bool open_own_editor(uint32_t editor_id)
     g_own_editor_charge_due = true; // BUG-0466: its result charges the price
     bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
-    if (!r)
+    if (!r) {
         g_own_editor = false;
+        if (g_own_editor_flags_fix)
+            g_own_editor_charge_due = false; // BUG-0811: no editor, no price
+    }
     return r;
 }
 
@@ -4647,9 +4672,14 @@ void end_session(EndPath path, bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_solo_await = 0; // BUG-0829
     g_pace_heard = 1; // BUG-0510
     g_pace_carry.reset();
     g_dna_spend_owed = 0; // BUG-0466
+    if (g_own_editor_flags_fix && !(game::mode_id() == modes::kEdit || game::mode_id() == modes::kEditor)) {
+        g_own_editor = false; // BUG-0811: (in an editor its result still comes, and charges, as in a game of one)
+        g_own_editor_charge_due = false;
+    }
     g_dna_out.clear();
     g_dna_notices.clear();
     g_state_mode_override = 0; // tests
@@ -4865,6 +4895,22 @@ void setup_callbacks()
                 dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
             } else
                 dna_pace_heard(1);
+            if (r.ok() && g_solo_await > 0) { // BUG-0829
+                bool paid = false;
+                for (auto& p : parts)
+                    paid = paid || (p.cause == dna_ledger::Cause::Earned && p.player == g_sess.my_id() &&
+                                    p.amount >= g_solo_await * 0.5f);
+                if (paid || H->time_seconds() > g_solo_await_until)
+                    g_solo_await = 0;
+                else if (!g_host_away && dna_route::host_total(false, false, game::avatar() != nullptr) == dna_route::Total::Apply) {
+                    g_solo_stale_totals++;
+                    LOG("dna: host total %.0f before it added the %.0f DNA earned here while it was away: not applied (BUG-0829)",
+                        total, g_solo_await);
+                    for (auto& p : parts)
+                        dna_note(p, g_sess.my_id());
+                    return;
+                }
+            }
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
                 if (g_dna_spend_fix)
@@ -5341,7 +5387,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
-    SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("host_away=%d (times %u) solo_dna=%.1f solo_stale_totals=%u\n", (int)g_host_away, g_host_away_count, g_solo_dna,
+        g_solo_stale_totals);
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
         (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
         g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
@@ -5721,6 +5768,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
                                   argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "nanvel")) { // host (tests, BUG-0894): nanvel <s> [id|-1] [air]
+        SAY("%s", npc::debug_nanvel((float)atof(argv[2]), argc > 3 ? atoi(argv[3]) : -1, argc > 4 && !strcmp(argv[4], "air")).c_str());
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "rxkeep")) { // guest (tests, BUG-0611): rxkeep <n> <s>
         SAY("%s", npc::debug_rxkeep(atoi(argv[2]), (float)atof(argv[3])).c_str());
         return 0;
@@ -5911,6 +5962,13 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
         return ok ? 0 : 1;
     }
+    if (argc > 5 && !strcmp(argv[1], "place")) { // host (tests, BUG-0815): NPC #id put at x y z (the game's teleport)
+        void* c = npc::host_npc((uint16_t)atoi(argv[2]));
+        if (c)
+            game::teleport(c, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])}, game::orientation(c));
+        SAY(c ? "npc placed" : "no such npc");
+        return c ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "hosthit")) { // host avatar hits host NPC #id
         bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 ? (float)atof(argv[4]) : 0.f);
         SAY(ok ? "host hit applied" : "no such npc");
@@ -5975,6 +6033,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "abil")) { // tests (BUG-0525): abilities of NPC <id> (host) / proxy (guest), -1 the avatar
         SAY("%s", social::abilities_dump(atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "games")) { // tests (BUG-0831): the host's social games and their prompts
+        SAY("%s", social::games_dump().c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
@@ -7126,6 +7188,30 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "speedset")) { // tests (BUG-0788): SetDesiredSpeed on each Creature
+                           for (auto& [id, r] : g_remotes) { // puppet now, and +0x1E0 read right after it (same frame)
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               uint8_t* sp = (uint8_t*)r.puppet + game::kSpatialOff;
+                               float before = *(float*)(sp + 0x1E0);
+                               game::set_speed(r.puppet, (float)atof(argv[2]));
+                               SAY("puppet %u desired %.2f -> %.2f (standard %.2f)\n", id, before, *(float*)(sp + 0x1E0),
+                                   *(float*)(sp + 0x1E4));
+                           }
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "speed")) { // tests (BUG-0788): the game's speeds of each Creature puppet
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               uint8_t* sp = (uint8_t*)r.puppet + game::kSpatialOff; // cLocomotiveObject
+                               net::Vec3 v = game::velocity(r.puppet);
+                               SAY("puppet %u desired=%.2f standard=%.2f vel=%.2f want=%.2f err=%.2f kinematic=%d\n", id,
+                                   *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), drive::speed(v), r.drv.last_want_speed,
+                                   r.drv.last_err, (int)r.drv.kinematic);
+                           }
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "hp")) { // tests (BUG-0697): the game's health of each ship puppet
                            for (auto& [id, r] : g_remotes)
                                SAY("puppet %u %s\n", id, modes::space_puppet_hp(r.puppet).c_str());

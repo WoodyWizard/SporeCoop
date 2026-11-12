@@ -1,7 +1,7 @@
 ---
 id: BUG-0815
 title: Creature: the nest mate does not answer the mating call when it wandered beyond the native reply radius, suspected
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-10
@@ -9,11 +9,11 @@ source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-0177 follow-ups
 role: host guest
 versions: 0.7.11.1
 fixed_in:
-branch:
-commits:
-tests: creature_mating (tools/tests/coop_creature_mating.py)
+branch: fix/w48-creature
+commits: 1fdf5305
+tests: creature_mating_far (tools/tests/coop_creature_mating_far.py)
 signature: mating call plays, no heart over the mate, a click on the mate does nothing; BT node 0x02D852F0 stays in phase 1
-docs: docs/re/creature.md#creature-mating-call
+docs: docs/re/creature.md#creature-mating-call, docs/re/creature.md#creature-c2-audit-0713
 related: BUG-0177
 ---
 
@@ -57,5 +57,22 @@ the mate to 10.9 to 11.3 m from the nest, then the Mating Call and a real click 
 phase 2, no egg cinematic within 30 s. PASS after: one egg cinematic, the Creature editor opens, zero faults.
 Control: the same with the mod unloaded, to decide whether it is vanilla behaviour (then a fix is optional).
 
+## Fix
+None: not reproduced on our build (below). No hook on 0xD7DAB0 / 0xD6D560 was added.
+
+## Verification
+Probe `creature_mating_far` (coop_creature_mating_far.py, extended suite): the host's game picks a mate near the nest,
+the player's creature at the nest, the Mating Call (Backspace), then the mate put 11.0 m from the nest (`coop.npc
+place`, the game's teleport; the ticket's trace had 11.30 m) and a real left click on it where the game draws it.
+* out/lab/20261112-080250 (lane 7): the mate 11.0 m away when clicked, the avatar's mating node 0x02D852F0, the egg
+  cinematic B6A1DBE1 3 s later.
+* out/lab/20261112-081738 (lane 7): the same, the egg cinematic 8 s later.
+* Seen on the way: the game walks the picked mate back towards the nest by itself (a mate put 11 m away was 3 to 5 m
+  from it 2 s later, lab 20261112-075547): a mate that "wandered off" does not stay off.
+no-fail-run: not reproducible: the radius stall did not happen at 11 m in two runs. Not covered: the fork's input-block
+counter of the click classifier (keyboard-only movement with its virtual cursor, BUG-0804) and the missing hearts
+effect.
+
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (fork evidence only).
+- 2026-11-12 (fix/w48-creature, C2 of 0.7.13): not reproduced: a mate 11 m from the nest still mated (lab 20261112-080250, -081738).

@@ -1,7 +1,7 @@
 ---
 id: BUG-0788
 title: drive::step sets the catch-up speed before MoveTo, and MoveTo resets it to the standard speed (suspected)
-status: open
+status: not-reproduced
 kind: bug
 stage: All
 reported: 2026-11-10
@@ -9,11 +9,11 @@ source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-main fbc19da6 (docs/re/cre
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w48-creature
+commits: 075bbcc2
+tests: puppet_speed_probe
 signature:
-docs:
+docs: docs/re/creature.md#creature-c2-audit-0713
 related: BUG-0365, BUG-0281
 ---
 
@@ -23,15 +23,7 @@ No player report. Found while reading the GA fork's locomotion RE: a driven pupp
 lags and falls back to the 4 m snap more often than the code intends.
 
 ## Root cause
-Inferred (from the fork's disassembly, not verified by us; confidence medium):
-`mods/coop/driver.h:223-224` (drive::step, `pl.walk` branch) calls `game::set_speed(p, want_sp)` and then
-`game::move_to(p, tgt, 0.3f)`. The fork found that native `cLocomotiveObject::MoveTo` (creature spatial vt 0xE0,
-dc04 0xC435F0) restores the standard speed itself: at 0xC437C8 it calls spatial vt 0xCC (GetStandardSpeed, 0xC42080,
-reads spatial +0x1E4) and at 0xC437E3 calls vt 0xC4 (SetDesiredSpeed) with that value and 0. So the speed set just before
-is overwritten. We already saw the effect in Tribe (BUG-0365: "a MoveTo given after SetDesiredSpeed resets the speed")
-and added `speed_after_goal` to drive::kinematic (`driver.h:335/345`, only Tribe sets it, `tribe.cpp:2731`), but the plain
-drive::step walk path (creature puppets `modes.cpp:427`, NPC proxies `npc.cpp:1961`) still has the old order.
-Suspected: the real impact depends on whether `want_sp` differs from the standard speed in practice.
+Verified in the code (Ghidra, dc04): MoveTo 0xC435F0 ends with vt 0xCC GetStandardSpeed and vt 0xC4 SetDesiredSpeed(that, 0) on every path. But the order has no effect on a Creature puppet: the game sets its desired speed (+0x1E0) again on every frame. Standing, a speed set by SetDesiredSpeed (0xC11570 writes +0x1E0) is 0 on the next frame (puppet_speed_probe, lab 20261112-074517: 7.0 / 2.5 / 9.0 -> 0.0 in all 6 samples). Walking to the step's goal with the speed set after the MoveTo, the desired speed was the standard 4.0 in all 6 samples while 3.02 was asked (lab 20261112-073116, the first version of the test with the swapped order).
 
 ## Fix idea
 From the fork (jwhans0n/SporeCoopGA fbc19da6, docs/re/creature.md "Adventure follower locomotion"); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -47,7 +39,11 @@ velocity +0x288) right after each drive::step command. FAIL (old order): desired
 and the puppet does not close the gap; PASS: desired speed equals want_sp and the error shrinks without a snap.
 
 ## Fix
+None: the swapped order (tried as drive.speed_after_moveto) changed nothing and was taken out again; drive::step keeps its order with a comment. Test commands `coop.puppet speed` / `speedset` stay.
+
 ## Verification
+no-fail-run: the reorder showed no effect (lab 20261112-073116: desired 4.0 = standard in all samples with it); puppet_speed_probe 20261112-074517 shows the per-frame reset.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12 (fix/w48-creature, C2 of 0.7.13): not reproduced: the game resets a puppet's desired speed every frame; the reorder had no effect and was removed.

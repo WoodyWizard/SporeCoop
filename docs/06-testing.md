@@ -6411,3 +6411,36 @@ on a warm-free lane (30 s of start):
 * `world_queue` part 4 (BUG-0954): since BUG-0508 the host's evolution goes in place for a guest in its own editor;
   part 4 checks that no world is sent then, and shares the host's world with `coop.share` while the guest is still in
   its editor for the BUG-0074 check. `SPORE_FIX_OFF=world.world_reset` now works like `--without world_reset` (FAIL).
+
+## Creature package C2 of 0.7.13: tests and their switches (2026-11-12, fix/w48-creature)
+<a id="testing-c2-creature-0713"></a>
+
+| Suite | Test | Ticket | Switch (its FAIL twin) | What it reads |
+|---|---|---|---|---|
+| `social_leave_meter` | `coop_creature_social_leave.py --meter` | BUG-0808 | `social.meter_end` | the game's social meter object on the guest (`coop.social meter` visible=) after `coop.leave` |
+| `social_leave_host` | `coop_creature_social_leave.py` | BUG-0831 | `social.forget_leaver` | the host's Kook's animations after the guest left (`coop.npc cur`): a prompt started again or the fail reaction 53685D8F |
+| `dna_away_bar` | `coop_dna_away_bar.py` (over `SPORE_NET="delay=250"`) | BUG-0829 | `core.solo_await` | both games' DNA and evolution bar (`coop.dna bar`) after the host's away time |
+| `attacker_owner` | `coop_attacker_owner.py` | BUG-0790 | `creature.attacker_owner` | the attacker of a UFO's hit in `coop.hp dmglog` against the UFO object |
+| `creature_flock_forget` | `coop_creature_flock_forget.py` (~8 min: two summon events of ~2 min each) | BUG-0800 | `creature.flock_forget` | the host's flock members (pack, positions) through and after the host's own summon event |
+| `nest_mirror_epoch` | `coop_nest_mirror_epoch.py` | BUG-0833 | `nest.mirror_epoch` | the old egg mirrors' memory after `coop.share` (vtable 0x14719B0, refcount +8 not above the game's own 3, serial +0x24) |
+| `creature_mating_far` (extended) | `coop_creature_mating_far.py` | BUG-0815 probe | none | the mate 11 m from the nest after the call, a real click, the egg cinematic |
+| `nest_target_probe` (extended) | `coop_nest_target_probe.py` | BUG-0881 probe | none | the guest's NestHerdFor(1) and migration state at 10 places during the host's migration, the nests' brain ranges |
+| `npc_nan_vel` | `coop_npc_nan_vel.py` | BUG-0894 | `game.finite_vel` | the guest's proxies' game positions (`coop.npc list` at=) during NaN velocities |
+
+Test commands added: `coop.social games` (host: the social games and their prompts' animations), `coop.hp ufohit
+<player> <dmg>` (host: the nearest UFO's combatant hits that player's puppet through the TakeDamage hook), `coop.npc
+nanvel <s> [id|-1] [air]` (host: the NPC states sent carry a NaN velocity, optionally the in-the-air flag),
+`coop.npc place <id> x y z` (host: the game's teleport of an NPC), `coop.puppet speed` / `coop.puppet speedset <v>`
+(the game's desired / standard speed of each Creature puppet; set and read in the same frame).
+
+* `coop_creature_social_leave.py`: a prompt the Kook is performing when the guest leaves plays to its end; only a new
+  start counts (the first version counted it and failed with the fix on, lab 20261112-072244).
+* `coop_dna_away_bar.py` needs the latency: on a clean link the stale host total arrives too rarely to fail; with
+  250 ms one way and the host's DNA changing every 0.1 s it failed in the first run.
+* `coop_nest_mirror_epoch.py`: a live mirror egg holds ~19 references, so "fell by two since before the load" passed
+  with the switch off (lab 20261112-075547); the check is the absolute count against the 3 the game keeps on a
+  destroyed egg.
+* `coop_creature_mating_far.py`: the game walks the picked mate back to the nest within 2 s; the probe puts it out
+  again after the Mating Call, right before the click.
+* `creature_flock_forget` takes ~6 min (two summon events); a summoned flock leaves the pack at the event's end, so the
+  test checks where the host's own flock goes during its event, not that it stays.

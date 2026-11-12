@@ -2968,7 +2968,7 @@ static void guest_state(net::Reader& r)
         g.id = id;
         void* c = g.c;
         g.tribe = m.tribe; g.owner = m.owner; g.age = m.age; g.body = m.body;
-        g.pos = m.pos; g.vel = m.vel; g.rot = m.rot; g.hp = m.hp; g.seen = now;
+        g.pos = m.pos; g.vel = game::finite_vel(m.vel); g.rot = m.rot; g.hp = m.hp; g.seen = now; // BUG-0894
         if (g_test_lift != 0.f) { // tests (BUG-0329): the host's member as if its ground were higher
             float r = std::sqrt(g.pos.x * g.pos.x + g.pos.y * g.pos.y + g.pos.z * g.pos.z);
             if (r > 1.f) {

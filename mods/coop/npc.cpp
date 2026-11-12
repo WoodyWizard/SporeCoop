@@ -325,6 +325,21 @@ static uint32_t g_thaw_kept = 0;          // guest: stale drops the thaw rule he
 static int g_rxkeep_n = 0;
 static double g_rxkeep_until = 0;
 static uint32_t g_rxkeep_cut = 0;
+// tests (BUG-0894): `coop.npc nanvel <s> [id]` (host): for s seconds the NPC states sent carry a NaN velocity (one NPC
+// or all), as a host game with a NaN velocity of its own (the BUG-0292 class) would send them
+static double g_nanvel_until = 0;
+static int g_nanvel_id = -1;
+static bool g_nanvel_air = false; // and marked in the air (NF_AIR: a thrown NPC, the guest's air_place writes the velocity)
+static uint32_t g_nanvel_sent = 0;
+std::string debug_nanvel(float secs, int id, bool air)
+{
+    g_nanvel_air = air;
+    g_nanvel_until = H->time_seconds() + secs;
+    g_nanvel_id = id;
+    char b[96];
+    snprintf(b, sizeof b, "nanvel %.1f s for %s (%u sent so far)\n", secs, id < 0 ? "every NPC" : "one NPC", g_nanvel_sent);
+    return b;
+}
 std::string debug_rxkeep(int n, float secs)
 {
     g_rxkeep_n = n < 0 ? 0 : n;
@@ -1611,8 +1626,15 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 known.erase(id);
                 k = false;
             }
-            if (k && send_states)
+            if (k && send_states) {
                 batch.push_back(host_state(id, c));
+                if (H->time_seconds() < g_nanvel_until && (g_nanvel_id < 0 || g_nanvel_id == id)) { // tests (BUG-0894)
+                    batch.back().vel = {NAN, NAN, NAN};
+                    if (g_nanvel_air)
+                        batch.back().flags |= net::NF_AIR;
+                    g_nanvel_sent++;
+                }
+            }
         }
         // unreliable batches that fit in one packet
         // BUG-0550 trailer: n x i16, each NPC's height over the host's terrain in cm (older guests ignore it)
@@ -2656,7 +2678,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             s.time_ms = t;
             s.pos = st.pos;
             s.rot = st.rot;
-            s.vel = st.vel;
+            s.vel = game::finite_vel(st.vel); // BUG-0894
             s.health = st.health;
             s.flags = st.flags;
             s.agl = agls[i];
@@ -2915,7 +2937,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return false;
         }
         bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
-        if (!pvp && creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
+        // BUG-0790: the attacker may be a vehicle, UFO, turret or building: the party check and the pack defence read
+        // creature fields, they take a listed creature only
+        void* att_creature = !attacker || !game::attacker_owner_fix() || game::creature_listed(attacker) ? attacker : nullptr;
+        if (!pvp && creature_hp::drop_party_hit(att_creature)) { // BUG-0374: never from the host's pack / family
             for (auto& p : C.sess->players())
                 if (p.id != 0 && C.puppet_of(p.id) == c)
                     log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
@@ -2938,8 +2963,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
                 log_hit(p.id, attacker, damage, "forwarded");
-                if (!pvp)
-                    creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
+                if (!pvp && att_creature)
+                    creature_hp::pack_defend(c, att_creature); // BUG-0735: the host's pack goes for the attacker
             }
         }
         return false; // puppets mirror the guest's own health

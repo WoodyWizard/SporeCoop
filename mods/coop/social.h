@@ -42,6 +42,7 @@ std::string status();
 bool drop_social_hit(uint16_t proxy_id);
 std::string species_dump(); // coop.social species (tests)
 extern unsigned g_stage_msg_win; // 0x60B4123 (a social win) seen by the creature-stage handler (tests)
+std::string games_dump(); // coop.social games (tests, BUG-0831): the host's social games, their prompts' animations
 std::string meter_dump(); // coop.social meter (tests, BUG-0179): the game's social meter object
 bool debug_answer(uint16_t id, uint32_t type); // coop.social answer <npc id> <hex type> (tests, BUG-0525)
 std::string abilities_dump(int id); // coop.social abil <npc id | -1> (tests, BUG-0525): abilities and prompt candidates

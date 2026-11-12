@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "game.h"
+#include "player_life.h"
 #include "net/validate.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
@@ -601,6 +602,12 @@ static void meter_task(int op, int npc_id, float frac = 0, int rounds = 1)
     g_meter_tasks.push_back({op, npc_id, frac, rounds});
 }
 
+// BUG-0808: a guest that left (or lost the host) in the middle of a social game kept the game's meter (face and bar) on
+// its screen in its single-player game: meter_tick closes it, and it runs only in a session. Now on_session_end queues
+// the close (outside the frame). `coop.fix social.meter_end off`: left open (0.7.11).
+static bool g_meter_end_fix = true;
+COOP_FIX("social.meter_end", "BUG-0808", g_meter_end_fix, "creature: the social meter of a guest's open social game is hidden when the session ends");
+
 // guest, every frame: the meter follows the engagement
 static void meter_tick()
 {
@@ -711,6 +718,47 @@ struct Game {
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
+// BUG-0831 (class BUG-0422): a guest that left in the middle of a social game left the host's NPC performing its prompts
+// and, after the prompt list, the fail reaction (up to 60 s); a newcomer under the same id got that game's lines and
+// result. The games of a player who leaves or joins are dropped (player_life). `coop.fix social.forget_leaver off`: kept.
+static bool g_forget_leaver = true;
+COOP_FIX("social.forget_leaver", "BUG-0831", g_forget_leaver, "creature: the host's NPC stops a social game whose guest left (a newcomer of that id inherits nothing)");
+static uint32_t g_games_forgotten = 0;
+static size_t games_of(uint8_t id)
+{
+    size_t n = 0;
+    for (auto& [k, g] : g_games)
+        n += k.first == id;
+    return n;
+}
+PLAYER_STATE("social.games", [](uint8_t id) {
+    if (!g_forget_leaver)
+        return;
+    for (auto it = g_games.begin(); it != g_games.end();)
+        if (it->first.first == id) {
+            it = g_games.erase(it);
+            g_games_forgotten++;
+        } else
+            ++it;
+}, [](uint8_t id) -> size_t { return games_of(id); });
+
+std::string games_dump()
+{
+    std::string out;
+    char b[96];
+    for (auto& [k, g] : g_games) {
+        snprintf(b, sizeof b, "game player=%u npc=%u idx=%d prompts=", k.first, k.second, g.idx);
+        out += b;
+        for (auto& p : g.prompts) {
+            snprintf(b, sizeof b, "%08X,", p.anim);
+            out += b;
+        }
+        out += "\n";
+    }
+    snprintf(b, sizeof b, "fail_anim=%08X games=%u forgotten=%u\n", kFailAnim, (unsigned)g_games.size(), g_games_forgotten);
+    return out + b;
+}
+
 
 struct Pending { // applied outside the frame (the result refreshes the creature UI)
     uint8_t player;
@@ -1197,6 +1245,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    // BUG-0808: the meter of a social game still open is hidden (meter_tick, which closes it, stops with the session)
+    if (g_meter_end_fix && g_meter_npc >= 0)
+        meter_task(3, g_meter_npc);
     g_engaged = -1;
     g_meter_npc = -1;
     g_goal_paid.clear();
@@ -1214,10 +1265,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "

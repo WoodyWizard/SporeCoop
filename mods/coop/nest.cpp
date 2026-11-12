@@ -270,6 +270,45 @@ static void remove_mirror(Mirror& m)
     g_removed++;
 }
 
+// BUG-0833: the world counter (game::world_epoch) also goes up when the avatar is replaced inside the stage (the own
+// creature chosen, an editor's new body): the egg mirrors were only forgotten then, while they were still eggs of the
+// guest's world, and the next snapshot made them again (two eggs per host egg, more after every change; the old ones
+// never hatch, are never removed, hold our references and their herds'). A world load frees the world's objects but
+// not the blocks we hold a reference to. Now a mirror of an older epoch is removed the normal way while the game's list
+// still has it (same serial), and only released (our two references) when the game destroyed it with its world.
+// `coop.fix nest.mirror_epoch off`: forgotten (0.7.11).
+static bool g_mirror_epoch_fix = true;
+COOP_FIX("nest.mirror_epoch", "BUG-0833", g_mirror_epoch_fix, "creature: a guest's egg mirrors are removed (not left behind) when its avatar or world changes");
+static uint32_t g_epoch_removed = 0, g_epoch_released = 0;
+static void drop_old_mirror(Mirror& m)
+{
+    if (!g_mirror_epoch_fix || !m.egg) {
+        m.egg = nullptr;
+        return;
+    }
+    bool listed = game::listed(m.egg, kEggNoun) && game::object_serial(m.egg) == m.serial;
+    if (listed) { // still an egg of this world: as remove_mirror
+        if (m.herd && field<void*>(m.egg, kEggHerd) == m.herd) {
+            field<void*>(m.egg, kEggHerd) = nullptr;
+            vcall<void>(m.herd, 1);
+        }
+        if (void* nm = noun_mgr())
+            thiscall<void>(a_DestroyInstance, nm, m.egg);
+        vcall<void>(m.egg, 1);
+        g_epoch_removed++;
+    } else if (!IsBadReadPtr(m.egg, 0x228) && field<uint32_t>(m.egg, 0x24) == m.serial &&
+               field<uint8_t>(m.egg, 0x21)) {
+        // destroyed with its world; the block is still ours (our reference): give back the herd's and ours
+        if (m.herd && field<void*>(m.egg, kEggHerd) == m.herd) {
+            field<void*>(m.egg, kEggHerd) = nullptr;
+            vcall<void>(m.herd, 1);
+        }
+        vcall<void>(m.egg, 1);
+        g_epoch_released++;
+    }
+    m.egg = nullptr;
+}
+
 static void clear_mirrors()
 {
     for (auto& [id, m] : g_mirrors)
@@ -365,9 +404,9 @@ static void host_tick(double now)
 
 static void guest_tick(double now)
 {
-    if (g_epoch != game::world_epoch()) { // another world: the old mirrors went with it
+    if (g_epoch != game::world_epoch()) { // another world (or another avatar in this one, BUG-0833)
         for (auto& [id, m] : g_mirrors)
-            m.egg = nullptr;
+            drop_old_mirror(m);
         g_mirrors.clear();
         g_own.clear();
         g_epoch = game::world_epoch();
@@ -378,8 +417,8 @@ static void guest_tick(double now)
     }
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();) {
         Mirror& m = it->second;
-        if (!mirror_ok(m)) { // the game took it (a cleanup of its own): forget it
-            m.egg = nullptr;
+        if (!mirror_ok(m)) { // the game took it (a cleanup of its own): forget it (BUG-0833: and give back our references)
+            drop_old_mirror(m);
             it = g_mirrors.erase(it);
             continue;
         }
@@ -644,7 +683,7 @@ void on_world_change()
 {
     g_still.clear();
     for (auto& [id, m] : g_mirrors)
-        m.egg = nullptr; // freed with the world
+        drop_old_mirror(m); // BUG-0833 (off: forgotten, "freed with the world")
     g_mirrors.clear();
 }
 
@@ -911,9 +950,9 @@ std::string status()
     int live = 0;
     for (auto& [id, m] : g_mirrors)
         live += mirror_ok(m);
-    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u\n",
+    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u epoch_removed=%u epoch_released=%u\n",
              (int)g_eggs_fix, (int)g_ground_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
-             g_snaps_tx, g_early_snaps, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed);
+             g_snaps_tx, g_early_snaps, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed, g_epoch_removed, g_epoch_released);
     return b;
 }
 

@@ -1,19 +1,19 @@
 ---
 id: BUG-0790
 title: TakeDamage hook turns every attacker combatant into a creature by subtracting 0x5A8, wrong for vehicle, UFO, building attackers (suspected)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-main 03de36a3 (game.cpp h_TakeDamage)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-creature
+commits: 7d823115
+tests: attacker_owner
 signature:
-docs:
+docs: docs/re/creature.md#creature-c2-audit-0713
 related:
 ---
 
@@ -23,13 +23,7 @@ creature (a vehicle, UFO, building, turret). Possible effects: an attack misattr
 address in the filter (suspected, no crash seen).
 
 ## Root cause
-Observed in code, consequence inferred (confidence medium): `mods/coop/game.cpp:182` (h_TakeDamage on
-cCreatureAnimal::TakeDamage) computes `att = attacker - kCombatOff (0x5A8)` for every attacker. 0x5A8 is the creature's
-cCombatant subobject; other classes put it elsewhere (vehicle combatant at vehicle+0x508, turret at +0x588, see our
-overrides_dc04aee5.sym). `npc::damage_filter` passes `att` to `creature_hp::drop_party_hit` -> `host_party`
-(`creature_hp.cpp:248`, reads `att + kFlagsOff` and `herd_of(att)`), `tribe::note_animal_hit`, `log_hit`. With a vehicle
-or UFO attacker (Civ, Space on a planet) these read a wrong object. The fork found that a combatant's virtual +0x0C is
-its ToGameData (owner object) conversion, valid for every combatant class.
+Observed (Ghidra, dc04) and at runtime. The combatant vt 0x0C of every class is its owner conversion: creature 0x1469E30 and citizen 0x146AAB0 -> 0xC0BFC0 `lea eax,[ecx-0x5A8]`, vehicle 0x1474CE8 and UFO 0x146BB48 -> 0xC3BDB0 `[ecx-0x508]`, turret 0x1466C28 -> 0xBCD080 `[ecx-0x588]`, hut (table at 0x1474318) -> 0xBCD230 `[ecx-0x120]`. The hook's `attacker - 0x5A8` gave a UFO hit the address UFO - 0xA0 (lab 20261112-073101), and the filter read creature fields there (the party check host_party, the pack defence's stimulus sender).
 
 ## Fix idea
 From the fork (jwhans0n/SporeCoopGA 03de36a3, docs/re/adventure-world.md "Shared actor identity, combat and lifecycle"); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -45,7 +39,14 @@ Creature or Civ stage with a vehicle attacking an animal (or Space: the UFO's la
 it is the vehicle / UFO object.
 
 ## Fix
+h_TakeDamage takes the attacker's object from its combatant vt 0x0C; drop_party_hit and pack_defend get the attacker only when it is a listed creature. Switch `coop.fix creature.attacker_owner off`: the subtraction. The fork's idea, verified on our build.
+
 ## Verification
+Test `attacker_owner` (coop_attacker_owner.py): the host's Drama Manager makes its UFO (`coop.drama start 2`), the UFO's combatant hits the guest's puppet through the hook (`coop.hp ufohit`); the attacker in `coop.hp dmglog`.
+* FAIL: out/lab/20261112-073101 (`SPORE_FIX_OFF=creature.attacker_owner`, lane 6): 0x213a0348 for the UFO 0x213a03e8.
+* PASS: out/lab/20261112-073116 (lane 7): the UFO object.
+* PASS: out/lab/20261112-080216 (lane 6, the switch on; only nest.mirror_epoch off in that run): the second PASS.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12 (fix/w48-creature, C2 of 0.7.13): fixed (creature.attacker_owner); FAIL 20261112-073101, PASS 20261112-073116, 20261112-080216.
