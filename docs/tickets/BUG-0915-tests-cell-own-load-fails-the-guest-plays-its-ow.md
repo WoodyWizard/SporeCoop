@@ -42,7 +42,7 @@ load as for a player who played it there; the record is cleared at the end. Test
 ## Verification
 FAIL (the test before the fix): out/lab/20261112-143119 (lane 5: "(0 own)", the world's cell 4DA56CA5, both own-cell
 checks failed, as on lane 9).
-PASS: out/lab/20261112-143433, PASS2_0915.
+PASS: out/lab/20261112-143433, out/lab/20261112-144537.
 
 ## History
 - 2026-11-10: opened.
