@@ -125,7 +125,9 @@ def main():
         time.sleep(3)
         print(f'  {time.time() - t0:3.0f} s: {cinematics(host)}', flush=True)
         host.call('key enter')
-    print(f'  relation now {rels(host).get(new[0]) if new else None}', flush=True)
+    rel = rels(host).get(new[0]) if new else None
+    print(f'  relation now {rel}', flush=True)
+    ck(rel and rel[0] >= 7, f'the village is allied (its relation {rel and rel[0]} at the allied level 7 or more)')
     report(host, 'after the alliance', ck)
 
     # the conquest
@@ -136,6 +138,10 @@ def main():
         while time.time() - t0 < 30:
             time.sleep(3)
             host.call('key enter')
+        vil = [ln for ln in host.call('coop.realign planet village')['out'].splitlines() if ln.startswith('pl ')]
+        down = [ln for ln in vil if re.search(r'fl=(\d+)', ln) and int(re.search(r'fl=(\d+)', ln).group(1)) & 2]
+        print(f'  villages: {len(vil)}, conquered: {down}', flush=True)
+        ck(bool(down), 'the village is conquered in the host\'s game (its +0x556)')
         report(host, 'after the conquest', ck)
     ck.faults(host=host, guest=guest)
     return ck.result()

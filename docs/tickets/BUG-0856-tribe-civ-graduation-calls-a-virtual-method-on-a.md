@@ -1,7 +1,7 @@
 ---
 id: BUG-0856
 title: Tribe -> Civ: graduation calls a virtual method on a null domesticated-animal pen (cTribe +0x19C4) (suspected for our saves)
-status: open
+status: not-reproduced
 kind: crash
 stage: Tribe
 reported: 2026-11-10
@@ -9,9 +9,9 @@ source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9049
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
 fixed_in:
-branch:
+branch: fix/w48-tribe-civ
 commits:
-tests:
+tests: tribe_pens
 signature: fork: runtime 0xFCD466 = canonical 0xCDD466, null data; stack SimCamera_Update+806 (B14296), CDECAC, CDF11C
 docs: docs/re/tribe.md#tribe-fork-graduation-notes
 related: BUG-0576, BUG-0495
@@ -24,10 +24,15 @@ fork's restored fixture had null pen and egg-pen pointers. Our tribe_civ test pa
 or fixtures can have a null pen.
 
 ## Root cause
-* Observed (fork, decoded): CDD461 calls C90060, which returns tribe+0x19C4 (mpDomesticatedAnimalsPen, ModAPI
-  cTribe.h), then calls its vt 0x54 with argument 0 and no null check.
-* Ours: no guard (code read). Unknown whether a vanilla tribe can have a null pen (probably not normally; maybe after
-  a load of a save made with our savestrip or with a fixture). Suspected, confidence low.
+Not reproduced: our player tribes have their pens.
+* Observed (Ghidra): the call is in 0xCDD0F0 (called from 0xCDE7E0), which takes `GetPlayerTribe` and at 0xCDD461
+  calls 0xC90060 (returns tribe +0x19C4) on **the player tribe only**, then its vt 0x54(0).
+* Observed (runtime, lab 20261112-091444 and 20261112-091646, `tribe_pens`): the player tribe of the host's and the
+  guest's game has both pens (+0x19C4, +0x19C8 non-null) on the tribe fixture, after the host's game formed a tribe,
+  and on the guest after a rejoin (its world loaded from the host's share save). Every computer village has null pens
+  in the game itself (the fixture's and the ones the game forms), which graduation does not touch.
+* tribe_civ (the end of Tribe through the City Hall editor) passes on our fixture. The fork's restored fixture had
+  null pens in all its tribes, the player tribe included: a state of its restore, not of the game or our saves.
 
 ## Fix idea
 From the fork (PandizeLive/SporeCoop-Lineages PR #196, BUG-9049, switch tribe.graduation_pen); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -44,10 +49,13 @@ null pen exists, tribe_civ on that fixture must FAIL on main (crash after the Ci
 guard. If no null pen can be made, close as not-reproduced and keep the RE note.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None: graduation reads only the player tribe's pen, which the game always has in our games (docs/re/tribe.md#tribe-graduation-pen).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+no-fail-run: no null pen of a player tribe found. Evidence: `coop_tribe_pens.py` (suite `tribe_pens`, tribe
+fixture, ~1.5 min): lab 20261112-091444 (every tribe printed: the player tribe's pens set, the villages' null) and
+20261112-091646 (the player tribe's pens on both games, after a formed tribe and after a rejoin).
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12 (fix/w48-tribe-civ): not reproduced: the call reads the player tribe's pen only; the player tribe has its pens in every game state looked at.

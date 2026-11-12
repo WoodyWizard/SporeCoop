@@ -1638,3 +1638,12 @@ BUG-0807. GOG 2024, lab lane 2 (civ fixture).
   "no free slot" (SnapToSlot), and the guest's copy was demolished by the reconcile: 3200 spent for one house before
   `civ.build_refund` (lab 20261112-085815), 1600 with it (20261112-085612).
 * CMD_BUILD carries the paid price as a float after the place since 0.7.13 (the host reads it only when present).
+## The Civ -> Space launch's pause and the spacecraft editor (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-launch-pause"></a>
+
+BUG-0855. GOG 2024, the host's game logs of campaign_space runs (four players).
+* ✔ The spacecraft editor request of the Civ -> Space change is editor 0x96B24187, submitted through the co-op vote
+  ("wants to edit a design (Civilization)"); the game submits it under its own pause and input lock, and the pause
+  reason is **0x4BF38A6** (cGameTimeManager GetPauseCount 1 at the gate), the same reason as the City Hall editor at
+  the end of Tribe (#tribe-graduation-save, BUG-0576). With `core.editor_own_pause` the editor opens 1.3-2 s after the
+  vote (rel/0.7.13 lab 20261112-050529 and five more runs). Answers "Unknown: which pause reason the Civ launch uses".

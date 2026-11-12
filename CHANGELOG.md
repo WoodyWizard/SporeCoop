@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the music of the dance at the fire pit stops for a guest when the dance ends, also when the guest was in
+  an editor at that moment; it used to play on until the guest loaded another world (BUG-0890).
 - Tribe: a baby tribe member grows up on a guest's screen when it grows up in the host's game, also when the guest
   joined or came back while the baby was growing; it stayed a baby there for a while longer (BUG-0857).
 - Tribe: a tribe member the host buys at the hut is the host's. Before, every member the host bought went to a guest,

@@ -3272,3 +3272,38 @@ BUG-0857. GOG 2024, Ghidra and lab lane 2. Verifies the fork's note in #tribe-fo
 * ✔ (runtime, lab 20261112-090138-2) A baby grows up 57-59 s after SpawnMember(0). A guest that rejoins 12 s after the
   birth has its mirror made again as a baby whose own timer starts then: it grew up 6 s after the host's. With
   `tribe.mirror_grow` the bound mirror is grown through vt 0x78 in the snapshot that says adult (the same second).
+## Members never change tribes (2026-11-12, fix/w48-tribe-civ)
+<a id="tribe-member-moves"></a>
+
+BUG-0841. GOG 2024, Ghidra (private project) and lab lane 2/3.
+* ✔ (Ghidra) `cTribe::AddMember` 0xC95F00 thiscall(tribe, citizen) ret 8 (null citizen: +0x338 robo population + 1;
+  a citizen already in +0x340 returns) is called by SpawnMember 0xC983C0, by the population set-up 0xC9A290 (vtable
+  0x1473E64, vt 0x8C: CreateInstance(0x18EB4B7), vt 0xE8 (0, tribe, 1, ...), then AddMember up to the count) and by
+  the thunk 0xC97010 = AddMember(c, 1), whose callers make or place new citizens: 0xACA2A0 (the noun manager's
+  placement of a citizen made outside Tribe mode: a nearby tribe within twice its radius takes it), 0xAD11E0,
+  0xAD2260. `RemoveMember` (vtable 0x1473E74, vt 0x9C) 0xC96070 thiscall(tribe, citizen, bool destroy) ret 8 detaches
+  (SetTribe(0)) or destroys; no caller hands the citizen to another tribe.
+* ✔ (runtime, `tribe_member_moves`) An alliance (relation 10) and a conquest (+0x556) leave the player tribe's
+  member vector as it was; the host's table saw no member in another tribe (`coop.tribe` `member_moves=0/0`).
+## The party music and the editors (2026-11-12, fix/w48-tribe-civ)
+<a id="tribe-party-stop"></a>
+
+BUG-0890. GOG 2024, lab lane 3, follows the BUG-0646 notes (tribe.cpp, the party music relay).
+* ✔ (runtime, lab 20261112-085745) The host's game keeps playing the fire-pit party music (0x19DC06DF) through its own
+  editor (60 s in the editor, still playing); the party's exit (StopAudio 0xD78F80) runs only after the host is back
+  in Tribe. So the host's stop is sent from Tribe in practice.
+* ✔ (runtime, lab 20261112-090930) A guest in its own editor (`coop.vote editor` on the guest opens it at once; the
+  host stays in Tribe) misses that stop when MSG_NPC_ANIM is dropped outside Tribe: its track played 35 s on after it
+  was back. `tribe.party_stop` takes kind 8 in every mode.
+* `coop.vote editor` on the host in Tribe opens the host's editor at once and gives the guest no ready button and no
+  offer; on the guest it opens the guest's own editor at once, the host plays on.
+## Graduation's pen call and the villages' pens (2026-11-12, fix/w48-tribe-civ)
+<a id="tribe-graduation-pen"></a>
+
+BUG-0856. GOG 2024, Ghidra and lab lane 3. Verifies the fork's note in #tribe-fork-graduation-notes.
+* ✔ (Ghidra) The sequence at 0xCDD461 is in 0xCDD0F0 (fastcall, its only caller 0xCDE7E0), which starts with
+  `GetPlayerTribe`, destroys the tribe's food mat (+0x260), calls 0xC90600, then 0xC90060 (`return tribe+0x19C4`)
+  and that object's vt 0x54(0) without a null check: **the player tribe's pen only**.
+* ✔ (runtime, `tribe_pens`) The player tribe has a pen and an egg pen (+0x19C4, +0x19C8) in both games, on the tribe
+  fixture, after the game forms a village and after a guest's rejoin. **Every computer village has both null** in the
+  game itself (the fixture's and newly formed ones): null pens there are normal.
