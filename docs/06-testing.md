@@ -6673,3 +6673,7 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
 * `cell_own_load` (BUG-0915): since BUG-0345 / BUG-0638 a choice (choices.ini) holds only in a world recorded for it
   (worlds.ini); the test sets the guest's record (`coop.creations worlds set cell <inst>`), loads the world again
   (`coop.worldfix queue 1 0`) and restores the record at the end.
+* `unit_parallel` (BUG-0969, ~1.5 min, NO_GAME): builds the net tests (build/host/net_tests_par) and runs 3 copies
+  at once, 2 rounds. Native tests that use real sockets must not use a fixed port of the discovery range
+  (kDefaultPort .. +19): the other lanes' games host there and answer a query to 127.0.0.1 within 10-14 ms, and the
+  `unit` of another lane binds the same port. Host on port 0 and point `Discovery::ports` at `port()`.

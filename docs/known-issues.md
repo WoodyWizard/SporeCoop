@@ -2896,3 +2896,6 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   lanes ran their smokes; a rerun passes.
 * Reproduce: `unit` on two lanes at the same moment (the test hosts on a fixed port of 127.0.0.1).
 * Ticket: BUG-0969
+* Fixed (unreleased, fix/w48-last, 2026-11-12): the checks hosted on the fixed port kDefaultPort + 19 and asked the
+  whole range, where another copy of the tests and the other lanes' games (they answer 127.0.0.1) live. They host on
+  an ephemeral port and ask only it (Discovery::ports); test unit_parallel (3 copies at once).
