@@ -6,7 +6,8 @@
   3. BUG-0809: the host's bytes to the guest over 15 s fall to a small part of step 1: no live Cell state (the
      cells around the host, 10 per second) goes to a guest that is not in the host's Cell world
   4. BUG-0797: the guest's own game populates its pool: the live creature cells of its game within 80 m
-     (`coop.pool npcs`, the game's cell pool) are there and stay over 40 s; the guest's game is in its own pool
+     (`coop.pool npcs`, the game's cell pool) are there in the last 25 s of 60 s (the game fills the pool
+     10-40 s after the load); the guest's game is in its own pool
      (cell_away solo=1)
 
   SPORE_FIX_OFF=cell.send_here coop_own_cell.py      (step 3 FAILS)
@@ -56,12 +57,12 @@ def main():
     # 4. BUG-0797
     counts = []
     t0 = time.time()
-    while time.time() - t0 < 40:
+    while time.time() - t0 < 60:
         counts.append(own_npcs(guest))
         time.sleep(5)
     away = [l for l in guest.call('coop.pool')['out'].splitlines() if l.startswith('cell_away')]
-    print(f'  the guest\'s own creature cells within 80 m over 40 s: {counts}; {away}', flush=True)
-    ck(min(counts) >= 3, f'the guest\'s own game populates its pool ({counts})')
+    print(f'  the guest\'s own creature cells within 80 m over 60 s: {counts}; {away}', flush=True)
+    ck(len(counts) >= 8 and min(counts[-5:]) >= 3, f'the guest\'s own game populates its pool ({counts}: the last 25 s)')
     ck(away and 'solo=1' in away[0], f'the guest plays its own pool ({away})')
     guest.call('coop.worldfix autoload 1')
     ck.faults(host=host, guest=guest)

@@ -20,6 +20,10 @@ def world_id(con):
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
+def space_other(con):
+    return bool(re.search(r'own world: .* space_other=1', con.call('coop.status')['out']))
+
+
 def connected(con):
     st = con.call('coop.status')['out'].lower()
     return 'client' in st or 'connected' in st
@@ -55,7 +59,10 @@ def load_own(guest, planet, name, mode_word, timeout=150, slot='Game9'):
         time.sleep(3)
         m = guest.call('game.mode')['out']
         _, w = world_id(guest)
-        if mode_word in m and w not in (None, '00000000', w0):
+        # Space: the world id is the place (the star system); the save shows as space_other=1 (another save than
+        # the host's)
+        moved = w not in (None, '00000000', w0) if mode_word != 'Space' else space_other(guest)
+        if mode_word in m and moved:
             guest.call('wait.frames 200 60000')
             print(f'  own world: the guest plays {name}.spo (world {w0} -> {w}) after {time.time() - t0:.0f} s', flush=True)
             return True
