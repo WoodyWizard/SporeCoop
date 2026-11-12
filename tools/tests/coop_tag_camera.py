@@ -86,16 +86,112 @@ def measure(png, colour):
             xs = [x for x in xs if abs(x - tx) < 120]  # (the text is short: stray pixels elsewhere do not count)
             if len(xs) < 40:
                 return {'tag': None, 'body': None, 'n': (len(xs), 0)}
+            def red(x, y):
+                r, g, b = px[x, y]
+                return r > 140 and g < 70 and b < 70 and r > 2.4 * max(g, b, 1)
             bx = []
             for y in range(min(h, by + 30), min(h - 200, by + 370), 2):
                 for x in range(max(0, tx - 420), min(w, tx + 420), 2):
-                    r, g, b = px[x, y]
-                    if r > 140 and g < 70 and b < 70 and r > 2.4 * max(g, b, 1):
+                    if red(x, y):
                         bx.append(x)
             bx.sort()
-            return {'tag': (tx, by), 'body': bx[len(bx) // 2] if len(bx) >= 40 else None, 'n': (len(xs), len(bx))}
+            span = None
+            if bx:  # the creature nearest to the tag (the nest has more of the red species): its columns only, a run
+                # of red columns without a gap of 40 px around the red column nearest to the tag
+                k = min(range(len(bx)), key=lambda i: abs(bx[i] - tx))
+                lo = hi = k
+                while lo > 0 and bx[lo] - bx[lo - 1] < 40:
+                    lo -= 1
+                while hi < len(bx) - 1 and bx[hi + 1] - bx[hi] < 40:
+                    hi += 1
+                bx = bx[lo:hi + 1]
+                span = (bx[0], bx[-1])
+            # BUG-0929: the tag's lowest row and the top of the red body under it: in the columns of that creature
+            # within 80 px of the tag's middle, the first row from the tag down with 4 red pixels that has red rows
+            # under it too (8 of the next 12: stray red pixels of the background do not count)
+            tag_bottom = max(y for y in range(by, by + 30) if any(abs(x - tx) < 120 for x in rows.get(y, ())))
+            top = None
+            if span:
+                x0, x1 = max(span[0], tx - 80, 0), min(span[1], tx + 80, w - 1)
+                redrow = {}
+                for y in range(tag_bottom + 1, min(h - 200, tag_bottom + 440)):
+                    redrow[y] = sum(1 for x in range(x0, x1 + 1) if red(x, y)) >= 4
+                for y in range(tag_bottom + 1, min(h - 212, tag_bottom + 428)):
+                    if redrow.get(y) and sum(1 for k in range(1, 13) if redrow.get(y + k)) >= 8:
+                        top = y
+                        break
+            return {'tag': (tx, by), 'body': bx[len(bx) // 2] if len(bx) >= 40 else None, 'n': (len(xs), len(bx)),
+                    'span': span if len(bx) >= 40 else None, 'tag_bottom': tag_bottom, 'body_top': top}
     except OSError:
         return None
+
+
+def colour_count(png, colour):
+    """pixels of this colour in the region measure() reads (the scene without tags: how much a tag colour is taken by the
+    world itself, e.g. a guest creature with yellow stripes)"""
+    try:
+        from PIL import Image
+        with Image.open(png) as im:
+            im = im.convert('RGB').resize((im.width // 2, im.height // 2))
+            w, h = im.size
+            px = im.load()
+            n = 0
+            for y in range(50, h - 165):
+                for x in range(65, w - 65):
+                    p = px[x, y]
+                    if abs(p[0] - colour[0]) + abs(p[1] - colour[1]) + abs(p[2] - colour[2]) < 48:
+                        n += 1
+            return n
+    except (ImportError, OSError):
+        return 0
+
+
+def pick_colour(host, guest, W, H, drag):
+    """the host's colour for the test: of the palette (not red: the creature fixture's species is red), the one the
+    guest's scene has least of, in shots with the name tags off at rest and after a turn each way"""
+    import settings_lib as sl
+    # (not blue: the sky; not pink: the mating call's hearts come and go)
+    palette = {'yellow': 'FFD040', 'green': '5CE05C', 'orange': 'FF9030', 'purple': 'B07CFF', 'cyan': '40E0E0'}
+    m = re.search(r'key=(\w+) argb=\w+ name=\S+ \(me\)', host.call('coop.find colors').get('out') or '')
+    pick_colour.restore = m.group(1) if m else 'yellow'
+    if not sl.force(host, [guest], 'all.name_tags', 'off'):
+        return None
+    counts = dict.fromkeys(palette, 0)
+    for k, d in enumerate((0, drag, -drag)):
+        if d:
+            guest.call(f'drag {W // 2} {H // 2} {W // 2 + d} {H // 2} right')
+            time.sleep(1.5)
+        png = os.path.join(lane.out_dir('shots'), f'tagcam_calib_{k}.png')
+        if guest.call('shot ' + png).get('ok'):
+            for key, hx in palette.items():
+                counts[key] += colour_count(png, tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4)))
+    sl.force(host, [guest], 'all.name_tags', 'on')
+    best = min(counts, key=lambda c: counts[c])
+    print(f'  the scene\'s pixels per tag colour (tags off): {counts}; the host takes {best}', flush=True)
+    out = host.call(f'coop.find color {best}').get('out') or ''
+    if 'ok' not in out:
+        return None
+    time.sleep(1.5)
+    hx = palette[best]
+    return tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def px_per_metre(con):
+    """screen px per metre of height at the partner: its position and 1 m over it (the planet's up) projected by this
+    game's camera (`coop.find labels`, `coop.find project`)"""
+    m = re.search(r'label kind=player .*pos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)', con.call('coop.find labels').get('out') or '')
+    if not m:
+        return None
+    p = [float(v) for v in m.groups()]
+    r = sum(v * v for v in p) ** 0.5 or 1.0
+    ys = []
+    for h in (0.0, 1.0):
+        q = [p[i] + p[i] / r * h for i in range(3)]
+        mm = re.search(r'sy=(-?[\d.]+)', con.call('coop.find project %.3f %.3f %.3f' % tuple(q)).get('out') or '')
+        if not mm:
+            return None
+        ys.append(float(mm.group(1)))
+    return abs(ys[0] - ys[1]) or None
 
 
 def shoot(con, name, colour):
@@ -120,9 +216,13 @@ def main():
     ap.add_argument('--drag', type=int, default=400, help='mouse px of one turn (play_creature.py: 300-450)')
     ap.add_argument('--turns', type=int, default=12)
     ap.add_argument('--walk', type=float, default=1.6, help='s the host walks away first')
-    ap.add_argument('--colour', default='', help='the tag\'s colour RRGGBB (default: asked from coop.find)')
+    ap.add_argument('--colour', default='', help='the tag\'s colour RRGGBB; auto: the host\'s as it is (coop.find); default: the host picks the palette '
+                         'colour the scene has least of')
     ap.add_argument('--near', type=float, default=60.0)
     ap.add_argument('--limit', type=int, default=-1)
+    ap.add_argument('--gap', type=float, default=-1,
+                    help='BUG-0929: FAIL when the tag stands more than this many metres over the top of its body in the '
+                         'shots at rest (-1: printed only)')
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
@@ -144,6 +244,12 @@ def main():
     hp, gp = place(host), place(guest)
     dist = sum((hp[i] - gp[i]) ** 2 for i in range(3)) ** 0.5 if hp and gp else -1
     print(f'  the players stand {dist:.1f} m apart', flush=True)
+    if len(a.colour) == 6:
+        colour = tuple(int(a.colour[i:i + 2], 16) for i in (0, 2, 4))
+    elif a.colour == 'auto':
+        colour = tag_colour(guest)
+    else:  # a colour the scene does not have (a guest creature with yellow stripes was read as the yellow tag)
+        colour = pick_colour(host, guest, W, H, a.drag) or tag_colour(guest)
     # the partner on the guest's screen, beside the guest's own creature
     sc = None
     for i in range(16):
@@ -153,19 +259,31 @@ def main():
         guest.call(f'drag {W // 2} {H // 2} {W // 2 + 90} {H // 2} right')
         time.sleep(1.5)
     ck(sc is not None, f'the host\'s creature is on the guest\'s screen ({sc})')
-    colour = tuple(int(a.colour[i:i + 2], 16) for i in (0, 2, 4)) if len(a.colour) == 6 else tag_colour(guest)
     ck(colour is not None, f'the tag\'s colour is known ({colour})')
     if not sc or not colour:
         ck.faults(host=host, guest=guest)
         return ck.result()
-    rest = []
+    print('  ' + (guest.call('kit.cam reset').get('out') or 'kit.cam: none (an old SporeKit)').strip(), flush=True)
+    rest, gaps = [], []
     for i in range(3):
         m, p = shoot(guest, f'tagcam_still_{i + 1}', colour)
         if m and m['tag'] and m['body'] is not None:
             rest.append(m['tag'][0] - m['body'])
+        if m and m.get('body_top') is not None:
+            gaps.append(m['body_top'] - m['tag_bottom'])
         print(f'  still {i + 1}: in the shot: tag {m["tag"] if m else "-"}, body x {m["body"] if m else "-"} '
-              f'({m["n"] if m else "-"} px) -> {p}', flush=True)
+              f'({m["n"] if m else "-"} px), tag bottom y {m.get("tag_bottom") if m else "-"}, body top y '
+              f'{m.get("body_top") if m else "-"} -> {p}', flush=True)
         time.sleep(0.4)
+    print('  ' + (guest.call('coop.find tagh').get('out') or '').strip(), flush=True)
+    ppm = px_per_metre(guest)
+    gap_m = sorted(gaps)[len(gaps) // 2] / ppm if gaps and ppm else None
+    print(f'  BUG-0929: the tag\'s lowest row is {gaps} px over the top of the body; {ppm or 0:.1f} px a metre there '
+          f'(the game\'s camera at the partner) -> {gap_m if gap_m is None else round(gap_m, 2)} m', flush=True)
+    if a.gap >= 0:
+        ck(gap_m is not None and gap_m <= a.gap,
+           f'camera at rest: the tag stands just over its creature, not up in the air ({gap_m} m between the tag and the '
+           f'top of the body in the shots, at most {a.gap})')
     ck(len(rest) >= 2, f'camera at rest: the tag and the body under it are found in the shots (tag - body: {rest} px)')
     base = sorted(rest)[len(rest) // 2] if rest else 0
     kinds = {'over': 0, 'off': 0, 'empty': 0, 'none': 0}
@@ -182,14 +300,22 @@ def main():
         elif m['body'] is None:
             kind, off = 'empty', None
         else:
-            off = m['tag'][0] - m['body'] - base
-            kind = 'over' if abs(off) <= a.near else 'off'
+            # over: the tag's middle within its creature's columns (a close creature is wide: its middle is not where
+            # its head and the tag are) or within --near px of where it is at rest
+            x0, x1 = m['span']
+            tx = m['tag'][0]
+            off = 0 if x0 - 30 <= tx <= x1 + 30 else (tx - (x1 + 30) if tx > x1 else tx - (x0 - 30))
+            if abs(m['tag'][0] - m['body'] - base) <= a.near:
+                off = 0
+            kind = 'over' if off == 0 else 'off'
             worst = max(worst, abs(off))
         kinds[kind] += 1
         print(f'  turn {k + 1} ({sign * a.drag:+d} px, shot {wait + 1} frames after the drag command): {kind}'
               + (f' ({off:+.0f} px)' if off is not None else '')
               + f'; tag {m["tag"] if m else "-"}, body x {m["body"] if m else "-"} -> {path}', flush=True)
         time.sleep(1.5)
+    # BUG-0948: how far the viewer moved between the game's draw and Present over the turns (SporeKit's own measure)
+    print('  ' + (guest.call('kit.cam').get('out') or 'kit.cam: none').strip(), flush=True)
     after = []
     for i in range(2):
         m, p = shoot(guest, f'tagcam_after_{i + 1}', colour)
@@ -203,6 +329,9 @@ def main():
         bad = kinds['off'] + kinds['empty']
         ck(bad <= a.limit, f'the tag is over its body while the camera turns ({bad} shots off or over empty ground, '
                            f'limit {a.limit})')
+    if getattr(pick_colour, 'restore', None):  # the lane's later tests: the host's colour as it was, none kept in coop.ini
+        host.call(f'coop.find color {pick_colour.restore}')
+        host.call('coop.find color none')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
