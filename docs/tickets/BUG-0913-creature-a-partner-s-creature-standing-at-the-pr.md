@@ -53,7 +53,8 @@ reach the bite's reach), then clicks the animal from behind (the game's target m
 `coop.find rivals 1` must switch the skipping off.
 * FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-072859 (click 0 of 2, the walk stopped 1.4 m short in
   2 rounds), 20261112-073905 (click 0 of 1), 20261112-071805 (click 0 of 3).
-* PASS: lab 20261112-073356, 20261112-073855 (clicks 3 of 3 / 4 of 4 on the animal, walks 2 of 2 reached).
+* PASS: lab 20261112-073356, 20261112-073855 (clicks 3 of 3 / 4 of 4 on the animal, walks 2 of 2 reached), 20261112-074338
+  (with play_creature, settings_creature, avatar_stale_target, partner_pass_ff).
 
 ## History
 - 2026-11-10: opened.
