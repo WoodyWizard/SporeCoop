@@ -264,6 +264,13 @@ static void evaluate()
 }
 
 // ---------------- entering the core ----------------
+// BUG-0820: a partner who already entered the core (its F_ENTERED flag, or its K_REACHED in this session) and then
+// flew away was still "missing" (not at the gate): the core waited for it for ever, only "Enter now" got in.
+// `coop.fix space.finale_entered off`: every partner not at the gate is waited for (0.7.12).
+static bool g_entered_fix = true;
+COOP_FIX("space.finale_entered", "BUG-0820", g_entered_fix,
+         "space finale: the core does not wait for a partner who already entered it");
+static uint32_t g_not_waited;
 // partners in space who are not at the gate yet (the ones the core waits for)
 static std::vector<std::string> missing()
 {
@@ -272,6 +279,10 @@ static std::vector<std::string> missing()
         return v;
     for (auto& p : spaceext::ctx().partners()) {
         auto it = g_peer.find(p.id);
+        if (g_entered_fix && ((it != g_peer.end() && it->second.flags & F_ENTERED) || g_reached_by.count(p.id))) {
+            g_not_waited++;
+            continue; // it was in the core already
+        }
         if (it == g_peer.end() || it->second.zone != Z_GATE)
             v.push_back(p.name);
     }
@@ -749,10 +760,10 @@ static std::string status()
     snprintf(b, sizeof b,
              "finale: core=%u ctx=%d busy=%d cin=%08X zone=%u dist=%.1f star=%u entered=%d staff=%d charges=%d waiting=%d alone=%d "
              "reached_by=%s waits=%u blocked=%u entries=%u entries_with=%u rewards=%u reward_skipped=%u flights=%u "
-             "flying=%u peers=[%s ]",
+             "flying=%u not_waited=%u peers=[%s ]",
              g_core, context(), busy(), cin, g_zone, g_dist, g_star, (g_flags & F_ENTERED) != 0, (g_flags & F_STAFF) != 0,
              tool_charges(kToolStaff), g_waiting, g_alone, who.c_str(), g_waits, g_blocked, g_entries, g_entries_with,
-             g_rewards, g_reward_skipped, g_flights, g_fly.star, peers.c_str());
+             g_rewards, g_reward_skipped, g_flights, g_fly.star, g_not_waited, peers.c_str());
     return b;
 }
 

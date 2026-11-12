@@ -1,19 +1,19 @@
 ---
 id: BUG-0832
 title: Space: a delivered spice sale pays the seller nothing when it is outside Space at the session end
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-space
+commits: d8dc662e
+tests: space_sale_end
 signature:
-docs:
+docs: docs/re/space.md#space-s1-0713
 related: BUG-0196
 ---
 
@@ -30,10 +30,18 @@ Owe the payment (as g_owed does for other trades) and pay it in the first Space 
 Receiver `coop.space trade hold 2`; seller `coop.space trade sell`, `coop.space trade away 1`, end the session: FAIL = `earned` unchanged after the seller is back in Space; PASS = paid.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+At the session end a delivered sale (BUG-0542: not given back) of a seller outside Space is owed (OwedSale: the
+sum, the spice, the sale's world tag) and paid in the first Space frame of that game (spaceext::owed_action decides as
+for refunds: Pay / Keep for another game / Drop). Root cause confirmed at runtime. Switch `coop.fix trade.sale_owed
+off` (0.7.12). `coop.space trade`: `sales_owed=<waiting>/<owed>/<paid>/<dropped>`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+`coop_space_sale_end.py` (suite `space_sale_end`): the guest sells 10 spice to the host's colony (the host `trade hold
+2`: added, no answer), `trade away 1`, leaves, `trade away 0`.
+* FAIL with `SPORE_FIX_OFF=trade.sale_owed`: lab 20261112-035215 (the guest's game money stays 100000).
+* PASS: lab 20261112-034734 (100000 + 149940 once, `sales_owed=1/1/0/0` before the return).
+* PASS again: lab 20261112-040253; the area's older tests pass on the branch (lab 20261112-041200, 20261112-041012).
 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
+- 2026-11-12: fixed on fix/w48-space (the payment is owed and paid back in Space; switch trade.sale_owed).

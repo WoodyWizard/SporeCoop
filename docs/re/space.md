@@ -2758,3 +2758,44 @@ BUG-0838. GOG 2024, runtime on lanes 6/7 (`coop.space allies civ <PlanetID>`, co
   +0x10FC..+0x110C) wrote the host's stage history into a guest's own Space save. wsync's guest tick applies no row in
   Space while own_world::space_other() (wsync.space_own). Lab: the host's stage 0 trait set to A5656E84, the guest's
   own save kept 00000000 for 10 s (20261112-025609).
+
+## Space S1 of 0.7.13: rejoins, away trips, the colony spice, gifts and loads (2026-11-12, fix/w48-space)
+<a id="space-s1-0713"></a>
+
+GOG 2024, lanes 2 and 3. Each finding has its FAIL / PASS runs in its ticket.
+
+* ✔ A crash rejoin by the token (BUG-0235) keeps the player id: the guest's game killed with SIGKILL, started again and
+  joined 9-10 s later got id 1 again; the host's session drops the old entry (PLAYER_LEAVE) and accepts the new HELLO
+  in the same message. State kept per id that only a per-frame "is the id still in players()" check clears is never
+  cleared then: use the leave event (player_life, PLAYER_STATE). BUG-0810: the host's kept colonies of that guest.
+* ✔ `spaceext::world_epoch` does not change over `coop.space away 1|0`, and the money pointer of the player's empire
+  is null while away: "back in Space" is not "another world". BUG-0813 (rivals budget asked for again on every return).
+* ✔ A partner who entered the galactic core keeps F_ENTERED in its state (kFlagEnteredCore is saved with its game)
+  after it flies away (zone 2 at a star in the Grox zone). BUG-0820.
+* ✔ The space fixture's home colony 00460035 has 9 cities with 1.2 spice each; a guest's arrival in the home system
+  collects them into its hold (0.7 left). With the host `away`, the guest's K_SPICE_TAKEN reached the host but was
+  dropped; the host's next K_SPICE (on its return) wrote 10.8 back into the guest's cities. BUG-0822.
+* ✔ The host's mirror of a guest's own colony in the home system (`allies colonize` -> 01460035, add_planet_own:
+  FillPlanet) has 2 cities with 0.0 spice, the same city count as the guest's real colony, which is why the colony
+  spice sync wrote 0.0 into it. BUG-0840.
+* ✔ The space_empire fixture's colony list order is 00460035 (9 cities), 01460035 (2), 00460014 (1) on both games:
+  SpacePlayerData +0x20 keeps the order of the save. BUG-0834 (the old 48-colony cap, shown with a test cap of 1).
+* ✔ A plant cargo item of an unknown key (type 0, 0DEC0826) in a guest's hold record: the plant factory finds no
+  template, apply_inv counts it as failed (no fault). BUG-0826.
+* ✔ A co-op spice gift that arrives is never answered; its entry stays in the sender's list across a load of another
+  game (game B, a copy of the slot), and a later "no room" answer of the same amount took that old entry. BUG-0828.
+* ✔ A delivered sale (`trade hold 2`: the receiver adds, no answer) is `delivered=1` on the seller within a second; a
+  sale of 10 Yellow Spice to the host's home colony in the space fixture is 149 940 (price 14 994). BUG-0832.
+* ✔ A survey contract's crew can grow while it is active (Carol accepted late: crew 0,1,2, needed 2). BUG-0830.
+* ✔ Space effects relay (`effects.space`): the game's last created effect in Space in the lab's fixture is DC08F952
+  (pool 5, made at the ship); relayed host -> guest and guest -> guest it is created active 0.05-0.06 m from the actor's
+  ship, no fault. BUG-0895.
+* ✔ A host's load of another Space save from the galaxy menu: the mode goes Space -> galaxy menu (0x02CCD1D2) ->
+  loading -> Space, the stage and the place (star) are the same, so nothing in the state tells the guests; the save
+  file does (`world::current_game_key`, e.g. `...\games\game0\madas.spo` -> `...\games\game9\madas.spo`). The guest
+  that gets the world goes to its galaxy menu and loads it into another of its slots (game1 -> game2). BUG-0941.
+* ✔ The player's UFO is the same object (pointer and object serial) over every trip inside one Space world: landing
+  and taking off, a jump and back, the galaxy view and back, and a death with the respawn at the colony ("We've built
+  you a new ship" keeps the old object, 0ECE8FB8 / serial 212, lab 20261112-035944). The captain screen's "Enter
+  Outfitter" did not open in the lab saves (hidden parent). ? An adventure from Space and a working outfitter not
+  tried. BUG-0836 (not reproduced).

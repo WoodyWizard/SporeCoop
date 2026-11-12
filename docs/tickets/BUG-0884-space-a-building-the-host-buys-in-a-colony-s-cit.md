@@ -60,3 +60,4 @@ get it.
 - 2026-11-10: fixed on fix/w47-b2 (the host relays its Space colony buildings; test space_planner_host).
 - 2026-11-10: the relay waits for the planner to close with the building (3946ad47); BUG-0902 opened for the guest side.
 - 2026-11-11: released in 0.7.12.
+- 2026-11-12: listed in the 0.7.13 package S1; already fixed in 0.7.12. space_planner_host passes again on fix/w48-space (lab 20261112-041012). The untested case named in Verification was not run.

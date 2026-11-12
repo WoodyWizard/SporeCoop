@@ -1913,6 +1913,8 @@ Found by fix/w40-play (2026-11-03), not fixed:
   game effect; such effects are never sent or played now (`coop.fix effects.main_world`) and
   `effects.other_stages` is on (docs/re/creature.md#creature-effects-painter). Space stays off
   (`coop.fix effects.space`, not verified). The fault itself did not come back on lane 4 even with the 0.7.4 build.
+* 2026-11-12 (fix/w48-space): Space verified and on by default (BUG-0895: effects_party_space passes, fails with
+  `SPORE_FIX_OFF=effects.space`).
 ## Space: the partners' UFO puppets may go into a guest's save (2026-11-03, fix/w41-tribe-world)
 <a id="issue-space-objects-in-save"></a>
 
@@ -2730,6 +2732,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: whether the host offers the world at all in this case, what a guest in another star system does.
 * Next steps: decide whether the guest follows (as in the gated stages) or is told.
 * Ticket: BUG-0941
+* Fixed (2026-11-12, fix/w48-space): the guest follows; the host shares its world when it loads another Space save
+  file (`space.load_follow`, docs/re/space.md#space-s1-0713).
 
 ## Tribe: a fault storm in the game's resource code on a guest after the host loaded its Tribe world again (2026-11-11, campaign, fix/w47-final12b)
 <a id="issue-tribe-reload-fault-storm"></a>

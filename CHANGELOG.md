@@ -73,6 +73,26 @@
   editors, while the game takes the village down; the world is sent in the Civilization stage (BUG-0849).
 - Galactic Adventures: the mod no longer saves the campaign or posts its quit to the main menu while an adventure is
   played (BUG-0854).
+- Space: a guest whose game crashed and who joins again at once gets its own colonies back, as after a normal rejoin
+  (BUG-0810).
+- Space, rivals mode: a guest's own money no longer jumps back after a visit to an editor or an adventure (a contract
+  reward paid on the return was lost) (BUG-0813).
+- Space: the galactic core no longer waits for a partner who already went in and flew away (BUG-0820).
+- Space: spice a guest collects from a shared colony while the host is in an editor or an adventure can no longer be
+  collected a second time (BUG-0822).
+- Space: cargo that could not be put back into a guest's hold after a rejoin is no longer lost for good; it is tried
+  again at the next rejoin (BUG-0826).
+- Space: spice from a gift that comes back after the host loaded another game returns to the hold right away instead
+  of being kept for the other game (BUG-0828).
+- Space: with three or four players, a survey contract is completed when enough ships reach the stars, even if a
+  player who joined the crew later stays at home (BUG-0830).
+- Space: a spice sale that arrived is paid even when the seller was in an editor or an adventure as the session ended
+  (BUG-0832).
+- Space: the stored spice of every shared colony is kept in step, not only of the first 48 (BUG-0834).
+- Space: a guest's own colony in a shared star system no longer loses its stored spice (BUG-0840).
+- Space: the effects of a player's ship (world effects) now show on the partners' screens (BUG-0895).
+- Space: when the host loads another Space save, the connected guests follow it into that game instead of playing on
+  in the old one (BUG-0941).
 
 ## [0.7.12] - 2026-11-11
 
