@@ -1647,3 +1647,5 @@ BUG-0855. GOG 2024, the host's game logs of campaign_space runs (four players).
   reason is **0x4BF38A6** (cGameTimeManager GetPauseCount 1 at the gate), the same reason as the City Hall editor at
   the end of Tribe (#tribe-graduation-save, BUG-0576). With `core.editor_own_pause` the editor opens 1.3-2 s after the
   vote (rel/0.7.13 lab 20261112-050529 and five more runs). Answers "Unknown: which pause reason the Civ launch uses".
+* ✔ With `core.editor_own_pause` off the spacecraft editor waited at the busy gate ("input_lock,paused") and came up
+  61 s after its vote (lab 20261112-100520, 20261112-102046): the hold the fork saw (BUG-0855).

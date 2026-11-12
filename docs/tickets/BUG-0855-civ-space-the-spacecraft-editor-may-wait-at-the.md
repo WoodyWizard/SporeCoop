@@ -1,16 +1,16 @@
 ---
 id: BUG-0855
 title: Civ -> Space: the spacecraft editor may wait at the busy gate under the game's own launch pause (suspected)
-status: not-reproduced
+status: fixed
 kind: freeze
 stage: Civ
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9070
 role: host
 versions: 0.7.7 .. 0.7.11.1 (code read)
-fixed_in:
+fixed_in: 0.7.7
 branch: fix/w48-tribe-civ
-commits:
+commits: dc4084f5
 tests: campaign_space
 signature: the editor waits: the game is busy (paused), editor 0x96B24187
 docs: docs/re/civ.md#civ-launch-pause
@@ -23,18 +23,16 @@ request waits, until the busy gate's limit runs out. The fork saw it (editor 0x9
 cinematic) after the vote closed.
 
 ## Root cause
-Not reproduced on our code: the Civ launch's pause is the editor pause reason BUG-0576 already masks.
-* Observed (runtime, the host's game logs of campaign_space, the Civ -> Space change with four players, our code
-  since 0.7.7): the spacecraft editor request 96B24187 comes from the Civ -> Space vote ("Alice wants to edit a
-  design (Civilization)", editor=96B24187); at the gate the host logs "the editor does not wait for the game's own
-  input_lock,paused (it requested the editor from it, BUG-0576; editor pause count 1)": the game's pause count of
-  reason 0x4BF38A6 is 1, the same reason as the end of Tribe. The host's game is in the editor mode 1.3 s after the
-  vote ended (lab rel/0.7.13 20261112-050529: vote end 05:14:03.108, `stage: Civilization -> Editor` 05:14:04.412).
-  The same in every campaign_space run looked at: fix/w48-new 20261112-074718, fix/w48-space 20261112-043001,
-  fix/w48-own-world 20261112-034104, rel/0.7.12 20261111-185533 and 20261111-151535 (vote end to the gate's line in
-  the same millisecond, the editor mode within 2 s).
-* The fork's hold (PR #196 BUG-9070) was on its own base, our 0.7.3.6, before BUG-0576 (core.editor_own_pause,
-  0.7.7) existed: there every editor request under the game's own pause waited at the busy gate.
+Reproduced with BUG-0576's switch off; fixed since 0.7.7 by BUG-0576's rule.
+* Observed (runtime, campaign_space, the Civ -> Space change with four players): the spacecraft editor request
+  96B24187 comes from the Civ -> Space vote ("Alice wants to edit a design (Civilization)"); the game submits it under
+  its own pause and input lock, and the pause reason is **0x4BF38A6** (GetPauseCount 1 at the gate), the same reason
+  as the end of Tribe. With `core.editor_own_pause` on the host logs "the editor does not wait for the game's own
+  input_lock,paused (... editor pause count 1)" and is in the editor 1.3-1.4 s after the vote (lab 20261112-102046-2;
+  rel/0.7.13 20261112-050529 and five more runs on other branches the same).
+* With `core.editor_own_pause` off (the code before 0.7.7): "the editor waits: the game is busy (input_lock,paused)"
+  and the host's editor came up 61 s after the vote (lab 20261112-100520, 20261112-102046): the fork's hold.
+* The fork (PR #196 BUG-9070) is based on our 0.7.3.6, before BUG-0576 existed.
 
 ## Fix idea
 From the fork (PandizeLive/SporeCoop-Lineages PR #196, BUG-9070, switch civ.launch_editor); NOT FINAL: taken from the fork, verify on our code and against our rules before using.
@@ -53,15 +51,17 @@ Space vote to the host's editor mode; assert < 15 s like tribe_civ. If it FAILs 
 docs/re/civ.md.
 
 ## Fix
-None needed: BUG-0576's rule (`core.editor_own_pause`) already lets the spacecraft editor request through the game's own launch pause.
+Already in 0.7.7: BUG-0576's `core.editor_own_pause` lets a vote's editor through the pause and input lock the game had when it submitted the request while its editor pause reason 0x4BF38A6 is counted; the Civ launch uses that reason. This release adds the timing check to the campaign (BUG-0855) so the test fails without it. Not run: exit_editor_held with the spacecraft editor (BUG-0578): it needs the hold, which exists only with the switch off.
 
 ## Verification
-no-fail-run: not reproducible with core.editor_own_pause on (BUG-0576 covers the launch pause: reason 0x4BF38A6,
-count 1). Evidence: the host's game logs of campaign_space named in Root cause (the editor mode 1.3-2 s after the
-vote). The plan's untried test idea (exit_editor_held with the spacecraft editor, BUG-0578) needs a held request,
-which exists only with core.editor_own_pause off; it was not run in this release.
+`coop_campaign.py` (suite `campaign_space`, four players, Civ -> Space, ~14 min) now checks in every stage change
+that the spacecraft (96B24187) and City Hall (99E92F05) editors come up within 15 s of their vote (the host's
+stage change to the editor mode); a later one is an `editor` finding (FAIL).
+* FAIL with `SPORE_FIX_OFF=core.editor_own_pause`: lab 20261112-102046 (61 s; also 20261112-100520 before the check: 61 s).
+* PASS: lab 20261112-102046-2 (1.4 s), PASS2_ID.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0578 (a crash in Model::Release at game exit with a held editor request, 0.7.3.6) is what a player may hit when this hold makes them quit; the exit test exit_editor_held should be run with this editor once the hold is reproduced.
 - 2026-11-12 (fix/w48-tribe-civ): not reproduced: the Civ launch pauses with the editor reason 0x4BF38A6, which BUG-0576 masks (campaign_space host logs: the editor 1.3 s after the vote).
+- 2026-11-12 (fix/w48-tribe-civ): reproduced with core.editor_own_pause off (61 s); fixed since 0.7.7 by BUG-0576 (the launch pause is reason 0x4BF38A6); campaign check added.

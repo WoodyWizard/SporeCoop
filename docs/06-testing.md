@@ -6412,3 +6412,6 @@ on a warm-free lane (30 s of start):
   Tribe (the window manager's modal window, input lock 0); the co-op window's Settings button must change the page.
 * `tribe_member_moves` (BUG-0841, evidence) and `tribe_pens` (BUG-0856, evidence) print what they read: members that
   changed tribes (`coop.tribe` `member_moves=`), every tribe's +0x19C4 / +0x19C8 (NPC villages have none).
+* The campaign (coop_campaign.py, every stage change) checks that the spacecraft (96B24187) and City Hall (99E92F05)
+  editors come up within 15 s of their vote (BUG-0855): an `editor` finding otherwise. Creature's editors are not
+  checked (they may wait for a cinematic, BUG-0404). campaign_space with `core.editor_own_pause` off: 61 s, FAIL.
