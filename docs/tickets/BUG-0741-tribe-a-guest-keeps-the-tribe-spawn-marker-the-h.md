@@ -58,7 +58,7 @@ marker count as the host.
   controller forms three tribes 1 s apart (the guest's log has its three "used up the tribe spawn marker" lines at
   +0.05, +1.05, +2.05 s in every run) and the test read the host 1 s after the first: between a tribe and its marker,
   or before the third. The guest's game ended with the host's markers every time. The same 5 of 18 on df6b707d, the
-  code before the day's Tribe logging (442a5678): fix/w47-final12d-base lab 20261111-210027, lane 5. The test now
+  code before the day's Tribe logging (442a5678): fix/w47-final12d lab 20261111-210027-at-df6b707d, lane 5. The test now
   waits until the host's tribes and markers have not changed for 4 s and reads the host again after the guest:
   PASS 15 of 15 (fix/w47-final12d lab 20261111-210409, lane 2) and 5 of 5 (20261111-211604, lane 5), 3 new tribes
   and host 1 / guest 1 marker in each; FAIL with SPORE_FIX_OFF=tribe.copy_marker (20261111-211838, lane 2: the guest

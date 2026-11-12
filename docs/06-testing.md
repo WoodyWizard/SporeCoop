@@ -6081,3 +6081,29 @@ that is in the picture.
 * `mem.read` of the puppet (`coop.status` prints its address) gives the object's position (+0xC4) and the model's
   (`+0xB54` -> `+0x04`) without a new command; they were never more than 0.19 m apart in 611 s.
 
+## Two Tribe tests that read too early or relied on a member's mood (2026-11-11, fix/w47-final12d)
+<a id="testing-tribe-form-pace-and-water"></a>
+
+BUG-0741 (tribe_copy_marker), BUG-0945 (tribe_member_air): both failed now and then in the 0.7.12 final check, both
+were the test. No change of the mod.
+
+* **The NPC tribe controller forms its tribes a second apart.** On the tribe fixture one `coop.tribe form` with
+  tribe.form_pace off gives the third tribe, and the game's controller then forms the fourth and the fifth by itself,
+  1.0 s and 2.0 s later (the guest's log has "the copy of the host's NPC tribe used up the tribe spawn marker" at
+  +0.05, +1.05, +2.05 s in every run, passing or failing). A test that reads the host's markers and tribes "1 s
+  later" reads in the middle: between its two commands a tribe formed (2 new tribes, 1 marker gone: rel/0.7.12 lab
+  20261111-185533), or the host's count was taken before the last tribe and the guest's after (host 2, guest 1: lab
+  20261111-204713 #1). 5 of 18 on the code before the day's Tribe logging too (df6b707d, lab
+  20261111-210027-at-df6b707d of fix/w47-final12d, lane 5, two more lanes busy): the rate follows the machine's load, not
+  the code. Rule: after anything that makes the controller form, wait until the host's tribes and markers have not
+  changed for 4 s, then compare, and read the host once more after the guest.
+* **A tribe member put somewhere stays only when it has nowhere to go.** `coop.tribe put` moves the body, not the
+  member's plans. On deep water a member in the node 0x05524115 (after a delivery or a rest) swam back to the land
+  after 6.8-14.8 s (4 runs of 4), one whose node had just become the idle 0x04601D70 left within 2 s (7 of 15), one
+  idle for a while floated 27 s and more (every other run). The trace marks are 10 s apart and the first one after
+  the put has an `agl_held` under 5 s, so "two lines with 5 s and more" needs the member up for 13-23 s: the old
+  test slept 26 s and failed 3 of 5 on lane 3 (lab 20261111-204713-2) with `agl_held` 2.6-3.0 on its only line. The
+  counter was right every time (the log's "down again after 6.8 s" agrees with it). Rule: a test that needs a member
+  to stay put reads its node first (`coop.tribe`, `bt=`), polls that it is still there, and puts it again when it
+  left; it does not sleep and hope.
+
