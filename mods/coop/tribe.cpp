@@ -1699,6 +1699,13 @@ static uint32_t g_party_own;             // guest: a party music track its own g
 static uint32_t g_party_sent, g_party_rx, g_party_played, g_party_stopped;
 
 static bool party_host() { return g_ok && g_party_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
+// BUG-0890: "the fire-dance music plays on on the guest". The host sent the stop only while its own game was in Tribe and
+// a guest dropped every MSG_NPC_ANIM while its game was not in Tribe (an editor, a load), so a stop that came then was
+// lost and the guest's track played on until its next world change. Now the host sends the stop of a track it relayed
+// whatever its mode, and a guest takes a stop (kind 8) in any mode. `coop.fix tribe.party_stop off`: the old checks.
+static bool g_party_stop_fix = true;
+COOP_FIX("tribe.party_stop", "BUG-0890", g_party_stop_fix, "tribe: the end of the dance music reaches the guest also when the host or the guest is not in Tribe at that moment");
+static uint32_t g_party_stops_outside; // stops sent or taken outside Tribe (tests)
 static void party_send(uint8_t kind, uint32_t track, uint32_t sound, float x, float y, float z)
 {
     net::Writer w;
@@ -1732,6 +1739,10 @@ static void SK_CDECL h_StopAudio(uint32_t track, int how)
         g_party_host_track = 0;
         if (party_host())
             party_send(8, track, 0, 0, 0, 0);
+        else if (g_party_stop_fix && g_party_fix && C.sess && is_host()) { // BUG-0890: relayed before, stopped outside Tribe
+            party_send(8, track, 0, 0, 0, 0);
+            g_party_stops_outside++;
+        }
     } else if (track == g_party_own) {
         g_party_own = 0;
     }
@@ -1797,6 +1808,11 @@ static void on_party(uint8_t kind, net::Reader& r)
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
+    if (kind == 8 && g_party_stop_fix && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-0890
+        g_party_stops_outside++;
+        on_party(kind, r);
+        return;
+    }
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
         return;
     if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
@@ -5781,9 +5797,12 @@ std::string debug(const std::vector<std::string>& a)
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
-               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) +
+               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
                "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made) + " paired=" + std::to_string(g_babies_paired) +
-               " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }();
+               " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }() +
+               "\nbaby_pair fix=" + std::to_string((int)g_baby_pair_fix) + " seen=" + std::to_string(g_buys_seen) + " own=" +
+               std::to_string(g_buys_own) + " other=" + std::to_string(g_buys_other) + " none=" + std::to_string(g_buys_none) +
+               " waiting=" + std::to_string(g_buys.size()) + " last " + g_baby_last;
     }
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
