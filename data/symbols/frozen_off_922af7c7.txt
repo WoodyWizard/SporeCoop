@@ -241,3 +241,4 @@ SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (
 Simulator::Cell::SwallowWhole ; BUG-0827: a host cell a guest swallows whole is not marked as eaten (old behaviour)
 SporeCoop::Havok_GroupFilter_IsCollisionEnabled ; BUG-0913: a partner's creature still blocks the way (old behaviour)
 SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still picks a partner's creature (old behaviour)
+SporeCoop::TribeStage_BabyBornMsg_Ret ; BUG-0824: a purchased member is paired the 0.7.12 way (old behaviour)
