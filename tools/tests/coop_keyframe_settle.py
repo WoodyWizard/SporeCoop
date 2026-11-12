@@ -14,9 +14,9 @@ import re
 import threading
 import time
 
+from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path)
 import lane
 from sporectl import Console
-from twoinst import Checks, keyframe, start
 
 
 def busy(con):

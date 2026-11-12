@@ -3388,3 +3388,20 @@ tribe_gameover_partner).
   95 s after its fall with full health (hp 168, dead 0), also while the caption is up; the caption stays until OK. In
   play_tribe the chief had fallen first, the rest 90 s later: the chief stood up 3 s into the caption, and the play's
   "no member with health" rule never pressed OK (BUG-0922, a test rule; the guest playing on meanwhile: BUG-0960).
+## The guest waits while the host's game-over caption is up (2026-11-12, fix/w48-rest)
+<a id="tribe-gameover-wait"></a>
+
+BUG-0960. GOG 2024, Ghidra and lab lanes 4 / 5 (tools/tests/coop_tribe_gameover_wait.py). Follows #tribe-bounce-mirrors
+and #tribe-guest-game-over.
+
+* ✔ (lab) Every member of the player tribe knocked out with `coop.tribe pincer` (5000 a blow; a chief with others
+  still up stops at 0.3, the last ones go to 0): the host's caption came 14 s later, the host `busy:
+  cinematic,input_lock,paused`, the guest `busy: -` (it played on) until the host's OK (Enter) bounced it back.
+* ✔ `Simulator::cGameTimeManager::Pause` 0xB32330 / `Resume` 0xB32360: thiscall(tm, uint32 reason id) ret 4; a count per
+  reason (+0x68 table through the id map 0x643A00), then 0xB320B0 sets the stood flag +0x48 bit 0 (what `busy: paused`
+  reads). A guest paused with the Civ planet-won reason 0x4BF38A7 stood (`busy: paused`) and ran again on Resume.
+* Fix `tribe.gameover_wait` (tribe.cpp): the host sends its caption state (MSG_NPC_ANIM kind 20 {u8 up}, reliable, every
+  3 s while up): up = in Tribe with the input lock and the stood time, entered with the player tribe out; a guest
+  pauses its game with that reason and a co-op note, and resumes on "down", 10 s without news, the stage's or the
+  session's end. ✔ Lab: the guest stood 0.0 s after the host's caption was seen and went on 0.5 s after the host was
+  back (20261112-140917).
