@@ -597,6 +597,35 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         say(b);
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "ufohit")) { // host (tests, BUG-0790): the nearest UFO's combatant hits a puppet
+        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
+        struct Q { void* p; void* best; float d; } q{p, nullptr, 1e9f};
+        if (p)
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* u) {
+                    auto* q = (Q*)u;
+                    net::Vec3 v;
+                    if (noun != 0x018EBADCu || !game::object_alive(o) || !game::object_position(o, v))
+                        return true;
+                    float d = net::dist(v, game::position(q->p));
+                    if (d < q->d) {
+                        q->d = d;
+                        q->best = o;
+                    }
+                    return true;
+                },
+                &q);
+        if (!q.best) {
+            say("no puppet or no UFO\n");
+            return 1;
+        }
+        // the UFO's cCombatant is at +0x508 (its vtable 0x146BB48: vt 0x0C = lea [ecx - 0x508], vt 0x18 TakeDamage)
+        game::hit_by_combatant(p, (float)atof(argv[3]), 0, (uint8_t*)q.best + 0x508, 0xFFFFFFFFu);
+        char b[96];
+        snprintf(b, sizeof b, "ufo %p (%.0f m) hit the puppet\n", q.best, q.d);
+        say(b);
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "packhit")) { // host (tests, the monitor's posse_damage): a pack member hits a puppet
         void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
         void* nm = game::noun_manager();

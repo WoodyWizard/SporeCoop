@@ -2915,7 +2915,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return false;
         }
         bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
-        if (!pvp && creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
+        // BUG-0790: the attacker may be a vehicle, UFO, turret or building: the party check and the pack defence read
+        // creature fields, they take a listed creature only
+        void* att_creature = !attacker || !game::attacker_owner_fix() || game::creature_listed(attacker) ? attacker : nullptr;
+        if (!pvp && creature_hp::drop_party_hit(att_creature)) { // BUG-0374: never from the host's pack / family
             for (auto& p : C.sess->players())
                 if (p.id != 0 && C.puppet_of(p.id) == c)
                     log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
@@ -2938,8 +2941,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
                 log_hit(p.id, attacker, damage, "forwarded");
-                if (!pvp)
-                    creature_hp::pack_defend(c, attacker); // BUG-0735: the host's pack goes for the attacker
+                if (!pvp && att_creature)
+                    creature_hp::pack_defend(c, att_creature); // BUG-0735: the host's pack goes for the attacker
             }
         }
         return false; // puppets mirror the guest's own health

@@ -178,10 +178,30 @@ std::string damage_log(bool clear)
     return s.empty() ? "no hits\n" : s;
 }
 
+// BUG-0790: the attacker of a hit is a cCombatant of any class: a creature's or citizen's at +0x5A8, a vehicle's and a
+// UFO's at +0x508, a turret's at +0x588, a hut's at +0x120 (dc04: the vt 0x0C of each of these combatant vtables is
+// `lea eax,[ecx - offset]; ret`, the owner object: 0xC0BFC0, 0xC3BDB0, 0xBCD080, 0xBCD230). `attacker - 0x5A8` was a
+// wrong pointer for every non-creature attacker (into the object before it or its heap neighbour), and the damage
+// filter read creature fields there (the party check, the pack defence's target). Now the owner comes from vt 0x0C;
+// the creature-only readers check that it is a listed creature. `coop.fix creature.attacker_owner off`: the subtraction.
+static bool g_attacker_owner_fix = true;
+COOP_FIX("creature.attacker_owner", "BUG-0790", g_attacker_owner_fix, "creature: a hit by a vehicle, UFO, turret or building names that object as the attacker (not a wrong pointer)");
+bool attacker_owner_fix() { return g_attacker_owner_fix; }
+static void* attacker_object(void* attacker)
+{
+    if (!attacker)
+        return nullptr;
+    if (!g_attacker_owner_fix)
+        return (uint8_t*)attacker - kCombatOff;
+    if (!readable(attacker, 4) || !readable(*(void**)attacker, 0x10))
+        return nullptr;
+    return vcall<void*>(attacker, 0x0C / 4); // cCombatant -> its object (ToGameData)
+}
+
 static int SK_THISCALL h_TakeDamage(void* combatant, float dmg, uint32_t pol, int type, const void* pos, void* attacker)
 {
     void* self = (uint8_t*)combatant - kCombatOff;
-    void* att = attacker ? (uint8_t*)attacker - kCombatOff : nullptr;
+    void* att = attacker_object(attacker);
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
     if (g_damage_filter && !g_damage_filter(self, dmg, type, att)) {
         dmglog_add(self, att, dmg, type, ret, 0);
@@ -354,6 +374,12 @@ void hit(void* c, float dmg, int type, void* attacker)
     Vector3 push{}; // no knockback, like a bite (see apply_damage)
     h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
                  attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
+}
+
+void hit_by_combatant(void* c, float dmg, int type, void* attacker_combatant, uint32_t pol)
+{
+    Vector3 push{};
+    h_TakeDamage((uint8_t*)c + kCombatOff, dmg, pol, type, &push, attacker_combatant);
 }
 
 void hit_push(void* c, float dmg, int type, void* attacker, const net::Vec3& p)

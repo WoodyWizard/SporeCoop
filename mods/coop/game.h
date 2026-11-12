@@ -225,6 +225,11 @@ void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 void* herd_of(void* c);
+// tests (BUG-0790): a hit through the hook with any combatant as the attacker (a UFO's +0x508, a vehicle's)
+void hit_by_combatant(void* c, float dmg, int type, void* attacker_combatant, uint32_t pol);
+bool attacker_owner_fix();
+net::Vec3 finite_vel(const net::Vec3& v); // BUG-0894 (game.finite_vel): a non-finite snapshot velocity -> 0
+uint32_t vel_zeroed(); // BUG-0790 (creature.attacker_owner): the hit's attacker is its object, maybe not a creature
 bool nest_position(void* c, net::Vec3& out); // the nest of the creature's herd (false: no herd or no nest)
 void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it
 void herd_home(void* herd, const net::Vec3& pos); // a nestless herd's home follows its puppet
