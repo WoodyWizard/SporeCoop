@@ -747,8 +747,10 @@ static void forget_last_attacker(void* dying)
             if (a < la->dying || a >= la->dying + kCreatureSpan)
                 return true;
             *(void**)((uint8_t*)o + kLastAttackerOff) = nullptr;
-            if (readable(a, 4) && readable(*(void**)a, 8)) // Release, as the game does when it replaces it
-                ((void(__thiscall*)(void*))(*(void***)a)[1])(a);
+            // the combatant's own Release (vt 0x64; AddRef 0x60): cCombatant::TakeDamage 0xBFCF10 replaces +0x28 so.
+            // (vt 4 of a combatant is no Release: the thunk 0xC06640 to the creature's Write 0xC04380 faulted)
+            if (readable(a, 4) && readable(*(void**)a, 0x68))
+                ((void(__thiscall*)(void*))(*(void***)a)[0x64 / 4])(a);
             la->n++;
             return true;
         },
