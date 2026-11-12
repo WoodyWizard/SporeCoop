@@ -174,11 +174,22 @@
 - Creature: an NPC egg that hatches or is eaten in the host's game is shown so on the guests at once, not up to a
   second later. A guest's click at an egg that had already hatched on the host hit the hatchling inside it: a small
   body lay where the egg was and the host counted it as the guest's hunt (BUG-0896).
+- Uninstall: the setup's Uninstall and uninstall.bat put the game's own steam_api.dll back also when an antivirus
+  removed SporeCoop's loader, stop without changing anything while an update runs or when the game's original file
+  is missing, say which file they could not remove instead of "removed", delete only SporeCoop's own symbol files,
+  and uninstall.bat no longer puts an old backup over a steam_api.dll that Steam or GOG restored (BUG-0851).
+- Tests: the setup test that closes the window after an install no longer fails now and then (BUG-0853).
 
 ### Changed
 - Creature: while friendly fire is off (and outside Rivals) a player walks through a partner's creature and a click
   in the combat stance goes to the animal behind it; the partner's creature no longer stops the second hunter short of
   the prey. With friendly fire on nothing changes; players' creatures can now stand inside each other (BUG-0913).
+- Antivirus warnings: every SporeCoop file now carries version information (product, version, description), each
+  release file and the DLLs inside the zip get a signed build provenance from GitHub Actions (`gh attestation
+  verify <file> --repo WoodyWizard/SporeCoop`), docs/INSTALL.md explains the false positives and how to check a
+  release, and SECURITY.md lists what each file does (BUG-0784).
+- tools/laa.py (optional, for big worlds): shows, sets and restores the Large Address Aware flag of SporeApp.exe with
+  a verified backup; see docs/INSTALL.md (BUG-0862).
 
 ## [0.7.12] - 2026-11-11
 

@@ -1,19 +1,19 @@
 ---
 id: BUG-0862
 title: Tooling idea: inspect, set with a verified backup and restore the Large Address Aware flag of SporeApp.exe
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-editor tools/large_address_aware.py
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-trust
+commits: 62a0bdd2, a2002fc2
+tests: tools/tests/tools_selftest.py laa, make test
 signature:
-docs:
+docs: docs/INSTALL.md#install-laa, docs/06-testing.md#testing-trust-install
 related: BUG-0631, BUG-0621
 ---
 
@@ -39,7 +39,26 @@ On a lane copy of the exe: set, check the flag and that only the Characteristics
 compare the hash with the original.
 
 ## Fix
+New `tools/laa.py status|set|restore <SporeApp.exe> [--force]`, re-implemented (not copied) after the fork's idea.
+`set` writes a backup `<exe>.pre-laa` read back and compared plus `<exe>.pre-laa.sha256`, sets
+IMAGE_FILE_LARGE_ADDRESS_AWARE in FileHeader.Characteristics, recomputes the PE checksum when it was not 0 (the
+ImageHlp algorithm), checks that no other byte changes and replaces the exe through a verified temporary file.
+Refuses: an exe that is already LAA (nothing to do), an existing backup, a non-PE / non-x86 file, and an exe with a
+`.bind` section (Steam's DRM wrapper may check its header) without `--force`. `restore` checks the backup's hash
+first. Never run by the setup or the mod: an optional tool documented in INSTALL.md (player consent = running it).
+SporeKit's symbol match by code_sha256 is unaffected (the header is not part of it).
+
 ## Verification
+- PASS: `tools_selftest.py laa` (13 checks on a fake PE32: only the flag and checksum bytes change, checksum valid,
+  backup verified, set again is a no-op, restore gives the original, a damaged backup and a .bind exe are refused).
+- FAIL on the base code: `SELFTEST_LAA=<missing tool> tools_selftest.py laa`: "tools/laa.py exists" FAILs (the tool
+  did not exist).
+- By hand on a copy of the GOG 2024 exe (dc04aee5..., in the scratch folder, never the game's): set changed 2 bytes
+  (Characteristics 0x0102 -> 0x0122, checksum 0x017c5d61 -> 0x017c5d81, both valid), `tools/exe_info.py` still
+  gives code_sha256 5a8267b2...; restore gave dc04aee5... again. The checksum code agrees with Wine's notepad.exe.
+- no-fail-run: a game run with the LAA exe (smoke on a lane) was not part of this package (no lab); the INSTALL text
+  says it is not tested in long sessions yet.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12 (fix/w48-trust): tools/laa.py and its self-test; not run in the game (package A1 had no lab).

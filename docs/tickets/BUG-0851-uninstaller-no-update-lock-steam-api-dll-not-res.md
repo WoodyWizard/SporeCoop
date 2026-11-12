@@ -1,19 +1,19 @@
 ---
 id: BUG-0851
 title: Uninstaller: no update lock, steam_api.dll not restored when missing, failures reported as removed, every .sym deleted
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 (installer/install.cpp do_uninstall, installer/uninstall.bat)
 role: all
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-trust
+commits: fcae15a5, 62a0bdd2, a2002fc2
+tests: tests/win_tests.cpp (test_uninstall, test_uninstall_bat), tools/tests/tools_selftest.py symlist, make test
 signature: 
-docs:
+docs: docs/INSTALL.md#8-update-and-uninstall, docs/06-testing.md#testing-trust-install
 related: BUG-0139, BUG-0243
 ---
 
@@ -57,10 +57,33 @@ original; (b) coop.dll held open: uninstall reports failure, not success; (c) a 
 survives; (d) uninstall while the update lock is held is refused. Each FAILs on main and PASSes with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`inst::do_uninstall` (installer/install.cpp) refuses a folder that is not a game, takes the folder's update lock
+without waiting (`upd::try_update_lock`; refused with "Another SporeCoop update is running" while an in-game update or
+another setup holds it), runs the pending swaps under it and refuses while `mods\sporecoop.pending` is still there.
+`steam_api.dll` comes back from `steam_api_orig.dll` when the current file is the loader **or missing**; it refuses
+(nothing changed) when the backup is missing, unreadable or itself the loader (`upd::inspect_loader`). It deletes only
+SporeCoop's files (`upd::kSymbolFiles`, no other `*.sym`), treats "not found" as done, and returns false with the
+names of files it could not delete (no more "removed" after a rename to .old); the version file goes last.
+`inst::has_sporecoop` keeps Uninstall enabled for a half removed install. `installer/uninstall.bat` runs
+`SporeCoopSetup.exe /S /uninstall` when it lies next to it; otherwise it restores `steam_api.dll` only when the
+current one is the loader (findstr on a tag line the loader now carries, loader/loader.c) or missing, refuses
+without a valid `steam_api_orig.dll`, and deletes `mods\coop.dll` and the known symbol files too.
+Not taken from the fork: the setup ignoring the real Steam libraries in test mode (test_setup_steam_ga needs them).
+Switch: setup-only `inst::g_uninstall_fix` (setup `/olduninstall`, win_tests `--old-uninstall`, part of `--old`;
+not a coop.fix switch: the setup is not coop.dll).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+Runs of `build/win_tests.exe` under Wine (soda-11.0-10) in a private prefix, `SPORE_WIN_UNIT_PREFIX=build/wineprefix
+python3 tools/tests/win_unit.py` (no lane, no game; outputs kept in the worktree's out/w48-trust/):
+- PASS: `win_unit.py`, ALL OK (out/w48-trust/win_unit_pass.txt): (a) restored, (b) "could not be removed ...
+  SporebinEP1\mods\coop.dll", (c) the player's .sym kept, (d) "Another SporeCoop update is running", (e) refused,
+  uninstall.bat 1. Steam's steam_api.dll kept, coop.dll removed, 3. with the setup: removed, log "OK".
+- FAIL with the fix off: `win_unit.py --old-uninstall`, 13 FAILs, all in test_uninstall / test_uninstall_bat
+  (out/w48-trust/win_unit_old-uninstall.txt): (a) steam_api.dll not restored, (b) "SporeCoop is removed" with
+  coop.dll held, (c) mine.sym removed, (d) uninstalled under the lock, (e) removed everything without a backup,
+  (f) Uninstall not offered, the old uninstall.bat (572c8e68) put the stale backup over Steam's file and left coop.dll.
+- `tools_selftest.py symlist`: PASS; on the base code it has no `upd::kSymbolFiles` (FAIL by construction).
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12 (fix/w48-trust): fixed as above; checked under Wine in a private prefix, FAIL with --old-uninstall.
