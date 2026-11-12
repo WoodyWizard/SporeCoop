@@ -1348,4 +1348,6 @@ BUG-0921, BUG-0923.
   whenever the guest was connected, also in a world of its own. With creations.alias_own_world every alias is undone
   (the slot gets the profile it had before; null: the game builds the guest's own on the next lookup) while
   own_world::elsewhere() or space_other(), and set again when the guest plays the host's world. `coop.creations
-  speciesof <key>` shows `own_world <n>` (aliases undone so far).
+  speciesof <key>` shows `own_world <n>` (aliases undone so far). ✔ Lab: in its own world the guest's game gives its
+  own creation (key 290229B9, bem 9B6134E2) for the host's TigerHorse id; with the switch off the host's (key
+  7D851520, bem 6E1A058F, aliased 1) (20261112-030351 / 20261112-031303).

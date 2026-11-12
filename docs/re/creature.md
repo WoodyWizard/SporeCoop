@@ -4124,4 +4124,6 @@ BUG-0926 (the 0.7.12 final check's long_creature host: runtime error R6025). GOG
 * BUG-0803: herd_evo_guard (wsync.cpp, BUG-0668) wrote CreatureGame_HerdEvolveOn = 0 for any connected guest in
   Creature; in a world of its own MSG_WSTATE is dropped, so nothing evolved its nests and its save kept that. With
   wsync.herd_evo_own the guard holds the step only while the guest plays the host's world (not
-  own_world::elsewhere()); the game's own value comes back otherwise.
+  own_world::elsewhere()); the game's own value comes back otherwise. ✔ Lab: after `coop.dna add 250` in its own
+  world the guest's game evolved 21 of 133 nests within 5 s; with the switch off 0 in 40 s (20261112-030351 /
+  20261112-031349).
