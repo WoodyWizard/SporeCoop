@@ -10,9 +10,11 @@
 
 #include "coop_ui.h"
 #include "fixes.h"
+#include "modes.h"
 #include "net/protocol.h"
 #include "net/utf8.h"
 #include "settings.h"
+#include "sui.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 
@@ -37,6 +39,14 @@ COOP_FIX("find.colors", "BUG-0764", g_colors_fix, "all stages: the host gives ev
 // finite position, with or without a state (0.7.11).
 bool g_placed_fix = true;
 COOP_FIX("find.placed", "BUG-0939", g_placed_fix, "all stages: no arrow, minimap blip or name for a partner that has no place in this world yet (no chief / avatar yet, loading, an editor, a position at the planet's centre)");
+
+// BUG-0949: the edge arrows, their labels and the name tags were drawn where each fell: two partners in one direction
+// wrote their labels over each other, an arrow sat inside a notification card, tags of Civ units stood on the minimap
+// and the bottom bar (0.7.12 final check 20261111-151535). On: the labels of a pass are placed together (findx::layout):
+// apart, off the game's UI windows (read outside the frame) and the co-op status block, a tag whose point is under the
+// HUD hidden. Off: each where it falls (0.7.12).
+bool g_layout_fix = true;
+COOP_FIX("find.layout", "BUG-0949", g_layout_fix, "all stages: partner arrows and name tags are kept apart and off the minimap, the bottom bar and notification cards");
 
 static findx::Colors g_tab;     // in force here (host: its own; guest: the host's)
 static uint32_t g_changes = 1;
@@ -246,6 +256,184 @@ static bool project(const float* w, float* sc, bool& filled)
     return on;
 }
 
+static void draw_arrow_shape(const findx::Arrow& a, uint32_t col)
+{
+    if (kit_tris()) {
+        float v[12];
+        int k = findx::arrow_tris(a, kSize, 3.f, v);
+        H->overlay_tris(v, k, 0xB0000000);
+        k = findx::arrow_tris(a, kSize, 0.f, v);
+        H->overlay_tris(v, k, col);
+    } else { // an older SporeKit: the glyph arrow of the pings
+        const char* g = std::fabs(std::cos(a.ang)) > 0.7071f ? (std::cos(a.ang) > 0 ? "►" : "◄")
+                                                             : (std::sin(a.ang) > 0 ? "▼" : "▲");
+        H->overlay_text((int)a.x - 8, (int)a.y - 10, col, g);
+    }
+}
+
+
+// ---- BUG-0949: the labels of a pass, placed together ----
+struct Queued {
+    bool arrow;
+    std::string kind, text;
+    uint8_t id;
+    uint32_t col;
+    int prio;
+    findx::LabelIn in;
+    findx::Arrow a;          // arrows: the shape
+    float tx, ty;            // the text's top left
+    float sx, sy, w[3];      // tags: the projected point and the world point (coop.find labels)
+};
+static std::vector<Queued> g_queue;
+static std::vector<findx::Box> g_hud;        // the game's UI windows (outside the frame)
+static findx::Box g_status{};                // the co-op status block
+static double g_hud_next = 0;
+static bool g_hud_queued = false;
+static uint32_t g_laid, g_moved, g_hidden_hud, g_hidden_full;
+constexpr float kLineH = 20.f;
+
+bool layout_on() { return g_layout_fix; }
+
+static std::vector<Target> g_ghosts;
+const std::vector<Target>& ghosts() { return g_ghosts; }
+
+static void note_box(const struct Queued& q, const findx::LabelOut& o);
+static void queue_arrow(uint8_t id, const std::string& label, uint32_t col, const findx::Arrow& a, int lx, int ly, int tw,
+                        int sw, int sh)
+{
+    Queued q{};
+    q.arrow = true;
+    q.kind = "arrow";
+    q.text = label;
+    q.id = id;
+    q.col = col;
+    q.prio = 2;
+    q.a = a;
+    q.tx = (float)lx, q.ty = (float)ly;
+    float v[12];
+    findx::arrow_tris(a, kSize, 3.f, v);
+    findx::Box b{(float)lx, (float)ly, (float)(lx + tw), (float)ly + kLineH};
+    for (int i = 0; i < 6; i++) {
+        b.x0 = std::min(b.x0, v[i * 2]), b.x1 = std::max(b.x1, v[i * 2]);
+        b.y0 = std::min(b.y0, v[i * 2 + 1]), b.y1 = std::max(b.y1, v[i * 2 + 1]);
+    }
+    q.in.box = b;
+    q.in.ax = a.x, q.in.ay = a.y;
+    // along the edge it sits on: the left and right edges slide up and down, the top and bottom ones sideways
+    bool side = a.x <= kMargin + 1 || a.x >= sw - kMargin - 1;
+    q.in.slide = side || sh <= 0 ? findx::Slide::Vertical : findx::Slide::Horizontal;
+    q.sx = a.x, q.sy = a.y;
+    if (!layout_on()) { // find.layout off: where it falls (0.7.12)
+        draw_arrow_shape(a, col);
+        H->overlay_text(lx, ly, col, label.c_str());
+        note_box(q, findx::LabelOut{});
+        return;
+    }
+    g_queue.push_back(q);
+}
+
+void tag(const char* kind, uint8_t id, const std::string& text, float sx, float sy, const float world[3], int prio)
+{
+    uint32_t col = color_of(id);
+    int tw = utf8::overlay_width(text);
+    float x = (float)((int)sx - tw / 2), y = (float)((int)sy - 10);
+    Queued q{};
+    q.arrow = false;
+    q.kind = kind;
+    q.text = text;
+    q.id = id;
+    q.col = col;
+    q.prio = prio;
+    q.tx = x, q.ty = y;
+    q.in.box = {x, y, x + tw, y + kLineH};
+    q.in.ax = sx, q.in.ay = sy;
+    q.in.slide = findx::Slide::Up;
+    q.in.anchor_rule = true;
+    q.sx = sx, q.sy = sy;
+    q.w[0] = world[0], q.w[1] = world[1], q.w[2] = world[2];
+    if (!layout_on()) { // find.layout off: where it falls (0.7.12)
+        H->overlay_text((int)x, (int)y, col, text.c_str());
+        note_box(q, findx::LabelOut{});
+        return;
+    }
+    g_queue.push_back(q);
+}
+
+void set_status_rect(int x0, int y0, int x1, int y1) { g_status = {(float)x0, (float)y0, (float)x1, (float)y1}; }
+
+void labels_flush()
+{
+    if (g_queue.empty())
+        return;
+    std::stable_sort(g_queue.begin(), g_queue.end(), [](const Queued& a, const Queued& b) { return a.prio < b.prio; });
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    std::vector<findx::Box> hud = g_hud;
+    if (g_status.x1 > g_status.x0)
+        hud.push_back(g_status);
+    size_t n = std::min<size_t>(g_queue.size(), 256);
+    std::vector<findx::LabelIn> in(n);
+    std::vector<findx::LabelOut> out(n);
+    for (size_t i = 0; i < n; i++)
+        in[i] = g_queue[i].in;
+    findx::layout(in.data(), (int)n, hud.data(), (int)hud.size(), sw, sh, out.data());
+    for (size_t i = 0; i < n; i++) {
+        const Queued& q = g_queue[i];
+        const findx::LabelOut& o = out[i];
+        g_laid++;
+        if (o.hidden) {
+            (o.why == 1 ? g_hidden_hud : g_hidden_full)++;
+        } else {
+            if (o.dx != 0 || o.dy != 0)
+                g_moved++;
+            if (q.arrow) {
+                findx::Arrow a = q.a;
+                a.x += o.dx, a.y += o.dy;
+                draw_arrow_shape(a, q.col);
+            }
+            H->overlay_text((int)(q.tx + o.dx), (int)(q.ty + o.dy), q.col, q.text.c_str());
+        }
+        note_box(q, o);
+    }
+    g_queue.clear();
+}
+
+// the game's UI windows a label must not cover: visible windows with a picture, smaller than a third of the screen,
+// at least 8 px each way (outside the frame, twice a second)
+static void hud_scan(sui::Win w, int depth, int sw, int sh, std::vector<findx::Box>& out)
+{
+    if (!w || depth > 24 || !sui::visible(w) || out.size() > 200)
+        return;
+    if (depth > 0 && sui::drawable(w)) {
+        sui::Rect r = sui::screen_rect(w);
+        float a = r.w() * r.h();
+        if (r.w() >= 8 && r.h() >= 8 && a < sw * (float)sh / 3.f && r.x2 > 0 && r.y2 > 0 && r.x1 < sw && r.y1 < sh)
+            out.push_back({r.x1, r.y1, r.x2, r.y2});
+    }
+    for (sui::Win c : sui::children(w))
+        hud_scan(c, depth + 1, sw, sh, out);
+}
+
+static void hud_task(void*)
+{
+    g_hud_queued = false;
+    std::vector<findx::Box> v;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    if (sui::Win root = sui::main_window())
+        hud_scan(root, 0, sw, sh, v);
+    g_hud = std::move(v);
+}
+
+void hud_tick(double now)
+{
+    if (!layout_on() || now < g_hud_next || g_hud_queued)
+        return;
+    g_hud_next = now + 0.5;
+    g_hud_queued = true;
+    H->run_outside_frame(hud_task, nullptr);
+}
+
 int draw_arrows(const std::vector<Target>& targets, const float* me)
 {
     g_last.clear();
@@ -308,20 +496,9 @@ int draw_arrows(const std::vector<Target>& targets, const float* me)
             std::string d = findx::dist_text(rc.dist);
             if (!d.empty())
                 label += "  " + d;
-            if (kit_tris()) {
-                float v[12];
-                int k = findx::arrow_tris(a, kSize, 3.f, v);
-                H->overlay_tris(v, k, 0xB0000000);
-                k = findx::arrow_tris(a, kSize, 0.f, v);
-                H->overlay_tris(v, k, col);
-            } else { // an older SporeKit: the glyph arrow of the pings
-                const char* g = std::fabs(std::cos(a.ang)) > 0.7071f ? (std::cos(a.ang) > 0 ? "►" : "◄")
-                                                                     : (std::sin(a.ang) > 0 ? "▼" : "▲");
-                H->overlay_text((int)a.x - 8, (int)a.y - 10, col, g);
-            }
             int tw = utf8::overlay_width(label), lx, ly;
             findx::label_at(a, kSize, tw, sw, sh, lx, ly);
-            H->overlay_text(lx, ly, col, label.c_str());
+            queue_arrow(t.id, label, col, a, lx, ly, tw, sw, sh);
             n++;
             g_drawn_total++;
         }
@@ -480,13 +657,34 @@ struct Label {
     std::string kind, text;
     uint8_t id;
     float sx, sy, p[3];
+    bool boxed = false, hidden = false;
+    float box[4] = {0, 0, 0, 0};
 };
 static std::vector<Label> g_labels;
-void labels_begin() { g_labels.clear(); }
+static std::vector<Label> g_drawn; // BUG-0949: every label of the last pass with its box as drawn (arrows too)
+void labels_begin()
+{
+    g_labels.clear();
+    g_drawn.clear();
+}
 void note_label(const char* kind, uint8_t id, const std::string& text, const float sc[2], const float world[3])
 {
     if (g_labels.size() < 256)
         g_labels.push_back({kind, text, id, sc[0], sc[1], {world[0], world[1], world[2]}});
+}
+static void note_box(const Queued& q, const findx::LabelOut& o)
+{
+    if (!q.arrow && !o.hidden) {
+        float sc[2] = {q.sx, q.sy};
+        note_label(q.kind.c_str(), q.id, q.text, sc, q.w);
+    }
+    if (g_drawn.size() >= 256)
+        return;
+    Label l{q.kind, q.text, q.id, q.sx, q.sy, {q.w[0], q.w[1], q.w[2]}};
+    l.boxed = true;
+    l.hidden = o.hidden;
+    l.box[0] = q.in.box.x0 + o.dx, l.box[1] = q.in.box.y0 + o.dy, l.box[2] = q.in.box.x1 + o.dx, l.box[3] = q.in.box.y1 + o.dy;
+    g_drawn.push_back(l);
 }
 
 int command(void*, int argc, const char* const* argv, SkOut* out)
@@ -499,6 +697,39 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
             SAY("label kind=%s id=%u sx=%.1f sy=%.1f pos=%.2f,%.2f,%.2f text=%s\n", l.kind.c_str(), l.id, l.sx, l.sy, l.p[0],
                 l.p[1], l.p[2], l.text.c_str());
         SAY("labels=%u sw=%d sh=%d\n", (unsigned)g_labels.size(), sw, sh);
+        return 0;
+    }
+    if (a1 == "ghost" && argc > 2 && !strcmp(argv[2], "clear")) {
+        g_ghosts.clear();
+        SAY("ghosts=0\n");
+        return 0;
+    }
+    if (a1 == "ghost" && argc > 5) { // tests (BUG-0949): a made-up partner at a world point
+        Target t{};
+        t.id = (uint8_t)atoi(argv[2]);
+        t.name = argc > 6 ? argv[6] : "Ghost" + std::to_string(t.id);
+        for (int k = 0; k < 3; k++)
+            t.pos[k] = (float)atof(argv[3 + k]);
+        for (auto it = g_ghosts.begin(); it != g_ghosts.end();)
+            it = it->id == t.id ? g_ghosts.erase(it) : it + 1;
+        g_ghosts.push_back(t);
+        SAY("ghosts=%u\n", (unsigned)g_ghosts.size());
+        return 0;
+    }
+    if (a1 == "boxes") { // tests (BUG-0949): every label of the last pass as drawn, and the HUD boxes they keep off
+        for (auto& l : g_drawn)
+            SAY("box kind=%s id=%u x0=%.0f y0=%.0f x1=%.0f y1=%.0f hidden=%d text=%s\n", l.kind.c_str(), l.id, l.box[0], l.box[1],
+                l.box[2], l.box[3], (int)l.hidden, l.text.c_str());
+        for (auto& b : g_hud)
+            SAY("hud x0=%.0f y0=%.0f x1=%.0f y1=%.0f\n", b.x0, b.y0, b.x1, b.y1);
+        if (g_status.x1 > g_status.x0)
+            SAY("hud x0=%.0f y0=%.0f x1=%.0f y1=%.0f status\n", g_status.x0, g_status.y0, g_status.x1, g_status.y1);
+        SAY("boxes=%u hud=%u layout=%d laid=%u moved=%u hidden_hud=%u hidden_full=%u\n", (unsigned)g_drawn.size(),
+            (unsigned)g_hud.size(), (int)layout_on(), g_laid, g_moved, g_hidden_hud, g_hidden_full);
+        return 0;
+    }
+    if (a1 == "tagh") { // tests (BUG-0929): the last name tag's height over its creature and the box it came from
+        SAY("%s\n", modes::tag_info().c_str());
         return 0;
     }
     if (a1 == "color" && argc > 2 && (!strcmp(argv[2], "none") || !strcmp(argv[2], "auto"))) { // no pick: the host assigns

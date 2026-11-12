@@ -522,6 +522,47 @@ static void test_settings()
 }
 
 // F2 of 0.7.12 (BUG-0764): the player colours, the arrow at the screen edge
+static void test_label_layout() // BUG-0949
+{
+    using namespace findx;
+    Box hud[2] = {{0, 900, 400, 1080}, {0, 1040, 1440, 1080}}; // a minimap and a bottom bar
+    // two arrow labels at the same place on the left edge: the second slides along the edge, they do not touch
+    LabelIn in[4];
+    in[0].box = {50, 500, 250, 522}, in[0].ax = 46, in[0].ay = 511, in[0].slide = Slide::Vertical;
+    in[1] = in[0];
+    // a tag whose point is under the minimap: hidden; a tag right over the bar's top: moved up off it
+    in[2].box = {100, 950, 160, 970}, in[2].ax = 130, in[2].ay = 960, in[2].anchor_rule = true;
+    in[3].box = {700, 1030, 760, 1050}, in[3].ax = 730, in[3].ay = 1035, in[3].anchor_rule = true;
+    LabelOut out[4];
+    layout(in, 4, hud, 2, 1440, 1080, out);
+    CHECK(!out[0].hidden && out[0].dx == 0 && out[0].dy == 0);
+    CHECK(!out[1].hidden && out[1].dx == 0 && out[1].dy != 0);
+    Box b0 = in[0].box, b1 = in[1].box;
+    b1.y0 += out[1].dy, b1.y1 += out[1].dy;
+    CHECK(!touch(b0, b1));
+    CHECK(out[2].hidden && out[2].why == 1);
+    CHECK(!out[3].hidden && out[3].dy < 0);
+    Box b3 = in[3].box;
+    b3.y0 += out[3].dy, b3.y1 += out[3].dy;
+    CHECK(!touch(b3, hud[0]) && !touch(b3, hud[1]));
+    // a label with no free place at all (the screen full of HUD): hidden, not drawn over it
+    Box full{0, 0, 1440, 1080};
+    LabelIn one;
+    one.box = {600, 500, 700, 520}, one.ax = -10, one.ay = -10;
+    LabelOut o;
+    layout(&one, 1, &full, 1, 1440, 1080, &o);
+    CHECK(o.hidden && o.why == 2);
+    // the shifts: up first for tags
+    CHECK(shift_of(0, 10, true) == 0 && shift_of(1, 10, true) == -10 && shift_of(2, 10, true) == 10 && shift_of(3, 10, true) == -20);
+    // a top edge arrow slides sideways
+    LabelIn t[2];
+    t[0].box = {600, 40, 800, 62}, t[0].slide = Slide::Horizontal, t[0].ax = 700, t[0].ay = 46;
+    t[1] = t[0];
+    LabelOut to[2];
+    layout(t, 2, nullptr, 0, 1440, 1080, to);
+    CHECK(!to[1].hidden && to[1].dy == 0 && to[1].dx != 0);
+}
+
 static void test_find()
 {
     using namespace findx;
@@ -756,6 +797,7 @@ int main(int argc, char** argv)
     test_host_world();
     test_settings();
     test_find();
+    test_label_layout();
     test_held_cmds();
     test_chunks();
     test_cycle();

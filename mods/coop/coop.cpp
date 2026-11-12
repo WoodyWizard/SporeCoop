@@ -70,6 +70,7 @@
 #include "net/utf8.h"
 #include "creations.h"
 #include "notify.h"
+#include "hud_portrait.h"
 #include "notify_text.h"
 #include "syncdbg.h"
 #include "sporekit.h"
@@ -4035,6 +4036,8 @@ void on_frame(void*, int, void*)
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
+    portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
+    pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
     sreport::tick();  // F4: the session report's round (host) and the guest's question / transfer
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
@@ -4199,9 +4202,8 @@ void draw_owner_tags()
             bool chief = tribe::is_chief(c);
             if (chief)
                 n = "\u2605 " + n + "'s chief";
-            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
             float at[3] = {p.x, p.y, p.z};
-            pfind::note_label(chief ? "chief" : "member", owner, n, sc, at);
+            pfind::tag(chief ? "chief" : "member", owner, n, sc[0], sc[1], at, chief ? 1 : 3); // F2 colour, BUG-0949
             g_tags_drawn++;
         },
         nullptr);
@@ -4220,9 +4222,8 @@ void draw_civ_tags()
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
             if (city)
                 n = "[" + n + "]";
-            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10, pfind::color_of(owner), n.c_str()); // F2
             float at[3] = {p.x, p.y, p.z};
-            pfind::note_label(city ? "city" : "vehicle", owner, n, sc, at);
+            pfind::tag(city ? "city" : "vehicle", owner, n, sc[0], sc[1], at, city ? 3 : 4); // F2 colour, BUG-0949
             g_tags_drawn++;
         },
         nullptr);
@@ -4393,6 +4394,8 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
         t.pos[0] = p.x, t.pos[1] = p.y, t.pos[2] = p.z;
         v.push_back(t);
     }
+    for (const pfind::Target& g : pfind::ghosts()) // tests (BUG-0949)
+        v.push_back(g);
     return v;
 }
 
@@ -4461,12 +4464,18 @@ void on_overlay(void*, int, void*)
         }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
-            H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, pfind::color_of(id), tag.c_str()); // F2
             float at[3] = {p.x, p.y, p.z};
-            pfind::note_label("player", id, tag, sc, at);
+            pfind::tag("player", id, tag, sc[0], sc[1], at, 0); // F2 colour, BUG-0949
             g_tags_drawn++;
         }
     }
+    if (av) // tests (BUG-0949): the made-up partners' tags, at their points
+        for (const pfind::Target& g : pfind::ghosts()) {
+            float w[3] = {g.pos[0], g.pos[1], g.pos[2]}, sc[2];
+            if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
+                pfind::tag("player", g.id, g.name, sc[0], sc[1], w, 0);
+        }
+    pfind::labels_flush(); // BUG-0949: the tags and arrows of this pass, apart and off the HUD
     std::string head;
     if (g_sess.role() == net::Role::Host)
         head = coop_ui::demo_text("CO-OP host :" + std::to_string(g_sess.port())) + "  " + std::to_string(g_sess.players().size()) +
@@ -4481,6 +4490,7 @@ void on_overlay(void*, int, void*)
     bool covered = coop_ui::is_open() || (!labels && g_local);
     if (head.empty() || (covered && g_status_block_fix)) {
         g_status_block = {0, 0, 0, 0};
+        pfind::set_status_rect(0, 0, 0, 0);
         notify::set_top_min(0);
         return;
     }
@@ -4506,6 +4516,7 @@ void on_overlay(void*, int, void*)
         y += 20;
     }
     g_status_block = {x, 70, x + wmax, y};
+    pfind::set_status_rect(x, 70, x + wmax, y); // BUG-0949: the next pass keeps the labels off it
     notify::set_top_min(g_status_block_fix ? (float)y + 8 : 0.f);
     // notices are notification panels now (notify.cpp); the history is in the co-op window
 }
@@ -7133,6 +7144,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         fc.sess = &g_sess;
         fc.feed = feed;
         pfind::init(H, M, fc);
+    portrait::init(H, M, [] { return g_mode == modes::kCreature; }); // BUG-0937
     }
     { // F4 of 0.7.12 (BUG-0767): one report for the session
         sreport::Ctx rc;

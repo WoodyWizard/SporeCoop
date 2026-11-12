@@ -70,6 +70,20 @@ bool map_on();
 void labels_begin();
 void note_label(const char* kind, uint8_t id, const std::string& text, const float sc[2], const float world[3]);
 
+// BUG-0949 (find.layout): the world labels of an overlay pass are placed together: kept apart from each other and off
+// the game's UI windows (findx::layout). tag() queues a name tag (centred on sx, its text's top at sy - 10) in the
+// colour of player id; draw_arrows queues its arrows; labels_flush() places and draws them (the end of the overlay's
+// label part). Off: each label is drawn where it falls (0.7.12). prio: lower first (keeps its place best).
+void tag(const char* kind, uint8_t id, const std::string& text, float sx, float sy, const float world[3], int prio);
+void labels_flush();
+void set_status_rect(int x0, int y0, int x1, int y1); // the co-op status block of the last pass (a HUD box too)
+void hud_tick(double now);                           // every frame: the UI windows' boxes are read outside the frame
+bool layout_on();
+extern bool g_layout_fix;
+// tests (BUG-0949): made-up partners (`coop.find ghost <id> <x> <y> <z> [name]`, `coop.find ghost clear`): an arrow
+// when off screen, a name tag at the point when on it, through the same path as a real partner's
+const std::vector<Target>& ghosts();
+
 int command(void*, int argc, const char* const* argv, SkOut* out); // coop.find
 std::string status();           // a line for coop.status
 
