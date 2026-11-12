@@ -5114,6 +5114,19 @@ std::string debug(const std::vector<std::string>& a)
         F<float>(v, kVHp) = std::max(1.f, (float)atof(a[2].c_str()));
         return "hp " + std::to_string((int)F<float>(v, kVHp));
     }
+    // vput <id> <x> <y> <z>: that vehicle put there (spatial SetPosition vt 0x38; host; tests, BUG-0775: a host vehicle
+    // standing nearer the city than the besiegers)
+    if (a.size() >= 5 && a[0] == "vput" && is_host()) {
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v))
+            return "no such vehicle";
+        float p[3] = {(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())};
+        vcall<void>((uint8_t*)v + kVSpatial, 0x38 / 4, (const float*)p);
+        net::Vec3 q = veh_pos(v);
+        char b[96];
+        snprintf(b, sizeof b, "put at (%.1f %.1f %.1f)", q.x, q.y, q.z);
+        return b;
+    }
     // buycity <city> [price]: the game's purchase of a city for the player civilization, as FinishBuyCity makes it
     // (cCity buy 0xBE99A0; 0 = the game's GetBuyPrice) (tests, BUG-0877)
     if (a.size() >= 2 && a[0] == "buycity") {

@@ -3146,3 +3146,35 @@ BUG-0945, BUG-0946. GOG 2024, tribe fixture, lanes 2 and 5 (probes, then tribe_m
 * ? Not checked: which of the game's own attacks reach 60 hp on a member (an epic's and a rogue's are likely), and
   whether the throw is the fight node's own reaction or the locomotion's (mode +0x2B0 = 3, docs/re/creature.md
   "thrown").
+
+## A conquest on one game only: the conquered flag, the hut's fall and an away conquest (2026-11-12, fix/w48-captures)
+<a id="tribe-conquest-sync"></a>
+
+BUG-0777, BUG-0879 (Discord 2026-11-09). GOG 2024, Ghidra (private project) and lane 5, tribe fixture. Adds to
+#tribe-hut-fall and #tribe-wsync.
+
+* ✔ (Ghidra) **cTribe +0x556 is the village's "conquered" flag.** Its only writer besides the ctor (0xC98430 clears
+  +0x555..+0x557) is `SporeCoop::cTribe_SetConquered` 0xC8E8C0 (view effect 0x1046F5EF, the village's bundles go).
+  Its caller is the Tribe stage's message handler 0xCD81F0 on message **0x58BADDD** (a village defeated: +8 the
+  village, +0x10 the conqueror's tribe), which also plays effects at the hut and updates the HUD.
+* ✔ (Ghidra) 0x58BADDD is posted by the hut combatant's own TakeDamage `SporeCoop::cTribeHut_TakeDamage` 0xC9CA30
+  (vt 0x18 of the hut's combatant at +0x120) when a blow takes the hut's health from above 0 to 0 in Tribe; members
+  standing or not. With an attackerPol other than -1 it first applies relationship 0x530CF05.
+* ✔ (Ghidra) The goal mission's update `TribeToTribeMission_Update` 0xC2F750 (vt 0xB8) ends the mission
+  (`TribeToTribeMission_Complete` 0xC2F7F0, vt 0x78) when the relation is 4 (allied) or +0x556 is set: kind 2 allied,
+  kind 1 conquered (AddGoalProgress, the history event 0xBA59E0(village, 6), TRG_TotemPole_Conquer). This answers
+  "? its caller" of #tribe-wsync and #tribe-hut-fall.
+* ✔ (code + runtime) realign kept a guest's hut at 1 hp at least (`max(1, host's)`: "the guest's game runs no
+  defeat"), and the rows had no dead state: a village the host conquered stood unconquered on the guest (hut whole,
+  +0x556 0). Fix `realign.hut_fall`: the rows carry Obj.fl bit 1 (`kFlDown`: a hut's combatant state 2, a village's
+  +0x556); a guest whose village (or hut) is down on the host and not here takes the game's own killing blow on its
+  hut (`tribe::fell_hut`: vt 0x18 with the hut's health + 10, attackerPol -1, the attacker a member of the player
+  tribe), or cTribe_SetConquered when no standing hut is left; a dead hut here takes no health write.
+  Lab 20261112-004329: on the guest the hut fell (state 2) and +0x556 was set in the same second as on the host, the
+  hut burns on both screens; the old matching ignores the new bit (match() compares kFlPlayer only).
+* ✔ (code) While the host is away the guest's own game raids and conquers (tribe.away). Fix `tribe.away_conquest`:
+  the guest watches every NPC village's +0x556 twice a second; one set while the host is away goes to the host as
+  MSG_TRIBE_CMD kind 4 (CMD_CONQUER, the village's position), held by the host until it is back in Tribe (BUG-0693),
+  which fells that village's hut with a blow by a member of that player (`coop.tribe conquests` counts).
+* ? Alliances (relation 4) were not run: the guest gets the relation through wsync.tribe_rel (ApplyRelationship), so
+  its own mission update should end the mission as allied by itself; not checked.

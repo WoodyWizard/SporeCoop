@@ -6,7 +6,7 @@ same in reverse"): the host's capture hook gave a captured city to the player wh
 not to the player whose vehicles took it.
 
 1. Two games on civ_npc; the host spawns three military land vehicles and gives them to the guest (`coop.give`), and
-   drives the fixture's own vehicle (the host's) next to the nearest NPC city's hall.
+   puts the fixture's own vehicle (the host's) 20 m from the nearest NPC city's hall (`coop.civ vput`).
 2. The other buildings of that city are cut to 5 hp on the host (`coop.civ bhp`) and the guest's vehicles kept at
    their health (`coop.civ vhp`) so the siege ends in minutes.
 3. The guest's real attack: it selects its vehicles, clicks the city and the crosshair of the city menu.
@@ -81,9 +81,9 @@ def main():
     ck(len(ids) == 3 and mine, f"the guest's vehicles {ids} (hp {full}), the host's {mine}")
     cp = hc[cap[0]]['pos']
     d = dist(tpos, cp) or 1
-    near = tuple(t + (c - t) / d * 12 for t, c in zip(tpos, cp))  # 12 m from the hall, on the side of the capital
-    if mine:
-        print('  host:', host.call('coop.civ move %d %.1f %.1f %.1f' % ((mine[0],) + near))['out'].strip(), flush=True)
+    near = tuple(t + (c - t) / d * 20 for t, c in zip(tpos, cp))  # 20 m from the hall, on the side of the capital
+    if mine:  # (a move order ends ~100 m off an enemy city: the vehicle is put there)
+        print('  host:', host.call('coop.civ vput %d %.1f %.1f %.1f' % ((mine[0],) + near))['out'].strip(), flush=True)
     print('  host:', host.call(f'coop.civ bhp {tgt} 5')['out'].strip(), flush=True)
     time.sleep(3)
     p = Player('guest', guest, 1, random.Random(1), [])
@@ -93,6 +93,8 @@ def main():
         h, hv = civ(host)
         if h.get(tgt, {}).get('player'):
             break
+        if mine:
+            host.call('coop.civ vput %d %.1f %.1f %.1f' % ((mine[0],) + near))
         for i in ids:  # the besiegers live through it (the city's defence would end them before the capture)
             if full.get(i):
                 host.call(f'coop.civ vhp {i} {full[i]:.0f}')
