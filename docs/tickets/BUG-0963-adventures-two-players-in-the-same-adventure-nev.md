@@ -1,7 +1,7 @@
 ---
 id: BUG-0963
 title: Adventures: two players in the same adventure never see each other's captain (each play has its own scenario key, so the place ids differ)
-status: open
+status: duplicate
 kind: bug
 stage: Adventure
 reported: 2026-11-12
@@ -39,3 +39,4 @@ adventure_duo with --own-places: both games in the tutorial adventure; the host'
 ## History
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-small): opened while testing BUG-0845.
+- 2026-11-12 (rel/0.7.13, orchestrator): closed as a duplicate of BUG-0793 (co-op Galactic Adventures, planned with Rivals 0.8, docs/11-rivals.md#rivals-fork-feature-ideas). Seeing the partner's captain in an adventure is part of that feature, not a defect of the current mod: there is no adventure co-op yet, and the 0.7.13 safety work (BUG-0789, BUG-0845, BUG-0854) keeps a session safe while a player plays an adventure. The place-id finding and the fix idea above stay as input for BUG-0793.
