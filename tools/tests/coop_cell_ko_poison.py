@@ -13,7 +13,7 @@ poison cells (cell type 5, `coop.pool see`) it has on its screen, by their keys;
    15 s); the host is knocked out (`coop.pool selfhit 50`): no new cloud key in its game for the 8 s of
    the knockout (after 1 s, the clouds made before stay their 3-7 s). Only clouds within 3 m of the knocked-out
    cell count (the other cell shares the grafted model and makes its own).
-2. --who guest: the host stays 6 m from the guest (its game draws the guest's cell, the poison step needs
+2. --who guest: the guest is invulnerable until its knockout (the host's clouds), the host stays 6 m from it (its game draws the guest's cell, the poison step needs
    it; too far to revive); control: the host's game makes the guest's clouds (new keys near the guest's
    puppet); the guest is knocked out: no new cloud key near its puppet in the host's game for 8 s.
 SPORE_FIX_OFF=cell.ko_no_poison must FAIL (new clouds while knocked out).
@@ -85,6 +85,7 @@ def main():
         got = host.call('coop.pool borrow poison graft')['out'].strip()
     else:
         guest.call('coop.pool tp 6 0')
+        guest.call('coop.pool invulnfor 120')  # (the host's own clouds knocked it out during the control, lab 20261112-070110)
         got = host.call(f'coop.pool borrow poison graft p{gid}')['out'].strip()
     print('  host: ' + got, flush=True)
     ck(got.startswith('borrowed'), f'the {a.who}\'s cell has the poison part in the host\'s game')
@@ -103,6 +104,9 @@ def main():
     print(f'  control: the game made {m1 - m0 if m0 is not None and m1 is not None else "?"} clouds of the {a.who}\'s cell', flush=True)
     ck(m0 is not None and m1 is not None and m1 > m0, f'control: the host\'s game makes clouds of the {a.who}\'s cell ({m0} -> {m1})')
     ko_con = host if a.who == 'host' else guest
+    if a.who == 'guest':
+        guest.call('coop.pool invulnfor 0.05')  # vulnerable again for the knockout
+        time.sleep(0.5)
     print(f'  {a.who}: ' + ko_con.call('coop.pool selfhit 50')['out'].strip(), flush=True)
     down = wait_downed(ko_con, 1)
     ck(down, f'the {a.who} is knocked out')

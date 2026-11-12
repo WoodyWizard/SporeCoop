@@ -13,7 +13,9 @@ cell's way); both games record the players' cells as they draw them (`coop.bodyr
 For every row of the HOST's copy of the guest's cell: how far it is ahead of the guest's own cell at the same
 moment, along the way that cell swam 0.25 s before (drawn 0.1 s late it is behind; moved on along an old velocity
 through a spike while the cell turned, it is ahead). Checks: over 1000 rows, none ahead by more than PAST m.
-SPORE_FIX_OFF=drive.cell_fall must FAIL (the copy ahead after turns in the spikes).
+Not reproduced (2026-11-12): the code without a fall-off in Cell never drew the copy ahead (max 0.03 m in 1351 rows,
+lab 20261112-065254; with Creature's fall-off in Cell 0.01 m, 20261112-065045): the switch tried (drive.cell_fall) was
+taken out again. Kept as a regression test.
 
   SPORE_NET=player SPORE_LANE=3 python3 tools/tests/coop_cell_puppet_stops.py [--legs 40]
 """

@@ -1007,19 +1007,11 @@ static void silent_tick(Remote& r, double now)
     }
 }
 
-// BUG-0887: the extrapolation of the partner's puppet past its newest state falls off in Cell as in Creature
-// (net::SnapshotBuffer::interp_fall): a cell that stopped or turned in a latency spike was drawn going on along the
-// old velocity for up to 0.25 s, then stepping back. Off: 0.7.12 (Creature only).
-static bool g_cell_fall_fix = true;
-COOP_FIX("drive.cell_fall", "BUG-0887", g_cell_fall_fix, "cell: the partner's cell stops where the partner stopped in a latency spike instead of swimming on past it");
-
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
     r.buf.jump_speed = g_mode == modes::kCreature ? modes::puppet_jump_speed() : 0.f; // BUG-0499
-    // BUG-0680 (drive.puppet_fall: the Creature puppets' stops); BUG-0887 (drive.cell_fall): the partner's cell too,
-    // drawn exactly at the sampled pose (modes::cell_drive), so a stop in a latency spike was drawn swimming on
-    r.buf.interp_fall = g_mode == modes::kCreature || (g_cell_fall_fix && g_mode == modes::kCell);
+    r.buf.interp_fall = g_mode == modes::kCreature; // BUG-0680 (drive.puppet_fall: the Creature puppets' stops)
     if (!r.buf.sample(now, s))
         return;
     silent_tick(r, now);

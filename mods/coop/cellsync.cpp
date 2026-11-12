@@ -919,8 +919,9 @@ static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
     }
     uint32_t live0 = G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0;
     o_Cloud(maker, size, at);
-    if (in_cell() && maker && modes::cell_is_puppet(maker))
-        g_puppet_clouds++; // host (BUG-0716): a partner's cloud, made by puppet_poison
+    if (in_cell() && maker && modes::cell_is_puppet(maker)) {
+        g_puppet_clouds++; // host (BUG-0716): a partner's cloud (puppet_poison, or the game's own poison step)
+    }
     if (in_cell() && maker && maker == avatar()) {
         g_clouds_made++;
         g_cloud_last = (G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0) - live0; // cells added by it
@@ -1260,12 +1261,6 @@ static bool g_fix_swallow_gone = true;
 COOP_FIX("cell.swallow_gone", "BUG-0827", g_fix_swallow_gone, "cell: a host cell a guest swallows whole is gone in the host's game too (it lived on and could be eaten again)");
 static std::unordered_map<uint32_t, double> g_swallowed;
 static uint32_t g_swallows_marked;
-// BUG-0835: h_Destroy took any destroy of a mirror touched in the last second for "eaten": the guest's visibility step
-// destroys poison clouds outside its active area every frame (0xE78C37) and a cloud the avatar swam through was
-// sent as eaten (ACT_GONE): the host removed its cloud early. A poison cell is never counted as eaten now. Off: 0.7.12.
-static bool g_fix_poison_not_eaten = true;
-COOP_FIX("cell.poison_not_eaten", "BUG-0835", g_fix_poison_not_eaten, "cell: a guest swimming through a poison cloud of the host's pool does not end the cloud in the host's game");
-static uint32_t g_poison_not_eaten;
 static const char* kind_of(uint8_t* c);
 static uint32_t g_kept, g_puppet_saves, g_puppet_new, g_own_eats, g_own_food;
 static std::unordered_map<int, void*> g_puppet_seen;
@@ -1347,11 +1342,6 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
             if (sw != g_swallowed.end())
                 g_swallowed.erase(sw);
             touched = touched || swallowed;
-            // BUG-0835: a poison cloud is not food: touching it hurts, the visibility step destroys it (0xE78C37)
-            if (touched && g_fix_poison_not_eaten && (ra == a_PoisonCullRet || !strcmp(kind_of(modes::cell_at(idx)), "poison"))) {
-                touched = false;
-                g_poison_not_eaten++;
-            }
             g_destroy_callers[touched ? ((ra - H->rebase(0)) | 0x40000000u) : ra]++;
             if (!touched) {
                 // Not our doing: the game removes it for its own reasons (a poison cloud outside our
@@ -6475,9 +6465,8 @@ std::string status()
     snprintf(sc, sizeof sc, "cell_send_centres: fix=%d tile_pass_behind=%.1f max=%.1f tile_passes=%u\n", (int)g_fix_send_centres,
              g_send_centre_lag, g_send_centre_lag_max, g_tile_passes);
     char c1[200]; // 0.7.13 C1 (BUG-0798, 0799, 0821, 0827, 0835, 0792)
-    snprintf(c1, sizeof c1, "cell_c1: down_scale=%.4g ko_clouds_blocked=%u kills_resent=%u swallows_marked=%u poison_not_eaten=%u spawn_slot=%d\n",
-             g_downed ? g_down_scale : 0.f, g_ko_clouds_blocked, g_kills_resent, g_swallows_marked, g_poison_not_eaten,
-             g_spawn_slot);
+    snprintf(c1, sizeof c1, "cell_c1: down_scale=%.4g ko_clouds_blocked=%u kills_resent=%u swallows_marked=%u spawn_slot=%d\n",
+             g_downed ? g_down_scale : 0.f, g_ko_clouds_blocked, g_kills_resent, g_swallows_marked, g_spawn_slot);
     return b + std::string(d) + t + j + o + sc + c1;
 }
 

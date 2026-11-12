@@ -82,10 +82,16 @@ def targets(con):
 
 
 def reach(con):
+    """(target, gap, the bite's reach, its status): the game's reach of key 1, the ability in column 0 of the bar's
+    combat row 1 (play_creature.py's reading; the fixture creature's bite: reach 1 m)"""
     out = con.call('coop.abilities reach')['out']
     m = re.search(r'target (\S+) dead=(\d) gap=([-\d.]+)', out)
-    rs = [float(x) for x in re.findall(r'type=\S+ row=1 key=\S+ reach=([-\d.]+)', out)]
-    return (m.group(1) if m else None, float(m.group(3)) if m else None, min(rs) if rs else 1.0)
+    abs_ = {int(x.group(1)): (float(x.group(2)), int(x.group(3))) for x in
+            re.finditer(r'ab (\d+) type=\S+ row=\S+ key=\S+ reach=([-\d.]+) min=\S+ status=(-?\d+)', out)}
+    b = re.search(r'bar 1:((?: -?\d+)+)', out)
+    col0 = int(b.group(1).split()[0]) if b else None
+    rch, st = abs_.get(col0, (1.0, None))
+    return (m.group(1) if m else None, float(m.group(3)) if m else None, rch, st)
 
 
 def aim(con, key):
@@ -99,6 +105,43 @@ def aim(con, key):
         con.call(f'drag {W // 2} {H // 2} {W // 2 + dx} {H // 2} right')
         time.sleep(0.5)
     return o if o and 20 < o[1] < W - 20 and 90 < o[2] < H - 170 else None
+
+
+def walk_through(host, guest, gid, label):
+    """(a) the guest's creature is put 6 m from the host's on a line, its camera turned to the host's creature, and a
+    real click on the ground 150 px above it on the screen (beyond it) walks it there: (closest m, passed it)"""
+    gs = sample(guest)
+    me, hp = (gs.get(f'p{gid}') or (None,))[0], (gs.get('p0') or (None,))[0]
+    if not me or not hp:
+        return None
+    d = [y - x for x, y in zip(hp, me)]
+    ln = math.sqrt(sum(c * c for c in d)) or 1
+    g = [x + c / ln * 6.0 for x, c in zip(hp, d)]
+    guest.call('coop.npc gopos %.2f %.2f %.2f' % tuple(g))
+    time.sleep(1.5)
+    o = aim(guest, 'p0')
+    if not o:
+        print(f'  [{label}] the host\'s creature is not on the guest\'s screen', flush=True)
+        return None
+    gs = sample(guest)
+    start, hp = (gs.get(f'p{gid}') or (None,))[0], (gs.get('p0') or (None,))[0]
+    guest.call(f'click {o[1]} {max(100, o[2] - 150)}')
+    way, t0 = [], time.time()
+    while time.time() - t0 < 6:
+        gs = sample(guest)
+        a, b = (gs.get(f'p{gid}') or (None,))[0], (gs.get('p0') or (None,))[0]
+        if a and b:
+            way.append((a, b))
+        time.sleep(0.1)
+    if not way or not start or not hp:
+        return None
+    u = [y - x for x, y in zip(start, hp)]
+    lu = math.sqrt(sum(c * c for c in u)) or 1
+    closest = min(math.dist(a, b) for a, b in way)
+    past = max(sum((ac - bc) * uc / lu for ac, bc, uc in zip(a, b, u)) for a, b in way)  # beyond the host along the way
+    print(f'  [{label}] walk: the guest {math.dist(start, hp):.1f} m from the host\'s creature, closest {closest:.2f} m, '
+          f'at most {past:.2f} m beyond it; {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
+    return closest, past > 1.0
 
 
 def one_round(host, guest, nid, hid, label):
@@ -115,7 +158,7 @@ def one_round(host, guest, nid, hid, label):
     print('  guest: ' + guest.call('coop.npc gopos %.2f %.2f %.2f' % tuple(g))['out'].strip(), flush=True)
     time.sleep(1.5)
     guest.call(f'click {W // 2 + 43} {H - 82}')  # the combat stance (the red button)
-    time.sleep(0.4)
+    time.sleep(0.5)
     key = f'n{nid}'
     o = aim(guest, key)
     if not o:
@@ -143,18 +186,18 @@ def one_round(host, guest, nid, hid, label):
           flush=True)
     reached, gaps = False, []
     if on_animal:
-        print('    reach before: ' + guest.call('coop.abilities reach')['out'].replace('\n', ' | ')[:400], flush=True)
+        print(f'    key 1 before: (target, gap, reach, status) = {reach(guest)}', flush=True)
         guest.call('key 1')  # the attack key (1): the game's walk-and-use
         t0 = time.time()
         while time.time() - t0 < 12:
-            tr, gap, rch = reach(guest)
+            tr, gap, rch, kst = reach(guest)
             if gap is not None:
                 gaps.append(round(gap, 1))
                 if gap <= rch:
                     reached = True
                     break
             time.sleep(0.25)
-        print('    reach after: ' + guest.call('coop.abilities reach')['out'].replace('\n', ' | ')[:400], flush=True)
+        print(f'    key 1 after: {reach(guest)}', flush=True)
         print(f'  [{label}] the guest\'s walk-and-use: gaps {gaps[::4]} -> reached {reached} '
               f'({time.time() - t0:.1f} s); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
     shot(guest, f'partner_pass_{label}')
@@ -173,6 +216,14 @@ def main():
         ck(sl.force(host, [guest], 'all.friendly_fire', 'on'), 'friendly fire on for both')
     hid = (re.search(r'client id=(\d+)', guest.call('coop.status')['out']) or [None, '1'])[1]
     print('  guest: ' + guest.call('coop.partnerpass')['out'].strip(), flush=True)
+
+    walks = []
+    for r in range(5):
+        w = walk_through(host, guest, hid, f'w{r + 1}')
+        if w:
+            walks.append(w)
+        if len(walks) >= 3:
+            break
     used, rounds = set(), []
     try:
         for r in range(a.rounds + 10):
@@ -196,9 +247,13 @@ def main():
     print(f'  rounds: {len(rounds)}, with the host in front of the animal: {len(front)}; '
           f'click on the animal {sum(1 for x in front if x[1])}, on the partner {sum(1 for x in front if x[3])}, '
           f'reached {sum(1 for x in front if x[2])}', flush=True)
+    print(f'  walks: {walks}', flush=True)
     if a.ff:
         print('  (friendly fire on: the old behaviour, not judged)', flush=True)
     else:
+        ck(len(walks) >= 2, f'walks towards the host\'s creature: {len(walks)} >= 2')
+        ck(walks and all(c < 0.8 and p for c, p in walks), 'the guest walks through the host\'s creature, not round it or '
+           f'stopped by it (closest, passed: {walks})')
         ck(len(front) >= 2, f'rounds with the host\'s creature in front of the animal on the guest\'s screen: {len(front)} >= 2')
         ck(front and all(x[1] for x in front), 'the guest\'s click goes to the animal behind the host\'s creature (the game\'s target)'
            f' ({sum(1 for x in front if x[1])} of {len(front)})')

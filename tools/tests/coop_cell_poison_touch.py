@@ -12,7 +12,9 @@ active tiles), so a mirrored cloud the guest swam into was "eaten": the host's c
    onto (`coop.pool swimto c<key> tp 0`: the game's collision pair with it).
 3. 0.8 s later the cloud is still there in the HOST's game (`coop.pool cell <key>`) for nearly all touched
    clouds (a cloud may end by itself: at most a quarter of them gone, at least 6 touched).
-SPORE_FIX_OFF=cell.poison_not_eaten must FAIL at 3 (the touched clouds end at once in the host's game).
+Not reproduced (2026-11-12): the guest's game never destroyed a mirrored cloud it touched (`coop.pool why`: none, 12
+touches, lab 20261112-065459 on the code without a fix); the fix tried (cell.poison_not_eaten) was taken out again.
+Kept as a regression test.
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_poison_touch.py
 """
