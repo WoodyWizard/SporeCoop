@@ -7,8 +7,9 @@ One game (the lane's host instance) at the galaxy menu:
 1. a window address from `coop.ui tree` still works (`coop.ui btn <addr>` answers, `coop.ui tree 1 all <addr>`
    lists it);
 2. its control id is taken as that window (`coop.ui tree 0 all <id>` names the same address);
-3. numbers that are neither (12345678, 00000010, DEADBEE0, a control id nobody has) answer "no window" for show,
-   btn, font, caption, area, align and the tree root;
+3. numbers that are neither (of 12345678, 00000010, DEADBEE0, ... those no window of the menu's whole tree has as its
+   address or control id: the menu has a window with control id 00000010) answer "no window" for show, btn, font,
+   caption, area, align and the tree root;
 4. the game has no fault (the game's own exception count, `exc`), no crash report, frames go on.
 SPORE_FIX_OFF=core.ui_window_arg must FAIL (the game faults at the first wild number).
 
@@ -25,7 +26,7 @@ import lane  # noqa: E402
 from sporectl import Console  # noqa: E402
 from twoinst import Checks, wait_up  # noqa: E402
 
-BAD = ('12345678', '00000010', 'DEADBEE0', '7E57C0DE')
+BAD = ('12345678', '00000010', 'DEADBEE0', '7E57C0DE', '0000BEE5', '6E0B0D1E')
 
 
 def call(c, line):
@@ -73,8 +74,14 @@ def main():
         out = call(h, f'coop.ui tree 0 all {cid}')
         print(f'  tree by control id {cid}: {out[:120]}', flush=True)
         ck(addr.upper().lstrip('0') in out.upper(), f'2. its control id {cid} is that window ({out[:80]})')
+    full = call(h, 'coop.ui tree 40 all')
+    taken = {a.upper().lstrip('0X').lstrip('0') for a in re.findall(r'^\s*\S+ ([0-9A-Fa-fx]+) id=', full, re.M)} | \
+            {c.lstrip('0') for c in re.findall(r'id=0x([0-9A-F]{8})', full)}
+    bad = [n for n in BAD if n.lstrip('0') not in taken][:4]
+    print(f'  numbers that are no window of the tree: {bad} (of {len(BAD)})', flush=True)
+    ck(len(bad) >= 3, 'three numbers no window has')
     f0 = frame(h)
-    for n in BAD:
+    for n in bad:
         for line in (f'coop.ui show {n} 1', f'coop.ui btn {n}', f'coop.ui font {n} 1', f'coop.ui caption {n} x',
                      f'coop.ui area {n} 0 0 10 10', f'coop.ui align {n} 1', f'coop.ui tree 1 all {n}'):
             out = call(h, line)

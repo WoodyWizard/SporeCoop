@@ -174,6 +174,11 @@
 - Creature: an NPC egg that hatches or is eaten in the host's game is shown so on the guests at once, not up to a
   second later. A guest's click at an egg that had already hatched on the host hit the hatchling inside it: a small
   body lay where the egg was and the host counted it as the guest's hunt (BUG-0896).
+- Creature: a creature with only a base paint (no coat and no detail layer) is checked for paints the other game does
+  not have, like any other creature: a Creepy & Cute base paint now shows as a similar base game paint on a game
+  without that pack instead of another colour (BUG-0852).
+- The mod's hang diagnostics (the stack dump made when the game stops drawing) no longer risk turning a short stall
+  into a freeze for good under Wine on Linux (BUG-0880).
 
 ### Changed
 - Creature: while friendly fire is off (and outside Rivals) a player walks through a partner's creature and a click

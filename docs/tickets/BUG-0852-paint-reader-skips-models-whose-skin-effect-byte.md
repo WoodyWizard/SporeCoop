@@ -1,20 +1,21 @@
 ---
 id: BUG-0852
 title: Paint reader skips models whose skin-effect bytes are run-compressed, so their paints are never checked or substituted
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9041
 role: all
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-small
+commits: fe67469a
+tests: make test (tests/validate_tests.cpp test_model_paint_runs)
 signature: 
-docs:
+docs: docs/re/creations.md#creations-paint-runs
 related: BUG-0559, BUG-0469, BUG-0727
+switch: creations.paint_runs
 ---
 
 ## Report
@@ -48,11 +49,15 @@ Lab: a creature with a C&C base paint and no coat/detail, guest without C&C, com
 guest.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Root cause confirmed in the code (the reader returned false for the whole model). `mods/coop/model_paint.h` (portable): `effects_read` decodes the byte runs over the 12 effect bytes and says per layer whether its four bytes are written byte by byte (`patch[k]`); `effects_strict` is the old reader. creations.cpp `model_effects` uses the decoding one (`coop.fix creations.paint_runs off`: the strict one, 0.7.12), so the content check (`unknown_paint_ids`), the substitution, the species data alignment and `coop.creations paints` see the paints of a run-packed model. `substitute_paints` rewrites only a layer that can be patched in place; an unknown paint inside a run is logged ("run-packed: not substituted in place", counter `in_run=` of `coop.creations paints`) and the content check then refuses the creation (the game's fallback shows), as for any paint without a substitute.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+Unit test `test_model_paint_runs` in tests/validate_tests.cpp (BUG-0727's untried case: the fork's shape, a model with a literal Creepy & Cute base paint and `00 FE 07` over coat and detail; a base id whose last byte runs into the coat; a model written byte by byte; a short header):
+* FAIL with the fix off (`validate_tests --nofix`: the strict reader, as before the fix): 7 checks of test_model_paint_runs fail (validate_tests.cpp:903-916, "ok", the ids, the patch flags), the run's output in the branch's scratch (35 FAILED in total, the other 28 are the older --nofix cases).
+* PASS twice with the fix (`validate_tests`: "validate tests OK", 2026-11-12), and in `make test".
+Not run in the lab: the lab profiles have no creation with such a model (the fork's 1934-byte landfall creature is not ours); the reader is the same code the game path calls.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0727 (not reproduced: a model whose records cannot be read built unchecked) is the parent case; this ticket is the same outcome for readable records. Linked.
+- 2026-11-12 (fix/w48-small): fixed (creations.paint_runs), unit test.

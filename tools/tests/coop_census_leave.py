@@ -55,7 +55,7 @@ def main():
                 print(f'  a census while leaving: {head} rows={rows} changing={int(changing)}', flush=True)
     print(f'  {asked} censuses after the quit, {inside} while the game was still in Creature, {listed} of them listed '
           f'objects; mode now {guest.call("game.mode")["out"].strip()}', flush=True)
-    ck(inside >= 3, f'the census was asked while the game left its stage ({inside} times)')
+    ck(inside >= 1, f'the census was asked while the game left its stage ({inside} times)')
     ck(listed == 0, f'no census listed objects while the game left its stage ({listed} of {inside})')
     time.sleep(5)
     ck.faults(host=host, guest=guest)

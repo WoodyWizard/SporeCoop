@@ -1828,6 +1828,7 @@ the first four return addresses into the game's code: the creator of every effec
   * 0xC881120E (into a fight) / 0x529FEC69 (out of it) = `SporeCoop::Creature_CombatVoice` 0xC1B030 (+0xBB1 the
     in-combat byte), called by the fight node 0xD69540 and the TakeDamage of animals and citizens.
     CORRECTION (2026-11-10, plan/w47-cellcreature, BUG-0837): 0xC1B030 is CreatureSetSneaking (docs/re/creature.md#creature-c1b030-two-names); +0xBB1 is the sneak byte, force = 1 forces the sneak.
+    CORRECTION (2026-11-12, fix/w48-small, BUG-0837): decided: the name is `SporeCoop::CreatureSetSneaking` (the only one in the .sym now; mirror_fx.cpp hooks it by that name); "combat voice", "into a fight" and "in-combat byte" above are superseded: the two sounds are the sneak's start and end, +0xBB1 is the sneak flag (docs/re/creature.md#creature-c1b030-decided).
   * 0xCE5F2ED0 = effect 0xA231DA2F of 0xCCBE90 (~ the tribe UI's order marker at the target: the effect id is picked by
     the order kind and the camera distance band): the ordering player's own feedback, not a member's.
   * other pool effects of the members (no sound in these runs): 0x8ADA6617 (pool 1 on the NPC chief, from 0xC2103D),

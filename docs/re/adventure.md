@@ -60,3 +60,24 @@ Co-op adventures as a feature: BUG-0793; the shared editor: BUG-0863.
 * The tutorial adventure from the galaxy menu: `tools/tests/adventure_start.py` (clicks for 1440x1080). The menu's
   intro hides the menu for more than its 1300 frames at a high frame rate: the script now waits for the menu's
   "Galactic Adventures" entry and the end of the intro first.
+
+## Two players in one adventure: the play mode, acts, the sky (2026-11-12, fix/w48-small)
+<a id="adventure-two-captains"></a>
+
+BUG-0845, BUG-0789. GOG 2024, objdump of SporeApp.exe and lab lane 2 (`tools/tests/coop_adventure_duo.py`, the tutorial
+adventure "The Arena of Oorama" from the galaxy menu).
+* ✔ (disassembly) `cScenarioPlayMode::JumpToAct` 0xF1F3C0 (`SporeCoop::ScenarioPlay_JumpToAct`) thiscall(play mode, int
+  act) `ret 4`: returns unless the play state +0x90 is 3 and act < the act count (0xF3BCD0 on cScenarioMode +0x74);
+  then SetCurrentAct 0xF1EE70 and 0xF1DD10 per goal. The play mode is `App::cScenarioMode::ptr` (0x16C7AA4) **+0x78**
+  (the fork's "play controller"), its current act **+0xB8**. The game's own next / previous act handler at 0xF0EC6A calls
+  JumpToAct with +0xB8 + 1 / - 1.
+* ✔ (runtime) Right after the start (`adventure_start.py`: Scenario and an avatar) the play state is **1** for as long as
+  nobody acts (60 s seen): the adventure's intro card waits for the player. Enter makes it 3 (playing). JumpToAct does
+  nothing in state 1. `coop.adventure act 1` (outside the frame) then starts act 1 of the tutorial ("Trials of Combat":
+  the gates open, Skex and Thorns come in), state 3, act 1, no fault (one game, lab lane 2).
+* ✔ (runtime) The sky: both games of a session in the tutorial adventure had the same sky (same clock, same spawn);
+  the host's captain put 60 m away moved the host's sky by 0.52 degrees (the fork: 4.95 degrees for 63 m on its
+  adventure). With the legacy MSG_WORLD_TIME applied (`wsync.tod` and `wsync.adventure_sky` off) the standing guest's
+  sky was the host's, 0.0 degrees apart (lab 20261112-122031). With `wsync.tod` on (since BUG-0579, the default) the
+  packet is not applied by a guest and the wsync sky row is not in play in kScenario, so the default build already kept
+  each captain's own sky; `wsync.adventure_sky` also stops the host's send and the legacy apply in an adventure.

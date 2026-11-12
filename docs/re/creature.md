@@ -4313,3 +4313,19 @@ GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and lanes 6 / 7 (creature fi
   host, and at the host's next nest), so row 11 of wsync (s_nest) starts no migration while the host's state is 1 / 2;
   the guest's starts after the host's claim, compared with the host's new home. ? [0x167EA30] is not the guest
   avatar's position after a `coop.npc gopos` (its home won while it stood at the other nest).
+
+## 0xC1B030 is CreatureSetSneaking: the name decided (2026-11-12, fix/w48-small)
+<a id="creature-c1b030-decided"></a>
+
+BUG-0837. Follows #creature-c1b030-two-names.
+* ✔ The right name is `SporeCoop::CreatureSetSneaking` (BUG-0463), not `SporeCoop::Creature_CombatVoice` (BUG-0600):
+  the function returns without force unless the creature has an ability of type 0xD (the Creature stage's sneak: the
+  host's fixture creature has it at index 7, and with it the alpha reached 0.2 at runtime, #creature-sneak) or 0x52 (an
+  adventure captain's stealth, inferred); +0xBB1 = 1 makes 0xC1CF30 ease the model's alpha to 0.2 and spend energy;
+  TakeDamage clears it (a hit ends a sneak). The "combat voice" sounds 0xC881120E / 0x529FEC69 are its start / end
+  sounds; a fight node calls it without force, which changes nothing for a creature without the sneak ability.
+* CORRECTION (2026-11-12, fix/w48-small, BUG-0837): `data/symbols/overrides_dc04aee5.sym` keeps only
+  CreatureSetSneaking (the second entry is removed, its callers and sounds moved into the first); mirror_fx.cpp hooks
+  the function by that name. Its relay K_VOICE replays the host's +0xBB1 changes on a guest's proxies with force = 1:
+  a forced sneak, as the host's NPC showed it (the host sends only the changes its own game made).
+

@@ -6,16 +6,16 @@ cScenarioPlayMode::SetCurrentAct, called from Initialize, after this order); the
 (adventure_start.py, the same adventure: the guest gets the host's profile packages), the one named by --first
 first, the other when the first is in it.
 1. both games are in the adventure (Scenario) with their captain, the session is up;
-2. BUG-0789, the sky: the guest stands still, the host's captain is put --walk m away; for 12 s the two games'
-   skies (the time-of-day object's orientation, `coop.wsync sky`) are read once a second. An adventure's sky
-   depends on the captain's place: when the host's sky moved by more than 0.5 degrees, the guest's sky must stay
-   its own (not come within 0.2 degrees of the host's while it was over 0.5 degrees off at the start);
+2. BUG-0789, the sky: the guest stands still, the host's captain is put --walk m away (200); 12 s later the two
+   games' skies (the time-of-day object's orientation, `coop.wsync sky`) are compared. An adventure's sky depends on
+   the captain's place: the host's must have moved by 1 degree or more, and the guest's must stay its own (more than
+   half of that away from the host's new sky; with the host's MSG_WORLD_TIME applied it is the host's, 0 degrees);
 3. BUG-0845, the act change: the host's game jumps to the next act (`coop.adventure act 1`: the game's JumpToAct,
-   what the act's end does: SetCurrentAct rebuilds the cast), then the guest's; 15 s later both are still in the
-   adventure, in act 1, with no fault and no crash report (the lab checks the reports too).
+   what the act's end does: SetCurrentAct rebuilds the cast; play state 3 needed: the intro card is closed with Enter
+   first), then the guest's; 15 s later both are still in the adventure, in act 1, with no fault and no crash report (the lab checks the reports too).
 SPORE_FIX_OFF=wsync.tod,wsync.adventure_sky must FAIL at 2 (the legacy MSG_WORLD_TIME applied in an adventure).
 
-  SPORE_LANE=N python3 tools/tests/coop_adventure_duo.py [--first host|guest|both] [--walk 60] [--no-act]
+  SPORE_LANE=N python3 tools/tests/coop_adventure_duo.py [--first host|guest|both] [--walk 200] [--no-act]
 """
 import argparse
 import math
@@ -51,10 +51,11 @@ def sky(c):
 
 
 def angle(a, b):
-    """degrees between two orientations"""
+    """degrees between two orientations (normalized: the console prints 4 decimals)"""
     if not a or not b:
         return None
-    d = abs(sum(x * y for x, y in zip(a, b)))
+    na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(x * x for x in b))
+    d = abs(sum(x * y for x, y in zip(a, b))) / (na * nb)
     return math.degrees(2 * math.acos(min(1.0, d)))
 
 
@@ -75,7 +76,7 @@ def start_adventure(inst):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--first', choices=('host', 'guest', 'both'), default='guest')
-    ap.add_argument('--walk', type=float, default=60.0)
+    ap.add_argument('--walk', type=float, default=200.0)
     ap.add_argument('--no-act', action='store_true')
     a = ap.parse_args()
     ck = Checks()
@@ -128,7 +129,18 @@ def main():
     st = call(h, 'coop.status')
     print('  host status: ' + ' | '.join(l.strip() for l in st.splitlines() if 'remote' in l or 'puppet' in l)[:400], flush=True)
     ck(re.search(r'remote 1\b', st) is not None, '1. the session is up in the adventure')
-    time.sleep(10)
+    # the adventure's intro card waits for the player (play state 1); Enter starts the play (state 3), as a click would
+    for who, c in (('host', h), ('guest', g)):
+        for i in range(6):
+            sa = act(c)
+            if sa and sa[0] == 3:
+                break
+            if i % 2 == 0:
+                c.call('key enter')
+            time.sleep(5)
+        print(f'  {who}: play state and act {act(c)}', flush=True)
+    ck(all((act(c) or (0, 0))[0] == 3 for c in (h, g)), '1. both games play the adventure (play state 3)')
+    time.sleep(5)
 
     # 2. the sky
     g0, h0 = sky(g), sky(h)
@@ -141,23 +153,16 @@ def main():
         sl = math.sqrt(sum(v * v for v in side))
         tgt = [hp[i] + side[i] / sl * a.walk + up[i] * 2 for i in range(3)]
         print('  host: ' + call(h, 'coop.npc gopos %.2f %.2f %.2f' % tuple(tgt)), flush=True)
-    samples = []
     for _ in range(12):
         time.sleep(1)
-        samples.append((sky(h), sky(g)))
-    h1, g1 = samples[-1]
-    moved = angle(h0, h1)
-    own = angle(g0, g1)
-    near = min((angle(x, y) for x, y in samples if x and y), default=None)
-    start_apart = angle(h0, g0)
-    print(f'  sky: the host\'s moved {moved} deg; the guest\'s {own} deg from its start; nearest to the host\'s {near} deg '
-          f'(apart at the start {start_apart})', flush=True)
-    if moved is not None and near is not None and (moved > 0.5 or start_apart > 0.5):
-        ck(near > 0.2 or start_apart <= 0.5,
-           f'2. the guest keeps its own sky (nearest to the host\'s: {near:.3f} deg, apart at the start {start_apart:.3f})')
-    else:
-        print('  2. the host\'s sky did not move and the skies were the same: nothing to tell apart', flush=True)
-        ck(moved is not None, '2. both games have a sky in the adventure')
+    h1, g1 = sky(h), sky(g)
+    moved, own, apart = angle(h0, h1), angle(g0, g1), angle(h1, g1)
+    print(f'  sky 12 s after the move: the host\'s moved {moved} deg, the guest\'s {own} deg; the two {apart} deg apart',
+          flush=True)
+    ck(moved is not None and moved >= 1.0, f'2. the host\'s sky moved with its captain ({moved} deg: else nothing to tell)')
+    if moved is not None and moved >= 1.0:
+        ck(apart is not None and apart > moved / 2,
+           f'2. the guest keeps its own sky, not the host\'s ({apart:.2f} deg from the host\'s, which moved {moved:.2f})')
 
     # 3. the act change
     if not a.no_act:

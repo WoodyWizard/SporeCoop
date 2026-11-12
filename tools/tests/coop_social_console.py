@@ -10,7 +10,7 @@ presses 1 again. Judged on what the games play (BUG-0891: before, only the host'
 the ones the press after the close brings that the idle sampling never showed; none of them may
 play on either game while the console was open, and the press after the close must bring one.
 
-  coop_social_console.py [--without-fix]   (--without-fix: coop.social textfix off, must FAIL)
+  coop_social_console.py [--without-fix]   (--without-fix or SPORE_FIX_OFF=social.text: must FAIL)
 
 The console opens only while the cheat manager's flag +0x64 is set (cCheatManager vt 0x4C,
 SetEnabled; AppShortcuts_OnKeyDown -> vt 0x44 -> 0x67E730 returns at once without it). It is 0 on
