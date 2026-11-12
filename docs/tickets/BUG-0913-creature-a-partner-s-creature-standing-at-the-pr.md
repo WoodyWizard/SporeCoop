@@ -69,4 +69,6 @@ reach the bite's reach), then clicks the animal from behind (the game's target m
   never started or another creature: tried again from 4.5 / 8 m, not judged), counts a landed bite as reached,
   aims and clicks again when the target click missed, and waits until the guest draws the host where it is after a
   long jump. Its checks are unchanged: the click on the animal, never the partner, and the walk not stopped by the
-  partner. FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-114751 (click 0 of 3); PASS: see below.
+  partner. With the final test: FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-130029 (click on the
+  partner 2 of 2), also 20261112-114751 (0 of 3); PASS 8 of 8 on lanes 6 / 7: 20261112-124402 (3 of 3), -124417
+  (3 of 3), -130600, -130741; partner_pass_ff 20261112-130044.
