@@ -2494,8 +2494,25 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
     return (ls.mode == stage || editor) && world && ls.world == world;
 }
 
+// BUG-0941: a host that loads another Space save from the galaxy menu sent no world to its connected guests: the
+// stage is the same and in Space the state's world is the place (star, planet), so nothing told the guests the save
+// was another one; they played on in their copy of the old save. The host's save file (world::current_game_key: the
+// slot folder and the planet file) when it entered Space, and when it left Space for the menu, is compared with the
+// one it loads into Space: another one is shared with everybody as a new stage is. `coop.fix space.load_follow off`:
+// no share (0.7.12; BUG-0933 then holds the shared money on the guests).
+static bool g_space_load_follow_fix = true;
+COOP_FIX("space.load_follow", "BUG-0941", g_space_load_follow_fix,
+         "space: guests follow the host into another Space save it loads");
+static std::string g_space_key; // the host's Space save as last seen at a mode change
+static uint32_t g_space_load_shares;
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
+    if (from == modes::kSpace && to == modes::kMenu) { // BUG-0941: the save it leaves (as written by the quit)
+        std::string k = world::current_game_key();
+        if (!k.empty())
+            g_space_key = k;
+    }
     if (to == modes::kLoad || to == modes::kMenu || (stage_mode(to) && to != modes::kTribe))
         g_last_editor_req = 0; // (BUG-0849: the end of Tribe is over; a Tribe game loaded later starts clean)
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
@@ -2523,10 +2540,23 @@ void on_mode_change(uint32_t from, uint32_t to)
     }
     uint32_t last = g_last_stage;
     g_last_stage = to;
+    bool other_save = false; // BUG-0941
+    if (to == modes::kSpace && from != modes::kEdit && from != modes::kEditor && from != modes::kScenario) {
+        std::string k = world::current_game_key();
+        other_save = g_space_load_follow_fix && last == modes::kSpace && !new_stage && !evolved && !k.empty() &&
+                     !g_space_key.empty() && k != g_space_key;
+        if (other_save)
+            LOG("space: the host loaded another Space save (%s, was %s): it goes to everybody (BUG-0941)", k.c_str(),
+                g_space_key.c_str());
+        if (!k.empty())
+            g_space_key = k;
+    }
     if (g_sess.role() != net::Role::Host || !g_share_world || g_remotes.empty() || !last)
         return;
-    if (!new_stage && !evolved)
+    if (!new_stage && !evolved && !other_save)
         return;
+    if (other_save)
+        g_space_load_shares++;
     if (evolved && tribe_graduating()) { // BUG-0849: no evolution; the Civ stage comes next and is shared then
         LOG("back from the editor %08X in the end of Tribe: no share (the Civilization stage is shared)", g_last_editor_req);
         notice(g_name + " made a design for the Civilization stage: it comes next", -1);
@@ -2545,6 +2575,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     if (new_stage && last == modes::kCreature && to == modes::kTribe)
         world::host_reload_after_share(); // BUG-0332: one ground for everybody (world.cpp tribe.host_reload)
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
+           : other_save         ? g_name + " loaded another game: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
            // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
            : to == modes::kTribe && (tribe::stage_end() || tribe_civ_editor(g_last_editor_req)) ? g_name + " made a design for the Civilization stage: it comes next"
@@ -5160,6 +5191,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host save: known %08X (welcome %08X, followed %08X, heard %u), mine %08X, space_other=%d, announced %08X\n", host_save_known(),
         g_sess.welcome_world(), g_host_save, g_host_save_heard, g_mode == modes::kSpace ? modes::current_world() : 0,
         (int)guest_space_other(), g_world_announced); // BUG-0933
+    SAY("space save: %s, load shares %u\n", g_space_key.empty() ? "-" : g_space_key.c_str(), g_space_load_shares); // BUG-0941
     SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233

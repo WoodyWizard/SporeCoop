@@ -96,8 +96,7 @@ add('tribe_effects', P + 'coop_tribe_effects.py', warm=True, minutes=4, fixture=
 add('effects_party', P + 'coop_effects_party.py', minutes=6, monitor={'proxy_n': 1000})  # BUG-0451 review: a guest's world effect reaches the second guest through the host relay (3 players); SPORE_FIX_OFF=creature.effects_relay fails
 for st in ('cell', 'tribe', 'civ'):  # BUG-0471: the same 3-player relay in every stage, cost under 1 % of the frame time
     add(f'effects_party_{st}', P + f'coop_effects_party.py --fixture {st}', minutes=6, monitor={'proxy_n': 1000})  # tribe / civ: SPORE_FIX_OFF=effects.main_world faults the games (the skin painter's effect, BUG-0451)
-# Space: the relay is off there (coop.fix effects.space, not verified: no effect of the own UFO can be made in a test)
-add('effects_party_space', P + 'coop_effects_party.py --fixture space', ('extended',), minutes=6, monitor={'proxy_n': 1000})
+add('effects_party_space', P + 'coop_effects_party.py --fixture space', minutes=6, monitor={'proxy_n': 1000})  # BUG-0895: the relay in Space, on by default since 0.7.13; SPORE_FIX_OFF=effects.space fails
 add('effects_here', P + 'coop_effects_here.py', minutes=5, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0471: no effect relayed into a guest's main menu, back in the world it is; SPORE_FIX_OFF=effects.here fails
 add('effects_validate', P + 'coop_effects_validate.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: spoofed and malformed effect messages are dropped before a game call, counted in coop.effects
 add('effects_live', P + 'coop_effects_live.py', warm=True, minutes=2, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: relayed world effects stay bounded (64, 8 s) and return to 0
@@ -361,6 +360,7 @@ for st, n in (('cell', 4), ('creature', 4), ('tribe', 4), ('civ', 3), ('space', 
 add('npc_max_hp', P + 'coop_npc_max_hp.py', warm=True, minutes=3, fixture='creature')  # an animal's maximum health on the guest is the host's (BUG-0710; SPORE_FIX_OFF=npc.max_health fails)
 add('space_own_save', P + 'coop_space_own_save.py', minutes=6, fixture='space')  # a guest in a Space save of its own keeps its own money (BUG-0709; SPORE_FIX_OFF=res.space_save fails)
 add('space_save_change', P + 'coop_space_save_change.py', minutes=8, fixture='creature')  # a guest that joined before the host loaded another save shares the Space money (BUG-0933; SPORE_FIX_OFF=res.space_save_follow fails)
+add('space_load_follow', P + 'coop_space_load_follow.py', minutes=6, fixture='space')  # a connected guest follows the host into another Space save it loads (BUG-0941; SPORE_FIX_OFF=space.load_follow fails)
 add('effect_ground', P + 'coop_effect_ground.py', warm=True, minutes=3, fixture='creature')  # a relayed world effect at its height over the receiver's ground (BUG-0608; SPORE_FIX_OFF=effects.ground fails)
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
 add('menu_stale_player', P + 'coop_menu_stale_player.py', minutes=12, fixture='tribe')  # a load from the galaxy menu with the old world's player empire left there (BUG-0284; --nofix fails)
@@ -621,6 +621,7 @@ add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colon
 add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
 add('space_colony_crash', P + 'coop_space_colony_rejoin.py --crash', minutes=6, fixture='space')  # the same after a crash rejoin that keeps the player id (BUG-0810; SPORE_FIX_OFF=space.kept_leave fails)
 add('space_items_rejoin', P + 'coop_space_items_rejoin.py', minutes=5, fixture='space')  # a guest's own cargo hold is its own again after it rejoins, never the host's (BUG-0678; SPORE_FIX_OFF=space.keep_items fails)
+add('space_items_missed', P + 'coop_space_items_missed.py', minutes=5, fixture='space')  # cargo a rejoin could not put back stays in the guest's kept hold (BUG-0826; SPORE_FIX_OFF=space.keep_items_missed fails)
 add('space_items_limits', P + 'coop_space_items_limits.py', minutes=6, fixture='space')  # a guest's own hold survives a host restart, keeps what changed while away, its own slots and artifact cargo (BUG-0679; SPORE_FIX_OFF=space.keep_items_local / space.keep_items_slots / space.keep_items_cargo fail)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
@@ -667,9 +668,12 @@ add('space_diplo_away', P + 'coop_space_diplo_away.py', minutes=4)  # a guest's 
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
 add('space_trade_end', P + 'coop_space_trade_end.py', warm=True, minutes=3, fixture='space')  # a gift the partner has is not given back when the session ends (BUG-0542; SPORE_FIX_OFF=trade.delivered fails)
+add('space_sale_end', P + 'coop_space_sale_end.py', minutes=4, fixture='space')  # a sale that arrived is paid when the seller was out of Space at the session end (BUG-0832; SPORE_FIX_OFF=trade.sale_owed fails)
 add('space_allies_own', P + 'coop_space_allies_own.py', warm=True, minutes=3, fixture='space')  # a partner's colony in a shared star system is a colony here too (BUG-0543; SPORE_FIX_OFF=allies.own_star fails)
 add('space_down_away', P + 'coop_space_down_away.py', minutes=5, fixture='space')  # a disabled ship and trips out of Space: paused in the same world, no death after a load, no invincibility left (BUG-0229, BUG-0228; SPORE_FIX_OFF=space.down_world / space.down_clear fail)
+add('space_down_editor', P + 'coop_space_down_editor.py', minutes=5, fixture='space', reports=True)  # a disabled ship's invincibility ends after an outfitter trip (BUG-0836; SPORE_FIX_OFF=space.down_ship_only; the captain screen's own fault BUG-0304 is checked by the test)
 add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, fixture='space')  # spice of a gift that comes back outside Space is put back once in Space (BUG-0226; SPORE_FIX_OFF=space.gift_refund fails)
+add('space_gift_reload', P + 'coop_space_gift_reload.py', minutes=6, fixture='space')  # a spice gift that comes back is matched to the newest gift, not one of the world before a load (BUG-0828; SPORE_FIX_OFF=space.gift_match_newest fails)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
@@ -686,6 +690,9 @@ add('space_drawn_planet', P + 'coop_space_drawn.py --planet', minutes=4, fixture
 add('space_planet_citizens', P + 'coop_space_planet.py --case citizens', minutes=4, fixture='space')  # BUG-0490: on the home planet the host's citizens near the guest stand in the guest's game at the same spots and sizes (SPORE_FIX_OFF=space.citizens fails)
 add('space_planet_vehicles', P + 'coop_space_planet.py --case vehicles', minutes=4, fixture='space')  # BUG-0490: the colony's vehicles are where the host's are (SPORE_FIX_OFF=space.vehicles fails)
 add('space_colony_spice', P + 'coop_space_planet.py --case spice', minutes=5, fixture='space')  # BUG-0537: the spice a guest's arrival collects from the shared colony is gone from the host's colony and pickups too (SPORE_FIX_OFF=space.colony_spice fails)
+add('space_spice_away', P + 'coop_space_colony_spice.py --case away', minutes=5, fixture='space')  # colony spice a guest collects while the host is in an editor is not there to collect again (BUG-0822; SPORE_FIX_OFF=space.colony_spice_away fails)
+add('space_spice_mirror', P + 'coop_space_colony_spice.py --case mirror', minutes=4, fixture='space')  # a guest's own colony in the shared home system keeps its spice (BUG-0840; SPORE_FIX_OFF=space.colony_spice_mirror fails)
+add('space_spice_cap', P + 'coop_space_colony_spice.py --case cap', minutes=4, fixture='space_empire')  # colonies past the old cap of 48 are synced too (BUG-0834; SPORE_FIX_OFF=space.colony_spice_all fails)
 add('space_stray_window', P + 'coop_space_stray_window.py', minutes=4, fixture='space')  # a window that pauses the game without a caption (My Collections, Sporepedia) is closed by the Space bots (BUG-0336; OLD_FINALE_TOOL=1 fails)
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 add('space_finale_gone', P + 'coop_space_finale_gone.py', minutes=9)  # the core does not wait for a partner who entered it and flew away (BUG-0820; SPORE_FIX_OFF=space.finale_entered fails)
@@ -755,6 +762,7 @@ for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc'
                   ('party_tribe_split', 'coop_party_tribe.py'), ('party_civ_own', 'coop_party_civ.py'),
                   ('party_space_names', 'coop_party_space.py'), ('party_civ_trade', 'coop_party_civ_trade.py')):
     add(name, P + cmd, ('multi', 'extended'), minutes=4)
+add('party_space_survey', P + 'coop_party_space_survey.py', ('multi', 'extended'), minutes=5)  # a survey with a late crew member at home is done and paid (BUG-0830; SPORE_FIX_OFF=space.survey_needed fails)
 # BUG-0295 / BUG-0298: four players in Cell far apart and close together: every game's cell pool stays under what
 # the game's broadphase holds, each guest has the host's cells around it; SPORE_FIX_OFF=cell.budget fails
 add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
