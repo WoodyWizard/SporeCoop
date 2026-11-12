@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- A partner's name tag and arrow stay on the partner while you turn the camera; during a fast turn they used to
+  jump beside it or over empty ground (BUG-0948).
+- Creature: a partner's name tag stands just over its creature's head; over a crouching creature it floated a metre
+  and more above it (BUG-0929).
+- Partner arrows and name tags no longer cover each other, the minimap, the bottom bar or message cards: they move
+  aside, and a tag whose creature is behind the HUD is hidden (BUG-0949).
+- Creature: the portrait at the bottom right of a guest's screen shows the creature the guest plays now, also after it
+  changed its creature or became the host's new one; it kept the first creature (BUG-0937).
 - Tribe: the music of the dance at the fire pit stops for a guest when the dance ends, also when the guest was in
   an editor at that moment; it used to play on until the guest loaded another world (BUG-0890).
 - Tribe: a baby tribe member grows up on a guest's screen when it grows up in the host's game, also when the guest

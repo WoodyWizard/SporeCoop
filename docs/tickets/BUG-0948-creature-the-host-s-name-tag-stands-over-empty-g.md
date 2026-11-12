@@ -1,19 +1,19 @@
 ---
 id: BUG-0948
 title: A partner's name tag (and arrow) leaves its creature while the own camera turns: the tag over empty ground, no creature under it (play_creature mid)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-151535
 role: guest
 versions: 0.7.11.2 0.7.12 (unreleased)
-fixed_in:
-branch: fix/w47-tag-empty
-commits:
+fixed_in: unreleased
+branch: fix/w48-labels
+commits: 6f6a4403 79858616
 tests: tag_camera
 signature:
-docs: docs/08-ui.md#ui-find-each-other
+docs: docs/re/graphics.md#graphics-drawn-camera
 related: BUG-0907, BUG-0929
 ---
 
@@ -90,20 +90,28 @@ Ruled out: BUG-0939 `find.placed`, BUG-0920 / BUG-0928 (one creature for everyon
 on the path, and the old build shows the same.
 
 ## Fix
-Open, for 0.7.13 (no change in the mod for 0.7.12). Direction: project the labels with the camera the picture was
-drawn with: keep the viewer's transform and view window of the moment the game draws the frame (a copy taken in the
-game's draw, or at the end of cCameraManager::Update of that frame if the draw follows it) and let
-`world_to_screen` / `pfind::project` use that copy in the overlay pass. All overlay labels go through the same
-function (name tags, arrows, owner tags, civ and tribe tags, the Space marks), so one fix covers them. Old way behind
-a switch.
+Fixed 2026-11-12 (fix/w48-labels), SporeKit switch `kit.fix drawncam`. The cause was measured (lane 4, `kit.cam`
+probes, docs/re/graphics.md#graphics-drawn-camera): every D3D view matrix the game sets while drawing frame N
+(SetTransform(D3DTS_VIEW)) is the viewer of Present N-1; the viewer at the frame's first BeginScene and at its Present
+already has the next camera step. CORRECTION of the direction above: a copy at the first BeginScene equals the viewer
+at Present and does not help (lab 20261112-115008: the copy and the live viewer equal in every turn frame). SporeKit
+now copies the viewer at the game's first SetTransform(VIEW) after a Present and `world_to_screen` projects with the
+copy inside the overlay pass (every overlay label: name tags, arrows, owner tags, Space marks). Off: the viewer at
+Present (0.7.12).
 
 ## Verification
-`python3 tools/lab.py run tag_camera --lane N` (extended suite, 80 s): today a measurement (RESULT OK unless a
-fault), its last line counts the turn shots by kind. With the fix: `coop_tag_camera.py --limit 0` must PASS (every
-turn shot `over` or `none` because the partner is outside the view) and FAIL with the switch off; today it would
-FAIL (4 of 12 shots off or over empty ground in lab 20261111-194717). The body is found by the red of the creature
-fixture's creature, so the test is for that fixture.
+`tag_camera` (`coop_tag_camera.py --limit 0`, suite full): every shot inside a turn has the tag over its creature
+(its columns in the shot) or no tag. The tag's colour is now picked by the host from the palette colours the scene has
+least of (a guest creature with yellow stripes was read as the yellow tag).
+* FAIL (`SPORE_FIX_OFF=kit.drawncam`): out/lab/20261112-125750 (3 shots off or over empty ground), 20261112-130104,
+  and 20261112-125110 and 20261112-125423 (2-4 each).
+* PASS (final measure): out/lab/20261112-125616, out/lab/20261112-125928; with the first measure also 20261112-122824,
+  20261112-123359-2.
+* A run with the fix that failed on the measure, not the tag: out/lab/20261112-124933 (the host's tag colour orange
+  matched the leaves of a tree the calibration shots had not seen; the tag over its creature in the picture). The
+  colour order now prefers purple and cyan.
 
 ## History
 - 2026-11-11: opened.
 - 2026-11-11: analysed on lane 6 (fix/w47-tag-empty): not a 0.7.12 regression, the labels are projected with a camera ahead of the picture while the camera turns (also in v0.7.11.2); test tag_camera; stays open for 0.7.13.
+- 2026-11-12: fixed on fix/w48-labels (SporeKit drawncam), tag_camera FAIL 20261112-125750, PASS 20261112-125616 and 20261112-125928.

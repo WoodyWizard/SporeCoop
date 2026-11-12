@@ -2678,7 +2678,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the radius of a long body is its half length, not its height.
 * Not checked: the model's real height (a bounding box) as the source.
 * Next steps: none planned (cosmetic).
-* Ticket: BUG-0929
+* Ticket: BUG-0929 (fixed on fix/w48-labels, unreleased: `creature.tag_height`, the tag at the creature's posed head;
+  the radius was not the cause: the rest-pose box and the radius are both a metre over the crouched body,
+  docs/re/creature.md#creature-posed-top-portrait)
 ## Creature: NPCs keep plain pointers to a partner's puppet that was destroyed in a fight (2026-11-11, fix/w47-final12)
 <a id="issue-creature-stale-puppet-pointers"></a>
 
@@ -2700,7 +2702,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Tribe: members at rest at the fire sit or crouch on one game and stand on the other, both ways (same_view_tribe
   views 2 and 3, tribe_name_tags). Probably the idle animations are not relayed, as in BUG-0914. Ticket: BUG-0936
 * Creature: the guest's HUD portrait keeps the first species after its creature changed (appeared_once) or after the
-  host's evolution in creature.mode host (one_creature). Ticket: BUG-0937
+  host's evolution in creature.mode host (one_creature). Ticket: BUG-0937 (fixed on fix/w48-labels, unreleased:
+  `creature.hud_portrait`, docs/re/creature.md#creature-posed-top-portrait)
 * Civ: the galaxy menu's logo and legal lines over the play of a guest that joined 11 s after its menu came up
   (campaign_space, seen once). Ticket: BUG-0938
 * Tribe: right after Creature -> Tribe the host draws an arrow "504 m" to the planet's centre for a guest that has
@@ -2788,7 +2791,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   is over the creature. The same in v0.7.11.2. The play bots' camera drags make it hundreds of px; for a player it
   should be a tag that slides a little during a turn (not measured).
 * Reproduce: `tools/lab.py run tag_camera` (shots inside a camera turn: `frames/tag_camera/tagcam_turn_N.jpg`).
-* Ticket: BUG-0948
+* Ticket: BUG-0948 (fixed on fix/w48-labels, unreleased: SporeKit `kit.fix drawncam`, the labels projected with the
+  camera the frame was drawn with, docs/re/graphics.md#graphics-drawn-camera)
 
 ## Find each other: arrows and name tags drawn over each other and over the HUD (2026-11-11, plan/w47-frames3)
 <a id="issue-find-labels-overlap"></a>
@@ -2798,7 +2802,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: 3-4 players; rel/0.7.12 lab 20261111-151535 sheets 016 (campaign_ct play-tribe, Bob), 017
   (campaign_short play-cell, Bob), 019 (campaign_short play-creature, host), 036 (play_civ end, host).
 * Next steps: a layout pass for the labels and HUD rectangles they keep out of.
-* Ticket: BUG-0949
+* Ticket: BUG-0949 (fixed on fix/w48-labels, unreleased: `find.layout`, docs/08-ui.md#ui-label-layout)
 
 ## Tribe and Civ: kept pointers checked by the object's own memory (2026-11-12, fix/w48-freed)
 <a id="issue-tribe-civ-kept-pointers"></a>

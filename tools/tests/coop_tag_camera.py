@@ -97,12 +97,12 @@ def measure(png, colour, origin=None):
             bx.sort()
             span = None
             if bx:  # the creature nearest to the tag (the nest has more of the red species): its columns only, a run
-                # of red columns without a gap of 40 px around the red column nearest to the tag
+                # of red columns without a gap of 80 px (a dark, shaded part of a close creature) around the red column nearest to the tag
                 k = min(range(len(bx)), key=lambda i: abs(bx[i] - tx))
                 lo = hi = k
-                while lo > 0 and bx[lo] - bx[lo - 1] < 40:
+                while lo > 0 and bx[lo] - bx[lo - 1] < 80:
                     lo -= 1
-                while hi < len(bx) - 1 and bx[hi + 1] - bx[hi] < 40:
+                while hi < len(bx) - 1 and bx[hi + 1] - bx[hi] < 80:
                     hi += 1
                 bx = bx[lo:hi + 1]
                 span = (bx[0], bx[-1])
@@ -156,8 +156,10 @@ def pick_colour(host, guest, W, H, drag):
     """the host's colour for the test: of the palette (not red: the creature fixture's species is red), the one the
     guest's scene has least of, in shots with the name tags off at rest and after a turn each way"""
     import settings_lib as sl
-    # (not blue: the sky; not pink: the mating call's hearts come and go)
-    palette = {'yellow': 'FFD040', 'green': '5CE05C', 'orange': 'FF9030', 'purple': 'B07CFF', 'cyan': '40E0E0'}
+    # (not blue: the sky; not pink: the mating call's hearts come and go). In the order taken on a tie: colours the
+    # creature world has least of first (orange: leaves of trees the calibration shots did not see; green: grass;
+    # yellow: hats and stripes)
+    palette = {'purple': 'B07CFF', 'cyan': '40E0E0', 'orange': 'FF9030', 'green': '5CE05C', 'yellow': 'FFD040'}
     m = re.search(r'key=(\w+) argb=\w+ name=\S+ \(me\)', host.call('coop.find colors').get('out') or '')
     pick_colour.restore = m.group(1) if m else 'yellow'
     if not sl.force(host, [guest], 'all.name_tags', 'off'):
@@ -172,7 +174,7 @@ def pick_colour(host, guest, W, H, drag):
             for key, hx in palette.items():
                 counts[key] += colour_count(png, tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4)))
     sl.force(host, [guest], 'all.name_tags', 'on')
-    best = min(counts, key=lambda c: counts[c])
+    best = min(counts, key=lambda c: (counts[c], list(palette).index(c)))
     print(f'  the scene\'s pixels per tag colour (tags off): {counts}; the host takes {best}', flush=True)
     out = host.call(f'coop.find color {best}').get('out') or ''
     if 'ok' not in out:
