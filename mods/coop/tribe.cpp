@@ -13,6 +13,7 @@
 #include "coop_ui.h"
 #include "creations.h"
 #include "driver.h"
+#include "effects.h"
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
@@ -1339,6 +1340,7 @@ static void party_forget();
 static void SK_THISCALL h_BabyBorn(void*, float, float, float); // BUG-0671 (below)
 static void baby_tick(double now);
 static void baby_forget();
+static void on_world_effect_start(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos); // BUG-0824 (below)
 static void save_start();
 static void save_end();
 
@@ -1406,6 +1408,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     party_hooks_install(); // BUG-0646 (optional)
     if (uintptr_t a = H->sym("SporeCoop::TribeStage_BabyBorn")) // BUG-0671 (optional)
         H->hook_create(M, (void*)a, (void*)h_BabyBorn, (void**)&o_BabyBorn);
+    effects::set_world_start_observer(on_world_effect_start); // BUG-0824
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
@@ -1696,6 +1699,13 @@ static uint32_t g_party_own;             // guest: a party music track its own g
 static uint32_t g_party_sent, g_party_rx, g_party_played, g_party_stopped;
 
 static bool party_host() { return g_ok && g_party_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
+// BUG-0890: "the fire-dance music plays on on the guest". The host sent the stop only while its own game was in Tribe and
+// a guest dropped every MSG_NPC_ANIM while its game was not in Tribe (an editor, a load), so a stop that came then was
+// lost and the guest's track played on until its next world change. Now the host sends the stop of a track it relayed
+// whatever its mode, and a guest takes a stop (kind 8) in any mode. `coop.fix tribe.party_stop off`: the old checks.
+static bool g_party_stop_fix = true;
+COOP_FIX("tribe.party_stop", "BUG-0890", g_party_stop_fix, "tribe: the end of the dance music reaches the guest also when the host or the guest is not in Tribe at that moment");
+static uint32_t g_party_stops_outside; // stops sent or taken outside Tribe (tests)
 static void party_send(uint8_t kind, uint32_t track, uint32_t sound, float x, float y, float z)
 {
     net::Writer w;
@@ -1729,6 +1739,10 @@ static void SK_CDECL h_StopAudio(uint32_t track, int how)
         g_party_host_track = 0;
         if (party_host())
             party_send(8, track, 0, 0, 0, 0);
+        else if (g_party_stop_fix && g_party_fix && C.sess && is_host()) { // BUG-0890: relayed before, stopped outside Tribe
+            party_send(8, track, 0, 0, 0, 0);
+            g_party_stops_outside++;
+        }
     } else if (track == g_party_own) {
         g_party_own = 0;
     }
@@ -1794,6 +1808,11 @@ static void on_party(uint8_t kind, net::Reader& r)
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
+    if (kind == 8 && g_party_stop_fix && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-0890
+        g_party_stops_outside++;
+        on_party(kind, r);
+        return;
+    }
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
         return;
     if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
@@ -1863,6 +1882,9 @@ static void test_vel_tick(double now)
     }
 }
 
+// BUG-0841 (evidence): members the host's game moved from one tribe to another (none seen: the game adds only new
+// citizens to a tribe, docs/re/tribe.md#tribe-member-moves); unowned: into the player tribe with owner 0xFE
+static uint32_t g_member_moves, g_member_moves_unowned;
 static void host_tick(double now)
 {
     test_vel_tick(now);
@@ -1920,6 +1942,11 @@ static void host_tick(double now)
                 it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 it->second.serial = game::object_serial(c);
                 g_hm_by_id[it->second.id] = c;
+            }
+            if (it->second.tribe && it->second.tribe != tribes[ti]) { // BUG-0841: a known member in another tribe now
+                g_member_moves++;
+                if (player && it->second.owner == 0xFE)
+                    g_member_moves_unowned++;
             }
             it->second.tribe = tribes[ti];
             it->second.body_since = 0;
@@ -2086,6 +2113,7 @@ struct BabyMade {
     net::Vec3 pos;
     double t;
     uint32_t serial = 0; // BUG-0951
+    uint8_t buyer = 0xFF; // BUG-0824: the guest whose relayed purchase it is (0xFF: not known)
 };
 static std::vector<BabyAsk> g_baby_asks;   // host: guests' babies its game did not make yet
 static std::vector<BabyMade> g_baby_made;  // host: babies its own game made lately that no guest claimed
@@ -2117,11 +2145,79 @@ static std::vector<void*> baby_call(void* stage, const net::Vec3& p)
                 out.push_back(c);
     return out;
 }
+// BUG-0824: "a member the host buys is given to the guest". Every game makes a baby for every purchase: the hut
+// effect 0xDB6F2233 a click on the own hut starts here is relayed to the partners (effects.other_stages), and its data
+// sends the stage's message 0x63BBC42 5.2 s later in each game that plays it (lab 20261112-084158: 5.16-5.20 s after
+// the start, the own and the relayed one alike). Before, the host took any baby its game made within 4 s of a guest's
+// ask (CMD_BABY) as that guest's, its own purchase too, and a guest asked for a baby for the host's relayed effect as if
+// it were its own purchase: every member the host bought went to the guest (lab 20261112-083858). Now each game notes
+// whose hut effect started (effects' observer: its own or the player that relayed it) and gives a baby of the message
+// the oldest such purchase: the host's own is the host's, a guest's relayed one is that guest's (and pairs only with
+// that guest's ask), and a guest asks only for its own. A baby without a noted purchase goes the old way.
+// `coop.fix tribe.baby_pair off`: the 0.7.12 pairing.
+static bool g_baby_pair_fix = true;
+COOP_FIX("tribe.baby_pair", "BUG-0824", g_baby_pair_fix, "tribe: a member a player buys at the hut is that player's, the host's own purchase too; a guest asks only for its own");
+static constexpr uint32_t kHutBuyFx = 0xDB6F2233u; // the effect a click on the own hut starts (lab 20261112-084158)
+static constexpr double kBuyKeep = 12.0;           // the baby comes 5.2 s after the effect
+static constexpr float kBuyNear = 25.0f;           // the baby is born ~10 m from the effect's place
+struct Buy {
+    uint8_t from;
+    net::Vec3 pos;
+    double t;
+    void* fx; // only to tell a second report of the same effect (never used as an object)
+};
+static std::vector<Buy> g_buys; // the purchases (hut effects) of this world whose baby did not come yet, oldest first
+static uint32_t g_buys_seen, g_buys_own, g_buys_other, g_buys_none;
+static void on_world_effect_start(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos)
+{
+    if (id != kHutBuyFx || !g_ok || game::mode_id() != modes::kTribe)
+        return;
+    double now = H->time_seconds();
+    g_buys.erase(std::remove_if(g_buys.begin(), g_buys.end(), [&](const Buy& b) { return now - b.t > kBuyKeep; }), g_buys.end());
+    for (auto& b : g_buys)
+        if (b.fx == fx && now - b.t < 1.0) // the same effect reported by a second creator hook (lab 20261112-084503)
+            return;
+    if (g_buys.size() >= 16)
+        g_buys.erase(g_buys.begin());
+    g_buys.push_back({from, pos, now, fx});
+    g_buys_seen++;
+}
+// the purchase a baby born at p belongs to (the oldest one near), taken from the list; false: none noted
+static bool take_buy(const net::Vec3& p, uint8_t* from)
+{
+    double now = H->time_seconds();
+    for (auto it = g_buys.begin(); it != g_buys.end(); ++it) {
+        float dx = it->pos.x - p.x, dy = it->pos.y - p.y, dz = it->pos.z - p.z;
+        if (now - it->t <= kBuyKeep && dx * dx + dy * dy + dz * dz < kBuyNear * kBuyNear) {
+            *from = it->from;
+            g_buys.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+static std::string g_baby_last; // tests: how the last baby went
 static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
 {
     g_baby_from = (uintptr_t)__builtin_return_address(0);
+    static uintptr_t a_msg_ret = H->sym("SporeCoop::TribeStage_BabyBornMsg_Ret");
+    // BUG-0824: whose purchase this baby is (only a baby of the hut's message; the stage's first baby is nobody's)
+    uint8_t buyer = 0xFF;
+    bool bought = g_ok && g_baby_pair_fix && g_guest_baby_fix && a_msg_ret && g_baby_from == a_msg_ret && C.sess &&
+                  take_buy(net::Vec3{x, y, z}, &buyer);
+    if (g_baby_pair_fix && g_ok && a_msg_ret && g_baby_from == a_msg_ret && !bought)
+        g_buys_none++;
+    {
+        char b[96];
+        snprintf(b, sizeof b, "at (%.1f %.1f %.1f) buyer=%d", x, y, z, bought ? (int)buyer : -1);
+        g_baby_last = b;
+    }
     bool on = g_ok && g_guest_baby_fix && game::mode_id() == modes::kTribe && stage;
     if (on && is_guest() && !local_play() && !g_gm.empty()) {
+        if (bought && buyer != C.sess->my_id()) { // BUG-0824: another player's purchase: the host makes it
+            g_buys_other++;
+            return;
+        }
         net::Writer w;
         w.u8(CMD_BABY); w.u8(0); w.u32(0);
         write_target(w, Target{});
@@ -2138,6 +2234,25 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
     }
     net::Vec3 p{x, y, z};
     double now = H->time_seconds();
+    if (bought && buyer == C.sess->my_id()) { // BUG-0824: the host's own purchase is the host's
+        for (void* c : baby_call(stage, p))
+            baby_give(c, buyer);
+        g_buys_own++;
+        return;
+    }
+    if (bought) { // BUG-0824: the relayed effect of guest `buyer`: its member; its ask (before or after) pairs with it
+        g_buys_other++;
+        for (void* c : baby_call(stage, p)) {
+            baby_give(c, buyer);
+            auto a = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return k.from == buyer; });
+            if (a != g_baby_asks.end()) {
+                g_baby_asks.erase(a);
+                g_babies_paired++;
+            } else
+                g_baby_made.push_back({c, p, now, game::object_serial(c), buyer});
+        }
+        return;
+    }
     for (void* c : baby_call(stage, p)) {
         auto a = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return baby_near(k.pos, p); });
         if (a != g_baby_asks.end()) { // the guest's baby, made here by its relayed effect
@@ -2156,7 +2271,9 @@ static void baby_on_host(uint8_t from, const net::Vec3& pos)
         g_cmds_rejected++;
         return;
     }
-    auto m = std::find_if(g_baby_made.begin(), g_baby_made.end(), [&](const BabyMade& k) { return baby_near(k.pos, pos); });
+    auto m = std::find_if(g_baby_made.begin(), g_baby_made.end(), [&](const BabyMade& k) {
+        return g_baby_pair_fix && k.buyer != 0xFF ? k.buyer == from : baby_near(k.pos, pos); // BUG-0824: only that guest's own purchase
+    });
     if (m != g_baby_made.end()) { // the host's game made it already (the relayed effect came first)
         if (kept_alive(m->c, m->serial, 0x18EB4B7u)) // (BUG-0951; kCitizenNoun)
             baby_give(m->c, from);
@@ -2189,6 +2306,7 @@ static void baby_tick(double now)
 }
 static void baby_forget()
 {
+    g_buys.clear(); // BUG-0824
     g_born_for.clear();
     g_baby_asks.clear();
     g_baby_made.clear();
@@ -2317,6 +2435,16 @@ static bool player_tribe_out(void* t)
 
 // BUG-0685: why the last spawn_member returned null (the mirror log names it)
 static const char* g_spawn_fail = "";
+// BUG-0857: "a baby stays a baby on the guest". A guest's mirror of a baby member grows up by the game's own timer of
+// that mirror, from its spawn: a mirror spawned (or bound) after the host's baby was born (a guest joining or rejoining
+// mid-growth) grew up that much later, and the host's age in the snapshot was used only at a spawn. Now a bound mirror
+// still a baby (+0xB34 0) whose host member is an adult grows up at once through the citizen's own GrowUp
+// (vt 0x78 0xC248C0: age 1, the adult's scale, model and AI flags, the HUD's selectable member).
+// `coop.fix tribe.mirror_grow off`: the mirror grows by its own timer only.
+static bool g_mirror_grow_fix = true;
+COOP_FIX("tribe.mirror_grow", "BUG-0857", g_mirror_grow_fix, "tribe: a guest's mirror of a baby member grows up when the host's member does, also when it was made later than the host's baby");
+static uint32_t g_mirrors_grown;
+
 static void* spawn_member(void* t, uint8_t age)
 {
     if (player_tribe_out(t)) {
@@ -2994,6 +3122,11 @@ static void guest_state(net::Reader& r)
                 g_mirror_stale++;
             g_gid_of.erase(c);
             g.c = c = nullptr;
+        }
+        if (c && g_mirror_grow_fix && m.age == 1 && !m.body && F<uint8_t>(c, kAgeOff) == 0 && !game::is_dead(c)) {
+            vcall<void>(c, 0x78 / 4); // BUG-0857: the citizen's own GrowUp (vt 0x78, plain ret)
+            g_mirrors_grown++;
+            MIRROR_LOG("tribe: mirror #%u grew up with the host's member (BUG-0857)", id);
         }
         if (c || (m.body && !g_join_body_fix)) // (no new mirror for a body before BUG-0665)
             continue;
@@ -4616,18 +4749,19 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
+                 g_member_moves, g_member_moves_unowned);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
-                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies);
+                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -5663,9 +5797,12 @@ std::string debug(const std::vector<std::string>& a)
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
-               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) +
+               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
                "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made) + " paired=" + std::to_string(g_babies_paired) +
-               " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }();
+               " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }() +
+               "\nbaby_pair fix=" + std::to_string((int)g_baby_pair_fix) + " seen=" + std::to_string(g_buys_seen) + " own=" +
+               std::to_string(g_buys_own) + " other=" + std::to_string(g_buys_other) + " none=" + std::to_string(g_buys_none) +
+               " waiting=" + std::to_string(g_buys.size()) + " last " + g_baby_last;
     }
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +

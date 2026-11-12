@@ -6444,3 +6444,27 @@ nanvel <s> [id|-1] [air]` (host: the NPC states sent carry a NaN velocity, optio
   again after the Mating Call, right before the click.
 * `creature_flock_forget` takes ~6 min (two summon events); a summoned flock leaves the pack at the event's end, so the
   test checks where the host's own flock goes during its event, not that it stays.
+## Tribe and Civ of 0.7.13 T1: purchases, growth, party music, refunds, a modal box (2026-11-12, fix/w48-tribe-civ)
+<a id="testing-t1-tribe-civ"></a>
+
+* `tribe_baby_pair` (BUG-0824, `tribe.baby_pair`, ~1.5 min): which member is whose follows the turn split, so the
+  test spawns members (`coop.tribe spawn 1`) until the last new one is the host's: the next unclaimed one is the
+  guest's, and a wrongly paired purchase shows as owner 1. Real clicks on the hut (`coop.targets objs`, the `hut..p`
+  row). `coop.tribe anims` prints `baby_pair fix= seen= own= other= none= waiting=` and how the last baby went.
+  `coop.effects log on` shows the hut effect 0xDB6F2233 ("sent world id") and its relayed start ("played on other").
+* `tribe_member_age_rejoin` (BUG-0857, `tribe.mirror_grow`, ~2 min): a rejoin 12 s after a baby's birth takes 9 s
+  (`coop.leave`, the join command, the world from the menu); the baby grows up 57-59 s after its birth.
+* `tribe_party_editor` (BUG-0890, `tribe.party_stop`, ~1.5 min): `coop.vote editor` on the guest opens the guest's
+  own editor at once (the host plays on in Tribe); on the host it opens only the host's (no ready button, no offer on
+  the guest). The host's party ends 15-20 s after it started; the party itself does not start in about 1 of 6 runs
+  (the members do not reach the fire in 60 s): run it again.
+* `civ_build_refund` (BUG-0807, `civ.build_refund`, SPORE_NET="delay=300", ~1.5 min): the delay makes the guest's
+  build of the last plot reach the host after the host's own (without it the host's building reached the guest
+  first and the guest's game had no plot left: "no free slot").
+* `ui_modal_tribe` (BUG-0858, `core.ui_modal_edit`, ~1 min): `coop.save hold` keeps the "game saved" box up in
+  Tribe (the window manager's modal window, input lock 0); the co-op window's Settings button must change the page.
+* `tribe_member_moves` (BUG-0841, evidence) and `tribe_pens` (BUG-0856, evidence) print what they read: members that
+  changed tribes (`coop.tribe` `member_moves=`), every tribe's +0x19C4 / +0x19C8 (NPC villages have none).
+* The campaign (coop_campaign.py, every stage change) checks that the spacecraft (96B24187) and City Hall (99E92F05)
+  editors come up within 15 s of their vote (BUG-0855): an `editor` finding otherwise. Creature's editors are not
+  checked (they may wait for a cinematic, BUG-0404). campaign_space with `core.editor_own_pause` off: 61 s, FAIL.

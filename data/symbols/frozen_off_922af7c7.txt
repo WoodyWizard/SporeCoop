@@ -244,3 +244,4 @@ SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still pi
 UTFWin::cWindowManager::PopModal ; BUG-0956: game fixes: no guard against a destroyed window in the list of modal windows on GOG 2016
 App::MessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
 App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+SporeCoop::TribeStage_BabyBornMsg_Ret ; BUG-0824: a purchased member is paired the 0.7.12 way (old behaviour)

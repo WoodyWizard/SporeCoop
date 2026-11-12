@@ -1061,6 +1061,25 @@ class Campaign:
         for l in lines:
             if 'wants to evolve' in l or 'evolution starts' in l:
                 self.note('host log: ' + l.split('coop: ')[-1])
+        # BUG-0855: the spacecraft (Civ -> Space) and City Hall (Tribe -> Civ) editors come up at once after their vote;
+        # a request the busy gate held under the game's own pause (core.editor_own_pause off) kept the host on a paused
+        # screen for a minute (lab 20261112-100520: 61 s). (Creature's editors may wait for a cinematic: BUG-0404.)
+        def secs(l):
+            m = re.match(r'(\d\d):(\d\d):(\d\d\.\d+)', l)
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else None
+        for i, l in enumerate(lines):
+            m = re.search(r'vote: end: .* editor=(96B24187|99E92F05)', l)  # the spacecraft / City Hall editor
+            if not m or secs(l) is None:
+                continue
+            nxt = next((x for x in lines[i + 1:] if re.search(r'coop: stage: \S+ \S+ -> Editor', x)), None)
+            wait = secs(nxt) - secs(l) if nxt and secs(nxt) is not None else None
+            if wait is not None and wait < 0:
+                wait += 86400
+            self.note(f'host: the editor {m.group(1)} came up {wait if wait is None else round(wait, 1)} s after its vote')
+            if wait is not None and wait > 15:
+                self.finding('editor', f'{self.stage}:editor_wait', f'the host\'s editor {m.group(1)} came up {wait:.0f} s '
+                             f'after its vote ({self.stage})', self.P,
+                             [f'`{x.strip()}`' for x in lines[i:i + 40] if 'editor' in x][:6])
         if timeups and readies:
             self.finding('vote', f'{self.stage}:timeup', f'a vote ran out of time although '
                          f'{", ".join(sorted({v[1] for v in readies}))} pressed "I\'m ready" ({self.stage})',

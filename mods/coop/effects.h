@@ -46,6 +46,11 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now); // main thread: send the effects the hooks queued
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
+// BUG-0824: called on the main thread for every world effect that starts here: this game's own (`from` = this player's
+// id, while connected) and the relayed ones (`from` = the player who made it), with the effect id, the effect and its
+// place. The game's creators can report one effect twice (seen: the same effect object in two hooks in one frame).
+using WorldStartFn = void (*)(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos);
+void set_world_start_observer(WorldStartFn fn);
 std::string watch(uint32_t id); // tests (BUG-0465): watch an effect id; its last own / received object and transform
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)
 bool set_log(bool on);

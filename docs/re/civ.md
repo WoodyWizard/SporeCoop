@@ -1639,3 +1639,25 @@ Fix `civ.owners_kept`: the host writes the owners of the player civilization's c
 gives them back at the first split after a world change (a city within 5 m, the owner must be in the session); when
 every city got its owner back nothing is dealt anew. Kept in memory only: a restart of the host's game loses them, and a
 new session deals the cities anew. `coop.civ tables` prints `kept: fix= worlds= this_world= saved= restored= key=`.
+## A guest's build the host cannot make (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-build-refund"></a>
+
+BUG-0807. GOG 2024, lab lane 2 (civ fixture).
+* ✔ (runtime) The players' city of the civ fixture has 11 building plots (`coop.civ slots 0`); a house costs 1600 at
+  every count (10 houses in a row, each 1600).
+* ✔ (runtime, a 300 ms link) A guest's build of the last plot that reaches the host after the host's own build of it:
+  the guest's game built it and paid (its copy of the city still had the plot), the host's build_in_city failed with
+  "no free slot" (SnapToSlot), and the guest's copy was demolished by the reconcile: 3200 spent for one house before
+  `civ.build_refund` (lab 20261112-085815), 1600 with it (20261112-085612).
+* CMD_BUILD carries the paid price as a float after the place since 0.7.13 (the host reads it only when present).
+## The Civ -> Space launch's pause and the spacecraft editor (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-launch-pause"></a>
+
+BUG-0855. GOG 2024, the host's game logs of campaign_space runs (four players).
+* ✔ The spacecraft editor request of the Civ -> Space change is editor 0x96B24187, submitted through the co-op vote
+  ("wants to edit a design (Civilization)"); the game submits it under its own pause and input lock, and the pause
+  reason is **0x4BF38A6** (cGameTimeManager GetPauseCount 1 at the gate), the same reason as the City Hall editor at
+  the end of Tribe (#tribe-graduation-save, BUG-0576). With `core.editor_own_pause` the editor opens 1.3-2 s after the
+  vote (rel/0.7.13 lab 20261112-050529 and five more runs). Answers "Unknown: which pause reason the Civ launch uses".
+* ✔ With `core.editor_own_pause` off the spacecraft editor waited at the busy gate ("input_lock,paused") and came up
+  61 s after its vote (lab 20261112-100520, 20261112-102046): the hold the fork saw (BUG-0855).
