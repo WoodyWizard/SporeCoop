@@ -1756,7 +1756,9 @@ unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one
 
 // a save for a world share is under way or due (a share that waits for its save: the editor lets
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
-bool share_save_due() { return world::save_busy() || world::save_pending(); }
+// (BUG-0849: not in the end of Tribe: no share save can be made there, the vehicle editor must not wait 15 s for one)
+static bool tribe_graduating();
+bool share_save_due() { return (world::save_busy() || world::save_pending()) && !tribe_graduating(); }
 
 // BUG-0560: the Cell stage's request (0xE84600) submits and then posts the editor's DNA budget (message 0x90A03FDF,
 // +8 = DNAForFood(food) - spent); the editor's listener takes it only after it entered (cEditor::OnEnter registers
@@ -1933,6 +1935,22 @@ void submit_tick(double now)
         req);
 }
 
+// BUG-0849: the end of Tribe (the City Hall editor done, the vehicle editor to come, then Civ). The game takes
+// the Tribe world down for Civ in that time (the player tribe has no food mat, every animal goes to (0 0 0),
+// docs/re/tribe.md#tribe-civ-transition); a share save posted then (the return from the City Hall editor taken for
+// an evolution, or a guest joining) was written while the village was dismantled: the fork's host faulted in the
+// game's serializer 36 ms after the vehicle editor was asked for. No share and no share save from the City Hall
+// editor's end to the Civ stage: the Civ stage is shared as a new stage. Off: as 0.7.12.
+static bool g_graduation_fix = true;
+COOP_FIX("tribe.graduation_save", "BUG-0849", g_graduation_fix, "tribe: no world share or share save between the City Hall editor and the Civilization stage");
+static unsigned g_graduation_refusals; // tests: share saves refused in the end of Tribe
+static bool tribe_civ_editor(uint32_t id);
+static uint32_t g_last_editor_req;
+static bool tribe_graduating()
+{
+    return g_graduation_fix && game::mode_id() == modes::kTribe && (tribe::stage_end() || tribe_civ_editor(g_last_editor_req));
+}
+
 // why the game must not save now (world::save_game)
 const char* save_blocker()
 {
@@ -1949,6 +1967,11 @@ const char* save_blocker()
         return "an editor is opening";
     if (mode_switch_pending())
         return "the game is switching modes";
+    if (tribe_graduating()) { // BUG-0849
+        if (!g_graduation_refusals++)
+            LOG("no world save in the end of Tribe (City Hall built, Civilization next): the world is sent in Civ");
+        return "the Tribe stage is ending (Civilization comes next): the world is sent in the Civilization stage";
+    }
     return nullptr;
 }
 
@@ -2022,7 +2045,6 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
 }
 
 // BUG-0588: the editor of the last request (EditorRequest +0xC): the end of Tribe's City Hall and vehicle editors
-static uint32_t g_last_editor_req = 0;
 static bool tribe_civ_editor(uint32_t id)
 {
     return id == 0x99E92F05u || id == 0xF670AA43u || id == 0x9AD7D4AAu || id == 0x7CB21BADu;
@@ -2474,6 +2496,8 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
 
 void on_mode_change(uint32_t from, uint32_t to)
 {
+    if (to == modes::kLoad || to == modes::kMenu || (stage_mode(to) && to != modes::kTribe))
+        g_last_editor_req = 0; // (BUG-0849: the end of Tribe is over; a Tribe game loaded later starts clean)
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
         feed("the others play on alone until you load a game again (they get its world)");
     bool editor = to == modes::kEdit || to == modes::kEditor;
@@ -2503,6 +2527,11 @@ void on_mode_change(uint32_t from, uint32_t to)
         return;
     if (!new_stage && !evolved)
         return;
+    if (evolved && tribe_graduating()) { // BUG-0849: no evolution; the Civ stage comes next and is shared then
+        LOG("back from the editor %08X in the end of Tribe: no share (the Civilization stage is shared)", g_last_editor_req);
+        notice(g_name + " made a design for the Civilization stage: it comes next", -1);
+        return;
+    }
     g_evo_cine = false;
     g_evo_save_due = evolved;
     for (auto& [id, r] : g_remotes)

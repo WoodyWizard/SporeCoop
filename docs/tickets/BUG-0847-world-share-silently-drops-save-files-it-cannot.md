@@ -1,19 +1,19 @@
 ---
 id: BUG-0847
 title: World share silently drops save files it cannot read, the guest accepts an incomplete world
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 (world.cpp collect rewrite, no ticket id)
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-saves
+commits: 4175db39
+tests: win_unit
 signature: 
-docs:
+docs: docs/06-testing.md#testing-saves-w48
 related: BUG-0105, BUG-0254
 ---
 
@@ -51,10 +51,19 @@ success), PASS with the fix. Plus a lab test: hold a file of the host's slot dur
 guest does not load a world (or gets it once the file is free).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+slotfs::collect (moved from world.cpp so win_tests runs it) reads every file of the slot with CreateFileW (all share
+modes) and exactly its directory size; a file that cannot be opened, changes size while it is read, a listing error,
+or more than 2048 files / 128 MB fails the share with the reason ("the save file X cannot be opened (error 32)").
+share_now returns that error: the share fails and coop.cpp retries it (BUG-0231). The guest also refuses an offer
+whose files or bytes do not all arrive. Switch `coop.fix world.share_complete off` = 0.7.12 (unreadable files left out).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+win_unit `test_share_collect`: a slot file held with share mode 0 (Wine: error 32).
+* FAIL: out/lab/20261112-013127 (`SPORE_FIX_OFF=world.share_complete`, lane 2): collect succeeded without the file.
+* PASS: out/lab/20261112-012955 (lane 2), out/lab/20261112-024053 (lane 3): refused, 0 files, the reason names sub/x.pkp.
+Observed in the lab: the mechanism (a held file was dropped silently). Not measured: how often players' scanners hold a
+save file at share time.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12: fixed on fix/w48-saves (world.share_complete), FAIL 20261112-013127, PASS 20261112-012955.

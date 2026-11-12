@@ -2808,3 +2808,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: docs/re/creature.md#creature-freed-block-reuse (a block comes back within 0.3-1.3 s).
 * Next steps: `game::LiveRef` at each site, a lint against `object_alive` on stored pointers.
 * Ticket: BUG-0951
+## Fixed on fix/w48-saves (2026-11-12): saves and the world share
+<a id="issue-saves-w48-fixed"></a>
+
+* Fixed (0.7.13): BUG-0846 (the saved box watcher and the game's questions), BUG-0804 (the mouse after the box),
+  BUG-0806 (an OK outside the window), BUG-0847 (unreadable save files in a share), BUG-0848 (the staged move on a
+  brief lock), BUG-0849 (a share save in the end of Tribe: reproduced as the fault at 0xBCAB07), BUG-0854 (saves and
+  the quit in an adventure: reproduced at GetPlanetRecord+0x2D). The entries above that name them are history.
+* Not reproduced: BUG-0817 (the guest's UFO mirror does not come back from a Creature save).

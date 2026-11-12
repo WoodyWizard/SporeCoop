@@ -1,19 +1,19 @@
 ---
 id: BUG-0848
 title: Windows: a received world's staged folder move into the save slot fails on a brief file lock (error 5)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9028
 role: guest
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-saves
+commits: 4175db39
+tests: win_unit
 signature: cannot move the world into ... (error 5)
-docs:
+docs: docs/06-testing.md#testing-saves-w48
 related: BUG-0254, BUG-0035
 ---
 
@@ -47,10 +47,20 @@ permanent lock (still fails, nothing lost) and an existing destination (refused)
 test; check that Wine reproduces the sharing violation for the directory rename (if not, the test documents it).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+slotfs.cpp move_staged: the final MoveFileW of the staged folder into the slot is tried again every 25 ms for up to
+1.5 s on ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION only; any other error fails at once; the destination is never
+touched; the last error is kept for the message. Switch `coop.fix world.staged_move off` = one try (0.7.12).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id -->
+win_unit `test_staged_move`: a real handle without FILE_SHARE_DELETE on a staged file plus an injected
+ERROR_ACCESS_DENIED for 150 ms (`slotfs::g_test_move_denied_until`: Wine renames a folder with an open file in it, so
+the Windows refusal is injected), then a permanent refusal (fails with error 5, the old world whole, nothing staged
+left).
+* FAIL: out/lab/20261112-013042 (`SPORE_FIX_OFF=world.staged_move`, lane 2): the 150 ms lock failed the write.
+* PASS: out/lab/20261112-012955, out/lab/20261112-024053 (stored after 1 retry; permanent lock refused with error 5).
+Proven on Wine with the injected error; the Windows behaviour itself (error 5 on a brief scanner handle) is the fork's
+observation.
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
+- 2026-11-12: fixed on fix/w48-saves (world.staged_move), FAIL 20261112-013042, PASS 20261112-012955.

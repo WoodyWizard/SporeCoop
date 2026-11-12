@@ -4,12 +4,17 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace slotfs {
 
 bool g_busy_fix = true, g_match_fix = true, g_write_fix = true;
 bool g_fallback_fix = true, g_cleanup_fix = true;
+bool g_staged_move_fix = true, g_collect_fix = true;
+std::function<void(const std::wstring&)> g_test_before_move;
+uint64_t g_test_move_denied_until;
+unsigned g_move_retries;
 std::wstring g_test_held;
 int g_test_cleanup_age_s = 600;
 
@@ -69,6 +74,127 @@ static std::string marker_field(const std::string& m, const char* key)
         p = e + 1;
     }
     return {};
+}
+
+// BUG-0847: the old read (0.7.12): _wfopen, a failure or a short read only drops the file
+static bool read_old(const std::wstring& p, std::vector<uint8_t>& out)
+{
+    FILE* f = _wfopen(p.c_str(), L"rb");
+    if (!f)
+        return false;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    out.resize(n > 0 ? n : 0);
+    bool ok = n <= 0 || fread(out.data(), 1, n, f) == (size_t)n;
+    fclose(f);
+    return ok;
+}
+
+// the whole file, exactly `expect` bytes (its size in the directory listing): a file that is still
+// being written or changed while it is read does not pass
+static bool read_whole(const std::wstring& p, uint64_t expect, std::vector<uint8_t>& out, std::string& why)
+{
+    HANDLE f = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        why = "cannot be opened (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+    LARGE_INTEGER sz{};
+    bool ok = GetFileSizeEx(f, &sz) != 0;
+    if (!ok || (uint64_t)sz.QuadPart != expect) {
+        why = ok ? "changed while it was read" : "has no size (error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return false;
+    }
+    out.resize((size_t)expect);
+    size_t got = 0;
+    while (got < out.size()) {
+        DWORD n = 0, want = (DWORD)std::min<size_t>(out.size() - got, 1u << 20);
+        if (!ReadFile(f, out.data() + got, want, &n, nullptr) || n == 0)
+            break;
+        got += n;
+    }
+    char extra;
+    DWORD more = 0;
+    bool tail = ReadFile(f, &extra, 1, &more, nullptr) && more == 0;
+    CloseHandle(f);
+    if (got != out.size() || !tail) {
+        why = "changed while it was read (" + std::to_string(got) + " of " + std::to_string(expect) + " bytes)";
+        return false;
+    }
+    return true;
+}
+
+static bool collect_dir(const std::wstring& root, const std::wstring& rel, std::vector<File>& out, uint64_t& total,
+                        std::string& err, const std::wstring& skip)
+{
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((root + L"\\" + rel + L"*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        if (!g_collect_fix || e == ERROR_FILE_NOT_FOUND || (rel.empty() && e == ERROR_PATH_NOT_FOUND))
+            return true;
+        err = "cannot list " + narrow(rel.empty() ? root : rel) + " (error " + std::to_string(e) + ")";
+        return false;
+    }
+    bool ok = true;
+    do {
+        std::wstring n = fd.cFileName;
+        if (n == L"." || n == L"..")
+            continue;
+        std::wstring r = rel + n;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (!(ok = collect_dir(root, r + L"\\", out, total, err, skip)))
+                break;
+            continue;
+        }
+        if (r == skip)
+            continue;
+        std::string s = narrow(r);
+        for (auto& c : s)
+            if (c == '\\')
+                c = '/';
+        File f;
+        if (!g_collect_fix) {
+            if (!read_old(root + L"\\" + r, f.data))
+                continue; // 0.7.12: left out without a word
+        } else {
+            uint64_t size = ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+            if (out.size() + 1 > kMaxWorldFiles || total + size > kMaxWorldBytes) {
+                err = "the save is too big to share (over " + std::to_string(kMaxWorldFiles) + " files or " +
+                      std::to_string(kMaxWorldBytes >> 20) + " MB)";
+                ok = false;
+                break;
+            }
+            std::string why;
+            if (!read_whole(root + L"\\" + r, size, f.data, why)) {
+                err = "the save file " + s + " " + why;
+                ok = false;
+                break;
+            }
+            total += size;
+        }
+        f.rel = s;
+        out.push_back(std::move(f));
+    } while (FindNextFileW(h, &fd));
+    if (ok && g_collect_fix && GetLastError() != ERROR_NO_MORE_FILES) {
+        err = "cannot list " + narrow(rel.empty() ? root : rel) + " (error " + std::to_string(GetLastError()) + ")";
+        ok = false;
+    }
+    FindClose(h);
+    return ok;
+}
+
+bool collect(const std::wstring& root, std::vector<File>& out, std::string& err, const std::wstring& skip_name)
+{
+    out.clear();
+    uint64_t total = 0;
+    if (collect_dir(root, L"", out, total, err, skip_name))
+        return true;
+    out.clear();
+    return false;
 }
 
 static void rmtree(const std::wstring& d)
@@ -337,6 +463,37 @@ bool write(const std::wstring& slot, const std::vector<const File*>& files, cons
     return ok;
 }
 
+// BUG-0848: the staged folder's final move into the slot. On Windows a scanner or indexer that opens
+// one of the fresh files for a moment (without FILE_SHARE_DELETE) makes MoveFileW fail with error 5
+// (or 32); the world was then not stored. Tried again for up to 1.5 s on those two errors only; the
+// destination is never touched (any other error, like an existing slot, fails at once). The last
+// error stays set for the caller's message.
+static bool move_staged(const std::wstring& src, const std::wstring& dst)
+{
+    uint64_t deadline = GetTickCount64() + 1500;
+    for (int tries = 1;; tries++) {
+        bool moved;
+        if (GetTickCount64() < g_test_move_denied_until) {
+            SetLastError(ERROR_ACCESS_DENIED);
+            moved = false;
+        } else {
+            moved = MoveFileW(src.c_str(), dst.c_str()) != 0;
+        }
+        if (moved) {
+            if (tries > 1)
+                g_move_retries++;
+            return true;
+        }
+        DWORD e = GetLastError();
+        uint64_t now = GetTickCount64();
+        if (!g_staged_move_fix || (e != ERROR_ACCESS_DENIED && e != ERROR_SHARING_VIOLATION) || now >= deadline) {
+            SetLastError(e);
+            return false;
+        }
+        Sleep((DWORD)std::min<uint64_t>(25, deadline - now));
+    }
+}
+
 static bool write_locked(const std::wstring& slot, const std::vector<const File*>& files, const std::string& host,
                          const std::string& planet, uint32_t world_id, std::string& err, WriteFail* why)
 {
@@ -371,7 +528,9 @@ static bool write_locked(const std::wstring& slot, const std::vector<const File*
             *why = WriteFail::Replace;
         return false;
     }
-    if (!MoveFileW(tmp.c_str(), slot.c_str())) {
+    if (g_test_before_move)
+        g_test_before_move(tmp);
+    if (!move_staged(tmp, slot)) {
         if (why)
             *why = WriteFail::Move;
         err = "cannot move the world into " + narrow(slot) + " (error " + std::to_string(GetLastError()) + ")";

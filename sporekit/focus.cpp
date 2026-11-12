@@ -181,6 +181,28 @@ void vcursor_set(int x, int y)
     g_vcursor_last = GetTickCount();
 }
 
+// BUG-0804: a click made for the mod (the game saved box's OK) gives the mouse back to the player at
+// once; held buttons (`button ... down`) keep it
+void vcursor_release()
+{
+    if (!g_vcursor_held)
+        g_vcursor_active = false;
+}
+
+// tests (console `cursor`): where the game reads the mouse (the hooked GetCursorPos), client coordinates
+bool vcursor_state(int& x, int& y, bool& virt)
+{
+    POINT p{};
+    virt = g_vcursor_active;
+    if (!GetCursorPos(&p))
+        return false;
+    if (HWND w = (HWND)game_window())
+        ScreenToClient(w, &p);
+    x = p.x;
+    y = p.y;
+    return true;
+}
+
 void vcursor_tick()
 {
     if (g_vcursor_active && !g_vcursor_held && GetTickCount() - g_vcursor_last > 5000)

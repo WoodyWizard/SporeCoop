@@ -24,6 +24,8 @@ bool share_now(uint8_t peer, std::string& err);
 double since_share(uint8_t peer);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// the game's quit message 0x4715068 (save and leave the stage for the galaxy menu); refused in an adventure (BUG-0854)
+bool post_quit_to_menu(std::string& err);
 extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
 bool saved_box_up();     // the "game saved" box of our last save is up (seen, watched)
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),

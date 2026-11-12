@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,18 @@ extern bool g_busy_fix, g_match_fix, g_write_fix;
 // world.cpp) and world.tmp_cleanup (leftovers of interrupted writes in Games-sporecoop-tmp are
 // tidied, under a named mutex shared by the game instances of one machine)
 extern bool g_fallback_fix, g_cleanup_fix;
+// BUG-0848: world.staged_move (the staged folder's final move into the slot is tried again for a
+// while when a file in it is held for a moment: ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION on
+// Windows, an antivirus or indexer scanning the new files). Off: one MoveFileW (0.7.12).
+// BUG-0847: world.share_complete (collect fails the share when a file of the slot cannot be read
+// completely, instead of leaving it out). Off: unreadable files are skipped (0.7.12).
+extern bool g_staged_move_fix, g_collect_fix;
+// tests (BUG-0848): called with the staged folder just before its final move (win_tests holds a
+// file in it); and the final move fails with ERROR_ACCESS_DENIED while GetTickCount64() is below
+// g_test_move_denied_until (a lock Wine does not make for a folder rename)
+extern std::function<void(const std::wstring&)> g_test_before_move;
+extern uint64_t g_test_move_denied_until;
+extern unsigned g_move_retries; // moves of a staged folder that needed more than one try
 extern std::wstring g_test_held; // tests: this slot (lower case) cannot be moved (as on Windows with a file in it in use)
 extern int g_test_cleanup_age_s; // tests: the age (s) from which a temp copy is deleted (default 600)
 
@@ -60,6 +73,15 @@ bool write_or_fallback(const std::wstring& games, std::wstring& slot, const std:
 // a slot whose move fails stays. Returns how many were moved.
 int tidy(const std::wstring& games, const std::wstring& kept, const std::wstring& busy_lower, const std::string& host,
          const std::string& planet);
+
+// A save slot as the host shares it: every file under `root` (relative names with '/'), but not
+// skip_name (the co-op marker). A received world is refused over these limits (world.cpp), so the
+// host checks them too.
+constexpr uint32_t kMaxWorldBytes = 128u << 20, kMaxWorldFiles = 2048;
+// false and `err` when a file could not be listed, opened or read completely (BUG-0847: a share
+// without that file was sent and loaded as an incomplete world); with world.share_complete off the
+// file is left out as before and the result is true.
+bool collect(const std::wstring& root, std::vector<File>& out, std::string& err, const std::wstring& skip_name = L"sporecoop.txt");
 
 std::string narrow(const std::wstring& w);
 std::wstring widen(const std::string& s);

@@ -3192,3 +3192,25 @@ BUG-0844 (class BUG-0426). GOG 2024, runtime on lanes 6/7 (`coop.tribe reusehunt
   tribe once the host's states came again (lab 20261112-010419).
 * ✔ The member vector (+0x340) of the live tribes is the safe way to find the tribe that has a citizen
   (`tribe_holding`); the citizen's owner field (+0x1014) is read only after the citizen is a listed object.
+## A save in the end of Tribe faults in the serializer (2026-11-12, fix/w48-saves)
+<a id="tribe-graduation-save"></a>
+
+* ✔ (runtime, lab 20261112-021437, `tribe.graduation_save` off) Back from the City Hall editor (the player tribe
+  without its food mat, `tribe::stage_end`), a guest that joins makes the host post a share save 5.5 s into the
+  stage; 1.2 s later the host's game faulted: `0xC0000005 at 0x00BCAB07` (data 0x60C), the address the fork
+  PandizeLive/SporeCoop-Lineages saw (its canonical 0xBCAB07, BUG-0849). The game's exception handler kept the game
+  running, no saved box came ("no saved box 10013 ms after the save: sharing anyway") and the slot got one more file
+  (11 instead of 10): a half-written save went to the guest. In Civ after it, four share saves in a row wrote nothing
+  ("no saved box and no file written", the game's save name 'snapshot.spo'); the guest got the world only by
+  "sharing anyway" 43 s later.
+* Rule (coop.cpp `tribe_graduating`): no share and no share save while the game is in Tribe and either
+  `tribe::stage_end()` or the last editor request was one of the end of Tribe (City Hall 0x99E92F05, vehicles
+  0xF670AA43 / 0x9AD7D4AA / 0x7CB21BAD); the return from those editors is not an evolution. The request id is
+  forgotten on a load, the menu or another stage.
+* Without a join our code made no share save in that time in the earlier runs: since BUG-0508 the return from the City
+  Hall editor goes "in place" for a guest in the same Tribe world (tribe_civ_ground 0.7.9 lab 20261106-231404:
+  "evolved in place: Bob keeps its world" after the 120 s cinematic hold).
+* ✔ A second FAIL run (lab 20261112-023150): the same fault 0xBCAB07 1.2 s after the join's share save. With the fix
+  the share for the joined guest waited (refused saves) and, before 138a239e, held the vehicle editor's request 15 s
+  (`share_save_due`); now the end of Tribe does not count a share that cannot save (the editor 0.4 s after its vote,
+  lab 20261112-022822).

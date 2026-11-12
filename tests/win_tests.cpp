@@ -345,6 +345,106 @@ static void test_slot_write_fails()
     CHECK(!exists(b + L"\\sporecoop.txt"));
 }
 
+// BUG-0848: the staged folder's final move into the slot meets a file held for a moment (Windows: a
+// scanner opens a fresh file without FILE_SHARE_DELETE and MoveFileW fails with error 5). Wine
+// moves a folder with an open file in it (test_slot_write_fails), so besides holding a real handle
+// the test makes the move fail with ERROR_ACCESS_DENIED for the same 150 ms
+// (slotfs::g_test_move_denied_until), as Windows does.
+static HANDLE g_move_hold;
+static DWORD WINAPI release_after(void* ms)
+{
+    Sleep((DWORD)(uintptr_t)ms);
+    if (g_move_hold != INVALID_HANDLE_VALUE)
+        CloseHandle(g_move_hold);
+    g_move_hold = INVALID_HANDLE_VALUE;
+    return 0;
+}
+
+static void test_staged_move()
+{
+    printf("world: the staged world's move into the slot survives a file held for a moment (BUG-0848)\n");
+    std::wstring games = fresh_dir(L"stagedmove") + L"\\Games";
+    CreateDirectoryW(games.c_str(), nullptr);
+    std::string err, note;
+    std::wstring a = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", true, note);
+    CHECK(wr(a, world("Terra", "A1"), "Alice", "Terra", 1, err));
+    // 1. held for 150 ms, then free: the world is stored
+    HANDLE th = nullptr;
+    slotfs::g_test_before_move = [&](const std::wstring& tmp) {
+        g_move_hold = CreateFileW((tmp + L"\\Terra.spo").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        slotfs::g_test_move_denied_until = GetTickCount64() + 150;
+        th = CreateThread(nullptr, 0, release_after, (void*)(uintptr_t)150, 0, nullptr);
+    };
+    err.clear();
+    unsigned retries = slotfs::g_move_retries;
+    bool ok = wr(a, world("Terra", "A2"), "Alice", "Terra", 2, err);
+    if (th) {
+        WaitForSingleObject(th, 5000);
+        CloseHandle(th);
+    }
+    printf("  held 150 ms: %s (%s), moves tried again %u\n", ok ? "stored" : "refused", err.c_str(),
+           slotfs::g_move_retries - retries);
+    CHECK(ok);
+    CHECK(get(a + L"\\Terra.spo") == "A2" && get(a + L"\\stars.db") == "A2");
+    CHECK(get(a + L"\\sporecoop.txt").find("host Alice\n") != std::string::npos);
+    // 2. held for good: refused with the error, the old world stays whole, nothing staged left behind
+    slotfs::g_test_before_move = [&](const std::wstring&) { slotfs::g_test_move_denied_until = GetTickCount64() + 60000; };
+    err.clear();
+    ok = wr(a, world("Terra", "A3"), "Alice", "Terra", 3, err);
+    slotfs::g_test_move_denied_until = 0;
+    slotfs::g_test_before_move = nullptr;
+    printf("  held for good: %s (%s)\n", ok ? "stored" : "refused", err.c_str());
+    CHECK(!ok && err.find("error 5") != std::string::npos);
+    std::string keep = slotfs::g_staged_move_fix ? "A2" : "A1"; // (--old: step 1 failed, A1 stayed)
+    CHECK(get(a + L"\\Terra.spo") == keep && get(a + L"\\stars.db") == keep && get(a + L"\\sub\\x.pkp") == keep);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((games + L"-sporecoop-tmp\\*").c_str(), &fd);
+    int left = 0;
+    if (h != INVALID_HANDLE_VALUE) {
+        do
+            left += wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..");
+        while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    CHECK(left == 0);
+}
+
+// BUG-0847: the host's share reads every file of the slot; one it cannot open (Windows: a scanner
+// holds it without share access, or the game is still writing it) fails the share, it is not left out
+static void test_share_collect()
+{
+    printf("world: a share fails when a file of the save cannot be read, never sends the rest (BUG-0847)\n");
+    std::wstring slot = fresh_dir(L"collect") + L"\\Game0";
+    put(slot + L"\\Terra.spo", "planet");
+    put(slot + L"\\stars.db", "stars");
+    put(slot + L"\\sub\\x.pkp", "sub file");
+    put(slot + L"\\sporecoop.txt", "host_slot 1\n");
+    std::vector<slotfs::File> files;
+    std::string err;
+    CHECK(slotfs::collect(slot, files, err));
+    CHECK(files.size() == 3); // the marker is not sent
+    size_t bytes = 0;
+    bool sub = false;
+    for (auto& f : files) {
+        bytes += f.data.size();
+        sub |= f.rel == "sub/x.pkp" && std::string(f.data.begin(), f.data.end()) == "sub file";
+    }
+    CHECK(bytes == 6 + 5 + 8 && sub);
+    // a file held without share access
+    HANDLE hold = CreateFileW((slot + L"\\sub\\x.pkp").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    files.clear();
+    err.clear();
+    bool ok = slotfs::collect(slot, files, err);
+    printf("  held file: %s, %u files (%s)\n", ok ? "collected" : "refused", (unsigned)files.size(), err.c_str());
+    CHECK(!ok && files.empty() && err.find("sub/x.pkp") != std::string::npos);
+    CloseHandle(hold);
+    // free again: the share goes out whole
+    files.clear();
+    err.clear();
+    CHECK(slotfs::collect(slot, files, err) && files.size() == 3);
+}
+
 static int count_same_host(const std::wstring& games, const char* host)
 {
     int n = 0;
@@ -1565,6 +1665,10 @@ int main(int argc, char** argv)
             upd::g_web_fallback_fix = false;
         else if (!strcmp(argv[i], "--old-retry")) // BUG-0755 (update.retry)
             upd::g_retry_fix = false;
+        else if (!strcmp(argv[i], "--old-move")) // BUG-0848 (world.staged_move)
+            slotfs::g_staged_move_fix = false;
+        else if (!strcmp(argv[i], "--old-collect")) // BUG-0847 (world.share_complete)
+            slotfs::g_collect_fix = false;
         else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
             g_setup = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
@@ -1578,6 +1682,7 @@ int main(int argc, char** argv)
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
+        slotfs::g_staged_move_fix = slotfs::g_collect_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
@@ -1603,6 +1708,8 @@ int main(int argc, char** argv)
     test_slot_write_fails();
     test_slot_fallback();
     test_slot_leftovers();
+    test_staged_move();
+    test_share_collect();
     test_ini_unicode();
     test_ini_encoding();
     test_setup_packs();
