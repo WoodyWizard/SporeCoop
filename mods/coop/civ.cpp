@@ -488,6 +488,12 @@ static bool g_fix_shots = true;
 COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's vehicles and turrets fire (no damage of their own)");
 constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
 constexpr uint32_t kTurretNoun = 0x0436F342;
+constexpr uint32_t kCreatureNoun = 0x018EB45E; // cCreatureAnimal: the wild creatures (not synced in Civ, BUG-0970)
+static bool g_fix_creature_target = true;
+COOP_FIX("civ.creature_target", "BUG-0970", g_fix_creature_target,
+         "civ: a guest's attack of a wild creature takes the host's creature near that place, or drives there");
+constexpr float kCreatureReach = 40.f;
+static unsigned g_creature_near, g_creature_moves; // BUG-0970: guest creature orders mapped to a near one / a move
 constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
 // BUG-0688: a city turret is no building: its combatant is at +0x588 (vtable 0x1466C28 GOG 2024, the turret TakeDamage's
 // `this`); +0x120 of a turret holds no object. guest_fire took every turret's combatant at kBCombatant and
@@ -3449,8 +3455,29 @@ static void host_command(uint8_t from, net::Reader& r)
         if (v && t.kind && !target) // BUG-0325 diagnostics: the order's target is not in the host's game
             snprintf(why, sizeof why, " (vehicle %u: target kind %u id %u noun %08X at (%.0f %.0f %.0f) not in the host's game)",
                      (unsigned)id, (unsigned)t.kind, (unsigned)t.id, t.noun, t.pos.x, t.pos.y, t.pos.z);
+        if (r.ok() && v && t.kind == 3 && t.noun == kCreatureNoun && !target && g_fix_creature_target) {
+            // BUG-0970: wild creatures are not synced in Civ (each game runs its own), so the guest's creature is
+            // rarely within 10 m of one of the host's: attack the host's creature nearest to that place (within
+            // kCreatureReach), else drive there (the order a right-click on the ground gives)
+            target = game::find_object(t.noun, t.pos, kCreatureReach);
+            if (!target) {
+                g_creature_moves++;
+                o_SetMoveOrder(v, t.pos.x, t.pos.y, t.pos.z, flag);
+                thiscall<void>(a_OrderStamp, v, 0);
+                g_cmds_done++;
+                return;
+            }
+            g_creature_near++;
+        }
         if (!r.ok() || !v || (t.kind && !target))
             return reject();
+        static int s_obj_logged;
+        net::Vec3 tp;
+        if (t.kind == 3 && s_obj_logged++ < 20 && game::object_position(target, tp)) // BUG-0970 diagnostics
+            H->log(M, SK_INFO, "civ: order %d of vehicle %u: noun %08X at (%.0f %.0f %.0f) is the host's at %.1f m", type,
+                   (unsigned)id, t.noun, t.pos.x, t.pos.y, t.pos.z,
+                   std::sqrt((tp.x - t.pos.x) * (tp.x - t.pos.x) + (tp.y - t.pos.y) * (tp.y - t.pos.y) +
+                             (tp.z - t.pos.z) * (tp.z - t.pos.z)));
         o_SetOrder(v, target, type, flag);
         thiscall<void>(a_OrderStamp, v, 0);
     } else if (kind == CMD_MOVE) {
@@ -5015,11 +5042,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
                  "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u sw_unvoted=%u boosts=%u "
-                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u\n",
+                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u creature_orders=%u/%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
                  g_religious_boosts, g_alarms, g_votes, g_sw_unvoted, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
-                 g_max_chunk, g_siege_npc);
+                 g_max_chunk, g_siege_npc, g_creature_near, g_creature_moves);
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
@@ -5577,6 +5604,11 @@ std::string debug(const std::vector<std::string>& a)
         if (a[2][0] == 'v') {
             t = local_vehicle((uint16_t)atoi(a[2].c_str() + 1));
             type = 1;
+        } else if (a[2][0] == 'c') { // c<x>,<y>,<z>: this game's wild creature (noun 0x18EB45E) within 10 m of there (BUG-0970)
+            net::Vec3 p{};
+            if (sscanf(a[2].c_str() + 1, "%f,%f,%f", &p.x, &p.y, &p.z) == 3)
+                t = game::find_object(kCreatureNoun, p, 10.f);
+            type = 1;
         } else {
             int ci = atoi(a[2].c_str());
             t = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
@@ -5671,6 +5703,48 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "spawned %p purpose=%d loco=%d design=%08X", v, F<int>(v, kVPurpose), F<int>(v, kVLoco), k[0]);
         return b;
+    }
+    if (a.size() >= 6 && a[0] == "creatureshift") {
+        // creatureshift <x> <y> <z> <r> <d>: every wild creature of this game within r m of the place is set d m
+        // aside along the ground (tests, BUG-0970: this game's herd is no longer where the partner's is; wild
+        // creatures are not synced in Civ)
+        struct Q {
+            net::Vec3 c;
+            float r2;
+            std::vector<void*> found;
+        } q{{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())},
+            (float)(atof(a[4].c_str()) * atof(a[4].c_str())), {}};
+        float d = (float)atof(a[5].c_str());
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 p;
+                if (n == kCreatureNoun && game::object_alive(o) && game::object_position(o, p)) {
+                    float dx = p.x - q->c.x, dy = p.y - q->c.y, dz = p.z - q->c.z;
+                    if (dx * dx + dy * dy + dz * dz < q->r2)
+                        q->found.push_back(o);
+                }
+                return true;
+            },
+            &q);
+        // a direction along the ground: up x (0 0 1) (or x (1 0 0) near a pole), keeping the distance to the centre
+        float len = std::sqrt(q.c.x * q.c.x + q.c.y * q.c.y + q.c.z * q.c.z);
+        if (len < 1.f)
+            return "no place";
+        net::Vec3 up{q.c.x / len, q.c.y / len, q.c.z / len};
+        net::Vec3 t{up.y, -up.x, 0.f};
+        if (std::fabs(up.z) > 0.9f)
+            t = {0.f, up.z, -up.y};
+        float tl = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
+        for (void* o : q.found) {
+            net::Vec3 p;
+            game::object_position(o, p);
+            net::Vec3 n{p.x + t.x / tl * d, p.y + t.y / tl * d, p.z + t.z / tl * d};
+            float nl = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            n = {n.x / nl * pl, n.y / nl * pl, n.z / nl * pl};
+            game::set_object_position(o, n);
+        }
+        return "shifted " + std::to_string(q.found.size()) + " creatures";
     }
     if (a.size() >= 5 && a[0] == "move") { // move <id> <x> <y> <z>
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));

@@ -189,7 +189,7 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         char b[256];
         int n = snprintf(b, sizeof b, "obj %c%d key=%08X alive=%d hp=%.1f ai=%d own=%s owner=%d pos=(%.1f %.1f %.1f)", r.kind,
                          r.id, r.key, r.alive, r.hp, r.ai, r.own, r.owner, r.pos.x, r.pos.y, r.pos.z);
-        if (all && n > 0 && n < (int)sizeof b - 64)
+        if ((all || creatures) && n > 0 && n < (int)sizeof b - 64) // (creatures: the noun tells a citizen, BUG-0970)
             snprintf(b + n, sizeof b - n, r.max_hp >= 0 ? " noun=%08X ser=%u scale=%.3f max=%.1f\n" : " noun=%08X ser=%u scale=%.3f\n",
                      r.noun, r.serial, r.scale, r.max_hp);
         else if (n > 0 && n < (int)sizeof b - 2)
