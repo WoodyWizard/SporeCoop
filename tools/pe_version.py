@@ -5,8 +5,12 @@
   tools/pe_version.py --expect X.Y.Z <file>...           exit 1 unless every file has a VERSIONINFO
                                                          whose FileVersion / ProductVersion strings are
                                                          X.Y.Z and whose fixed FILEVERSION is X,Y,Z(,0)
+  tools/pe_version.py --repro-sha256 <file>...          sha256 with the link time stamps and the debug
+                                                         record's id zeroed: two builds of the same commit
+                                                         (stripped like tools/package.sh) give the same value
 tools/package.sh runs --expect on every binary of the release (the zip, the pack and the setup).
 """
+import hashlib
 import struct
 import sys
 
@@ -108,6 +112,31 @@ def parse(vi):
     return fixed, strings
 
 
+def repro_bytes(data):
+    """the image with the fields that change on every link zeroed: the COFF header's TimeDateStamp, each
+    debug directory entry's TimeDateStamp and the CodeView (RSDS) record's GUID and age"""
+    b = bytearray(data)
+    if len(b) < 0x40 or b[:2] != b'MZ' or b[_u32(b, 0x3C):_u32(b, 0x3C) + 4] != b'PE\0\0':
+        raise ValueError('not a PE file')
+    pe = _u32(b, 0x3C)
+    struct.pack_into('<I', b, pe + 8, 0)
+    opt = pe + 24
+    dd = opt + (96 if _u16(b, opt) == 0x10B else 112)
+    dbg_rva, dbg_size = struct.unpack_from('<II', b, dd + 6 * 8)
+    nsec, optsz = _u16(b, pe + 6), _u16(b, pe + 20)
+    for i in range(nsec):
+        o = opt + optsz + 40 * i
+        vsize, va, rsize, raw = struct.unpack_from('<IIII', b, o + 8)
+        if dbg_rva and va <= dbg_rva < va + max(vsize, rsize):
+            d = raw + dbg_rva - va
+            for e in range(d, d + dbg_size, 28):
+                struct.pack_into('<I', b, e + 4, 0)
+                ptr = _u32(b, e + 24)
+                if _u32(b, e + 12) == 2 and b[ptr:ptr + 4] == b'RSDS':
+                    b[ptr + 4:ptr + 24] = bytes(20)
+    return bytes(b)
+
+
 def read(path):
     with open(path, 'rb') as f:
         vi = version_resource(f.read())
@@ -116,6 +145,11 @@ def read(path):
 
 def main(argv):
     expect = None
+    if argv[:1] == ['--repro-sha256']:
+        for p in argv[1:]:
+            with open(p, 'rb') as f:
+                print(hashlib.sha256(repro_bytes(f.read())).hexdigest(), p)
+        return 0
     if argv[:1] == ['--expect']:
         expect, argv = argv[1], argv[2:]
     if not argv:

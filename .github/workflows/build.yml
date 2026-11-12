@@ -48,6 +48,9 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+      # BUG-0784: build provenance attestations (free for public repositories): `gh attestation verify`
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -64,3 +67,21 @@ jobs:
           (cd dist && sha256sum SporeCoop-*.zip SporeCoop-*.pack SporeCoopSetup.exe > SHA256SUMS.txt)
           gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SporeCoop-*.pack dist/SporeCoopSetup.exe dist/SHA256SUMS.txt \
             --title "SporeCoop $ver" --notes-file notes.md
+      # BUG-0784: a signed build provenance for every release file and for each binary inside the zip,
+      # so anyone can check that a file was built by this workflow from the tag:
+      #   gh attestation verify <file> --repo WoodyWizard/SporeCoop
+      # After the publish and allowed to fail: an attestation problem never blocks a release.
+      - name: the binaries inside the zip
+        continue-on-error: true
+        run: mkdir -p inzip && unzip -q dist/SporeCoop-*.zip -d inzip
+      - name: attest the build provenance
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/SporeCoop-*.zip
+            dist/SporeCoop-*.pack
+            dist/SporeCoopSetup.exe
+            inzip/SporeCoop/steam_api.sporekit.dll
+            inzip/SporeCoop/sporekit.dll
+            inzip/SporeCoop/mods/coop.dll
