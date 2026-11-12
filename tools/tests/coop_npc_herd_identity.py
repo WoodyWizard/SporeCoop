@@ -30,9 +30,9 @@ def plist(con):
     nests = set(int(m.group(1), 16) for m in re.finditer(r'nest \S+ herd=([0-9A-Fa-f]+) alive=1', out))
     prox = {}
     for line in out.splitlines():
-        m = re.match(r'\s*#(\d+) species=(\S+) spawned .*?ptr=(\S+) herd=([0-9A-Fa-f]+).*?herd_sp=(-?\d)', line)
+        m = re.match(r'\s*#(\d+) species=(\S+) spawned .*?rx=(\d+)/s .*?ptr=(\S+) herd=([0-9A-Fa-f]+).*?herd_sp=(-?\d)', line)
         if m:
-            prox[int(m.group(1))] = (m.group(2), int(m.group(3), 16), int(m.group(4), 16), int(m.group(5)))
+            prox[int(m.group(1))] = (m.group(2), int(m.group(4), 16), int(m.group(5), 16), int(m.group(6)), int(m.group(3)))
     return nests, prox
 
 
@@ -63,7 +63,8 @@ def main():
     for i, p in prox.items():
         by_sp.setdefault(p[0], set()).add(p[2])
     family = set(int(m.group(1), 16) for m in re.finditer(r'herd=([0-9A-Fa-f]+) .*?fam=1', guest.call('coop.npc list')['out']))
-    cand = [i for i, p in sorted(prox.items()) if p[2] not in nests and p[2] not in family and len(by_sp[p[0]]) == 1]
+    # (only proxies the host sends states for now: one without states is not made again whatever its herd)
+    cand = [i for i, p in sorted(prox.items()) if p[2] not in nests and p[2] not in family and len(by_sp[p[0]]) == 1 and p[4] >= 5]
     cand += [i for i, p in sorted(prox.items()) if p[2] in nests and by_sp[p[0]] == {p[2]} and i not in cand]
     cand += [i for i, p in sorted(prox.items()) if p[2] in nests and i not in cand]
     print(f'  candidates {cand}: herds by species {dict((k, sorted(hex(h) for h in v)) for k, v in by_sp.items())}, '
