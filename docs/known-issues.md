@@ -2779,8 +2779,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the host's species in the picture is about 450 px away. On the host both creatures stand 2-3 m apart, tagged.
 * Reproduce: seen once, rel/0.7.12 lab 20261111-151535, play_creature "mid" frame
   (`out/lab/20261111-151535/frames/sheets/038_play_creature_02_mid.jpg`).
-* Not checked: whether the puppet is missing at the tag's place or drawn at a stale place (`coop.find` against
-  `coop.status` on the guest).
+* Cause (2026-11-11): not a missing or stale puppet. The labels of the overlay (name tags, arrows) are projected with
+  the viewer as it is at Present, which is ahead of the picture just drawn while the camera turns; at rest the tag
+  is over the creature. The same in v0.7.11.2. The play bots' camera drags make it hundreds of px; for a player it
+  should be a tag that slides a little during a turn (not measured).
+* Reproduce: `tools/lab.py run tag_camera` (shots inside a camera turn: `frames/tag_camera/tagcam_turn_N.jpg`).
 * Ticket: BUG-0948
 
 ## Find each other: arrows and name tags drawn over each other and over the HUD (2026-11-11, plan/w47-frames3)

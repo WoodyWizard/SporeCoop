@@ -6057,3 +6057,27 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
 * Probes that came back empty are worth their lines here: 30 min of play_tribe on three lanes and two Tribe plays of
   four-player campaigns gave no member over 3 m at all, so a reproduction of the campaign's finding by "playing
   more" costs hours; the log line is the way.
+
+## Overlay labels in a shot taken while a bot turns the camera (2026-11-11, fix/w47-tag-empty)
+<a id="testing-labels-camera-turn"></a>
+
+BUG-0948. A key frame or shot taken while the game's camera turns shows the mod's overlay labels (name tags, arrows
+and their distance, owner tags) away from their objects: over empty ground, or an arrow at the edge for a partner
+that is in the picture.
+
+* The labels are projected in the overlay pass with the viewer as it is at Present; the picture was drawn with the
+  camera before that step. At rest both are the same.
+* SporeKit's `drag ... right` (the bots' `look_for`, `play_creature.py`'s 300-450 px sweeps) turns the Creature
+  camera by tens of degrees a frame for 8 frames and more: in `tag_camera` (coop_tag_camera.py) 4 of 12 shots inside
+  such a turn had the tag 230-240 px off its creature or over empty ground and 6 had no tag (lab 20261111-194717),
+  0 of 3 at rest.
+  `play_creature`'s guest bot turns 200 times in 10 minutes, so a key frame of a play test meets a turn now and then.
+* Reading such a frame: a label that is only moved sideways from its object, in a play test with camera sweeps, is
+  this. A review finding needs the label wrong with the camera at rest (`same_view`, `find_partners`, the start
+  frame of a play test), or a world-space measure: `coop.track` (p against d of the puppet's rows) says whether the
+  tag's anchor left the drawn body (it did not: two single frames in 20 minutes of play_creature).
+* A test that shoots for the labels waits a second or more after its last drag (the turn goes on after the 8 mouse
+  steps: labels still moved 15 frames after the drag command).
+* `mem.read` of the puppet (`coop.status` prints its address) gives the object's position (+0xC4) and the model's
+  (`+0xB54` -> `+0x04`) without a new command; they were never more than 0.19 m apart in 611 s.
+
