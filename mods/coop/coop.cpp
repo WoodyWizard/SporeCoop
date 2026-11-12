@@ -5884,6 +5884,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::abilities_dump(atoi(argv[2])).c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "games")) { // tests (BUG-0831): the host's social games and their prompts
+        SAY("%s", social::games_dump().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
         SAY("%s", social::meter_dump().c_str());
         return 0;
