@@ -900,6 +900,7 @@ struct BodyRow {
 };
 static std::deque<BodyRow> g_bodyrec;
 static bool g_bodyrec_on = false, g_bodyrec_diag = false;
+static std::string g_bodyrec_kinds; // `coop.bodyrec start kinds <chars>`: only keys starting with one of them (Cell: p)
 static constexpr size_t kBodyRecMax = 400000;
 
 static void bodyrec_tick(double now)
@@ -907,6 +908,8 @@ static void bodyrec_tick(double now)
     if (!g_bodyrec_on || !g_sess.connected())
         return;
     for (auto& e : sync_all()) {
+        if (!g_bodyrec_kinds.empty() && (e.key.empty() || g_bodyrec_kinds.find(e.key[0]) == std::string::npos))
+            continue;
         BodyRow r{};
         r.t = now;
         snprintf(r.key, sizeof r.key, "%s", e.key.c_str());
@@ -936,6 +939,7 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
         g_bodyrec.clear();
         g_bodyrec_on = true;
         g_bodyrec_diag = argc > 2 && !strcmp(argv[2], "diag");
+        g_bodyrec_kinds = argc > 3 && !strcmp(argv[2], "kinds") ? argv[3] : ""; // tests (BUG-0887): a Cell pool is hundreds of rows a frame
     } else if (!strcmp(a, "stop"))
         g_bodyrec_on = false;
     else if (!strcmp(a, "dump")) { // dump [from] [n]: t key x y z (t: absolute s)

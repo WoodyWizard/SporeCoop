@@ -143,7 +143,8 @@ def one_round(host, guest, nid, hid, label):
           flush=True)
     reached, gaps = False, []
     if on_animal:
-        guest.call('key 0x31')  # the attack key (1): the game's walk-and-use
+        print('    reach before: ' + guest.call('coop.abilities reach')['out'].replace('\n', ' | ')[:400], flush=True)
+        guest.call('key 1')  # the attack key (1): the game's walk-and-use
         t0 = time.time()
         while time.time() - t0 < 12:
             tr, gap, rch = reach(guest)
@@ -153,6 +154,7 @@ def one_round(host, guest, nid, hid, label):
                     reached = True
                     break
             time.sleep(0.25)
+        print('    reach after: ' + guest.call('coop.abilities reach')['out'].replace('\n', ' | ')[:400], flush=True)
         print(f'  [{label}] the guest\'s walk-and-use: gaps {gaps[::4]} -> reached {reached} '
               f'({time.time() - t0:.1f} s); {guest.call("coop.partnerpass")["out"].strip()}', flush=True)
     shot(guest, f'partner_pass_{label}')

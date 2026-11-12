@@ -899,12 +899,19 @@ static void note_foreign_hit(uint8_t* att)
 using Cloud_t = void(SK_CDECL*)(uint8_t*, int, void*);
 static Cloud_t o_Cloud;
 static uint32_t g_clouds_made, g_cloud_last = 0xFFFFFFFF, g_puppet_clouds;
+// host (BUG-0799): a partner's puppet whose player is knocked out
+static bool ko_puppet(uint8_t* c)
+{
+    if (!is_host() || !modes::cell_is_puppet(c))
+        return false;
+    for (int id = 1; id < 8; id++)
+        if (puppet_cell(id) == c)
+            return guest_knocked_out((uint32_t)id);
+    return false;
+}
 static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
 {
-    if (g_fix_ko_no_poison && in_cell() && maker &&
-        ((g_downed && maker == avatar()) ||
-         (is_host() && modes::cell_is_puppet(maker) && C.puppet_owner && C.puppet_owner(maker) > 0 &&
-          guest_knocked_out((uint32_t)C.puppet_owner(maker))))) {
+    if (g_fix_ko_no_poison && in_cell() && maker && ((g_downed && maker == avatar()) || ko_puppet(maker))) {
         // BUG-0799: a knocked-out cell makes no cloud: our own, and a knocked-out partner's puppet (puppet_poison, and
         // the game's own poison step, which also runs for a puppet drawn here with a poison part: lab 20261112-063438)
         g_ko_clouds_blocked++;
