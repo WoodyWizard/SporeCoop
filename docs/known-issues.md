@@ -2771,3 +2771,24 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: the share save's stamp list at the rejoin; whether a second load on the guest evens it out.
 * Next steps: 0.7.13: a two-game test (the host forms a village, the guest leaves and joins, `coop.terrain` round it).
 * Ticket: BUG-0947
+
+## Creature: the host's name tag over empty grass on the guest's screen (2026-11-11, plan/w47-frames3)
+<a id="issue-creature-tag-empty-grass"></a>
+
+* What happens: on the guest the tag "Alice" stands on an open slope with no creature under it; the only creature of
+  the host's species in the picture is about 450 px away. On the host both creatures stand 2-3 m apart, tagged.
+* Reproduce: seen once, rel/0.7.12 lab 20261111-151535, play_creature "mid" frame
+  (`out/lab/20261111-151535/frames/sheets/038_play_creature_02_mid.jpg`).
+* Not checked: whether the puppet is missing at the tag's place or drawn at a stale place (`coop.find` against
+  `coop.status` on the guest).
+* Ticket: BUG-0948
+
+## Find each other: arrows and name tags drawn over each other and over the HUD (2026-11-11, plan/w47-frames3)
+<a id="issue-find-labels-overlap"></a>
+
+* What happens: two partners in one direction get their arrow labels on top of each other (unreadable); an arrow can
+  sit inside a notification card; Civ unit tags stand on the minimap and the bottom bar.
+* Reproduce: 3-4 players; rel/0.7.12 lab 20261111-151535 sheets 016 (campaign_ct play-tribe, Bob), 017
+  (campaign_short play-cell, Bob), 019 (campaign_short play-creature, host), 036 (play_civ end, host).
+* Next steps: a layout pass for the labels and HUD rectangles they keep out of.
+* Ticket: BUG-0949

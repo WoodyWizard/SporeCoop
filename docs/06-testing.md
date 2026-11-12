@@ -5632,6 +5632,14 @@ by side and the creatures in them counted.
   portrait stale after a creature change), BUG-0938 (the galaxy menu's logo over Civ play on one guest), BUG-0939 (an
   arrow "Dave 504 m" to the planet's centre). To read a roster, crop x 915..960 of the frame and enlarge 4-5 times: the
   480 px tiles of the 4-player sheets do not show it.
+* Review of the third 0.7.12 final check (lab 20261111-151535, 60 sheets, plan/w47-frames3): BUG-0920 holds (one_creature
+  `evolved`: the guest has the world and the HUD), BUG-0921 holds (no white square in any roster of campaign, campaign_ct,
+  campaign_tribe, roster_portraits, tribe_portraits, play_tribe), BUG-0923 holds (one "appeared" notice at every start),
+  BUG-0939 holds (no arrow to the planet's centre after Creature -> Tribe; find_partners_tribe: no arrow, no name). Seen
+  again: BUG-0935 (campaign play-tribe, play_tribe end), BUG-0937, BUG-0929, BUG-0914 / BUG-0936, BUG-0924 (advance-cell
+  x3, find_partners creature_arrow, play_cell start, play_tribe start and mid, play_civ start's money). Not seen:
+  BUG-0922, BUG-0938. New: BUG-0948 (the host's tag over empty grass on the guest, play_creature mid), BUG-0949 (arrow
+  labels and tags over each other and over the HUD). creature_kills has no key frames.
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 
