@@ -3639,16 +3639,25 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
         }
 }
 
+// BUG-0919: the synced entries (`coop.targets all`, the sync-check) take a creature only when the game's object list has
+// it now (game::listed), not on its own destroyed byte alone: a console command runs between frames with the tables of
+// the last tick (they are not rebuilt while the simulation stands). Off: the destroyed byte (0.7.12).
+static bool g_entries_listed_fix = true;
+COOP_FIX("npc.entries_listed", "BUG-0919", g_entries_listed_fix,
+         "tests: coop.targets all and the sync-check read only creatures the game's object list has now");
+bool entries_listed() { return g_entries_listed_fix; }
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
+    game::LiveScope live; // (one walk of the object list for all the questions below)
     if (C.sess && C.sess->role() == net::Role::Host) {
         for (auto& [c, h] : g_host_npcs) // updated this frame: an unloaded one may be freed already
-            if (g_seen_now.count(c) && game::object_alive(c) && !game::is_dead(c)) // living ones only
+            // BUG-0919: and in the game's object list now (a command between frames, the table of the last tick)
+            if (g_seen_now.count(c) && (g_entries_listed_fix ? game::listed(c) : game::object_alive(c)) && !game::is_dead(c))
                 v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, px] : g_proxies)
-            if (px_live(px) && game::object_alive(px.c) && !px.killed)
+            if (px_live(px) && (g_entries_listed_fix ? game::listed(px.c) : game::object_alive(px.c)) && !px.killed)
                 v.push_back({"n" + std::to_string(id), game::position(px.c), game::orientation(px.c)});
     }
     return v;

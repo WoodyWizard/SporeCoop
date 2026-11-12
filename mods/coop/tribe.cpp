@@ -5285,11 +5285,16 @@ std::string status()
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;
-    for (auto& [o, c] : g_chief) {
-        auto it = g_chief_scale.find(c);
-        char sb[32];
-        snprintf(sb, sizeof sb, " %u:%.2f", o, it != g_chief_scale.end() && it->second > 0 ? game::scale(c) / it->second : 0.f);
-        scales += sb;
+    {
+        game::LiveScope live; // BUG-0919: a chief of the last tick is asked only when the game's list has it now
+        for (auto& [o, c] : g_chief) {
+            auto it = g_chief_scale.find(c);
+            char sb[32];
+            bool ok = !npc::entries_listed() || game::listed(c);
+            snprintf(sb, sizeof sb, ok ? " %u:%.2f" : " %u:gone", o,
+                     ok && it != g_chief_scale.end() && it->second > 0 ? game::scale(c) / it->second : 0.f);
+            scales += sb;
+        }
     }
     snprintf(b, sizeof b,
              "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u mirror_out_passed=%u fix_chiefs=%d "
@@ -6525,9 +6530,10 @@ COOP_FIX("tribe.sync_bodies", "BUG-0664", g_sync_bodies_fix,
 std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
+    game::LiveScope live; // BUG-0919 (one walk of the object list)
     if (C.sess && C.sess->role() == net::Role::Host) {
         for (auto& [c, h] : g_hm)
-            if (game::object_alive(c) && !(g_sync_bodies_fix && h.body_since != 0))
+            if ((npc::entries_listed() ? game::listed(c) : game::object_alive(c)) && !(g_sync_bodies_fix && h.body_since != 0))
                 v.push_back({"t" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, g] : g_gm)
