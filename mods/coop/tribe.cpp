@@ -1866,6 +1866,9 @@ static void test_vel_tick(double now)
     }
 }
 
+// BUG-0841 (evidence): members the host's game moved from one tribe to another (none seen: the game adds only new
+// citizens to a tribe, docs/re/tribe.md#tribe-member-moves); unowned: into the player tribe with owner 0xFE
+static uint32_t g_member_moves, g_member_moves_unowned;
 static void host_tick(double now)
 {
     test_vel_tick(now);
@@ -1923,6 +1926,11 @@ static void host_tick(double now)
                 it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 it->second.serial = game::object_serial(c);
                 g_hm_by_id[it->second.id] = c;
+            }
+            if (it->second.tribe && it->second.tribe != tribes[ti]) { // BUG-0841: a known member in another tribe now
+                g_member_moves++;
+                if (player && it->second.owner == 0xFE)
+                    g_member_moves_unowned++;
             }
             it->second.tribe = tribes[ti];
             it->second.body_since = 0;
@@ -2411,6 +2419,16 @@ static bool player_tribe_out(void* t)
 
 // BUG-0685: why the last spawn_member returned null (the mirror log names it)
 static const char* g_spawn_fail = "";
+// BUG-0857: "a baby stays a baby on the guest". A guest's mirror of a baby member grows up by the game's own timer of
+// that mirror, from its spawn: a mirror spawned (or bound) after the host's baby was born (a guest joining or rejoining
+// mid-growth) grew up that much later, and the host's age in the snapshot was used only at a spawn. Now a bound mirror
+// still a baby (+0xB34 0) whose host member is an adult grows up at once through the citizen's own GrowUp
+// (vt 0x78 0xC248C0: age 1, the adult's scale, model and AI flags, the HUD's selectable member).
+// `coop.fix tribe.mirror_grow off`: the mirror grows by its own timer only.
+static bool g_mirror_grow_fix = true;
+COOP_FIX("tribe.mirror_grow", "BUG-0857", g_mirror_grow_fix, "tribe: a guest's mirror of a baby member grows up when the host's member does, also when it was made later than the host's baby");
+static uint32_t g_mirrors_grown;
+
 static void* spawn_member(void* t, uint8_t age)
 {
     if (player_tribe_out(t)) {
@@ -3088,6 +3106,11 @@ static void guest_state(net::Reader& r)
                 g_mirror_stale++;
             g_gid_of.erase(c);
             g.c = c = nullptr;
+        }
+        if (c && g_mirror_grow_fix && m.age == 1 && !m.body && F<uint8_t>(c, kAgeOff) == 0 && !game::is_dead(c)) {
+            vcall<void>(c, 0x78 / 4); // BUG-0857: the citizen's own GrowUp (vt 0x78, plain ret)
+            g_mirrors_grown++;
+            MIRROR_LOG("tribe: mirror #%u grew up with the host's member (BUG-0857)", id);
         }
         if (c || (m.body && !g_join_body_fix)) // (no new mirror for a body before BUG-0665)
             continue;
@@ -4710,18 +4733,19 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
+                 g_member_moves, g_member_moves_unowned);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
-                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies);
+                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
