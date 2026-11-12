@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Two players in one adventure (there is no adventure co-op yet: this is about safety), BUG-0845 and BUG-0789.
 
-Both games start at the galaxy menu, the host hosts and the guest joins THERE (a fork's host crashed in
+Each game plays its own copy of an adventure (the scenario resource's key differs, so the place ids differ and no
+puppet is made); for the fork's case both games get one place id (`coop.adventure place`, --own-places: not), so each
+has the partner's captain as a creature puppet in its scenario's cast. Both games start at the galaxy menu, the host
+hosts and the guest joins THERE (a fork's host crashed in
 cScenarioPlayMode::SetCurrentAct, called from Initialize, after this order); then both start the tutorial adventure
 (adventure_start.py, the same adventure: the guest gets the host's profile packages), the one named by --first
 first, the other when the first is in it.
@@ -69,6 +72,11 @@ def act(c):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
+def puppet(c):
+    m = re.search(r'puppet pos=\(([^)]*)\)', call(c, 'coop.status'))
+    return m.group(1) if m else None
+
+
 def start_adventure(inst):
     return subprocess.Popen([sys.executable, os.path.join(HERE, 'adventure_start.py'), '-i', str(inst)])
 
@@ -78,6 +86,7 @@ def main():
     ap.add_argument('--first', choices=('host', 'guest', 'both'), default='guest')
     ap.add_argument('--walk', type=float, default=200.0)
     ap.add_argument('--no-act', action='store_true')
+    ap.add_argument('--own-places', action='store_true', help='keep each game\'s own place id (no puppets)')
     a = ap.parse_args()
     ck = Checks()
     lane.sh('kill')
@@ -102,6 +111,12 @@ def main():
     for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
         for who, c in (('host', h), ('guest', g)):
             print(f'  SPORE_FIX_OFF ({who}): ' + call(c, f'coop.fix {name} off'), flush=True)
+    if not a.own_places:
+        # each game plays its own copy of the adventure (its resource key differs: two place ids, no puppets); one
+        # place id for both makes the partner's captain a puppet in the other game's scenario, the case of the fork's
+        # crash (BUG-0845)
+        for who, c in (('host', h), ('guest', g)):
+            print(f'  {who}: ' + call(c, 'coop.adventure place 0ADF0E01'), flush=True)
     print('  host: ' + call(h, lane.HOST_CMD), flush=True)
     print('  guest: ' + call(g, f'cheat coop join 127.0.0.1:{lane.PORT} Bob'), flush=True)
     joined = False
@@ -140,6 +155,11 @@ def main():
             time.sleep(5)
         print(f'  {who}: play state and act {act(c)}', flush=True)
     ck(all((act(c) or (0, 0))[0] == 3 for c in (h, g)), '1. both games play the adventure (play state 3)')
+    print(f'  host: {call(h, "coop.adventure").splitlines()[0]}; guest: {call(g, "coop.adventure").splitlines()[0]}', flush=True)
+    if not a.own_places:
+        hp_, gp_ = puppet(h), puppet(g)
+        print(f'  host\'s puppet of the guest: {hp_}; guest\'s puppet of the host: {gp_}', flush=True)
+        ck(hp_ is not None and gp_ is not None, '1. each game has the partner\'s captain as a puppet in its scenario')
     time.sleep(5)
 
     # 2. the sky
@@ -176,6 +196,8 @@ def main():
         ck(hm == 'Scenario' and gm == 'Scenario', f'3. both games are still in the adventure ({hm}, {gm})')
         ck(ah is not None and ah[1] == 1, f'3. the host\'s game is in act 1 ({ah})')
         ck(ag is not None and ag[1] == 1, f'3. the guest\'s game is in act 1 ({ag})')
+        if not a.own_places:
+            print(f'  after the act change: host\'s puppet {puppet(h)}, guest\'s puppet {puppet(g)}', flush=True)
         st = call(h, 'coop.status')
         print('  host status after: ' + ' | '.join(l.strip() for l in st.splitlines() if 'remote' in l or 'puppet' in l)[:400],
               flush=True)

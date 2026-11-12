@@ -6,9 +6,9 @@ opens the cheat console (Ctrl+Shift+C) and types 1 and 2 there; after the consol
 presses 1 again. Judged on what the games play (BUG-0891: before, only the host's mod counter
 `acts_in`, now printed for diagnostics): the guest's avatar and the host's puppet of it
 (`coop.npc cur`: the game's current animation, `cur avatar` / `cur p<id>`) are sampled every
-0.1 s before (idle), while the console is open and after it closed. The ability's animations are
-the ones the press after the close brings that the idle sampling never showed; none of them may
-play on either game while the console was open, and the press after the close must bring one.
+0.1 s while the console is open and after it closed. The social abilities' animations come from
+the game (`coop.social abil -1`: `anim=`, GetAnimationID(0)); none of them may play on either game
+while the console was open, and the press after the close must play one on both.
 
   coop_social_console.py [--without-fix]   (--without-fix or SPORE_FIX_OFF=social.text: must FAIL)
 
@@ -93,10 +93,16 @@ def main():
                 into_h.add(b.group(1))
             time.sleep(0.1)
 
+    # the social abilities' animations (key=1: the social kind; `anim=` is what the ability plays,
+    # cCreatureAbility::GetAnimationID(0))
+    abil = {m.group(1) for m in re.finditer(r'^ab \d+ type=0x[0-9A-F]+ key=1 .*anim=([0-9A-F]{8})',
+                                            guest.call('coop.social abil -1')['out'], re.M)}
+    print(f'  the guest\'s social abilities play {sorted(abil)}', flush=True)
+    ck(abil, 'the guest\'s avatar has social abilities')
     idle_g, idle_h = set(), set()
-    sample(4.0, idle_g, idle_h)
-    print(f'  idle: guest avatar {sorted(idle_g)}, host puppet {sorted(idle_h)}', flush=True)
-    ck(idle_g and idle_h, 'the guest\'s avatar and the host\'s puppet of it have an animation')
+    sample(2.0, idle_g, idle_h)
+    print(f'  before: guest avatar {sorted(idle_g)}, host puppet {sorted(idle_h)}', flush=True)
+    time.sleep(2.0)  # (an ability the engagement played is over)
     enable_console(guest)
     console(guest)
     keys = guest.call('coop.social keys')['out'].strip()
@@ -114,24 +120,25 @@ def main():
     close_console(guest)
     ck(not console_open(guest), 'the cheat console is closed again')
     time.sleep(1)
-    guest.call(f'coop.social goto {target}')
-    for _ in range(3):  # (the engagement may have run out meanwhile: engage again)
-        if re.search(r'engaged=' + target + r'\b', social(guest)) or engage(guest, 'n' + target, 20):
-            break
-    sample(2.0, idle_g, idle_h)  # (idle again after the walk)
-    a2 = acts()
     after_g, after_h = set(), set()
-    hold(guest, 0x31)
-    sample(3.0, after_g, after_h)
+    a2 = acts()
+    for _ in range(4):  # (the ability may still cool down, the engagement may have run out)
+        guest.call(f'coop.social goto {target}')
+        if not re.search(r'engaged=' + target + r'\b', social(guest)):
+            engage(guest, 'n' + target, 20)
+        time.sleep(1.0)
+        hold(guest, 0x31)
+        sample(3.0, after_g, after_h)
+        if abil & after_g:
+            break
     a3 = acts()
-    abil_g, abil_h = after_g - idle_g, after_h - idle_h
-    print(f'  after the close, key 1: guest avatar {sorted(after_g)} (new: {sorted(abil_g)}), host puppet {sorted(after_h)} '
-          f'(new: {sorted(abil_h)}); (host acts_in {a2} -> {a3})', flush=True)
-    ck(abil_g, 'the key 1 plays the ability on the guest\'s avatar once the console is closed (a new animation)')
-    ck(abil_h, 'the host\'s puppet of the guest plays it too')
-    ck(not (abil_g & open_g), f'digits typed in the cheat console play no social ability on the guest\'s avatar '
-       f'({sorted(abil_g & open_g)})')
-    ck(not (abil_h & open_h), f'nor on the host\'s puppet of it ({sorted(abil_h & open_h)})')
+    print(f'  after the close, key 1: guest avatar {sorted(after_g)}, host puppet {sorted(after_h)}; '
+          f'(host acts_in {a2} -> {a3})', flush=True)
+    ck(abil & after_g, 'the key 1 plays the social ability on the guest\'s avatar once the console is closed')
+    ck(abil & after_h, 'the host\'s puppet of the guest plays it too')
+    ck(not (abil & open_g), f'digits typed in the cheat console play no social ability on the guest\'s avatar '
+       f'({sorted(abil & open_g)})')
+    ck(not (abil & open_h), f'nor on the host\'s puppet of it ({sorted(abil & open_h)})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

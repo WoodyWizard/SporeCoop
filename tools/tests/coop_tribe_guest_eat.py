@@ -8,8 +8,8 @@ tribe.mirror_hunger). Two games on the tribe fixture:
 1. a member the guest owns (`owner=` of the host's `coop.tribe` rows; members are dealt round-robin) is made hungry
    in the host's game (`coop.tribe hunger <id> 15`, the game's own setter) and given no order;
 2. within 120 s the HOST's game feeds it by itself: its hunger (cCreatureBase +0xBBC) rises by 30 or more;
-3. the guest's mirror shows it: its hunger in the guest's game rises the same way (within 5 of the host's 5 s after
-   the meal), and the animation the host's member's tree started for the meal (`bhv=` of the host's
+3. the guest's mirror shows it: its hunger in the guest's game is the host's member's before the meal (25 or less)
+   and after it (within 5), and the animation the host's member's tree started for the meal (`bhv=` of the host's
    `coop.tribe anims` while its hunger rose) is the mirror's current animation in the guest's game at least once.
 SPORE_FIX_OFF=tribe.mirror_anims,tribe.mirror_hunger must FAIL at 3 (the guest sees no meal).
 
@@ -58,7 +58,7 @@ def main():
     mid = mine[0]
     print(f'  host #{mid}: ' + host.call(f'coop.tribe hunger {mid} 15')['out'].strip(), flush=True)
     t0 = time.time()
-    base_h, meal_at, meal_anims, seen_g, last = None, None, set(), [], None
+    base_h, meal_at, meal_anims, seen_g, last, hungry_g = None, None, set(), [], None, None
     while time.time() - t0 < 120:
         hr, gr = rows(host), rows(guest)
         ha, ga = anims(host), anims(guest)
@@ -70,6 +70,8 @@ def main():
             last = (time.time() - t0, hh, gh)
         if mid in ga:
             seen_g.append((time.time() - t0, ga[mid][0]))
+        if meal_at is None and gh is not None:  # before the meal: the guest's mirror as hungry as the host's member
+            hungry_g = gh if hungry_g is None else min(hungry_g, gh)
         if hh is not None and base_h is not None and hh > base_h + 5 and mid in ha:
             meal_anims.add(ha[mid][1])  # the animation its tree started while the hunger rose
             if meal_at is None:
@@ -86,6 +88,8 @@ def main():
     print('  guest anims: ' + guest.call('coop.tribe anims')['out'].strip().splitlines()[-1], flush=True)
     ck(meal_at is not None and hh >= (base_h or 0) + 30,
        f'2. the host\'s game fed the guest\'s member by itself, no order (hunger {base_h} -> {hh:.1f})')
+    ck(hungry_g is not None and hungry_g <= 25,
+       f'3. before the meal the guest\'s mirror was as hungry as the host\'s member (lowest {hungry_g}, the host\'s 15)')
     ck(gh >= 0 and abs(gh - hh) <= 5, f'3. the guest\'s mirror is as fed as the host\'s member ({gh:.1f} / {hh:.1f})')
     shown = meal_at is not None and any(a in meal_anims for t, a in seen_g if t >= meal_at - 4)
     ck(shown, f'3. the guest\'s mirror plays the meal\'s animation ({sorted(meal_anims)})')

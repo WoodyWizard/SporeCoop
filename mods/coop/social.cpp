@@ -1405,8 +1405,9 @@ std::string abilities_dump(int id)
         uint8_t* a = (uint8_t*)ability(c, i);
         if (!a || IsBadReadPtr(a, 0x108))
             continue;
-        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f\n", i, *(uint32_t*)(a + 8),
-                 *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C), *(float*)(a + 0xA8));
+        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f anim=%08X\n", i,
+                 *(uint32_t*)(a + 8), *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C),
+                 *(float*)(a + 0xA8), ability_anim(a)); // (anim: BUG-0891, what the ability plays)
         out += b;
         // the hit's extra effects (0xC20390: kinds at +0xB8..+0xBC, chances at +0xCC; kind 1 = stun for +0x80 s through
         // the victim's vt 0x94, docs/re/creature.md#creature-stun)
