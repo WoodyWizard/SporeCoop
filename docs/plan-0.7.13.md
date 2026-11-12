@@ -57,6 +57,7 @@ not verified by us".
 | **N1 Net and session** | A leaver's ready flag inherited by the next player of its id; names from the network not sanitized (log lines, the slot marker); LAN discovery answering the whole internet; 16 half-open peer slots; DOS device names in received paths; a task destructor under the task lock; host() / join() inside a delivery callback; a late chunk of an older realign cycle restarting the cycle | BUG-0772, 0774, 0776, 0778, 0785, 0860, 0861, 0886 |
 | **G1 Adventures: safety** (no adventure co-op yet) | The host's time of day overriding an adventure's lighting, the partner's puppet in the scenario cast crashing the host at an act change | BUG-0789, 0845 |
 | **P1 Performance, tools, small things** | `readable` calling VirtualQuery on every check (measure first), the wheel without modifier flags in tests, a console command casting a number to a window, the paint reader skipping run-compressed models, one function under two names in the .sym; the watchdog and stack dump calling VirtualQuery while the target thread is suspended (a hang under Wine); tests that cannot fail or assert a mod counter (guest bite, Tribe members eating, the social console, Cell poison damage); the census without a stage-change guard | BUG-0791, 0859, 0812, 0852, 0837, 0880, 0888, 0889, 0891, 0892, 0885 |
+| **B1 Left from 0.7.12** | The 0.7.12 final check and key-frame reviews: Tribe mirrors (a staff swing, a member thrown by a blow, the roster health, idle poses, ground round a live-made village after a rejoin), Creature labels (tag height, tag in a camera turn, arrows over each other and the HUD, the HUD portrait after a species change), NPC pointers into a destroyed puppet, a family animal far from its copy, Civ: a guest's purchase lost, the galaxy menu logo left on a guest; Space: a guest not following the host's load of another save; Tribe: the host's game-over caption while the guest plays on; tests and lab: cell_own_load on lane 9, coop.targets / coop.status reading stale tables, key frames at bad moments | BUG-0914, 0946, 0935, 0936, 0947, 0929, 0948, 0949, 0937, 0930, 0932, 0940, 0938, 0941, 0922, 0915, 0919, 0924 |
 
 ## Fixes never seen failing (from the closed-ticket review)
 
@@ -100,7 +101,7 @@ docs/11-rivals.md#rivals-fork-feature-ideas. Each ticket says how the fork built
 
 1. H0 and the 0.7.12 blockers as soon as the owner decides (they do not wait for 0.7.13).
 2. Wave 1 (at most 3 lab agents): R1, R2, L1: the player reports with a known cause and the crashes.
-3. Wave 2: W1, O1, S1, then R3, C1, C2, T1.
+3. Wave 2: W1, O1, S1, then R3, C1, C2, T1, B1 (B1 split by area: Tribe mirrors, labels, the rest).
 4. Wave 3: N1, G1, A1, P1 (A1 needs no lab: build files, docs, vendor submissions by the owner).
 5. Each package starts with the tests that reproduce its findings; a finding whose test cannot be made to fail after
    a serious attempt is closed as not reproduced with the runs as evidence.
@@ -127,3 +128,9 @@ docs/11-rivals.md#rivals-fork-feature-ideas. Each ticket says how the fork built
 * **Friendly fire in Rivals works in every stage** (Cell, Creature, Tribe, Civilization, Space): required, not
   optional. BUG-0899 (the 0.7.12 setting works in Creature only) is closed by Rivals 0.8, see
   docs/11-rivals.md#rivals-friendly-fire-all-stages.
+
+## Started (2026-11-12)
+
+The owner asked to start 0.7.13 on 2026-11-12. Branch rel/0.7.13 from main 1d8e9d68 (v0.7.12). H0 and the 0.7.12
+blockers are done (0.7.11.2, 0.7.12). The 0.7.12 leftovers are package B1. Wave 1 started: R1 (fix/w48-civ-speed,
+lanes 2/3), R2 (fix/w48-captures, lanes 4/5), L1 (fix/w48-freed, lanes 6/7).
