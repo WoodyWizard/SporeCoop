@@ -117,15 +117,31 @@ void focus_install_hooks()
 // UI tests and frame-counted waits expect 30 fps). In a game the cap is the game's own again: the
 // cell physics, for example, steps per frame and drifts at other frame rates. 0 = no limit;
 // frame_ms forces a value everywhere; console: frame.limit <ms> (forced) / frame.limit auto.
+// The value is the game's property kFrameLimitMS (id 44 of the AppProperties list: +0xB0 of its value
+// array, docs/02-modkit.md#modkit-frame-limit).
+// BUG-0779: the "game's own" value was read once at the first frame and written back every 10 frames,
+// so a frame limit another program set later (a mod, a frame limiter, the game itself) was undone
+// within 10 frames. Now a value SporeKit did not write is taken as the new own value and kept.
+// `kit.fix framelimit 0`: the value of the first frame is written back, as before (0.3.15).
 static int g_forced = -2; // -2: not read yet, -1: automatic
 static int g_menu_ms = -1;
 static int g_game_ms = 33; // the game's own value, read before the first change
+static int g_last_seen = -1; // the value after SporeKit's last look / write (-1: never)
+static unsigned g_others = 0; // changes by someone else seen
 
 void set_frame_limit(int ms)
 {
     g_forced = ms;
     SKLOG(SK_INFO, "frame limit: %d ms%s", ms, ms < 0 ? " (automatic)" : "");
     apply_frame_limit();
+}
+
+static int* frame_limit_field()
+{
+    uintptr_t p = sym("App::FrameLimit_ptr");
+    uint8_t* app = p ? *(uint8_t**)p : nullptr;
+    uint8_t* cfg = app ? *(uint8_t**)(app + 0x3C) : nullptr;
+    return cfg ? (int*)(cfg + 0xB0) : nullptr;
 }
 
 void apply_frame_limit()
@@ -137,22 +153,42 @@ void apply_frame_limit()
         if (g_menu_ms >= 0)
             SKLOG(SK_INFO, "frame limit: %d ms in the menus (test run)", g_menu_ms);
     }
-    uintptr_t p = sym("App::FrameLimit_ptr");
-    uint8_t* app = p ? *(uint8_t**)p : nullptr;
-    uint8_t* cfg = app ? *(uint8_t**)(app + 0x3C) : nullptr;
-    if (!cfg)
+    int* f = frame_limit_field();
+    if (!f)
         return;
     static bool read_own;
+    int cur = *f;
     if (!read_own) {
-        g_game_ms = *(int*)(cfg + 0xB0);
+        g_game_ms = cur;
         read_own = true;
+        SKLOG(SK_INFO, "frame limit: the game's own %d ms (kFrameLimitMS) at frame %llu%s", cur,
+              (unsigned long long)frame_index(), cur == 0 ? " (no limit: the frame rate is not capped)" : "");
+    } else if (g_last_seen >= 0 && cur != g_last_seen) {
+        g_others++;
+        if (fixed(g_fix_framelimit)) {
+            SKLOG(SK_INFO, "frame limit: set to %d ms by another program or the game (was %d ms): kept as the "
+                           "game's own (BUG-0779)%s", cur, g_last_seen, g_forced >= 0 ? "; frame.limit / frame_ms still wins" : "");
+            g_game_ms = cur;
+        } else if (g_others <= 5)
+            SKLOG(SK_INFO, "frame limit: set to %d ms by another program or the game; written back to %d ms "
+                           "(kit.fix framelimit 0)", cur, g_game_ms);
     }
     uint32_t mode = game_mode_id();
     bool menu = mode == 0 || mode == 0x2CCD1D2; // startup / GalaxyGameEntry
     int want = g_forced >= 0 ? g_forced : (menu && g_menu_ms >= 0 ? g_menu_ms : g_game_ms);
-    if (*(int*)(cfg + 0xB0) != want)
-        *(int*)(cfg + 0xB0) = want;
+    if (*f != want)
+        *f = want;
+    g_last_seen = want;
 }
+
+int frame_limit_now()
+{
+    int* f = frame_limit_field();
+    return f ? *f : -1;
+}
+
+int frame_limit_own() { return g_game_ms; }
+unsigned frame_limit_changes() { return g_others; }
 
 // called once the game window is known (device creation)
 void focus_attach_window(void* hwnd)

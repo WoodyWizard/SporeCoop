@@ -259,6 +259,11 @@ void vcursor_release();         // BUG-0804: back to the real mouse now (unless 
 bool vcursor_state(int& x, int& y, bool& virt); // the point GetCursorPos gives the game (client coords)
 void place_test_window();
 void apply_frame_limit();
+std::string present_intervals(bool reset); // BUG-0779: Present interval statistic since the last reset (console)
+void d3d9_note_function(const char* what, const void* p); // log the module of a hooked d3d9 function
+int frame_limit_now();          // kFrameLimitMS in the game now (-1: not readable yet)
+int frame_limit_own();          // the game's own value as SporeKit keeps it (BUG-0779)
+unsigned frame_limit_changes(); // changes of the value by another program / the game seen
 void set_frame_limit(int ms);    // console: frame.limit <ms> (33 = the game's own, 0 = none)        // test runs: lift the game's 30 fps cap ([sporekit] test_frame_ms)       // test runs: move the game window to a secondary monitor
 
 // fixes.cpp: fixes with a switch for tests (`kit.fix <name> 0|1`): 1 (default) = fixed, 0 = the old
@@ -290,6 +295,7 @@ extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting th
 extern KitFix g_fix_initfail;  // BUG-0521: a failed start of the game is reported and explained
 extern KitFix g_fix_dialognote; // BUG-0925: a dialog on the main thread is named in the log (text, stack, report)
 extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (minimized) is not a hang
+extern KitFix g_fix_framelimit; // BUG-0779: a frame limit set by another program is kept, not written back
 extern KitFix g_fix_presentlost; // BUG-0653: a hitch over 2 s is not Present lost (game loop passes without Present needed)
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }

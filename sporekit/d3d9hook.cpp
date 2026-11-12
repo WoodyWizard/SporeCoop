@@ -4,8 +4,10 @@
 
 #include <d3d9.h>
 
+#include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <vector>
 
 namespace sk {
 
@@ -29,6 +31,149 @@ static HWND g_hwnd;
 static uint64_t g_frame;
 static double g_fps, g_last_t;
 static bool g_in_frame;
+
+// ---- BUG-0779: what the player's device and its hooks are, and how far apart the frames are shown ----
+// the module a code address lives in ("d3d9.dll (game folder)", "d3d9.dll (system)", ...)
+static std::string module_text(const void* p)
+{
+    HMODULE m = nullptr;
+    if (!p || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                  (LPCWSTR)p, &m))
+        return "no module";
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(m, path, MAX_PATH);
+    std::string full = narrow(std::wstring(path, n));
+    std::string name = full.substr(full.find_last_of("\\/") + 1);
+    std::string low = full, game = narrow(game_dir());
+    for (auto& c : low)
+        c = (char)tolower((unsigned char)c);
+    for (auto& c : game)
+        c = (char)tolower((unsigned char)c);
+    bool in_game = !game.empty() && low.rfind(game, 0) == 0;
+    bool sys = low.find("\\windows\\") != std::string::npos;
+    return name + (in_game ? " (game folder)" : sys ? " (system)" : " (elsewhere)");
+}
+
+static bool readable(const void* p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!p || !VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)))
+        return false;
+    return (uintptr_t)p + n <= (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+}
+
+// where a function's first instruction jumps when it starts with one (another program's hook placed before ours)
+static std::string jump_text(const void* p)
+{
+    if (!p || !readable(p, 8))
+        return "";
+    const uint8_t* b = (const uint8_t*)p;
+    const uint8_t* to = nullptr;
+    if (b[0] == 0xE9)
+        to = b + 5 + *(const int32_t*)(b + 1);
+    else if (b[0] == 0xFF && b[1] == 0x25 && readable(*(void* const*)(b + 2), 4))
+        to = **(const uint8_t* const* const*)(b + 2);
+    else if (b[0] == 0x68 && b[5] == 0xC3) // push imm32; ret
+        to = *(const uint8_t* const*)(b + 1);
+    if (!to)
+        return "";
+    return ", starts with a jump into " + module_text(to);
+}
+
+void d3d9_note_function(const char* what, const void* p)
+{
+    SKLOG(SK_INFO, "d3d9: %s at %p in %s%s", what, p, module_text(p).c_str(), jump_text(p).c_str());
+}
+
+static void log_pp(const char* what, const D3DPRESENT_PARAMETERS* pp)
+{
+    if (!pp)
+        return;
+    unsigned iv = pp->PresentationInterval;
+    const char* ivs = iv == D3DPRESENT_INTERVAL_IMMEDIATE ? "immediate: no vsync"
+                      : iv == D3DPRESENT_INTERVAL_DEFAULT ? "default: vsync"
+                      : iv == D3DPRESENT_INTERVAL_ONE     ? "one: vsync"
+                                                          : "other";
+    SKLOG(SK_INFO, "%s: %ux%u windowed=%d interval=0x%X (%s) refresh=%u Hz swap effect=%u back buffers=%u", what,
+          pp->BackBufferWidth, pp->BackBufferHeight, pp->Windowed, iv, ivs, pp->FullScreen_RefreshRateInHz,
+          (unsigned)pp->SwapEffect, pp->BackBufferCount);
+}
+
+// The game asks for PresentationInterval IMMEDIATE (no vsync) in windowed and fullscreen mode (seen at CreateDevice and
+// every Reset, GOG 2024): the picture tears whenever a frame is shown while the screen is drawn, the more the faster
+// the game runs (BUG-0779). [sporekit] vsync = 1 asks the driver for vsync instead (interval one), 0 for none, -1 (the
+// default) leaves the game's choice.
+static void vsync_apply(D3DPRESENT_PARAMETERS* pp)
+{
+    static int want = -2;
+    if (want == -2)
+        want = ini_int(mods_dirw() + L"\\sporekit.ini", "sporekit", "vsync", -1);
+    if (!pp || want < 0)
+        return;
+    UINT iv = want ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
+    if (pp->PresentationInterval != iv) {
+        SKLOG(SK_INFO, "vsync: [sporekit] vsync=%d: presentation interval 0x%X instead of the game's 0x%X", want, iv,
+              pp->PresentationInterval);
+        pp->PresentationInterval = iv;
+    }
+}
+
+// Present intervals: one set for the minute line of the log, one for the console (`frame.interval`)
+struct Intervals {
+    std::vector<float> ms;
+    void add(float v)
+    {
+        if (ms.size() < 200000)
+            ms.push_back(v);
+    }
+    std::string text() const
+    {
+        if (ms.empty())
+            return "no Present intervals yet";
+        std::vector<float> s = ms;
+        std::sort(s.begin(), s.end());
+        double sum = 0;
+        for (float v : s)
+            sum += v;
+        char b[200];
+        snprintf(b, sizeof b, "present interval mean %.1f ms p50 %.1f p95 %.1f max %.1f over %u frames (%.1f fps)",
+                 sum / s.size(), s[s.size() / 2], s[std::min(s.size() - 1, s.size() * 95 / 100)], s.back(),
+                 (unsigned)s.size(), sum > 0 ? 1000.0 * s.size() / sum : 0.0);
+        return b;
+    }
+};
+static Intervals g_iv_min, g_iv_con;
+static double g_iv_last_t, g_iv_min_t;
+static std::mutex g_iv_mu;
+
+static void interval_tick()
+{
+    double t = now_seconds();
+    std::lock_guard<std::mutex> lk(g_iv_mu);
+    if (g_iv_last_t > 0) {
+        float d = (float)((t - g_iv_last_t) * 1000.0);
+        g_iv_min.add(d);
+        g_iv_con.add(d);
+    }
+    g_iv_last_t = t;
+    if (g_iv_min_t <= 0)
+        g_iv_min_t = t;
+    if (t - g_iv_min_t >= 60) {
+        SKLOG(SK_INFO, "frames: %s this minute; frame limit %d ms (the game's own %d ms)", g_iv_min.text().c_str(),
+              frame_limit_now(), frame_limit_own());
+        g_iv_min.ms.clear();
+        g_iv_min_t = t;
+    }
+}
+
+std::string present_intervals(bool reset)
+{
+    std::lock_guard<std::mutex> lk(g_iv_mu);
+    std::string s = g_iv_con.text();
+    if (reset)
+        g_iv_con.ms.clear();
+    return s;
+}
 
 // ---- overlay font (D3DX from the game's own d3dx9_27.dll) ----
 struct ID3DXFontVtbl; // we call through raw vtable indices
@@ -331,6 +476,7 @@ static void on_frame_begin_present()
         SKLOG(SK_INFO, "frames: Present reaches SporeKit again; frames come from Present");
     }
     frame_enter(false, sp);
+    interval_tick();
     frame_common();
 
     // overlay pass
@@ -437,6 +583,8 @@ static HRESULT WINAPI h_SwapPresent(IDirect3DSwapChain9* sc, const RECT* a, cons
 
 static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
 {
+    log_pp("device Reset asks for", pp);
+    vsync_apply(pp);
     fire(SK_EV_DEVICE_LOST, dev);
     tri_release(); // a state block holds no D3DPOOL_DEFAULT resource, but is made anew after a Reset anyway
     if (g_font)
@@ -457,6 +605,10 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
 static void hook_device(IDirect3DDevice9* dev)
 {
     void** v = vt(dev);
+    if (!o_Present) {
+        d3d9_note_function("Present", v[17]);
+        d3d9_note_function("Reset", v[16]);
+    }
     if (!o_Present)
         hook_create(&g_kit_mod, v[17], (void*)h_Present, (void**)&o_Present);
     if (!o_Reset)
@@ -473,6 +625,8 @@ static void hook_device(IDirect3DDevice9* dev)
 static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWND w, DWORD f,
                                      D3DPRESENT_PARAMETERS* pp, IDirect3DDevice9** out)
 {
+    log_pp("CreateDevice asks for", pp);
+    vsync_apply(pp);
     HRESULT hr = o_CreateDevice(d3d, ad, t, w, f, pp, out);
     SKLOG(SK_INFO, "CreateDevice hwnd=%p flags=0x%lX %ux%u windowed=%d -> 0x%08lX", w, f,
           pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0, pp ? pp->Windowed : -1, hr);
@@ -495,8 +649,10 @@ static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWN
 static IDirect3D9* WINAPI h_Direct3DCreate9(UINT sdk)
 {
     IDirect3D9* d3d = o_Direct3DCreate9(sdk);
-    if (d3d && !o_CreateDevice)
+    if (d3d && !o_CreateDevice) {
+        d3d9_note_function("CreateDevice", vt(d3d)[16]);
         hook_create(&g_kit_mod, vt(d3d)[16], (void*)h_CreateDevice, (void**)&o_CreateDevice);
+    }
     return d3d;
 }
 
@@ -510,6 +666,7 @@ bool d3d9_install()
         SKLOG(SK_ERROR, "d3d9: Direct3DCreate9 not found");
         return false;
     }
+    d3d9_note_function("Direct3DCreate9", p);
     return hook_create(&g_kit_mod, p, (void*)h_Direct3DCreate9, (void**)&o_Direct3DCreate9) == 0;
 }
 
