@@ -10,8 +10,8 @@ tribes could then form one on a site already used.
 1. Two games on the tribe fixture (cold). Both games list the same tribe spawn markers (the world's).
 2. The host's controller forms its next tribe (`coop.tribe form`, the function the game calls during
    play; again while the next species is still being baked; tribe.form_pace off, so the party's food
-   does not hold it). The host's game has one marker fewer for each
-   tribe it formed (with 3-4 tribes it forms the next ones every second).
+   does not hold it). With 3-4 tribes it forms the next ones a second apart: the test waits until the host's
+   tribes and markers have not changed for 4 s. The host's game then has one marker fewer for each tribe it formed.
 3. Within 20 s the guest's game has a tribe where the host's new one is (its copy) and no tribe spawn
    marker within 5 m of the one the host's game used up: the guest's own object list.
 
@@ -63,9 +63,19 @@ def main():
         if m and m.group(1) != m.group(2):
             break
         time.sleep(1.5)
-    host.call('coop.fix tribe.form_pace on')  # (with 3-4 tribes the controller forms the next ones every second)
-    time.sleep(1)
-    hm1, ht1 = markers(host), tribes(host)
+    host.call('coop.fix tribe.form_pace on')
+    # With 3-4 tribes the controller forms the next ones a second apart (three tribes in 2 s on the fixture): the
+    # host's state is read when it has stopped changing, not in the middle (a read 1 s after the first tribe fell
+    # between the second tribe and its marker, or before the third: lab 20261111-185533, -204713).
+    seen, since, t0 = None, time.time(), time.time()
+    while time.time() - t0 < 40:
+        hm1, ht1 = markers(host), tribes(host)
+        if (len(hm1), len(ht1)) != seen:
+            seen, since = (len(hm1), len(ht1)), time.time()
+        elif time.time() - since >= 4:
+            break
+        time.sleep(0.5)
+    ck(time.time() - since >= 4, f'the host\'s controller is done forming: {seen[1]} tribes and {seen[0]} markers for 4 s')
     used = gone(hm0, hm1)
     new = gone(ht1, ht0, 5)
     print(f'  host: new tribes {show(new)}, markers used up {show(used)}', flush=True)
@@ -85,7 +95,9 @@ def main():
     print('  guest: ' + guest.call('coop.tribe markers')['out'].strip().splitlines()[-1], flush=True)
     ck(len(copies) == len(new), f'the guest\'s game has its copy of each new tribe ({len(copies)} of {len(new)})')
     ck(not left, f'the guest\'s game has no tribe spawn marker where the host\'s controller used one up ({show(left)})')
-    ck(len(gm1) == len(hm1), f'the same number of tribe spawn markers on both games (host {len(hm1)}, guest {len(gm1)})')
+    hm2 = markers(host)
+    ck(len(hm2) == len(hm1), f'the host formed no tribe meanwhile ({len(hm1)} -> {len(hm2)} markers)')
+    ck(len(gm1) == len(hm2), f'the same number of tribe spawn markers on both games (host {len(hm2)}, guest {len(gm1)})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
