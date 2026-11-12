@@ -14,9 +14,13 @@ there was 5.1 / 5.9 m higher than the host's, and the host's members that went t
 PASS: the two grounds within 50 m of the new village differ by less than LIMIT, the guest's village within 2 m.
 
 SPORE_FIX_OFF=<the fix> must FAIL (docs/tickets/BUG-0332).
+--rejoin (BUG-0947): then the guest leaves and joins again (it loads the host's world, the new village in it) and
+the two grounds round the village are compared again (a four-player campaign's rejoin in Tribe had them 4.5-4.9 m
+apart there).
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_form_ground.py
 """
+import argparse
 import math
 import re
 import time
@@ -34,6 +38,9 @@ def tribes(con):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--rejoin', action='store_true')
+    a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(6)
@@ -75,6 +82,20 @@ def main():
        f'50 m {worst:.2f} m < {LIMIT})')
     ck(mine and mine[0][0] < 2.0, f'the guest\'s village stands where the host\'s does '
        f'({mine[0][0] if mine else -1:.2f} m < 2)')
+    if a.rejoin:  # BUG-0947
+        from coop_tribe_looks import rejoin
+        if rejoin(ck, host, guest):
+            time.sleep(15)
+            worst2 = 0.0
+            for k in range(2):
+                w = compare(host, guest, [(dd, q) for dd, q in pts if dd <= 50])
+                print(f'  after the rejoin, sample {k + 1}: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
+                      flush=True)
+                print(f'    centre: host {ground(host, at)} guest {ground(guest, at)}', flush=True)
+                worst2 = max([worst2] + list(w.values()))
+                time.sleep(10)
+            ck(worst2 < LIMIT, f'after the guest\'s rejoin its ground round the village is still the host\'s (largest '
+               f'difference within 50 m {worst2:.2f} m < {LIMIT})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

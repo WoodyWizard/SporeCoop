@@ -26,6 +26,7 @@ play. Measured all the time (docs/stability/tribe.md):
 """
 import argparse
 import math
+import os
 import random
 import re
 import sys
@@ -61,6 +62,52 @@ def tribe_state(con):
                                         hp=float(m.group(5)), pos=tuple(float(m.group(i)) for i in (6, 7, 8)),
                                         tribe=tribe)
     return out
+
+
+# BUG-0922: the game-over rule. The play pressed OK only when no member of the player tribe had health on the host for
+# 15 s; the guest's members belong to the host's player tribe too, so with a living guest that never came while the host
+# sat in the caption (the last 40 s of a play of the 0.7.12 final check, the guest playing on against a paused host).
+# Now the caption itself is the rule: the game-over window ("Alas! Your population has fallen below the minimum ...",
+# `coop.ui find "Alas"`) up on the host for 3 s. PLAY_TRIBE_OLD_GAMEOVER=1: the members rule (the test's twin).
+OLD_GAMEOVER = os.environ.get('PLAY_TRIBE_OLD_GAMEOVER') == '1'
+
+
+def caption_up(con):
+    """the game-over caption is up in this game"""
+    return 'no window' not in (con.call('coop.ui find "Alas"').get('out') or 'no window')
+
+
+class GameOver:
+    """the play's game-over rule: due() says when to press OK on the host (BUG-0922)"""
+
+    def __init__(self, old=None):
+        self.old = OLD_GAMEOVER if old is None else old
+        self.since = None
+        self.caption_since = None
+        self.longest = 0.0  # s: the longest time the caption was up on the host (seen by due())
+
+    def due(self, host, hs=None):
+        if self.old:
+            hs = tribe_state(host) if hs is None else hs
+            up = not [i for i, v in hs.items() if v['tribe'] == 'p' and v['hp'] > 0]
+            wait = 15
+            cap = caption_up(host)
+        else:
+            up, wait = caption_up(host), 3
+            cap = up
+        if cap:
+            self.caption_since = self.caption_since or time.time()
+            self.longest = max(self.longest, time.time() - self.caption_since)
+        else:
+            self.caption_since = None
+        if not up:
+            self.since = None
+            return False
+        self.since = self.since or time.time()
+        if time.time() - self.since > wait:
+            self.since = None
+            return True
+        return False
 
 
 def tribe_centres(con):
@@ -258,7 +305,7 @@ class Game:
         self.both_attacked = 0
         self.plan_i, self.plan_until = -1, 0
         self.maxhp = {}
-        self.dead_since = None
+        self.gameover = GameOver()  # BUG-0922
         self.game_overs = 0
         self.phases = []
         self.pending_gift = None
@@ -572,22 +619,17 @@ class Game:
         hs, gs = tribe_state(self.host), tribe_state(self.guest)
         # the tribe died out: the game shows "Alas! Your population has fallen below the minimum..."
         # and waits for OK, which bounces back to the last save (the host's world; the guest follows)
-        if not [i for i, v in hs.items() if v['tribe'] == 'p' and v['hp'] > 0]:
-            self.dead_since = self.dead_since or time.time()
-            if time.time() - self.dead_since > 15:
-                self.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over: bounce back)')
-                self.host.call('key enter')
-                self.game_overs += 1
-                self.dead_since = None
-                time.sleep(12)
-                for p in self.p:  # the reload resets the view: look where the minimap points again
-                    p.cur = None
-                    p.busy.clear()
-                    p.zoom = 0
-                    p.calibrate()
-                hs, gs = tribe_state(self.host), tribe_state(self.guest)
-        else:
-            self.dead_since = None
+        if self.gameover.due(self.host, hs):  # (BUG-0922: the caption, not the members)
+            self.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over: bounce back)')
+            self.host.call('key enter')
+            self.game_overs += 1
+            time.sleep(12)
+            for p in self.p:  # the reload resets the view: look where the minimap points again
+                p.cur = None
+                p.busy.clear()
+                p.zoom = 0
+                p.calibrate()
+            hs, gs = tribe_state(self.host), tribe_state(self.guest)
 
         def roster(s):
             return {i: v['owner'] for i, v in s.items() if v['tribe'] == 'p'}
@@ -826,6 +868,17 @@ def main():
         for line in g.log[-40:]:
             print('   ', line)
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_tribe.py --minutes {a.minutes} --seed {seed}')
+    # BUG-0922: a game over at the very end: OK first (the end frame shows play), and the host never sat in the caption
+    t_end = time.time()
+    while time.time() - t_end < 25 and caption_up(host):
+        if g.gameover.due(host):
+            g.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over at the end)')
+            host.call('key enter')
+            g.game_overs += 1
+            time.sleep(8)
+        time.sleep(0.5)
+    ck(g.gameover.longest < 25, f'the host never sat in the game-over caption for long (longest {g.gameover.longest:.0f} s, '
+                                f'game overs {g.game_overs})')
     try:
         keyframe('end', 'after the play: both games in Tribe play, the same huts and members on both, the tribe panel and minimap in place')
         shot(host, 'play_tribe_host.png')

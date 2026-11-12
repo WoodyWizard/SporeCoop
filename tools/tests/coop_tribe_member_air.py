@@ -10,7 +10,9 @@ member's stay over 3 m (`tribe: member #.. is .. m over the ground ...` and `...
 
 2. Blows the host's leader lives through (`coop.tribe pincer`, the combatant's TakeDamage as a real blow: 60, 100,
    140 hp): each throws it over 3 m; the log has the member, its node, and "down again" after less than 5 s.
-   Printed, not asserted: where the guest's mirror is meanwhile (BUG-0946: the guests do not see the throw).
+   BUG-0946: the guest's mirror of the leader is thrown up too: over 2.5 m over the guest's own ground in the 3 s
+   after at least two of the three blows (the host sends its member's height over its ground while it is up,
+   tribe.mirror_air; before, the mirror stayed within 0.06 m of its ground). SPORE_FIX_OFF=tribe.mirror_air fails.
 1. A member put into deep water while it idles (node 0x04601D70; one with somewhere to go, node 0x05524115 or just
    out of it, swims back to the land within 2-15 s: the test waits for the idle node and tries again, up to three
    times, when the member left) floats on it, 10 m and
@@ -25,7 +27,8 @@ import time
 
 import lane
 from play_tribe import tribe_centres
-from twoinst import Checks, game_runs, start
+from coop_tribe_looks import view_both
+from twoinst import Checks, game_runs, keyframe, start
 
 OVER = re.compile(r'\[s ([\d.]+)\].*tribe: member #(\d+) of player (\d+) is ([\d.]+) m over the ground.*?: (bt=\w+ .*)$')
 DOWN = re.compile(r'\[s ([\d.]+)\].*tribe: member #(\d+) of player (\d+) is down again \(or gone\) after ([\d.]+) s over 3 m, '
@@ -147,17 +150,29 @@ def main():
     # ---- 2. blows throw the leader up
     mark = log_mark(host)
     full = ms[lead]['hp']
+    guest_tops = []
     for dmg in (60, 100, 140):
         host.call(f'coop.tribe sethp {lead} {full:.0f}')
+        shoot = dmg == 100 and view_both(host, guest, members(host)[lead]['pos'], 16.0, 4.0)
         print(f'  blow of {dmg} on #{lead}:', host.call(f'coop.tribe pincer {lead} {rest[0]} {dmg}')['out'][:60], flush=True)
         low = 0.0
-        for _ in range(12):  # the guest's mirror meanwhile (printed: BUG-0946)
+        for k in range(12):  # the guest's mirror meanwhile (BUG-0946)
             g = members(guest).get(lead)
             low = max(low, ground(guest, g['pos'])[1] if g else 0.0)
+            if shoot and k == 1:
+                keyframe('toss', f'the same camera on both games 16 m from the host\'s leader #{lead} a moment after a '
+                         f'blow of {dmg}: it is in the air (about 3-5 m over the ground) on both screens', kind='sameview')
             time.sleep(0.25)
+        if shoot:
+            for c in (host, guest):
+                c.call('coop.view off')
         print(f'    the guest\'s mirror of #{lead} was at most {low:.2f} m over its ground in the 3 s after', flush=True)
+        guest_tops.append(low)
         time.sleep(5)
     host.call(f'coop.tribe sethp {lead} {full:.0f}')
+    ck(sum(1 for x in guest_tops if x > 2.5) >= 2,
+       f'the guest sees the throws: its mirror over 2.5 m over its ground after {sum(1 for x in guest_tops if x > 2.5)} '
+       f'of 3 blows (highest {", ".join(f"{x:.2f}" for x in guest_tops)} m)')
     time.sleep(1.5)
     lines = log_since(host, mark)
     ups = [m for m in map(OVER.search, lines) if m and int(m.group(2)) == lead]
