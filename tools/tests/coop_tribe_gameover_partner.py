@@ -16,10 +16,25 @@ Key frame `caption`: both games while the caption is up (the host's caption, the
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_gameover_partner.py
 """
+import re
 import time
 
 from play_tribe import GameOver, caption_up, tribe_state
 from twoinst import Checks, game_runs, keyframe, start
+
+
+KO_WAIT = 80  # s: a knocked-out chief stands up after about 95 s (docs/re/tribe.md#tribe-member-toss): the caption comes
+# just before it does, as in the reported play
+
+
+def chief_row(con):
+    """the player tribe's leader on this game: hp, dead flag, node"""
+    for line in con.call('coop.tribe')['out'].splitlines():
+        if re.search(r' leader=1 ', line) and not line.lstrip().startswith('#0 '):
+            m = re.search(r'#(\d+) .*hp=([\d.]+) .*dead=(\d) bt=(\w+)', line)
+            if m:
+                return [f'chief #{m.group(1)} hp={m.group(2)} dead={m.group(3)} bt={m.group(4)}']
+    return ['no chief']
 
 
 def mode(con):
@@ -54,6 +69,27 @@ def main():
           flush=True)
     ck(living, f'the guest\'s members keep their health ({living})')
 
+    # no game over while the guest's members live (the host's game counts them: lab 20261112-091820), and the knocked-out
+    # chief: in the reported play the host's chief lay knocked out and was "back on its feet on the host" (its health
+    # over 0, the guest's log) 3 s into the caption, which the members rule took for a living member
+    t0, up = time.time(), False
+    while time.time() - t0 < KO_WAIT and not up:
+        time.sleep(5)
+        up = caption_up(host)
+        print(f'    {time.time() - t0:3.0f} s: ' + ' '.join(chief_row(host)), flush=True)
+    ck(not up, f'no game over on the host while the guest\'s members live ({KO_WAIT} s)')
+    # 2. the guest's members too, with blows the size of the epic's (it knocked the tribe out in the reported play)
+    t0 = time.time()
+    while time.time() - t0 < 60 and not caption_up(host):
+        hs = tribe_state(host)
+        alive = [i for i in theirs if i in hs and hs[i]['hp'] > 0]
+        if not alive:
+            break
+        for i in alive:
+            host.call(f'coop.tribe pincer {i} {enemy[0]} 100')
+        time.sleep(1.5)
+    rows = [ln.strip()[:120] for ln in host.call('coop.tribe')['out'].splitlines() if re.search(r'dead=1|hp=0\.', ln)]
+    print('  knocked out on the host:', *rows[:8], sep='\n    ', flush=True)
     rule = GameOver()
     print(f'  the play\'s game-over rule: {"members (old)" if rule.old else "the caption"}', flush=True)
     t1, seen, pressed, shot = time.time(), None, None, False
@@ -65,6 +101,8 @@ def main():
             keyframe('caption', 'the host in the game-over caption ("Alas! Your population has fallen below the '
                      'minimum..."), the guest in play: the caption must be closed by the play within seconds')
             shot = True
+        if int(time.time() - t1) % 3 == 0:
+            print(f'    caption {up}: ' + ' '.join(chief_row(host)), flush=True)
         if rule.due(host):
             host.call('key enter')
             pressed = time.time() - t1
@@ -74,9 +112,11 @@ def main():
         time.sleep(0.5)
     print(f'  caption on the host after {seen if seen is None else round(seen, 1)} s; OK pressed at '
           f'{pressed if pressed is None else round(pressed, 1)} s', flush=True)
-    if seen is None:  # the game kept the tribe alive with the guest's members: no game over to answer
-        print('  (no caption: the host\'s game counts the guest\'s members)', flush=True)
-        ck(not caption_up(host), 'no game over on the host while the guest\'s members live')
+    hs = tribe_state(host)
+    print(f'  the play\'s view at the end: player members with health '
+          f'{[(i, v["hp"]) for i, v in hs.items() if v["tribe"] == "p" and v["hp"] > 0]}', flush=True)
+    if not ck(seen is not None, 'the game over came on the host (every member knocked out)'):
+        pass
     else:
         ck(pressed is not None and pressed - seen < 25,
            f'the play\'s rule closes the caption within 25 s (seen {seen:.0f} s, OK at {pressed})')

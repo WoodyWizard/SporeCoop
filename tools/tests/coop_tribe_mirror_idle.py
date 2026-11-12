@@ -14,10 +14,13 @@ second (`coop.tribe anims`: the game's current main animation, the host's last b
 whether the hand holds its item, `hold=`):
 --part idle (BUG-0936): samples where the host's member stands or walks in its own idle choice (the same animation in
    two samples in a row, not just started): the guest's mirror must play that or its own idle / walk (the locomotion
-   animations), not a behaviour animation, in 75 % of them.
---part hold (BUG-0914): each time the host's member holds its item in the hand (`hold=1`) in an animation (a hold:
-   the samples of it in a row), the guest's mirror must hold its item in that same animation during it or in the
-   0.6 s after (the relay's delay), for 70 % of the holds.
+   animations), not a behaviour animation, in 80 % of them (62 % without the fix, 96-99 % with it).
+--part hold (BUG-0914): the natural holds are printed (each hold of the host's member in an animation and whether the
+   mirror held its item in that animation during it or 0.6 s after: the mirror's own game takes the item itself in
+   some animations, so the rate is no measure); then the host's chief takes its staff into the hand in the animation
+   it plays (`coop.tribe hand <id> <item>`, the game's attach: the hold modifier bound to that animation, what its
+   behaviour nodes do in a swing) three times and puts it back (`hand <id> end`): the guest's copy must hold the staff
+   in the hand 1.5 s after each take and have it back in the grip 1.5 s after each end.
 Key frames of kind sameview: the village's fire with the members at rest (idle), the host's chief with its staff
 (hold, shot while the host's chief holds the staff in an animation).
 
@@ -45,9 +48,13 @@ def anims(con):
 
 
 def leader(con):
+    """the player tribe's leader (the host's chief)"""
+    player = False
     for line in con.call('coop.tribe')['out'].splitlines():
+        if line.startswith('tribe '):
+            player = '(player)' in line
         m = re.match(r'\s+#(\d+) .*leader=1', line)
-        if m and m.group(1) != '0':
+        if m and player and m.group(1) != '0':
             return int(m.group(1))
     return None
 
@@ -84,7 +91,7 @@ def main():
             if x['hold'] and x['anim'] not in LOCO and not (ep and ep['anim'] == x['anim'] and ep['open']):
                 if ep:
                     done.append(ep)
-                ep = eps[i] = dict(anim=x['anim'], open=True, after=0, hit=False)
+                ep = eps[i] = dict(anim=x['anim'], open=True, after=0, hit=False, id=i)
             elif ep and ep['open'] and (not x['hold'] or x['anim'] != ep['anim']):
                 ep['open'] = False
             if ep:
@@ -99,6 +106,13 @@ def main():
           f'(else: {sorted(stale.items(), key=lambda kv: -kv[1])[:8]})', flush=True)
     hold_n, hold_ok = len(done), sum(1 for e in done if e['hit'])
     print(f'  hold: the mirror held its item in {hold_ok} of the host\'s {hold_n} holds in an animation', flush=True)
+    per = {}
+    for e in done:
+        k = per.setdefault(e['anim'], [0, 0])
+        k[0] += e['hit']
+        k[1] += 1
+    print('    by animation (held / holds): ' + ', '.join(f'{k} {v[0]}/{v[1]}' for k, v in sorted(per.items(), key=lambda kv: -kv[1][1])),
+          flush=True)
     for con, who in ((host, 'host'), (guest, 'guest')):
         out = con.call('coop.tribe anims')['out']
         print(f'  {who}:', ' | '.join(l for l in out.splitlines() if l.startswith(('idle fix', 'hold fix', 'anims fix'))))
@@ -111,8 +125,8 @@ def main():
                          'stand, sit or crouch the same way on both screens', kind='sameview')
             rate = idle_ok / idle_n if idle_n else 0.0
             ck(idle_n >= 40, f'the host\'s members stand or walk in their own idle ({idle_n} samples >= 40)')
-            ck(rate >= 0.75, f'the guest\'s mirrors do too, not an animation the host\'s member has ended '
-                             f'({100 * rate:.0f} % >= 75 %)')
+            ck(rate >= 0.8, f'the guest\'s mirrors do too, not an animation the host\'s member has ended '
+                             f'({100 * rate:.0f} % >= 80 %)')
         else:
             lead = leader(host)
             shot = False
@@ -132,9 +146,44 @@ def main():
                         shot = True
                     time.sleep(0.2)
             print(f'  swing key frame: {shot}', flush=True)
-            rate = hold_ok / hold_n if hold_n else 0.0
-            ck(hold_n >= 15, f'the host\'s members hold their items in animations ({hold_n} holds >= 15)')
-            ck(rate >= 0.7, f'the guest\'s mirrors hold them in the same animation too ({100 * rate:.0f} % >= 70 %)')
+            # The natural holds above are short (0.5-2 s) and partly taken by the mirror's own game (the work and the
+            # change animations attach at their own events): printed, not asserted. The check: the host's chief takes
+            # its staff into the hand in the animation it plays (`coop.tribe hand <id> <item>`: the game's attach, the
+            # hold modifier bound to that animation, as its behaviour nodes do) and puts it back (`hand <id> end`).
+            rounds, follow, back = 0, 0, 0
+            for k in range(12):
+                if rounds >= 3:
+                    break
+                x = anims(host).get(lead)
+                hand = host.call(f'coop.tribe hand {lead}')['out']
+                item = re.search(r'item=(\d+)', hand)
+                if not x or not item or int(item.group(1)) <= 0 or x['hold']:
+                    print(f'    try {k}: not now (anim {x and x["anim"]} hold {x and x["hold"]}; {hand.strip()[:90]})', flush=True)
+                    time.sleep(3)
+                    continue
+                host.call(f'coop.tribe hand {lead} {item.group(1)}')
+                time.sleep(1.5)
+                x, y = anims(host).get(lead), anims(guest).get(lead)
+                if not x or not x['hold']:
+                    print(f'    round {k}: the host\'s chief let go at once (anim {x and x["anim"]})', flush=True)
+                    host.call(f'coop.tribe hand {lead} end')
+                    time.sleep(2)
+                    continue
+                rounds += 1
+                follow += bool(y and y['hold'])
+                if rounds == 1 and view_both(host, guest, x['pos'], 10.0, 3.0):
+                    keyframe('hold', f'the same camera on both games 10 m from the host\'s chief #{lead} holding its staff '
+                             f'in the hand (taken in its animation {x["anim"]}): the staff held forward in the hand on both '
+                             f'screens, not upright in the resting grip on the guest', kind='sameview')
+                host.call(f'coop.tribe hand {lead} end')
+                time.sleep(1.5)
+                y2 = anims(guest).get(lead)
+                back += bool(y2 and not y2['hold'])
+                print(f'    round {k}: host anim {x["anim"]} hold 1; guest anim {y and y["anim"]} hold {y and y["hold"]}; '
+                      f'after the host\'s end: guest hold {y2 and y2["hold"]}', flush=True)
+            ck(rounds >= 2, f'the host\'s chief held its staff in its animation ({rounds} rounds >= 2)')
+            ck(rounds and follow == rounds, f'the guest\'s copy of the chief held it in the hand too ({follow} of {rounds})')
+            ck(rounds and back == rounds, f'and put it back into the grip when the host\'s did ({back} of {rounds})')
     finally:
         for con in (host, guest):
             con.call('coop.view off')

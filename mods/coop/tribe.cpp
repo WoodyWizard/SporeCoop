@@ -951,7 +951,8 @@ static void set_hand(void* c, int item) { thiscall<void>(a_SetHandheldItem, c, i
 // timed modifier the attach 0xC240E0 adds with that animation's handle; #tribe-held-item), else in the resting grip.
 // The host's game takes the item inside its behaviour animations (a chief swinging its staff: `hold=1`); the guest's
 // mirror plays the same animation (the relay) but its hand never takes the item again: the staff stayed upright. The
-// host sends each start of a member's hold with the animation playing then (kind 11: u8 n, n x {u16 id, u32 anim}); a
+// host sends each start of a member's hold with the animation playing then (kind 11: u8 n, n x {u16 id, u32 anim}; anim 0:
+// the hold ended, and a mirror's hold taken for it ends too); a
 // guest attaches the item again on its mirror while it plays that animation (Citizen_SetHandheldItem, its own hand:
 // the modifier is bound to the mirror's animation and ends with it, as on the host), and held_items_tick leaves such
 // a hold to its animation (8 s at most). `coop.fix tribe.mirror_hold off`: nothing sent or done.
@@ -1641,6 +1642,8 @@ static void send_member_holds()
         uint32_t cur = 0;
         if (h && h != m.hold && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur)
             v.push_back({m.id, cur});
+        else if (!h && m.hold && v.size() < 64)
+            v.push_back({m.id, 0}); // the hold ended (the item back in the resting grip)
         m.hold = h;
     }
     if (v.empty() || !g_mirror_hold_fix)
@@ -2006,6 +2009,14 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             auto it = g_gm.find(id);
             if (!g_mirror_hold_fix || it == g_gm.end())
                 continue;
+            if (!anim) { // the host's member put the item back into the grip: so does a mirror that took it for it
+                GMember& g = it->second;
+                g.hold_anim = 0;
+                if (g.hold_bound && mirror_ok(g) && has_body(g.c))
+                    hold_modifier(g.c, true);
+                g.hold_bound = false;
+                continue;
+            }
             it->second.hold_anim = anim;
             it->second.hold_at = now;
             hold_try(it->second, now);

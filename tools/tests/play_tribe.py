@@ -73,8 +73,13 @@ OLD_GAMEOVER = os.environ.get('PLAY_TRIBE_OLD_GAMEOVER') == '1'
 
 
 def caption_up(con):
-    """the game-over caption is up in this game"""
-    return 'no window' not in (con.call('coop.ui find "Alas"').get('out') or 'no window')
+    """the game-over caption is shown in this game: its window and every parent visible (`coop.ui find` lists the chain
+    with the flags; the window stays in the tree, hidden, after the bounce back)"""
+    out = con.call('coop.ui find "Alas"').get('out') or 'no window'
+    if 'no window' in out:
+        return False
+    fl = [int(m, 16) for m in re.findall(r' fl=0x([0-9A-Fa-f]+) ', out)]
+    return bool(fl) and all(f & 1 for f in fl)
 
 
 class GameOver:

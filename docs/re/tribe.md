@@ -3240,3 +3240,47 @@ BUG-0955, BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 7 (tribe_mirror_l
   destroyed flag is seen before the free; they keep the serial now anyway (`tribe.kept_refs`).
 * ✔ The HUD's target ring map is keyed by the target's serial (+0x24, `ring_shown`): a ring drawn for a new object
   at the old address would be keyed by the new one's.
+## Mirrors that look like the host's members: hunger, throws, idle poses, the hold of an item (2026-11-12, fix/w48-tribe-mirrors)
+<a id="tribe-mirror-looks"></a>
+
+BUG-0935, BUG-0946, BUG-0936, BUG-0914. GOG 2024, Ghidra (private project) and lanes 4 / 5, tribe fixture. Follows
+#tribe-held-item and #tribe-member-toss. `coop.tribe` rows print `maxhp= hunger=<+0xBBC>/<+0xBB8>/<+0xB90>
+idle=<+0xE3C> anim=<current>`; `coop.tribe anims` rows `idle=` (the host's last idle-refresh play) and `hold=`, and
+the counters `air`, `idle`, `hold`, `hunger_sets`.
+
+* ✔ (Ghidra) **cCreatureBase +0xBBC is mHunger** (0..100; the serializer's names: "mHunger" +0xBBC, "mHungerDelta"
+  +0xBB8, "mHungerDelayTimer" +0xB90). Getter 0xC0BB20, clamped setter `SporeCoop::Creature_SetHunger` 0xC0BB30.
+  The update `SporeCoop::Creature_HungerUpdate` 0xC0D5A0 (a vtable slot, every frame) adds the delta (-0.28 a second
+  at runtime) times dt; below 1 the creature starves: TakeDamage of its combatant (+0x5A8 vt 0x18) every frame. The
+  eat 0xC22C40 (the behaviour tree's, from the tribe's food) raises it with health and takes the tribe's bundles.
+* ✔ (runtime, lane 4, 5 min) The host's members eat (99.8 after 4 min), a guest's mirror never does (30.3 then; 0 in
+  about 6 min): the roster card of a starving member is red with an empty bar (BUG-0935: the guest's cards red after
+  minutes of play, the host's well). The mirror's own starvation blows are undone by the snapshot's health.
+* Fix `tribe.mirror_hunger`: hunger is a replicated field (kind `tribe_member_hunger` 11, field 7), applied with the
+  setter when the mirror differs by 2 %. Lab: the guest's own update had its mirrors at 65-67 when the host's ate
+  (100): "member #1's hunger 66.1 -> 99.9 as in the host's game".
+* ✔ (runtime) A thrown member (#tribe-member-toss) can keep the grounded byte +0x137 for part of its flight, so the
+  host sends every member more than 0.5 m over its ground (or `drive::body_airborne`) with that height (MSG_NPC_ANIM
+  kind 9 {u16 id, f32 agl} once a cycle). Fix `tribe.mirror_air`: a guest places the mirror at that height over its
+  own ground (drive::air_place, as npc.air) while the news is under 0.35 s old. A member floating on deep water
+  (15.2 m over the sea bed) is sent too and lands on the guest's water as before.
+* ✔ (runtime, lane 4/5, `coop.tribe anims` of both games twice a second) The animations of members at rest: the
+  relay (BUG-0569) starts the host's behaviour animations on the mirrors, the idle refresh (Creature_IdleRefresh,
+  plays its idle / walk choice; never relayed) is each game's own. A behaviour animation the host's tree cuts short
+  (the idle variants 0x02C39001..3, the gestures 0x04C6CB02 / 05, the work 0x03CDACC0) went on to its end on the
+  mirror while the host's member already stood (0x02481DE5) or walked (0x04866DAB / 0x04866D8E): with the host in its
+  own idle choice, the mirror played the same or its own idle / walk in 30 % of the samples (probe, 3 min). The BT's
+  idle override +0xE3C was -1 on every member sampled.
+* Fix `tribe.mirror_idle`: the host notes the idle refresh's plays per member (game.cpp's idle listener) and once a
+  second sends what each member plays that is not its behaviour animation (kind 10 {u16 id, u32 anim, u8 1 idle
+  choice | 2 another start}); a guest mirror that plays something else ends it (not within 1.5 s of a relayed start,
+  at most every 2 s): its own idle refresh (forced) for an idle choice, else the host's animation; the locomotion's
+  idle / walk ids are never played as main animations. Same samples: 96 % (tribe_mirror_idle).
+* ✔ (runtime) The host's members take their item into the hand inside behaviour animations (`hold=1`: the chief's
+  gestures 0x04C6CB02 / 05, work 0x03CDACC0, 0x02DF4B12, 0x066E50FC, the change 0x02C39200), each for 0.5-2 s. A
+  mirror plays the animation through the relay, but only some take the item themselves (the change animation's
+  event); for the chief's gestures the mirror's staff stayed in the resting grip (BUG-0914).
+* Fix `tribe.mirror_hold`: the host sends each new hold of a member (a new kind 5 modifier handle) with the animation
+  playing (kind 11 {u16 id, u32 anim}); the guest attaches the item again (Citizen_SetHandheldItem) while its mirror
+  plays that animation (also right after the relay starts it), so the modifier is bound to that animation and ends
+  with it; held_items_tick (BUG-0906's 1.5 s end) leaves such a hold alone for up to 8 s while the animation plays.

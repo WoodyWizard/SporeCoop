@@ -6411,3 +6411,31 @@ on a warm-free lane (30 s of start):
 * `world_queue` part 4 (BUG-0954): since BUG-0508 the host's evolution goes in place for a guest in its own editor;
   part 4 checks that no world is sent then, and shares the host's world with `coop.share` while the guest is still in
   its editor for the BUG-0074 check. `SPORE_FIX_OFF=world.world_reset` now works like `--without world_reset` (FAIL).
+## Tribe mirrors' looks: hunger, throws, poses, the hold; play_tribe's game-over rule (2026-11-12, fix/w48-tribe-mirrors)
+<a id="testing-tribe-mirror-looks"></a>
+
+docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
+
+* `tribe_mirror_hunger` (BUG-0935): the guest sets its mirrors' hunger to 0 (`coop.tribe hunger <id> 0`: the game's
+  setter, what minutes of its own update leave) and the host one member's to 40; the `hunger=` of the `coop.tribe`
+  rows must agree within 3 after 5 s. Key frame `roster`. `SPORE_FIX_OFF=tribe.mirror_hunger` fails.
+* `tribe_member_air` (BUG-0946 added): after blows of 60 / 100 / 140 on the host's leader the guest's mirror must be
+  over 2.5 m over its own ground after 2 of the 3 (sampled ~4 times a second through the console: the top is often
+  missed, 2.0-4.9 m seen with the fix, 0.04 m without); key frame `toss` of kind sameview 0.75 s after the second blow.
+  `SPORE_FIX_OFF=tribe.mirror_air` fails. The water part keeps its allowed monitor finding (BUG-0945).
+* `tribe_mirror_idle` / `tribe_mirror_hold` (coop_tribe_mirror_idle.py --part idle | hold; BUG-0936 / BUG-0914): 120 s
+  of `coop.tribe anims` on both games twice a second with 4 more members. idle: samples where the host's member is in
+  its own idle choice (the same animation two samples in a row) and the mirror plays it or a locomotion idle / walk.
+  hold: each hold of the host's member in an animation (the `hold=1` samples in a row) and whether the mirror held
+  its item in that animation during it or 0.6 s after. Key frames `rest` (16 m from the village) and `swing` (12 m
+  from the chief while it holds its staff). The 0.2-0.5 s sampling cannot see the first frames of a hold: compare
+  rates, not single holds.
+* `tribe_gameover_partner` (BUG-0922): the host's own members knocked out (5000 hp blows) while the guest's live: no
+  caption on the host (the game counts the guest's members, 20 s); then the guest's members too, with 100 hp blows;
+  the caption must be closed by play_tribe's rule (`play_tribe.GameOver`, the caption `coop.ui find "Alas"` up 3 s)
+  within 25 s. `PLAY_TRIBE_OLD_GAMEOVER=1` is the rule before (no member of the player tribe with hp > 0 for 15 s).
+  play_tribe itself now presses OK on the caption, closes one left at the end before its `end` key frame and checks
+  that the host never sat in the caption for 25 s.
+* `tribe_form_ground_rejoin` (coop_tribe_form_ground.py --rejoin; BUG-0947): the host's game forms an NPC village, the
+  guest makes its copy live, then leaves and joins again (it loads the host's world with the village) and the two
+  grounds round the village are compared again.

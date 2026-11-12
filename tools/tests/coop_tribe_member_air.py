@@ -159,7 +159,7 @@ def main():
         for k in range(12):  # the guest's mirror meanwhile (BUG-0946)
             g = members(guest).get(lead)
             low = max(low, ground(guest, g['pos'])[1] if g else 0.0)
-            if shoot and k == 1:
+            if shoot and k == 2:
                 keyframe('toss', f'the same camera on both games 16 m from the host\'s leader #{lead} a moment after a '
                          f'blow of {dmg}: it is in the air (about 3-5 m over the ground) on both screens', kind='sameview')
             time.sleep(0.25)

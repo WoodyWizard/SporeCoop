@@ -96,6 +96,28 @@ def main():
                 time.sleep(10)
             ck(worst2 < LIMIT, f'after the guest\'s rejoin its ground round the village is still the host\'s (largest '
                f'difference within 50 m {worst2:.2f} m < {LIMIT})')
+            if worst2 >= LIMIT:  # BUG-0947 (exploration, printed): the stamps there, and what a re-stamp does
+                near = {}
+                for con, who in ((host, 'host'), (guest, 'guest')):
+                    near[who] = []
+                    for ln in (con.call('coop.terrain list').get('out') or '').splitlines():
+                        f = ln.split()
+                        if len(f) > 7 and f[0] == 's' and math.dist(tuple(map(float, f[4:7])), at) < 80:
+                            near[who].append(f)
+                            print(f'    {who} stamp: {ln.strip()[:150]}', flush=True)
+                for f in near['guest']:
+                    if f[1] == '770':
+                        print('    guest reapply:', guest.call(f'coop.terrain reapply {f[2]} {f[2]}')['out'].strip()[:200],
+                              flush=True)
+                time.sleep(4)
+                w = compare(host, guest, [(dd, q) for dd, q in pts if dd <= 50])
+                print('  after the guest re-stamped them live: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
+                      flush=True)
+                print('    guest:', guest.call('coop.terrain rebuild')['out'].strip()[:120], flush=True)
+                time.sleep(6)
+                w = compare(host, guest, [(dd, q) for dd, q in pts if dd <= 50])
+                print('  after a rebuild on the guest: ' + ', '.join(f'{dd} m: {v:.2f}' for dd, v in sorted(w.items())),
+                      flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
