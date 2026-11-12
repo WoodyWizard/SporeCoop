@@ -60,7 +60,7 @@ def main():
     ids = [i for i, v in sorted(plist(guest).items()) if v[0] == 'spawned']
     ck(len(ids) >= 2, f'the guest has spawned proxies of the host\'s animals ({len(ids)})')
     reused, driven = 0, []
-    for i in ids[:a.tries * 6]:
+    for i in ids[:24]:  # (a reuse comes in about one of 3-8 hunts, rarer in Tribe)
         if reused >= a.tries:
             break
         print('  ' + guest.call('coop.npc settle 5')['out'].strip(), flush=True)
