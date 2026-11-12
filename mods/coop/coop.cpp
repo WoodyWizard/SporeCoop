@@ -5679,6 +5679,24 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
 // BUG-0400: `coop.npc gopos` (tests) puts a point under the terrain onto it
 static bool g_gopos_ground_fix = true;
 COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc gopos puts the avatar onto the ground, never under it");
+// BUG-0964: the ground above is GetHeightAt, the bare terrain: a nest mound or a rock stands above it (their collision
+// is loaded near the camera). A creature put at the terrain's height under such a mound is inside its collision and
+// Havok holds it in every direction (the attack key's walk-and-use and any walk do nothing until it is put higher;
+// lab 20261112-142742: 7 of 7 such creatures walked after a 2 m lift, all of them 2.6-4.3 m from a nest's centre).
+// The game's own surface (cPlanetModel_SurfacePoint: the terrain, then a ray cast down onto the collision) is the top.
+static bool g_gopos_surface_fix = true;
+COOP_FIX("tools.gopos_surface", "BUG-0964", g_gopos_surface_fix, "tests: coop.npc gopos / gonpc put the avatar onto the top of a nest mound or rock, never inside it");
+
+// the point lifted onto the game's surface (a mound, a rock) when it is under it (BUG-0964); the lift in metres
+static float gopos_onto_surface(net::Vec3& p)
+{
+    float r = drive::speed(p), s = g_gopos_surface_fix ? game::surface_radius(p) : 0.f;
+    if (!(s > 1 && r > 1 && r < s + 0.05f) || s - r > 20.f) // (20 m: no surface found that far up)
+        return 0.f;
+    float k = (s + 0.05f) / r;
+    p = {p.x * k, p.y * k, p.z * k};
+    return s + 0.05f - r;
+}
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
@@ -5880,8 +5898,12 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         bool lifted = g_gopos_ground_fix && g > 1 && r > 1 && r < g;
         if (lifted)
             p = {p.x * g / r, p.y * g / r, p.z * g / r};
+        float up = gopos_onto_surface(p);
         game::teleport(av, p, game::orientation(av));
-        SAY("avatar moved%s", lifted ? " (onto the ground)" : "");
+        if (up > 0.f)
+            SAY("avatar moved (onto the surface: %.2f m up, a mound or a rock)", up);
+        else
+            SAY("avatar moved%s", lifted ? " (onto the ground)" : "");
         return 0;
     }
     if (argc > 2 && (!strcmp(argv[1], "goherd") || !strcmp(argv[1], "gonpc"))) { // tests: the avatar d m
@@ -5911,6 +5933,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         float qr = drive::speed(q), qg = game::ground_radius(q);
         if (g_gopos_ground_fix && qg > 1 && qr > 1 && qr < qg + 0.3f)
             q = {q.x * (qg + 0.3f) / qr, q.y * (qg + 0.3f) / qr, q.z * (qg + 0.3f) / qr};
+        gopos_onto_surface(q);
         game::teleport(av, q, game::orientation(av));
         SAY("avatar at (%.1f %.1f %.1f)", q.x, q.y, q.z);
         return 0;

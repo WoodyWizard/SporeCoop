@@ -331,6 +331,9 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
             for (void* q : game::puppets())
                 if (q == want)
                     p = q;
+            // `any` (BUG-0964): any live creature of the world's list (an animal, an NPC proxy)
+            if (!p && argc > 3 && !strcmp(argv[3], "any") && game::listed(want, 0x18EB45Eu))
+                p = want;
             if (!p || !skg::readable(p, 0x5B0) || game::is_dead(p)) {
                 SAY("%s is no live puppet of ours\n", argv[2]);
                 return 1;
@@ -432,6 +435,145 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
                         SAY(" %d", *(int*)(bar + row * 0x28 + col * 8));
                     SAY("\n");
                 }
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "walkto")) { // tests (BUG-0964): the game's own walk to x y z (as the BT's
+        // walk-and-use asks it: cCreatureBase::WalkTo(2 = walk, &pos, &facing, stop 0.1, acceptable 0.2))
+        uintptr_t wt = H->sym("Simulator::cCreatureBase::WalkTo");
+        net::Vec3 p = game::position(av), q{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        net::Vec3 f{q.x - p.x, q.y - p.y, q.z - p.z};
+        if (!wt) {
+            SAY("no WalkTo\n");
+            return 1;
+        }
+        skg::thiscall<void>(wt, av, 2, &q, &f, 0.1f, 0.2f);
+        SAY("walking to (%.2f %.2f %.2f)\n", q.x, q.y, q.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "mark0")) { // tests (BUG-0964): clear the teleport mark +0xB5D
+        SAY("mark was %d\n", *(uint8_t*)((uint8_t*)av + 0xB5D));
+        *(uint8_t*)((uint8_t*)av + 0xB5D) = 0;
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "walk")) { // tests (BUG-0964): what the avatar's walk-and-use is doing
+        // the behaviour tree's node (AI +0x1D8), its stimuli (AI +8: 8 slots of 0x38, masks +0/+4, sender +0x2C),
+        // the timed goal slots (+0xB48 -> 8 x 0x44, template +0x24), the locomotion: desired / standard speed
+        // (spatial +0x1E0 / +0x1E4), the movement request (spatial +0x1F4: destination +0x14, goal-stop +0x20, mode
+        // +0x5C, acceptable-stop +0x60) and the velocity (creature +0x288)
+        uint8_t* c = (uint8_t*)av;
+        uint8_t* ai = *(uint8_t**)(c + 0xB4C);
+        if (ai && skg::readable(ai, 0x200)) {
+            SAY("node=%08X ai+1D0:", *(uint32_t*)(ai + 0x1D8));
+            for (int o = 0x1C0; o < 0x200; o += 4)
+                SAY(" %X", *(uint32_t*)(ai + o));
+            SAY("\nstim:");
+            for (int i = 0; i < 8; i++) {
+                uint8_t* s = ai + 8 + i * 0x38;
+                if (*(uint32_t*)s || *(uint32_t*)(s + 4))
+                    SAY(" [%X:%X v=%g c=%X t=%X snd=%p]", *(uint32_t*)s, *(uint32_t*)(s + 4), *(float*)(s + 8),
+                        *(uint32_t*)(s + 0xC), *(uint32_t*)(s + 0x10), *(void**)(s + 0x2C));
+            }
+            SAY("\n");
+        }
+        if (uint8_t* g = *(uint8_t**)(c + 0xB48); g && skg::readable(g, 0x230)) {
+            SAY("goals mask=%X:", *(uint32_t*)(g + 0x22C));
+            for (int i = 0; i < 8; i++)
+                if (*(int*)(g + i * 0x44 + 0x24) != -1)
+                    SAY(" [%d t=%d grp=%d s=%.1f tg=%p]", i, *(int*)(g + i * 0x44 + 0x24), *(int*)(g + i * 0x44 + 0x28),
+                        *(float*)(g + i * 0x44 + 0x2C), *(void**)(g + i * 0x44 + 0x40));
+            SAY("\n");
+        }
+        uint8_t* sp = c + 0xC0;
+        uint8_t* rq = sp + 0x1F4;
+        net::Vec3 p = game::position(av), v = *(net::Vec3*)(c + game::kVelOff);
+        SAY("speed desired=%.2f standard=%.2f vel=%.2f pos=(%.2f %.2f %.2f) req dest=(%.2f %.2f %.2f) stop=%.2f mode=%d acc=%.2f\n",
+            *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z), p.x, p.y, p.z,
+            *(float*)(rq + 0x14), *(float*)(rq + 0x18), *(float*)(rq + 0x1C), *(float*)(rq + 0x20), *(int*)(rq + 0x5C),
+            *(float*)(rq + 0x60));
+        { // the facing (spatial vt 0x5C, as the walk step 0xB46EF0 reads it) against the way to the request's goal:
+            // the step's speed is max(0, cos) of that angle; it turns by slerp, set only when the result is finite
+            float fw[3] = {};
+            skg::thiscall<void*>((uintptr_t)skg::vtable(sp)[0x5C / 4], sp, fw);
+            net::Quat q = game::orientation(av);
+            float dx = *(float*)(rq + 0x14) - p.x, dy = *(float*)(rq + 0x18) - p.y, dz = *(float*)(rq + 0x1C) - p.z;
+            float dl = std::sqrt(dx * dx + dy * dy + dz * dz) + 1e-6f;
+            SAY("facing=(%.3f %.3f %.3f) quat=(%.4f %.4f %.4f %.4f) |q|=%.5f cos_to_goal=%.3f\n", fw[0], fw[1], fw[2], q.x,
+                q.y, q.z, q.w, std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w),
+                (fw[0] * dx + fw[1] * dy + fw[2] * dz) / dl);
+            // the steering's sum this frame (Locomotion_Steer: the goal pull, the obstacle and flocking forces of
+            // the list at spatial +0x490): the walk step goes along it at max(0, cos to the facing) of the speed
+            if (uintptr_t st = H->sym("SporeCoop::Locomotion_Steer"); st && argc > 2) {
+                float s[3] = {};
+                skg::thiscall<void>(st, sp, s);
+                float sl = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]) + 1e-9f;
+                SAY("steer=(%.3f %.3f %.3f) |s|=%.3f cos_facing=%.3f cos_goal=%.3f forces=%d:", s[0], s[1], s[2], sl,
+                    (s[0] * fw[0] + s[1] * fw[1] + s[2] * fw[2]) / sl, (s[0] * dx + s[1] * dy + s[2] * dz) / sl / dl,
+                    (int)((*(uintptr_t*)(sp + 0x494) - *(uintptr_t*)(sp + 0x490)) / 4));
+                for (uintptr_t* f = *(uintptr_t**)(sp + 0x490); f && f != *(uintptr_t**)(sp + 0x494); f++)
+                    SAY(" %X", (unsigned)*f);
+                SAY("\n");
+                // the world's objects within 5 m: noun@distance/cos of their bearing to the way to the goal
+                struct U {
+                    net::Vec3 p, g;
+                    void* self;
+                    std::string s;
+                    int n;
+                } u{p, {dx / dl, dy / dl, dz / dl}, av, "", 0};
+                game::for_each_object(
+                    [](void* o, uint32_t noun, void* up) {
+                        auto* u = (U*)up;
+                        net::Vec3 q;
+                        if (o == u->self || u->n >= 24 || !game::object_position(o, q))
+                            return true;
+                        float ex = q.x - u->p.x, ey = q.y - u->p.y, ez = q.z - u->p.z, d = std::sqrt(ex * ex + ey * ey + ez * ez);
+                        if (d > 5.f)
+                            return true;
+                        char b[64];
+                        snprintf(b, sizeof b, " %08X@%.1f/%.2f", noun, d, d > 0.01f ? (ex * u->g.x + ey * u->g.y + ez * u->g.z) / d : 0.f);
+                        u->s += b;
+                        u->n++;
+                        return true;
+                    },
+                    &u);
+                SAY("near:%s\n", u.s.c_str());
+                struct N {
+                    net::Vec3 p;
+                    float d;
+                    net::Vec3 q;
+                } nn{p, 1e9f, {}};
+                game::for_each_object(
+                    [](void* o, uint32_t noun, void* up) {
+                        auto* n = (N*)up;
+                        net::Vec3 q;
+                        if (noun != 0x52AA6122u || !game::object_position(o, q))
+                            return true;
+                        float d = std::sqrt((q.x - n->p.x) * (q.x - n->p.x) + (q.y - n->p.y) * (q.y - n->p.y) +
+                                            (q.z - n->p.z) * (q.z - n->p.z));
+                        if (d < n->d)
+                            n->d = d, n->q = q;
+                        return true;
+                    },
+                    &nn);
+                float pr = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+                SAY("nest=%.1f m (its radius %.2f, ground %.2f) me: radius %.2f ground %.2f surface %.2f\n", nn.d,
+                    std::sqrt(nn.q.x * nn.q.x + nn.q.y * nn.q.y + nn.q.z * nn.q.z), game::ground_radius(nn.q), pr,
+                    game::ground_radius(p), game::surface_radius(p));
+            }
+        }
+        SAY("req:");
+        for (int o = 0; o < 0x70; o += 4)
+            SAY(" %X", *(uint32_t*)(rq + o));
+        if (argc > 2 && skg::readable(c, 0x1700)) { // `walk raw`: the creature's dwords +0..+0x1700 (spatial at +0xC0)
+            for (int o = 0; o < 0x1700; o += 4) {
+                if (o % 0x40 == 0)
+                    SAY("\nc+%X:", o);
+                SAY(" %X", *(uint32_t*)(c + o));
+            }
+        }
+        uint32_t an = 0;
+        game::drawn_state(av, nullptr, &an);
+        SAY("\nanim=%08X flags b58=%X mark b5d=%d f98=%d\n", an, *(uint32_t*)(c + 0xB58), *(uint8_t*)(c + 0xB5D),
+            *(int*)(c + 0xF98));
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)

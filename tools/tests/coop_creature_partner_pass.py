@@ -197,6 +197,11 @@ def walk_once(host, guest, nid, hid, av, mine, a, d, ln, behind, label):
         desired = round(struct.unpack('<f', sp[:4])[0], 2) if len(sp) == 8 else None
         print(f'    not reached: desired speed {desired} (the game still walks it when > 0), moved {moved} m, the host\'s creature {dh} m away, nearest others {others[:3]}, '
               f'stance {ability_mode(guest)}, key 1 {reach(guest)} -> stopped by: {blocker}', flush=True)
+        # (BUG-0964 / BUG-0965: the game's view of the stop: the locomotion's request and steering, the nearest nest,
+        # the avatar's radius against the terrain and the surface; a creature inside a nest mound's collision is held
+        # in every direction, docs/re/creature.md#creature-walk-held-in-mound)
+        print('    ' + '\n      '.join(x for x in guest.call('coop.abilities walk raw')['out'].splitlines()
+                                       if x.startswith(('speed', 'steer', 'nest'))), flush=True)
     return reached, gaps, blocker, path, still
 
 

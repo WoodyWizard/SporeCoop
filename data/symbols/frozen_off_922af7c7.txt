@@ -247,3 +247,4 @@ SporeCoop::TribeStage_BabyBornMsg_Ret ; BUG-0824: a purchased member is paired t
 SporeCoop::Creature_SetHunger ; BUG-0935: tribe.mirror_hunger: a guest's mirrors keep their own hunger
 SporeCoop::cTribe_ApplyGroundStamp ; BUG-0947: tribe.village_load_stamp: a village made during play keeps one ground stamp
 SporeCoop::ScenarioPlay_JumpToAct ; tests: coop.adventure act (BUG-0845)
+SporeCoop::Locomotion_Steer ; tests: coop.abilities walk raw prints the steering (BUG-0964)
