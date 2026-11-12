@@ -244,3 +244,5 @@ SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still pi
 UTFWin::cWindowManager::PopModal ; BUG-0956: game fixes: no guard against a destroyed window in the list of modal windows on GOG 2016
 App::MessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
 App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+SporeCoop::Creature_SetHunger ; BUG-0935: tribe.mirror_hunger: a guest's mirrors keep their own hunger
+SporeCoop::cTribe_ApplyGroundStamp ; BUG-0947: tribe.village_load_stamp: a village made during play keeps one ground stamp

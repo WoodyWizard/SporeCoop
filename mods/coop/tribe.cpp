@@ -960,6 +960,7 @@ static bool g_mirror_hold_fix = true;
 COOP_FIX("tribe.mirror_hold", "BUG-0914", g_mirror_hold_fix, "tribe: a guest's mirror swings its staff or instrument when the host's member does (it stood with the item in the resting grip)");
 static uint32_t g_hold_sent, g_hold_rx, g_hold_bound;
 constexpr double kHoldBoundMax = 8.0;
+static void hold_try(GMember& g, double now);
 // guest, a few times a second: the mirrors' items settle into the grip
 static void held_items_tick(double now)
 {
@@ -973,6 +974,8 @@ static void held_items_tick(double now)
     }
     for (auto& [id, m] : g_gm) {
         void* c = m.c;
+        if (m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
+            hold_try(m, now);
         uint32_t h = mirror_ok(m) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
         auto it = g_hold_seen.find(id);
         if (!h) {
@@ -1397,6 +1400,7 @@ static void save_start();
 static void save_end();
 
 static void on_idle_anim(void* c, uint32_t anim);
+static uintptr_t a_TribeGroundStamp; // BUG-0947 (village_stamps_tick)
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1413,6 +1417,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     fields::add_kind({fields::K_TRIBE_HUNGER, "tribe_member_hunger", &g_hunger_fix, kHungerFields, 1, member_each, member_mirror,
                       [] { return active(); }});
     a_SetHunger = H->sym("SporeCoop::Creature_SetHunger");
+    a_TribeGroundStamp = H->sym("SporeCoop::cTribe_ApplyGroundStamp"); // BUG-0947
     game::set_idle_anim_listener(on_idle_anim); // BUG-0936
     a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
     a_AttachmentOf = H->sym("SporeCoop::Creature_AttachmentOf");
@@ -1636,29 +1641,43 @@ static void on_idle_anim(void* c, uint32_t anim)
 static uint32_t hold_modifier(void* c, bool end);
 static void send_member_holds()
 {
-    std::vector<std::pair<uint16_t, uint32_t>> v;
+    std::vector<std::pair<uint16_t, uint32_t>> v, ends;
+    static double again_at; // once a second every hold again (a mirror that played the animation later, a lost start)
+    double now = H->time_seconds();
+    bool again = now - again_at >= 1.0 || now < again_at;
+    if (again)
+        again_at = now;
     for (auto& [c, m] : g_hm) {
         uint32_t h = kept_alive(c, m.serial, 0x18EB4B7u) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
         uint32_t cur = 0;
-        if (h && h != m.hold && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur)
+        if (h && (h != m.hold || again) && v.size() < 64 && game::drawn_state(c, nullptr, &cur) && cur)
             v.push_back({m.id, cur});
-        else if (!h && m.hold && v.size() < 64)
-            v.push_back({m.id, 0}); // the hold ended (the item back in the resting grip)
+        else if (!h && m.hold && ends.size() < 64)
+            ends.push_back({m.id, 0}); // the hold ended (the item back in the resting grip)
         m.hold = h;
     }
-    if (v.empty() || !g_mirror_hold_fix)
+    if (!g_mirror_hold_fix)
         return;
-    net::Writer w;
-    w.u8(11);
-    w.u8((uint8_t)v.size());
-    for (auto& [id, a] : v) {
-        w.u16(id);
-        w.u32(a);
+    for (int reliable = 0; reliable < 2; reliable++) { // (an end must not be lost: the mirror would hold on for 8 s)
+        auto& list = reliable ? ends : v;
+        if (list.empty())
+            continue;
+        net::Writer w;
+        w.u8(11);
+        w.u8((uint8_t)list.size());
+        for (auto& [id, a] : list) {
+            w.u16(id);
+            w.u32(a);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0) {
+                if (reliable)
+                    C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+                else
+                    C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            }
+        g_hold_sent += (uint32_t)list.size();
     }
-    for (auto& p : C.sess->players())
-        if (p.id != 0)
-            C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
-    g_hold_sent += (uint32_t)v.size();
 }
 // guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
 static void hold_try(GMember& g, double now)
@@ -4646,11 +4665,55 @@ static std::string tribe_hunt_status()
     return b;
 }
 
+// BUG-0947 (docs/re/tribe.md#tribe-village-load-stamp): a village has two ground stamps: the one made with it
+// (0xC9DEE0) and the tribe's own (cTribe +0x19D4, SporeCoop::cTribe_ApplyGroundStamp 0xC91890: 50 m wide). The live
+// Creature -> Tribe change and every load make the tribe's stamp (a load: for a village saved without it); the NPC
+// tribe controller's forming and SpawnNpcTribe (a guest's copy of the host's) do not. So the games that saw a village
+// made had one stamp there and a game that loaded the world later (a guest's rejoin, a host's reload) two: its ground
+// 50 m round the village 5-8 m off (lab 20261112-094334: 7.95 m). The same stamp applied live gives the loaded ground
+// exactly (lab: the host stamped it by hand, 0.00 m at every point). Fix: every game in Tribe gives a village without
+// it the tribe's stamp through the game's own call, a second after it appeared. Off: the village keeps one stamp.
+static bool g_village_stamp_fix = true;
+COOP_FIX("tribe.village_load_stamp", "BUG-0947", g_village_stamp_fix,
+         "tribe: a village made during play gets the ground stamp a load of the world gives it (a rejoining guest's ground round it was 5-8 m off)");
+static uint32_t g_village_stamps;
+constexpr uintptr_t kTribeStampOff = 0x19D4, kTribeStampPropOff = 0x2D4;
+static void village_stamps_tick(double now)
+{
+    static double last;
+    static std::unordered_map<void*, double> seen; // tribe -> first seen without its stamp
+    if (now - last < 0.5 && now >= last)
+        return;
+    last = now;
+    if (!g_village_stamp_fix || !a_TribeGroundStamp || game::mode_id() != modes::kTribe) {
+        seen.clear();
+        return;
+    }
+    std::unordered_map<void*, double> next;
+    for (void* t : all_tribes()) {
+        if (!skg::readable((uint8_t*)t + kTribeStampOff, 4) || F<uint32_t>(t, kTribeStampOff) || !F<void*>(t, kTribeStampPropOff))
+            continue;
+        auto it = seen.find(t);
+        double since = it == seen.end() ? now : it->second;
+        if (now - since < 1.0) { // (the live change makes it itself right after the village)
+            next[t] = since;
+            continue;
+        }
+        thiscall<void>(a_TribeGroundStamp, t);
+        g_village_stamps++;
+        net::Vec3 p = tribe_pos(t);
+        H->log(M, SK_INFO, "tribe: the village at (%.0f %.0f %.0f) made during play gets the ground stamp a load gives it: id %u (BUG-0947)",
+               p.x, p.y, p.z, F<uint32_t>(t, kTribeStampOff));
+    }
+    seen.swap(next);
+}
+
 void tick(double now)
 {
     tribe_hunt_tick();
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
+    village_stamps_tick(now); // BUG-0947
     if (!active())
         return;
     g_cmd_world = modes::current_world();
@@ -6129,11 +6192,12 @@ std::string list()
         uintptr_t hudp = tribes[ti] == pt ? H->sym("SporeCoop::TribeHud_ptr") : 0; // BUG-0645: the HUD's cap
         void* hud = hudp && skg::readable((void*)hudp, 4) ? *(void**)hudp : nullptr;
         snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d level=%d cap=%d "
-                 "hud_cap=%d obj=%p color=%08X\n",
+                 "hud_cap=%d obj=%p color=%08X stamp=%u\n",
                  (unsigned)ti, tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
                  ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]), F<int>(tribes[ti], 0x38),
                  a_MaxPop ? thiscall<int>(a_MaxPop, tribes[ti]) : -1,
-                 hud && skg::readable(hud, 0x14) ? F<int>(hud, 0x10) : -1, tribes[ti], F<uint32_t>(tribes[ti], 0x234));
+                 hud && skg::readable(hud, 0x14) ? F<int>(hud, 0x10) : -1, tribes[ti], F<uint32_t>(tribes[ti], 0x234),
+                 F<uint32_t>(tribes[ti], kTribeStampOff)); // (BUG-0947: the tribe's ground stamp, 0 none)
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);

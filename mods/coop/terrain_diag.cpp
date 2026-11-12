@@ -49,7 +49,9 @@ void note(const Call& c)
                std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z), c.scale, c.id, c.prop);
 }
 
-uint32_t caller_of(void* ra) { return (uint32_t)((uintptr_t)ra - H->rebase(0) + 0x400000); }
+// the return address as a GOG 2024 VA (rebase(0) is the base's shift from 0x400000). CORRECTION (2026-11-12, BUG-0947):
+// it added 0x400000 once more, so every "from 0x0109DFBF / 0x01091981" in docs and logs before is 0x00C9DFBF / 0x00C91981
+uint32_t caller_of(void* ra) { return (uint32_t)((uintptr_t)ra - H->rebase(0)); }
 
 using ApplyFn = uint32_t(SK_THISCALL*)(void*, const uint8_t*, void*);
 using RemoveFn = void(SK_THISCALL*)(void*, uint32_t, int);
@@ -232,6 +234,34 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
         snprintf(b, sizeof b, "reapplied %d of %u (list %u..%u of %u)\n", ok, (unsigned)v.size(), (unsigned)from, (unsigned)to,
                  (unsigned)n);
         H->out_printf(out, "%s%s", b, s.c_str());
+        return 0;
+    }
+    // stamp <template id> <key instance> <key group>: RE (BUG-0947), ApplyStamp now with the transform of stamp <template
+    // id> (its +0x770 entry) and the prop list of that key (the stamp a village's load adds, applied live)
+    if (argc > 4 && !strcmp(argv[1], "stamp") && o_Apply) {
+        uintptr_t pmg = H->sym("App::IPropManager::Get");
+        void* pm = pmg ? skg::cdecl_call<void*>(pmg) : nullptr;
+        uint32_t want = (uint32_t)strtoul(argv[2], nullptr, 10);
+        uint32_t ki = (uint32_t)strtoul(argv[3], nullptr, 16), kg = (uint32_t)strtoul(argv[4], nullptr, 16);
+        uint8_t xf[0x38];
+        bool found = false;
+        if (t && pm && skg::readable((uint8_t*)t + 0x770, 8)) {
+            uint8_t* bg = *(uint8_t**)((uint8_t*)t + 0x770);
+            uint8_t* en = *(uint8_t**)((uint8_t*)t + 0x774);
+            for (uint8_t* e = bg; bg && e + 0xAC <= en && !found; e += 0xAC)
+                if (*(uint32_t*)(e + 0xA8) == want) {
+                    memcpy(xf, e, 0x38);
+                    found = true;
+                }
+        }
+        void* pl = nullptr;
+        if (!found || !skg::vcall<bool>(pm, 0x2C / 4, ki, kg, &pl) || !pl) {
+            H->out_printf(out, "no template stamp %u or no prop list %08X/%08X", want, ki, kg);
+            return 1;
+        }
+        uint32_t nid = o_Apply(t, xf, pl);
+        skg::vcall<int>(pl, 0x04 / 4);
+        H->out_printf(out, "stamped %u", nid);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "raw")) { // RE: the whole 0xAC-byte entry of stamp <id>
