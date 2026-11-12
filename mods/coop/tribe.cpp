@@ -693,7 +693,7 @@ static void SK_THISCALL h_RingsUpdate(void* owner)
     void* by = nullptr;
     for (uint16_t id : g_ring.ids) {
         auto it = g_gm.find(id);
-        if (it != g_gm.end() && it->second.c && F<uint8_t>(it->second.c, kSelectedOff)) {
+        if (it != g_gm.end() && mirror_ok(it->second) && F<uint8_t>(it->second.c, kSelectedOff)) { // (BUG-0955)
             by = it->second.c;
             break;
         }
@@ -792,7 +792,7 @@ static void member_each(void (*cb)(uint16_t, void*, void*), void* u)
 static void* member_mirror(uint16_t id)
 {
     auto it = g_gm.find(id);
-    return it != g_gm.end() && it->second.c && game::object_alive(it->second.c) ? it->second.c : nullptr;
+    return it != g_gm.end() && mirror_ok(it->second) ? it->second.c : nullptr; // (BUG-0955)
 }
 
 // ---- tools (BUG-0514, docs/re/tribe.md#tribe-tools-guest) ----
@@ -928,7 +928,7 @@ static void held_items_tick(double now)
     }
     for (auto& [id, m] : g_gm) {
         void* c = m.c;
-        uint32_t h = c && game::object_alive(c) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
+        uint32_t h = mirror_ok(m) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
         auto it = g_hold_seen.find(id);
         if (!h) {
             if (it != g_hold_seen.end())
@@ -1801,7 +1801,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             continue;
         auto it = g_gm.find(id);
         void* c = it == g_gm.end() ? nullptr : it->second.c;
-        if (!c || !game::object_alive(c) || game::is_dead(c))
+        if (!c || !mirror_ok(it->second) || game::is_dead(c)) // (BUG-0955)
             continue;
         GMember& g = it->second;
         if (kind == 3) { // only when the mirror plays another one, at most every 2 s, not right after a start
@@ -3309,7 +3309,7 @@ uint16_t id_of(void* c) { return member_id(c); }
 void* mirror_of(uint16_t id)
 {
     auto it = g_gm.find(id);
-    return it == g_gm.end() ? nullptr : it->second.c;
+    return it == g_gm.end() || !mirror_ok(it->second) ? nullptr : it->second.c; // (BUG-0955)
 }
 
 // tests (game bots): a readable key for tribe buildings on screen: hut<tribe index>, "p" for the player's
@@ -4541,7 +4541,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
     }
     double now = H->time_seconds();
     for (auto& [id, g] : g_gm) {
-        if (g.owner >= 0xFE || !g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
+        if (g.owner >= 0xFE || !mirror_ok(g) || now - g.seen > 3.0) // (BUG-0955)
             continue;
         fn({id, g.owner, g.c, &g.aim, g.aim_speed, (uint16_t)g.ds.teleports, &g.ds.drawn}, user);
     }
@@ -4564,7 +4564,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     double now = H->time_seconds();
     char k[8];
     for (auto& [id, g] : g_gm) {
-        if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0 || g.buf.empty())
+        if (!mirror_ok(g) || now - g.seen > 3.0 || g.buf.empty()) // (BUG-0955)
             continue;
         snprintf(k, sizeof k, "a%u", (unsigned)id);
         fn(k, g.aim, user);
@@ -4634,7 +4634,7 @@ static void* local_of(uint16_t id)
         return it == g_hm_by_id.end() ? nullptr : it->second;
     }
     auto it = g_gm.find(id);
-    return it == g_gm.end() ? nullptr : it->second.c;
+    return it == g_gm.end() || !mirror_ok(it->second) ? nullptr : it->second.c; // (BUG-0955)
 }
 
 bool near_member(const net::Vec3& p, float radius)
@@ -5620,7 +5620,7 @@ std::string debug(const std::vector<std::string>& a)
                 line(m.id, c, m.bhv_anim);
         else
             for (auto& [id, g] : g_gm)
-                line(id, g.c, 0);
+                line(id, mirror_ok(g) ? g.c : nullptr, 0);
         return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
@@ -5828,7 +5828,7 @@ std::vector<syncdbg::Entry> sync_entries()
                 v.push_back({"t" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, g] : g_gm)
-            if (g.c && game::object_alive(g.c) && !(g_sync_bodies_fix && g.body))
+            if (mirror_ok(g) && !(g_sync_bodies_fix && g.body)) // (BUG-0955)
                 v.push_back({"t" + std::to_string(id), game::position(g.c), game::orientation(g.c)});
     }
     return v;
