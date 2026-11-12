@@ -14,9 +14,11 @@ given hp 60 (`coop.pool npcflag`).
    of the host's `coop.pool`, the damage type of the electric animation) and the creature's hp drops in
    the HOST's game; the guest's game zapped (`zaps=`).
 2. --part poison: the guest's creation has the poison part in the host's game (`borrow poison graft p<id>` on the
-   host: the puppet's model data), the guest stays next to the creature: the host's game makes the guest's clouds
-   (`puppet_clouds=`). (Its damage is the game's: with the grafted values even the host's own avatar's clouds hurt
-   nothing, lab 20261108-044202, so the creature's hp is only printed.)
+   host: the puppet's model data, which the fixture's host cell shares: the host's own cell makes no cloud for the
+   test, `coop.pool noowncloud 1`), the guest stays next to the creature: the host's game makes the guest's clouds
+   (`puppet_clouds=`), and the creature, put onto each new one in the host's game (`coop.pool place`: the game's
+   own contact decides), must lose health there (the game's hp, not the cloud counter: BUG-0892) and the guest's
+   mirror must show it. (Lab 20261108-044202 saw no loss with the creature merely next to the clouds.)
 SPORE_FIX_OFF=cell.electric (--part electric) / cell.puppet_poison (--part poison) must FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_cell_parts_attack.py --part electric|poison [--seconds 40]

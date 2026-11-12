@@ -2365,6 +2365,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   the host: `puppet_clouds=`), the creature's health in the host's game (`coop.pool cell c<key>`).
 * Known: docs/re/cell.md#cell-electric-attack (the poison step, the clouds, what the graft sets).
 * Ticket: BUG-0716 (the clouds fixed; the damage not verified).
+* Update (2026-11-12, fix/w48-small, BUG-0892): verified. A host creature put onto the clouds the host's game makes for
+  the guest's puppet (`coop.pool place`) lost 6 hp in the host's game and the guest's mirror showed it (lab
+  20261112-125720, 20261112-130016; with cell.puppet_poison off no cloud and no loss, 20261112-125843). The earlier "no
+  loss" (lab 20261108-044202) had the creature only next to the clouds. Test cell_poison asserts it; nothing open here.
 ## Space: an NPC empire's store pays a different price in each game (2026-11-08, fix/w46-g4b-coverage)
 <a id="issue-space-npc-store-prices"></a>
 

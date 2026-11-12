@@ -913,7 +913,8 @@ static bool g_test_no_own_cloud = false; // tests (BUG-0892): our own avatar mak
 static uint32_t g_own_clouds_held;
 static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
 {
-    if (g_test_no_own_cloud && in_cell() && maker && maker == avatar()) {
+    if (g_test_no_own_cloud && in_cell() && maker && maker == avatar() && !modes::cell_is_puppet(maker)) {
+        // (puppet_poison lends a partner's puppet the avatar index for its step: that cloud is the partner's)
         g_own_clouds_held++;
         return;
     }

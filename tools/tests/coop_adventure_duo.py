@@ -131,6 +131,13 @@ def main():
         procs = [start_adventure(lane.HOST if w == 'host' else lane.GUEST) for w in order]
         for p in procs:
             p.wait(timeout=900)
+        for w in order:  # a start whose clicks were lost: a picture, then once more from the galaxy menu
+            c = h if w == 'host' else g
+            if mode(c) == 'GalaxyGameEntry':
+                print(f'  {w}: still at the galaxy menu: ' + call(c, 'shot ' + os.path.join(lane.out_dir('shots'),
+                                                                                         f'adventure_start_{w}.png')),
+                      flush=True)
+                start_adventure(lane.HOST if w == 'host' else lane.GUEST).wait(timeout=900)
     if a.first == 'both':
         enter(['host', 'guest'])
     else:
