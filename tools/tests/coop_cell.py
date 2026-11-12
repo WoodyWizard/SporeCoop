@@ -88,7 +88,11 @@ def main():
         g3, _ = pool(guest)
     ck(g3['food'] == h3['food'], f'guest has the same total ({g3["food"]})')
 
-    # knockout far from the partner: nobody saves it at once
+    # knockout far from the partner: nobody saves it at once. The host's cell is still on its last swim (+18 +18,
+    # ~2.4 m/s): it is stopped first, or it swims past the guest put 9 m away and revives it within 2 s (lab
+    # 20261112-094823: 4.1 m after the tp, revived 2.0 s after the knockout, before the check)
+    host.call('coop.pool goto 0 0')
+    time.sleep(1.5)
     print(' ', guest.call('coop.pool tp 9 0')['out'])
     time.sleep(1)
     print(' ', pool(guest)[1].splitlines()[0])
