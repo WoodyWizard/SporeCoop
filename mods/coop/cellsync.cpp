@@ -909,8 +909,14 @@ static bool ko_puppet(uint8_t* c)
             return guest_knocked_out((uint32_t)id);
     return false;
 }
+static bool g_test_no_own_cloud = false; // tests (BUG-0892): our own avatar makes no cloud (a partner's puppet does)
+static uint32_t g_own_clouds_held;
 static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
 {
+    if (g_test_no_own_cloud && in_cell() && maker && maker == avatar()) {
+        g_own_clouds_held++;
+        return;
+    }
     if (g_fix_ko_no_poison && in_cell() && maker && ((g_downed && maker == avatar()) || ko_puppet(maker))) {
         // BUG-0799: a knocked-out cell makes no cloud: our own, and a knocked-out partner's puppet (puppet_poison, and
         // the game's own poison step, which also runs for a puppet drawn here with a poison part: lab 20261112-063438)
@@ -5774,6 +5780,10 @@ std::string debug(const std::vector<std::string>& a)
                  d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
                  F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_camera_heals);
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "noowncloud") { // tests (BUG-0892): 1 = our own avatar makes no poison cloud
+        g_test_no_own_cloud = atoi(a[1].c_str()) != 0;
+        return "noowncloud " + std::to_string((int)g_test_no_own_cloud) + " held=" + std::to_string(g_own_clouds_held);
     }
     if (a.size() >= 3 && a[0] == "place" && !is_guest()) { // tests (BUG-0892): put the cell c<key> onto the cell c<to>
         // (a host creature onto a poison cloud: the game's own contact pair decides what it costs it)

@@ -1,7 +1,7 @@
 ---
 id: BUG-0791
 title: skg::readable calls VirtualQuery on every check: on native Windows it can eat the main thread with many objects (suspected)
-status: open
+status: wontfix
 kind: bug
 stage: All
 reported: 2026-11-10
@@ -9,11 +9,11 @@ source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-main 589ca98d (docs/re/bui
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w48-small
+commits: 3a3c5d3b
+tests: perf_readable, perf_readable_civ_npc
 signature:
-docs:
+docs: docs/06-testing.md#testing-p1-g1
 related:
 ---
 
@@ -45,7 +45,20 @@ NtQueryVirtualMemory (sampling). FAIL: a large share (several percent or more); 
 FPS up, the readable fixture (guard pages, freed memory) still correct.
 
 ## Fix
+Measured first, as the plan asked; not changed: it costs nothing measurable here. `skg::readable` now counts its calls (an interlocked increment) and can make N more VirtualQuery per call for a cost check (`coop.perf readable [extra n]`: calls per frame since the last ask, fps, and the cost of one call from a loop of 2000). Test `perf_readable` (extended, per fixture): both games of a session, 20 s as they are, then 20 s with 20 more VirtualQuery per call.
+
+| fixture | game | readable() calls a frame | fps | one call (loop) | share of the frame |
+|---|---|---|---|---|---|
+| creature | host | 39 | 56.4 | 1.22 us | 0.27 % |
+| creature | guest | 36 | 58.8 | 1.10 us | 0.23 % |
+| civ_npc | host | 136 | 42.8 | 1.52 us | 0.89 % |
+| civ_npc | guest | 194 | 42.6 | 1.29 us | 1.06 % |
+
+With 20 more VirtualQuery per call (21 x the cost) the frame rate moved within its own noise (Creature 56.4 -> 55.8 / 58.8 -> 56.9; Civ 42.8 -> 49.0, i.e. faster). Under Wine one VirtualQuery is about 1.1-1.5 us; even the Civ guest's 194 calls take about 0.25 ms of a 23 ms frame. The fork's case (97 % of the main thread in NtQueryVirtualMemory) was a 438-actor adventure on native Windows, where we have no lane: there a call may cost more, but our per-frame counts are small (tens to ~200). A scoped cache (the fork's ReadOnlyMemoryScope) is not worth its risk (a stale region answer after a free) for ~1 % at most. perf_readable fails at 5 % of the frame, so a code change that multiplies the calls is caught.
+
 ## Verification
+no-fail-run: a measurement, nothing fixed. Runs: out/lab/20261112-124945 (perf_readable, creature), out/lab/20261112-125124 (perf_readable_civ_npc). Not measured: native Windows (no Windows lane), a 4-player session, Tribe (perf_readable_tribe exists, not run).
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-12 (fix/w48-small): measured (0.2-1.1 % of the frame under Wine, 36-194 calls a frame): wontfix; counter, coop.perf readable and perf_readable kept.

@@ -93,9 +93,9 @@ def main():
     if not key:
         return ck.result()
     print('  ' + host.call(f'coop.pool npcflag {key} hp 60')['out'].strip())
-    if a.part == 'poison':  # the host's own cell (it shares the fixture's model and so the graft) 14 m off: its camera
-        # still shows the guest's puppet (the poison step needs the puppet's GFX), its own clouds stay apart
-        print('  host: ' + host.call('coop.pool tp 14 0')['out'].strip(), flush=True)
+    if a.part == 'poison':  # the host's own cell shares the fixture's model and so the graft: it makes no cloud of its
+        # own here (a test switch of the host's cloud maker hook), every poison cloud is the guest's puppet's
+        print('  host: ' + host.call('coop.pool noowncloud 1')['out'].strip(), flush=True)
     time.sleep(2.5)
     t0_types, g0 = types(host), guest.call('coop.pool')['out']
     hp0 = num(host.call(f'coop.pool cell {key}')['out'], 'hp')
@@ -105,15 +105,15 @@ def main():
         guest.call(f'coop.pool swimto {key} tp')  # stays next to it (the electric step needs a target near its parts)
         k0 += 1
         if a.part == 'poison':
-            # BUG-0892: the creature onto each new cloud the host's game made next to the guest's puppet (the host's
-            # own cell is 14 m away): the game's own contact of a creature with a partner's cloud decides the damage
-            if k0 % 6 == 0:
-                host.call('coop.pool tp 14 0')
+            # BUG-0892: the creature onto each new cloud the host's game made for the guest's puppet: the game's own
+            # contact of a creature with a partner's cloud decides the damage
+            if k0 % 4 == 1:  # the host's game draws the guest's cell (the poison step needs its GFX)
+                host.call(f'coop.pool swimto {key} tp')
             pp = puppet_pos(host, gid)
             for ck_key in sorted(clouds(host) - seen_clouds):
                 seen_clouds.add(ck_key)
                 cp = cell_pos(host, ck_key)
-                if pp and cp and math.hypot(cp[0] - pp[0], cp[1] - pp[1]) < 5:
+                if pp and cp and math.hypot(cp[0] - pp[0], cp[1] - pp[1]) < 10:
                     r = host.call(f'coop.pool place {key} {ck_key}')['out'].strip()
                     placed += 1
                     if placed <= 3:
@@ -156,6 +156,8 @@ def main():
            f'2. the guest\'s mirror shows the loss (hp {ghp}, host {low})')
     guest.call('coop.pool borrow off')
     host.call(f'coop.pool borrow off x p{gid}')
+    if a.part == 'poison':
+        print('  host: ' + host.call('coop.pool noowncloud 0')['out'].strip(), flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
