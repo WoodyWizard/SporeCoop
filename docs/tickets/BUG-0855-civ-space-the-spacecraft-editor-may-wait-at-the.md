@@ -58,7 +58,7 @@ Already in 0.7.7: BUG-0576's `core.editor_own_pause` lets a vote's editor throug
 that the spacecraft (96B24187) and City Hall (99E92F05) editors come up within 15 s of their vote (the host's
 stage change to the editor mode); a later one is an `editor` finding (FAIL).
 * FAIL with `SPORE_FIX_OFF=core.editor_own_pause`: lab 20261112-102046 (61 s; also 20261112-100520 before the check: 61 s).
-* PASS: lab 20261112-102046-2 (1.4 s), PASS2_ID.
+* PASS: lab 20261112-102046-2 (1.4 s), 20261112-103545 (1.0 s).
 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
