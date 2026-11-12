@@ -564,10 +564,21 @@ static uint32_t g_hold_last_noun, g_put_fast, g_put_near;
 struct Carried {        // the partner's copy of an object a player carries (or threw), in this game
     void* obj = nullptr;
     uint32_t noun = 0;
+    void* holder = nullptr; // BUG-0814: the puppet whose hold slot has it
     bool held = false;
     bool dropped = false; // the player let go of it: released here at its first rest point
 };
 static std::map<uint8_t, Carried> g_carried; // player id -> its object here
+// BUG-0814 (class BUG-0426): a partner's puppet that held the copy of a stick or rock was despawned (the partner died,
+// hid, left, made a new creature) with the copy still in its hold slot (+0x71 held, physics +0x1F0 kinematic, attached
+// to the freed creature's socket): the rock hung in the air where the puppet had been and a later K_PUT called
+// Release on the new puppet that never held it. Now the copy is let go through the game's release before the puppet
+// goes, the release only ever names the puppet that holds it, and the carry state ends with the player.
+// Old (`coop.fix creature.carry_holder off`): nothing released, any puppet named.
+static bool g_carry_holder_fix = true;
+COOP_FIX("creature.carry_holder", "BUG-0814", g_carry_holder_fix, "creature: a stick or rock a partner carried falls when the partner's creature goes (it hung in the air)");
+static uint32_t g_hold_released_on_go;
+static std::map<uint8_t, std::pair<void*, uint32_t>> g_last_copy; // tests: player -> (object, noun) last held here
 struct Thrown {          // this game's own object after the own creature let go of it: watched until it rests
     void* obj = nullptr;
     uint32_t noun = 0;
@@ -776,20 +787,23 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
         carry_send(kind, player, noun, kind == K_DROP ? nullptr : &p, from); // the other guests
     } else if (from != 0)
         return;
-    void* pup = C.puppet_of ? C.puppet_of(player) : nullptr;
+    void* pup = g_carry_holder_fix ? (C.puppet_live ? C.puppet_live(player) : nullptr) : C.puppet_of ? C.puppet_of(player) : nullptr;
     Carried& cr = g_carried[player];
     g_in_relay = true;
     if (kind == K_HOLD) {
         g_hold_rx++;
-        if (cr.held && cr.obj && pup && obj_listed(cr.obj, cr.noun))
-            o_Release(pup, game::cast(cr.obj, 0x1186577), 0, 0);
+        void* rel = g_carry_holder_fix ? (cr.holder == pup ? pup : nullptr) : pup; // BUG-0814: only its holder
+        if (cr.held && cr.obj && rel && obj_listed(cr.obj, cr.noun))
+            o_Release(rel, game::cast(cr.obj, 0x1186577), 0, 0);
         cr = Carried{};
         void* o = game::find_object(noun, p, 6.0f); // (the copy may have rolled a few m after its last rest point)
         void* sp = o ? game::cast(o, 0x1186577) : nullptr;
         if (sp && pup && game::is_puppet(pup) && o_Hold(pup, sp, 0, true)) {
             cr.obj = o;
             cr.noun = noun;
+            cr.holder = pup;
             cr.held = true;
+            g_last_copy[player] = {o, noun};
             g_hold_done++;
         } else {
             g_hold_nocopy++;
@@ -802,8 +816,9 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
     } else if (kind == K_PUT) {
         g_put_rx++;
         if (cr.held && cr.dropped && cr.obj && obj_listed(cr.obj, cr.noun)) {
-            if (pup)
-                o_Release(pup, game::cast(cr.obj, 0x1186577), 0, 0);
+            void* rel = g_carry_holder_fix ? (cr.holder == pup ? pup : nullptr) : pup; // BUG-0814: only its holder
+            if (rel)
+                o_Release(rel, game::cast(cr.obj, 0x1186577), 0, 0);
             cr.held = false;
         }
         if (cr.obj && !cr.held && obj_listed(cr.obj, cr.noun)) { // (the copy stays the player's for the next rest point)
@@ -814,6 +829,29 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
         }
     }
     g_in_relay = false;
+}
+
+void puppet_going(uint8_t id, void* puppet)
+{
+    if (!g_carry_holder_fix)
+        return;
+    auto it = g_carried.find(id);
+    if (it == g_carried.end())
+        return;
+    Carried& cr = it->second;
+    if (cr.held && cr.obj && cr.holder == puppet && o_Release && game::creature_listed(puppet) && obj_listed(cr.obj, cr.noun)) {
+        g_in_relay = true; // (not a release of the own creature: nothing is sent)
+        o_Release(puppet, game::cast(cr.obj, 0x1186577), 0, 0);
+        g_in_relay = false;
+        g_hold_released_on_go++;
+    }
+    g_carried.erase(it);
+}
+
+void player_left(uint8_t id)
+{
+    if (g_carry_holder_fix)
+        g_carried.erase(id);
 }
 
 static std::string carry_dump()
@@ -846,6 +884,21 @@ static std::string carry_dump()
         if (cr.obj && obj_listed(cr.obj, cr.noun))
             game::object_position(cr.obj, p);
         snprintf(b, sizeof b, "copy of player %u obj=%p held=%d pos=(%.1f %.1f %.1f)\n", id, cr.obj, (int)cr.held, p.x, p.y, p.z);
+        out += b;
+    }
+    // BUG-0814 (tests): the last copy held for each player, also after its carry state ended: the game's own fields
+    // (the held object +0x71: 1 = held by a creature; its physics component 0x116DD1B +0x1F0: 3 = attached)
+    for (auto& [id, lc] : g_last_copy) {
+        bool l = obj_listed(lc.first, lc.second);
+        void* sp = l ? game::cast(lc.first, 0x1186577) : nullptr;
+        void* ph = l ? game::cast(lc.first, 0x116DD1B) : nullptr;
+        net::Vec3 q{};
+        if (l)
+            game::object_position(lc.first, q);
+        snprintf(b, sizeof b, "last copy of player %u obj=%p listed=%d game_held=%d phys=%d pos=(%.1f %.1f %.1f) released_on_go=%u\n",
+                 id, lc.first, (int)l, sp && skg::readable((uint8_t*)sp + 0x71, 1) ? (int)*((uint8_t*)sp + 0x71) : -1,
+                 ph && skg::readable((uint8_t*)ph + 0x1F0, 4) ? *(int*)((uint8_t*)ph + 0x1F0) : -1, q.x, q.y, q.z,
+                 g_hold_released_on_go);
         out += b;
     }
     snprintf(b, sizeof b, "carry fix=%d hold_tx=%u hold_rx=%u done=%u nocopy=%u drop_tx=%u drop_rx=%u put_tx=%u put_rx=%u "

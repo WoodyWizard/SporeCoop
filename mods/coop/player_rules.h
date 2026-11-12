@@ -44,5 +44,9 @@ bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet:
 uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hit running now, 0 none (BUG-0555)
 // guest, MSG_DAMAGE: the hit of a melee ability from an NPC 1 m or more away while the own creature is in the air (BUG-0555)
 bool guest_drops_air_hit(void* avatar, void* attacker, uint32_t ability);
+// BUG-0814: player id's Creature puppet goes now (despawn, forget, a new puppet): the copy of a stick or rock it holds
+// here is let go first (the game's release, so the object is on its own again), and its carry state ends
+void puppet_going(uint8_t id, void* puppet);
+void player_left(uint8_t id); // BUG-0814: its carry state ends with it (a newcomer gets the id)
 
 } // namespace player_rules

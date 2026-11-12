@@ -42,8 +42,8 @@ def hunt(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--tries', type=int, default=2)
-    ap.add_argument('--rounds', type=int, default=10)
+    ap.add_argument('--tries', type=int, default=1)
+    ap.add_argument('--rounds', type=int, default=16)
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()

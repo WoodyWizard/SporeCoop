@@ -89,10 +89,38 @@ using RelevanceFn = void*(SK_THISCALL*)(void* mgr, uint32_t a, uint32_t dt_ms);
 static RelevanceFn o_Relevance;
 
 static Sphere g_game_last; // the game's own first sphere at the last pass (diagnostics)
+static bool g_on_ours;     // BUG-0882: the game came into the last pass with its vector on g_buf
+
+// BUG-0882 (see h_Relevance): what was lent, for the ledger's undo
+static bool g_lend_fix = true;
+COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer or the player species changed");
+struct Lent {
+    Sphere** v = nullptr;
+    Sphere *b = nullptr, *e = nullptr, *cap = nullptr;
+};
+static Lent g_lent;
+bool lend_ledger_on() { return g_lend_fix; }
+static bool g_test_unwind;
+static uint32_t g_unwound, g_lend_undone;
+static void undo_lend(void* p, uintptr_t)
+{
+    Lent* l = (Lent*)p;
+    if (l->v && !IsBadWritePtr(l->v, 12) && l->v[0] >= g_buf && l->v[0] < g_buf + kMaxSpheres) { // still on ours
+        l->v[0] = l->b;
+        l->v[1] = l->e;
+        l->v[2] = l->cap;
+        g_lend_undone++;
+    }
+    l->v = nullptr;
+}
 
 static void* SK_THISCALL h_Relevance(void* mgr, uint32_t a, uint32_t dt_ms)
 {
     g_passes++;
+    if (mgr && !IsBadReadPtr((uint8_t*)mgr + 0x20, 12)) { // BUG-0882 (tests): the vector the game comes with
+        Sphere* v0 = *(Sphere**)((uint8_t*)mgr + 0x20);
+        g_on_ours = v0 >= g_buf && v0 < g_buf + kMaxSpheres;
+    }
     if (mgr && !IsBadReadPtr((uint8_t*)mgr + 0x20, 8)) {
         Sphere* b0 = *(Sphere**)((uint8_t*)mgr + 0x20);
         if (b0 && b0 != *(Sphere**)((uint8_t*)mgr + 0x24) && !IsBadReadPtr(b0, sizeof(Sphere)))
@@ -113,13 +141,27 @@ static void* SK_THISCALL h_Relevance(void* mgr, uint32_t a, uint32_t dt_ms)
     memcpy(g_buf, b, own * sizeof(Sphere));
     for (size_t i = 0; i < n; i++)
         g_buf[own + i] = {c[i].pos.x, c[i].pos.y, c[i].pos.z, b[0].enter_sq, b[0].leave_sq};
+    // BUG-0882: the game's handler catches faults inside the pass (BUG-0110); a fault unwinds past the restore below
+    // and the game's sphere vector stays on our static buffer (the next pass then copies from it and "restores" it
+    // for good; the game's vector code may free or grow it: heap corruption). The lend goes into the swap ledger, so
+    // the frame's swap guard puts the game's pointers back. Off (`coop.fix game.lend_ledger off`): no entry.
+    g_lent = {v, b, e, cap};
+    size_t mark = g_lend_fix ? game::swap_open(undo_lend, &g_lent, 0, "relevance sphere vector (view centres)") : 0;
     v[0] = g_buf;
     v[1] = g_buf + own + n;
     v[2] = g_buf + kMaxSpheres;
     void* r = o_Relevance(mgr, a, dt_ms);
+    if (g_test_unwind) { // tests (BUG-0882, `coop.views unwind`): as if a fault in the pass unwound past us
+        g_test_unwind = false;
+        g_unwound++;
+        return r;
+    }
     v[0] = b;
     v[1] = e;
     v[2] = cap;
+    g_lent.v = nullptr;
+    if (g_lend_fix)
+        game::swap_close(mark);
     g_passes_extra++;
     g_last_extra_at = now;
     if (n > g_extra_max)
@@ -150,9 +192,17 @@ std::string status()
     return s;
 }
 
-static int c_views(void*, int, const char* const*, SkOut* out)
+static int c_views(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "unwind")) { // tests (BUG-0882): the next pass with partners leaves without its restore
+        g_test_unwind = true;
+        H->out_printf(out, "the next relevance pass with partners leaves like a fault\n");
+        return 0;
+    }
     H->out_printf(out, "%s", status().c_str());
+    // BUG-0882: where the game's sphere vector (relevance manager +0x20) points now: its own heap, or our buffer
+    H->out_printf(out, "\n  game vector on_our_buffer=%d unwound=%u undone=%u lend_fix=%d", (int)g_on_ours, g_unwound,
+                  g_lend_undone, (int)g_lend_fix);
     return 0;
 }
 

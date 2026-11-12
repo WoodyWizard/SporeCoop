@@ -12,6 +12,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "view_centres.h"
 #include "net/interp.h"
 #include "sporekit_game.hpp"
 
@@ -112,6 +113,7 @@ typedef void*(SK_THISCALL* PlayerSpecies_t)(void*);
 static Scale_t o_Scale;
 static PlayerSpecies_t o_PlayerSpecies;
 static void* g_ps_override; // (main thread: vt 0x80 of the own avatar is running)
+static bool g_test_scale_unwind; // tests (BUG-0882)
 static float* g_norm_global;
 static uint32_t g_own_scales;
 
@@ -133,9 +135,21 @@ static float SK_THISCALL h_Scale(void* c, uint32_t arg)
     if (!sp || !ps || sp == ps)
         return o_Scale(c, arg);
     float keep = g_norm_global ? *g_norm_global : 0.f;
+    // BUG-0882: a fault inside the call that the game's handler catches unwinds past the reset below: PlayerSpecies
+    // then answered this species for good (and h_Scale bailed out on it). The override goes into the swap ledger; the
+    // frame's swap guard clears it. Off: game.lend_ledger (view_centres.cpp) also switches this entry off.
+    size_t mark = views::lend_ledger_on() ? game::swap_open(game::swap_undo_ptr_if, &g_ps_override, (uintptr_t)sp,
+                                                            "player species override (own scale)")
+                                          : 0;
     g_ps_override = sp;
     float r = o_Scale(c, arg);
+    if (g_test_scale_unwind) { // tests (BUG-0882, `coop.hp scaleunwind`): as if a fault unwound past us
+        g_test_scale_unwind = false;
+        return r;
+    }
     g_ps_override = nullptr;
+    if (views::lend_ledger_on())
+        game::swap_close(mark);
     if (g_norm_global)
         *g_norm_global = keep;
     g_own_scales++;
@@ -444,6 +458,22 @@ static std::string pack()
 static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
 {
     auto say = [&](const std::string& s) { H->out_printf(out, "%s", s.c_str()); };
+    // tests (BUG-0882): species: what the game's PlayerSpecies answers now and the avatar's species; scaleunwind: the own
+    // avatar's scale call (vt 0x80, as the game makes it) runs once and leaves like a fault unwound past the reset
+    if (argc > 1 && (!strcmp(argv[1], "species") || !strcmp(argv[1], "scaleunwind"))) {
+        void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+        unsigned before = g_own_scales;
+        if (!strcmp(argv[1], "scaleunwind") && av && o_Scale) {
+            g_test_scale_unwind = true;
+            skg::vcall<float>(av, 0x80 / 4, false);
+            g_test_scale_unwind = false;
+        }
+        void* ps = player_species();
+        void* own = av ? skg::field<void*>(av, game::kSpeciesOff) : nullptr;
+        H->out_printf(out, "player_species=%p avatar_species=%p same=%d override=%p own_scales=%u (+%u) lend_fix=%d\n", ps, own,
+                      (int)(ps && ps == own), g_ps_override, g_own_scales, g_own_scales - before, (int)views::lend_ledger_on());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "pack")) {
         say(pack());
         return 0;

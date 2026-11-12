@@ -55,7 +55,13 @@ def main():
             break
         time.sleep(1)
     nests, prox = plist(guest)
-    cand = [i for i, p in sorted(prox.items()) if p[2] in nests]
+    # a species whose proxies all live in its one cached nest herd (another nest of it would take the cache's place,
+    # and the stale entry would never be asked)
+    by_sp = {}
+    for i, p in prox.items():
+        by_sp.setdefault(p[0], set()).add(p[2])
+    cand = [i for i, p in sorted(prox.items()) if p[2] in nests and by_sp[p[0]] == {p[2]}]
+    cand += [i for i, p in sorted(prox.items()) if p[2] in nests and i not in cand]
     ck(cand, f'the guest has proxies in cached nest herds ({len(cand)} of {len(prox)}, {len(nests)} nest herds)')
     reused, wrong, used = 0, [], set()
     for i in cand:

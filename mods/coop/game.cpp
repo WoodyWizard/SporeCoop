@@ -1528,8 +1528,21 @@ static WorldToken world_now()
     void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
     return {nm ? field<void*>(nm, kNounAvatarOff) : nullptr, world_epoch()};
 }
-static std::vector<std::pair<void*, WorldToken>> g_destroy_later; // creature, world when queued
-static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
+struct LaterDestroy {
+    void* first;           // the creature
+    WorldToken second;     // the world when queued
+    uint32_t serial = 0;   // BUG-0825: its cGameData::mID when queued
+};
+static std::vector<LaterDestroy> g_destroy_later;
+static uint32_t g_destroys_deferred = 0, g_destroys_late = 0, g_destroys_not_same = 0;
+// BUG-0825 (class BUG-0426): a creature of ours queued for destruction during a cinematic was destroyed when the
+// cinematic ended if its address was still a listed creature; the game may have freed it meanwhile and built another
+// creature there (an NPC of the world: the block comes back within frames), which then went too, and counted as a
+// puppet (no AI, stripped from saves) while queued. Now the queue keeps the serial: an entry whose object is not the
+// one queued is dropped (and is no puppet of ours) in every frame, also during the cinematic.
+// Old (`coop.fix npc.defer_identity off`): the address.
+static bool g_defer_identity_fix = true;
+COOP_FIX("npc.defer_identity", "BUG-0825", g_defer_identity_fix, "creature: a creature that the game built where a copy waiting for the end of a cinematic was is never destroyed with it");
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 COOP_FIX("npc.cinedefer", "BUG-0018", g_destroy_defer, "creature: creatures removed during a cinematic go when it is over");
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
@@ -1565,7 +1578,7 @@ void destroy_creature(void* c)
     if (defer) {
         if (destroy_pending(c))
             return;
-        g_destroy_later.push_back({c, world_now()});
+        g_destroy_later.push_back({c, world_now(), object_serial(c)});
         g_destroys_deferred++;
         return;
     }
@@ -1605,12 +1618,23 @@ void destroy_deferred_tick()
             it = g_destroy_later.erase(it);
         } else
             ++it;
+    if (g_defer_identity_fix) // BUG-0825: freed meanwhile, or another creature at its address: not ours any more
+        for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
+            if (!alive(LiveRef{it->first, it->serial, 0x18EB45Eu})) {
+                H->log(M, SK_INFO, "deferred destroy of %p dropped: not the creature queued any more (npc.defer_identity)",
+                       it->first);
+                puppet_unregister(it->first);
+                g_destroys_not_same++;
+                it = g_destroy_later.erase(it);
+            } else
+                ++it;
     if (g_destroy_later.empty() || cinematic_running())
         return;
     auto later = std::move(g_destroy_later);
     g_destroy_later.clear();
     void* nm = cdecl_call<void*>(a_NounGet);
-    for (auto& [c, queued_in] : later) {
+    for (auto& d : later) {
+        void* c = d.first;
         puppet_unregister(c);
         if (!creature_listed(c) || !nm)
             continue;
@@ -1622,8 +1646,8 @@ void destroy_deferred_tick()
 std::string destroy_deferred_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "destroys during cinematics: deferred=%u done_after=%u pending=%u", g_destroys_deferred,
-             g_destroys_late, (unsigned)g_destroy_later.size());
+    snprintf(b, sizeof b, "destroys during cinematics: deferred=%u done_after=%u pending=%u not_same=%u", g_destroys_deferred,
+             g_destroys_late, (unsigned)g_destroy_later.size(), g_destroys_not_same);
     return b;
 }
 

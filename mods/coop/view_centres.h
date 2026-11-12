@@ -133,4 +133,6 @@ private:
     std::vector<Centre> list_;
 };
 
+// BUG-0882: changes lent around a game call go into the swap ledger (game.lend_ledger)
+bool lend_ledger_on();
 } // namespace views
