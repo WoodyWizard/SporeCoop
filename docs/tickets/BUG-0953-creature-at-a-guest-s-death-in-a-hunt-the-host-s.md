@@ -11,7 +11,7 @@ versions:
 fixed_in: unreleased
 branch: fix/w48-freed2
 commits: 30183093
-tests: long_creature
+tests: make test (gates_selftest: monitor puppet_hp)
 signature:
 docs: docs/06-testing.md#testing-freed2-w48
 related:
