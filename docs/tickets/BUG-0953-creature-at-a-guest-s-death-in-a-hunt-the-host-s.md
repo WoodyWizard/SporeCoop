@@ -48,3 +48,4 @@ Replay of the recorded logs (monitor.py replay) of lab fix/w48-freed 20261112-01
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed on fix/w48-freed2 (monitor rule; not a mod defect).
+- 2026-11-12: long_creature on fix/w48-freed2 (lane 7, 46 min): PASS, out/lab/20261112-052420-2.
