@@ -378,6 +378,19 @@ static void test_host_world()
     CHECK(host_world::host_save_now(5, true, cr, 6) == 6 && host_world::host_save_now(5, true, space, 6) == 5);
     CHECK(host_world::host_save_now(5, true, cr, 0) == 5 && host_world::host_save_now(5, false, cr, 6) == 5);
     CHECK(host_world::announce_world(6, 5) && !host_world::announce_world(6, 6) && !host_world::announce_world(0, 5));
+    // O1 (BUG-0801, BUG-0809): the host's view of one guest is that guest's own classify()
+    CHECK(host_world::peer_elsewhere(true, cr, 8, cr, 7) && host_world::peer_elsewhere(true, cr, 0, cr, 7));
+    CHECK(!host_world::peer_elsewhere(true, cr, 7, cr, 7) && !host_world::peer_elsewhere(false, cr, 8, cr, 7));
+    CHECK(!host_world::peer_elsewhere(true, 0x2CCD1D2, 8, cr, 7) && !host_world::peer_elsewhere(true, civ, 8, cr, 7));
+    CHECK(host_world::peer_here(true, cr, 7, cr, 7) && !host_world::peer_here(true, cr, 8, cr, 7));
+    CHECK(!host_world::peer_here(true, 0x2CCD1D2, 7, cr, 7) && !host_world::peer_here(true, cr, 0, cr, 0) &&
+          !host_world::peer_here(false, cr, 7, cr, 7));
+    // BUG-0797: the host in another stage (not a menu / editor / load)
+    const uint32_t cell = host_world::kCell;
+    CHECK(host_world::host_in_other_stage(true, cell, true, cr) && host_world::host_in_other_stage(true, cell, true, space));
+    CHECK(!host_world::host_in_other_stage(true, cell, true, cell) && !host_world::host_in_other_stage(true, cell, true, 0x2CCD1D2));
+    CHECK(!host_world::host_in_other_stage(false, cell, true, cr) && !host_world::host_in_other_stage(true, cell, false, cr) &&
+          !host_world::host_in_other_stage(true, space, true, cr));
     CHECK(host_world::msg_class(net::MSG_HOST_WORLD) == host_world::MsgClass::Session);
     using host_world::MsgClass;
     using host_world::msg_class;
