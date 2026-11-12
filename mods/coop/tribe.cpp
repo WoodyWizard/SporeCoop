@@ -2024,9 +2024,96 @@ static void on_party(uint8_t kind, net::Reader& r)
     g_party_played++;
 }
 
+// BUG-0960: when every member of the player tribe is knocked out the game-over caption ("Alas! Your population has
+// fallen below the minimum ...") comes on the host only and stands the host's game (busy=cinematic,input_lock,paused)
+// until its player answers it; the guest's game showed nothing and played on against the paused host (its orders and
+// the mirrors' moves waited for a game that stood). Now the host tells the guests while its caption is up
+// (MSG_NPC_ANIM kind 20 {u8 up}, reliable, again every 3 s while up) and a guest's game stands too (the game's own
+// cGameTimeManager::Pause, the Civ planet-won reason 0x4BF38A7, never used in Tribe) with a co-op note, until the
+// host's caption is gone (its OK reloads the tribe for everybody), the host's news stops for 10 s, or the stage or the
+// session ends. The guest's own caption is not shown: its OK would reload its own save (BUG-0685).
+// Old (`coop.fix tribe.gameover_wait off`): the guest plays on.
+static bool g_gameover_wait_fix = true;
+COOP_FIX("tribe.gameover_wait", "BUG-0960", g_gameover_wait_fix,
+         "tribe: a guest's game waits (paused, with a note) while the host's game-over caption is up");
+constexpr uint8_t kGameOverKind = 20;
+constexpr uint32_t kGameOverPause = 0x4BF38A7u; // (Civ's planet-won pause reason, SporeCoop::GameCiv_PlanetWonPause)
+static bool g_go_host_up;       // host: its caption is up (last sent)
+static double g_go_host_sent = -100;
+static bool g_go_paused;        // guest: its game stands for the host's caption (one Pause of ours)
+static double g_go_news = -100; // guest: the host's last "up"
+static uint32_t g_go_sent, g_go_pauses, g_go_resumes;
+static bool player_tribe_out(void* t);
+
+static void* time_manager()
+{
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+static void gameover_pause(bool on, const char* why)
+{
+    static uintptr_t pause = H->sym("Simulator::cGameTimeManager::Pause"),
+                     resume = H->sym("Simulator::cGameTimeManager::Resume");
+    void* tm = time_manager();
+    if (on == g_go_paused || !tm || !pause || !resume)
+        return;
+    thiscall<int>(on ? pause : resume, tm, kGameOverPause);
+    g_go_paused = on;
+    (on ? g_go_pauses : g_go_resumes)++;
+    H->log(M, SK_INFO, "tribe: the host's game-over caption is %s: this game %s (BUG-0960, %s)", on ? "up" : "gone",
+           on ? "waits" : "goes on", why);
+    if (C.feed && C.sess)
+        C.feed(on ? C.sess->name_of(0) + "'s tribe is out: the game waits until " + C.sess->name_of(0) +
+                        " (host) answers the caption, then the tribe comes back for everybody"
+                  : C.sess->name_of(0) + " (host) answered the caption: the game goes on");
+}
+
+// host, every send cycle: its caption is up (the input lock and the stood time in Tribe, entered with the player
+// tribe out: a knocked-out chief may stand up again under the caption, BUG-0922)
+static void gameover_host_tick(double now)
+{
+    if (!g_gameover_wait_fix || !C.sess)
+        return;
+    bool lock = coop_ui::input_lock_now() > 0 && world::time_paused();
+    bool up = g_go_host_up ? lock : lock && player_tribe_out(player_tribe());
+    if (up == g_go_host_up && (!up || now - g_go_host_sent < 3.0))
+        return;
+    g_go_host_up = up;
+    g_go_host_sent = now;
+    net::Writer w;
+    w.u8(kGameOverKind);
+    w.u8(up ? 1 : 0);
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+    g_go_sent++;
+}
+
+// guest, every tick (any mode): the wait ends with the stage, the session or the host's news
+static void gameover_guest_tick(double now)
+{
+    if (!g_go_paused)
+        return;
+    if (!C.sess || !C.sess->connected() || game::mode_id() != modes::kTribe)
+        gameover_pause(false, "the stage or the session ended");
+    else if (now - g_go_news > 10.0)
+        gameover_pause(false, "no news from the host for 10 s");
+}
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
+    if (kind == kGameOverKind) { // BUG-0960
+        bool up = r.u8() != 0;
+        if (!r.ok() || !g_ok || !is_guest())
+            return;
+        if (up)
+            g_go_news = H->time_seconds();
+        if (g_gameover_wait_fix && (!up || game::mode_id() == modes::kTribe))
+            gameover_pause(up, "the host's news");
+        return;
+    }
     if (kind == 8 && g_party_stop_fix && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-0890
         g_party_stops_outside++;
         on_party(kind, r);
@@ -2191,6 +2278,7 @@ static void host_tick(double now)
     if (now - g_last_send < 0.12)
         return;
     g_last_send = now;
+    gameover_host_tick(now); // BUG-0960
     baby_tick(now); // BUG-0671
     void* pt = player_tribe();
     auto tribes = all_tribes();
@@ -4854,6 +4942,8 @@ static void village_stamps_tick(double now)
 void tick(double now)
 {
     tribe_hunt_tick();
+    if (is_guest() || g_go_paused)
+        gameover_guest_tick(now); // BUG-0960 (also outside Tribe: the wait ends there)
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
     village_stamps_tick(now); // BUG-0947
@@ -5146,6 +5236,9 @@ std::string status()
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
     if (!g_last_local.empty())
         out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
+    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960)\n",
+             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes);
+    out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
