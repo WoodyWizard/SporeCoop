@@ -1689,8 +1689,14 @@ static void hold_try(GMember& g, double now)
     uint32_t cur = 0;
     if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim)
         return;
-    if (!hold_modifier(g.c, false))
-        set_hand(g.c, item); // (the attach adds the hold modifier with the animation playing now)
+    if (!hold_modifier(g.c, false)) {
+        // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
+        // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
+        float sc = read_item_scale(g.c);
+        set_hand(g.c, item);
+        if (g_item_scale_fix && sc != 1.f)
+            apply_item_scale(g.c, sc);
+    }
     g.hold_bound = true;
     g.hold_at = now; // (bound: held_items_tick lets it end with the animation)
     g.hold_anim_bound = g.hold_anim;
