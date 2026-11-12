@@ -73,11 +73,16 @@ def main():
         for s, e, an in gh:
             if not any(hs - 0.3 < e and s < he + 0.3 for hs, he, _ in hh):
                 own.append((round(s - t0, 1), round(e - s, 2), an))
+        w0 = rows['host'][0][0] if rows['host'] else 0
         for s, e, an in hh:
-            if any(abs(gs - s) < 0.5 for gs, _, _ in gh):
+            if s - w0 < 0.2:  # (open at the window's start: not comparable)
+                continue
+            if any(gs < e + 0.3 and s < ge + 0.3 for gs, ge, _ in gh):
                 shared += 1
             elif e - s > 0.3:
+                g_near = [(round(t - t0, 2), x, h) for t, x, h in rows['guest'] if s - 0.5 < t < e + 0.5][::3]
                 missed.append((round(s - t0, 1), round(e - s, 2), an))
+                print(f'    the mirror around the host\'s hold at {s - t0:.1f} s: {g_near[:20]}', flush=True)
         print(f'  window {w + 1}: {len(rows["host"])} / {len(rows["guest"])} samples; host holds '
               f'{[(round(s - t0, 1), round(e - s, 2), x) for s, e, x in hh]}; the mirror\'s own holds so far {own}', flush=True)
         if own:

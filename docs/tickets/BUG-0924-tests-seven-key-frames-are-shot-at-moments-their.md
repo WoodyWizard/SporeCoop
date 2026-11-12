@@ -1,19 +1,19 @@
 ---
 id: BUG-0924
 title: tests: seven key frames are shot at moments their note cannot hold (an editor, a cinematic, a pause menu, a camera on a bare slope)
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: 
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-rest
+commits: 9e7abf21
+tests: keyframe_settle, play_tribe, same_view_tribe, play_civ
 signature:
-docs:
+docs: docs/06-testing.md#testing-w48-rest
 related: BUG-0263
 ---
 
@@ -43,11 +43,21 @@ menu (with a time limit), and play_tribe's start frame needs the camera on the v
 calibrate with).
 
 ## Fix
-Open.
+tools/tests/twoinst.py `keyframe(..., settle=None)` / `keyframe_settle`: before the shot it waits (at most
+SPORE_KEYFRAME_SETTLE s, default 20) until no game of the frame reports `busy:` cinematic, paused or loading
+(`coop.status`), nor an editor mode (`game.mode`); a game still busy then and a wait of 1 s or more are written into
+the manifest's `extra`, so the reviewer sees why a frame shows an editor. Frames meant for a busy moment pass
+`settle=0`. play_tribe turns each view to its own members before `start` (the bare slope); play_civ shoots `start`
+after the money reached the guest. Left as they are, with the manifest saying so: an editor the play itself ends in
+(play_creature end), a talk box of an NPC nation (input lock only), the co-op window.
 
 ## Verification
-no-fail-run: tooling (the notes and the moment of the frames). How to test: the same sheets of the next run show
-play in every tile.
+Test `keyframe_settle` (tools/tests/coop_keyframe_settle.py): the guest's pause menu open for 6 s while a key frame is
+asked for: the frame must come after the menu closed.
+FAIL (twoinst.py before the fix, run from a temporary worktree, copied here): out/lab/20261112-141542 (the frame at
++0.4 s, the menu closed at +6.2 s).
+PASS: out/lab/20261112-141721, out/lab/20261112-142543 (the frame at +6.5 s, "waited 6.1 s").
+The sheets of play_tribe and same_view_tribe of this branch's final runs: FINAL_0924.
 
 ## History
 - 2026-11-11: opened.
@@ -58,3 +68,4 @@ play in every tile.
   009 (campaign advance-civ: guest Dave with the co-op window open), 033 (play_civ start: money 33,000 on the
   host and 3,000 on the guest, shot between the test's money gift and its arrival 5 s later). Not this time:
   play_creature end (both in play), play_space end, campaign play-cell.
+- 2026-11-12: key frames wait for the games to settle (twoinst.keyframe), play_tribe / play_civ start frames, fix/w48-rest.
