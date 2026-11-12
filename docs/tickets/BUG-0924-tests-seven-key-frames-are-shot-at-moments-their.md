@@ -57,7 +57,7 @@ asked for: the frame must come after the menu closed.
 FAIL (twoinst.py before the fix, run from a temporary worktree, copied here): out/lab/20261112-141542 (the frame at
 +0.4 s, the menu closed at +6.2 s).
 PASS: out/lab/20261112-141721, out/lab/20261112-142543 (the frame at +6.5 s, "waited 6.1 s").
-The sheets of play_tribe and same_view_tribe of this branch's final runs: FINAL_0924.
+The key frames of play_tribe and same_view_tribe of the final runs (out/lab/20261112-145017): play_tribe start shows the village and the members on both; none in a cinematic, a pause or an editor.
 
 ## History
 - 2026-11-11: opened.
