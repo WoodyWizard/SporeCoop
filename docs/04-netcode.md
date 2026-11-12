@@ -350,3 +350,39 @@ transform: the effect's height over the sender's ground (cPlanetModel::GetHeight
 30 m off). The receiver (and the host's relay to guest 3+) puts the effect at that height over its own ground, the
 rule every remote body follows (BUG-0425); older SporeCoop stops reading before the trailer. `effects.ground`
 (BUG-0608). Test: coop_effect_ground (an effect sent as from a host whose ground lies 5 m higher).
+
+## Input from the network: names, discovery, half-open peers, restarts (2026-11-12, fix/w48-net)
+<a id="netcode-network-input"></a>
+
+Package N1 of 0.7.13. Everything below is portable code in `mods/coop/net/` with a net_tests case that fails with its
+switch off (`net_tests --off <name>`, and with `--nofix`).
+
+* **Names** (BUG-0774, `net.name_clean`): every name that comes from another machine is cut to one clean line by
+  `utf8::clean_text` / `utf8::net_name` (net/utf8.h): no C0 / C1 control characters, DEL, U+2028 / U+2029, no bytes
+  that are not UTF-8 (stray continuation bytes, cut or overlong sequences, surrogates), at most 24 code points for a
+  name. Where: the host on a HELLO (before the rejoin, late-join and unique-name rules compare it), the guest on
+  WELCOME (the roster, the host's name) and PLAYER_JOIN, the LAN list on a DiscoverReply (name, info line cut to 64),
+  world.cpp on a WorldOffer's planet name (it goes into the co-op slot's marker file, `sporecoop.txt`) and on the log
+  line of a refused file name. Peer version texts are cut to 120. An empty result is "guest<id>" / "host".
+  Compatible with 0.7.12: its local names are already clean (`utf8::player_name`), so both sides agree.
+* **LAN discovery** (BUG-0776, `net.lan_only_disc`): the host answers a discovery query only from loopback, the
+  private ranges, link-local, 100.64/10 or a subnet of one of its own adapters (`Session::lan_broadcasts`, set by
+  coop.cpp from `adapters::list()`: Radmin VPN 26/8, Hamachi 25/8), and at most `kDiscoverPerSecond` (20) times a
+  second over all senders. `net::local_source` (net/ipmask.h) takes the subnet of a broadcast address as its
+  trailing one bits (at most one bit wider than the real mask). `coop.status` on the host: a line
+  `refused: discovery=N (answered M) ...` once something was refused. A 0.7.12 guest on the LAN still finds the
+  host; a scan over the internet to a forwarded port gets no answer (direct join by address is unchanged).
+* **Half-open peers** (BUG-0778, `net.halfopen_cap`): a datagram from an endpoint without a peer (or with another
+  connection id than its peer's) opens a peer only when it carries a reliable HELLO that reads
+  (`Session::carries_hello`); else it is dropped (`no_hello=` in the line above) and replaces nobody. A peer that is
+  still not accepted after its HELLO was handled is a refused one waiting for its REJECT: when its address holds
+  `kHalfOpenPerIp` (4) of them or the table holds `kMaxPeers` (16), the oldest goes (`half_open_evicted=`), not
+  retired, so that game gets its REJECT again on its next HELLO. A 0.7.12 guest's first datagram is its HELLO, so it
+  joins as before.
+* **A new session inside a delivery callback** (BUG-0861, `net.restart_gen`): `host()` / `join()` from a callback
+  (cb.connected, cb.player_leave, cb.custom ...) used to defer the old session's leave to the end of the delivery,
+  which then closed the new session. Now `restart_leave()` ends the old session at once (BYE, transport closed) but
+  keeps its peers in `zombies_` until `Connection::on_packet` has returned (BUG-0029: that Connection is still
+  running), a pending leave and its cb.disconnected of the old session are dropped (logged), and a generation counter
+  (`gen_`, bumped by host, join and every end of a session) stops the rest of that packet and that frame's update
+  for the old session. A plain `leave()` in a callback is deferred as before.

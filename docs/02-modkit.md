@@ -425,3 +425,13 @@ logger runs, then the process ends) and, in about 1 of 4 runs, Wine refuses even
   stack above and below its innermost SEH record and the raw dwords under it (the live frames of the call that went
   astray), and has the report thread made at boot (the BUG-0056 one) write the crash report, the archive and the
   minidump while it waits. `kit.fix offstack 0`: nothing of this (0.3.15).
+
+## Dropping a reloaded mod's tasks outside the task lock (2026-11-12, fix/w48-net)
+<a id="modkit-task-drop"></a>
+
+A hot reload (`mod.reload`) drops the queued main-thread and outside-frame tasks whose code is in the old image
+(`drop_tasks_in`, BUG-0060). Since BUG-0860 (`kit.fix taskdrop`) the matching tasks are moved out under `g_task_mu`
+and destroyed after it is unlocked (sporekit/task_drop.h, tested by validate_tests `test_task_drop`): a task's
+captures may queue another task in their destructors, and `run_on_main` / `run_outside_frame` lock the same
+non-recursive mutex, which deadlocked the thread before. No capture of ours is known to do this; the fix closes the
+class. `run_after_frames` tasks are SporeKit's own (input.cpp), never a mod's, so they are not dropped.
