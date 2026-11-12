@@ -64,9 +64,11 @@ static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here
 static bool g_other_stages = true;
 COOP_FIX("effects.other_stages", "BUG-0451", g_other_stages,
          "effects: also relayed in Tribe and Civilization (off: Cell and Creature only, as 0.7.4)");
-// Space: not verified (no effect of the own UFO could be made in a test, docs/re/creature.md); off as in 0.7.4
-static bool g_space = false;
-COOP_FIX("effects.space", "BUG-0451", g_space, "effects: also relayed in Space (unverified, off by default)");
+// Space: off since 0.7.4 as "not verified" (no effect of the own UFO could be made in a test, docs/re/creature.md).
+// BUG-0895: effects_party_space (three players, the game's own effect at each player's ship, relayed host -> guest and
+// guest -> guest) passes with it and fails without it, no fault: on by default now. `coop.fix effects.space off`: off.
+static bool g_space = true;
+COOP_FIX("effects.space", "BUG-0895", g_space, "effects: also relayed in Space (the effects a player's ship makes show on the partners' screens)");
 static bool g_main_world_fix = true;
 COOP_FIX("effects.main_world", "BUG-0451", g_main_world_fix,
          "effects: the skin painter's own effects are never relayed (they faulted the partner's game in Tribe and Civ)");

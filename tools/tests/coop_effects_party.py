@@ -9,6 +9,7 @@ effect manager), and the other guest's game must create the game's effect object
 actor's world position) from the relayed message.
 
   coop_effects_party.py [--fixture cell|creature|tribe|civ|space] [--old-cost]   (SPORE_FIX_OFF=creature.effects_relay must FAIL;
+                         in Space SPORE_FIX_OFF=effects.space must FAIL, BUG-0895;
                          in Tribe / Civ SPORE_FIX_OFF=effects.main_world faults the games: the skin painter's effect)
 
 Every stage (BUG-0471): the same three cases in the stage's fixture, the effect id is the last one the
@@ -184,9 +185,7 @@ def main():
     p = Party.start(a.fixture, players=3, join_together=True)
     ck = Checks()
     print(f'  fixture {a.fixture}', flush=True)
-    if a.fixture == 'space':  # Space is not verified: the relay is off there unless asked for (coop.fix effects.space)
-        for x in p.all:
-            x.con.call('coop.fix effects.space on')
+    # Space (BUG-0895): the relay is on by default since 0.7.13; SPORE_FIX_OFF=effects.space must FAIL
     if a.fixture != 'creature':
         # the last effect id this stage's game created in its own effect world (with effects.main_world off:
         # in any world, so also a skin painter's paint effect, which faulted the games in Tribe / Civ, BUG-0451)
