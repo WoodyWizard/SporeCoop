@@ -4419,7 +4419,9 @@ the attack key that never moves the avatar).
   lab 20261112-143856-2). Fix `tools.gopos_surface`: the point goes onto the game's surface (`game::surface_radius`)
   when it is under it. ✔ (runtime) The surface's ray cast hits creatures too: `gonpc <id> 1.0` (2 m over the
   animal) lifted so landed the host on the animal's back and 2.3-2.8 m from it (partner_pass lab 20261112-144140-2);
-  gonpc keeps its 2 m drop, and gopos keeps the point when another creature is within 2.5 m. With it: 15 of 15 presses walked (lab 20261112-143501-2);
+  gonpc keeps its 2 m drop. ✔ (runtime) Skipping the lift within 2.5 m of another creature left the guest inside the
+  mound once more (an animal 1.7 m away, lab 20261112-152630): gopos takes the median of five surface samples (the point
+  and four 1.2 m around it; an animal covers one or two, a mound all). With it: 15 of 15 presses walked (lab 20261112-143501-2);
   switched off: 4 held of 16 (20261112-143501).
 * `coop.abilities walk [raw]` prints the avatar's node (ai +0x1D8), stimuli, goal slots, speeds, the request
   (spatial +0x1F4), the facing (spatial vt 0x5C) and its cos to the goal, `raw`: the steering sum (Locomotion_Steer

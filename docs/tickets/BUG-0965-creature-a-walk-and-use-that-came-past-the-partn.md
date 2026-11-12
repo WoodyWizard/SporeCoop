@@ -40,9 +40,10 @@ Evidence (fix/w48-walk, lab lanes 2 / 3, docs/re/creature.md#creature-walk-held-
   (`phantom_pairs=` .../0/..., fix/w48-pass), the steering of a held avatar has one force (0xB499D0, the static
   obstacles; creatures are not in cObstacleManager), the target stays the animal, so neither Havok, the steering, the
   hover nor the target holds it at the partner.
-* With `tools.gopos_surface` on: no held walk in any partner_pass run of the branch (lab 20261112-145217-2 and the
-  final runs listed in the History), nor in walk_start (47 of 47 presses walked, lab 20261112-143501-2, -143856,
-  -145217).
+* With `tools.gopos_surface` on (final code, the median of five surface samples): every walk of partner_pass x4 reached
+  the animal (13 of 13 judged, no walk stopped, lab 20261112-153816), walk_start 20261112-154110 (2 runs) none held.
+  An earlier version that skipped the lift near another creature still left one guest inside the mound
+  (20261112-152630: held in every direction 1.7 m from an animal): that is why the median.
 Not re-captured: one of the original "1.4-2.0 m beside the partner" stops itself with the new diagnostics (about 1 round
 in 15); the fix-off runs gave holds of the same kind in the same herd.
 

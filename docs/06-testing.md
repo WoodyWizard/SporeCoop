@@ -6646,7 +6646,7 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   and Havok holds it in every direction: the attack key, a click on the ground, any WalkTo do nothing, for as long as
   it stays there (also after another teleport to the same place). It looked like "a press of the attack key that
   never starts the walk" in partner_pass (about 1 round in 5). `coop.npc gopos` puts the point onto the game's
-  surface now (`tools.gopos_surface`; not within 2.5 m of another creature: the surface's ray cast hits creatures); a test that teleports with its own command (`coop.abilities put`,
+  surface now (`tools.gopos_surface`; the median of five samples 1.2 m apart: the surface's ray cast hits creatures); a test that teleports with its own command (`coop.abilities put`,
   `goto`, game::teleport) near a nest must do the same (lift the creature, it falls onto the mound).
 * `coop_creature_walk_start.py` (suite `walk_start`, ~3 min; `walk_start_solo`: the host's game alone, no session;
   `walk_start_walkin`: no teleport, the game walks the creature to each point, every fix off, extended): animals near

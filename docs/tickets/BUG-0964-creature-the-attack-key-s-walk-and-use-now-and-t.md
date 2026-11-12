@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-walk
-commits: 18a57a2a, d71d5660, 79de1e01
+commits: 18a57a2a, d71d5660, 79de1e01, 48f7eb8a
 tests: walk_start, walk_start_solo, walk_start_walkin, partner_pass
 signature:
 docs: docs/re/creature.md#creature-partner-pass-rel, docs/re/creature.md#creature-walk-held-in-mound, docs/06-testing.md#testing-walk-start
@@ -45,8 +45,8 @@ the same herd for several rounds" of the partner_pass runs is the same spot near
 ## Fix
 coop.cpp (`tools.gopos_surface`): `coop.npc gopos` puts the point onto the game's surface (`game::surface_radius`,
 cPlanetModel_SurfacePoint: the terrain, then the ray cast onto the mound's or a rock's collision) when it is under it,
-except within 2.5 m of another creature (the ray cast hits creatures: it would land on its back). `gonpc` already drops
-the creature from 2 m over the NPC. Off: `coop.fix tools.gopos_surface off` (SPORE_FIX_OFF=tools.gopos_surface).
+as the median of five samples (the point and four 1.2 m around it: the ray cast hits creatures too, and a creature
+covers one or two of them, a mound all). `gonpc` already drops the creature from 2 m over the NPC. Off: `coop.fix tools.gopos_surface off` (SPORE_FIX_OFF=tools.gopos_surface).
 Test only: no CHANGELOG line (a player never meets it). Diagnosis tools: `coop.abilities walk [raw]`, `walkto`,
 `target <ptr> any` (debug.cpp).
 
@@ -57,6 +57,8 @@ in its own game every time.
 * FAIL with `SPORE_FIX_OFF=tools.gopos_surface`: lab 20261112-143501 (4 of 16 held, each inside a mound: surface
   0.55-0.65 m above, a plain walk 0 m every way, 2 m higher it walked).
 * PASS: lab 20261112-143501-2 (15 of 15), 20261112-143856 (16 of 16).
+* With the final code (the median of five surface samples, 48f7eb8a): FAIL with the switch off 20261112-153816-2
+  (2 of 16 held), PASS 20261112-154110 (2 runs).
 * The game's own path (no teleport, every fix off, no session): `walk_start_walkin` 20261112-143856-2 (12 of 12).
 
 ## History
