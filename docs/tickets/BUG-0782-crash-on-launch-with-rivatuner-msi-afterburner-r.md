@@ -54,7 +54,7 @@ for:
 ## Verification
 `coop_env_notes.py` (suite `env_notes`), lane 5: a do-nothing DLL named rtsshooks.dll (build/test/rtsshooks.dll,
 tests/dll/stand_in.c) loaded into the host's game by `kit.test.loadlib`.
-* PASS: lab 20261112-041609-2 (other hooks names RivaTuner, the advice line, the host's notice, none on the guest).
+* PASS: lab 20261112-041609-2 (other hooks names RivaTuner, the advice line, the host's notice, none on the guest), 20261112-053347.
 * FAIL with `SPORE_FIX_OFF=core.rtss_note`: lab 20261112-041730 (no notice).
 * Not verified: a real RTSS on Windows (whether the advice avoids the crash).
 

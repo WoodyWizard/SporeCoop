@@ -74,7 +74,7 @@ host the egg is eaten, no creature, no body, no DNA, no hunt), step 4 (the host'
 1 Hz snapshots; the guest polled every 0.1 s: a proxy within 1.5 m of a whole mirror for at most 0.4 s).
 * FAIL with `SPORE_FIX_OFF=nest.hatch_now`: lab 20261112-052254 (0.91 s). An earlier off run with the hatch at a
   random moment passed (0.12 s, lab 20261112-051854): the window depends on the phase, hence the timed hatch.
-* PASS: lab 20261112-051551, 20261112-052559 (0.00 s; `early=2` snapshots on the host).
+* PASS: lab 20261112-051551, 20261112-052559, 20261112-052927 (0.00 s; `early=2` snapshots on the host).
 * Not tried: step 3 (an eat in the hatch's second) ran in no run: the herd laid 2 eggs (the test then runs steps 4
   and 2).
 

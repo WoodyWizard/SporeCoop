@@ -6285,3 +6285,7 @@ creature is freed 10-40 frames later, the next creature of its species takes the
   started again between its leave and its join (BADGES_RESTART=1, default): a rejoin from the same game faults at the
   load after a badge was earned (BUG-0956). The game goes on with a badge chain by itself after the restore (B8E0B054
   4 -> 2, 055 2 -> 1, 056 1 -> 0): the test compares the earned set (state < 2), not every state.
+* `coop.abilities reach` (the play bots poll it) called the game's Ability_RangeScale without its creature argument
+  (cdecl float(int kind, creature*)): harmless while the stack slot held 0, a fault at 0xD38A56 and both play_creature
+  bots hung once other code changed the stack (BUG-0957, fixed). A test command that calls the game is checked against
+  the disassembly like mod code.

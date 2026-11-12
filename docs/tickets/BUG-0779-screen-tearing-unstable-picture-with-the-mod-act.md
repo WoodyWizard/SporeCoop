@@ -99,10 +99,10 @@ Observed in the lab:
 
 ## Verification
 * `kit_frame_limit` (lane 4): FAIL with `SPORE_FIX_OFF=kit.framelimit`: lab 20261112-041025 (property 16, 14.3 ms);
-  PASS: lab 20261112-040913 (property 50, 48.9 ms).
+  PASS: lab 20261112-040913 (property 50, 48.9 ms), 20261112-055106-2 (final code).
 * `kit_wrapper_cap` (lane 4, the lane's folder put back after it): PASS lab 20261112-041138 (33.3 ms in all three,
   4.1 ms without dxvk.conf, vsync=1 logged and 16.9 ms); no fix depends on it (evidence that the wrapper cap holds).
-* `env_notes` (lane 5, the uncapped notice): PASS lab 20261112-041609-2, FAIL with `SPORE_FIX_OFF=core.uncapped_note`:
+* `env_notes` (lane 5, the uncapped notice): PASS lab 20261112-041609-2, 20261112-053347, FAIL with `SPORE_FIX_OFF=core.uncapped_note`:
   lab 20261112-041852.
 * Not verified: the player's own mods (ask him which ModAPI mod gave the 30 fps lock, and to try `vsync=1`).
 
