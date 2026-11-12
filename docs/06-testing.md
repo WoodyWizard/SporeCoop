@@ -6426,10 +6426,13 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
 * `tribe_mirror_idle` / `tribe_mirror_hold` (coop_tribe_mirror_idle.py --part idle | hold; BUG-0936 / BUG-0914): 120 s
   of `coop.tribe anims` on both games twice a second with 4 more members. idle: samples where the host's member is in
   its own idle choice (the same animation two samples in a row) and the mirror plays it or a locomotion idle / walk.
-  hold: each hold of the host's member in an animation (the `hold=1` samples in a row) and whether the mirror held
-  its item in that animation during it or 0.6 s after. Key frames `rest` (16 m from the village) and `swing` (12 m
-  from the chief while it holds its staff). The 0.2-0.5 s sampling cannot see the first frames of a hold: compare
-  rates, not single holds.
+  hold: the natural holds are only printed (the mirror's own game takes the item itself in the work and change
+  animations: 60-70 % "held" with the fix off, 78-80 % on: no measure); the check is three rounds of the host's chief
+  taking its staff (`coop.tribe hand <id> <item>`, its item or 17, the game's attach; or a gesture holding it already)
+  and putting it back (`hand <id> end`): the guest's copy must hold it 1.5 s after each take (0 of 3 with the fix off)
+  and be back in the grip 1.5 s after each end. Key frames `rest` (16 m from the village), `swing` (12 m from the chief
+  in a natural hold) and `hold` (10 m, in the first round: the staff forward on both screens; upright on the guest
+  with the fix off). The chief may have put its staff away (item 0) for minutes: the test gives it the staff.
 * `tribe_gameover_partner` (BUG-0922): the host's own members knocked out (5000 hp blows) while the guest's live: no
   caption on the host (the game counts the guest's members, 20 s); then the guest's members too, with 100 hp blows;
   the caption must be closed by play_tribe's rule (`play_tribe.GameOver`, the caption `coop.ui find "Alas"` up 3 s)
@@ -6438,4 +6441,8 @@ docs/re/tribe.md#tribe-mirror-looks. All on the tribe fixture, 3-5 min each.
   that the host never sat in the caption for 25 s.
 * `tribe_form_ground_rejoin` (coop_tribe_form_ground.py --rejoin; BUG-0947): the host's game forms an NPC village, the
   guest makes its copy live, then leaves and joins again (it loads the host's world with the village) and the two
-  grounds round the village are compared again.
+  grounds round the village are compared again (limit 0.5 m; 7.95 m on the 50 m ring with the fix off). On a
+  difference it prints the stamps within 80 m on both (`coop.terrain list`), the guest's extra ones' prop keys
+  (`coop.terrain raw`) and the grounds after the host applied that stamp live (`coop.terrain stamp <template id>
+  <key instance> <key group>`, new). `SPORE_FIX_OFF=tribe.village_load_stamp` fails.
+* `coop.terrain` callers (`from 0x...`) are GOG 2024 VAs now; before 2026-11-12 they were 0x400000 too high.

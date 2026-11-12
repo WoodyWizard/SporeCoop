@@ -1,20 +1,20 @@
 ---
 id: BUG-0922
 title: Tribe: the host sits in the game-over caption for the last 40 s of play_tribe while the guest plays on and sees the host's chief standing; the test's game-over rule does not see it
-status: open
-kind: bug
+status: fixed
+kind: test
 stage: Tribe
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: host
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-tribe-mirrors
+commits: f2051355, b059baac
+tests: tribe_gameover_partner, play_tribe
 signature:
-docs:
-related: BUG-0172, BUG-0685, BUG-0652
+docs: docs/06-testing.md#testing-tribe-mirror-looks
+related: BUG-0172, BUG-0685, BUG-0652, BUG-0960
 ---
 
 ## Report
@@ -34,22 +34,28 @@ Frames: `out/lab/20261111-044257/frames/play_tribe/03_end_host.jpg`, `03_end_gue
 * The test says "game overs 0" and every check passed.
 
 ## Root cause
-Observed (tools/tests/play_tribe.py, the game-over rule): it presses Enter only when no member with tribe 'p' and
-hp > 0 is left on the host for 15 s. Inferred: the guest's members belong to the player tribe in the host's game
-too, so with a living guest the list is never empty and the rule never fires; the host stays in the caption until
-the play ends. Not known: why the game showed the caption with 6 members of the player tribe alive (the host's own
-members and chief all down at once, by BUG-0172's notes the caption comes when only the knocked-out chief is left),
-and whether the guest should show something while the host is in it (today it plays on against a paused host).
-Probably older than 0.7.12 (the epic phase and the rule are not new); seen once, in 1 of 5 runs with an end frame.
+Proven (lab, tribe_gameover_partner): a test artefact plus the game's own rule. The game shows the caption on the host
+when every member of the player tribe is down (the guest's members count: with the host's own members and chief
+knocked out and the guest's alive there is no caption for 80 s). A knocked-out chief stands up again about 95 s after
+its fall with full health (hp 168, dead 0), also while the caption is up and the game is paused behind it; the
+caption stays. play_tribe pressed OK only when no player-tribe member had hp > 0 for 15 s: with the chief standing it
+never did, and the host sat in the caption to the end of the play while the guest played on (the guest's log "mirror
+#1 goes: dead here, back on its feet on the host" 3 s into the caption, its end frame the host's chief standing).
+Reproduced: the chief knocked out 80 s before the rest, the caption 10 s after the last fall, the chief up 168 hp a
+few seconds later, the members rule never fired in 40 s (out/lab/20261112-093040, key frame = the report's picture).
 
 ## Fix
-Open.
+Tests only (no game change): play_tribe's game-over rule is the caption itself (`play_tribe.GameOver`: the window
+"Alas..." and every parent visible for 3 s: OK); the play closes a caption left at its end before the `end` key frame
+and fails when the host sat in the caption for 25 s. `PLAY_TRIBE_OLD_GAMEOVER=1` keeps the members rule (the twin).
+The guest playing on during the host's caption is BUG-0960.
 
 ## Verification
-Open. How to test: replay `SPORE_LANE=5 python3 tools/tests/play_tribe.py --minutes 10.0 --seed 6749893`; or kill the
-host's own members by `coop.tribe pincer` while the guest has members (BUG-0172's recipe) and read `coop.status` busy
-flags and `coop.ui find "Alas"` on both. The check the test lacks: the host is not in a cinematic with a caption for
-more than 15 s (`coop.ui find "Alas"` instead of counting members), and the end key frame only after it is closed.
+Test `tools/tests/coop_tribe_gameover_partner.py` (suite `tribe_gameover_partner`).
+* FAIL with `PLAY_TRIBE_OLD_GAMEOVER=1`: out/lab/20261112-093040 (caption 10 s after the last fall, the chief up, no
+  OK in 40 s).
+* PASS: out/lab/20261112-093429, out/lab/20261112-095407 (the chief stood up in the caption both times, OK at 13 s).
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: fixed (fix/w48-tribe-mirrors): a test artefact; play_tribe answers the caption; BUG-0960 opened for the guest's side.

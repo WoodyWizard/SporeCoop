@@ -1,19 +1,19 @@
 ---
 id: BUG-0935
 title: Tribe: the guest's roster shows the members red with an empty health bar while the host's roster has them healthy (play_tribe, campaign)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w48-tribe-mirrors
+commits: 6fc65d20
+tests: tribe_mirror_hunger
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-mirror-looks, docs/06-testing.md#testing-tribe-mirror-looks
 related: BUG-0889, BUG-0921, BUG-0643, BUG-0173
 ---
 
@@ -46,23 +46,26 @@ Severity: medium (wrong information in the main Tribe panel, on guests only). Co
 not looked at).
 
 ## Root cause
-Not analysed (review of pictures only). Observed: the guest's cards differ from the host's for the same slots at the
-same moment, and the difference grows with play time. docs/re/tribe.md says "the guests see the members' health of
-the host" (the blows are the host's), which the roster contradicts: either that holds for the member objects but
-not for what the roster card reads, or it does not hold for every member.
-Inferred (low confidence), two candidates: (1) the guest's mirrors run no behaviour tree (tribe.cpp h_BTTick,
-BUG-0889), so nothing feeds them in the guest's game: their own hunger runs down to zero and the game's card turns
-red and takes health off locally; (2) the health the card reads (the combatant's health against vt 0x58 maximum)
-is not what the relay writes for mirrors.
+Proven (Ghidra + runtime). A member's hunger is cCreatureBase +0xBBC (mHunger, 0..100); its update 0xC0D5A0 takes
+0.28 a second off it and below 1 the member starves (TakeDamage of its combatant every frame); a member eats in its
+behaviour tree (0xC22C40). A guest's mirror runs no tree, so it never ate: probe on lane 4 (the new `hunger=` of the
+`coop.tribe` rows) host 99.8 / guest 30.3 after 4 min, guest 0 after about 6 min, while health stayed the host's
+(the snapshot). The roster card of a starving member is red with an empty bar: the guest's cards after minutes of
+play. Candidate (2) of the report (the health the card reads) was not it: `maxhp=` and `hp=` agreed.
 
 ## Fix
-Open.
+`tribe.mirror_hunger`: the member's hunger is a replicated field (fields kind `tribe_member_hunger` 11, field 7),
+applied with the game's clamped setter 0xC0BB30 (`SporeCoop::Creature_SetHunger`) when the mirror is 2 % off. Lab
+logs: "member #1's hunger 66.1 -> 99.9 as in the host's game" after the host's member ate.
 
 ## Verification
-Open. How to test: play_tribe (or tribe_coop with 5 min of idle time) and read every player-tribe member's health,
-maximum and hunger on both games (`coop.tribe` rows on the host and the guest); they must agree within the relay
-delay. The check the tests lack: a golden or a console read of the roster cards on the guest after minutes of
-play (ui_golden has the roster only at the start).
+Test `tools/tests/coop_tribe_mirror_hunger.py` (suite `tribe_mirror_hunger`): the guest's mirrors set to hunger 0
+(what minutes of its own update leave), the host's member to 40: within 5 s every mirror has the host's value; key
+frame `roster`.
+* FAIL with `SPORE_FIX_OFF=tribe.mirror_hunger`: out/lab/20261112-091714 (mirrors stay at 0, the host's 38.5 not
+  mirrored).
+* PASS: out/lab/20261112-090616-2, out/lab/20261112-094224.
 
 ## History
 - 2026-11-11: opened.
+- 2026-11-12: fixed (fix/w48-tribe-mirrors): hunger replicated.

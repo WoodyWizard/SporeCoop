@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a guest's tribe members no longer look starved in the roster after a few minutes of play (red cards with an
+  empty bar); they are as hungry as in the host's game (BUG-0935).
+- Tribe: a tribe member thrown into the air by a hard blow is in the air on the guests' screens too; it stayed on the
+  ground there (BUG-0946).
+- Tribe: tribe members at rest stand, sit or crouch the same way on every player's screen; a guest's copy no longer
+  goes on with a gesture the host's member has already stopped (BUG-0936).
+- Tribe: when a host's tribe member swings its staff or instrument, the guest's copy swings it too instead of holding
+  it upright (BUG-0914).
+- Tribe: a guest that joins again during Tribe has the same ground as everybody else round the villages that appeared
+  during play; it was up to 8 m higher or lower there (BUG-0947).
 - Cell: a player knocked out while a level change rescales the pool stays where it lay, next to the partner who can
   revive it; it was held far out in the pool (BUG-0798).
 - Cell: a knocked-out cell no longer makes poison clouds that hurt and kill creatures for its owner while it is down
