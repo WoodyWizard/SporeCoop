@@ -2939,3 +2939,13 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   0-60 %; the test's average check fails in about half the runs (also before BUG-0975's fix, and with its switch off).
 * Reproduce: `tools/lab.py run cell_levelup_view --lane N --repeat 4`.
 * Ticket: BUG-0976
+
+## Tests: walk_start_walkin with every fix off crashed in DXVK after two caught memcpy faults (2026-11-12, test: fix/w48-d3d9)
+<a id="issue-fixoff-dxvk-crash"></a>
+
+* What happens: 18 ms after `coop.fix all off` (solo, Creature, the partner gone 3 s before) the host's game catches
+  a fault in ucrtbase memcpy on the main thread (the console's frame), another 1 s later, then crashes in DXVK 3.1.1's
+  CS thread (d3d9.dll+0x11395B, a command list with a null command pool: damaged heap). Seen once (lab
+  20261112-175447); the same test passed on fix/w48-walk. Only with every fix off; not seen with fixes on.
+* Reproduce: `tools/lab.py run walk_start_walkin --lane N --repeat 10` (not reproduced yet).
+* Ticket: BUG-0977
