@@ -1052,6 +1052,25 @@ static void silent_tick(Remote& r, double now)
     }
 }
 
+// BUG-1064: in Cell a partner's pose is in its own world scale (BUG-0519); a level change rescales each world over
+// ~3.5 s at its own moment, so the host's view centre for a partner (the tiles kept round it, the cull's active area,
+// h_TileActive) sat off the partner's place then (by the two scales' ratio): the host's game culled the cells round
+// the partner that its own view keeps (a level down: 37 % of the partner's area against 20 % of the host's own,
+// lab 20261113-033642-2). Now the centre is in the host's scale, where the partner's cell is drawn.
+// Old (`coop.fix cell.view_centre_scale off`): the pose as it came.
+static bool g_fix_view_centre_scale = true;
+COOP_FIX("cell.view_centre_scale", "BUG-1064", g_fix_view_centre_scale, "cell: the host keeps the world round a partner at the partner's place in the host's world scale while a level change rescales either world");
+static net::Vec3 view_pos(const net::PlayerState& s)
+{
+    if (!g_fix_view_centre_scale || g_mode != modes::kCell || !(s.scale > 0))
+        return s.pos;
+    float own = cellsync::scale_now();
+    if (!(own > 0) || !std::isfinite(own))
+        return s.pos;
+    float k = s.scale / own;
+    return {s.pos.x * k, s.pos.y * k, s.pos.z * k};
+}
+
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
@@ -1065,7 +1084,7 @@ void drive_puppet(Remote& r, double now)
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;
     // BUG-0280: the host keeps its world simulated around every partner it shows in its own place
     if (visible && g_sess.role() == net::Role::Host)
-        views::note(r.id, s.pos, g_mode, now);
+        views::note(r.id, view_pos(s), g_mode, now);
     else
         views::forget(r.id);
     if (r.puppet && !visible) // why a partner disappears (docs/stability/cell.md)

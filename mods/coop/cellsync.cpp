@@ -1322,6 +1322,15 @@ static bool g_fix_levelup_keep = true;
 COOP_FIX("cell.levelup_keep", "BUG-0635", g_fix_levelup_keep, "cell: a level change on the host keeps the cells on a partner's screen, as a single player keeps the cells in its view (they vanished on the guest and new ones came)");
 static bool g_in_wipe; // host: inside RemoveCellsOfOldScale
 static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost, g_wipe_calls; // host: per session (tests)
+// tests (BUG-1064): `coop.pool areas mark` marks the cells in the host's visible box and in the same box round each
+// partner's cell (area 0: the host, k: partner k); `coop.pool areas` tells per area how many are gone and which
+// DestroyCell caller removed them (h_Destroy, by return address)
+struct AreaMark {
+    uint8_t area;
+    uint32_t by; // DestroyCell's return address (rebased), 0 while not destroyed
+};
+static std::unordered_map<uint32_t, AreaMark> g_area_mark;
+static float g_centre_err_max, g_centre_err_moving; // tests (BUG-1064): the farthest a partner's view centre was from its cell (settled / scale moving)
 // host: is the cell's sphere inside a partner's visible box (as 0xE5CDE0 tests the host's own box)?
 static bool in_partner_view(uint8_t* c)
 {
@@ -1469,6 +1478,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
     bool dgfx = dc && F<uint32_t>(dc, 0x248);
     if (dc)
         g_dbg_destroy_by[(uintptr_t)__builtin_return_address(0)]++;
+    if (!g_area_mark.empty()) {
+        auto am = g_area_mark.find(idx);
+        if (am != g_area_mark.end() && !am->second.by)
+            am->second.by = (uint32_t)((uintptr_t)__builtin_return_address(0) - H->rebase(0));
+    }
     o_Destroy(idx, loot, f, x);
     if (dc && dparts && dn > 1) {
         g_dbg_destroys++;
@@ -2447,6 +2461,15 @@ static void tiles_drain(int, PartnerTiles& pt)
 // `coop.pool food 1000`, lab 20261030-004900) or replaced the host's own tile of the same key (that
 // one leaked). So our tiles go back to the pool before such a step, and no partner pass runs until
 // the scale settles (h_PopTiles).
+// BUG-1066: the food of a partner or of `coop.pool food` comes in food_drain (BUG-0633), right before the game's
+// step: its AddFoodPoints sets the target scale and this very step rescales, with our tiles still in the pool (the
+// flush looked at the scale before the drain). The rescale put our tile objects into the host's list (one per key,
+// the last wins: our shadow of a shared key replaced the host's own populated tile), h_PopTiles took them out again
+// and the host's own tiles of those keys stayed live in no list (15-16 a change). Now the flush runs after the drain.
+// Old (`coop.fix cell.scale_food_flush off`): before it.
+static bool g_fix_scale_food_flush = true;
+COOP_FIX("cell.scale_food_flush", "BUG-1066", g_fix_scale_food_flush, "cell: the host gives its partner tiles back before the world rescale that a partner's food starts (its own tiles were left in no list)");
+static uint32_t g_tiles_scale_flush;
 using WorldScale_t = void(SK_CDECL*)(float);
 static WorldScale_t o_WorldScale;
 static uintptr_t a_WorldScale;
@@ -2534,13 +2557,20 @@ static void SK_CDECL h_WorldScale(float dt)
     g_last_dt = dt;
     own_probe("step start");
     stack_tick();
-    if (!g_ptiles.empty() && in_cell() && scale_moving())
-        for (auto& [id, pt] : g_ptiles)
-            if (pt.list && pt.list->begin != pt.list->end) {
-                g_tiles_flush++;
-                tiles_delete(pt.list, [](const int32_t*) { return false; });
-            }
+    auto flush = [] {
+        if (!g_ptiles.empty() && in_cell() && scale_moving())
+            for (auto& [id, pt] : g_ptiles)
+                if (pt.list && pt.list->begin != pt.list->end) {
+                    g_tiles_flush++;
+                    g_tiles_scale_flush++;
+                    tiles_delete(pt.list, [](const int32_t*) { return false; });
+                }
+    };
+    if (!g_fix_scale_food_flush)
+        flush();
     food_drain(false); // BUG-0633: the food from outside the step, as a meal of this step
+    if (g_fix_scale_food_flush) // BUG-1066: after the drain, whose level change starts the scale moving
+        flush();
     puppet_poison(dt); // BUG-0716: the partners' poison parts, as the avatar's in this step
     o_WorldScale(dt);
 }
@@ -2778,6 +2808,14 @@ static void pop_tiles(int level, TileList* list, int all)
         for (size_t i = 0; i < n; i++)
             g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
     }
+    for (auto& v : g_views.list()) // tests (BUG-1064): how far each partner's centre is from where its cell is drawn
+        if (v.player)
+            if (uint8_t* pc = puppet_cell(v.player)) {
+                float e = std::hypot(v.pos.x - pos_of(pc).x, v.pos.y - pos_of(pc).y);
+                float& m = scale_moving() ? g_centre_err_moving : g_centre_err_max;
+                if (std::isfinite(e) && e > m)
+                    m = e;
+            }
     g_view_boxes.clear();
     for (auto& v : g_views.list()) {
         float dx = v.pos.x - hb.cx(), dy = v.pos.y - hb.cy();
@@ -6557,11 +6595,84 @@ std::string debug(const std::vector<std::string>& a)
         g_test_view_edge = std::clamp(atoi(a[1].c_str()), 0, 600);
         return "view box at the 1e7 edge for " + std::to_string(g_test_view_edge) + " tile passes\n";
     }
+    if (!a.empty() && a[0] == "areas" && is_host()) { // tests (BUG-1064): the host's own area and each partner's
+        float* vb = view_boxes();
+        if (a.size() > 1 && a[1] == "mark") {
+            g_area_mark.clear();
+            g_centre_err_max = g_centre_err_moving = 0;
+            if (!vb)
+                return "areas: no view boxes\n";
+            float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
+            std::vector<std::pair<int, net::Vec3>> ctr{{0, {(vb[0] + vb[3]) * 0.5f, (vb[1] + vb[4]) * 0.5f, 0.f}}};
+            for (int id = 1; id < 4; id++)
+                if (uint8_t* pc = puppet_cell(id))
+                    ctr.push_back({id, pos_of(pc)});
+            uint32_t n[4] = {};
+            for_each_cell([&](uint8_t* c, uint32_t idx) {
+                if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+                    return;
+                net::Vec3 p = pos_of(c);
+                float r = 1.7f * F<float>(c, kSize);
+                if (!std::isfinite(r))
+                    return;
+                for (auto& [id, q] : ctr)
+                    if (std::fabs(p.x - q.x) <= hx + r && std::fabs(p.y - q.y) <= hy + r) {
+                        g_area_mark[idx] = {(uint8_t)id, 0};
+                        n[id]++;
+                        break;
+                    }
+            });
+            char b[160];
+            snprintf(b, sizeof b, "areas marked host=%u p1=%u p2=%u p3=%u box=%.1fx%.1f\n", n[0], n[1], n[2], n[3], hx, hy);
+            return b;
+        }
+        // per area: marked, gone, gone by RemoveCellsOfOldScale / by another DestroyCell caller / without DestroyCell
+        std::map<int, std::array<uint32_t, 4>> st;
+        std::map<int, std::map<uint32_t, uint32_t>> by;
+        for (auto& [idx, m] : g_area_mark) {
+            auto& v = st[m.area];
+            v[0]++;
+            uint8_t* c = modes::cell_at(idx);
+            if (c && !F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying))
+                continue;
+            v[1]++;
+            if (m.by)
+                by[m.area][m.by]++;
+            else
+                v[3]++;
+        }
+        std::string out;
+        for (auto& [area, v] : st) {
+            char b[96];
+            snprintf(b, sizeof b, "area %s%d marked=%u gone=%u nodestroy=%u by", area ? "p" : "host", area, v[0], v[1], v[3]);
+            out += b;
+            for (auto& [ra, k] : by[area]) {
+                snprintf(b, sizeof b, " %08X:%u", ra, k);
+                out += b;
+            }
+            out += "\n";
+        }
+        { // where the host keeps the world round each partner, and where the partner's cell is
+            char b[200];
+            snprintf(b, sizeof b, "centre_err settled %.1f moving %.1f\n", g_centre_err_max, g_centre_err_moving);
+            out += b;
+            for (auto& v : g_views.list()) {
+                uint8_t* pc = v.player ? puppet_cell(v.player) : avatar();
+                auto pt = g_ptiles.find(v.player);
+                int n = pt != g_ptiles.end() && pt->second.list ? (int)((pt->second.list->end - pt->second.list->begin) / 2) : -1;
+                snprintf(b, sizeof b, "centre %d (%.1f %.1f) cell (%.1f %.1f) tiles %d scale %.4f target %.4f\n", v.player, v.pos.x, v.pos.y,
+                         pc ? pos_of(pc).x : 0.f, pc ? pos_of(pc).y : 0.f, n, world_scale(), F<float>(G(), 0x5150));
+                out += b;
+            }
+        }
+        return out.empty() ? std::string("areas: none marked\n") : out;
+    }
     if (!a.empty() && a[0] == "tilestat") { // tests (BUG-0999, BUG-1000): the host's tile bookkeeping counters
         char b[320];
         snprintf(b, sizeof b, "tilestat views_empty_skips=%u flushes=%u handed=%u handed_flushed=%u resets=%u between_warns=%u "
-                 "check_warns=%u passes=%u lists=%u views=%u\n", g_views_empty_skips, g_tiles_flush, g_tiles_handed, g_handed_flushed,
-                 g_tile_resets, g_tile_check_warns_between, g_tile_checks_bad, g_tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size());
+                 "check_warns=%u passes=%u lists=%u views=%u unshared=%u scale_flushes=%u\n", g_views_empty_skips, g_tiles_flush, g_tiles_handed, g_handed_flushed,
+                 g_tile_resets, g_tile_check_warns_between, g_tile_checks_bad, g_tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size(),
+                 g_tiles_unshared, g_tiles_scale_flush);
         return b;
     }
     if (!a.empty() && a[0] == "lootbig") { // tests (BUG-1004): `lootbig <n>`: the next foreground loot drop makes <n> cells; `lootbig`: the counters

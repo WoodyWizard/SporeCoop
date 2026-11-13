@@ -3431,3 +3431,16 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (2026-11-13, fix/w49-tctl2; `tribe.foreign_note`, test tribe_foreign_click) **BUG-1087** (Tribe, guest): a
   click on another player's member or its roster card selected nothing and said nothing (the split of the player tribe
   is by design). Reproduce: Tribe, two players, the guest clicks a host member.
+## Cell: a level down removes more of the cells round a partner than round the host in the host's game (2026-11-13, fix/w49-cell2 test)
+<a id="issue-cell-first-down-partner"></a>
+
+* What happens: on a level down (+-150 food, the guest 60-70 m away) the host's game removed more of the cells in the
+  box round the partner than of its own, pooled over three down changes 28 / 16 %, 87 / 24 %, 74 / 22 % (3 of 5 runs);
+  the guest sees it as a big part of its screen replaced.
+* Reproduce: `tools/lab.py run cell_levelup_area --lane N` (the printed area shares; `--strict` asserts them).
+* Known: by the cull 0xE7C3E6 (a cell without a parent whose tile IsTileActive refuses, docs/re/cell.md#cell-levelup-partner-area).
+  One cause is fixed (`cell.view_centre_scale`: the partner's view centre was 17-37 m off while the scale moved); the
+  centre is right now (0.7-3.6 m) and the loss stays in some runs.
+* Not checked: whether those cells had a parent, which tiles were active round the partner then, the camera lag (the
+  host's view box trails its cell by up to 40 m right after a down change, the partner box is the host box moved).
+* Ticket: BUG-1064 (BUG-1080 folded in)
