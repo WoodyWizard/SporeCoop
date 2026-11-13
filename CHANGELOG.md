@@ -82,7 +82,8 @@
 - Civilization: when a guest buys a city, the "choose the city's specialty" question now comes up on that guest's
   screen and its answer counts in every game; before, the host was asked (and its game paused) instead (BUG-0982).
 - Cell: during a level change the host keeps the world round a guest at the guest's real place (it was off by up to
-  30 m, and cells round the guest vanished); some extra loss round a guest on a level down is still open (BUG-1064).
+  30 m, and cells round the guest vanished). The extra loss still measured after that on level downs came from the
+  test (the guest stood next to the host); with the two apart a guest loses no more than the host (BUG-1064).
 - Cell: a level change that came from a partner's food no longer leaves tiles of the host's world behind that nothing
   cleans up (BUG-1066).
 - Joining: with "joining after the start" off, a new player whose name was already used in the session (two

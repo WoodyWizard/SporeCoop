@@ -3444,3 +3444,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: whether those cells had a parent, which tiles were active round the partner then, the camera lag (the
   host's view box trails its cell by up to 40 m right after a down change, the partner box is the host box moved).
 * Ticket: BUG-1064 (BUG-1080 folded in)
+* Resolved (2026-11-13, fix/w49-cell3): not a co-op loss. The test's guest stood 1-8 m from the host at every mark
+  (its one `tp` did not hold), so the partner's area was the band outside the host's box, the cells a down change
+  pushes out first. With the areas apart (the guest moved before each change) the partner's area lost no more than
+  the host's beyond noise on the down changes in 20 runs (pooled -38 .. +9 points): the rest is the game's own cull at the edge of
+  a whole-tile range (docs/re/cell.md#cell-levelup-cull-measured). `cell_levelup_area` asserts the shares now.

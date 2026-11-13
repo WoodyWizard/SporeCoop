@@ -43,3 +43,6 @@ them are cells without a parent at the tile edge.
 - 2026-11-13: opened.
 - 2026-11-13: folded into BUG-1064 (the same symptom after its view-centre fix: later runs had it in other down
   changes too, 87 / 24 % and 74 / 22 % pooled, labs 20261113-123921, -123921-2).
+- 2026-11-13: fix/w49-cell3: explained under BUG-1064: the guest stood 1-8 m from the host in those labs (the test's
+  `tp` did not hold), so "the area round the partner" was the band outside the host's box; with the areas apart no
+  excess beyond noise.

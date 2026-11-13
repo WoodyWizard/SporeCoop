@@ -1327,10 +1327,23 @@ static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost, g_wipe_calls; /
 // DestroyCell caller removed them (h_Destroy, by return address)
 struct AreaMark {
     uint8_t area;
+    uint8_t parent; // at the mark: 1 when the cell's parent cell +0x36C is alive (ShouldCullCell never culls it then)
+    uint8_t ring;   // at the mark: its offset from the area's centre in sixths of the box half (max of x, y), 0..6
+    int8_t lvl;     // at the mark: its level +0x358 - the food level
     uint32_t by; // DestroyCell's return address (rebased), 0 while not destroyed
 };
 static std::unordered_map<uint32_t, AreaMark> g_area_mark;
 static float g_centre_err_max, g_centre_err_moving; // tests (BUG-1064): the farthest a partner's view centre was from its cell (settled / scale moving)
+// tests (BUG-1064): per area, the cull 0xE7C3E6 of a marked cell: how old the partner view boxes h_TileActive read were
+// (sim frames since g_view_boxes was built), and how far the area's box centre was from the area's cell then
+struct AreaCull {
+    uint32_t n, stale, maxage, fresh_ok, lvl[8], layer1, box_ok, union_ok; // lvl: the culled tile's level - the food level, -2 .. +5
+    float maxoff, maxrel;                        // maxrel: the cell's farthest offset from its area's cell in box halves
+};
+static AreaCull g_area_cull[4];
+static uint32_t g_sim_frame, g_boxes_frame, g_area_skips0; // h_WorldScale counts SimUpdates; pop_tiles notes its box build
+static void area_cull_note(uint8_t area, uint8_t* c);
+static uintptr_t a_CullRet; // DestroyCell's return address in the cell update after ShouldCullCell (0xE7C3E6)
 // host: is the cell's sphere inside a partner's visible box (as 0xE5CDE0 tests the host's own box)?
 static bool in_partner_view(uint8_t* c)
 {
@@ -1480,8 +1493,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
         g_dbg_destroy_by[(uintptr_t)__builtin_return_address(0)]++;
     if (!g_area_mark.empty()) {
         auto am = g_area_mark.find(idx);
-        if (am != g_area_mark.end() && !am->second.by)
+        if (am != g_area_mark.end() && !am->second.by) {
             am->second.by = (uint32_t)((uintptr_t)__builtin_return_address(0) - H->rebase(0));
+            if (dc && a_CullRet && (uintptr_t)__builtin_return_address(0) == a_CullRet)
+                area_cull_note(am->second.area, dc);
+        }
     }
     o_Destroy(idx, loot, f, x);
     if (dc && dparts && dn > 1) {
@@ -2304,8 +2320,11 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
     o_PopTile(t, all);
 }
 
+static int32_t g_last_tile[4]; // tests (BUG-1064): the last tile asked outside a pass (the cull's, right before its DestroyCell)
 static bool SK_CDECL h_TileActive(const int32_t* t)
 {
+    if (t && g_pass < 0)
+        memcpy(g_last_tile, t, sizeof g_last_tile);
     // inside a partner pass the only caller is PopulateTiles' delete loop, whose erase would shorten
     // the host's list (tiles_delete did this list's deletes already): it deletes nothing of ours
     if (g_pass > 0)
@@ -2327,6 +2346,61 @@ static bool SK_CDECL h_TileActive(const int32_t* t)
     if (r)
         g_tiles_kept++;
     return r;
+}
+
+static void area_cull_note(uint8_t area, uint8_t* c)
+{
+    float* vb = view_boxes();
+    uint8_t* s = S();
+    uint8_t* pc = area ? puppet_cell(area) : avatar();
+    if (area >= 4 || !vb || !pc || !s)
+        return;
+    AreaCull& st = g_area_cull[area];
+    st.n++;
+    uint32_t age = g_sim_frame - g_boxes_frame;
+    st.stale += age != 0;
+    st.maxage = std::max(st.maxage, age);
+    for (size_t k = 0; k < g_views.size() && k < g_view_boxes.size(); k++)
+        if (g_views.list()[k].player == area) {
+            auto& b = g_view_boxes[k];
+            float off = std::hypot((b[0] + b[3]) * 0.5f - pos_of(pc).x, (b[1] + b[4]) * 0.5f - pos_of(pc).y);
+            if (std::isfinite(off))
+                st.maxoff = std::max(st.maxoff, off);
+        }
+    float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
+    if (hx > 0 && hy > 0)
+        st.maxrel = std::max(st.maxrel, std::max(std::fabs(pos_of(c).x - pos_of(pc).x) / hx, std::fabs(pos_of(c).y - pos_of(pc).y) / hy));
+    int d = g_last_tile[1] - cell_logic::level_of_food(F<int32_t>(s, 0x1C));
+    st.lvl[std::clamp(d + 2, 0, 7)]++;
+    if (o_TileActive) { // would the tile be active with the host's box this frame moved onto the area's cell?
+        float save[12];
+        memcpy(save, vb, sizeof save);
+        float dx = pos_of(pc).x - (save[0] + save[3]) * 0.5f, dy = pos_of(pc).y - (save[1] + save[4]) * 0.5f;
+        for (int i : {0, 3})
+            vb[i] += dx;
+        for (int i : {1, 4})
+            vb[i] += dy;
+        bool fresh = o_TileActive(g_last_tile), boxed = false;
+        st.fresh_ok += fresh;
+        // the area's own box of g_view_boxes, as h_TileActive's union reads it
+        float bc[4] = {};
+        for (size_t k = 0; k < g_views.size() && k < g_view_boxes.size(); k++)
+            if (g_views.list()[k].player == area) {
+                memcpy(vb, g_view_boxes[k].data(), sizeof save);
+                boxed = o_TileActive(g_last_tile);
+                st.box_ok += boxed;
+                bc[0] = (vb[0] + vb[3]) * 0.5f, bc[1] = (vb[1] + vb[4]) * 0.5f, bc[2] = vb[3] - vb[0], bc[3] = vb[4] - vb[1];
+            }
+        memcpy(vb, save, sizeof save);
+        if (st.n <= 4)
+            H->log(M, SK_INFO, "coop: areas: cull area %d cell (%.2f %.2f) its area's cell (%.2f %.2f) box %s(%.2f %.2f %.2fx%.2f) host vb (%.2f %.2f "
+                               "%.2fx%.2f) tile %d/%d/%d/%d food %d scale %.4f -> %.4f frame %u: fresh %d box %d",
+                   area, pos_of(c).x, pos_of(c).y, pos_of(pc).x, pos_of(pc).y, "", bc[0], bc[1], bc[2], bc[3], (save[0] + save[3]) * 0.5f,
+                   (save[1] + save[4]) * 0.5f, save[3] - save[0], save[4] - save[1], g_last_tile[0], g_last_tile[1], g_last_tile[2], g_last_tile[3],
+                   F<int32_t>(s, 0x1C), F<float>(G(), 0x514C), F<float>(G(), 0x5150), g_sim_frame, fresh, boxed);
+        st.union_ok += h_TileActive(g_last_tile);
+    }
+    st.layer1 += g_last_tile[0] != 0;
 }
 
 // Delete the tiles of one of our lists that `keep` refuses, as PopulateTiles' own delete loop does
@@ -2555,6 +2629,7 @@ static void stack_tick()
 static void SK_CDECL h_WorldScale(float dt)
 {
     g_last_dt = dt;
+    g_sim_frame++;
     own_probe("step start");
     stack_tick();
     auto flush = [] {
@@ -2706,6 +2781,47 @@ static bool tiles_overflow(int level)
     return true;
 }
 
+// the view centres: the host's view box, then every partner's cell; each centre's box (h_TileActive's union)
+static void build_views(const float* vb, double now, std::array<float, 12>& host_box)
+{
+    memcpy(host_box.data(), vb, sizeof(float) * 12);
+    views::Box hb{host_box[0], host_box[1], host_box[3], host_box[4]};
+    g_views.clear();
+    // the partners' centres: the one registry (views::note, coop.cpp: every partner shown in our
+    // place), the same the Creature and Tribe stages use (BUG-0280); a host view that is not finite
+    // gets no partner pass at all (BUG-0292)
+    if (views::finite_pos({hb.cx(), hb.cy(), 0.f})) {
+        g_views.set_host({hb.cx(), hb.cy(), 0.f});
+        views::Centre pc[views::kMaxCentres];
+        size_t n = views::partners(modes::kCell, now, pc, views::kMaxCentres - 1);
+        for (size_t i = 0; i < n; i++)
+            g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
+    }
+    for (auto& v : g_views.list()) // tests (BUG-1064): how far each partner's noted centre is from where its cell is drawn
+        if (v.player)
+            if (uint8_t* pc = puppet_cell(v.player)) {
+                float e = std::hypot(v.pos.x - pos_of(pc).x, v.pos.y - pos_of(pc).y);
+                float& m = scale_moving() ? g_centre_err_moving : g_centre_err_max;
+                if (std::isfinite(e) && e > m)
+                    m = e;
+            }
+    g_view_boxes.clear();
+    for (auto& v : g_views.list()) {
+        float dx = v.pos.x - hb.cx(), dy = v.pos.y - hb.cy();
+        std::array<float, 12> b = host_box;
+        for (int i : {0, 3})
+            b[i] += dx;
+        for (int i : {1, 4})
+            b[i] += dy;
+        if (!g_view_boxes.empty()) // a partner's background box is empty: no layer 1 tiles for it
+            for (int i = 6; i < 12; i++)
+                b[i] = 0;
+        g_view_boxes.push_back(b);
+    }
+    g_union = g_view_boxes.size() > 1;
+    g_boxes_frame = g_sim_frame;
+}
+
 static void pop_tiles(int level, TileList* list, int all);
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 {
@@ -2792,44 +2908,9 @@ static void pop_tiles(int level, TileList* list, int all)
     if (g_shadow_tiles.size() > 4096)
         for (auto it = g_shadow_tiles.begin(); it != g_shadow_tiles.end();)
             it = tile_alive(*it) ? std::next(it) : g_shadow_tiles.erase(it);
-    // the view centres: the host's view box, then every partner's cell
     double now = H->time_seconds();
     std::array<float, 12> host_box;
-    memcpy(host_box.data(), vb, sizeof(float) * 12);
-    views::Box hb{host_box[0], host_box[1], host_box[3], host_box[4]};
-    g_views.clear();
-    // the partners' centres: the one registry (views::note, coop.cpp: every partner shown in our
-    // place), the same the Creature and Tribe stages use (BUG-0280); a host view that is not finite
-    // gets no partner pass at all (BUG-0292)
-    if (views::finite_pos({hb.cx(), hb.cy(), 0.f})) {
-        g_views.set_host({hb.cx(), hb.cy(), 0.f});
-        views::Centre pc[views::kMaxCentres];
-        size_t n = views::partners(modes::kCell, now, pc, views::kMaxCentres - 1);
-        for (size_t i = 0; i < n; i++)
-            g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
-    }
-    for (auto& v : g_views.list()) // tests (BUG-1064): how far each partner's centre is from where its cell is drawn
-        if (v.player)
-            if (uint8_t* pc = puppet_cell(v.player)) {
-                float e = std::hypot(v.pos.x - pos_of(pc).x, v.pos.y - pos_of(pc).y);
-                float& m = scale_moving() ? g_centre_err_moving : g_centre_err_max;
-                if (std::isfinite(e) && e > m)
-                    m = e;
-            }
-    g_view_boxes.clear();
-    for (auto& v : g_views.list()) {
-        float dx = v.pos.x - hb.cx(), dy = v.pos.y - hb.cy();
-        std::array<float, 12> b = host_box;
-        for (int i : {0, 3})
-            b[i] += dx;
-        for (int i : {1, 4})
-            b[i] += dy;
-        if (!g_view_boxes.empty()) // a partner's background box is empty: no layer 1 tiles for it
-            for (int i = 6; i < 12; i++)
-                b[i] = 0;
-        g_view_boxes.push_back(b);
-    }
-    g_union = g_view_boxes.size() > 1;
+    build_views(vb, now, host_box);
     // our deletes first (h_TileActive: any player's box), before the host's pass. On a level change
     // (the level base differs) or a rebuild (all), or when the tile pool is short of room, every tile
     // of ours goes back first: the host's own pass must never find the pool full (CreateObject then
@@ -3592,6 +3673,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     }
     H->hook_create(M, (void*)a_DamageCell, (void*)h_DamageCell, (void**)&o_DamageCell);
     a_PoisonCullRet = H->sym("SporeCoop::Cell_PoisonCull_ret"); // tests (BUG-0716)
+    a_CullRet = H->sym("SporeCoop::Cell_CullDestroy_ret");    // tests (BUG-1064)
     a_PoisonStep = H->sym("SporeCoop::Cell_PoisonStep"); // BUG-0716
     if (uintptr_t cl = H->sym("SporeCoop::Cell_PoisonCloud")) // tests (BUG-0716)
         H->hook_create(M, (void*)cl, (void*)h_Cloud, (void**)&o_Cloud);
@@ -6141,6 +6223,12 @@ std::string debug(const std::vector<std::string>& a)
                  me.y, g_stack_frames, g_stack_pairs);
         return b;
     }
+    if (!a.empty() && a[0] == "camsnap") { // tests (BUG-1064): our camera onto our own cell (a still cell's camera stays where a rescale left it)
+        if (!av)
+            return "no cell\n";
+        camera_snap(pos_of(av));
+        return "camera on our cell\n";
+    }
     if (!a.empty() && a[0] == "cam") { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
         uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
         if (!ui || !skg::readable(ui + 0x48, 0xB0))
@@ -6600,6 +6688,8 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() > 1 && a[1] == "mark") {
             g_area_mark.clear();
             g_centre_err_max = g_centre_err_moving = 0;
+            memset(g_area_cull, 0, sizeof g_area_cull);
+            g_area_skips0 = g_tilecap_skips;
             if (!vb)
                 return "areas: no view boxes\n";
             float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
@@ -6617,7 +6707,10 @@ std::string debug(const std::vector<std::string>& a)
                     return;
                 for (auto& [id, q] : ctr)
                     if (std::fabs(p.x - q.x) <= hx + r && std::fabs(p.y - q.y) <= hy + r) {
-                        g_area_mark[idx] = {(uint8_t)id, 0};
+                        uint8_t ring = (uint8_t)std::min(6.f, 6.f * std::max(std::fabs(p.x - q.x) / hx, std::fabs(p.y - q.y) / hy));
+                        int lv = F<int32_t>(c, kLevel) - cell_logic::level_of_food(S() ? F<int32_t>(S(), 0x1C) : 0);
+                        g_area_mark[idx] = {(uint8_t)id, (uint8_t)(modes::cell_at(F<uint32_t>(c, 0x36C)) != nullptr), ring,
+                                            (int8_t)std::clamp(lv, -9, 9), 0};
                         n[id]++;
                         break;
                     }
@@ -6642,6 +6735,31 @@ std::string debug(const std::vector<std::string>& a)
                 v[3]++;
         }
         std::string out;
+        { // tests (BUG-1064): per area, culled (0xE7C3E6) / marked by the cell's ring at the mark (sixths of the box half),
+          // by its level against the food level (-2 .. +3), and of the cells with a live parent cell
+            uint32_t rm[4][7] = {}, rc[4][7] = {}, lm[4][6] = {}, lc[4][6] = {}, pm[4] = {}, pcl[4] = {};
+            uint32_t cull = a_CullRet ? (uint32_t)(a_CullRet - H->rebase(0)) : 0;
+            for (auto& [idx, m] : g_area_mark)
+                if (m.area < 4) {
+                    bool culled = cull && m.by == cull;
+                    rm[m.area][std::min<int>(m.ring, 6)]++, rc[m.area][std::min<int>(m.ring, 6)] += culled;
+                    int l = std::clamp(m.lvl + 2, 0, 5);
+                    lm[m.area][l]++, lc[m.area][l] += culled;
+                    pm[m.area] += m.parent, pcl[m.area] += m.parent && culled;
+                }
+            for (int k = 0; k < 4; k++) {
+                if (!(rm[k][0] + rm[k][1] + rm[k][2] + rm[k][3] + rm[k][4] + rm[k][5] + rm[k][6]))
+                    continue;
+                std::string ln = std::string("rings ") + (k ? "p" : "host") + std::to_string(k);
+                for (int r = 0; r < 7; r++)
+                    ln += " " + std::to_string(rc[k][r]) + "/" + std::to_string(rm[k][r]);
+                ln += " levels";
+                for (int l = 0; l < 6; l++)
+                    ln += " " + std::to_string(lc[k][l]) + "/" + std::to_string(lm[k][l]);
+                ln += " parent " + std::to_string(pcl[k]) + "/" + std::to_string(pm[k]) + "\n";
+                out += ln;
+            }
+        }
         for (auto& [area, v] : st) {
             char b[96];
             snprintf(b, sizeof b, "area %s%d marked=%u gone=%u nodestroy=%u by", area ? "p" : "host", area, v[0], v[1], v[3]);
@@ -6655,6 +6773,19 @@ std::string debug(const std::vector<std::string>& a)
         { // where the host keeps the world round each partner, and where the partner's cell is
             char b[200];
             snprintf(b, sizeof b, "centre_err settled %.1f moving %.1f\n", g_centre_err_max, g_centre_err_moving);
+            out += b;
+            // the cull of marked cells: the age of the boxes it read, the area's box off its cell, the culled tile's
+            // level against the food level, and whether the host's box moved onto the area's cell kept it
+            for (int k = 0; k < 4; k++) {
+                auto& c = g_area_cull[k];
+                if (!c.n)
+                    continue;
+                snprintf(b, sizeof b, "cull %s%d n=%u stale=%u maxage=%u maxoff=%.1f maxrel=%.2f fresh_ok=%u box_ok=%u union_ok=%u layer1=%u lvl=%u/%u/%u/%u/%u/%u/%u/%u\n",
+                         k ? "p" : "host", k, c.n, c.stale, c.maxage, c.maxoff, c.maxrel, c.fresh_ok, c.box_ok, c.union_ok, c.layer1, c.lvl[0], c.lvl[1], c.lvl[2], c.lvl[3],
+                         c.lvl[4], c.lvl[5], c.lvl[6], c.lvl[7]);
+                out += b;
+            }
+            snprintf(b, sizeof b, "passes skipped by the tile cap %u\n", g_tilecap_skips - g_area_skips0);
             out += b;
             for (auto& v : g_views.list()) {
                 uint8_t* pc = v.player ? puppet_cell(v.player) : avatar();

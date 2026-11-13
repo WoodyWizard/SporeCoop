@@ -7538,3 +7538,30 @@ again within 20 s and the players' hut stands in both games (`coop.realign plane
   rescale) and `scale_flushes=` (flushes before a moving-scale step). `coop.pool areas` also prints each view centre
   with its cell and tile count, and `centre_err settled / moving` (the farthest a partner's centre was from its cell
   since the mark).
+* ~ superseded (2026-11-13, fix/w49-cell3): "the guest 60 m left of and 40 m below the host" never held (1-8 m at the
+  marks) and the shares are asserted by default now: docs/06-testing.md#testing-cell-levelup-area-apart.
+
+## Cell level changes round a partner, the areas apart (2026-11-13, fix/w49-cell3)
+<a id="testing-cell-levelup-area-apart"></a>
+
+`coop_cell_levelup_area.py` (`cell_levelup_area`, ~5 min) reworked for BUG-1064:
+* Before each change the guest goes 70 m (world scale 0.5, before an up change) or 30 m (1.5, before a down change)
+  left of and below the host (`coop.pool tp`), and the host's camera onto its cell (`coop.pool camsnap`, new: a still
+  cell's camera stays where a rescale left it, 7-40 m off). The single `tp` right after the start never held: in all
+  labs of fix/w49-cell2 the guest was 1-8 m from the host at the marks and the "partner's area" was the band round the
+  host's box (the reason for the 26-66 point excess seen there).
+* A change is pooled only when the two areas are apart at the mark (more than two box widths in x or y) and the
+  host's view centre is within 10 m of its cell; the shares are asserted by default (`--print-only` prints them):
+  pooled per run the partner's area may lose at most 25 points (up) / 15 points (down) more than the host's own.
+  Data for the margins (20 runs): partner minus host -14 .. +17 (up, mean +2.4, sd 9.2), -38 .. +9 (down, mostly
+  well below 0); one area alone loses 2-57 % of its cells in one down change (the cull reads whole tiles).
+* `coop.pool areas` prints more: `rings <area>` culled / marked per sixth of the box half (ring 6: at the edge or
+  beyond), per level against the food level, and of the cells with a live parent cell; `cull <area>` per cull 0xE7C3E6
+  of a marked cell: the age of the boxes it read (`stale`, `maxage` in sim frames), the area's box centre off its
+  cell (`maxoff`), how far out the culled cells were (`maxrel`, box halves), and whether IsTileActive would have
+  kept the tile with the host's box moved onto the area's cell (`fresh_ok`), with the area's own box (`box_ok`), with
+  the union (`union_ok`); `passes skipped by the tile cap`. The first four culls per mark go to the host's game log
+  (`coop: areas: cull area ...`, positions, the tile, the scale).
+* FAILS with `SPORE_FIX_OFF=cell.view_centre_scale` (the centre check: 15.7 / 21.7 m, lab 20261113-171219) and
+  `cell.scale_food_flush` (the tile pool check).
+
