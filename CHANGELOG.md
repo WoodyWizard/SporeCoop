@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Partner name tags and edge arrows are no longer drawn over a cutscene that holds the game, such as the
+  Creature stage's intro (BUG-0985).
 - Cell: a guest whose own game was at a higher level (for example food 300, level 4) no longer crashes the
   moment it joins a host at a lower level; the game drew the tiles of the new level at the old level's scale and
   overran its own buffer (BUG-0975).

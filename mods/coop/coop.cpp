@@ -4299,6 +4299,23 @@ COOP_FIX("social.text", "BUG-0149", g_text_fix, "creature: ability keys are not 
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
+// BUG-0985: the partners' tags and edge arrows stood over a stage's cutscene (the host in the Creature stage's
+// intro, 0.7.13 final check, campaign advance-cell): world labels stay off while a cinematic holds the game (it
+// plays with the input locked or the time stood) in Cell, Creature, Tribe and Civ. Space and the galaxy keep them
+// (their flights play as cinematics with the input locked; the arrows are how a player finds the others there).
+// Off: the labels are drawn over every cinematic (0.7.12).
+bool g_cine_labels_fix = true;
+COOP_FIX("find.cinematic", "BUG-0985", g_cine_labels_fix,
+         "Cell, Creature, Tribe, Civ: no partner tag or arrow over a cutscene that holds the game");
+uint32_t g_cine_hidden = 0; // frames whose labels a cinematic hid (coop.status)
+static bool cinematic_holds_labels()
+{
+    if (!g_cine_labels_fix || !world::cinematic_playing())
+        return false;
+    if (g_mode != modes::kCell && g_mode != modes::kCreature && g_mode != modes::kTribe && g_mode != modes::kCiv)
+        return false;
+    return coop_ui::input_lock_now() > 0 || world::time_paused();
+}
 
 bool shown_chain(sui::Win w)
 {
@@ -4464,6 +4481,10 @@ void on_overlay(void*, int, void*)
     bool labels = !g_menu_up && !coop_ui::is_open();
     if (!labels)
         g_menu_hidden++;
+    else if (cinematic_holds_labels()) { // BUG-0985
+        labels = false;
+        g_cine_hidden++;
+    }
     // F3 (BUG-0768): all.name_tags off hides the partners' names (creature, cell, ship, tribe members, civ cities and
     // vehicles); pings, the knock-out bar and the arrows stay
     bool tags = labels && settings::on(settings::kNameTags);
@@ -5470,8 +5491,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
-    SAY("labels: menu_up=%d window=%d hidden_frames=%u name_tags=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(),
-        g_menu_hidden, g_tags_drawn);
+    SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u\n", (int)g_menu_up.load(),
+        (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden, g_tags_drawn);
     for (auto& p : g_sess.players()) // tests (BUG-0809): the datagrams sent to each peer so far
         if (net::Connection* c = p.id != g_sess.my_id() ? g_sess.conn_to(p.id) : nullptr)
             SAY("net to %u: out_bytes=%llu out_packets=%u\n", (unsigned)p.id, (unsigned long long)c->stats.bytes_sent,
