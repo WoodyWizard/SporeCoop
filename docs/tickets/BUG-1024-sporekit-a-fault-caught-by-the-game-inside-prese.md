@@ -1,19 +1,19 @@
 ---
 id: BUG-1024
 title: SporeKit: a fault caught by the game inside Present leaves the Present depth set (no more frames) or the overlay scene open
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-4
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit
+commits: 438e1cdb
+tests: kit_present_fault, kit_overlay_fault
 signature:
-docs: docs/known-issues.md#issue-present-depth-stuck
+docs: docs/02-modkit.md#modkit-present-unwind, docs/known-issues.md#issue-present-depth-stuck
 related:
 ---
 
@@ -44,6 +44,21 @@ message dispatched inside Present):
 * The C++ guards would not help: llvm-mingw i686, SEH unwinding by the game's __except skips our frames without
   running destructors.
 
+Runtime / fix/w49-kit:
+Observed at runtime (fix/w49-kit, lab lane 7, `SPORE_FIX_OFF=kit.presentunwind`):
+* Path 1 (a fault inside the original Present, made by `kit.test.presentfault present` between the depth's `++` and
+  o_Present, as a driver fault would be): the game's handler caught it and the game drew on, but the host's SporeKit
+  frame counter stopped for good (1444 -> 1444), the outside-frame command `window` got no answer, the guest's age of
+  the host's state grew to 35 s and more (lab 20261113-010320). h_Present starts a frame only at depth 0 and the game
+  loop fallback returns early on a set depth (code as described above).
+* Path 2 (three faults in the overlay pass, `kit.test.presentfault overlay`): worse than the audit said. The scene
+  stayed open for good: the game's own BeginScene fails inside it and the game then skips its EndScene, so SporeKit's
+  overlay pass never began a scene again (only 1 of 3 armed faults ever ran: no overlay pass, no labels, no partner
+  arrows for the rest of the run) and the back buffer's reference count went 1 -> 3 (a later device Reset fails while
+  it is held) (lab 20261113-010700-2). The first version of the fix (references released, no EndScene) showed the
+  same dead overlay (lab 20261113-010320-2): the scene must be ended too.
+* llvm-mingw i686 has no SEH unwinding of our frames: no destructor and no statement after the call runs.
+
 ## Fix idea
 Record the stack pointer and thread of the outermost Present entry (as g_frame_sp does for frames); in
 frame_from_game_loop (after App::Canvas::Tick, which runs outside Present) a set g_present_depth on the main thread
@@ -60,11 +75,26 @@ outside-frame command (`coop.ui where 0`) answers. Main: the frame counter stops
 failing (path 2): FAIL. Related BUG-0966 (frames go on there; check its candidates at the same time).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/d3d9hook.cpp, `kit.fix presentunwind` (SporeKit fixes.cpp):
+* The outermost Present's stack address and thread are kept (present_enter). present_cut_off: an entry of h_Present /
+  h_SwapPresent on that thread at or above it (a nested Present, the device's calling the swapchain's, is deeper) or
+  the game loop pass after App::Canvas::Tick (frame_from_game_loop) finds the depth still set: Present was left by an
+  unwind; the depth goes back to 0, a WARN "frames: Present was left by a fault the game's handler caught (N so far)",
+  the outside-frame tasks are resumed.
+* The overlay pass keeps its back buffer, the game's render target and an "open scene" flag in statics; when the
+  frame is found cut off (frame_cut_off, the next frame's start, before the original Present) overlay_cut_off ends the
+  scene, puts the render target back and releases both surfaces (WARN "overlay: the overlay pass was cut off").
+* Test commands `kit.test.presentfault present|overlay` (and its state line) and test_fault_null.
+Switch off: the depth and the overlay state are left as before.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Tests kit_present_fault (`kit_present_fault.py --case present`) and kit_overlay_fault (`--case overlay`), lanes 6 / 7:
+* FAIL `SPORE_FIX_OFF=kit.presentunwind`: out/lab/20261113-010320 (present: frames 1444 -> 1444, no answer to
+  `window`, the guest's age of the host 35.7 s; overlay after it: no frames) and out/lab/20261113-010700-2 (overlay:
+  1 of 3 faults ran, the overlay pass dead, back buffer references 1 -> 3).
+* PASS: out/lab/20261113-010700 (present: depth back to 0, frames 1594 -> 1909, `window` answers, guest's age
+  0.05 s; overlay: 3 of 3 cut off, references 1 -> 1, frames go on), out/lab/20261113-011847.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit (FAIL/PASS twin).

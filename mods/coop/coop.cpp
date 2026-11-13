@@ -12,6 +12,7 @@
 #include <iphlpapi.h>
 
 #include <algorithm>
+#include <mutex>
 #include <cstddef>
 #include <array>
 #include <atomic>
@@ -3276,9 +3277,12 @@ void menu_tick(double now);
 
 // ---- diagnostics (SporeKit 0.3.4+: crash / problem reports, docs/02-modkit.md 2.7) ----
 // the co-op state for a report, built on the frame (a crash report must not read game objects):
-// two buffers, the report reads the last complete one
+// two buffers, the report reads the last complete one. BUG-1022: a report thread that took the pointer and was
+// preempted for 2 s+ read a buffer the main thread was assigning again: the buffers change under g_diag_mu and the
+// report gets a copy of its own (per thread), made under it
 static std::string g_diag_buf[2];
 static std::atomic<int> g_diag_cur{0};
+static std::mutex g_diag_mu;
 static double g_diag_t = -100;
 static bool g_fault_told;
 
@@ -3325,12 +3329,19 @@ static void diag_tick(double now)
     size_t first = g_chat.size() > 8 ? g_chat.size() - 8 : 0;
     for (size_t i = first; i < g_chat.size(); i++)
         s += "chat: " + g_chat[i] + "\n";
+    std::lock_guard<std::mutex> lk(g_diag_mu);
     int next = 1 - g_diag_cur.load();
     g_diag_buf[next] = std::move(s);
     g_diag_cur = next;
 }
 
-static const char* diag_context_fn(void*) { return g_diag_buf[g_diag_cur.load()].c_str(); }
+static const char* diag_context_fn(void*)
+{
+    thread_local std::string copy; // valid until this thread's next call (SporeKit copies it at once)
+    std::lock_guard<std::mutex> lk(g_diag_mu);
+    copy = g_diag_buf[g_diag_cur.load()];
+    return copy.c_str();
+}
 
 // a fault inside SporeKit or coop.dll was caught (SK_EV_FAULT): tell the player once per run where
 // the report is, a mod bug is behind it

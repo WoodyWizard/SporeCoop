@@ -24,6 +24,10 @@
              procedure gets WM_MOUSEWHEEL with MK_SHIFT / MK_CONTROL in its wParam (`kit.test.wheel`), a
              plain wheel without them
 
+  vehedge    BUG-1028: a fault on a thread whose stack pointer is 8 bytes below the end of its stack's committed
+             region (`kit.test.vehedge`: the 12 dwords the fault logger copied read past it and faulted inside the
+             logger): the fault is recorded (the logger's last fault is this one), one fault only, the game goes on
+
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   SPORE_FIX_OFF=<kit fix>[,...]  the same for the cases of those fixes only (the lab's twin runs,
              e.g. SPORE_FIX_OFF=hookorig with `--case hooknew`)
@@ -46,7 +50,7 @@ GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
        'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark',
-       'hooknew': 'hookorig', 'hooksplit': 'hookfirst', 'stackvm': 'stackvq', 'wheel': 'wheelmk'}
+       'hooknew': 'hookorig', 'hooksplit': 'hookfirst', 'stackvm': 'stackvq', 'wheel': 'wheelmk', 'vehedge': 'vehbounds'}
 CASES = list(FIX)
 
 
@@ -142,6 +146,12 @@ def run_case(ck, case):
         ck(m is not None and int(m.group(3)) < 2000, f'no snapshot took 2 s or more ({m.group(3) if m else "?"} ms)')
         ck(m is not None and m.group(4) == '0',
            f'no VirtualQuery while the main thread was suspended ({m.group(4) if m else "?"} calls)')
+    elif case == 'vehedge':
+        r, dt = timed('kit.test.vehedge', 30)
+        print(f'  vehedge: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
+        ck(r is not None and 'ended=1' in r['out'], 'the test thread came back to its own stack')
+        ck(r is not None and 'recorded=1' in r['out'], 'the fault logger recorded the fault (its last fault is this one)')
+        ck(r is not None and 'nested=0 ' in r['out'], 'no second fault inside the fault logger')
     elif case == 'wheel':
         def wheel(keys):
             for k in keys:

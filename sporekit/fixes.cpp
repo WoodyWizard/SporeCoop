@@ -35,6 +35,12 @@ KitFix g_fix_taskdrop{"taskdrop", "the tasks of an unloaded mod are destroyed af
 KitFix g_fix_drawncam{"drawncam", "the overlay's labels are projected with the camera the frame was drawn with, not the one at Present (BUG-0948)", 1};
 KitFix g_fix_stackvq{"stackvq", "stack / hangdump / watchdog: the stack bounds come from the thread's TEB before the suspend, no VirtualQuery while it is suspended (BUG-0880)", 1};
 KitFix g_fix_wheelmk{"wheelmk", "the virtual mouse wheel carries the held keys and buttons in its wParam (MK_SHIFT, MK_CONTROL, MK_LBUTTON, MK_RBUTTON) (BUG-0859)", 1};
+KitFix g_fix_presentunwind{"presentunwind", "a fault the game's handler caught inside Present does not leave the Present depth set (no frame would start again) or the overlay's scene and surfaces held (BUG-1024)", 1};
+KitFix g_fix_taskcut{"taskcut", "a console command whose main-thread task was cut off by a fault the game's handler caught is answered with an error, not left waiting (BUG-0966)", 1};
+KitFix g_fix_crashcopy{"crashcopy", "the crash report thread works on copies of the crash's exception record and registers, not on the crashed thread's frame (BUG-1020)", 1};
+KitFix g_fix_reportsafe{"reportsafe", "reports written off the main thread read the game mode the main thread cached and the mod list under a lock (BUG-1022)", 1};
+KitFix g_fix_vehbounds{"vehbounds", "the fault logger reads the faulting stack only inside its readable region and records the fault before reading it (BUG-1028)", 1};
+KitFix g_fix_trireset{"trireset", "the overlay's state block is made anew on a new device, a failed CreateStateBlock is tried again after a Reset (BUG-1026)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
@@ -42,7 +48,8 @@ std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &
                                        &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
                                        &g_fix_exitwait, &g_fix_hookorig, &g_fix_hookfirst, &g_fix_initfail, &g_fix_hangloop, &g_fix_longout,
                                        &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop, &g_fix_drawncam,
-                                       &g_fix_stackvq, &g_fix_wheelmk}; }
+                                       &g_fix_stackvq, &g_fix_wheelmk, &g_fix_presentunwind, &g_fix_taskcut, &g_fix_crashcopy,
+                                       &g_fix_reportsafe, &g_fix_vehbounds, &g_fix_trireset}; }
 
 KitFix* kit_fix_find(const char* name)
 {
@@ -92,6 +99,14 @@ static LONG CALLBACK test_page_handler(EXCEPTION_POINTERS* ep)
     DWORD old;
     VirtualProtect(g_page, 4096, PAGE_READWRITE, &old);
     return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+// tests (BUG-1024, BUG-0966): an access violation nobody repairs (a read of address 0x10), for the game's own handler
+// to catch, as a fault in a mod's code or in the driver would be
+void test_fault_null()
+{
+    volatile uintptr_t a = 0x10;
+    (void)*(volatile uint32_t*)a;
 }
 
 void* test_fault_page()
