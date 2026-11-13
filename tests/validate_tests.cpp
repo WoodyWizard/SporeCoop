@@ -2,6 +2,9 @@
 // message handlers of the mod use for what other players send.
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -184,6 +187,98 @@ static void test_space_origin()
     CHECK(!space_origin_ok(false, 1, 1, 1));
     for (uint8_t k : {1, 2, 3, 4, 5, 6, 10, 11, 21, 30, 31, 33, 34, 40, 41, 42, 51, 53, 54, 55, 56, 60, 61, 70, 76})
         CHECK(!space_host_only(k));
+}
+
+// BUG-1041: one direction table (space_dir) for every MSG_SPACE kind; every kind declared in a space source file must
+// be in it. --nofix: the old list of six host-only kinds
+static void test_space_dir()
+{
+    printf("MSG_SPACE direction table (BUG-1041)\n");
+    const bool fix = !g_nofix;
+    int bad = 0;
+    for (uint8_t k : {12, 78, 80, 86, 20, 22, 32, 50, 52, 57}) {
+        bool host_only = space_host_only(k, fix), guest_blocked = !space_origin_ok(true, 2, 2, k, fix),
+             relayed_blocked = !space_origin_ok(false, 0, 2, k, fix);
+        if (!host_only || !guest_blocked || !relayed_blocked) {
+            printf("  kind %u from a guest: host-only %d, refused by the host %d, refused relayed %d\n", k, host_only,
+                   guest_blocked, relayed_blocked);
+            bad++;
+        }
+        CHECK(space_origin_ok(false, 0, 0, k, fix)); // the host's own
+    }
+    // guest-only kinds never come with the host's origin; a guest's own (relayed) is fine
+    for (uint8_t k : {13, 21, 33, 51, 55, 56, 77, 79, 81, 85, 87}) {
+        if (space_origin_ok(false, 0, 0, k, fix)) {
+            printf("  guest-only kind %u with the host's origin: taken\n", k);
+            bad++;
+        }
+        CHECK(space_origin_ok(true, 2, 2, k, fix) && space_origin_ok(false, 0, 2, k, fix));
+    }
+    CHECK(bad == 0);
+    // any-direction kinds pass both ways
+    for (uint8_t k : {1, 5, 10, 11, 30, 40, 53, 54, 60, 70, 76})
+        CHECK(space_dir(k) == SpaceDir::Any && space_origin_ok(true, 2, 2, k) && space_origin_ok(false, 0, 0, k) &&
+              space_origin_ok(false, 0, 2, k));
+    // every kind declared in the files that send MSG_SPACE (enum Kind values 1..99) has a direction
+    int listed = 0, missing = 0;
+    for (const char* f : {"spacecoop", "space_map", "space_contracts", "space_diplomacy", "space_finale", "space_rivalry",
+                          "space_allies", "space_trade", "space_planets", "space_badges"}) {
+        std::ifstream in(std::string("mods/coop/") + f + ".cpp");
+        if (!in) {
+            printf("  (no %s.cpp: run from the repository root)\n", f);
+            missing++;
+            continue;
+        }
+        std::stringstream ss;
+        ss << in.rdbuf();
+        std::string src = ss.str();
+        // the enum of the kinds: the first `enum ... Kind : uint8_t {` .. `}` of the file
+        size_t a = src.find("enum Kind : uint8_t");
+        size_t e = a == std::string::npos ? a : src.find("};", a); // (the comments hold braces)
+        if (a == std::string::npos || e == std::string::npos) {
+            printf("  %s.cpp: no enum Kind\n", f);
+            missing++;
+            continue;
+        }
+        std::string body = src.substr(a, e - a);
+        std::regex kre("K_[A-Z0-9_]+\\s*=\\s*([0-9]+)");
+        for (std::sregex_iterator it(body.begin(), body.end(), kre), end; it != end; ++it) {
+            int k = std::stoi((*it)[1]);
+            listed++;
+            if (k < 1 || k > 255 || space_dir((uint8_t)k) == SpaceDir::Unknown) {
+                printf("  %s.cpp: kind %d has no direction in space_dir (net/validate.h)\n", f, k);
+                missing++;
+            }
+        }
+    }
+    printf("  %d kinds in the space sources, %d without a direction\n", listed, missing);
+    CHECK(listed >= 49 && missing == 0);
+}
+
+// BUG-1048: a received world effect (pool 5) with a scale of 0, below 0 or huge was created by the game. --nofix: the
+// check before (finite numbers and the position only)
+static void test_effect_xf()
+{
+    printf("received world effect transform (BUG-1048)\n");
+    const bool fix = !g_nofix;
+    auto xf = [](float scale) {
+        std::vector<float> f(16, 0.f);
+        f[0] = 10, f[1] = 20, f[2] = 30, f[3] = scale;
+        f[4] = f[8] = f[12] = 1; // the matrix
+        return f;
+    };
+    CHECK(effect_xf_ok(xf(1).data(), 1e5f, fix) && effect_xf_ok(xf(1000).data(), 1e5f, fix));
+    int taken = 0;
+    for (float sc : {0.f, -1.f, 1e30f, 1001.f})
+        taken += effect_xf_ok(xf(sc).data(), 1e5f, fix);
+    printf("  scales 0, -1, 1e30, 1001: %d of 4 taken\n", taken);
+    CHECK(taken == 0);
+    auto far = xf(1);
+    far[1] = 2e5f;
+    CHECK(!effect_xf_ok(far.data(), 1e5f, fix));
+    auto nan = xf(1);
+    nan[9] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(!effect_xf_ok(nan.data(), 1e5f, fix));
 }
 
 static void test_numbers()
@@ -989,6 +1084,8 @@ int main(int argc, char** argv)
     test_chunks();
     test_cycle();
     test_space_origin();
+    test_space_dir();
+    test_effect_xf();
     test_numbers();
     test_players();
     test_give_target();

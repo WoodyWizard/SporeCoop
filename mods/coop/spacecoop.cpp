@@ -64,6 +64,10 @@ COOP_FIX("space.repair", "BUG-0147", g_repair_fix, "space: a new disable starts 
 static uint32_t g_last_down_epoch;
 static bool g_down_epoch_fix = true;
 COOP_FIX("space.down_epoch", "BUG-0257", g_down_epoch_fix, "space: the 60 s between two disables end with a load of the Space world");
+// BUG-1041: one direction table for every MSG_SPACE kind (net/validate.h space_dir): a kind used by the wrong side is
+// dropped. Off: the list of six host-only kinds before
+static bool g_dir_table = true;
+COOP_FIX("space.dir_table", "BUG-1041", g_dir_table, "space: every Space message kind is checked against who may send it (one table)");
 // BUG-0228, BUG-0229: the ship the disabled state was set on, with its object serial and the Space
 // world it lived in (spaceext::world_epoch). The invincible byte is cleared on that ship only, at
 // once in Space or owed until the first Space frame back in the same world (an editor, an
@@ -1580,7 +1584,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     if (!r.ok())
         return;
     bool host = C.sess->role() == net::Role::Host;
-    if (!net::space_origin_ok(host, from, origin, kind)) {
+    if (!net::space_origin_ok(host, from, origin, kind, g_dir_table)) {
         g_bad_origin++;
         return;
     }

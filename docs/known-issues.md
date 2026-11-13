@@ -3212,6 +3212,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: session.cpp counts any seen name as a rejoin even with the rejoin token on; the old entry of that name is
   not retired (observed in code).
 * Ticket: BUG-1001
+* 2026-11-13 (fix/w49-net): fixed (`coop.fix net.join_seen`): after the start a player comes back only by its rejoin
+  token (kept for the same host and name on a leave), without a token by a name nobody has and that dropped recently;
+  every live entry counts against the limit. Tests: net_tests test_join_seen, lab join_late_names
+  (docs/04-netcode.md#netcode-n2-join-input).
 
 ## Civ, Space: a shared money line names the wrong player or a false "earned" after two spends at once (2026-11-13, audit 0.7.14)
 <a id="issue-shared-cause-floor"></a>

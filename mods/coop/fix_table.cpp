@@ -29,6 +29,10 @@ COOP_FIX("net.name_clean", "BUG-0774", net::g_fix.name_clean, "net: player names
 COOP_FIX("net.lan_only_disc", "BUG-0776", net::g_fix.lan_only_disc, "net: the host answers LAN discovery only from local networks, at most 20 answers a second");
 COOP_FIX("net.halfopen_cap", "BUG-0778", net::g_fix.halfopen_cap, "net: a new peer only for a HELLO, a full peer table evicts the oldest half-open peer");
 COOP_FIX("net.restart_gen", "BUG-0861", net::g_fix.restart_gen, "net: a host / join started inside a message callback is not closed by the old session's deferred leave");
+COOP_FIX("net.join_seen", "BUG-1001", net::g_fix.join_seen, "net: after the start a player comes back by its rejoin token (or, without one, by a name that dropped recently and nobody has now); every live entry counts against the limit");
+COOP_FIX("net.replace_checked", "BUG-1003", net::g_fix.replace_checked, "net: a joined guest's entry is replaced by a new connection only when checked");
+COOP_FIX("net.welcome_split", "BUG-1005", net::g_fix.welcome_split, "net: a joining guest joins the pieces of a WELCOME longer than one packet");
+COOP_FIX("net.recv_skip_big", "BUG-1007", net::g_fix.recv_skip_big, "net: a datagram too big for the read buffer is skipped, the other datagrams of the frame are still read");
 COOP_FIX("net.async_resolve", "BUG-0204",net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
 
 // updater/ (FIX_SWITCH)

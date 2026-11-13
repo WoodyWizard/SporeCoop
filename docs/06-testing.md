@@ -7051,3 +7051,21 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 | `coop_cell_loot_big.py` (`cell_loot_big`, ~1 min) | `coop.pool lootbig 300` (host: the next foreground drop makes 300 cells: the table's cell entry, or a repeat entry 300 times; `tables=` lists the entry types seen), the host bites creatures until it came; the game's own count `listed_last` is 300 and the pool grew (BUG-1004) | `SPORE_FIX_OFF=cell.loot_list` (unsafe: a stack overrun) |
 | `coop_cell_flush_handover.py` (`cell_flush_handover`, multi, 3 players, ~4 min) | two guests on one spot 30 m from the host (one list holds the tiles, the other their shadows; 12 m apart gave no shadow hand-over at all), four level changes, two rebuilds (`coop.pool rebuild`: G+0x51D8); `coop.pool tilestat`: flushes > 0, `handed_flushed` 0 (made or waiting for room in a list the same pass deletes), no "frame between" warning with dead entries (BUG-1000). The check's 20 warnings are used up by BUG-1066 in two changes | `SPORE_FIX_OFF=cell.flush_handover` |
 | `coop_cell_levelup_view.py` (`cell_levelup_view`, reworked) | BUG-0976: the guest's screen keys are also asked of the host's game: no cell gone only on the guest (at most 10 %); BUG-0635: the host's wipe destroyed no cell on the guest's screen (`wipe_near_lost`, the game's DestroyCell calls from RemoveCellsOfOldScale). The screen shares are printed only: an up change removes 43-91 % of any screen in a game alone too, the host's screen then held as few as 7 cells (the old per-change average failed about half the runs), and round a partner the host's game loses more anyway (BUG-1064) | `SPORE_FIX_OFF=cell.levelup_keep` (the down changes) |
+
+## Net and validation of 0.7.14 N2: unit twins and one lab trio (2026-11-13, fix/w49-net)
+<a id="testing-n2-net"></a>
+
+* `net_tests` (fake transport, next to test_halfopen): `test_join_seen` (BUG-1001: two "Player" games with other
+  tokens, a crash rejoin by token, the limit with a silent same-name entry, no-token names), `test_replace_checked`,
+  `test_welcome_split` (BUG-1005: three guests with 24-emoji names and 255-byte versions over localhost),
+  `test_recv_skip_big` (BUG-1007: `BigNet`, a FakeNet that returns `Session::kRecvSkipped` for a datagram over the
+  buffer; and Discovery over a real socket with a 600-byte datagram first), `test_dbpf_flag4` (BUG-1012). Each fails
+  with `net_tests --off join_seen|replace_checked|welcome_split|recv_skip_big` (BUG-1012: `--nofix`).
+* `test_rejoin_same_endpoint` runs its rejoin for 2.6 s now: a rejoin through the same endpoint without a token
+  replaces the old entry after 2 s of its silence.
+* `validate_tests`: `test_space_dir` (the MSG_SPACE direction table; every `enum Kind` value of the ten space source
+  files must have a direction; it reads mods/coop/*.cpp, so it runs from the repository root as make test does),
+  `test_effect_xf` (BUG-1048). Both fail with `validate_tests --nofix`.
+* Lab `join_late_names` (coop_join_late_names.py, creature, 3 games: twoinst + coop_multi.start_extra): late join
+  off, an extra game joins with the guest's name Bob (refused), Bob leaves and comes back (admitted by its kept
+  token), late join on (the extra joins as "Bob 2"). `SPORE_FIX_OFF=net.join_seen` fails.

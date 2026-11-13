@@ -30,6 +30,12 @@ struct Fixes {
     bool lan_only_disc = true;  // BUG-0776: LAN discovery is answered only from local networks, rate limited
     bool halfopen_cap = true;   // BUG-0778: a new peer only for a HELLO; a full table evicts the oldest half-open peer
     bool restart_gen = true;    // BUG-0861: host() / join() inside a delivery callback is not torn down by the old deferred leave
+    // 0.7.14 (N2)
+    bool join_seen = true;       // BUG-1001: a rejoin after the start by its token (or, without one, a name dropped recently
+                                 // that nobody has now); every live entry counts against the player limit
+    bool replace_checked = true; // BUG-1003: a joined guest's entry is replaced by a new connection only when checked
+    bool welcome_split = true;   // BUG-1005: a joining guest that announced CAP_SPLIT joins the pieces of the host's WELCOME
+    bool recv_skip_big = true;   // BUG-1007: a datagram too big for the read buffer is skipped, the reads of the frame go on
 };
 inline Fixes g_fix;
 
