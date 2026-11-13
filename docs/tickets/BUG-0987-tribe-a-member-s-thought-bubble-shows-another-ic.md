@@ -1,7 +1,7 @@
 ---
 id: BUG-0987
 title: Tribe: a member's thought bubble shows another icon on the guest than on the host (tribe_mirror_idle rest, tribe_mirror_hold hold)
-status: open
+status: wontfix
 kind: desync
 stage: Tribe
 reported: 2026-11-12
@@ -9,12 +9,12 @@ source: 0.7.13 final check key frames, lab 20261112-175447
 role: guest
 versions: 
 fixed_in:
-branch:
+branch: fix/w49-mirror
 commits:
 tests:
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-bubble-icons, docs/known-issues.md#issue-tribe-bubble-icons
+related: BUG-1043
 ---
 
 ## Report
@@ -27,19 +27,22 @@ Reproduce: `lab.py run tribe_mirror_idle tribe_mirror_hold` and compare the bubb
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-Not analysed (fix/w48-ftribe, 2026-11-12). Inferred: the bubble is the game's own display of a member's current
-need / behaviour (food, music, idea); a guest's mirrors run no behaviour tree and the mod relays no bubble, so the
-guest's game shows what its own state of the mirror says (its hunger field from BUG-0935's relay, its idle). Next:
-find what the bubble reads (string / effect of the bubble, the member's field) and relay it or set it on the mirror.
-Not done now: a cosmetic difference with no effect on play, the mechanism is unknown (RE first), the release waits.
+Observed (fix/w49-mirror, `coop.effects log`, shots of both games, a member made to chat with its CreaturePlayAnim): the
+bubble is the animation event effect 0x883816C2 of the chat animations 0x04FFA012..0x04FFA019, a cloud with a random
+pictogram (chat, not a member's wish). The relay plays the animation on the mirror and the guest's game makes the same
+effect at the same moment; the pictogram is the effect's own pick. Not BUG-1043's cause (no field involved).
+Three ways to give both games the same pick failed (seed + restart of the effect; the effects' random generator set
+before the effect is built; and before each of its updates): the pick is made deeper in the effect system
+(docs/re/tribe.md#tribe-bubble-icons).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed (wontfix): a random chat pictogram, cosmetic, no effect on play; a fix needs the Swarm particle component's
+random source found first. The experiment code is not kept; known-issues#issue-tribe-bubble-icons.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not fixed (wontfix); reproduced in 5 of 6 forced chats (probe on lanes 6 / 7).
 
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fix/w48-ftribe: seen in two key frames of the 0.7.13 final check; left for a later release (cosmetic, RE needed).
+- 2026-11-13: fix/w49-mirror: mechanism found (the chat effect 0x883816C2), three sync attempts failed; wontfix.

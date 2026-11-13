@@ -1,7 +1,7 @@
 ---
 id: BUG-0990
 title: Creature: the host's camera looks into the ground at the end of campaign_short's creature play (seen once)
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-12
@@ -9,11 +9,11 @@ source: rel/0.7.13 final check out/lab/20261112-175447 (key-frame review)
 role: 
 versions: 0.7.13-rc
 fixed_in:
-branch:
+branch: fix/w49-mirror
 commits:
 tests: campaign_short (key frame play-creature)
 signature:
-docs:
+docs: docs/known-issues.md#issue-camera-in-ground
 related:
 ---
 
@@ -24,16 +24,17 @@ ground texture: the camera looks into the terrain, no own creature, only the edg
 guests' pictures are normal. Alice at (34.8 -495.8 -100.1), Carol 9 m away sees the scene from above as usual.
 
 ## Root cause
-Not known. Candidates: the camera inside a slope or a rock after the bot's walk (the game's creature camera
-collides with terrain), a camera left by an earlier test step of the bot. Seen once; the campaign bot has no
-camera command in the creature play (only the wheel in other stages).
+Not known. Seen once.
 
 ## Fix
-Not done. Next: a key frame's manifest could carry the camera's eye height over the ground (`coop.cam`) to tell
-a camera in the ground from a close-up.
+None.
 
 ## Verification
-no-fail-run: open, seen once
+no-fail-run: not reproduced. A scan of the key frames of every lab run on this machine (321 run folders, 886
+Creature stage frames of hosts and guests, by sky in the upper picture and contrast) found this one frame only; the
+other flagged frames were the death screen's top view and dark scenes. play_creature --quick of the final check of
+fix/w49-mirror looked at too (see History).
 
 ## History
 - 2026-11-12: opened.
+- 2026-11-13: fix/w49-mirror: not reproduced (frame scan); closed.

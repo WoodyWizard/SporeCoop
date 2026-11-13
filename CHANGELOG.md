@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the guest's copy of a chief no longer goes back into a staff gesture after changing its item while the
+  host's chief stands (it kept swinging for up to half a minute) (BUG-0972).
+- Tribe: the guests' copies of the tribe members play a gesture at the same moment as on the host, so a staff or a
+  lean points the same way on every screen (BUG-0988).
+- Tribe: a staff that a guest's copy of a member takes into its hand by itself is put back within half a second also
+  on a slow PC (BUG-0993).
+- Creature: a guest who joins no longer starts inside the host's creature; it stands a few metres beside it (BUG-0989).
 - Co-op window: a chat line or name typed while a caption or a game message box holds the input now takes its full
   length in Cyrillic, Greek or CJK letters (it stopped at half or a third), keeps an emoji whole and ignores DEL
   (BUG-1027).

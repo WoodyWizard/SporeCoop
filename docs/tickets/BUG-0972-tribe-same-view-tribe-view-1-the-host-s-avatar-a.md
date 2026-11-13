@@ -1,20 +1,21 @@
 ---
 id: BUG-0972
 title: Tribe: same_view_tribe view 1: the host's avatar (Alice) crouches at the fire on the host while the guest's puppet of it stands about 1 m off in a stepping pose and Bob's chief differs in pose
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-12
 source: fix/w48-last same_view_tribe lab 20261112-172240 (#1)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-mirror
+commits: 093807dc
+tests: tribe_mirror_stale, same_view_tribe
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-mirror-pose-phase, docs/known-issues.md#issue-tribe-same-view-avatar-pose, docs/06-testing.md#testing-t2-mirror
+related: BUG-0936, BUG-0992, BUG-0988
+switch: tribe.mirror_stale_anim
 ---
 
 ## Report
@@ -30,15 +31,26 @@ the same view, the other way round: the host's avatar "Alice" stands at the fire
 driven by the creature sync, its pose by the relayed animation at the moment of the still): folded in here.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (probe, both games' `coop.tribe anims` at 5 Hz): "Alice" in Tribe is the host's chief, member #1, shown on
+the guest by a member mirror (not the creature puppet). Its mirror played the host's animation in 59 % of the samples
+(other members 89-98 %); 257 of the rest were the host's chief standing (0x02481DE5) and the mirror in the gesture
+0x04C6CB02. The guest's hold trace showed how: a relayed restart of the gesture waited behind the running one as a
+pending track (BUG-0992), the next relayed start (the change 0x02C39200) played, and after it the waiting gesture came
+back and ran for 37 s. The idle fix (kind 10, BUG-0936) left it: the host sent "idle" and the mirror's animation was
+not the last relayed one, which the fix took for the mirror's own idle or walk. The rest of the pose difference in
+the stills is the animation's moment (BUG-0988).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+A mirror in an animation that is not its locomotion's idle / walk, while the host's member is in its idle or walk, has
+its pending tracks ended (AnimatedCreature_ClearPending) and its idle refreshed. Switch `coop.fix tribe.mirror_stale_anim off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tribe_mirror_stale` (coop_tribe_mirror_stale.py: while the host's chief stands, the guest's mirror plays the
+gesture as a returned start, `coop.tribe mplay`; back in its idle / walk within 4.5 s).
+FAIL (SPORE_FIX_OFF=tribe.mirror_stale_anim): out/lab/20261113-045727 (two rounds never back in 9 s). PASS:
+out/lab/20261113-045727-2 (0.7-2.1 s), and the final check runs (see History).
 
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fix/w48-ftribe: a second frame (final check 054) folded in; still open.
+- 2026-11-13: cause found and fixed on fix/w49-mirror (package T2 of 0.7.14).

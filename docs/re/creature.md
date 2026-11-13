@@ -4527,3 +4527,19 @@ x...` (lab lane 2, runs 20261112-212318, -212702, -213737, -214616, -214745, -21
 * A social stimulus posted through BT_PostStimulus (0xBC9940) with this = AI block + 8, (lo 0x10000, hi 0,
   value 1.0, sender = the avatar) runs the hook h_Post as a click does (`coop.social post`); posting it to an animal
   of the guest's own world caused no fault.
+
+## A joining guest starts on the host's creature (2026-11-13, fix/w49-mirror)
+<a id="creature-join-apart"></a>
+
+BUG-0989. GOG 2024, lab lanes 6 / 7, creature fixture.
+* ✔ (lab 20261113-051156, a rejoin with the fix off) A guest that loads the host's save starts where the save has the
+  player's creature: 0.06 m from the host's creature (its puppet on the guest), 0.08 m on the host's game for the
+  guest's puppet, for as long as nobody walks; the two bodies are drawn inside each other and each game poses them
+  on its own.
+* Fix `core.join_apart` (coop.cpp join_apart_tick): once per arrival (a new own avatar in Creature), when the host's
+  puppet is the first time within 2.5 m of the guest's creature for 0.5 s (within 30 s), the guest's creature is put
+  5 m beside it (away from it, else along the planet's tangent) on the ground and the surface (as `coop.npc gopos`,
+  BUG-0400 / BUG-0964); an arrival elsewhere is left alone for good. `coop.npc joinapart` prints the moves and the
+  distance at the move. Lab: 5.07 m on the guest, 5.01 m on the host, from the first sample on.
+* ? The host's name tag over the guest's own creature for a moment at the join (the ticket's second frame) is the
+  same spot; it lasts until the move now (under 1 s).

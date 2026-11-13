@@ -2916,6 +2916,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run same_view_tribe --repeat 3`, compare the 01_view1 pairs.
 * Known: seen once; the other runs' views agree. Not checked whether it is an animation phase at the still's moment.
 * Ticket: BUG-0972
+* Fixed (unreleased, fix/w49-mirror, 2026-11-13): a relayed restart of a gesture that waited behind the running one
+  came back after the next relayed animation and the idle fix left it (it was not the last relayed start): the guest's
+  copy of the chief stayed in a gesture for up to 37 s while the host's stood. Such an animation is ended now
+  (`tribe.mirror_stale_anim`, test tribe_mirror_stale); the gesture's moment follows the host's too (BUG-0988,
+  `tribe.mirror_phase`, test tribe_mirror_phase). docs/re/tribe.md#tribe-mirror-pose-phase.
 * Fixed (unreleased, feat/lab-speed, 2026-11-12): the test hosts on a free port of the discovery range under its own
   process's name and counts only that game (docs/06-testing.md#testing-lab-speed).
 
@@ -2981,6 +2986,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: the guest's avatar starts where the host's save has the player's creature (inferred, not analysed).
 * Next steps: put the joining avatar a few metres aside on the game's surface.
 * Ticket: BUG-0989
+* Fixed (unreleased, fix/w49-mirror, 2026-11-13): confirmed (a rejoin on the fixture: 0.06 m apart for 20 s). The
+  guest's creature is put 5 m beside the host's once per arrival (`core.join_apart`, test creature_join_apart).
+  docs/re/creature.md#creature-join-apart.
 
 ## Creature: the host's camera looked into the ground at the end of a campaign creature play (2026-11-12, key frames: fix/w48-fui)
 <a id="issue-camera-in-ground"></a>
@@ -2989,6 +2997,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   (lab 20261112-175447, campaign_short play-creature).
 * Reproduce: not known.
 * Ticket: BUG-0990
+* Not reproduced (fix/w49-mirror, 2026-11-13): a scan of the key frames of every lab run on this machine (321 run
+  folders, 886 Creature stage frames of host and guests) by sky and contrast found this one frame only; the other
+  flagged frames were the death screen's top view or dark scenes. Closed; reopen with the camera's height over the
+  ground when it shows again.
 
 ## Tests: play_tribe's planted desync no longer fails it (2026-11-12, test: feat/lab-speed)
 <a id="issue-play-tribe-plant"></a>
@@ -3312,3 +3324,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: seen at 150 and 170 px; the cause is not analysed (the button's wrap width).
 * Ticket: BUG-1062
 * Fixed (unreleased, fix/w49-space2, 2026-11-13): `core.ui_give_fit`; FAIL lab 20261113-024426, PASS 20261113-024531-2.
+
+## Tribe: a member's thought bubble shows another icon on each game (2026-11-13, fix/w49-mirror)
+<a id="issue-tribe-bubble-icons"></a>
+
+* What happens: two members chatting (the animations 0x04FFA012..0x04FFA019) show a cloud with a pictogram (a fish, a
+  spear, a horn, a ball, ...) over their heads at the same moment on both games, but each game shows its own
+  pictogram. It is chat, not a member's wish: the pictogram changes with each bubble.
+* Reproduce: `coop.tribe` probe of fix/w49-mirror: the host plays 0x04FFA012 on a member (its CreaturePlayAnim), both
+  games' shots 1-3 s later; or tribe_mirror_idle's rest key frame.
+* Known: docs/re/tribe.md#tribe-bubble-icons. The bubble is the animation event effect 0x883816C2, made on both
+  games by the relayed animation; the pictogram is picked by the effect system while the effect runs. Not BUG-1043's
+  cause (no field is involved). Setting the effects' random generator to one seed right before the effect is built,
+  and before each of its updates, still gave other pictograms on the two games and on one game from bubble to bubble.
+* Next steps: find the particle component's own random source (Swarm), or leave it (cosmetic chat).
+* Ticket: BUG-0987 (wontfix)

@@ -3562,3 +3562,63 @@ BUG-1051 / BUG-1049, GOG 2024, lab lane 5.
   game: the member's order record (ai+0x60C, rec+0 action 7, rec+0x28 target) names the destroyed block. No fault was
   seen in the 50 s after (3 rounds); the block is freed later and the record would then point into freed memory.
 * The host resolves member and target ids only through game::alive (tribe.cmd_listed).
+
+## Mirror poses: a gesture that comes back, the moment of an animation, a mirror's own hold (2026-11-13, fix/w49-mirror)
+<a id="tribe-mirror-pose-phase"></a>
+
+BUG-0972, BUG-0988, BUG-0993. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows #tribe-mirror-looks,
+#tribe-hold-missed and #tribe-anim-queued-start.
+
+* ✔ (probe, both games' `coop.tribe anims` at 5 Hz for 150 s) The host's chief (#1) and its mirror played the same
+  animation in 59 % of the samples (the other members 89-98 %); 257 of the rest were the host's chief in its idle
+  0x02481DE5 and the mirror in the gesture 0x04C6CB02. Second probe with the guest's hold trace: the host restarted
+  the gesture at 80.9 s (a pending track of the same id on the mirror, as in BUG-0992 (b)), changed its item at
+  90.3 s (0x02C39200) and then walked and stood; the mirror played the change, then the waiting gesture again (91.4 s)
+  until the end (37 s). The idle fix (kind 10) skipped it: the host sent its idle (how 1) and the mirror's animation
+  was not the last relayed one (0x02C39200), which the fix took for the mirror's own idle or walk.
+* Fix `tribe.mirror_stale_anim` (BUG-0972): a mirror in an animation that is not its locomotion's idle / walk
+  (0x02481DE5, 0x04866D8E, 0x04866DAB, 0x04866DD4), while the host's member is in its idle or walk, has its pending
+  tracks ended (AnimatedCreature_ClearPending 0xA02B00) and its idle refreshed (trace `Z`; `stale_cut=` in
+  `coop.tribe anims`). Lab: the mirror back in its idle / walk 0.7-2.1 s after such a gesture (off: never in 9 s).
+* ✔ (Ghidra) The main animation track as GetCurrentAnimation 0xA05090 finds it (0x9FF690): the animation state
+  (AnimatedCreature +0x184), the main index +0xFA4 into the playing list +0xF0C (index <= 0xF), the track at state +
+  8 + index * 0xF0 (its first dword not 0); the track's id +0xD8, **its time in the animation +0xA8 (double, seconds;
+  GetCurrentAnimation's float* time)**, +0xB0 an int (its 4th out-argument), +0xA0 = -1.0 when it loops.
+* ✔ (lab, tribe_mirror_phase off) A relayed behaviour animation runs on the mirror 0.05-0.16 s behind the host's
+  member (0x04C6CB02 0.16 s, 0x02C39002 0.15 s, 0x06426C10 0.05 s; median of all 0.10 s), more after a returned or
+  late start (up to 2 s). Writing the mirror's track time +0xA8 moves the animation there: the time goes on from the
+  value written (the next samples). ~ The pose follows the time (inferred from the key frames, not measured on bones).
+* Fix `tribe.mirror_phase` (BUG-0988): once a second the host sends every member's time in its behaviour animation
+  (MSG_NPC_ANIM kind 14: u8 n, n x {u16 id, u32 anim, f32 time}; not for loops); a guest whose mirror plays that
+  animation more than 0.1 s from time + RTT / 2 writes the track's time (`phase fix ... set=` in `coop.tribe anims`;
+  `t=` and `loop=` in its rows). Lab: median 0.046 s, 98 % under 0.15 s (off 0.099 s, 77 %). The mirror still runs
+  0.03-0.1 s behind (the RTT / 2 estimate is below the real delay of a once-a-second message).
+* Fix `tribe.hold_cut_frame` (BUG-0993): held_items_tick looks at the mirrors' own holds every frame (hold_try keeps
+  its 0.25 s tick): the BUG-0962 cut comes 0.41-0.43 s after the hold began at 25 fps (before 0.59-0.78 s there, up to
+  1.05 s at 26 fps with hitches). Trace `H`: a hand set by `coop.tribe hand` (tests).
+
+## A member's thought bubble: the chat effect and its pictogram (2026-11-13, fix/w49-mirror)
+<a id="tribe-bubble-icons"></a>
+
+BUG-0987 (wontfix). GOG 2024, lab lanes 6 / 7, `coop.effects log`, shots of both games, probes with a forced seed.
+
+* ✔ (runtime) The bubble over two chatting members (a cloud with a pictogram: a fish, a spear, a horn, a ball, a
+  cake, a planet, ...) is the **animation event effect 0x883816C2** of the chat animations 0x04FFA012..0x04FFA019
+  (AnimEffect_Create from AnimEvent_Handle, call path 0x9A72E3 -> 0x9A61D7), about 2 m over the member. The relay plays
+  the animation on the guest's mirror and its game makes the same effect at the same moment (60-90 ms after the
+  host's); the pictogram differs (5 of 6 bubbles in a probe). Not related to BUG-1043 (no field is involved).
+* ✔ AnimEvent_Handle's param 2 (the animating instance) is the creature's animated model: AnimatedCreature
+  (creature +0xB54) +0x17C (matched every bubble to its member on both games).
+* ✔ (Ghidra) The visual effect (vtable 0x1457DE8; a second interface at +8, vtable 0x1457DA8, the group interface,
+  slot 0x18 = 0xA838A0 its update(dt, float, stats*)): vt 0x3C 0xA81D00 writes **+0x180, the seed**; Start 0xA82660
+  seeds the effects' generator SporeCoop::EffectsRandom 0x16778DC with it (Random_Seed 0x936000: 0 or -1 takes the
+  time stamp counter) before its components' Start; vt 0x0C 0xA81FB0 Stop(hard) clears the started flags 0x200 /
+  0x400. The bubble has one component (+0x144..+0x148, 0x5C bytes, +0x38 a nested effect of the same class). The
+  generator 0x16778DC is read by the random float 0x936240 from 100+ places (UI, terrain, the effects' updates).
+* ✘ Tried, no effect on the pictogram: (1) vt 0x3C(seed) + Stop(1) + Start(0) right after the effect was made (the
+  same pictogram stayed; later bubbles changed anyway); (2) the generator set to one seed right before
+  AnimEffect_Create built the effect, on both games (forced 12345 on every bubble: flower, axe, horn, ghost on one
+  game, others on the other); (3) the same also before every update of the bubble (a hook on 0xA838A0 for the
+  effect, its +8 interface and the nested effect; 1780 updates seeded): still other pictograms. So the pick is
+  neither in the build nor in the group update's draws from 0x16778DC; it is made deeper (a particle component's own
+  random or another generator). Not followed further: cosmetic chat (known-issues#issue-tribe-bubble-icons).

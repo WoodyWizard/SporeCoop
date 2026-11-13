@@ -1,20 +1,21 @@
 ---
 id: BUG-0988
 title: Tribe: the chief's staff in the hand points another way on the guest's mirror than on the host (tribe_mirror_hold hold, same_view_tribe view 4)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-12
 source: 0.7.13 final check key frames, lab 20261112-175447
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-mirror
+commits: f3f432ff
+tests: tribe_mirror_phase, tribe_mirror_hold, same_view_tribe
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-mirror-pose-phase, docs/06-testing.md#testing-t2-mirror
+related: BUG-0972, BUG-0992
+switch: tribe.mirror_phase
 ---
 
 ## Report
@@ -27,26 +28,23 @@ both games: the pose within the animation differs.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-Inferred, not proven (fix/w48-ftribe, 2026-11-12): the mirror plays the same animation (tribe_mirror_idle: 734 of 739
-samples the same id) but not at the same phase: the relay starts an animation when its start reaches the guest (one
-network delay later) and a looping idle on the mirror is the mirror's own loop (started by its own idle refresh or
-locomotion at its own time); the hold (the started modifier that puts the item into the hand) is bound to the
-animation playing, so the arm and staff follow the mirror's phase. No phase or time of an animation is relayed today
-(MSG_NPC_ANIM carries ids only). The tests compare the id and the hold, both equal here.
-A fix needs the animation's time (GetCurrentAnimation's float* time out-argument, AnimatedCreature vt 0x58) sent with the
-start / snapshot and set on the mirror (a setter not known yet): RE and a new message field, not for 0.7.13. Player
-impact: an arm or staff angle at one moment; the item, the animation and the hold match.
-Note (fix/w48-ftribe): with BUG-0992's fix the same key frame (tribe_mirror_hold 02_hold, out/lab/20261112-220233 in
-fix/w48-ftribe) showed the staff the same way on both games; one frame, so the phase cause above is not ruled out
-(the hold bound to a pending track, BUG-0992 (b), may have been part of 063).
+Observed (tribe_mirror_phase with the fix off: the main track's time +0xA8 on both games): a relayed behaviour
+animation runs 0.05-0.16 s behind the host's member (median 0.10 s; 0x04C6CB02 0.16 s), up to 2 s after a late start.
+The relay sends ids only; nothing brought the mirror to the host's moment. The returned gesture of BUG-0972 was the
+other part of the stills (a mirror in a gesture the host had left).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Once a second the host sends each member's time in its behaviour animation (MSG_NPC_ANIM kind 14, not for loops); a
+guest whose mirror plays it more than 0.1 s from that time + RTT / 2 writes its track's time there. Switch
+`coop.fix tribe.mirror_phase off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tribe_mirror_phase` (coop_tribe_mirror_phase.py: both games' track times of the same animation, median
+difference under 0.08 s, 80 % under 0.15 s).
+FAIL (SPORE_FIX_OFF=tribe.mirror_phase): out/lab/20261113-050335-2 (median 0.099 s, 77 %). PASS: out/lab/20261113-050335
+(median 0.046 s, 98 %), and the final check runs (see History).
 
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fix/w48-ftribe: seen in key frames 057 / 062 / 063 of the 0.7.13 final check; left for a later release (animation phase, RE needed).
+- 2026-11-13: fixed on fix/w49-mirror (package T2 of 0.7.14).
