@@ -2052,10 +2052,10 @@ static uint32_t g_nan_pop_skips, g_nan_heals;
 // total taken in one AddFoodPoints) leaves the world scale G+0x514C at the old level's for ~3 s while
 // PopulateTiles builds the new level's active set from it: the lowest levels' tiles are tiny and the
 // game writes thousands of entries into its stack buffer of 511 (0xC0000005 at 0x00E5FA50, the process
-// gone without a crash report). Now no pass runs while the scale still eases down (or the set would not
-// fit): ~3 s, then the settled pass populates the new level as usual. Old (`coop.fix cell.tile_cap off`): as before.
+// gone without a crash report). Now no pass runs while the scale is still more than one level above its
+// target (or the set would not fit): ~2 s after a fall of three levels; a fall of one level is untouched. Old (`coop.fix cell.tile_cap off`): as before.
 static bool g_fix_tile_cap = true;
-COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while the world scale eases down after a level fall or the active set would overflow the game's 511-tile buffer");
+COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while the world scale is more than one level above its target after a fall, or while the active set would overflow the game's 511-tile buffer");
 static uint32_t g_tilecap_skips;
 static double g_tilecap_max;
 static uintptr_t a_TileSizes;
@@ -2606,10 +2606,11 @@ static bool tiles_overflow(int level)
     if (!g_fix_tile_cap || !g || !s || !vb || !a_TileSizes)
         return false;
     double n = cell_logic::active_tiles(level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), vb, (const float*)a_TileSizes, 16);
-    // also while the scale still eases down: a pass that fits the buffer at 3-6 x the settled set filled the
-    // new level with that many cells at once and a game alone faulted in CreateSoftBody / CellPhysicsStep
-    // (2138 faults, lab 20261112-195008); settled the set is 36-80 tiles
-    bool falling = F<float>(g, 0x514C) > F<float>(g, 0x5150) * 1.001f;
+    // also while the scale is still more than one level (x sqrt(10)) above its target: a pass that fit the
+    // buffer at scale ratio ~7 filled the new level with that many cells at once and a game alone faulted in
+    // CreateSoftBody / CellPhysicsStep (2138 faults, lab 20261112-195008). From one level above on it is the
+    // game's own one-level fall (its debug keys), left as it is (cell_levelup_view's -150).
+    bool falling = F<float>(g, 0x514C) > F<float>(g, 0x5150) * 3.5f;
     if (n <= cell_logic::kActiveTileCap && !falling)
         return false;
     if (g_tilecap_skips++ % 30 == 0)

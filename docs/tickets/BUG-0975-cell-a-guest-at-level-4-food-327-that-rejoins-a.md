@@ -53,9 +53,12 @@ fall (one shown: cell_particles -> cell_ko_food).
 ## Fix
 `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles, `Simulator::Cell::TileSizes`): no tile pass while
 the world scale still eases down after a fall, or while its active set (computed as the game does) would exceed 480
-tiles. After ~2.5 s the settled pass populates the new level as usual. A first version that only capped the set at
+tiles. After ~2 s the pass populates the new level as usual. The hold ends one level above the target (G+0x514C <=
+3.5 x G+0x5150): a fall of one level (the game's own debug keys, cell_levelup_view's -150) is left as the game does it. A first version that only capped the set at
 480 kept the guest in a session alive, but a game alone then populated 3-6 x the settled set at once and faulted in
-CreateSoftBody / CellPhysicsStep (2138 faults, lab 20261112-195008); hence the hold while the scale falls.
+CreateSoftBody / CellPhysicsStep (2138 faults, lab 20261112-195008); hence the hold while the scale falls. A hold for the
+whole descent (561bc917) also held cell_levelup_view's one-level falls and that test then lost more of the guest's
+screen (labs 20261112-201333, 3 of 3 runs failed; fix off 1 of 2, 20261112-200916); narrowed to more than one level.
 
 ## Verification
 Test `cell_level_drop` (the guest at food 330 rejoins the host at food 0; the guest's game must answer, take the host's

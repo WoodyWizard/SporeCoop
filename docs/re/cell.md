@@ -2266,11 +2266,13 @@ BUG-0975. GOG 2024, Ghidra and lanes 6 / 7.
   guest that joins a host at food 0 (the host's total in one call, lab 20261112-194555) and in a game alone with no
   session (`coop.pool food -330`, the game's own AddFoodPoints, lab 20261112-194555-2). So it is the game's own
   bug; the game itself never lowers food by more than 50 (its debug keys), the mod's shared total does.
-* `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles): no pass while the world scale eases down
-  (G+0x514C > G+0x5150) or while the active set would exceed 480 tiles (`tiles: pass skipped ...`, `coop.pool`
+* `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles): no pass while the world scale is more than
+  one level above its target (G+0x514C > 3.5 x G+0x5150; one level is x sqrt(10)) or while the active set would exceed 480 tiles (`tiles: pass skipped ...`, `coop.pool`
   `tilecap_skips=` / `tilecap_max=`); measured: the set 14 200-14 400 tiles right after 330 -> 0, the scale 15 ->
   0.5 in ~2.5 s, 151-303 passes held.
 * ✔ (runtime, lab 20261112-195008) the 480 cap alone is not enough in a game alone: the first pass that fits (at
   3-6 x the settled set, scale ~3) populated the new level with that many cells at once and the game faulted in
   CreateSoftBody / CellPhysicsStep / effects (2138 faults). A guest in a session (its cells are the host's
-  mirrors) had no fault with the cap alone.
+  mirrors) had no fault with the cap alone. A hold for the whole descent (G+0x514C > G+0x5150) also held the
+  one-level falls of cell_levelup_view (-150) and the guest lost more of its screen there (78-82 %, labs
+  20261112-201333); the hold stops at one level above, so a one-level fall runs as in the game.
