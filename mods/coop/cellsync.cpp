@@ -2948,6 +2948,7 @@ static bool g_fix_loot_list = true;
 COOP_FIX_UNSAFE("cell.loot_list", "BUG-1004", g_fix_loot_list, "cell: the host's list of a loot drop's new cells holds as many as the cell pool (4096), not 256 on the stack");
 static uint32_t g_loot_big_n;        // tests (BUG-1004): the next foreground loot drop makes this many cells of one entry
 static int g_loot_listed_last = -1;  // cells the last listed drop appended (the game's count)
+static std::string g_loot_seen;      // tests: the entry types of the tables seen while armed
 static std::deque<std::pair<uint32_t, double>> g_loot_recent; // host: cells the last loot drops created
 static uint32_t pool_live()
 {
@@ -2974,18 +2975,30 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
     int cap = g_fix_loot_list ? 4096 : 256;
     int n = 0;
     bool mine = fg && !out && !nout;
-    // tests (BUG-1004): one entry of the drop's table makes g_loot_big_n cells (the other entries weigh 0 for this call)
+    // tests (BUG-1004): one entry of the drop's table makes g_loot_big_n cells, or a repeat entry repeats g_loot_big_n
+    // times (the other entries weigh 0 for this call)
     struct Saved { int32_t* e; int32_t count; float weight; };
     std::vector<Saved> saved;
     void* holder = nullptr;
     if (mine && g_loot_big_n && table && a_GetData) {
         int32_t* t = skg::cdecl_call<int32_t*>(a_GetData, table, &holder);
+        if (g_loot_seen.size() < 200) {
+            g_loot_seen += t ? " n" + std::to_string(t[1]) + ":" : " null";
+            for (int i = 0; t && t[0] && i < t[1] && i < 8; i++)
+                g_loot_seen += std::to_string(((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0]);
+        }
         if (t && t[0] && t[1] > 0 && t[1] < 64) {
             bool one = false;
+            int kind = 1; // a cell entry, else a repeat entry (repeated n times, each a drop of its sub-table)
+            for (int i = 0; i < t[1]; i++)
+                if (((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0] == 1)
+                    kind = 1, i = t[1];
+                else if (((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0] == 2)
+                    kind = 2;
             for (int i = 0; i < t[1]; i++) {
                 int32_t* e = (int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i);
                 saved.push_back({e, e[4], ((float*)e)[3]});
-                if (e[0] == 1 && !one) {
+                if (e[0] == kind && !one) {
                     one = true;
                     e[4] = (int32_t)g_loot_big_n;
                     ((float*)e)[3] = 1.f;
@@ -5911,6 +5924,21 @@ std::string debug(const std::vector<std::string>& a)
             v = 1;
         } else if (a[2] == "invuln") {
             F<uint8_t>(c, kInvuln) = v;
+        } else if (a[2] == "alert" && a_GetData && F<void*>(c, kRes)) { // BUG-1008: the species' death alert radius
+            // (KillCell's alert 0xE71F00 runs only when the AI block's +0x2C is not 0: the fixture's level-1 kinds have 0)
+            void* holder = nullptr;
+            uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+            if (holder)
+                --F<int>(holder, 0xC);
+            if (!res)
+                return "no resource data";
+            float r = (float)atof(a[3].c_str());
+            F<float>(res, 0xE0 + 0x2C) = r;
+            if (F<int>(res, 0x248) != -1)
+                F<float>(res, 0x248 + 0x2C) = r;
+            if (F<int>(res, 0x194) != -1)
+                F<float>(res, 0x194 + 0x2C) = r;
+            v = r != 0.f;
         } else if (a[2] == "spare" && a_GetData && F<void*>(c, kRes)) {
             void* holder = nullptr;
             uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
@@ -5920,7 +5948,7 @@ std::string debug(const std::vector<std::string>& a)
                 return "no resource data";
             F<uint8_t>(res, 0x300) = v;
         } else
-            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>";
+            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n> | alert <radius>";
         char b[96];
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
@@ -6520,9 +6548,9 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() > 1)
             g_loot_big_n = (uint32_t)std::clamp(atoi(a[1].c_str()), 0, 1000);
         char b[160];
-        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d pool=%u\n", g_loot_big_n, g_loot_calls, g_loot_cells,
+        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d pool=%u tables=", g_loot_big_n, g_loot_calls, g_loot_cells,
                  g_loot_listed_last, pool_live());
-        return b;
+        return b + g_loot_seen + "\n";
     }
     if (a.size() >= 4 && a[0] == "sendhit" && is_guest()) { // tests (BUG-1008): `sendhit c<key> <dmg> <type>`: a MSG_CELL_HIT as it is
         uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
@@ -6533,13 +6561,13 @@ std::string debug(const std::vector<std::string>& a)
         uint8_t* v = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
         if (!v || v == av || modes::cell_is_puppet(v))
             return "herd: no such NPC\n";
-        uint32_t model = F<uint32_t>(v, kModelKey);
+        void* kind = F<void*>(v, kRes); // KillCell's alert takes the cells of the same resource
         int want = atoi(a[2].c_str()), moved = 0;
         net::Vec3 at = pos_of(v);
         std::string idx;
         for_each_cell([&](uint8_t* c, uint32_t i) {
             if (moved >= want || c == v || c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ||
-                F<uint32_t>(c, kModelKey) != model || F<void*>(c, kQuery) != fg_query())
+                F<void*>(c, kRes) != kind || F<void*>(c, kQuery) != fg_query())
                 return;
             float ang = 6.2831853f * (float)moved / (float)std::max(want, 1);
             set_pos(c, {at.x + 3.f * std::cos(ang), at.y + 3.f * std::sin(ang), at.z});

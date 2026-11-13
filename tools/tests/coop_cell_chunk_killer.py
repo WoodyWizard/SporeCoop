@@ -8,7 +8,8 @@ guest's puppet that killed it.
 
 Two games in the Cell fixture. The guest picks a host creature, the host puts 4 cells of its species
 3 m round it (`coop.pool herd`) and sets its hp to 2; the guest sends a type 6 hit of 6 (`coop.pool sendhit`:
-the message its mouth sends). Checked in the HOST's game: the victim dies, and the flee / chase targets of
+the message its mouth sends), after giving the kind a death alert radius (`npcflag alert`: the fixture's level-1
+kinds have none, KillCell's alert 0xE71F00 then does nothing). Checked in the HOST's game: the victim dies, and the flee / chase targets of
 its kind (the game's +0x220 / +0x22C, `coop.pool targets`) that the kill set point at the guest's puppet,
 none at the host's own cell.
 
@@ -62,6 +63,8 @@ def main():
     time.sleep(2)
     host.call(f'coop.pool herd {key} 4')
     print('  ' + host.call(f'coop.pool npcflag {key} hp 2')['out'].strip(), flush=True)
+    # the fixture's level-1 kinds have no death alert (AI block +0x2C = 0): give this one a radius, as bigger kinds have
+    print('  ' + host.call(f'coop.pool npcflag {key} alert 60')['out'].strip(), flush=True)
     print('  guest: ' + guest.call(f'coop.pool sendhit {key} 6 6')['out'].strip(), flush=True)
     seen_pup, seen_host, out = set(), set(), ''
     t0 = time.time()

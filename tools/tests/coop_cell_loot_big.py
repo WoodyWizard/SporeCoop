@@ -33,29 +33,22 @@ def main():
     guest.call('coop.pool invulnfor 600')
     l0, out = loot(host)
     print('  host: ' + out, flush=True)
-    key, r = None, ''
-    for _ in range(10):
-        r = host.call('coop.pool kill - hit')['out']
-        m = re.match(r'bit (c\d+) ', r)
-        if m and 'dying' not in r:
-            key = m.group(1)
-            break
-        time.sleep(1)
-    if not key:
-        print('RESULT: SKIP (no creature near the host)')
-        return 0
-    host.call(f'coop.pool npcflag {key} hp 1')
-    host.call(f'coop.pool swimto {key} tp')
-    time.sleep(2.5)
     print('  host: ' + host.call('coop.pool lootbig 300')['out'].strip(), flush=True)
-    r = ''
-    for _ in range(4):
-        r = host.call(f'coop.pool kill {key}')['out'].strip()
-        if 'dying' in r or r == 'gone':
+    # the host bites the creatures nearest to it (the game's Bite) until a drop came: each lethal bite breaks one
+    t0, l1, r = time.time(), {}, ''
+    while time.time() - t0 < 40:
+        m = re.match(r'bit (c\d+) ', host.call('coop.pool kill - hit')['out'])
+        if m:
+            host.call(f'coop.pool npcflag {m.group(1)} hp 1')
+            host.call(f'coop.pool swimto {m.group(1)} tp')
+            time.sleep(0.5)
+            r = host.call(f'coop.pool kill {m.group(1)}')['out'].strip()
+        time.sleep(1.0)
+        l1, out = loot(host)
+        if not l1.get('armed', 1):
             break
-        time.sleep(1.2)
     print('  host bite: ' + r[:160], flush=True)
-    time.sleep(2)
+    time.sleep(1)
     l1, out = loot(host)
     print('  host: ' + out, flush=True)
     if l1.get('armed', 0):
