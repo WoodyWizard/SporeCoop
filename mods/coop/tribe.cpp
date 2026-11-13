@@ -404,6 +404,11 @@ static uint32_t g_mirror_grounded; // diagnostics (coop.tribe): standing mirrors
 constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
 // tests (BUG-0481): `coop.tribe delay <s>` on a guest: a planted late mirror (play_tribe's sync check must fail)
 static double g_test_delay = kMirrorDelay;
+// BUG-0974: since the lead (BUG-0425) the mirrors are shown where the host has its members now and the buffer's
+// delay is not read, so the planted delay changed nothing and play_tribe passed with it. Now the delay also holds the
+// lead target back (net::SnapshotBuffer::test_lag). Off: the delay is the buffer's interpolation delay only (0.7.13).
+static bool g_test_lag_fix = true;
+COOP_FIX("tribe.test_delay_lead", "BUG-0974", g_test_lag_fix, "tests: coop.tribe delay also delays the mirrors shown by the lead (play_tribe's planted desync)");
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
 // BUG-0386 (`coop.fix tribe.mirror_keep`): a walked member mirror whose placing this game does not keep is moved by
 // teleports with the mark until it is on its path again (WalkPlace::keep_lost, the NPC proxies' rule of BUG-0361).
@@ -3727,6 +3732,8 @@ static void guest_state(net::Reader& r)
             ps.rot = g.rot;
             ps.vel = g.vel;
             g.buf.delay = g_test_delay;
+            // BUG-0974: the lead does not read `delay`: a planted delay holds the lead target back by itself
+            g.buf.test_lag = g_test_delay != kMirrorDelay && g_test_lag_fix ? g_test_delay : 0;
             g.buf.lead = true; // BUG-0425 (drive.lead)
             g.buf.smooth_max = kMirrorSmoothMax; // BUG-0619 (drive.lead_smooth)
             g.buf.push(ps, now);

@@ -232,6 +232,9 @@ void* species_by_key(const Key& k);
 void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
+// BUG-1067: a herd create_herd made (or own_herd_for handed out) in this process, the same object (its serial);
+// the game's own herds look the same in Civ (no archetype, no nest)
+bool our_herd(void* h);
 void* herd_of(void* c);
 // tests (BUG-0790): a hit through the hook with any combatant as the attacker (a UFO's +0x508, a vehicle's)
 void hit_by_combatant(void* c, float dmg, int type, void* attacker_combatant, uint32_t pol);
