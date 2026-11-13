@@ -1818,6 +1818,17 @@ static bool g_mirror_phase_fix = true;
 COOP_FIX("tribe.mirror_phase", "BUG-0988", g_mirror_phase_fix,
          "tribe: a guest's copy of a member is at the same moment of a gesture as the host's member (the chief's staff pointed another way)");
 static uint32_t g_phase_sent, g_phase_rx, g_phase_set, g_phase_unlooped;
+// BUG-1072: the host's chief in the same main animation at the same moment on both games still stood another way (bent /
+// upright, the staff at another angle). Probes of every playing track (lab lane 7, docs/re/tribe.md#tribe-chief-tracks):
+// besides the main track the chief plays a second looping track (0x05EF4EE1, a ~2 s loop, also 0x0354559B) whose time
+// was 1-31 s apart on the two games (each game started it itself), and its locomotion idle 0x02481DE5 (left out of
+// kind 15) 0.4-6.8 s apart. Now the host also sends, once a second, the time / loop setting / passes of every member's
+// other playing tracks and of its idle (MSG_NPC_ANIM kind 16, the format of kind 15), and a guest whose mirror plays a
+// track of that id gives it the host's. `coop.fix tribe.mirror_phase_tracks off`: only the main track (kind 15).
+static bool g_phase_tracks_fix = true;
+COOP_FIX("tribe.mirror_phase_tracks", "BUG-1072", g_phase_tracks_fix,
+         "tribe: a guest's copy of a member plays its other animation layers (the chief's posture loop, its idle) at the host's moment");
+static uint32_t g_tracks_sent, g_tracks_rx, g_tracks_set;
 static double g_phase_last_off;
 static void on_idle_anim(void* c, uint32_t anim)
 {
@@ -1919,6 +1930,25 @@ static uint8_t* main_track(void* c)
     return *(uint32_t*)tr ? tr : nullptr;
 }
 static bool track_loops(uint8_t* tr) { return *(float*)(tr + 0xA0) == -1.0f; }
+// BUG-1072: every playing track of a creature (the playing list +0xF0C, 16 indices; the main one is +0xF0C[+0xFA4]):
+// fn(track, is_main); a track's first dword is 0 when it holds no animation
+template <typename Fn>
+static void playing_tracks(void* c, Fn fn)
+{
+    uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+    if (!st || !skg::readable(st, 0xFAC))
+        return;
+    uint32_t mi = *(uint32_t*)(st + 0xFA4);
+    for (uint32_t i = 0; i < 16; i++) {
+        uint32_t k = *(uint32_t*)(st + 0xF0C + i * 4);
+        if (k > 0xF)
+            continue;
+        uint8_t* tr = st + 8 + k * 0xF0;
+        if (*(uint32_t*)tr && *(uint32_t*)(tr + 0xD8))
+            fn(tr, i == mi);
+    }
+}
 // guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
 static void hold_try(GMember& g, double now)
 {
@@ -2081,6 +2111,40 @@ static void send_member_anims(double now)
                 if (p.id != 0)
                     C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
             g_phase_sent += (uint32_t)ph2.size();
+        }
+        if (g_phase_tracks_fix) { // BUG-1072: kind 16, the other playing tracks and the idle (the format of kind 15)
+            std::vector<Ph2> ph3;
+            for (auto& [c, m] : g_hm) {
+                if (!game::object_alive(c) || game::is_dead(c))
+                    continue;
+                playing_tracks(c, [&](uint8_t* tr, bool main) {
+                    uint32_t an = *(uint32_t*)(tr + 0xD8);
+                    // (the main one goes with kind 15 / 14, but the idle; a walk's time follows its speed)
+                    if (main ? an != 0x02481DE5u : *(int*)(tr + 0xC0) == 3) // (3: fading out)
+                        return;
+                    if (ph3.size() < 255)
+                        ph3.push_back({m.id, an, (float)*(double*)(tr + 0xA8), *(float*)(tr + 0xA0),
+                                       (uint16_t)std::clamp(*(int*)(tr + 0xB0), 0, 0xFFFF)});
+                });
+            }
+            const size_t per = 64; // (64 x 16 bytes in one packet)
+            for (size_t i = 0; i < ph3.size(); i += per) {
+                size_t n = std::min(per, ph3.size() - i);
+                net::Writer w;
+                w.u8(16);
+                w.u8((uint8_t)n);
+                for (size_t j = i; j < i + n; j++) {
+                    w.u16(ph3[j].id);
+                    w.u32(ph3[j].anim);
+                    w.f32(ph3[j].t);
+                    w.f32(ph3[j].a0);
+                    w.u16(ph3[j].b0);
+                }
+                for (auto& p : C.sess->players())
+                    if (p.id != 0)
+                        C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            }
+            g_tracks_sent += (uint32_t)ph3.size();
         }
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
@@ -2517,6 +2581,41 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             it->second.hold_at = now;
             it->second.hold_item = item;
             hold_try(it->second, now);
+        }
+        return;
+    }
+    if (kind == 16) { // BUG-1072: the members' other playing tracks and idle (u16 id, u32 anim, f32 t, f32 +0xA0, u16 +0xB0)
+        if (!g_phase_tracks_fix)
+            return;
+        uint8_t n = r.u8();
+        int rtt = C.sess ? C.sess->rtt_of(0) : -1;
+        double d = rtt >= 0 && rtt < 1000 ? rtt / 2000.0 : 0.05;
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            uint32_t anim = r.u32();
+            float t = r.f32(), a0 = r.f32();
+            int b0 = r.u16();
+            if (!r.ok())
+                break;
+            g_tracks_rx++;
+            auto it = g_gm.find(id);
+            if (it == g_gm.end() || !mirror_ok(it->second) || !std::isfinite(t) || t < 0 || !std::isfinite(a0) ||
+                game::is_dead(it->second.c))
+                continue;
+            uint8_t* tr = nullptr;
+            playing_tracks(it->second.c, [&](uint8_t* x, bool) {
+                if (!tr && *(uint32_t*)(x + 0xD8) == anim && *(int*)(x + 0xC0) != 3)
+                    tr = x;
+            });
+            if (!tr)
+                continue;
+            *(float*)(tr + 0xA0) = a0;
+            *(int*)(tr + 0xB0) = b0;
+            double& tm = *(double*)(tr + 0xA8), want = t + d;
+            if (std::fabs(tm - want) > 0.1) {
+                tm = want;
+                g_tracks_set++;
+            }
         }
         return;
     }
@@ -5982,11 +6081,26 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "scale %.3f", c ? game::scale(c) : 0.f);
         return c ? std::string(b) : std::string("no such member");
     }
-    if (a.size() >= 4 && a[0] == "pincer" && is_host()) { // pincer <victim id> <attacker id> <dmg>
-        void* v = local_of((uint16_t)atoi(a[1].c_str())), *at = local_of((uint16_t)atoi(a[2].c_str()));
-        if (!v || !at)
+    if (a.size() >= 4 && a[0] == "pincer" && is_host()) { // pincer <victim id>[,<victim id>...] <attacker id> <dmg>
+        // (BUG-1083: several victims get their blows in this one call, i.e. in one frame, before any behaviour tick)
+        void* at = local_of((uint16_t)atoi(a[2].c_str()));
+        std::vector<void*> vs;
+        for (size_t p = 0; p < a[1].size();) {
+            size_t q = a[1].find(',', p);
+            if (q == std::string::npos)
+                q = a[1].size();
+            void* v = local_of((uint16_t)atoi(a[1].substr(p, q - p).c_str()));
+            if (!v)
+                return "no such member";
+            vs.push_back(v);
+            p = q + 1;
+        }
+        if (vs.empty() || !at)
             return "no such member";
-        return hit(v, at, (float)atof(a[3].c_str()));
+        std::string r;
+        for (void* v : vs)
+            r += (r.empty() ? "" : "; ") + hit(v, at, (float)atof(a[3].c_str()));
+        return r;
     }
     if (!a.empty() && a[0] == "scales") { // the player tribe's members: size in the game / own size (BUG-0067)
         void* pt = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
@@ -6934,7 +7048,8 @@ std::string debug(const std::vector<std::string>& a)
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
                " stale_cut=" + std::to_string(g_stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
                " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) + " unlooped=" + std::to_string(g_phase_unlooped) +
-               " last_off=" + std::to_string(g_phase_last_off) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
+               " last_off=" + std::to_string(g_phase_last_off) + "\ntracks fix=" + std::to_string((int)g_phase_tracks_fix) +
+               " sent=" + std::to_string(g_tracks_sent) + " rx=" + std::to_string(g_tracks_rx) + " set=" + std::to_string(g_tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
                " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +

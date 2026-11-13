@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the host's chief now stands the same way on the guest's screen when it plays the same animation: its
+  posture layers and its idle run at the host's moment too, not only its main animation (before, it could stand bent
+  on one screen and upright on the other, the staff at another angle) (BUG-1072).
 - Tribe: while the host's game shows "Your tribal hut has been destroyed" (the players' own hut fell), the guests'
   games wait with a note, as they already did for the tribe knocked out, and go on after the host's answer and reload
   (BUG-1081).

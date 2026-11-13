@@ -7483,3 +7483,22 @@ again within 20 s and the players' hut stands in both games (`coop.realign plane
   20261113-140058; with the fix 20261113-140055.
 * The guest's co-op note ("The tribal hut is destroyed: waiting for Alice (host) ...") is in its log at the pause;
   the feed line has faded by the key frame 9 s later.
+## tribe_gameover_partner's timing, and the chief's other animation tracks (2026-11-13, fix/w49-chief)
+<a id="testing-gameover-partner-timing"></a>
+
+* BUG-1083: `tribe_gameover_partner` failed about 1 in 5 with no caption at all. Cause: the test's own blows. The game
+  posts the game over only at a member's fall that sees fewer than 2 members up (docs/re/tribe.md#tribe-gameover-list);
+  the old test hit both guest members with two console calls back to back, and when both fell before the first one's
+  behaviour tick no fall saw it (`busy -` under a knocked-out chief: lab 20261113-140322, 20261113-142822 #3). Now the
+  test kills the guest's members one at a time and gives the last killing blow 84 s after the chief's fall (the chief
+  stands up 91-97 s after it: still down at the last fall, up 6-12 s later, which BUG-0922's members-rule twin
+  needs). It prints the game's up list (`list=N [#ids]`, cTribe +0x354 read with mem.read) and the host's `busy`.
+  Knobs: `GO_PARTNER_KO_WAIT` (60), `GO_PARTNER_LAST_AT` (84); twin `GO_PARTNER_SAME_FRAME=1`: the last two killing
+  blows in one `coop.tribe pincer a,b ...` call (one frame): no game over (FAIL). `coop.tribe pincer` takes a comma
+  list of victims for that.
+* BUG-1072: `tribe_chief_tracks` (tribe fixture, warm, ~2.5 min): both games' animation state of the host's chief read
+  with `mem.read` every 0.4 s for 90 s (the playing tracks, docs/re/tribe.md#tribe-chief-tracks); of the samples where
+  both play the same non-main track or the idle, 85 % must have their times within 0.3 s. Key frames `chief1` /
+  `chief2`: the same camera at the chief. `PROBE_RAW=1` prints every track's fields and raw dwords (exploration). Twin
+  `SPORE_LAB_FIXOFF="tribe_chief_tracks=tribe.mirror_phase_tracks"`: 34 % (lab 20261113-150319); with the fix 98 % and
+  96 % (20261113-150637).

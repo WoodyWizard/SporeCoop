@@ -3783,3 +3783,62 @@ pointing at the dead hut (as `cTribe::HutIsDead` 0xC90730 reads it). 7.4 s later
 first) the caption "Oh, the humanity! Your tribal hut has been destroyed! Perhaps a fresh start is just the thing you
 need." is up (`coop.ui find "humanity"`), and the game stands with `busy: cinematic,input_lock,paused`, as for the
 population game over (BUG-0960). Its OK (Enter) reloads the save: back in Tribe play with the hut at 1000/1000.
+
+## The game over's member count: two members falling in one frame (2026-11-13, fix/w49-chief)
+<a id="tribe-gameover-list"></a>
+
+BUG-1083. GOG 2024, Ghidra and lab lanes 6 / 7 (tools/tests/coop_tribe_gameover_partner.py). Adds to
+#tribe-village-load-stamp (the game over with a chief standing up) and #tribe-guest-game-over.
+
+* ✔ (Ghidra) `cCreatureCitizen::TakeDamage` 0xC26940: when a blow takes a player-tribe member from health to 0 it
+  counts the tribe's **up list** (`SporeCoop::cTribe_UpCount` 0xC8F500: the size of cTribe +0x354..+0x358, entries
+  citizen+0xC0; the robo count +0x338 in a robo tribe) and posts the game over (message 0x5C80207) only when it is
+  under 2. The falling member is still in the list at that moment.
+* ✔ (Ghidra) The list loses a member in its behaviour's death node (`SporeCoop::BT_CitizenDeathEnter` 0xDA78C0), in a
+  chief's knockout node (`SporeCoop::BT_CitizenKnockoutEnter` 0xDB1A30, which also starts the knockout timer) and in RemoveMember 0xC96070
+  (0xC95280); it gains one in AddMember, 0xC248C0 and the knockout's end (`SporeCoop::BT_CitizenKnockoutEnd` 0xDACCD0), which also sets full health: that is
+  the chief standing up 91-97 s after its fall (hp 168, dead 0; runtime: 91, 94, 95, 97 s).
+* ✔ (lab, the test printing the list) The host's chief knocked out and its own members dead: the list held the two
+  guest members only (`list=2`). One blow killing one member at a time: 2 -> 1 at the first fall's next behaviour
+  tick, then the last fall saw 1 and the input lock came at once, the caption about 10 s later (20261113-144931 and the
+  runs below). Both killing blows in one console call (one frame): both falls saw 2, the list went to 0 at the next
+  tick and **no game over came at all**; the knocked-out chief stood up 95 s after its fall and the tribe played on with
+  it (20261113-144926 #1). The same happened without the one-call twin when the test's two blows (two console calls
+  back to back) landed before the first member's death node ran (20261113-140322, 20261113-142822 #3: `busy -`, no
+  input lock, while the chief still lay knocked out).
+* So the game's own rule: members that fall in the same behaviour tick never bring the game over; with the chief only
+  knocked out the tribe goes on once it stands up (a lenient outcome, not a lost game). It is not a co-op change (the
+  host's game decides alone, the guest waits under the host's caption, #tribe-gameover-wait). An epic's area blow
+  could do the same in play; not seen in a play.
+* ~ The knockout timer is +0x2C8 of the object 0xC230B0 returns (likely the citizen's tribe, not checked at runtime);
+  the knockout node sets it only when it is not running.
+
+## The chief's other animation tracks: a posture loop and the idle (2026-11-13, fix/w49-chief)
+<a id="tribe-chief-tracks"></a>
+
+BUG-1072. GOG 2024, Ghidra and lab lane 7 (a probe reading both games' animation state with `mem.read` at 2.5 Hz for
+150 s, then tools/tests/coop_tribe_chief_tracks.py). Follows #tribe-chief-load-gesture and #tribe-anim-queued-start.
+
+* ✔ (Ghidra) An animation track (0xF0 bytes, state + 8 + k * 0xF0) besides id +0xD8, time +0xA8, +0xA0 and +0xB0: **+0xC0
+  its fade state** (0 off, 1 fading in, 2 playing, 3 fading out; 0x9FF7C0 turns a fade-in into a fade-out), +0xC4 the
+  fade's elapsed time, +0x88 the fade-in length, +0x78 the fade-out length (0.2 s seen); the weight is the fade's
+  progress (+0xC4 / +0x88 in, 1 - +0xC4 / +0x78 out). +0x6C a handle of a paired track (0x9FFD50: a handle is (track index + 1) | generation << 8,
+  the generation at the track's +0xB4); +0x08 + i * 0xC (8 entries {0, -1.0, 1.0} after a reset 0xA003D0) and +0x68
+  an index into them. +0x80 / +0x84: what CreaturePlayAnim's vt 0xC writes (0xA00130) and the start reads (0xA01A90).
+  The start 0xA01750: mode +0x80 = 0 queues it pending (+0xF4C), 1 replaces the main one (the old main fades), 2 adds it
+  to the playing list beside the main one (a layer).
+* ✔ (probe) The host's chief plays two or three tracks at once on both games: the main one (the idle 0x02481DE5, the
+  staff gesture 0x04C6CB02, 0x04C6CB05, a walk) plus a looping layer **0x05EF4EE1** (+0xA0 -1.0, about 2.03 s a pass)
+  and at times **0x0354559B** (looping). All seen on both games with the same ids (each game starts them itself: the
+  mirror's own behaviour / locomotion code, not the relay). The track sets were the same in most samples.
+* ✔ (probe) Their times were not: 0x05EF4EE1 ran 9.4 s, 20.2 s and 31.7 s apart (1.3-1.9 s apart within its 2 s loop)
+  except for 18 s after both restarted it together; 0x0354559B 0.5-3.2 s apart; the idle 0x02481DE5 (the main track,
+  which kind 15 leaves out as locomotion) 0.4-6.8 s apart. The main gesture 0x04C6CB02 itself matched within 0.03 s
+  (kind 15, BUG-1069). So "the same main animation at the same moment" still blended another moment of the layer: in
+  the twin's key frames (lab 20261113-150319, the same camera) the staff points at another angle.
+* Fix `tribe.mirror_phase_tracks` (BUG-1072): once a second the host sends every member's other playing tracks (not
+  fading out) and its idle when that is the main one (MSG_NPC_ANIM kind 16, kind 15's entry format: u16 id, u32 anim,
+  f32 t, f32 +0xA0, u16 +0xB0); a guest whose mirror plays a track of that id (not fading out) gives it the host's
+  +0xA0 / +0xB0 and time + RTT / 2 when 0.1 s or more off. `tracks fix= sent= rx= set=` in `coop.tribe anims`.
+* ? Which animations 0x05EF4EE1 / 0x0354559B are (names not found) and what starts them (likely the citizen's tool /
+  posture code: the chief with its staff); not needed for the fix.
