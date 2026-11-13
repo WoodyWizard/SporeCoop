@@ -2022,25 +2022,34 @@ static void send_member_anims(double now)
         g_idle_sent += (uint32_t)idle.size();
     }
     if (g_mirror_phase_fix) { // BUG-0988: where in its behaviour animation each member is now
-        // ph: kind 14 (the behaviour's start); ph2: kind 15, BUG-1069, any other current animation that is not a loop
-        // or the locomotion's (a guest with tribe.mirror_phase_any off ignores kind 15: the twin works from its join)
-        std::vector<std::tuple<uint16_t, uint32_t, float>> ph, ph2;
+        // ph: kind 14 (the behaviour's start, not a loop: as 0.7.13); ph2: kind 15, BUG-1069, every member's current
+        // animation but the locomotion's idle / walk, loops too, with the track's +0xA0 / +0xB0 (a guest with
+        // tribe.mirror_phase_any off ignores kind 15: the twin works from its join)
+        std::vector<std::tuple<uint16_t, uint32_t, float>> ph;
+        struct Ph2 {
+            uint16_t id;
+            uint32_t anim;
+            float t, a0;
+            uint16_t b0;
+        };
+        std::vector<Ph2> ph2;
         for (auto& [c, m] : g_hm) {
             uint8_t* tr;
             uint32_t cur = 0;
-            if (ph.size() < 120 && ph2.size() < 120 && (m.bhv_anim || g_phase_any_fix) && game::object_alive(c) &&
-                game::drawn_state(c, nullptr, &cur) && cur && (cur == m.bhv_anim || (g_phase_any_fix && !loco_anim(cur))) &&
-                (tr = main_track(c)) && !track_loops(tr) && *(uint32_t*)(tr + 0xD8) == cur)
-                (m.bhv_anim && cur == m.bhv_anim ? ph : ph2).emplace_back(m.id, cur, (float)*(double*)(tr + 0xA8));
-        }
-        for (int k = 0; k < 2; k++) {
-            auto& list = k ? ph2 : ph;
-            if (list.empty())
+            if (!game::object_alive(c) || !game::drawn_state(c, nullptr, &cur) || !cur || !(tr = main_track(c)) ||
+                *(uint32_t*)(tr + 0xD8) != cur)
                 continue;
+            if (ph.size() < 120 && m.bhv_anim && cur == m.bhv_anim && !track_loops(tr))
+                ph.emplace_back(m.id, cur, (float)*(double*)(tr + 0xA8));
+            if (g_phase_any_fix && ph2.size() < 64 && !loco_anim(cur)) // (64 x 16 bytes in one packet)
+                ph2.push_back({m.id, cur, (float)*(double*)(tr + 0xA8), *(float*)(tr + 0xA0),
+                               (uint16_t)std::clamp(*(int*)(tr + 0xB0), 0, 0xFFFF)});
+        }
+        if (!ph.empty()) {
             net::Writer w;
-            w.u8(k ? 15 : 14);
-            w.u8((uint8_t)list.size());
-            for (auto& [id, an, t] : list) {
+            w.u8(14);
+            w.u8((uint8_t)ph.size());
+            for (auto& [id, an, t] : ph) {
                 w.u16(id);
                 w.u32(an);
                 w.f32(t);
@@ -2048,7 +2057,23 @@ static void send_member_anims(double now)
             for (auto& p : C.sess->players())
                 if (p.id != 0)
                     C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
-            g_phase_sent += (uint32_t)list.size();
+            g_phase_sent += (uint32_t)ph.size();
+        }
+        if (!ph2.empty()) {
+            net::Writer w;
+            w.u8(15);
+            w.u8((uint8_t)ph2.size());
+            for (auto& e : ph2) {
+                w.u16(e.id);
+                w.u32(e.anim);
+                w.f32(e.t);
+                w.f32(e.a0);
+                w.u16(e.b0);
+            }
+            for (auto& p : C.sess->players())
+                if (p.id != 0)
+                    C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            g_phase_sent += (uint32_t)ph2.size();
         }
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
@@ -2451,7 +2476,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         return;
     }
     if (kind == 14 || kind == 15) { // BUG-0988: where in its behaviour animation each host member is (15: BUG-1069,
-        // in another animation that is not a loop, e.g. one begun before the session)
+        // in any animation but the locomotion's, with the track's pass setting: u16 id, u32 anim, f32 t, f32 +0xA0, u16 +0xB0)
         if (kind == 15 && !g_phase_any_fix)
             return;
         uint8_t n = r.u8();
@@ -2461,29 +2486,32 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             uint16_t id = r.u16();
             uint32_t anim = r.u32();
             float t = r.f32();
+            float a0 = kind == 15 ? r.f32() : 1.0f;
+            int b0 = kind == 15 ? r.u16() : 0;
             if (!r.ok())
                 break;
             g_phase_rx++;
             auto it = g_gm.find(id);
-            if (!g_mirror_phase_fix || it == g_gm.end() || !mirror_ok(it->second) || !std::isfinite(t) || t < 0)
+            if (!g_mirror_phase_fix || it == g_gm.end() || !mirror_ok(it->second) || !std::isfinite(t) || t < 0 ||
+                !std::isfinite(a0))
                 continue;
             uint8_t* tr = main_track(it->second.c);
             if (!tr || *(uint32_t*)(tr + 0xD8) != anim)
                 continue;
-            if (track_loops(tr)) {
-                // BUG-1069: the host's track of it plays once (only those are sent); the mirror's start of it loops
-                // when the game made the new track looping (lab probe: a0 -1.0, b0 counting passes, the mirror in the
-                // gesture 8 s after the host's had ended): made a single pass like the host's (+0xA0 1.0, +0xB0 0)
-                if (!g_phase_any_fix)
-                    continue;
-                *(float*)(tr + 0xA0) = 1.0f;
-                *(int*)(tr + 0xB0) = 0;
+            if (kind == 14 && track_loops(tr))
+                continue;
+            if (kind == 15 && (*(float*)(tr + 0xA0) != a0 || *(int*)(tr + 0xB0) != b0)) {
+                // BUG-1069: the host's track of it loops (+0xA0 -1.0) or plays once (1.0) and has made +0xB0 passes;
+                // the mirror's start of the same id was made the other way (lab probe: the host's chief in a looping
+                // staff gesture for 30 s+, its mirror in single passes that ended and came back; or the mirror looping
+                // 8 s after the host's single pass ended): the mirror's track gets the host's
+                *(float*)(tr + 0xA0) = a0;
+                *(int*)(tr + 0xB0) = b0;
                 g_phase_unlooped++;
             }
             double& tm = *(double*)(tr + 0xA8), want = t + d;
-            // (BUG-1069: up to 60 s apart with tribe.mirror_phase_any: the chief's staff gestures run 10-50 s, and a
-            // mirror whose instance began 5.6 s before the host's restart was never set)
-            if (std::fabs(tm - want) > 0.1 && std::fabs(tm - want) < (g_phase_any_fix ? 60.0 : 5.0)) {
+            // (BUG-1069: any difference with kind 15: the chief's looping staff gesture ran 30 s+ on the host)
+            if (std::fabs(tm - want) > 0.1 && (kind == 15 || std::fabs(tm - want) < 5.0)) {
                 g_phase_last_off = tm - want;
                 tm = want;
                 g_phase_set++;

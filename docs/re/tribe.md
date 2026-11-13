@@ -3649,9 +3649,14 @@ BUG-1069, BUG-1071. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows #tribe-mir
   same id was sometimes a looping track (a0 -1.0; 1 of 6 starts in the probe, after the idle at t 15 s): the phase fix
   skipped loops, so the mirror stayed in the gesture 8 s after the host's had ended (b0 1). ~ Which start makes the
   looping track is not known (CreaturePlayAnim's vt 0xC(track, current loops ? 1 : 0), #tribe-anim-queued-start).
-* Fixes: `tribe.mirror_phase_any` (the moment of any current animation that is neither a loop nor the locomotion's
-  idle / walk as MSG_NPC_ANIM kind 15, same layout as 14; a guest sets differences up to 60 s, and a mirror track of
-  that id that loops is made a single pass first: +0xA0 = 1.0, +0xB0 = 0; `unlooped=` in `coop.tribe anims`), `tribe.hold_restart`
+* ✔ (second probe, 150 s) The other way round too: the host's chief's own 0x04C6CB02 track can loop (a0 -1.0 from its
+  start at 116.6 s to the end of the probe; the stills of 060215 #6 had it at t 16-22 s): its mirror played single
+  passes of ~6-7 s, went to its idle, was started again by the hold / idle news, and so on (the hand empty 1.3-1.5 s at
+  each gap in tribe_chief_still). The moment relay never covered loops.
+* Fixes: `tribe.mirror_phase_any` (once a second the host sends every member's current animation but the
+  locomotion's idle / walk, loops too, as MSG_NPC_ANIM kind 15: u8 n, n x {u16 id, u32 anim, f32 t, f32 +0xA0, u16
+  +0xB0}; a guest whose mirror plays that id gives its track the host's +0xA0 / +0xB0 when they differ (`unlooped=` in
+  `coop.tribe anims`) and the host's time + RTT / 2 when 0.1 s or more off), `tribe.hold_restart`
   (a relayed restart of the animation a host's hold bound to under 0.5 s before is skipped while the mirror plays it,
   trace `D`), `tribe.mirror_idle_loco` (the host reads every member's animation for the idle news, and a member whose
   behaviour start is its locomotion's idle / walk goes as idle news, not as kind 3).
