@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w49-guard
-commits: 03edbe89
+commits: 03edbe89 530f1cd2
 tests: call_guard
 signature:
 docs: docs/06-testing.md#testing-call-guards
