@@ -6266,6 +6266,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::debug_objects(strtoul(argv[2], nullptr, 16), strtoul(argv[3], nullptr, 16)).c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "post")) { // tests (BUG-0994): post <hex creature>: the avatar's social click on it
+        SAY("%s", social::debug_post((void*)strtoul(argv[2], nullptr, 16)).c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "log")) {
         social::debug_social(0, -1);
         SAY("toggled");

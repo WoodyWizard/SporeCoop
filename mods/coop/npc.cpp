@@ -3349,13 +3349,39 @@ int proxy_id(void* c)
     return it == g_proxy_of.end() ? -1 : it->second;
 }
 
+// BUG-0994 (class BUG-0426, the live pointer package L2 of 0.7.14): social.cpp's h_Post (the avatar's social click,
+// inside the game's simulation) asked which proxy owns an AI block by reading +0xB4C of every key of g_proxy_of, also
+// of a creature the guest's game had removed since the last guest_tick (the settle second after an avatar change, a
+// frame before check_identity): a freed block read, or another creature built there that matched and sent K_ENGAGE
+// for the gone proxy (the host started a social game with its NPC). Now only proxies whose creature is the object
+// they made (px_alive: the game's list and the serial; one walk, no game code runs in the loop) are asked.
+// `coop.fix npc.ai_lookup_live off`: every key (0.7.13).
+static bool g_ai_lookup_live_fix = true;
+COOP_FIX("npc.ai_lookup_live", "BUG-0994", g_ai_lookup_live_fix,
+         "creature: a guest's social click never names a copy of an animal its game has just removed");
+static uint32_t g_ai_lookup_gone;
 int proxy_id_of_ai(void* ai)
 {
+    if (g_ai_lookup_live_fix) {
+        game::LiveScope live;
+        for (auto& [id, px] : g_proxies) {
+            if (!px.c || !g_proxy_of.count(px.c))
+                continue;
+            if (!px_alive(px)) {
+                g_ai_lookup_gone++;
+                continue;
+            }
+            if (*(void**)((uint8_t*)px.c + 0xB4C) == ai) // cCreatureAnimal +0xB4C: the AI block
+                return id;
+        }
+        return -1;
+    }
     for (auto& [c, id] : g_proxy_of)
         if (c && *(void**)((uint8_t*)c + 0xB4C) == ai) // cCreatureAnimal +0xB4C: the AI block
             return id;
     return -1;
 }
+uint32_t ai_lookup_gone() { return g_ai_lookup_gone; }
 
 // host: the pack recruits NPC #id, as the end of a social game with an ally does (tests)
 bool debug_recruit(uint16_t id)
