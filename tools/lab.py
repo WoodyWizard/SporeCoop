@@ -543,7 +543,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     has_result = 'RESULT:' in text or t['cmd'].startswith('make')
     skipped = 'RESULT: SKIP' in text and 'RESULT: FAIL' not in text
     faults = [l.strip() for l in text.splitlines() if ' faults: ' in l and 'total faults: 0' not in l]
-    lab_fails = []
+    lab_fails, lab_notes = [], []
     if not t.get('reports'):
         lab_fails += [f'FAIL lab: instance {i} stopped answering after the test (crash after the checks?)'
                       for i in died]
@@ -557,7 +557,27 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
             except OSError:
                 bad = []
             lab_fails += [f'FAIL lab: hook not made in {os.path.basename(gl)}: {a}' for a in bad]
+    # BUG-0975 (feat/lab-speed): a game that dies in the warm reset of the next test (the state the test before left
+    # killed it) made twoinst start cold and the test passed: no one saw the crash. It fails the test now, with the
+    # lane's logs the restart moved to logs/previous
+    # (a console that timed out is only said: a slow game, not proven gone; 19 such lines in the recorded runs, against
+    # 27 lost games before, 25 of them in Cell tests)
+    m = re.search(r'\(warm reset failed: (?!cold start)(.*?) ?\)$', text, re.M)
+    lost = m and ('Errno' in m.group(1) or 'closed' in m.group(1))
+    if m and not lost:
+        lab_notes.append(f'warm reset: {m.group(1)[:80]} (a game too slow to answer: cold start)')
+    if lost and not t.get('reports'):
+        lab_fails.append(f'FAIL lab: the warm reset lost a game ({m.group(1)[:80]}): a crash in the state the test '
+                         f'before left? (logs/previous copied as {t["name"]}{suffix}.previous.*)')
+        prev = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs', 'previous')
+        for p in glob.glob(os.path.join(prev, 'sporekit*.log')):
+            try:
+                if os.path.getmtime(p) >= t0 - 2:
+                    shutil.copy(p, os.path.join(logdir, f'{t["name"]}{suffix}.previous.{os.path.basename(p)}'))
+            except OSError:
+                pass
     gate_fails, gate_notes, _ = log_gates(t, lane, text, marks0, t0)
+    gate_notes = lab_notes + gate_notes
     lab_fails += gate_fails
     if mem.get('over'):  # BUG-0916: also for a test that makes reports on purpose
         lab_fails.insert(0, 'FAIL lab: ' + mem['over'])

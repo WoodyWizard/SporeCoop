@@ -119,6 +119,12 @@ def lab_cases(tree, tmp):
                               f'print(\'RESULT: OK\' if n else \'the game did not answer\');exit(0 if n else 1)"',
               ('smoke',))
     suite.add('skipper', f'{py} "print(\'RESULT: SKIP (no free lane)\')"', ('smoke',))
+    suite.add('warm_lost', f'{py} "print(\'  (warm reset failed: [Errno 104] Connection reset by peer )\');'
+                           f'print(\'  (warm reset failed: cold start)\');print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('warm_slow', f'{py} "print(\'  (warm reset failed: timed out )\');'
+                           f'print(\'  (warm reset failed: cold start)\');print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('warm_refused', f'{py} "print(\'  (no warm reuse: SPORE_FIX_OFF x left switches off; cold start)\');'
+                              f'print(\'RESULT: OK\')"', ('smoke',))
     a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip=','.join(str(n) for n in range(1, LANE)),
                            lanes=1, no_build=True, cold=False, retry=1)
     out = io.StringIO()
@@ -141,6 +147,10 @@ def lab_cases(tree, tmp):
           'harness_once: no RESULT line, then OK on the retry: ok (flaky)')
     check(res['skipper'].get('skipped') and '| skipper | skip' in summary,
           'skipper: a SKIP result is a skip in results.json and summary.md, not a pass (BUG-0100)')
+    check(not res['warm_lost']['ok'] and res['warm_refused']['ok'] and res['warm_slow']['ok']
+          and any('timed out' in g for g in res['warm_slow'].get('gates', [])),
+          'warm_lost: a game lost in the warm reset fails the test (BUG-0975); a refused warm reuse does not, a console '
+          'that timed out is a note')
     check(rc != 0, 'the run fails')
 
     # BUG-0052: a test past the timeout (a command bash does not exec: a list) leaves nothing behind

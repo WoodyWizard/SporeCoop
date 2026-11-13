@@ -2898,3 +2898,23 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-0969
 * Fixed (unreleased, feat/lab-speed, 2026-11-12): the test hosts on a free port of the discovery range under its own
   process's name and counts only that game (docs/06-testing.md#testing-lab-speed).
+
+## Cell: a guest at a high level dies when it joins a host world at a lower one (2026-11-12, crash: feat/lab-speed)
+<a id="issue-cell-join-lower-level"></a>
+
+* What happens: the guest's food drops from the level it had (327, level 4) to the host's (0) at the join, and the
+  next tile pass faults in `Simulator::Cell::ShouldCullCell+0x190` (0xC0000005 at 0x00E5FA50, from PopulateTiles);
+  the guest's game is gone without a crash report.
+* Reproduce: two games in the `cell` fixture, food raised to level 4 (cell_particles does this), then the host loads
+  the fixture again and the guest rejoins (the lab's warm reset). 27 more games lost in warm resets of the recorded
+  runs, 25 in Cell (mostly cell_coop), probably the same.
+* Ticket: BUG-0975
+
+## Tests: play_tribe's planted desync no longer fails it (2026-11-12, test: feat/lab-speed)
+<a id="issue-play-tribe-plant"></a>
+
+* What happens: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` should make play_tribe fail its `sync t*` check (the
+  guest's mirrors 0.6 s late); it passes at 5 and 10 min, the probe's best lag is 0.00 s. play_tribe has no known
+  FAIL case.
+* Reproduce: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6" tools/lab.py run play_tribe --lane N`.
+* Ticket: BUG-0974
