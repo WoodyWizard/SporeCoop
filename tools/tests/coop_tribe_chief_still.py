@@ -10,7 +10,10 @@ host's chief (the game's current animation, `hold=`: the hand's started hold mod
 (`coop.tribe hand`: the item in the hand) at ~3 Hz, for --secs. Printed: every stretch of over --slack s where the two
 games disagree on the hold, the hand item or the animation, with both games' animations around it.
 Checked (the game's own state on both machines): no stretch of over --slack s where one game's chief holds its item
-in the hand and the other's does not; the hand item the same within 3 s of every change.
+in the hand and the other's does not; no stretch of over 2 s where both play the same gesture (not a loop) more than
+0.5 s apart in it (the track time `t=`); the hand item the same within 3 s of every change.
+Twin: SPORE_FIX_OFF=tribe.mirror_phase_any: the chief's gesture begun at the load (before the session) runs on the
+guest from its own start, 10-20 s from the host's moment (FAIL).
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_chief_still.py [--secs 90] [--slack 1.0]
 """
@@ -23,14 +26,16 @@ from twoinst import Checks, game_runs, keyframe, start  # (first: it puts tools/
 import lane
 from sporectl import Console
 
+LOCO = {'02481DE5', '04866D8E', '04866DAB', '04866DD4'}  # the locomotion's idle / walk
+
 
 def sample(inst, cid, secs, rows, hands, t_end):
     c = Console(inst)
     nh = 0.0
     while time.time() < t_end:
-        m = re.search(r'cur ' + cid + r' anim=(\w+) bhv=\w+ .*hold=(\d)', c.call('coop.tribe anims')['out'])
+        m = re.search(r'cur ' + cid + r' anim=(\w+) bhv=\w+ .*hold=(\d) t=([-\d.]+) loop=(-?\d)', c.call('coop.tribe anims')['out'])
         if m:
-            rows.append((time.time(), m.group(1), int(m.group(2))))
+            rows.append((time.time(), m.group(1), int(m.group(2)), float(m.group(3)), int(m.group(4))))
         if time.time() >= nh:
             nh = time.time() + 0.33
             h = re.search(r'item=(-?\d+)', c.call(f'coop.tribe hand {cid}')['out'])
@@ -96,6 +101,10 @@ def main():
         h, g = at(hr, t), at(gr, t)
         return bool(h and g and h[2] != g[2])
 
+    def moment_differs(t):  # BUG-1069: the same gesture (not a loop) at another moment of it
+        h, g = at(hr, t), at(gr, t)
+        return bool(h and g and h[1] == g[1] and h[4] == 0 and g[4] == 0 and h[1] not in LOCO and abs(h[3] - g[3]) > 0.5)
+
     def anim_differs(t):
         h, g = at(hr, t), at(gr, t)
         return bool(h and g and h[1] != g[1])
@@ -108,8 +117,8 @@ def main():
     def runs(rr, s, e, k=1):
         out = []
         for r in rr:
-            if s - 2 < r[0] < e + 1 and (not out or out[-1][1:] != r[k:]):
-                out.append((round(r[0] - t0, 2),) + tuple(r[k:]))
+            if s - 2 < r[0] < e + 1 and (not out or out[-1][1:] != r[k:k + 2]):
+                out.append((round(r[0] - t0, 2),) + tuple(r[k:k + 2]))
         return out[:14]
     agree = sum(not hold_differs(t) for t in ts)
     print(f'  {len(hr)} / {len(gr)} samples; hold the same in {agree} ({100 * agree / len(ts):.1f} %), animation the same '
@@ -119,6 +128,10 @@ def main():
         h = at(hr, s)
         print(f'    hold differs {s - t0:.1f}-{e - t0:.1f} s (host hold={h[2]}): host {runs(hr, s, e)}; guest {runs(gr, s, e)}',
               flush=True)
+    bad_moment = stretches(ts, moment_differs, 2.0)
+    for s, e in bad_moment:
+        h, g = at(hr, s), at(gr, s)
+        print(f'    moment differs {s - t0:.1f}-{e - t0:.1f} s: {h[1]} host t={h[3]:.2f}, guest t={g[3]:.2f}', flush=True)
     bad_item = stretches(hts, item_differs, 3.0)
     for s, e in bad_item:
         print(f'    hand item differs {s - t0:.1f}-{e - t0:.1f} s: host {runs(hands["host"], s, e)}; '
@@ -140,6 +153,8 @@ def main():
     keyframe('chief', f"the host's chief #{cid} at the end on both games' own cameras", kind='key')
     ck(not bad_hold, f'no stretch over {a.slack} s with the chief\'s item in the hand on one game only '
                      f'({[(round(s - t0, 1), round(e - s, 1)) for s, e in bad_hold]})')
+    ck(not bad_moment, f'no stretch over 2 s with the chief in the same gesture over 0.5 s apart on the two games '
+                       f'({[(round(s - t0, 1), round(e - s, 1)) for s, e in bad_moment]})')
     ck(not bad_item, f'the chief\'s hand item the same on both games within 3 s ({[(round(s - t0, 1), round(e - s, 1)) for s, e in bad_item]})')
     ck.faults(host=host, guest=guest)
     return ck.result()

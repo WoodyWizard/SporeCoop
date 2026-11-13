@@ -3368,3 +3368,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   console call breaks. Seen once (out/lab/20261113-052132).
 * Reproduce: `lab.py run same_view_tribe --lane 7 --repeat 5`.
 * Ticket: BUG-1070
+* Explained (fix/w49-tribe3, 2026-11-13): not the game or the mod: a second lab run started on lane 7 at that second
+  and killed the lane's games (docs/06-testing.md#testing-lane-lock); the lab now refuses a run on a held lane.

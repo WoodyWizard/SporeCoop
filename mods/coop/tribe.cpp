@@ -1782,6 +1782,21 @@ static uint32_t g_stale_cut;
 static bool g_idle_loco_fix = true;
 COOP_FIX("tribe.mirror_idle_loco", "BUG-1071", g_idle_loco_fix,
          "tribe: a guest's mirror leaves a gesture when the host's member stands in an idle its behaviour started (right after the session start)");
+// BUG-1069: the moment (kind 14) went only for a member whose current animation its behaviour tree started while the
+// host tracked it (bhv_anim). The host's chief of the save stood in its long staff gesture 0x04C6CB02 started at the
+// load, before the session (bhv_anim 0, t 16-22 s): the guest's mirror played it from its own start (t 0.6-6 s) and
+// never got the host's moment: the staff forward in the hand on the host, another pose (or still the resting grip) on
+// the guest in same_view_tribe's stills. Now the moment of any current animation that is not a loop and not the
+// locomotion's idle / walk goes too (the guest sets it only when its mirror plays the same id).
+// `coop.fix tribe.mirror_phase_any off`: as before.
+static bool g_phase_any_fix = true;
+COOP_FIX("tribe.mirror_phase_any", "BUG-1069", g_phase_any_fix,
+         "tribe: a guest's copy of a member is at the host's moment also of a gesture that began before the session (the chief's staff held another way)");
+// BUG-1069: a relayed restart of the animation a host's hold was bound to under 0.5 s before is not played (the mirror
+// keeps the running instance and the hold). `coop.fix tribe.hold_restart off`: played, the hold lost until the resend.
+static bool g_hold_restart_fix = true;
+COOP_FIX("tribe.hold_restart", "BUG-1069", g_hold_restart_fix,
+         "tribe: a guest's copy of a member keeps the item in its hand when the host's member restarts its gesture with it");
 static bool loco_anim(uint32_t a)
 {
     return a == 0x02481DE5u || a == 0x04866D8Eu || a == 0x04866DABu || a == 0x04866DD4u;
@@ -2007,19 +2022,25 @@ static void send_member_anims(double now)
         g_idle_sent += (uint32_t)idle.size();
     }
     if (g_mirror_phase_fix) { // BUG-0988: where in its behaviour animation each member is now
-        std::vector<std::tuple<uint16_t, uint32_t, float>> ph;
+        // ph: kind 14 (the behaviour's start); ph2: kind 15, BUG-1069, any other current animation that is not a loop
+        // or the locomotion's (a guest with tribe.mirror_phase_any off ignores kind 15: the twin works from its join)
+        std::vector<std::tuple<uint16_t, uint32_t, float>> ph, ph2;
         for (auto& [c, m] : g_hm) {
             uint8_t* tr;
             uint32_t cur = 0;
-            if (ph.size() < 120 && m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur == m.bhv_anim &&
+            if (ph.size() < 120 && ph2.size() < 120 && (m.bhv_anim || g_phase_any_fix) && game::object_alive(c) &&
+                game::drawn_state(c, nullptr, &cur) && cur && (cur == m.bhv_anim || (g_phase_any_fix && !loco_anim(cur))) &&
                 (tr = main_track(c)) && !track_loops(tr) && *(uint32_t*)(tr + 0xD8) == cur)
-                ph.emplace_back(m.id, cur, (float)*(double*)(tr + 0xA8));
+                (m.bhv_anim && cur == m.bhv_anim ? ph : ph2).emplace_back(m.id, cur, (float)*(double*)(tr + 0xA8));
         }
-        if (!ph.empty()) {
+        for (int k = 0; k < 2; k++) {
+            auto& list = k ? ph2 : ph;
+            if (list.empty())
+                continue;
             net::Writer w;
-            w.u8(14);
-            w.u8((uint8_t)ph.size());
-            for (auto& [id, an, t] : ph) {
+            w.u8(k ? 15 : 14);
+            w.u8((uint8_t)list.size());
+            for (auto& [id, an, t] : list) {
                 w.u16(id);
                 w.u32(an);
                 w.f32(t);
@@ -2027,7 +2048,7 @@ static void send_member_anims(double now)
             for (auto& p : C.sess->players())
                 if (p.id != 0)
                     C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
-            g_phase_sent += (uint32_t)ph.size();
+            g_phase_sent += (uint32_t)list.size();
         }
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
@@ -2429,7 +2450,10 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         }
         return;
     }
-    if (kind == 14) { // BUG-0988: where in its behaviour animation each host member is
+    if (kind == 14 || kind == 15) { // BUG-0988: where in its behaviour animation each host member is (15: BUG-1069,
+        // in another animation that is not a loop, e.g. one begun before the session)
+        if (kind == 15 && !g_phase_any_fix)
+            return;
         uint8_t n = r.u8();
         int rtt = C.sess ? C.sess->rtt_of(0) : -1;
         double d = rtt >= 0 && rtt < 1000 ? rtt / 2000.0 : 0.05;
@@ -2447,7 +2471,9 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             if (!tr || track_loops(tr) || *(uint32_t*)(tr + 0xD8) != anim)
                 continue;
             double& tm = *(double*)(tr + 0xA8), want = t + d;
-            if (std::fabs(tm - want) > 0.1 && std::fabs(tm - want) < 5.0) {
+            // (BUG-1069: up to 60 s apart with tribe.mirror_phase_any: the chief's staff gestures run 10-50 s, and a
+            // mirror whose instance began 5.6 s before the host's restart was never set)
+            if (std::fabs(tm - want) > 0.1 && std::fabs(tm - want) < (g_phase_any_fix ? 60.0 : 5.0)) {
                 g_phase_last_off = tm - want;
                 tm = want;
                 g_phase_set++;
@@ -2554,6 +2580,17 @@ void on_member_anims(uint8_t kind, net::Reader& r)
                 // BUG-0968: hold_try started it for the host's hold just now (the start and the relay came together);
                 // started again, the hold bound to the first start ended and the item never came back (lab trace:
                 // P, T, R at one moment, then no hold for the host's 2.7 s)
+                hold_ev(id, 'D', anim, cur);
+                continue;
+            }
+        }
+        if (g_hold_restart_fix && g_mirror_hold_fix && g.hold_bound && g.hold_anim_bound == anim && now - g.hold_at < 0.5) {
+            uint32_t cur = 0;
+            if (game::drawn_state(c, nullptr, &cur) && cur == anim) {
+                // BUG-1069: the host's hold just bound to the mirror's running instance (S, T); the relayed restart of
+                // that animation (the host's member restarted it with the hold) would end the bound instance and the
+                // hold with it until the next resend (lab: S T R, the hand empty 1.1 s). The mirror goes on in it; its
+                // moment comes with the phase (kind 14 / 15).
                 hold_ev(id, 'D', anim, cur);
                 continue;
             }
