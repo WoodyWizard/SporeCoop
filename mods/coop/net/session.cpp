@@ -51,6 +51,8 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err)
     my_name_ = name;
     welcomed_ = true;
     seen_names_.clear();
+    seen_tokens_.clear();
+    dropped_names_.clear();
     lan_id_ = new_conn_id(now(), tr_->local_port() ^ 0x4C414E00u); // BUG-0210: new per hosted game
     logf(cb, "hosting on UDP port %u", tr_->local_port());
     return true;
@@ -143,6 +145,9 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
+    // BUG-1005: the host splits a WELCOME longer than one packet for a guest that announced CAP_SPLIT (in this HELLO):
+    // join its pieces (an older host never splits). WELCOME then sets what the host announced
+    p->conn.peer_split = g_fix.welcome_split && h.ext && (h.caps & CAP_SPLIT);
     peers_.push_back(std::move(p));
     logf(cb, "joining %s ...", ep.masked().c_str());
 }
@@ -358,9 +363,13 @@ std::string Session::status() const
                  p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
     }
-    if (role_ == Role::Host && (disc_refused_ || halfopen_refused_ || halfopen_evicted_)) { // BUG-0776, BUG-0778
-        snprintf(b, sizeof b, "refused: discovery=%u (answered %u) no_hello=%u half_open_evicted=%u\n", disc_refused_, disc_answered_,
-                 halfopen_refused_, halfopen_evicted_);
+    if (role_ == Role::Host && (disc_refused_ || halfopen_refused_ || halfopen_evicted_ || replace_refused_)) { // BUG-0776, BUG-0778
+        snprintf(b, sizeof b, "refused: discovery=%u (answered %u) no_hello=%u half_open_evicted=%u replace=%u\n", disc_refused_,
+                 disc_answered_, halfopen_refused_, halfopen_evicted_, replace_refused_);
+        s += b;
+    }
+    if (recv_skipped_) { // BUG-1007
+        snprintf(b, sizeof b, "datagrams skipped (too big): %u\n", recv_skipped_);
         s += b;
     }
     for (auto& p : peers_)
@@ -478,6 +487,14 @@ void Session::drop_peer(size_t idx, uint8_t reason)
     auto& p = peers_[idx];
     bool was = p->accepted;
     uint8_t id = p->id;
+    if (was && role_ == Role::Host) { // BUG-1001: when this name dropped (a player without a token may come back by it)
+        uint32_t t = now();
+        auto it = std::find_if(dropped_names_.begin(), dropped_names_.end(), [&](auto& e) { return e.first == p->hello_name; });
+        if (it != dropped_names_.end())
+            it->second = t;
+        else if (dropped_names_.size() < 64)
+            dropped_names_.push_back({p->hello_name, t});
+    }
     logf(cb, "player %u (%s) disconnected (reason %u)", id, p->name.c_str(), reason);
     retired_.push_back(p->conn.conn_id);
     if (retired_.size() > 64)
@@ -501,6 +518,26 @@ static void clean_info(PlayerInfo& pl)
     if (pl.name.empty())
         pl.name = pl.id == 0 ? std::string("host") : "guest" + std::to_string(pl.id);
     pl.version = utf8::clean_text(pl.version, kVersionMax);
+}
+
+// BUG-1001 (the owner's rule, plan 0.7.14 decision 7): may this HELLO come back while the host takes no new players?
+// With the token rule on and a token in the HELLO: only by that token (admitted before in this session, no live entry
+// has it now). Without a token (an older SporeCoop, or the token rule off): by its name, only when nobody of that name
+// is in the session now and the name dropped within kRejoinNameMs. Two friends both called "Player" are two players
+bool Session::rejoin_known(const Peer& p, const Hello& h, bool by_token) const
+{
+    auto live = [&](auto&& same) {
+        for (auto& o : peers_)
+            if (o.get() != &p && o->accepted && !o->bye && same(*o))
+                return true;
+        return false;
+    };
+    if (by_token && h.has_token)
+        return std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) != seen_tokens_.end() &&
+               !live([&](const Peer& o) { return o.has_token && o.token == h.token; });
+    auto it = std::find_if(dropped_names_.begin(), dropped_names_.end(), [&](auto& e) { return e.first == h.name; });
+    return it != dropped_names_.end() && this->now() - it->second <= kRejoinNameMs &&
+           !live([&](const Peer& o) { return o.hello_name == h.name; });
 }
 
 void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
@@ -548,9 +585,28 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             } else if (alloc_id() == 0xFF) {
                 rej.reason = REJ_FULL;
                 rej.text = "session is full";
+            } else if (g_fix.join_seen) {
+                // F3 (BUG-0768): the host's player limit and the late-join rule. BUG-1001: a rejoin is the old entry
+                // dropped by its token above, or rejoin_known (its token, or without one a name dropped recently that
+                // nobody has now); a name alone never passes. Every live entry counts, except a silent one of this name
+                // that the name rule below (net.rejoin_token off) retires now
+                bool seen = dropped_by_token || rejoin_known(p, h, by_token);
+                const bool name_rule = unique_names && rejoin_by_name && !by_token;
+                const std::string pname = h.name.empty() ? "guest" + std::to_string(alloc_id()) : h.name;
+                int here = 1; // the host
+                for (auto& o : peers_)
+                    if (o.get() != &p && o->accepted && !o->bye &&
+                        !(name_rule && o->name == pname && this->now() - o->conn.last_recv_ms > 2000))
+                        here++;
+                if (here >= max_players) {
+                    rej.reason = REJ_FULL;
+                    rej.text = "session is full (the host takes " + std::to_string(max_players) + " players)";
+                } else if (!seen && join_closed && join_closed()) {
+                    rej.reason = REJ_STARTED;
+                    rej.text = "the host does not take new players after the start";
+                }
             } else {
-                // F3 (BUG-0768): the host's player limit and the late-join rule. A rejoin (its old entry dropped by its
-                // token, or a name seen in this session, whose silent old entry the name rule below replaces) passes
+                // the rule before BUG-1001: a name seen in this session passes, and its silent entry is not counted
                 bool seen = dropped_by_token ||
                             std::find(seen_names_.begin(), seen_names_.end(), h.name) != seen_names_.end();
                 int here = 1; // the host
@@ -604,6 +660,12 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
+            p.hello_name = h.name;
+            if (h.has_token && std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) == seen_tokens_.end()) {
+                if (seen_tokens_.size() >= 64)
+                    seen_tokens_.erase(seen_tokens_.begin());
+                seen_tokens_.push_back(h.token);
+            }
             p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
             p.version = h.version;
             Welcome wl;
@@ -848,7 +910,7 @@ void Session::flush(uint32_t now)
 }
 
 // BUG-0778: does a datagram (looks_valid already) carry a HELLO that reads? Only such a datagram opens a peer
-bool Session::carries_hello(const uint8_t* data, size_t n)
+bool Session::carries_hello(const uint8_t* data, size_t n, Hello* out)
 {
     Reader r(data, n);
     r.skip(4 + 2 + 4 + 2 + 2 + 16); // magic, protocol, connection, seq, ack, ack bits
@@ -863,8 +925,11 @@ bool Session::carries_hello(const uint8_t* data, size_t n)
         if (type == MSG_HELLO && (flags & 1) && !(flags & 2)) {
             Reader hr(r.cur(), len);
             Hello h;
-            if (h.read(hr))
+            if (h.read(hr)) {
+                if (out)
+                    *out = h;
                 return true;
+            }
         }
         r.skip(len);
     }
@@ -929,6 +994,10 @@ void Session::update()
     for (int i = 0; i < 256; i++) {
         Endpoint from;
         int n = tr_->recv_from(from, buf, sizeof buf);
+        if (n == kRecvSkipped && g_fix.recv_skip_big) { // BUG-1007: one datagram too big, the next ones are still read
+            recv_skipped_++;
+            continue;
+        }
         if (n <= 0)
             break;
         uint32_t magic = 0;
@@ -965,6 +1034,19 @@ void Session::update()
             if (g_fix.halfopen_cap && !carries_hello(buf, (size_t)n)) {
                 halfopen_refused_++;
                 continue;
+            }
+            if (p && p->accepted && g_fix.replace_checked) {
+                // BUG-1003: a joined guest goes only for the same game (its rejoin token) or once its own connection
+                // has been silent for 2 s (the old game is gone); until then the new HELLO waits (it is sent again)
+                Hello nh;
+                bool hello = carries_hello(buf, (size_t)n, &nh);
+                bool same = hello && nh.has_token && p->has_token && nh.token == p->token;
+                if (!same && now - p->conn.last_recv_ms <= 2000) {
+                    if (replace_refused_++ < 5 || replace_refused_ % 100 == 0)
+                        logf(cb, "a new connection from %s waits: player %u is live (%u so far)", from.masked().c_str(), p->id,
+                             replace_refused_);
+                    continue;
+                }
             }
             if (p) {
                 // the same address and port with a new connection id: the guest left and joined

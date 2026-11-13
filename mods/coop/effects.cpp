@@ -14,6 +14,7 @@
 #include "mirror_fx.h"
 #include "modes.h"
 #include "net/protocol.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 namespace effects {
@@ -117,6 +118,9 @@ static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
 static uint32_t g_dropped_spoof;
 static uint32_t g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short;
 static constexpr float kPosMax = 1e5f; // a world position further out is not a planet's stage
+// BUG-1048: a received world effect's scale must be in the sender's range (0, 1000]; off: any finite scale
+static bool g_scale_fix = true;
+COOP_FIX("effects.scale_check", "BUG-1048", g_scale_fix, "effects: a partner's world effect with a scale of 0, below 0 or over 1000 is dropped");
 // Every field of a received start / stop is checked here before the game is called (BUG-0451
 // review item 3); false = dropped and counted.
 static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key, const uint8_t* xf)
@@ -141,16 +145,9 @@ static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
         return false;
     }
     if (pool == 5) {
-        const float* f = (const float*)(xf + 4); // position, uniform scale, 3x3 matrix
-        for (int i = 0; i < 16; i++) {
-            float v;
-            memcpy(&v, f + i, 4);
-            if (!std::isfinite(v)) {
-                g_bad_xf++;
-                return false;
-            }
-        }
-        if (!(fabsf(f[0]) < kPosMax && fabsf(f[1]) < kPosMax && fabsf(f[2]) < kPosMax)) {
+        float f[16]; // position, uniform scale, 3x3 matrix
+        memcpy(f, xf + 4, sizeof f);
+        if (!net::effect_xf_ok(f, kPosMax, g_scale_fix)) { // BUG-1048: the scale too
             g_bad_xf++;
             return false;
         }
