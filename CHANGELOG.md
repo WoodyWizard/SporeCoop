@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: wild creatures are now the same in every game: the host's game runs them and the guests show them
+  (where they walk, their herds, their deaths), so a guest's click on a creature means the same creature for
+  everyone; before, each game ran its own herds and they drifted apart (BUG-0973).
+- Civilization: when a guest buys a city, the "choose the city's specialty" question now comes up on that guest's
+  screen and its answer counts in every game; before, the host was asked (and its game paused) instead (BUG-0982).
 - Joining: with "joining after the start" off, a new player whose name was already used in the session (two
   friends both called "Player") is refused now, and a player who left comes back as itself; a player with the name
   of a loading player no longer joins over the player limit (BUG-1001).

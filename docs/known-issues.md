@@ -2904,6 +2904,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   guest can see (and click) a creature the host's game no longer has there. Since BUG-0970 such an order is not lost.
 * Reproduce: play_civ for ~9 min, compare `coop.census creatures` on both games near a herd.
 * Ticket: BUG-0973
+* Fixed (unreleased, fix/w49-civ, 2026-11-13): the host owns them (npc.civ_wild, the Tribe stage's NPC proxies), test
+  civ_wild_sync (docs/re/civ.md#civ-wild-sync).
 * Fixed (unreleased, fix/w48-last, 2026-11-12): the checks hosted on the fixed port kDefaultPort + 19 and asked the
   whole range, where another copy of the tests and the other lanes' games (they answer 127.0.0.1) live. They host on
   an ephemeral port and ask only it (Discovery::ports); test unit_parallel (3 copies at once).
@@ -2957,6 +2959,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: answer the box on the host by the guest's choice (forward the question to the buyer), or take the
   city's own specialty for a guest's purchase.
 * Ticket: BUG-0982
+* Fixed (unreleased, fix/w49-civ, 2026-11-13): the question goes to the city's owner (civ.specialty_buyer), test
+  civ_buy_city (docs/re/civ.md#civ-specialty-buyer).
 ## Tests: walk_start_walkin with every fix off crashed in DXVK after two caught memcpy faults (2026-11-12, test: fix/w48-d3d9)
 <a id="issue-fixoff-dxvk-crash"></a>
 

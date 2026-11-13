@@ -64,3 +64,5 @@ out/lab/20261112-170402 (85 / 85 / 0), both PASS. make test PASS.
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-civcmd): traced to an unsynced wild creature target; fixed (civ.creature_target), test civ_guest_creature.
 - 2026-11-12: released in 0.7.13.
+- 2026-11-13 (fix/w49-civ): with BUG-0973 the host owns the wild creatures; civ_guest_creature (this ticket's case: games
+  whose herds differ) now runs with `npc.civ_wild` off.
