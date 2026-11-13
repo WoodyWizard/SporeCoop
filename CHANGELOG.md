@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the guest's copy of a chief holds its staff like the host's chief also in a gesture that began before the
+  session or that the chief restarts with the staff in its hand (it stood at another moment of the gesture, or with
+  the staff in the resting grip) (BUG-1069).
+- Tribe: right after a session starts, the guest's copy of a chief no longer stays in a staff gesture for several
+  seconds while the host's chief stands (BUG-1071).
+- Test lab: a second test run started on a lane that another run uses is refused instead of ending that run's games
+  (a test's game seemed to vanish without a crash report) (BUG-1070).
 - Tribe: the guest's copy of a chief no longer goes back into a staff gesture after changing its item while the
   host's chief stands (it kept swinging for up to half a minute) (BUG-0972).
 - Tribe: the guests' copies of the tribe members play a gesture at the same moment as on the host, so a staff or a

@@ -23,6 +23,7 @@ import threading
 import time
 
 from twoinst import Checks, game_runs, keyframe, start  # (first: it puts tools/ on the path)
+from coop_tribe_looks import view_both
 import lane
 from sporectl import Console
 
@@ -150,7 +151,10 @@ def main():
                     if p[:1] == ['hev'] and s - t0 - 2 < float(p[1]) - gnow + wnow < e - t0 + 1:
                         ev.append(f'{float(p[1]) - gnow + wnow:.2f} {" ".join(p[3:])}')
                 print(f'    guest events {s - t0:.1f}-{e - t0:.1f} s: {"; ".join(ev[:20])}', flush=True)
-    keyframe('chief', f"the host's chief #{cid} at the end on both games' own cameras", kind='key')
+    m = re.search(r'cur ' + cid + r' anim=\w+ bhv=\w+ pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.tribe anims')['out'])
+    if m and view_both(host, guest, tuple(float(m.group(i)) for i in (1, 2, 3)), 10.0, 3.0):
+        keyframe('chief', f"the same camera on both games 10 m from the host's chief #{cid}: its staff held the same "
+                          f"way (in the hand or in the resting grip, the same angle) on both screens", kind='sameview')
     ck(not bad_hold, f'no stretch over {a.slack} s with the chief\'s item in the hand on one game only '
                      f'({[(round(s - t0, 1), round(e - s, 1)) for s, e in bad_hold]})')
     ck(not bad_moment, f'no stretch over 2 s with the chief in the same gesture over 0.5 s apart on the two games '

@@ -3622,3 +3622,29 @@ BUG-0987 (wontfix). GOG 2024, lab lanes 6 / 7, `coop.effects log`, shots of both
   effect, its +8 interface and the nested effect; 1780 updates seeded): still other pictograms. So the pick is
   neither in the build nor in the group update's draws from 0x16778DC; it is made deeper (a particle component's own
   random or another generator). Not followed further: cosmetic chat (known-issues#issue-tribe-bubble-icons).
+
+## The chief's gesture from the load, a restart over a bound hold, members without a behaviour start (2026-11-13, fix/w49-tribe3)
+<a id="tribe-chief-load-gesture"></a>
+
+BUG-1069, BUG-1071. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows #tribe-mirror-pose-phase.
+
+* ✔ (lab 20261113-060215 #6, same_view_tribe with the chief's rows at each still) The host's chief of the fixture
+  stands in its staff gesture 0x04C6CB02 begun at the save's load, before the session: on the host `bhv=00000000`
+  (no behaviour start seen since the host began tracking: SporeCoop's behaviour listener never saw it) and the track
+  time t 16.7 -> 22.2 s over the four views (the gesture runs 20 s and more); the guest's mirror played the same id
+  from its own start (t 0.6 -> 6.1 s; started by the idle news kind 10 how 2 or hold_try's P), the hold 0 at the
+  first view. The moment (kind 14, BUG-0988) went only for members whose current animation equals bhv_anim: none for
+  this one, so the staff pointed elsewhere on the two screens.
+* ✔ (lab 20261113-060910, tribe_chief_still) The same gesture on both games 5.6 s apart (host restarted it: t 2.96,
+  mirror 8.53): the phase fix only set differences under 5 s. The host's chief restarts 0x04C6CB02 with a hold
+  (holdtrace `S T R` at one moment): the relayed restart started a new instance on the mirror and the hold bound to the
+  running one ended (`O` only at the next resend, 1.1 s later). Once the mirror's instance ended before the host's
+  (host still in the gesture, mirror idle 1.4 s, holdtrace `M`).
+* ✔ (same run, tribe_mirror_stale round 1) The host's chief in its idle with `bhv=00000000` and the guest's mirror in a
+  returned gesture (relayed 0): no idle news (kind 10) was sent for it at all, because the host read the member's
+  animation only when bhv_anim was set; the gesture ran to its own end (6.4 s; 9 s in 20261113-054031-2).
+* Fixes: `tribe.mirror_phase_any` (the moment of any current animation that is neither a loop nor the locomotion's
+  idle / walk as MSG_NPC_ANIM kind 15, same layout as 14; a guest sets differences up to 60 s), `tribe.hold_restart`
+  (a relayed restart of the animation a host's hold bound to under 0.5 s before is skipped while the mirror plays it,
+  trace `D`), `tribe.mirror_idle_loco` (the host reads every member's animation for the idle news, and a member whose
+  behaviour start is its locomotion's idle / walk goes as idle news, not as kind 3).

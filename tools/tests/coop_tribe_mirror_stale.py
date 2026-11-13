@@ -18,7 +18,10 @@ walk because it was not the last relayed animation, and left it.
    host's chief stays in its idle / walk.
 Fewer than 2 counted rounds in --secs: SKIP. Checked: in every counted round the mirror is back in its idle / walk
 within 4.5 s (the host's idle news comes once a second; the fix waits 1.5-2 s after a relayed start).
-SPORE_FIX_OFF=tribe.mirror_stale_anim: the mirror stays in the gesture (FAIL). Key frame of kind sameview: the chief
+SPORE_FIX_OFF=tribe.mirror_stale_anim: the mirror stays in the gesture (FAIL).
+BUG-1071: every second round the host first forgets the chief's last behaviour start (`coop.tribe bhvzero`: bhv 0, as
+right after the save's load, when the first round of a session failed); SPORE_FIX_OFF=tribe.mirror_idle_loco: no idle
+news for it, the mirror stays in the gesture until it ends (FAIL). Key frame of kind sameview: the chief
 on both games after the last round.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_mirror_stale.py [--rounds 4]
@@ -43,6 +46,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=4)
     ap.add_argument('--secs', type=float, default=300, help='at most this long for the rounds')
+    ap.add_argument('--zero-bhv', type=int, default=1, help='BUG-1071: every second round the host forgets the chief\'s '
+                    'last behaviour start (`coop.tribe bhvzero`), as after the load; 0: never')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -51,7 +56,7 @@ def main():
     lead = re.findall(r'#(\d+) \S+ owner=0 .*leader=1', host.call('coop.tribe')['out'])
     cid = lead[0] if lead else '1'
     print(f"  the host's chief #{cid}", flush=True)
-    done, backs, t0 = 0, [], time.time()
+    done, backs, t0, zeros = 0, [], time.time(), 0
     while done < a.rounds and time.time() - t0 < a.secs:
         h1 = row(host, cid)
         time.sleep(0.3)
@@ -59,6 +64,10 @@ def main():
         if not h1 or not h2 or h1[0] not in LOCO or h2[0] not in LOCO:
             time.sleep(1.0)
             continue
+        zero = a.zero_bhv and done % 2 == 1  # BUG-1071: every second round as right after the load (no behaviour start)
+        if zero:
+            host.call(f'coop.tribe bhvzero {cid}')
+            h2 = row(host, cid) or h2
         out = guest.call(f'coop.tribe mplay {cid} {GESTURE}')['out'].strip() + f' host={h2[0]} bhv={h2[1]}'
         ts, host_ok, back = time.time(), True, None
         seq = []
@@ -76,6 +85,7 @@ def main():
             print(f'  ({out}; the host\'s chief left its idle / walk meanwhile: not counted; mirror {seq})', flush=True)
             continue
         done += 1
+        zeros += zero and h2[1] == '00000000'
         backs.append(back if back is not None else 99.0)
         if back is None:  # BUG-1071: what the guest's idle fix did meanwhile (I / Z: the host's idle news acted on)
             ev = [ln for ln in guest.call(f'coop.tribe holdtrace {cid}')['out'].splitlines() if ln.startswith('hev')]
@@ -91,6 +101,8 @@ def main():
     if done < 2:  # (the host's chief gestured the whole time: the case never came)
         print(f'RESULT: SKIP {done} rounds with the host\'s chief in its idle / walk in {a.secs:.0f} s (< 2)', flush=True)
         return 0
+    if a.zero_bhv:
+        ck(zeros >= 1, f'at least one counted round with the host\'s chief without a behaviour start ({zeros})')
     ck(backs and all(b <= 4.5 for b in backs), f'the guest\'s mirror leaves the returned gesture within 4.5 s in every round ({backs})')
     ck.faults(host=host, guest=guest)
     return ck.result()

@@ -6355,6 +6355,15 @@ std::string debug(const std::vector<std::string>& a)
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
                std::to_string(g_item_holds_ended);
     }
+    if (a.size() >= 2 && a[0] == "bhvzero" && is_host()) { // bhvzero <member id>: tests (BUG-1071), the member as after
+        // the save's load: no behaviour start seen yet (bhv_anim 0)
+        for (auto& [c, m] : g_hm)
+            if (m.id == (uint16_t)atoi(a[1].c_str())) {
+                m.bhv_anim = 0;
+                return "bhvzero " + a[1];
+            }
+        return "no such member";
+    }
     if (a.size() >= 3 && a[0] == "mplay" && is_guest()) { // mplay <member id> <hex anim>: tests (BUG-0972), the mirror
         // plays that animation as an earlier relayed start that came back after another one (not the last relayed)
         auto it = g_gm.find((uint16_t)atoi(a[1].c_str()));
