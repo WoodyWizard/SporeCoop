@@ -7399,3 +7399,46 @@ species and home within 2 m, `coop.npc archless all`) before its own `coop.save`
 none may be missing, the save strips no empty herd. `SPORE_FIX_OFF=savestrip.our_herds` FAIL 20261113-045930 (72
 stripped, 52 missing), PASS 20261113-045626; BUG-0255's own case still PASSES (save_hygiene_leave 20261113-050134,
 4 empty herds of ours stripped). The restart helper waits for the Civ mode, not for `coop.avatar` (no avatar in Civ).
+
+## Q1 continued: the campaign's cinematics, the Tribe end and the finale (2026-11-13, fix/w49-camp)
+<a id="testing-w49-camp"></a>
+
+**BUG-1073: the cinematics left off by the host's Tribe reload.** The jump campaigns' stuck Civ end (captures that never
+took a city) and much of the unreliable Tribe end on the campaign's own planet (#testing-w49-tests) had one cause in
+the game: after the live Creature -> Tribe change the cinematic manager is off (+0x15F 0, CRG2TRG) until the Tribe
+start turns it on, and the mod's reload of the host's Tribe 6-7 s after that change can come first; a load never turns
+it on (docs/re/civ.md#civ-cinematics-enabled). Seen in 3 of 6 runs of this branch with a watcher on the flag. Fix:
+gamefixes `game.cinematics_on_load` (a load into a stage turns them on, logged "the cinematics were off after the load
+into mode ...: on again (BUG-1073)").
+* `coop.cine [on|off]`: the flag (`enabled=`), the manager's state (+0x2C, a cinematic runs) and id (+0x148), the
+  restores. Tests set the flag as the game's own stage changes do.
+* `cine_load` (coop_cine_load.py, tribe fixture, 2 games, ~2 min): the host's cinematics off, its `coop.load` of
+  civ_npc in game, a Capture with its cinematic: it must play and the city must change hands on both games.
+  `SPORE_FIX_OFF=game.cinematics_on_load` FAIL 20261113-141811, PASS 20261113-142022.
+* With the flag 0 in Tribe the host bot's box never selected its own members (`no member selected` 32 times in
+  campaign_tribe_end 20261113-133534, 0/5 in 30 min); the full campaigns' minimap calibration read one view for three
+  clicks (inferred: the view moves of the minimap / card clicks go through the cinematic manager). A watcher for the
+  flag: read `[0x167EB50]` +0x15F with `mem.read` (or `coop.cine`) every few seconds.
+* `campaign_civ_jump` (suite entry, ~45 min, no suite): the campaign's jump path on purpose (CAMPAIGN_OLD_TRIBE=1, the
+  Tribe timeout 12 min, then the civ_npc jump, Civ by captures, Space, the finale). Lab 20261113-133150: the flag was 1
+  in that run (no race), all 10 cities taken through their cinematics; its finale stuck on Bob (below).
+
+**The Tribe end on the campaign's own planet** (campaign_tribe_end; `CAMPAIGN_STRICT_TRIBE` is now on by default: a
+Tribe timeout is a failing `stuck`, `CAMPAIGN_STRICT_TRIBE=0` the old `info`):
+* the raid orders keep a home guard (the players' chiefs and `HOME_GUARD` = 3 members next to the village;
+  `CAMPAIGN_RAID_ALL=1`: all go): the game over by population (no player member with health) reloaded the save at 4/5
+  in 20261113-120534.
+* Runs of this branch: 20261113-125218 (flag 1) Civ reached, 5/5; 20261113-125221 (flag 1) Civ reached;
+  20261113-133534 (flag 0 the whole Tribe, before the fix) 0/5 in 30 min; with the fix 20261113-142311 Civ reached in
+  17 min (the restore fired at the reload; 4 huts in 2-3 min each).
+* Monitor gate `ground`: Tribe members held by the Tribe end's cinematics (the host's line `busy=cinematic`) are not
+  judged (`agl_cine`, default 1; 0: as before): the game removes the village's ground stamp under a member that stands
+  frozen 18 m up for the 100 s of the change (20261113-125218, replayed with `monitor.py replay`).
+
+**BUG-1079: the finale's zoom-out.** The host's ship was destroyed in the Space play without its death cinematic
+(BUG-1073), spacecoop forced the respawn, and the new ship lacked the drive the bots add; to_galaxy now gives the ship
+the drive before the first wheel turn (`OLD_FINALE_DRIVE=1`: the old bot).
+
+**Found on the way** (tickets, not fixed here): BUG-1082 (a guest's mirror of an NPC village member 114 m off, sync-check
+MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 on a guest in Tribe while the host edits,
+20261113-142311).
