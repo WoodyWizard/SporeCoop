@@ -1341,6 +1341,16 @@ class Campaign:
         g.plan = lambda: 'raid'
         g.target_for = lambda pl, kind, st, centres, enemies, tk=tk: (centres.get(tk, raid['hut']),
                                                                        lambda o: o[0] == f'hut{tk}')
+        host_pl = next((pl for pl in g.p if pl.pid == 0), None)
+        for _ in range(2):  # the host's click first, on purpose (play_tribe's step draws its kind at random)
+            if host_pl is None or raid.get('host_click'):
+                break
+            try:
+                if self.tribe_host_click(g, host_pl, raid):
+                    raid.setdefault('clicks', []).append(host_pl.name)
+                    raid['host_click'] = True
+            except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+                self.finding('info', f'tribe:hostclick:{type(e).__name__}', f'tribe host click error: {e!r}')
         for _ in range(3):
             for pl in g.p:
                 if pl.pid == 0 and raid.get('host_click'):
@@ -1356,6 +1366,34 @@ class Campaign:
             if raid.get('host_click'):
                 break
         self.note(f'tribe: raid clicks on the hut of village {tk} by {raid.get("clicks", [])}')
+
+    def tribe_host_click(self, g, pl, raid):
+        """the host's own attack click on the raided hut, as a player gives it: the view on its members, a box round
+        them, attack mode, the view on the hut (minimap), a right-click on the hut. True when the game took it as a raid
+        order (action 15)"""
+        import play_tribe
+        tk = raid['tribe']
+        st = play_tribe.tribe_state(pl.con)
+        mine = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] == 0 and v['hp'] > 0]
+        if not mine:
+            return False
+        if not pl.J and not pl.calibrate():
+            return False
+        sel = g.select_idle(pl, st, mine, True)
+        if not sel:
+            return False
+        pl.mode(1)
+        if not pl.look(raid['hut']):
+            pl.calibrate()  # the view turned: the minimap's map again
+            if not pl.look(raid['hut']):
+                return False
+        pl.centre()
+        tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
+        if not tg:
+            return False
+        n0 = pl.given
+        g.click_order(pl, 'raid', sel, tg[0], 30)
+        return pl.given > n0 and 'action=15' in pl.last_order()[0]
 
     def tribe_order(self, raid):
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction
