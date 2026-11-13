@@ -4005,6 +4005,7 @@ static void apply_startup_off()
     fclose(f);
 }
 
+static void join_apart_tick(double now);
 void on_frame(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
@@ -4141,6 +4142,7 @@ void on_frame(void*, int, void*)
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
     avatar_change_check();
+    join_apart_tick(now); // BUG-0989
 
     remove_strays(now);
     follow_phase(now);
@@ -5788,11 +5790,89 @@ static float gopos_onto_surface(net::Vec3& p)
     return s + 0.05f - r;
 }
 
+// BUG-0989: a guest that joins in Creature loads the host's save, so its creature starts where the save has the player's
+// creature: on the host's creature (lab key frames: both avatars at one point, drawn inside each other, other poses on
+// each game; the host's name tag over the guest's own creature for a moment). Once per arrival, when the host's
+// creature's puppet first stands within kJoinApart of the guest's own creature (for 0.5 s, within 30 s of the arrival),
+// the guest's creature is put kJoinAside m beside it on the game's surface; a guest that arrives elsewhere, or walks up
+// to the host later, is left alone. `coop.fix core.join_apart off`: as before (the two in one spot).
+static bool g_join_apart_fix = true;
+COOP_FIX("core.join_apart", "BUG-0989", g_join_apart_fix,
+         "creature: a joining guest's creature is put a few metres beside the host's (both started in one spot, drawn inside each other)");
+constexpr float kJoinApart = 2.5f, kJoinAside = 5.f;
+static uint32_t g_join_aparts;
+static double g_join_apart_at = -1;
+static float g_join_apart_from = -1;
+static void join_apart_tick(double now)
+{
+    static void* av_seen;
+    static double av_since, close_since;
+    static bool decided;
+    void* av = g_mode == modes::kCreature && g_sess.role() == net::Role::Client && g_sess.connected() ? game::avatar() : nullptr;
+    if (av != av_seen) {
+        av_seen = av;
+        av_since = now;
+        close_since = 0;
+        decided = false;
+    }
+    if (!av || decided || !g_join_apart_fix || now - av_since > 30.0)
+        return;
+    auto it = g_remotes.find(0);
+    if (it == g_remotes.end() || !it->second.puppet || !creature_puppet(it->second.puppet_adapter) ||
+        !game::creature_listed(it->second.puppet))
+        return;
+    net::Vec3 a = game::position(av), b = game::position(it->second.puppet);
+    float rb = drive::speed(b);
+    if (rb < 1.f)
+        return;
+    if (net::dist(a, b) >= kJoinApart) {
+        decided = true; // (it arrived elsewhere: nothing to do, now or later)
+        return;
+    }
+    if (close_since == 0) {
+        close_since = now;
+        return;
+    }
+    if (now - close_since < 0.5)
+        return;
+    decided = true;
+    // sideways on the ground: away from the host's creature when they are apart at all, else along the planet's tangent
+    net::Vec3 up{b.x / rb, b.y / rb, b.z / rb}, d{a.x - b.x, a.y - b.y, a.z - b.z};
+    float along = d.x * up.x + d.y * up.y + d.z * up.z;
+    d = {d.x - up.x * along, d.y - up.y * along, d.z - up.z * along};
+    float ld = drive::speed(d);
+    if (ld < 0.2f) {
+        d = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
+        ld = drive::speed(d);
+    }
+    net::Vec3 p{b.x + d.x / ld * kJoinAside, b.y + d.y / ld * kJoinAside, b.z + d.z / ld * kJoinAside};
+    float r = drive::speed(p), g = game::ground_radius(p);
+    if (g > 1 && r > 1)
+        p = {p.x * g / r, p.y * g / r, p.z * g / r};
+    gopos_onto_surface(p);
+    game::teleport(av, p, game::orientation(av));
+    g_join_aparts++;
+    g_join_apart_at = now;
+    g_join_apart_from = net::dist(a, b);
+    LOG("creature: this creature started on the host's (%.1f m apart): put %.0f m beside it (BUG-0989)", net::dist(a, b), kJoinAside);
+}
+static std::string join_apart_status()
+{
+    char b[128];
+    snprintf(b, sizeof b, "join_apart fix=%d moves=%u last=%.1f s ago from=%.2f m", (int)g_join_apart_fix, g_join_aparts,
+             g_join_apart_at < 0 ? -1.0 : H->time_seconds() - g_join_apart_at, g_join_apart_from);
+    return b;
+}
+
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 2 && !strcmp(argv[1], "animquiet")) { // guest (tests, BUG-0464)
         npc::set_anim_quiet((float)atof(argv[2]));
         SAY("ok\n");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "joinapart")) { // tests (BUG-0989)
+        SAY("%s\n", join_apart_status().c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "anims")) { // BUG-0464: the behaviour animation relay's counters
