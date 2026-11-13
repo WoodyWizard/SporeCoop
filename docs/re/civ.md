@@ -1674,3 +1674,14 @@ BUG-0970. Lab lane 4, GOG 2024.
   (~500 m off).
 * ✔ (runtime) A guest's right-click on a creature sends CMD_ORDER type 1 with target kind 3 (noun + position); the
   host now takes its own creature within 40 m of that place, else a move order there (`civ.creature_target`).
+
+## A guest's order on a vehicle the host's game just removed (2026-11-13, fix/w49-live)
+<a id="civ-cmd-listed"></a>
+
+* ✔ (lab 20261113-022453, BUG-1053) Vehicle_Remove (0xCAA7B0, `coop.civ remove`) leaves the game's object list in the
+  same call (`listed=0`), the host's table g_hv keeps the entry until the next host tick (0.1 s). SetOrder(v, <removed
+  vehicle>, 1, 1) is accepted: v's mOrders (+0xB68) element 0 names the removed block as its target.
+* ✔ The freed block of a removed vehicle is given to the next vehicle the game makes: three spawnveh calls ~5 s apart
+  after three removals got the same address 1A7719A0 each time (lab 20261113-022453). A stale table entry is therefore
+  quickly another vehicle of the same nation (BUG-0951's serial check covers host_tick; the commands use
+  game::alive with the serial, civ.cmd_listed).

@@ -54,6 +54,7 @@ bool debug_event(uint32_t crt_instance, int event); // host, tests (BUG-0168): t
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the
 // stimulus log
 bool debug_social(uint16_t npc_id, int slot);
+std::string debug_post(void* c); // tests (BUG-0994): the avatar's social stimulus to creature c (the hooked game call)
 bool debug_goto(uint16_t npc_id); // tests: the guest's avatar steps next to proxy #id
 std::string debug_objects(uint32_t vt_lo, uint32_t vt_hi); // game objects with a vtable in the range
 

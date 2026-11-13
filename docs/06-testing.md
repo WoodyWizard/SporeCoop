@@ -7008,3 +7008,21 @@ BUG-1055 and its tickets (docs/01-architecture.md#arch-lifecycle-registry).
   `space` fixture (tutorial lock on) the respawned ship stayed in the system view; after a respawn the wheel did
   nothing for about 20 s. `OLD_FINALE_DEATH=1` is the 0.7.13 bot (FAIL). `coop.space heal` sets the ship's hp to
   its max (the campaign's repair before the finale).
+## Same-pump orders on a removed object and lookups after a reuse (2026-11-13, fix/w49-live)
+<a id="testing-same-pump-orders"></a>
+
+The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of docs/06-testing.md#testing-freed-block-reuse.
+
+* `coop.tribe drop_member <id>` (host): RemoveMember(c, destroy) now. `coop.tribe guestcmd <from> <action> <target id>
+  <member id>` (host): the guest's CMD_ACTION with a member as target, run through host_command as on_message does; the
+  answer has `in_table=` / `listed=` of the target and the member's order record (`rec= target=`).
+* `coop.civ guestcmd <from> <vehicle id> v<vehicle id>|<city> [type]` (host): the guest's CMD_ORDER the same way; the
+  answer has the ordered vehicle's current order target (mOrders +0xB68). `coop.civ remove <id>` is the game's disband.
+* Both are sent on two console connections 3 ms apart (the drop first): they run in one pump, before the next table
+  cycle; a round counts only with `in_table=1 listed=0`. Every round counted in the lab (3 of 3, ~1 min a test).
+* `coop.social post <hex creature>` (guest): the avatar's social stimulus to that creature through the hooked
+  BT_PostStimulus; prints the engaged proxy before and after. `coop.track air` lists the air holds
+  (`hold <ptr> serial= pos=`).
+* Tests: tribe_cmd_listed, civ_cmd_listed (FAIL with SPORE_FIX_OFF=tribe.cmd_listed / civ.cmd_listed), npc_ai_lookup
+  (npc.ai_lookup_live), npc_air_live (game.air_live). The creature ones need a reuse hit (about one in three hunts:
+  one hit came in the first 1-4 proxies in every run).

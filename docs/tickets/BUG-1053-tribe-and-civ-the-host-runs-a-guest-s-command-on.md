@@ -1,19 +1,19 @@
 ---
 id: BUG-1053
 title: Tribe and Civ: the host runs a guest's command on member, vehicle and target pointers of the last table cycle without the frame's object list
-status: open
+status: fixed
 kind: bug
 stage: Tribe,civ
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-6
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w49-live
+commits: ba498632, b46e8265
+tests: tribe_cmd_listed, civ_cmd_listed, play_tribe, play_civ
+signature: a member / vehicle order whose target is a destroyed object of the host's last table cycle
+docs: docs/re/tribe.md#tribe-cmd-listed, docs/re/civ.md#civ-cmd-listed, docs/06-testing.md#testing-same-pump-orders
 related: BUG-0951, BUG-0919, BUG-0426
 ---
 
@@ -59,11 +59,26 @@ console connections). Assert on the host's game that the new object at the reuse
 / target fields unchanged) and the command is rejected. Main: the order lands on the new object: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Tribe (`coop.fix tribe.cmd_listed`): host_command takes a member and a member target (resolve_target kind 1) of the
+table g_hm only while it is the object the table entry was made for in the game's list (`hm_live`: game::alive with
+the entry's serial, citizen noun; inside the frame's game::LiveScope for messages, a list walk for console / held
+commands); otherwise the order is rejected ("the target is gone"). give_on_host checks the member the same way before
+reading its tribe; near_own_chief (h_CitizenTD, inside the game's update) asks game::listed for the chief before
+reading its position. Civ (`coop.fix civ.cmd_listed`): own_vehicle and resolve_target (kind 1 vehicle, kind 2 city)
+use `hv_live` (game::alive, vehicle noun 0x18C6DE8, the entry's serial) and `host_city` (game::listed) for every
+command kind (order, move, give, buy, build, buy city, capture); h_Capture and h_Convert skip entries that are gone
+(one walk in a local LiveScope: no game code runs in their loops); for_each_owned, for_each_target and own_selection
+collect only live entries in one walk and call their callbacks after it. Test commands: `coop.tribe drop_member`,
+`coop.tribe guestcmd`, `coop.civ guestcmd`; `cmd_gone=` in both host status lines.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Tests tribe_cmd_listed (tools/tests/coop_tribe_cmd_listed.py, tribe fixture) and civ_cmd_listed
+(coop_civ_cmd_listed.py, civ_npc): the target dropped / removed and the guest's attack order on it in the same pump;
+the ordered member's / vehicle's own order record in the host's game must not name the destroyed block.
+FAIL (SPORE_FIX_OFF=tribe.cmd_listed): out/lab/20261113-022421 (3 of 3 rounds: `rec=7 target=<the dropped citizen>`).
+FAIL (SPORE_FIX_OFF=civ.cmd_listed): out/lab/20261113-022453 (3 of 3 rounds: the order's target is the removed vehicle).
+PASS: out/lab/20261113-022545, out/lab/20261113-023224-2, out/lab/20261113-024715 (tribe); out/lab/20261113-022656, out/lab/20261113-023224, out/lab/20261113-024715-2 (civ, the last runs after the status keys were renamed for test_lint).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-live (package L2): table entries through game::alive / listed (tribe.cmd_listed, civ.cmd_listed); FAIL/PASS twins tribe_cmd_listed, civ_cmd_listed.

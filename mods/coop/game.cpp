@@ -100,8 +100,18 @@ struct AirHold {
     void* ac; // its AnimatedCreature (+0xB54), the low animation start's this
     net::Vec3 pos, vel;
     net::Quat rot;
+    uint32_t serial = 0; // BUG-0995: c's cGameData::mID when the hold was made
 };
 static std::vector<AirHold> g_air;
+// BUG-0995 (the serial part, package L2 of 0.7.14; class BUG-0426): air_reassert matched the updated creature with the
+// holds by address only: a held creature the game removed and freed while no forget path ran (the settle second of
+// npc.cpp's guest_tick after an avatar change) gave its block to the next creature the game built, and that animal of
+// the guest's own world was put in the air at the held spot on every update. Now a hold keeps the creature's serial
+// and is dropped (nothing placed) when the creature at that address is another object; the serial of the creature the
+// game updates is its own memory (no list walk on this hot path). `coop.fix game.air_live off`: by address (0.7.13).
+static bool g_air_live_fix = true;
+COOP_FIX("game.air_live", "BUG-0995", g_air_live_fix, "creature: a puppet's hold in the air never lifts another creature the game built where it was");
+static uint32_t g_air_stale;
 // BUG-0995 (the release part; the serial is package L2's): the holds are matched by address, so none may outlive its
 // session or its world: a creature the game freed with the world and built again at that address (an animal of
 // the next world) would be put in the air at the old spot. air_release_all had no caller. Off: kept (0.7.13).
@@ -1862,22 +1872,27 @@ void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, cons
 {
     for (size_t i = 0; i < g_air.size(); i++)
         if (g_air[i].c == c) {
-            if (on)
-                g_air[i] = {c, field<void*>(c, 0xB54), pos, vel, rot};
+            if (on) // (the serial stays the one of the creature the hold was made for: BUG-0995)
+                g_air[i] = {c, field<void*>(c, 0xB54), pos, vel, rot, g_air[i].serial};
             else
                 g_air.erase(g_air.begin() + i);
             return;
         }
     if (on && g_air.size() < 64) // (BUG-0550: NPC proxies in the air too)
-        g_air.push_back({c, field<void*>(c, 0xB54), pos, vel, rot});
+        g_air.push_back({c, field<void*>(c, 0xB54), pos, vel, rot, object_serial(c)});
 }
 
 void air_release_all() { g_air.clear(); } // (also the lifecycle entry game.air above)
 
 static void air_reassert(void* c, int where)
 {
-    for (auto& h : g_air)
-        if (h.c == c) {
+    for (size_t i = 0; i < g_air.size(); i++)
+        if (AirHold& h = g_air[i]; h.c == c) {
+            if (g_air_live_fix && h.serial && object_serial(c) != h.serial) { // BUG-0995: another creature there now
+                g_air_stale++;
+                g_air.erase(g_air.begin() + i);
+                return;
+            }
             if (!grounded(c))
                 return;
             place(c, h.pos, h.rot);
@@ -1896,7 +1911,7 @@ static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
     if (!g_air.empty())
         for (auto& h : g_air)
             if (h.ac == ac) {
-                air_reassert(h.c, 4);
+                air_reassert(h.c, 4); // (may drop h: BUG-0995)
                 break;
             }
     return r;
@@ -1904,10 +1919,16 @@ static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
 
 std::string air_status()
 {
-    char b[180];
-    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u mound_lifts=%u\n", (unsigned)g_air.size(),
-             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops, g_mound_lifts);
-    return b;
+    char b[220];
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u mound_lifts=%u stale=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops, g_mound_lifts,
+             g_air_stale);
+    std::string s = b;
+    for (auto& h : g_air) { // (BUG-0995 tests: each hold, by address)
+        snprintf(b, sizeof b, "  hold %p serial=%u pos=(%.2f %.2f %.2f)\n", h.c, h.serial, h.pos.x, h.pos.y, h.pos.z);
+        s += b;
+    }
+    return s;
 }
 
 void set_position(void* c, const net::Vec3& pos)

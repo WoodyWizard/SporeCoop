@@ -2642,11 +2642,37 @@ static void* fruit_instead(const net::Vec3& pos)
     return best ? best : game::find_object(kFruitNoun, pos, 15.f);
 }
 
+// BUG-1053 (class BUG-0426, the live pointer package L2 of 0.7.14): the host ran a guest's command on the members and
+// targets of its table g_hm, rebuilt from the game's lists only every kHostInterval: a member the host's game removed
+// since (taken out of its tribe and destroyed, a raid's fall) was still there, and DoAction got the destroyed citizen
+// as the order's target (or the member, checked by its own memory only, object_alive). Now a member or target of the
+// table is used only while it is the same object in the game's list (game::alive with the serial the table kept,
+// inside the frame's game::LiveScope: one walk); else the command is rejected as gone. The same check guards
+// give_on_host and near_own_chief (a hook inside the game's update: the list is walked there).
+// `coop.fix tribe.cmd_listed off`: the table's pointers as they were (0.7.13).
+static bool g_cmd_listed_fix = true;
+COOP_FIX("tribe.cmd_listed", "BUG-1053", g_cmd_listed_fix,
+         "tribe: the host never runs a guest's order on a member or target its game removed since the last table cycle");
+static uint32_t g_cmd_gone;
+// host: c of g_hm is the member the table made it for and in the game's list now
+static bool hm_live(void* c)
+{
+    auto it = c ? g_hm.find(c) : g_hm.end();
+    if (it == g_hm.end())
+        return false;
+    if (!g_cmd_listed_fix || game::alive(game::LiveRef{c, it->second.serial, 0x18EB4B7u})) // (kCitizenNoun)
+        return true;
+    g_cmd_gone++;
+    return false;
+}
+
 static void* resolve_target(const Target& t)
 {
     if (t.kind == 1) {
         auto it = g_hm_by_id.find(t.id);
-        return it == g_hm_by_id.end() ? nullptr : it->second;
+        if (it == g_hm_by_id.end())
+            return nullptr;
+        return !g_cmd_listed_fix || hm_live(it->second) ? it->second : nullptr; // (BUG-1053)
     }
     if (t.kind == 2 && t.noun)
         return game::find_object(t.noun, t.pos, 8.f);
@@ -2663,7 +2689,8 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
     for (uint16_t id : ids) {
         auto it = g_hm_by_id.find(id);
         auto hm = it == g_hm_by_id.end() ? g_hm.end() : g_hm.find(it->second);
-        if (hm == g_hm.end() || hm->second.owner != from || F<void*>(hm->first, kOwnerTribeOff) != pt)
+        if (hm == g_hm.end() || hm->second.owner != from || (g_cmd_listed_fix && !hm_live(hm->first)) || // (BUG-1053)
+            F<void*>(hm->first, kOwnerTribeOff) != pt)
             continue;
         hm->second.owner = to;
         n++;
@@ -2955,7 +2982,7 @@ static void host_command(uint8_t from, net::Reader& r)
     }
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
         g_cmds_rejected++;
-        g_last_cmd += " rejected: no such target here";
+        g_last_cmd += tgt.kind == 1 && g_hm_by_id.count(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
     for (uint16_t id : ids) {
@@ -2966,8 +2993,8 @@ static void host_command(uint8_t from, net::Reader& r)
         }
         void* c = it->second;
         auto hm = g_hm.find(c);
-        if (hm == g_hm.end() || hm->second.owner != from || F<void*>(c, kOwnerTribeOff) != pt ||
-            !game::object_alive(c)) {
+        if (hm == g_hm.end() || hm->second.owner != from ||
+            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || F<void*>(c, kOwnerTribeOff) != pt) { // (BUG-1053)
             g_cmds_rejected++;
             continue;
         }
@@ -4212,7 +4239,15 @@ static void chiefs_tick()
 static bool near_own_chief(void* c, uint8_t owner)
 {
     auto it = g_chief.find(owner);
-    return it != g_chief.end() && it->second != c && net::dist(game::position(it->second), game::position(c)) < 15.f;
+    if (it == g_chief.end() || !it->second || it->second == c)
+        return false;
+    // BUG-1053: g_chief is chiefs_tick's table; a hit in the game's update before the next tick may come after the
+    // chief left (a fall, drop_chief): its position is read only while the game's list has it (walked here: a hook)
+    if (g_cmd_listed_fix && !game::listed(it->second, 0x18EB4B7u)) {
+        g_cmd_gone++;
+        return false;
+    }
+    return net::dist(game::position(it->second), game::position(c)) < 15.f;
 }
 
 // cCreatureCitizen TakeDamage 0xC26920 (this = citizen+0x5A8): every hit on a citizen
@@ -5437,9 +5472,9 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u\n",
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
-                 g_member_moves, g_member_moves_unowned);
+                 g_member_moves, g_member_moves_unowned, g_cmd_gone);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
@@ -5603,6 +5638,43 @@ std::string debug(const std::vector<std::string>& a)
         uint16_t id = member_id(c);
         remove_member(c);
         return "dropped chief #" + std::to_string(id);
+    }
+    if (a.size() >= 2 && a[0] == "drop_member" && is_host()) { // drop_member <id>: tests (BUG-1053), the member leaves its
+        // tribe at once (RemoveMember(c, destroy), as a fall or a raid's end); the host's table keeps it until the next tick
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c || !game::listed(c, 0x18EB4B7u))
+            return "no such member";
+        remove_member(c);
+        char b[96];
+        snprintf(b, sizeof b, "dropped member #%s %p listed_now=%d", a[1].c_str(), c, (int)game::listed(c, 0x18EB4B7u));
+        return b;
+    }
+    if (a.size() >= 5 && a[0] == "guestcmd" && is_host()) { // guestcmd <from> <action> <target member id> <member id>:
+        // tests (BUG-1053), a guest's order (MSG_TRIBE_CMD CMD_ACTION on a member as its target) handled here now, as
+        // on_message does; then the ordered member's order record in the game
+        uint16_t tid = (uint16_t)atoi(a[3].c_str()), mid = (uint16_t)atoi(a[4].c_str());
+        auto ti = g_hm_by_id.find(tid);
+        void* tc = ti == g_hm_by_id.end() ? nullptr : ti->second;
+        net::Writer w;
+        w.u8(CMD_ACTION);
+        w.u8(1);
+        w.u16(mid);
+        w.u32((uint32_t)atoi(a[2].c_str()));
+        Target t;
+        t.kind = 1;
+        t.id = tid;
+        write_target(w, t);
+        w.f32(0); w.f32(0); w.f32(0);
+        uint32_t d0 = g_cmds_done, r0 = g_cmds_rejected;
+        net::Reader r(w.data.data(), w.data.size());
+        host_command((uint8_t)atoi(a[1].c_str()), r);
+        auto mi = g_hm_by_id.find(mid);
+        void* mc = mi == g_hm_by_id.end() ? nullptr : mi->second;
+        char b[480];
+        snprintf(b, sizeof b, "guestcmd: target #%u %p in_table=%d listed=%d ran=%u refused=%u | %s | member: ", tid, tc,
+                 (int)(tc != nullptr), (int)(tc && game::listed(tc, 0x18EB4B7u)), g_cmds_done - d0, g_cmds_rejected - r0,
+                 g_last_cmd.c_str());
+        return std::string(b) + (mc && game::listed(mc, 0x18EB4B7u) ? ai_line(mc) : std::string("gone"));
     }
     if (a.size() >= 2 && a[0] == "stale_chief") { // stale_chief <id>: as if a former chief's freed block
         // now held this member (another tribe's citizen): the next chiefs_tick must leave it alone

@@ -1484,6 +1484,26 @@ bool debug_answer(uint16_t id, uint32_t type)
     return true;
 }
 
+// tests (BUG-0994): the avatar posts the social stimulus to creature c's AI block through the game's BT_PostStimulus
+// (its hooked entry: h_Post runs as for a click on it); then which proxy the guest engaged
+std::string debug_post(void* c)
+{
+    static uintptr_t a = H->sym("SporeCoop::BT_PostStimulus");
+    void* av = game::avatar();
+    if (!a || !av || !c || !game::creature_listed(c))
+        return "no avatar, no creature or no BT_PostStimulus\n";
+    void* ai = *(void**)((uint8_t*)c + 0xB4C);
+    if (!ai)
+        return "the creature has no AI block\n";
+    int e0 = g_engaged;
+    uint32_t n0 = g_engages, g0 = npc::ai_lookup_gone();
+    thiscall<void*>(a, (uint8_t*)ai + 8, kSocialStimulus, 0u, 1.0f, av);
+    char b[200];
+    snprintf(b, sizeof b, "posted to %p (ai %p): engaged %d -> %d, engages +%u, lookups skipped as gone +%u\n", c, ai, e0,
+             g_engaged, g_engages - n0, npc::ai_lookup_gone() - g0);
+    return b;
+}
+
 bool debug_social(uint16_t id, int slot)
 {
     if (slot < 0) { // toggle the stimulus log

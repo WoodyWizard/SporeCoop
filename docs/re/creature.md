@@ -4513,3 +4513,17 @@ x...` (lab lane 2, runs 20261112-212318, -212702, -213737, -214616, -214745, -21
   next creation gets the block: with the old hunt (300 frames, misses kept) 1 round in 3 on idle lanes, 1 in 37 in the
   loaded final check; with `xf20` 5 in 17 on an idle lane. Not a
   regression of npc.defer_identity: in every round with a reuse the creature at the block lived after the cinematic.
+
+## Lookups by address of a creature that may be gone (2026-11-13, fix/w49-live)
+<a id="creature-live-lookups"></a>
+
+* ✔ (lab 20261113-022821, BUG-0994) A new creature built in a freed proxy's block has its own AI block (+0xB4C); a
+  lookup by "which g_proxy_of key has this AI block" matched it as the old proxy (`engaged -1 -> 2`). The serial
+  (+0x24) of the new creature differs (px_alive refuses it).
+* ✔ (lab 20261113-022929-2, BUG-0995) A held air position (game.cpp g_air) matched by address put the new creature at
+  the held spot (0.00 m) on its updates while the npc tick waited (`coop.npc settle`). With the serial kept in the hold
+  the new creature stayed where it was made (10.4 m away, lab 20261113-023052). The serial read is of the creature the
+  game is updating, so it needs no list walk.
+* A social stimulus posted through BT_PostStimulus (0xBC9940) with this = AI block + 8, (lo 0x10000, hi 0,
+  value 1.0, sender = the avatar) runs the hook h_Post as a click does (`coop.social post`); posting it to an animal
+  of the guest's own world caused no fault.
