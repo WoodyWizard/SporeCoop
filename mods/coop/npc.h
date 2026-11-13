@@ -110,6 +110,7 @@ std::string debug_forget(uint16_t id);
 std::string debug_gamekill(uint16_t id);
 std::string debug_settle(double s); // tests (BUG-0842): the guest's npc tick waits s seconds, as after an avatar change
 // tests (BUG-0426 class): a freed address given to a new creature (npc.cpp ReuseHunt); proxy <id>'s creature
+void debug_reuse_wait_free(int tries); // tests (BUG-0825): the hunt ends N tries after the target's heap chunk is free
 std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tries = 0, int burst = 1, void* herd = nullptr,
                              const net::Vec3* at = nullptr, bool herds = false, bool pool = false, bool keep = false, int every = 1);
 std::string debug_reuse_status();

@@ -91,10 +91,14 @@ def main():
                 shared += 1
             elif e - s > 0.3:
                 missed.append((round(s - t0, 1), round(e - s, 2), an))
-                g_near = [(round(t - t0, 2), x, h) for t, x, h in rows['guest'] if s - 1.5 < t < e + 0.5][::2]
-                h_near = [(round(t - t0, 2), x, h) for t, x, h in rows['host'] if s - 1.5 < t < e + 0.5][::2]
-                print(f'    the mirror around the host\'s hold at {s - t0:.1f} s: {g_near[:20]}', flush=True)
-                print(f'    the host around it: {h_near[:40]}', flush=True)
+                def runs(rr):  # (the animation runs: first sample time, anim, hold) from 4 s before to 2 s after
+                    out = []
+                    for t, x, h in rr:
+                        if s - 4 < t < e + 2 and (not out or out[-1][1:] != (x, h)):
+                            out.append((round(t - t0, 2), x, h))
+                    return out
+                print(f'    the mirror around the host\'s hold at {s - t0:.1f} s: {runs(rows["guest"])}', flush=True)
+                print(f'    the host around it: {runs(rows["host"])}', flush=True)
         new_miss = [m for m in missed if m[0] + t0 >= w0 - 1]
         if new_miss:  # the guest's own hold events of the chief around each miss (start / end received, binding, cuts)
             tr = Console(lane.GUEST).call(f'coop.tribe holdtrace {cid}')['out']

@@ -3494,3 +3494,35 @@ tribe.hold_anim's play, D a relayed start skipped after P). Follows #tribe-hold-
 * Fix (BUG-0983, `tribe.conquer_caption_guest`): a guest's village caption ends itself after the same 8 s through
   `world::end_cinematic` (no notice: nobody else waits for it). Measured: busy 16-20 s after the conquest (two
   captions of 8 s), then free.
+## A start that waits behind the running animation (2026-11-12, fix/w48-ftribe)
+<a id="tribe-anim-queued-start"></a>
+
+BUG-0992. Follows #tribe-hold-missed (the 0.7.13 final check still missed holds of 0.35-0.43 s in the change 0x02C39200;
+this branch's runs also one of 4.2 s and one of 2.7 s in the gesture 0x04C6CB02).
+
+* ✔ (Ghidra GOG 2024) `SporeCoop::CreaturePlayAnim` 0xC122F0 thiscall(creature, anim, a, b) ret 0xC: maps the id
+  (0xC0C710: in Tribe 0xEBFCE0), reads the current main animation (AnimatedCreature vt 0x58 = 0xA05090, main track
+  0x9FF690), returns 0 when that is the same id and loops (track +0xA0 == -1.0, 0xA048D0); `a` != 0 ends the pending
+  tracks (0xA02B00 -> 0xA008C0, `SporeCoop::AnimatedCreature_ClearPending`); then a new track (vt 8), vt 0xC(track,
+  current loops ? 1 : 0) (0xA00130: track +0x80), vt 0x18 start (0xA01A90 -> 0xA01750), vt 0x40 the id, vt 0x3C,
+  0xC103B0, +0xE88 = the new track. `cCreatureBase::PlayAnimation` 0xC12470: the same with vt 0xC(track, 1) always.
+* ✔ (Ghidra) The animation state (AnimatedCreature +0x184): tracks of 0xF0 bytes from +8 (id at +0xD8, state +0xC0),
+  the playing ones' indices at +0xF0C (the main one +0xF0C[+0xFA4]), the pending ones' at +0xF4C (16 each, -1 free).
+* ✔ (lab 20261112-175447, 20261112-205503 #2, holdtrace) A relayed start of the change (`R 02C39200 04C6CB02`) and
+  hold_try's own start (`P`) returned a track, but the mirror went on in its gesture 0x04C6CB02 until the host's end.
+  The host's member did the same: its tree started the change at ~32.0 s and its current animation stayed the gesture
+  until 33.1 s. So a start over a non-looping current animation waits until that one ends (a looping one, idle or
+  walk, is cut at once: `R 06426C10 06426C10`). The mirror's gesture began later than the host's, so it ended later and
+  the host's 0.4 s hold was over first.
+* ✔ (Ghidra) The attach 0xC240E0 (from Citizen_SetHandheldItem 0xC250A0, its last argument the tool's data +0x30)
+  adds the hold modifier (0xBCA980 kind 5) with the track found by 0x9FF700(state, current id): it looks in the
+  **pending** tracks first, then the playing ones. The modifier's tick 0xC11240 keeps it only while that track's state
+  +0xC0 is 1 or 2.
+* ✔ (lab 20261112-213048 #1, 20261112-214601 #2) The host's chief started 0x04C6CB02 again right after its last one;
+  the mirror, still in its own 0x04C6CB02, got the relayed restart as a pending track of the same id. Every attach
+  (`T 04C6CB02 1100` once a second for the host's 2.7-4.2 s) bound the hold to that pending track and no hold showed.
+  (Starting the animation again with PlayAnimation, tried first, added one more pending track: same miss.)
+* Fix `tribe.hold_queued` (BUG-0992): before the attach, a mirror with a pending track of its current id has its
+  pending tracks ended (the game's 0xA02B00; trace `W`): it goes on in the running instance and the hold binds to it.
+  A fresh host hold whose animation the mirror still does not play 0.2 s after hold_try started it is held in the
+  animation the mirror plays (trace `Q`), ended by the host's end as any bound hold.

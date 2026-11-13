@@ -6786,3 +6786,17 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
 * `fixoff_clean` (BUG-0977): every fix off on the host alone right after the guest left, the commands the walk test
   sends and 30 address lookups (`coop.adapters stress`), 4 rounds; no fault. The fault log's `module calls:` line
   (return addresses into DLLs) named Wine's nsi.dll: core.adapters' off side, now unsafe (BUG-0977). `SPORE_PROBE_OFF=<prefix,...>` / `SPORE_PROBE_ON=<name,...>` bisect the switches.
+## defer_identity and tribe_hold_guest after the 0.7.13 final check (2026-11-12, fix/w48-ftribe)
+<a id="testing-ftribe-w48"></a>
+
+* `defer_identity` (BUG-0825): its failures in the final check (0 reuses in 16 rounds) were the setup, not the fix.
+  `coop.npc reusehunt` now prints the target's heap chunk (`chunk hdr=... freed_at=... foot_free=...`,
+  docs/re/creature.md#creature-freed-in-cinematic): the puppet's block is freed when the game lets go of it, during
+  the cinematic only in some rounds and mostly while creatures are destroyed (the hunt's misses). The hunt flags are
+  now `xf20` (misses destroyed at once; `f<N>`: the round ends N tries after the chunk is free) and 900 frames; a
+  round with a free but no reuse is inconclusive as before. Measured: the block freed in 10 of 17 rounds and reused in 5 on an idle lane
+  (rounds take 20-60 s). Env for RE: `SPORE_DEFER_FLAGS`, `SPORE_DEFER_TRIES`, `SPORE_DEFER_STALEREF=1` (prints
+  `coop.staleref <puppet>` 10 s into each hunt).
+* `tribe_hold_guest` (BUG-0992): on a miss the test prints both games' animation runs from 4 s before to 2 s after
+  (first sample of each animation / hold change), not every second sample; the guest's holdtrace has `Q` (held in the
+  mirror's current animation) and `W` (pending tracks of the current id ended before the attach).

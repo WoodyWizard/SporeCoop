@@ -926,6 +926,7 @@ constexpr uintptr_t kHeldItemOff = 0xFFC; // cCreatureCitizen: mCurrentHandheldI
 constexpr uintptr_t kHandOff = 0xFC4;     // ... the hand (an attachment slot) the item goes to
 constexpr uint32_t kHandKeyBase = 0x2735300; // the attachment key of hand h (0xC250A0)
 static uintptr_t a_SetHandheldItem, a_AttachmentOf;
+static uintptr_t a_ClearPending; // BUG-0992
 static bool g_held_item_fix = true;
 COOP_FIX("tribe.held_item", "BUG-0906", g_held_item_fix, "tribe: a guest's mirror of a member holds what the host's member holds (the chief's staff, a weapon, an instrument)");
 static uint32_t g_item_sets;
@@ -1016,13 +1017,26 @@ static bool g_hold_anim_fix = true;
 COOP_FIX("tribe.hold_anim", "BUG-0968", g_hold_anim_fix,
          "tribe: a guest's mirror plays the animation the host's member holds its item in when it played another one (the chief raised its torch on one game only)");
 static uint32_t g_hold_anim_plays;
+// BUG-0992: a start over a non-looping animation (a gesture 0x04C6CB02, 2-46 s) waits until that one ends, on the
+// host too (its change began 1.1 s after its own start call). (a) The mirror's gesture began later than the host's, so
+// it ended later: the host's change and its 0.35-0.43 s hold were over before the mirror's change began (0.7.13 final
+// check, holdtrace `P 02C39200 04C6CB02`, `t` until `E`). Now a fresh host hold whose animation the mirror still does
+// not play 0.2 s after hold_try started it is held in the animation the mirror plays (trace Q). (b) A relayed restart
+// of the gesture the mirror plays waited as a pending track of the same id, and the attach bound the hold to that
+// pending track (0xC240E0 looks there first): no hold for the host's 2.7-4.2 s. Now the pending tracks are ended
+// first (the game's 0xA02B00, trace W) and the hold binds to the running one. docs/re/tribe.md#tribe-anim-queued-start.
+// `coop.fix tribe.hold_queued off`: neither.
+static bool g_hold_queued_fix = true;
+COOP_FIX("tribe.hold_queued", "BUG-0992", g_hold_queued_fix,
+         "tribe: a guest's mirror holds its item while the host's member does even when the mirror's own gesture still runs (a short hold in the change animation was missed)");
+static uint32_t g_hold_queued;
 static uint32_t g_hold_only_ended;
 static void hold_try(GMember& g, double now);
 // tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
 struct HoldEv {
     double t;
     uint16_t id;
-    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), O own hold seen, C own cut, M 1.5 s end, R relay played
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played
     uint32_t a, b;
 };
 static HoldEv g_hold_ev[4096];
@@ -1503,6 +1517,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
     a_AttachmentOf = H->sym("SporeCoop::Creature_AttachmentOf");
     a_ModifierRemove = H->sym("SporeCoop::CreatureModifiers_Remove");
+    a_ClearPending = H->sym("SporeCoop::AnimatedCreature_ClearPending"); // BUG-0992
     a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
     a_IsLeader = H->sym("SporeCoop::Citizen_IsLeader");
     a_SetChieftain = H->sym("SporeCoop::cTribe_SetChieftain");
@@ -1768,6 +1783,31 @@ static void send_member_holds()
         g_hold_sent += (uint32_t)list.size();
     }
 }
+// BUG-0992: the attach (0xC240E0) binds the hold modifier to the track of the current animation's id, looking in the
+// animation state's pending tracks (+0xF4C, 16 indices) before the playing ones (+0xF0C): a start of the same id waiting
+// behind the running one (a relayed restart of a gesture) got the hold, whose tick (0xC11240) ends it while that track
+// does not play. When a pending track has the current id, the pending tracks are cleared with the game's own call
+// (0xA02B00, as CreaturePlayAnim does for its `a`): the mirror goes on in the running instance, the hold binds to it.
+static bool clear_pending_same(void* c, uint32_t cur)
+{
+    uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+    if (!st || !cur || !a_ClearPending || !skg::readable(st, 0xFAC))
+        return false;
+    bool same = false;
+    for (int i = 0; i < 16 && !same; i++) {
+        uint32_t k = *(uint32_t*)(st + 0xF4C + i * 4);
+        if (k > 0xF || k == *(uint32_t*)(st + 0xFA8))
+            continue;
+        uint8_t* tr = st + 8 + k * 0xF0;
+        same = *(uint32_t*)tr && *(uint32_t*)(tr + 0xD8) == cur;
+    }
+    if (same) {
+        thiscall<void>(a_ClearPending, ac);
+        g_hold_queued++;
+    }
+    return same;
+}
 // guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
 static void hold_try(GMember& g, double now)
 {
@@ -1788,7 +1828,15 @@ static void hold_try(GMember& g, double now)
             hold_ev(member_id(g.c), 'P', g.hold_anim, cur);
         }
     }
-    if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || cur != g.hold_anim) {
+    bool queued = false;
+    if (item > 0 && game::drawn_state(g.c, nullptr, &cur) && cur && cur != g.hold_anim && g_hold_anim_fix &&
+        g_hold_queued_fix && now - g.hold_at < 1.0 && now - g.hold_play_at >= 0.2 && now - g.hold_play_at < 1.0 &&
+        !game::is_dead(g.c)) { // BUG-0992: the started animation waits behind the mirror's current one
+        queued = true;
+        g_hold_queued++;
+        hold_ev(member_id(g.c), 'Q', g.hold_anim, cur);
+    }
+    if (item <= 0 || !game::drawn_state(g.c, nullptr, &cur) || (cur != g.hold_anim && !queued)) {
         hold_ev(member_id(g.c), 't', g.hold_anim, item <= 0 ? 0xFFFFFFFFu : cur);
         return;
     }
@@ -1799,13 +1847,15 @@ static void hold_try(GMember& g, double now)
         // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
         // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
         float sc = read_item_scale(g.c);
+        if (g_hold_queued_fix && clear_pending_same(g.c, cur))
+            hold_ev(member_id(g.c), 'W', cur, 0); // BUG-0992
         set_hand(g.c, item);
         if (g_item_scale_fix && sc != 1.f)
             apply_item_scale(g.c, sc);
     }
     g.hold_bound = true;
     g.hold_at = now; // (bound: held_items_tick lets it end with the animation)
-    g.hold_anim_bound = g.hold_anim;
+    g.hold_anim_bound = queued ? cur : g.hold_anim;
     g.hold_anim = 0;
     g_hold_bound++;
 }
@@ -6439,7 +6489,7 @@ std::string debug(const std::vector<std::string>& a)
                " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
                "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
-               " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
+               " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
                std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +

@@ -24,6 +24,10 @@ stands about 1 m to the left in a stepping pose and Bob's chief is mid-step with
 two runs (-2, -3) agree. The test's creature match passed (positions within its tolerance). Seen once; it may be an
 animation phase at the moment of the still (the avatar's puppet is driven by the creature sync, not the member relay).
 Reproduce: `lab.py run same_view_tribe --repeat 3` and compare 01_view1 pairs.
+Seen again (fix/w48-ftribe review of the 0.7.13 final check, out/lab/20261112-175447 sheet 054_same_view_tribe_01_view1):
+the same view, the other way round: the host's avatar "Alice" stands at the fire on the host and crouches on the guest
+(its puppet), Bob's chief stands on the host and is in another pose on the guest. Same class (the avatar's puppet is
+driven by the creature sync, its pose by the relayed animation at the moment of the still): folded in here.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->
@@ -37,3 +41,4 @@ Reproduce: `lab.py run same_view_tribe --repeat 3` and compare 01_view1 pairs.
 
 ## History
 - 2026-11-12: opened.
+- 2026-11-12: fix/w48-ftribe: a second frame (final check 054) folded in; still open.

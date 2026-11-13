@@ -4487,3 +4487,29 @@ the attack key that never moves the avatar).
   start the walk-and-use at all" and #creature-partner-pass-rel "? why it cannot move from that spot" and "? what holds
   it there": the test's gopos had put the creature inside a nest mound's collision (above); with tools.gopos_surface
   none of them happened again in the branch's runs.
+## When the game frees a destroyed puppet during a cinematic (2026-11-12, fix/w48-ftribe)
+<a id="creature-freed-in-cinematic"></a>
+
+BUG-0825 (its test defer_identity failed 2 of 3 runs of the 0.7.13 final check: 0 reuses in 16 rounds). Follows
+#creature-freed-block-reuse. Host on the creature fixture, CRG_ClaimNest playing, `coop.npc reusehunt <puppet> <frames>
+x...` (lab lane 2, runs 20261112-212318, -212702, -213737, -214616, -214745, -215349).
+
+* ✔ The heap is dlmalloc-like: the dword before a creature reads 0x16A9 (chunk 0x16A8 bytes | 1 = the chunk before in
+  use); the chunk is free when bit 0 of the next chunk's header (creature - 4 + 0x16A8) is clear, and then the dword at
+  creature - 8 + 0x16A8 holds its size (0x16A8: not merged with a free neighbour). `coop.npc reusehunt` prints this
+  (`chunk hdr= freed_at= hdr_free= next_free= foot_free=`).
+* ✔ The destroyed puppet's block stays in use while the cinematic plays: with no creature made during the hunt (an
+  earlier `f` mode), 0 of 17 blocks were freed in 1800 frames each; most were freed within 5-20 frames after the
+  cinematic's end (and taken at once by other allocations: `hdr_free` 0x1309 / 0x1931, a split or merged chunk). With
+  the hunt's misses kept alive (queued by the stray removal, not destroyed) it was freed in 1 of 4 rounds (try 115 in
+  20261112-212318 round 4) and the creature made in that frame got it; with the misses destroyed at once (`xf20`) it
+  was freed within the 900-frame hunt in 10 of 17 rounds (after 8-248 tries) and taken by the next creation in 5 of
+  them (20261112-214616, -214745, -215349). So destroying creatures is what lets the game let go of it (? which list).
+* ✔ `coop.staleref` 17 s after the destroy (no hunt creatures, 20261112-213737): 144-182 pointers into the block, besides its own and two
+  of our module's (the hunt's target, staleref's list) only heap words of unnamed blocks (+0x0 x11-15, +0xC0 x15-19);
+  the block's +8 read 1 / 3 (a count still held). ? who: not a listed object, not an AI block, not cModifiers; the
+  cinematic's own lists are the suspect (freed at its end).
+* So a round of the test reaches its condition only when the game lets go of the puppet during the cinematic and the
+  next creation gets the block: with the old hunt (300 frames, misses kept) 1 round in 3 on idle lanes, 1 in 37 in the
+  loaded final check; with `xf20` 5 in 17 on an idle lane. Not a
+  regression of npc.defer_identity: in every round with a reuse the creature at the block lived after the cinematic.

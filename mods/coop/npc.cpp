@@ -3388,8 +3388,33 @@ struct ReuseHunt {
     std::vector<void*> kept;
     net::Vec3 at{};         // where (without an avatar: Tribe)
     std::vector<void*> made;
+    // the heap chunk of the target (tests, BUG-0825: why a round got no reuse): the dlmalloc-style header before it
+    // (size | 1 = the chunk before in use), the next chunk's header (bit 0: the target in use) and the size kept
+    // at its end once free (the size of the free chunk, larger when merged with the one before)
+    uint32_t hdr0 = 0, hdr_free = 0, next_free = 0, foot_free = 0;
+    int freed_at = -1;     // the try count when its chunk was seen free
+    uint64_t freed_frame = 0;
+    int wait_free = 0;     // f<N>: once the chunk is free, at most N more tries (the game frees a destroyed creature when
+                           // its last reference goes; the first creation after it takes the block, or none will)
 };
 static ReuseHunt g_reuse;
+static void reuse_watch_chunk()
+{
+    uint8_t* t = g_reuse.target;
+    if (!t || g_reuse.freed_at >= 0 || !g_reuse.hdr0)
+        return;
+    uint32_t sz = g_reuse.hdr0 & ~7u;
+    if (sz < 16 || sz > 0x100000 || !skg::readable(t - 8, sz + 8))
+        return;
+    uint32_t next = *(uint32_t*)(t - 8 + sz + 4);
+    if (next & 1)
+        return;
+    g_reuse.freed_at = g_reuse.tries;
+    g_reuse.freed_frame = H->frame_index();
+    g_reuse.hdr_free = *(uint32_t*)(t - 4);
+    g_reuse.next_free = next;
+    g_reuse.foot_free = *(uint32_t*)(t - 8 + sz);
+}
 static void reuse_release_kept()
 {
     std::sort(g_reuse.kept.begin(), g_reuse.kept.end());
@@ -3403,6 +3428,7 @@ static void reuse_tick()
 {
     if (!g_reuse.kept.empty() && (g_reuse.left <= 0 || g_reuse.hit))
         reuse_release_kept();
+    reuse_watch_chunk(); // (also after the hunt: when the block is freed at all)
     if (g_reuse.left <= 0 || !g_reuse.target)
         return;
     g_reuse.left--;
@@ -3410,6 +3436,8 @@ static void reuse_tick()
         return;
     if (g_reuse.unlisted_at < 0 && !game::listed(g_reuse.target))
         g_reuse.unlisted_at = g_reuse.tries;
+    if (g_reuse.wait_free > 0 && g_reuse.freed_at >= 0) // (freed: the next creations take it or the round is lost)
+        g_reuse.left = std::min(g_reuse.left, g_reuse.wait_free - (g_reuse.tries - g_reuse.freed_at));
     void* av = game::avatar();
     void* sp = g_reuse.species ? g_reuse.species : av ? game::species_profile(av) : nullptr;
     if (!sp)
@@ -3459,6 +3487,7 @@ std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tr
     g_reuse.keep = keep;
     g_reuse.every = std::max(1, every);
     g_reuse.target = (uint8_t*)target;
+    g_reuse.hdr0 = target && skg::readable((uint8_t*)target - 4, 4) ? *(uint32_t*)((uint8_t*)target - 4) : 0;
     g_reuse.left = frames;
     g_reuse.species = species;
     g_reuse.burst = burst;
@@ -3476,6 +3505,13 @@ std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tr
     snprintf(b, sizeof b, "reuse hunt for %p: %d frames, species %p\n", target, frames, species);
     return b;
 }
+void debug_reuse_wait_free(int tries)
+{
+    // (only with a heap chunk header that reads as one)
+    uint32_t sz = g_reuse.hdr0 & ~7u;
+    if (sz >= 16 && sz <= 0x100000 && (g_reuse.hdr0 & 1))
+        g_reuse.wait_free = std::max(1, tries);
+}
 uint32_t handler_dropped() { return g_handler_dropped; }
 void* debug_proxy_creature(uint16_t id)
 {
@@ -3489,6 +3525,10 @@ std::string debug_reuse_status()
              (void*)g_reuse.target, g_reuse.left, g_reuse.tries, g_reuse.unlisted_at, g_reuse.hit, g_reuse.hit_serial,
              (unsigned long long)g_reuse.hit_frame, (unsigned long long)H->frame_index(), (int)game::listed(g_reuse.target), (unsigned)g_reuse.kept.size());
     std::string s = b;
+    snprintf(b, sizeof b, "chunk hdr=%08X freed_at=%d freed_frame=%llu hdr_free=%08X next_free=%08X foot_free=%08X\n",
+             g_reuse.hdr0, g_reuse.freed_at, (unsigned long long)g_reuse.freed_frame, g_reuse.hdr_free, g_reuse.next_free,
+             g_reuse.foot_free);
+    s += b;
     if (g_reuse.hit && !g_reuse.herds) { // the new object at the freed address: what the game does with it now
         bool l = game::listed(g_reuse.hit, 0x18EB45Eu) && game::object_serial(g_reuse.hit) == g_reuse.hit_serial;
         net::Vec3 q = l ? game::position(g_reuse.hit) : net::Vec3{};

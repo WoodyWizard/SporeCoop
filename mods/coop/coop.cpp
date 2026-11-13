@@ -5849,11 +5849,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         const char* bb = strchr(fl, 'b');
         int burst = bb ? std::max(1, atoi(bb + 1)) : 1;
         // k: the misses stay alive until the hunt ends (their blocks do not go back first); e<N>: a try every N frames
+        // f<N>: once the target's heap chunk is free, at most N more tries (BUG-0825)
         const char* ee = strchr(fl, 'e');
+        const char* ff = strchr(fl, 'f');
         SAY("%s%s", x ? "destroyed by the game; " : "",
             npc::debug_reuse_hunt(t, argc > 3 ? atoi(argv[3]) : 120, sp, now_tries, burst, herd, &at, false,
                                   strchr(fl, 'r') != nullptr, // r: Create with its reuse flag
                                   strchr(fl, 'k') != nullptr, ee ? atoi(ee + 1) : 1).c_str());
+        if (ff)
+            npc::debug_reuse_wait_free(atoi(ff + 1) > 0 ? atoi(ff + 1) : 20);
         SAY("%s", npc::debug_reuse_status().c_str());
         return 0;
     }
