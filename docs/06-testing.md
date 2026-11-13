@@ -6936,3 +6936,26 @@ Use and limits:
   (drift, growth, a rare race) shows only in the full runs, so the release still runs them all. The parallel unit
   loads the machine harder for under a minute (8 jobs). The schedule's estimate comes from the out/lab folders of
   this machine; on a fresh checkout it falls back on the suite's minutes.
+
+## Lifecycle reset tests (2026-11-13, fix/w49-life)
+<a id="testing-lifecycle-reset"></a>
+
+BUG-1055 and its tickets (docs/01-architecture.md#arch-lifecycle-registry).
+* `coop.lifecycle held` (both games): `now: ...` (what the registered entries hold), `left session: none (resets N)`
+  and `left world: none (resets N)` (what the last session end / world change left). Read the `left` lines after
+  waiting for the reset count to grow: the next world fills the state again at once (a drama event, the own cell's
+  pose), so `now` is no check.
+* `coop_lifecycle_reset.py` (suite `lifecycle_reset`, ~16 min, one cold start): every stage fixture in turn on the
+  same two games (the host loads the next fixture into slot 20+i with `coop.load`: no restart, a world change on
+  both games), 20 s of play, then the session ends by Leave (even stages) or by the host's Leave first so that the
+  guest is dropped (odd stages). `SPORE_STAGES=cell,creature` runs a part (suite `lifecycle_reset_cell`). It marks the
+  lane state dirty, so the next warm test starts cold. `SPORE_FIX_OFF=core.lifecycle_reset` fails.
+* `coop_tribe_cycle_restart.py` (BUG-1051): `coop.tribe cycle <n>` sets the host's Tribe snapshot counter (a long
+  session, then a restarted game); the guest's mirror must follow a member the host put 15 m away (`coop.tribe put`).
+* `coop_tribe_host_reload_reset.py` (BUG-1054): `coop.tribe reload arm` makes the host's reload due as the live
+  Creature -> Tribe change does; `coop.tribe reload` prints `host_reloads=`.
+* `coop_mirror_fx_keys.py` (BUG-1049): `coop.mirrorfx key start|stop <member> <effect>` (host: the game's pool-1
+  start / stop on a member, relayed as the hook relays it), `coop.mirrorfx fill <n>` (fake keyed starts),
+  `coop.mirrorfx has <member> <key>` (guest: the game's effect of that key on the mirror, active or not).
+* `cell_parts_apart` (BUG-0998): coop_cell_parts.py with `SPORE_FIX_OFF=parts.shared`; with `parts.cell_apart` off too
+  it fails.

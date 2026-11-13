@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: a guest that joins another host, or the same host after it restarted its game, now sees the host's tribe
+  move again at once; before, its game dropped every update of the new host as "old" for up to an hour (BUG-1051).
+- Tribe: the host's game no longer loads its save again a few seconds after a guest joins, when an earlier session
+  ended right after the host entered the Tribe stage and the host had loaded another game since (BUG-1054).
+- Creature, Tribe: a fight sound or effect of a host creature no longer keeps playing on the guest's copy after a long
+  session with many fights (BUG-1049).
+- Cell: the mod's per-session Cell state (a meal received in the last moment of a session, the move next to the host
+  after joining, the own cell's last good position and its small size after a respawn) no longer carries over into
+  the next session or Cell game (BUG-1002).
+
 ## [0.7.13] - 2026-11-12
 
 A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many
