@@ -1,20 +1,20 @@
 ---
 id: BUG-0976
 title: Cell: cell_levelup_view fails about half its runs on the level-ups: the guest loses 76-100% of its screen on an up change where the host's game loses 0-60%
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-12
 source: fix/w48-cellcull labs 20261112-195306-2, 20261112-200916, 20261112-202450
 role: 
 versions: 
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w49-cell
 commits:
-tests:
+tests: cell_levelup_view
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-cell-c1
+related: BUG-0635, BUG-1064
 ---
 
 ## Report
@@ -29,10 +29,18 @@ screen). The downs were 0-53 %. Same with BUG-0975's switch off (`SPORE_FIX_OFF=
 How to reproduce: `tools/lab.py run cell_levelup_view --lane N --repeat 4`.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+The test, not a loss of cells. Observed (lab 20261113-021621, 4 runs, 1 failed; run 4 with the guest's screen keys
+also asked of the host's game): 0 cells gone only on the guest in all changes; every cell gone from the guest's
+screen was gone in the HOST's game too, and the host's wipe destroyed none of them (`wipe_near_lost` 0). The guest
+shows the host's world exactly. The failures came from the up changes: a level-up removes 43-91 % of any screen in a
+game alone (the host's own screen), the host's screen then held as few as 7 cells, and the check compared the
+per-change average of two different places with a margin of 20 points. Left over: round a partner the host's game
+removes about 15 points more of the old cells on an up change than round its own cell (10 of 11 ups): BUG-1064.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test only (tools/tests/coop_cell_levelup_view.py): a new check that no cell is gone on the guest while the host's game
+still has it (at most 10 %); the BUG-0635 comparison is pooled over the down changes (guest loss <= host + 25 points,
+at least 35 % allowed); the up changes are printed, not compared. No game code change, so no switch.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);

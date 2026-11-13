@@ -1,19 +1,19 @@
 ---
 id: BUG-0999
 title: Cell: the host's partner tile pass loops over an empty view set (size() - 1 wraps) when its own view box centre is not finite
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-3
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-cell
+commits: 23b91609
+tests: cell_views_empty
 signature:
-docs:
+docs: docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1
 related:
 ---
 
@@ -47,11 +47,18 @@ counts the crash); fixed: no fault, the pass skipped. Hard to see FAIL without a
 assertion.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+cellsync.cpp pop_tiles (h_PopTiles): the partner pass is skipped when the view set is empty (the host's own centre
+failed views::finite_pos), counted as `views_empty_skips` (`coop.pool tilestat`). BUG-0975's cell.tile_cap check is
+unchanged before it. Switch `coop.fix cell.views_empty off` (unsafe: the off side hangs or faults). Test command
+`coop.pool viewedge <n>` (host: its view box with the x edges at exactly 1e7 for n passes; reachable with
+cell.nan_guard on, view_bad refuses only > 1e7).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_views_empty`.
+FAIL (SPORE_FIX_OFF=cell.views_empty): out/lab/20261113-023139-2 (the host hung in the pass: a hang report, the
+console timed out).
+PASS: out/lab/20261113-022529-2, out/lab/20261113-023438-2 (30 passes skipped, no fault).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-cell (package C1).

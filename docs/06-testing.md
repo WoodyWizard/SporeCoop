@@ -6986,3 +6986,15 @@ BUG-1055 and its tickets (docs/01-architecture.md#arch-lifecycle-registry).
   `coop.mirrorfx has <member> <key>` (guest: the game's effect of that key on the mirror, active or not).
 * `cell_parts_apart` (BUG-0998): coop_cell_parts.py with `SPORE_FIX_OFF=parts.shared`; with `parts.cell_apart` off too
   it fails.
+
+## Cell package C1 twin tests (2026-11-13, fix/w49-cell)
+<a id="testing-cell-c1"></a>
+
+| Test (suite) | What it checks in the game | FAILS with |
+|---|---|---|
+| `coop_cell_mirror_nan.py` (`cell_mirror_nan`, Cell fixture, ~1 min) | `coop.pool nanmirror` (guest: the particles of its nearest soft mirror NaN); 1 s and 3 s later `coop.pool mirrornf c<key>` (the game's cell +0x4C, the particles' mean, `cell_nonfinite`) is finite and within 2 m of `coop.pool cell c<key>` on the host (BUG-1006) | `SPORE_FIX_OFF=cell.mirror_nan_heal` |
+| `coop_cell_chunk_killer.py` (`cell_chunk_killer`, ~1 min) | the guest's type 6 hit (`coop.pool sendhit c<key> 6 6`) kills a host NPC with 4 cells of its kind round it (`herd`) and a death alert radius (`npcflag c<key> alert 60`: the fixture's kinds have none); `coop.pool targets` on the host: their flee (+0x220) / chase target is the guest's puppet, never the host's cell (BUG-1008). Without `npcflag alert` the alert never runs (SKIP) | `SPORE_FIX_OFF=cell.chunk_killer` |
+| `coop_cell_views_empty.py` (`cell_views_empty`, ~1 min) | `coop.pool viewedge 30` (host: its view box at the 1e7 edge for 30 tile passes, put back after each); `coop.pool tilestat` views_empty_skips grows, no fault, the guest still has its mirrors (BUG-0999) | `SPORE_FIX_OFF=cell.views_empty` (unsafe: the host faults or hangs) |
+| `coop_cell_loot_big.py` (`cell_loot_big`, ~1 min) | `coop.pool lootbig 300` (host: the next foreground drop makes 300 cells: the table's cell entry, or a repeat entry 300 times; `tables=` lists the entry types seen), the host bites creatures until it came; the game's own count `listed_last` is 300 and the pool grew (BUG-1004) | `SPORE_FIX_OFF=cell.loot_list` (unsafe: a stack overrun) |
+| `coop_cell_flush_handover.py` (`cell_flush_handover`, multi, 3 players, ~4 min) | two guests 30 / 42 m from the host, four level changes; `coop.pool tilestat`: flushes > 0, `handed_flushed` 0, no "frame between" warning after a list reset (BUG-1000) | `SPORE_FIX_OFF=cell.flush_handover` |
+| `coop_cell_levelup_view.py` (`cell_levelup_view`, reworked) | BUG-0976: the guest's screen keys are also asked of the host's game: no cell gone only on the guest (at most 10 %); the BUG-0635 comparison is pooled over the DOWN changes only (an up change removes 43-91 % of any screen in a game alone too, the host's screen then held as few as 7 cells: the per-change average failed about half the runs) | `SPORE_FIX_OFF=cell.levelup_keep` (the down changes) |

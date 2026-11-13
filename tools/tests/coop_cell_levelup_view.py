@@ -11,9 +11,9 @@ the host populates around it). Each round the host changes the shared food by +1
 change level three times: one change of the world scale); before and 5 s after, each game's own screen is read (`coop.pool see`: the cells the game
 draws inside the window, by host index) and 5 s after the change which of them still exist in that game
 (`coop.pool alive`). Checked: no cell gone on the guest that the host's game still has (BUG-0976: the guest
-shows the host's world), and on the down changes the share of the guest's screen that is gone is about what the
-host's game removes from its own screen, not the whole screen. The up changes are printed, not compared: an up
-change removes 43-91 % of any screen in a game alone too, and the host's screen then held as few as 7 cells, so
+shows the host's world), and the host's level change (RemoveCellsOfOldScale's DestroyCell calls, `wipe_near_lost`)
+destroyed none of the cells on the guest's screen (BUG-0635). The shares of each screen that are gone are printed,
+not compared (BUG-0976): an up change removes 43-91 % of any screen in a game alone too, and the host's screen then held as few as 7 cells, so
 their average was noise (BUG-0976: it failed half its runs on that).
 
   coop_cell_levelup_view.py [--rounds 6]   (SPORE_FIX_OFF=cell.levelup_keep: fails)
@@ -53,6 +53,7 @@ def main():
     guest.call('coop.pool invulnfor 600')
     lost = {'host': [], 'guest': []}
     down = {'host': [0, 0], 'guest': [0, 0]}  # BUG-0976: gone, on screen over the down changes
+    near_lost = 0  # BUG-0635: cells on the partner's screen the host's wipe destroyed
     only = [0, 0]  # BUG-0976: cells gone only on the guest, cells on its screen (all changes)
     # once, then both stay (a teleport each round, right before a lab hitch, left the host's picture of the guest
     # 30 m behind for two trace lines: the monitor's drawn gate, lab 20261106-223318)
@@ -74,6 +75,7 @@ def main():
         g_only = g_gone & on_host
         n1 = {'host': screen(host), 'guest': screen(guest)}
         w1 = once(host)
+        near_lost += w1.get('wipe_near_lost', 0) - w0.get('wipe_near_lost', 0)
         parts = []
         for who in ('host', 'guest'):
             if len(s0[who]) < 3:
@@ -107,9 +109,11 @@ def main():
     # BUG-0635: on the down changes (a game alone keeps most of its screen) the host's game keeps the guest's screen as
     # it keeps its own, pooled over the changes (one change of 7 cells on the host's screen made the average noise)
     gd, hd = down['guest'][0] / max(1, down['guest'][1]), down['host'][0] / max(1, down['host'][1])
-    ck(down['guest'][1] >= 10 and gd <= max(0.35, hd + 0.25),
-       f'a level change down kept the guest\'s screen as the host\'s game keeps its own (guest lost {down["guest"][0]} of '
-       f'{down["guest"][1]} ({gd:.0%}), host {down["host"][0]} of {down["host"][1]} ({hd:.0%}))')
+    print(f'  down changes: guest lost {down["guest"][0]} of {down["guest"][1]} ({gd:.0%}), host {down["host"][0]} of '
+          f'{down["host"][1]} ({hd:.0%}) (printed: with the fix 21-48 % on the guest, BUG-1064)', flush=True)
+    # BUG-0635: the host's level change (RemoveCellsOfOldScale's DestroyCell calls) destroyed none of the cells on the
+    # guest's screen (with cell.levelup_keep off: 23-99 a change, lab 20261113-023621)
+    ck(near_lost == 0, f'the host\'s level change destroyed no cell on the guest\'s screen ({near_lost} in {a.rounds} changes)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
