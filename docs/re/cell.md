@@ -2276,3 +2276,29 @@ BUG-0975. GOG 2024, Ghidra and lanes 6 / 7.
   mirrors) had no fault with the cap alone. A hold for the whole descent (G+0x514C > G+0x5150) also held the
   one-level falls of cell_levelup_view (-150) and the guest lost more of its screen there (78-82 %, labs
   20261112-201333); the hold stops at one level above, so a one-level fall runs as in the game.
+
+## Loot tables, KillCell's death alert, mirrors that go NaN (2026-11-13, fix/w49-cell)
+<a id="cell-loot-alert"></a>
+
+BUG-1004, BUG-1008, BUG-1006, BUG-0999. GOG 2024, Ghidra (out/ghidra-2024) and lanes 4 / 5.
+
+* ✔ (Ghidra) **SpawnLoot 0xE771D0's table**: `GetData(lootTable)` gives `{entries*, count, radius min, radius max,
+  +0x10 ?, +0x14 speed, +0x18 flag, +0x1C flag (the "not on screen" test), +0x20 ?}`. An entry is 0x1C bytes: +0 type
+  (0 nothing, 1 cells, 2 repeat), +4 the cell resource key, +8 the sub-table of a repeat, +0xC float weight, +0x10 base
+  count, +0x14 random range (RandomInt), +0x18 level offset. One entry is picked by weight; type 1 makes `+0x10 +
+  RandomInt(+0x14)` cells through 0xE76480 and appends each to `outIdx` when given (no bound; a failed create appends
+  its 0 too); type 2 calls SpawnLoot again with the sub-table and the same list. The break event 0xE7ADD0 passes the
+  global table `0xE4CC90(7)` (not the creature's own `res+0xD4`, which KillCell uses through 0xE52A20).
+* ✔ (Ghidra) **KillCell 0xE7A4A0's death alert 0xE71F00** (cdecl `void(cell* victim, u32 killerIdx)`): reads the
+  victim's AI block (difficulty G+0x5190+0x7C: 0 -> res+0x248, 2 -> res+0x194 when not -1, else res+0xE0); only when
+  the block's float **+0x2C** is not 0, FindCellsInRadius(victim pos, table[..] / world scale x +0x2C / 30) and every
+  cell there with the **same resource ref** (+0x108, not the model key) gets flee target **+0x220 = killer**, flee time
+  +0x21C = block +0x34, and 0xE70950(cell, killer) (the flee start). The fixture's level-1 kinds have +0x2C = 0: their
+  kills alert nobody (runtime, lane 4: 4 cells of the kind 3 m round the victim kept flee 0).
+* `coop.pool npcflag c<key> alert <r>` (tests) sets +0x2C of the kind's AI blocks; `coop.pool herd c<key> <n>` puts
+  cells of the same resource round it; `coop.pool targets <idx,...>` prints +0x220 / +0x21C / +0x22C.
+* ✔ (runtime, BUG-1006) A guest's mirror whose particles are NaN never recovers without a repair: lab
+  20261113-022529 (`cell.mirror_nan_heal off`) still had non-finite fields 0x284 after 1 s and 0x385 after 3 s
+  (particle positions, then the centre, velocity and matrix: cell_move adds `want - pos` with pos NaN).
+* ✔ (code, BUG-0999) the host's view set is empty whenever its own view box centre fails views::finite_pos: with
+  cell.nan_guard on that is still reachable with both x edges at exactly 1e7 (view_bad refuses only > 1e7).

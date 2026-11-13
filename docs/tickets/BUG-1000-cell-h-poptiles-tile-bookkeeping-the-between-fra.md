@@ -1,20 +1,20 @@
 ---
 id: BUG-1000
 title: Cell: h_PopTiles tile bookkeeping: the between-frames check runs before the rebuild cleanup, and a flush hands shadow tiles to partner lists flushed next
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-21
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-cell
+commits: 23b91609, 64795658
+tests: cell_flush_handover
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-cell-c1-0714
+related: BUG-1066
 ---
 
 ## Report
@@ -47,11 +47,22 @@ level line, as cell_levelup_view): count `g_tiles_handed` during flushes into li
 counter in `coop.pool`) and the `tiles: check after the frame between` warnings after a rebuild; main: > 0, fixed: 0.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+cellsync.cpp: (2) during the flush of every partner list (`all_go`) `hand_over` tries only the host's list (`g_flushing`);
+a hand-over into a list the same pass flushes (populated, or waiting for room under the cell budget) is counted as
+`handed_flushed` (`coop.pool tilestat`). (1) the between-frames `tiles_check` runs after the lists a rebuild freed are
+forgotten; its warning counter counts only warnings with dead entries. One switch for the ticket:
+`coop.fix cell.flush_handover off`. Test command `coop.pool rebuild` (host: G+0x51D8, the game's RebuildLevel next frame).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_flush_handover` (3 players, the two guests on one spot 30 m from the host: one list populated, the other its
+shadows; four level changes, two rebuilds).
+FAIL (SPORE_FIX_OFF=cell.flush_handover): out/lab/20261113-025004 (8 hand-overs into a list flushed in the same pass).
+PASS: out/lab/20261113-025004-2, out/lab/20261113-025224.
+Part (1) (the log order) had no FAIL of its own: the check's 20 warnings were used up by BUG-1066's mismatch in the
+first two changes, before the rebuilds (4 list resets, 0 dead-entry warnings with the switch off too); fixed by code.
+Earlier runs with the guests 12 m apart showed no shadow hand-over either way (20261113-024334 off, 20261113-023819 and
+20261113-024127-2 on).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-cell (package C1); BUG-1066 opened (the tile pool mismatch seen in its runs).

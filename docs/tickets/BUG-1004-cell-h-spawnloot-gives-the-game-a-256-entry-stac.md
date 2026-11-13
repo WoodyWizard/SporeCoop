@@ -1,19 +1,19 @@
 ---
 id: BUG-1004
 title: Cell: h_SpawnLoot gives the game a 256-entry stack list it fills without a bound
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-18
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-cell
+commits: 23b91609, bb9e3b4a, cbd1da51
+tests: cell_loot_big
 signature:
-docs:
+docs: docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1-0714
 related:
 ---
 
@@ -41,11 +41,17 @@ loot table entry of 300 cells (type 1, count 300) on the host in Cell; main: a s
 fixed: 300 cells listed. `no-fail-run` is acceptable if the fake table cannot be built.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+cellsync.cpp h_SpawnLoot: the list given to the game is a static one of 4096 entries (the cell pool's size; the game's
+recursion passes it on, never asks the hook again), read back up to that bound. Switch `coop.fix cell.loot_list off`
+(unsafe: the old 256-entry stack array). Test command `coop.pool lootbig <n>` (host: the next foreground drop's table
+makes n cells, or its repeat entry repeats n times). RE of the table: docs/re/cell.md#cell-loot-alert.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_loot_big` (one drop of the fixture's break table repeated 300 times: 600 cells).
+FAIL (SPORE_FIX_OFF=cell.loot_list): out/lab/20261113-023529 (a fault at 0x8329032C on the host: the return address
+overwritten by cell indices).
+PASS: out/lab/20261113-023438-2, out/lab/20261113-023819.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-cell (package C1).

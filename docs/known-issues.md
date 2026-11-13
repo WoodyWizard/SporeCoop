@@ -3186,6 +3186,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   mirror's particles.
 * Known: by code (modes.cpp cell_move adds `want - pos` with a NaN pos to every particle; cellsync.cpp h_Soft turns
   the particles by a NaN angle); no NaN check for mirrors.
+* Fixed (unreleased, fix/w49-cell, BUG-1006): a mirror with a non-finite field is rebuilt at the host's pose before
+  it is moved, and the turn skips a NaN angle (`cell.mirror_nan_heal`).
 * Ticket: BUG-1006
 
 ## Cell: a host creature a guest's jaw finishes off turns its kind against the host (2026-11-13, audit 0.7.14)
@@ -3196,6 +3198,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen at runtime; a guest with a jaw part kills a host NPC by chunks.
 * Known: by code (cellsync.cpp MSG_CELL_HIT type 6 calls h_KillCell with the host's avatar as the killer; the eat
   path uses the guest's puppet).
+* Fixed (unreleased, fix/w49-cell, BUG-1008): the kill is the guest's puppet's, and a dead cell refuses the hit
+  (`cell.chunk_killer`).
 * Ticket: BUG-1008
 
 ## Session: with late join off a new player with a name already seen (the default "Player") still joins (2026-11-13, audit 0.7.14)

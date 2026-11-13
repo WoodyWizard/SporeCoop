@@ -17,6 +17,11 @@
   contracts switched off in the session settings (BUG-1037).
 - Co-op window: "Give 10 to <player>" (Space) and "Give to <player>" are as wide as their caption; before, the
   caption wrapped onto two lines cut by the button's frame (BUG-1062).
+- Cell: in 3-4 player sessions a copy of a host cell on a guest's screen that broke into invalid numbers now comes
+  back in its place at once; before, it drifted away or vanished for good and could break the guest's own cell
+  (BUG-1006).
+- Cell: when a guest's mouth tears the last chunk off a host creature, that creature's kind now turns on the guest
+  who killed it, not on the host's cell (BUG-1008).
 - Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
   now merges that guest's own budget; before, its budget was lost and the host's save money was added instead. A
   player new to a Rivals session now starts its own empire with 0 money, not with a copy of the host's money
