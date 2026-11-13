@@ -3,6 +3,7 @@
 #include "core.h"
 
 #include <atomic>
+#include <mutex>
 
 namespace sk {
 
@@ -29,17 +30,18 @@ static SHORT WINAPI h_GetKeyState(int vk)
     return r;
 }
 
+// BUG-1016: reached from the console thread (key / click / button / drag) and from the main thread (a mod's click
+// through command_exec): a plain static flag let two first calls create the same hooks at once
+static std::once_flag g_hooks_once;
 static void ensure_hooks()
 {
-    static bool done = false;
-    if (done)
-        return;
-    done = true;
-    HMODULE u = GetModuleHandleW(L"user32.dll");
-    hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetAsyncKeyState"), (void*)h_GetAsyncKeyState,
-                (void**)&o_GetAsyncKeyState);
-    hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetKeyState"), (void*)h_GetKeyState,
-                (void**)&o_GetKeyState);
+    std::call_once(g_hooks_once, [] {
+        HMODULE u = GetModuleHandleW(L"user32.dll");
+        hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetAsyncKeyState"), (void*)h_GetAsyncKeyState,
+                    (void**)&o_GetAsyncKeyState);
+        hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetKeyState"), (void*)h_GetKeyState,
+                    (void**)&o_GetKeyState);
+    });
 }
 
 static LPARAM key_lparam(int vk, bool up)

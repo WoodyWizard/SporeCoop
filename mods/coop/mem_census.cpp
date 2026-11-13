@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -202,7 +203,9 @@ static LONG NTAPI h_free(HANDLE proc, PVOID* base, PSIZE_T size, ULONG type)
 {
     PVOID b = base ? *base : nullptr;
     LONG r = o_free(proc, base, size, type);
-    if (r >= 0 && g_tab && (type & MEM_RELEASE) && b && proc == (HANDLE)-1)
+    // BUG-1060: idle while the tracker is off (it tested g_tab: every release of the process took the lock after
+    // `track off`); a later `track on` starts with an empty table
+    if (r >= 0 && g_on && (type & MEM_RELEASE) && b && proc == (HANDLE)-1)
         forget((uintptr_t)(base && *base ? *base : b));
     return r;
 }
@@ -217,11 +220,30 @@ static void add_sys(const char* name)
     g_sys[g_nsys++] = {(uintptr_t)m, (uintptr_t)m + nt->OptionalHeader.SizeOfImage};
 }
 
+// BUG-1060: coop.memcensus is an any-thread command: two consoles made the first `track on` at once (two critical
+// section inits, two TLS indices, two tables, two hook creates). One lock around the whole switch.
+static std::mutex g_track_mu;
+
+static std::string track_locked(bool on);
+
 static std::string track(bool on)
+{
+    std::lock_guard<std::mutex> lk(g_track_mu);
+    return track_locked(on);
+}
+
+static std::string track_locked(bool on)
 {
     if (!on) {
         g_on = false;
-        return "tracker off (the hook stays; nothing new is remembered)\n";
+        return "tracker off (the hooks stay, idle; nothing new is remembered or forgotten)\n";
+    }
+    if (g_on)
+        return "tracker on\n";
+    if (g_tab && g_cs_init) { // on again after an off: the frees meanwhile were not seen, start anew
+        EnterCriticalSection(&g_cs);
+        memset(g_tab, 0, sizeof(Alloc) * kSlots);
+        LeaveCriticalSection(&g_cs);
     }
     if (!g_cs_init) {
         InitializeCriticalSection(&g_cs);

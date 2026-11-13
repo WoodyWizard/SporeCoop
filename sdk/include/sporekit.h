@@ -27,7 +27,7 @@ enum SkLogLevel { SK_DEBUG = 0, SK_INFO = 1, SK_WARN = 2, SK_ERROR = 3 };
 enum SkEvent {
     SK_EV_APP_PREINIT = 0,  /* after App::cAppSystem::PreInit */
     SK_EV_APP_INIT = 1,     /* after App::cAppSystem::Init (game managers exist) */
-    SK_EV_POST_INIT = 2,    /* after App::cSporeApp::Init (main menu ready) */
+    SK_EV_POST_INIT = 2,    /* after App::cSporeApp::Init (main menu ready); not fired when that Init failed */
     SK_EV_FRAME = 3,        /* every frame, before Present. arg = float* dt seconds */
     SK_EV_OVERLAY = 4,      /* every frame, draw on top. arg = IDirect3DDevice9* */
     SK_EV_SHUTDOWN = 5,     /* App::cSporeApp::Shutdown */

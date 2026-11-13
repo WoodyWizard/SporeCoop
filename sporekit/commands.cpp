@@ -912,7 +912,7 @@ void register_builtin_commands()
                     outf(out, "frame limit set");
                     return 0;
                 },
-                nullptr, A);
+                nullptr, M); // BUG-1016: apply_frame_limit runs on the main thread every frame (was any thread)
     command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
     command_add(k, "frame.interval", "frame.interval [reset] - Present interval statistic since the last reset (BUG-0779)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
@@ -944,9 +944,12 @@ void register_builtin_commands()
     command_add(k, "drag", "drag <x1> <y1> <x2> <y2> [left|right] - press, move, release", c_drag, nullptr, A);
     command_add(k, "wheel", "wheel <x> <y> <notches> - mouse wheel (+ zooms in)", c_wheel, nullptr, A);
     command_add(k, "mods", "list mods", c_mods, nullptr, M);
-    command_add(k, "mod.reload", "mod.reload <name> - hot reload", c_mod_op, (void*)0, M);
-    command_add(k, "mod.load", "mod.load <name>", c_mod_op, (void*)1, M);
-    command_add(k, "mod.unload", "mod.unload <name>", c_mod_op, (void*)2, M);
+    // BUG-1035: outside the frame (a mod's on_unload removes UI windows, its new image's main makes them), not in the
+    // frame's task pump inside our Present detour
+    const int O = SK_CMD_OUTSIDE_FRAME;
+    command_add(k, "mod.reload", "mod.reload <name> - hot reload", c_mod_op, (void*)0, O);
+    command_add(k, "mod.load", "mod.load <name>", c_mod_op, (void*)1, O);
+    command_add(k, "mod.unload", "mod.unload <name>", c_mod_op, (void*)2, O);
     command_add(k, "hooks", "list installed hooks", c_hooks, nullptr, A);
     command_add(k, "game.mode", "active game mode", c_mode, nullptr, M);
     command_add(k, "stack", "stack [depth] - main thread stack (works when hung)", c_stack, nullptr, W);

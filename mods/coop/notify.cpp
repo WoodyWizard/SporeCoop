@@ -18,7 +18,11 @@ static std::function<uint32_t()> g_font;
 static std::mutex g_mu;
 static std::deque<std::pair<std::string, std::string>> g_queue; // (text, kind) waiting to be built (outside the frame)
 static bool g_build_queued, g_anim_queued;
-static double g_last_frame; // UI is touched only while frames run (not under a modal game box)
+// UI is touched only while frames run (not under a modal game box). BUG-1023: written by tick (main thread), read by
+// show() from any caller: atomic, not "under g_mu by contract"
+static std::atomic<double> g_last_frame{0};
+// BUG-1023: set by shutdown (the mod's unload): a build / animate task queued before it does nothing
+static std::atomic<bool> g_closed{false};
 static unsigned g_shown, g_failed;
 
 constexpr float kW = 560, kH = 58, kGap = 8, kMargin = 24;
@@ -97,6 +101,8 @@ static void build(void*)
     {
         std::lock_guard<std::mutex> lk(g_mu);
         g_build_queued = false;
+        if (g_closed)
+            return;
         if (!frames_running()) // a modal box (e.g. "game saved") holds the frames: later (tick)
             return;
         q.swap(g_queue);
@@ -156,7 +162,7 @@ static void build(void*)
 static void animate(void*)
 {
     g_anim_queued = false;
-    if (!g_root || g_toasts.empty() || !frames_running())
+    if (g_closed || !g_root || g_toasts.empty() || !frames_running())
         return;
     float sw, sh;
     screen(sw, sh);
@@ -191,11 +197,14 @@ void init(const SkHost* host, SkMod*, std::function<uint32_t()> font)
 {
     H = host;
     g_font = std::move(font);
+    g_closed = false;
 }
 
 void show(const std::string& text, const char* kind)
 {
     std::lock_guard<std::mutex> lk(g_mu);
+    if (g_closed)
+        return;
     g_queue.emplace_back(text, kind && notify_text::g_fix ? kind : "");
     while (g_queue.size() > kMaxVisible)
         g_queue.pop_front();
@@ -223,6 +232,14 @@ void tick(double now)
 
 void shutdown()
 {
+    {
+        // BUG-1023: the waiting texts and the queued-task flags went on living: a build queued before the unload
+        // rebuilt panels after it
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_closed = true;
+        g_queue.clear();
+        g_build_queued = g_anim_queued = false;
+    }
     for (auto& t : g_toasts)
         remove(t);
     g_toasts.clear();

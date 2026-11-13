@@ -188,10 +188,28 @@ static bool make_unicode_locked(const std::wstring& file, bool force)
     return true;
 }
 
+// BUG-1017: a read under the same locks as the conversion (make_unicode: a temp file renamed over the file) and the
+// writes, so it never opens the file while another thread or game instance replaces it (Windows: a sharing
+// violation, the default came back once). The cross-process lock is waited for at most 500 ms; the read goes on
+// without it after that. `kit.fix inilock 0`: no locks, as before.
+struct ReadLock {
+    std::unique_lock<std::mutex> lk;
+    FileLock* fl = nullptr;
+    explicit ReadLock(const std::wstring& file)
+    {
+        if (!g_lock_fix)
+            return;
+        lk = std::unique_lock<std::mutex>(g_mu);
+        fl = new FileLock(file);
+    }
+    ~ReadLock() { delete fl; }
+};
+
 std::string read_str(const std::wstring& file, const char* section, const char* key, const char* def)
 {
     make_unicode(file, false); // a hand-edited UTF-8 file is converted before it is read
     std::vector<wchar_t> buf(1024);
+    ReadLock rl(file);
     GetPrivateProfileStringW(wide(section).c_str(), wide(key).c_str(), wide(def ? def : "").c_str(), buf.data(),
                              (DWORD)buf.size(), file.c_str());
     return utf8(buf.data());
@@ -199,6 +217,7 @@ std::string read_str(const std::wstring& file, const char* section, const char* 
 
 int read_int(const std::wstring& file, const char* section, const char* key, int def)
 {
+    ReadLock rl(file);
     return (int)GetPrivateProfileIntW(wide(section).c_str(), wide(key).c_str(), def, file.c_str());
 }
 
@@ -206,12 +225,12 @@ bool write_str(const std::wstring& file, const char* section, const char* key, c
 {
     bool wide_value = value && !ascii(value);
     bool uni = wide_value ? make_unicode(file, true) : false;
+    std::lock_guard<std::mutex> lk(g_mu); // BUG-1017: before log_once (its set is guarded by g_mu)
     if (wide_value && !uni && g_unicode_fix && g_lock_fix) {
         // BUG-0245: the profile API would store "????" in a file that is not Unicode: keep the old value
         log_once(file, "a value that is not ASCII could not be saved in Unicode: kept the old value");
         return false;
     }
-    std::lock_guard<std::mutex> lk(g_mu);
     FileLock fl(file); // the other instance's conversion must not overwrite this write
     if (!fl.ok())
         return false;

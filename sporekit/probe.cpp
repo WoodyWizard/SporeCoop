@@ -3,6 +3,8 @@
 // Works without knowing the function's signature - an RE helper.
 #include "core.h"
 
+#include <atomic>
+
 #include <cstdio>
 #include <intrin.h>
 #include <mutex>
@@ -139,12 +141,27 @@ namespace sk {
 
 typedef HANDLE(WINAPI* CreateFileW_t)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 static CreateFileW_t o_CreateFileW;
+// BUG-1031: ftrace (main thread) assigned the string while the detour read it on every thread that opens a file (a
+// read of the freed old buffer). Readers take the lock shared, the assignment exclusive; with no filter the detour
+// only reads the flag.
 static std::wstring g_ftrace;
+static SRWLOCK g_ftrace_lock = SRWLOCK_INIT;
+static std::atomic<bool> g_ftrace_on{false};
+
+static bool ftrace_match(LPCWSTR name)
+{
+    if (!g_ftrace_on.load(std::memory_order_acquire) || !name)
+        return false;
+    AcquireSRWLockShared(&g_ftrace_lock);
+    bool m = !g_ftrace.empty() && wcsstr(name, g_ftrace.c_str());
+    ReleaseSRWLockShared(&g_ftrace_lock);
+    return m;
+}
 
 static HANDLE WINAPI h_CreateFileW(LPCWSTR name, DWORD acc, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp,
                                    DWORD flags, HANDLE tmpl)
 {
-    if (!g_ftrace.empty() && name && wcsstr(name, g_ftrace.c_str())) {
+    if (ftrace_match(name)) {
         uint32_t* sp = (uint32_t*)__builtin_frame_address(0);
         std::string chain;
         uintptr_t lo = image_base(), hi = image_base() + 0x1000000;
@@ -172,7 +189,11 @@ std::string ftrace_set(const std::string& substr)
     if (!o_CreateFileW)
         hook_create(&g_kit_mod, (void*)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "CreateFileW"),
                     (void*)h_CreateFileW, (void**)&o_CreateFileW);
-    g_ftrace = widen(substr);
+    std::wstring w = widen(substr);
+    AcquireSRWLockExclusive(&g_ftrace_lock);
+    g_ftrace.swap(w); // the old buffer is freed below, after the lock
+    g_ftrace_on.store(!g_ftrace.empty(), std::memory_order_release);
+    ReleaseSRWLockExclusive(&g_ftrace_lock);
     return substr.empty() ? "file trace off" : "tracing CreateFileW paths containing '" + substr + "'";
 }
 

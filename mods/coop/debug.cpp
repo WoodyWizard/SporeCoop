@@ -953,14 +953,35 @@ bool SK_THISCALL h_LoadGame(void* self, const void* params)
     return o_LoadGame(self, params);
 }
 
+// BUG-1035: outside the frame (it closes and reopens the save database and loads a game); every symbol and manager
+// checked; the arguments converted from UTF-8 (they were widened byte by byte: a non-ASCII slot path was wrong)
 int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
         SAY("usage: coop.loadworld <windows slot dir ending with \\> <Planet.spo>");
         return 1;
     }
-    auto w = [](const char* s) { std::u16string r; for (; *s; s++) r += (char16_t)(unsigned char)*s; return r; };
+    if (!need_syms(out, {"Resource::GetDatabaseByID", "Simulator::cStarManager::Get",
+                         "Simulator::cStarManager::ReadStarsFromSaveDB", "Simulator::cGamePersistenceManager::Get",
+                         "Simulator::cGamePersistenceManager::LoadGameByName"}))
+        return 1;
+    auto w = [](const char* s) {
+        std::u16string r;
+        int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+        if (n > 1) {
+            std::wstring t(n, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, s, -1, &t[0], n);
+            r.assign(t.begin(), t.begin() + (n - 1));
+        }
+        return r;
+    };
     std::u16string dir = w(argv[1]), name = w(argv[2]);
+    if (dir.empty() || name.empty()) {
+        SAY("the slot dir or the planet name is not valid UTF-8");
+        return 1;
+    }
+    void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
+    if (!mgr) { SAY("no game persistence manager"); return 1; }
     void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
     if (!db) { SAY("no save DB"); return 1; }
     const char16_t* old = skg::vcall<const char16_t*>(db, 0x28 / 4);
@@ -972,7 +993,6 @@ int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
     if (void* sm = skg::cdecl_call<void*>(H->sym("Simulator::cStarManager::Get")))
         skg::thiscall<void>(H->sym("Simulator::cStarManager::ReadStarsFromSaveDB"), sm);
     SAY("access=%d close=%d open=%d\n", acc, closed, opened);
-    void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
     skg::thiscall<void>(H->sym("Simulator::cGamePersistenceManager::LoadGameByName"), mgr, name.c_str());
     SAY("save DB %s -> %s (SetLocation %d), loading %s", olds.c_str(), argv[1], ok, argv[2]);
     return 0;
@@ -1036,7 +1056,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
     g_self = self;
     terrain_diag::init(host, self); // BUG-0332
     host->command_add(self, "coop.loadworld", "debug: point the save DB to a slot dir and load a planet", c_loadworld,
-                      nullptr, SK_CMD_MAIN_THREAD);
+                      nullptr, SK_CMD_OUTSIDE_FRAME); // BUG-1035: not in the frame
     host->command_add(self, "coop.savedb", "debug: current save folder database", c_savedb, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.loadhook", "debug: log cGamePersistenceManager::LoadGame parameters", c_loadhook,

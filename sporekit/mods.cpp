@@ -10,6 +10,7 @@ namespace sk {
 static std::vector<std::unique_ptr<SkMod>> g_mods;
 static int g_gen = 0;
 static const DWORD kUnloadGraceMs = 50;
+static const DWORD kCmdWaitMs = 10000; // BUG-1018: coop.sample runs up to 30 s; longer ones keep the old image
 
 static std::wstring shadow_dir() { return mods_dirw() + L"\\.shadow"; }
 
@@ -97,6 +98,19 @@ static void unload_from(SkMod* m)
 {
     if (!m->module)
         return;
+    // BUG-1018: a console command of the mod running on another thread (any-thread commands, coop.sample) would come
+    // back into unmapped code: no new call starts once its commands are gone, the running ones are waited for before
+    // the mod tears down its state; one that does not return in time keeps the old image mapped (a leak of one DLL
+    // copy in a dev path, not a crash)
+    bool keep_image = false;
+    if (fixed(g_fix_cmdkeep)) {
+        commands_remove_all(m);
+        std::string why;
+        if (!commands_wait_idle(m, kCmdWaitMs, why)) {
+            keep_image = true;
+            logf(m, SK_WARN, "unload: %s; the old image stays mapped (BUG-1018)", why.c_str());
+        }
+    }
     if (m->info && m->info->on_unload)
         m->info->on_unload();
     int hooks = hooks_remove_all(m);
@@ -117,10 +131,12 @@ static void unload_from(SkMod* m)
         if (size_t n = drop_tasks_in(base, base + nt->OptionalHeader.SizeOfImage))
             logf(m, SK_INFO, "dropped %u queued task(s) of the old image", (unsigned)n);
     }
-    FreeLibrary(m->module);
+    if (!keep_image) {
+        FreeLibrary(m->module);
+        DeleteFileW(m->live_path.c_str());
+    }
     m->module = nullptr;
     m->info = nullptr;
-    DeleteFileW(m->live_path.c_str());
     mods_line_update();
     logf(m, SK_INFO, "unloaded");
 }

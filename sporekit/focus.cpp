@@ -8,7 +8,8 @@
 
 namespace sk {
 
-static bool g_background = true;
+// BUG-1016: written by the console thread (`bg`), read by the window hooks on the game's threads
+static std::atomic<bool> g_background{true};
 static bool g_test_run; // started with a test profile or as instance 2+
 static WNDPROC o_WndProc;
 static HWND g_sub_hwnd;
@@ -209,10 +210,11 @@ void focus_attach_window(void* hwnd)
         return;
     g_sub_hwnd = (HWND)hwnd;
     o_WndProc = (WNDPROC)SetWindowLongPtrW(g_sub_hwnd, GWLP_WNDPROC, (LONG_PTR)h_WndProc);
-    SKLOG(SK_INFO, "window %p subclassed (background mode %s)", hwnd, g_background ? "on" : "off");
+    SKLOG(SK_INFO, "window %p subclassed (background mode %s)", hwnd, g_background.load() ? "on" : "off");
 }
 
-static DWORD g_vcursor_last;
+// BUG-1016: written by the console thread (move / button / click), read by vcursor_tick on the main thread
+static std::atomic<DWORD> g_vcursor_last{0};
 static std::atomic<bool> g_vcursor_held{false};
 
 void vcursor_hold(bool on)

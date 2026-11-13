@@ -8,6 +8,7 @@
 #include "core.h"
 #include "task_drop.h"
 
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
@@ -170,6 +171,66 @@ struct Cmd {
 static std::mutex g_cmd_mu;
 static std::map<std::string, Cmd> g_cmds;
 
+// BUG-1018: a mod's commands running now (under g_cmd_mu). An any-thread command (coop.sample on the console's thread)
+// ran on while mod.unload / mod.reload freed its DLL on the main thread: the thread came back into unmapped code. The
+// count is taken under the same lock as the command's lookup, so once commands_remove_all has run no new call starts;
+// unload_from waits for the running ones (commands_wait_idle). `kit.fix cmdkeep 0`: no count, no wait.
+struct CmdBusy {
+    int main = 0;  // on the main thread (only nested in the unload itself: it cannot wait for them)
+    int other = 0; // on other threads
+};
+static std::map<SkMod*, CmdBusy> g_busy;
+static std::condition_variable g_busy_cv;
+
+// a found command, counted as running until release (the lookup's lock held by the caller)
+static bool cmd_hold_locked(const Cmd& c)
+{
+    if (!c.mod || c.mod->builtin || !fixed(g_fix_cmdkeep))
+        return false;
+    CmdBusy& b = g_busy[c.mod];
+    (GetCurrentThreadId() == g_main_tid ? b.main : b.other)++;
+    return true;
+}
+
+static void cmd_release(SkMod* mod, bool held)
+{
+    if (!held)
+        return;
+    {
+        std::lock_guard<std::mutex> lk(g_cmd_mu);
+        CmdBusy& b = g_busy[mod];
+        (GetCurrentThreadId() == g_main_tid ? b.main : b.other)--;
+    }
+    g_busy_cv.notify_all();
+}
+
+struct CmdHeld {
+    SkMod* mod;
+    bool held;
+    ~CmdHeld() { cmd_release(mod, held); }
+};
+
+bool commands_wait_idle(SkMod* mod, DWORD ms, std::string& why)
+{
+    std::unique_lock<std::mutex> lk(g_cmd_mu);
+    auto idle = [&] { return g_busy[mod].other == 0; };
+    if (g_busy[mod].main) {
+        why = std::to_string(g_busy[mod].main) + " of its commands run on the main thread around this unload";
+        return false;
+    }
+    if (idle())
+        return true;
+    int n = g_busy[mod].other;
+    DWORD t0 = GetTickCount();
+    bool ok = g_busy_cv.wait_for(lk, std::chrono::milliseconds(ms), idle);
+    if (!ok)
+        why = std::to_string(g_busy[mod].other) + " of its commands still run on other threads after " + std::to_string(ms) + " ms";
+    else
+        SKLOG(SK_INFO, "unload of %s waited %lu ms for %d running command(s) (BUG-1018)", mod->name.c_str(),
+              GetTickCount() - t0, n);
+    return ok;
+}
+
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags)
 {
@@ -303,6 +364,7 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
     if (args.empty())
         return 0;
     Cmd c;
+    CmdHeld held{nullptr, false}; // BUG-1018: a command run on this thread below is counted from its lookup on
     {
         std::lock_guard<std::mutex> lk(g_cmd_mu);
         auto it = g_cmds.find(args[0]);
@@ -311,6 +373,10 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
             return 1;
         }
         c = it->second;
+        if (from_main || (c.flags & SK_CMD_ANY_THREAD)) {
+            held.mod = c.mod;
+            held.held = cmd_hold_locked(c);
+        }
     }
     // on the main thread a command that waits for the next frames (or suspends the main thread)
     // waits for itself: the game stops (BUG-0065, the cheat console `sk shot`)
@@ -338,6 +404,7 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
                                                    : run_on_main;
     post([req] {
         Cmd cc;
+        bool h;
         {
             std::lock_guard<std::mutex> lk(g_cmd_mu);
             auto it = g_cmds.find(req->name);
@@ -347,7 +414,9 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
                 return;
             }
             cc = it->second;
+            h = cmd_hold_locked(cc);
         }
+        CmdHeld held{cc.mod, h};
         // BUG-0966: answered with an error if a caught fault cuts the command off
         uint64_t id = running_begin((uintptr_t)__builtin_frame_address(0), req->name, [req](const std::string& t) {
             req->out = t;
@@ -413,19 +482,23 @@ static void start_next(Client& c)
         if (args.empty())
             continue;
         Cmd cmd;
-        bool found;
+        bool found, h = false;
         {
             std::lock_guard<std::mutex> lk(g_cmd_mu);
             auto it = g_cmds.find(args[0]);
             found = it != g_cmds.end();
-            if (found)
+            if (found) {
                 cmd = it->second;
+                if (cmd.flags & SK_CMD_ANY_THREAD)
+                    h = cmd_hold_locked(cmd); // BUG-1018
+            }
         }
         if (!found) {
             c.outbuf += json_reply(1, "unknown command: " + args[0] + " (try 'help')");
             continue;
         }
         if (cmd.flags & SK_CMD_ANY_THREAD) {
+            CmdHeld held{cmd.mod, h};
             std::string out;
             int rc = run_cmd(cmd, args, out);
             c.outbuf += json_reply(rc, out);
@@ -443,14 +516,17 @@ static void start_next(Client& c)
                                                          : run_on_main;
         post([out, rc, done, args, name] {
             Cmd cc;
-            bool ok;
+            bool ok, h = false;
             {
                 std::lock_guard<std::mutex> lk(g_cmd_mu);
                 auto it = g_cmds.find(name);
                 ok = it != g_cmds.end();
-                if (ok)
+                if (ok) {
                     cc = it->second;
+                    h = cmd_hold_locked(cc); // BUG-1018
+                }
             }
+            CmdHeld held{cc.mod, h};
             std::string o;
             // BUG-0966: answered with an error if a caught fault cuts the command off
             uint64_t id = ok ? running_begin((uintptr_t)__builtin_frame_address(0), name, [out, rc, done](const std::string& t) {

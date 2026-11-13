@@ -707,6 +707,8 @@ struct GenState {
     bool generating;
     int in_names;
     int in_profile; // BUG-0185: inside cStarRecord_GetSpeciesProfile (a species load draws too)
+    // BUG-1074: the frame addresses of the outermost hooks that set generating / in_names / in_profile
+    uintptr_t gen_sp, names_sp, profile_sp;
     uint32_t draws, hash, other; // BUG-0185 diagnosis: private draws, their results, global draws
     uint32_t trace[48][2];       // the first private draws: caller, result
 };
@@ -718,6 +720,39 @@ COOP_FIX("space.seed", "BUG-0123", g_seed_fix, "space: planet seeding state is p
 static DWORD g_main_tid;                     // set by tick (the main thread)
 static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
 static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
+
+// BUG-1074: a fault the game catches inside a generation (or a name / profile draw) left the thread's flags set: with
+// `generating` stuck every later draw of that thread was seeded and its later generations were taken for nested ones
+// (not seeded), with `in_profile` stuck the profile's draws went on the seeded generator again (BUG-0185). The state
+// is per thread, so BUG-1047's per-frame reset cannot clear it: each hook notes the frame address of the outermost
+// call that set a flag; a later call at or above that address is not nested inside it (the stack grows down), so
+// the flag is a leftover of a call a fault cut off and is cleared. `coop.fix space.gen_unwind off`: kept, as before.
+static bool g_gen_unwind_fix = true;
+COOP_FIX("space.gen_unwind", "BUG-1074", g_gen_unwind_fix,
+         "space: the planet seeding's per-thread flags left by a generation a caught fault cut off are cleared");
+static std::atomic<uint32_t> g_gen_unwound{0};
+
+static void gen_unwind(GenState& g, uintptr_t sp)
+{
+    if (!g_gen_unwind_fix || !g_seed_fix) // the shared state (seedfix 0) mixes the threads' stacks
+        return;
+    bool any = false;
+    if (g.generating && sp >= g.gen_sp) {
+        g.generating = false;
+        any = true;
+    }
+    if (g.in_names > 0 && sp >= g.names_sp) {
+        g.in_names = 0;
+        any = true;
+    }
+    if (g.in_profile > 0 && sp >= g.profile_sp) {
+        g.in_profile = 0;
+        any = true;
+    }
+    if (any && !g_gen_unwound++)
+        H->log(M, SK_WARN, "space: planet seeding flags left by a cut-off generation on thread %lu were cleared (BUG-1074)",
+               (unsigned long)GetCurrentThreadId());
+}
 
 // BUG-0185: RequirePlanetsForStar calls cStarRecord_GetSpeciesProfile before the generation. When
 // the star's species profile is not cached yet (star +0x80), the species manager loads it and
@@ -781,7 +816,13 @@ static void off_main(uint32_t& n, const char* what)
                (unsigned long)GetCurrentThreadId());
 }
 
-static void names_enter() { gen().in_names++; }
+static void names_enter(uintptr_t sp)
+{
+    GenState& g = gen();
+    gen_unwind(g, sp);
+    if (!g.in_names++)
+        g.names_sp = sp;
+}
 static void names_leave() { gen().in_names--; }
 
 using RandomName_t = void*(SK_THISCALL*)(void*, void*, uint32_t);
@@ -789,7 +830,7 @@ static RandomName_t o_RandomName;
 static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
 {
     off_main(g_names_off_main, "GenerateRandomName");
-    names_enter();
+    names_enter((uintptr_t)__builtin_frame_address(0));
     void* r = o_RandomName(names, out, kind);
     names_leave();
     return r;
@@ -800,7 +841,10 @@ static SpeciesProfile_t o_SpeciesProfile;
 static void* SK_THISCALL h_SpeciesProfile(void* star)
 {
     GenState& g = gen();
-    g.in_profile++;
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    gen_unwind(g, sp); // BUG-1074
+    if (!g.in_profile++)
+        g.profile_sp = sp;
     void* r = o_SpeciesProfile(star);
     g.in_profile--;
     return r;
@@ -823,6 +867,8 @@ static uint32_t g_stores_seeded;
 static void SK_THISCALL h_StoreFill(void* trading, void* own_spice)
 {
     GenState& g = gen();
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    gen_unwind(g, sp); // BUG-1074
     void* store = nullptr;
     if (g_store_seed_fix && connected() && !g.generating && trading && !IsBadReadPtr(trading, 0xA0)) {
         void** sb = F<void**>(trading, 0x48);
@@ -850,6 +896,7 @@ static void SK_THISCALL h_StoreFill(void* trading, void* own_spice)
     uint32_t seed = g.rng;
     g_gen_thread_shared = GetCurrentThreadId();
     g.draws = g.hash = g.other = 0;
+    g.gen_sp = sp;
     g.generating = true;
     o_StoreFill(trading, own_spice);
     g.generating = false;
@@ -867,6 +914,8 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
     off_main(g_gen_off_main, "RequirePlanetsForStar");
     GenState& g = gen();
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    gen_unwind(g, sp); // BUG-1074
     if (!star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC) || g.generating) {
         o_RequirePlanets(sm, star, p3);
         return;
@@ -900,6 +949,7 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
         memcpy(tpl, p3, 12);
     void* caller = __builtin_return_address(0);
     g.draws = g.hash = g.other = 0;
+    g.gen_sp = sp;
     g.generating = true;
     o_RequirePlanets(sm, star, p3);
     g.generating = false;
@@ -938,7 +988,7 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 static void names_held(int ms)
 {
     std::thread([ms] {
-        names_enter();
+        names_enter((uintptr_t)__builtin_frame_address(0));
         Sleep(ms);
         names_leave();
     }).detach();

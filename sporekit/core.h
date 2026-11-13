@@ -117,6 +117,9 @@ bool console_start(int port);
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags);
 void commands_remove_all(SkMod* mod);
+// BUG-1018: wait (at most ms) until no command of the mod runs on another thread; false (and why) when they still do
+// or one runs on the main thread around the caller (kit.fix cmdkeep)
+bool commands_wait_idle(SkMod* mod, DWORD ms, std::string& why);
 int command_exec_line(const std::string& line, std::string& out, bool from_main);
 std::vector<std::string> split_args(const std::string& line);
 std::vector<std::pair<std::string, std::string>> commands_list();
@@ -323,6 +326,8 @@ extern KitFix g_fix_crashcopy; // BUG-1020: the crash report thread works on cop
 extern KitFix g_fix_reportsafe; // BUG-1022: reports off the main thread use the cached mode and lock the mod list
 extern KitFix g_fix_vehbounds; // BUG-1028: the fault logger's stack reads stay inside the readable region
 extern KitFix g_fix_trireset;  // BUG-1026: the overlay state block is reset on a new device, retried after a Reset
+extern KitFix g_fix_cmdkeep;   // BUG-1018: a mod's image is freed only after its running console commands returned
+extern KitFix g_fix_postinit;  // BUG-1021: SK_EV_POST_INIT is not fired after a failed cSporeApp::Init
 // BUG-1033: a module's file name, "" when GetModuleFileNameW fails (a module unloaded meanwhile) or cuts the path;
 // the callers' stack buffers were used whatever the call returned
 inline std::wstring module_path(HMODULE m)
