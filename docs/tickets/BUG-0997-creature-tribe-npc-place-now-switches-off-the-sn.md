@@ -1,19 +1,19 @@
 ---
 id: BUG-0997
 title: Creature, Tribe: npc.place_now switches off the snap of a walked NPC proxy (a host animal thrown aside is closed at catch-up speed, not teleported)
-status: open
+status: fixed
 kind: desync
 stage: Creature,Tribe
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-15
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-small
+commits: f4aca716
+tests: npc_snap
 signature:
-docs: docs/known-issues.md#issue-npc-snap-dead
+docs: docs/known-issues.md#issue-npc-snap-dead, docs/06-testing.md#testing-t1-small
 related: BUG-0757, BUG-0361
 ---
 
@@ -27,15 +27,9 @@ this frame" test never holds for a moving proxy: the copy slides back to the hos
 (up to ~2 s at 2-7 m off, what BUG-0361 measured before the snap) instead of jumping there.
 
 ## Root cause
-Observed in code (main efd2e0ba):
-* mods/coop/npc.cpp:2083 `drive::path_update(px.drv, s.pos, now)` records `ds.path.prev = s.pos`.
-* npc.cpp:2141-2149: `o.snap = 2.5f`; with g_place_now_fix `aim = s.pos + vel * g_frame_dt`, then
-  `drive::walk_place(px.c, aim, ...)`.
-* mods/coop/driver.h:358-359 walk_place: the snap needs `net::dist(ds.path.prev, pos_in) < 0.01f`; pos_in is the aim,
-  `|vel| * g_frame_dt` from prev (a proxy walks only above 0.3 m/s, npc.cpp:2129: 0.01 m or more at 30 fps and below).
-Inferred (high confidence): the snap is dead code for NPC proxies while npc.place_now is on; the catch-up (catch_prop,
-keep_lost) still closes the error, slower. Severity: medium-low (a visible slide of an animal copy after a hit or
-knock-back in Creature and Tribe). civ.place_now (BUG-0438, civ.cpp) may have the same pattern: not checked here.
+Confirmed at runtime: with npc.place_now the walked proxy was aimed a frame ahead and drive::walk_place compared the
+aim (not the path point) with ds.path.prev: the snap never fired for a moving proxy; a host NPC put 5 m aside was
+closed by the catch-up in 0.39-0.78 s (median 0.46 s) on the guest's screen.
 
 ## Fix idea
 Give walk_place the path point separately (a `path_pos` in WalkPlace, defaulting to pos_in) and compare that with
@@ -49,11 +43,16 @@ teleport count from coop.npctrack only as a diagnosis). FAIL on main (seconds to
 npc.place_now off it PASSes on main too (the twin that shows the cause).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+WalkPlace takes this frame's path point (has_path_pos / path_pos) for the snap's "the path jumped" test; the teleport
+still goes to the aimed point. Switch `coop.fix npc.place_now_snap off` (0.7.10 .. 0.7.13). Test command
+`coop.npctrack shove <id> <m> x y z <m/s>` (host).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `npc_snap` (coop_npc_snap.py: three host NPCs walking at 3 m/s around the guest, each put 5 m aside three
+times; the guest's per-frame track gives the time until its drawn copy is within 1 m of the host's path).
+FAIL (SPORE_FIX_OFF=npc.place_now_snap): out/lab/20261113-031433 (median 0.46 s, slowest 0.78 s). PASS: out/lab/20261113-030613,
+out/lab/20261113-031904 (median 0.03 s, slowest 0.04 s in the first).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-small (package T1).

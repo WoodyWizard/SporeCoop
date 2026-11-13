@@ -1,19 +1,19 @@
 ---
 id: BUG-0996
 title: Creations: a dropped or failed creation package is never closed or released (file handle and DatabasePackedFile kept for the process)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-8
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-small
+commits: f4aca716, 3e2de219
+tests: creations_package_close
 signature:
-docs:
+docs: docs/re/creations.md#creations-package-close, docs/06-testing.md#testing-t1-small
 related: BUG-0055, BUG-0370
 ---
 
@@ -27,17 +27,10 @@ package_for writes `<name>_2.package` ... `<name>_49.package` when the old file 
 ("cannot write the package") after 48 tries.
 
 ## Root cause
-Observed in code (main efd2e0ba):
-* mods/coop/creations.cpp:1497-1520 register_package: operator new, ctor, AddRef ((db+4) vt[0]), Initialize (vt 0x04),
-  Open (vt 0x18); on an Open failure (1510-1513) or a RegisterDatabase failure (1514-1517) it returns nullptr without a
-  Close or Release (a failed RegisterDatabase also leaves the file open).
-* creations.cpp:1522-1527 unregister_package: RegisterDatabase(false, db) only; drop_package (1615-1622) erases the map
-  entry. Callers: 1861 (a world package replaced), 1884 (a player creation replaced), 3060 (session end).
-* creations.cpp:1594-1603 package_for: the "_N" fallback when write_file fails because the old file is open.
-Inferred (medium confidence): the game's Close is vt[7] and Release is (db+4) vt[1] (the audit's slots, consistent with
-the AddRef at (db+4) vt[0]); whether the resource manager still holds resources read from a dropped package (so a
-Release must wait) is not checked. Severity: low (a leak of a handle and ~1 KB per creation change; the 48-name limit
-is reached only by one creation key changed 48 times in one game process).
+RE first (docs/re/creations.md#creations-package-close, GOG 2024): Close is the primary vtable slot 0x1C (0x8D9CD0),
+GetRefCount 0x10, Release the refcount vtable's slot 1 ((db+4) vt[1], 0x69D3C0), which at 0 runs the deleting dtor
+(its Shutdown closes the file). Confirmed at runtime: a guest switching between its own creatures A, B, A, ... made
+the host write the second package of A as `_2` (the dropped package still open).
 
 ## Fix idea
 RE first: confirm Close (vt[7]) and Release ((db+4) vt[1]) in docs/re/creations.md and the .sym. Then close and release
@@ -51,11 +44,17 @@ sends a new version by the test command) 5 times; the guest's log/`coop.creation
 instead of `_2`). FAIL on main (`_2`, `_3` names, the file locked), PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+A dropped package is released 2 s later outside the frame (Close + Release) when GetRefCount is 1 and no table of
+creations.cpp still names it; a package that failed to Open or to register is released at once. Switch
+`coop.fix creations.package_close off` (0.7.13). The status has a `packages:` line (open, closing, closed, kept,
+renamed).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `creations_package_close` (coop_creations_package_close.py: the guest plays its own creatures A, B, A, B, A; the
+host's packages).
+FAIL (SPORE_FIX_OFF=creations.package_close): out/lab/20261113-031708. PASS: out/lab/20261113-031536, out/lab/20261113-033100-2 (renamed=0,
+closed=4).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-small (package T1).

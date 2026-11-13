@@ -1,19 +1,19 @@
 ---
 id: BUG-1061
 title: Creature: after a session in Cell, the partner's puppet shows its own species' full health instead of the partner's for 10+ s after the next Creature join
-status: open
-kind: desync
+status: fixed
+kind: test
 stage: Creature
 reported: 2026-11-13
 source: fix/w49-life lab (coop_lifecycle_reset.py, monitor puppet_hp)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-small
+commits: f4aca716
+tests: lifecycle_reset, gates_selftest
 signature:
-docs:
+docs: docs/known-issues.md#issue-puppet-hp-after-cell, docs/06-testing.md#testing-t1-small
 related:
 ---
 
@@ -29,17 +29,23 @@ follow a Cell one (the cold-start creature tests, the lifecycle test with Creatu
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-Not analysed. Inferred: creature_hp's drive_puppet erases the puppet's entry while the partner's state reports
-max_health <= 0 (h_GetMaxHp then answers the puppet's own maximum), or a value of the Cell game is used for the
-first Creature states (the player species, the level health).
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not a game desync (observed in the logs of the reported runs): in out/lab/20261113-010644-2 (fix/w49-life) the host's own
+Creature line was hp=10/10 and the guest showed it 10/10; in 20261113-011935 the guest's own line was 18/18 and the host
+showed it 18/18. The monitor's Timeline sorts every own line of a machine by the session clock, which starts at 0 in
+every session: the guest's Creature partner line at s 30.011 was matched with the host's own line of the Cell session
+before it at s 30.017 (6/6, closer in time than the Creature line at s 30.026). The hp rule had the same matching.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+tools/tests/monitor.py: Timeline.window / own_at take the partner record and keep only own lines of the stage and
+world it names; used by same_moment (puppet_hp, drawn, ground) and the hp rule. Config `same_session` (default 1;
+0: the matching before).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: the reported runs (fix/w49-life out/lab/20261113-010644-2, 20261113-011601, 20261113-011935: MONITOR-VIOLATION
+puppet_hp); `monitor.py` replay of 20261113-011935 with same_session=0 gives the violation, with 1 none. gates_selftest
+twin `f_php_sessions` (same_session=0 fails, 1 passes). PASS: out/lab/20261113-031719 (lifecycle_reset with
+SPORE_STAGES=cell,creature, no monitor violation).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-small (package T1).
