@@ -7437,6 +7437,8 @@ host's and its key frame shows the game's own "Oh, the humanity! Your tribal hut
 20261113-132309); with the fix the hut stands, smoking, with `own_hut_kept` counting (20261113-132309-2).
 * The host's own game shows that caption too and waits for its OK; nothing pauses the guests meanwhile (BUG-0960's
   wait covers the tribe knocked out only).
+* Since BUG-1081 (`tribe.hut_defeat_wait`) the guests wait during that caption too:
+  docs/06-testing.md#testing-hut-defeat-wait.
 ## Two copies of one instance: refused (2026-11-13, fix/w49-fault)
 <a id="testing-double-instance"></a>
 
@@ -7454,3 +7456,30 @@ its galaxy save at boot; one such boot crashed in the game's star read (docs/re/
   than 20 s.
 * Boot loop measurements (fix/w49-fault): 12 cold boots of the tribe fixture's profile under load, 0 faults; 16 with
   a deliberate double start, 0 crashes, 3 never reached the galaxy menu in 120 s.
+* Tests that start a game again without `spore.sh kill` (checked 2026-11-13, fix/w49-hutwait): `kill_game` (SIGKILL by
+  pid) then `run_guest` 1-3 s later: space_colony_rejoin / space_colony_crash, tribe_portraits, nest_species,
+  coop_long_session's restart, coop_mem_census `--solo` (no restart); an in-game `quit` then a start:
+  space_badges_rejoin (waits until the console is gone, then 3 s), coop_mode without `--fixture` (waits until the
+  console is gone, then 3 s). None can hit the 20 s refusal: each restarted game had booted to its world first
+  (well over 20 s). The "already runs" refusal is what could hit: a game process still tearing down after its console
+  closed. Not seen: space_badges_rejoin, space_colony_crash, space_colony_rejoin (lab 20261113-141352, lane 7),
+  nest_species, tribe_portraits (20261113-141547, lane 6) passed with the guard, no refusal note in their logs. The
+  `wait_up(inst, 90)` then `run_guest()` retry paths (twoinst, the rejoin tests) cover a refusal; space_badges_rejoin
+  and coop_mode have no retry.
+## The host's hut-destroyed caption holds the guests (2026-11-13, fix/w49-hutwait)
+<a id="testing-hut-defeat-wait"></a>
+
+BUG-1081. `tribe_hut_defeat_wait` (tribe fixture, warm, ~1.5 min): the host gives the players' own hut the game's
+killing blow (`coop.tribe hutfall <x> <y> <z>`, docs/06-testing.md#testing-own-hut-fall; no NPC tribe needed). The
+host's game shows "Oh, the humanity! Your tribal hut has been destroyed! ..." 7.4 s after the blow (the cinematic
+first) with `busy: cinematic,input_lock,paused`. Checked on the guest's game: its time stands within 6 s and still
+8 s later (`busy: paused`, the game's cGameTimeManager), no caption of its own ("humanity" or "Alas" in `coop.ui
+find`); then the host presses Enter, its game reloads its save and is back in Tribe play, the guest's time runs
+again within 20 s and the players' hut stands in both games (`coop.realign planet hut`, fl bit 2 clear).
+* The wait is BUG-0960's (`tribe.gameover_wait`): one shared condition on the host (`gameover_why`: the tribe out,
+  or its hut, cTribe +0x368, in combatant state 2); the news (MSG_NPC_ANIM kind 20) carries the reason byte, the
+  guest's note names it. `coop.status`: `tribe game over wait: host_up why hut_ups ...`.
+* Twin `SPORE_LAB_FIXOFF="tribe_hut_defeat_wait=tribe.hut_defeat_wait"`: the guest plays on (`busy -`), lab
+  20261113-140058; with the fix 20261113-140055.
+* The guest's co-op note ("The tribal hut is destroyed: waiting for Alice (host) ...") is in its log at the pause;
+  the feed line has faded by the key frame 9 s later.

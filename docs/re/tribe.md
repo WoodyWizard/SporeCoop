@@ -3773,3 +3773,13 @@ BUG-1076. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and the campaign's g
   reload after such a raid.
 * Fix `realign.own_hut` (BUG-1076): a guest's own players' hut never takes the realign's blow; its health follows the
   host's down to 1 hp, the host's game decides the defeat. Test `tribe_own_hut_fall` (docs/06-testing.md#testing-own-hut-fall).
+
+## The hut-destroyed defeat on the host (2026-11-13, fix/w49-hutwait)
+<a id="tribe-hut-defeat-caption"></a>
+
+BUG-1081. ✔ (runtime, lab 20261113-140055) The killing blow on the player tribe's own hut (`coop.tribe hutfall`,
+combatant vt 0x18) sets its combatant state (+0x120 +0x34) to 2 at once; the player tribe's `mpHut` (+0x368) keeps
+pointing at the dead hut (as `cTribe::HutIsDead` 0xC90730 reads it). 7.4 s later (a cinematic of the burning hut
+first) the caption "Oh, the humanity! Your tribal hut has been destroyed! Perhaps a fresh start is just the thing you
+need." is up (`coop.ui find "humanity"`), and the game stands with `busy: cinematic,input_lock,paused`, as for the
+population game over (BUG-0960). Its OK (Enter) reloads the save: back in Tribe play with the hut at 1000/1000.

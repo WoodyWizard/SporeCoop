@@ -3414,6 +3414,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the host's game fell in the guest's game too, which ran its own defeat and reloads in a loop; a village caption after
   such a reload read the freed tribe (`realign.own_hut`; docs/re/tribe.md#tribe-caption-tribe-token). Test:
   tribe_own_hut_fall.
-* Open **BUG-1081** (Tribe, host): the host's "Your tribal hut has been destroyed" caption holds the host's game only;
+* Fixed (2026-11-13, fix/w49-hutwait; `tribe.hut_defeat_wait`, test tribe_hut_defeat_wait) **BUG-1081** (Tribe, host): the host's "Your tribal hut has been destroyed" caption holds the host's game only;
   the guests play on until the host's OK and reload (BUG-0960's wait covers the tribe knocked out only). Reproduce:
   `coop.tribe hutfall` on the players' hut in the host's game (docs/06-testing.md#testing-own-hut-fall).
+* Open **BUG-1083** (test, Tribe): tribe_gameover_partner flakes about 1 run in 5: the host's game-over caption never
+  comes because the host's knocked-out chief has health again (168) in phase 2 (lab 20261113-140322; the rerun
+  20261113-141231 passed). Reproduce: run tribe_gameover_partner a few times on one lane.

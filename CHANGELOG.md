@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: while the host's game shows "Your tribal hut has been destroyed" (the players' own hut fell), the guests'
+  games wait with a note, as they already did for the tribe knocked out, and go on after the host's answer and reload
+  (BUG-1081).
 - Tribe: when the players' own hut falls in the host's game, a guest's game no longer destroys its own copy of the
   hut and runs its own defeat (the "Your tribal hut has been destroyed" caption and a reload of its own save, again
   and again); the host's game decides the defeat. The guest's faults while a village caption played after such a
