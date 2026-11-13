@@ -1717,7 +1717,9 @@ BUG-0973. GOG 2024, lane 4, fixtures civ_npc / civ.
   The guest's own wild creatures are removed by the update filter; proxies take the nest herd of their species.
   `npc.view_centres_civ`: the partners' pointers (rts_fill) are spheres of the host's relevance pass in Civ too.
 * Bandwidth: 10 creatures x 47 B (NpcState) + 2 B (agl trailer) every 0.1 s per guest = about 4.9 KB/s per guest,
-  one or two unreliable packets per batch; spawns are reliable, once per creature.
+  one or two unreliable packets per batch; spawns are reliable, once per creature. Measured (lab, civ_npc, 24-25
+  creatures once the cameras moved, host -> guest in all): 7.6 KB/s with the sync off, 20.1 KB/s with it, 12.3 KB/s
+  with `npc.civ_quiet` (a standing creature's state once a second).
 * ? Not checked: the guest's pointer as a relevance centre in play (in the tests the guest's mouse stays off the
   planet, its centre is (0 0 0)); a guest whose host is away (local play) shows no wild creatures until the host is
   back (the Tribe stage's rule: proxies dropped, the own ones were removed).
