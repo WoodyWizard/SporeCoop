@@ -7164,11 +7164,31 @@ raids every NPC village until its hut falls (docs/re/tribe.md#tribe-raid-end):
 * New suite entry `campaign_tribe_end` (`--from creature --to civ --minutes 2`, ~35 min): the live Creature -> Tribe
   change and the Tribe end on the campaign's own planet. `CAMPAIGN_GUEST_CMDS="cmd;cmd"`: console commands on every
   guest at the start (a planted problem for the campaign's twin).
-* Runs: campaign_tc2 `--quick` PASS lab 20261113-054114 (Tribe -> Civ in 1152 s, no jump; before the cut-on-first-blow
-  change one raid took 300 s).
+* More runs of the same rules (fix/w49-tests, lab ids in out/lab of that worktree): the host's raid click is made by
+  the campaign itself (tribe_host_click: its members boxed, else one member, attack mode, the minimap's view on the hut,
+  a right-click; play_tribe's step draws its kind at random and gave no host click on the campaign's planet for whole
+  raids), a hut is cut to 40 again whenever its village repaired it (cut to 40, back at 306 of 750 four minutes later),
+  the players' hut is repaired under 80 %, a village without a host click in 3 tries waits 4 min (another first),
+  ADVANCE_MIN['tribe'] = 30.
+* Results: **on the tribe fixture the Tribe end comes every time** (campaign_tc2: 1152 s, lab 20261113-054114; 727 s,
+  20261113-085346). **On the campaign's own planet (the live Creature -> Tribe change) not yet reliably**: campaign_tribe_end
+  reached Civ in 1475 s in 20261113-120528 and stopped at 3/5 in 20261113-120534 (a game over reloaded the save at 4/5:
+  the population, not the hut, inferred), earlier versions of the rules 1/5-4/5 (20261113-073952, -081129, -092426,
+  -100632; the full campaigns -060756, -082316, -101808 jumped). Hence the timeout stays `info` (and the jump);
+  `CAMPAIGN_STRICT_TRIBE=1` makes it a failing `stuck`. Open for the next round: why the raiders die (a village of
+  aggressive members kills 6-12 raiders a raid, `spawn` keeps up), the host's box that misses its members, the game
+  over by population while every member raids.
+* The campaign's twin (a planted real problem must still fail it): `CAMPAIGN_GUEST_CMDS="coop.tribe delay 1.0"` on
+  campaign_tc2 (8 min of Tribe play): FAIL with three `desync` findings (Bob, Carol, Dave: kind t out of sync, p90
+  4.0-6.7 m) in lab 20261113-085346, while the same run's Tribe end reached Civ the players' way. (With `--quick` and 3 min
+  of Tribe play the plant was seen in one check only before a rejoin, lab 20261113-060758: too short for two checks in a
+  row.)
 * Found by the campaign on the way: BUG-1073 (after an in-game load of civ_npc from Tribe, a capture with its
-  cinematic never gives the city: Civ -> Space stuck; lab 20261113-060756, -060758; campaign_space without a jump
-  captures all, lab 20261113-072523).
+  cinematic never gives the city: Civ -> Space stuck, in all four campaigns that jumped; campaign_space without a jump
+  captures all, lab 20261113-072523), BUG-1079 (the finale stuck after the jump to the space fixture), BUG-1076 (a
+  guest's caught faults at 0xCE69F9 in the Tribe end), BUG-1075 (a crash at boot under load), BUG-1068.
+* Pitfall: `lab.py run campaign` runs the whole campaign SUITE (campaign, campaign_ct, _short, _tribe, _space, ...); one
+  test of that name is `lab.py run =campaign`.
 
 **Q2: play_tribe's planted desync (BUG-0974).** The check is `sync t*: 90% within 1.5 m of the host's path over
 0.32 s`. The plant `coop.tribe delay` only set the mirror buffer's `delay`, which the lead (BUG-0425, `drive.lead`,
