@@ -7502,3 +7502,25 @@ again within 20 s and the players' hut stands in both games (`coop.realign plane
   `chief2`: the same camera at the chief. `PROBE_RAW=1` prints every track's fields and raw dwords (exploration). Twin
   `SPORE_LAB_FIXOFF="tribe_chief_tracks=tribe.mirror_phase_tracks"`: 34 % (lab 20261113-150319); with the fix 98 % and
   96 % (20261113-150637).
+
+## The Creature stage end, a host's pause and foreign clicks in Tribe (2026-11-13, fix/w49-tctl2)
+<a id="testing-stage-end-pause-foreign"></a>
+
+* BUG-1085: `stage_end_vote` / `stage_end_guest` (coop_stage_end_vote.py, creature fixture, ~3-4 min each) end the
+  Creature stage the players' way: `coop.dna add 3000`, the brain caption's check (CAPTION_OK, after 6 s of
+  `movie=1`, every 10 s), then History and its check (HISTORY_BTN / HISTORY_OK of coop_campaign.py) every 25 s until
+  the game builds the request. The test reads the request from the game's log (`editor request in Creature: editor
+  465C50BA tag 064AA168`), so a run where the game never offered the stage end fails instead of passing on nothing.
+  `stage_end_guest` with the fix off clicks "done" in the guest's stage-end editor and prints how far the guest goes
+  (observation, the run fails anyway). `coop.vote stageend` builds the stage-end request (tag 0x64AA168);
+  `coop.vote evolve` now builds the mating editor's (0x12191CA, an evolution inside the stage, as every test using it
+  meant). `coop.vote` prints `stage-end votes`, `guest stage-end requests refused`.
+* BUG-1085: `editor_now` and `creature_mating` share the mating recipe (`coop_creature_mating.mate_click`: the mate the
+  game picked, Backspace, a left click on it); `editor_now` no longer starts with a mod-built request. The game's
+  mating request comes ~25 s after the click (the egg cinematic).
+* BUG-1086: `tribe_host_pause` (tribe fixture, warm, ~1 min): the host's Esc; the guest's `busy: paused` and its toast
+  "Alice paused the game ..." within 8 s; Resume Game (uifind) and both run within 15 s.
+* BUG-1087: `tribe_foreign_click` (tribe fixture, warm, ~1 min): a real click 20 px above the screen point of the
+  host's member farthest from the guest's own (`coop.targets objs` gives the root; the body stands above it; a click
+  on the root point often hit the ground), a box when the click refused nothing; `coop.status` prints `foreign clicks
+  N told M`. Toast texts may hold an apostrophe: read them with `'(.*?)'(?= \||$)`, not `'([^']*)'`.

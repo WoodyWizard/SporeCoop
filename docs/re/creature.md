@@ -4543,3 +4543,20 @@ BUG-0989. GOG 2024, lab lanes 6 / 7, creature fixture.
   distance at the move. Lab: 5.07 m on the guest, 5.01 m on the host, from the first sample on.
 * ? The host's name tag over the guest's own creature for a moment at the join (the ticket's second frame) is the
   same spot; it lasts until the move now (under 1 s).
+
+## Which Creature editor request is which, at runtime (2026-11-13, fix/w49-tctl2)
+<a id="creature-editor-tags-runtime"></a>
+
+BUG-1085. Confirms docs/re/creature.md#creature-mating-call and the CORRECTION in docs/re/creations.md (own editor
+items) at runtime; `h_Submit` logs every Creature request now (`editor request in Creature: editor <id> tag <tag>`).
+
+* ✔ (lab 20261113-154950, editor_now) The game's own mating (Backspace, a left click on the mate the game picked):
+  editor 312E9D6A, **tag 0x12191CA**.
+* ✔ (lab 20261113-154517, -154923, stage_end_guest) The stage end the players' way (`coop.dna add 3000`, the caption
+  "Congratulations! Your brain is fully grown ... evolve to the tribal stage!" answered with its check, History's button
+  and its check): editor 465C50BA, **tag 0x64AA168**. So 0x64AA168 is the stage-end editor.
+* ✔ A guest's game offers that button too (shared DNA: the guest's own brain reaches level 4 with its caption). With the
+  request let through (0.7.13, `core.editor_now_tag` off) the guest's game went into its stage-end editor while the
+  host played Creature, and after "done" into a Tribe of its own: Creature 3 s later, Tribe 75 s later ("Tribal Stage"
+  loading card, the host still [Creature] in the co-op list; lab 20261113-154923). Refused in h_Submit (with
+  BUG-0920's flag clear) the guest's game stays in its Creature stage, drawn, with the HUD.

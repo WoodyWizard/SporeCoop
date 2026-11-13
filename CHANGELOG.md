@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: the end of the stage (the evolve button to Tribe) waits for every player's "I'm ready" again ("Alice wants
+  to move on to the Tribe stage"); before, the host went on alone and the guests got a pointless "Evolve now". The
+  host's evolution after a mating now opens at once with an "Evolve now" offer to the others, as planned for 0.7.11
+  (it waited for the vote). A guest's own press of the stage-end button no longer takes it into a Tribe stage of its
+  own: it counts as its "I'm ready" during the vote (BUG-1085).
+- Tribe: while the host's game is paused (its pause menu, the Sporepedia, a tutorial box), the guests' games wait too
+  with the note "Alice paused the game", and go on with the host; before, a guest's orders waited silently and its
+  members stood (BUG-1086).
+- Tribe: a click on another player's tribe member (or its card) now says whose member it is ("That member is Alice's:
+  you lead only your own members") instead of doing nothing (BUG-1087).
 - Tribe: the host's chief now stands the same way on the guest's screen when it plays the same animation: its
   posture layers and its idle run at the host's moment too, not only its main animation (before, it could stand bent
   on one screen and upright on the other, the staff at another angle) (BUG-1072).

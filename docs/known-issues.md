@@ -3420,12 +3420,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Open **BUG-1083** (test, Tribe): tribe_gameover_partner flakes about 1 run in 5: the host's game-over caption never
   comes because the host's knocked-out chief has health again (168) in phase 2 (lab 20261113-140322; the rerun
   20261113-141231 passed). Reproduce: run tribe_gameover_partner a few times on one lane.
-* Open **BUG-1085** (Creature, all): `core.editor_now` (BUG-0516) acts on the stage-end editor (tag 0x64AA168), not on
-  the mating editor (0x12191CA): the host's Creature -> Tribe editor opens without a vote and the guests get an
-  "Evolve now" offer; mating evolutions still wait for the vote (campaign_tribe 20261111-212008, long_creature
-  20261112-083019). Reproduce: campaign advance creature -> tribe with two players, host log "core.editor_now".
-* Open **BUG-1086** (Tribe, guest): while the host's game is paused (pause menu, Sporepedia, a modal) the guest's
-  orders wait and its members stand, with no note on the guest. Reproduce: Tribe, host keeps Esc open 20 s, the guest
-  orders a walk.
-* Open **BUG-1087** (Tribe, guest): a click on another player's member or its roster card selects nothing and says
-  nothing (the split of the player tribe is by design). Reproduce: Tribe, two players, the guest clicks a host member.
+* Fixed (2026-11-13, fix/w49-tctl2; `core.editor_now_tag`, tests stage_end_vote, stage_end_guest, editor_now)
+  **BUG-1085** (Creature, all): `core.editor_now` (BUG-0516) acted on the stage-end editor (tag 0x64AA168), not on the
+  mating editor (0x12191CA): the host's Creature -> Tribe editor opened without a vote and the guests got an "Evolve
+  now" offer; mating evolutions waited for the vote; a guest's own stage-end press took it into a Tribe of its own
+  (lab 20261113-154923). Reproduce: `SPORE_LAB_FIXOFF="stage_end_vote=core.editor_now_tag"`.
+* Fixed (2026-11-13, fix/w49-tctl2; `tribe.host_pause_wait`, test tribe_host_pause) **BUG-1086** (Tribe, guest): while
+  the host's game was paused (pause menu, Sporepedia, a modal) the guest's orders waited and its members stood, with
+  no note on the guest. Reproduce: Tribe, the host's Esc, the guest's `busy` stays `-`.
+* Fixed (2026-11-13, fix/w49-tctl2; `tribe.foreign_note`, test tribe_foreign_click) **BUG-1087** (Tribe, guest): a
+  click on another player's member or its roster card selected nothing and said nothing (the split of the player tribe
+  is by design). Reproduce: Tribe, two players, the guest clicks a host member.
