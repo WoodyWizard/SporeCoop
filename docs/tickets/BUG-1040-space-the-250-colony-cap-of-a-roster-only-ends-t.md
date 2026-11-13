@@ -11,7 +11,7 @@ versions:
 fixed_in: unreleased
 branch: fix/w49-space2
 commits: daac928c
-tests: 
+tests: space_map
 signature:
 docs: docs/re/space.md#space-restore-window
 related:

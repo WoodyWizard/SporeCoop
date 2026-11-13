@@ -3289,3 +3289,4 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: tools/tests/coop_space_give_pick.py (or 2 players with spice in the cargo), F9.
 * Known: seen at 150 and 170 px; the cause is not analysed (the button's wrap width).
 * Ticket: BUG-1062
+* Fixed (unreleased, fix/w49-space2, 2026-11-13): `core.ui_give_fit`; FAIL lab 20261113-024426, PASS 20261113-024531-2.
