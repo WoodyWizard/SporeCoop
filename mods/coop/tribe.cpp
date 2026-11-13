@@ -2369,6 +2369,33 @@ static bool g_go_paused;        // guest: its game stands for the host's caption
 static double g_go_news = -100; // guest: the host's last "up"
 static uint32_t g_go_sent, g_go_pauses, g_go_resumes;
 static bool player_tribe_out(void* t);
+// BUG-1081: the players' own hut destroyed in the host's game brings the game's other defeat caption ("Oh, the humanity!
+// Your tribal hut has been destroyed! ...", its OK reloads the host's save) and stands the host's game the same way;
+// the guests played on. The same wait above covers it: the host's "up" also starts when its player tribe's hut
+// (cTribe +0x368 mpHut) is dead (its combatant +0x120 state +0x34 == 2, as cTribe::HutIsDead 0xC90730 reads it).
+// Old (`coop.fix tribe.hut_defeat_wait off`): only the tribe knocked out holds the guests.
+static bool g_hut_defeat_wait_fix = true;
+COOP_FIX("tribe.hut_defeat_wait", "BUG-1081", g_hut_defeat_wait_fix,
+         "tribe: a guest's game waits while the host's 'Your tribal hut has been destroyed' caption is up, too");
+enum GameOverWhy : uint8_t { kGoTribeOut = 1, kGoHutDown = 2 };
+static uint8_t g_go_why;       // host: why its caption is up (last sent); guest: the host's last reason
+static uint32_t g_go_hut_ups;  // host: waits started for the hut's defeat
+
+static bool player_hut_down(void* t)
+{
+    void* h = t && skg::readable(t, 0x36C) ? F<void*>(t, 0x368) : nullptr;
+    return h && skg::readable(h, 0x158) && F<int>(h, 0x120 + 0x34) == 2;
+}
+
+// host: why the player's game is over (0: it is not), the shared condition of the wait
+static uint8_t gameover_why(void* t)
+{
+    if (player_tribe_out(t))
+        return kGoTribeOut;
+    if (g_hut_defeat_wait_fix && player_hut_down(t))
+        return kGoHutDown;
+    return 0;
+}
 
 static void* time_manager()
 {
@@ -2389,7 +2416,8 @@ static void gameover_pause(bool on, const char* why)
     H->log(M, SK_INFO, "tribe: the host's game-over caption is %s: this game %s (BUG-0960, %s)", on ? "up" : "gone",
            on ? "waits" : "goes on", why);
     if (C.feed && C.sess)
-        C.feed(on ? "The tribe is out: waiting for " + C.sess->name_of(0) + " (host) to answer the caption"
+        C.feed(on ? std::string(g_go_why == kGoHutDown ? "The tribal hut is destroyed" : "The tribe is out") +
+                        ": waiting for " + C.sess->name_of(0) + " (host) to answer the caption"
                   : C.sess->name_of(0) + " (host) answered: the game goes on");
 }
 
@@ -2400,14 +2428,18 @@ static void gameover_host_tick(double now)
     if (!g_gameover_wait_fix || !C.sess)
         return;
     bool lock = coop_ui::input_lock_now() > 0 && world::time_paused();
-    bool up = g_go_host_up ? lock : lock && player_tribe_out(player_tribe());
+    uint8_t why = g_go_host_up ? g_go_why : lock ? gameover_why(player_tribe()) : 0;
+    bool up = g_go_host_up ? lock : why != 0;
     if (up == g_go_host_up && (!up || now - g_go_host_sent < 3.0))
         return;
+    if (up && !g_go_host_up && why == kGoHutDown)
+        g_go_hut_ups++;
     g_go_host_up = up;
+    g_go_why = up ? why : 0;
     g_go_host_sent = now;
     net::Writer w;
     w.u8(kGameOverKind);
-    w.u8(up ? 1 : 0);
+    w.u8(up ? why : 0); // 0 gone, else the reason (BUG-1081; a 0.7.13 guest reads any non-zero as up)
     for (auto& p : C.sess->players())
         if (p.id != 0)
             C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
@@ -2429,11 +2461,14 @@ static void gameover_guest_tick(double now)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
     if (kind == kGameOverKind) { // BUG-0960
-        bool up = r.u8() != 0;
+        uint8_t why = r.u8();
+        bool up = why != 0;
         if (!r.ok() || !g_ok || !is_guest())
             return;
-        if (up)
+        if (up) {
             g_go_news = H->time_seconds();
+            g_go_why = why;
+        }
         if (g_gameover_wait_fix && (!up || game::mode_id() == modes::kTribe))
             gameover_pause(up, "the host's news");
         return;
@@ -5747,8 +5782,8 @@ std::string status()
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
     if (!g_last_local.empty())
         out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
-    snprintf(b, sizeof b, "tribe game over wait: host_up=%d sent=%u paused=%d pauses=%u resumes=%u (BUG-0960); body cards off %u (BUG-0961); unsent holds ended %u (BUG-0962)\n",
-             (int)g_go_host_up, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards, g_hold_only_ended);
+    snprintf(b, sizeof b, "tribe game over wait: host_up=%d why=%u hut_ups=%u sent=%u paused=%d pauses=%u resumes=%u (BUG-0960, BUG-1081); body cards off %u (BUG-0961); unsent holds ended %u (BUG-0962)\n",
+             (int)g_go_host_up, (unsigned)g_go_why, g_go_hut_ups, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_body_cards, g_hold_only_ended);
     out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)
