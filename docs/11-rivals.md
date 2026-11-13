@@ -351,3 +351,21 @@ Required for Rivals (the owner, 2026-11-11: not up for discussion): players can 
 stage: Cell, Creature, Tribe, Civilization and Space. The 0.7.12 session setting "Friendly fire" works in Creature
 only (BUG-0899); Cell, Tribe and Civilization are built with Rivals 0.8, Space already has its rivals mode. In
 co-op (not Rivals) the setting stays off by default.
+
+## Own designs for every player (2026-11-13, plan/0.7.14)
+<a id="rivals-own-designs"></a>
+
+Owner decision (2026-11-13): in 0.8 every player plays the Tribe and Civilization stages with designs of its own,
+not the host save's for everybody:
+
+* the player's species: its chief and tribe members, and later the citizens of its cities;
+* its tribe outfits and tools;
+* its Civilization vehicles (land, sea, air) from its My Creations;
+* its buildings (city hall, houses, factories, entertainment).
+
+Today (0.7.13) Tribe and Civilization use the host world's species and the host's vehicle and building designs
+(docs/09-coop-design.md, 9.4; creations.host_designs sends the host's vehicle designs to the guests,
+docs/re/civ.md). Known starting points: the guest-to-host direction of creations.host_designs (MSG_CREATION kind
+6/7/8) for vehicles and buildings, and the key collision of buildings (BUG-0670). A tribe has one species in the game,
+so an own species per player needs RE first; it fits Rivals, where each player has a tribe of its own anyway.
+A player asked for it on Discord (2026-11-13).

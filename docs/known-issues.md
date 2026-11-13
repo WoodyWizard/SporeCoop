@@ -2998,3 +2998,254 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   FAIL case.
 * Reproduce: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6" tools/lab.py run play_tribe --lane N`.
 * Ticket: BUG-0974
+## Space: switching Rivals to Allies while a guest is joining gives the wrong shared money (2026-11-13, audit 0.7.14)
+<a id="issue-rivals-merge-unknown-budget"></a>
+
+* What happens: in Rivals a guest joins or rejoins; the host switches to Allies before the guest's game is in Space
+  and has its budget back. The merge adds the guest's whole current money (the host's save money, or the shared
+  total) instead of its budget; a rejoiner's own budget is lost.
+* Reproduce: not run; switch to Allies while the guest loads (steps in the ticket).
+* Known: by code (space_rivalry.cpp on_state / host_apply / apply_pending_money); the doubling case is inferred.
+* Ticket: BUG-1029
+
+## Space: in Rivals at war, the host's escorts and a guest cannot damage each other (2026-11-13, audit 0.7.14)
+<a id="issue-war-escort-hits"></a>
+
+* What happens: a guest at war with the host is attacked by the host's escorts and Defenders, but its ship takes no
+  damage; its shots at the host's escorts do nothing either.
+* Reproduce: Rivals, declare war, fly near the host's escort; not run.
+* Known: by code, the BUG-0420 friendly filter (squadron.cpp) and the host's empire id given as the attacker.
+* Ticket: BUG-1032
+
+## Space: a gift or a sale right after a guest's rejoin is lost (2026-11-13, audit 0.7.14)
+<a id="issue-trade-before-restore"></a>
+
+* What happens: a tool gift, a spice sale to the guest's colony or an offer the guest accepts in the first seconds
+  after its rejoin goes into the hold that its kept hold then replaces; the sender was told it arrived.
+* Reproduce: give a tool within about 20 s of the guest's rejoin; not run.
+* Known: by code, K_TOOL / K_SELL / answer_offer do not wait for inv_restore_pending (space_trade.cpp).
+* Ticket: BUG-1034
+
+## Space: old partners' colonies come back as allies in a new session (2026-11-13, audit 0.7.14)
+<a id="issue-allies-end-pending"></a>
+
+* What happens: if a session ends while the player is on an ally's mirror planet and the player then goes to the
+  menu and joins or hosts another Space session, the old partners' mirror colonies appear as frozen allies.
+* Reproduce: not run; the steps in the ticket.
+* Known: by code (space_allies.cpp tick returns outside Space before the pending cleanup); trigger 5 of BUG-0038.
+* Ticket: BUG-1036
+
+## Space: a mission reward tool is never given while the host has Space contracts off (2026-11-13, audit 0.7.14)
+<a id="issue-owed-tool-contracts-off"></a>
+
+* What happens: a partner's mission reward tool that comes while the guest is outside Space is owed and never paid
+  while the host's session settings have Space contracts off.
+* Reproduce: not run.
+* Known: by code, owed_tick runs only in the contracts feature's tick.
+* Ticket: BUG-1037
+
+## Space: an armada wave without ships waits forever (2026-11-13, audit 0.7.14)
+<a id="issue-armada-empty-wave"></a>
+
+* What happens: if a wave's raid brings no ships in 30 s, the contract resumes the same raid every 30 s instead of
+  starting a new one.
+* Reproduce: not run (needs a raid that brings no ships).
+* Known: by code, space_contracts.cpp armada_tick.
+* Ticket: BUG-1038
+
+## Space: the host's colony spice drops after a world load in the session (2026-11-13, audit 0.7.14)
+<a id="issue-colony-spice-old-world"></a>
+
+* What happens: after a guest loads another world in the same session (or after a Rivals period), its older and
+  lower colony spice values are sent as "collected" and written into the host's colonies.
+* Reproduce: not run.
+* Known: by code, space_planets.cpp g_gc is not tied to the world epoch.
+* Ticket: BUG-1039
+
+## Space: a partner's terraforming can make another player's game fault (2026-11-13, audit 0.7.14)
+<a id="issue-terra-rec-unchecked"></a>
+
+* What happens: when a partner terraforms, the other games write the planet's record through the game's
+  GetPlanetRecord with no checks. A game that has not generated that star's planets, or is not in Space, can fault
+  (a null read in the game).
+* Reproduce: not seen. A partner terraforms a planet of a far star while you are elsewhere or load another world.
+* Known: spacecoop.cpp apply_terra_rec (inferred from code; BUG-0284 shows the game's read does no checks).
+* Ticket: BUG-1042
+
+## Space: "Fly to" a partner at the galactic core costs energy (2026-11-13, audit 0.7.14)
+<a id="issue-finale-fly-energy"></a>
+
+* What happens: from the galaxy view the finale's "Fly to" uses the game's paid travel. Energy is spent, and a ship
+  with no energy takes damage. A ship disabled after the order still flies.
+* Reproduce: not seen. Near the core, galaxy view, low energy, "Fly to" a partner.
+* Known: space_finale.cpp fly_step (observed in code).
+* Ticket: BUG-1045
+
+## Space: a guest sees a host NPC ship fire a burst of 4 shots for one (2026-11-13, audit 0.7.14)
+<a id="issue-space-shot-burst"></a>
+
+* What happens: a host ship that fires again 1 to 2.3 s after a pause shows 4 shots on the guest (or none).
+  Cosmetic: the copies hurt nothing.
+* Reproduce: not seen. Watch a host escort or pirate that fires in short bursts.
+* Known: the host's shot count restarts at 1 while the guest still has the old count (observed in code).
+* Ticket: BUG-1046
+
+## Space, 3-4 players: "Give 10 to <player>" gives the spice to someone else (2026-11-13, audit 0.7.14)
+<a id="issue-space-give-recipient"></a>
+
+* What happens: the button names co-op's give target (a pick made in Tribe or Civ stays), but the spice goes to the
+  first other player of the session. In Space the ">" picker is hidden.
+* Reproduce: not seen. 3 players: pick the third player with ">" in Civ, go to Space, click Give.
+* Known: give_spice ignores the recipient (observed in code).
+* Ticket: BUG-1050
+
+## Creature, Tribe: a fight sound or effect can keep playing on a guest's copy of a host creature (2026-11-13, audit 0.7.14)
+<a id="issue-mirror-fx-keys"></a>
+
+* What happens: the host's list of effects it relayed a start for is never cleared. When it fills (256), the stop
+  of one effect is no longer sent, and that effect keeps running on the guest's copy.
+* Reproduce: not seen; long Creature or Tribe sessions with many fights.
+* Known: mirror_fx.cpp g_keys (observed); whether the list fills in real play is inferred.
+* Ticket: BUG-1049
+
+## Creature, Tribe: a host animal knocked aside slides back on the guest instead of jumping (2026-11-13, audit 0.7.14)
+<a id="issue-npc-snap-dead"></a>
+
+* What happens: when the host's animal is thrown aside or put back by its game while it walks, the guest's copy
+  closes the 2-7 m at catch-up speed over up to about 2 s instead of being placed there at once.
+* Reproduce: not run; npc_walk_player with a host-side 5 m teleport of a walking NPC.
+* Known: by code (high confidence): npc.place_now (BUG-0757) aims the proxy one frame ahead, so drive::walk_place's
+  snap test (driver.h) never holds for a moving proxy.
+* Ticket: BUG-0997
+
+## Tribe: after joining another (or a restarted) host the guest sees no Tribe updates (2026-11-13, audit 0.7.14)
+<a id="issue-tribe-cycle-not-reset"></a>
+
+* What happens: a guest that played Tribe with one host and joins another host, or the same host after it
+  restarted its game, without restarting its own game drops every Tribe snapshot as an older cycle: the host's
+  members do not move, appear or go on the guest until the new host's counter passes the old one.
+* Reproduce: play Tribe as a guest, leave, restart the host's game, join again; `coop.status` on the guest shows
+  `older_chunks=` growing.
+* Known: tribe.cpp g_cyc / g_cycle_ids are never reset (code reading, not seen at runtime). Workaround: restart the
+  guest's game before joining.
+* Ticket: BUG-1051
+
+## Tribe: a chief "saved" by a partner's member dies at the next blow (2026-11-13, audit 0.7.14)
+<a id="issue-tribe-chief-rescue-hp"></a>
+
+* What happens: with the Chief aura setting on (the default), "<A> saved <B>'s chief" leaves the chief 0.3 hit
+  points instead of 30 % of its health.
+* Reproduce: a partner's member next to a chief that takes a killing blow (code reading, not seen at runtime).
+* Known: the rescue reads the maximum from the citizen's +0x5D4 (1.0), the field BUG-0745 found wrong for the heal.
+* Ticket: BUG-1052
+
+## Tribe: the host's game reloads its save once in a later session (2026-11-13, audit 0.7.14)
+<a id="issue-tribe-stale-host-reload"></a>
+
+* What happens: if a session ended in the seconds after the host's live Creature to Tribe change (before the world
+  went out), the first world share of a later session in Tribe makes the host's game load its own save again.
+* Reproduce: the guests leave right after the host enters Tribe live; then a new join while the host plays Tribe
+  (code reading, not seen at runtime).
+* Known: world.cpp g_reload_due survives the session end.
+* Ticket: BUG-1054
+
+## Tribe: the guest's copy of a host member keeps a tool the host's member put down (2026-11-13, audit 0.7.14)
+<a id="issue-tribe-tool-zero"></a>
+
+* What happens: the field relay drops the value 0, so "no tool" (and hunger 0) never reaches the guest. The guest's
+  copy keeps the old tool type.
+* Reproduce: not seen. A host member takes a weapon, then goes back to no tool; read +0x102C on both games.
+* Known: fields.cpp drops every value under 0.001 (observed in code).
+* Ticket: BUG-1043
+
+## Cell: a copy of a host cell on a guest can go NaN for good (2026-11-13, audit 0.7.14)
+<a id="issue-cell-mirror-nan"></a>
+
+* What happens: on a guest, a mirror whose own soft body went NaN in the guest's cell step is never repaired: it
+  drifts away or vanishes, and the guest's own cell touching it can go NaN too (then the BUG-0299 heal puts it back).
+* Reproduce: not seen at runtime; 3-4 player Cell sessions are the likely place. Planned test: NaN written into one
+  mirror's particles.
+* Known: by code (modes.cpp cell_move adds `want - pos` with a NaN pos to every particle; cellsync.cpp h_Soft turns
+  the particles by a NaN angle); no NaN check for mirrors.
+* Ticket: BUG-1006
+
+## Cell: a host creature a guest's jaw finishes off turns its kind against the host (2026-11-13, audit 0.7.14)
+<a id="issue-cell-chunk-kill-host"></a>
+
+* What happens: when the last chunk a guest's mouth tears off kills a host NPC, the host's game counts the kill as
+  the host's own cell's, so that species turns on the host's cell, not on the guest.
+* Reproduce: not seen at runtime; a guest with a jaw part kills a host NPC by chunks.
+* Known: by code (cellsync.cpp MSG_CELL_HIT type 6 calls h_KillCell with the host's avatar as the killer; the eat
+  path uses the guest's puppet).
+* Ticket: BUG-1008
+
+## Session: with late join off a new player with a name already seen (the default "Player") still joins (2026-11-13, audit 0.7.14)
+<a id="issue-late-join-seen-name"></a>
+
+* What happens: the host turned late join off and started; a new player whose name was used earlier in the session
+  (two friends who kept the default "Player") joins as "Player 2". With a player limit below 4, a join with the name
+  of a player that is loading (silent 2 s) goes over the limit.
+* Reproduce: three games, late join off, two guests named Player; the second joins after the start (not run).
+* Known: session.cpp counts any seen name as a rejoin even with the rejoin token on; the old entry of that name is
+  not retired (observed in code).
+* Ticket: BUG-1001
+
+## Civ, Space: a shared money line names the wrong player or a false "earned" after two spends at once (2026-11-13, audit 0.7.14)
+<a id="issue-shared-cause-floor"></a>
+
+* What happens: when the host and a guest spend the shared money at the same moment and the pool hits 0, the
+  guests' feed can say the host earned money it did not earn, or credit the whole spend to the guest; the money
+  itself is right.
+* Reproduce: Civ, 300 in the pool, host and guest buy at once (not run).
+* Known: shared.cpp adds the guest's full change to applied/causes although the floor cut it (observed in code).
+* Ticket: BUG-1009
+
+## All: the last session summary is missing from reports when the game folder has non-Latin letters (Windows) (2026-11-13, audit 0.7.14)
+<a id="issue-summary-non-ascii-path"></a>
+
+* What happens: coop-last-session.txt is not written or read when the path to the mod's logs folder has letters
+  outside the ANSI code page, so the next problem report has no summary line at its top.
+* Reproduce: Spore in a folder with a Cyrillic or CJK name on Windows; end a co-op session; the file is absent.
+* Known: diag_stats.cpp calls fopen on a UTF-8 path (observed in code).
+* Ticket: BUG-1011
+
+## Session report: a long non-Latin host name ends in a broken character in the guest's report question (2026-11-13, audit 0.7.14)
+<a id="issue-sreport-host-cut"></a>
+
+* What happens: "<host> asks for your problem report" shows the host's name cut to 40 bytes, so a CJK name of 14
+  or more characters ends in a broken character.
+* Reproduce: a host named with 14 CJK characters, a session report round (not run).
+* Known: sreport.cpp calls substr(0, 40) on the UTF-8 name (observed in code).
+* Ticket: BUG-1013
+
+## Update: Try again shows the last download's progress for a moment (2026-11-13, audit 0.7.14)
+<a id="issue-update-retry-progress"></a>
+
+* What happens: after a failed update, Try again first shows the old "Downloading ... N %" until the new download
+  reports progress.
+* Reproduce: a failing update download, then Try again (not run).
+* Known: autoupdate.cpp never resets g_got / g_total (observed in code).
+* Ticket: BUG-1015
+
+## UI: text typed into the co-op window under a caption or the game saved box stops at half its length (2026-11-13, audit 0.7.14)
+<a id="issue-locked-edit-utf8"></a>
+
+* What happens: while a caption or a modal game box holds the input, the mod types the player's keys into the co-op
+  text line itself. A name or chat line in Cyrillic, Greek or CJK stops at half its limit (a third for CJK), DEL is
+  taken as a character, and an emoji becomes two replacement characters. Normal typing is not affected.
+* Reproduce: type 30 Cyrillic letters and an emoji into the chat while a caption holds the input (not run).
+* Known: locked_edit_apply (coop_ui.cpp) counts UTF-8 bytes against the UTF-16 limit and encodes each UTF-16 unit
+  on its own (by code, not seen at runtime).
+* Ticket: BUG-1027
+
+## All stages: after a caught fault inside the game's Present the co-op stops while the game draws on (2026-11-13, audit 0.7.14)
+<a id="issue-present-depth-stuck"></a>
+
+* What happens: a fault inside Direct3D's Present (in the driver, or in a SporeKit task pumped by a message
+  dispatched inside Present) that the game's own handler catches leaves SporeKit's Present depth set: no SporeKit
+  frame runs again, so no co-op ticks, no network updates and no outside-frame console commands, while the game
+  keeps drawing. A fault in an overlay handler leaves the overlay's scene open instead.
+* Reproduce: not seen at runtime; needs a test command that faults inside Present.
+* Known: sporekit/d3d9hook.cpp (plain g_present_depth++/-- around o_Present / o_SwapPresent; frame_cut_off does not
+  reset the depth); observed in code, reachability inferred. Related to BUG-0966 (there the frames went on).
+* Ticket: BUG-1024
