@@ -46,6 +46,8 @@ struct Feature {
     // after spacecoop::init (symbols, hooks); false = the feature stays off (logged)
     std::function<bool(const SkHost*, SkMod*)> init;
     std::function<void(double now)> tick;                                  // every frame, inside Present
+    // every frame while the host's session settings switch the feature off (F3): what it still owes the player (BUG-1037)
+    std::function<void(double now)> tick_off;
     std::function<void(uint8_t kind, uint8_t origin, net::Reader&)> on_message; // origin != me
     std::function<void()> on_session_end;
     std::function<void()> draw_overlay;                                    // inside Present: draw only

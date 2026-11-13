@@ -129,6 +129,23 @@ static std::vector<Owed> g_owed;
 static bool g_refund_fix = true;
 COOP_FIX("trade.refund", "BUG-0058", g_refund_fix, "space: gifts that come back outside Space wait until Space");
 static bool g_away;        // tests: the feature acts as outside Space (no inventory), BUG-0058
+// BUG-1034: a gift (K_TOOL) or a sale (K_SELL) that reaches a rejoined guest while its kept hold is still to come
+// (inv_restore_pending: up to 20 s after its fresh hold went) went into the host's copy of the hold, which the restore
+// (apply_inv) then replaced: the item was lost in both games (the sender was told it was taken). Now such a message
+// waits here and is handled (added and answered) once the restore is done; an offer is not accepted in that window.
+// Off: added at once (0.7.13).
+static bool g_wait_restore_fix = true;
+COOP_FIX("space.trade_wait_restore", "BUG-1034", g_wait_restore_fix,
+         "space: a gift or a sale reaching a rejoined guest before its own cargo hold is back waits for it");
+struct Waiting {
+    uint8_t kind, origin;
+    uint32_t id;
+    std::vector<uint8_t> body; // the message after `to` and `id`
+};
+static std::vector<Waiting> g_waiting;
+static uint32_t g_waited, g_offer_waits;
+static bool inv_restore_pending();
+static bool g_restore_hold; // tests (BUG-1034): the guest's restore waits (no own record, K_INV_KEPT not taken)
 static int g_hold;         // tests: 1 do not answer gifts (the answer is still on its way); 2 add
                            // gifts and sales but do not answer (the answer is lost, BUG-0542)
 // BUG-0542: the own session ends with a gift or a sale on its way: what the partner's side had
@@ -715,6 +732,12 @@ static void answer_offer(uint32_t id, bool accept, int from = -1)
     for (size_t i = 0; i < g_offers.size(); i++) {
         if (g_offers[i].id != id || (from >= 0 && g_offers[i].from != from))
             continue;
+        if (accept && g_wait_restore_fix && inv_restore_pending()) { // BUG-1034: the hold is not ours yet
+            g_offer_waits++;
+            spaceext::notice(spaceext::tr("Your cargo hold is being restored: accept in a moment",
+                                          "Ваш трюм ещё восстанавливается: примите чуть позже"));
+            return; // the offer stays
+        }
         Offer of = g_offers[i];
         g_offers.erase(g_offers.begin() + i);
         uint8_t reason = 0; // 0 declined, 1 no money, 2 no cargo room, 3 not in space
@@ -816,12 +839,39 @@ static void pay_owed()
 }
 
 static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r);
+static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r);
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     uint8_t to = r.u8();
     uint32_t id = r.u32();
     if (!r.ok() || to != spaceext::my_id())
         return;
+    // BUG-1034: not into the hold the restore is about to replace
+    if ((kind == K_TOOL || kind == K_SELL) && g_wait_restore_fix && inv_restore_pending() && g_waiting.size() < 64) {
+        g_waiting.push_back({kind, origin, id, std::vector<uint8_t>(r.cur(), r.cur() + r.left())});
+        g_waited++;
+        H->log(M, SK_INFO, "trade: %s from %s waits for the own hold's restore (BUG-1034)", kind == K_TOOL ? "a gift" : "a sale",
+               spaceext::name_of(origin).c_str());
+        return;
+    }
+    handle(kind, origin, id, r);
+}
+
+// BUG-1034: the gifts and sales that waited for the restore, once it is done (or the session ended)
+static void handle_waiting()
+{
+    if (g_waiting.empty() || inv_restore_pending())
+        return;
+    auto v = std::move(g_waiting);
+    g_waiting.clear();
+    for (auto& w : v) {
+        net::Reader r(w.body.data(), w.body.size());
+        handle(w.kind, w.origin, w.id, r);
+    }
+}
+
+static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
+{
     std::string from = spaceext::name_of(origin);
     switch (kind) {
     case K_TOOL: {
@@ -1429,6 +1479,8 @@ static bool inv_restore_pending()
     uint32_t e = spaceext::world_epoch();
     if (!e || e == g_inv_join_epoch || e == g_inv_applied_epoch || e == g_inv_none_epoch)
         return false;
+    if (g_restore_hold)
+        return true; // tests (BUG-1034): a slow restore
     return e != g_inv_fresh_epoch || H->time_seconds() - g_inv_fresh_t < 20.0;
 }
 
@@ -1488,7 +1540,7 @@ static void inv_tick(double now)
     bool fresh = e != g_inv_fresh_epoch;
     if (e != g_inv_epoch_seen)
         g_inv_epoch_seen = e, g_inv_epoch_t = now;
-    if (fresh && g_keep_local_fix && g_keep_items_fix && e != g_inv_applied_epoch) {
+    if (fresh && g_keep_local_fix && g_keep_items_fix && e != g_inv_applied_epoch && !g_restore_hold) {
         // BUG-0679: this player's own record of the host world: its hold at once (after 2 s of the world, so the
         // game's load has settled), the host's kept one is not needed; the hold goes to the host as not fresh
         std::string key = rec_key_now();
@@ -1584,6 +1636,8 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
         }
         return;
     }
+    if (g_restore_hold)
+        return; // tests (BUG-1034): not taken now, the host sends it again after 10 s
     Inv v;
     if (!get_inv(r, v))
         return;
@@ -1698,6 +1752,7 @@ static void tick(double now)
     if (g_refund_fix)
         pay_owed(); // also after the session ended
     pay_owed_sales(); // BUG-0832
+    handle_waiting(); // BUG-1034 (also after the session ended: the sender counts them as delivered)
     if (!spaceext::connected())
         return;
     for (auto& o : g_out) // BUG-0542: did the partner's side get it?
@@ -1889,16 +1944,18 @@ static std::vector<spaceext::Row> rows()
 
 static std::string status()
 {
-    char b[560];
+    char b[720];
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
              "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
-             "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u sales_owed=%u/%u/%u/%u\n",
+             "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u sales_owed=%u/%u/%u/%u "
+             "waiting=%u waited=%u offer_waits=%u restore_pending=%d\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
              (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch(),
              (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end,
-             (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped);
+             (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped, (unsigned)g_waiting.size(),
+             g_waited, g_offer_waits, (int)inv_restore_pending());
     return b;
 }
 
@@ -2007,6 +2064,10 @@ static std::string debug(const std::vector<std::string>& a)
         (a[0] == "refundfix" ? g_refund_fix : g_away) = on;
         return a[0] + (on ? " 1\n" : " 0\n");
     }
+    if (a[0] == "restorehold" && a.size() > 1) { // tests (BUG-1034): 1 the guest's restore waits until 0
+        g_restore_hold = a[1] != "0";
+        return std::string("restorehold ") + (g_restore_hold ? "1" : "0") + "\n";
+    }
     if (a[0] == "inv") { // BUG-0678: the game's hold as the game holds it
         Inv v;
         return read_inv(v) ? inv_text(v) : "no inventory\n";
@@ -2056,7 +2117,7 @@ static std::string debug(const std::vector<std::string>& a)
     }
     return "usage: coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> | "
            "take <inst> <n> | deal | sell [n] | offers | accept <id> | decline <id> | money | refundfix 0|1 | "
-           "away 0|1 | hold 0|1|2 | kept | cargo <type> <inst> [n] | slots <n>]\n";
+           "away 0|1 | hold 0|1|2 | restorehold 0|1 | kept | cargo <type> <inst> [n] | slots <n>]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)

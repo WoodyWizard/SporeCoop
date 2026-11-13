@@ -53,6 +53,12 @@ COOP_FIX("core.ui_share_explain", "BUG-0597", g_share_explain_fix, "ui: Send my 
 // BUG-0598: a guest without own creations of the stage's kind saw "My cell: the world's own" with no arrows and
 // no hint, and could not tell that a choice exists (a player asked where to pick the own creation). The row says
 // whose it is ("the host's species") and how to get a choice (make one in an editor). Off: "the world's own" (0.7.7).
+// BUG-1062: "Give 10 to <player>" (Space) and "Give to <player>" kept a fixed width (150 / 170 px): a caption wraps
+// when it needs more than the width minus ~30 px (docs/08-ui.md#ui-text-width), so "Give 10 to Carol" showed on two
+// lines cut by the button's frame. Now the give button (and in Space the jump button left of it) is as wide as its
+// caption needs, growing to the left. Off: the fixed widths (0.7.13).
+static bool g_give_fit_fix = true;
+COOP_FIX("core.ui_give_fit", "BUG-1062", g_give_fit_fix, "ui: the give and jump buttons are as wide as their captions");
 static bool g_creation_hint_fix = true;
 COOP_FIX("core.ui_creation_hint", "BUG-0598", g_creation_hint_fix, "ui: the creation row says whose creation it is and how to get a choice");
 static bool g_f9_down;
@@ -1411,15 +1417,28 @@ static void refresh_lobby()
         if (w && (std::abs(sui::area(w).x1 - r.x1) > 0.5f || std::abs(sui::area(w).x2 - r.x2) > 0.5f))
             sui::set_area(w, r);
     };
-    place(D.give_next, pick_space ? Rect{694, 430, 720, 460} : Rect{520, 430, 560, 460});
-    place(D.give_btn, pick_space ? Rect{520, 430, 690, 460} : Rect{570, 430, 720, 460});
-    place(D.jump_btn, pick_space ? Rect{400, 430, 515, 460} : Rect{400, 430, 560, 460});
-    show(D.give_next, pick && (!space || pick_space));
-    text(D.give_btn, space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto);
+    std::string give_cap = space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto;
     std::string jto;
     bool jump = A.jump && A.jump(jto);
+    std::string jump_cap = std::string(T("Jump to ", "К звезде: ")) + jto;
+    Rect r_next = pick_space ? Rect{694, 430, 720, 460} : Rect{520, 430, 560, 460};
+    Rect r_give = pick_space ? Rect{520, 430, 690, 460} : Rect{570, 430, 720, 460};
+    Rect r_jump = pick_space ? Rect{400, 430, 515, 460} : Rect{400, 430, 560, 460};
+    if (g_give_fit_fix) { // BUG-1062: right to left, each button as wide as its caption needs (+34: the frame)
+        auto need = [](const std::string& c, float base) { return std::max(base, std::round(caption_width(demo_text(c)) + 34)); };
+        r_give.x1 = r_give.x2 - need(give_cap, r_give.x2 - r_give.x1);
+        if (pick && !space) // Tribe / Civ: ">" left of the give button
+            r_next = Rect{r_give.x1 - 50, 430, r_give.x1 - 10, 460};
+        float jx2 = std::min(r_jump.x2, (giving && gn > 0 ? r_give.x1 : 720.f) - 5);
+        r_jump = Rect{jx2 - need(jump_cap, r_jump.x2 - r_jump.x1), 430, jx2, 460};
+    }
+    place(D.give_next, r_next);
+    place(D.give_btn, r_give);
+    place(D.jump_btn, r_jump);
+    show(D.give_next, pick && (!space || pick_space));
+    text(D.give_btn, give_cap);
     show(D.jump_btn, jump);
-    text(D.jump_btn, std::string(T("Jump to ", "К звезде: ")) + jto);
+    text(D.jump_btn, jump_cap);
     bool can = (!cl.empty() && !giving && ck != 2 && cown > 0) || roles;
     show(D.creation_prev, can);
     show(D.creation_next, can);

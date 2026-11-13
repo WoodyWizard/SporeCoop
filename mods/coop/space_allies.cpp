@@ -107,6 +107,15 @@ static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
 static bool g_aborted_fix = true;  // coop.space allies abortedfix 0: the set is never pruned (BUG-0136, tests)
 COOP_FIX("allies.aborted", "BUG-0136", g_aborted_fix, "space: a won raid on a partner's colony does not count as aborted");
 static bool g_end_pending;        // the session ended while I was on a mirror planet
+// BUG-1036 (BUG-0038 trigger 5): the session ended on a mirror planet (g_end_pending), then the player left Space (the
+// menu, a load): the tick returned outside Space before the pending end, so the old partners stayed in g_m; back in
+// Space in a new session the pending end was dropped ("the mirrors are wanted again") and the old partners' colonies
+// came back as frozen allies in the new galaxy. Now the pending end finishes outside Space once no mirror is applied
+// (the galaxy went: nothing to undo), and a new session in Space ends the old mirrors first. Off: as 0.7.13.
+static bool g_end_pending_fix = true;
+COOP_FIX("space.allies_end_pending", "BUG-1036", g_end_pending_fix,
+         "space: the old partners' mirrors go when a session ended on a mirror planet and the player left Space");
+static uint32_t g_end_pending_done;
 // BUG-0543: a partner's colony in a star system that is mine here (we start as one empire: the home
 // system and every colony both had at the join are shared) was not shown at all ("your own star
 // system"): in my game the planet stayed free, and I could found a colony of my own on it. Now it is
@@ -115,6 +124,7 @@ static bool g_end_pending;        // the session ended while I was on a mirror p
 static bool g_own_star_fix = true;
 COOP_FIX("allies.own_star", "BUG-0543", g_own_star_fix, "space: a partner's colony in a star system of mine is a colony here too");
 static void end_all();
+static void forget_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
 
 // ---------------- game helpers ----------------
@@ -1038,6 +1048,12 @@ static void tick(double now)
                 forget(m);
                 reset_empire(m);
             }
+        if (g_end_pending && g_end_pending_fix && !any_applied()) { // BUG-1036: nothing in a galaxy to undo
+            g_end_pending = false;
+            g_end_pending_done++;
+            forget_all();
+            H->log(M, SK_INFO, "allies: the ended session's mirrors forgotten outside Space (BUG-1036)");
+        }
         return;
     }
     if (g_end_pending) {
@@ -1045,7 +1061,7 @@ static void tick(double now)
         if (now < next)
             return;
         next = now + 1.0;
-        if (!spaceext::connected())
+        if (!spaceext::connected() || g_end_pending_fix) // BUG-1036: a new session ends the old one's mirrors first
             H->run_outside_frame([](void*) { end_all(); }, nullptr);
         else
             g_end_pending = false; // a new session: the mirrors are wanted again
@@ -1127,6 +1143,10 @@ static void end_all()
     }
     g_end_pending = false;
     unapply_all();
+    forget_all();
+}
+static void forget_all()
+{
     for (auto& [n, m] : g_m)
         forget(m);
     g_m.clear();
@@ -1205,9 +1225,9 @@ static std::string status()
         ap += m.applied, pl += (int)m.planets.size(), st += (int)m.stars.size();
     snprintf(b, sizeof b,
              "allies: mirrors=%d applied=%d stars=%d planets=%d hold=%d saves=%u unmirrors=%u applies=%u growth_blocked=%u "
-             "raids_started=%u raids_won=%u raids_completed=%u",
+             "raids_started=%u raids_won=%u raids_completed=%u end_pending=%d end_pending_done=%u",
              (int)g_m.size(), ap, st, pl, (int)g_hold, g_saves, g_unmirrors, g_applies, g_growth_blocked,
-             g_raids_started, g_raids_won, g_raids_completed);
+             g_raids_started, g_raids_won, g_raids_completed, (int)g_end_pending, g_end_pending_done);
     return std::string(b) + (g_last.empty() ? "" : " last='" + g_last + "'");
 }
 
