@@ -3339,3 +3339,28 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   and before each of its updates, still gave other pictograms on the two games and on one game from bubble to bubble.
 * Next steps: find the particle component's own random source (Swarm), or leave it (cosmetic chat).
 * Ticket: BUG-0987 (wontfix)
+
+## Tribe: a chief's staff in the hand on one game and in the grip on the other in a still (2026-11-13, fix/w49-mirror)
+<a id="issue-tribe-still-staff-grip"></a>
+
+* What happens: same_view_tribe stills after BUG-0972 / BUG-0988: the host's chief holds its staff in the hand, the
+  guest's copy has it upright in the resting grip (or held another way) at the same moment.
+* Reproduce: `lab.py run same_view_tribe --repeat 3`, compare the chief's staff; `coop.tribe anims` (`hold=`, `t=`).
+* Known: the animation and its moment agree (tribe_mirror_phase); the hold tests pass. Not analysed.
+* Ticket: BUG-1069
+
+## Tribe: right after the session start a returned gesture of the chief's copy can stay (2026-11-13, fix/w49-mirror)
+<a id="issue-tribe-stale-first"></a>
+
+* What happens: one round of 12 in tribe_mirror_stale (the first of a session, the mirror's last relayed animation 0)
+  kept the gesture for 9 s while the host's chief stood; every other round ended it within 0.5-2.1 s.
+* Reproduce: `lab.py run tribe_mirror_stale --repeat 3`; `coop.tribe holdtrace 1` on the guest (Z / I events).
+* Ticket: BUG-1071
+
+## Tests: same_view_tribe's host game gone 7 s into Tribe (2026-11-13, fix/w49-mirror)
+<a id="issue-same-view-tribe-host-gone"></a>
+
+* What happens: lane 7, a cold start: the host's game log ends 6.7 s into Tribe, no fault, no crash report; the test's
+  console call breaks. Seen once (out/lab/20261113-052132).
+* Reproduce: `lab.py run same_view_tribe --lane 7 --repeat 5`.
+* Ticket: BUG-1070

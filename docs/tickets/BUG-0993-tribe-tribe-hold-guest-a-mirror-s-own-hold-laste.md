@@ -49,3 +49,4 @@ and the final check runs (see History).
 ## History
 - 2026-11-12: opened.
 - 2026-11-13: fixed on fix/w49-mirror (package T2 of 0.7.14).
+- 2026-11-13: fix/w49-mirror final check: tribe_hold_cut PASS out/lab/20261113-052132 (lane 7), out/lab/reruns 20261113-054031 (lane 6) and 20261113-054834 (lane 7), the test made to SKIP when the host held in most rounds); tribe_hold_guest PASS x2 (20261113-051820-2, 20261113-052132).

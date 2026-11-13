@@ -38,3 +38,4 @@ fix/w49-mirror looked at too (see History).
 ## History
 - 2026-11-12: opened.
 - 2026-11-13: fix/w49-mirror: not reproduced (frame scan); closed.
+- 2026-11-13: fix/w49-mirror final check: play_creature --quick (20261113-052132) key frames normal.

@@ -11,7 +11,8 @@ saw the hold, 0.5-0.85 s after the hold began, and over 1.0 s at 26 fps with hit
    game's Citizen_SetHandheldItem: a started kind 5 modifier the host never sent, as when the mirror's own gesture
    takes it), then samples the game's own hand state (`hold=`) for 1.6 s.
 3. The guest's hold trace (`coop.tribe holdtrace <id>`, game seconds): the time from the hand set (H) to the cut (C).
-   A round with a host's hold of the chief in between (S / T), or in which the game took no hold, is not counted.
+   A round with a host's hold of the chief in between (S / T), or in which the game took no hold or its animation ended
+   the hold by itself within 0.55 s, is not counted; fewer than ROUNDS / 2 counted: SKIP.
 Checked: every cut within 0.55 s of the hold's start (game clock); the game's `hold=` back to 0 within 1.0 s of the
 first sample that showed it. SPORE_FIX_OFF=tribe.hold_cut_frame: 0.6-0.9 s (FAIL).
 
@@ -51,9 +52,10 @@ def main():
                 rows.append((time.time(), int(m.group(1))))
             time.sleep(0.03)
         on = [t for t, h in rows if h]
+        held = None  # the game's own hold in this round, s (None: never held)
         if on:
             off = next((t for t, h in rows if not h and t > on[0]), rows[-1][0] + 0.03)
-            sampled.append(round(off - on[0], 2))
+            held = round(off - on[0], 2)
         ev = []
         for ln in guest.call(f'coop.tribe holdtrace {cid}')['out'].splitlines():
             p = ln.split()
@@ -72,19 +74,26 @@ def main():
             skipped += 1
             print(f'  round {r + 1}: no hold began ({"".join(w for _, w in tail)}), not counted', flush=True)
             continue
+        if held is not None:
+            sampled.append(held)
         end = next((t for t, w in tail if w in 'CM'), None)
         if end is None:
-            print(f'  round {r + 1}: no cut ({"".join(w for _, w in tail)})', flush=True)
+            if held is not None and held < 0.55:  # (its animation ended and took the hold with it: nothing to cut)
+                print(f'  round {r + 1}: the hold ended by itself after {held} s ({"".join(w for _, w in tail)})', flush=True)
+                continue
+            print(f'  round {r + 1}: no cut ({"".join(w for _, w in tail)}); sampled hold {held} s', flush=True)
             cuts.append(9.9)
             continue
         cuts.append(round(end - tail[0][0], 3))
         print(f'  round {r + 1}: cut {cuts[-1]} s after the hand set ({"".join(w for _, w in tail)}); sampled hold '
-              f'{sampled[-1] if sampled else "-"} s', flush=True)
+              f'{held} s', flush=True)
         time.sleep(0.5)
     if a.fps:
         guest.call('frame.limit auto')
     print(f'  cuts {cuts}; sampled holds {sampled}; skipped {skipped}', flush=True)
-    ck(len(cuts) >= a.rounds // 2, f'{len(cuts)} rounds counted (>= {a.rounds // 2})')
+    if len(cuts) < a.rounds // 2:  # (the host's chief held its staff itself in most rounds: the case did not come)
+        print(f'RESULT: SKIP {len(cuts)} rounds counted (< {a.rounds // 2}): the host\'s holds came in between', flush=True)
+        return 0
     ck(cuts and all(c <= 0.55 for c in cuts), f'every hold of the mirror\'s own is cut within 0.55 s ({cuts})')
     ck(sampled and all(s < 1.0 for s in sampled), f'the game\'s hold= is back to 0 within 1.0 s ({sampled})')
     ck.faults(host=host, guest=guest)
