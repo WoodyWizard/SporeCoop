@@ -7,8 +7,8 @@ docs/re/creature.md#creature-mating-call): the stage change went on without aski
 "Evolve now"), while the mating evolutions (tag 0x12191CA) waited for the vote.
 
 Two games on the creature fixture; the stage end the players' way, as the campaign does it (coop_campaign.py
-kick_creature): `coop.dna add 3000` (brain upgrade 4, the bar full), then History and its check, retried every 25 s
-while no cinematic plays.
+kick_creature): `coop.dna add 3000` (brain upgrade 4, the bar full; its caption "Your brain is fully grown ..." answered
+with its check), then History and its check, retried every 25 s while no cinematic plays.
 
 default (the host ends the stage):
   1. the host's game builds the stage-end request (its log: "editor request in Creature: ... tag 064AA168");
@@ -29,7 +29,7 @@ import sys
 import time
 
 import lane
-from coop_campaign import HISTORY_BTN, HISTORY_OK
+from coop_campaign import CAPTION_OK, HISTORY_BTN, HISTORY_OK
 from coop_ui import Ui
 from twoinst import Checks, keyframe, start
 
@@ -72,15 +72,29 @@ def press_stage_end(con, inst, until, secs=180):
     """DNA 3000, then History and its check every 25 s while no cinematic plays, until until() or a request"""
     print('  ' + con.call('coop.dna add 3000')['out'].strip()[:100], flush=True)
     n0 = len(stage_end_requests(inst))
-    t0, last = time.time(), 0.0
+    t0, last, movie, ok_at = time.time(), 0.0, None, 0.0
     while time.time() - t0 < secs:
         if len(stage_end_requests(inst)) > n0 or until():
             return True
-        if 'movie=1' not in con.call('coop.status')['out'] and in_creature(con) and time.time() - last > 25:
-            history(con)
-            last = time.time()
+        if 'movie=1' in con.call('coop.status')['out']:
+            # the brain upgrade's caption ("Your brain is fully grown ...") waits for its check, as a player reads it
+            movie = movie or time.time()
+            if time.time() - movie >= 6 and time.time() - ok_at >= 10:
+                caption_ok(con)
+                ok_at = time.time()
+        else:
+            movie = None
+            if in_creature(con) and time.time() - last > 25:
+                history(con)
+                last = time.time()
         time.sleep(2)
     return False
+
+
+def caption_ok(con):
+    con.call(f'move {CAPTION_OK[0]} {CAPTION_OK[1]}')
+    time.sleep(0.4)
+    con.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
 
 
 def host_case(host, guest, ck):

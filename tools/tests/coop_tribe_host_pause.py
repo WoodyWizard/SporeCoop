@@ -30,7 +30,8 @@ def busy(con):
 
 
 def toasts(con):
-    return re.findall(r"^toast \S+ \([^)]*\) '([^']*)'", con.call('coop.status')['out'], re.M)
+    # (the text may hold an apostrophe: up to the quote before the text's line list or the line's end)
+    return re.findall(r"^toast \S+ \([^)]*\) '(.*?)'(?= \||$)", con.call('coop.status')['out'], re.M)
 
 
 def main():
