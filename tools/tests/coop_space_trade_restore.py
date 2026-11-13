@@ -37,6 +37,10 @@ def cargo(con, inst):
     return int(m.group(1)) if m else 0
 
 
+def cargos(con):
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r"cargo (\S+) '[^']*' x(\d+)", sp(con, 'trade spices'))}
+
+
 def field(text, key):
     m = re.search(r'\b' + key + r'=(-?\d+)', text)
     return int(m.group(1)) if m else -1
@@ -60,6 +64,8 @@ def main():
     time.sleep(4)  # the guest's hold reaches the host
     print('  host kept: ' + sp(host, 'trade kept').replace('\n', ' | '), flush=True)
 
+    own = cargos(guest)  # the guest's own spice before it leaves
+    print(f'  guest spice cargo: {own}', flush=True)
     # 2. leave, hold the restore, join again
     print('  ' + sp(guest, 'trade restorehold 1'), flush=True)
     guest.call('coop.leave')
@@ -106,8 +112,10 @@ def main():
     ck(got is not None, f'the guest\'s game has its own 9 charges plus the 5 given in the window ({g_after})')
     ck(h_after == 7, f'the host\'s game gave 5 and got none back ({h_after})')
     if inst:
-        gc1 = wait(lambda: (lambda c: c if c >= n else None)(cargo(guest, inst)), 15) or cargo(guest, inst)
-        ck(gc1 >= n, f'the sold spice ({n} x {inst}) is in the guest\'s cargo ({gc1})')
+        want = own.get(inst, 0) + n
+        gc1 = wait(lambda: (lambda c: c if c == want else None)(cargo(guest, inst)), 15) or cargo(guest, inst)
+        ck(gc1 == want, f'the sold spice ({n} x {inst}) is in the guest\'s cargo on top of its own '
+           f'{own.get(inst, 0)}: {gc1} ({want})')
     print('  guest trade: ' + sp(guest, 'trade').strip(), flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()

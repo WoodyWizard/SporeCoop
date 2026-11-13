@@ -2957,3 +2957,26 @@ Mod-side mechanics (space_rivalry.cpp, space_planets.cpp), no new game addresses
   right of the Give button (724..756 x 430..460: the jump button holds its Tribe / Civ place 520..560).
 * Tests: `coop.space nogen` (a star without generated planets), `coop.space terrarec <place> a t w` (send a
   K_TERRA_REC), `coop.space heal` (the ship's hp to its max), `coop.space finale goto <star> delay <s>`.
+
+## Restore window trades, allies pending end, owed tools, empty armada raids (2026-11-13, fix/w49-space2)
+<a id="space-restore-window"></a>
+
+* ✔ (code) BUG-1034: a rejoined guest's hold is the host's copy until its own comes back (K_INV_KEPT or its own
+  record, BUG-0678 / BUG-0679; `inv_restore_pending()`: at most 20 s after its fresh hold went). A K_TOOL or K_SELL
+  in that window now waits in space_trade's `g_waiting` (the message body after `to` / `id`) and is handled, added
+  and answered, in the first trade tick after the restore (or after the session ended: the sender counts a delivered
+  gift as received, BUG-0542). Accepting an offer in the window keeps the offer and says "accept in a moment".
+  Switch `space.trade_wait_restore`. Test hook `coop.space trade restorehold 1`: the guest's own record is not used,
+  K_INV_KEPT is not taken (the host resends after 10 s) and the window stays open until `restorehold 0`. The `trade`
+  status line has `waiting= waited= offer_waits= restore_pending=`.
+* ✔ (code) BUG-1036: space_allies' tick outside Space forgets applied mirrors whose galaxy went; with a pending end
+  (the session ended on a mirror planet) and nothing applied left, the old mirrors are forgotten there too
+  (`end_pending_done` in `allies status`). Back in Space connected with a pending end, end_all runs (it waits again
+  while the ship is on a mirror planet) instead of dropping the pending end. Switch `space.allies_end_pending`.
+* ✔ (code) BUG-1037: spaceext::Feature has `tick_off` (every frame while the host's session settings switch the
+  feature off). space_contracts pays its owed rewards (BUG-0694, also K_MISSION tools) there; `coop.space contracts
+  owed` prints the counts (`paid_while_off`). Switch `space.owed_always`.
+* ✔ (code) BUG-1038: correction of the audit (SPC-12): with `contracts.wave_resume` on, a fresh wave's empty raid was
+  resumed once (30 s more), then aborted by the resumed-wave branch; not forever. Now the 30 s branch aborts the empty
+  raid (SetState 7) for a fresh wave too and the next ready tick starts a new one. Switch `space.armada_empty_wave`.
+* ✔ (code) BUG-1040: the roster scan's 250-colony cap now ends the scan over all stars (space_map.cpp).

@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: a tool gift or a spice sale that reaches a guest who just rejoined, before its own cargo hold is back, is
+  now added once the hold is restored; before, it went into the host's copy of the hold and was lost in both games.
+  Accepting a trade offer in those seconds asks to accept a moment later (BUG-1034).
+- Space: when a session ended while the player was on an ally's mirror planet and the player then went to the menu
+  and joined another session, the old partner's colonies no longer come back as a frozen ally (BUG-1036).
+- Space: a mission reward tool earned while outside Space is now given back in Space also when the host has Space
+  contracts switched off in the session settings (BUG-1037).
+- Space: an armada contract wave whose raid brings no ships now starts a new raid after 30 s instead of waiting
+  another 30 s on the same empty raid (BUG-1038).
+- Co-op window: "Give 10 to <player>" (Space) and "Give to <player>" are as wide as their caption; before, the
+  caption wrapped onto two lines cut by the button's frame (BUG-1062).
 - Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
   now merges that guest's own budget; before, its budget was lost and the host's save money was added instead. A
   player new to a Rivals session now starts its own empire with 0 money, not with a copy of the host's money

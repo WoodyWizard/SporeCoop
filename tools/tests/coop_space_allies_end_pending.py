@@ -21,13 +21,18 @@ import time
 
 import lane
 from coop_space_allies_reload import free_planets, sp
-from coop_space_map import context, land_on, no_movie, place, wait
+from coop_space_map import context, no_movie, place, wait
 from twoinst import Checks, keyframe, start, wait_guest_in
 
 
 def owner(con, star):
-    m = re.search(r"owner='([^']*)'", sp(con, 'allies star', star))
+    m = re.search(r"owner='(.*?)'(?: \(mine\))? tech=", sp(con, 'allies star', star))
     return m.group(1) if m else None
+
+
+def free_in(con, star):
+    """the free planets (tech 0-3, no colony) of a star"""
+    return re.findall(r"planet ([0-9A-F]+) '[^']*' tech=([0-3])\b", sp(con, 'allies star', star))
 
 
 def main():
@@ -38,14 +43,31 @@ def main():
     free = free_planets(guest)
     if not ck(free, f'a free planet for the mirror: {free}'):
         return ck.result()
-    planet = free[0]
-    star = int(planet, 16) & 0xFFFFFF
+    # the ship's active planet after a jump is the one `land` lands on: the mirror goes on it when it is free
+    planet = None
+    for cand in free:
+        star = int(cand, 16) & 0xFFFFFF
+        print(f'  guest jumpto {star}:', sp(guest, 'jumpto', star), flush=True)
+        if not wait(lambda: place(guest)[1] == star and context(guest) == 'system', 60):
+            continue
+        no_movie(guest)
+        act = place(guest)[2]
+        ok = [p for p, _ in free_in(guest, star)]
+        print(f'  star {star}: active {act}, free {ok}', flush=True)
+        if act in ok:
+            planet = act
+            break
+    if planet is None:
+        print('RESULT: SKIP (no free planet was the active one after a jump)', flush=True)
+        ck.faults(host=host, guest=guest)
+        return 0
     print('  fake:', sp(guest, 'allies fake Zed', planet).splitlines()[0], flush=True)
     ck(owner(guest, star) == "Zed's empire", f'star {star} is Zed\'s in the guest\'s game ({owner(guest, star)})')
-    print(f'  guest jumpto {star}:', sp(guest, 'jumpto', star), flush=True)
-    ck(wait(lambda: place(guest)[1] == star and context(guest) == 'system', 60), f'the guest is at star {star}')
-    no_movie(guest)
-    ck(land_on(guest, planet, 'guest'), f'the guest landed on the mirror colony {planet}')
+    print('  land:', sp(guest, 'land'), flush=True)
+    landed = wait(lambda: context(guest) == 'planet' and place(guest)[2] == planet, 40)
+    ck(landed, f'the guest landed on the mirror colony {planet} ({sp(guest, "star")})')
+    if not landed:
+        return ck.result()
     no_movie(guest)
     print('  guest cities:', sp(guest, 'allies cities').replace('\n', ' | ')[:300], flush=True)
 
