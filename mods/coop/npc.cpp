@@ -46,9 +46,20 @@ static constexpr double kStateInterval = 0.1;
 static constexpr float kMaxHit = 10000.f; // a guest's reported hit (MSG_DAMAGE_REQ) is clamped to 0..this
 static constexpr float kRtsRelevance = 250.f; // tribe stage: m around the player tribe
 
-// NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage
-static bool npc_stage() { return game::in_creature_stage() || game::mode_id() == 0x1654C02; }
-static bool rts_stage() { return game::mode_id() == 0x1654C02; }
+// BUG-0973: the Civilization stage's wild creatures (cCreatureAnimal, noun 0x18EB45E: herds and epics) ran in each
+// game on its own: they fled, moved and died apart, the guest's mirror vehicles never killed one, and a guest's click
+// on a creature named one the host did not have there. Now the host owns them as in the Tribe stage: the guest's own
+// are removed by the update filter and it shows proxies of the host's (positions, herds, deaths, walked like the
+// Tribe stage's). A Civ planet has few of them (civ_npc: 10, the civ fixture: 4), so every one goes to every guest
+// in the world (kCivRelevance). `coop.fix npc.civ_wild off`: each game runs its own (0.7.13).
+static bool g_civ_wild_fix = true;
+COOP_FIX("npc.civ_wild", "BUG-0973", g_civ_wild_fix,
+         "civ: the host owns the wild creatures, every guest shows the host's (positions, herds, deaths)");
+static constexpr float kCivRelevance = 1e6f; // m: the whole planet
+static bool civ_stage() { return g_civ_wild_fix && game::mode_id() == modes::kCiv; }
+// NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage (and in Civ)
+static bool npc_stage() { return game::in_creature_stage() || game::mode_id() == 0x1654C02 || civ_stage(); }
+static bool rts_stage() { return game::mode_id() == 0x1654C02 || civ_stage(); }
 // BUG-0291: in the Tribe stage the host sent a guest only the animals within kRtsRelevance of the
 // player tribe; a guest looking farther away saw none there (its own are removed by the update
 // filter). Now also those within kRelevance of the guest's view centre (its pointer,
@@ -1522,7 +1533,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
     net::Vec3 center;
-    bool rts = rts_stage() && C.stage_center && C.stage_center(center);
+    const bool civ = civ_stage(); // BUG-0973: no centre, the whole planet
+    bool rts = civ || (rts_stage() && C.stage_center && C.stage_center(center));
     if (!av && !rts)
         return;
     // no creature updated this frame: the simulation stands still (pause menu, the death caption
@@ -1558,7 +1570,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             it = g_host_npcs.end();
             g_reused++;
         }
-        if (it == g_host_npcs.end() && g_stray_ids_fix && saved_stray(c)) // BUG-0385: never an NPC of the world
+        // BUG-0385: never an NPC of the world. BUG-0973: not in Civ, whose herds look like ours (members without an
+        // archetype tuning, herds without an archetype or nest: the civ_npc herd of 7 was never tracked) and where no
+        // partner's puppet exists to be saved
+        if (it == g_host_npcs.end() && g_stray_ids_fix && !civ && saved_stray(c))
             continue;
         if (it == g_host_npcs.end()) {
             uint16_t id = alloc_npc_id(
@@ -1647,7 +1662,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         }
         net::Vec3 view;
         bool has_view = false;
-        if (rts) {
+        if (civ) {
+            gp = {};
+            relevance = kCivRelevance;
+        } else if (rts) {
             gp = center;
             relevance = kRtsRelevance;
             has_view = g_rts_views_fix && views::of(p.id, game::mode_id(), now, view);

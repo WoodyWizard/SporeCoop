@@ -83,7 +83,16 @@ static double g_last_extra_at;
 // `npc.view_centres_tribe off`: Creature only (the first version of this fix).
 static bool g_tribe = true;
 COOP_FIX("npc.view_centres_tribe", "BUG-0280", g_tribe, "tribe: the host keeps animals and herds alive around every partner's view too");
-static bool stage_on(uint32_t mode) { return mode == 0x1654C01u || (g_tribe && mode == 0x1654C02u); }
+// BUG-0973: the Civilization stage runs the same pass (game sphere: the camera's point, 150 m / 200 m): a herd more
+// than 200 m from the host's camera point leaves the simulation (its herd cleared, no more updates), so with the host
+// owning the wild creatures (npc.civ_wild) a guest looking elsewhere saw none. The partners' pointers (rts_fill, as
+// in Tribe) keep the host's herds simulated there too. `npc.view_centres_civ off`: the host's camera only.
+static bool g_civ = true;
+COOP_FIX("npc.view_centres_civ", "BUG-0973", g_civ, "civ: the host keeps wild herds simulated around every partner's pointer too");
+static bool stage_on(uint32_t mode)
+{
+    return mode == 0x1654C01u || (g_tribe && mode == 0x1654C02u) || (g_civ && mode == 0x1654C04u);
+}
 
 using RelevanceFn = void*(SK_THISCALL*)(void* mgr, uint32_t a, uint32_t dt_ms);
 static RelevanceFn o_Relevance;

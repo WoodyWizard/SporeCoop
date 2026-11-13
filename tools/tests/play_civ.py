@@ -88,13 +88,14 @@ def stat(line, key):
 SPECIALTY = ('Military', 'Religious', 'Economic')  # the captured / bought city's specialty question (a modal box)
 
 
-def answer_specialty(con, wait=0.0):
-    """the specialty question of a bought or captured city, answered like a player (its first choice): the
-    caption pressed, or None when no such box is up (within `wait` s)"""
+def answer_specialty(con, wait=0.0, prefer=None):
+    """the specialty question of a bought or captured city, answered like a player (its first choice, or the caption
+    `prefer` when the box has it): the caption pressed, or None when no such box is up (within `wait` s)"""
     import uifind
     t0 = time.time()
+    order = ((prefer,) if prefer else ()) + tuple(c for c in SPECIALTY if c != prefer)
     while True:
-        for cap in SPECIALTY:
+        for cap in order:
             b = uifind.shown(con, cap)
             if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the box's button, not the HUD's tab label
                 uifind.press(con, cap)
