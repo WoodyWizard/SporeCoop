@@ -11,10 +11,10 @@ versions: 0.7.12
 fixed_in: unreleased
 branch: fix/w49-civ
 commits: 409f7c75, edfaef2c
-tests: civ_wild_sync, civ_guest_creature, play_civ
+tests: civ_wild_sync, civ_guest_creature, civ_save_strip, play_civ
 signature:
 docs: docs/re/civ.md#civ-wild-sync
-related: BUG-0970
+related: BUG-0970, BUG-1067
 ---
 
 ## Report
@@ -55,6 +55,16 @@ FAIL with SPORE_FIX_OFF=npc.civ_wild: out/lab/20261113-040340 and 20261113-04161
 PASS: out/lab/20261113-041106 (2 runs) and, with npc.civ_quiet, out/lab/20261113-041929 (2 runs: 12.3 KB/s host ->
 guest in all, 24 creatures; 7.6 KB/s with the sync off, 20.1 KB/s without npc.civ_quiet, run 20261113-041607).
 civ_guest_creature (BUG-0970's case needs games that differ) runs with npc.civ_wild off: PASS out/lab/20261113-041352.
+Saves (CLAUDE.md 2, the orchestrator's check): civ_save_strip now also checks the wild creatures. Carol (a guest)
+shows 10-22 proxies of the host's creatures (some in the game's nest herds, 9 herds made for them), saves, leaves and
+loads the save alone: 0 wild creatures in the reloaded world, no fault (lab 20261113-043251, Carol on free lane 2;
+direct run lane 4 + 5: 0 of 17). Its catch was seen: with SPORE_FIX_OFF=savestrip.on 6 of 10 came back within 20 m
+of a proxy's place (direct run lane 4 + 5, FAIL). savestrip already strips them in Civ (npc::is_proxy, and Civ's
+herds pass the own-kind test), no change needed. Consequence: a guest's own save of the host's Civ world has no wild
+creatures (its own were removed by the sync). The host has no proxies; its per-guest quiet table is memory only.
+Found on the way: BUG-1067 (empty game herds of Civ stripped from saves, pre-existing).
+Stage change and capture checks with the branch: civ_capture_keeps PASS out/lab/20261113-044104, tribe_civ_rejoin
+PASS out/lab/20261113-044109.
 
 ## History
 - 2026-11-12: opened from the BUG-0970 analysis; not part of 0.7.13 (bug release), planned later.

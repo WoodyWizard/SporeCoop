@@ -7109,3 +7109,7 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * `civ_buy_city` asserts BUG-0982: `specialty question: host None | guest Economic` and `spec=2` (the `coop.civ` city
   lines' new field) on both games; `play_civ.answer_specialty(con, wait, prefer=)` presses a chosen caption.
   SPORE_FIX_OFF=civ.specialty_buyer fails. `coop.civ tables` prints `specialty: asked= shown= answered= applied=`.
+* `civ_save_strip` also checks BUG-0973: after Carol's reload alone no wild creature within 20 m of where one of her
+  proxies stood (her own were removed by the sync, so any is a saved proxy; they walk for the 10 s after the load).
+  SPORE_FIX_OFF=savestrip.on: 6 of 10 came back (FAIL). Run outside the lab with `SPORE_LANE=4 SPORE_LANE_B=5` to
+  keep Carol on a lane of your own (the lab takes the first free lane from 2).
