@@ -1336,8 +1336,9 @@ class Campaign:
         if sum(1 for h in own if float(h) > 0) < 4:
             # play_tribe raids only with 4 or more own members alive (fewer: it gathers); the host's share of the
             # tribe after the play on the campaign's own planet was 1-2 (lab 20261113-060756 / -060758: no host click)
-            self.note('shortcut: coop.tribe spawn 6 (the host\'s own members for its raid click)')
-            self.host.call('coop.tribe spawn 6')
+            # (a spawn is shared out among the players: 12 give the host 3-4)
+            self.note('shortcut: coop.tribe spawn 12 (the host\'s own members for its raid click)')
+            self.host.call('coop.tribe spawn 12')
             time.sleep(3)
         for pl in g.p:
             pl.busy.clear()  # a player sends members that are on another job too
@@ -1368,35 +1369,43 @@ class Campaign:
                     raid['host_click'] = raid.get('host_click') or pl.pid == 0
             if raid.get('host_click'):
                 break
-        self.note(f'tribe: raid clicks on the hut of village {tk} by {raid.get("clicks", [])}')
+        self.note(f'tribe: raid clicks on the hut of village {tk} by {raid.get("clicks", [])}'
+                  + (f' (the host\'s click: {raid["why"]})' if raid.get('why') else ''))
 
     def tribe_host_click(self, g, pl, raid):
         """the host's own attack click on the raided hut, as a player gives it: the view on its members, a box round
         them, attack mode, the view on the hut (minimap), a right-click on the hut. True when the game took it as a raid
-        order (action 15)"""
+        order (action 15); raid['why'] says what failed"""
         import play_tribe
         tk = raid['tribe']
         st = play_tribe.tribe_state(pl.con)
         mine = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] == 0 and v['hp'] > 0]
         if not mine:
+            raid['why'] = 'no own member'
             return False
         if not pl.J and not pl.calibrate():
+            raid['why'] = 'minimap not calibrated'
             return False
         sel = g.select_idle(pl, st, mine, True)
         if not sel:
+            raid['why'] = f'no member selected ({len(mine)} own)'
             return False
         pl.mode(1)
         if not pl.look(raid['hut']):
             pl.calibrate()  # the view turned: the minimap's map again
             if not pl.look(raid['hut']):
+                raid['why'] = 'the view did not reach the hut'
                 return False
         pl.centre()
         tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
         if not tg:
+            raid['why'] = 'the hut not on screen'
             return False
         n0 = pl.given
         g.click_order(pl, 'raid', sel, tg[0], 30)
-        return pl.given > n0 and 'action=15' in pl.last_order()[0]
+        ok = pl.given > n0 and 'action=15' in pl.last_order()[0]
+        raid['why'] = '' if ok else f'the click gave {pl.last_order()[0][:60]!r}'
+        return ok
 
     def tribe_order(self, raid):
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction
