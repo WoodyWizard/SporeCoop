@@ -657,6 +657,12 @@ def quick_case(tree, tmp):
     runs = labcov.runs_by_test([base])
     check('longplay' not in runs and 'plain' in runs,
           'quick: labcov does not count a quick result as a run of the test (the release rule wants the full one)')
+    took = lab.measured_seconds([base])
+    check(('longplay', True) in took and ('plain', False) in took and ('longplay', False) not in took,
+          'schedule: the recorded durations are kept apart for quick and full runs')
+    check(lab.expected_seconds(dict(name='plain', minutes=30), took) == took[('plain', False)] and
+          lab.expected_seconds(dict(name='never', minutes=7), took) == 420,
+          'schedule: a test is expected to take its recorded median, a test without a record its minutes')
 
 
 def kill_case(tree, tmp):
