@@ -1062,7 +1062,7 @@ static void hold_try(GMember& g, double now);
 struct HoldEv {
     double t;
     uint16_t id;
-    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests)
     uint32_t a, b;
 };
 static HoldEv g_hold_ev[4096];
@@ -1072,19 +1072,27 @@ static void hold_ev(uint16_t id, char what, uint32_t a, uint32_t b)
     g_hold_ev[g_hold_ev_n++ % 4096] = {H->time_seconds(), id, what, a, b};
 }
 // guest, a few times a second: the mirrors' items settle into the grip
+// BUG-0993: the mirror's own holds are looked at every frame (they were looked at with the rest every 0.25 s: the
+// cut came 0.5-0.85 s after the hold began, over 1.0 s at 26 fps with hitches); hold_try keeps the 0.25 s tick.
+// `coop.fix tribe.hold_cut_frame off`: everything every 0.25 s as before.
+static bool g_hold_cut_frame_fix = true;
+COOP_FIX("tribe.hold_cut_frame", "BUG-0993", g_hold_cut_frame_fix,
+         "tribe: a guest's mirror lets go of an item its own animation took 0.35 s after it took it at any frame rate (the 0.25 s tick made it 0.5-1.05 s)");
 static void held_items_tick(double now)
 {
     static double last;
-    if (now - last < 0.25 && now >= last)
+    bool slow = !(now - last < 0.25 && now >= last);
+    if (!slow && !g_hold_cut_frame_fix)
         return;
-    last = now;
+    if (slow)
+        last = now;
     if (!g_held_item_fix) {
         g_hold_seen.clear();
         return;
     }
     for (auto& [id, m] : g_gm) {
         void* c = m.c;
-        if (m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
+        if (slow && m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
             hold_try(m, now);
         uint32_t h = mirror_ok(m) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
         auto it = g_hold_seen.find(id);
@@ -6180,6 +6188,8 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
             thiscall<void>(a_SetHandheldItem, c, 0, -1);
             set_hand(c, atoi(a[2].c_str()));
+            if (is_guest())
+                hold_ev((uint16_t)atoi(a[1].c_str()), 'H', (uint32_t)atoi(a[2].c_str()), 0); // tests (BUG-0993): the hand set here
         }
         if (a.size() >= 3 && a[2] == "end")
             return "end " + std::to_string(hold_modifier(c, true) ? 1 : 0);
