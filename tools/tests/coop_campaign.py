@@ -40,7 +40,7 @@ mechanic runs for real):
     more members (test setup, and again when the raiders are down to 7); every NPC village is raided until its hut
     falls: the players' real attack right-clicks on the hut first (the host's own click is needed: BUG-1068), then
     `coop.tribe order <id> 15 <hut>` for every member (the DoAction a right-click gives), the hut's health cut to 40
-    once a blow landed (`coop.tribe huthp`; 400-750 hp take the raiders minutes), the players' own hut kept above half
+    once a blow landed (`coop.tribe huthp`; 400-750 hp take the raiders minutes), the players' own hut kept above 80 %
     its health (an NPC village raids back; its fall is a game over that reloads the save), `coop.tribe form` when no
     village is left before the bar is full. The game's own conquests fill the goal bar; then the advance button, the
     stage card, the caption, the votes, the City Hall and vehicle editors (three parts, a name). When the stage does
@@ -1168,7 +1168,7 @@ class Campaign:
         return home, out
 
     def tribe_home_hut(self, state):
-        """shortcut: the players' own hut kept above half its health. With every member out raiding, an NPC village
+        """shortcut: the players' own hut kept above 80 % of its health. With every member out raiding, an NPC village
         raids back and the players' hut falls: the game ends the stage (its save reloaded, every conquest gone; twice
         while the farthest village was raided, campaign_tc2 lab 20261113-051634). Players leave defenders at home or
         come back; the bots raid with everyone."""
@@ -1190,7 +1190,7 @@ class Campaign:
             state.pop('home_hut')  # (another world after a reload: look again)
             return
         hp, mx = int(m.group(1)), int(m.group(2))
-        if mx and hp < mx / 2:
+        if mx and hp < mx * 0.8:  # (kicks come every 25-60 s: a raid took it from over half to 0 in between, lab 20261113-082316)
             self.note(f'shortcut: coop.tribe huthp: the players\' hut repaired ({hp}/{mx} -> {mx}: an NPC village raids back)')
             self.host.call('coop.tribe huthp %.2f %.2f %.2f %d' % (hut + (mx,)))
 

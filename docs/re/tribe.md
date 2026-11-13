@@ -3585,4 +3585,4 @@ Q1 of 0.7.14 (the campaign's Tribe end), GOG 2024, lane 4, tribe fixture (Zorisp
 * ~ (runtime, lab 20261113-051634, twice) While the farthest village was raided with every member, the host's game
   played a cinematic with the input lock and then reloaded its save (`Tribe -> Loading -> Tribe` in 0.1 s, members
   24 -> 19, every conquest gone): a game over. Not seen which one (no screenshot); inferred: the NPC village raided back
-  the players' empty village. The campaign keeps the players' hut above half its health since (a noted shortcut).
+  the players' empty village. The campaign keeps the players' hut above 80 % of its health since (a noted shortcut).

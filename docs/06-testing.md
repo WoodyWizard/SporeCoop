@@ -7155,7 +7155,7 @@ raids every NPC village until its hut falls (docs/re/tribe.md#tribe-raid-end):
 * then the shortcuts, printed as `shortcut:`: `coop.tribe order <id> 15 <hut>` for every member (the DoAction a
   right-click gives), the hut's health cut to 40 once a blow landed (`coop.tribe huthp`; huts have 400-750 hp),
   `coop.tribe spawn 6` when the raiders are down to 7 or the host has fewer than 4 own members (play_tribe raids only
-  with 4), the players' own hut kept above half its health (a game over reloaded the save twice in lab
+  with 4), the players' own hut kept above 80 % of its health (a game over reloaded the save twice in lab
   20261113-051634), `coop.tribe form` when no village is left before the bar is full;
 * the game's conquests fill the goal bar (`coop.wstate` progress / total, 5 in the tribe fixture: the game forms new
   villages after the first conquest), then the advance button (0x6454B47), the stage card, the caption, the votes
