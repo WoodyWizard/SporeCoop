@@ -7437,7 +7437,8 @@ Tribe timeout is a failing `stuck`, `CAMPAIGN_STRICT_TRIBE=0` the old `info`):
   20261113-125218 (flag 1) Civ reached; 20261113-125221 (flag 1) Civ reached; 20261113-133534 (flag 0 the whole
   Tribe, before the fix) 0/5 in 30 min; with the fix: 20261113-142311 Civ in 17 min; 20261113-145317 a game over at
   2/5, then 1/5 at the timeout (before the pincer and the nearest pick); 20261113-153633 (pincer, no nearest pick yet)
-  Civ in 15 min, 5 conquests of 1.5-3 min. The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
+  Civ in 15 min, 5 conquests of 1.5-3 min; 20261113-160426-2 (all of it) Civ in 12 min (the lab failed it on BUG-1082's
+  sync gate). The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
   village), the jump.
 * Monitor gate `ground`: Tribe members are not judged while the host's own line says `busy=cinematic` or `editor`
   (`agl_cine`, default 1; 0: as before): during the Tribe end change the game holds members where they stand while it
