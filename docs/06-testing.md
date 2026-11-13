@@ -7239,3 +7239,96 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * `kit_initfail.py` also checks that SK_EV_POST_INIT is not fired after the failed Init (BUG-1021; the log line
   "SK_EV_POST_INIT not fired"). Twin: `SPORE_FIX_OFF=kit.postinit` (written into the test marker file: the switch
   is off from the start).
+## Warm resets for the cold-start candidates, in batches (2026-11-13, fix/w49-warm)
+<a id="testing-w49-warm"></a>
+
+Q3 of [the 0.7.14 plan](plan-0.7.14.md): the cold tests of [the lab-speed candidates](#testing-lab-speed) moved to
+warm resets (`warm=True, fixture=...` in suite.py), batch by fixture, each batch run once warm on lanes 6 / 7
+(`SPORE_DETECTOR=20 tools/lab.py run <batch> --lane 6 --lane 7 --retry 0 --no-build`). "Before" is each test's
+cold time (the median of its last 5 passed runs, `lab.measured_seconds()`), "after" this run's time; the cold
+starts of a batch run (each lane's first test, a test after a failure, a refused reuse) are in the totals.
+
+**Candidates.** A static read of the 702 cold tests (`warm=False`, comments and docstrings left out): 117 are in
+no smoke / full suite and 68 are generated `players` variants (both left alone); 285 have a reason of their own
+to start cold, by the first one found: a load, the galaxy menu or a new game 50, an env prefix of the command
+(`SPORE_NET`, `SPORE_FPS`, a test knob) 45, their own kill / restart / `wait_up` 43, 3-4 games 36, an editor or an
+editor vote 32, a start of their own (`join_in_intro`, `join_at`, `before_join`, `guest_creations=False`, preset
+choices, `keep_holds`) 24, a crash / initfail / `exc` 19, `reports=True` 16, profile files 3, no game 1. Of the 249
+left, 17 more stay cold by their script (editor votes in coop_nest_follow, coop_evolve_world,
+coop_rejoin_saved_puppet, coop_editor_*, coop_guest_editor, coop_join_during `--case editor`, tribe_party_editor,
+space_rival_away, space_spice_away; cell_evolve_poll ends the Cell stage; the space_finale* tests end at the
+galaxy core; unit_parallel runs no game), space_death joined: **232 candidates**.
+
+| batch (lab run) | tests | started warm | passed | before (cold medians) | after | warm-started tests: before -> after | warm reset / cold start (median) |
+|---|---|---|---|---|---|---|---|
+| Cell (20261113-090414) | 43 | 30 | 39 | 68.6 min | 67.5 min | 2627 -> 1966 s (-22 s each) | 19 / 33 s |
+| Creature (20261113-094538) | 69 | 46 | 63 | 97.2 min | 88.8 min | 3502 -> 2704 s (-17 s each) | 20 / 38 s |
+| Tribe (20261113-103507) | 53 | 34 | 50 | 88.6 min | 81.2 min | 3012 -> 2456 s (-16 s each) | 20 / 34 s |
+| Space, Civ (20261113-111705, + cell_swallow_gone) | 68 | 47 | 65 | 127.8 min | 129.0 min | space 2326 -> 2316 s, space_empire / space_free 2208 -> 2251 s, civ 217 -> 191 s | space 23, space_empire / space_free 49 / 31 s |
+
+The machine was loaded (campaign runs on lanes 4 / 5, LOAD notes): the cold starts of these runs took 33-39 s and
+their tests longer than their medians, so a batch's total says little; the warm-started tests' own times are the
+measure. **Saved per full final check: about 30 test-minutes** (the kept warm tests that started warm in the
+batches, 27 Cell x 22 s + 42 Creature x 17 s + 31 Tribe x 16 s + 2 Civ x 13 s; Space 0), about 5 min of wall time
+on 6 lanes. The share that starts warm depends on the order: a lane's first test, every test after a failure and
+every test after one that set a switch or knob (`coop.settings force`, `coop.team`, `frame.limit`, `coop.diag
+detail`, ...: twoinst refuses such games, BUG-0430) start cold; 30-47 of 43-69 did in the batches.
+
+**Back to cold (31), each with its reason:**
+* cell_jumps, cell_jumps_host: warm, both failed the sync-check gate (`p: 1 apart`) after a long Cell test on the
+  lane (cell_levelups, cell_puppet_cell_long); cold they pass (5 of the last 5 recorded).
+* own_cell: warm, "the guest's own game populates its pool" failed (the guest's own Cell world after a warm reset).
+* creature_mating: warm, no mate picked near the nest (the predecessor's game state at the nest).
+* nest_evolve: warm, 0/10 samples with the host's nest generation (the nests evolved in the earlier test).
+* herd_help_stale: warm, sync-check `p: 1 extra on the guest`.
+* tag_camera: warm, 3 shots with the tag off its body (the camera's state from the test before).
+* tribe_guest_eat: warm, the guest's mirror not as hungry as the host's member before the meal.
+* tribe_hold_cut: warm, one of the mirror's own holds took 1.05 s to cut (limit 0.55 s).
+* tribe_bounce_world: its end state makes the next warm reset fault the guest (BUG-1078, below).
+* civ_wild_sync: warm, the guest's wild creatures 502 m from the host's (the herds the test before moved).
+* space_empire (13: space_sky, space_store, space_shots, space_planner_*, space_city_keep, space_shot_count,
+  space_spice_cap, space_diplomacy, call_guard, space_diplo_away) and space_free (7: space_free, space_terra_tool,
+  space_sculpt_tool, space_sculpt_away, space_terra_elsewhere, space_npc_mission, space_finale_death): **their warm
+  reset takes 49-51 s against a cold start of 30-31 s**: the guest rejoins in its old copy and then loads the host's
+  world through the galaxy menu (`guest in game 46`). Warm only when the warm reset sends the guest to the menu
+  before it joins (not done).
+* The `space` fixture stays warm, with no measured gain: its warm reset is 19 s or 49-51 s depending on the test
+  before (the guest's place), 2326 -> 2316 s over 26 tests.
+
+Failures in the batches that were not the warm reset (the test started cold): cell_swallow_gone (instance 13 did not
+start, the machine; passed in 20261113-111705), find_partners (a cold start after `coop.team off`; 7 of 7 passed
+before), attacker_owner (posse_damage gate, cold, BUG-1077: 3 of 6 recent runs), civ_role_damage (LOAD),
+civ_guest_creature (42.6 m against 45 m, cold). They stay warm.
+
+**The warm reset found a fault** (BUG-1078, like BUG-0975): after tribe_bounce_world (the host's game over and
+reload) the guest's Drama Manager held a creature_attack event back four times (`would start its own creature_attack
+event: not on a guest`); in the next warm reset, alone after `coop.leave`, it started it and faulted once at
+0x00D521BA (data 0x120, caught). The lab failed tribe_member_air for it.
+
+**Twin checks: the warm reset hides no bug.** 10 bug tests, each right after a passing test of its fixture on the
+same lane (`--in-order`), with only its own twin switch off (`SPORE_LAB_FIXOFF`, below): all 10 started from a warm
+reset (19-22 s) and FAILED; with the switch on each PASSED from a warm reset in its batch run.
+
+| test | switch | warm, switch off | warm, switch on |
+|---|---|---|---|
+| cell_ko_poison | cell.ko_no_poison | FAIL 20261113-122313 (no cloud check: 36 -> 57) | PASS 20261113-090414 |
+| cell_kill_refused | cell.kill_refused | FAIL 20261113-122313 | PASS 20261113-090414 |
+| creature_brain_hp | creature.own_brain_hp | FAIL 20261113-122313 (16.0 -> 16.0) | PASS 20261113-094538 |
+| puppet_unground | creature.puppet_unground | FAIL 20261113-122313 (min -0.69 m) | PASS 20261113-094538 |
+| space_owed_contracts_off | space.owed_always | FAIL 20261113-122313 | PASS 20261113-111705 |
+| wsync_stages | wsync.stages | FAIL 20261113-122316 | PASS 20261113-103507 |
+| tribe_copy_marker | tribe.copy_marker | FAIL 20261113-122316 | PASS 20261113-103507 |
+| tribe_healer | tribe.heal_max | FAIL 20261113-122316 (15.0 -> 15.0) | PASS 20261113-103507 |
+| space_partner_hp | drive.space_hp | FAIL 20261113-122316 (1.00, the guest 0.60) | PASS 20261113-111705 |
+| civ_village_bundle | wobj.bundle_civ_carried | FAIL 20261113-122316 (kept 0 of 2) | PASS 20261113-111705 |
+
+Tools and test changes:
+* `lab.py run ... --in-order`: the named tests in the given order (not longest first), so a passing warm test of
+  the fixture runs before the twin. `SPORE_LAB_FIXOFF="<test>=<switch>[,<switch>];..."` switches fixes off for the
+  named tests only (`SPORE_FIX_OFF` for the whole run would make every game of the run refuse a warm reuse). The runs
+  are recorded as usual, so `lab.py fixcheck` counts them. Example:
+  `SPORE_LAB_FIXOFF="cell_kill_refused=cell.kill_refused" tools/lab.py run cell_loot_big,cell_kill_refused --in-order --lane 6`.
+* twoinst KNOBS: `coop.track lift <v>`, `coop.npctrack novel <v>` and `coop.space repairdist <v>` (space_death sets
+  it to 0 and back) are knobs now: a warm successor refuses games a test left with them.
+* space_play and space_death read the guest's `rescues`, `gifts_got`, `terra_got` and `lost` relative to their
+  start (per-process counters a warm run inherits; `terra_got >= 1` would have passed on an earlier test's count).
