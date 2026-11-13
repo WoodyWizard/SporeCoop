@@ -3660,3 +3660,29 @@ BUG-1069, BUG-1071. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows #tribe-mir
   (a relayed restart of the animation a host's hold bound to under 0.5 s before is skipped while the mirror plays it,
   trace `D`), `tribe.mirror_idle_loco` (the host reads every member's animation for the idle news, and a member whose
   behaviour start is its locomotion's idle / walk goes as idle news, not as kind 3).
+
+## The goal mission of a village only guests act on (2026-11-13, fix/w49-raid)
+<a id="tribe-guest-mission"></a>
+
+BUG-1068. GOG 2024, lanes 6 / 7, tribe fixture (`coop_tribe_guest_raid_goal.py`). Adds to #tribe-wsync and
+#tribe-conquest-sync.
+
+* ✔ (runtime, lab 20261113-072615, `tribe.guest_mission` off) The fixture's NPC village (pol 0x21CB) raided by a
+  guest's member only (its order through DoActionForObjects -> MSG_TRIBE_CMD -> the host's DoAction 15 on the hut):
+  the hut fell (state 2), the host's Tribe Mission Manager had no current mission before or after (`tribe_goal`
+  target FFFFFFFF, state 0) and the goal bar stayed 0.0/5.0 for 30 s. A guest's gift (DoAction 9 on the cTribe) did
+  not move the card either. So nothing on the host's DoAction path makes the village's cTribeToTribeMission; the
+  game's own click makes it in DoActionGeneric 0xCD0C20 (SetTargetTribe 0xCD3D70) before DoActionForAllSelected.
+  The host's own `coop.tribe order` / `act_obj` skip that function too (they call DoAction / DoActionForObjects).
+* ✔ (runtime, lab 20261113-072313, fix off) A village the host's game formed during play (`coop.tribe npc_tribe 3
+  45`, SpawnNpcTribe) raided the same way **did** count: no current mission before the fall, then 4 s after it the
+  current mission was that village's (state 5, card shown) and the bar went 0 -> 1. ? What made that mission at the
+  fall (likely the tribe message handler 0xCD1D60, a caller of SetTargetTribe, on the defeat message 0x58BADDD for
+  a village formed during play) and why it does not for the save's villages: not traced.
+* ✔ (runtime, labs 20261113-072313-2, 20261113-073140, 20261113-073140-2) SetTargetTribe(mgr, the village's cTribe) called
+  on the host outside the frame when its order from a guest runs (`wsync::goal_target`, fix `tribe.guest_mission`):
+  the gift moved the host's card at once (state 3, card=1), the raided village's fall counted 0 -> 1 within 2 s.
+  The mission's update ends it from the village's conquered flag alone, so making it at the order is enough.
+* ~ On the guest, right after such a fall, `tribe_goal` read progress 2.0 once while the host's was 1.0 (the guest's
+  own game also ends a mission it has for the village through realign.hut_fall's blow, then the row writes the
+  host's value): seen in labs 20261113-072313-2 and 20261113-073140; the guest applies the held row every frame (guest_tick), so it is a moment, not checked further.

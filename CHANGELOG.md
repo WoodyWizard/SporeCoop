@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a village that only guests raided (or befriended with gifts) now counts for the stage's goal; before, it
+  fell without moving the goal bar, so the Tribe stage could not end by the guests' conquests (BUG-1068).
 - Tribe: the guest's copy of a chief holds its staff like the host's chief also in a gesture that began before the
   session or that the chief restarts with the staff in its hand (it stood at another moment of the gesture, or with
   the staff in the resting grip) (BUG-1069).

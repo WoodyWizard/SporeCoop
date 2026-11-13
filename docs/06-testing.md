@@ -7188,3 +7188,18 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * tribe_mirror_stale (BUG-1071): every second round the host first forgets the chief's last behaviour start
   (`coop.tribe bhvzero <id>`, host, tests: bhv 0 as right after the save's load); checked that at least one such round
   counted. Twin: `SPORE_FIX_OFF=tribe.mirror_idle_loco`.
+
+## A village only the guest raided and the host's goal bar (2026-11-13, fix/w49-raid)
+<a id="testing-tribe-guest-raid-goal"></a>
+
+* `coop_tribe_guest_raid_goal.py` (suite `tribe_guest_raid_goal`, tribe, ~3 min, BUG-1068): the guest's orders go
+  through its own game's order path (`coop.tribe select <id> 1` on the guest's members, then `coop.tribe act_obj
+  <action> <noun> <x y z>` on the guest: DoActionForObjects, which a guest sends to the host as MSG_TRIBE_CMD). First
+  a gift (9) on the fixture's nearest NPC village: the host's goal card (`coop.wsync dump tribe_goal` target) moves
+  there. Then a village the host forms (`coop.tribe npc_tribe 3 45`, no mission was ever made for it) is raided (15)
+  by the guest's members only, its hut cut to 2 hp once they are at it; after the fall the host's `progress=` must
+  rise within 30 s. Twin: `SPORE_FIX_OFF=tribe.guest_mission` (card and bar stay). `coop.status` host line
+  `guest_missions=` counts the missions the fix made.
+* Pitfall: the host's own `coop.tribe order` and `act_obj` do not make the mission either (the game's
+  SetTargetTribe is in DoActionGeneric 0xCD0C20, before DoActionForAllSelected): a test of the goal bar driven by
+  those commands on the host counts nothing, with or without the fix.
