@@ -1696,3 +1696,52 @@ BUG-1056 (owner decision 8 of plan-0.7.14). ✔ runtime (civ_npc fixture, lane 7
   host's states place the mirror; in local play the game's own check runs (`civ.away_ground`).
 - A guest's SetPosition (spatial vt 0x38) of a mirror its own game drives is undone by the locomotion within 0.3 s (it
   ended 630 m away, where it was driving): StopMovement (spatial vt 0xEC) first, as guest_tick does before Teleport.
+
+## Wild creatures owned by the host (2026-11-13, fix/w49-civ)
+<a id="civ-wild-sync"></a>
+
+BUG-0973. GOG 2024, lane 4, fixtures civ_npc / civ.
+* ✔ (runtime) civ_npc has 10 wild creatures (noun 0x18EB45E): a herd of 7 (species 06538C80, hp 10/5) near
+  (-285 246 353) and three epics (hp 3000, about 506 m from the centre, one each). They run the same
+  `cCreatureAnimal::Update` as the Creature stage's (game.cpp h_Update), so npc.cpp's update filter and host_tick see
+  them. Census rows of noun 0x18EB4B7 next to them are not wild creatures (not updated through that hook).
+* ✔ (runtime) The herd members have no archetype tuning (+0xE84) and their herd looks like the herds the mod makes
+  (no archetype +0x88, no nest): npc.stray_ids (BUG-0385, `saved_stray`) gave them no NPC id, only the epics were
+  tracked. Civ skips that rule (no partner's puppet exists in Civ to be saved).
+* ✔ (runtime) The Creature stage's relevance pass (Relevance_Update, view_centres.cpp) runs in Civ too: one game
+  sphere at the camera's point, enter 150 m, leave 200 m. A herd set 60 m aside (about 245 m from the host's camera
+  point) stopped updating and lost its herd within a second (npc `pooled=7` on the host); the epics 500 m away kept
+  updating (not checked why: no herd relevance for epics?).
+* Fix `npc.civ_wild`: npc.cpp runs in Civ like the Tribe stage (rts_stage: proxies walked at their own ground height)
+  without a centre: every wild creature the host's game updates goes to every guest in the world (kCivRelevance).
+  The guest's own wild creatures are removed by the update filter; proxies take the nest herd of their species.
+  `npc.view_centres_civ`: the partners' pointers (rts_fill) are spheres of the host's relevance pass in Civ too.
+* Bandwidth: 10 creatures x 47 B (NpcState) + 2 B (agl trailer) every 0.1 s per guest = about 4.9 KB/s per guest,
+  one or two unreliable packets per batch; spawns are reliable, once per creature. Measured (lab, civ_npc, 24-25
+  creatures once the cameras moved, host -> guest in all): 7.6 KB/s with the sync off, 20.1 KB/s with it, 12.3 KB/s
+  with `npc.civ_quiet` (a standing creature's state once a second).
+* ? Not checked: the guest's pointer as a relevance centre in play (in the tests the guest's mouse stays off the
+  planet, its centre is (0 0 0)); a guest whose host is away (local play) shows no wild creatures until the host is
+  back (the Tribe stage's rule: proxies dropped, the own ones were removed).
+
+## The specialty question goes to the buyer (2026-11-13, fix/w49-civ)
+<a id="civ-specialty-buyer"></a>
+
+BUG-0982. GOG 2024, Ghidra + runtime (lane 4, civ_npc).
+* ✔ (Ghidra) `GameCiv_CaptureNeedsSpecialty` 0xCF7A30: cdecl, no arguments, returns bool in AL; reads player civ
+  +0x44C (the last city it captured), compares its capture type +0x29C (0 military, 1 religious, 2 economic; a
+  purchase is 2) with the specialty (0xBD8320 = `mov eax,[ecx+0x540]`) and calls `cCity_ShowSpecialtyBox` 0xBD9330
+  (thiscall, ECX = city: the text by +0x540 / +0x29C, `cSPUIMessageBox::ShowDialog`, Pause 0x4BF38A7) when they
+  differ. Its only caller is GameCiv_HandleMessage (the capture cinematic's end); returning 0 lets the handler go on
+  to the planet-won check at once.
+* ✔ (Ghidra) The box's answer: 0xBDC950 posts message 0x40FAFDF with the pressed button at data +8; every city's
+  listener `cCity_MessageListener` 0xBE75C0 (this = city +0x20C) acts only for the player civ's +0x44C city: button
+  0x5107B1A = take the capture type (`cCity_SetSpecialty(city, +0x29C, 1)` + effects), else keep; then Resume
+  0x4BF38A7, 0xCFA280 (an effect and hint flags when the civ has more cities than before) and the planet-won check.
+* ✔ (runtime) Fix `civ.specialty_buyer`: the host's hook of 0xCF7A30 sends the question of a city whose owner is a
+  guest (owner table, else the pending captor) to that guest (MSG_CIV_CMD kind 8: city index, capture type) and
+  returns 0 (no box, no pause on the host). The guest writes the type into its copy's +0x29C and calls
+  ShowSpecialtyBox outside the frame (the game's own box and pause there); its listener hook takes the answer
+  message once (the same data pointer reaches every city's listener), sets its copy, resumes the pause and sends
+  kind 8 (city, take, type) back; the host's game calls SetSpecialty when the guest took the new one. civ_buy_city:
+  question on the guest only, Economic taken, specialty 2 in both games (`coop.civ` city lines print `spec=`).

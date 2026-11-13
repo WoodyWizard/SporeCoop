@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <functional>
 #include <map>
 #include <unordered_map>
@@ -2031,6 +2032,159 @@ static void SK_THISCALL h_CityBuy(void* city, uint32_t pol, float price)
     o_CityBuy(city, pol, price);
 }
 
+// BUG-0982: the specialty question of a city the player civilization took (docs/re/civ.md#civ-stage-end): at the end
+// of the capture cinematic the game asks GameCiv_CaptureNeedsSpecialty (0xCF7A30) for the player civilization's last
+// captured city (+0x44C) and, when its capture type (+0x29C) is not its specialty (+0x540), shows the box
+// (cCity_ShowSpecialtyBox: the question and Pause 0x4BF38A7). A guest's purchase (civ.buy_city) or away capture
+// runs in the host's game, so the box and its pause came up on the host and the buyer was never asked. Now the host
+// sends the question to the city's owner (CMD_SPECIALTY: city, capture type) and goes on unpaused; the guest's game
+// shows the game's own box for its copy of the city; its answer (the listener's message 0x40FAFDF: 0x5107B1A takes
+// the capture type, 0x5107B19 keeps the specialty) comes back and the host's game sets the specialty.
+// `coop.fix civ.specialty_buyer off`: the host's game asks its own player (0.7.13).
+static bool g_fix_specialty_buyer = true;
+COOP_FIX("civ.specialty_buyer", "BUG-0982", g_fix_specialty_buyer,
+         "civ: the specialty question of a city a guest bought or captured goes to that guest; the host's game does not pause");
+constexpr uint8_t kCmdSpecialty = 8; // host -> owner: u8 city, u32 capture type; guest -> host: u8 city, u8 take, u32 type
+constexpr uintptr_t kCivLastCaptured = 0x44C, kCityCaptureType = 0x29C;
+constexpr uint32_t kSpecialtyAnswerMsg = 0x40FAFDF, kSpecialtyTake = 0x5107B1A;
+using NeedsSpecialty_t = bool(__cdecl*)();
+static NeedsSpecialty_t o_NeedsSpecialty;
+using CityListener_t = uint32_t(SK_THISCALL*)(void*, uint32_t, void*);
+static CityListener_t o_CityListener;
+static uintptr_t a_ShowSpecialtyBox, a_SetSpecialty, a_TimeMgr, a_TimeResume;
+static uint32_t g_spec_asked, g_spec_shown, g_spec_answered, g_spec_applied, g_spec_rejected;
+struct SpecialtyAsk {
+    uint8_t ci;
+    int type;
+};
+static std::deque<SpecialtyAsk> g_spec_queue; // guest: questions of the host not shown yet
+static int g_spec_open = -1;                  // guest: the city index whose box is up (-1: none)
+static int g_spec_open_type = 0;
+static void* g_spec_answer_data;              // guest: the answer message taken (every city's listener gets it)
+LIFECYCLE_STATE("civ.specialty_questions", lifecycle::kSession | lifecycle::kWorld, &g_fix_specialty_buyer,
+                [] {
+                    g_spec_queue.clear();
+                    g_spec_open = -1;
+                    g_spec_answer_data = nullptr;
+                },
+                []() -> size_t { return g_spec_queue.size() + (g_spec_open >= 0); });
+
+static bool __cdecl h_NeedsSpecialty()
+{
+    if (g_fix_specialty_buyer && is_host() && game::mode_id() == modes::kCiv && C.sess) {
+        void* pc = player_civ();
+        void* city = pc ? F<void*>(pc, kCivLastCaptured) : nullptr;
+        if (city && game::listed(city)) {
+            uint8_t owner = owner_of_city(city);
+            if (owner == 0xFF) {
+                auto it = g_capture_by.find(city);
+                owner = it == g_capture_by.end() ? 0xFF : it->second.owner;
+            }
+            int type = F<int>(city, kCityCaptureType), spec = F<int>(city, kCitySpecialty);
+            int ci = host_index_of_city(city);
+            if (owner != 0xFF && owner != C.sess->my_id() && net::is_player(*C.sess, owner) && type >= 0 && type <= 2 &&
+                type != spec && ci >= 0) {
+                net::Writer w;
+                w.u8(kCmdSpecialty);
+                w.u8((uint8_t)ci);
+                w.u32((uint32_t)type);
+                C.sess->send_reliable_to(owner, net::MSG_CIV_CMD, w);
+                g_spec_asked++;
+                H->log(M, SK_INFO, "civ: the specialty question of city %d (specialty %d, taken as %d) goes to its owner, "
+                       "player %u (BUG-0982)", ci, spec, type, (unsigned)owner);
+                return false; // no box, no pause here: the game goes on to its planet check
+            }
+        }
+    }
+    return o_NeedsSpecialty();
+}
+
+static void spec_show_next()
+{
+    if (g_spec_open >= 0 || g_spec_queue.empty())
+        return;
+    H->run_outside_frame(
+        [](void*) {
+            while (g_spec_open < 0 && !g_spec_queue.empty()) {
+                SpecialtyAsk a = g_spec_queue.front();
+                g_spec_queue.pop_front();
+                void* city = a.ci < g_host_cities.size() ? g_host_cities[a.ci] : nullptr;
+                if (!is_guest() || game::mode_id() != modes::kCiv || !city || !game::listed(city) || !a_ShowSpecialtyBox)
+                    continue;
+                F<int>(city, kCityCaptureType) = a.type; // (the box's text and the answer read it)
+                g_spec_open = a.ci;
+                g_spec_open_type = a.type;
+                g_spec_answer_data = nullptr;
+                thiscall<void>(a_ShowSpecialtyBox, city);
+                g_spec_shown++;
+                H->log(M, SK_INFO, "civ: the host asks this game for the specialty of city %u (BUG-0982)", (unsigned)a.ci);
+            }
+        },
+        nullptr);
+}
+
+static uint32_t SK_THISCALL h_CityListener(void* self, uint32_t msg, void* data)
+{
+    if (msg == kSpecialtyAnswerMsg && g_spec_open >= 0 && is_guest() && data && !IsBadReadPtr(data, 12)) {
+        if (data == g_spec_answer_data)
+            return 0; // the same answer reaching the next city's listener: taken already
+        g_spec_answer_data = data;
+        uint32_t button = *(uint32_t*)((uint8_t*)data + 8);
+        bool take = button == kSpecialtyTake;
+        uint8_t ci = (uint8_t)g_spec_open;
+        int type = g_spec_open_type;
+        g_spec_open = -1;
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (take && city && game::listed(city) && a_SetSpecialty)
+            thiscall<void>(a_SetSpecialty, city, type, 1); // this game's copy at once (the host's follows)
+        if (a_TimeMgr && a_TimeResume)
+            if (void* tm = skg::cdecl_call<void*>(a_TimeMgr))
+                thiscall<int>(a_TimeResume, tm, 0x4BF38A7u); // the box's own pause
+        net::Writer w;
+        w.u8(kCmdSpecialty);
+        w.u8(ci);
+        w.u8(take ? 1 : 0);
+        w.u32((uint32_t)type);
+        send_cmd(w);
+        g_spec_answered++;
+        H->log(M, SK_INFO, "civ: the specialty of city %u answered (%s): sent to the host (BUG-0982)", (unsigned)ci,
+               take ? "take the new one" : "keep");
+        spec_show_next();
+        return 0;
+    }
+    return o_CityListener(self, msg, data);
+}
+
+static void guest_specialty_ask(net::Reader& r)
+{
+    uint8_t ci = r.u8();
+    int type = (int)r.u32();
+    if (!r.ok() || type < 0 || type > 2)
+        return;
+    g_spec_queue.push_back({ci, type});
+    spec_show_next();
+}
+
+static void host_specialty_answer(uint8_t from, net::Reader& r)
+{
+    uint8_t ci = r.u8();
+    bool take = r.u8() != 0;
+    int type = (int)r.u32();
+    void* city = host_city(ci);
+    void* pc = player_civ();
+    if (!r.ok() || !city || !pc || pol_of(city) != pol_of(pc) || owner_of_city(city) != from || type < 0 || type > 2) {
+        g_spec_rejected++;
+        H->log(M, SK_INFO, "civ: a specialty answer of player %u for city %u not taken (not that player's city)",
+               (unsigned)from, (unsigned)ci);
+        return;
+    }
+    if (take && a_SetSpecialty)
+        thiscall<void>(a_SetSpecialty, city, type, 1);
+    g_spec_applied++;
+    H->log(M, SK_INFO, "civ: player %u answered the specialty of city %u: %s (BUG-0982)", (unsigned)from, (unsigned)ci,
+           take ? "the new one" : "kept");
+}
+
 static uint8_t player_of_combatant(void* att)
 {
     if (!att || IsBadReadPtr(att, 4))
@@ -2578,6 +2732,17 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
     if (uintptr_t cb = H->sym("SporeCoop::cCity_Buy")) // BUG-0877 (optional)
         H->hook_create(M, (void*)cb, (void*)h_CityBuy, (void**)&o_CityBuy);
+    { // BUG-0982 (optional)
+        uintptr_t ns = H->sym("SporeCoop::GameCiv_CaptureNeedsSpecialty"), cl = H->sym("SporeCoop::cCity_MessageListener");
+        a_ShowSpecialtyBox = H->sym("SporeCoop::cCity_ShowSpecialtyBox");
+        a_SetSpecialty = H->sym("SporeCoop::cCity_SetSpecialty");
+        a_TimeMgr = H->sym("Simulator::cGameTimeManager::Get");
+        a_TimeResume = H->sym("Simulator::cGameTimeManager::Resume");
+        if (ns && cl && a_ShowSpecialtyBox && a_SetSpecialty) {
+            H->hook_create(M, (void*)ns, (void*)h_NeedsSpecialty, (void**)&o_NeedsSpecialty);
+            H->hook_create(M, (void*)cl, (void*)h_CityListener, (void**)&o_CityListener);
+        }
+    }
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
@@ -3603,6 +3768,9 @@ static void host_command(uint8_t from, net::Reader& r)
             refund_build(from, paid, g_build_fail);
             return reject();
         }
+    } else if (kind == kCmdSpecialty) { // BUG-0982: a guest's answer to the specialty question of its city
+        host_specialty_answer(from, r);
+        return;
     } else if (kind == 6 /* CMD_BUYCITY, BUG-0877 */ || kind == 7 /* CMD_CAPTURE, BUG-0878 */) {
         uint8_t ci = r.u8();
         float price = kind == 6 ? r.f32() : 0.f;
@@ -4932,6 +5100,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
+    else if (type == net::MSG_CIV_CMD && is_guest() && from == 0 && r.left()) { // BUG-0982: the host's question
+        if (r.u8() == kCmdSpecialty)
+            guest_specialty_ask(r);
+    }
     else if (type == net::MSG_CIV_BUILD && is_guest())
         guest_build(r);
     else if (type == net::MSG_CIV_ALARM && is_guest()) {
@@ -5256,10 +5428,10 @@ std::string list()
         }
         snprintf(b, sizeof b,
                  "city %d %p pol=%08X%s owner=%d buildings=%u pos=(%.0f %.0f %.0f) capture=%.0f/%08X convert=%.0f buy=%.0f "
-                 "ruins=%d hp=%.0f\n",
+                 "ruins=%d hp=%.0f spec=%d\n",
                  host_index_of_city(c), c, pol_of(c), pc && pol_of(c) == pol_of(pc) ? " (player)" : "",
                  o == 0xFF ? -1 : (int)o, (unsigned)blds.size(), p.x, p.y, p.z, F<float>(c, 0x748),
-                 F<uint32_t>(c, 0x74C), F<float>(c, 0x750), F<float>(c, 0x758), ruins, hp);
+                 F<uint32_t>(c, 0x74C), F<float>(c, 0x750), F<float>(c, 0x758), ruins, hp, F<int>(c, kCitySpecialty));
         out += b;
     }
     for (void* v : all_vehicles()) {
@@ -5467,7 +5639,11 @@ std::string debug(const std::vector<std::string>& a)
             kn = it->second.size();
         snprintf(k, sizeof k, "kept: fix=%d worlds=%u this_world=%u saved=%u restored=%u key=%s\n", (int)g_fix_owners_kept,
                  (unsigned)g_kept_cities.size(), (unsigned)kn, g_kept_saved, g_kept_restored, g_kept_key.c_str());
-        return std::string(b) + k + c;
+        char sp[200]; // BUG-0982
+        snprintf(sp, sizeof sp, "specialty: fix=%d asked=%u shown=%u answered=%u applied=%u rejected=%u queued=%u open=%d\n",
+                 (int)g_fix_specialty_buyer, g_spec_asked, g_spec_shown, g_spec_answered, g_spec_applied, g_spec_rejected,
+                 (unsigned)g_spec_queue.size(), g_spec_open);
+        return std::string(b) + k + sp + c;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)

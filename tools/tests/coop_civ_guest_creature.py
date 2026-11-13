@@ -21,6 +21,7 @@ FAIL switch: `coop.fix civ.creature_target off` (the order is rejected unless th
 
   SPORE_LANE=4 python3 tools/tests/coop_civ_guest_creature.py [--off]
 """
+import os
 import re
 import sys
 import time
@@ -40,6 +41,12 @@ def creatures(con):
 
 def main():
     off = '--off' in sys.argv
+    # BUG-0973: the host owns the wild creatures now (npc.civ_wild), so the two games' herds no longer drift apart and
+    # this test's case (the guest clicks a creature the host does not have there) needs the sync off: what is checked
+    # here is BUG-0970's answer to an order on such a creature (it can still come from a guest whose host is away)
+    names = [n for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n]
+    if 'npc.civ_wild' not in names:
+        os.environ['SPORE_FIX_OFF'] = ','.join(names + ['npc.civ_wild'])
     host, guest = start('civ')
     ck = Checks()
     if off:  # (also SPORE_FIX_OFF=civ.creature_target)

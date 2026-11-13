@@ -13,6 +13,7 @@ came back after a load as vehicles of that world, with nothing to drive them.
    without vehicles gets the game's free first vehicle on load, so at most 1 vehicle),
    no null in any civilization's vehicle lists (`coop.civ civlists`: what a stripped reference becomes
    on load), no fault for 10 s.
+   BUG-0973: no wild creature where one of the host's wild creatures' proxies stood when Carol saved.
 PASS: 2 to 4. SPORE_FIX_OFF=civ.save_strip: the loaded world has the mirror vehicles (FAIL).
 
   SPORE_LANE=2 SPORE_FREE_LANE=3 python3 tools/tests/coop_civ_save_strip.py
@@ -30,6 +31,14 @@ from coop_creature_e84 import close_boxes
 from coop_multi import join_cmd, start_extra
 from coop_unknown_parts import clean_caches, lane_b
 from twoinst import Checks, start
+
+
+def wild(con):
+    """BUG-0973: the wild creatures of this game (census rows of noun 0x18EB45E): [(pos, own)]; own proxy = a copy
+    of the host's creature that this guest's game shows (npc.civ_wild)"""
+    import worlddiff
+    w = worlddiff.World(con.call('coop.census creatures')['out'])
+    return [(r['pos'], r.get('own')) for r in w.rows if r['noun'] == 0x018EB45E]
 
 
 def vehicles(con):
@@ -93,6 +102,11 @@ def main():
         hv, cv = vehicles(host), vehicles(carol)
         print(f'  vehicles: host {len(hv)}, Carol {len(cv)}', flush=True)
         ck(len(cv) > 0 and len(cv) == len(hv), f'Carol mirrors the host\'s vehicles ({len(cv)} of {len(hv)})')
+        cw = wild(carol)
+        proxies = [p for p, o in cw if o == 'proxy']
+        print(f'  Carol\'s wild creatures: {len(cw)}, proxies of the host\'s {len(proxies)} '
+              f'({carol.call("coop.npc herds")["out"].strip().splitlines()[-1][:80]})', flush=True)
+        ck(proxies, f'Carol shows the host\'s wild creatures as proxies ({len(proxies)})')
         slot, folder, planet = save_slot(carol, carol_dir)
         ck(slot != '' and planet != '', f'Carol plays a save of her own ({slot}/{planet})')
         t_save = time.time()
@@ -133,6 +147,15 @@ def main():
            f'no mirror vehicle of the session is in the reloaded world ({len(lv)} vehicles, at most the game\'s free '
            f'one; {len(left)} within 2 m of a mirror\'s place)')
         ck(loaded and nulls == 0, f'no null in the civilizations\' vehicle lists ({nulls})')
+        # BUG-0973: the proxies of the host's wild creatures (and the herds made for them) are ours: not in the save
+        lw = wild(re_)
+        # (the guest's own wild creatures were removed by the sync, so a creature near a proxy's place after the load
+        # is a saved proxy; they walk for the 10 s after the load: 20 m. Without savestrip: 18 of 20 came back)
+        kept = [p for p, _ in lw if any(math.dist(p, q) < 20.0 for q in proxies)]
+        print(f'  wild creatures after the reload: {len(lw)} at {[tuple(round(x) for x in p) for p, _ in lw][:12]}; '
+              f'{len(kept)} within 20 m of where a proxy stood when saved', flush=True)
+        ck(loaded and not kept, f'no proxy of the host\'s wild creatures is in the reloaded world ({len(kept)} of '
+           f'{len(proxies)} still there)')
     finally:
         subprocess.run([lane.SPORE, 'kill'], env=dict(os.environ, SPORE_LANE=str(b)), capture_output=True)
         time.sleep(2)

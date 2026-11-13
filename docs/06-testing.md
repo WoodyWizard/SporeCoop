@@ -7117,3 +7117,22 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * The monitor's `same_session` (BUG-1061, default 1): the hp, puppet_hp, drawn and ground rules match a partner line
   only with the subject's own lines of the stage and world it names (each session's clock starts at s 0, so a test
   with several sessions has several lines at the same s). gates_selftest has the twin (`same_session=0` fails).
+
+## Civ wild creatures and the specialty question (2026-11-13, fix/w49-civ)
+<a id="testing-civ-wild-sync"></a>
+
+* `civ_wild_sync` (BUG-0973, civ_npc, ~80 s): both cameras on the herd (`frame_city`: the Civ game simulates herds only
+  within ~200 m of a camera or a partner's pointer), the host's `coop.civ creatureshift` moves the herd 40 m, the
+  census compares the host's simulated creatures (`own=npc`) with the guest's both ways (4 m), then the guest's two
+  vehicles attack its creature and the host's creature of the same place must die (body on the guest). It prints the
+  host's outgoing rate (`coop.status` `net to 1: out_bytes`) over 10 s. The census of the host also lists creatures
+  its game no longer simulates (out of every relevance sphere: they stand, herd cleared); the guest shows none there.
+  SPORE_FIX_OFF=npc.civ_wild fails.
+* `civ_guest_creature` (BUG-0970) needs two games whose herds differ: it adds npc.civ_wild to SPORE_FIX_OFF itself.
+* `civ_buy_city` asserts BUG-0982: `specialty question: host None | guest Economic` and `spec=2` (the `coop.civ` city
+  lines' new field) on both games; `play_civ.answer_specialty(con, wait, prefer=)` presses a chosen caption.
+  SPORE_FIX_OFF=civ.specialty_buyer fails. `coop.civ tables` prints `specialty: asked= shown= answered= applied=`.
+* `civ_save_strip` also checks BUG-0973: after Carol's reload alone no wild creature within 20 m of where one of her
+  proxies stood (her own were removed by the sync, so any is a saved proxy; they walk for the 10 s after the load).
+  SPORE_FIX_OFF=savestrip.on: 6 of 10 came back (FAIL). Run outside the lab with `SPORE_LANE=4 SPORE_LANE_B=5` to
+  keep Carol on a lane of your own (the lab takes the first free lane from 2).
