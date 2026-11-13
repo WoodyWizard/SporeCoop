@@ -106,7 +106,9 @@ VK_F9 = '0x78'
 REWARD_CHECK = (932, 844)
 TRIBE_HUT = '1E4DAAE'        # the hut noun (a village falls with its hut)
 TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows in place of History
-ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 20, 'civ': 20}  # default time of a stage change
+# default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
+# 13-19 min in the runs on the fixture and the campaign's own planet, so 30
+ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}
 
 
 def drag_slow(con, sx, sy, tx, ty):
@@ -1258,6 +1260,14 @@ class Campaign:
                 return
             alive = self.tribe_raiders()
             if not raid.get('host_click'):  # no attack click of the host yet: no mission, the conquest would be no goal
+                raid['tries'] = raid.get('tries', 0) + 1
+                if raid['tries'] >= 3 and len(state.get('standing', [])) > 1:
+                    # a far village the players' view does not reach (the minimap's look misses it, lab
+                    # 20261113-073952: 316 m, 9 min without a click): another village first, this one later
+                    state.setdefault('skip', {})[raid['tribe']] = time.time() + 240
+                    self.note(f'tribe: no attack click of the host on village {raid["tribe"]} in 3 tries: another village first')
+                    state['raid'] = None
+                    return
                 if len(alive) < 8:
                     self.host.call('coop.tribe spawn 6')
                 self.tribe_clicks(raid)
@@ -1299,7 +1309,10 @@ class Campaign:
                 self.host.call('coop.tribe form')
             self.note(f'tribe: no village left to raid (goal bar {pr})')
             return
-        tk, c, hut, hp = targets[0]
+        state['standing'] = [t[0] for t in targets]
+        skip = state.get('skip', {})
+        pick = [t for t in targets if skip.get(t[0], 0) < time.time()] or targets
+        tk, c, hut, hp = pick[0]
         raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False)
         state['raid'] = raid
         self.note(f'tribe: raid on village {tk} ({len(targets)} standing, goal bar {pr}), its hut {hut} '
@@ -1738,10 +1751,13 @@ def main():
                 nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
                 ok = camp.advance(stage)
                 if not ok and not camp.dead:
-                    sure = stage != 'tribe'  # the Tribe stage's end by raids is not sure to come in time
+                    # Q1 of 0.7.14: the Tribe end by conquests comes in 13-19 min now, a Tribe change that does not finish
+                    # is a finding like any other (it was `info` while the raids never felled a hut);
+                    # CAMPAIGN_OLD_TRIBE=1 keeps 0.7.13's raids and their `info`
+                    sure = stage != 'tribe' or os.environ.get('CAMPAIGN_OLD_TRIBE') != '1'
                     camp.finding('stuck' if sure else 'info', f'advance:{stage}',
                                  f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
-                                 + ('' if sure else ' (the raids did not conquer every tribe in time)'),
+                                 + ('' if stage != 'tribe' else f' (goal bar {camp.tribe_progress()})'),
                                  camp.P)
                     if a.jump:
                         ok = camp.jump(nxt)
