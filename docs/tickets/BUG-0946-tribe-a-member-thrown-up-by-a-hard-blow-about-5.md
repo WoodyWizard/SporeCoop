@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-final12c, probes and tribe_member_air (lab 20261111-182334)
 role: guest
 versions: 0.7.11 - 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-mirrors
 commits: 6fc65d20
 tests: tribe_member_air
@@ -45,3 +45,4 @@ frame `toss` of kind sameview.
 ## History
 - 2026-11-11: opened (fix/w47-final12c). For 0.7.13.
 - 2026-11-12: fixed (fix/w48-tribe-mirrors): the members' height over the host's ground relayed.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-own-world
 commits: dda0afe5
 tests: own_creature
@@ -40,3 +40,4 @@ Test `own_creature` step 4 (2 instances suffice: the one guest is elsewhere, the
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-own-world, O1 of 0.7.13): fixed with core.vote_present; FAIL 20261112-031435, PASS 20261112-030351 / 030546.
+- 2026-11-12: released in 0.7.13.

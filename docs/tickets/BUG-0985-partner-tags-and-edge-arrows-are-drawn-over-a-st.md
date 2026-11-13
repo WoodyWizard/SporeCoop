@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 final check out/lab/20261112-175447 (key-frame review)
 role: 
 versions: 0.7.13-rc
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fui
 commits: 7fc88a7e dd572e4b
 tests: tag_cinematic
@@ -50,3 +50,4 @@ cutscene with no tag).
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed (find.cinematic), test tag_cinematic; fix/w48-fui.
+- 2026-11-12: released in 0.7.13.

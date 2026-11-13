@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab, fix/w48-reports (play_creature)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-reports
 commits: f714646d
 tests: play_creature, avatar_stale_target
@@ -44,3 +44,4 @@ No switch (a test command's wrong call).
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: opened and fixed (fix/w48-reports), met by the final check of R3.
+- 2026-11-12: released in 0.7.13.

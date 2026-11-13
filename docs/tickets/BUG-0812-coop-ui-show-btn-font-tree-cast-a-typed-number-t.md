@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9108 (commit 6c8c4b2, lineages42-dev)
 role: host guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-small
 commits: 7e576f89
 tests: ui_bad_arg
@@ -49,3 +49,4 @@ ui_bad_arg (`coop_ui_bad_arg.py`, one game at the galaxy menu): a window address
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit).
 - 2026-11-12 (fix/w48-small): fixed (core.ui_window_arg), test ui_bad_arg.
+- 2026-11-12: released in 0.7.13.

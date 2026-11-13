@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9057 (Cell recurrence at 800x600, commit b3d24b5, lineages30-dev)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: cf952855
 tests: saved_box_offscreen
@@ -57,3 +57,4 @@ BUG-0846) is confirmed with a posted Enter (it goes to the topmost modal box), l
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
 - 2026-11-12: reproduced with a video mode change to 800x600, fixed on fix/w48-saves (world.saved_box_offscreen), FAIL 20261112-014918, PASS 20261112-014833.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9057
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: cf952855
 tests: saved_box_question
@@ -83,3 +83,4 @@ not seen by us).
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: fixed on fix/w48-saves (world.saved_box_only), FAIL 20261112-014220, PASS 20261112-014019.
+- 2026-11-12: released in 0.7.13.

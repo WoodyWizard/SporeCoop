@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cell
 commits: 3e554da8
 tests: cell_kill_refused
@@ -50,3 +50,4 @@ then the guest's real lethal bite must kill the creature in the host's game.
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-cell): fixed (cell.kill_refused), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

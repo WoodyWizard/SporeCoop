@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: tribe_held_item key frames, lab 20261110-214352 (sheet 009)
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-mirrors
 commits: 6fc65d20, b059baac, b781e846, 79e45732, 2fa8696f
 tests: tribe_mirror_hold
@@ -53,3 +53,4 @@ it back: the guest's copy holds it within 4 s of each take and has it as the hos
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed (fix/w48-tribe-mirrors): the members' holds relayed. The natural-hold rate alone is no measure (the mirror's game takes the item itself in some animations).
+- 2026-11-12: released in 0.7.13.

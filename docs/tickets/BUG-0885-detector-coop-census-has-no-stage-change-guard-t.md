@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-small
 commits: 78418470
 tests: census_leave
@@ -46,3 +46,4 @@ No fault was seen in the FAIL run (the freed blocks keep their content for a mom
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0605. Severity low, confidence medium.
 - 2026-11-12 (fix/w48-small): fixed (census.census_live), test census_leave.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 (world.cpp collect rewrite, no ticket id)
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: 4175db39
 tests: win_unit
@@ -67,3 +67,4 @@ save file at share time.
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: fixed on fix/w48-saves (world.share_complete), FAIL 20261112-013127, PASS 20261112-012955.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-walk lab 20261112-154553 (smoke, lane 2)
 role: 
 versions: 0.7.13 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-last
 commits: 8fbf48a9
 tests: unit_parallel, unit
@@ -53,3 +53,4 @@ port 0, read it back) and point the discovery at it.
 ## History
 - 2026-11-12: opened (fix/w48-walk).
 - 2026-11-12: cause shown (fixed port + the lanes' games in the range), ephemeral port asked alone, unit_parallel (fix/w48-last).
+- 2026-11-12: released in 0.7.13.

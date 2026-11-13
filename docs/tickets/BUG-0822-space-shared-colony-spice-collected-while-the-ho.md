@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-space
 commits: 41614516
 tests: space_spice_away
@@ -48,3 +48,4 @@ home system and back (its game collects the home colony), the host `away 0`, 12 
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12: fixed on fix/w48-space (a collection that arrives while the host is away waits; switch space.colony_spice_away).
+- 2026-11-12: released in 0.7.13.

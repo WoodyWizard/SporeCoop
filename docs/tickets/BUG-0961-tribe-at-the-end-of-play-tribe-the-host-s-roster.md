@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-tribe-mirrors, play_tribe key frame 03_end, lab 20261112-102606
 role: guest
 versions: 0.7.13 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: fcaec2b8
 tests: tribe_roster_cards, play_tribe
@@ -51,3 +51,4 @@ PASS: out/lab/20261112-142414, out/lab/20261112-142541.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: reproduced (a dead member kept its card on the guest), the card taken off with the body (tribe.body_card), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

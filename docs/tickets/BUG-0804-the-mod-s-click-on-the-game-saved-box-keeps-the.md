@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9101 (commit 39cdca69, lineages41-dev)
 role: host guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: cf952855
 tests: saved_box_cursor
@@ -65,3 +65,4 @@ GetCursorPos gives the game). The mod's click on the saved box's OK uses `releas
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
 - 2026-11-12: fixed on fix/w48-saves (world.saved_box_cursor), FAIL 20261112-014119, PASS 20261112-014220-2.
+- 2026-11-12: released in 0.7.13.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-11-12
+
 A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many
 more found by the tests and by looking at their screenshots, in every stage. Among them: Civilization vehicles that
 got faster and faster, a crash when a guest further on in the Cell stage joined a host, a guest stuck in the

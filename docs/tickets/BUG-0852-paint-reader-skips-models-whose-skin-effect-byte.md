@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9041
 role: all
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-small
 commits: fe67469a
 tests: make test (tests/validate_tests.cpp test_model_paint_runs)
@@ -61,3 +61,4 @@ Not run in the lab: the lab profiles have no creation with such a model (the for
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0727 (not reproduced: a model whose records cannot be read built unchecked) is the parent case; this ticket is the same outcome for readable records. Linked.
 - 2026-11-12 (fix/w48-small): fixed (creations.paint_runs), unit test.
+- 2026-11-12: released in 0.7.13.

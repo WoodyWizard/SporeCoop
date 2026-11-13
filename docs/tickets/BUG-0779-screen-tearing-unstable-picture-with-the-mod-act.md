@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: Discord 2026-11-09 Screen tearing
 role: host
 versions: 0.7.10.1, 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-reports
 commits: 87d4b985, 41f47c43
 tests: kit_frame_limit, kit_wrapper_cap, env_notes
@@ -115,3 +115,4 @@ Observed in the lab:
   areas (Pictures / Movies / Animations, the ru-ru PlayerDir case); crash_triage links them to BUG-0506 (the missing
   save area guard, fixed in 0.7.4); the 0.7.10.1 and 0.7.11.1 runs enter the editor without a crash.
 - 2026-11-12: fixed (fix/w48-reports): SporeKit keeps another program's frame cap, a vsync option, logs, a notice; a wrapper's cap holds.
+- 2026-11-12: released in 0.7.13.

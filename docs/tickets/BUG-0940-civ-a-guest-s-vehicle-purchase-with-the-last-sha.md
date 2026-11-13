@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check 2 of 0.7.12, campaign (lab 20261111-090547), play_civ PROBLEM line
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: 3204a8d8
 tests: civ_buy_race, play_civ, campaign
@@ -58,3 +58,4 @@ PASS: out/lab/20261112-134351, out/lab/20261112-141549.
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: the race made on purpose (civ_buy_race): the game refuses the click itself, nothing is sent or lost; play_civ counts it as buy_broke (fix/w48-rest).
+- 2026-11-12: released in 0.7.13.

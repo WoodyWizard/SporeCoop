@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-civ
 commits: fea09459
 tests: tribe_baby_pair
@@ -57,3 +57,4 @@ the host's, and the guest asked for none; part B: host and guest click within 0.
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12 (fix/w48-tribe-civ): reproduced (every host purchase went to the guest), fixed (tribe.baby_pair), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

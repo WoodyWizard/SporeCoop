@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-151535
 role: guest
 versions: 0.7.11.2 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-labels
 commits: 6f6a4403 79858616
 tests: tag_camera
@@ -115,3 +115,4 @@ least of (a guest creature with yellow stripes was read as the yellow tag).
 - 2026-11-11: opened.
 - 2026-11-11: analysed on lane 6 (fix/w47-tag-empty): not a 0.7.12 regression, the labels are projected with a camera ahead of the picture while the camera turns (also in v0.7.11.2); test tag_camera; stays open for 0.7.13.
 - 2026-11-12: fixed on fix/w48-labels (SporeKit drawncam), tag_camera FAIL 20261112-125750, PASS 20261112-125616 and 20261112-125928.
+- 2026-11-12: released in 0.7.13.

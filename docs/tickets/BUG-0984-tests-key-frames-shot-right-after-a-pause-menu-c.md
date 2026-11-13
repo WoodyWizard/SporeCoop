@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 final check out/lab/20261112-175447 (key-frame review)
 role: 
 versions: 0.7.13-rc
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fui
 commits: f4fa2eb9
 tests: keyframe_settle
@@ -40,3 +40,4 @@ out/lab/20261112-212439 (1.86 s after the close).
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed in the test helper; fix/w48-fui.
+- 2026-11-12: released in 0.7.13.

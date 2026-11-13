@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9050
 role: host
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: f4b30adf, 138a239e
 tests: tribe_civ_rejoin, tribe_civ
@@ -76,3 +76,4 @@ Hall editor; the host's slot files are sampled until the vehicle editor opens; f
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: reproduced with a guest joining in the end of Tribe (fault 0xBCAB07) and fixed on fix/w48-saves (tribe.graduation_save), FAIL 20261112-021437 / 023150, PASS 20261112-022822.
+- 2026-11-12: released in 0.7.13.

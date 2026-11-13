@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-space
 commits: fff29d37
 tests: space_finale_gone
@@ -47,3 +47,4 @@ the core and zooms in (`finale enter`).
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12: fixed on fix/w48-space (an entered partner is not waited for; switch space.finale_entered).
+- 2026-11-12: released in 0.7.13.

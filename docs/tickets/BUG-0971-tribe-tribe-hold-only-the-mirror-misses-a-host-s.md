@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 integration lab 20261112-155526 (tribe_hold_only); fix/w48-rest 20261112-143651
 role: guest
 versions: 0.7.13 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-last
 commits: 148fc439
 tests: tribe_hold_guest, tribe_hold_only
@@ -47,3 +47,4 @@ time (lab 20261112-164945), so the evidence is the two tests' rate (4 misses of 
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: cause found (the mirror's item still 0 at the host's start), tribe.hold_item, fix/w48-last.
+- 2026-11-12: released in 0.7.13.

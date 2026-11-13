@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fmisc
 commits: ea7552b3
 tests: space_spice_cap
@@ -41,3 +41,4 @@ host [1.5]). PASS: out/lab/20261112-212500 (space_spice_cap 3 of 3, lane 6).
 
 ## History
 - 2026-11-12: opened; test value under the game's cap (fix/w48-fmisc).
+- 2026-11-12: released in 0.7.13.

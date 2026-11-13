@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 (installer/install.cpp do_uninstall, installer/uninstall.bat)
 role: all
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-trust
 commits: fcae15a5, 62a0bdd2, a2002fc2
 tests: tests/win_tests.cpp (test_uninstall, test_uninstall_bat), tools/tests/tools_selftest.py symlist, make test
@@ -87,3 +87,4 @@ python3 tools/tests/win_unit.py` (no lane, no game; outputs kept in the worktree
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12 (fix/w48-trust): fixed as above; checked under Wine in a private prefix, FAIL with --old-uninstall.
+- 2026-11-12: released in 0.7.13.

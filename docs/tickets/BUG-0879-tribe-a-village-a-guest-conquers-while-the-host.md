@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-captures
 commits: be1ce456, 5a073eb7, 3ec69627
 tests: tribe_away_conquest
@@ -51,3 +51,4 @@ conquered and its hut down, the guest's too.
 ## History
 - 2026-11-10: opened from the Tribe / Civ / Space code audit for the 0.7.13 plan.
 - 2026-11-12 (fix/w48-captures): fixed, FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

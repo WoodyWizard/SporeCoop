@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-net
 commits: 2f9c631b
 tests: unit (make test: validate_tests test_planet_rx)
@@ -50,3 +50,4 @@ kept as it was in PlanetRx).
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0616. Severity low, confidence high.
 - 2026-11-12: fixed on fix/w48-net (0.7.13 N1): PlanetRx on CycleTracker; FAIL/PASS unit runs.
+- 2026-11-12: released in 0.7.13.

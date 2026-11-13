@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: Discord 2026-11-09 bug-reports
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-captures
 commits: 70334b34, 7930f984, 3ec69627
 tests: civ_capture_credit
@@ -71,3 +71,4 @@ siege takes the city; on both games it must be the guest's (owner 1).
 - 2026-11-10: opened.
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0648 (Discord 2026-11-06, 0.7.8: the guest's vehicles trigger captures but do not capture) is the same mechanism seen by a player before; its regression test civ_guest_attack never checked the captor.
 - 2026-11-12 (fix/w48-captures): fixed, FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-rest final check, same_view_tribe lab 20261112-145017
 role: 
 versions: 0.7.13 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-last
 commits: 148fc439 a54a52bf
 tests: tribe_hold_guest, tribe_hold_only, same_view_tribe
@@ -56,3 +56,4 @@ out/lab/20261112-171257 (2 of 2).
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: cause found (the mirror in another animation at the host's hold start), tribe.hold_anim, fix/w48-last.
+- 2026-11-12: released in 0.7.13.

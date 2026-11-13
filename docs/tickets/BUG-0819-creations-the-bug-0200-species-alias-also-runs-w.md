@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-own-world
 commits: dda0afe5, 37dc770a
 tests: own_creature
@@ -40,3 +40,4 @@ Test `own_creature` steps 1 and 3: the guest with colliding My Creations (coop_n
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-own-world, O1 of 0.7.13): fixed with creations.alias_own_world; FAIL 20261112-031303, PASS 20261112-030351 / 030546.
+- 2026-11-12: released in 0.7.13.

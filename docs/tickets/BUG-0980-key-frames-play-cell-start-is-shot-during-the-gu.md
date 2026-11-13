@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fmisc
 commits: ea7552b3
 tests: play_cell, keyframe_settle
@@ -41,3 +41,4 @@ both cells in open water, no letterbox, no rock). keyframe_settle still OK: out/
 
 ## History
 - 2026-11-12: opened from key frame 035; calm wait added (fix/w48-fmisc).
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-main e43c1484 (preview 8 local lighting)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-small
 commits: 3a3c5d3b
 tests: adventure_duo, adventure_duo_host_first
@@ -57,3 +57,4 @@ adventure_duo (`coop_adventure_duo.py`): host and guest join at the galaxy menu,
 ## History
 - 2026-11-10: opened.
 - 2026-11-12 (fix/w48-small): measured; the default build already kept the own sky (wsync.tod); wsync.adventure_sky guards the legacy packet in adventures; test adventure_duo.
+- 2026-11-12: released in 0.7.13.

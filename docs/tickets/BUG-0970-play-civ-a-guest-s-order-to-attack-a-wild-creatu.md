@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 integration out/lab/20261112-155526 play_civ
 role: guest
 versions: rel/0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-civcmd
 commits: bc0bd209
 tests: civ_guest_creature, play_civ
@@ -63,3 +63,4 @@ out/lab/20261112-170402 (85 / 85 / 0), both PASS. make test PASS.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-civcmd): traced to an unsynced wild creature target; fixed (civ.creature_target), test civ_guest_creature.
+- 2026-11-12: released in 0.7.13.

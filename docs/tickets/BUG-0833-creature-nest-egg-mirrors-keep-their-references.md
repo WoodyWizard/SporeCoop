@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-creature
 commits: c6bcdd15
 tests: nest_mirror_epoch
@@ -52,3 +52,4 @@ game keeps.
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-creature, C2 of 0.7.13): fixed (nest.mirror_epoch); FAIL 20261112-080216, PASS 20261112-080250, 20261112-080849.
+- 2026-11-12: released in 0.7.13.

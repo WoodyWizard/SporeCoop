@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-cell lab 2026-11-12 (coop_cell_ko_poison.py)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-pass
 commits: a52c61de, febc5c8e
 tests: cell_partner_poison, cell_partner_poison_host, cell_partner_poison_ff
@@ -61,3 +61,4 @@ must not be knocked out.
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-cell): opened from the BUG-0799 runs.
 - 2026-11-12 (fix/w48-pass): fixed (cell.partner_poison), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: 
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-mirrors
 commits: 6fc65d20
 tests: tribe_mirror_idle
@@ -63,3 +63,4 @@ is in its own idle choice; the mirror must play it or its own idle / walk in 80 
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: fixed (fix/w48-tribe-mirrors): the host's idle choices relayed.
+- 2026-11-12: released in 0.7.13.

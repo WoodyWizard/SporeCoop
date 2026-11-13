@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork nvstlex/SporeCoopNVST nvst/rivals-foundation 64471660, 3af94028, a4a99f94
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cell
 commits: 3e554da8
 tests: cell_spawn_slots, cell_tests player_spawn_slots
@@ -62,3 +62,4 @@ both. In each guest's own game its cell and the other guest's must be over 4 m a
 ## History
 - 2026-11-10: opened.
 - 2026-11-12 (fix/w48-cell): fixed (cell.spawn_slots), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

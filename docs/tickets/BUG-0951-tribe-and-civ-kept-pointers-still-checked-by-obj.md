@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-freed (0.7.13 L1), code read
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed2
 commits: e0f359c9 c93007ff
 tests: civ_mirror_lifetime, tribe_mirror_lifetime
@@ -83,3 +83,4 @@ shared mechanism, group 2's reachable failures are BUG-0955.
 - 2026-11-12: fixed on fix/w48-freed2 (refactor per group; reachable failures in BUG-0955).
 - 2026-11-12: play_civ on fix/w48-freed2 lost more guest orders once (31 %, out/lab/20261112-061048; 24 % in 20261112-062447, rel/0.7.13 18 % in 20261112-063357, 26 % on fix/w48-civ-speed before): gv_ok no longer asks the object list (a just-made mirror), see the next runs.
 - 2026-11-12: after c93007ff: play_civ out/lab/20261112-064630-2 (guest orders lost 8 %, host 0 %), out/lab/20261112-064834 (11- 2026-11-12: after c93007ff: play_civ out/lab/20261112-064630-2 (guest orders lost 8 %, host 0 %) and out/lab/20261112-064834 (11 %): PASS; civ_mirror_lifetime + civ_coop out/lab/20261112-064630: PASS.
+- 2026-11-12: released in 0.7.13.

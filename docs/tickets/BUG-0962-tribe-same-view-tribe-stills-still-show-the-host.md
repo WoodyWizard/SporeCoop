@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-tribe-mirrors, same_view_tribe key frames lab 20261112-102606
 role: guest
 versions: 0.7.13 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: c13be445
 tests: tribe_hold_only, tribe_mirror_hold, same_view_tribe
@@ -51,3 +51,4 @@ PASS: out/lab/20261112-143653, out/lab/20261112-144021 (such holds 0.54-0.71 s).
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: measured (holds of the mirror's own, not phase), such holds end after 0.35 s (tribe.mirror_hold_only), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-0455 (commit b3d24b5, lineages30-dev)
 role: host guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cell
 commits: fa9fa072
 tests: cell_meta_only
@@ -77,3 +77,4 @@ the guest's own shares never send a cell without a model.
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
 - 2026-11-12 (fix/w48-cell): fixed (creations.meta_only), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

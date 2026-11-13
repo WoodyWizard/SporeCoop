@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: Discord 2026-11-09 help Crashing on launch
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-reports
 commits: 41f47c43
 tests: env_notes
@@ -61,3 +61,4 @@ tests/dll/stand_in.c) loaded into the host's game by `kit.test.loadlib`.
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: notice, crash report advice, INSTALL section (fix/w48-reports); the crash itself not reproduced.
+- 2026-11-12: released in 0.7.13.

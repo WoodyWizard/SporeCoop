@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 integration lab 20261112-135150 (partner_pass, lanes 6/7)
 role: host, guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-walk
 commits: 79de1e01
 tests: tools/tests/tools_selftest.py (make test, check bootfault)
@@ -51,3 +51,4 @@ and passes; any other fault in the same game fails as before (the lab's own log 
 ## History
 - 2026-11-12: opened (the orchestrator's note on lab 20261112-135150), explained and tolerated in the test harness
   (fix/w48-walk).
+- 2026-11-12: released in 0.7.13.

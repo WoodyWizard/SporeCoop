@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-editor tools/large_address_aware.py
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-trust
 commits: 62a0bdd2, a2002fc2
 tests: tools/tests/tools_selftest.py laa, make test
@@ -62,3 +62,4 @@ SporeKit's symbol match by code_sha256 is unaffected (the header is not part of 
 ## History
 - 2026-11-10: opened.
 - 2026-11-12 (fix/w48-trust): tools/laa.py and its self-test; not run in the game (package A1 had no lab).
+- 2026-11-12: released in 0.7.13.

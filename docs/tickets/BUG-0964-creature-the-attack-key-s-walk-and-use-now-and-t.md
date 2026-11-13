@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-pass lab 2026-11-12 (partner_pass)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-walk
 commits: 18a57a2a, d71d5660, 79de1e01, 48f7eb8a
 tests: walk_start, walk_start_solo, walk_start_walkin, partner_pass
@@ -65,3 +65,4 @@ in its own game every time.
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-walk): cause found (the tests' gopos under a nest mound), fixed in the test tool
   (tools.gopos_surface), test walk_start; FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

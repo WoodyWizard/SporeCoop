@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9029
 role: 
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-trust
 commits: fcae15a5
 tests: tests/win_tests.cpp (test_setup_close)
@@ -55,3 +55,4 @@ Under Wine in a private prefix (`SPORE_WIN_UNIT_PREFIX=build/wineprefix python3 
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12 (fix/w48-trust): fixed (test made deterministic, the race reproduced every run with the old wait).
+- 2026-11-12: released in 0.7.13.

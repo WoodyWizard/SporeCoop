@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: all
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-net
 commits: 2f9c631b
 tests: unit (make test: validate_tests test_world_path)
@@ -54,3 +54,4 @@ Unit test (tests/validate_tests.cpp or net_tests): `safe_rel("con")`, `safe_rel(
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed on fix/w48-net (0.7.13 N1): device names refused; FAIL/PASS unit runs.
+- 2026-11-12: released in 0.7.13.

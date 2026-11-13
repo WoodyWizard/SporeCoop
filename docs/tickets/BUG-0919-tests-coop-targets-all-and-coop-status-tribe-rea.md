@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: code audit for BUG-0917
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: 339c3dc4
 tests: status_stale_chief, sync_tribe, play_tribe
@@ -53,3 +53,4 @@ PASS: out/lab/20261112-144419, out/lab/20261112-144421 (`0:gone`, `1:gone`).
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: reproduced for the Tribe status (same-pump drop), the entries and the status ask the object list (npc.entries_listed), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

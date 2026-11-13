@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: feat/lab-speed lab 20261112-1903 (warm reset after cell_particles, lane 6)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cellcull
 commits: 8dd800ce, 561bc917, c4e98537
 tests: cell_level_drop, cell_level_drop_solo
@@ -89,3 +89,4 @@ the guest must live. cell_particles stays a cold test until this is fixed (suite
 ## History
 - 2026-11-12: opened (feat/lab-speed).
 - 2026-11-12: fixed on fix/w48-cellcull (`cell.tile_cap`): the game's own bug, reachable by players through the shared food total.
+- 2026-11-12: released in 0.7.13.

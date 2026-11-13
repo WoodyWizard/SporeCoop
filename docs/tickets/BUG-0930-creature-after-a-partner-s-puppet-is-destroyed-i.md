@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: found with coop.staleref while fixing BUG-0926 (lab lane 2, 2026-11-11)
 role: host
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: 70c01f1f, 184396b6, 42f198bc
 tests: stale_last_attacker, herd_help_stale, npc_lost_target
@@ -74,3 +74,4 @@ on any holder in a listed object, an AI block or cModifiers).
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: holders named (cModifiers, not the AI block; the last attacker), the last attacker released after a destroy (npc.stale_last_attacker), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

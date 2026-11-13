@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: 
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: 9e7abf21
 tests: keyframe_settle, play_tribe, same_view_tribe, play_civ
@@ -69,3 +69,4 @@ The key frames of play_tribe and same_view_tribe of the final runs (out/lab/2026
   host and 3,000 on the guest, shot between the test's money gift and its arrival 5 s later). Not this time:
   play_creature end (both in play), play_space end, campaign play-cell.
 - 2026-11-12: key frames wait for the games to settle (twoinst.keyframe), play_tribe / play_civ start frames, fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

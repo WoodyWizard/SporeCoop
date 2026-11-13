@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-freed lab 20261112-013858 long_creature (lane 7)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed2
 commits: 30183093
 tests: make test (gates_selftest: monitor puppet_hp)
@@ -49,3 +49,4 @@ Replay of the recorded logs (monitor.py replay) of lab fix/w48-freed 20261112-01
 - 2026-11-12: opened.
 - 2026-11-12: fixed on fix/w48-freed2 (monitor rule; not a mod defect).
 - 2026-11-12: long_creature on fix/w48-freed2 (lane 7, 46 min): PASS, out/lab/20261112-052420-2.
+- 2026-11-12: released in 0.7.13.

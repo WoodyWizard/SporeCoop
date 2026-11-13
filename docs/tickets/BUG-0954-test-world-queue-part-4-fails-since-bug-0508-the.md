@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab (fix/w48-saves area run)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-new
 commits: fc9436b4
 tests: world_queue
@@ -47,3 +47,4 @@ switches itself, so the lab's twin switch was undone before). No mod change.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: part 4 rewritten on fix/w48-new (in-place evolution checked, the BUG-0074 share by coop.share).
+- 2026-11-12: released in 0.7.13.

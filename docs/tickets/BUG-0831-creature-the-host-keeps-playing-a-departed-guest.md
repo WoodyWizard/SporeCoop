@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-creature
 commits: 122a7f0b
 tests: social_leave_host
@@ -42,3 +42,4 @@ Test `social_leave_host` (coop_creature_social_leave.py): a guest engages a Kook
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-creature, C2 of 0.7.13): fixed (social.forget_leaver); FAIL 20261112-073101, PASS 20261112-073116, 20261112-080216.
+- 2026-11-12: released in 0.7.13.

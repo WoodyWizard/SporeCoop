@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-play-bots, lab lane 9, 2026-11-10 (play_creature's joint hunts)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cell
 commits: f6d5a6b2
 tests: partner_pass, partner_pass_ff, play_creature (the bots walk around)
@@ -72,3 +72,4 @@ reach the bite's reach), then clicks the animal from behind (the game's target m
   partner. With the final test: FAIL with `SPORE_FIX_OFF=creature.partner_pass`: lab 20261112-130029 (click on the
   partner 2 of 2), also 20261112-114751 (0 of 3); PASS 8 of 8 on lanes 6 / 7: 20261112-124402 (3 of 3), -124417
   (3 of 3), -130600, -130741; partner_pass_ff 20261112-130044.
+- 2026-11-12: released in 0.7.13.

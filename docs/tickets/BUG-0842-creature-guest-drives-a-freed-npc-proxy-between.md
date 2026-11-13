@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9012
 role: guest
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed
 commits: 570ee491
 tests: proxy_identity, proxy_identity_tribe
@@ -64,3 +64,4 @@ Tests `proxy_identity` and `proxy_identity_tribe` (tools/tests/coop_proxy_identi
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: a candidate explanation of BUG-0170 (the 4-player Creature guest heap corruption of 2026-10-23, whose code had the same window without any list check). Scope note: check_listed runs only `game::in_creature_stage()` (npc.cpp:1789), so Tribe animal proxies are driven every frame with the +0x21 byte as the only check; the fix and its test should cover Tribe too (the guest's own tribe kills and frees proxies there, the comment at npc.cpp:1799).
 - 2026-11-12: fixed on fix/w48-freed (npc.proxy_identity, the shared game::listed / LiveRef of BUG-0426); covers Tribe too.
+- 2026-11-12: released in 0.7.13.

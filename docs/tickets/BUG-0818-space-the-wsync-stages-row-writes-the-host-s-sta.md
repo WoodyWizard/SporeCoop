@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-own-world
 commits: dda0afe5, 946f4dd2
 tests: own_space
@@ -40,3 +40,4 @@ Test `own_space` step 4 (`coop.wsync stage 0 <hex>` on the host, `coop.wsync dum
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12 (fix/w48-own-world, O1 of 0.7.13): fixed with wsync.space_own; FAIL 20261112-030215, PASS 20261112-025609 / 031100.
+- 2026-11-12: released in 0.7.13.

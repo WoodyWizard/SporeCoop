@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fix/w47-play-bots lab out/lab/20261110-232109 (lane 9)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: 133f1c02
 tests: cell_own_load
@@ -47,3 +47,4 @@ PASS: out/lab/20261112-143433, out/lab/20261112-144537.
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: the test sets the per-world record and loads the world again (fix/w48-rest).
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: Discord 2026-11-09 suggestions
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-reports
 commits: 0c8d2bbf, a4c922aa
 tests: space_badges_rejoin
@@ -73,3 +73,4 @@ joins and loads the host's world; the earned badges (state < 2) and counter 2 mu
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed (fix/w48-reports): space.keep_badges; BUG-0956 opened (a fault at a rejoin from the same game).
+- 2026-11-12: released in 0.7.13.

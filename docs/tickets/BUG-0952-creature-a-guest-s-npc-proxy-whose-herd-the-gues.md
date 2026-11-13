@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-freed lab 20261112-012019, 20261112-013804 (npc_herd_identity)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed2
 commits: 48082a85
 tests: npc_herd_identity
@@ -50,3 +50,4 @@ tools/tests/coop_npc_herd_identity.py: bodies (the list's ` DEAD`) are no candid
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: closed on fix/w48-freed2: a body, not made again by design (BUG-0383); the test picks no bodies.
+- 2026-11-12: released in 0.7.13.

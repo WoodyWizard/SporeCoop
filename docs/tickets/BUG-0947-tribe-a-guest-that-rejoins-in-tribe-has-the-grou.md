@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, campaign, Carol after its rejoin)
 role: guest
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-mirrors
 commits: b781e846
 tests: tribe_form_ground_rejoin
@@ -51,3 +51,4 @@ within 0.5 m.
 - 2026-11-11: opened (fix/w47-final12c). For 0.7.13. Reproduce: a four-player campaign with the rejoin in Tribe after
   `coop.tribe form` made a village, then `coop.terrain` on both games round the village.
 - 2026-11-12: fixed (fix/w48-tribe-mirrors): a village made live gets the tribe's ground stamp too.
+- 2026-11-12: released in 0.7.13.

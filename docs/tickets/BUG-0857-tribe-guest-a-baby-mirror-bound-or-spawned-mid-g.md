@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9021
 role: guest
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-civ
 commits: 15b40763
 tests: tribe_member_age_rejoin
@@ -61,3 +61,4 @@ mirror must have age 1 within 3 s (the game's +0xB34 on both).
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12 (fix/w48-tribe-civ): reproduced by a rejoin mid-growth, fixed (tribe.mirror_grow), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

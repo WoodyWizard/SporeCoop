@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-editor 28536e76, 6e4f5eab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-net
 commits: 2f9c631b
 tests: unit (make test: validate_tests test_task_drop)
@@ -52,3 +52,4 @@ Switch `kit.fix taskdrop 0`. Not ported from the fork: written on our code.
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed on fix/w48-net (0.7.13 N1): tasks destroyed outside the lock; FAIL/PASS unit runs.
+- 2026-11-12: released in 0.7.13.

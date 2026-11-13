@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed
 commits: 570ee491
 tests: anim_not_creature, anim_not_creature_tribe
@@ -40,3 +40,4 @@ Tests `anim_not_creature` (Cell) and `anim_not_creature_tribe` (Tribe), tools/te
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12: fixed on fix/w48-freed (core.anim_creature_only).
+- 2026-11-12: released in 0.7.13.

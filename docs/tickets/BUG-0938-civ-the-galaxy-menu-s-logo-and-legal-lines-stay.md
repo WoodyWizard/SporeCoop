@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-090547
 role: guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: d5d96134
 tests: menu_splash, creature_intro_camera
@@ -67,3 +67,4 @@ PASS: out/lab/20261112-140452, out/lab/20261112-141206 (hidden 0.4 s into the st
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: the menu splash named (GalaxyGameEntry +0x204), a step left up by a join from the menu hidden in the stage (world.menu_splash), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

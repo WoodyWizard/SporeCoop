@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 final check, lab out/lab/20261112-175447 (walk_start_walkin, lane 3)
 role: 
 versions: 0.7.13-rc
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-d3d9, fix/w48-fui
 commits: 87997372 f2b5dd5c
 tests: fixoff_clean, walk_start_walkin
@@ -145,3 +145,4 @@ PASS (all off skips core.adapters): out/lab/20261112-214819 (fixoff_clean), out/
 - 2026-11-12: opened from the rel/0.7.13 final check (lab 20261112-175447); analysis: DXVK 3.1.1 CS thread, null command pool after two caught memcpy faults of our CRT on the main thread right after `coop.fix all off`; fix/w48-d3d9.
 - 2026-11-12: fix/w48-fui: not reproduced on lanes 4/5 (6 runs); fault logger prints module return addresses; fixoff_clean probe test; switches ruled out listed.
 - 2026-11-12: cause found (core.adapters off: Wine nsi memcpy on the main thread), switch marked unsafe; fixed on fix/w48-fui.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-civ
 commits: 9ce33b62
 tests: tribe_party_editor
@@ -56,3 +56,4 @@ the guest leaves its editor (the red X): its game must not play 0x19DC06DF (`coo
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0646. Severity low, confidence low.
 - 2026-11-12 (fix/w48-tribe-civ): reproduced (the guest in its editor at the stop), fixed (tribe.party_stop), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

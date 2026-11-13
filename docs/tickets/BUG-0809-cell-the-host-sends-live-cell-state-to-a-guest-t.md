@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9098 (lineages30-dev, still open there)
 role: host guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-own-world
 commits: dda0afe5, 1843ae9a
 tests: own_cell
@@ -55,3 +55,4 @@ Test `own_cell` step 3: the host's bytes to the guest (`coop.status` `net to 1: 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (code audit, not reproduced by us).
 - 2026-11-12 (fix/w48-own-world, O1 of 0.7.13): fixed with cell.send_here (own_world::peer_here); FAIL 20261112-030026, PASS 20261112-030818 / 031057.
+- 2026-11-12: released in 0.7.13.

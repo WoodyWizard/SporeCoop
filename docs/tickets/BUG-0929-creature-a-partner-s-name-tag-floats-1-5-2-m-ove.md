@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257 (BUG-0920's side note)
 role: host,guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-labels
 commits: 6f97c555 79858616 57eba16c
 tests: tag_height
@@ -45,3 +45,4 @@ the game's camera, at most 0.7.
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: fixed on fix/w48-labels (creature.tag_height), tag_height FAIL 20261112-123947, PASS 20261112-123942.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-captures 2026-11-12 (code reading)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-new
 commits: bb98d142
 tests: civ_owners_reload
@@ -45,3 +45,4 @@ nothing is dealt anew. In memory only: a restart of the host's game or a new ses
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: reproduced and fixed on fix/w48-new (civ.owners_kept).
+- 2026-11-12: released in 0.7.13.

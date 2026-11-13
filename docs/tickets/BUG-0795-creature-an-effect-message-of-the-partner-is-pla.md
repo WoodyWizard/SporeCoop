@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed
 commits: 570ee491, fdc10ecc
 tests: effect_puppet_gone
@@ -41,3 +41,4 @@ Test `effect_puppet_gone` (tools/tests/coop_effect_puppet_gone.py).
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: BUG-0520 (the game's UFO abduction freeing the partner's puppet on the host, duplicate of BUG-0507) is the known native free that reaches this path on 0.7.10+; BUG-0507's check sits in drive_puppet only. Linked both ways.
 - 2026-11-12: fixed on fix/w48-freed (effects.puppet_live); the test idea of the closed-ticket review (a native destroy of the partner's puppet plus an effect in the same frame) is the test.
+- 2026-11-12: released in 0.7.13.

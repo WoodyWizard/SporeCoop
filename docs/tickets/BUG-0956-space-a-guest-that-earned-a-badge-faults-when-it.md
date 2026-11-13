@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab, fix/w48-reports (coop_space_badges_rejoin.py)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-new
 commits: b5c3735c, 6d1517c6
 tests: dead_modal_list, space_badges_rejoin
@@ -70,3 +70,4 @@ never run. In most runs the vectored handlers still ran (SporeKit's fault logger
 ## History
 - 2026-11-12: opened (fix/w48-reports, met while testing BUG-0786).
 - 2026-11-12: cause found and fixed on fix/w48-new (a destroyed window in the modal list; PopModal guard; SporeKit writes a report for an off-stack fault).
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-cell
 commits: 3e554da8
 tests: cell_ko_scale
@@ -49,3 +49,4 @@ must stay (under 1.5 m), the host's cell must stay near, then the host next to i
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-cell): fixed (cell.down_scale), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

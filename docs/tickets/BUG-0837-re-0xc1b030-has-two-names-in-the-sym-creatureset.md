@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-small
 commits: 3a3c5d3b
 tests: make test (tools/re_lint.py)
@@ -42,3 +42,4 @@ no-fail-run: knowledge base only (the .sym, the docs, a symbol name in the code)
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12 (fix/w48-small): fixed: CreatureSetSneaking is the name, the alias removed, CORRECTIONs added.
+- 2026-11-12: released in 0.7.13.

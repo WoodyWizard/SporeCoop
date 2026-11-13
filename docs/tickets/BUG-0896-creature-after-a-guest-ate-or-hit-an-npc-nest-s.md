@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: owner, watching a player's recording 2026-11-10 (two screenshots)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-reports
 commits: 85e77d3d
 tests: nest_egg_hunt
@@ -81,3 +81,4 @@ host the egg is eaten, no creature, no body, no DNA, no hunt), step 4 (the host'
 ## History
 - 2026-11-10: opened from the owner's observation; need the recording's time code or a report archive.
 - 2026-11-12: fixed (fix/w48-reports): nest.hatch_now; the window measured 0.91 s without it.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: 
 versions: all
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-net
 commits: fa0b0a65, 5857b6d1
 tests: unit (make test: net_tests test_discovery_source)
@@ -61,3 +61,4 @@ Unit test (validate_tests, fake transport): a discovery query from 8.8.8.8 gets 
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed on fix/w48-net (0.7.13 N1): LAN-only answers, rate limit; FAIL/PASS unit runs.
+- 2026-11-12: released in 0.7.13.

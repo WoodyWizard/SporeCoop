@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-civ
 commits: 2fc01638
 tests: civ_build_refund
@@ -51,3 +51,4 @@ moment; after 6 s one building more in each game and the money (each game's own)
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12 (fix/w48-tribe-civ): reproduced (the last plot race), fixed (civ.build_refund), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab-final-0.7.13
 role: both
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fmisc
 commits: ea7552b3
 tests: civ_away_capture, civ_buy_city, civ_capture_credit, civ_capture_keeps, civ_owners_reload, tribe_away_conquest, tribe_conquest_guest
@@ -46,3 +46,4 @@ view on both).
 ## History
 - 2026-11-12: opened from the 0.7.13 final check key frames; framing helpers (fix/w48-fmisc).
 - 2026-11-12: re-check (out/lab/20261112-225741, sheet 032): tribe_conquest_guest frames the fallen hut on the guest; the host's camera still stays far from the village (only the smoke over the burnt spot shows). Test framing on the host's side, follow-up for 0.7.14.
+- 2026-11-12: released in 0.7.13.

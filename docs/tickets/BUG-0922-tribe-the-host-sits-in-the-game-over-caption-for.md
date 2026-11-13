@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: host
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-tribe-mirrors
 commits: f2051355, b059baac
 tests: tribe_gameover_partner, play_tribe
@@ -59,3 +59,4 @@ Test `tools/tests/coop_tribe_gameover_partner.py` (suite `tribe_gameover_partner
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: fixed (fix/w48-tribe-mirrors): a test artefact; play_tribe answers the caption; BUG-0960 opened for the guest's side.
+- 2026-11-12: released in 0.7.13.

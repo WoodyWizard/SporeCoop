@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: 0.7.13 final check tribe_hold_guest, lab 20261112-175447 / 20261112-205503
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-ftribe
 commits: 32685d83
 tests: tribe_hold_guest
@@ -63,3 +63,4 @@ Test `tribe_hold_guest` (tools/tests/coop_tribe_hold_only.py --who guest --windo
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed on fix/w48-ftribe (tribe.hold_queued).
+- 2026-11-12: released in 0.7.13.

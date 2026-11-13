@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9004
 role: both
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-saves
 commits: f4b30adf
 tests: adventure_save
@@ -60,3 +60,4 @@ without hover); fixed on the way.
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: reproduced (GetPlanetRecord+0x2D) and fixed on fix/w48-saves (world.adventure_saves), FAIL 20261112-023031, PASS 20261112-022831.
+- 2026-11-12: released in 0.7.13.

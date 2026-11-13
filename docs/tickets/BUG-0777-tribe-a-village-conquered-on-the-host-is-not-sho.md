@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: Discord 2026-11-09 bug-reports
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-captures
 commits: 89310a4c, 5a073eb7, 7930f984, 3ec69627
 tests: tribe_conquest_guest
@@ -66,3 +66,4 @@ host's members raid its hut (cut to 2 hp); after the host's fall the guest's vil
 ## History
 - 2026-11-10: opened.
 - 2026-11-12 (fix/w48-captures): fixed, FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

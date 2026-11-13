@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed
 commits: 1e58b7e0
 tests: lend_ledger
@@ -44,3 +44,4 @@ Test `lend_ledger` (tools/tests/coop_lend_ledger.py).
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0110. Severity medium, confidence medium.
 - 2026-11-12: fixed on fix/w48-freed (game.lend_ledger); a fault inside these calls is injected, not made by the game (`coop.views unwind`, `coop.hp scaleunwind`), as BUG-0110's tests do.
+- 2026-11-12: released in 0.7.13.

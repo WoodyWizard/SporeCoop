@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-captures
 commits: 70334b34, 0f46393a, 3ec69627
 tests: civ_capture_keeps
@@ -58,3 +58,4 @@ meter (`coop.civ siege <city> 0 150 pc`); for 12 s on both games the city is the
 - 2026-11-10: opened from the Tribe / Civ / Space code audit for the 0.7.13 plan.
 - 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: a second candidate for BUG-0648's host report (0.7.8: the guest's captures do not count); the resplit code is from 74144ecf (2026-10-21), so it was in 0.7.8. Linked.
 - 2026-11-12 (fix/w48-captures): fixed, FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

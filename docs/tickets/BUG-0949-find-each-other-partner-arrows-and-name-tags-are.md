@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-151535
 role: host,guest
 versions: 0.7.12 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-labels
 commits: a98f2cb7 79858616
 tests: find_layout
@@ -58,3 +58,4 @@ under the minimap and a message card hidden, the one over the bottom bar moved, 
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: fixed on fix/w48-labels (find.layout), find_layout FAIL 20261112-123659, PASS 20261112-122824 and 20261112-123359-2.
+- 2026-11-12: released in 0.7.13.

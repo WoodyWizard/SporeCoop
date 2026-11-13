@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fixed-ticket review 2026-11-10 (0.7.13 plan)
 role: both
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-space
 commits: 8f0afe6e
 tests: effects_party_space
@@ -53,3 +53,4 @@ games, the relay under 1 % of the main thread. Switch `coop.fix effects.space of
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0451. Severity low, confidence medium.
 - 2026-11-12: fixed on fix/w48-space (effects.space on by default after the 3-player run passed and its twin failed).
+- 2026-11-12: released in 0.7.13.

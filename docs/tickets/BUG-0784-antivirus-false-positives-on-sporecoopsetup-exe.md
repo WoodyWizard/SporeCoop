@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: GitHub #200, GitHub #201
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-trust
 commits: 2d2deb8d, 204a70f6, a2002fc2
 tests: tools/pe_version.py --expect (tools/package.sh), make test
@@ -85,3 +85,4 @@ Switch: none (build metadata and docs; the FAIL run is the base build).
 ## History
 - 2026-11-10: opened.
 - 2026-11-12 (fix/w48-trust): the build parts done, the owner's parts prepared in docs/release-trust.md.
+- 2026-11-12: released in 0.7.13.

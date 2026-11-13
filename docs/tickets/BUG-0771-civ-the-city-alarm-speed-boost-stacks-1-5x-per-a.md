@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: GitHub #199
 role: host
 versions: 0.7.10.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-civ-speed
 commits: 69eecd6d, 942fa887, 1342d697
 tests: civ_boost_stack
@@ -74,3 +74,4 @@ the mod's frame tick); no NPC-army siege was run for it.
 ## History
 - 2026-11-10: opened.
 - 2026-11-12: fixed on fix/w48-civ-speed (civ.boost_base), FAIL 20261112-003101, PASS 20261112-002848 / -003341 / -003838.
+- 2026-11-12: released in 0.7.13.

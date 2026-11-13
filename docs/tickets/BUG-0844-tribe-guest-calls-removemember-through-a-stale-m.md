@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages PR #196 BUG-9051
 role: guest
 versions: 0.7.3.6 .. 0.7.11.1 (code read)
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed
 commits: 570ee491
 tests: tribe_mirror_lifetime
@@ -55,3 +55,4 @@ Test `tribe_mirror_lifetime` (tools/tests/coop_tribe_mirror_lifetime.py): up to 
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12: fixed on fix/w48-freed (tribe.mirror_member_lifetime).
 - 2026-11-12: fix/w48-freed2: nine other users of a mirror's citizen still asked object_alive (faults on rel/0.7.13 in tribe_mirror_lifetime): BUG-0955; the test plays rounds until a reuse within 6 min.
+- 2026-11-12: released in 0.7.13.

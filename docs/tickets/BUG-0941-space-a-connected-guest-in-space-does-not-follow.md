@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: fix/w47-final12b, first draft of coop_space_save_change.py (lab 20261111-105829, 20261111-105831)
 role: guest
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-space
 commits: 82221ae4
 tests: space_load_follow
@@ -63,3 +63,4 @@ host's slot Game9 (the same planet name), the host goes to the galaxy menu and l
 ## History
 - 2026-11-11: opened.
 - 2026-11-12: fixed on fix/w48-space (the host shares its world when it loads another Space save; switch space.load_follow).
+- 2026-11-12: released in 0.7.13.

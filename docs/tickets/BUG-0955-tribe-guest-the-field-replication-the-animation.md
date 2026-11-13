@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 lab 20261112-041619-2, 20261112-031338 (tribe_mirror_lifetime)
 role: guest
 versions: 0.7.12 .. rel/0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-freed2
 commits: 06f67869
 tests: tribe_mirror_lifetime
@@ -48,3 +48,4 @@ Test `tribe_mirror_lifetime`.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: fixed on fix/w48-freed2.
+- 2026-11-12: released in 0.7.13.

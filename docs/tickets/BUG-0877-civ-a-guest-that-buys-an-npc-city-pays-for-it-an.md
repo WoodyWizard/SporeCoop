@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-captures
 commits: 70334b34, 7930f984, 5e81941b, 3ec69627
 tests: civ_buy_city
@@ -51,3 +51,4 @@ and the guest's (owner 1).
 ## History
 - 2026-11-10: opened from the Tribe / Civ / Space code audit for the 0.7.13 plan.
 - 2026-11-12 (fix/w48-captures): fixed, FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

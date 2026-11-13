@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-fmisc
 commits: ea7552b3
 tests: tribe_conquest_guest
@@ -41,3 +41,4 @@ guest's log "ended it" for 5418B038 and 94D17D9F; tribe_away_conquest OK).
 
 ## History
 - 2026-11-12: opened from key frame 059; fixed on fix/w48-fmisc (tribe.conquer_caption_guest).
+- 2026-11-12: released in 0.7.13.

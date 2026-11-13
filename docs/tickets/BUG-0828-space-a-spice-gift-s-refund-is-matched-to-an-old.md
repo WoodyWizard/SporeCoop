@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 0.7.11.1
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-space
 commits: 3f6fb767
 tests: space_gift_reload
@@ -46,3 +46,4 @@ slot made at the start), the guest `gift noroom 1`, the host gives 10 again.
 ## History
 - 2026-11-10: opened (code audit for the 0.7.13 plan, Tribe / Civ / Space area).
 - 2026-11-12: fixed on fix/w48-space (the newest gift is matched, other worlds' entries pruned; switch space.gift_match_newest).
+- 2026-11-12: released in 0.7.13.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-tribe-mirrors, tribe_gameover_partner lab 20261112-093040 (BUG-0922)
 role: guest
 versions: 0.7.12 - 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-rest
 commits: fd4b65ab, fcaec2b8, 6507e5fc
 tests: tribe_gameover_wait, tribe_gameover_partner
@@ -51,3 +51,4 @@ PASS: out/lab/20261112-140917, out/lab/20261112-141335.
 ## History
 - 2026-11-12: opened.
 - 2026-11-12: the guest waits (paused, a note) under the host's caption (tribe.gameover_wait), fix/w48-rest.
+- 2026-11-12: released in 0.7.13.

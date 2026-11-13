@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-cell lab 2026-11-12 (coop_cell_kill_refused.py)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-pass
 commits: a52c61de
 tests: cell_kill_refused, cell_tests (kill_word)
@@ -44,3 +44,4 @@ say "refused (knocked out)". Unit: tests/cell_tests.cpp `kill_word_ko` (make tes
 - 2026-11-12: opened.
 - 2026-11-12 (fix/w48-cell): opened.
 - 2026-11-12 (fix/w48-pass): fixed (cell.ko_trace), FAIL and PASS runs in Verification.
+- 2026-11-12: released in 0.7.13.

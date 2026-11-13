@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: code audit 2026-11-10 (0.7.13 plan)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.13
 branch: fix/w48-civ-speed
 commits: 69eecd6d, 942fa887, 1342d697
 tests: civ_boost_stack
@@ -43,3 +43,4 @@ with owner 254 and the NPC vehicle's +0x218 unchanged.
 ## History
 - 2026-11-10: opened from the Tribe / Civ / Space code audit for the 0.7.13 plan.
 - 2026-11-12: fixed on fix/w48-civ-speed (civ.boost_players), FAIL 20261112-003106, PASS 20261112-002848 / -003341 / -003838.
+- 2026-11-12: released in 0.7.13.
