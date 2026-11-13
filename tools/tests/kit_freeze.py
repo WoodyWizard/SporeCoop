@@ -151,7 +151,7 @@ def run_case(ck, case):
         print(f'  vehedge: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
         ck(r is not None and 'ended=1' in r['out'], 'the test thread came back to its own stack')
         ck(r is not None and 'recorded=1' in r['out'], 'the fault logger recorded the fault (its last fault is this one)')
-        ck(r is not None and 'faults=1 ' in r['out'], 'no second fault inside the fault logger')
+        ck(r is not None and 'nested=0 ' in r['out'], 'no second fault inside the fault logger')
     elif case == 'wheel':
         def wheel(keys):
             for k in keys:

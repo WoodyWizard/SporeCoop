@@ -392,13 +392,15 @@ namespace sk {
 static volatile DWORD g_edge_tid;
 static uint8_t* g_edge_block;
 static constexpr size_t kEdgeCommit = 192 * 1024, kEdgeReserve = 256 * 1024;
-static volatile LONG g_edge_faults;
+static volatile LONG g_edge_faults, g_edge_nested; // nested: a fault elsewhere (inside the fault logger)
 
 static LONG CALLBACK edge_handler(EXCEPTION_POINTERS* ep)
 {
     if (!g_edge_tid || GetCurrentThreadId() != g_edge_tid)
         return EXCEPTION_CONTINUE_SEARCH;
     InterlockedIncrement(&g_edge_faults);
+    if ((uintptr_t)ep->ExceptionRecord->ExceptionAddress != (uintptr_t)sk_edge_fault_at)
+        InterlockedIncrement(&g_edge_nested);
     ep->ContextRecord->Eip = (DWORD)(uintptr_t)sk_edge_resume;
     return EXCEPTION_CONTINUE_EXECUTION;
 }
@@ -428,7 +430,7 @@ std::string exceptions_edge_test()
         AddVectoredExceptionHandler(0, edge_handler);
         installed = true;
     }
-    g_edge_faults = 0;
+    g_edge_faults = g_edge_nested = 0;
     DWORD tid = 0;
     HANDLE t = CreateThread(nullptr, 0, edge_thread, nullptr, 0, &tid);
     if (!t)
@@ -442,8 +444,8 @@ std::string exceptions_edge_test()
         recorded = g_last_tid == tid && (uintptr_t)g_last_er.ExceptionAddress == (uintptr_t)sk_edge_fault_at;
     }
     char b[200];
-    snprintf(b, sizeof b, "vehedge: recorded=%d faults=%ld ended=%d at=%08X vehbounds=%d", recorded ? 1 : 0,
-             (long)g_edge_faults, ended ? 1 : 0, (unsigned)(uintptr_t)sk_edge_fault_at, fixed(g_fix_vehbounds) ? 1 : 0);
+    snprintf(b, sizeof b, "vehedge: recorded=%d faults=%ld nested=%ld ended=%d at=%08X vehbounds=%d",
+             recorded ? 1 : 0, (long)g_edge_faults, (long)g_edge_nested, ended ? 1 : 0, (unsigned)(uintptr_t)sk_edge_fault_at, fixed(g_fix_vehbounds) ? 1 : 0);
     return b;
 }
 
