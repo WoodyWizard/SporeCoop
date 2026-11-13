@@ -6702,3 +6702,140 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   both games of a lane at once; the game goes on. Seen in 2 recorded runs (20261101-143943, 20261112-135150).
   `Checks.faults` (twoinst.py) lets a game pass whose only faults are this signature and prints it without the
   "total faults: N" the lab counts; `SPORE_BOOT_FAULT_STRICT=1` counts it again. tools_selftest `bootfault`.
+
+## Lab speed: quick runs, a parallel unit, warm tests, the schedule (2026-11-12, feat/lab-speed)
+<a id="testing-lab-speed"></a>
+
+Tests took about 90 % of a release's time (13 runs, 11.2 test-hours over two days): the long play scenarios
+(long_creature 2768 s, play_* 646-761 s, campaign_* 550-810 s, partner_pass ~240-300 s), the cold start of both games
+in every cold test (31-41 s, under load 45-60 s, against 18-20 s for a warm reset) and `unit` (355 s in every smoke).
+Four changes, none of them changes what a test asserts at full length:
+
+**1. `lab.py run ... --quick` (or `SPORE_LAB_QUICK=1`): the long play scenarios shortened, for intermediate runs.**
+A test's `quick={flag: value}` entry in suite.py replaces that flag's value in its command (`suite.quick_cmd`); the
+lab gives the test `SPORE_LAB_QUICK=1` (every other test `0`), marks the result `quick` in results.json (the run too)
+and `(quick)` in summary.md. `labcov` does not count a quick result as a run of the test, so
+[the release rule](#testing-release-rule) and `lab.py coverage` still want the full length, the default. **The final
+check of a release never uses `--quick`.**
+
+| test | full | quick | full s | quick s (lab 20261112-172350) |
+|---|---|---|---|---|
+| play_cell | `--minutes 10` | `--minutes 3 --start-food 150` | 648 | 231 (219-249 with a switch off) |
+| play_creature | 10 | 5 | 646 | 353 |
+| play_tribe | 10 | 5 | 670 | 376 |
+| play_civ | 10 | 4 | 661 | 365 |
+| play_space | 12 | 5 | 761 | 343 |
+| long_creature, long_tribe | 40 | 6 (= `long_<stage>_short`) | 2768 | 699 / 738 (the `_short` runs) |
+| campaign_short | `--minutes 3` | 2 | 552 | ~430 (estimated: two play phases 1 min shorter) |
+| campaign_tc2 | 8 | 2 | (not recorded) | about 12 min less (estimated) |
+| campaign | 8 | 3 | 4896 | about 25 min less (estimated) |
+
+The other campaign_* entries (`--minutes 2`) have no quick entry: their stage changes and the four games' start
+dominate, and 2 min is the shortest play in which the campaign's checks run at all (a rejoin at 30-70 % of the play
+phase is followed by a 20 s quiet time in which `check()` returns early; at 1 min the play often had no check).
+partner_pass has none either: its rounds are its evidence (BUG-0913 shows in some rounds only), fewer rounds would
+catch the bug less often.
+
+What each quick run still does once (the checks of the full run, from the scripts):
+* **play_cell**: 3 min of play give about 18 measures (food on both, desync, the partner seen), the prey answers
+  compared every 2 s, the eats budget (scales with the time), the hunt trial after the play. Two changes keep the
+  full run as it was: the partner misses allowed are `max(2, looks / 10)` (6 at 10 min as before; at 3 min one miss
+  would have been the whole budget), and `--start-food 150` gives the food a 10 min run reaches (126-264: level 2-3) at
+  the start. **Without it the quick run missed BUG-0910**: 3 min stay at level 1, where no hunter of the host's game is
+  within 80 m of a player, the trial found none to try and fell back on the play's samples (0), so
+  `SPORE_FIX_OFF=cell.puppet_level` PASSED 3 of 3 (lab 20261112-174021). With the start food (level 2) the trial runs
+  (a hunter chases the guest 0.4 s after the move) and the switch off FAILS 2 of 2 (20261112-175130: "the host's NPCs
+  judge the guest's cell as they judge the host's (1140 of 5408 answers differ)").
+* **play_creature**: 5 min (not 3): the guest's exit to the main menu comes at 30-60 % of the play and can take
+  2 min; 5 min leave 2-3 min of joint play for the hits, kills and joint hunts (+32 joint hits, a chat line, the exit
+  and the return in lab 20261112-172350).
+* **play_tribe**: 5 min reach the plan's gather, hunt and first raid (phases of 70-120 s). The orders check wants
+  `min(10, max(4, played / 40))` orders per player (10 at 10 min as before; the order pace gives one per 30 s).
+* **play_civ**: 4 min give about 2 min with each snapshot chunk size and enough guest orders for the lost-order rate
+  (it needs 8; 18 by 134 s in the quick run).
+* **play_space**: 5 min give 2-3 battle damage cycles (90 s apart), so a death or a disable and the rescue path
+  (1 host death and its respawn in the quick run).
+* **long_<stage>**: every event of the session (death, editor, main menu, restart, rejoin) with 1 min segments.
+
+Only the full length reaches (not covered by `--quick`):
+* play_cell: the level-ups during play (the quick run starts at level 2 and stays there), high food levels;
+* play_creature: several kills and rescues, chat in practice (a bot step types one ~1.6 % of the time);
+* play_tribe: the social phase (from 280-480 s) and the second raid; an epic (random);
+* play_civ: a siege and capture of the target city;
+* play_space: several deaths and rescues, galaxy trips and jumps to the partner (the 120 s apart rule);
+* long_<stage>: 6.7 min segments of continuous play, slow drift and growth (memory, detector rows over time), the
+  bots' own evolution vote running out into the editor;
+* campaign_tc2: a long Tribe play before the raids to Civ; campaign: 8 min per stage.
+
+Found on the way: BUG-0974, play_tribe's planted desync (`PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"`) no longer
+fails it, at 5 min (20261112-174029) nor at 10 (20261112-174746): the guest prints the delay, the probe sees a best lag
+of 0.00 s. play_tribe has no known FAIL case now.
+
+**2. Unit: `make test` runs its parts at once (355-360 s -> 49 s on a loaded machine).**
+`make test` runs `unit-parts` with `-j$(TEST_JOBS)` (8) and `-Otarget` (each part's output when it ends): `unit-net`
+(net_tests + fakepeer_check), `unit-lab` (lab, gates, walk, dash self-tests), `unit-cpp` (validate, cell, npc, space,
+text, jpeg, fixes tests), `unit-lint` (re, docs, glyph, tickets), `unit-tools` (tools, visual, state fields, test lint),
+`test-asan` (with `--nofix`, `--old-dbbf`, `--old-refpack`), `test-tsan`, `unit-fuzz`. `make test TEST_JOBS=1` runs them
+one after the other. Before (per part, serial, one run): lab_selftest 87 s, the three net_tests runs 34 + 37 + 39 s,
+their compiles 20 + 28 + 21 s, tools_selftest 23 s, tickets check 21 s.
+* net_tests: every test in a table; `--shard K/N` runs every N-th, `--only a,b` chosen ones, `NET_TESTS_TIMES=1`
+  prints each test's time. `tools/tests/shards.py N <binary> [args]` runs the N shards at once (`NET_SHARDS`, 8) and
+  wants "ALL OK" from each; with `--nofix --expect-fail` every shard must run to its end (no abort) and the FAILs of
+  all shards are summed (98, as in the serial run). Most tests wait in real time over localhost UDP (the bulk link
+  simulations already run on a simulated clock: `window 160, seed 1: 3300/3300 in 14.8 s` is simulated, 0.04 s
+  real), so the shards take the longest shard: 34 s -> 10.5 s. test_rejoin_token (15.5 s of real time) is five tests
+  now (busy, full, edge 0-2), the same asserts; the longest test is test_join_by_name (4.7 s: a name server that
+  hangs 1.5 s on purpose).
+* lab_selftest: its nine case groups run as processes at once (87 s -> 31 s, the longest group interrupt_cases;
+  68 checks as before); `--case <name>` runs one, `--serial` all in one process.
+* BUG-0969 (the discovery check failed when two net_tests ran at once): test_discovery hosts on the highest free
+  port of the discovery range under a name of its own process and counts only that game; the parallel shards would
+  have hit it every run.
+
+**3. Warm instead of cold: a first batch of 15 tests.** A warm test reuses the lane's games when the test before was
+warm and passed on the same fixture (`warm=True, fixture=...` in suite.py; twoinst's warm reset: `coop.leave`, the
+fixture into a fresh slot, the guest joins again). Made warm: away_refill, cell_ko_food, cell_ko_bite,
+tribe_mirror_anims, tribe_form_pace, tribe_theme_music, tribe_footsteps, tribe_guest_baby, tribe_guest_baby_noeffects,
+tribe_fight_sounds, tribe_hit_impacts, npc_frozen_death, npc_frozen_caption, npc_frozen_thaw, npc_frozen_pooled.
+None of them is about a fresh start, a join, a load or a crash after it. The same code on lanes 6 / 7: `--cold`
+1420 s for the 15 (lab 20261112-180014), warm 1102 s (20261112-190142), all passed in both; 10 of the 15 ran warm
+(warm reset 15-24 s against a cold start of 33-60 s on the loaded machine), about 26 s saved per warm test.
+* **The warm reset found a crash** (BUG-0975): cell_particles ends at level 4 (food 303-327); the next warm reset (the
+  fixture at food 0) killed the guest in `Simulator::Cell::ShouldCullCell+0x190`. twoinst then started cold and the
+  next test passed. The recorded runs have 27 more such lines (`(warm reset failed: [Errno 104] Connection reset by
+  peer )`, `console closed the connection`), 25 in Cell tests, mostly cell_coop. **The lab now fails a test whose
+  warm reset lost a game** and copies the lane's `logs/previous` into the run folder (`<test>.previous.*`); `warm
+  reset failed: timed out` (19 recorded) is a note. cell_particles stays cold until BUG-0975 is fixed. Expect
+  cell_coop (smoke) to fail now and then on this until then: it is that crash, not the new rule.
+* The warm tests still catch their bugs: each run by hand on a warm lane (`SPORE_WARM=1`, a passing test of the same
+  fixture before it, then the bug test with its twin switch off; outputs in out/lab/20261112-190142/fixoff/): all
+  four ran from a warm reset (19-22 s) and FAILED: tribe_form_pace with `tribe.form_pace` ("no new village at the
+  party's food 135"), cell_ko_food with `cell.ko_no_eat` (food for the knocked-out cell on both games),
+  npc_frozen_thaw with `npc.thaw_stale` ("2 reads with some missing; stale drops 20"), away_refill with
+  `npc.away_locals` ("[0, 0, 0, 0, 0], need 7 of 11"); with the switches on they passed warm in 20261112-190142.
+* More candidates (a static read of every cold test's script and helpers, not run): about 280 tests have no fresh
+  start, join, load, profile change, editor or crash of their own, among them most single-fixture Cell, Creature,
+  Tribe and Space feature tests, space_page (smoke) and the generated `players` variants of 1-on-1 bases (forced
+  cold since a SPORE_FPS / SPORE_NET variant could not be reused; the lane state now refuses a warm reuse after a
+  fix_off / fps change by itself). Before moving them: space_play and space_death compare per-process counters
+  (`rescues == 1`, `gifts_got == 1`: take the start value, as cell_coop does), `coop.track lift` and
+  `coop.npctrack novel` are not in twoinst's KNOBS (a warm successor would inherit them), and a test with
+  `fixture=None` is never grouped by the lab. Move them in batches by fixture, each batch run twice in one call so
+  each test follows another warm predecessor (the documented warm failures were order effects: absolute counters,
+  the first NPC of a list, a disabled ship, an open window).
+
+**4. The schedule: longest first by what the tests took.** `lab.measured_seconds()`: the median of a test's last 5
+passed runs (main checkout and worktrees; quick and full apart), the suite's `minutes` only without a record. The
+minutes were rough: unit said 1 min and took 355 s, so a smoke started it last and waited for it. Simulated on the
+recorded durations (6 s per test for the lab's wait and kill, no warm reuse): smoke on 3 lanes 13.3 -> 10.0 min (8.3
+with the parallel unit), full on 6 lanes 221.1 -> 217.2 min, nightly 331.6 -> 327.6 min.
+
+Use and limits:
+* Intermediate runs: `tools/lab.py run nightly --quick --lanes N` (or the play_* / campaign tests by name). The
+  final check of a release and the release rule's runs: no `--quick` (labcov would not count them anyway).
+* `make test` at its old pace: `make test TEST_JOBS=1`; one net test: `build/host/net_tests --only test_discovery`;
+  where the time goes: `NET_TESTS_TIMES=1 build/host/net_tests`.
+* Risks: a quick run is a weaker statistical sample (fewer hits, fewer orders, one level); a bug that needs time
+  (drift, growth, a rare race) shows only in the full runs, so the release still runs them all. The parallel unit
+  loads the machine harder for under a minute (8 jobs). The schedule's estimate comes from the out/lab folders of
+  this machine; on a fresh checkout it falls back on the suite's minutes.
