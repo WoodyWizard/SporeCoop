@@ -2939,3 +2939,19 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   0-60 %; the test's average check fails in about half the runs (also before BUG-0975's fix, and with its switch off).
 * Reproduce: `tools/lab.py run cell_levelup_view --lane N --repeat 4`.
 * Ticket: BUG-0976
+
+## Civilization: a guest's city purchase asks the host for the city's specialty (2026-11-12, test: fix/w48-fmisc)
+<a id="issue-civ-guest-buy-specialty"></a>
+
+* What happens: the guest buys an NPC city; the host's game shows "You've bought out this military city ... Choose
+  the city's specialty" (a modal box) and stands paused until the host answers; the guest is never asked.
+* Reproduce: `tools/lab.py run civ_buy_city` (it prints `specialty question: host Military | guest None`); key
+  frame 026 of rel/0.7.13 lab 20261112-175447 (the box on the host only, `busy host: paused` for 20 s).
+* Known: the purchase is made in the host's game for the guest (`buys_done` on the host, civ.buy_city BUG-0877), so
+  the game's own question (0xCF7A30, capture type != specialty: box 0xBD9330 + Pause, docs/re/civ.md section on
+  GameCiv_IsPlanetOwned) comes up there. In civ_owners_reload a box left up by the test survived the host's quit to
+  the galaxy menu and the load of the save (key frame 030); a player cannot quit with the box up the same way (not
+  checked).
+* Next steps: answer the box on the host by the guest's choice (forward the question to the buyer), or take the
+  city's own specialty for a guest's purchase.
+* Ticket: BUG-0982

@@ -3481,3 +3481,16 @@ tribe.hold_anim's play, D a relayed start skipped after P). Follows #tribe-hold-
   second) attached no started modifier until the host's end (2.7 s missed). The relay skips a start of the animation
   hold_try played under 0.5 s before while the mirror still plays it (trace D).
 * The BUG-0962 cut of the mirror's own holds is quantised by the 0.25 s tick: up to 0.85 s by design (0.8 s measured).
+
+## The guest's game plays the village captions too (2026-11-12, fix/w48-fmisc)
+<a id="tribe-guest-village-caption"></a>
+
+* ✔ (runtime, lab 20261112-212337-2 / 20261112-212603) When the host's raid conquers a village and the realign
+  conquers it in the guest's game too (BUG-0777), the guest's game plays the same captions as the host's
+  (docs/re/tribe.md#tribe-conquer-caption): TRG_TotemPole_Conquer 5418B038 ("You have destroyed the ... Village! Your
+  totem grows ..."), then TRG_Upgrade 94D17D9F, with the input lock and the game time standing until its own player
+  clicks. The host's closes after 8 s (BUG-0531); the guest's stood 40 s+ (test end) with
+  `busy cinematic,input_lock,paused`.
+* Fix (BUG-0983, `tribe.conquer_caption_guest`): a guest's village caption ends itself after the same 8 s through
+  `world::end_cinematic` (no notice: nobody else waits for it). Measured: busy 16-20 s after the conquest (two
+  captions of 8 s), then free.

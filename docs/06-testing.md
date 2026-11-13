@@ -6737,3 +6737,34 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   both (BUG-0975, docs/re/cell.md#cell-level-fall).
 * The lab's warm reset after a Cell test that ended at a higher level (cell_particles at food 300+) is exactly
   this fall: before the fix it killed the guest and twoinst covered it with a cold start.
+
+## Key frames: the calm wait, the framing helpers, header positions, flakes of the 0.7.13 final check (2026-11-12, fix/w48-fmisc)
+<a id="testing-keyframe-framing"></a>
+
+* `keyframe(..., calm=N)` (twoinst): after the busy wait, the games must also stay not busy for N s. The Cell intro
+  of a guest that just joined (the meteor rock and the letterbox) stays on screen a few seconds after the game's
+  cinematic and input lock end: the `play_cell` start frame was shot there in every run (6 of 6 sheets checked,
+  BUG-0980); it now uses `calm=8`.
+* `play_civ.frame_city({role: con}, pos)` answers a specialty question still up (`answer_specialty`, it pauses the
+  game and covers the city) and pans each game's camera onto the city (W/A/S/D, `Player.look_at`);
+  `play_tribe.frame_point({role: con}, pos)` centres each game's view through the minimap. The civ capture / buy and
+  tribe conquest tests call them before their key frame (BUG-0981): before, the frames showed the capital or the home
+  village and the colours or the fallen hut could not be checked by eye.
+* `civ_capture_credit`: the unit tagged with the host's name inside the guest's captured city is the host's own
+  vehicle, which the test puts by the city hall on purpose (`coop.civ vput`: "a host vehicle nearer"); the arrow
+  "Alice NNN m" points at the host's view point, not at that vehicle. Not a bug.
+* The guest's position in a Tribe / Civ frame header (0.0 0.0 0.0): in the RTS stages `coop.avatar`'s position is
+  the player's pointer on the planet (modes.cpp rts_fill, `mouse_on_planet`); a test game whose mouse never moved
+  over the window has none, so it stays at the origin. The picture is right; real players move the mouse.
+* Flakes of the 0.7.13 final check (lab 20261112-175447, each passed 2 of 2 in 20261112-205503):
+  * `adventure_duo_host_first` "3. the guest's game is in act 1 ((3, 0))": the guest's `coop.adventure act 1`
+    came while its game had the input lock on (trace input_lock=1 18:55:55-18:56:06, an adventure cinematic); the
+    queued JumpToAct likely did nothing then (inferred, not traced).
+  * `env_notes` "the host's game tells the player it runs without its frame cap": the uncapped host ran at 22.8 fps
+    (6 lanes busy); the note needs an average of 50 fps or more (diag_stats.cpp env_minute), so none came: right
+    behaviour, the load starved the test.
+  * `nest_target_probe` drawn gate 6.8 m (2 lines from s 130): the host game had hitches of 5.0 / 1.5 s at its
+    start and 32-37 fps; not analysed further.
+  * `tag_height` 1.19 m: the three stills measured the body top at y 461 / 558 / 532 for one tag at y 406-416; in
+    still 2 the partner stands among look-alike creatures at a nest, the measured body is not the one under the
+    tag (the median 106 px took two such stills). Not analysed further.

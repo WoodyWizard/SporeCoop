@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: when the host's tribe conquers a village, the guest's game no longer stands still in the "You have destroyed
+  the village" caption until the guest clicks it: it closes itself after 8 s, as the host's does (BUG-0983).
 - Cell: a guest whose own game was at a higher level (for example food 300, level 4) no longer crashes the
   moment it joins a host at a lower level; the game drew the tiles of the new level at the old level's scale and
   overran its own buffer (BUG-0975).

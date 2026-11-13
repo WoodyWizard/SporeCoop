@@ -2895,3 +2895,15 @@ BUG-0956. GOG 2024 (dc04aee5), runtime (lane 4, space_badges_rejoin with `BADGES
 * `coop.msglisteners [hex id]` lists the game's listeners of a message (App::MessageManager_ptr 0x16514CC: hash map
   +0x74 buckets, +0x78 count, node {id, list*, next}, list node {next, prev, object, priority, flag, fn, user});
   0x212D3E7 had 9 listeners in the galaxy menu (audio 0xEA9DA0, simulator 0xB63650, achievements 0x677100, ...).
+
+## Stored colony spice over the cap is clamped at runtime too (2026-11-12, fix/w48-fmisc)
+<a id="space-spice-runtime-clamp"></a>
+
+* ✔ (runtime, lab, GOG 2024) CORRECTION (2026-11-12, fix/w48-fmisc) to "set higher is clamped at the next load" in
+  section 9 above: the game clamps a city's stored spice (`cCityData` +0x1C) back to the colony's cap while it runs,
+  within seconds and with no load. `coop.space colonyspice set 00460014 30` on the host (colony of one city, cap 5):
+  in rel/0.7.13 lab 20261112-175447 the host's value went 30 -> 5 and its sync sent 5 (guest `written=2`); in
+  20261112-205503 (#1) the guest's game clamped its copy 30 -> 5 first, which colonyspice read as a collection of 25
+  (`this game collected spice of colony 00460014`) and took from the host too. In 1 of 3 runs the guest read 30
+  before either clamp. Which function clamps is not known (`?`); the production / pickup update (0xC82B70, every
+  ~6 s on the active planet) is the likely place. Tests set values under the cap (BUG-0979).
