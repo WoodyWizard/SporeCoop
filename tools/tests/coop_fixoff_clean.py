@@ -12,6 +12,12 @@ game lives.
 
   SPORE_PROBE_OFF=<prefix>[,<prefix>...]  only the switches whose names start so go off (bisecting; `all` = all off)
   SPORE_PROBE_ON=<name>[,<name>...]       these stay on (after `all off`)
+  SPORE_PROBE_STRESS=N                    local address lookups per round (`coop.adapters stress N`, default 30): with
+                                          core.adapters off they run on the main thread, Wine's nsi memcpy (BUG-0977)
+
+BUG-0977's cause: core.adapters' off side (the main-thread GetAdaptersAddresses of BUG-0286) faulted in Wine's nsi
+memcpy and damaged the heap (DXVK crashed a frame later); it is an unsafe switch now (`all off` leaves it on).
+SPORE_PROBE_OFF=core.adapters must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_fixoff_clean.py [--rounds 4]
 """
@@ -52,6 +58,7 @@ def main():
     pre = [p.strip() for p in os.environ.get('SPORE_PROBE_OFF', 'all').split(',') if p.strip()]
     keep = [p.strip() for p in os.environ.get('SPORE_PROBE_ON', '').split(',') if p.strip()]
     names = None
+    stress = int(os.environ.get('SPORE_PROBE_STRESS', '30') or 0) or 1
     if pre != ['all']:
         lst = host.call('coop.fix list')['out'].splitlines()
         allnames = [m.group(1) for m in (re.match(r'\s*(\S+\.\S+) (?:on|off)\b', x) for x in lst) if m]
@@ -61,6 +68,7 @@ def main():
     print(f'  host faults before: {f0}', flush=True)
     for r in range(a.rounds):
         print(f'  round {r + 1}: ' + switch_off(host, names, keep), flush=True)
+        host.call(f'coop.adapters stress {stress}')
         host.call('coop.pauses')
         ability_mode(host)
         host.call('coop.npc list')

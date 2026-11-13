@@ -2951,6 +2951,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * 2026-11-12 (fix/w48-fui): seen again on lane 3 (rerun 20261112-205503 #1, a caught fault only); 6 clean runs on lanes 4
   and 5 (walk_start_walkin, fixoff_clean). The fault log now prints `module calls:` (return addresses into our DLLs)
   to name the caller next time.
+* FIXED (2026-11-12, fix/w48-fui): the cause was core.adapters' off side (Wine's GetAdaptersAddresses on the main
+  thread, BUG-0286); the switch is unsafe now, `all off` leaves it on.
 * Ticket: BUG-0977
 
 ## Creature: a joining guest's creature stands inside the host's creature (2026-11-12, key frames: fix/w48-fui)

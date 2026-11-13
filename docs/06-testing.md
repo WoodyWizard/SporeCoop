@@ -6754,4 +6754,5 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
 * `play_creature` can end in an evolution (the host's bot at the nest starts the vote, both games go into the
   editor together): the end key frame then says so (BUG-0986).
 * `fixoff_clean` (BUG-0977): every fix off on the host alone right after the guest left, the commands the walk test
-  sends, 4 rounds; no fault. `SPORE_PROBE_OFF=<prefix,...>` / `SPORE_PROBE_ON=<name,...>` bisect the switches.
+  sends and 30 address lookups (`coop.adapters stress`), 4 rounds; no fault. The fault log's `module calls:` line
+  (return addresses into DLLs) named Wine's nsi.dll: core.adapters' off side, now unsafe (BUG-0977). `SPORE_PROBE_OFF=<prefix,...>` / `SPORE_PROBE_ON=<name,...>` bisect the switches.

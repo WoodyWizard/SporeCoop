@@ -1,20 +1,20 @@
 ---
 id: BUG-0977
 title: tests: walk_start_walkin with every fix off crashes in DXVK's CS thread (dc04aee5:d3d9.dll+0x11395B) after two caught faults in ucrtbase memcpy on the main thread
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-11-12
 source: rel/0.7.13 final check, lab out/lab/20261112-175447 (walk_start_walkin, lane 3)
 role: 
 versions: 0.7.13-rc
-fixed_in:
+fixed_in: unreleased
 branch: fix/w48-d3d9, fix/w48-fui
-commits:
-tests: walk_start_walkin, fixoff_clean
+commits: 87997372 f2b5dd5c
+tests: fixoff_clean, walk_start_walkin
 signature: dc04aee5:d3d9.dll+0x11395B (0xC0000005, read of 0x00000004, DXVK 3.1.1 CS thread); before it dc04aee5:ucrtbase.dll+0x14A84 and dc04aee5:ucrtbase.dll+0x149B4 (caught, main thread)
-docs:
-related: BUG-0917, BUG-0919, BUG-0964, BUG-0667, BUG-0779
+docs: docs/06-testing.md#testing-tag-cinematic
+related: BUG-0286, BUG-0917, BUG-0919, BUG-0964, BUG-0667, BUG-0779
 ---
 
 ## Report
@@ -114,22 +114,34 @@ Second look (2026-11-12, fix/w48-fui):
 * Not reproduced on lanes 4 and 5: walk_start_walkin 4 of 4 clean (out/lab/20261112-212031-2,
   out/lab/20261112-212320 x3), the new probe fixoff_clean 2 of 2 clean (8 all-off rounds, out/lab/20261112-212031).
 
+**Cause found (2026-11-12, fix/w48-fui)**: `core.adapters` (BUG-0286). Its off side is the old synchronous
+GetAdaptersAddresses on the caller's (main) thread, the very call whose Wine nsi reply BUG-0286 found to fault in a
+memcpy with a garbage count. Switching it off also drops `adapters::generation()` to 0, so the host's lobby refresh
+(coop.cpp, BUG-0776's broadcast list) calls `local_addresses()` in the next frame: the 3 ms / 18 ms after `all off`.
+Evidence: the probe fixoff_clean on lane 5 (out/lab/20261112-213438-2) faulted 1 s after `all off` at
+ucrtbase.dll+0x149B4 (the final's second fault) and then crashed in DXVK (d3d9.dll+0x20E62A, d3d9.dll+0x1769EE): the
+new `module calls:` line named nsi.dll / ntdll.dll; with only core.adapters off and 30 main-thread lookups a round
+(out/lab/20261112-215159) the host faulted at ucrtbase.dll+0x14A84 (the final's first fault) with
+`module calls: nsi.dll+0x1C8C ... iphlpapi.dll+0xC8EA` and the game died. The memcpy writes past its buffer when it
+does not fault: the heap DXVK's CS thread then read was damaged. Why it shows only since 0.7.13: the switch existed,
+but the earlier all-off runs mostly ran before a session's lobby refresh or without the generation drop hitting a
+fresh lookup; not analysed further.
+
 ## Fix
-Not done. Plan:
-1. Reproduce on one lane: `walk_start_walkin` x10 (and `--who solo --mode teleport --fixoff`), each with
-   `SPORE_DETECTOR` off; then the same with fixes on (expected: no fault).
-2. Find the command: log every console command with its time in lab runs (sporekit console) or let the fault
-   logger print 64 stack words and resolve coop.dll / sporekit.dll return addresses (as BUG-0917 did by hand), so
-   a caught fault in ucrtbase names the mod function.
-3. Bisect the switch: `coop.fix all off` then `coop.fix <half> on`, halving by prefix (game., npc., core., ...),
-   first the four stale-pointer fixes above.
-4. Fix the found off-path or command (object list check before the copy); if the off-path itself is the old bug,
-   mark that switch `COOP_FIX_UNSAFE` so `all off` skips it.
-5. The empty 288-byte .dmp: check why the minidump had no streams (BUG-0127 family).
+mods/coop/adapters.cpp: `core.adapters` is a COOP_FIX_UNSAFE switch (R4: its off side corrupts memory under Wine):
+`coop.fix all off` leaves it on, `coop.fix core.adapters off` still switches it. Players never switch it. The fault
+log prints `module calls:` (return addresses into other modules), which named nsi.dll here (sporekit/exceptions.cpp).
+Test fixoff_clean (coop_fixoff_clean.py): every fix off on the host alone right after the guest left, 30 address
+lookups and the walk test's commands a round, 4 rounds; no fault.
 
 ## Verification
-no-fail-run: not reproduced on lanes 4 and 5 (walk_start_walkin 4 runs, fixoff_clean 2 runs, 2026-11-12); faults seen on lane 3 only (out/lab/20261112-175447, out/lab/20261112-205503 #1)
+FAIL: out/lab/20261112-213438-2 (fixoff_clean, all off, before the unsafe mark: fault + DXVK crash, lane 5);
+out/lab/20261112-215159 (SPORE_PROBE_OFF=core.adapters, the twin: crash in nsi's memcpy, lane 4). Before them on
+lane 3: out/lab/20261112-175447, out/lab/20261112-205503 #1.
+PASS (all off skips core.adapters): out/lab/20261112-214819 (fixoff_clean), out/lab/20261112-214938 (walk_start_walkin
+2 of 2, fixoff_clean 2 of 2), out/lab/20261112-215802 and out/lab/20261112-215802-2 (fixoff_clean with 30 lookups a round, lanes 5 and 4: 24 unsafe skipped, 0 faults).
 
 ## History
 - 2026-11-12: opened from the rel/0.7.13 final check (lab 20261112-175447); analysis: DXVK 3.1.1 CS thread, null command pool after two caught memcpy faults of our CRT on the main thread right after `coop.fix all off`; fix/w48-d3d9.
 - 2026-11-12: fix/w48-fui: not reproduced on lanes 4/5 (6 runs); fault logger prints module return addresses; fixoff_clean probe test; switches ruled out listed.
+- 2026-11-12: cause found (core.adapters off: Wine nsi memcpy on the main thread), switch marked unsafe; fixed on fix/w48-fui.
