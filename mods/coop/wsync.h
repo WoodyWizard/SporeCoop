@@ -47,5 +47,8 @@ bool owns_time_of_day();
 std::string status();
 // BUG-0942: a guest is about to destroy this village (tribe::remove_village): its goal card goes with it
 void village_gone(void* tribe);
+// BUG-1068: host: a guest's raid or gift order on this NPC village makes its goal mission (and moves the goal card
+// there) as the host's own click does: SetTargetTribe outside the frame. False when it was already the target.
+bool goal_target(void* tribe);
 
 } // namespace wsync

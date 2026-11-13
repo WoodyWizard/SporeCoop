@@ -3129,6 +3129,35 @@ static void baby_forget()
 }
 
 static void conquer_on_host(uint8_t from, const net::Vec3& p); // BUG-0879 (below)
+// BUG-1068: "a village only guests raided falls without counting for the stage's goal". The goal bar counts a village
+// when its cTribeToTribeMission ends (TribeToTribeMission_Update 0xC2F750 sees the conquered flag +0x556 or the
+// alliance, docs/re/tribe.md#tribe-conquest-sync); the mission is made by TribeMission_SetTargetTribe 0xCD3D70, which
+// the host's game calls from its own input only (DoActionGeneric 0xCD0C20, input actions 0xC raid / 0xE, 0x10 gift).
+// A guest's order runs here through DoAction without it: the village had no mission, its fall counted nothing.
+// Now a guest's raid (CitizenAction 15) or gift (9) on another tribe's object makes that village's mission as the
+// host's click does (wsync::goal_target: SetTargetTribe outside the frame; the goal card follows it, as for the host's
+// own clicks). `coop.fix tribe.guest_mission off`: 0.7.13.
+static bool g_guest_mission_fix = true;
+COOP_FIX("tribe.guest_mission", "BUG-1068", g_guest_mission_fix,
+         "tribe: a village the guests raid or give gifts to counts for the stage's goal, as one the host acts on");
+static uint32_t g_guest_missions;
+// the village (cTribe) of an order's target: the tribe itself, a hut (+0x230), a tool (+0x1F8), a member (+0x1014)
+static void* target_village(void* o)
+{
+    if (!o || !game::object_alive(o))
+        return nullptr;
+    uint32_t noun = game::noun_id(o);
+    void* t = noun == kTribeNoun        ? o
+              : noun == 0x1E4DAAEu      ? F<void*>(o, 0x230)       // cTribeHut (docs/re/tribe.md "Raids on buildings")
+              : noun == 0x18C8F0Cu      ? F<void*>(o, 0x1F8)       // cTribeTool
+              : noun == 0x18EB4B7u      ? F<void*>(o, kOwnerTribeOff) // cCreatureCitizen
+                                        : nullptr;
+    if (!t || t == player_tribe())
+        return nullptr;
+    auto ts = all_tribes();
+    return std::find(ts.begin(), ts.end(), t) != ts.end() ? t : nullptr;
+}
+
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -3187,6 +3216,7 @@ static void host_command(uint8_t from, net::Reader& r)
         g_last_cmd += tgt.kind == 1 && g_hm_by_id.count(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
+    int ran = 0;
     for (uint16_t id : ids) {
         auto it = g_hm_by_id.find(id);
         if (it == g_hm_by_id.end()) {
@@ -3208,7 +3238,14 @@ static void host_command(uint8_t from, net::Reader& r)
         } else
             thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
         g_cmds_done++;
+        ran++;
     }
+    // BUG-1068: the village's goal mission, as the host's own raid or gift click makes it
+    if (ran && g_guest_mission_fix && kind == CMD_ACTION && (action == 15 || action == 9) && from != C.sess->my_id())
+        if (void* v = target_village(target); v && wsync::goal_target(v)) {
+            g_guest_missions++;
+            g_last_cmd += " (the village's goal mission: BUG-1068)";
+        }
 }
 
 // ---------------- guest: mirrors ----------------
@@ -5680,9 +5717,9 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u\n",
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u guest_missions=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
-                 g_member_moves, g_member_moves_unowned, g_cmd_gone);
+                 g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "

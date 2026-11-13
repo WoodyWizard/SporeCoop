@@ -391,6 +391,17 @@ static void goal_task(void*)
     if (still)
         skg::thiscall<void>(set, mgr, t);
 }
+bool goal_target(void* tribe)
+{
+    void* mgr = mission_mgr();
+    if (!mgr || !tribe || game::mode_id() != modes::kTribe || current_target(mgr, nullptr) == tribe)
+        return false;
+    bool pending = g_goal_target != nullptr;
+    g_goal_target = tribe; // goal_task takes the latest one
+    if (!pending)
+        H->run_outside_frame(goal_task, nullptr);
+    return true;
+}
 static int s_goal(const Table& want, bool apply)
 {
     void* p = cplayer();
