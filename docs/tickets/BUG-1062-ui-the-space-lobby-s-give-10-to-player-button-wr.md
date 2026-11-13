@@ -44,7 +44,7 @@ for their captions with the button's real text borders (23 px a side, `coop.ui b
 layout_problems; the key frame shows the caption on one line.
 * FAIL (SPORE_FIX_OFF=core.ui_give_fit): out/lab/20261113-024426 ("Give 10 to Carol" needs 147 px, has 124), and
   out/lab/20261113-023651 (the first check, width - 30: has 140)
-* PASS: out/lab/20261113-024531-2 (key frame: "Give 10 to Carol" on one line)
+* PASS: out/lab/20261113-024531-2 (key frame: "Give 10 to Carol" on one line), out/lab/20261113-025113
 * The first fix (+34) passed the old check but still wrapped in its key frame (out/lab/20261113-023651-2): the
   borders were measured then (docs/08-ui.md#ui-give-fit; the lenient check is BUG-1065).
 
