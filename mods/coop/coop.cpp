@@ -1339,6 +1339,21 @@ bool guest_space_other()
                                    has ? it->second.buf.latest().mode : 0, host_save_known());
 }
 
+// BUG-1063: the player list's "other world" (co-op window rows, the status block) was !same_place(); in Space the place
+// is a star or planet (0 in the galaxy view), so every partner at another star, and all of them while the own ship was
+// in the galaxy view or respawning, "played another world". In Space it now means another Space save: known to a
+// guest about the host (guest_space_other); other rows say nothing there. Off: !same_place() in Space too (0.7.13).
+static bool g_other_world_fix = true;
+COOP_FIX("core.ui_other_world", "BUG-1063", g_other_world_fix, "ui: in Space the player list says other world only for another Space save, not another star");
+static bool other_world_label(uint8_t id, const net::PlayerState& ls)
+{
+    if (ls.mode != g_mode)
+        return false;
+    if (!g_other_world_fix || g_mode != modes::kSpace)
+        return !same_place(ls);
+    return id == 0 && guest_space_other();
+}
+
 // the module asking host_absent_for (npc runs in Creature and Tribe)
 enum class Absent { Npc, Tribe, Civ };
 
@@ -4613,7 +4628,7 @@ void on_overlay(void*, int, void*)
         auto it = g_remotes.find(p.id);
         if (p.id != g_sess.my_id() && it != g_remotes.end() && !it->second.buf.empty()) {
             const auto& ls = it->second.buf.latest();
-            line += std::string("  [") + modes::mode_name(ls.mode) + (same_place(ls) || ls.mode != g_mode ? "" : ", other world") + "]";
+            line += std::string("  [") + modes::mode_name(ls.mode) + (other_world_label(p.id, ls) ? ", other world" : "") + "]";
         }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
         wmax = std::max(wmax, utf8::overlay_width(line));
@@ -6345,7 +6360,7 @@ std::vector<coop_ui::PlayerRow> ui_players()
             if (it != g_remotes.end() && !it->second.buf.empty()) {
                 const auto& ls = it->second.buf.latest();
                 r.stage = modes::mode_name(ls.mode);
-                if (ls.mode == g_mode && !same_place(ls) && g_adapter)
+                if (other_world_label(p.id, ls) && g_adapter)
                     r.stage += ", other world";
             } else
                 r.stage = "...";
@@ -6820,7 +6835,8 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && (!strcmp(argv[1], "nudge") || !strcmp(argv[1], "hide"))) { // tests: ui_golden's twin
         bool hide = !strcmp(argv[1], "hide");
         SAY("%s", coop_ui::test_nudge(argv[2], argc > 3 && !hide ? (float)atof(argv[3]) : 0.f,
-                                      argc > 4 && !hide ? (float)atof(argv[4]) : 0.f, hide).c_str());
+                                      argc > 4 && !hide ? (float)atof(argv[4]) : 0.f, hide,
+                                      argc > 5 && !hide ? (float)atof(argv[5]) : 0.f).c_str()); // [dw]: BUG-1065's twin
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "color")) { // tests / layout shots: a colour for players without one
@@ -7003,7 +7019,7 @@ void support_init()
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
-                   "detail 0|1|2 | mem | reserve <MB> (tests: a planted leak)] - support diagnostics (docs/REPORTING.md#reporting-support)",
+                   "detail 0|1|2 | mem | reserve <MB> (tests: a planted leak) | summarysub <folder>|- | summarywrite] - support diagnostics (docs/REPORTING.md#reporting-support)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
@@ -8224,9 +8240,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     gamefixes::init(H, M);
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);
-    H->command_add(M, "coop.update", "coop.update [check | apply] - SporeCoop updates from GitHub releases",
+    H->command_add(M, "coop.update", "coop.update [check | apply | url <u> | testdelay <ms> | applydelay <ms>] - SporeCoop updates from GitHub releases",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
-                       SAY("%s", autoupdate::command(argc > 1 ? argv[1] : "").c_str());
+                       SAY("%s", autoupdate::command(argc > 1 ? argv[1] : "", argc > 2 ? argv[2] : "").c_str());
                        return 0;
                    },
                    nullptr, MT);

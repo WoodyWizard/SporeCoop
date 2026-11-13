@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <windows.h>
 
 #include "sporekit.h"
@@ -138,6 +139,13 @@ static void restore()
 static int c_view(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc >= 8 && !strcmp(argv[1], "set")) {
+        // BUG-1030: apply() / restore() call these every camera update: all of them known first (an unknown build)
+        for (const char* n : {"App::cViewer::GetViewTransform", "App::cViewer::SetViewTransform",
+                              "App::cViewer::SetPerspectiveProjection", "App::cViewer::SetViewWindow"})
+            if (!H->sym(n)) {
+                SAY("view: no symbol %s in this build", n);
+                return 1;
+            }
         if (!g_hooked) {
             uintptr_t a = H->sym("App::cCameraManager::Update");
             if (!a || H->hook_create(M, (void*)a, (void*)&h_Update, (void**)&o_Update) != 0) {

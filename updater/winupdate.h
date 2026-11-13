@@ -55,6 +55,7 @@ bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bo
 // tests (BUG-0214 split of the old g_old_fix): false = the old behaviour
 extern bool g_old_suffix_fix;  // update.old_suffix, BUG-0114: backups as *.sporecoop-old, the cleanup deletes only ours
 extern bool g_keep_failed_fix; // update.keep_failed, BUG-0150: a failed pending swap keeps its list
+extern bool g_pending_whole_fix; // update.pending_whole, BUG-1019: false = apply_pack keeps 4 KB of an older list
 extern std::string g_swap_delay_file; // tests (BUG-0243): only this pack path waits ("" = every file)
 extern int g_fail_swap_at; // tests (BUG-0242): the Nth swap (1-based) fails like "cannot replace"
 // BUG-0243: apply_pack swaps under a named mutex per game folder; cleanup_old and the pending swaps

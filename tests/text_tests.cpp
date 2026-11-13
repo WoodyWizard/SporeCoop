@@ -9,6 +9,7 @@
 #include "net/utf8.h"
 #include "notify_text.h"
 #include "trace_rate.h"
+#include "typed_text.h"
 
 static int g_fail;
 #define CHECK(c)                                                  \
@@ -108,11 +109,40 @@ static void test_trace_rate()
     CHECK(r.take_summary(30.0).empty()); // nothing dropped in it
 }
 
+// BUG-1027: the co-op line typed by the mod under the game's input lock: the limit in UTF-16 units, no DEL, whole pairs
+static void test_locked_typing()
+{
+    printf("locked typing: characters against the limit, no DEL, emoji whole (BUG-1027)\n");
+    std::u16string q;
+    for (int i = 0; i < 30; i++)
+        q += u'\u0416'; // 30 x "Ж"
+    q += u'\u007F';     // DEL
+    q += u"\U0001F600"; // an emoji: a surrogate pair
+    bool enter = false;
+    unsigned typed = 0;
+    std::string t = typed_text::apply("", q, 24, enter, typed); // the name line (24)
+    CHECK(utf8::count(t) == 24 && t == rep("\xD0\x96", 24));
+    t = typed_text::apply("", q, 120, enter, typed); // the chat line (120)
+    CHECK(t == rep("\xD0\x96", 30) + "\xF0\x9F\x98\x80"); // all 30, no DEL, the emoji as one character
+    CHECK(utf8::valid(t) && t.find("\xEF\xBF\xBD") == std::string::npos);
+    std::u16string bs = u"\b";
+    t = typed_text::apply(t, bs, 120, enter, typed); // Backspace takes the whole emoji
+    CHECK(t == rep("\xD0\x96", 30));
+    std::u16string cut = u"ab\U0001F600"; // a pair that does not fit (2 units left of 3) is not split
+    t = typed_text::apply("", cut, 3, enter, typed);
+    CHECK(t == "ab");
+    std::u16string go = u"x\ry";
+    enter = false;
+    t = typed_text::apply("", go, 120, enter, typed);
+    CHECK(enter && t == "x");
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--old")) {
         utf8::g_cut_fix = false;
         notify_text::g_fix = false;
+        typed_text::g_utf16_fix = false;
         printf("text fixes OFF\n");
     }
     test_str_cut();
@@ -120,6 +150,7 @@ int main(int argc, char** argv)
     test_width();
     test_notify_lines();
     test_trace_rate();
+    test_locked_typing();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

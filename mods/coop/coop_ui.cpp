@@ -22,6 +22,7 @@
 #include "space_ext.h"
 #include "settings.h"
 #include "sui.h"
+#include "typed_text.h"
 #include "world.h"
 #include "fixes.h"
 
@@ -288,6 +289,8 @@ static void ensure_menu_button()
         g_menu_drawable = sui::std_drawable_with_icon(sui::drawable(share), icon);
         if (!icon)
             H->log(M, SK_WARN, "ui: coop_icon not found (Data/SporeCoop.package missing?)");
+        else if (sui::g_release_fix)
+            sui::release(icon); // BUG-1025: GetImage's reference is ours; the drawable's slots took their own
     }
     if (g_menu_drawable)
         sui::set_drawable(b, g_menu_drawable);
@@ -310,8 +313,11 @@ static void ensure_menu_button()
         std::string v = A.version_line();
         v = v.substr(0, v.find("  -  "));
         if (Win l = sui::label(menu, {r.x1 + 6, r.y2 - 4, r.x2 + 90, r.y2 + 14}, v, sui::font(share), kDim,
-                               sui::kAlignLeft))
+                               sui::kAlignLeft)) {
             sui::set_ids(l, kIdMenuButton + 1, 0);
+            if (sui::g_release_fix)
+                sui::release(l); // BUG-1025: the menu holds it, the mod keeps no pointer (found by its id next time)
+        }
     }
     H->log(M, SK_INFO, "ui: co-op item added to the main menu");
 }
@@ -540,6 +546,7 @@ static Win add_edit(std::vector<Win>& page, const char* name, const Rect& r, con
 static void do_send_chat();
 static bool g_locked_edit_fix = true;
 COOP_FIX("core.ui_locked_edit", "BUG-0482", g_locked_edit_fix, "ui: the co-op window's chat line takes the typing while a caption holds the game's input lock");
+COOP_FIX("core.ui_locked_edit_utf16", "BUG-1027", typed_text::g_utf16_fix, "ui: a line typed under the input lock counts characters (not UTF-8 bytes) against its limit, drops DEL, keeps emoji whole");
 static Win g_locked_edit;          // the line clicked under the lock, typed by the mod
 static std::string g_locked_text;  // its text as the mod left it (the game changing it: it has the focus)
 static unsigned g_locked_typed;    // tests: characters the mod typed
@@ -559,26 +566,7 @@ static void locked_edit_apply(void*)
     }
     int max_len = g_edit_max.count(w) ? g_edit_max[w] : 120;
     bool enter = false;
-    for (char16_t c : q) {
-        if (c == 0x0D) {
-            enter = true;
-            break;
-        }
-        if (c == 0x08) {
-            while (!t.empty() && (t.back() & 0xC0) == 0x80) // a UTF-8 continuation byte
-                t.pop_back();
-            if (!t.empty())
-                t.pop_back();
-        } else if (c >= 0x20 && (int)t.size() < max_len) {
-            char b[4];
-            int n = c < 0x80 ? (b[0] = (char)c, 1)
-                    : c < 0x800 ? (b[0] = (char)(0xC0 | (c >> 6)), b[1] = (char)(0x80 | (c & 0x3F)), 2)
-                                : (b[0] = (char)(0xE0 | (c >> 12)), b[1] = (char)(0x80 | ((c >> 6) & 0x3F)),
-                                   b[2] = (char)(0x80 | (c & 0x3F)), 3);
-            t.append(b, n);
-            g_locked_typed++;
-        }
-    }
+    t = typed_text::apply(t, q, max_len, enter, g_locked_typed); // BUG-1027: UTF-16 units against the limit
     sui::set_edit_text(w, t);
     g_locked_text = sui::edit_text(w);
     if (enter && w == D.chat_edit) {
@@ -1748,6 +1736,7 @@ static void pause_menu_tick()
 // applied at the end of every refresh, so the page logic cannot put it back
 struct Nudge {
     float dx = 0, dy = 0;
+    float dw = 0; // BUG-1065's twin: the width changed by this much (a caption that no longer fits)
     bool hide = false;
     bool have_base = false;
     Rect base{};
@@ -1768,7 +1757,7 @@ static void apply_test_nudges()
         if (n.hide)
             sui::set_visible(w, false);
         else
-            sui::set_area(w, Rect{n.base.x1 + n.dx, n.base.y1 + n.dy, n.base.x2 + n.dx, n.base.y2 + n.dy});
+            sui::set_area(w, Rect{n.base.x1 + n.dx, n.base.y1 + n.dy, n.base.x2 + n.dx + n.dw, n.base.y2 + n.dy});
     }
 }
 
@@ -2171,7 +2160,7 @@ std::string widgets_state()
     return s;
 }
 
-std::string test_nudge(const std::string& name, float dx, float dy, bool hide)
+std::string test_nudge(const std::string& name, float dx, float dy, bool hide, float dw)
 {
     if (name == "off") { // every nudged control back to its place
         for (auto& [nm, n] : g_nudges) {
@@ -2188,10 +2177,11 @@ std::string test_nudge(const std::string& name, float dx, float dy, bool hide)
     Nudge& n = g_nudges[name];
     n.dx = dx;
     n.dy = dy;
+    n.dw = dw;
     n.hide = hide;
     g_dirty = true;
-    char b[128];
-    snprintf(b, sizeof b, "ui: %s %s (%.0f, %.0f)", name.c_str(), hide ? "hidden" : "moved by", dx, dy);
+    char b[160];
+    snprintf(b, sizeof b, "ui: %s %s (%.0f, %.0f) width %+.0f", name.c_str(), hide ? "hidden" : "moved by", dx, dy, dw);
     return b;
 }
 

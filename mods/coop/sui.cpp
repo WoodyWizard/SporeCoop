@@ -203,6 +203,25 @@ std::string dump(Win root, int max_depth, bool only_visible)
 // ---------------- changing ----------------
 void add_ref(Win w) { if (w) vcall<int>(w, 0); }
 void release(Win w) { if (w) vcall<int>(w, 1); }
+// the object's reference count now (AddRef's answer minus the one it added, given back at once): the game's own
+// count of a live window, image or drawable (Object: AddRef slot 0, Release slot 1)
+int refs(void* o)
+{
+    if (!o)
+        return 0;
+    int n = vcall<int>(o, 0) - 1;
+    vcall<int>(o, 1);
+    return n;
+}
+
+// BUG-1025: every window the mod made kept the mod's own reference for good (new_button / text_edit take one more
+// on top of the creation's, the keep-alive of the mod's tables), a handler's creation reference was never given
+// back and a layout object of a failed load leaked. With the switch the mod gives back what it holds when it drops
+// a window (the notification panels' labels, the main menu's item and its version line, an older pause menu
+// button), the handler's own reference once the window took one, the menu icon's image reference after the
+// drawable took its own, and a failed layout object is used again. Off (`coop.fix core.ui_release off`): 0.7.13.
+bool g_release_fix = true;
+COOP_FIX("core.ui_release", "BUG-1025", g_release_fix, "ui: windows, handlers and images the mod drops are given back to the game (no leak per notification)");
 void set_caption(Win w, const std::string& t)
 {
     std::u16string u = utf16(t);
@@ -234,13 +253,21 @@ Win load_layout(uint32_t instance, uint32_t group)
         if (control_id(c) == 0x05B598FA)
             layer = c;
     std::vector<Win> before = children(layer);
-    // the UILayout object stays alive for the whole session (the windows belong to it)
-    void* l = calloc(1, 0x40);
-    thiscall<void*>(a_layout_ctor, l);
-    vcall<int>(l, 1); // AddRef (DefaultRefCounted: [0] is the destructor)
+    // the UILayout object stays alive for the whole session (the windows belong to it). BUG-1025: one whose load
+    // failed is used for the next load (it was calloc'd: never given to the game's allocator to free)
+    static void* s_spare;
+    void* l = g_release_fix && s_spare ? s_spare : nullptr;
+    s_spare = nullptr;
+    if (!l) {
+        l = calloc(1, 0x40);
+        thiscall<void*>(a_layout_ctor, l);
+        vcall<int>(l, 1); // AddRef (DefaultRefCounted: [0] is the destructor)
+    }
     uint32_t key[3] = {instance, 0x0510A95B, group};
-    if (!o_LayoutLoad(l, key, true, 0x5B598FA))
+    if (!o_LayoutLoad(l, key, true, 0x5B598FA)) {
+        s_spare = l;
         return nullptr;
+    }
     if (!layer)
         layer = thiscall<Win>(a_layout_container, l);
     for (Win c : children(layer)) {
@@ -485,6 +512,10 @@ void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn)
     auto* box = new HandlerBox{std::move(fn)};
     void* p = H->ui_winproc(M, tramp, box, 0);
     vcall<void>(w, 0x104 / 4, p);
+    if (g_release_fix && refs(p) >= 2) { // the window holds its own (AddWinProc): ours is not needed (BUG-1025)
+        vcall<int>(p, 1);
+        return nullptr; // (no caller keeps it; remove_handler would give back a reference not ours)
+    }
     return p;
 }
 
@@ -592,6 +623,33 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
     if (sub == "layouts") {
         for (auto& l : g_layouts)
             H->out_printf(out, "%08X.%08X group %08X\n", l.instance, l.type, l.group);
+        return 0;
+    }
+    if (sub == "refs" && argc > 2) { // the game's reference count of a window (BUG-1025)
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        H->out_printf(out, "refs %p %d\n", w, refs(w));
+        return 0;
+    }
+    if (sub == "reftest") { // RE (BUG-1025): the reference counts of a window the mod makes, step by step
+        Win parent = main_window();
+        Win l = label(nullptr, {0, 0, 10, 10}, "reftest", 0, 0xFFFFFFFF, kAlignLeft);
+        if (!l || !parent)
+            return 1;
+        int made = refs(l);
+        add_child(parent, l);
+        int added = refs(l);
+        void* p = H->ui_winproc(M, tramp, new HandlerBox{}, 0);
+        int proc0 = refs(p);
+        vcall<void>(l, 0x104 / 4, p);
+        int proc1 = refs(p);
+        remove_child(parent, l);
+        int removed = refs(l);
+        H->out_printf(out, "label: made %d (with ours), in a parent %d, taken out %d; handler: made %d, on the window %d\n",
+                      made, added, removed, proc0, proc1);
+        vcall<int>(p, 1); // ours
+        release(l);       // ours: the label and its handler go
         return 0;
     }
     if (sub == "load" && argc > 2) {

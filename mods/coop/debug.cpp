@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <unordered_map>
+#include <initializer_list>
 #include <vector>
 #include <windows.h>
 
@@ -28,6 +29,18 @@ namespace {
 SkMod* g_self;
 }
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
+
+// BUG-1030: debug commands called H->sym() results without a check (a missing name: a call to address 0 on an unknown
+// build). True when every name is known; else says which one is missing.
+static bool need_syms(SkOut* out, std::initializer_list<const char*> names)
+{
+    for (const char* n : names)
+        if (!H->sym(n)) {
+            SAY("no symbol %s in this build\n", n);
+            return false;
+        }
+    return true;
+}
 
 namespace {
 int c_save(void*, int argc, const char* const* argv, SkOut* out)
@@ -580,7 +593,12 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "lift")) { // put it <m> higher (its fall is the second half of a jump)
         net::Vec3 p = game::position(av);
-        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), k = (r + (float)atof(argv[2])) / r;
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (!(r > 1e-3f)) { // BUG-1030: no direction "up" at the planet's centre (k was a division by 0)
+            SAY("no lift: the position is at the planet's centre\n");
+            return 1;
+        }
+        float k = (r + (float)atof(argv[2])) / r;
         game::teleport(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
         SAY("lifted %.2f\n", (float)atof(argv[2]));
         return 0;
@@ -666,6 +684,8 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
         uint8_t* me = data + me_slot * 0x398;
         float* mp = (float*)(me + 0x4C);
         Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
+        if (!need_syms(out, {"Simulator::Cell::CreateCellObject"}))
+            return 1;
         uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,
                                             *(void**)(src + 0x108), argc > 5 ? atoi(argv[5]) : *(int*)(src + 0x358), 1.f, 1.f, 1, (void*)nullptr, 0);
         if (argc > 6) // tests (BUG-0455): the guests get this cell with a model instance they do not have
@@ -680,6 +700,8 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
 int c_cam(void*, int argc, const char* const* argv, SkOut* out)
 {
     using namespace skg;
+    if (!need_syms(out, {"App::IGameModeManager::Get", "App::cViewer::GetCameraToPoint"}))
+        return 1;
     uintptr_t mmget = H->sym("App::IGameModeManager::Get");
     void* mm = cdecl_call<void*>(mmget);
     void* viewer = mm ? vcall<void*>(mm, 0x58 / 4) : nullptr;
@@ -856,8 +878,14 @@ int c_w2s(void*, int, const char* const*, SkOut* out)
     SAY("avatar (%.2f %.2f %.2f) -> ok=%d screen=(%.1f %.1f)\n", p.x, p.y, p.z, ok, sc[0], sc[1]);
     // check with the game's own inverse: ray through that pixel should pass near the avatar
     using namespace skg;
+    if (!need_syms(out, {"App::IGameModeManager::Get", "App::cViewer::GetCameraToPoint"}))
+        return 1;
     void* mm = cdecl_call<void*>(H->sym("App::IGameModeManager::Get"));
-    void* viewer = vcall<void*>(mm, 0x58 / 4);
+    void* viewer = mm ? vcall<void*>(mm, 0x58 / 4) : nullptr;
+    if (!viewer) {
+        SAY("no viewer\n");
+        return 1;
+    }
     Vector3 o{}, d{};
     thiscall<bool>(H->sym("App::cViewer::GetCameraToPoint"), viewer, sc[0], sc[1], &o, &d);
     float vx = p.x - o.x, vy = p.y - o.y, vz = p.z - o.z;
@@ -871,6 +899,9 @@ int c_w2s(void*, int, const char* const*, SkOut* out)
 namespace {
 int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "gain")) &&
+        !need_syms(out, {"Simulator::cCreatureGameData::AddEvolutionPoints"}))
+        return 1;
     if (argc > 2 && !strcmp(argv[1], "add")) {
         // simulate a gain as the game would report it (goes through the coop hook), exactly N: test
         // setups (not scaled by the party's pace, BUG-0510)
@@ -949,6 +980,8 @@ int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_savedb(void*, int, const char* const*, SkOut* out)
 {
+    if (!need_syms(out, {"Resource::GetDatabaseByID"}))
+        return 1;
     void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
     if (!db) { SAY("no save DB"); return 1; }
     const char16_t* loc = skg::vcall<const char16_t*>(db, 0x28 / 4);
@@ -960,6 +993,8 @@ int c_savedb(void*, int, const char* const*, SkOut* out)
 
 int c_loadhook(void*, int, const char* const*, SkOut* out)
 {
+    if (!need_syms(out, {"Simulator::cGamePersistenceManager::LoadGame"}))
+        return 1;
     if (!o_LoadGame)
         H->hook_create(g_self, (void*)H->sym("Simulator::cGamePersistenceManager::LoadGame"), (void*)h_LoadGame, (void**)&o_LoadGame);
     SAY("LoadGame logging hook installed");

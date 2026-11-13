@@ -245,6 +245,50 @@ static void test_pending()
     CHECK(!exists(list));
 }
 
+// BUG-1019: apply_pack kept only the first 4096 bytes of an older sporecoop.pending when it deferred another file
+static std::string get_all(const std::wstring& p); // below
+
+static void test_pending_long()
+{
+    printf("updater: apply_pack adds a deferred file to the whole pending list (BUG-1019)\n");
+    std::wstring g = fresh_dir(L"pendlong");
+    std::wstring list = g + L"\\SporebinEP1\\mods\\sporecoop.pending", dll = g + L"\\SporebinEP1\\mods\\coop.dll";
+    put(g + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+    put(dll, "OLDDLL");
+    std::string old; // an older list of about 5000 bytes: 100 lines of 50 bytes, the last one coop.dll itself
+    for (int i = 0; i < 99; i++) {
+        char ln[64];
+        snprintf(ln, sizeof ln, "SporebinEP1/mods/sporekit/symbols/entry-%03d.sym\n", i);
+        old += ln;
+    }
+    old += "SporebinEP1/mods/coop.dll\n";
+    put(list, old);
+    upd::Pack p;
+    p.version = "9";
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, {'N', 'E', 'W'}});
+    // the running game holds coop.dll: the swap waits for the next start
+    HANDLE hold = CreateFileW(dll.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    std::string err;
+    int pending = 0;
+    bool ok = upd::apply_pack(g, p, err, &pending);
+    CloseHandle(hold);
+    std::string now = get_all(list);
+    int lines = 0, dll_lines = 0;
+    for (size_t i = 0; i < now.size();) {
+        size_t e = now.find('\n', i);
+        std::string ln = now.substr(i, (e == std::string::npos ? now.size() : e) - i);
+        lines += !ln.empty();
+        dll_lines += ln == "SporebinEP1/mods/coop.dll";
+        i = e == std::string::npos ? now.size() : e + 1;
+    }
+    printf("  apply=%d (%s) deferred=%d, the list: %u bytes, %d lines (%d of coop.dll), was %u bytes\n", ok, err.c_str(),
+           pending, (unsigned)now.size(), lines, dll_lines, (unsigned)old.size());
+    CHECK(ok && pending == 1);
+    CHECK(now.compare(0, old.size(), old) == 0); // every older line kept whole
+    CHECK(lines == 100 && dll_lines == 1);       // coop.dll listed once
+}
+
 // BUG-0035, BUG-0087, BUG-0105: where a received world goes and how it is written
 static std::vector<slotfs::File> world(const char* planet, const char* data)
 {
@@ -1811,6 +1855,8 @@ int main(int argc, char** argv)
             upd::g_web_fallback_fix = false;
         else if (!strcmp(argv[i], "--old-retry")) // BUG-0755 (update.retry)
             upd::g_retry_fix = false;
+        else if (!strcmp(argv[i], "--old-pending")) // BUG-1019 (update.pending_whole)
+            upd::g_pending_whole_fix = false;
         else if (!strcmp(argv[i], "--old-move")) // BUG-0848 (world.staged_move)
             slotfs::g_staged_move_fix = false;
         else if (!strcmp(argv[i], "--old-collect")) // BUG-0847 (world.share_complete)
@@ -1844,6 +1890,7 @@ int main(int argc, char** argv)
         g_close_wait_fix = false;
         upd::g_web_fallback_fix = false;
         upd::g_retry_fix = false;
+        upd::g_pending_whole_fix = false;
     }
     upd::g_retry_unit_ms = 50; // the in-process retries wait 50 / 150 ms (the setup's real 1 s / 3 s)
     upd::g_log = [](const std::string& s) { printf("    log: %s\n", s.c_str()); };
@@ -1857,6 +1904,7 @@ int main(int argc, char** argv)
     test_apply_rollback();
     test_update_lock();
     test_pending();
+    test_pending_long();
     test_slot_busy();
     test_slot_match();
     test_slot_write_fails();

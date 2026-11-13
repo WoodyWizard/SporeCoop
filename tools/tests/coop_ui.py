@@ -24,6 +24,9 @@ host (instance 1, profile test, creature save) and guest (instance 2, empty prof
 Screenshots: out/shots/ui_*.png (out/laneN/shots on lane N)
 
 usage: coop_ui.py [--no-restart]
+
+BUG-1065: layout_problems takes a button's text borders as 46 px (23 a side). Twin: UI_LAYOUT_TWIN="report -12" makes
+"Report a problem" 12 px narrower (it wraps): the lobby check FAILs; with UI_BUTTON_PAD=30 (the old rule) it passes.
 """
 import os
 import subprocess
@@ -216,7 +219,9 @@ def widgets(con):
     return out
 
 
-BUTTON_PAD = 30  # a button's caption wraps when it needs more than its width minus ~30 px (BUG-0904)
+# a button's caption wraps when it needs more than its width minus its text borders, 23 px a side (IButton vt +0x50:
+# 23 11 23 11; docs/08-ui.md#ui-give-fit). BUG-1065: was 30 (BUG-0904's estimate), a caption 1..16 px too wide passed
+BUTTON_PAD = int(os.environ.get('UI_BUTTON_PAD', '46'))  # (30: the check before BUG-1065, for its twin runs)
 
 
 def layout_problems(con):
@@ -336,6 +341,8 @@ def run(restart):
               f'{ui.who}: a first start begins with the name step (step={st and st.get("step")})')
         if during:
             check(not intro(ui.c), f'{ui.who}: the menu intro was skipped')
+        probs = layout_problems(ui.c)
+        check(not probs, f'{ui.who}: the name step: captions fit, nothing overlaps {probs} (BUG-1065)')
     shot(hc, 'ui_step_name.png')
 
     # ---- 2. the names: Continue (host), Enter (guest) ----
@@ -348,6 +355,8 @@ def run(restart):
         check(st is not None, f'{ui.who}: the name step goes on to Host / Join')
         name = ui.c.call('coop.name')['out']
         check(nm in name, f'{ui.who}: the typed name is the player\'s name ({name.strip()})')
+        probs = layout_problems(ui.c)
+        check(not probs, f'{ui.who}: the Host / Join step: captions fit, nothing overlaps {probs} (BUG-1065)')
     ini = open(INI, encoding='utf-8').read() if os.path.exists(INI) else ''
     check('name_chosen=1' in ini, 'the chosen name is kept (coop.ini [ui] name_chosen=1: no name step next time)')
     shot(hc, 'ui_step_choose.png')
@@ -360,11 +369,17 @@ def run(restart):
     # lane 1 when the lane was made: 47810 on lane 2 too): "bind() failed" while lane 1 hosts
     host.type_into('port', str(lane.PORT))
     shot(hc, 'ui_step_host.png')
+    probs = layout_problems(hc)
+    check(not probs, f'host: the Host step: captions fit, nothing overlaps {probs} (BUG-1065)')
     host.click('host')
     st = host.wait(lambda s: s['page'] == 'lobby' and s['rows'], 15, 'host lobby')
     check(st and 'Alice' in st['rows'][0][0], f'host: hosting, lobby shows {st["rows"] if st else None}')
     check(st and f':{lane.PORT}' in st.get('hostaddr', ''), f'host: the lobby gives the address ({st and st.get("hostaddr")!r})')
     check(st and st['askreports']['vis'], 'host: "Ask the players for their reports" in the lobby')
+    twin = os.environ.get('UI_LAYOUT_TWIN', '').split()  # BUG-1065's twin: "<control> <dw>", a button made narrower
+    if len(twin) == 2:
+        print('  UI_LAYOUT_TWIN:', hc.call(f'coop.uistate nudge {twin[0]} 0 0 {twin[1]}')['out'].strip(), flush=True)
+        time.sleep(1.5)
     shot(hc, 'ui_host_lobby.png')
     probs = layout_problems(hc)
     check(not probs, f'host: the lobby in the menu: captions fit, nothing overlaps {probs}')
@@ -387,6 +402,8 @@ def run(restart):
         check('joint_hunt=0' in hc.call('coop.settings get creature.joint_hunt')['out'],
               'host: the game plays with it off (coop.settings)')
     shot(hc, 'ui_settings_menu.png')
+    probs = layout_problems(hc)
+    check(not probs, f'host: the settings page with the Creature group: captions fit, nothing overlaps {probs} (BUG-1065)')
     host.click('setprev')  # the first page: All stages and Cell
     time.sleep(1)
     sets_rows = [w for w in widgets(hc) if w[1] == 'B' and (w[3] in ('On', 'Off') or w[3].isdigit())]
@@ -425,6 +442,8 @@ def run(restart):
         guest.click('lanmore')
         time.sleep(1)
     shot(gc, 'ui_step_join.png')
+    probs = layout_problems(gc)
+    check(not probs, f'guest: the Join step: captions fit, nothing overlaps {probs} (BUG-1065)')
     if row is not None:
         check(True, f'guest: host found on the network: {st[row]["text"]}')
         guest.click(row)
@@ -531,6 +550,9 @@ def run(restart):
         check('regen=0' in gc.call('coop.settings get cell.regen')['out'], 'guest: its game plays with the host\'s value')
     shot(hc, 'ui_settings_host_ingame.png')
     shot(gc, 'ui_settings_guest.png')
+    for ui in (host, guest):
+        probs = layout_problems(ui.c)
+        check(not probs, f'{ui.who}: the settings page in game: captions fit, nothing overlaps {probs} (BUG-1065)')
     gs = guest.state()
     ga = gs.get('sets', {}).get('all.partner_arrows')
     check(ga and not ga['en'] and not any(v['en'] for v in gs['sets'].values()),

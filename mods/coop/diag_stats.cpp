@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <vector>
 
@@ -167,11 +168,17 @@ static unsigned g_net_ticks = 0;
 
 static double loss_pct(uint32_t lost, uint32_t sent) { return sent ? 100.0 * lost / sent : 0; }
 
+// BUG-1010: "last heard N ms" subtracted the connection's last receive time (net::now_ms, steady_clock) from
+// GetTickCount: two clocks with their own epochs (on Windows QPC and the tick count drift apart; under Wine both
+// count from the same boot clock, so the lab never saw a wrong value). The session's own clock now. Off: GetTickCount.
+static bool g_silent_clock_fix = true;
+COOP_FIX("diag.silent_clock", "BUG-1010", g_silent_clock_fix, "diag: the leave lines' last heard value uses the connection's own clock");
+
 static void net_second(double now, bool minute)
 {
     if (!in_session())
         return;
-    uint32_t nowms = GetTickCount();
+    uint32_t nowms = g_silent_clock_fix ? net::now_ms() : GetTickCount(); // (the Session clock without its test seam)
     bool five = ++g_net_ticks % 5 == 0;
     for (auto& p : g_P.sess->players()) {
         if (p.id == g_P.sess->my_id() || (g_P.sess->role() == net::Role::Client && p.id != 0))
@@ -298,12 +305,35 @@ static bool kit_has_headline()
     return g_H->size >= offsetof(SkHost, diag_headline) + sizeof(void*) && g_H->diag_headline;
 }
 
+static std::string g_summary_sub; // tests (coop.diag summarysub <folder>): a sub folder of mods\logs, UTF-8 (BUG-1011)
+
 static std::string summary_file()
 {
     const char* d = g_H->size >= offsetof(SkHost, logs_dir) + sizeof(void*) && g_H->logs_dir ? g_H->logs_dir() : nullptr;
     char inst[16];
     snprintf(inst, sizeof inst, "%d", g_H->instance_id());
-    return d ? std::string(d) + "\\coop-last-session" + (g_H->instance_id() > 1 ? std::string(".") + inst : "") + ".txt" : "";
+    return d ? std::string(d) + (g_summary_sub.empty() ? "" : "\\" + g_summary_sub) + "\\coop-last-session" +
+                   (g_H->instance_id() > 1 ? std::string(".") + inst : "") + ".txt"
+             : "";
+}
+
+// BUG-1011: logs_dir() is UTF-8 and fopen takes a path in the ANSI code page: with letters outside it in the game
+// folder (a Steam library in a Cyrillic or CJK folder) coop-last-session.txt was never written nor read. Wide
+// paths now, as sreport.cpp. Off: fopen with the UTF-8 path (0.7.13).
+static bool g_summary_wide_fix = true;
+COOP_FIX("diag.summary_wide", "BUG-1011", g_summary_wide_fix, "diag: the session summary file is opened by its wide path (non-ASCII game folders)");
+
+static FILE* summary_open(const std::string& f, const char* how)
+{
+    if (!g_summary_wide_fix)
+        return fopen(f.c_str(), how);
+    int n = MultiByteToWideChar(CP_UTF8, 0, f.c_str(), -1, nullptr, 0);
+    if (n <= 0)
+        return nullptr;
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, f.c_str(), -1, w.data(), n);
+    std::wstring m(how, how + strlen(how));
+    return _wfopen(w.c_str(), m.c_str());
 }
 
 void write_summary(const char* why)
@@ -319,7 +349,7 @@ void write_summary(const char* why)
         g_H->diag_headline(g_M, text.c_str());
     std::string f = summary_file();
     if (!f.empty())
-        if (FILE* fp = fopen(f.c_str(), "w")) {
+        if (FILE* fp = summary_open(f, "w")) {
             fputs(text.c_str(), fp);
             fputc('\n', fp);
             fclose(fp);
@@ -512,7 +542,7 @@ void init(const SkHost* host, SkMod* mod, const Probe& probe)
     // the summary of the last session of an earlier run stays at the top of reports until a new one
     std::string f = summary_file();
     if (!f.empty() && kit_has_headline())
-        if (FILE* fp = fopen(f.c_str(), "r")) {
+        if (FILE* fp = summary_open(f, "r")) {
             char b[1200] = {0};
             size_t n = fread(b, 1, sizeof b - 1, fp);
             fclose(fp);
@@ -657,6 +687,22 @@ std::string command(const std::vector<std::string>& a)
         return sync_command(a);
     if (a.size() >= 1 && a[0] == "summary")
         return summary_line("asked") + "\n";
+    if (a.size() >= 1 && a[0] == "summarysub") { // tests (BUG-1011): the summary file into mods\logs\<folder> (- = none)
+        g_summary_sub = a.size() > 1 && a[1] != "-" ? a[1] : "";
+        return "summarysub '" + g_summary_sub + "' file '" + summary_file() + "'\n";
+    }
+    if (a.size() >= 1 && a[0] == "summarywrite") { // tests (BUG-1011): write the summary file now, then read it back
+        write_summary("asked");
+        std::string f = summary_file();
+        char b[64] = {0};
+        size_t n = 0;
+        if (FILE* fp = summary_open(f, "r")) {
+            n = fread(b, 1, sizeof b - 1, fp);
+            fclose(fp);
+        }
+        return "summary written: read back " + std::to_string(n) + " bytes (wide=" + std::to_string((int)g_summary_wide_fix) +
+               ")\n";
+    }
     if (a.size() >= 2 && a[0] == "detail") {
         g_detail = std::max(0, std::min(2, atoi(a[1].c_str())));
         return "log_detail=" + std::to_string(g_detail) + "\n";

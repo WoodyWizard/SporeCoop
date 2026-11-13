@@ -27,6 +27,7 @@ constexpr size_t kMaxVisible = 5;
 
 struct Toast {
     sui::Win w = nullptr;
+    std::vector<sui::Win> labels; // ours (sui::label keeps one reference for the mod: BUG-1025)
     std::string text, kind;
     double t0 = 0, life = 6;
     float y = -1; // current top (slides when panels above go away)
@@ -60,10 +61,30 @@ void set_top_min(float y) { g_top_min = y; }
 
 static float top_of(size_t i, float sh) { return std::max(sh * 0.15f, g_top_min.load()) + i * (kH + kGap); }
 
+// BUG-1025 (tests, `coop.notify` status): what is left of the dropped panels, from the game's reference counts read
+// while the windows are alive (never after: a window the game frees may be gone). panel_refs: the panel's count
+// before it is taken out of the main window (1 = only the main window's: freed with it); label_refs: a label's count
+// before (ours + the panel's); kept: labels with a reference left once the panel is freed (leaked)
+static unsigned g_dropped, g_labels_freed, g_labels_kept;
+static int g_panel_refs = -1, g_label_refs = -1;
+
+// outside the frame (build, animate, shutdown at the unload)
 static void remove(Toast& t)
 {
-    if (t.w && g_root)
+    if (t.w && g_root) {
+        g_panel_refs = sui::refs(t.w);
+        for (sui::Win l : t.labels) {
+            int n = g_label_refs = sui::refs(l);
+            if (sui::g_release_fix) { // ours back while the panel still holds it: the panel's release frees it
+                sui::release(l);
+                n--;
+            }
+            (n <= 1 && g_panel_refs == 1 ? g_labels_freed : g_labels_kept)++; // (1: the panel's)
+        }
         sui::remove_child(g_root, t.w);
+        g_dropped++;
+    }
+    t.labels.clear();
     t.w = nullptr;
 }
 
@@ -107,16 +128,20 @@ static void build(void*)
         sui::set_flag(w, sui::kFlagAlwaysInFront, true);
         uint32_t font = g_font && g_font() ? g_font() : kDialogFont;
         auto lines = lines_of(text);
+        std::vector<sui::Win> labels;
         for (size_t li = 0; li < lines.size(); li++) {
             float y0 = lines.size() == 1 ? 0.f : (li == 0 ? 5.f : 27.f);
             float h = lines.size() == 1 ? kH : 26.f;
             sui::Rect lr{68, y0, 68 + std::min(text_w(lines[li]), kW - 80), y0 + h};
-            if (sui::Win l = sui::label(w, lr, lines[li], font, 0xFFFFFFFF, sui::kAlignLeft))
+            if (sui::Win l = sui::label(w, lr, lines[li], font, 0xFFFFFFFF, sui::kAlignLeft)) {
                 sui::set_flag(l, sui::kFlagIgnoreMouse, true);
+                labels.push_back(l);
+            }
         }
         sui::bring_to_front(root, w);
         Toast t;
         t.w = w;
+        t.labels = std::move(labels);
         t.text = text;
         t.kind = kind;
         t.t0 = H->time_seconds();
@@ -208,6 +233,9 @@ std::string status()
     char b[160];
     snprintf(b, sizeof b, "notify: shown=%u failed=%u visible=%u\n", g_shown, g_failed, (unsigned)g_toasts.size());
     std::string s = b;
+    snprintf(b, sizeof b, "notify dropped=%u labels_freed=%u labels_kept=%u panel_refs=%d label_refs=%d release=%d\n",
+             g_dropped, g_labels_freed, g_labels_kept, g_panel_refs, g_label_refs, (int)sui::g_release_fix);
+    s += b;
     for (auto& t : g_toasts) {
         sui::Rect r = sui::area(t.w);
         snprintf(b, sizeof b, "toast %s (%.0f %.0f %.0f %.0f) ", t.kind.c_str(), r.x1, r.y1, r.x2, r.y2);

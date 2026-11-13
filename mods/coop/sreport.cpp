@@ -16,6 +16,7 @@
 #include "fixes.h"
 #include "net/protocol.h"
 #include "net/sreport.h"
+#include "net/utf8.h"
 #include "trace.h"
 
 namespace sreport {
@@ -31,6 +32,16 @@ COOP_FIX("core.session_report", "BUG-0767", g_fix, "core: the host's report asks
 // BUG-0783: a guest still making or sending its report answers a new Ask at once (its report goes to the new round)
 bool g_reask_fix = true;
 COOP_FIX("core.sreport_reask", "BUG-0783", g_reask_fix, "core: a guest making or sending its report answers the host's next Ask");
+// BUG-1013: the guest cut the host's name in the Ask to 40 bytes: a CJK or long mixed name ended in a broken UTF-8
+// sequence in the feed and the co-op window. Whole characters now (net_name: 24 code points, clean UTF-8). Off: 40 bytes.
+static bool g_host_cut_fix = true;
+COOP_FIX("core.sreport_host_cut", "BUG-1013", g_host_cut_fix, "core: the host's name in a report question is cut by whole characters");
+static std::string ask_host(const std::string& h) { return g_host_cut_fix ? utf8::net_name(h) : h.substr(0, 40); }
+// BUG-1014: `coop.sreport status` said round=none while the session zip was written (start_write moves the round out
+// before g_writing is set): "writing" could never be printed. Off: the old expression (tests read it).
+static bool g_writing_status_fix = true;
+COOP_FIX("core.sreport_writing", "BUG-1014", g_writing_status_fix, "core: coop.sreport status says round=writing while the session zip is written");
+static std::string g_test_ask_name; // tests (coop.sreport askname <name>): the host name sent in the next Asks
 
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 #define LOG(...) H->log(M, SK_INFO, __VA_ARGS__)
@@ -122,7 +133,7 @@ static std::string summary_line(const Round& r)
 // the main thread (tick). Off: the whole write outside the frame on the main thread (0.7.12 F4).
 bool g_write_worker_fix = true;
 COOP_FIX("core.sreport_write_worker", "BUG-0780", g_write_worker_fix, "core: the session report zip is written on a worker thread");
-static int g_write_delay_ms; // tests (coop.sreport writedelay <ms>): a slow disk, this long per MB written
+static int g_write_delay_ms; // tests (coop.sreport writedelay <ms>): a slow disk, this long at the start and per MB written
 
 struct WriteJob {
     std::unique_ptr<Round> r;
@@ -192,8 +203,9 @@ static void do_write(WriteJob& j)
         int delay = j.delay_ms;
         z.out = [f, &written, delay](const uint8_t* p, size_t n) {
             size_t before = written >> 20;
+            bool first = written == 0;
             written += n;
-            if (delay > 0 && (written >> 20) != before)
+            if (delay > 0 && (first || (written >> 20) != before)) // (also before the first byte: a small zip waits too)
                 Sleep((DWORD)delay); // tests: a slow disk
             return f && fwrite(p, 1, n, f) == n;
         };
@@ -328,7 +340,7 @@ std::string ask(const std::string& host_zip)
     }
     Ask a;
     a.round = r->id;
-    a.host = g_host_name;
+    a.host = g_test_ask_name.empty() ? g_host_name : g_test_ask_name;
     net::Writer w;
     a.write(w);
     for (auto& g : r->guests)
@@ -540,7 +552,7 @@ static void guest_message(uint8_t kind, net::Reader& r)
             // its start (the pieces still queued carry the old round: the host drops them).
             uint32_t old = g_ask_round;
             g_ask_round = a.round;
-            g_ask_host = a.host.substr(0, 40);
+            g_ask_host = ask_host(a.host);
             g_ask_at = now_s();
             g_reasked++;
             if (g_gs == GState::Sending) {
@@ -554,7 +566,7 @@ static void guest_message(uint8_t kind, net::Reader& r)
             return;
         }
         g_ask_round = a.round;
-        g_ask_host = a.host.substr(0, 40);
+        g_ask_host = ask_host(a.host);
         g_ask_at = now_s();
         g_gs = GState::Asked;
         g_guest_line.clear();
@@ -702,7 +714,10 @@ std::string status()
     static const char* gs[] = {"idle", "asked", "making", "sending", "done"};
     char b[256];
     snprintf(b, sizeof b, "sreport fix=%d round=%s rounds=%u refused=%u stops=%u guest=%s asks=%u sent=%u declined=%u stopped=%u reasked=%u test=%s\n",
-             (int)g_fix, g_round ? (g_writing ? "writing" : "asking") : "none", g_rounds, g_refused, g_stops_sent,
+             (int)g_fix,
+             g_writing_status_fix ? (g_writing ? "writing" : g_round ? "asking" : "none")
+                                  : (g_round ? (g_writing ? "writing" : "asking") : "none"),
+             g_rounds, g_refused, g_stops_sent,
              gs[(int)g_gs], g_asks, g_sent_reports, g_declined, g_stopped, g_reasked, g_test.c_str());
     std::string s = b;
     s += "hostline '" + host_line() + "'\n";
@@ -751,12 +766,17 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         SAY("sreport writedelay=%d\n", g_write_delay_ms);
         return 0;
     }
+    if (sub == "askname" && argc > 2) { // tests (BUG-1013): the host name the next Asks carry ("-": its own)
+        g_test_ask_name = strcmp(argv[2], "-") ? std::string(argv[2]) : std::string();
+        SAY("sreport askname='%s'\n", g_test_ask_name.c_str());
+        return 0;
+    }
     if (sub == "stallwait" && argc > 2) { // tests: the host's wait for the next piece of a report (s, 2..60)
         g_stall_wait = std::max(2.0, std::min(kStallWait, atof(argv[2])));
         SAY("sreport stallwait=%.0f\n", g_stall_wait);
         return 0;
     }
-    SAY("coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk|stall | stallwait <s> | writedelay <ms>\n");
+    SAY("coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk|stall | stallwait <s> | writedelay <ms> | askname <name>|-\n");
     return 1;
 }
 

@@ -15,7 +15,7 @@ void tick(); // main thread: notifications
 // the co-op window: the text of the update line and of its button ("" = nothing to show)
 bool ui(std::string& line, std::string& button);
 void start_update();
-std::string command(const std::string& arg); // coop.update [check | apply | status]
+std::string command(const std::string& arg, const std::string& val = {}); // coop.update [check | apply | status | url | testdelay | applydelay]
 // on_unload: no thread logs or notifies any more; returns how many still run (each holds the
 // module, so the old image stays mapped until they end: BUG-0060)
 int shutdown();

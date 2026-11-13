@@ -132,7 +132,7 @@ std::string demo_text(std::string t);
 // tests (coop.uistate widgets): every visible widget, `widget x1 y1 x2 y2 L|B <caption width> '<caption>'`
 std::string widgets_state();
 // tests (ui_golden's twin): a named control of coop.uistate moved by (dx, dy) or hidden until "off"
-std::string test_nudge(const std::string& name, float dx, float dy, bool hide);
+std::string test_nudge(const std::string& name, float dx, float dy, bool hide, float dw = 0);
 
 // the dialog text font (0 until the co-op window was built once)
 uint32_t text_font();

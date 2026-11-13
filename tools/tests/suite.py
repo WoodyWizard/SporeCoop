@@ -230,6 +230,9 @@ add('old_species', P + 'coop_old_species.py', minutes=3)  # an NPC of a player's
 add('dna_notice', P + 'coop_dna_notice.py', minutes=3)  # shared DNA names its cause on the partner's screen (+N DNA from Bob's hunt) and in the logs (dna: a -> b cause=...); a feature, no switch
 add('dna_notice_cell', P + 'coop_dna_notice.py --cell', minutes=3)  # Cell: a partner's meals named on the other's screen (+10 food (DNA) from Bob's meals) and in the logs
 add('notify', P + 'coop_notify.py', minutes=3)
+add('menu_diag', P + 'coop_menu_diag.py', minutes=3)  # one game in the galaxy menu: notification panels and their labels freed (BUG-1025; SPORE_FIX_OFF=core.ui_release fails), the session summary in a Cyrillic folder (BUG-1011; diag.summary_wide fails), Update right after the check and Try again at 0 % (BUG-1015; core.update_busy fails)
+add('text_lines', P + 'coop_text_lines.py', warm=True, minutes=4, fixture='creature', reports=True)  # 70 Cyrillic letters and an emoji typed under a caption's input lock (BUG-1027; core.ui_locked_edit_utf16 fails), a CJK host name in the report question (BUG-1013; core.sreport_host_cut fails), round=writing (BUG-1014; core.sreport_writing fails)
+add('space_other_world', P + 'coop_space_other_world.py', warm=True, minutes=4, fixture='space')  # the player list says no "other world" for a partner at another place of the same Space save (BUG-1063; SPORE_FIX_OFF=core.ui_other_world fails)
 add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('lan_dedup', P + 'coop_lan_dedup.py', warm=True, minutes=3, fixture='creature')  # a host on two network addresses is one row in the guest's LAN list (BUG-0210; SPORE_FIX_OFF=net.lan_dedup fails)

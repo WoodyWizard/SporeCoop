@@ -200,6 +200,10 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
         uint8_t* en = *(uint8_t**)((uint8_t*)t + 0x774);
         size_t n = (bg && en > bg) ? (size_t)(en - bg) / 0xAC : 0;
         size_t to = argc > 3 ? std::min(n, (size_t)atoi(argv[3]) + 1) : n;
+        if (from < to && !skg::readable(bg + from * 0xAC, (to - from) * 0xAC)) { // BUG-1030: the entries, not the head only
+            H->out_printf(out, "the stamp list %p (%u entries) is not readable", bg, (unsigned)n);
+            return 1;
+        }
         struct One {
             uint8_t xf[0x38];
             uint32_t key[3], id;

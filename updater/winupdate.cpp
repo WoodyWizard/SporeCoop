@@ -18,6 +18,10 @@ std::string g_swap_delay_file; // not a lab switch: test hook (BUG-0243)
 int g_fail_swap_at = 0;         // not a lab switch: test hook (BUG-0242)
 FIX_SWITCH(g_lock_fix); // update.lock, BUG-0243: the update lock of a game folder
 FIX_SWITCH(g_web_fallback_fix); // update.web_fallback, BUG-0392: the release page when the API refuses
+// update.pending_whole, BUG-1019: apply_pack kept only the first 4096 bytes of an existing sporecoop.pending (one
+// ReadFile into a stack buffer); a longer list was cut mid-line and the cut line glued to the first new entry. Now
+// the whole list (up to 1 MB, as pending.h reads it), ended by a newline, without lines that are there already.
+FIX_SWITCH(g_pending_whole_fix);
 
 // BUG-0243: the update lock of a game folder, made so that a game run by the player and a setup run
 // as administrator can open each other's (a NULL DACL); waits at most wait_ms. nullptr: not taken
@@ -475,14 +479,50 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
         std::wstring list = root + L"\\SporebinEP1\\mods\\sporecoop.pending";
         std::vector<uint8_t> old;
         HANDLE f = CreateFileW(list.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-        if (f != INVALID_HANDLE_VALUE) { // keep entries of an earlier update
+        if (f != INVALID_HANDLE_VALUE && !g_pending_whole_fix) { // keep entries of an earlier update (0.7.13: 4 KB)
             char b[4096];
             DWORD got = 0;
             ReadFile(f, b, sizeof b, &got, nullptr);
             CloseHandle(f);
             old.assign(b, b + got);
+        } else if (f != INVALID_HANDLE_VALUE) {
+            LARGE_INTEGER size{};
+            if (GetFileSizeEx(f, &size) && size.QuadPart > 0 && size.QuadPart <= (1 << 20)) {
+                old.resize((size_t)size.QuadPart);
+                DWORD got = 0;
+                if (!ReadFile(f, old.data(), (DWORD)old.size(), &got, nullptr))
+                    got = 0;
+                old.resize(got);
+            }
+            CloseHandle(f);
         }
-        old.insert(old.end(), later.begin(), later.end());
+        if (g_pending_whole_fix) {
+            if (!old.empty() && old.back() != '\n')
+                old.push_back('\n');
+            auto lines = [](const std::string& t) { // the list's lines without their line ends
+                std::vector<std::string> v;
+                for (size_t i = 0; i < t.size();) {
+                    size_t e = t.find('\n', i);
+                    if (e == std::string::npos)
+                        e = t.size();
+                    std::string ln = t.substr(i, e - i);
+                    if (!ln.empty() && ln.back() == '\r')
+                        ln.pop_back();
+                    if (!ln.empty())
+                        v.push_back(ln);
+                    i = e + 1;
+                }
+                return v;
+            };
+            std::vector<std::string> have = lines(std::string(old.begin(), old.end()));
+            for (auto& ln : lines(later))
+                if (std::find(have.begin(), have.end(), ln) == have.end()) { // a file deferred again: listed once
+                    have.push_back(ln);
+                    old.insert(old.end(), ln.begin(), ln.end());
+                    old.push_back('\n');
+                }
+        } else
+            old.insert(old.end(), later.begin(), later.end());
         if (!write_all(list, old)) {
             err = why("cannot write", list);
             goto rollback;
