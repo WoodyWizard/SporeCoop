@@ -5601,6 +5601,8 @@ std::string debug(const std::vector<std::string>& a)
         if (!v || !exists(v))
             return "no such vehicle";
         float p[3] = {(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())};
+        if (!is_host()) // (a guest's mirror: its locomotion would pull it back to where it drove, as guest_tick does)
+            vcall<void>((uint8_t*)v + kVSpatial, 0xEC / 4); // StopMovement
         vcall<void>((uint8_t*)v + kVSpatial, 0x38 / 4, (const float*)p);
         net::Vec3 q = veh_pos(v);
         char b[96];
