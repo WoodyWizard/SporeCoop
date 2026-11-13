@@ -165,6 +165,7 @@ def main():
         ck(failed is not None, f'the broken pack fails the update ({ustate(c)[2][-120:]})')
         c.call('coop.update testdelay 0')
         c.call('coop.update applydelay 3000')
+        wait(lambda: 'busy=0' in ustate(c)[2], 8, 0.1)  # (b) on its own: the failed thread is done
         time.sleep(0.5)
         c.call('coop.update apply')  # Try again
         st = wait(lambda: ustate(c)[0] == 'downloading' and ustate(c), 2, 0.05)

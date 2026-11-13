@@ -7040,3 +7040,26 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * `space_owed_contracts_off` (BUG-1037, fixture space, ~2 min): `coop.settings force space.contracts off` (settings_lib),
   then the reward_away steps.
 * `space_give_pick` also checks the give row's layout (BUG-1062, layout_problems on Bob's window).
+
+## Diagnostics, co-op window text and updater tests of 0.7.14 P2 (2026-11-13, fix/w49-ui)
+<a id="testing-p2-ui"></a>
+
+* `menu_diag` (coop_menu_diag.py, one game in the galaxy menu, ~2 min): notification panels freed (BUG-1025,
+  `core.ui_release`), the session summary in `mods\logs\Тест` (BUG-1011, `diag.summary_wide`; seam
+  `coop.diag summarysub <folder>|-` and `coop.diag summarywrite`), Update right after the check and Try again at 0
+  (BUG-1015, `core.update_busy`; seams `coop.update url <u>`, `testdelay <ms>` (a thread waits after its final state),
+  `applydelay <ms>` (the download waits before its first byte); a local server on port 47950 + lane offers the next
+  version with a pack that is not a pack). `coop.update` prints `busy=` and the window's `line='...'` while downloading.
+* `text_lines` (coop_text_lines.py, two games, creature, warm): 70 Cyrillic letters, DEL and an emoji typed under
+  CRG_ClaimNest's input lock (BUG-1027, `core.ui_locked_edit_utf16`; `text` posts a surrogate pair as two WM_CHAR),
+  a 14-character CJK host name in the report question (BUG-1013, `core.sreport_host_cut`; seam
+  `coop.sreport askname <name>|-`), `round=writing` while the zip is written (BUG-1014, `core.sreport_writing`).
+  `coop.sreport writedelay <ms>` now also waits once before the first byte (a small zip waits too).
+* `space_other_world` (coop_space_other_world.py, two games, space, warm): no "other world" in either player list at
+  the home star and with the guest in the galaxy view (BUG-1063, `core.ui_other_world`).
+* win_unit `test_pending_long` (BUG-1019, `--old-pending` / `SPORE_FIX_OFF=update.pending_whole`): a deferred file
+  is added to a 5000-byte sporecoop.pending whole, listed once.
+* tests/text_tests.cpp `test_locked_typing` (BUG-1027; `--old` fails it).
+* ui (coop_ui.py): layout_problems with 46 px of text borders on every co-op window step (BUG-1065); twin
+  `UI_LAYOUT_TWIN="report -12"` (the lobby's "Report a problem" 12 px narrower: it wraps) FAILs, with
+  `UI_BUTTON_PAD=30` too (the old rule) it would pass. `coop.uistate nudge <name> <dx> <dy> [dw]` (dw: a width change).

@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Fixed
+- Co-op window: a chat line or name typed while a caption or a game message box holds the input now takes its full
+  length in Cyrillic, Greek or CJK letters (it stopped at half or a third), keeps an emoji whole and ignores DEL
+  (BUG-1027).
+- Space: the player list no longer says "other world" for a partner at another star, or for everyone while your
+  ship is in the galaxy view or respawning; it means a partner in another Space save (BUG-1063).
+- Problem reports: a guest asked for its report by a host with a long CJK or mixed name sees the whole name, not one
+  ending in a broken character (BUG-1013).
+- The last session's summary line is written and shown at the top of the next problem report also when the game
+  folder has Cyrillic or CJK letters in its path (Windows) (BUG-1011).
+- Update: a click on Update right after the check found the new version is no longer ignored, and Try again starts
+  its progress at 0 instead of showing the last attempt's (BUG-1015). A second update that has to wait for the next
+  start no longer cuts a long list of waiting files (BUG-1019).
+- Notification panels and the main menu's co-op item no longer keep their windows in memory after they are gone
+  (BUG-1025).
 - Tribe, Civilization: a guest's order on a tribe member or vehicle that had just been removed in the host's game (it
   fell, was disbanded) no longer goes to the removed object in the host's game (BUG-1053).
 - Creature: a guest's social click right after a creature change no longer starts the social game with the wrong
