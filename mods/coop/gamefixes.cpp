@@ -1714,7 +1714,7 @@ static int c_menuhover(void*, int argc, const char* const* argv, SkOut* out)
 // PlayCinematic plays nothing while it is 0). The live Creature -> Tribe change clears it after CRG2TRG and the Tribe start
 // sets it again; the mod's own reload of the host's Tribe right after that change (tribe.host_reload, BUG-0332) can come
 // first, and a load does not set it again: the whole Tribe ran without a cinematic, and so did every stage loaded later
-// in that game (lab 20261113-133xxx lane 5: 0 from 13:40:52 on, through the galaxy menu and the reload). In Civ a
+// in that game (campaign_tribe_end lab 20261113-133534 lane 5: 0 from 13:40:52 on, through the galaxy menu and the reload). In Civ a
 // capture's cinematic (CVG_Capture) never played, so the captured city never changed hands (its ChangeOwner waits for
 // the cinematic's end); in Space a destroyed ship got no death cinematic. A save loaded into a stage starts with
 // cinematics on (as after the game's start): when a load ends in a stage with the flag 0, it is set again.

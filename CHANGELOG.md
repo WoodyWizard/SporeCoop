@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Cinematics stay on after the host's Tribe reload that follows the Creature -> Tribe change: before, that reload
+  could leave the game's cinematics off for the rest of the game: no Tribe cinematics, and after a later load of a Civ
+  save a city taken by a siege, a conversion or a purchase never changed hands; a destroyed spaceship got no death
+  scene (BUG-1073).
 - Developer tools: unloading or hot-reloading the co-op mod while one of its console commands still runs on another
   thread (`coop.sample`) no longer crashes the game; the unload waits for the command (BUG-1018).
 - Developer tools: `mod.reload`, `mod.load`, `mod.unload` and `coop.loadworld` run outside the frame; `coop.loadworld`

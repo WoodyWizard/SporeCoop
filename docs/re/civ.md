@@ -1777,7 +1777,7 @@ reading `[0x167EB50]` +0x15F / +0x2C / +0x148 every 5 s; `coop.cine` shows the s
   Creature (0xD4538E), in the Civ start (0xCFD0CF) and in the galaxy menu's enter (0xEF24D4, vtable 0x148AFC0 +0x30).
 * ✔ (runtime) Creature -> Tribe: 0 from CRG2TRG (13:36:28) until the Tribe start; the advance button: 0 from the
   click (13:22:34) through the City Hall and vehicle editors until the Civ start (13:25:22: 1).
-* ✔ (runtime, campaign_tribe_end lane 5, 13:40:52-14:0x) The mod's reload of the host's Tribe right after the live
+* ✔ (runtime, campaign_tribe_end lab 20261113-133534 lane 5, from 13:40:52) The mod's reload of the host's Tribe right after the live
   change (tribe.host_reload, BUG-0332: Tribe -> galaxy menu -> Loading -> Tribe 6.6 s after the change) came before the
   Tribe start's SetEnabled(1): the flag stayed 0 in the galaxy menu (its enter did not run SetEnabled(1) on this
   path: another run of the same path showed 1 there, 13:38:02) and through the whole Tribe. A load does not set it.
@@ -1788,5 +1788,8 @@ reading `[0x167EB50]` +0x15F / +0x2C / +0x148 every 5 s; `coop.cine` shows the s
   sets the city's pending flags +0x2E0.. and leaves the ChangeOwner to the end of CVG_Capture (msg 0x44F1189); with no
   cinematic the city never changes hands. With instant 1 (a surrender) it does (the ChangeOwner is direct). In Space
   a destroyed ship's death cinematic does not play (spacecoop's respawn_tick: "no death cinematic runs: respawn").
+* ~ (runtime, same run) In Tribe with the flag 0 the host's bot never box-selected its own members (32 tries, "no
+  member selected") and the full campaigns' minimap calibration read the same view for three clicks: inferred, the
+  view moves of a minimap or card click go through the cinematic manager and do nothing while it is off.
 * Fix (coop.dll, gamefixes `game.cinematics_on_load`): when a load ends in Cell / Creature / Tribe / Civ / Space with
   +0x15F 0, SetEnabled(1). A boot + load starts with 1, so a loaded stage never needs 0.

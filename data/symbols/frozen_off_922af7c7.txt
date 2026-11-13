@@ -255,3 +255,4 @@ SporeCoop::GameCiv_CaptureNeedsSpecialty ; BUG-0982: civ.specialty_buyer: the sp
 SporeCoop::cCity_MessageListener ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
 SporeCoop::cCity_SetSpecialty ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
 SporeCoop::cCity_ShowSpecialtyBox ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::cCinematicManager_SetEnabled ; BUG-1073: game.cinematics_on_load: a load does not turn the cinematics on again (old behaviour)
