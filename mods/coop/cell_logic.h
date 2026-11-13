@@ -319,4 +319,52 @@ inline const char* kill_word(bool again, bool alive, bool knocked_out)
                          : "applied";
 }
 
+// BUG-0975: the number of tiles PopulateTiles 0xE7D370 would write for its active set (0xE5FA80: nine groups,
+// layer 0 at levels base+2, +1, 0, -1 from the view box doubled, layer 1 at base+4 .. base from the background
+// box, each group the tiles of size tile_sizes[level] / world_scale * step(level - level_of_food) * 0.85 that
+// cover the box, 0xE5F610 / 0xE5FA00). The game writes them into a stack buffer of 511 entries without a
+// bound: right after a fall of several levels at once (a guest at food 327 joining a host at food 0) the
+// world scale G+0x514C is still the old level's (it eases to the new one over ~3 s) and the lowest levels'
+// tiles are tiny: thousands of entries, the stack is overwritten up to its top (0xC0000005 at 0x00E5FA50).
+// `vb`: Simulator::Cell::ViewBoxes (12 floats), `sizes`: the game's tile size table (>= 16 levels).
+inline int level_of_food(int food) { return food >= 1000 ? 10 : food < 0 ? 1 : 1 + food / 100; }
+inline double active_tiles(int base, int food, float world_scale, const float* vb, const float* sizes, int n_sizes)
+{
+    if (!vb || !sizes || !(world_scale > 0.f) || !std::isfinite(world_scale))
+        return 1e9;
+    for (int i = 0; i < 12; i++)
+        if (!std::isfinite(vb[i]))
+            return 1e9;
+    auto step = [](int d) { // 0xE51FD0
+        return d <= -1 ? 1.0 : d == 0 ? 0.5 : d == 1 ? 0.25 : d == 2 ? 0.125 : d == 3 ? 0.0625 : 0.03125;
+    };
+    int lof = level_of_food(food);
+    double total = 0;
+    static const int kLayer0[4] = {2, 1, 0, -1}, kLayer1[5] = {4, 3, 2, 1, 0};
+    for (int layer = 0; layer < 2; layer++) {
+        double x0, y0, x1, y1;
+        if (layer == 0) { // the visible box doubled about its centre
+            double cx = (vb[0] + vb[3]) * 0.5, cy = (vb[1] + vb[4]) * 0.5, w = vb[3] - vb[0], h = vb[4] - vb[1];
+            x0 = cx - w, x1 = cx + w, y0 = cy - h, y1 = cy + h;
+        } else {
+            x0 = vb[6], y0 = vb[7], x1 = vb[9], y1 = vb[10];
+        }
+        const int* offs = layer == 0 ? kLayer0 : kLayer1;
+        for (int k = 0; k < (layer == 0 ? 4 : 5); k++) {
+            int level = base + offs[k];
+            if (level < 0 || level >= n_sizes)
+                return 1e9;
+            double size = (double)sizes[level] / world_scale * step(level - lof) * 0.85;
+            if (!(size > 0))
+                return 1e9;
+            double f = 1.0 / size;
+            double nx = std::ceil(f * x1) - std::floor(f * x0), ny = std::ceil(f * y1) - std::floor(f * y0);
+            if (nx > 0 && ny > 0)
+                total += nx * ny;
+        }
+    }
+    return total;
+}
+constexpr int kActiveTileCap = 480; // the game's buffer holds 511 (0x27F4 bytes of 20-byte entries)
+
 } // namespace cell_logic

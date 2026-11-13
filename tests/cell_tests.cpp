@@ -286,6 +286,18 @@ static void player_spawn_slots()
     CHECK(std::hypot(u - x[1], v - y[1]) > 1.f);
 }
 
+// BUG-0975: the active set of a pass right after a fall of three levels does not fit the game's buffer; settled it does
+static void active_set()
+{
+    const float sizes[17] = {10, 30, 100, 300, 1000, 3000, 1e4f, 3e4f, 1e5f, 3e5f, 1e6f, 3e6f, 1e7f, 3e7f, 1e8f, 3e8f, 1e9f};
+    const float vb[12] = {-10, -7.5f, 0, 10, 7.5f, 0, -20, -15, 0, 20, 15, 0}; // ViewBoxes about the origin
+    CHECK(level_of_food(0) == 1 && level_of_food(99) == 1 && level_of_food(327) == 4 && level_of_food(1000) == 10);
+    double settled1 = active_tiles(1, 0, 1.f, vb, sizes, 17), settled4 = active_tiles(4, 327, 30.f, vb, sizes, 17);
+    CHECK(settled1 < kActiveTileCap && settled4 < kActiveTileCap);
+    CHECK(active_tiles(1, 0, 30.f, vb, sizes, 17) > 511); // 327 -> 0 with the level 4 scale: the crash
+    CHECK(active_tiles(1, 0, NAN, vb, sizes, 17) > 511);  // garbage: no pass
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -304,6 +316,7 @@ int main(int argc, char** argv)
     partner_tiles();
     once();
     kill_word_ko();
+    active_set();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

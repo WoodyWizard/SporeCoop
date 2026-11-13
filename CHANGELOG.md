@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a guest whose own game was at a higher level (for example food 300, level 4) no longer crashes the
+  moment it joins a host at a lower level; the game drew the tiles of the new level at the old level's scale and
+  overran its own buffer (BUG-0975).
 - Civilization: a guest's vehicles sent to attack a wild creature no longer ignore the order when the host's
   game has that creature elsewhere (wild creatures are not shared): they attack the host's creature near there or
   drive there (BUG-0970).

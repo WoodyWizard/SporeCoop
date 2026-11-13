@@ -2243,3 +2243,29 @@ BUG-0958, GOG 2024, lab lane 7 (`coop_cell_partner_poison.py`). Answers the "Not
   2 dead); a guest's mirror keeps it (`Mirror::product`) and DamageCell of the own avatar by a poison mirror with it
   is refused while friendly fire is off outside Rivals; on the host the cells a partner's puppet's cloud maker added
   (h_Cloud, a before / after pass over the pool) are refused the same way. `coop.pool`: `cell_partner_poison:`.
+
+## A fall of several levels at once overflows the tile pass (2026-11-12, fix/w48-cellcull)
+<a id="cell-level-fall"></a>
+
+BUG-0975. GOG 2024, Ghidra and lanes 6 / 7.
+
+* ✔ (Ghidra) PopulateTiles 0xE7D370 builds its active set with 0xE5FA80 into a stack buffer of 0x27F4 bytes (511
+  entries of 20 bytes) with no bound: nine groups by 0xE5FA00, layer 0 at the levels base+2, +1, 0, -1 from the
+  visible box doubled about its centre, layer 1 at base+4 .. base from the background box. Each group writes every
+  tile {layer, level, x, y} of the box (0xE5F610: floor / ceil of the box times 1 / size), size =
+  `Simulator::Cell::TileSizes[level]` (10, 30, 100, 300, ... x sqrt(10) a level) / world scale G+0x514C x step x
+  0.85, step 0xE51FD0 by level - LevelOfFood(S+0x1C): 1 at -1 and below, 0.5 at 0, halving up to 1/32 at +4.
+  The level base is LevelOfFood (1 + food / 100).
+* ✔ (Ghidra) AddFoodPoints sets the target scale G+0x5150 at once; WorldScaleStep eases G+0x514C to it over ~3 s.
+  Up, the old scale is smaller: fewer, bigger tiles. Down, the old scale is bigger: for a fall of k levels the
+  lowest groups get ~10^k times their tiles (estimate with the boxes +-10 x +-7.5 / +-20 x +-15: settled 36-80,
+  one level down 470-490, three levels down 37 000).
+* ✔ (runtime, `coop_cell_level_drop.py`, fix off) food 330 -> 0 in one AddFoodPoints kills the game in its first
+  tile pass: 0xC0000005 at 0x00E5FA50 (the write loop of 0xE5FA00, EDI at the stack top 0x0012FFF4, data
+  0x00130000; the symbolizer calls it ShouldCullCell+0x190), the process gone without a crash report. Both on a
+  guest that joins a host at food 0 (the host's total in one call, lab 20261112-194555) and in a game alone with no
+  session (`coop.pool food -330`, the game's own AddFoodPoints, lab 20261112-194555-2). So it is the game's own
+  bug; the game itself never lowers food by more than 50 (its debug keys), the mod's shared total does.
+* `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles): a pass whose active set would exceed 480
+  tiles is skipped (`tiles: pass skipped ...`, `coop.pool` `tilecap_skips=` / `tilecap_max=`); the scale settles
+  and the next pass runs.

@@ -2916,3 +2916,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run same_view_tribe --repeat 3`, compare the 01_view1 pairs.
 * Known: seen once; the other runs' views agree. Not checked whether it is an animation phase at the still's moment.
 * Ticket: BUG-0972
+
+## Cell: a guest at a high level dies when it joins a host world at a lower one (2026-11-12, crash: feat/lab-speed)
+<a id="issue-cell-join-lower-level"></a>
+
+* What happens: the guest's food drops from the level it had (327, level 4) to the host's (0) at the join, and the
+  next tile pass faults in `Simulator::Cell::ShouldCullCell+0x190` (0xC0000005 at 0x00E5FA50, from PopulateTiles);
+  the guest's game is gone without a crash report.
+* Reproduce: two games in the `cell` fixture, food raised to level 4 (cell_particles does this), then the host loads
+  the fixture again and the guest rejoins (the lab's warm reset). 27 more games lost in warm resets of the recorded
+  runs, 25 in Cell (mostly cell_coop), probably the same.
+* Ticket: BUG-0975
+* Fixed (unreleased, fix/w48-cellcull, 2026-11-12): the game's own bug (a game alone dies on the same fall), reached
+  only through the mod's shared food total. PopulateTiles writes its active set into a stack buffer of 511 without
+  a bound; after a fall of several levels the world scale is still the old one for ~3 s and the set has thousands
+  of tiles. Such a pass is skipped now (`cell.tile_cap`); test cell_level_drop. docs/re/cell.md#cell-level-fall.

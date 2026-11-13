@@ -2048,6 +2048,17 @@ static uint32_t g_nonfinite_sent_skipped, g_nonfinite_dropped;
 static bool g_fix_nan_guard = true;
 COOP_FIX("cell.nan_guard", "BUG-0299", g_fix_nan_guard, "cell: no tile populating while the own view is NaN, and the own cell goes back to its last finite position");
 static uint32_t g_nan_pop_skips, g_nan_heals;
+// BUG-0975: a fall of several levels at once (a guest at food 327 that joins a host at food 0, the host's
+// total taken in one AddFoodPoints) leaves the world scale G+0x514C at the old level's for ~3 s while
+// PopulateTiles builds the new level's active set from it: the lowest levels' tiles are tiny and the
+// game writes thousands of entries into its stack buffer of 511 (0xC0000005 at 0x00E5FA50, the process
+// gone without a crash report). Now a pass whose active set would not fit is skipped (the scale settles
+// in a few frames and the next pass runs). Old (`coop.fix cell.tile_cap off`): as before.
+static bool g_fix_tile_cap = true;
+COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while its active set would overflow the game's 511-tile buffer (a fall of several levels at once)");
+static uint32_t g_tilecap_skips;
+static double g_tilecap_max;
+static uintptr_t a_TileSizes;
 static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
 {
     return views::finite_pos(p) && std::isfinite(vx) && std::isfinite(vy) && std::isfinite(size) && std::fabs(vx) < 1e6f &&
@@ -2586,12 +2597,33 @@ static void feed_starved()
     }
 }
 
+// BUG-0975: the active set of this pass would not fit the game's buffer
+static bool tiles_overflow(int level)
+{
+    uint8_t* g = G();
+    uint8_t* s = S();
+    float* vb = view_boxes();
+    if (!g_fix_tile_cap || !g || !s || !vb || !a_TileSizes)
+        return false;
+    double n = cell_logic::active_tiles(level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), vb, (const float*)a_TileSizes, 16);
+    if (n <= cell_logic::kActiveTileCap)
+        return false;
+    if (g_tilecap_skips++ % 30 == 0)
+        trace::line("tiles", "pass skipped: its active set would be %.0f tiles (the game's buffer holds 511), level %d, food %d, "
+                             "world scale %.3f -> %.3f (BUG-0975, %u skipped)",
+                    n, level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), F<float>(g, 0x5150), g_tilecap_skips);
+    g_tilecap_max = std::max(g_tilecap_max, n);
+    return true;
+}
+
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 {
     if (view_bad()) { // BUG-0299: the active set from NaN boxes is garbage
         g_nan_pop_skips++;
         return;
     }
+    if (tiles_overflow(level))
+        return;
     float* vb = view_boxes();
     bool ours = g_fix_partner_tiles && vb && list && list == host_tiles() && is_host() && in_cell() && C.puppets;
     if (!ours) {
@@ -3352,6 +3384,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_PopTile = H->sym("Simulator::Cell::PopulateTile");
     a_TileActive = H->sym("Simulator::Cell::IsTileActive");
     a_ViewBoxes = H->sym("Simulator::Cell::ViewBoxes");
+    a_TileSizes = H->sym("Simulator::Cell::TileSizes"); // BUG-0975
     a_WorldScale = H->sym("Simulator::Cell::WorldScaleStep");
     a_PickTargets = H->sym("Simulator::Cell::PickTargets");
     g_ok = a_DamageCell && a_KillCell && a_Break && a_Destroy && a_AddFood && a_Populate && a_RefCreate &&
@@ -6535,17 +6568,17 @@ std::string status()
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size(), g_zaps, g_zap_hits,
                  g_product_hits, g_product_pairs, g_products_live, g_foreign_mirror, g_foreign_puppet, g_foreign_other);
-    char t[640];
+    char t[768];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u budget=%d starved=%u/%u fed=%u screen=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d nan_pop_skips=%u nan_heals=%u\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u budget=%d starved=%u/%u fed=%u screen=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d nan_pop_skips=%u nan_heals=%u tilecap_skips=%u tilecap_max=%.0f\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
              g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
              G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, (int)g_fix_budget, g_tiles_starved,
-             (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals);
+             (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals, g_tilecap_skips, g_tilecap_max);
     char j[96];
     snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
     char o[300]; // BUG-0632 / BUG-0636 (class BUG-0420), BUG-0635

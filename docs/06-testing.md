@@ -6727,3 +6727,13 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   still open at a window's end counts for overlaps (a mirror's hold inside it is no hold "of its own"). The change
   animation 0x02C39200 comes 0.5-1 times in 2 min: `--changes N` (sample until N such holds) needed more than 12 min
   for 5, so no suite entry uses it. The BUG-0962 cut is checked at < 1.0 s (0.25 s tick: up to 0.85 s by design).
+
+## Cell: a fall of several levels (2026-11-12, fix/w48-cellcull)
+<a id="testing-cell-level-drop"></a>
+
+* `coop_cell_level_drop.py` (suite `cell_level_drop`, Cell fixture, ~1.5 min): the guest leaves, goes to food 330
+  alone and joins the host (food 0) again; its game must live and take the host's food. `--case solo` (suite
+  `cell_level_drop_solo`, extended): the same fall in a game with no session. `SPORE_FIX_OFF=cell.tile_cap` fails
+  both (BUG-0975, docs/re/cell.md#cell-level-fall).
+* The lab's warm reset after a Cell test that ended at a higher level (cell_particles at food 300+) is exactly
+  this fall: before the fix it killed the guest and twoinst covered it with a cold start.
