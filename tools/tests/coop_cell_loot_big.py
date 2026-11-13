@@ -7,9 +7,9 @@ every cell it makes, recursion included, with no bound. The game's own tables ma
 a table (a mod's, or a repeat chain) that makes more than 256 wrote past the array on the stack.
 
 Two games in the Cell fixture. The host arms one drop of 300 cells (`coop.pool lootbig 300`: for that call
-the cell entry of the drop's own loot table makes 300 cells, the other entries weigh 0; the table is put
-back right after) and bites the nearest creature to death (the game's Bite: BreakOrSwallow, then the
-break's SpawnLoot). Checked: the game made and listed 300 cells (its count, `listed_last`), the host's
+the cell entry of the drop's loot table makes 300 cells, or its repeat entry repeats 300 times (the fixture's break
+table has one repeat entry: 2 cells a repeat, 600 in all), the other entries weigh 0; the table is put back right after) and bites the nearest creature to death (the game's Bite: BreakOrSwallow, then the
+break's SpawnLoot). Checked: the game made and listed at least 300 cells (its count of the armed drop, `listed_big`), the host's
 cell pool grew by them, and neither game faulted.
 
   coop_cell_loot_big.py   (SPORE_FIX_OFF=cell.loot_list: the stack list overflows, the host faults, it FAILS)
@@ -54,7 +54,7 @@ def main():
     if l1.get('armed', 0):
         print('RESULT: SKIP (no foreground loot drop with a cell entry came)')
         return 0
-    ck(l1.get('listed_last') == 300, f'the game made and listed one drop of 300 cells ({l1.get("listed_last")})')
+    ck(l1.get('listed_big', 0) >= 300, f'the game made and listed one drop of at least 300 cells ({l1.get("listed_big")})')
     ck(l1.get('cells', 0) - l0.get('cells', 0) >= 250, f'the host\'s cell pool grew by them ({l1.get("cells", 0) - l0.get("cells", 0)})')
     ck.faults(host=host, guest=guest)
     return ck.result()

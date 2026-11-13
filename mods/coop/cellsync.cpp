@@ -2948,6 +2948,7 @@ static bool g_fix_loot_list = true;
 COOP_FIX_UNSAFE("cell.loot_list", "BUG-1004", g_fix_loot_list, "cell: the host's list of a loot drop's new cells holds as many as the cell pool (4096), not 256 on the stack");
 static uint32_t g_loot_big_n;        // tests (BUG-1004): the next foreground loot drop makes this many cells of one entry
 static int g_loot_listed_last = -1;  // cells the last listed drop appended (the game's count)
+static int g_loot_listed_big = -1;   // tests: cells the armed drop appended
 static std::string g_loot_seen;      // tests: the entry types of the tables seen while armed
 static std::deque<std::pair<uint32_t, double>> g_loot_recent; // host: cells the last loot drops created
 static uint32_t pool_live()
@@ -3022,6 +3023,8 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
         --F<int>(holder, 0xC);
     if (mine)
         g_loot_listed_last = n;
+    if (mine && !saved.empty())
+        g_loot_listed_big = n;
     if (fg) {
         g_loot_calls++;
         uint32_t after = pool_live();
@@ -6548,8 +6551,8 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() > 1)
             g_loot_big_n = (uint32_t)std::clamp(atoi(a[1].c_str()), 0, 1000);
         char b[160];
-        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d pool=%u tables=", g_loot_big_n, g_loot_calls, g_loot_cells,
-                 g_loot_listed_last, pool_live());
+        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d listed_big=%d pool=%u tables=", g_loot_big_n, g_loot_calls,
+                 g_loot_cells, g_loot_listed_last, g_loot_listed_big, pool_live());
         return b + g_loot_seen + "\n";
     }
     if (a.size() >= 4 && a[0] == "sendhit" && is_guest()) { // tests (BUG-1008): `sendhit c<key> <dmg> <type>`: a MSG_CELL_HIT as it is
