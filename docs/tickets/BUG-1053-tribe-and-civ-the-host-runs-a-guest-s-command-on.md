@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w49-live
-commits: ba498632
+commits: ba498632, b46e8265
 tests: tribe_cmd_listed, civ_cmd_listed, play_tribe, play_civ
 signature: a member / vehicle order whose target is a destroyed object of the host's last table cycle
 docs: docs/re/tribe.md#tribe-cmd-listed, docs/re/civ.md#civ-cmd-listed, docs/06-testing.md#testing-same-pump-orders
