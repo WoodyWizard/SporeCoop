@@ -196,6 +196,9 @@ def to_galaxy(con, who, ck):
         time.sleep(1.5)
     print(f'  {who}: zoomed out with {n} x 5 notches')
     ok = wait(lambda: fin(con).get('ctx') == '2', 20)
+    if not ok:  # what held the wheel (BUG-1079): the finale state, the ship, its tools
+        print(f'  {who}: still not in the galaxy view: {fin(con).get("line", "")[:160]} | {sp(con, "hp")[:100]} | '
+              f'drive: {sp(con, "tool add interstellardrive")[:60]}', flush=True)
     ck(ok, f'{who}: zoomed out to the galaxy view')
     time.sleep(3)
     settle(con, who)  # the drive's first galaxy view shows a tutorial caption
