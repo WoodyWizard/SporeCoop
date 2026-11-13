@@ -7040,3 +7040,21 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * `space_owed_contracts_off` (BUG-1037, fixture space, ~2 min): `coop.settings force space.contracts off` (settings_lib),
   then the reward_away steps.
 * `space_give_pick` also checks the give row's layout (BUG-1062, layout_problems on Bob's window).
+
+## Net and validation of 0.7.14 N2: unit twins and one lab trio (2026-11-13, fix/w49-net)
+<a id="testing-n2-net"></a>
+
+* `net_tests` (fake transport, next to test_halfopen): `test_join_seen` (BUG-1001: two "Player" games with other
+  tokens, a crash rejoin by token, the limit with a silent same-name entry, no-token names), `test_replace_checked`,
+  `test_welcome_split` (BUG-1005: three guests with 24-emoji names and 255-byte versions over localhost),
+  `test_recv_skip_big` (BUG-1007: `BigNet`, a FakeNet that returns `Session::kRecvSkipped` for a datagram over the
+  buffer; and Discovery over a real socket with a 600-byte datagram first), `test_dbpf_flag4` (BUG-1012). Each fails
+  with `net_tests --off join_seen|replace_checked|welcome_split|recv_skip_big` (BUG-1012: `--nofix`).
+* `test_rejoin_same_endpoint` runs its rejoin for 2.6 s now: a rejoin through the same endpoint without a token
+  replaces the old entry after 2 s of its silence.
+* `validate_tests`: `test_space_dir` (the MSG_SPACE direction table; every `enum Kind` value of the ten space source
+  files must have a direction; it reads mods/coop/*.cpp, so it runs from the repository root as make test does),
+  `test_effect_xf` (BUG-1048). Both fail with `validate_tests --nofix`.
+* Lab `join_late_names` (coop_join_late_names.py, creature, 3 games: twoinst + coop_multi.start_extra): late join
+  off, an extra game joins with the guest's name Bob (refused), Bob leaves and comes back (admitted by its kept
+  token), late join on (the extra joins as "Bob 2"). `SPORE_FIX_OFF=net.join_seen` fails.

@@ -1,20 +1,21 @@
 ---
 id: BUG-1007
 title: Net: one datagram bigger than the read buffer (WSAEMSGSIZE) ends the socket reads of the frame in Session::update and the LAN discovery
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-4
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-net
+commits: 226988e3
+tests: unit (make test: net_tests test_recv_skip_big)
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-n2-join-input, docs/06-testing.md#testing-n2-net
 related:
+switch: net.recv_skip_big
 ---
 
 ## Report
@@ -45,11 +46,12 @@ host port before a burst of game packets (tools/tests helper with a raw UDP sock
 count in coop.net stats.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`UdpSocket::recv_from` returns -2 (`Session::kRecvSkipped`) for WSAEMSGSIZE on Windows / Wine and, in the native build, for a datagram longer than the buffer (recvfrom with MSG_TRUNC reports its real length), so the tests see what Windows does. `Session::update` and `Discovery::update` count it and go on to the next datagram (the 256 / 64 reads per frame still bound the loop); coop.status shows `datagrams skipped (too big): N`. Discovery's buffer is 2048 bytes (was 512, below the reply format's 526-byte maximum). Switch `coop.fix net.recv_skip_big off`: the loops stop at -2 as at -1 before, Discovery reads 512 bytes again.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* Unit (make test): net_tests `test_recv_skip_big`: (1) `BigNet` (a FakeNet whose recv_from returns kRecvSkipped for a datagram over the buffer, as UdpSocket does) with a 3000-byte datagram before a guest's HELLO in one frame; (2) Discovery over a real localhost socket with a 600-byte datagram before a valid reply. FAIL `net_tests --off recv_skip_big` (the HELLO not read in that frame, the reply not found: out/n2-unit/net_off_recv_skip_big.txt in the fix/w49-net worktree), PASS in make test twice (out/n2-unit/net_pass_1.txt, net_pass_2.txt).
+* Not checked: that Wine maps a cut UDP datagram to WSAEMSGSIZE (inferred); the native path is covered by MSG_TRUNC.
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-net (0.7.14 N2): an oversized datagram is skipped, the reads go on; discovery buffer 2048; FAIL/PASS unit runs.

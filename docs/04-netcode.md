@@ -386,3 +386,38 @@ switch off (`net_tests --off <name>`, and with `--nofix`).
   running), a pending leave and its cb.disconnected of the old session are dropped (logged), and a generation counter
   (`gen_`, bumped by host, join and every end of a session) stops the rest of that packet and that frame's update
   for the old session. A plain `leave()` in a callback is deferred as before.
+
+## Join rules and input checks of 0.7.14 N2 (2026-11-13, fix/w49-net)
+<a id="netcode-n2-join-input"></a>
+
+* **Coming back after the start** (BUG-1001, `net.join_seen`; the owner's rule, plan 0.7.14 decision 7): with
+  all.late_join off (`Session::join_closed`) the host admits after the start only a player it had admitted before.
+  With the rejoin token rule on (the default) and a token in the HELLO: only by that token (`seen_tokens_`, every token
+  admitted since `host()`, and no live entry holds it now); a crash rejoin replaces its silent entry by token as before
+  (BUG-0235). Without a token (an older SporeCoop, or `net.rejoin_token` off): by the HELLO name, only when nobody of
+  that name is in the session and the name dropped within `kRejoinNameMs` (10 min). A name alone never passes, and
+  the player limit counts every live entry (a silent one of the same name only when the name rule of
+  `net.rejoin_token off` retires it in the same HELLO). Names are compared in one form: `Peer::hello_name`, the cleaned
+  HELLO name before " 2" / "guest<id>".
+* **The token on a leave** (BUG-1001): `rejoin::clear(true)` on a leave and on a lost session keeps the token in
+  memory for the same host address string and the same name (up to 8 such pairs; never in the file, never sent to
+  another host or under another name), so a player who left comes back as itself while late join is off. Another name
+  from the same game is a new player. Before, every leave emptied the token (BUG-0235) and the name rule let anybody
+  of that name back.
+* **A rejoin through the same address and port without a token** waits until the old connection has been silent for
+  2 s (about 2 s longer than before; the joining game sends its HELLO again).
+* **A WELCOME over one packet** (BUG-1005, `net.welcome_split`): a joining guest whose HELLO announced CAP_SPLIT joins
+  the pieces of the host's reply (`peer_split` set in `start_hello`, the WELCOME then sets the host's real caps).
+  Reachable with long names (24 emoji are 96 bytes) and long version texts (255 bytes each) in a 4-player roster
+  (about 1430 bytes against the 1163-byte piece). An older host never splits.
+* **A datagram too big for the buffer** (BUG-1007, `net.recv_skip_big`): `UdpSocket::recv_from` returns -2
+  (`Session::kRecvSkipped`) for WSAEMSGSIZE (Windows / Wine) and, natively, for a datagram cut by MSG_TRUNC; the read
+  loops of `Session::update` and `Discovery::update` go on to the next datagram (`datagrams skipped` in coop.status).
+  The discovery buffer is 2048 bytes (was 512, the reply format's maximum is 526). Under Wine the WSAEMSGSIZE mapping
+  is inferred, not checked.
+* **DBPF index flag 4** (BUG-1012, `net.dbbf_bounds`, unit only): the skipped field must lie inside the index.
+* **MSG_SPACE directions** (`space.dir_table`): `net::space_dir` (net/validate.h) is the one table of every MSG_SPACE
+  kind's direction (Host, Guest, Any), used by `space_origin_ok`. A new kind goes into the table: validate_tests reads
+  every `enum Kind` of the space sources and fails for a kind without a direction.
+* **World effect scale** (BUG-1048, `effects.scale_check`): a received pool-5 effect needs 0 < scale <= 1000 (the
+  sender's range, `copy_transform`), `net::effect_xf_ok`.

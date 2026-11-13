@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- Joining: with "joining after the start" off, a new player whose name was already used in the session (two
+  friends both called "Player") is refused now, and a player who left comes back as itself; a player with the name
+  of a loading player no longer joins over the player limit (BUG-1001).
+- Joining: a joining guest gets in when the host's reply is longer than one packet (long names and versions in a
+  4-player session) (BUG-1005).
+- Network: one oversized datagram no longer stops the other packets of that frame from being read, in the session
+  and in the LAN game list (BUG-1007).
+- Network hardening: more checks on data received from other machines (BUG-1003, BUG-1012, BUG-1041, BUG-1048).
 - Tribe, Civilization: a guest's order on a tribe member or vehicle that had just been removed in the host's game (it
   fell, was disbanded) no longer goes to the removed object in the host's game (BUG-1053).
 - Creature: a guest's social click right after a creature change no longer starts the social game with the wrong
