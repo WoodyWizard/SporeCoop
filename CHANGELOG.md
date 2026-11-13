@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- One fault inside a game call that the game survives no longer switches a co-op feature off for the rest of the
+  session: Space diplomacy, ship hits, terraforming, a guest's mirror sounds, Civ changes, Cell and Tribe relays and
+  others now work again on the next frame (BUG-1047).
 - Tribe: a village that only guests raided (or befriended with gifts) now counts for the stage's goal; before, it
   fell without moving the goal bar, so the Tribe stage could not end by the guests' conquests (BUG-1068).
 - Tribe: the guest's copy of a chief holds its staff like the host's chief also in a gesture that began before the

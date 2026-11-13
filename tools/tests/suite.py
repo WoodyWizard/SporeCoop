@@ -770,6 +770,7 @@ add('space_terra_far', P + 'coop_space_terra_far.py', minutes=3, fixture='space'
 add('space_give_pick', P + 'coop_space_give_pick.py', ('multi', 'extended'), minutes=5)  # three players in Space: ">" picks Carol, "Give 10 to Carol" puts the spice into Carol's game, not Alice's (BUG-1050; SPORE_FIX_OFF=space.give_pick fails)
 add('space_finale_death', P + 'coop_space_finale_death.py', minutes=4, fixture='space_free')  # tests (BUG-0991): the finale bot confirms the death caption of a destroyed ship and zooms out (OLD_FINALE_DEATH=1 fails)
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
+add('call_guard', P + 'coop_call_guard.py', minutes=4)  # BUG-1047: a module's call guard left set by a caught fault (space_diplomacy's replay cut short) does not switch its relay off: the guest's first contact reaches the host (SPORE_FIX_OFF=core.call_guard_reset fails)
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (SPORE_FIX_OFF=game.ufo_model fails)
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
 add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)

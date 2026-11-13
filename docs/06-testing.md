@@ -7203,3 +7203,20 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * Pitfall: the host's own `coop.tribe order` and `act_obj` do not make the mission either (the game's
   SetTargetTribe is in DoActionGeneric 0xCD0C20, before DoActionForAllSelected): a test of the goal bar driven by
   those commands on the host counts nothing, with or without the fix.
+
+## Call guards of the modules (2026-11-13, fix/w49-guard)
+<a id="testing-call-guards"></a>
+
+* `mods/coop/call_guard.h` (BUG-1047): every module's re-entrancy guard around its own game calls (`g_applying`,
+  `g_playing`, `g_in_relay`, the hooks' depth counters, ...) is registered (`CALL_GUARD` / `CALL_GUARD_DEPTH`) and
+  held with `callguard::Hold` / `callguard::Depth`, never with a bare `flag = true; call; flag = false;`. The frame's
+  swap guard tick (game.cpp `reset_call_guards`, BUG-0882) clears every registered guard still set. Do not register
+  a guard that is meant to stay set across frames, a thread_local one or one of another thread.
+* `coop.guard`: every registered guard with `set=` and `cleared=` (how often the frame reset found it set), `last=`
+  the names of the last reset that cleared anything. `coop.guard unwind <name> [n]`: the next n holds of that guard
+  end as a fault the game caught ends them (the guard stays set); `coop.guard stick <name>`: set it now.
+* `coop_call_guard.py` (suite `call_guard`, space_empire fixture, ~4 min): the guest's replay of the host's gift is cut
+  short (`unwind space_diplomacy.applying`), then the guest's own game makes first contact with an empire nobody has
+  met (a jump to its home star); the host's game must have met it too (its relation flags). Twin:
+  `SPORE_FIX_OFF=core.call_guard_reset` (the guard stays set, the contact is never sent).
+* Unit test: `test_call_guard` in tests/npc_tests.cpp (holds, unwind, reset, the switch off).
