@@ -5671,7 +5671,7 @@ std::string debug(const std::vector<std::string>& a)
         auto mi = g_hm_by_id.find(mid);
         void* mc = mi == g_hm_by_id.end() ? nullptr : mi->second;
         char b[480];
-        snprintf(b, sizeof b, "guestcmd: target #%u %p in_table=%d listed=%d done=%u rejected=%u | %s | member: ", tid, tc,
+        snprintf(b, sizeof b, "guestcmd: target #%u %p in_table=%d listed=%d ran=%u refused=%u | %s | member: ", tid, tc,
                  (int)(tc != nullptr), (int)(tc && game::listed(tc, 0x18EB4B7u)), g_cmds_done - d0, g_cmds_rejected - r0,
                  g_last_cmd.c_str());
         return std::string(b) + (mc && game::listed(mc, 0x18EB4B7u) ? ai_line(mc) : std::string("gone"));

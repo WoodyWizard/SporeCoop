@@ -77,7 +77,7 @@ Tests tribe_cmd_listed (tools/tests/coop_tribe_cmd_listed.py, tribe fixture) and
 the ordered member's / vehicle's own order record in the host's game must not name the destroyed block.
 FAIL (SPORE_FIX_OFF=tribe.cmd_listed): out/lab/20261113-022421 (3 of 3 rounds: `rec=7 target=<the dropped citizen>`).
 FAIL (SPORE_FIX_OFF=civ.cmd_listed): out/lab/20261113-022453 (3 of 3 rounds: the order's target is the removed vehicle).
-PASS: out/lab/20261113-022545, out/lab/20261113-023224-2 (tribe); out/lab/20261113-022656, out/lab/20261113-023224 (civ).
+PASS: out/lab/20261113-022545, out/lab/20261113-023224-2, out/lab/20261113-024715 (tribe); out/lab/20261113-022656, out/lab/20261113-023224, out/lab/20261113-024715-2 (civ, the last runs after the status keys were renamed for test_lint).
 
 ## History
 - 2026-11-13: opened.

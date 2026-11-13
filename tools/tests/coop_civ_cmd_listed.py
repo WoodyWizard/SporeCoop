@@ -89,14 +89,14 @@ def main():
             th.start()
         for th in ths:
             th.join()
-        mc = re.search(r'guestcmd: target (\S+) in_table=(\d) listed=(\d) done=(\d+) rejected=(\d+)', out.get('cmd', ''))
+        mc = re.search(r'guestcmd: target (\S+) in_table=(\d) listed=(\d) ran=(\d+) refused=(\d+)', out.get('cmd', ''))
         mo = re.search(r'order target=(\S+) type=(-?\d+)', out.get('cmd', ''))
         print(f'  round: T=#{t} {tp:08X} V=#{v} | {out.get("rm")} | {out.get("cmd")}', flush=True)
         if out.get('rm') == 'removed' and mc and mc.group(2) == '1' and mc.group(3) == '0':
             counted += 1
             got = hexptr(mo.group(1)) if mo else 0
             if tp and got == tp:
-                bad.append(f'#{v} ordered onto the removed #{t} ({mo.group(1)}, done={mc.group(4)})')
+                bad.append(f'#{v} ordered onto the removed #{t} ({mo.group(1)}, ran={mc.group(4)})')
         else:
             print('  (not counted: the order did not come between the removal and the next table cycle)', flush=True)
         time.sleep(3)

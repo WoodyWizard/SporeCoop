@@ -85,7 +85,7 @@ def main():
         for th in ths:
             th.join()
         md = re.search(r'dropped member #\d+ (\S+)', out.get('drop', ''))
-        mc = re.search(r'in_table=(\d) listed=(\d) done=(\d+) rejected=(\d+)', out.get('cmd', ''))
+        mc = re.search(r'in_table=(\d) listed=(\d) ran=(\d+) refused=(\d+)', out.get('cmd', ''))
         mt = re.search(r'member: rec=(-?\d+) target=(\S+)', out.get('cmd', ''))
         print(f'  round: T=#{t} M=#{m} | {out.get("drop")} | {out.get("cmd")}', flush=True)
         stale = bool(md and mc and mc.group(1) == '1' and mc.group(2) == '0')
@@ -94,7 +94,7 @@ def main():
             tp = hexptr(md.group(1))
             got = hexptr(mt.group(2)) if mt else 0
             if tp and got == tp:
-                bad.append(f'#{m} ordered onto the dropped #{t} ({mt.group(2)}, done={mc.group(3)})')
+                bad.append(f'#{m} ordered onto the dropped #{t} ({mt.group(2)}, ran={mc.group(3)})')
         else:
             print('  (not counted: the order did not come between the drop and the next table cycle)', flush=True)
         time.sleep(3)

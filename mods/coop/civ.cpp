@@ -5670,7 +5670,7 @@ std::string debug(const std::vector<std::string>& a)
             }
         }
         char b[240];
-        snprintf(b, sizeof b, "guestcmd: target %p in_table=%d listed=%d done=%u rejected=%u gone=%u | vehicle #%u %p order target=%p type=%d",
+        snprintf(b, sizeof b, "guestcmd: target %p in_table=%d listed=%d ran=%u refused=%u gone_now=%u | vehicle #%u %p order target=%p type=%d",
                  tp, (int)(tp != nullptr), (int)(tp && game::listed(tp)), g_cmds_done - d0, g_cmds_rejected - r0, g_cmd_gone - g0,
                  (unsigned)vid, v, ot, otype);
         return b;
