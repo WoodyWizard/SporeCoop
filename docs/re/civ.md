@@ -1745,3 +1745,20 @@ BUG-0982. GOG 2024, Ghidra + runtime (lane 4, civ_npc).
   message once (the same data pointer reaches every city's listener), sets its copy, resumes the pause and sends
   kind 8 (city, take, type) back; the host's game calls SetSpecialty when the guest took the new one. civ_buy_city:
   question on the guest only, Economic taken, specialty 2 in both games (`coop.civ` city lines print `spec=`).
+
+## The game's empty herds in a Civ save (2026-11-13, fix/w49-tests)
+<a id="civ-save-herds"></a>
+
+BUG-1067. GOG 2024, lane 5, civ fixture (Arigine), host + guest.
+* ✔ (runtime) The host's Civ world: 82 herds (noun 0x1BE418E), 78 without an archetype (+0x88 = 0) and a nest, 71 of
+  those empty, 25 members in all (`coop.npc archless all`); many have their home at (0 0 0). The guest's game: 90 / 86 /
+  79. Wild creatures out of the camera's relevance are pooled and leave their herd empty (#civ-wild-sync), so most of
+  the game's Civ herds are empty at any time.
+* ✔ (runtime) Such a herd looks exactly like a herd the mod makes for a puppet or a proxy (CreateHerd(.., 0, 0, 0, 0)):
+  savestrip's empty-herd rule of BUG-0255 left 72 of them out of the host's own save. After loading that save the game
+  has 82 herds again (it makes the missing ones at load), but 52 of the 72 were not back at their home (the same
+  species within 2 m): the herds' homes moved. No fault in 20 s after the load.
+* Fix `savestrip.our_herds`: the mod's herds are known by their serial (`game::our_herd`, cGameData::mID +0x24), only
+  those are stripped when empty.
+* ? Not checked: what a moved herd home changes in play (where the wild creatures roam, their nests); a guest's save
+  behaves the same (its 77 stripped in civ_save_strip, BUG-0973).
