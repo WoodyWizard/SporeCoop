@@ -255,3 +255,5 @@ SporeCoop::GameCiv_CaptureNeedsSpecialty ; BUG-0982: civ.specialty_buyer: the sp
 SporeCoop::cCity_MessageListener ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
 SporeCoop::cCity_SetSpecialty ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
 SporeCoop::cCity_ShowSpecialtyBox ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::DramaEvent_GetObject ; BUG-1078: tribe.attack_target: a creature attack on a removed village is not held back (old behaviour)
+SporeCoop::DramaEvent_SetObject ; BUG-1078: tribe.attack_target: a creature attack on a removed village is not held back (old behaviour)

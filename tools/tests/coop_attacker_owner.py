@@ -22,12 +22,13 @@ import os
 import re
 import time
 
+import lane
 from twoinst import Checks, start
 
 
 def log_size(con):
     try:
-        return os.path.getsize(con.game_log())
+        return os.path.getsize(lane.game_log(con.port - 47799))
     except OSError:
         return 0
 
@@ -35,7 +36,7 @@ def log_size(con):
 def hit_lines(con, since):
     """the monitor's damage lines of the host's game log since the byte offset `since`"""
     try:
-        with open(con.game_log(), 'rb') as f:
+        with open(lane.game_log(con.port - 47799), 'rb') as f:
             f.seek(since)
             text = f.read().decode('utf-8', 'replace')
     except OSError:
