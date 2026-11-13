@@ -1,20 +1,21 @@
 ---
 id: BUG-1015
 title: Update: a click on Update right after the check ends is ignored (g_busy still set), and Try again shows the last download's progress
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-11
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: menu_diag
 signature:
-docs: docs/known-issues.md#issue-update-retry-progress
+docs: docs/known-issues.md#issue-update-retry-progress, docs/06-testing.md#testing-p2-ui
 related:
+switch: core.update_busy
 ---
 
 ## Report
@@ -40,11 +41,19 @@ repeated: main sometimes stays Available (FAIL, flaky by nature); a failing firs
 ui line after the retry must show 0 % (FAIL on main).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+autoupdate.cpp: set_final() sets a thread's last state and clears g_busy under g_mu together; end_thread no
+longer clears g_busy (a new thread may own it already); apply_work resets g_got / g_total before Downloading. Test seams
+`coop.update url <u>`, `testdelay <ms>` (a thread waits after its final state: the old window widened), `applydelay
+<ms>`; `coop.update` prints busy= and the window's line while downloading. Switch `coop.fix core.update_busy off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_menu_diag.py: a local server offers the next version with a pack that is not one. (a) apply within the
+check thread's 3 s after "available"; (b) after the failure, Try again with the download held 3 s: the line must start
+at 0.
+* FAIL (SPORE_FIX_OFF=core.update_busy): out/lab/20261113-032710 (a: stayed "available"; b: "Downloading ... 100 %");
+  out/lab/20261113-032307-2 (a; b failed for a's reason, the test then waited for the thread: 66f43dd7)
+* PASS: out/lab/20261113-032115, out/lab/20261113-032833 ("0 KB")
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

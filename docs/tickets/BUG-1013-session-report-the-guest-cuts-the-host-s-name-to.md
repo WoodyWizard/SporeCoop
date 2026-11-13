@@ -1,20 +1,21 @@
 ---
 id: BUG-1013
 title: Session report: the guest cuts the host's name to 40 bytes, a non-Latin host name ends in a broken character in the feed and the window
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-9
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: text_lines
 signature:
-docs: docs/known-issues.md#issue-sreport-host-cut
+docs: docs/known-issues.md#issue-sreport-host-cut, docs/06-testing.md#testing-p2-ui
 related:
+switch: core.sreport_host_cut
 ---
 
 ## Report
@@ -36,11 +37,16 @@ characters (coop.name), assert the guest's window line (coop.sreport status / th
 with the whole name: FAIL on main, PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sreport.cpp: the host name of an Ask goes through utf8::net_name (whole characters, 24 code points, clean UTF-8)
+instead of substr(0, 40). Test seam `coop.sreport askname <name>|-` (the host name the next Asks carry). Switch
+`coop.fix core.sreport_host_cut off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_text_lines.py (suite `text_lines`): a host name of 14 CJK characters (42 bytes); the guest's guestline must
+start with the whole name, no U+FFFD.
+* FAIL (SPORE_FIX_OFF=...,core.sreport_host_cut,...): out/lab/20261113-032307 ('...練習<U+FFFD> (host) asks')
+* PASS: out/lab/20261113-032115-2, out/lab/20261113-032426
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

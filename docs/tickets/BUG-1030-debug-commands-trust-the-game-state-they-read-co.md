@@ -1,20 +1,21 @@
 ---
 id: BUG-1030
 title: Debug commands trust the game state they read: coop.abilities lift at r 0, unchecked symbols and pointers in coop.cell / cam / w2s / dna / savedb / loadhook / test_view, terrain reapply entries
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-24
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: make test (re_lint; no-fail-run)
 signature:
 docs:
 related:
+switch: none (debug commands)
 ---
 
 ## Report
@@ -49,11 +50,18 @@ No twoinst test can show a player effect. `no-fail-run: debug commands, hardenin
 command with bad input in tools/tests/coop_ui_bad_arg.py style (lift on a stubbed zero position is not reachable).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+debug.cpp: need_syms() checks the symbols before c_cell (CreateCellObject), c_cam, c_w2s (also a null mode
+manager / viewer), c_dna add / gain, c_savedb and c_loadhook call them; `coop.abilities lift` refuses a position at the
+planet's centre (r < 1e-3, a division by 0); test_view.cpp `coop.view set` checks its four viewer symbols before it
+hooks; terrain_diag.cpp `reapply` checks the whole range of entries it reads (skg::readable). Not bugs (the audit was
+wrong, see Root cause): h_Relevance, coop.ui align/area/caption (BUG-0812), c_sample. c_loadworld is left to the K2
+package (its thread flag, BUG-1018 family). No switch: debug and test commands only.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* no-fail-run: debug and test commands, hardening only; the unchecked symbols are unreachable on the supported
+  build (re_lint fails the build when a name is missing) and lift at r 0 needs a position at the planet's centre.
+  make test (re_lint) passes; the commands still answer in the lab tests that use them.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

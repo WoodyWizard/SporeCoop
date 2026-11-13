@@ -1,20 +1,21 @@
 ---
 id: BUG-1027
 title: UI: a co-op text line typed under the game's input lock counts UTF-8 bytes against the character limit, takes DEL and breaks surrogate pairs
-status: open
+status: fixed
 kind: bug
 stage: UI
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-21
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: text_lines, tests/text_tests.cpp
 signature:
-docs: docs/known-issues.md#issue-locked-edit-utf8
+docs: docs/known-issues.md#issue-locked-edit-utf8, docs/06-testing.md#testing-p2-ui
 related:
+switch: core.ui_locked_edit_utf16
 ---
 
 ## Report
@@ -43,11 +44,17 @@ surrogate pair) into the chat line; assert the game's edit text has all 30 lette
 FAIL on main (cut, U+FFFD), PASS with the fix. A name variant: 20 Cyrillic letters into the name line, all kept.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+New portable mods/coop/typed_text.h: apply() works on the UTF-16 text (the edit's limit is in UTF-16 units),
+drops controls and DEL, takes a surrogate pair whole (or not at all at the limit), Backspace removes a whole pair;
+coop_ui.cpp locked_edit_apply calls it. apply_old() is the 0.7.13 code. Switch `coop.fix core.ui_locked_edit_utf16 off`
+(text_tests --old).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_text_lines.py: 70 Cyrillic letters, DEL and an emoji typed under CRG_ClaimNest's input lock; the game's
+text field must hold exactly the 70 letters and the emoji. tests/text_tests.cpp test_locked_typing (`--old` fails 4 checks).
+* FAIL (SPORE_FIX_OFF=core.ui_locked_edit_utf16,...): out/lab/20261113-032307 (60 letters, no emoji, DEL in the text)
+* PASS: out/lab/20261113-032115-2, out/lab/20261113-032426
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

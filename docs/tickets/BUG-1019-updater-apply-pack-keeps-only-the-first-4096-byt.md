@@ -1,20 +1,21 @@
 ---
 id: BUG-1019
 title: Updater: apply_pack keeps only the first 4096 bytes of an existing sporecoop.pending list
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-13
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: win_unit, tests/win_tests.cpp
 signature:
-docs:
+docs: docs/06-testing.md#testing-p2-ui
 related:
+switch: update.pending_whole
 ---
 
 ## Report
@@ -41,11 +42,16 @@ lines, run an update that defers a file, assert every old line and the new one a
 list is cut at 4096), PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+updater/winupdate.cpp apply_pack: the existing sporecoop.pending is read whole (GetFileSizeEx, up to 1 MB as
+pending.h), ended by a newline, and a deferred file already listed is not added again. Portable switch
+`update.pending_whole` (fix_table.cpp; win_tests --old-pending).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tests/win_tests.cpp test_pending_long (win_unit): a 4778-byte list of 100 lines, coop.dll held by the "game":
+every old line kept whole, coop.dll listed once.
+* FAIL (SPORE_FIX_OFF=update.pending_whole): out/lab/20261113-032424 (win_tests.cpp:288, :289)
+* PASS: out/lab/20261113-032115, out/lab/20261113-032833
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

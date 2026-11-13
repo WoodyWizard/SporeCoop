@@ -1,20 +1,21 @@
 ---
 id: BUG-1011
 title: diag: coop-last-session.txt is opened with fopen on a UTF-8 path, lost when the game folder has non-ASCII letters (Windows)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-7
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: menu_diag
 signature:
-docs: docs/known-issues.md#issue-summary-non-ascii-path
+docs: docs/known-issues.md#issue-summary-non-ascii-path, docs/06-testing.md#testing-p2-ui
 related:
+switch: diag.summary_wide
 ---
 
 ## Report
@@ -39,11 +40,16 @@ session, assert coop-last-session.txt exists: FAIL on main, PASS with the fix. O
 the lane path cannot be made.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+diag_stats.cpp: the summary file is opened through summary_open(): _wfopen with the UTF-8 path widened
+(MultiByteToWideChar CP_UTF8), as sreport.cpp. Test seams `coop.diag summarysub <folder>|-` (the file into a sub folder
+of mods\logs) and `coop.diag summarywrite` (write and read back now). Switch `coop.fix diag.summary_wide off` (fopen).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_menu_diag.py (suite `menu_diag`): the summary into mods\logs\Тест, the file must be on disk and read back.
+Under Wine (ACP 1252) fopen with the UTF-8 path wrote nothing: the bug reproduces without a non-ASCII lane.
+* FAIL (SPORE_FIX_OFF=diag.summary_wide): out/lab/20261113-032307-2, out/lab/20261113-032710 ("read back 0 bytes", no file)
+* PASS: out/lab/20261113-032115, out/lab/20261113-032833
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

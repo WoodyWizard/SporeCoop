@@ -1,20 +1,21 @@
 ---
 id: BUG-1063
 title: UI: in Space the player list says 'other world' for a partner at another star, or for everyone while the own ship is in the galaxy view or respawning
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-13
 source: fix/w49-space (S1) observation, checked by code on fix/w49-space2
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: space_other_world
 signature:
-docs:
+docs: docs/06-testing.md#testing-p2-ui
 related:
+switch: core.ui_other_world
 ---
 
 ## Report
@@ -39,11 +40,17 @@ In Space say where the partner is ("Space, other star" / nothing while the own p
 stars, `coop.uistate` player rows; galaxy view of the guest.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop.cpp other_world_label() for the co-op window's rows (ui_players) and the status block: outside Space as
+before (!same_place); in Space "other world" only for the host's row on a guest that plays another Space save
+(guest_space_other, BUG-0709 / BUG-0933); the host and guest-to-guest rows say nothing there (the save of another
+guest is not known). Switch `coop.fix core.ui_other_world off` (!same_place in Space, 0.7.13).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_space_other_world.py (suite `space_other_world`): both co-op windows' rows at the home star and with the
+guest in the galaxy view (its place 0).
+* FAIL (SPORE_FIX_OFF=core.ui_other_world): out/lab/20261113-032606 (both rows "Space, other world" in the galaxy view)
+* PASS: out/lab/20261113-032515, out/lab/20261113-032833 (screenshot: "Space" on both rows)
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

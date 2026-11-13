@@ -1,20 +1,21 @@
 ---
 id: BUG-1014
 title: tests: sreport status never says round=writing (start_write moves g_round out before g_writing is set)
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-10
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: text_lines
 signature:
-docs:
+docs: docs/06-testing.md#testing-p2-ui
 related:
+switch: core.sreport_writing
 ---
 
 ## Report
@@ -36,11 +37,17 @@ coop_session_report.py: poll the status right after the last answer arrives with
 hook): expect round=writing once: FAIL on main, PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sreport.cpp status(): `g_writing ? "writing" : g_round ? "asking" : "none"`. coop_session_report.py and
+coop_sreport_leave.py wait for round=none and are not affected. `coop.sreport writedelay <ms>` now also waits once
+before the first byte (a zip under 1 MB waited nothing). Switch `coop.fix core.sreport_writing off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_text_lines.py: the guest sends its report, the host writes with writedelay 3000; the polled status must say
+round=writing once.
+* FAIL (SPORE_FIX_OFF=...,core.sreport_writing): out/lab/20261113-032307 (seen: asking, none)
+* PASS: out/lab/20261113-032115-2, out/lab/20261113-032426 (seen: asking, writing); sreport_leave (writedelay's
+  users): see History
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

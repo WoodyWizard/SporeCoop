@@ -1,20 +1,21 @@
 ---
 id: BUG-1025
 title: UI: windows the mod made (toast panels and labels, the rebuilt co-op window, the menu button) keep the mod's reference for good
-status: open
+status: fixed
 kind: bug
 stage: UI
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-9
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: menu_diag
 signature:
-docs:
+docs: docs/08-ui.md#ui-window-refs
 related:
+switch: core.ui_release
 ---
 
 ## Report
@@ -53,11 +54,20 @@ UTFWin window count (coop.ui tree all | wc); assert the window count returns to 
 expire. FAIL on main (count grows by ~2-3 per toast), PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Measured first (docs/08-ui.md#ui-window-refs): a created window starts at 0 references, so the mod's own is the
+last one of a window it took out. notify.cpp keeps a panel's labels and gives their references back before the panel
+is taken out (the panel, held only by the main window, then frees them); sui::add_handler gives the proc's creation
+reference back once the window holds its own; the menu icon's GetImage reference and the menu's version label are
+released; a UILayout object of a failed load is reused (it is calloc'd). Not changed on purpose: the main menu item and
+the pause menu button (BUG-0163: the galaxy menu is freed by the game; the keep-alive stays), the dialog of an older
+image after a hot reload (developer path). Switch `coop.fix core.ui_release off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_menu_diag.py: 12 notifications come and go, then 60 more; the game's own reference counts read while the
+windows are alive (`coop.notify`: panel_refs 1, every label freed), no fault.
+* FAIL (SPORE_FIX_OFF=core.ui_release): out/lab/20261113-032307-2, out/lab/20261113-032710 (labels kept 13 of 13)
+* PASS: out/lab/20261113-032115, out/lab/20261113-032833 (80 panels, 80 labels freed, 0 kept, no fault)
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).

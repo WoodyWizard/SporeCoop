@@ -3228,6 +3228,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: Spore in a folder with a Cyrillic or CJK name on Windows; end a co-op session; the file is absent.
 * Known: diag_stats.cpp calls fopen on a UTF-8 path (observed in code).
 * Ticket: BUG-1011
+* Fixed (unreleased, fix/w49-ui, 2026-11-13): `diag.summary_wide`; FAIL lab 20261113-032710, PASS 20261113-032833.
 
 ## Session report: a long non-Latin host name ends in a broken character in the guest's report question (2026-11-13, audit 0.7.14)
 <a id="issue-sreport-host-cut"></a>
@@ -3237,6 +3238,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: a host named with 14 CJK characters, a session report round (not run).
 * Known: sreport.cpp calls substr(0, 40) on the UTF-8 name (observed in code).
 * Ticket: BUG-1013
+* Fixed (unreleased, fix/w49-ui, 2026-11-13): `core.sreport_host_cut`; FAIL lab 20261113-032307, PASS 20261113-032426.
 
 ## Update: Try again shows the last download's progress for a moment (2026-11-13, audit 0.7.14)
 <a id="issue-update-retry-progress"></a>
@@ -3246,6 +3248,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: a failing update download, then Try again (not run).
 * Known: autoupdate.cpp never resets g_got / g_total (observed in code).
 * Ticket: BUG-1015
+* Fixed (unreleased, fix/w49-ui, 2026-11-13): `core.update_busy`; FAIL lab 20261113-032710, PASS 20261113-032833.
 
 ## UI: text typed into the co-op window under a caption or the game saved box stops at half its length (2026-11-13, audit 0.7.14)
 <a id="issue-locked-edit-utf8"></a>
@@ -3257,6 +3260,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: locked_edit_apply (coop_ui.cpp) counts UTF-8 bytes against the UTF-16 limit and encodes each UTF-16 unit
   on its own (by code, not seen at runtime).
 * Ticket: BUG-1027
+* Fixed (unreleased, fix/w49-ui, 2026-11-13): `core.ui_locked_edit_utf16`; FAIL lab 20261113-032307, PASS 20261113-032426.
 
 ## All stages: after a caught fault inside the game's Present the co-op stops while the game draws on (2026-11-13, audit 0.7.14)
 <a id="issue-present-depth-stuck"></a>

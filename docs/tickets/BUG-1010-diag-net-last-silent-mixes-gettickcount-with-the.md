@@ -1,20 +1,21 @@
 ---
 id: BUG-1010
 title: diag: net last_silent mixes GetTickCount with the steady_clock connection time, the leave lines print a garbage last heard value
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-6
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-ui
+commits: 8bc5ebf9, 66f43dd7
+tests: make test (no lab test: no-fail-run)
 signature:
 docs:
 related:
+switch: diag.silent_clock
 ---
 
 ## Report
@@ -36,11 +37,15 @@ Any twoinst test that ends a session with a timeout (coop_rejoin_net.py drops th
 value in the host's sporekit.log is within 0..timeout_ms+1000: FAIL on main (a huge or wrapped number), PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+diag_stats.cpp net_second: `nowms = net::now_ms()` (the clock of Connection::last_recv_ms, the Session's own when it
+has no test seam) instead of GetTickCount. Switch `coop.fix diag.silent_clock off` (GetTickCount, 0.7.13).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* no-fail-run: not reproducible under Wine: GetTickCount and libc++'s steady_clock (QueryPerformanceCounter) both
+  count from the same boot clock there, so the difference is a few ms. Seen in the main checkout's lab logs: every
+  "last heard N ms" of out/lab/20261103-012624 is 14..877 ms (plausible values). On Windows QPC and the tick count
+  are separate clocks with their own drift and resolution; the fix takes both values from one clock (code review).
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).
