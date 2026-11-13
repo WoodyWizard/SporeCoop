@@ -3102,6 +3102,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 ## Creature, Tribe: a fight sound or effect can keep playing on a guest's copy of a host creature (2026-11-13, audit 0.7.14)
 <a id="issue-mirror-fx-keys"></a>
 
+* Fixed (unreleased, fix/w49-life, BUG-1049): the table ends with the session and the world, and a full table
+  stops its oldest effect on the guest (`mirror.fx_keys`).
 * What happens: the host's list of effects it relayed a start for is never cleared. When it fills (256), the stop
   of one effect is no longer sent, and that effect keeps running on the guest's copy.
 * Reproduce: not seen; long Creature or Tribe sessions with many fights.
@@ -3121,6 +3123,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 ## Tribe: after joining another (or a restarted) host the guest sees no Tribe updates (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-cycle-not-reset"></a>
 
+* Fixed (unreleased, fix/w49-life, BUG-1051): the tracker starts over with every session and world
+  (`tribe.cycle_reset`, `civ.cycle_reset`).
 * What happens: a guest that played Tribe with one host and joins another host, or the same host after it
   restarted its game, without restarting its own game drops every Tribe snapshot as an older cycle: the host's
   members do not move, appear or go on the guest until the new host's counter passes the old one.
@@ -3142,6 +3146,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 ## Tribe: the host's game reloads its save once in a later session (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-stale-host-reload"></a>
 
+* Fixed (unreleased, fix/w49-life, BUG-1054): the reload due is forgotten when the host's world changes
+  (`tribe.host_reload_reset`); in the same live world it stays due on purpose (BUG-0332).
 * What happens: if a session ended in the seconds after the host's live Creature to Tribe change (before the world
   went out), the first world share of a later session in Tribe makes the host's game load its own save again.
 * Reproduce: the guests leave right after the host enters Tribe live; then a new join while the host plays Tribe
@@ -3249,3 +3255,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: sporekit/d3d9hook.cpp (plain g_present_depth++/-- around o_Present / o_SwapPresent; frame_cut_off does not
   reset the depth); observed in code, reachability inferred. Related to BUG-0966 (there the frames went on).
 * Ticket: BUG-1024
+
+## Creature: after a Cell session the partner's creature shows its own full health for a while (2026-11-13, fix/w49-life)
+<a id="issue-puppet-hp-after-cell"></a>
+
+* What happens: two players play Cell, end the session, load a Creature game and join again: for 10 s or more each
+  game shows the partner's creature at its species' own full health (10/10, 18/18) while the partner has 6/6.
+* Reproduce: `SPORE_STAGES=cell,creature python3 tools/tests/coop_lifecycle_reset.py` (the monitor's puppet_hp rule).
+* Known: seen in 3 of 4 runs, also with `core.lifecycle_reset off`; not with Creature first.
+* Ticket: BUG-1061

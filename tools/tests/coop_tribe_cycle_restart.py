@@ -2,12 +2,12 @@
 """BUG-1051: a guest that joins a restarted host (or another host) gets the host's Tribe snapshots.
 
 The guest's game keeps the cycle number of the last Tribe snapshot it got (net::CycleTracker) and drops a chunk of an
-"older" cycle (BUG-0612). The tracker was never reset: after a long session (cycle ~40000) the guest left and the
+"older" cycle (BUG-0612). The tracker was never reset: after a long session (cycle ~20000) the guest left and the
 host's game was restarted (its counter starts at 1 again); on the rejoin every snapshot of the new host was "older"
 (up to 32768 cycles behind) and dropped: no host member moved on the guest, no mirror was made, for up to an hour.
 
-1. Two games on the tribe fixture; the host's snapshot counter is set to 40000 (`coop.tribe cycle 40000`: a session
-   of about 80 minutes) and the guest follows it for 6 s.
+1. Two games on the tribe fixture; the host's snapshot counter is set to 20000 (`coop.tribe cycle 20000`: a session
+   of about 40 minutes; newer than the guest's, so it follows it) for 6 s.
 2. The guest leaves; the host's counter goes back to 1 (`coop.tribe cycle 1`, as a restarted game's); the guest joins
    again (it loads the host's world).
 3. The host puts one of its members 15 m away (`coop.tribe put`, on the ground). PASS: within 10 s the guest's game
@@ -49,7 +49,7 @@ def main():
     host, guest = start('tribe')
     ck = Checks()
     lane_state(**{**lane_state(), 'fixture': 'tribe-cycle-dirty'})  # the host's counter was set by hand
-    print(' ', host.call('coop.tribe cycle 40000')['out'].strip(), flush=True)
+    print(' ', host.call('coop.tribe cycle 20000')['out'].strip(), flush=True)
     time.sleep(6)
     print(f'  guest before the leave: older_chunks={older(guest)}', flush=True)
     print(' ', guest.call('coop.leave')['out'].strip(), flush=True)

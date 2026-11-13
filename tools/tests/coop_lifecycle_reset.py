@@ -4,7 +4,7 @@ session and of a world in one registry (mods/coop/lifecycle.h); coop.cpp resets 
 new world. Right after each reset the registry notes what is still held (`coop.lifecycle held`: "left session: ...",
 "left world: ..."), so the check does not depend on what the next world fills in again.
 
-For each stage fixture (SPORE_STAGES, default cell,creature,tribe,civ,space), on the same two games:
+For each stage fixture (SPORE_STAGES, default creature,cell,tribe,civ,space; Creature first: after Cell it shows BUG-1061), on the same two games:
   1. (after the first stage) the host loads the stage's fixture (a world change on the host), hosts again, the guest
      joins (it loads the host's world: a world change on the guest): both games' last world reset left nothing;
   2. the two play for 20 s; what the registry holds is printed (at least one stage must hold something);
@@ -13,7 +13,7 @@ For each stage fixture (SPORE_STAGES, default cell,creature,tribe,civ,space), on
 (The unload path runs the same end_session and reset; its state goes with the unloaded image, nothing to read.)
 
   SPORE_FIX_OFF=core.lifecycle_reset   FAILS: the registry resets nothing, the entries are left
-  SPORE_FIX_OFF=cell.session_reset SPORE_STAGES=cell          FAILS (cell.own_good / cell.join left), BUG-1002
+  SPORE_FIX_OFF=cell.session_reset SPORE_STAGES=creature,cell,tribe     FAILS (cell.own_good / cell.join left), BUG-1002
   SPORE_FIX_OFF=tribe.cycle_reset SPORE_STAGES=tribe,creature FAILS (tribe.cycle left on the guest), BUG-1051
 """
 import os
@@ -25,7 +25,7 @@ import lane
 from lane import sh
 from twoinst import Checks, lane_state, start, wait_guest_in
 
-STAGES = [s for s in os.environ.get('SPORE_STAGES', 'cell,creature,tribe,civ,space').split(',') if s]
+STAGES = [s for s in os.environ.get('SPORE_STAGES', 'creature,cell,tribe,civ,space').split(',') if s]
 
 
 def held(con):

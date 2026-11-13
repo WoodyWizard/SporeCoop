@@ -6948,7 +6948,7 @@ BUG-1055 and its tickets (docs/01-architecture.md#arch-lifecycle-registry).
 * `coop_lifecycle_reset.py` (suite `lifecycle_reset`, ~16 min, one cold start): every stage fixture in turn on the
   same two games (the host loads the next fixture into slot 20+i with `coop.load`: no restart, a world change on
   both games), 20 s of play, then the session ends by Leave (even stages) or by the host's Leave first so that the
-  guest is dropped (odd stages). `SPORE_STAGES=cell,creature` runs a part (suite `lifecycle_reset_cell`). It marks the
+  guest is dropped (odd stages). `SPORE_STAGES=creature,cell,tribe` runs a part (suite `lifecycle_reset_cell`). It marks the
   lane state dirty, so the next warm test starts cold. `SPORE_FIX_OFF=core.lifecycle_reset` fails.
 * `coop_tribe_cycle_restart.py` (BUG-1051): `coop.tribe cycle <n>` sets the host's Tribe snapshot counter (a long
   session, then a restarted game); the guest's mirror must follow a member the host put 15 m away (`coop.tribe put`).
