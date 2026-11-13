@@ -106,6 +106,7 @@ VK_F9 = '0x78'
 REWARD_CHECK = (932, 844)
 TRIBE_HUT = '1E4DAAE'        # the hut noun (a village falls with its hut)
 TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows in place of History
+HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}
@@ -1415,6 +1416,19 @@ class Campaign:
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction
         a right-click gives, as host_command runs a guest's): the bots' clicks reach only the members on screen"""
         ids = self.tribe_raiders()
+        if os.environ.get('CAMPAIGN_RAID_ALL') != '1':
+            # a home guard stays: the players' chiefs and the HOME_GUARD members nearest to the village. The game ends
+            # Tribe (game over, its save reloaded: every conquest gone) when no player member has health left; with every
+            # member sent the village's defenders killed them all (lab 20261113-120534 at 4/5). CAMPAIGN_RAID_ALL=1: all go
+            out = self.host.call('coop.tribe')
+            chiefs = {int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=[0-3] .*?leader=1', out)}
+            cm = re.search(r'chiefs=((?: \d:#\d+)*)', out)
+            chiefs |= {int(x) for x in re.findall(r'#(\d+)', cm.group(1))} if cm else set()
+            cent = re.search(r'^tribe \d+ \(player\) at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out, re.M)
+            home = tuple(float(cent.group(i)) for i in (1, 2, 3)) if cent else None
+            rest = sorted((i for i in ids if i not in chiefs), key=lambda i: math.dist(ids[i], home) if home else 0)
+            guard = set(rest[:HOME_GUARD]) | chiefs
+            ids = {i: q for i, q in ids.items() if i not in guard}
         for mid in ids:
             self.host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % ((mid,) + raid['hut'] + (TRIBE_HUT,)))
         if not raid.get('ordered'):

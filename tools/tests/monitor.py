@@ -97,7 +97,7 @@ PF_IN_WORLD, PF_DEAD = 1, 16
 DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50, link_pending=400, link_age=5.0,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
-                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0,
+                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0, agl_cine=1,
                 php_n=2, php_same_way=1, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
                 drawn_scale=1, drawn_age=1.0, same_session=1)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
@@ -629,6 +629,15 @@ class Ground(Hook):
     def check(self, tl):
         c, out = self.c, []
         n = c['agl_n']
+
+        def cine_held(tl, r, pid):
+            # the end of Tribe (TRG2CVG cinematics between the City Hall and vehicle editors): the game holds the
+            # members where they stand while it lays the city's ground (a village stamp removed under a member left it
+            # 18 m up for the 100 s of the change, campaign_tribe_end lab 20261113-125218); the host's own line says
+            # busy=cinematic. agl_cine=0: judged as before
+            o = r if pid is None else self.same_moment(tl, r)[1]
+            m = re.search(r'busy=(\S+)', (o or {}).get('rest', ''))
+            return bool(m and 'cinematic' in m.group(1).split(','))
         series = [(who, None, lst) for who, lst in tl.own.items()] + \
             [(viewer, pid, lst) for (viewer, pid), lst in tl.partner.items()]
         for who, pid, lst in series:
@@ -653,6 +662,8 @@ class Ground(Hook):
                 if not ok(r):
                     return False
                 if r['stage'] == 'Tribe':  # a member that stays up, not one thrown by a blow (BUG-0945)
+                    if c['agl_cine'] and cine_held(tl, r, pid):
+                        return False
                     return r.get('agl_hi', r['agl']) > c['agl_over'] and r.get('agl_held', 1e9) >= c['agl_hold']
                 if pid is None:  # a creature on a rock reads 1-16 m (GetHeightAt is the terrain only)
                     return False

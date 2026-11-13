@@ -962,6 +962,11 @@ add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no
 # then raids on every village until the goal bar is full, the City Hall and vehicle editors, Civ): no jump
 add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale', ('campaign',),
     minutes=45, timeout=3600)
+# BUG-1073 / BUG-1079: the campaign's jump path on its own planet: the Tribe end not tried (CAMPAIGN_OLD_TRIBE=1: 0.7.13's
+# raids, no village falls), the host loads the civ_npc fixture in game after 12 min, Civ is played and its end comes by
+# the captures with their cinematics (stuck in every jump campaign before the fix), then Space and the finale
+add('campaign_civ_jump', 'CAMPAIGN_OLD_TRIBE=1 ' + P + 'coop_campaign.py --from creature --to space --minutes 2 --advance-minutes 12',
+    (), minutes=60, timeout=4800)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran
