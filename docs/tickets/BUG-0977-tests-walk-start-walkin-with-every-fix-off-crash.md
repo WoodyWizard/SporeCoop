@@ -9,9 +9,9 @@ source: rel/0.7.13 final check, lab out/lab/20261112-175447 (walk_start_walkin, 
 role: 
 versions: 0.7.13-rc
 fixed_in:
-branch:
+branch: fix/w48-d3d9, fix/w48-fui
 commits:
-tests: walk_start_walkin
+tests: walk_start_walkin, fixoff_clean
 signature: dc04aee5:d3d9.dll+0x11395B (0xC0000005, read of 0x00000004, DXVK 3.1.1 CS thread); before it dc04aee5:ucrtbase.dll+0x14A84 and dc04aee5:ucrtbase.dll+0x149B4 (caught, main thread)
 docs:
 related: BUG-0917, BUG-0919, BUG-0964, BUG-0667, BUG-0779
@@ -94,6 +94,26 @@ Verdict: **unknown, most likely test-induced in the mod's process** (a stale rea
 off-path of a fix with every fix off, then heap damage that hit DXVK). Not Wine/DXVK under memory pressure. Players
 never run `coop.fix all off`; nothing points at the shipped code with fixes on.
 
+Second look (2026-11-12, fix/w48-fui):
+* The rerun out/lab/20261112-205503 (walk_start_walkin#1, lane 3) had the first fault again, 3 ms after
+  `coop.fix all off` (ucrtbase.dll+0x14A84, data 0xCEB64818, ecx=C9A80F00, edi=D641E530, edx=0D641E53); #2 on lane 3
+  passed. In both faults with this eip ecx is huge (46D80900, C9A80F00, C235EAC0) and edx = edi >> 4: a copy with a
+  garbage length. All three faulting runs were on lane 3 (final, rerun #1); lane 3's bottle is the same as lanes 4
+  and 5 (caffe-10.0, dxvk-3.1.1, the same d3d9.dll).
+* The `calls:` addresses are stale stack words, not the caller: 0xB7F0DF is the return inside GetHeightAt from
+  Terrain::cTerrainMapSet::GetHeight (0xF92760, no memcpy), 0xA35243 the return from an import call, 0xA42982 from
+  UTFWin::ImageDrawable::GetTiling. The copy is called from a module (ours or the CRT's users): the fault logger
+  listed exe addresses only. It now also prints `module calls:` (return addresses into any other module, as
+  module+offset), so the next fault names the function (sporekit/exceptions.cpp).
+* Checked and ruled out as the direct cause: game.lend_ledger and views' sphere lend (opened and closed inside one
+  call, the switch only flips between frames), core.mem_reserve (gives back its block 70 ms after the fault, on the
+  diag tick), game.listed_frame (its off side walks the list, reads nothing stale), game.avatar_stale_target and
+  npc.stale_last_attacker (act at a destroy only: the partner's puppet was destroyed 3 s before the switch, with the
+  fixes on). npc.entries_listed's off side (`coop.sync`: object_alive on the last tick's table) is the remaining
+  stale reader on the test's path; not proven.
+* Not reproduced on lanes 4 and 5: walk_start_walkin 4 of 4 clean (out/lab/20261112-212031-2,
+  out/lab/20261112-212320 x3), the new probe fixoff_clean 2 of 2 clean (8 all-off rounds, out/lab/20261112-212031).
+
 ## Fix
 Not done. Plan:
 1. Reproduce on one lane: `walk_start_walkin` x10 (and `--who solo --mode teleport --fixoff`), each with
@@ -108,7 +128,8 @@ Not done. Plan:
 5. The empty 288-byte .dmp: check why the minidump had no streams (BUG-0127 family).
 
 ## Verification
-no-fail-run: not reproduced yet (analysis only, lanes busy)
+no-fail-run: not reproduced on lanes 4 and 5 (walk_start_walkin 4 runs, fixoff_clean 2 runs, 2026-11-12); faults seen on lane 3 only (out/lab/20261112-175447, out/lab/20261112-205503 #1)
 
 ## History
 - 2026-11-12: opened from the rel/0.7.13 final check (lab 20261112-175447); analysis: DXVK 3.1.1 CS thread, null command pool after two caught memcpy faults of our CRT on the main thread right after `coop.fix all off`; fix/w48-d3d9.
+- 2026-11-12: fix/w48-fui: not reproduced on lanes 4/5 (6 runs); fault logger prints module return addresses; fixoff_clean probe test; switches ruled out listed.

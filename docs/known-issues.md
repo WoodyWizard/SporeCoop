@@ -2948,6 +2948,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   CS thread (d3d9.dll+0x11395B, a command list with a null command pool: damaged heap). Seen once (lab
   20261112-175447); the same test passed on fix/w48-walk. Only with every fix off; not seen with fixes on.
 * Reproduce: `tools/lab.py run walk_start_walkin --lane N --repeat 10` (not reproduced yet).
+* 2026-11-12 (fix/w48-fui): seen again on lane 3 (rerun 20261112-205503 #1, a caught fault only); 6 clean runs on lanes 4
+  and 5 (walk_start_walkin, fixoff_clean). The fault log now prints `module calls:` (return addresses into our DLLs)
+  to name the caller next time.
 * Ticket: BUG-0977
 
 ## Creature: a joining guest's creature stands inside the host's creature (2026-11-12, key frames: fix/w48-fui)
