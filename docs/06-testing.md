@@ -7026,3 +7026,17 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * Tests: tribe_cmd_listed, civ_cmd_listed (FAIL with SPORE_FIX_OFF=tribe.cmd_listed / civ.cmd_listed), npc_ai_lookup
   (npc.ai_lookup_live), npc_air_live (game.air_live). The creature ones need a reuse hit (about one in three hunts:
   one hit came in the first 1-4 proxies in every run).
+
+## Space rejoin window and contracts tests (2026-11-13, fix/w49-space2)
+<a id="testing-space-restore-window"></a>
+
+* `space_trade_restore` (BUG-1034, fixture space, ~5 min): `coop.space trade restorehold 1` on the guest before its
+  rejoin holds the restore (a slow host); the host's `trade kept` sent_back count shows the window is open; the host
+  gives 5 bomb charges (`trade give <inst> 5 <guest id>`) and sells spice (`trade sell`); `restorehold 0`, then the
+  host resends K_INV_KEPT within 10 s. Asserts the games' inventories (`trade all`, `trade spices`).
+* `space_allies_end_pending` (BUG-1036, fixture space, ~5 min): the guest fakes a mirror (`allies fake Zed <planet>`),
+  `jumpto` its star (a free planet that is the ship's active one after the jump; else `RESULT: SKIP`), lands (`coop.space land`), leaves the session there (`allies status`: end_pending=1), `coop.menu`, joins
+  again. Asserts the guest game's star record owner (`allies star <id>`).
+* `space_owed_contracts_off` (BUG-1037, fixture space, ~2 min): `coop.settings force space.contracts off` (settings_lib),
+  then the reward_away steps.
+* `space_give_pick` also checks the give row's layout (BUG-1062, layout_problems on Bob's window).

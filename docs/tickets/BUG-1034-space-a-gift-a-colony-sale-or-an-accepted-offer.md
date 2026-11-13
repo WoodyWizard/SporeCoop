@@ -1,19 +1,19 @@
 ---
 id: BUG-1034
 title: Space: a gift, a colony sale or an accepted offer that reaches a rejoined guest before its kept hold is restored is lost
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-4
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-space2
+commits: daac928c, 8d73e8a9
+tests: space_trade_restore
 signature:
-docs: docs/known-issues.md#issue-trade-before-restore
+docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-trade-before-restore
 related: BUG-0678, BUG-0832, BUG-0196
 ---
 
@@ -36,11 +36,23 @@ While inv_restore_pending(): K_TOOL and K_SELL answer with got = 0 and a reason 
 Extend coop_space_items_rejoin.py: right after the guest's rejoin (a test hold on K_INV_KEPT, like g_hold) the host gives it a tool and sells it spice; after the restore assert the guest game's inventory has the gift (or the host's game got it back). Main: FAIL (the item is in neither game).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+space_trade.cpp: while `inv_restore_pending()` a K_TOOL or K_SELL for this player waits in `g_waiting` (the message
+body after `to` / `id`, at most 64) and `handle_waiting()` handles it (adds and answers, the old code path) in the
+first trade tick after the restore, or after the session ended (the sender counts a delivered gift as received,
+BUG-0542). Accepting an offer in the window keeps the offer and shows "Your cargo hold is being restored: accept in
+a moment". Switch `coop.fix space.trade_wait_restore off`: added at once (0.7.13). Test hook `coop.space trade
+restorehold 0|1` (the guest's restore waits: no own record, K_INV_KEPT not taken; the host resends after 10 s).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_trade_restore.py` (suite `space_trade_restore`, fixture space, ~1.5 min): the guest's restore held over
+its rejoin, the host gives 5 bomb charges and sells 10 spice in the window, then the restore. Asserts the guest game's
+inventory (bomb 9 + 5, the spice on top of its own) and the host's (12 - 5).
+* FAIL (SPORE_FIX_OFF=space.trade_wait_restore): out/lab/20261113-022524 (guest bomb 9, spice 0: both lost; the
+  host had given them)
+* PASS: out/lab/20261113-022524-2 (bomb 14, spice 10), out/lab/20261113-023145-2 (the spice check against the own
+  hold: 0 + 10), out/lab/20261113-023651-2
+Offers (answer_offer) are covered by reading only (Rivals; not in the test).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space2 (gifts and sales wait for the restore; offers wait for it).

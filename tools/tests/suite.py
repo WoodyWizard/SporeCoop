@@ -781,6 +781,10 @@ add('space_gift_reload', P + 'coop_space_gift_reload.py', minutes=6, fixture='sp
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
 add('space_allies_reload_addr', P + 'coop_space_allies_reload.py --same-address', minutes=5, fixture='space')  # the same, with the new player cEmpire at the old address: the Space world epoch sees the reload (BUG-0225; SPORE_FIX_OFF=allies.reload_id fails)
+# 0.7.14 S2 (fix/w49-space2): Space rejoin window and contracts
+add('space_trade_restore', P + 'coop_space_trade_restore.py', minutes=6, fixture='space')  # a gift and a sale reaching a rejoined guest before its own hold is back are in its hold after the restore (BUG-1034; SPORE_FIX_OFF=space.trade_wait_restore fails)
+add('space_allies_end_pending', P + 'coop_space_allies_end_pending.py', minutes=7, fixture='space')  # a session ended on a mirror planet, the menu, a new session: no old mirror colony in the new galaxy (BUG-1036; SPORE_FIX_OFF=space.allies_end_pending fails)
+add('space_owed_contracts_off', P + 'coop_space_owed_contracts_off.py', minutes=3, fixture='space')  # an owed reward tool is given with Space contracts off (BUG-1037; SPORE_FIX_OFF=space.owed_always fails)
 add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=6, fixture='space')  # a trade refund that comes back while another game is loaded waits for its own game (BUG-0225; SPORE_FIX_OFF=space.owed_id fails)
 add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', minutes=5, fixture='space')  # the same game loaded again (saved by the quit after the gift): paid once (BUG-0225, BUG-0058)
 add('dead_modal_list', P + 'coop_dead_modal_list.py', warm=True, minutes=3, fixture='space')  # a destroyed window listed under a popped modal one is not made the modal one (BUG-0956; SPORE_FIX_OFF=game.dead_modal_list fails)

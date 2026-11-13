@@ -1,19 +1,19 @@
 ---
 id: BUG-1036
 title: Space: the session ended on an ally's mirror planet, then a menu and another session: the old partners' mirror colonies come back
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-5
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-space2
+commits: daac928c, 8d73e8a9
+tests: space_allies_end_pending
 signature:
-docs: docs/known-issues.md#issue-allies-end-pending
+docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-allies-end-pending
 related: BUG-0038, BUG-0197
 ---
 
@@ -35,11 +35,19 @@ end_all's pending part runs outside Space too (forget the mirrors without unappl
 Extend coop_space_allies_reload.py: the host mirrors a guest's colony (`allies fake`), lands on the mirror planet, the session ends (guest leaves, host leaves), the host goes to the menu, loads the fixture and hosts again with another guest; assert the game's empire map has no mirror empire of the old partner (coop.space allies status and the cEmpire list). Main: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+space_allies.cpp tick: outside Space, with a pending end and no mirror applied any more (the galaxy went), the old
+mirrors are forgotten (`forget_all`, `end_pending_done` in `allies status`); back in Space connected with a pending
+end, `end_all` runs (it waits again while the ship is on a mirror planet) instead of dropping it. Switch `coop.fix
+space.allies_end_pending off` (0.7.13).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_allies_end_pending.py` (suite `space_allies_end_pending`, fixture space, ~1.2 min): the guest's fake mirror
+"Zed" on the free planet that is its ship's active one after a jump, a landing on it, coop.leave (end_pending=1),
+coop.menu, a new join. Asserts the guest game's star record owner (`allies star`).
+* FAIL (SPORE_FIX_OFF=space.allies_end_pending): out/lab/20261113-023145 (the star owner is "Zed's empire" again in
+  the new session's galaxy)
+* PASS: out/lab/20261113-023145-2 (owner '-', end_pending_done=1), out/lab/20261113-023651-2
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space2 (the pending end finishes outside Space; a new session ends the old mirrors first).

@@ -186,6 +186,8 @@ static bool read_local(Roster& r)
     }
     r.colonies.clear();
     for (void* s : ptr_vec((uint8_t*)emp + 0x88, 1024)) {
+        if (r.colonies.size() >= 250)
+            break; // BUG-1040: the cap ends the whole scan, not only this star's planets
         if (!readable(s, 0x98))
             continue;
         for (void* p : ptr_vec((uint8_t*)s + 0x84, 64)) {

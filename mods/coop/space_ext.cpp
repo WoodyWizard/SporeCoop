@@ -229,6 +229,8 @@ void tick_all(double now)
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
         if (live(i) && v[i].tick)
             v[i].tick(now);
+        else if (g_on[i] && v[i].tick_off)
+            v[i].tick_off(now);
 }
 
 bool dispatch(uint8_t kind, uint8_t origin, net::Reader& r)

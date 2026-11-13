@@ -107,6 +107,11 @@ bool g_wave_tough_fix = true, g_wave_resume_fix = true, g_wave_away_fix = true;
 COOP_FIX("contracts.wave_tough", "BUG-0227", g_wave_tough_fix, "space: armada ships get their HP raised once per object, not per address");
 COOP_FIX("contracts.wave_resume", "BUG-0227", g_wave_resume_fix, "space: a resumed armada wave waits for its ships again");
 COOP_FIX("contracts.wave_away", "BUG-0227", g_wave_away_fix, "space: an armada raid that ends while the host is away counts");
+// BUG-1038: a fresh (not resumed) wave whose raid brought no ships in 30 s kept its mission, so the next ready tick
+// resumed that same empty raid (30 s more) instead of starting a new one. Now the empty raid is aborted and a new one
+// starts. Off: resumed once more (0.7.13).
+bool g_wave_empty_fix = true;
+COOP_FIX("space.armada_empty_wave", "BUG-1038", g_wave_empty_fix, "space: an armada wave whose raid brought no ships starts a new raid");
 bool g_wave_resumed;              // the running wave was resumed (BUG-0227)
 int g_wave_away_result;           // the wave's raid ended while the host was away: 5 or 6 (BUG-0227)
 bool g_tough_reuse, g_hide_ships; // tests: the address-reuse simulation / the resumed raid brings no ships
@@ -308,6 +313,13 @@ struct OwedReward {
 };
 std::vector<OwedReward> g_owed;
 uint32_t g_owed_paid, g_owed_dropped;
+// BUG-1037: the owed rewards (also a partner's mission tool, spacecoop K_MISSION) were paid only by this feature's tick,
+// which does not run while the host's session settings have Space contracts off (F3, BUG-0768): the tool was never
+// given. Now they are paid also while the feature is off (spaceext tick_off). Off: not paid then (0.7.13).
+bool g_owed_always_fix = true;
+COOP_FIX("space.owed_always", "BUG-1037", g_owed_always_fix,
+         "space: an owed mission reward tool is given also while the session has Space contracts off");
+uint32_t g_owed_paid_off; // paid while the feature was off
 void say(const std::string& t);
 void owed_tick()
 {
@@ -334,6 +346,8 @@ void owed_tick()
             tool = true;
         }
         g_owed_paid++;
+        if (!spaceext::feature_allowed("contracts"))
+            g_owed_paid_off++;
         H->log(M, SK_INFO, "contracts: an owed reward paid (%s): money %d, tool %d", o.what.c_str(), o.money, (int)tool);
         say(o.what + tr(": the reward you earned while away is yours now", ": награда, заработанная вне космоса, получена"));
     }
@@ -969,7 +983,7 @@ void armada_tick(double t)
             if (!g_wave_ships && t - g_wave_t > 30) {
                 H->log(M, SK_WARN, "contracts: the raid of wave %d brought no ships in 30 s: again", g.wave);
                 g_wave_on = false; // started again below
-                if (g_wave_resume_fix && g_wave_resumed) {
+                if ((g_wave_resume_fix && g_wave_resumed) || g_wave_empty_fix) {
                     // BUG-0227: end the old raid first (found in the live list this tick), or the
                     // next ready tick would resume it again, or start a second raid next to it
                     if (g_wave_mission && raids_on_target().count(g_wave_mission) && a_SetState) {
@@ -1492,6 +1506,11 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "result given; owed %u paid %u dropped %u\n", (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped);
         return b;
     }
+    if (a[0] == "owed") { // tests (BUG-1037): the owed rewards
+        snprintf(b, sizeof b, "owed %u paid %u dropped %u paid_while_off %u\n", (unsigned)g_owed.size(), g_owed_paid,
+                 g_owed_dropped, g_owed_paid_off);
+        return b;
+    }
     if (a[0] == "tool" && a.size() > 1) {
         uint32_t h = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         snprintf(b, sizeof b, "tool %08X %s: %s\n", h, tool_name(h).c_str(), has_tool(h) ? "have" : "no");
@@ -1511,6 +1530,11 @@ bool reg = spaceext::add({.name = "contracts",
                           .kind_hi = 29,
                           .init = init,
                           .tick = tick,
+                          .tick_off =
+                              [](double) {
+                                  if (g_owed_fix && g_owed_always_fix)
+                                      owed_tick(); // BUG-1037
+                              },
                           .on_message = on_message,
                           .on_session_end = on_session_end,
                           .draw_overlay = draw_overlay,

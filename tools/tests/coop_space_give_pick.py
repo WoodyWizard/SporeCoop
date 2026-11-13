@@ -11,13 +11,16 @@ Alice hosts, Bob and Carol are guests (tools/tests/party.py, space_free: spice i
 3. Bob clicks "Give 10 to Carol": the spice in Carol's game's cargo (`coop.space spice`, the game's inventory item
    count) grows by 10, Alice's does not change, Bob's falls by 10.
 PASS with the fix; SPORE_FIX_OFF=space.give_pick: ">" hidden and the spice goes to Alice (FAIL).
+BUG-1062: the Give button is as wide as its caption needs (`coop.uistate widgets`, layout_problems); with
+SPORE_FIX_OFF=core.ui_give_fit "Give 10 to Carol" needs more than the 170 px button gives (FAIL; the button's text
+borders are 23 px on each side, so a caption needs its width + 46).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_give_pick.py
 """
 import re
 import time
 
-from coop_ui import VK_F9, Ui
+from coop_ui import VK_F9, Ui, layout_problems, widgets
 from party import Party
 from twoinst import Checks, keyframe, shot
 
@@ -75,6 +78,14 @@ def run(p):
         time.sleep(1)
     st = ui.state()
     ck('Carol' in st['give']['text'], f"the Give button names Carol ({st['give']['text']!r})")
+    # BUG-1062: the caption fits its button (a caption wraps when it needs more than the width minus ~30 px)
+    # (the button's text borders are 23 px on each side, `coop.ui btn`: the caption needs its width + 46)
+    give_probs = [f'button {cap!r} needs {need} px, has {r[2] - r[0] - 46}' for r, kind, need, cap in widgets(bob.con)
+                  if kind == 'B' and ('Give' in cap or 'Jump' in cap) and need > r[2] - r[0] - 46]
+    give_probs += [x for x in layout_problems(bob.con) if 'Give' in x or 'Jump' in x]
+    print('  give row: ' + ' | '.join(w for w in bob.con.call('coop.uistate widgets')['out'].splitlines()
+                                       if '430' in w or 'Give' in w), flush=True)
+    ck(not give_probs, f'"Give 10 to Carol" and its row fit their buttons on one line ({give_probs})')
     keyframe('give_pick', 'Bob\'s co-op window in Space with three players: "Give 10 to Carol" with ">" next to it, '
              'the jump button left of them, nothing overlaps', players={'host': alice.con, 'guest': bob.con})
     shot(bob.con, 'space_give_pick_window.png')
