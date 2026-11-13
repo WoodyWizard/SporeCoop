@@ -1,19 +1,19 @@
 ---
 id: BUG-1054
 title: Tribe: after a session that ended during the host's live Creature to Tribe change, the host reloads its own save at the first share of a later session
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-9
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: tribe_host_reload_reset
 signature:
-docs: docs/known-issues.md#issue-tribe-stale-host-reload
+docs: docs/known-issues.md#issue-tribe-stale-host-reload, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0332
 ---
 
@@ -44,11 +44,19 @@ Assert on the host's game that no load starts (the game's mode stays Tribe witho
 Main: the host's game loads its save: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`g_reload_due` is entry `world.host_reload` of the lifecycle registry with scope world only: it is forgotten when the
+host's world changes (a load, another stage) before the share went out. Not at the session end, against the ticket's
+fix idea: in the same live Tribe world the host's ground still differs from the share save's, so the reload at the
+first share of a later session there is BUG-0332's fix doing its job, not a stale reload. Switch
+`coop.fix tribe.host_reload_reset off` (0.7.13). Test command `coop.tribe reload [arm]` (host: make the reload due as
+the live change does; print host_reloads).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tribe_host_reload_reset` (the reload made due, the host leaves, loads the tribe fixture again, hosts, the guest
+joins: no load of the host's game in the 40 s after the join).
+FAIL (SPORE_FIX_OFF=tribe.host_reload_reset): out/lab/20261113-012110 (host_reloads 0 -> 1 after the join).
+PASS: out/lab/20261113-011705, out/lab/20261113-012647.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).

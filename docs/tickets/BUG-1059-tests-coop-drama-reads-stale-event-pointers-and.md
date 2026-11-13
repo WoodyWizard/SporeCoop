@@ -1,19 +1,19 @@
 ---
 id: BUG-1059
 title: tests: coop.drama reads stale event pointers and the drama hook logs the wrong missing symbol
-status: open
+status: fixed
 kind: tooling
 stage: Creature
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-23
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: lifecycle_reset
 signature:
-docs:
+docs: docs/01-architecture.md#arch-lifecycle-registry
 related: BUG-0736, BUG-0800
 ---
 
@@ -38,11 +38,15 @@ no player test; a unit-level check: `coop.drama` after a world load prints no ev
 (a run of any creature test that loads twice, asserting the event column is empty after the load).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+drama.cpp: the last event per kind is entry `drama.last_events` of the lifecycle registry (world change), coop.drama
+reads the event's +0xC through skg::readable, and the install logs the missing symbol it means
+(DramaManager_StartEvent or SummonEvent_Update). No switch (debug output, as the ticket says).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test and debug output only (coop.drama); the reset is the lifecycle registry's (lifecycle_reset checks
+every entry after each world change, out/lab/20261113-011223), the log text is not testable without a missing
+symbol.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).

@@ -9,7 +9,7 @@ source: audit 2026-11-12 (0.7.14) WLD-7
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w49-life
 commits:
 tests:
 signature:
@@ -59,3 +59,4 @@ PASS with the serial check.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fix/w49-life (package L1): the release part done: the holds are entry `game.air` of the lifecycle registry (session end and world change; switch `coop.fix game.air_release off`), so no hold outlives its session or world. Held 0 at every reset of the lifecycle_reset runs (the forget paths release them already), so no FAIL run for this part. The serial check of air_reassert stays open for package L2 (plan-0.7.14).

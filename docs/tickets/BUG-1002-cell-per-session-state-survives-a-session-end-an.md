@@ -1,19 +1,19 @@
 ---
 id: BUG-1002
 title: Cell: per-session state survives a session end and the host's absence (queued food closures, the join-after-load avatar, the own cell's last good pose, the body factor)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-10 WLD-11
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: lifecycle_reset_cell, lifecycle_reset
 signature:
-docs:
+docs: docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related:
 ---
 
@@ -56,11 +56,19 @@ The lifecycle package's general test (every module's per-session state empty aft
 food after one step; main: changed after the leave, fixed: unchanged.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+cellsync.cpp registers its per-session / per-world state in the lifecycle registry under one switch
+`coop.fix cell.session_reset` (off: 0.7.13): `cell.food_queue` (session + world; solo_start also clears it: the host's
+totals queued before it went away), `cell.join` (session + world: the join-after-load avatar, since, check, tries),
+`cell.own_good` (world: the last good pose of the BUG-0299 heal) and `cell.body` (world: the small respawn's factor;
+a session end inside the same Cell game keeps the small body growing back). The registry runs on every session end,
+also when cellsync::on_session_end is skipped (outside Cell).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `lifecycle_reset_cell` (coop_lifecycle_reset.py with SPORE_STAGES; Creature, Cell, Tribe).
+FAIL (SPORE_FIX_OFF=cell.session_reset): out/lab/20261113-011935 (cell.join left at the guest's session ends,
+cell.own_good at both games' world change; that run had the old order Cell, Creature and also hit BUG-1061's monitor
+gate). PASS: out/lab/20261113-012450-2, out/lab/20261113-013333; also lifecycle_reset (out/lab/20261113-011223, out/lab/20261113-012450-2, out/lab/20261113-013333).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).
