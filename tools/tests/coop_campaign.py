@@ -1282,9 +1282,12 @@ class Campaign:
             near = [i for i, q in alive.items() if math.dist(q, raid['hut']) < 20]
             mx = re.search(r'health \d+/(\d+)', hs)
             hit = m and mx and float(m.group(1)) < float(mx.group(1)) - 1  # a blow landed (raiders hit from 20-30 m)
-            if not raid['cut'] and (near or hit):
-                self.note('shortcut: coop.tribe huthp: the raided hut\'s health cut to 40 (its 400-1000 hp take the '
-                          'raiders minutes)')
+            # cut again whenever it is over 40: the village's members repair their hut (damage type 10, docs/re/tribe.md
+            # #tribe-hut-fall) while the raiders die (lab 20261113-092426: cut to 40, back at 306 of 750 four minutes later)
+            if (near or hit) and m and float(m.group(1)) > 45:
+                if not raid['cut']:
+                    self.note('shortcut: coop.tribe huthp: the raided hut\'s health cut to 40 (its 400-1000 hp take the '
+                              'raiders minutes; again whenever the village repairs it)')
                 self.host.call('coop.tribe huthp %.2f %.2f %.2f 40' % raid['hut'])
                 raid['cut'] = True
             h = float(m.group(1)) if m else None
