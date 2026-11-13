@@ -877,8 +877,15 @@ def main():
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_creature.py --minutes {a.minutes} --seed {seed}')
     shot(host, 'play_creature_host.png')
     shot(guest, 'play_creature_guest.png')
-    keyframe('end', 'after the play: both games in Creature play (no menu, no loading screen), the partner visible '
-                    'or its arrow at the edge, the same creatures on both')
+    # BUG-0986: a play can end in an evolution the host's bot started at the nest (the vote ends, both games go into
+    # the creature editor together): the frame then shows both editors (the settle wait would only wait out 20 s)
+    eds = ['Editor' in (c.call('game.mode').get('out') or '') for c in (host, guest)]
+    if all(eds):
+        keyframe('end', 'after the play: the play ended in an evolution (the vote of the host\'s bot at the nest): both '
+                        'games in the creature editor, each with its own creature, no menu, no loading screen', settle=0)
+    else:
+        keyframe('end', 'after the play: both games in Creature play (no menu, no loading screen), the partner visible '
+                        'or its arrow at the edge, the same creatures on both')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
