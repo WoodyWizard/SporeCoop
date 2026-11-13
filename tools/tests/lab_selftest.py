@@ -40,6 +40,8 @@ Cases (ticket):
   mem_gate      the memory gate: a 4-game test waits while MemAvailable is short and starts when it is back; the
                 games of a test just started count; with nothing running it fails as not started after the wait
   quick         lab.py run --quick: the quick entry's shortened command, marked quick, not counted by labcov
+  lane_lock     a second lab run on a lane another run still uses is refused before its start-of-run kill;
+                the old behaviour (SPORE_LAB_NO_LANE_LOCK=1) fails it (BUG-1070)
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -565,10 +567,82 @@ suite.T[:] = []
 suite.add('same_' + who, f'{sys.executable} -c "print(\'run {who}\'); print(\'RESULT: OK\')"', ('smoke',))
 while not os.path.exists(go):  # start together
     time.sleep(0.005)
+# a lane each (lane 9 / 10): two runs on one lane are refused since BUG-1070 (lane_lock_case)
+a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip='1,2,3,4,5,6,7,8,' + ('10' if who == 'a' else '9'),
+                       lanes=1, no_build=True, cold=False, retry=1)
+sys.exit(lab.cmd_run(a))
+"""
+
+
+LANE_LOCK = r"""
+import os, subprocess, sys, time
+tree, root, who, rec = sys.argv[1:5]
+sys.path.insert(0, os.path.join(tree, 'tools'))
+import lab, suite, argparse
+lab.ROOT = root
+lab.preflight = lambda: True
+lab.ensure_lanes = lambda n: None
+lab.lane_game = lambda lane: os.path.join(root, 'games', f'lane{lane}')
+lab.lane_alive = lambda lane: {}
+def spore(tree, lane, *a, **k):
+    with open(rec, 'a') as f:
+        f.write(f'{who} {lane} {" ".join(a)} {time.time():.2f}' + chr(10))
+    return subprocess.CompletedProcess(a, 0, '', '')
+lab.spore = spore
+lab.AFTER = 0.2
+suite.T[:] = []
+nap = 4 if who == 'a' else 0
+suite.add('lock_' + who, f'{sys.executable} -c "import time; time.sleep({nap}); print(\'RESULT: OK\')"', ('smoke',))
 a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip='1,2,3,4,5,6,7,8,9', lanes=1, no_build=True,
                        cold=False, retry=1)
 sys.exit(lab.cmd_run(a))
 """
+
+
+def lane_lock_case(tree, tmp):
+    """BUG-1070: a second lab run started on a lane that a run still uses is refused before it kills that
+    lane's games (it ended the first run's games: the host's game gone without a crash report). Run a holds
+    lane 10 for a 4 s test; run b starts on lane 10 1.5 s later: it must exit non-zero naming the other run
+    and never call `spore.sh kill`, and run a's test must pass. SPORE_LAB_NO_LANE_LOCK=1 (the old behaviour)
+    must fail it: shown once as the FAIL half."""
+    script = os.path.join(tmp, 'lane_lock_child.py')
+    open(script, 'w').write(LANE_LOCK)
+
+    def two(nolock):
+        root = os.path.join(tmp, 'll_old' if nolock else 'll')
+        os.makedirs(os.path.join(root, 'games', 'lane10', 'SporebinEP1', 'mods', 'logs'), exist_ok=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', root], capture_output=True)
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+        rec = os.path.join(root, 'spore_calls.txt')
+        env = dict(os.environ)
+        env.pop('SPORE_LAB_NO_LANE_LOCK', None)
+        if nolock:
+            env['SPORE_LAB_NO_LANE_LOCK'] = '1'
+        ka = subprocess.Popen([sys.executable, script, tree, root, 'a', rec], env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True)
+        time.sleep(1.5)
+        kb = subprocess.Popen([sys.executable, script, tree, root, 'b', rec], env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True)
+        outs = {}
+        for who, k in (('b', kb), ('a', ka)):
+            try:
+                outs[who] = (k.communicate(timeout=60)[0], k.returncode)
+            except subprocess.TimeoutExpired:
+                k.kill()
+                outs[who] = ('timeout', -1)
+        calls = open(rec).read().split(chr(10)) if os.path.exists(rec) else []
+        b_kills = [c for c in calls if c.startswith('b ') and ' kill' in c]
+        ok = (outs['b'][1] != 0 and 'in use by another lab run' in outs['b'][0] and not b_kills
+              and outs['a'][1] == 0)
+        return ok, outs, b_kills
+    ok, outs, b_kills = two(False)
+    check(ok, f'lane_lock: a second run on a busy lane is refused and kills nothing (b: exit {outs["b"][1]}, '
+              f'kills {b_kills}; a: exit {outs["a"][1]}) (BUG-1070)')
+    if not ok:
+        print(outs['b'][0][-600:], outs['a'][0][-600:])
+    ok, outs, b_kills = two(True)
+    check(not ok, f'lane_lock (old behaviour, SPORE_LAB_NO_LANE_LOCK=1): the case catches the second run killing '
+                  f'the busy lane ({b_kills})')
 
 
 def same_second_case(tree, tmp):
@@ -790,7 +864,8 @@ def mem_cases(tree, tmp):
         lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
 
 
-CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case', 'gate_cases',
+CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case',
+         'lane_lock_case', 'gate_cases',
          'watch_cases', 'interrupt_cases')
 
 

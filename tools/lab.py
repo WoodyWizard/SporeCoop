@@ -185,6 +185,50 @@ def free_lane_lock(lane):
     return os.path.join(os.path.dirname(lane_game(lane)), f'.update_check-lane{lane}.lock')
 
 
+_lane_locks = []  # BUG-1070: the open lock files of this process's run (held until the process ends)
+
+
+def lane_run_lock(lane):
+    """BUG-1070: the lock a lab run holds on each of its lanes for its whole life (next to the lane's game)"""
+    return os.path.join(os.path.dirname(lane_game(lane)), f'.lab-run-lane{lane}.lock')
+
+
+def take_lanes(lanes, run_id):
+    """BUG-1070: a run's lanes are its own. A second run started on a lane that another run still uses ended
+    that run's games with its start-of-run `spore.sh kill` (lab 20261113-052132: the host's game gone 7 s into
+    Tribe, no crash report, both games' processes ended the second 20261113-054031-2 started on lane 7).
+    Takes an exclusive flock per lane (released by the kernel when the process ends); a lane held by another
+    run: None and the holder's line. The old behaviour (no lock): SPORE_LAB_NO_LANE_LOCK=1 (self-test)."""
+    import fcntl
+    for f in _lane_locks:  # an earlier cmd_run of this process (the self-test) is over
+        try:
+            f.close()
+        except OSError:
+            pass
+    _lane_locks.clear()
+    if os.environ.get('SPORE_LAB_NO_LANE_LOCK') == '1':
+        return []
+    for lane in lanes:
+        path = lane_run_lock(lane)
+        f = open(path, 'a+')
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            f.seek(0)
+            holder = f.read().strip() or 'unknown'
+            f.close()
+            for g in _lane_locks:
+                g.close()
+            _lane_locks.clear()
+            return None, lane, holder
+        f.seek(0)
+        f.truncate()
+        f.write(f'run {run_id} pid {os.getpid()} since {datetime.datetime.now():%H:%M:%S}\n')
+        f.flush()
+        _lane_locks.append(f)
+    return list(lanes)
+
+
 def free_lane_watch(text):
     """(lane, since) of a uses_free_lane test's `LAB-WATCH lane=N since=T` line, or None"""
     m = re.search(r'^LAB-WATCH lane=(\d+) since=([\d.]+)', text, re.M)
@@ -690,6 +734,11 @@ def cmd_run(a):
     os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 11) if _free(n)), ''))
     print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})'
           + (f'; QUICK: {sum(bool(t.get("quick_run")) for t in tests)} shortened' if quick else ''))
+    got = take_lanes(a.lane_ids, run_id)
+    if isinstance(got, tuple):  # BUG-1070: never kill the games of a lane another run is using
+        _, lane, holder = got
+        sys.exit(f'lab: lane {lane} is in use by another lab run ({holder}): wait for it or pick another lane '
+                 '(two runs on one lane kill each other\'s games, BUG-1070)')
     if not a.no_build:
         build(tree)
     ensure_lanes(a.lane_ids)
