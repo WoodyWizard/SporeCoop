@@ -421,6 +421,7 @@ add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')
 add('res_away', P + 'coop_res_away.py', warm=True, minutes=3, fixture='civ')  # a guest's credit while the host cannot hold it, a purchase right after an editor visit, Civ money (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1; step 2 shows BUG-0692 only on Tribe food: res_away_tribe)
 add('res_away_tribe', P + 'coop_res_away.py --tribe', warm=True, minutes=3, fixture='tribe')  # the same with the Tribe food (BUG-0691, BUG-0692; SPORE_FIX_OFF=res.owed fails step 1, SPORE_FIX_OFF=res.mode_keep fails step 2)
 add('res_cause', P + 'coop_res_cause.py', warm=True, minutes=3, fixture='tribe')  # a notice says whose purchase or earning moved the shared food on the other game (BUG-0696; SPORE_FIX_OFF=res.cause fails)
+add('res_cause_floor', 'SPORE_NET="delay=300" ' + P + 'coop_res_cause_floor.py', minutes=4, fixture='tribe')  # a guest's spend cut at 0 by the shared floor is not shown as the host's earning (BUG-1009; SPORE_FIX_OFF=shared.cause_clamped fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
 add('civ_city_burst', P + 'coop_civ_city_burst.py', warm=True, minutes=3, fixture='civ_npc')  # three NPC cities the guest missed reach it at once with their vehicles (BUG-0380; SPORE_FIX_OFF=civ.city_burst fails)
 add('civ_cursor', P + 'coop_civ_cursor.py', warm=True, minutes=3, fixture='civ')  # the sync-check leaves out a moving Civ pointer, a resting one is where the guest shows it (BUG-0380; SPORE_FIX_OFF=diag.rts_cursor fails)
@@ -745,6 +746,7 @@ add('space_armada_return', P + 'coop_space_armada_return.py', minutes=8, fixture
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
 add('space_rival_away', P + 'coop_space_rival_away.py', minutes=4, fixture='space')  # rivals: a guest's own budget is not reset to the host's copy after an editor trip (BUG-0813; SPORE_FIX_OFF=space.rival_budget_world fails)
+add('space_rival_merge', P + 'coop_space_rival_merge.py', minutes=10, fixture='space')  # rivals -> allies inside a rejoiner's load merges its kept budget; a newcomer to rivals starts with 0 (BUG-1029; SPORE_FIX_OFF=space.merge_known_budget fails)
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (SPORE_FIX_OFF=game.ufo_model fails)
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
@@ -779,6 +781,7 @@ add('space_colony_spice', P + 'coop_space_planet.py --case spice', minutes=5, fi
 add('space_spice_away', P + 'coop_space_colony_spice.py --case away', minutes=5, fixture='space')  # colony spice a guest collects while the host is in an editor is not there to collect again (BUG-0822; SPORE_FIX_OFF=space.colony_spice_away fails)
 add('space_spice_mirror', P + 'coop_space_colony_spice.py --case mirror', minutes=4, fixture='space')  # a guest's own colony in the shared home system keeps its spice (BUG-0840; SPORE_FIX_OFF=space.colony_spice_mirror fails)
 add('space_spice_cap', P + 'coop_space_colony_spice.py --case cap', minutes=4, fixture='space_empire')  # colonies past the old cap of 48 are synced too (BUG-0834; SPORE_FIX_OFF=space.colony_spice_all fails)
+add('space_spice_rivals', P + 'coop_space_colony_spice.py --case rivals', minutes=4, fixture='space')  # a guest's colony spice of a Rivals period is not sent to the host as collected (BUG-1039; SPORE_FIX_OFF=space.colony_spice_epoch fails)
 add('space_stray_window', P + 'coop_space_stray_window.py', minutes=4, fixture='space')  # a window that pauses the game without a caption (My Collections, Sporepedia) is closed by the Space bots (BUG-0336; OLD_FINALE_TOOL=1 fails)
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 add('space_finale_gone', P + 'coop_space_finale_gone.py', minutes=9)  # the core does not wait for a partner who entered it and flew away (BUG-0820; SPORE_FIX_OFF=space.finale_entered fails)

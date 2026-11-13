@@ -208,6 +208,23 @@ static void say_cause(net::Session& s, const Res& r, uint8_t player, double v)
     g_feed(b);
     g_causes_shown++;
 }
+// BUG-1009: a guest's change the floor (0) or the money cap cut was counted in full in `applied` and in the guest's
+// cause: the next total's own part (v - synced - applied) then named the difference as the host's earning or spending
+// ("<host> earned 300 (shared)" when only the pool ran dry). On: what the game really took is counted.
+// `coop.fix shared.cause_clamped off`: the change as sent (0.7.13).
+static bool g_cause_clamp_fix = true;
+COOP_FIX("shared.cause_clamped", "BUG-1009", g_cause_clamp_fix,
+         "shared: a guest's change cut at 0 by the shared money's floor is counted as cut in the notices' causes");
+// add `change` to the resource: the part the game really took (the floor at 0, money_clamp's cap), or the change
+// itself with the fix off
+static double add_counted(Res& r, double cur, double change)
+{
+    r.set(net::shared_add(cur, change, g_floor_fix));
+    double after;
+    if (!g_cause_clamp_fix || !r.get(after) || !std::isfinite(after))
+        return change;
+    return after - cur;
+}
 static bool g_hold;          // the last tick: the guest is elsewhere and the totals are held
 static uint32_t g_held_totals; // tests: host totals ignored while held
 
@@ -315,8 +332,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         if (g_mode_keep_fix && s.role() == net::Role::Client && r.have && game::stage_epoch(r.mode) != r.epoch)
             r.have = false; // another world of the stage: wait for the host's total
         if (s.role() == net::Role::Host && r.owed != 0 && !g_hold) { // BUG-0691: pay what was acked while away
-            r.set(net::shared_add(v, r.owed, g_floor_fix));
-            r.applied += r.owed;
+            r.applied += add_counted(r, v, r.owed); // BUG-1009: what the game took
             H->log(M, SK_INFO, "shared %s %+.1f owed to the guests paid", r.name, r.owed);
             r.owed = 0;
             g_owed_paid++;
@@ -481,10 +497,10 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                 }
             }
             if (std::fabs(v) < 1e7) {
-                r.set(net::shared_add(cur, v, g_floor_fix));
-                r.applied += v;
-                r.causes[from] += v;
-                say_cause(s, r, from, v); // BUG-0696: on the host at once
+                double d = add_counted(r, cur, v); // BUG-1009: the part the floor / the cap let through
+                r.applied += d;
+                r.causes[from] += d;
+                say_cause(s, r, from, d); // BUG-0696: on the host at once
             }
             (v > 0 ? r.gained : r.spent) += v; // tests: what the guests changed
             H->log(M, SK_INFO, "shared %s %+.1f from player %u", r.name, v, from);

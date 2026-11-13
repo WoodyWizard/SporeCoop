@@ -253,12 +253,34 @@ struct GuestColony {
 static std::map<uint32_t, GuestColony> g_gc;
 static double g_last_check = -100;
 static uint32_t g_rx, g_written, g_taken_tx;
+// BUG-1039: g_gc lived for the whole session: after another Space world (a rejoin or a load of the host's save) or a
+// Rivals period (no sync, the values frozen), the first host K_SPICE compared the guest's new values with the old ones
+// and every lower one went to the host as a collection (K_SPICE_TAKEN): the host's colonies dropped to the older
+// amounts. On: the last-known values are of one Space world and of one Allies period; the first K_SPICE after either
+// only writes. `coop.fix space.colony_spice_epoch off`: kept for the session (0.7.13).
+static bool g_gc_epoch_fix = true;
+COOP_FIX("space.colony_spice_epoch", "BUG-1039", g_gc_epoch_fix,
+         "space: a guest's colony spice of an older world or of a Rivals period is not sent to the host as collected");
+static uint32_t g_gc_epoch, g_gc_dropped;
+static void gc_fresh()
+{
+    if (!g_gc_epoch_fix)
+        return;
+    uint32_t e = spaceext::world_epoch();
+    if (spaceext::rivals() || e != g_gc_epoch) {
+        if (!g_gc.empty())
+            g_gc_dropped++;
+        g_gc.clear();
+        g_gc_epoch = spaceext::rivals() ? 0 : e;
+    }
+}
 
 static void guest_check(double now, bool force = false)
 {
     if (!force && now - g_last_check < kCheckEvery)
         return;
     g_last_check = now;
+    gc_fresh(); // BUG-1039
     uint32_t pol = player_pol();
     for (auto& c : colonies(pol)) {
         auto it = g_gc.find(c.id);
@@ -327,6 +349,8 @@ static void guest_state(net::Reader& r, double now)
 // ---- feature
 static void tick(double now)
 {
+    if (!spaceext::is_host())
+        gc_fresh(); // BUG-1039: a Rivals period or another world ends the last-known values
     if (!active())
         return;
     if (spaceext::is_host()) {
@@ -363,6 +387,7 @@ static void on_session_end()
 {
     g_sent.clear();
     g_gc.clear();
+    g_gc_epoch = 0;
     g_last_send = -100;
     g_taken_wait.clear();
     g_old_cap = kMaxColonies;
@@ -373,9 +398,9 @@ static std::string status()
     char b[320];
     snprintf(b, sizeof b,
              "colonyspice: fix=%d tx=%u taken_rx=%u taken=%u rx=%u written=%u taken_tx=%u queued=%u late=%u stale=%u cut=%u "
-             "mirrors_skipped=%u",
+             "mirrors_skipped=%u gc_dropped=%u",
              (int)g_fix, g_tx, g_taken_rx, g_taken_applied, g_rx, g_written, g_taken_tx, g_taken_queued, g_taken_late,
-             g_taken_stale, g_cut, g_mirror_skipped);
+             g_taken_stale, g_cut, g_mirror_skipped, g_gc_dropped);
     return b;
 }
 
