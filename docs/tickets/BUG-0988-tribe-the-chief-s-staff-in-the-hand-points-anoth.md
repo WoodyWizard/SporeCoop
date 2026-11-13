@@ -36,6 +36,9 @@ animation playing, so the arm and staff follow the mirror's phase. No phase or t
 A fix needs the animation's time (GetCurrentAnimation's float* time out-argument, AnimatedCreature vt 0x58) sent with the
 start / snapshot and set on the mirror (a setter not known yet): RE and a new message field, not for 0.7.13. Player
 impact: an arm or staff angle at one moment; the item, the animation and the hold match.
+Note (fix/w48-ftribe): with BUG-0992's fix the same key frame (tribe_mirror_hold 02_hold, out/lab/20261112-220233 in
+fix/w48-ftribe) showed the staff the same way on both games; one frame, so the phase cause above is not ruled out
+(the hold bound to a pending track, BUG-0992 (b), may have been part of 063).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->

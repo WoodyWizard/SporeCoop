@@ -42,7 +42,19 @@ Test `defer_identity` (tools/tests/coop_defer_identity.py).
   FAIL with SPORE_FIX_OFF=npc.defer_identity: out/lab/20261112-050957 (2 of 2, the creature at the freed block
   destroyed with the queue).
 
+* fix/w48-ftribe (0.7.13 final check: FAIL in 20261112-175447 and 20261112-205503 #1, 0 reuses in 16 rounds each):
+  the test's setup did not reach its condition, the fix did not regress (every round with a reuse kept the creature
+  alive, also in 20261112-205503 #2). The hunt now watches the target's heap chunk (`chunk ... freed_at=`): with 300
+  frames and the misses kept, the puppet's block was mostly still in use when the hunt ended (freed only at the
+  cinematic's end); with no creature made it was never freed during the cinematic (0 of 17); with the misses destroyed
+  at once it was freed in most rounds within 1-250 tries and the next creation took it (docs/re/creature.md#creature-freed-in-cinematic).
+  The test hunts 900 frames, misses destroyed at once, and ends a round 20 tries after the free (`xf20`).
+  PASS: out/lab/20261112-214616, out/lab/20261112-214745 (2), out/lab/20261112-220233, PASS_FINAL;
+  FAIL with SPORE_FIX_OFF=npc.defer_identity: out/lab/20261112-215349 (2 of 2: the creature at the freed block
+  destroyed with the queue).
+
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12: fixed on fix/w48-freed (npc.defer_identity).
 - 2026-11-12: fix/w48-freed2: the test retries the scenario until the reuse happened (10/10 with the fix).
+- 2026-11-12: fix/w48-ftribe: the test waits for the game's free (heap chunk watch), misses destroyed at once; 0.7.13 final check failures were the setup.

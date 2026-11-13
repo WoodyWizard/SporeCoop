@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a guest now sees the host's members hold their staff or torch in the hand also when the copy is still in an
+  earlier gesture (a short hold in the change of items was missed) or got the same gesture again while it played it
+  (a held staff of several seconds was missed) (BUG-0992).
 - Cell: a guest whose own game was at a higher level (for example food 300, level 4) no longer crashes the
   moment it joins a host at a lower level; the game drew the tiles of the new level at the old level's scale and
   overran its own buffer (BUG-0975).
