@@ -1786,9 +1786,10 @@ COOP_FIX("tribe.mirror_idle_loco", "BUG-1071", g_idle_loco_fix,
 // host tracked it (bhv_anim). The host's chief of the save stood in its long staff gesture 0x04C6CB02 started at the
 // load, before the session (bhv_anim 0, t 16-22 s): the guest's mirror played it from its own start (t 0.6-6 s) and
 // never got the host's moment: the staff forward in the hand on the host, another pose (or still the resting grip) on
-// the guest in same_view_tribe's stills. Now the moment of any current animation that is not a loop and not the
-// locomotion's idle / walk goes too (the guest sets it only when its mirror plays the same id).
-// `coop.fix tribe.mirror_phase_any off`: as before.
+// the guest in same_view_tribe's stills. The host's own track of that gesture can also loop (+0xA0 -1.0) for 30 s+
+// while the mirror played single passes that ended and came back. Now the moment of any current animation but the
+// locomotion's idle / walk goes too, loops included, with the track's loop setting and passes (kind 15); the guest
+// sets them only when its mirror plays the same id. `coop.fix tribe.mirror_phase_any off`: as before.
 static bool g_phase_any_fix = true;
 COOP_FIX("tribe.mirror_phase_any", "BUG-1069", g_phase_any_fix,
          "tribe: a guest's copy of a member is at the host's moment also of a gesture that began before the session (the chief's staff held another way)");

@@ -37,13 +37,17 @@ Not the hold relay alone: the gesture's moment, in three ways (observed, docs/re
 * tribe_chief_still (lab 20261113-060910): the same gesture 5.6 s apart after the host restarted it; the phase fix
   ignored differences of 5 s and more. The mirror's older instance ended 1.9 s before the host's (hold `M`, the hand
   empty 1.4 s on the guest).
+* Probes (lane 6 / 7, both games' chief rows at 10 Hz, the track's +0xA0 / +0xB0 shown): the host's own track of the
+  gesture loops at times (+0xA0 -1.0, 30 s+), and a mirror's start of it loops at times while the host's plays once:
+  the mirror ended its passes while the host went on (or the other way), the hand empty 1.3-1.5 s at each gap.
 * Same run: the host restarted the gesture with a new hold: holdtrace `S T R` at one moment, the relayed restart ended
   the instance the hold had just bound to; the guest's hand empty 1.1 s until the hold's resend.
 
 ## Fix
-* `tribe.mirror_phase_any`: the host sends the moment of every member's current animation that is neither a loop nor
-  the locomotion's idle / walk (MSG_NPC_ANIM kind 15, kind 14's layout; a guest with the switch off ignores it, so the
-  twin acts from the join); a guest sets differences up to 60 s (5 s before).
+* `tribe.mirror_phase_any`: the host sends the moment of every member's current animation but the locomotion's idle /
+  walk, loops too, with the track's loop setting (+0xA0: -1.0 loops, 1.0 once) and passes (+0xB0) (MSG_NPC_ANIM kind
+  15; a guest with the switch off ignores it, so the twin acts from the join); a guest whose mirror plays that id takes
+  the host's loop setting and passes and its time, whatever the difference (kind 14 kept to 5 s).
 * `tribe.hold_restart`: a relayed restart of the animation a host's hold was bound to under 0.5 s before is skipped
   while the mirror plays it (trace `D`); the moment comes with kind 14 / 15.
 * Tests: tribe_chief_still (new); same_view_tribe prints the host's chief's animation / hold / time / item on both
