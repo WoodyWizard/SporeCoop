@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w49-cell2, fix/w49-cell3
-commits: d7f41e27, 5f75d936, 58c4aad0
+commits: d7f41e27, 5f75d936, 58c4aad0, 19ea35f8
 tests: cell_levelup_area, cell_levelup_view
 signature:
 docs: docs/re/cell.md#cell-levelup-partner-area, docs/re/cell.md#cell-levelup-cull-measured, docs/06-testing.md#testing-cell-c2-0714, docs/06-testing.md#testing-cell-levelup-area-apart
@@ -104,7 +104,9 @@ cell_levelup_view PASS (guest-only loss 0 of 170, wipe_near_lost 0) and cell_lev
 Final (fix/w49-cell3, the reworked test, the shares asserted): PASS out/lab/20261113-171719 (2 repeats),
 out/lab/20261113-171721 (2), out/lab/20261113-171723 (2): 6 of 6; FAIL with SPORE_FIX_OFF=cell.view_centre_scale
 out/lab/20261113-171725 (centre 15.6 m; up +20 points) and out/lab/20261113-171219 (15.7 / 21.7 m, 2 of 2). Earlier
-versions of the margins (10 / 20 points; now 15 / 25): the same PASS runs. Regression: see the History line.
+versions of the margins (10 / 20 points; now 15 / 25): the same PASS runs. Regression (fix/w49-cell3): cell_levelup_view
+PASS out/lab/20261113-172237, cell_level_drop PASS out/lab/20261113-172239, cell_flush_handover PASS
+out/lab/20261113-172241, play_cell --quick PASS out/lab/20261113-172243.
 
 ## History
 - 2026-11-13: opened.
