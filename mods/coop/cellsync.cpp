@@ -2333,6 +2333,8 @@ static void hand_over(int32_t key, TileList* from)
             if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
                 if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
+                    if (g_flushing && g_flush_lists.count(l))
+                        g_handed_flushed++; // BUG-1000: waits in a list this pass deletes
                     g_starved.emplace((uint32_t)e[1], (uint8_t)0xFF);
                     return true;
                 }
@@ -2575,7 +2577,7 @@ static void tiles_check(const char* step, int level)
     uint32_t live = F<uint32_t>(g, 0x38 + 0xC);
     if (n != live || dead) {
         g_tile_checks_bad++;
-        if (!strncmp(step, "the frame between", 17))
+        if (!strncmp(step, "the frame between", 17) && dead) // dead entries: a list that points at freed tiles
             g_tile_check_warns_between++;
         std::string fr;
         for (uint32_t i : g_freed_dbg)
@@ -6535,6 +6537,11 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "mirrornf c%u nf=0x%X pos=(%.2f %.2f) pmean=(%.2f %.2f) parts=%d heals=%u turns_skipped=%u\n", key,
                  cell_nonfinite(c), pos_of(c).x, pos_of(c).y, mx, my, used, g_mirror_nan_heals, g_mirror_nan_turns);
         return b;
+    }
+    if (!a.empty() && a[0] == "rebuild" && is_host() && G()) { // tests (BUG-1000): the game rebuilds the level next frame
+        // (G+0x51D8, the respawn's request: RebuildLevel 0xE7FD00 clears the tile pool, docs/re/cell.md)
+        F<uint8_t>(G(), 0x51D8) = 1;
+        return "rebuild requested\n";
     }
     if (a.size() >= 2 && a[0] == "viewedge" && is_host()) { // tests (BUG-0999): the host's view box at the 1e7 edge for <n> tile passes
         g_test_view_edge = std::clamp(atoi(a[1].c_str()), 0, 600);
