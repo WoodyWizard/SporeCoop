@@ -1,19 +1,19 @@
 ---
 id: BUG-1046
 title: Space: a guest's mirror of a host NPC ship fires 4 shots for 1 (or skips the first) when the ship shoots again 1-2.3 s after a pause (host and guest forget a shooter at different times, the count restarts)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-13
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-space
+commits: f95e96fe
+tests: space_shot_count
 signature:
-docs: docs/known-issues.md#issue-space-shot-burst
+docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-space-shot-burst
 related: BUG-0677
 ---
 
@@ -35,11 +35,25 @@ Do not restart the host's count: keep the per-ship counter in its own map that s
 `coop_space_shots.py`: a host NPC ship (escort / pirate test spawn) fires one shot, waits 1.5 s, fires one more (a host test command calling FireTool on it, or the game's own fight with a timed target); assert the guest's game made exactly 1 FireTool on the mirror for the second shot (`coop.space shots` counters of the game's tool, or the guest's FireTool hook count). Main: 4 (FAIL).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+squadron.cpp, switch `coop.fix space.shot_count` (off: 0.7.13): the host's per-ship shot count lives in its own map
+(g_shot_counts) that outlives the 1 s list of shooters; it is erased with the ship (its id leaves the host's list) and
+at the session end. A shot after a pause continues the count, so the guest's `done` stays comparable: one shot is one
+FireTool in the guest's game, whether the guest still keeps the old entry (2.3 s) or not.
+Test command (host): `coop.fleet fire <id> [slot]`: the ship fires that weapon slot at the host's ship once through
+the FireTool hook; the answer lists the slots with a weapon (`slots=`).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_shot_count.py` (suite `space_shot_count`, fixture space_empire, both on the colony planet, ~2 min): the host
+spawns a ship of its empire (it does not fight on its own) and fires it by `coop.fleet fire`; the guest's game's
+FireTool calls that fired (`fired=` of `coop.fleet list`: the game's answer). Case A: one shot of slot 1, then 1.5 s
+later one of slot 2 (the count is per ship, the reload per weapon: one weapon took no second shot within 2.1 s, lab
+20261113-013314). Case B (two quick shots then a third weapon: the burst of 4) runs only for a ship with 3 weapons; the
+escort has 2 (slots 1 and 2), so B was not run: the burst of 4 stays by code (same mechanism, the counts 2 and 1).
+* FAIL (SPORE_FIX_OFF=space.shot_count): out/lab/20261113-013833 (A: the guest's game fired 0)
+* PASS: out/lab/20261113-013622-2, out/lab/20261113-015737-2 (A: 1)
+Found on the way (docs/re/space.md#space-war-npc-hits): in a star system FireTool refused every shot of the escort's
+weapon (fired=0, lab 20261113-012916-2); on a planet it fires.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space: the shot count outlives the 1 s list; FAIL/PASS in the lab (case A).

@@ -6949,3 +6949,25 @@ Use and limits:
   sets `SPORE_NET="delay=300"`; the test prints `RESULT: SKIP` if the guest's change still came after the host's
   total (no floor reached). Toasts in `coop.status` move on screen: compare their text, not the whole line.
 * `space_spice_rivals` (BUG-1039): colony values under the game's cap (3, 0.5, 4.5 per city of the home colony).
+
+## Space combat, finale and gift tests of 0.7.14 S1 (2026-11-13, fix/w49-space)
+<a id="testing-finale-death"></a>
+
+* `space_war_escort` (BUG-1032, fixture space, ~1 min): Rivals and War by commands (`coop.space rivalry mode rivals`,
+  `rivalry war 0` on the guest), `coop.fleet spawn 2 own` for the host's escort; the hits go through the hook path
+  (`coop.fleet hurt` / `shoot`). Asserts the games' hp (`coop.space hp`, `coop.fleet list`).
+* `space_shot_count` (BUG-1046, fixture space_empire, ~2 min): NPC weapons fire only on a planet (FireTool refused
+  every shot in a star system); one weapon reloads longer than 2.1 s, so `coop.fleet fire <id> <slot>` alternates
+  slots (the count is per ship). Case B (a burst of 4) needs a ship with 3 weapon slots; the escort has 2, so the
+  test runs case A only. `RESULT: SKIP` when no two weapons fired in time.
+* `space_finale_fly` (BUG-1045, fixture space, ~1 min): `coop.space finale goto <star> delay <s>` runs the queued
+  step later (to disable the ship in between: `coop.space disable 1`).
+* `space_terra_far` (BUG-1042, fixture space, ~1 min): `coop.space nogen` (guest) names a star without generated
+  planets (00121000 in the fixture), `coop.space terrarec <place> a t w` (host) sends a K_TERRA_REC. The FAIL twin
+  shows caught faults at 0x00BBABE2 in the guest's `exc`.
+* `space_give_pick` (BUG-1050, multi / extended, a party of 3 on one lane, space_free, ~1 min): real clicks on ">"
+  and Give in Bob's co-op window; Carol's game has no spice before (count 0), 10 after.
+* `space_finale_death` (BUG-0991, fixture space_free, ~2.5 min): the finale's to_galaxy after a lone death. On the
+  `space` fixture (tutorial lock on) the respawned ship stayed in the system view; after a respawn the wheel did
+  nothing for about 20 s. `OLD_FINALE_DEATH=1` is the 0.7.13 bot (FAIL). `coop.space heal` sets the ship's hp to
+  its max (the campaign's repair before the finale).

@@ -1,19 +1,19 @@
 ---
 id: BUG-1042
 title: Space: a partner's terraforming record (K_TERRA_REC) calls GetPlanetRecord unchecked: a star without generated planets, an id out of the star table, or a game outside Space can fault
-status: open
+status: fixed
 kind: crash
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-2
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs: docs/known-issues.md#issue-terra-rec-unchecked
+fixed_in: unreleased
+branch: fix/w49-space
+commits: f95e96fe
+tests: space_terra_far
+signature: 0xC0000005 at 0x00BBABE2 Simulator::cStarRecord::GetPlanetRecord+0x12 data=0 (from cStarManager::GetPlanetRecord 0x00BA6F4B)
+docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-terra-rec-unchecked
 related: BUG-0883, BUG-0284
 ---
 
@@ -36,11 +36,23 @@ In `apply_terra_rec`: return unless `in_space()`; look the star up with `star_re
 New `coop_space_terra_far.py` (space fixture, 2 players): the host terraforms a planet of a star the guest's game has not generated (a test command on the host that sends K_TERRA_REC for a far star id and one for an id past the star table, and the same while the guest is at the galaxy menu / loading). Assert the guest's game has no fault or crash report and its record of a generated planet still changes. Main: expect a fault report (FAIL) on the far / bad id; with the fix PASS. Existing `coop_space_terra_tool.py` must still pass.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+spacecoop.cpp, switch `coop.fix space.terra_rec_checked` (off: 0.7.13): planet_record_checked(id) (apply_terra_rec's
+"elsewhere" branch and the test read `coop.space planet <id>`) returns null unless the game is in Space, the star
+comes from the bounded star_record(id & 0xFFFFFF), and the planet index (id >> 24) is under the star's generated
+planet count (+0xAC); only then cStarManager::GetPlanetRecord. A skipped record counts `terra_rec_skipped=` in
+coop.status. Test commands: `coop.space nogen`, `coop.space terrarec <place> a t w`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_terra_far.py` (suite `space_terra_far`, fixture space, ~1 min): the guest names a star its game has not
+generated planets for (00121000, the first such star after 50 records); the host sends K_TERRA_REC for its planet 0
+and for 0x40FFFFFF (past the star table); control: planet 01460035 of the home system takes the values.
+* FAIL (SPORE_FIX_OFF=space.terra_rec_checked): out/lab/20261113-014338 (the guest's game: two caught faults at
+  0x00BBABE2 cStarRecord::GetPlanetRecord+0x12, data 0: the BUG-0284 null read; a game without a handler there
+  crashes)
+* PASS: out/lab/20261113-014106-2, out/lab/20261113-015436-2 (no fault; the control record (0.0, 0.45, -1.0) -> (0.25, 0.75, 0.4))
+Observed: the star without generated planets faulted; the id past the table faulted at the same address (inferred: the unbounded
+read ended on a record with no planets). The case "outside Space" is covered by the in_space() check, not run.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space: the record is looked up only for a generated planet of a known star, in Space; FAIL/PASS in the lab.

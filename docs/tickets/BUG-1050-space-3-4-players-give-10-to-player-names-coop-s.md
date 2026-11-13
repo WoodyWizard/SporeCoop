@@ -1,19 +1,19 @@
 ---
 id: BUG-1050
 title: Space, 3-4 players: "Give 10 to <player>" names coop's give target, but the spice goes to the first other player of the session (give_spice ignores the recipient; the > picker is hidden in Space)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SEAM-1
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-space
+commits: f95e96fe
+tests: space_give_pick
 signature:
-docs: docs/known-issues.md#issue-space-give-recipient
+docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-space-give-recipient
 related: BUG-0075, BUG-0234
 ---
 
@@ -36,11 +36,28 @@ Confidence: high.
 New `coop_space_give_pick.py` (3 instances, space fixture): guest 2 picks guest 3 (`coop.give next` = the > button), clicks Give (the ui action / `coop.give`); assert guest 3's game inventory spice grew by 10 and the host's did not (the game's inventory count, `coop.space spice`). Main: the host got it (FAIL).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop.cpp, spacecoop.cpp, coop_ui.cpp; switch `coop.fix space.give_pick` (off: 0.7.13, the first other player and no
+">" in Space):
+* give_selected_to(to) passes the recipient to `spacecoop::give_spice(10, to)` (`coop.give <id>` too); give_spice
+  refuses a recipient that is not another player of the session; 0xFF keeps the old first-other-player choice.
+* The co-op window (owner decision 9: ">" back in 3-4 player Space sessions, next to the Give button): in Space with 2+
+  possible recipients the row is cut anew: jump 400..515, "Give 10 to <player>" 520..690, ">" 694..720 (the window's
+  inner edge, as Send); elsewhere the old places (jump 400..560, ">" 520..560, Give 570..720). App callback
+  `give_pick_space`.
+Interpretation: the owner's words "next to '<' under 'Fly to'" did not match a "<" in that row (there is none in
+Space); ">" was put right of the Give button it belongs to.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_give_pick.py` (suite `space_give_pick`, multi / extended, party of 3 on one lane, fixture space_free, ~1
+min): Bob opens the co-op window, ">" must be shown; real clicks on ">" until the button names Carol, then on Give;
+the spice in each game's cargo (`coop.space spice`, the game's inventory count).
+* FAIL (SPORE_FIX_OFF=space.give_pick): out/lab/20261113-014626 (">" hidden; Alice 20 -> 30, Carol 0 -> 0)
+* PASS: out/lab/20261113-014859-2 (">" right of the window's edge, first layout), out/lab/20261113-015206, out/lab/20261113-020049 (the final
+  layout: Carol 0 -> 10, Alice 20 -> 20, Bob 20 -> 10)
+Key frame looked at (01_give_pick_guest.jpg of 20261113-015206): ">" inside the window next to Give, nothing
+overlaps; the Give caption wraps on two lines (old, BUG-1062). No tools/tests/golden reference has this row (the
+golden steps are 2-player).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space: the spice goes to the named player, ">" in Space; FAIL/PASS in the lab.
