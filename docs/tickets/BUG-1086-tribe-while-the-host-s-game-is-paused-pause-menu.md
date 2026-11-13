@@ -61,7 +61,9 @@ send cycle in Tribe turns a stand of its game time of 1 s or more (cGameTimeMana
 a reason of the same wait, sent as MSG_NPC_ANIM kind 21 {up} (a new kind: a 0.7.13 guest ignores it instead of
 reading it as "the tribe is out"); a guest's game stands with the game's own Pause (reason 0x4BF38A7, the one Pause of
 the wait) and the panel "<host> paused the game: yours waits, your orders run when <host> goes on", and goes on with
-"<host> (host) goes on: so does your game"; a game over replaces the pause (the guest's note changes with it), the
+"<host> (host) goes on: so does your game" (both notes only when the pause held 1.5 s on the guest: the host's short
+stands at a join's save or a reload, seen in play_tribe and tribe_gameover_wait of 20261113-160412 as a note pair 0.1-0.4 s
+apart, pause the guest without a word); a game over replaces the pause (the guest's note changes with it), the
 pause's end never ends a game over's wait; the 10 s no-news and stage / session ends apply as before. `coop.status`
 prints `host pauses told`. Off: the guest plays on (0.7.13).
 

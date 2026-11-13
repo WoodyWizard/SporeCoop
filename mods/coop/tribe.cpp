@@ -2487,6 +2487,7 @@ COOP_FIX("tribe.host_pause_wait", "BUG-1086", g_host_pause_wait_fix,
 constexpr uint8_t kHostPauseKind = 21;
 enum GameOverWhy : uint8_t { kGoTribeOut = 1, kGoHutDown = 2, kGoHostPaused = 3 };
 static double g_hp_since;     // host: its game time stands since (0: it runs)
+static double g_hp_note_at;   // guest: when to show the host's pause note (0: shown, or none due)
 static uint32_t g_hp_ups;     // host: pauses told
 static uint8_t g_go_why;       // host: why its caption is up (last sent); guest: the host's last reason
 static uint32_t g_go_hut_ups;  // host: waits started for the hut's defeat
@@ -2535,9 +2536,19 @@ static void gameover_pause(bool on, const char* why)
     (on ? g_go_pauses : g_go_resumes)++;
     H->log(M, SK_INFO, "tribe: the host's %s is %s: this game %s (%s, %s)", g_go_why == kGoHostPaused ? "pause" : "game-over caption",
            on ? "up" : "gone", on ? "waits" : "goes on", g_go_why == kGoHostPaused ? "BUG-1086" : "BUG-0960", why);
-    if (C.feed && C.sess)
-        C.feed(on ? gameover_note() : C.sess->name_of(0) + (g_go_why == kGoHostPaused || !g_go_why ? " (host) goes on: so does your game"
-                                                                                                   : " (host) answered: the game goes on"));
+    if (!C.feed || !C.sess)
+        return;
+    if (g_go_why == kGoHostPaused) { // the pause's note only once it held 1.5 s (a join's or a reload's short stand: none)
+        if (on)
+            g_hp_note_at = H->time_seconds() + 1.5;
+        else if (!g_hp_note_at) // (told: so is the end)
+            C.feed(C.sess->name_of(0) + " (host) goes on: so does your game");
+        if (!on)
+            g_hp_note_at = 0;
+        return;
+    }
+    g_hp_note_at = 0;
+    C.feed(on ? gameover_note() : C.sess->name_of(0) + " (host) answered: the game goes on");
 }
 
 // host, every send cycle: its caption is up (the input lock and the stood time in Tribe, entered with the player
@@ -2591,6 +2602,10 @@ static void gameover_guest_tick(double now)
 {
     if (!g_go_paused)
         return;
+    if (g_hp_note_at && now >= g_hp_note_at && g_go_why == kGoHostPaused && C.feed) { // BUG-1086
+        g_hp_note_at = 0;
+        C.feed(gameover_note());
+    }
     if (!C.sess || !C.sess->connected() || game::mode_id() != modes::kTribe)
         gameover_pause(false, "the stage or the session ended");
     else if (now - g_go_news > 10.0)
@@ -2614,7 +2629,9 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             g_go_news = H->time_seconds();
             if (g_go_paused && why != g_go_why && fix && C.feed) { // the reason changed while waiting
                 g_go_why = why;
-                C.feed(gameover_note());
+                g_hp_note_at = why == kGoHostPaused ? H->time_seconds() + 1.5 : 0;
+                if (why != kGoHostPaused)
+                    C.feed(gameover_note());
             }
             g_go_why = why;
         }
