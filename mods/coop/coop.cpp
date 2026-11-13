@@ -6434,6 +6434,12 @@ static std::vector<uint8_t> player_ids()
 uint8_t give_target() { return net::give_target(player_ids(), g_sess.my_id(), g_give_pick, g_give_pick_fix); }
 void give_target_cycle() { g_give_pick = net::give_target_next(player_ids(), g_sess.my_id(), g_give_pick); }
 
+// BUG-1050: in Space "Give 10 to <player>" named coop's give target, but the spice went to the first other player of the
+// session, and the ">" picker was hidden there. Now the spice goes to the player the button names, and the co-op window
+// shows ">" in Space too (coop_ui.cpp). `coop.fix space.give_pick off`: the first other player, ">" hidden (0.7.13).
+bool g_space_give_pick_fix = true;
+COOP_FIX("space.give_pick", "BUG-1050", g_space_give_pick_fix,
+         "space: Give 10 spice goes to the player the button names, and 3-4 players pick the recipient with >");
 int give_selected_to(uint8_t to)
 {
     if (to == 0xFF)
@@ -6443,7 +6449,7 @@ int give_selected_to(uint8_t to)
     if (g_mode == modes::kCiv)
         return civ::give_selected(to);
     if (g_mode == modes::kSpace)
-        return spacecoop::give_spice(10);
+        return spacecoop::give_spice(10, g_space_give_pick_fix ? to : 0xFF);
     return 0;
 }
 
@@ -6651,6 +6657,7 @@ void init_ui()
     a.give_do = [] { give_selected_to(give_target()); };
     a.give_cycle = [] { give_target_cycle(); };
     a.give_choices = [] { return (int)g_sess.players().size() - 1; };
+    a.give_pick_space = [] { return g_space_give_pick_fix; };
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {

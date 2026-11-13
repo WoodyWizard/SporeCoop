@@ -1232,6 +1232,12 @@ class Campaign:
         ck = Ck()
         for p in self.P:  # (the drive came with the Space play phase)
             fz.settle(p.con, p.name, timeout=60)
+            # BUG-0991: the space bot does not repair its ship; one left near death (8 of 1500 hp) was destroyed on
+            # the way and its death caption held the finale. A player repairs before such a trip: the bots get full hp
+            m = re.search(r'hp ([\d.]+) max ([\d.]+)', fz.sp(p.con, 'hp'))
+            if m and float(m.group(2)) > 0 and float(m.group(1)) < 0.5 * float(m.group(2)):
+                self.note(f'shortcut: {p.name}: ship at {m.group(1)} of {m.group(2)} hp: coop.space heal '
+                          f'({fz.sp(p.con, "heal")})')
         self.take_off(h)  # the Space play may have left the host on a planet
         fz.to_galaxy(h.con, h.name, ck)
         self.note('shortcut: coop.space finale goto near (the host crosses the galaxy)')

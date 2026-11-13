@@ -1403,7 +1403,18 @@ static void refresh_lobby()
     }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
-    show(D.give_next, giving && gn > 0 && !space && A.give_choices && A.give_choices() > 1);
+    // BUG-1050: in Space with 3-4 players ">" comes back; the jump button holds its Tribe / Civ place (520..560), so
+    // the row is cut anew there: jump 400..515, Give 520..690, ">" 694..720 (the window's inner edge, as Send)
+    bool pick = giving && gn > 0 && A.give_choices && A.give_choices() > 1;
+    bool pick_space = pick && space && A.give_pick_space && A.give_pick_space();
+    auto place = [](Win w, const Rect& r) {
+        if (w && (std::abs(sui::area(w).x1 - r.x1) > 0.5f || std::abs(sui::area(w).x2 - r.x2) > 0.5f))
+            sui::set_area(w, r);
+    };
+    place(D.give_next, pick_space ? Rect{694, 430, 720, 460} : Rect{520, 430, 560, 460});
+    place(D.give_btn, pick_space ? Rect{520, 430, 690, 460} : Rect{570, 430, 720, 460});
+    place(D.jump_btn, pick_space ? Rect{400, 430, 515, 460} : Rect{400, 430, 560, 460});
+    show(D.give_next, pick && (!space || pick_space));
     text(D.give_btn, space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto);
     std::string jto;
     bool jump = A.jump && A.jump(jto);

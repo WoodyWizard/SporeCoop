@@ -1143,6 +1143,32 @@ static void apply_terra(uint32_t planet_place, const float d[3])
 }
 
 // BUG-0883: a partner's planet record values after its own terraforming
+// BUG-1042: a partner's K_TERRA_REC was written through cStarManager::GetPlanetRecord with no check: it indexes the star
+// table with no bound and reads records[i] of a star whose planets this game never generated (count +0xAC = 0: the null
+// read of BUG-0284), and it ran outside Space too. Now the star comes from the bounded star_record, its planets must be
+// generated here and the planet index under their count, and the game must be in Space; else the record is skipped.
+// `coop.fix space.terra_rec_checked off`: the unchecked call (0.7.13).
+static bool g_terra_rec_checked_fix = true;
+COOP_FIX("space.terra_rec_checked", "BUG-1042", g_terra_rec_checked_fix,
+         "space: a partner's terraforming record of a star not generated here, a bad id or one outside Space is skipped");
+static uint32_t g_terra_rec_skipped;
+// the record of PlanetID `planet` (index << 24 | star) through the game, or null when the game would read past its data
+static void* planet_record_checked(uint32_t planet)
+{
+    static uintptr_t get_rec = H->sym("Simulator::cStarManager::GetPlanetRecord");
+    void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+    if (!sm || !get_rec)
+        return nullptr;
+    if (g_terra_rec_checked_fix) {
+        void* star = star_record(planet & 0xFFFFFFu);
+        uint32_t i = (planet >> 24) & 0x3Fu;
+        if (!in_space() || !star || IsBadReadPtr(star, 0xB0) || i >= F<uint8_t>(star, 0xAC)) {
+            g_terra_rec_skipped++;
+            return nullptr;
+        }
+    }
+    return thiscall<void*>(get_rec, sm, planet & 0x3FFFFFFFu);
+}
 static void apply_terra_rec(uint32_t planet_place, const float v[3])
 {
     g_terra_rec_got++;
@@ -1156,11 +1182,8 @@ static void apply_terra_rec(uint32_t planet_place, const float v[3])
         if (data && !IsBadReadPtr(data, 0x2034) && F<uint8_t>(data, 0x2030))
             return; // terraforming runs here: the live deltas (K_TERRA) move this record
         rec = active_planet_record();
-    } else {
-        static uintptr_t get_rec = H->sym("Simulator::cStarManager::GetPlanetRecord");
-        void* sm = cdecl_call<void*>(a_StarMgr);
-        rec = sm && get_rec ? thiscall<void*>(get_rec, sm, planet_place & 0x3FFFFFFFu) : nullptr;
-    }
+    } else
+        rec = planet_record_checked(planet_place & 0x3FFFFFFFu);
     if (!rec || IsBadWritePtr(rec, 0xBC))
         return;
     for (int i = 0; i < 3; i++)
@@ -1497,9 +1520,17 @@ int spice(std::string& to)
     return find_spice(inventory(), k, c) >= 0 ? c : 0;
 }
 
-int give_spice(int n)
+int give_spice(int n, uint8_t to)
 {
-    uint8_t to = gift_target();
+    if (to != 0xFF) { // BUG-1050: the recipient coop's give target names; it must be another player of the session
+        bool ok = false;
+        if (C.sess)
+            for (auto& p : C.sess->players())
+                ok |= p.id == to && to != C.sess->my_id();
+        if (!ok)
+            return 0;
+    } else
+        to = gift_target();
     void* inv = inventory();
     Key k;
     int c = 0;
@@ -2000,13 +2031,13 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[512];
+    char b[640];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off);
     return b + spaceext::status_all();
 }
@@ -2338,6 +2369,12 @@ std::string debug(const std::vector<std::string>& a)
         g_repair_fix = a[1] != "0";
         return std::string("repairfix ") + (g_repair_fix ? "1" : "0");
     }
+    if (a[0] == "heal" && u) { // tests (BUG-0991): the bots' repair before the finale: the ship's hp to its max
+        if (F<int>(u, kState) != 2 && F<float>(u, kMaxHp) > 0)
+            F<float>(u, kHp) = F<float>(u, kMaxHp);
+        snprintf(b, sizeof b, "hp %.1f max %.1f state=%d", F<float>(u, kHp), F<float>(u, kMaxHp), F<int>(u, kState));
+        return b;
+    }
     if (a[0] == "energy" && u) { // tests (BUG-0063): the ship's energy (+0x7F4, max +0x7F8); "energy <v>" sets it
         if (a.size() > 1)
             F<float>(u, 0x7F4) = (float)atof(a[1].c_str());
@@ -2608,15 +2645,46 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "planet") { // [PlanetID]: that planet's record (BUG-0883), else the active one
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* rec = p ? F<void*>(p, 0x13C) : nullptr;
-        if (a.size() > 1) {
-            uintptr_t gr = H->sym("Simulator::cStarManager::GetPlanetRecord");
-            void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
-            rec = sm && gr ? thiscall<void*>(gr, sm, (uint32_t)strtoul(a[1].c_str(), nullptr, 16)) : nullptr;
-        }
+        if (a.size() > 1)
+            rec = planet_record_checked((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
         if (!rec)
             return "not on a planet";
         snprintf(b, sizeof b, "planet b0=%.3f b4=%.3f b8=%.3f", F<float>(rec, 0xB0), F<float>(rec, 0xB4),
                  F<float>(rec, 0xB8));
+        return b;
+    }
+    if (a[0] == "terrarec" && a.size() > 4) { // tests (BUG-1042): send a K_TERRA_REC for <place hex> as if we terraformed it
+        net::Writer w;
+        w.u32((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        for (int i = 2; i < 5; i++)
+            w.f32((float)atof(a[i].c_str()));
+        send(K_TERRA_REC, w);
+        return "sent";
+    }
+    if (a[0] == "nogen") { // tests (BUG-1042): a star of this galaxy whose planets this game has not generated
+        void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+        if (!sm || IsBadReadPtr((uint8_t*)sm + 0xC8, 8))
+            return "no star manager";
+        uint8_t* sb = F<uint8_t*>(sm, 0xC8);
+        uint8_t* se = F<uint8_t*>(sm, 0xCC);
+        uint32_t n = 0, found = 0;
+        for (uint32_t sec = 0; sb && se > sb && sec < (uint32_t)((se - sb) / 20) && !found; sec++) {
+            if (IsBadReadPtr(sb + sec * 20, 8))
+                break;
+            void** arr = F<void**>(sb + sec * 20, 0);
+            void** end = F<void**>(sb + sec * 20, 4);
+            for (uint32_t i = 0; arr && end > arr && i < (uint32_t)(end - arr) && i < 4096; i++) {
+                void* r = IsBadReadPtr(arr + i, 4) ? nullptr : arr[i];
+                if (!r || IsBadReadPtr(r, 0xB0))
+                    continue;
+                n++;
+                if (!F<uint8_t>(r, 0xAC) && F<uint32_t>(r, 0x70) == (sec << 12 | i) && n > 50) { // (not one near home)
+                    found = F<uint32_t>(r, 0x70);
+                    break;
+                }
+            }
+        }
+        snprintf(b, sizeof b, "nogen %08X after %u stars", found, n);
         return b;
     }
     if (a[0] == "sculpt") { // BUG-0763: the sculpting / colouring relay and the active terrain's colours

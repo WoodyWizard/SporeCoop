@@ -101,8 +101,18 @@ def close_stray(con, who):
     return True
 
 
+def death_caption(con):
+    """BUG-0991: the death caption ("...you return to your homeworld, a new spaceship at the ready") holds the input
+    and waits for its OK, but the finale's busy flag does not show it; `coop.space hp` does (cine=1, or state=2: the
+    ship destroyed). OLD_FINALE_DEATH=1: not looked for (the 0.7.13 bot, to see it stuck)"""
+    if os.environ.get('OLD_FINALE_DEATH') == '1':
+        return False
+    hp = sp(con, 'hp')
+    return 'cine=1' in hp or 'state=2' in hp
+
+
 def settle(con, who, secs=4, timeout=120):
-    """press OK on every caption (tutorial texts, badges) until nothing plays for `secs`. A caption
+    """press OK on every caption (tutorial texts, badges, the death caption) until nothing plays for `secs`. A caption
     is confirmed only after it has been up for 6 s: an Enter while a caption is still coming up
     crashed the game in the UI (AV at 0xCCCCCCCC from App::Canvas::Tick, docs/06-testing.md)"""
     quiet = 0.0
@@ -111,7 +121,7 @@ def settle(con, who, secs=4, timeout=120):
     t0 = time.time()
     while time.time() - t0 < timeout:
         f = fin(con)
-        if f.get('busy') == '1':
+        if f.get('busy') == '1' or death_caption(con):
             quiet = 0.0
             since = since or time.time()
             if time.time() - since >= 6 and close_stray(con, who):  # (BUG-0336)
@@ -145,13 +155,32 @@ def to_galaxy(con, who, ck):
     (BUG-0303; OLD_FINALE_TOOL=1 skips that, to see the old tool fail)"""
     import play_space
     n = 0
-    for _ in range(10):
+    tries = 10
+    died = False
+    while tries > 0:
+        tries -= 1
         if fin(con).get('ctx') == '2':
             break
         if os.environ.get('OLD_FINALE_TOOL') != '1' and play_space.captain_open(con):
             print(f'  {who}: the captain screen is open: OK closes it')
             play_space.close_captain(con)
         close_stray(con, who)  # My Collections, Sporepedia (BUG-0336)
+        if death_caption(con):  # BUG-0991: the ship was destroyed: its caption takes no wheel until OK
+            print(f'  {who}: the ship was destroyed: OK on the death caption first', flush=True)
+            settle(con, who, timeout=60)
+            # the respawn: the new ship travels to a colony under a caption; the wheel does nothing until it is there
+            wait(lambda: all(k in sp(con, 'hp') for k in ('state=0', 'cine=0', 'movie=0')), 90, 2)
+            time.sleep(5)
+            settle(con, who, timeout=60)
+            tries = 25  # the respawned ship: the wheel did nothing for ~20 s after it arrived (lab 20261113-020049-2)
+            died = True
+        # the new ship has the save's tools: the drive the bots added is gone (lab 20261113-014338-2)
+        if died and 'state=0' in sp(con, 'hp'):
+            r = sp(con, 'tool add interstellardrive')  # ("already there" when the ship kept it)
+            if r != 'already there':
+                print(f'  {who}: the new ship had no interstellar drive: added again ({r})', flush=True)
+                time.sleep(3)
+                settle(con, who, timeout=30)
         con.call('wheel 720 540 -5')
         n += 1
         time.sleep(1.5)

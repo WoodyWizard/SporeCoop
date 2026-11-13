@@ -91,6 +91,7 @@ struct Mirror {
     float hp = 0;
     double seen = 0;
     net::VelocityEstimate est; // ship snapshots carry no velocity
+    uint32_t pol = 0xFFFFFFFFu; // the political id the host's game gives the ship
 };
 static std::unordered_map<uint16_t, Mirror> g_mirrors;
 static std::unordered_map<void*, uint16_t> g_mirror_of;
@@ -157,6 +158,18 @@ static bool friendly(void* ship)
     uint32_t mine = a_PlayerEmpireID ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
     return mine != 0xFFFFFFFFu && mine != 0 && F<uint32_t>(ship, kPol) == mine;
 }
+// BUG-1032: the BUG-0420 filter was written for Allies; in Rivals a guest at War with the host is an enemy of the host's
+// empire (its puppet has no empire, space_rivalry.cpp puppets_tick), and the host's escorts and Defenders attack it. The
+// filter dropped those hits (no MSG_UFO_DAMAGE) and the guest's shots at the escorts (MSG_UFO_HIT), and the hit a guest
+// sent was applied with the host's own empire id as the attacker's, which the game ignores within one empire (BUG-0705).
+// Now a hit between the host's empire and a player at War with the host counts both ways (owner decision 1, 0.7.14):
+// not friendly, applied with no empire (kNoPol) as the attacker's political id on both games.
+// `coop.fix space.war_npc_hits off`: dropped as friendly (0.7.13).
+static bool g_war_hits_fix = true;
+COOP_FIX("space.war_npc_hits", "BUG-1032", g_war_hits_fix,
+         "space: in Rivals at War the host's escorts and Defenders and the guest's ship damage each other");
+static uint32_t g_war_hits_out, g_war_hits_in, g_war_damage_in;
+static bool war_with(uint8_t player) { return g_war_hits_fix && rivalry::at_war(player); }
 
 // ---------------- BUG-0677: the host's NPC ship shots on the guests ----------------
 // A guest's mirrors never fire (h_FireTool returns 0 for them: the host's game decides the fights and relays the hits), so
@@ -170,6 +183,14 @@ static bool friendly(void* ship)
 // (BUG-0477, BUG-0530, BUG-0534, BUG-0688). `coop.fix space.shots off`: mirrors never fire (0.7.10).
 static bool g_shots_fix = true;
 COOP_FIX("space.shots", "BUG-0677", g_shots_fix, "space: a guest sees the host's NPC ships fire (the copies hurt nothing there)");
+// BUG-1046: the host dropped a shooter 1 s after its last shot and a new shot restarted its count at 1, while the guest
+// kept the old entry (its `done`) up to 2.3 s: a shot in between fired 4 copies (or none). The count now lives in its
+// own map that outlives the 1 s list (erased with the ship), so the guest's `done` stays comparable.
+// `coop.fix space.shot_count off`: the count restarts with the entry (0.7.13).
+static bool g_shot_count_fix = true;
+COOP_FIX("space.shot_count", "BUG-1046", g_shot_count_fix,
+         "space: a host NPC ship that fires again after a pause shows one shot on the guests, not a burst of 4 or none");
+static std::unordered_map<uint16_t, uint8_t> g_shot_counts; // host: ship id -> its shots so far (wrapping)
 constexpr uint8_t kShotChunk = 0xFE;
 constexpr uintptr_t kWeapons = 0x790; // mpNPCWeapon and the ground / near / medium / far air / abduct tools: 6 slots
 constexpr double kShotSend = 0.2, kShotKeep = 1.0, kShotRetry = 0.1;
@@ -276,9 +297,11 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
     }
     if (is_host() && C.puppet_owner) {
         int owner = C.puppet_owner(u);
-        bool own = owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att);
+        bool own = owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att) && !war_with((uint8_t)owner);
         if (own)
             g_friendly_dropped++;
+        else if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att))
+            g_war_hits_out++; // BUG-1032: an escort's hit on a War player's puppet
         if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && !own) {
             // an NPC ship hit a guest's ship: the guest takes it on its own ship
             net::Writer w;
@@ -334,7 +357,7 @@ static void ship_fired(void* tool, void* u, const float* aim, int dp, int a5, vo
     }
     s.seen = H->time_seconds();
     auto& e = g_ship_shots[it->second];
-    s.count = (uint8_t)(e.count + 1);
+    s.count = g_shot_count_fix ? ++g_shot_counts[it->second] : (uint8_t)(e.count + 1);
     e = s;
     g_shot_new = true;
     g_shots_seen++;
@@ -540,6 +563,7 @@ static void host_tick(double now)
     for (auto it = g_hid.begin(); it != g_hid.end();) {
         if (!alive.count(it->first)) {
             g_hid_rev.erase(it->second);
+            g_shot_counts.erase(it->second); // BUG-1046
             it = g_hid.erase(it);
         } else
             ++it;
@@ -919,7 +943,7 @@ static void guest_state(net::Reader& r)
             return;
         g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
-        m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
+        m.pos = p; m.rot = q; m.hp = hp; m.seen = now; m.pol = pol;
         m.est.update(p, now, sent);
         if (id == g_hold_mirror)
             continue; // tests: keep the freed pointer until the next MSG_UFO_DAMAGE
@@ -1047,6 +1071,12 @@ static void guest_tick(double now)
             continue;
         if (!here || now - m.seen > 3.0)
             continue;
+        if (g_war_hits_fix) { // BUG-1032: at War with the host its empire's ships are enemies here (our weapons hit them)
+            uint32_t mine = a_PlayerEmpireID ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
+            uint32_t want = m.pol == mine && war_with(0) ? 0xFFFFFFFFu : m.pol;
+            if (F<uint32_t>(m.u, kPol) != want)
+                F<uint32_t>(m.u, kPol) = want; // cGameData::SetPoliticalID is this store (space_rivalry.cpp)
+        }
         net::Vec3 at = m.est.at(now); // moved on with the estimated velocity (fast ships)
         float p[3] = {at.x, at.y, at.z}, q[4] = {m.rot.x, m.rot.y, m.rot.z, m.rot.w};
         vcall<void>((uint8_t*)m.u + kLoco, 0x38 / 4, (const float*)p); // SetPosition
@@ -1104,17 +1134,24 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_hid_rev.find(id);
         if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
-        if (friendly(it->second)) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
+        bool war = war_with(from); // BUG-1032: a guest at War with the host (its shots at the escorts count)
+        if (friendly(it->second) && !war) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
             g_friendly_dropped++;
             return;
         }
+        if (war && friendly(it->second))
+            g_war_hits_in++;
         dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
         if (!net::finite3(dir))
             dir[0] = dir[1] = dir[2] = 0;
         void* puppet = hit_puppet(from);
+        uint32_t mine = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
+        // BUG-1032: the game applies no hit whose attacker political id (the argument) is the victim's (BUG-0705):
+        // a War guest's hit on our empire's ship goes in with no empire (-1); any other with ours, as before (with
+        // -1 a hit on a pirate, -1 itself, was dropped: lab 20261113-012657)
+        uint32_t apol = war && F<uint32_t>(it->second, kPol) == mine ? 0xFFFFFFFFu : mine;
         g_applying = true;
-        o_TakeDamage((uint8_t*)it->second + kCombat, dmg, skg::cdecl_call<uint32_t>(a_PlayerEmpireID), t, dir,
-                     puppet ? (uint8_t*)puppet + kCombat : nullptr);
+        o_TakeDamage((uint8_t*)it->second + kCombat, dmg, apol, t, dir, puppet ? (uint8_t*)puppet + kCombat : nullptr);
         g_applying = false;
         g_hits_in++;
     } else if (type == net::MSG_UFO_DAMAGE && is_guest()) {
@@ -1132,7 +1169,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // next to a partner only disables the ship (spacecoop rescue). Calling the original here
         // skipped that, and the guest's ship died in real fights with the partner next to it.
         g_applying = true;
-        h_TakeDamage((uint8_t*)me + kCombat, dmg, a ? F<uint32_t>(a, kPol) : 0xFFFFFFFFu, t, dir,
+        uint32_t apol = a ? F<uint32_t>(a, kPol) : 0xFFFFFFFFu;
+        if (war_with(0)) { // BUG-1032: the host's escort's hit; its empire id is ours in this game (the host's save)
+            apol = 0xFFFFFFFFu;
+            g_war_damage_in++;
+        }
+        h_TakeDamage((uint8_t*)me + kCombat, dmg, apol, t, dir,
                      a ? (uint8_t*)a + kCombat : nullptr);
         g_applying = false;
         g_damage_in++;
@@ -1150,6 +1192,7 @@ void on_session_end()
     g_hid.clear();
     g_hid_rev.clear();
     g_ship_shots.clear();    // BUG-0677
+    g_shot_counts.clear();   // BUG-1046
     g_ship_shots_in.clear();
     g_hold_mirror = 0xFFFF;
     g_stale_puppet = nullptr;
@@ -1183,9 +1226,11 @@ static std::string status_ships()
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
-                 "att_dropped=%u att_freed=%u controller_skips=%u save_stripped=%u/%u friendly_dropped=%u\n",
+                 "att_dropped=%u att_freed=%u controller_skips=%u save_stripped=%u/%u friendly_dropped=%u "
+                 "war_hits_out=%u war_hits_in=%u\n",
                  (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots, g_att_dropped,
-                 g_att_freed, g_ctl_skipped, g_ufo_stripped, g_ufo_strip_saves, g_friendly_dropped);
+                 g_att_freed, g_ctl_skipped, g_ufo_stripped, g_ufo_strip_saves, g_friendly_dropped, g_war_hits_out,
+                 g_war_hits_in);
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
@@ -1199,8 +1244,8 @@ static std::string status_ships()
         size_t n = strlen(b);
         if (n && b[n - 1] == '\n')
             b[--n] = 0;
-        snprintf(b + n, sizeof b - n, " zero_keys=%u design_waits=%u designs_used=%u\n", g_zero_keys, g_design_waits,
-                 g_designs_used);
+        snprintf(b + n, sizeof b - n, " zero_keys=%u design_waits=%u designs_used=%u war_damage_in=%u\n", g_zero_keys,
+                 g_design_waits, g_designs_used, g_war_damage_in);
     }
     return b;
 }
@@ -1331,6 +1376,31 @@ std::string debug(const std::vector<std::string>& a)
                      dir, (uint8_t*)me + kCombat);
         return "shot";
     }
+    if (a.size() >= 2 && a[0] == "fire") { // tests (BUG-1046, host): ship #id fires its NPC weapon at our ship once
+        auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
+        void* u = it == g_hid_rev.end() ? nullptr : it->second;
+        if (!is_host() || !u || !live(u) || !me || !a_ToolMgrGet)
+            return "no such ship (host only)";
+        std::string have; // the slots with a weapon (0..5, 255: the combatant's)
+        for (uint8_t sl : {(uint8_t)0, (uint8_t)1, (uint8_t)2, (uint8_t)3, (uint8_t)4, (uint8_t)5, (uint8_t)0xFF})
+            if (weapon_in(u, sl))
+                have += (have.empty() ? "" : ",") + std::to_string(sl);
+        void* tool = nullptr;
+        if (a.size() >= 3) // fire <id> <slot>
+            tool = weapon_in(u, (uint8_t)atoi(a[2].c_str()));
+        for (uint8_t sl : {(uint8_t)0, (uint8_t)0xFF, (uint8_t)1, (uint8_t)2, (uint8_t)3, (uint8_t)4})
+            if (!tool && a.size() < 3)
+                tool = weapon_in(u, sl);
+        void* mgr = tool ? skg::cdecl_call<void*>(a_ToolMgrGet) : nullptr;
+        if (!mgr)
+            return "no weapon (slots " + have + ")";
+        net::Vec3 p = pos_of(me);
+        float aim[3] = {p.x, p.y, p.z};
+        int r = h_FireTool(mgr, tool, (uint8_t*)u + kLoco, aim, -1, 0, (uint8_t*)me + kLoco, 0);
+        char b[96];
+        snprintf(b, sizeof b, "fired=%d seen=%u slots=%s", r & 0xFF, g_shots_seen, have.c_str());
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "spawn") { // spawn <type> [own]: a ship without an empire (pirate) next to
         // us, or with our own empire's political id (`own`: type 3 = an escort ship of ours, BUG-0084)
         uint32_t pol = a.size() >= 3 && a[2] == "own" ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
@@ -1431,7 +1501,7 @@ std::string debug(const std::vector<std::string>& a)
         game::destroy_creature(pup);
         return live(pup) ? "still listed" : "freed";
     }
-    return "usage: coop.fleet list | spawn <type> [own] | shoot <id> <dmg> | hurt <ship id> <player> | hitfix 0|1 | "
+    return "usage: coop.fleet list | spawn <type> [own] | fire <id> [slot] | shoot <id> <dmg> | hurt <ship id> <player> | hitfix 0|1 | "
            "chunkfix 0|1 | keepposse 0|1 | drop <chunk> <n> | freemirror <id> | freepuppet <player>";
 }
 

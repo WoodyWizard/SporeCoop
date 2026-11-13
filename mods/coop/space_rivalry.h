@@ -14,4 +14,8 @@ namespace rivalry {
 // must not call the game on the puppet.
 bool on_hit(void* ufo, void* attacker, float dmg, int type, const float* dir);
 
+// true when rivals mode is on and this game's player is at war with player `id` (BUG-1032: the
+// host's own NPC ships and that player's ship then hit each other)
+bool at_war(uint8_t id);
+
 } // namespace rivalry

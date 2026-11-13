@@ -747,6 +747,13 @@ add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contra
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
 add('space_rival_away', P + 'coop_space_rival_away.py', minutes=4, fixture='space')  # rivals: a guest's own budget is not reset to the host's copy after an editor trip (BUG-0813; SPORE_FIX_OFF=space.rival_budget_world fails)
 add('space_rival_merge', P + 'coop_space_rival_merge.py', minutes=10, fixture='space')  # rivals -> allies inside a rejoiner's load merges its kept budget; a newcomer to rivals starts with 0 (BUG-1029; SPORE_FIX_OFF=space.merge_known_budget fails)
+# 0.7.14 S1 (fix/w49-space): Space combat, finale, gifts
+add('space_war_escort', P + 'coop_space_war_escort.py', minutes=4, fixture='space')  # Rivals at War: the host's escort damages the guest's ship in the guest's game and the guest's shots the escort in the host's game; Allies again: friendly (BUG-1032; SPORE_FIX_OFF=space.war_npc_hits fails)
+add('space_shot_count', P + 'coop_space_shot_count.py', minutes=4, fixture='space_empire')  # a host NPC ship's shot 1.5 s after its last is one FireTool in the guest's game, not 4 or 0 (BUG-1046; SPORE_FIX_OFF=space.shot_count fails)
+add('space_finale_fly', P + 'coop_space_finale_fly.py', minutes=5, fixture='space')  # finale "Fly to" from the galaxy view: no energy spent, no hp lost with none, a ship disabled after the order stays (BUG-1045; SPORE_FIX_OFF=space.finale_fly_free fails)
+add('space_terra_far', P + 'coop_space_terra_far.py', minutes=3, fixture='space')  # K_TERRA_REC for a star not generated in the guest's game and for a bad id: no fault there; a generated planet still takes it (BUG-1042; SPORE_FIX_OFF=space.terra_rec_checked fails)
+add('space_give_pick', P + 'coop_space_give_pick.py', ('multi', 'extended'), minutes=5)  # three players in Space: ">" picks Carol, "Give 10 to Carol" puts the spice into Carol's game, not Alice's (BUG-1050; SPORE_FIX_OFF=space.give_pick fails)
+add('space_finale_death', P + 'coop_space_finale_death.py', minutes=4, fixture='space_free')  # tests (BUG-0991): the finale bot confirms the death caption of a destroyed ship and zooms out (OLD_FINALE_DEATH=1 fails)
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (SPORE_FIX_OFF=game.ufo_model fails)
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
