@@ -2266,6 +2266,11 @@ BUG-0975. GOG 2024, Ghidra and lanes 6 / 7.
   guest that joins a host at food 0 (the host's total in one call, lab 20261112-194555) and in a game alone with no
   session (`coop.pool food -330`, the game's own AddFoodPoints, lab 20261112-194555-2). So it is the game's own
   bug; the game itself never lowers food by more than 50 (its debug keys), the mod's shared total does.
-* `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles): a pass whose active set would exceed 480
-  tiles is skipped (`tiles: pass skipped ...`, `coop.pool` `tilecap_skips=` / `tilecap_max=`); the scale settles
-  and the next pass runs.
+* `cell.tile_cap` (cellsync.cpp h_PopTiles, cell_logic::active_tiles): no pass while the world scale eases down
+  (G+0x514C > G+0x5150) or while the active set would exceed 480 tiles (`tiles: pass skipped ...`, `coop.pool`
+  `tilecap_skips=` / `tilecap_max=`); measured: the set 14 200-14 400 tiles right after 330 -> 0, the scale 15 ->
+  0.5 in ~2.5 s, 151-303 passes held.
+* ✔ (runtime, lab 20261112-195008) the 480 cap alone is not enough in a game alone: the first pass that fits (at
+  3-6 x the settled set, scale ~3) populated the new level with that many cells at once and the game faulted in
+  CreateSoftBody / CellPhysicsStep / effects (2138 faults). A guest in a session (its cells are the host's
+  mirrors) had no fault with the cap alone.

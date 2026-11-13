@@ -2930,4 +2930,4 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (unreleased, fix/w48-cellcull, 2026-11-12): the game's own bug (a game alone dies on the same fall), reached
   only through the mod's shared food total. PopulateTiles writes its active set into a stack buffer of 511 without
   a bound; after a fall of several levels the world scale is still the old one for ~3 s and the set has thousands
-  of tiles. Such a pass is skipped now (`cell.tile_cap`); test cell_level_drop. docs/re/cell.md#cell-level-fall.
+  of tiles. No tile pass runs now until the scale has settled (`cell.tile_cap`); test cell_level_drop. docs/re/cell.md#cell-level-fall.
