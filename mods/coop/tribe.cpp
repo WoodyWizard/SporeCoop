@@ -1062,7 +1062,7 @@ static void hold_try(GMember& g, double now);
 struct HoldEv {
     double t;
     uint16_t id;
-    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests)
     uint32_t a, b;
 };
 static HoldEv g_hold_ev[4096];
@@ -1072,19 +1072,27 @@ static void hold_ev(uint16_t id, char what, uint32_t a, uint32_t b)
     g_hold_ev[g_hold_ev_n++ % 4096] = {H->time_seconds(), id, what, a, b};
 }
 // guest, a few times a second: the mirrors' items settle into the grip
+// BUG-0993: the mirror's own holds are looked at every frame (they were looked at with the rest every 0.25 s: the
+// cut came 0.5-0.85 s after the hold began, over 1.0 s at 26 fps with hitches); hold_try keeps the 0.25 s tick.
+// `coop.fix tribe.hold_cut_frame off`: everything every 0.25 s as before.
+static bool g_hold_cut_frame_fix = true;
+COOP_FIX("tribe.hold_cut_frame", "BUG-0993", g_hold_cut_frame_fix,
+         "tribe: a guest's mirror lets go of an item its own animation took 0.35 s after it took it at any frame rate (the 0.25 s tick made it 0.5-1.05 s)");
 static void held_items_tick(double now)
 {
     static double last;
-    if (now - last < 0.25 && now >= last)
+    bool slow = !(now - last < 0.25 && now >= last);
+    if (!slow && !g_hold_cut_frame_fix)
         return;
-    last = now;
+    if (slow)
+        last = now;
     if (!g_held_item_fix) {
         g_hold_seen.clear();
         return;
     }
     for (auto& [id, m] : g_gm) {
         void* c = m.c;
-        if (m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
+        if (slow && m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
             hold_try(m, now);
         uint32_t h = mirror_ok(m) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
         auto it = g_hold_seen.find(id);
@@ -1753,6 +1761,29 @@ static void send_member_air()
 static bool g_mirror_idle_fix = true;
 COOP_FIX("tribe.mirror_idle", "BUG-0936", g_mirror_idle_fix, "tribe: a guest's mirror stops a member's animation when the host's member has gone back to its idle or walk (members at rest had other poses)");
 static uint32_t g_idle_sent, g_idle_refreshed, g_idle_played;
+// BUG-0972: the idle fix left a mirror alone whose animation was not the last relayed start (taken for its own idle or
+// walk). A relayed restart of a gesture the mirror still played waited behind it as a pending track (BUG-0992); the
+// next relayed start (the change 0x02C39200) played, and after it the waiting gesture came back: the guest's copy of
+// the host's chief swung its staff for 37 s while the host's stood (lab probe: the chief's animation the same on both
+// games in 59 % of the samples, 257 of the others host idle 0x02481DE5 / mirror gesture 0x04C6CB02; the same_view
+// stills showed it standing on one game and in a gesture or a step on the other). Now a mirror in any animation that
+// is not its locomotion's idle or walk, while the host's member is in its idle or walk, has its waiting starts ended
+// (AnimatedCreature_ClearPending) and its idle refreshed. `coop.fix tribe.mirror_stale_anim off`: as before.
+static bool g_stale_anim_fix = true;
+COOP_FIX("tribe.mirror_stale_anim", "BUG-0972", g_stale_anim_fix,
+         "tribe: a guest's mirror stops a gesture that came back after another animation when the host's member stands or walks (the chief swung its staff on one game only)");
+static uint32_t g_stale_cut;
+// BUG-0988: the guest's copy of a member plays the host's behaviour animation from when the relay's start reached it
+// (one network delay and up to a cycle later): the same gesture at another moment of it, the chief's staff at another
+// angle in the same_view stills (0.1-0.3 s in the hold lab). Once a second the host sends where in its behaviour
+// animation each member is (MSG_NPC_ANIM kind 14: u8 n, n x {u16 id, u32 anim, f32 time in it, s}); a guest whose mirror
+// plays the same animation (not a loop) more than 0.1 s from that time plus half the round trip sets its track's time
+// there (the track's +0xA8). `coop.fix tribe.mirror_phase off`: nothing sent or set.
+static bool g_mirror_phase_fix = true;
+COOP_FIX("tribe.mirror_phase", "BUG-0988", g_mirror_phase_fix,
+         "tribe: a guest's copy of a member is at the same moment of a gesture as the host's member (the chief's staff pointed another way)");
+static uint32_t g_phase_sent, g_phase_rx, g_phase_set;
+static double g_phase_last_off;
 static void on_idle_anim(void* c, uint32_t anim)
 {
     if (!g_ok || !is_host())
@@ -1834,6 +1865,25 @@ static bool clear_pending_same(void* c, uint32_t cur)
     }
     return same;
 }
+// BUG-0988: the main animation track of a creature, as GetCurrentAnimation (0xA05090) finds it (0x9FF690): the
+// animation state (AnimatedCreature +0x184), the main index +0xFA4 into the playing list +0xF0C, tracks of 0xF0 bytes
+// from +8; a track's id +0xD8, its time in the animation +0xA8 (double, s), +0xA0 -1.0 when it loops
+static uint8_t* main_track(void* c)
+{
+    uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+    if (!st || !skg::readable(st, 0xFAC))
+        return nullptr;
+    uint32_t i = *(uint32_t*)(st + 0xFA4);
+    if (i > 0xF)
+        return nullptr;
+    uint32_t k = *(uint32_t*)(st + 0xF0C + i * 4);
+    if (k > 0xF)
+        return nullptr;
+    uint8_t* tr = st + 8 + k * 0xF0;
+    return *(uint32_t*)tr ? tr : nullptr;
+}
+static bool track_loops(uint8_t* tr) { return *(float*)(tr + 0xA0) == -1.0f; }
 // guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
 static void hold_try(GMember& g, double now)
 {
@@ -1939,6 +1989,30 @@ static void send_member_anims(double now)
             if (p.id != 0)
                 C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
         g_idle_sent += (uint32_t)idle.size();
+    }
+    if (g_mirror_phase_fix) { // BUG-0988: where in its behaviour animation each member is now
+        std::vector<std::tuple<uint16_t, uint32_t, float>> ph;
+        for (auto& [c, m] : g_hm) {
+            uint8_t* tr;
+            uint32_t cur = 0;
+            if (ph.size() < 120 && m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur == m.bhv_anim &&
+                (tr = main_track(c)) && !track_loops(tr) && *(uint32_t*)(tr + 0xD8) == cur)
+                ph.emplace_back(m.id, cur, (float)*(double*)(tr + 0xA8));
+        }
+        if (!ph.empty()) {
+            net::Writer w;
+            w.u8(14);
+            w.u8((uint8_t)ph.size());
+            for (auto& [id, an, t] : ph) {
+                w.u16(id);
+                w.u32(an);
+                w.f32(t);
+            }
+            for (auto& p : C.sess->players())
+                if (p.id != 0)
+                    C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            g_phase_sent += (uint32_t)ph.size();
+        }
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
     for (size_t i = 0; i < v.size(); i += per2) {
@@ -2339,6 +2413,32 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         }
         return;
     }
+    if (kind == 14) { // BUG-0988: where in its behaviour animation each host member is
+        uint8_t n = r.u8();
+        int rtt = C.sess ? C.sess->rtt_of(0) : -1;
+        double d = rtt >= 0 && rtt < 1000 ? rtt / 2000.0 : 0.05;
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            uint32_t anim = r.u32();
+            float t = r.f32();
+            if (!r.ok())
+                break;
+            g_phase_rx++;
+            auto it = g_gm.find(id);
+            if (!g_mirror_phase_fix || it == g_gm.end() || !mirror_ok(it->second) || !std::isfinite(t) || t < 0)
+                continue;
+            uint8_t* tr = main_track(it->second.c);
+            if (!tr || track_loops(tr) || *(uint32_t*)(tr + 0xD8) != anim)
+                continue;
+            double& tm = *(double*)(tr + 0xA8), want = t + d;
+            if (std::fabs(tm - want) > 0.1 && std::fabs(tm - want) < 5.0) {
+                g_phase_last_off = tm - want;
+                tm = want;
+                g_phase_set++;
+            }
+        }
+        return;
+    }
     if (kind == 10) { // BUG-0936: what the host's members play now that is no behaviour animation
         uint8_t n = r.u8();
         for (int i = 0; i < n && r.ok(); i++) {
@@ -2358,11 +2458,21 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             // system's gait, not by the idle refresh, on the host too; never played as a main animation on a mirror
             if (anim == 0x02481DE5u || anim == 0x04866D8Eu || anim == 0x04866DABu || anim == 0x04866DD4u)
                 how = 1;
-            if (how == 1 && cur != g.relayed_anim)
-                continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
+            bool stale = false;
+            if (how == 1 && cur != g.relayed_anim) {
+                if (!g_stale_anim_fix || cur == 0x02481DE5u || cur == 0x04866D8Eu || cur == 0x04866DABu || cur == 0x04866DD4u)
+                    continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
+                stale = true; // BUG-0972: an earlier relayed start that waited behind another animation
+            }
             g.anim_fix_at = now;
-            hold_ev(id, 'I', anim, cur); // (tests: the mirror's animation ended for the host's idle / other start)
+            hold_ev(id, stale ? 'Z' : 'I', anim, cur); // (tests: the mirror's animation ended for the host's idle / other start)
             if (how == 1) {
+                if (stale && a_ClearPending) { // (the waiting starts go too, or the next one comes back the same way)
+                    uint8_t* ac = has_body(g.c) ? F<uint8_t*>(g.c, 0xB54) : nullptr;
+                    if (ac)
+                        thiscall<void>(a_ClearPending, ac);
+                    g_stale_cut++;
+                }
                 game::idle_refresh(g.c, true);
                 g_idle_refreshed++;
             } else if (game::play_behaviour_anim(g.c, anim, 0, 1, -1)) {
@@ -6180,6 +6290,8 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
             thiscall<void>(a_SetHandheldItem, c, 0, -1);
             set_hand(c, atoi(a[2].c_str()));
+            if (is_guest())
+                hold_ev((uint16_t)atoi(a[1].c_str()), 'H', (uint32_t)atoi(a[2].c_str()), 0); // tests (BUG-0993): the hand set here
         }
         if (a.size() >= 3 && a[2] == "end")
             return "end " + std::to_string(hold_modifier(c, true) ? 1 : 0);
@@ -6189,6 +6301,18 @@ std::string debug(const std::vector<std::string>& a)
                  g_item_sets);
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
                std::to_string(g_item_holds_ended);
+    }
+    if (a.size() >= 3 && a[0] == "mplay" && is_guest()) { // mplay <member id> <hex anim>: tests (BUG-0972), the mirror
+        // plays that animation as an earlier relayed start that came back after another one (not the last relayed)
+        auto it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_gm.end() || !mirror_ok(it->second) || !has_body(it->second.c))
+            return "no such mirror";
+        bool ok = game::play_behaviour_anim(it->second.c, (uint32_t)strtoul(a[2].c_str(), nullptr, 16), 0, 1, -1);
+        uint32_t cur = 0;
+        game::drawn_state(it->second.c, nullptr, &cur);
+        char b[96];
+        snprintf(b, sizeof b, "mplay %d cur=%08X relayed=%08X", (int)ok, cur, it->second.relayed_anim);
+        return b;
     }
     if (a.size() >= 3 && a[0] == "applytool" && is_guest()) { // applytool <member id> <type>: tests (BUG-0583), the
         // mirror's tool field applied as if the host's member held that tool (tribe.tool_hold's own apply)
@@ -6590,8 +6714,10 @@ std::string debug(const std::vector<std::string>& a)
             uint32_t an = 0;
             if (c && game::object_alive(c) && game::drawn_state(c, nullptr, &an)) {
                 net::Vec3 p = game::position(c);
-                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f) idle=%08X hold=%d\n", id, an, bhv, p.x, p.y,
-                         p.z, idle, has_body(c) && hold_modifier(c, false) ? 1 : 0);
+                uint8_t* tr = main_track(c);
+                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f) idle=%08X hold=%d t=%.3f loop=%d now=%.3f\n", id, an,
+                         bhv, p.x, p.y, p.z, idle, has_body(c) && hold_modifier(c, false) ? 1 : 0, tr ? *(double*)(tr + 0xA8) : -1.0,
+                         tr ? (int)track_loops(tr) : -1, H->time_seconds());
                 o += b;
             }
         };
@@ -6606,7 +6732,9 @@ std::string debug(const std::vector<std::string>& a)
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_air_sent) +
                " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
-               "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
+               " stale_cut=" + std::to_string(g_stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
+               " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) +
+               " last_off=" + std::to_string(g_phase_last_off) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
                " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +

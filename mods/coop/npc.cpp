@@ -2832,7 +2832,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!is_guest())
             return;
         uint8_t kind = r.u8();
-        if ((kind >= 2 && kind <= 12) || kind == 20) { // (12: BUG-0971, a hold start with its item; 20: BUG-0960, the host's game-over caption) // BUG-0569 / BUG-0568 / BUG-0646 / BUG-0946 / BUG-0936 / BUG-0914: the tribe members' animations, the theme and party music, the members in the air (tribe.cpp)
+        if ((kind >= 2 && kind <= 12) || kind == 14 || kind == 20) { // (12: BUG-0971, a hold start with its item; 14: BUG-0988, the members' animation times; 20: BUG-0960, the host's game-over caption) // BUG-0569 / BUG-0568 / BUG-0646 / BUG-0946 / BUG-0936 / BUG-0914: the tribe members' animations, the theme and party music, the members in the air (tribe.cpp)
             tribe::on_member_anims(kind, r);
             return;
         }

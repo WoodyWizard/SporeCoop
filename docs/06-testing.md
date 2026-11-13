@@ -7136,3 +7136,25 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   proxies stood (her own were removed by the sync, so any is a saved proxy; they walk for the 10 s after the load).
   SPORE_FIX_OFF=savestrip.on: 6 of 10 came back (FAIL). Run outside the lab with `SPORE_LANE=4 SPORE_LANE_B=5` to
   keep Carol on a lane of your own (the lab takes the first free lane from 2).
+## Tribe mirror poses and the Creature join spot (2026-11-13, fix/w49-mirror)
+<a id="testing-t2-mirror"></a>
+
+* `tribe_hold_cut` (BUG-0993, tribe, ~2 min): the guest at 25 fps (`frame.limit 40`) puts the staff into its mirror's
+  hand of the host's chief (`coop.tribe hand <id> 17`) 10 times; `coop.tribe holdtrace <id>` gives the hand set (`H`)
+  and the cut (`C`) on the game clock: every cut within 0.55 s. Rounds in which the game took no hold (the mirror in
+  a walk) or the host held in between (`S` / `T`) are not counted.
+* `tribe_mirror_stale` (BUG-0972, tribe, ~3-5 min): when the host's chief stands or walks, the guest's mirror plays
+  the gesture 0x04C6CB02 as a returned start (`coop.tribe mplay <id> <anim>`: the game's CreaturePlayAnim, the last
+  relayed animation left as it is); the mirror must be in its idle / walk within 4.5 s. Rounds in which the host's
+  chief leaves its idle / walk are not counted (the chief gestures often: 4 rounds can take 3 min). Key frame of the
+  chief (sameview).
+* `tribe_mirror_phase` (BUG-0988, tribe, ~3 min): both games' `coop.tribe anims` sampled together for 120 s; the rows'
+  `t=` is the main track's time in the animation (+0xA8), `loop=` whether it loops; the difference of the two games'
+  times for the same non-looping animation, taken back to one wall clock moment (each answer's arrival), median under
+  0.08 s. The sampling noise is ~0.02 s.
+* `creature_join_apart` (BUG-0989, creature, ~2 min): the fixture's join already ran the fix, so the test makes the
+  guest join again (`lane.JOIN`, the switches a twin turns off act from this join on) and reads both games' own
+  creature (`coop.avatar`) and their puppet of the other (`coop.status`). `coop.npc joinapart` tells where the guest
+  started when the fix moved it before the first sample.
+* Pitfall (BUG-0989): a fix that acts while the guest joins is still on during `twoinst.start` with SPORE_FIX_OFF;
+  its twin needs a second join in the test.
