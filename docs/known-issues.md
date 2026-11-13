@@ -3299,13 +3299,16 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-1062
 * Fixed (unreleased, fix/w49-space2, 2026-11-13): `core.ui_give_fit`; FAIL lab 20261113-024426, PASS 20261113-024531-2.
 
-## Cell: the first level down after a partner moved away culls most of the few cells round it in the host's game (2026-11-13, fix/w49-cell2 test)
+## Cell: a level down removes more of the cells round a partner than round the host in the host's game (2026-11-13, fix/w49-cell2 test)
 <a id="issue-cell-first-down-partner"></a>
 
-* What happens: on the first level down after the guest swam off (cell_levelup_area change 2) the host's game removed
-  most of the cells in the box round the partner (10 of 10, 5 of 7, 16 of 17) against about a quarter of its own.
-  Later down changes are even. The partner's view centre was right (BUG-1064 fixed).
-* Reproduce: `tools/lab.py run cell_levelup_area --lane N`, the line of change 2.
-* Known: by the cull 0xE7C3E6 (and once 0xE78B6E, the room a hatching cell clears); the area held only 7-17 cells.
-* Not checked: whether those cells had a parent, which tiles were active round the partner then.
-* Ticket: BUG-1080
+* What happens: on a level down (+-150 food, the guest 60-70 m away) the host's game removed more of the cells in the
+  box round the partner than of its own, pooled over three down changes 28 / 16 %, 87 / 24 %, 74 / 22 % (3 of 5 runs);
+  the guest sees it as a big part of its screen replaced.
+* Reproduce: `tools/lab.py run cell_levelup_area --lane N` (the printed area shares; `--strict` asserts them).
+* Known: by the cull 0xE7C3E6 (a cell without a parent whose tile IsTileActive refuses, docs/re/cell.md#cell-levelup-partner-area).
+  One cause is fixed (`cell.view_centre_scale`: the partner's view centre was 17-37 m off while the scale moved); the
+  centre is right now (0.7-3.6 m) and the loss stays in some runs.
+* Not checked: whether those cells had a parent, which tiles were active round the partner then, the camera lag (the
+  host's view box trails its cell by up to 40 m right after a down change, the partner box is the host box moved).
+* Ticket: BUG-1064 (BUG-1080 folded in)

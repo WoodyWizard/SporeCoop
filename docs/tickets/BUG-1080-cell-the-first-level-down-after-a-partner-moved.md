@@ -1,7 +1,7 @@
 ---
 id: BUG-1080
 title: Cell: the first level down after a partner moved away culls most of the few cells round the partner in the host's game
-status: open
+status: duplicate
 kind: bug
 stage: Cell
 reported: 2026-11-13
@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-1064
 ---
 
 ## Report
@@ -41,3 +41,5 @@ them are cells without a parent at the tile edge.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: folded into BUG-1064 (the same symptom after its view-centre fix: later runs had it in other down
+  changes too, 87 / 24 % and 74 / 22 % pooled, labs 20261113-123921, -123921-2).

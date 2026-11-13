@@ -2325,8 +2325,10 @@ BUG-1064, BUG-1066. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2 / 3.
   (and the state is sampled ~0.1 s late), so while the scale moved the centre was 17-37 m from where the host's game
   draws the partner's cell (settled: 0-7 m), and the cull took the cells round the partner whose tiles were then
   outside every box. Fix `cell.view_centre_scale` (coop.cpp view_pos): the centre times partner scale / own scale,
-  as cell_drive draws the cell (BUG-0519). With it the error is 0.7-2.5 m and the partner's area loses down 11 %
-  against 20 % (lab 20261113-044709-2).
+  as cell_drive draws the cell (BUG-0519). With it the error is 0.7-3.6 m and the partner's area lost down 11 %
+  against 20 % (lab 20261113-044709-2), but in later runs still 28 / 16 %, 87 / 24 %, 74 / 22 % (labs
+  20261113-071833, -123921, -123921-2): the centre was one cause, not the only one (BUG-1064 open, known-issues
+  #issue-cell-first-down-partner).
 * ✔ (runtime) the Cell fixture's host sits near the level's right edge (x ~100 at world scale 0.5): `coop.pool tp 200
   0` left the guest 5 m from the host (clamped), so the two areas were one. +-150 food is one world-scale step here
   (0.5 <-> 1.5: distances to a third and back), and the host's view box (the camera) trails its cell by up to 40 m

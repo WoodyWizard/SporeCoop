@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w49-cell2
-commits: d7f41e27
+commits: d7f41e27, 58c4aad0
 tests: cell_levelup_area, cell_flush_handover
 signature:
 docs: docs/re/cell.md#cell-levelup-partner-area, docs/06-testing.md#testing-cell-c2-0714
@@ -46,10 +46,10 @@ food drain. Off: before it. `coop.pool tilestat` prints `unshared=` and `scale_f
 ## Verification
 Test `cell_levelup_area` (its tile pool check: `coop.pool tilestat` check_warns, the host's count of the game's tile
 pool G+0x38 against the lists, after six level changes).
-FAIL (SPORE_FIX_OFF=cell.scale_food_flush): out/lab/20261113-034534-2 (21 mismatches, 72 of our tiles taken out of the
-host's list); also out/lab/20261113-033642-2 (unshared 15 per change, 21 warnings after two changes).
-PASS: out/lab/20261113-034534, out/lab/20261113-035120 (0 mismatches, 0 unshared); cell_flush_handover (3 players)
-out/lab/20261113-035120.
+FAIL (SPORE_FIX_OFF=cell.scale_food_flush): out/lab/20261113-071833-2 (21 mismatches, 80 of our tiles taken out of the
+host's list); also out/lab/20261113-034534-2 (21, 72) and out/lab/20261113-033642-2 (unshared 15 per change).
+PASS: out/lab/20261113-071833, out/lab/20261113-123921, out/lab/20261113-162634-2 (0 mismatches, 0 unshared);
+cell_flush_handover (3 players, the check no longer used up) PASS out/lab/20261113-035120, out/lab/20261113-123921.
 
 ## History
 - 2026-11-13: opened.

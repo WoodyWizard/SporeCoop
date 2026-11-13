@@ -1,20 +1,20 @@
 ---
 id: BUG-1064
 title: Cell: on a level-up the host's game removes about 15 points more of the cells round a partner than round its own cell
-status: fixed
+status: open
 kind: bug
 stage: Cell
 reported: 2026-11-13
 source: fix/w49-cell labs 20261113-021621, 20261113-022529-2 (BUG-0976 analysis)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in:
 branch: fix/w49-cell2
-commits: d7f41e27
-tests: cell_levelup_area, cell_levelup_view
+commits: d7f41e27, 5f75d936, 58c4aad0
+tests: cell_levelup_area (--strict for the area shares), cell_levelup_view
 signature:
 docs: docs/re/cell.md#cell-levelup-partner-area, docs/06-testing.md#testing-cell-c2-0714
-related: BUG-0976, BUG-0635
+related: BUG-0976, BUG-0635, BUG-1080
 ---
 
 ## Report
@@ -46,21 +46,26 @@ lists (C1's guess): tiles do not own cells, the cull reads only the boxes.
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
-`cell.view_centre_scale` (coop.cpp `view_pos`): in Cell the host notes a partner's view centre times partner scale /
-own scale, where the partner's cell is drawn (cell_drive's BUG-0519 conversion). Off: the pose as it came.
-BUG-0975's tile cap untouched (cell_level_drop PASS).
+PARTIAL. `cell.view_centre_scale` (coop.cpp `view_pos`): in Cell the host notes a partner's view centre times partner
+scale / own scale, where the partner's cell is drawn (cell_drive's BUG-0519 conversion). Off: the pose as it came.
+It fixes a measured error (the centre 17-37 m off the partner's cell while the scale moved, 0.7-3.6 m with it) but NOT
+the whole symptom: with it the down changes still removed more round the partner in 3 of 5 runs (28 / 16 %, 87 / 24 %,
+74 / 22 %; 11 / 20 % and 22 / 12 % in the others). The rest is not analysed (BUG-1080 was opened for it and folded in
+here). BUG-0975's tile cap untouched (cell_level_drop PASS).
 
 ## Verification
-Test `cell_levelup_area` (the guest 60 m left of and 40 m below the host, six +-150 changes; per change in the host's
-game the cells of its visible box and of the same box round the partner, pooled share removed by the level change's
-DestroyCell callers; the partner's view centre against its cell while the scale moves).
-FAIL (SPORE_FIX_OFF=cell.view_centre_scale): out/lab/20261113-044709 (centre 17-37 m off the partner's cell while the
-scale moved; down changes 52 % of the partner's area against 10 % of the host's own).
-PASS: out/lab/20261113-044709-2 (centre 0.7-2.5 m; down 11 % / 20 %, up 55 % / 90 %), out/lab/PASS2.
-Earlier runs (out/lab/20261113-034143, -034534, -035120, -041224*) had the guest 5 m from the host (`tp 200 0` was
-clamped at the level's edge): the two areas were one, their shares are not evidence either way.
-cell_levelup_view (guest screen) and cell_level_drop (BUG-0975's cap untouched): PASS in out/lab/PASS2.
+Test `cell_levelup_area` (the guest 60 m left of / 40 m below the host, six +-150 changes; `coop.pool areas`).
+The centre (the cause fixed): FAIL (SPORE_FIX_OFF=cell.view_centre_scale) out/lab/20261113-044709 (37.2 m, printed by
+the test version of then; its area shares failed: down 52 % / 10 %), out/lab/20261113-162634 (36.9 m, the check
+fails; shares down 49 / 23 %); PASS out/lab/20261113-071833 (1.6 m),
+out/lab/20261113-123921 (3.0 m), out/lab/20261113-123921-2 (3.6 m), out/lab/20261113-162634-2 (2.0 m; shares down 25 / 10 %).
+The area shares (the symptom, still open): with the fix down changes 11 / 20 % (out/lab/20261113-044709-2), 28 / 16 %
+(out/lab/20261113-071833), 87 / 24 % (out/lab/20261113-123921), 74 / 22 % (out/lab/20261113-123921-2), 25 / 10 % (out/lab/20261113-162634-2): printed by the
+test, asserted with --strict only. Up changes: the partner never lost more than the host beyond 0 points.
+Runs before 20261113-044709 had the guest 5 m from the host (`tp 200 0` clamped at the level's edge): no evidence.
+cell_levelup_view PASS (guest-only loss 0 of 170, wipe_near_lost 0) and cell_level_drop PASS: out/lab/20261113-071833.
 
 ## History
 - 2026-11-13: opened.
-- 2026-11-13: cause found (the partner's view centre in its own world scale), fixed on fix/w49-cell2.
+- 2026-11-13: fix/w49-cell2: one cause found and fixed (the partner's view centre in its own world scale); the
+  down-change loss round the partner remains in some runs: open.
