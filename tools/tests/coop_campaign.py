@@ -1195,6 +1195,22 @@ class Campaign:
             self.note(f'shortcut: coop.tribe huthp: the players\' hut repaired ({hp}/{mx} -> {mx}: an NPC village raids back)')
             self.host.call('coop.tribe huthp %.2f %.2f %.2f %d' % (hut + (mx,)))
 
+    def tribe_members(self, tk):
+        """[(member id, hp)] of NPC village tk's living members (the host's game)"""
+        out, cur = [], None
+        for line in self.host.call('coop.tribe').splitlines():
+            t = re.match(r'tribe (\d+) at', line)
+            if t:
+                cur = int(t.group(1))
+                continue
+            if line.startswith('tribe '):
+                cur = None
+                continue
+            m = re.search(r'#(\d+) \S+ owner=254 .*?hp=([\d.]+) .*?dead=0', line)
+            if m and cur == tk and float(m.group(2)) > 0:
+                out.append((int(m.group(1)), float(m.group(2))))
+        return out
+
     def tribe_raiders(self):
         """{member id: position} of the players' living members (the host's game)"""
         out = self.host.call('coop.tribe')
@@ -1291,6 +1307,22 @@ class Campaign:
                               'raiders minutes; again whenever the village repairs it)')
                 self.host.call('coop.tribe huthp %.2f %.2f %.2f 40' % raid['hut'])
                 raid['cut'] = True
+            elif m and 1.5 < float(m.group(1)) <= 45 and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+                # a hut at 4 of 750 stood for minutes once its raiders were dead (lab 20261113-145317): the next blow fells it
+                self.host.call('coop.tribe huthp %.2f %.2f %.2f 1' % raid['hut'])
+            if raid['cut'] and time.time() - raid.get('pinced', 0) > 60 and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+                # the village's defenders kill 6-12 raiders a raid, and with them dead an NPC village raids the players'
+                # village back (a game over reloaded the save at 2/5 in lab 20261113-145317): shortcut, every 60 s the
+                # raided village's members take the blows of the players' members (`coop.tribe pincer`)
+                defenders = self.tribe_members(raid['tribe'])
+                own = list(alive) or list(self.tribe_raiders())
+                if defenders and own:
+                    for i, (mid, hp) in enumerate(defenders[:8]):
+                        self.host.call(f'coop.tribe pincer {mid} {own[i % len(own)]} {hp + 1:.0f}')
+                    if not raid.get('pinced'):
+                        self.note(f'shortcut: coop.tribe pincer: the {min(8, len(defenders))} defenders of village '
+                                  f'{raid["tribe"]} take the raiders\' blows (again every 60 s)')
+                raid['pinced'] = time.time()
             h = float(m.group(1)) if m else None
             if h != raid.get('hp'):
                 raid['hp'], raid['since'] = h, time.time()
