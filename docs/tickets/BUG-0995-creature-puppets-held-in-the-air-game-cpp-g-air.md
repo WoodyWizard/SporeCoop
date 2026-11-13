@@ -1,19 +1,19 @@
 ---
 id: BUG-0995
 title: Creature: puppets held in the air (game.cpp g_air) are matched by address only and never cleared at a world change or session end
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-7
 role: 
 versions: 
-fixed_in:
-branch: fix/w49-life
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-live
+commits: ff031065
+tests: npc_air_live, lifecycle_reset, npc_air
 signature:
-docs:
+docs: docs/re/creature.md#creature-live-lookups, docs/06-testing.md#testing-same-pump-orders
 related: BUG-0532, BUG-0550, BUG-0946, BUG-0426
 ---
 
@@ -51,12 +51,20 @@ its own (the game's position, not the held one). FAIL on main if the address is 
 PASS with the serial check.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The release part is L1's (`game.air` lifecycle entry, `coop.fix game.air_release`). The serial part
+(`coop.fix game.air_live`): AirHold keeps the creature's serial (game::object_serial at the first air_hold; a refresh
+by the same caller keeps it); air_reassert (after the creature's Update, its animation starts) compares the serial of
+the creature the game is updating (its own memory, live by construction: no list walk on this hot path) and drops the
+hold without placing anything when another object lives at the address. `coop.track air` lists the holds.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test npc_air_live (tools/tests/coop_npc_air_live.py, creature fixture): the host lifts its NPC 4 m (`coop.npc
+lift`), its proxy is held in the air on the guest; `coop.npc settle 8`, `coop.npc reusehunt p<id> 150 x` until a new
+creature takes the freed block; that creature's position for 3 s must stay over 1 m from the held spot.
+FAIL (SPORE_FIX_OFF=game.air_live): out/lab/20261113-022929-2 (the new creature at 0.00 m from the held spot).
+PASS: out/lab/20261113-023052, out/lab/20261113-023224 (10.4 m: it stayed where it was made; `stale=1`).
 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fix/w49-life (package L1): the release part done: the holds are entry `game.air` of the lifecycle registry (session end and world change; switch `coop.fix game.air_release off`), so no hold outlives its session or world. Held 0 at every reset of the lifecycle_reset runs (the forget paths release them already), so no FAIL run for this part. The serial check of air_reassert stays open for package L2 (plan-0.7.14).
+- 2026-11-13: fixed on fix/w49-live (package L2): the serial check of air_reassert (game.air_live); FAIL/PASS twin npc_air_live.

@@ -3546,3 +3546,13 @@ BUG-1051 / BUG-1049, GOG 2024, lab lane 5.
   themselves; 0xE55DC391 key 0x35052B7 (pool 1, the sprint's dust) stays active (the mirror is not sprinting, its
   Update does not stop it); 0x8ADA6617 is never active (pool 2 too). The keyed effects a 25 s fight of the host's
   members made: those three only (`coop.effects log on`, fx1k / fx2k lines).
+
+## A guest's order on a member the host's game just removed (2026-11-13, fix/w49-live)
+<a id="tribe-cmd-listed"></a>
+
+* ✔ (lab 20261113-022421, BUG-1053) RemoveMember(c, destroy) (cTribe vt 0x9C, `coop.tribe drop_member`) takes the
+  citizen out of the game's object list at once (`listed_now=0` in the same console call), but the host's table g_hm
+  keeps it until the next host_tick (0.12 s). DoAction(member, 7 Attack, <that destroyed citizen>) is accepted by the
+  game: the member's order record (ai+0x60C, rec+0 action 7, rec+0x28 target) names the destroyed block. No fault was
+  seen in the 50 s after (3 rounds); the block is freed later and the record would then point into freed memory.
+* The host resolves member and target ids only through game::alive (tribe.cmd_listed).

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe, Civilization: a guest's order on a tribe member or vehicle that had just been removed in the host's game (it
+  fell, was disbanded) no longer goes to the removed object in the host's game (BUG-1053).
+- Creature: a guest's social click right after a creature change no longer starts the social game with the wrong
+  animal, and an animal of the guest's world is no longer lifted into the air where a removed copy of a host animal
+  floated (BUG-0994, BUG-0995).
 - Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
   now merges that guest's own budget; before, its budget was lost and the host's save money was added instead. A
   player new to a Rivals session now starts its own empire with 0 money, not with a copy of the host's money
