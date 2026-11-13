@@ -32,7 +32,7 @@ import re
 import time
 
 from coop_cinematic_puppet import CLAIM, cinematic, eax, puppet, wait
-from twoinst import Checks, start
+from twoinst import Checks, monitor_flush, start
 
 
 def hunt(con):
@@ -101,8 +101,18 @@ def main():
         print('  host after the round: ' + ' | '.join(host.call('coop.npc reusehunt')['out'].strip().splitlines()[:2]), flush=True)
         if reused >= 1:
             break
+    if not reused:
+        # The game reuses the block in about 1 round of 3 (docs/06-testing.md#testing-ftribe-w48): a run without a
+        # reuse proves nothing either way, so it is a skip (not a pass), still failing on faults.
+        print(f'  the game gave no queued puppet\'s block to a new creature during the cinematic ({reused} times)')
+        ck.faults(host=host, guest=guest)
+        if not ck.ok:
+            return ck.result()
+        monitor_flush()
+        print('RESULT: SKIP (the condition was not reached: no block reuse in the time)')
+        return 0
     ck(reused >= 1, f'the game gave a queued puppet\'s block to a new creature during the cinematic ({reused} times)')
-    ck(reused and not gone, f'that creature still lives when the cinematic is over (destroyed with the queue: {gone})')
+    ck(not gone, f'that creature still lives when the cinematic is over (destroyed with the queue: {gone})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

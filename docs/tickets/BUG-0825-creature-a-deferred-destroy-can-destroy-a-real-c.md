@@ -58,3 +58,4 @@ Test `defer_identity` (tools/tests/coop_defer_identity.py).
 - 2026-11-12: fixed on fix/w48-freed (npc.defer_identity).
 - 2026-11-12: fix/w48-freed2: the test retries the scenario until the reuse happened (10/10 with the fix).
 - 2026-11-12: fix/w48-ftribe: the test waits for the game's free (heap chunk watch), misses destroyed at once; 0.7.13 final check failures were the setup.
+- 2026-11-12: the test reports RESULT: SKIP when the game gave no block to a new creature in the time (about 1 round in 3 reuses it; under the final check's load it often never did): such a run proves nothing; a FAIL stays for a reuse whose creature is destroyed and for faults. Rerun out/lab/20261112-232932 (1 PASS, 1 not reached).
