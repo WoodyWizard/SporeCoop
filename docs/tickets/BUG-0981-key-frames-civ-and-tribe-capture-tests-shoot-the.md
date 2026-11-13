@@ -45,3 +45,4 @@ view on both).
 
 ## History
 - 2026-11-12: opened from the 0.7.13 final check key frames; framing helpers (fix/w48-fmisc).
+- 2026-11-12: re-check (out/lab/20261112-225741, sheet 032): tribe_conquest_guest frames the fallen hut on the guest; the host's camera still stays far from the village (only the smoke over the burnt spot shows). Test framing on the host's side, follow-up for 0.7.14.
