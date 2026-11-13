@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.14
 fixed_in: unreleased
 branch: fix/w49-chief
-commits:
+commits: 5ea0bc18
 tests: tribe_gameover_partner
 signature:
 docs: docs/re/tribe.md#tribe-gameover-list, docs/06-testing.md#testing-gameover-partner-timing
@@ -57,7 +57,7 @@ comma list of victims (one frame).
 ## Verification
 * FAIL (twin, the last blows in one frame): out/lab/20261113-144926 (#1, #2), out/lab/20261113-151255.
 * FAIL (natural, the old blows): out/lab/20261113-140322 (report), out/lab/20261113-142822 #3.
-* PASS: out/lab/20261113-144931 (#1-#3, intermediate timing), out/lab/20261113-150427 (#1, #2), FINAL_PASS.
+* PASS: out/lab/20261113-144931 (#1-#3, intermediate timing), out/lab/20261113-150427 (#1, #2), out/lab/20261113-151653 (#1-#3, the final test: the last blow 84.0-84.1 s after the chief's fall, the caption 10.5-11.0 s after the falls).
 * BUG-0922's twin still fails with the new timing (`PLAY_TRIBE_OLD_GAMEOVER=1`): out/lab/20261113-150933.
 
 ## History

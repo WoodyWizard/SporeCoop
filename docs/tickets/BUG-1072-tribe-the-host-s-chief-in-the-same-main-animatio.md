@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.13 - rel/0.7.14
 fixed_in: unreleased
 branch: fix/w49-chief
-commits:
+commits: 5ea0bc18
 tests: tribe_chief_tracks
 signature:
 docs: docs/re/tribe.md#tribe-chief-tracks, docs/06-testing.md#testing-gameover-partner-timing
@@ -57,7 +57,7 @@ the shared non-main tracks and the idle within 0.3 s in 85 % of the samples.
 * FAIL (SPORE_LAB_FIXOFF=tribe_chief_tracks=tribe.mirror_phase_tracks): out/lab/20261113-150319 (34 %: 05EF4EE1 57
   of 169, 0354559B 5 of 56, the idle 40 of 76).
 * PASS: out/lab/20261113-150637 #1 (98 %), #2 (96 %; 05EF4EE1 190 of 192, the idle 117 of 119, 0354559B 17 of 25).
-* Regression: REGRESSION_RUN.
+* Regression: out/lab/20261113-151144 (tribe_hold_only, tribe_mirror_stale, tribe_chief_still, same_view_tribe all OK; same_view_tribe's stills: the chief's idle 0x02481DE5 within 0.06 s on both games at three of four, the fourth taken in a walk start).
 Left: 0x0354559B still off in some samples (restarted on one game between two sends); the key frames of the PASS runs
 show the same staff angle with small differences of the free arm (the shots are not taken at the exact same moment).
 
