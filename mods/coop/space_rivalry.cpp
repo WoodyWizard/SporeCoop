@@ -686,6 +686,11 @@ bool on_hit(void* ufo, void* attacker, float dmg, int type, const float* dir)
     return false;
 }
 
+bool at_war(uint8_t id)
+{
+    return spaceext::connected() && spaceext::rivals() && id != me() && spaceext::relation(me(), id) == Relation::War;
+}
+
 // the puppets of players at war with us belong to no empire (our weapons hit them), the others
 // to ours (the game's own friendly-fire rules keep them safe)
 static void puppets_tick()

@@ -65,6 +65,7 @@ struct Api {
     std::function<void()> give_do;
     std::function<void()> give_cycle;  // the next other player as the recipient (BUG-0075)
     std::function<int()> give_choices; // how many players a gift can go to
+    std::function<bool()> give_pick_space; // BUG-1050: Space shows the ">" picker too (coop.fix space.give_pick)
     // space: travel to a partner's star system (false = not possible now, else whose)
     std::function<bool(std::string& to)> jump;
     std::function<void()> jump_do;

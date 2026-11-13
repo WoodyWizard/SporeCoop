@@ -2926,3 +2926,34 @@ Mod-side mechanics (space_rivalry.cpp, space_planets.cpp), no new game addresses
   own empire starts with 0, not with the host's save money.
 * ✔ (code) BUG-1039: the guest's last-known colony spice (`g_gc`) is of one Space world and one Allies period (a
   Rivals period clears it): the first host K_SPICE after either only writes, no K_SPICE_TAKEN of older values.
+
+## War hits, NPC shot counts, the finale's galaxy jump, far terraform records (2026-11-13, fix/w49-space)
+<a id="space-war-npc-hits"></a>
+
+0.7.14 package S1 (BUG-1032, 1046, 1045, 1042, 1050, 0991). GOG 2024 (dc04aee5), lab runs on lanes 2 and 3.
+* ✔ (runtime, lab 20261113-012657) In a co-op session the guest's game has the host's empire id as its own
+  (PlayerEmpireID 800021CA on both games: the guest plays the host's save). A mirror of the host's escort therefore
+  carried the guest's own empire id in the guest's game.
+* ✔ (runtime, labs 20261113-012657 / 013833) cGameDataUFO TakeDamage drops a hit whose attacker political id (the
+  argument, not the attacker object's +0x30) equals the victim's: -1 against a pirate (-1) did nothing, the host's
+  empire id against the same pirate took 2 hp; -1 against the host's escort (800021CA) took 10.
+* ✔ (runtime) A War guest's hits now count both ways (`space.war_npc_hits`): the host's escort's hit on the War
+  puppet goes to the guest (MSG_UFO_DAMAGE, applied with -1), the guest's MSG_UFO_HIT on the host's empire's ships is
+  applied with -1, and the guest's mirrors of the host's empire's ships get -1 while at War (like the War puppets
+  on the host, space_rivalry.cpp puppets_tick).
+* ✔ (runtime, lab 20261113-012916-2) FireTool of an NPC escort's weapon (`coop.fleet fire`) in a star system was
+  refused every time (al = 0); on a planet (space_empire's colony 01460035) it fires. A host escort (type 2, own
+  empire) has weapons in slots 1 and 2 (+0x794, +0x798), none in slot 0 (+0x790 mpNPCWeapon); one weapon took no
+  second shot within 2.1 s (its reload), so `coop.fleet fire <id> <slot>` alternates slots.
+* ✔ (code) BUG-1046: the host's per-ship shot count (`g_shot_counts`) outlives the 1 s list of shooters (erased with
+  the ship); before, a shot 1.0-2.3 s after the last restarted the count and the guest fired 0 (or 4 after a burst).
+* ✔ (runtime, lab 20261113-013833-2) The finale's direct SpaceTeleportTo in the galaxy view with energy 0 took 200
+  of 1500 hp for a jump next to the core; with full energy (100) none was spent for that jump. teleport_in_galaxy
+  (BUG-0063) keeps both (`space.finale_fly_free`).
+* ✔ (runtime, lab 20261113-014106-2) A guest's star table has stars with planet count +0xAC = 0 within the first 60
+  records (00121000); a K_TERRA_REC for such a star or for 0x40FFFFFF is now skipped (`space.terra_rec_checked`:
+  star_record bounded, the index under +0xAC, in Space only). The FAIL run is in BUG-1042.
+* ✔ (code) BUG-1050: in Space "Give 10 to <player>" sends to coop's give target (`space.give_pick`); the ">" picker sits
+  right of the Give button (724..756 x 430..460: the jump button holds its Tribe / Civ place 520..560).
+* Tests: `coop.space nogen` (a star without generated planets), `coop.space terrarec <place> a t w` (send a
+  K_TERRA_REC), `coop.space heal` (the ship's hp to its max), `coop.space finale goto <star> delay <s>`.

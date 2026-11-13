@@ -29,6 +29,16 @@
 - Cell: the mod's per-session Cell state (a meal received in the last moment of a session, the move next to the host
   after joining, the own cell's last good position and its small size after a respawn) no longer carries over into
   the next session or Cell game (BUG-1002).
+- Space, Rivals mode at war with the host: the host's escort ships and system Defenders and the guest's ship now
+  really damage each other (before, their shots hit nothing on either side) (BUG-1032).
+- Space: a host's NPC ship that fires again after a short pause no longer shows a burst of extra shots, or no shot,
+  on the guests' screens (BUG-1046).
+- Space finale: "Fly to" a partner at the galactic core from the galaxy view no longer costs health with no energy
+  left, and a ship disabled after the order no longer flies (BUG-1045).
+- Space: a partner's terraforming no longer makes another player's game fault when that player's game never
+  loaded the planets of that star (BUG-1042).
+- Space, 3-4 players: "Give 10 to <player>" now gives the spice to the player the button names, and ">" picks the
+  recipient in Space too (BUG-1050).
 
 ## [0.7.13] - 2026-11-12
 

@@ -3018,6 +3018,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: Rivals, declare war, fly near the host's escort; not run.
 * Known: by code, the BUG-0420 friendly filter (squadron.cpp) and the host's empire id given as the attacker.
 * Ticket: BUG-1032
+* Fixed (unreleased, fix/w49-space, `space.war_npc_hits`): at War the hits count both ways (owner decision 1).
 
 ## Space: a gift or a sale right after a guest's rejoin is lost (2026-11-13, audit 0.7.14)
 <a id="issue-trade-before-restore"></a>
@@ -3075,6 +3076,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen. A partner terraforms a planet of a far star while you are elsewhere or load another world.
 * Known: spacecoop.cpp apply_terra_rec (inferred from code; BUG-0284 shows the game's read does no checks).
 * Ticket: BUG-1042
+* Fixed (unreleased, fix/w49-space, `space.terra_rec_checked`): only a generated planet of a known star, in Space.
 
 ## Space: "Fly to" a partner at the galactic core costs energy (2026-11-13, audit 0.7.14)
 <a id="issue-finale-fly-energy"></a>
@@ -3084,6 +3086,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen. Near the core, galaxy view, low energy, "Fly to" a partner.
 * Known: space_finale.cpp fly_step (observed in code).
 * Ticket: BUG-1045
+* Fixed (unreleased, fix/w49-space, `space.finale_fly_free`): the galaxy step goes through teleport_in_galaxy.
 
 ## Space: a guest sees a host NPC ship fire a burst of 4 shots for one (2026-11-13, audit 0.7.14)
 <a id="issue-space-shot-burst"></a>
@@ -3093,6 +3096,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen. Watch a host escort or pirate that fires in short bursts.
 * Known: the host's shot count restarts at 1 while the guest still has the old count (observed in code).
 * Ticket: BUG-1046
+* Fixed (unreleased, fix/w49-space, `space.shot_count`): the host's shot count outlives the 1 s list.
 
 ## Space, 3-4 players: "Give 10 to <player>" gives the spice to someone else (2026-11-13, audit 0.7.14)
 <a id="issue-space-give-recipient"></a>
@@ -3102,6 +3106,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen. 3 players: pick the third player with ">" in Civ, go to Space, click Give.
 * Known: give_spice ignores the recipient (observed in code).
 * Ticket: BUG-1050
+* Fixed (unreleased, fix/w49-space, `space.give_pick`): the spice goes to the named player; ">" in Space.
 
 ## Creature, Tribe: a fight sound or effect can keep playing on a guest's copy of a host creature (2026-11-13, audit 0.7.14)
 <a id="issue-mirror-fx-keys"></a>
@@ -3272,3 +3277,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `SPORE_STAGES=cell,creature python3 tools/tests/coop_lifecycle_reset.py` (the monitor's puppet_hp rule).
 * Known: seen in 3 of 4 runs, also with `core.lifecycle_reset off`; not with Creature first.
 * Ticket: BUG-1061
+
+## Space: the Space lobby's "Give 10 to <player>" button wraps its caption (2026-11-13, fix/w49-space key frame)
+<a id="issue-give-caption-wrap"></a>
+
+* What happens: the co-op window's Space row shows "Give 10 to / Carol" on two lines, cut by the button's frame.
+* Reproduce: tools/tests/coop_space_give_pick.py (or 2 players with spice in the cargo), F9.
+* Known: seen at 150 and 170 px; the cause is not analysed (the button's wrap width).
+* Ticket: BUG-1062
