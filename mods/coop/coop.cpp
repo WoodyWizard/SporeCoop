@@ -1685,6 +1685,20 @@ uint32_t g_one_evolutions = 0, g_one_refused = 0; // its host evolutions / refus
 // BUG-0920: an editor request the mod took and will never submit (evo_flag_tick clears the game's flag at once)
 bool g_evo_flag_refused = false;
 COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Creature evolution editor opens at once; each guest gets an Evolve now offer instead of the ready vote");
+// BUG-1085: core.editor_now keyed on the request's tag +0x90 == 0x64AA168, taken for the mating call's. It is the
+// stage-end editor's (CreatureGame_HandleMessage 0xD42E50 on 0x4471C60 with +0xDE set, which only the Timeline's evolve
+// button sets: Creature -> Tribe, docs/re/creature.md#creature-mating-call); the mating editor is 0xD3C650 with tag
+// 0x12191CA (also the tag of the first Creature editor after Cell, 0xFD4902BD, which BUG-0315's arrival vote owns). So
+// Creature -> Tribe went on without the vote (the guests got a pointless "Evolve now") and every mating evolution waited
+// for it, the reverse of docs/09-coop-design.md 9.3. On: the mating request (0x12191CA, not the landfall editor, not
+// right after the switch vote) opens at once with offers; the stage-end request (0x64AA168) is a stage start: the host's
+// waits for the vote "wants to move on to the Tribe stage", a guest's in the host's Creature world is refused (its I'm
+// ready during that vote) and never takes that guest to Tribe alone. Off: as 0.7.13 (keyed on 0x64AA168, a guest's
+// stage-end request reaches its game).
+static bool g_editor_tag_fix = true;
+COOP_FIX("core.editor_now_tag", "BUG-1085", g_editor_tag_fix, "core: Creature: the mating evolution opens at once with offers, the stage-end editor (Creature -> Tribe) waits for the vote and a guest cannot start it alone");
+constexpr uint32_t kTagMating = 0x12191CAu, kTagStageEnd = 0x64AA168u, kEditorLandfall = 0xFD4902BDu;
+unsigned g_stage_end_votes, g_stage_end_guest_refused; // tests (coop.vote)
 constexpr uint8_t kVoteOffer = 1; // MSG_VOTE flags: an evolve offer, not a vote (sent with active = 0: older guests ignore it)
 constexpr double kOfferSeconds = 90.0;
 uint32_t g_offer_editor = 0;   // guest: the editor of the host's offer (0 = none)
@@ -2341,9 +2355,19 @@ bool SK_CDECL h_Submit(void* req)
     if (req && mode == modes::kCell && g_sess.connected())
         cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
+        uint32_t tag = skg::readable(req, 0x94) ? skg::field<uint32_t>(req, 0x90) : 0u;
+        uint32_t editor = skg::field<uint32_t>(req, 0xC);
+        // BUG-1085: which Creature request this is (the stage-end editor or an evolution inside the stage)
+        bool stage_end = g_editor_tag_fix && mode == modes::kCreature && tag == kTagStageEnd;
+        bool in_stage = !g_editor_tag_fix ? tag == kTagStageEnd
+                                          : tag == kTagMating && editor != kEditorLandfall &&
+                                                !(g_switch_vote_fix && settings::on(settings::kSwitchVote) &&
+                                                  H->time_seconds() - g_switch_passed_at < 300.0);
+        if (mode == modes::kCreature)
+            LOG("editor request in Creature: editor %08X tag %08X (%s)", editor, tag,
+                stage_end ? "the stage's end" : in_stage ? "an evolution in the stage" : "other");
         bool now_ok = g_editor_now_fix && settings::on(settings::kEditorNow) && g_sess.role() == net::Role::Host &&
-                      !g_vote.active && mode == modes::kCreature && skg::readable(req, 0x94) &&
-                      skg::field<uint32_t>(req, 0x90) == 0x64AA168u;
+                      !g_vote.active && mode == modes::kCreature && in_stage;
         // F5 (BUG-0769): creature.mode host: one creature for everyone, only the host evolves it (no vote, no offer);
         // a guest's own editor request is refused (the game's nest / mating call of a guest)
         bool one = host_creature_mode() && (mode == modes::kCell || mode == modes::kCreature);
@@ -2363,10 +2387,28 @@ bool SK_CDECL h_Submit(void* req)
             broadcast_offer(id, g_name + " evolves now: press Evolve now (F9) to evolve yours too");
             notice(g_name + " evolves now (the others may evolve too)", -1);
         } else if (g_sess.role() == net::Role::Host) {
-            if (!g_vote.active)
-                start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
-                                    modes::mode_name(mode) + ")");
+            if (!g_vote.active) {
+                if (stage_end) { // BUG-1085: a stage start keeps the vote
+                    g_stage_end_votes++;
+                    LOG("evolution: the end of the Creature stage waits for the vote (BUG-1085)");
+                    start_vote(req, g_name + " wants to move on to the Tribe stage");
+                } else
+                    start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
+                                        modes::mode_name(mode) + ")");
+            }
             return false; // runs when the vote is over
+        } else if (stage_end && host_world_now() == host_world::HostWorld::Same) {
+            // BUG-1085 (docs/09-coop-design.md 9.3): a guest cannot change the stage alone; its press is its I'm ready
+            g_stage_end_guest_refused++;
+            g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            if (g_vote.active) {
+                LOG("evolution: this guest's stage-end request is its I'm ready (BUG-1085)");
+                set_ready(true);
+            } else {
+                LOG("evolution: this guest's stage-end request is not taken: the host moves everybody on (BUG-1085)");
+                feed("the host moves everybody on to the Tribe stage (after a vote)");
+            }
+            return false;
         } else {
             offer_end("the own evolution"); // BUG-0516: this guest evolves on its own now
             notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
@@ -8096,7 +8138,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                                             game::species_key(av)); // BUG-0720
                            bool r = req && skg::cdecl_call<bool>(submit, req);
                            SAY("editor request submitted -> %d\n", (int)r);
-                       } else if (argc > 1 && !strcmp(argv[1], "evolve") && game::mode_id() == modes::kCreature) {
+                       } else if (argc > 1 && (!strcmp(argv[1], "evolve") || !strcmp(argv[1], "stageend")) &&
+                                  game::mode_id() == modes::kCreature) {
                            // tests (BUG-0457): the creature stage's own evolution request, as its message handler
                            // 0xD42E50 builds it when the avatar meets its mate (docs/re/creations.md#creations-evolution-request):
                            // +0x90 the evolution tag (the editor's result is applied to the species), +0x94 the
@@ -8116,15 +8159,20 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                SAY("not possible here");
                                return 1;
                            }
+                           // BUG-1085: `evolve` carries the mating editor's tag (an evolution inside the stage, as 0xD3C650
+                           // builds it), `stageend` the stage-end editor's (0xD42E50 on 0x4471C60, Creature -> Tribe)
+                           bool end = !strcmp(argv[1], "stageend");
+                           skg::field<uint32_t>(req, 0x90) = end ? kTagStageEnd : kTagMating;
                            bool r = skg::cdecl_call<bool>(submit, req);
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
                                *(uint8_t*)f = 1;
-                           SAY("evolution request submitted -> %d\n", (int)r);
+                           SAY("%s request submitted -> %d\n", end ? "stage-end" : "evolution", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "mate") && game::mode_id() == modes::kCreature) {
                            // tests (BUG-0920): the game's own evolution request, not one built by the mod: its message
                            // handler 0xD42E50 run with message 0x4471C60 and +0xDA set (the avatar met its mate, as
                            // coop.editreq diff does), the request goes through the Submit hook like a player's mating
-                           // call; the game then posts 0x5D02A72 and sets its editor-pending flag itself
+                           // call; the game then posts 0x5D02A72 and sets its editor-pending flag itself. BUG-1085: this
+                           // builder is the stage-end editor's (tag 0x64AA168, Creature -> Tribe), not the mating call's
                            if (!game::avatar() || !g_creature_game || !o_CreatureGameMsg) {
                                SAY("not possible here");
                                return 1;
@@ -8151,7 +8199,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            "votes of the host not taken elsewhere %u\n"
                            "switch votes %u (host clicks held %u, guest clicks held %u, arrivals ready %u)\n"
                            "evolve offers sent %u got %u taken %u expired %u, offer now %d\n"
-                           "editor-pending flag %d, cleared %u (BUG-0920)",
+                           "editor-pending flag %d, cleared %u (BUG-0920)\n"
+                           "stage-end votes %u, guest stage-end requests refused %u (BUG-1085)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
@@ -8159,7 +8208,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
                            editor_pause_count(), g_vote_elsewhere, g_switch_votes, g_switch_held, g_switch_guest_held,
                            g_switch_arrivals, g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired,
-                           g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared);
+                           g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared, g_stage_end_votes,
+                           g_stage_end_guest_refused);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

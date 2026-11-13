@@ -5,8 +5,9 @@ Creature fixture. Until 0.7.10 the host's evolution (the mating call's request) 
 "I'm ready" or 60 s, and every guest's own editor opened at the vote's end. No world reload follows the host's editor
 since BUG-0508, so the host goes on at once and each guest gets an offer ("Evolve now") instead of the ready vote:
 
-  1. `coop.vote evolve` on the host (the creature stage's own evolution request, as the game builds it): the host's
-     game is in its editor within 15 s although the guest pressed nothing.
+  1. The host mates the players' way (coop_creature_mating.py: the mate the game picked, Backspace, a left click on
+     it): the game's own mating editor request (0xD3C650, tag 0x12191CA; BUG-1085: not a request the mod builds, and
+     not the stage-end editor's 0x64AA168) opens the host's editor, with no vote, although the guest pressed nothing.
   2. The guest's game meanwhile stays in the Creature stage (no editor forced on it) and its co-op window shows
      "Evolve now" (coop.uistate).
   3. The host leaves its editor (done): back in its Creature stage, while the guest has not evolved.
@@ -14,7 +15,8 @@ since BUG-0508, so the host goes on at once and each guest gets an offer ("Evolv
      plays; the guest leaves it with the red cross and plays its creature again.
 
   coop_editor_now.py                                 (PASS)
-  SPORE_FIX_OFF=core.editor_now coop_editor_now.py   (step 1 FAILS: the host's editor waits for the vote)
+  SPORE_FIX_OFF=core.editor_now coop_editor_now.py       (step 1 FAILS: the host's editor waits for the vote)
+  SPORE_FIX_OFF=core.editor_now_tag coop_editor_now.py   (step 1 FAILS: keyed on the stage-end tag, BUG-1085)
 
 --off (BUG-0768, the session setting core.editor_now off, `coop.settings force`): the host's request starts the vote
 as before 0.7.11 (the guest sees "I'm ready", no Evolve now offer), the host's editor waits for it (not open after
@@ -26,6 +28,7 @@ import time
 import settings_lib as sl
 import twoinst
 
+from coop_creature_mating import mate_click
 from coop_ui import Ui
 from twoinst import Checks, start
 
@@ -70,7 +73,7 @@ def setting_off(host, guest, gu, ck):
 
 
 def main():
-    host, guest = start()
+    host, guest = start('creature')
     ck = Checks()
     gu = Ui(guest, 'guest')
     time.sleep(3)
@@ -85,11 +88,16 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
 
-    # 1. the host's editor at once
+    # 1. the host's editor at once, from the game's own mating request (BUG-1085: not one the mod builds)
+    if not mate_click(host, ck):
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     t0 = time.time()
-    print(' ', host.call('coop.vote evolve')['out'].strip().splitlines()[0], flush=True)
-    ck(wait(lambda: in_editor(host), 15), f"the host's game is in its evolution editor without the guest's ready "
-       f"({mode(host).strip()}, {time.time() - t0:.0f} s)")
+    wait(lambda: in_editor(host) or 'vote active' in host.call('coop.vote')['out'], 120)
+    v = host.call('coop.vote')['out']
+    print(f'  host {mode(host).strip()}, vote: {v.splitlines()[0][:100]} ({time.time() - t0:.0f} s after the click)', flush=True)
+    ck(in_editor(host) and 'vote active' not in v,
+       f"the host's game is in its mating evolution editor without a vote ({mode(host).strip()}, {v.splitlines()[0][:60]})")
 
     # 2. the guest is offered the evolution, not pulled into it
     st = gu.wait(lambda s: s.get('open') == '1' and s['ready']['vis'], 10, 'the offer')

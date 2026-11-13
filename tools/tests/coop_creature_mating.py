@@ -5,13 +5,15 @@ docs/re/creature.md#creature-mating-call).
 The game's drama manager picks the mate itself near the nest (every 5 s: a family member within 15 m of the nest,
 marked +0xB58 & 0x10, `coop.drama mate`); the mating call (Backspace) only shows hearts. A left click on the mate
 (cursor kind 9) makes the avatar walk to it and mate (BT node 02D852F0, the mate 91BFFC22), the CRG_LaidEgg
-cinematic plays, and the game's mating editor request (0xD3C650, tag 0x12191CA) goes to the co-op vote.
+cinematic plays, and the game's mating editor request (0xD3C650, tag 0x12191CA) opens the host's editor
+at once with an Evolve now offer to the guest (core.editor_now, BUG-1085).
 
 1. Two games on the creature fixture (the host at its nest). The host's game names a mate (`coop.drama mate`).
 2. The host presses Backspace (the call), then left-clicks the mate where its game draws it (`coop.targets all`):
    the avatar goes to mate (its node 02D852F0).
-3. The host's game asks for the editor: the vote "wants to evolve (Creature)" on the host and on the guest's
-   screen; the guest is ready; the host's editor opens (game.mode leaves the Creature stage), the guest's own too.
+3. The host's game asks for the editor: an evolution inside the stage (BUG-1085): the host's editor opens at once and
+   the guest's screen offers "Evolve now" (core.editor_now off: the vote, "I'm ready"); the guest's click opens its
+   own editor.
 4. Both leave their editors with "done": both games are back in the Creature stage.
 
   coop_creature_mating.py   (MATING_CLICK=other: a click on another member of the family instead: must FAIL)"""
@@ -53,14 +55,9 @@ def mode(con):
     return con.call('game.mode')['out'].strip()
 
 
-def main():
-    host, guest = start('creature')
-    ck = Checks()
-    hu, gu = Ui(host, 'host'), Ui(guest, 'guest')
-    other = os.environ.get('MATING_CLICK') == 'other'
-    m0 = mode(host)
-
-    # 1. the game picks the mate near the nest (every 5 s)
+def mate_click(host, ck, other=False):
+    """steps 1 and 2 (shared with coop_editor_now.py): the game picks the mate, the host's mating call and a real left
+    click on it; True when the host's creature goes to mate (its node 02D852F0)"""
     mt = None
     t0 = time.time()
     while time.time() - t0 < 30:
@@ -74,15 +71,13 @@ def main():
     me = ids.get(mt['ptr']) if mt else None
     ck(me is not None, f'the mate is one of the host\'s NPCs ({me})')
     if not me:
-        ck.faults(host=host, guest=guest)
-        return ck.result()
+        return False
     nid = me[0]
     if other:  # the twin: another adult of the family
         fam = [v for p, v in ids.items() if v[1] == me[1] and p != mt['ptr']]
         print(f'  MATING_CLICK=other: clicking #{fam[0][0] if fam else None} instead of the mate #{nid}', flush=True)
         nid = fam[0][0] if fam else nid
 
-    # 2. the call, then a click on the mate
     host.call('coop.npc gonpc %s 5' % nid)
     time.sleep(1.5)
     host.call('key 0x08')  # Backspace: the mating call (hearts only)
@@ -104,9 +99,21 @@ def main():
         if going:
             break
     ck(going, f'a left click on the mate: the host\'s creature goes to mate (node {MATE_NODE})')
+    return going
 
-    # 3. the game's mating editor request: the vote
-    st = None
+
+def main():
+    host, guest = start('creature')
+    ck = Checks()
+    hu, gu = Ui(host, 'host'), Ui(guest, 'guest')
+    other = os.environ.get('MATING_CLICK') == 'other'
+    m0 = mode(host)
+    if not mate_click(host, ck, other):
+        ck.faults(host=host, guest=guest)
+        return ck.result()
+
+    # 3. the game's mating editor request: an evolution inside the stage (BUG-0516 / BUG-1085): the host's editor opens
+    # at once and the guest gets "Evolve now" (with core.editor_now off: the vote "wants to evolve", then I'm ready)
     t0 = time.time()
     while time.time() - t0 < 120:
         v = host.call('coop.vote')['out']
@@ -114,18 +121,18 @@ def main():
             break
         time.sleep(1)
     print(f'  host vote: {host.call("coop.vote")["out"].strip()[:160]} ({time.time() - t0:.0f} s after the click)', flush=True)
-    st = gu.wait(lambda s: s['open'] == '1' and 'wants to evolve' in s.get('world', ''), 20, 'vote on the guest')
-    ck(st is not None, f'the guest sees the vote of the mating editor: {st.get("world") if st else None}')
+    st = gu.wait(lambda s: s['open'] == '1' and s['ready']['vis'], 20, 'vote or offer on the guest')
+    txt = st and st['ready']['text']
+    ck(st is not None, f'the guest is asked about the mating evolution: {txt!r} ({st.get("world") if st else None})')
     shot(host, 'mating_vote_host.png')
     if st:
-        gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
         gu.click('ready')
     t0 = time.time()
     while time.time() - t0 < 60 and mode(host) == m0:
         time.sleep(1)
-    ck(mode(host) != m0, f'the host\'s creature editor opened after the vote ({mode(host)})')
+    ck(mode(host) != m0, f'the host\'s creature editor opened ({mode(host)})')
     t0 = time.time()
-    while time.time() - t0 < 30 and mode(guest) == m0:
+    while time.time() - t0 < 90 and mode(guest) == m0:
         time.sleep(1)
     ck(mode(guest) != m0, f'the guest\'s own editor opened too ({mode(guest)})')
 
