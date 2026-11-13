@@ -29,6 +29,8 @@ In 0.7.13's final check the same jump path captured all 9 cities (out/lab/202611
 Not reproduced on a fresh world: capprobe (civ_npc, 2 games, the same call) took 2 of 2 cities after 8 s on
 rel/0.7.13 and on this branch; campaign_space (4 players, civ fixture, 2 min play, no jump) captured all
 (lab 20261113-072523).
+Seen again in the full campaigns lab 20261113-082316 and 20261113-101808 (lane 4, both after the civ_npc jump):
+every capture logged, no city taken, 20 min, stuck (four runs of four with the jump).
 Reproduce: `coop_campaign.py --from tribe --to space` with a Tribe end that does not finish (CAMPAIGN_OLD_TRIBE=1),
 so the host jumps to civ_npc; watch "cCity::Capture of 1 city ... (9 of other nations listed)" repeat.
 
