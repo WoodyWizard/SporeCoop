@@ -29,7 +29,7 @@ import sys
 import time
 
 import lane
-from coop_campaign import CAPTION_OK, HISTORY_BTN, HISTORY_OK
+from coop_campaign import CAPTION_OK, EDITOR_DONE, HISTORY_BTN, HISTORY_OK
 from coop_ui import Ui
 from twoinst import Checks, keyframe, start
 
@@ -147,6 +147,23 @@ def guest_case(host, guest, ck):
        f'the guest\'s game stays in the Creature stage (no editor, no Tribe of its own: {left or mode(guest)})')
     ck(flag == 0, f'the guest\'s stage is drawn (the game\'s editor-pending flag cleared: {flag})')
     ck(in_creature(host), f'the host plays on in the Creature stage ({mode(host)})')
+    if left and 'Editor' in mode(guest):  # the bug: how far the guest's own stage end goes (observed, not asserted)
+        time.sleep(5)
+        guest.call(f'click {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
+        t1, seen = time.time(), []
+        while time.time() - t1 < 180:
+            m = mode(guest)
+            if not seen or seen[-1][1] != m:
+                seen.append((round(time.time() - t1), m))
+            if m.endswith('Tribe'):
+                break
+            if 'movie=1' in guest.call('coop.status')['out']:
+                caption_ok(guest)
+            time.sleep(3)
+        keyframe('stage_end_guest_alone', 'the bug: the guest after its own stage-end editor (Tribe of its own?) while '
+                                          'the host plays Creature', settle=0)
+        print(f'  the guest after "done" in its stage-end editor: {seen}; host {mode(host)}', flush=True)
+        return
     keyframe('stage_end_guest', 'both games in the Creature stage; the guest\'s panel "the host moves everybody on to '
                                 'the Tribe stage (after a vote)"', settle=0)
 
