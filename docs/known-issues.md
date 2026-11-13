@@ -3390,3 +3390,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   alone after the leave. Found by the lab's warm resets (fix/w49-warm, lab 20261113-103507); tribe_bounce_world stays
   cold until it is fixed. Reproduce: `tools/lab.py run tribe_bounce_world,tribe_member_air --in-order --lane N`.
 * **BUG-1077** (test): attacker_owner fails the monitor's posse_damage gate now and then (3 of 6 recent runs, cold).
+## Tribe: a village only guests raided does not count for the stage's goal (2026-11-13, fix/w49-tests)
+<a id="issue-tribe-guest-raid-goal"></a>
+
+* What happens: a guest's raid takes an NPC village's hut down (the village is conquered in every game), but the
+  stage's goal bar on the host stays where it was: no conquest cinematic, no goal. Only a village the host's player
+  attacked itself at least once counts.
+* Reproduce: tribe fixture, the guest box-selects members and right-clicks the NPC village's hut in attack mode until
+  it falls (`coop.tribe huthp <x y z> 40` shortens it); `coop.wstate` `progress=` stays 0 on the host. The campaign's
+  Tribe end needs the host's own click for this reason (coop_campaign.py tribe_clicks).
+* Known: the village's cTribeToTribeMission is made by the host game's own input actions (TribeMission_SetTargetTribe,
+  docs/re/tribe.md#tribe-wsync); a guest's order runs on the host as a DoAction without it (inferred, not traced in
+  Ghidra). Observed in campaign_tc2 lab 20261113-050826 and the fix/w49-tests exploration on lane 4.
+* Next steps: host_command calls SetTargetTribe for a guest's attack / gift on another tribe's object.
+* Ticket: BUG-1068.

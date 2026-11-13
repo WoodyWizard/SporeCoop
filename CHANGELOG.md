@@ -35,6 +35,9 @@
 - Tribe: a staff that a guest's copy of a member takes into its hand by itself is put back within half a second also
   on a slow PC (BUG-0993).
 - Creature: a guest who joins no longer starts inside the host's creature; it stands a few metres beside it (BUG-0989).
+- Civilization: a save keeps the game's own herds of wild creatures; the empty ones were left out of every Civ save
+  (they look like the herds the mod makes for a partner's creature), so after each load the game made new herds in
+  other places and the wild animals' homes moved (BUG-1067).
 - Co-op window: a chat line or name typed while a caption or a game message box holds the input now takes its full
   length in Cyrillic, Greek or CJK letters (it stopped at half or a third), keeps an emoji whole and ignores DEL
   (BUG-1027).

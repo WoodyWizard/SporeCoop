@@ -4,6 +4,7 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -127,6 +128,24 @@ static AcPlay_t o_AcPlay;
 static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a);
 
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
+// BUG-1067: every herd of ours by its serial (cGameData::mID +0x24, new for every object the game creates): savestrip's
+// empty-herd rule (BUG-0255) strips only these. Herds are never destroyed by the game; a world change frees them and a
+// new object at the same address has another serial.
+static std::unordered_map<void*, uint32_t> g_our_herd_serial;
+static void note_our_herd(void* h)
+{
+    if (!h || !skg::readable(h, 0x28))
+        return;
+    if (g_our_herd_serial.size() > 1024) // (stale entries of older worlds)
+        for (auto it = g_our_herd_serial.begin(); it != g_our_herd_serial.end();)
+            it = !object_alive(it->first) || object_serial(it->first) != it->second ? g_our_herd_serial.erase(it) : std::next(it);
+    g_our_herd_serial[h] = object_serial(h);
+}
+bool our_herd(void* h)
+{
+    auto it = h ? g_our_herd_serial.find(h) : g_our_herd_serial.end();
+    return it != g_our_herd_serial.end() && skg::readable(h, 0x28) && object_alive(h) && object_serial(h) == it->second;
+}
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
 typedef void(SK_THISCALL* Update_t)(void*, int);
@@ -2086,6 +2105,7 @@ void* create_herd(const net::Vec3& pos, void* species)
         if (g_our_herds.size() > 256)
             g_our_herds.erase(g_our_herds.begin());
         g_our_herds.push_back(h);
+        note_our_herd(h);
     }
     return h;
 }
@@ -2109,6 +2129,7 @@ void* own_herd_for(void* species)
             return false;
         },
         &f);
+    note_our_herd(f.found); // (BUG-1067: one a save brought back is ours from now on)
     return f.found;
 }
 

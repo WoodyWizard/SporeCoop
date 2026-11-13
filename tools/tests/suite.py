@@ -467,6 +467,7 @@ add('tribe_civ_ground', P + 'coop_tribe_civ.py --ground', minutes=13, fixture='t
 add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's open city planner: the mod changes nothing it holds (BUG-0493, BUG-0491; SPORE_FIX_OFF=civ.planner_hold fails: out/lab/20261103-131021)
 add('civ_planner_build', P + 'coop_civ_planner_build.py', warm=True, minutes=4, fixture='civ_npc')  # BUG-0189: the guest drags a house from its city planner's palette onto a plot: the host's game has it, the shared money fell by its price on both (SPORE_FIX_OFF=civ.planner_send fails)
 add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)
+add('civ_save_herds', P + 'coop_civ_save_herds.py', minutes=6, fixture='civ')  # BUG-1067: every herd of the game (the empty ones without an archetype too) comes back from a Civ save (SPORE_FIX_OFF=savestrip.our_herds fails)
 add('civ_save_strip', P + 'coop_civ_save_strip.py', minutes=10, uses_free_lane=True)  # a Civ guest's save holds no mirror vehicle and reloads alone without a fault or a null in the civ lists (BUG-0470; SPORE_FIX_OFF=civ.save_strip fails)
 add('tribe_save_strip', P + 'coop_tribe_save_strip.py', minutes=10, uses_free_lane=True)  # a Tribe guest's save holds none of the mirrors / tribes the mod made and reloads alone without a fault (BUG-0495; SPORE_FIX_OFF=tribe.save_strip fails)
 add('space_save_strip', P + 'coop_space_save_strip.py', minutes=10, uses_free_lane=True)  # a Space guest's save holds none of the partners' puppets or the host's mirrors and reloads alone without a fault (BUG-0522; SPORE_FIX_OFF=space.save_strip fails)
@@ -957,6 +958,10 @@ add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes
 # guest's mirror of the host's tribe leader went missing in the whole campaign)
 add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', (),
     minutes=45, timeout=3600, quick={'--minutes': 2})
+# Q1 of 0.7.14: the end of Tribe the players' way on the campaign's own planet (the live Creature -> Tribe change first,
+# then raids on every village until the goal bar is full, the City Hall and vehicle editors, Civ): no jump
+add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale', ('campaign',),
+    minutes=45, timeout=3600)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran

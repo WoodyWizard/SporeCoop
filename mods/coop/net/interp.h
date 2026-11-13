@@ -261,6 +261,9 @@ class SnapshotBuffer {
 public:
     double delay = 0.10;       // interpolation delay (s)
     bool lead = false;         // BUG-0425: shown where the sender has it now (g_lead_fix)
+    // tests (BUG-0974): with the lead, shown this many s behind where the lead rule puts it (a planted late mirror;
+    // `delay` is not used by the lead, so `coop.tribe delay` did nothing since BUG-0425)
+    double test_lag = 0;
     double max_extrap = 0.25;  // extrapolation limit (s)
     float smooth_max = 0;      // BUG-0619: a lead jump up to this (m) is smoothed (g_lead_smooth_fix); 0 = never
     // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
@@ -444,6 +447,7 @@ private:
             const bool late = g_lead_late_fix && ((g_lead_smooth_fix && member_rules() && !jittery_) || (late_lead && g_lead_fall_fix));
             if (late)
                 tl = late_time(local_now, tl);
+            tl -= test_lag; // (tests, BUG-0974)
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
             // moves a state on by its age, and states 0-120 ms late (mobile: 60 ms jitter) made the lead target step
             // 1-4 m at every start, speed change and stop; closing that at any speed the mirror can show was the
