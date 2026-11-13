@@ -2907,3 +2907,22 @@ BUG-0956. GOG 2024 (dc04aee5), runtime (lane 4, space_badges_rejoin with `BADGES
   (`this game collected spice of colony 00460014`) and took from the host too. In 1 of 3 runs the guest read 30
   before either clamp. Which function clamps is not known (`?`); the production / pickup update (0xC82B70, every
   ~6 s on the active planet) is the likely place. Tests set values under the cap (BUG-0979).
+
+## Rivals merge with an unknown budget, colony spice per world (2026-11-13, fix/w49-money)
+<a id="space-rival-merge-known"></a>
+
+Mod-side mechanics (space_rivalry.cpp, space_planets.cpp), no new game addresses:
+* ✔ (code) A guest's Rivals budget is "known" only after the split (`g_split_pending` applied) or the host's K_SET
+  answer to its K_ASK; a rejoin or any load of the host's save (`coop.share`) makes it unknown again (a new
+  `spaceext::world_epoch`; an editor or an adventure does not, BUG-0813). Until then the guest's game money is the
+  save's money (the host's budget at the save), not its own.
+* ✔ (code) The host keeps a player's last K_MONEY by id (`g_budget`, erased when the player leaves) and by name
+  (`g_budget_name`, a rejoiner's kept budget). BUG-1029: the Allies merge credited only `g_budget`, so a rejoiner
+  inside its load had no credit and sent its whole game money as K_MERGE_FIX. Now every roster guest is credited (id
+  report, else the name's kept budget, else 0) and a guest whose budget is not known in the current world sends no
+  correction. `coop.space rivalry` shows `newcomers=` and `merge_fix_skipped=`; `rivalry holdset <s>` (tests) makes
+  the host answer no K_ASK for s seconds.
+* ✔ (decision 2026-11-13) A newcomer to a Rivals session (its name has no kept budget) gets K_SET `have=2, v=0`: its
+  own empire starts with 0, not with the host's save money.
+* ✔ (code) BUG-1039: the guest's last-known colony spice (`g_gc`) is of one Space world and one Allies period (a
+  Rivals period clears it): the first host K_SPICE after either only writes, no K_SPICE_TAKEN of older values.

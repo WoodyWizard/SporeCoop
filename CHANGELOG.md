@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
+  now merges that guest's own budget; before, its budget was lost and the host's save money was added instead. A
+  player new to a Rivals session now starts its own empire with 0 money, not with a copy of the host's money
+  (BUG-1029).
+- Space: after a Rivals period, the first sync of the shared colonies no longer takes the guest's older spice
+  amounts as collected and lowers the host's colonies to them (BUG-1039).
+- Shared money and food: when the host and a guest spend at the same moment and the pool runs dry, the notices no
+  longer say the host earned money or food it did not earn (BUG-1009).
+
 ## [0.7.13] - 2026-11-12
 
 A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many

@@ -6936,3 +6936,16 @@ Use and limits:
   (drift, growth, a rare race) shows only in the full runs, so the release still runs them all. The parallel unit
   loads the machine harder for under a minute (8 jobs). The schedule's estimate comes from the out/lab folders of
   this machine; on a fresh checkout it falls back on the suite's minutes.
+
+## Rivals money and shared causes: twin tests (2026-11-13, fix/w49-money)
+<a id="testing-rivals-money"></a>
+
+* `space_rival_merge` (BUG-1029, ~2 min): the window "the guest's game loads the host's save" is reached without a
+  hook: after `coop.leave` + the join command, poll the guest's `game.mode` until it has no `Space` (the host's
+  save modal is closed with Enter meanwhile, as in twoinst.wait_guest_in) and switch at that moment. A rejoin always
+  reloaded the host's world in the lab. A newcomer is the same game joining under another name (`... Carol`).
+  `coop.space rivalry holdset <s>` (host) holds the K_SET answers for a narrower window; not used by the test.
+* `res_cause_floor` (BUG-1009): two purchases cross only when neither game hears the other in time: the suite entry
+  sets `SPORE_NET="delay=300"`; the test prints `RESULT: SKIP` if the guest's change still came after the host's
+  total (no floor reached). Toasts in `coop.status` move on screen: compare their text, not the whole line.
+* `space_spice_rivals` (BUG-1039): colony values under the game's cap (3, 0.5, 4.5 per city of the home colony).

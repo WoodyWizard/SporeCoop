@@ -1,17 +1,17 @@
 ---
 id: BUG-1009
 title: Civ/Space: a guest's change cut at 0 by the shared money floor is still counted in full, the next host total names a wrong cause (host earned / spent)
-status: open
+status: fixed
 kind: bug
 stage: Civ,Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-5
 role: host
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-money
+commits: d500f3b0
+tests: res_cause_floor
 signature:
 docs: docs/known-issues.md#issue-shared-cause-floor
 related:
@@ -41,11 +41,19 @@ so the guest's spend floors; assert the guest's feed line (the game's notificati
 host: FAIL on main, PASS with the fix.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+shared.cpp, switch `coop.fix shared.cause_clamped` (off: 0.7.13): add_counted() writes the change through
+shared_add / the resource's setter (money_clamp) and returns what the game really took (after - before); the host's
+`applied`, the guest's cause and the host's own notice use it, for a guest's MSG_RES_ADD and for owed changes paid
+later (BUG-0691).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_res_cause_floor.py` (suite `res_cause_floor`, fixture tribe, SPORE_NET="delay=300"): shared food 400, the host
+spends 150 and the guest 350 at once (the 300 ms link makes the purchases cross); the food is 0 on both and the
+guest's game (its toasts) must not say the host earned food.
+* FAIL (SPORE_FIX_OFF=shared.cause_clamped): out/lab/20261113-005801, out/lab/20261113-010621 (the final script) ("Alice earned 100 food (shared)" on the guest)
+* PASS: out/lab/20261113-010344, out/lab/20261113-010732 (with res_cause, civ_money_short, space_spice_away, space_spice_mirror: all OK)
+Tested on the Tribe food (same code path as Civ / Space money, no city income noise).
 
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
+- 2026-11-13: fixed on fix/w49-money (d500f3b0): applied / causes count what the floor let through; FAIL/PASS in the lab.

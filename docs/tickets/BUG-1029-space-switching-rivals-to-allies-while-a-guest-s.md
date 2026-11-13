@@ -1,19 +1,19 @@
 ---
 id: BUG-1029
 title: Space: switching Rivals to Allies while a guest's budget is not known yet merges the wrong money (the save's money or the shared total instead of its budget)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-1
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-money
+commits: d500f3b0
+tests: space_rival_merge
 signature:
-docs: docs/known-issues.md#issue-rivals-merge-unknown-budget
+docs: docs/re/space.md#space-rival-merge-known, docs/known-issues.md#issue-rivals-merge-unknown-budget
 related: BUG-0192, BUG-0813, BUG-0422
 ---
 
@@ -36,11 +36,31 @@ The merge must not depend on what the guest has at the switch when the host neve
 Extend tools/tests/coop_space_rivalry.py (or a new coop_space_rival_merge_join.py): Rivals on, the guest leaves and rejoins (or joins fresh) and the host switches to Allies while the guest is still loading (and once in the same frame as its first K_ASK, a test hook that holds K_SET); assert the host's game money (the shared total in the game, not a counter) equals host budget + the guest's known budget. Main: FAIL (the total grows by the guest's save money or by the total itself).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+space_rivalry.cpp, switch `coop.fix space.merge_known_budget` (off: 0.7.13):
+* host_apply(A_ALLIES) credits every guest of the roster: its last K_MONEY (g_budget), else its kept budget by name
+  (g_budget_name, a rejoiner), else 0 (a newcomer); the K_STATE carries a credit for each.
+* apply_pending_money: a guest whose budget is not known in the current Space world (g_budget_known and
+  g_budget_epoch == world_epoch; a rejoin or a load of the host's save makes it unknown) sends no K_MERGE_FIX: its
+  game money is the save's (or the shared total), the host's credit is its budget. The split and K_SET now set
+  g_budget_epoch at once.
+* Owner decision 2 (2026-11-13): K_ASK of a name with no kept budget is answered `have=2, v=0`: a newcomer to a Rivals
+  session starts its empire with 0, not with the host's save money; the host records that budget (a merge counts 0).
+* Tests: `coop.space rivalry holdset <s>` (the host answers no K_ASK for s seconds); status `newcomers=`,
+  `merge_fix_skipped=`.
+Root cause confirmed at runtime (lab 20261113-005710, fix off): budgets host 49000 / guest 57000, the guest rejoins,
+the host switches to Allies inside its load: both games 98000 = host 49000 + the save's 49000 (the rejoiner's 57000
+lost; observed, not inferred). The "shared total doubled" variant (case b) was not seen: the guest's first K_STATE
+after the rejoin already carried the merge, so no correction was pending; the fix covers it by the epoch rule
+(inferred).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_rival_merge.py` (suite `space_rival_merge`, fixture space, ~2 min): Rivals, the guest earns 7000 and the
+host spends 1000; the guest rejoins and the host switches to Allies while the guest's game loads: both games' Space
+money (cEmpire +0xD0) must be host + the guest's kept budget. Then Rivals again and a new player (Carol) joins: its
+game money must be 0, and the merge gives the host's budget only.
+* FAIL (SPORE_FIX_OFF=space.merge_known_budget): out/lab/20261113-005710 (98000 instead of 106000; Carol 49000)
+* PASS: out/lab/20261113-005935 (106000 on both; Carol 0, merge 53000 on both), out/lab/20261113-010140 (with space_rivalry and space_rival_away, all OK)
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-money (d500f3b0): the merge credits every roster guest, no correction with an unknown budget, newcomers start at 0; FAIL/PASS in the lab.

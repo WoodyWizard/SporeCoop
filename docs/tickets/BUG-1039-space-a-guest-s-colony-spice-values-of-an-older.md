@@ -1,19 +1,19 @@
 ---
 id: BUG-1039
 title: Space: a guest's colony spice values of an older world (or of Rivals) are taken as a collection after a world load in the session
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-14
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-money
+commits: d500f3b0
+tests: space_spice_rivals
 signature:
-docs: docs/known-issues.md#issue-colony-spice-old-world
+docs: docs/re/space.md#space-rival-merge-known, docs/known-issues.md#issue-colony-spice-old-world
 related: BUG-0822, BUG-0840
 ---
 
@@ -35,11 +35,21 @@ Tag g_gc with spaceext::world_epoch() (and the Rivals switch): another epoch or 
 Extend coop_space_colony_spice.py: sync once, the host lets the colony grow, the guest reloads the host's world in the session (share again) so its values are older and lower, then the first K_SPICE; assert the host's game colony value did not drop. Main: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+space_planets.cpp, switch `coop.fix space.colony_spice_epoch` (off: 0.7.13): gc_fresh() (guest tick and
+guest_check) clears the last-known values g_gc when spaceext::world_epoch() changed or while Rivals is on, so the
+first host K_SPICE after another world or a Rivals period only writes; no K_SPICE_TAKEN of older values. Status
+`gc_dropped=`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_space_colony_spice.py --case rivals` (suite `space_spice_rivals`, fixture space): the home colony synced at 3
+per city, a Rivals period with the guest's game at 0.5 and the host's at 4.5, back to Allies: the host's colony must
+keep 4.5 and the guest's game get it.
+* FAIL (SPORE_FIX_OFF=space.colony_spice_epoch): out/lab/20261113-005801 (the host's colony dropped to 0.5 per city;
+  the guest sent taken_tx=1)
+* PASS: out/lab/20261113-010104, out/lab/20261113-010344 (4.5 on both games, gc_dropped=1, taken_tx=0)
+The other path of the ticket (a reload of the host's world in the session) is covered by the same epoch rule and was
+not run separately.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-money (d500f3b0): g_gc tied to the world epoch and cleared by Rivals; FAIL/PASS in the lab.

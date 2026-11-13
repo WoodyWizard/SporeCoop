@@ -26,7 +26,8 @@ def food(con):
 
 
 def toasts(con):
-    return [ln for ln in con.call('coop.status')['out'].splitlines() if ln.startswith('toast ')]
+    """the texts of the notification toasts on screen (a toast's box moves as others come and go: the text only)"""
+    return {ln.split(' | ', 1)[-1] for ln in con.call('coop.status')['out'].splitlines() if ln.startswith('toast ')}
 
 
 def main():
@@ -37,7 +38,8 @@ def main():
     ck = Checks()
     time.sleep(3)
     f0 = food(host) or 0
-    host.call(f'coop.res add food {400 - f0:.0f}')
+    setup = round(400 - f0)
+    host.call(f'coop.res add food {setup}')
     t0 = time.time()
     while time.time() - t0 < 10 and not (food(host) == 400 and food(guest) == 400):
         time.sleep(0.3)
@@ -53,13 +55,14 @@ def main():
     t0 = time.time()
     while time.time() - t0 < 8:
         for ln in toasts(guest):
-            if ln not in before and re.search(r'earned \d+ food', ln):
-                earned.append(ln)
+            m = re.search(r'earned (\d+) food', ln)
+            if ln not in before and m and (int(m.group(1)) != setup or setup == 100) and ln not in earned:
+                earned.append(ln)  # (the setup's own earning may still be on screen)
         time.sleep(0.2)
     fh, fg = food(host), food(guest)
     print(f'  food after both purchases: host {fh}, guest {fg}', flush=True)
     print('  guest toasts:', [t for t in toasts(guest) if t not in before], flush=True)
-    print('  host toasts:', toasts(host)[-3:], flush=True)
+    print('  host toasts:', sorted(toasts(host)), flush=True)
     if fh is not None and fh > 1:
         print('  the guest\'s purchase came before the host\'s total: no floor was reached')
         print('RESULT: SKIP (the purchases did not cross)')

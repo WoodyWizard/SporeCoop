@@ -3007,6 +3007,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not run; switch to Allies while the guest loads (steps in the ticket).
 * Known: by code (space_rivalry.cpp on_state / host_apply / apply_pending_money); the doubling case is inferred.
 * Ticket: BUG-1029
+* Fixed (unreleased, fix/w49-money, `space.merge_known_budget`): the merge credits every guest (a rejoiner its kept
+  budget, a newcomer 0); a guest with an unknown budget sends no correction; a newcomer to Rivals starts with 0.
 
 ## Space: in Rivals at war, the host's escorts and a guest cannot damage each other (2026-11-13, audit 0.7.14)
 <a id="issue-war-escort-hits"></a>
@@ -3061,6 +3063,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not run.
 * Known: by code, space_planets.cpp g_gc is not tied to the world epoch.
 * Ticket: BUG-1039
+* Fixed (unreleased, fix/w49-money, `space.colony_spice_epoch`): the guest's last-known values are cleared by another
+  world or a Rivals period.
 
 ## Space: a partner's terraforming can make another player's game fault (2026-11-13, audit 0.7.14)
 <a id="issue-terra-rec-unchecked"></a>
@@ -3199,6 +3203,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: Civ, 300 in the pool, host and guest buy at once (not run).
 * Known: shared.cpp adds the guest's full change to applied/causes although the floor cut it (observed in code).
 * Ticket: BUG-1009
+* Fixed (unreleased, fix/w49-money, `shared.cause_clamped`): the host counts what the floor let through.
 
 ## All: the last session summary is missing from reports when the game folder has non-Latin letters (Windows) (2026-11-13, audit 0.7.14)
 <a id="issue-summary-non-ascii-path"></a>
