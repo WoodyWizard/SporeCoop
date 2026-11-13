@@ -7173,3 +7173,18 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   run (run <id> pid <pid> since <time>)") before its build and its kill. The kernel drops the lock with the process.
   Runs from trees without this change do not take it. Self-test: lab_selftest.py `lane_lock` (old behaviour:
   `SPORE_LAB_NO_LANE_LOCK=1`).
+
+## The chief's staff on both games from the start; rounds without a behaviour start (2026-11-13, fix/w49-tribe3)
+<a id="testing-tribe-chief-still"></a>
+
+* `coop_tribe_chief_still.py` (suite `tribe_chief_still`, ~2.5 min, BUG-1069): from the moment the guest's game runs,
+  both games' rows of the host's chief at ~20 Hz (animation, `hold=`, track time `t=`, `loop=`) and its hand item at
+  ~3 Hz for 90 s. Fails on a stretch over 1 s with the item in the hand on one game only, over 2 s in the same gesture
+  more than 0.5 s apart, or a hand item that differs over 3 s. Prints each stretch with both games' animations and the
+  guest's hold trace. Key frame: both cameras 10 m from the chief (`sameview`).
+  Twin: `SPORE_FIX_OFF=tribe.mirror_phase_any,tribe.hold_restart` (the gesture begun at the load 5-14 s apart).
+* same_view_tribe prints the host's chief's animation / bhv / hold / t / item on both games at each still (`host's
+  chief at the still:`): read it next to the sheet when a still shows the staff another way.
+* tribe_mirror_stale (BUG-1071): every second round the host first forgets the chief's last behaviour start
+  (`coop.tribe bhvzero <id>`, host, tests: bhv 0 as right after the save's load); checked that at least one such round
+  counted. Twin: `SPORE_FIX_OFF=tribe.mirror_idle_loco`.

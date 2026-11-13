@@ -3352,6 +3352,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run same_view_tribe --repeat 3`, compare the chief's staff; `coop.tribe anims` (`hold=`, `t=`).
 * Known: the animation and its moment agree (tribe_mirror_phase); the hold tests pass. Not analysed.
 * Ticket: BUG-1069
+* Fixed (unreleased, fix/w49-tribe3, 2026-11-13): the chief's gesture from the load got no moment relay, a moment
+  5 s+ off was never set, a restart over a just-bound hold dropped it (`tribe.mirror_phase_any`, `tribe.hold_restart`;
+  docs/re/tribe.md#tribe-chief-load-gesture).
 
 ## Tribe: right after the session start a returned gesture of the chief's copy can stay (2026-11-13, fix/w49-mirror)
 <a id="issue-tribe-stale-first"></a>
@@ -3360,6 +3363,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   kept the gesture for 9 s while the host's chief stood; every other round ended it within 0.5-2.1 s.
 * Reproduce: `lab.py run tribe_mirror_stale --repeat 3`; `coop.tribe holdtrace 1` on the guest (Z / I events).
 * Ticket: BUG-1071
+* Fixed (unreleased, fix/w49-tribe3, 2026-11-13): no idle news went for a member with no behaviour start since the
+  load (`tribe.mirror_idle_loco`).
 
 ## Tests: same_view_tribe's host game gone 7 s into Tribe (2026-11-13, fix/w49-mirror)
 <a id="issue-same-view-tribe-host-gone"></a>
