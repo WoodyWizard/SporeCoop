@@ -44,8 +44,11 @@ new ship since the play): added again"; `OLD_FINALE_DRIVE=1`: the old bot. BUG-1
 
 ## Verification
 - no-fail-run: a test bot fix (the drive the bot itself adds); the FAIL side is the recorded finales (20261113-060756,
-  -082316, -101808, 20261112-175447: the host's zoom-out stuck after a new ship). With the fix: the finales of the
-  campaigns in docs/06-testing.md#testing-w49-camp.
+  -082316, -101808, 20261112-175447: the host's zoom-out stuck after a new ship). With both fixes: the full campaign
+  20261113-142203 (after the jump to civ_npc and Civ -> Space by the game): every player zoomed out (2-3 notches),
+  entered the core and got the Staff of Life. campaign_civ_jump 20261113-133150 stuck once on a guest (Bob) right after
+  "Fly to Alice" near the core, no destruction in its log: not explained (the zoom-out failure now prints the finale state,
+  the ship and its drive).
 
 ## History
 - 2026-11-13: opened.

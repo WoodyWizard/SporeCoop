@@ -7428,17 +7428,31 @@ Tribe timeout is a failing `stuck`, `CAMPAIGN_STRICT_TRIBE=0` the old `info`):
 * the raid orders keep a home guard (the players' chiefs and `HOME_GUARD` = 3 members next to the village;
   `CAMPAIGN_RAID_ALL=1`: all go): the game over by population (no player member with health) reloaded the save at 4/5
   in 20261113-120534.
-* Runs of this branch: 20261113-125218 (flag 1) Civ reached, 5/5; 20261113-125221 (flag 1) Civ reached;
-  20261113-133534 (flag 0 the whole Tribe, before the fix) 0/5 in 30 min; with the fix 20261113-142311 Civ reached in
-  17 min (the restore fired at the reload; 4 huts in 2-3 min each).
-* Monitor gate `ground`: Tribe members held by the Tribe end's cinematics (the host's line `busy=cinematic`) are not
-  judged (`agl_cine`, default 1; 0: as before): the game removes the village's ground stamp under a member that stands
-  frozen 18 m up for the 100 s of the change (20261113-125218, replayed with `monitor.py replay`).
+* More shortcuts (printed `shortcut:`, `CAMPAIGN_OLD_RAID=1`: off): the nearest standing village first (a village at
+  318 m: two raids of 300 s without a fall, the raiders killed on the way, full campaign 20261113-142203); every 60 s
+  of a raid the raided village's members take the blows of the players' members (`coop.tribe pincer`; their defenders
+  killed 6-12 raiders a raid and a village raided the players' home back, a game over reloaded at 2/5 in
+  20261113-145317); a hut under 45 hp is cut to 1 (one stood at 4 of 750 for minutes once its raiders were dead).
+* Runs of this branch (campaign_tribe_end, Tribe end the players' way):
+  20261113-125218 (flag 1) Civ reached; 20261113-125221 (flag 1) Civ reached; 20261113-133534 (flag 0 the whole
+  Tribe, before the fix) 0/5 in 30 min; with the fix: 20261113-142311 Civ in 17 min; 20261113-145317 a game over at
+  2/5, then 1/5 at the timeout (before the pincer and the nearest pick); 20261113-153633 (pincer, no nearest pick yet)
+  Civ in 15 min, 5 conquests of 1.5-3 min. The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
+  village), the jump.
+* Monitor gate `ground`: Tribe members are not judged while the host's own line says `busy=cinematic` or `editor`
+  (`agl_cine`, default 1; 0: as before): during the Tribe end change the game holds members where they stand while it
+  removes the village's ground stamp under them, 16-18 m up for 76-100 s on every game (20261113-125218 member #129,
+  -153633 member #67, both `bt=046A27F6`). A member up in the play phase still fails it (BUG-1088, 20261113-142203).
+  Checked with `monitor.py replay` on the three runs.
 
 **BUG-1079: the finale's zoom-out.** The host's ship was destroyed in the Space play without its death cinematic
 (BUG-1073), spacecoop forced the respawn, and the new ship lacked the drive the bots add; to_galaxy now gives the ship
-the drive before the first wheel turn (`OLD_FINALE_DRIVE=1`: the old bot).
+the drive before the first wheel turn (`OLD_FINALE_DRIVE=1`: the old bot). The full campaign 20261113-142203 (jump to
+civ_npc, then all 9 captures with their cinematics and Civ -> Space by the game) ran the finale to the Staff of Life.
+When the zoom-out fails the bot now prints the finale state, the ship and its drive (Bob in 20261113-133150, near the
+core right after "Fly to Alice", not explained).
 
 **Found on the way** (tickets, not fixed here): BUG-1082 (a guest's mirror of an NPC village member 114 m off, sync-check
 MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 on a guest in Tribe while the host edits,
-20261113-142311).
+20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
+full campaign 20261113-142203).

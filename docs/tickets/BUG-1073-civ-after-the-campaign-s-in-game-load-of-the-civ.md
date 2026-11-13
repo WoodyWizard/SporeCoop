@@ -77,7 +77,11 @@ the cinematic must play and the city must be the player civilization's in the ho
 - PASS with the fix: lab 20261113-142022 (lane 4): restored_on_load=1, the cinematic played, the city taken on both.
 - The natural path without the fix: campaign_tribe_end 20261113-133534 (lane 5, the build before the fix): the flag 0
   from CRG2TRG through the reload and the whole Tribe (no host click, 0/5 in 30 min), then the jump; the run ends at Civ
-  (no capture in that test). With the fix: see docs/06-testing.md#testing-w49-camp.
+  (no capture in that test).
+- With the fix, the natural path: the full campaign 20261113-142203 (lane 4): "the cinematics were off after the load
+  into mode 01654C02: on again" at the host's Tribe reload (14:43:21), the Tribe timeout at 3/5 made the campaign jump
+  to civ_npc, all 9 captures played their cinematics and took their cities, Civ -> Space by the game, the finale
+  complete. campaign_tribe_end 20261113-142311 and -153633: the restore fired and Tribe ended by the game.
 
 ## History
 - 2026-11-13: opened.
