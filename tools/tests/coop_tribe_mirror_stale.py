@@ -59,7 +59,7 @@ def main():
         if not h1 or not h2 or h1[0] not in LOCO or h2[0] not in LOCO:
             time.sleep(1.0)
             continue
-        out = guest.call(f'coop.tribe mplay {cid} {GESTURE}')['out'].strip()
+        out = guest.call(f'coop.tribe mplay {cid} {GESTURE}')['out'].strip() + f' host={h2[0]} bhv={h2[1]}'
         ts, host_ok, back = time.time(), True, None
         seq = []
         while time.time() - ts < 9.0:
@@ -77,6 +77,9 @@ def main():
             continue
         done += 1
         backs.append(back if back is not None else 99.0)
+        if back is None:  # BUG-1071: what the guest's idle fix did meanwhile (I / Z: the host's idle news acted on)
+            ev = [ln for ln in guest.call(f'coop.tribe holdtrace {cid}')['out'].splitlines() if ln.startswith('hev')]
+            print('  (holdtrace of the round: ' + '; '.join(ev[-12:]) + ')', flush=True)
         print(f'  round {done}: {out}; the mirror back in its idle / walk after {back} s ({seq})', flush=True)
         time.sleep(2.0)
     print('  ' + next((ln.strip() for ln in guest.call('coop.tribe anims')['out'].splitlines() if ln.startswith('idle fix')), ''),

@@ -7158,3 +7158,18 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   started when the fix moved it before the first sample.
 * Pitfall (BUG-0989): a fix that acts while the guest joins is still on during `twoinst.start` with SPORE_FIX_OFF;
   its twin needs a second join in the test.
+
+## A lab run owns its lanes (2026-11-13, fix/w49-tribe3)
+<a id="testing-lane-lock"></a>
+
+* BUG-1070: a lab run kills the games of its lanes when it starts. A second run started on a lane another run still
+  used ended that run's games in the middle of a test (lab 20261113-052132: the host's game "gone" 7 s into Tribe with
+  no crash report, the console's BrokenPipe; both games' processes ended the second run 20261113-054031-2 began on the
+  same lane, `journalctl --user` shows their Bottles scopes ending then). It looks like a game that died without a
+  report: before analysing such a case, list the runs of every worktree that started on that lane around that time
+  (`ls -d ../SporeCoop-wt/*/*/out/lab/<date>-<hhmm>*` and their results.json lanes).
+* Now `lab.py run` takes an exclusive flock on `SPORE-lab/.lab-run-lane<N>.lock` (lane 1: next to the main checkout)
+  for each of its lanes for its whole life; a run whose lane is held stops at once ("lane N is in use by another lab
+  run (run <id> pid <pid> since <time>)") before its build and its kill. The kernel drops the lock with the process.
+  Runs from trees without this change do not take it. Self-test: lab_selftest.py `lane_lock` (old behaviour:
+  `SPORE_LAB_NO_LANE_LOCK=1`).

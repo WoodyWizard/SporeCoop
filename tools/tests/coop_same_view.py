@@ -57,6 +57,20 @@ def brightness(con, name):
         return None
 
 
+def chief_rows(host, guest):
+    """the host's chief's `coop.tribe anims` animation / hold / track time and its hand item on both games"""
+    lead = re.findall(r'#(\d+) \S+ owner=0 .*leader=1', host.call('coop.tribe').get('out') or '')
+    if not lead:
+        return 'no chief'
+    out = []
+    for name, c in (('host', host), ('guest', guest)):
+        m = re.search(r'cur ' + lead[0] + r' anim=(\w+) bhv=(\w+) .*hold=(\d) t=([-\d.]+)', c.call('coop.tribe anims').get('out') or '')
+        h = re.search(r'item=(-?\d+)', c.call(f'coop.tribe hand {lead[0]}').get('out') or '')
+        out.append(f'{name} anim={m.group(1)} bhv={m.group(2)} hold={m.group(3)} t={m.group(4)} item={h.group(1) if h else "?"}'
+                   if m else f'{name} -')
+    return f'#{lead[0]} ' + '; '.join(out)
+
+
 def wait_drawn(players, secs=90):
     """until every game draws its world (a guest's world is black for a while after its load in Tribe): the mean
     brightness of a shot over 25; seconds waited, None when one never drew"""
@@ -127,6 +141,8 @@ def main():
                      f'the same models, paints and poses', kind='sameview',
                      extra=[f'check: {r["line"]}', 'keys: ' + ' '.join(keys)[:200]])
             print(f'  view {k + 1}: host {len(hs)}, guest {len(gs)}: {r["line"]}', flush=True)
+            if mode == 'Tribe':  # BUG-1069: the host's chief at the still on both games (animation, hold, hand item)
+                print(f'    host\'s chief at the still: {chief_rows(host, guest)}', flush=True)
             for x in r['only_a'][:4]:
                 print(f'    only the host: {x}', flush=True)
             for x in r['only_b'][:4]:

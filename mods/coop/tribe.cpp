@@ -1773,6 +1773,19 @@ static bool g_stale_anim_fix = true;
 COOP_FIX("tribe.mirror_stale_anim", "BUG-0972", g_stale_anim_fix,
          "tribe: a guest's mirror stops a gesture that came back after another animation when the host's member stands or walks (the chief swung its staff on one game only)");
 static uint32_t g_stale_cut;
+// BUG-1071: a member whose behaviour tree itself started its locomotion's idle or walk (bhv_anim one of those ids, as
+// the host's chief after the save's load, before any guest joined: nothing relayed) went to the guests as "plays its
+// behaviour animation" (kind 3), not as its idle (kind 10). Kind 3 starts that idle on the mirror like a relayed start:
+// over a gesture it waits behind it (a pending track, #tribe-anim-queued-start) and the stale-gesture cut (BUG-0972)
+// never ran: the mirror stayed in a gesture for 9 s while the host's chief stood. Now a member in its locomotion's idle
+// or walk is always reported as its idle (kind 10, how 1). `coop.fix tribe.mirror_idle_loco off`: as before.
+static bool g_idle_loco_fix = true;
+COOP_FIX("tribe.mirror_idle_loco", "BUG-1071", g_idle_loco_fix,
+         "tribe: a guest's mirror leaves a gesture when the host's member stands in an idle its behaviour started (right after the session start)");
+static bool loco_anim(uint32_t a)
+{
+    return a == 0x02481DE5u || a == 0x04866D8Eu || a == 0x04866DABu || a == 0x04866DD4u;
+}
 // BUG-0988: the guest's copy of a member plays the host's behaviour animation from when the relay's start reached it
 // (one network delay and up to a cycle later): the same gesture at another moment of it, the chief's staff at another
 // angle in the same_view stills (0.1-0.3 s in the hold lab). Once a second the host sends where in its behaviour
@@ -1971,7 +1984,10 @@ static void send_member_anims(double now)
     std::vector<IdleNow> idle; // BUG-0936
     for (auto& [c, m] : g_hm) {
         uint32_t cur = 0;
-        if (m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur && cur == m.bhv_anim)
+        // (BUG-1071: with the fix the animation is read for a member with no behaviour start yet too, bhv_anim 0: it
+        // was never reported at all)
+        bool drawn = (m.bhv_anim || g_idle_loco_fix) && game::object_alive(c) && game::drawn_state(c, nullptr, &cur);
+        if (m.bhv_anim && drawn && cur && cur == m.bhv_anim && !(g_idle_loco_fix && g_mirror_idle_fix && loco_anim(cur)))
             v.push_back({m.id, cur});
         else if (g_mirror_idle_fix && cur && idle.size() < 255 && !game::is_dead(c))
             idle.push_back({m.id, cur, (uint8_t)(cur == m.idle_anim ? 1 : 2)});
