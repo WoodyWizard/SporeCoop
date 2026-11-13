@@ -2052,10 +2052,10 @@ static uint32_t g_nan_pop_skips, g_nan_heals;
 // total taken in one AddFoodPoints) leaves the world scale G+0x514C at the old level's for ~3 s while
 // PopulateTiles builds the new level's active set from it: the lowest levels' tiles are tiny and the
 // game writes thousands of entries into its stack buffer of 511 (0xC0000005 at 0x00E5FA50, the process
-// gone without a crash report). Now a pass whose active set would not fit is skipped (the scale settles
-// in a few frames and the next pass runs). Old (`coop.fix cell.tile_cap off`): as before.
+// gone without a crash report). Now no pass runs while the scale still eases down (or the set would not
+// fit): ~3 s, then the settled pass populates the new level as usual. Old (`coop.fix cell.tile_cap off`): as before.
 static bool g_fix_tile_cap = true;
-COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while its active set would overflow the game's 511-tile buffer (a fall of several levels at once)");
+COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while the world scale eases down after a level fall or the active set would overflow the game's 511-tile buffer");
 static uint32_t g_tilecap_skips;
 static double g_tilecap_max;
 static uintptr_t a_TileSizes;
@@ -2606,10 +2606,14 @@ static bool tiles_overflow(int level)
     if (!g_fix_tile_cap || !g || !s || !vb || !a_TileSizes)
         return false;
     double n = cell_logic::active_tiles(level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), vb, (const float*)a_TileSizes, 16);
-    if (n <= cell_logic::kActiveTileCap)
+    // also while the scale still eases down: a pass that fits the buffer at 3-6 x the settled set filled the
+    // new level with that many cells at once and a game alone faulted in CreateSoftBody / CellPhysicsStep
+    // (2138 faults, lab 20261112-195008); settled the set is 36-80 tiles
+    bool falling = F<float>(g, 0x514C) > F<float>(g, 0x5150) * 1.001f;
+    if (n <= cell_logic::kActiveTileCap && !falling)
         return false;
     if (g_tilecap_skips++ % 30 == 0)
-        trace::line("tiles", "pass skipped: its active set would be %.0f tiles (the game's buffer holds 511), level %d, food %d, "
+        trace::line("tiles", "pass skipped: its active set would be %.0f tiles (the game's buffer holds 511; held until the scale settles), level %d, food %d, "
                              "world scale %.3f -> %.3f (BUG-0975, %u skipped)",
                     n, level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), F<float>(g, 0x5150), g_tilecap_skips);
     g_tilecap_max = std::max(g_tilecap_max, n);
