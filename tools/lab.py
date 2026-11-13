@@ -579,6 +579,32 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                 gates=gate_fails + gate_notes, log_marks={w: m for w, m in marks0.items() if m})
 
 
+def measured_seconds(dirs=None, keep=5):
+    """{(test, quick): median seconds of its last `keep` passed runs} over the recorded runs (out/lab of the main
+    checkout and of the worktrees): the scheduler's estimate (docs/06-testing.md#testing-lab-speed). The suite's
+    `minutes` were rough (play_space 14 said, 13 taken; long_creature 60 said, 46 taken; unit 1 said, 6 taken)"""
+    try:
+        dirs = dirs if dirs is not None else loggates.lab_dirs(
+            os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir')))
+        seen = {}
+        for rundir, _, r in loggates.recorded(dirs):
+            if r.get('ok') and not r.get('skipped') and r.get('seconds'):
+                seen.setdefault((r['name'].split('#')[0], bool(r.get('quick'))), []).append(
+                    (os.path.basename(rundir), r['seconds']))
+    except Exception:  # noqa: BLE001 (an estimate: without it the suite's minutes)
+        return {}
+    out = {}
+    for k, v in seen.items():
+        last = sorted(x[1] for x in sorted(v)[-keep:])
+        out[k] = last[len(last) // 2]
+    return out
+
+
+def expected_seconds(t, took):
+    """how long a test of this run will take: its recorded median, else the suite's minutes"""
+    return took.get((t['name'].split('#')[0], bool(t.get('quick_run')))) or t['minutes'] * 60
+
+
 def new_run_dir(branch=None, now=None):
     """BUG-0353 / BUG-0362: a run directory of this run only. The id is the start time to the second (and the
     branch); a run started in the same second as another one (two lab processes at once) gets the next free
@@ -649,7 +675,8 @@ def cmd_run(a):
     ensure_lanes(a.lane_ids)
     for lane in a.lane_ids:  # a run starts from clean games
         spore(tree, lane, 'kill')
-    parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -t['minutes'])
+    took = measured_seconds()  # feat/lab-speed: longest first by what the tests took lately, not the rough minutes
+    parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -expected_seconds(t, took))
     alone = [t for t in tests if t['exclusive']]
     pending = list(parallel)
     results, lock = [], threading.Lock()
