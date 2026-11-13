@@ -1761,6 +1761,18 @@ static void send_member_air()
 static bool g_mirror_idle_fix = true;
 COOP_FIX("tribe.mirror_idle", "BUG-0936", g_mirror_idle_fix, "tribe: a guest's mirror stops a member's animation when the host's member has gone back to its idle or walk (members at rest had other poses)");
 static uint32_t g_idle_sent, g_idle_refreshed, g_idle_played;
+// BUG-0972: the idle fix left a mirror alone whose animation was not the last relayed start (taken for its own idle or
+// walk). A relayed restart of a gesture the mirror still played waited behind it as a pending track (BUG-0992); the
+// next relayed start (the change 0x02C39200) played, and after it the waiting gesture came back: the guest's copy of
+// the host's chief swung its staff for 37 s while the host's stood (lab probe: the chief's animation the same on both
+// games in 59 % of the samples, 257 of the others host idle 0x02481DE5 / mirror gesture 0x04C6CB02; the same_view
+// stills showed it standing on one game and in a gesture or a step on the other). Now a mirror in any animation that
+// is not its locomotion's idle or walk, while the host's member is in its idle or walk, has its waiting starts ended
+// (AnimatedCreature_ClearPending) and its idle refreshed. `coop.fix tribe.mirror_stale_anim off`: as before.
+static bool g_stale_anim_fix = true;
+COOP_FIX("tribe.mirror_stale_anim", "BUG-0972", g_stale_anim_fix,
+         "tribe: a guest's mirror stops a gesture that came back after another animation when the host's member stands or walks (the chief swung its staff on one game only)");
+static uint32_t g_stale_cut;
 static void on_idle_anim(void* c, uint32_t anim)
 {
     if (!g_ok || !is_host())
@@ -2366,11 +2378,21 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             // system's gait, not by the idle refresh, on the host too; never played as a main animation on a mirror
             if (anim == 0x02481DE5u || anim == 0x04866D8Eu || anim == 0x04866DABu || anim == 0x04866DD4u)
                 how = 1;
-            if (how == 1 && cur != g.relayed_anim)
-                continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
+            bool stale = false;
+            if (how == 1 && cur != g.relayed_anim) {
+                if (!g_stale_anim_fix || cur == 0x02481DE5u || cur == 0x04866D8Eu || cur == 0x04866DABu || cur == 0x04866DD4u)
+                    continue; // (its own idle or walk: its locomotion's choice, which may lag the host's by a step)
+                stale = true; // BUG-0972: an earlier relayed start that waited behind another animation
+            }
             g.anim_fix_at = now;
-            hold_ev(id, 'I', anim, cur); // (tests: the mirror's animation ended for the host's idle / other start)
+            hold_ev(id, stale ? 'Z' : 'I', anim, cur); // (tests: the mirror's animation ended for the host's idle / other start)
             if (how == 1) {
+                if (stale && a_ClearPending) { // (the waiting starts go too, or the next one comes back the same way)
+                    uint8_t* ac = has_body(g.c) ? F<uint8_t*>(g.c, 0xB54) : nullptr;
+                    if (ac)
+                        thiscall<void>(a_ClearPending, ac);
+                    g_stale_cut++;
+                }
                 game::idle_refresh(g.c, true);
                 g_idle_refreshed++;
             } else if (game::play_behaviour_anim(g.c, anim, 0, 1, -1)) {
@@ -6200,6 +6222,18 @@ std::string debug(const std::vector<std::string>& a)
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
                std::to_string(g_item_holds_ended);
     }
+    if (a.size() >= 3 && a[0] == "mplay" && is_guest()) { // mplay <member id> <hex anim>: tests (BUG-0972), the mirror
+        // plays that animation as an earlier relayed start that came back after another one (not the last relayed)
+        auto it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_gm.end() || !mirror_ok(it->second) || !has_body(it->second.c))
+            return "no such mirror";
+        bool ok = game::play_behaviour_anim(it->second.c, (uint32_t)strtoul(a[2].c_str(), nullptr, 16), 0, 1, -1);
+        uint32_t cur = 0;
+        game::drawn_state(it->second.c, nullptr, &cur);
+        char b[96];
+        snprintf(b, sizeof b, "mplay %d cur=%08X relayed=%08X", (int)ok, cur, it->second.relayed_anim);
+        return b;
+    }
     if (a.size() >= 3 && a[0] == "applytool" && is_guest()) { // applytool <member id> <type>: tests (BUG-0583), the
         // mirror's tool field applied as if the host's member held that tool (tribe.tool_hold's own apply)
         void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
@@ -6616,7 +6650,7 @@ std::string debug(const std::vector<std::string>& a)
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_air_sent) +
                " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
-               "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
+               " stale_cut=" + std::to_string(g_stale_cut) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
                " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
