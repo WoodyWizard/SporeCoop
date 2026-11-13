@@ -82,6 +82,8 @@ the cinematic must play and the city must be the player civilization's in the ho
   into mode 01654C02: on again" at the host's Tribe reload (14:43:21), the Tribe timeout at 3/5 made the campaign jump
   to civ_npc, all 9 captures played their cinematics and took their cities, Civ -> Space by the game, the finale
   complete. campaign_tribe_end 20261113-142311 and -153633: the restore fired and Tribe ended by the game.
+- The full campaign 20261113-160426 (lane 4): the restore fired at the Tribe reload (16:25:54), Tribe -> Civ -> Space
+  by the game (9 captures with their cinematics), no jump, campaign RESULT: OK (the lab failed it on BUG-1089).
 
 ## History
 - 2026-11-13: opened.

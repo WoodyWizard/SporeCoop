@@ -7438,13 +7438,24 @@ Tribe timeout is a failing `stuck`, `CAMPAIGN_STRICT_TRIBE=0` the old `info`):
   Tribe, before the fix) 0/5 in 30 min; with the fix: 20261113-142311 Civ in 17 min; 20261113-145317 a game over at
   2/5, then 1/5 at the timeout (before the pincer and the nearest pick); 20261113-153633 (pincer, no nearest pick yet)
   Civ in 15 min, 5 conquests of 1.5-3 min; 20261113-160426-2 (all of it) Civ in 12 min (the lab failed it on BUG-1082's
-  sync gate). The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
+  sync gate); 20261113-163143 Civ in 15.5 min (BUG-0440's proxies gate). The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
   village), the jump.
 * Monitor gate `ground`: Tribe members are not judged while the host's own line says `busy=cinematic` or `editor`
   (`agl_cine`, default 1; 0: as before): during the Tribe end change the game holds members where they stand while it
   removes the village's ground stamp under them, 16-18 m up for 76-100 s on every game (20261113-125218 member #129,
   -153633 member #67, both `bt=046A27F6`). A member up in the play phase still fails it (BUG-1088, 20261113-142203).
   Checked with `monitor.py replay` on the three runs.
+
+**The full campaign** (`lab.py run =campaign`, 4 players, Cell to the core): 20261113-160426 (lane 4, all of the
+above) went Cell -> Creature -> Tribe -> Civ -> Space and the finale the players' way, **no jump, campaign RESULT: OK**
+(81 min; the Tribe end in 17 min, 9 captures with their cinematics, every player in the core with the Staff of Life).
+The lab failed it on one sync-check gate in Civ (BUG-1089: 14 host NPCs at the planet's centre, 525 m from a guest's
+proxies). Earlier full runs of this branch: 20261113-142203 (home guard only) the Tribe timeout at 3/5, the jump, then
+Civ, Space and the finale complete; lab gates BUG-1088.
+* What still fails a full campaign at the lab level (every run of this branch had one, each a ticket): BUG-1082
+  (sync-check, a member apart during raids), BUG-1084 (guest faults at 0xC23469), BUG-1088 (ground gate, a member up in
+  a fight), BUG-1089 (sync-check, Civ NPCs at the centre), BUG-0440 (proxies gate, campaign_tribe_end 20261113-163143,
+  reopened).
 
 **BUG-1079: the finale's zoom-out.** The host's ship was destroyed in the Space play without its death cinematic
 (BUG-1073), spacecoop forced the respawn, and the new ship lacked the drive the bots add; to_galaxy now gives the ship
@@ -7456,4 +7467,5 @@ core right after "Fly to Alice", not explained).
 **Found on the way** (tickets, not fixed here): BUG-1082 (a guest's mirror of an NPC village member 114 m off, sync-check
 MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 on a guest in Tribe while the host edits,
 20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
-full campaign 20261113-142203).
+full campaign 20261113-142203), BUG-1089 (a guest's proxies of Civ NPCs the host has at the planet's centre,
+full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113-163143).

@@ -3428,3 +3428,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the Tribe play; the monitor's ground gate fails the campaign.
 * Reproduce: the full campaign (lab 20261113-142203, member #16 of Carol).
 * Ticket: BUG-1088.
+
+## Civ: a guest's proxies of host NPCs that the host has at the planet's centre (2026-11-13, fix/w49-camp)
+<a id="issue-civ-npc-centre"></a>
+
+* What happens: right after a guest's rejoin in Civ, 14 NPCs of the host's game stand at (0 0 0) while another guest
+  shows their new proxies on the ground 525 m away (sync-check MISMATCH `n: 14 apart`).
+* Reproduce: the full campaign (lab 20261113-160426, Civ, 17:00:23).
+* Ticket: BUG-1089.
