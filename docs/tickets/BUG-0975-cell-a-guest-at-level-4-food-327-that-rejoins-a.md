@@ -66,8 +66,10 @@ food and keep its cell; no fault on either game) and the control `cell_level_dro
 FAIL (SPORE_FIX_OFF=cell.tile_cap): out/lab/20261112-194555 (cell_level_drop: the guest gone at the join, 0xC0000005
 at 0x00E5FA50 from PopulateTiles, as in the lab-speed run), out/lab/20261112-194555-2 (cell_level_drop_solo: the same
 fault in a game alone). PASS (cap only, first version): out/lab/20261112-194718 (cell_level_drop 2 of 2; the solo case
-then faulted, out/lab/20261112-195008). PASS (final): out/lab/20261112-195306 (cell_level_drop 2 of 2,
-cell_level_drop_solo 2 of 2, 0 faults; 151-303 passes held, the set up to 14 368 tiles, ~2.5-5 s).
+then faulted, out/lab/20261112-195008). PASS (hold for the whole descent, 561bc917): out/lab/20261112-195306 (cell_level_drop 2 of 2,
+cell_level_drop_solo 2 of 2, 0 faults; 151-303 passes held, the set up to 14 368 tiles). PASS (final, c4e98537):
+out/lab/20261112-201829-2 (cell_level_drop 2 of 2, cell_level_drop_solo 2 of 2, 0 faults, 140-186 passes held, the set
+up to 14 418 tiles); related out/lab/20261112-201829 (play_cell, cell_coop after it warm, cell_levelup_view: 3 of 3).
 Unit: cell_tests active_set.
 
 ## History
