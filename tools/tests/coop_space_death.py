@@ -78,6 +78,8 @@ def main():
     _, home = star_of(host)
     print('  host', sp(host, 'star'), '| guest', sp(guest, 'star'), '| dist', sp(guest, 'dist'))
     ck(stat(guest, 'partners_here') >= 1, 'both ships are in the same star system')
+    # per-process counters: a warm run (lab, w49-warm) starts from the values the games already have
+    lost0, rescues0 = max(0, stat(guest, 'lost')), max(0, stat(guest, 'rescues'))
 
     # 1. disabled next to the partner, nobody comes: the native death after 20 s
     # (the ships start a few metres apart and a test can not fly the player's ship away: the repair
@@ -89,7 +91,7 @@ def main():
     while time.time() - t0 < 30 and field(sp(guest, 'hp'), 'state') != 2:
         time.sleep(1)
     print(f'  destroyed after {time.time() - t0:.0f} s:', sp(guest, 'hp'))
-    ck(stat(guest, 'lost') == 1 and stat(guest, 'rescues') == 0, 'not repaired in 20 s: the ship is lost')
+    ck(stat(guest, 'lost') - lost0 == 1 and stat(guest, 'rescues') == rescues0, 'not repaired in 20 s: the ship is lost')
     print(' ', sp(guest, 'repairdist', 60))
     respawn(ck, guest, 'timeout', home)
 

@@ -537,6 +537,12 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                SPORE_LAB_RUN=os.path.abspath(logdir), SPORE_LAB_TEST=t['name'] + suffix)
     # a quick run's shortened test knows it (docs/06-testing.md#testing-lab-speed); every other test runs full length
     env['SPORE_LAB_QUICK'] = '1' if t.get('quick_run') else '0'
+    # w49-warm twin checks: SPORE_LAB_FIXOFF="<test>=<switch>[,<switch>];..." switches fixes off for the named tests of
+    # the run only (SPORE_FIX_OFF would switch them off for every test, so no test of the run could start warm)
+    for part in filter(None, (x.strip() for x in os.environ.get('SPORE_LAB_FIXOFF', '').split(';'))):
+        name, _, sw = part.partition('=')
+        if name.strip() == t['name'].split('#')[0] and sw.strip():
+            env['SPORE_FIX_OFF'] = sw.strip()
     if t.get('monitor') is not None:  # the invariant monitor's settings (tools/tests/monitor.py)
         env['SPORE_MONITOR'] = t['monitor'] if isinstance(t['monitor'], str) else json.dumps(t['monitor'])
     log = os.path.join(logdir, t['name'] + suffix + '.log')
@@ -745,7 +751,12 @@ def cmd_run(a):
     for lane in a.lane_ids:  # a run starts from clean games
         spore(tree, lane, 'kill')
     took = measured_seconds()  # feat/lab-speed: longest first by what the tests took lately, not the rough minutes
-    parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -expected_seconds(t, took))
+    parallel = [t for t in tests if not t['exclusive']]
+    if getattr(a, 'in_order', False):  # --in-order: as named (a warm predecessor before a twin check)
+        order = [x.strip().lstrip('=') for x in a.tests.split(',')]
+        parallel.sort(key=lambda t: order.index(t['name'].split('#')[0]) if t['name'].split('#')[0] in order else len(order))
+    else:
+        parallel.sort(key=lambda t: -expected_seconds(t, took))
     alone = [t for t in tests if t['exclusive']]
     pending = list(parallel)
     results, lock = [], threading.Lock()
@@ -1013,6 +1024,8 @@ def main():
     r.add_argument('--cold', action='store_true', help='no warm reuse of running games')
     r.add_argument('--no-build', action='store_true')
     r.add_argument('--retry', type=int, default=1)
+    r.add_argument('--in-order', action='store_true', help='run the named tests in the given order (not longest '
+                   'first): a passing warm test before a twin check (SPORE_LAB_FIXOFF="<test>=<switch>")')
     r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt)')
     r.add_argument('--quick', action='store_true', help='the long play scenarios shortened (suite.py quick=; also '
                    'SPORE_LAB_QUICK=1): intermediate runs only, the release rule does not count them')
