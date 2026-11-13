@@ -3449,3 +3449,35 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   pushes out first. With the areas apart (the guest moved before each change) the partner's area lost no more than
   the host's beyond noise on the down changes in 20 runs (pooled -38 .. +9 points): the rest is the game's own cull at the edge of
   a whole-tile range (docs/re/cell.md#cell-levelup-cull-measured). `cell_levelup_area` asserts the shares now.
+
+## Tribe: a guest's mirror of an NPC village member 114 m off the host's during raids (2026-11-13, fix/w49-camp)
+<a id="issue-tribe-npc-member-apart"></a>
+
+* What happens: one NPC village member of the host's game is drawn 114 m away on one guest for two sync checks in a
+  row (sync-check MISMATCH, `t: 1 apart`), the other guests match.
+* Reproduce: campaign_tribe_end (lab 20261113-125221, 4 s after a `coop.tribe spawn 6` during the raids).
+* Ticket: BUG-1082.
+
+## Tribe: caught faults at 0xC23469 on a guest while the host edits the City Hall (2026-11-13, fix/w49-camp)
+<a id="issue-tribe-holdbundle-fault"></a>
+
+* What happens: BUG-0684's null bundle (Citizen_HoldBundle, from the heal / gather node) on a guest in Tribe while the
+  host is in the Tribe end's editors; the game survives (caught), the lab fails the run on the fault count.
+* Reproduce: campaign_tribe_end (lab 20261113-142311, Dave).
+* Ticket: BUG-1084.
+
+## Tribe: a player member stays several metres up for half a minute in a fight (2026-11-13, fix/w49-camp)
+<a id="issue-tribe-member-up"></a>
+
+* What happens: a member in the fight node (`bt=05218BB3`) is 3-8.75 m over the ground for 36 s on every game during
+  the Tribe play; the monitor's ground gate fails the campaign.
+* Reproduce: the full campaign (lab 20261113-142203, member #16 of Carol).
+* Ticket: BUG-1088.
+
+## Civ: a guest's proxies of host NPCs that the host has at the planet's centre (2026-11-13, fix/w49-camp)
+<a id="issue-civ-npc-centre"></a>
+
+* What happens: right after a guest's rejoin in Civ, 14 NPCs of the host's game stand at (0 0 0) while another guest
+  shows their new proxies on the ground 525 m away (sync-check MISMATCH `n: 14 apart`).
+* Reproduce: the full campaign (lab 20261113-160426, Civ, 17:00:23).
+* Ticket: BUG-1089.

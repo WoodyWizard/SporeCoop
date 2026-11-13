@@ -1,7 +1,7 @@
 ---
 id: BUG-0440
 title: Tests: chaos_tribe fails on the monitor's proxies gate (one Tribe NPC proxy over 3 m off the host's NPC)
-status: not-reproduced
+status: open
 kind: test
 stage: Tribe
 reported: 2026-11-01
@@ -66,3 +66,4 @@ no-fail-run: not reproduced on 0.7.10 code (rel/0.7.10 + fix/w46-k3-bodies, driv
   host's own game) is seen and is BUG-0610. Not marked fixed: chaos_tribe's gate not rerun often enough to say.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): 8 chaos_tribe runs (6 with the lead, 2 without), no gate failure; 2 single audit lines with the new diagnostics (an offset the guest's game keeps next to a herd mate); closed not-reproduced, the blocker named.
 - 2026-11-07 (fix/w46-k3-bodies, K3): one more attempt on the current build, with a low fps and bad network variant (30 fps, SPORE_NET=player): 7 of 7 chaos_tribe pass, no stuck proxy in any audit line. Stays not-reproduced, closed with these runs.
+- 2026-11-13: seen again (fix/w49-camp): campaign_tribe_end lab 20261113-163143 failed on the proxies gate, extra1 and extra2 at s 610 and extra2 at s 1140 (Tribe raids; the proxy stuck with citizens 018EB45E within 1-2 m, BUG-0440's own log line). Also in the full campaign 20261113-101808 of fix/w49-tests.

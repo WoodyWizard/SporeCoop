@@ -106,6 +106,7 @@ VK_F9 = '0x78'
 REWARD_CHECK = (932, 844)
 TRIBE_HUT = '1E4DAAE'        # the hut noun (a village falls with its hut)
 TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows in place of History
+HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}
@@ -1194,6 +1195,22 @@ class Campaign:
             self.note(f'shortcut: coop.tribe huthp: the players\' hut repaired ({hp}/{mx} -> {mx}: an NPC village raids back)')
             self.host.call('coop.tribe huthp %.2f %.2f %.2f %d' % (hut + (mx,)))
 
+    def tribe_members(self, tk):
+        """[(member id, hp)] of NPC village tk's living members (the host's game)"""
+        out, cur = [], None
+        for line in self.host.call('coop.tribe').splitlines():
+            t = re.match(r'tribe (\d+) at', line)
+            if t:
+                cur = int(t.group(1))
+                continue
+            if line.startswith('tribe '):
+                cur = None
+                continue
+            m = re.search(r'#(\d+) \S+ owner=254 .*?hp=([\d.]+) .*?dead=0', line)
+            if m and cur == tk and float(m.group(2)) > 0:
+                out.append((int(m.group(1)), float(m.group(2))))
+        return out
+
     def tribe_raiders(self):
         """{member id: position} of the players' living members (the host's game)"""
         out = self.host.call('coop.tribe')
@@ -1290,6 +1307,22 @@ class Campaign:
                               'raiders minutes; again whenever the village repairs it)')
                 self.host.call('coop.tribe huthp %.2f %.2f %.2f 40' % raid['hut'])
                 raid['cut'] = True
+            elif m and 1.5 < float(m.group(1)) <= 45 and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+                # a hut at 4 of 750 stood for minutes once its raiders were dead (lab 20261113-145317): the next blow fells it
+                self.host.call('coop.tribe huthp %.2f %.2f %.2f 1' % raid['hut'])
+            if raid['cut'] and time.time() - raid.get('pinced', 0) > 60 and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+                # the village's defenders kill 6-12 raiders a raid, and with them dead an NPC village raids the players'
+                # village back (a game over reloaded the save at 2/5 in lab 20261113-145317): shortcut, every 60 s the
+                # raided village's members take the blows of the players' members (`coop.tribe pincer`)
+                defenders = self.tribe_members(raid['tribe'])
+                own = list(alive) or list(self.tribe_raiders())
+                if defenders and own:
+                    for i, (mid, hp) in enumerate(defenders[:8]):
+                        self.host.call(f'coop.tribe pincer {mid} {own[i % len(own)]} {hp + 1:.0f}')
+                    if not raid.get('pinced'):
+                        self.note(f'shortcut: coop.tribe pincer: the {min(8, len(defenders))} defenders of village '
+                                  f'{raid["tribe"]} take the raiders\' blows (again every 60 s)')
+                raid['pinced'] = time.time()
             h = float(m.group(1)) if m else None
             if h != raid.get('hp'):
                 raid['hp'], raid['since'] = h, time.time()
@@ -1315,6 +1348,10 @@ class Campaign:
         state['standing'] = [t[0] for t in targets]
         skip = state.get('skip', {})
         pick = [t for t in targets if skip.get(t[0], 0) < time.time()] or targets
+        if home and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+            # the nearest village first: the raiders walk 300 m to a far one and its defenders kill them on the way
+            # (village 4 at 318 m: two raids of 300 s without a fall while one at 170-230 m stood, lab 20261113-142203)
+            pick.sort(key=lambda t: math.dist(t[3], home))
         tk, c, hut, hp = pick[0]
         raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False)
         state['raid'] = raid
@@ -1415,6 +1452,19 @@ class Campaign:
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction
         a right-click gives, as host_command runs a guest's): the bots' clicks reach only the members on screen"""
         ids = self.tribe_raiders()
+        if os.environ.get('CAMPAIGN_RAID_ALL') != '1':
+            # a home guard stays: the players' chiefs and the HOME_GUARD members nearest to the village. The game ends
+            # Tribe (game over, its save reloaded: every conquest gone) when no player member has health left; with every
+            # member sent the village's defenders killed them all (lab 20261113-120534 at 4/5). CAMPAIGN_RAID_ALL=1: all go
+            out = self.host.call('coop.tribe')
+            chiefs = {int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=[0-3] .*?leader=1', out)}
+            cm = re.search(r'chiefs=((?: \d:#\d+)*)', out)
+            chiefs |= {int(x) for x in re.findall(r'#(\d+)', cm.group(1))} if cm else set()
+            cent = re.search(r'^tribe \d+ \(player\) at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out, re.M)
+            home = tuple(float(cent.group(i)) for i in (1, 2, 3)) if cent else None
+            rest = sorted((i for i in ids if i not in chiefs), key=lambda i: math.dist(ids[i], home) if home else 0)
+            guard = set(rest[:HOME_GUARD]) | chiefs
+            ids = {i: q for i, q in ids.items() if i not in guard}
         for mid in ids:
             self.host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % ((mid,) + raid['hut'] + (TRIBE_HUT,)))
         if not raid.get('ordered'):
@@ -1805,10 +1855,10 @@ def main():
                 nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
                 ok = camp.advance(stage)
                 if not ok and not camp.dead:
-                    # Q1 of 0.7.14: the Tribe end by conquests comes in 12-19 min on the tribe fixture (campaign_tc2), but on
-                    # the campaign's own planet only in some runs (25 min in 1 of the last 2): still `info` (and the jump).
-                    # CAMPAIGN_STRICT_TRIBE=1 makes it a failing `stuck` finding
-                    sure = stage != 'tribe' or os.environ.get('CAMPAIGN_STRICT_TRIBE') == '1'
+                    # Q1 of 0.7.14: the Tribe end by conquests (the hut raids) came in every run on the tribe fixture and,
+                    # once the cinematics were on again after the host's Tribe reload (BUG-1073, fix/w49-camp), on the
+                    # campaign's own planet: a timeout is a failing `stuck` now. CAMPAIGN_STRICT_TRIBE=0: `info` (as before)
+                    sure = stage != 'tribe' or os.environ.get('CAMPAIGN_STRICT_TRIBE') != '0'
                     camp.finding('stuck' if sure else 'info', f'advance:{stage}',
                                  f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
                                  + ('' if stage != 'tribe' else f' (goal bar {camp.tribe_progress()})'),

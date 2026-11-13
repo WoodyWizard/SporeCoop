@@ -7565,3 +7565,73 @@ again within 20 s and the players' hut stands in both games (`coop.realign plane
 * FAILS with `SPORE_FIX_OFF=cell.view_centre_scale` (the centre check: 15.7 / 21.7 m, lab 20261113-171219) and
   `cell.scale_food_flush` (the tile pool check).
 
+
+## Q1 continued: the campaign's cinematics, the Tribe end and the finale (2026-11-13, fix/w49-camp)
+<a id="testing-w49-camp"></a>
+
+**BUG-1073: the cinematics left off by the host's Tribe reload.** The jump campaigns' stuck Civ end (captures that never
+took a city) and much of the unreliable Tribe end on the campaign's own planet (#testing-w49-tests) had one cause in
+the game: after the live Creature -> Tribe change the cinematic manager is off (+0x15F 0, CRG2TRG) until the Tribe
+start turns it on, and the mod's reload of the host's Tribe 6-7 s after that change can come first; a load never turns
+it on (docs/re/civ.md#civ-cinematics-enabled). Seen in 3 of 6 runs of this branch with a watcher on the flag. Fix:
+gamefixes `game.cinematics_on_load` (a load into a stage turns them on, logged "the cinematics were off after the load
+into mode ...: on again (BUG-1073)").
+* `coop.cine [on|off]`: the flag (`enabled=`), the manager's state (+0x2C, a cinematic runs) and id (+0x148), the
+  restores. Tests set the flag as the game's own stage changes do.
+* `cine_load` (coop_cine_load.py, tribe fixture, 2 games, ~2 min): the host's cinematics off, its `coop.load` of
+  civ_npc in game, a Capture with its cinematic: it must play and the city must change hands on both games.
+  `SPORE_FIX_OFF=game.cinematics_on_load` FAIL 20261113-141811, PASS 20261113-142022.
+* With the flag 0 in Tribe the host bot's box never selected its own members (`no member selected` 32 times in
+  campaign_tribe_end 20261113-133534, 0/5 in 30 min); the full campaigns' minimap calibration read one view for three
+  clicks (inferred: the view moves of the minimap / card clicks go through the cinematic manager). A watcher for the
+  flag: read `[0x167EB50]` +0x15F with `mem.read` (or `coop.cine`) every few seconds.
+* `campaign_civ_jump` (suite entry, ~45 min, no suite): the campaign's jump path on purpose (CAMPAIGN_OLD_TRIBE=1, the
+  Tribe timeout 12 min, then the civ_npc jump, Civ by captures, Space, the finale). Lab 20261113-133150: the flag was 1
+  in that run (no race), all 10 cities taken through their cinematics; its finale stuck on Bob (below).
+
+**The Tribe end on the campaign's own planet** (campaign_tribe_end; `CAMPAIGN_STRICT_TRIBE` is now on by default: a
+Tribe timeout is a failing `stuck`, `CAMPAIGN_STRICT_TRIBE=0` the old `info`):
+* the raid orders keep a home guard (the players' chiefs and `HOME_GUARD` = 3 members next to the village;
+  `CAMPAIGN_RAID_ALL=1`: all go): the game over by population (no player member with health) reloaded the save at 4/5
+  in 20261113-120534.
+* More shortcuts (printed `shortcut:`, `CAMPAIGN_OLD_RAID=1`: off): the nearest standing village first (a village at
+  318 m: two raids of 300 s without a fall, the raiders killed on the way, full campaign 20261113-142203); every 60 s
+  of a raid the raided village's members take the blows of the players' members (`coop.tribe pincer`; their defenders
+  killed 6-12 raiders a raid and a village raided the players' home back, a game over reloaded at 2/5 in
+  20261113-145317); a hut under 45 hp is cut to 1 (one stood at 4 of 750 for minutes once its raiders were dead).
+* Runs of this branch (campaign_tribe_end, Tribe end the players' way):
+  20261113-125218 (flag 1) Civ reached; 20261113-125221 (flag 1) Civ reached; 20261113-133534 (flag 0 the whole
+  Tribe, before the fix) 0/5 in 30 min; with the fix: 20261113-142311 Civ in 17 min; 20261113-145317 a game over at
+  2/5, then 1/5 at the timeout (before the pincer and the nearest pick); 20261113-153633 (pincer, no nearest pick yet)
+  Civ in 15 min, 5 conquests of 1.5-3 min; 20261113-160426-2 (all of it) Civ in 12 min (the lab failed it on BUG-1082's
+  sync gate); 20261113-163143 Civ in 15.5 min (BUG-0440's proxies gate). The full campaign 20261113-142203 (home guard only): 3/5 in 30 min (the far
+  village), the jump.
+* Monitor gate `ground`: Tribe members are not judged while the host's own line says `busy=cinematic` or `editor`
+  (`agl_cine`, default 1; 0: as before): during the Tribe end change the game holds members where they stand while it
+  removes the village's ground stamp under them, 16-18 m up for 76-100 s on every game (20261113-125218 member #129,
+  -153633 member #67, both `bt=046A27F6`). A member up in the play phase still fails it (BUG-1088, 20261113-142203).
+  Checked with `monitor.py replay` on the three runs.
+
+**The full campaign** (`lab.py run =campaign`, 4 players, Cell to the core): 20261113-160426 (lane 4, all of the
+above) went Cell -> Creature -> Tribe -> Civ -> Space and the finale the players' way, **no jump, campaign RESULT: OK**
+(81 min; the Tribe end in 17 min, 9 captures with their cinematics, every player in the core with the Staff of Life).
+The lab failed it on one sync-check gate in Civ (BUG-1089: 14 host NPCs at the planet's centre, 525 m from a guest's
+proxies). Earlier full runs of this branch: 20261113-142203 (home guard only) the Tribe timeout at 3/5, the jump, then
+Civ, Space and the finale complete; lab gates BUG-1088.
+* What still fails a full campaign at the lab level (every run of this branch had one, each a ticket): BUG-1082
+  (sync-check, a member apart during raids), BUG-1084 (guest faults at 0xC23469), BUG-1088 (ground gate, a member up in
+  a fight), BUG-1089 (sync-check, Civ NPCs at the centre), BUG-0440 (proxies gate, campaign_tribe_end 20261113-163143,
+  reopened).
+
+**BUG-1079: the finale's zoom-out.** The host's ship was destroyed in the Space play without its death cinematic
+(BUG-1073), spacecoop forced the respawn, and the new ship lacked the drive the bots add; to_galaxy now gives the ship
+the drive before the first wheel turn (`OLD_FINALE_DRIVE=1`: the old bot). The full campaign 20261113-142203 (jump to
+civ_npc, then all 9 captures with their cinematics and Civ -> Space by the game) ran the finale to the Staff of Life.
+When the zoom-out fails the bot now prints the finale state, the ship and its drive (Bob in 20261113-133150, near the
+core right after "Fly to Alice", not explained).
+
+**Found on the way** (tickets, not fixed here): BUG-1082 (a guest's mirror of an NPC village member 114 m off, sync-check
+MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 on a guest in Tribe while the host edits,
+20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
+full campaign 20261113-142203), BUG-1089 (a guest's proxies of Civ NPCs the host has at the planet's centre,
+full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113-163143).

@@ -157,6 +157,16 @@ def to_galaxy(con, who, ck):
     n = 0
     tries = 10
     died = False
+    # BUG-1079: the interstellar drive the bots added (play_space's drive) goes with a ship the game replaced since (a
+    # respawn after a destruction the death caption did not show: the mod's forced respawn while the cinematics were
+    # off, BUG-1073; a ship lost while disabled); without it the wheel stops at the solar system (campaign finales of
+    # lab 20261113-060756, -082316, -101808, 20261112-175447). The ship has it before the first wheel turn.
+    if os.environ.get('OLD_FINALE_DRIVE') != '1' and 'state=0' in sp(con, 'hp'):
+        r = sp(con, 'tool add interstellardrive')
+        if r != 'already there':
+            print(f'  {who}: the ship had no interstellar drive (a new ship since the play): added again ({r})', flush=True)
+            time.sleep(3)
+            settle(con, who, timeout=30)
     while tries > 0:
         tries -= 1
         if fin(con).get('ctx') == '2':
@@ -186,6 +196,9 @@ def to_galaxy(con, who, ck):
         time.sleep(1.5)
     print(f'  {who}: zoomed out with {n} x 5 notches')
     ok = wait(lambda: fin(con).get('ctx') == '2', 20)
+    if not ok:  # what held the wheel (BUG-1079): the finale state, the ship, its tools
+        print(f'  {who}: still not in the galaxy view: {fin(con).get("line", "")[:160]} | {sp(con, "hp")[:100]} | '
+              f'drive: {sp(con, "tool add interstellardrive")[:60]}', flush=True)
     ck(ok, f'{who}: zoomed out to the galaxy view')
     time.sleep(3)
     settle(con, who)  # the drive's first galaxy view shows a tutorial caption

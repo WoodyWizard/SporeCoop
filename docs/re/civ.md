@@ -1762,3 +1762,34 @@ BUG-1067. GOG 2024, lane 5, civ fixture (Arigine), host + guest.
   those are stripped when empty.
 * ? Not checked: what a moved herd home changes in play (where the wild creatures roam, their nests); a guest's save
   behaves the same (its 77 stripped in civ_save_strip, BUG-0973).
+
+## The cinematic manager's enabled flag and loads (2026-11-13, fix/w49-camp)
+<a id="civ-cinematics-enabled"></a>
+
+BUG-1073, BUG-1079. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and runtime (lab lanes 4 and 5, a watcher
+reading `[0x167EB50]` +0x15F / +0x2C / +0x148 every 5 s; `coop.cine` shows the same).
+
+* ✔ `cCinematicManager::PlayCinematic` 0xAE08B0 plays nothing and returns 0 while the manager's byte **+0x15F** is 0
+  (its first check). The only writer besides a table init is `SporeCoop::cCinematicManager_SetEnabled` 0xADF310
+  (thiscall(mgr, bool) ret 4; 0 also empties the queue at +0x118..+0x128). Call sites: **0** right after
+  `PlayCinematic("CRG2TRG")` (0xD3FFD2, the live Creature -> Tribe change) and after `TRG2CVG_PreEditor` (0xCDC6E8,
+  TribeGame_AdvanceProc, the Tribe advance button); **1** in the Tribe start (0xCD4410, 0xCD8341, 0xCDD5ED), in
+  Creature (0xD4538E), in the Civ start (0xCFD0CF) and in the galaxy menu's enter (0xEF24D4, vtable 0x148AFC0 +0x30).
+* ✔ (runtime) Creature -> Tribe: 0 from CRG2TRG (13:36:28) until the Tribe start; the advance button: 0 from the
+  click (13:22:34) through the City Hall and vehicle editors until the Civ start (13:25:22: 1).
+* ✔ (runtime, campaign_tribe_end lab 20261113-133534 lane 5, from 13:40:52) The mod's reload of the host's Tribe right after the live
+  change (tribe.host_reload, BUG-0332: Tribe -> galaxy menu -> Loading -> Tribe 6.6 s after the change) came before the
+  Tribe start's SetEnabled(1): the flag stayed 0 in the galaxy menu (its enter did not run SetEnabled(1) on this
+  path: another run of the same path showed 1 there, 13:38:02) and through the whole Tribe. A load does not set it.
+  Seen in the full campaigns too: the host had no cinematic after the Creature -> Tribe change in all four jump
+  campaigns of fix/w49-tests (`busy=cinematic` in its trace lines stops at 10:39 in lab 20261113-101808; 0.7.13's
+  final check had them in Tribe and Civ).
+* ✔ Consequence in Civ: `cCity::Capture` with instant 0 (sieges, conversions, purchases, the campaign's shortcut)
+  sets the city's pending flags +0x2E0.. and leaves the ChangeOwner to the end of CVG_Capture (msg 0x44F1189); with no
+  cinematic the city never changes hands. With instant 1 (a surrender) it does (the ChangeOwner is direct). In Space
+  a destroyed ship's death cinematic does not play (spacecoop's respawn_tick: "no death cinematic runs: respawn").
+* ~ (runtime, same run) In Tribe with the flag 0 the host's bot never box-selected its own members (32 tries, "no
+  member selected") and the full campaigns' minimap calibration read the same view for three clicks: inferred, the
+  view moves of a minimap or card click go through the cinematic manager and do nothing while it is off.
+* Fix (coop.dll, gamefixes `game.cinematics_on_load`): when a load ends in Cell / Creature / Tribe / Civ / Space with
+  +0x15F 0, SetEnabled(1). A boot + load starts with 1, so a loaded stage never needs 0.
