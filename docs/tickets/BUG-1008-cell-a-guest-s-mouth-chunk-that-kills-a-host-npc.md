@@ -13,7 +13,7 @@ branch: fix/w49-cell
 commits: 23b91609, bb9e3b4a
 tests: cell_chunk_killer
 signature:
-docs: docs/known-issues.md#issue-cell-chunk-kill-host, docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1
+docs: docs/known-issues.md#issue-cell-chunk-kill-host, docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1-0714
 related:
 ---
 

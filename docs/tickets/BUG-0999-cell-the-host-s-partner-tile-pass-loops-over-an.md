@@ -13,7 +13,7 @@ branch: fix/w49-cell
 commits: 23b91609
 tests: cell_views_empty
 signature:
-docs: docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1
+docs: docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1-0714
 related:
 ---
 

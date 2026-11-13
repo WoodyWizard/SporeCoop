@@ -10,10 +10,10 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w49-cell
-commits:
+commits: 23b91609, 23cc5481
 tests: cell_levelup_view
 signature:
-docs: docs/06-testing.md#testing-cell-c1
+docs: docs/06-testing.md#testing-cell-c1-0714
 related: BUG-0635, BUG-1064
 ---
 
@@ -43,8 +43,12 @@ still has it (at most 10 %); the BUG-0635 comparison is pooled over the down cha
 at least 35 % allowed); the up changes are printed, not compared. No game code change, so no switch.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test only (no game code changed); the decision rests on the runs below.
+Evidence: out/lab/20261113-021621 (4 runs of the old test: 1 FAIL, 3 OK; run 4 with the host cross-check: 0 cells gone
+only on the guest); out/lab/20261113-022529-2 (reworked test: 0 of 284 gone only on the guest).
+The reworked test still catches BUG-0635: FAIL with SPORE_FIX_OFF=cell.levelup_keep out/lab/20261113-024127 (the host's
+wipe destroyed 628 cells on the guest's screen). PASS: out/lab/20261113-024127-2 (2 runs).
 
 ## History
 - 2026-11-12: opened.
+- 2026-11-13: closed on fix/w49-cell (package C1): the test, not a loss of cells; BUG-1064 opened for the extra loss round a partner.

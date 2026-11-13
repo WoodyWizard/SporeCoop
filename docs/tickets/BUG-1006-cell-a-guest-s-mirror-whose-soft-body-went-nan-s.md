@@ -13,7 +13,7 @@ branch: fix/w49-cell
 commits: 23b91609
 tests: cell_mirror_nan
 signature:
-docs: docs/known-issues.md#issue-cell-mirror-nan, docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1
+docs: docs/known-issues.md#issue-cell-mirror-nan, docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1-0714
 related:
 ---
 
