@@ -1386,7 +1386,11 @@ class Campaign:
         if not pl.J and not pl.calibrate():
             raid['why'] = 'minimap not calibrated'
             return False
-        sel = g.select_idle(pl, st, mine, True)
+        sel = []
+        for group in (True, False, False):  # a box round several, else one member at a time (a box can miss: 12:32 of
+            sel = g.select_idle(pl, st, mine, group)  # lab 20261113-120534, "no member selected (6 own)")
+            if sel:
+                break
         if not sel:
             raid['why'] = f'no member selected ({len(mine)} own)'
             return False
