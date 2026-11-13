@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w49-tribe3
-commits: 9051b80c 3756afed 6d72a5d7
+commits: 9051b80c 3756afed 6d72a5d7 930d8352 809c71f2
 tests: tribe_chief_still, same_view_tribe (the chief rows at each still)
 signature:
 docs: docs/re/tribe.md#tribe-chief-load-gesture
@@ -55,8 +55,12 @@ Not the hold relay alone: the gesture's moment, in three ways (observed, docs/re
 
 ## Verification
 tribe_chief_still: FAIL 20261113-060910 (lane 7, the build before the fix: hold differs 1.4 s and 1.1 s, the same
-gesture 5.6 s apart for 4.1 s), FAIL 20261113-062027 (lane 6, SPORE_FIX_OFF=tribe.mirror_phase_any,tribe.hold_restart:
-the gesture 5.4-14 s apart in 4 stretches, 2-10 s long); PASS 20261113-062025 (lane 7), PASS 20261113-062735 (lane 7).
+gesture 5.6 s apart for 4.1 s), FAIL 20261113-070339 (lane 6, final code with SPORE_FIX_OFF=tribe.mirror_phase_any,
+tribe.hold_restart: the same gesture over 0.5 s apart for 6.6 s and 9.0 s; also 20261113-062027 with the first
+version); PASS 20261113-065854 #1 and #2 (lane 6, final code: hold the same in 99.4 / 98.5 % of the samples, no
+stretch). Earlier versions: PASS 20261113-062025 / 20261113-062735, then a fail of the hold check in
+20261113-064228 #2 / 20261113-065048 #1 that the probes traced to the looping tracks (fixed by the loop setting).
+same_view_tribe x3 --cold 20261113-070558 (lane 6, final code: the chief's animation, time (within 0.03 s) and hold the same on both games in 11 of 12 stills, the 12th taken as the host started 0x04C6CB05) (the chief's rows at each still).
 
 ## History
 - 2026-11-13: opened.

@@ -46,7 +46,7 @@ guest's hold trace of a round that never came back.
 tribe_mirror_stale: FAIL 20261113-060910 (lane 7, the build before the fix: round 1 with the host's chief at bhv 0,
 back after 6.4 s), FAIL 20261113-062734 (lane 6, SPORE_FIX_OFF=tribe.mirror_idle_loco, the test's bhvzero rounds 2 and 4
 never back in 9 s: [1.0, 99.0, 0.5, 99.0]); PASS 20261113-062735 (lane 7: [0.5, 1.1, 1.6, 1.9], 2 rounds at bhv 0),
-PASS2_PLACEHOLDER.
+PASS 20261113-063318 (lane 7: [1.0, 0.5, 0.5, 0.5]), PASS 20261113-065855 (lane 7, final code).
 
 ## History
 - 2026-11-13: opened.

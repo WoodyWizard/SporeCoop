@@ -59,7 +59,7 @@ starts on lane 10 1.5 s later. FAIL with the lab of rel/0.7.14 (`--tree ../../re
 fix/w49-tribe3 (b exits 1 "in use by another lab run", no kill; a passes).
 no-fail-run: lab tooling, shown by the self-test (no game); the game-side cause is ruled out by the repeats below.
 Repeats with all of 0.7.14's mirror changes on: same_view_tribe x6 lane 7 (20261113-060215, all passed, 6 cold
-starts), play_tribe --quick x3 lane 6 (20261113-060217, all passed), same_view_tribe --cold x3 lane 6 (FINAL6A), and every
+starts), play_tribe --quick x3 lane 6 (20261113-060217, all passed), same_view_tribe --cold x3 lane 6 (20261113-063317 and 20261113-070558, all passed), and every
 other lab run of this branch: no game lost without a report.
 
 ## History

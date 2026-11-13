@@ -3375,3 +3375,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-1070
 * Explained (fix/w49-tribe3, 2026-11-13): not the game or the mod: a second lab run started on lane 7 at that second
   and killed the lane's games (docs/06-testing.md#testing-lane-lock); the lab now refuses a run on a held lane.
+
+## Tribe: the host's chief at the same moment of the same animation stands another way on the guest (2026-11-13, fix/w49-tribe3)
+<a id="issue-tribe-chief-overlay-pose"></a>
+
+* What happens: in two same_view_tribe stills of fix/w49-tribe3 (12 views each run), the chief's main animation and its time agree
+  on both games (within 0.03 s) but the body is bent on one game and upright on the other, the staff at another angle.
+* Reproduce: `lab.py run same_view_tribe --repeat 3` (the `host's chief at the still:` lines next to the sheets).
+* Known: only the main track is relayed and timed; the other playing tracks are not compared yet.
+* Ticket: BUG-1072
