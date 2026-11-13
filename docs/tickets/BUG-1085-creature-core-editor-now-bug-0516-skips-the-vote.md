@@ -105,6 +105,10 @@ the stage-end tag; `coop.vote` prints `stage-end votes` and `guest stage-end req
 * editor_now (now on the game's own mating, not `coop.vote evolve`): FAIL off (20261113-154950: the vote); PASS x2
   (20261113-155537). creature_mating (updated: the editor at once and the offer) PASS x2 (20261113-155537).
 
+* Regression (lanes 6 / 7): editor_now_off, vote_caption, own_editor_cancel, editor_request, evolve_in_place_creature,
+  tribe_gameover_wait, play_tribe --quick PASS (20261113-160412); play_creature --quick, vote_caption PASS
+  (20261113-161300); after the note delay tribe_gameover_wait, tribe_host_pause PASS (20261113-161954).
+
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tctl2 (`core.editor_now_tag`); the guest path confirmed and closed.

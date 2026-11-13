@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.x
 fixed_in: unreleased
 branch: fix/w49-tctl2
-commits: 4d0dd0b1, 601e7ddf
+commits: 4d0dd0b1, 601e7ddf, 640ad2c1
 tests: tribe_host_pause
 signature:
 docs: docs/09-coop-design.md, docs/06-testing.md#testing-stage-end-pause-foreign
@@ -72,6 +72,10 @@ tribe_host_pause: FAIL off (20261113-154016-2: guest `busy -`, no panel); PASS x
 #1 #2: the guest paused 1.4 s after the host's Esc, its panel "Alice paused the game: yours waits ...", both run 0.5 s
 after Resume Game). Key frame 20261113-154426 checked: the host in its Options menu, the guest's Tribe with the panel.
 tribe_gameover_wait in the regression run (below).
+
+* Regression (lanes 6 / 7): editor_now_off, vote_caption, own_editor_cancel, editor_request, evolve_in_place_creature,
+  tribe_gameover_wait, play_tribe --quick PASS (20261113-160412); play_creature --quick, vote_caption PASS
+  (20261113-161300); after the note delay tribe_gameover_wait, tribe_host_pause PASS (20261113-161954).
 
 ## History
 - 2026-11-13: opened.

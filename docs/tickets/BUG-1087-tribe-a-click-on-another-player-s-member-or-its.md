@@ -65,6 +65,10 @@ failed only on the test's toast regex cut at the apostrophe; 20261113-154637 #1 
 still selects it. Key frame 20261113-154426 checked: the panel "That member is Alice's: you lead only your own
 members" on the guest's Tribe.
 
+* Regression (lanes 6 / 7): editor_now_off, vote_caption, own_editor_cancel, editor_request, evolve_in_place_creature,
+  tribe_gameover_wait, play_tribe --quick PASS (20261113-160412); play_creature --quick, vote_caption PASS
+  (20261113-161300); after the note delay tribe_gameover_wait, tribe_host_pause PASS (20261113-161954).
+
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tctl2 (`tribe.foreign_note`).

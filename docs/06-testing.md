@@ -7519,7 +7519,8 @@ again within 20 s and the players' hut stands in both games (`coop.realign plane
   game picked, Backspace, a left click on it); `editor_now` no longer starts with a mod-built request. The game's
   mating request comes ~25 s after the click (the egg cinematic).
 * BUG-1086: `tribe_host_pause` (tribe fixture, warm, ~1 min): the host's Esc; the guest's `busy: paused` and its toast
-  "Alice paused the game ..." within 8 s; Resume Game (uifind) and both run within 15 s.
+  "Alice paused the game ..." within 8 s (the note comes 1.5 s after the guest's pause: ~3 s after the Esc); Resume
+  Game (uifind) and both run within 15 s.
 * BUG-1087: `tribe_foreign_click` (tribe fixture, warm, ~1 min): a real click 20 px above the screen point of the
   host's member farthest from the guest's own (`coop.targets objs` gives the root; the body stands above it; a click
   on the root point often hit the ground), a box when the click refused nothing; `coop.status` prints `foreign clicks
