@@ -11,13 +11,36 @@ offset of a creature's cCombatant; a vehicle's and a UFO's combatant is at +0x50
    as a UFO weapon calls it).
 PASS: the hook's attacker (the damage log, `coop.hp dmglog`) is the UFO object of the game's list. FAIL
 (SPORE_FIX_OFF=creature.attacker_owner): another address (the UFO - 0xA0).
+4. BUG-1077: the monitor's line of that hit in the host's game log (`damage: <guest> hit by <kind> ... posse=`) names
+   an object, not of the host's party (`hit by object ... posse=0`). FAIL (SPORE_FIX_OFF=npc.hit_log_object): the
+   line read the UFO as a creature (`npc`, or `pack ... posse=1` when the byte at the creature flags' offset of the
+   UFO has 0x100: the monitor's posse_damage gate failed 3 of 6 runs).
 
   SPORE_LANE=7 python3 tools/tests/coop_attacker_owner.py
 """
+import os
 import re
 import time
 
 from twoinst import Checks, start
+
+
+def log_size(con):
+    try:
+        return os.path.getsize(con.game_log())
+    except OSError:
+        return 0
+
+
+def hit_lines(con, since):
+    """the monitor's damage lines of the host's game log since the byte offset `since`"""
+    try:
+        with open(con.game_log(), 'rb') as f:
+            f.seek(since)
+            text = f.read().decode('utf-8', 'replace')
+    except OSError:
+        return []
+    return re.findall(r'coop: damage: (\d+ hit by (\S+) owner=\S+ posse=(\S+) amount=([-\d.]+).*)', text)
 
 
 def main():
@@ -28,6 +51,7 @@ def main():
         guest.call('coop.npc gopos %.2f %.2f %.2f' % (float(m.group(1)) + 4, float(m.group(2)), float(m.group(3))))
     time.sleep(3)
     ufo = None
+    since = log_size(host)
     for _ in range(4):
         print('  host:', host.call('coop.drama start 2')['out'].strip().replace('\n', ' | ')[:200], flush=True)
         t0 = time.time()
@@ -49,6 +73,13 @@ def main():
         atts = [int(a, 16) for a in re.findall(r'attacker=([0-9A-Fa-fx]+) amount=0\.10 ', log)]
         ck(atts, 'the hit went through the TakeDamage hook')
         ck(atts and all(a == ufo for a in atts), f'the attacker of the hit is the UFO object ({ufo:#x}): {[hex(a) for a in atts]}')
+        time.sleep(1)
+        lines = [x for x in hit_lines(host, since) if abs(float(x[3]) - 0.1) < 0.01]
+        print('  host monitor lines:', [x[0] for x in lines][:4], flush=True)
+        # (the monitor's lines are on in the lab: trace detail 1, the first line of each kind is always written)
+        ck(lines, "the host's game log has the monitor's line of the UFO's 0.1 hp hit")
+        ck(lines and all(k == 'object' and p == '0' for _, k, p, _ in lines),
+           f"the monitor's line names the UFO as an object, not of the host's party (BUG-1077): {[x[0] for x in lines][:2]}")
     ck.faults(host=host, guest=guest)
     return ck.result()
 
