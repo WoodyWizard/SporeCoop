@@ -2949,3 +2949,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   20261112-175447); the same test passed on fix/w48-walk. Only with every fix off; not seen with fixes on.
 * Reproduce: `tools/lab.py run walk_start_walkin --lane N --repeat 10` (not reproduced yet).
 * Ticket: BUG-0977
+
+## Creature: a joining guest's creature stands inside the host's creature (2026-11-12, key frames: fix/w48-fui)
+<a id="issue-join-same-spot"></a>
+
+* What happens: on a join into Creature both creatures stand at one point, drawn inside each other, until one walks;
+  the two games show the pair in other poses.
+* Reproduce: any test on the creature fixture (key frames of play_creature start, same_view, find_layout).
+* Known: the guest's avatar starts where the host's save has the player's creature (inferred, not analysed).
+* Next steps: put the joining avatar a few metres aside on the game's surface.
+* Ticket: BUG-0989
+
+## Creature: the host's camera looked into the ground at the end of a campaign creature play (2026-11-12, key frames: fix/w48-fui)
+<a id="issue-camera-in-ground"></a>
+
+* What happens: the host's picture was only terrain (no own creature), the guests' normal. Seen once
+  (lab 20261112-175447, campaign_short play-creature).
+* Reproduce: not known.
+* Ticket: BUG-0990
