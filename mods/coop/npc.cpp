@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "lifecycle.h"
 #include "player_rules.h"
 #include "view_centres.h"
 #include "modes.h"
@@ -56,6 +57,22 @@ static bool g_civ_wild_fix = true;
 COOP_FIX("npc.civ_wild", "BUG-0973", g_civ_wild_fix,
          "civ: the host owns the wild creatures, every guest shows the host's (positions, herds, deaths)");
 static constexpr float kCivRelevance = 1e6f; // m: the whole planet
+// The bandwidth of it: a state is 49 B (NpcState and the height trailer) ten times a second per guest; a lab civ_npc
+// run had 25 wild creatures, 12.5 KB/s per guest. Most of them stand most of the time: a standing creature's state
+// (no speed, the same place, flags and health as the last one sent to that guest) goes once a second only (the
+// guest drops a proxy without states after 5 s). `coop.fix npc.civ_quiet off`: every 0.1 s.
+static bool g_civ_quiet_fix = true;
+COOP_FIX("npc.civ_quiet", "BUG-0973", g_civ_quiet_fix, "civ: a standing wild creature's state goes to the guests once a second");
+struct CivSent {
+    net::Vec3 pos;
+    uint8_t flags;
+    float health;
+    double at;
+};
+static std::map<uint8_t, std::unordered_map<uint16_t, CivSent>> g_civ_sent; // host: guest -> id -> last state sent
+static uint32_t g_civ_quiet_skipped;
+LIFECYCLE_STATE("npc.civ_sent", lifecycle::kSession | lifecycle::kWorld, &g_civ_quiet_fix, [] { g_civ_sent.clear(); },
+                []() -> size_t { return g_civ_sent.size(); });
 static bool civ_stage() { return g_civ_wild_fix && game::mode_id() == modes::kCiv; }
 // NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage (and in Civ)
 static bool npc_stage() { return game::in_creature_stage() || game::mode_id() == 0x1654C02 || civ_stage(); }
@@ -1692,7 +1709,18 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 k = false;
             }
             if (k && send_states) {
-                batch.push_back(host_state(id, c));
+                net::NpcState st = host_state(id, c);
+                if (civ && g_civ_quiet_fix) { // BUG-0973: a standing creature's state once a second only
+                    auto& q = g_civ_sent[p.id][id];
+                    bool same = drive::speed(st.vel) < 0.05f && net::dist(st.pos, q.pos) < 0.05f && st.flags == q.flags &&
+                                std::fabs(st.health - q.health) < 0.01f;
+                    if (same && now - q.at < 1.0) {
+                        g_civ_quiet_skipped++;
+                        continue;
+                    }
+                    q = {st.pos, st.flags, st.health, now};
+                }
+                batch.push_back(st);
                 if (H->time_seconds() < g_nanvel_until && (g_nanvel_id < 0 || g_nanvel_id == id)) { // tests (BUG-0894)
                     batch.back().vel = {NAN, NAN, NAN};
                     if (g_nanvel_air)
@@ -2642,6 +2670,7 @@ void set_known_fix(bool on) { g_known_fix = on; }
 void on_player_leave(uint8_t id)
 {
     g_meat_sent.erase(id);
+    g_civ_sent.erase(id); // BUG-0973
     if (g_known_fix)
         g_known.erase(id);
 }
@@ -3106,7 +3135,10 @@ std::string status()
         char b3[128]; // F3 (BUG-0768)
         snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
                  g_pvp_in, g_pvp_relayed);
-        return std::string(b) + b2 + b3 + meat_status() + game::destroy_deferred_status() + "\n";
+        char b4[128]; // BUG-0973
+        snprintf(b4, sizeof b4, "npc civ: wild=%d quiet=%d quiet_skipped=%u\n", (int)g_civ_wild_fix, (int)g_civ_quiet_fix,
+                 g_civ_quiet_skipped);
+        return std::string(b) + b2 + b3 + b4 + meat_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
