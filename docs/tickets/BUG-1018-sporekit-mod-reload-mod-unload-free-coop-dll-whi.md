@@ -1,19 +1,19 @@
 ---
 id: BUG-1018
 title: SporeKit: mod.reload / mod.unload free coop.dll while an any-thread console command of it still runs
-status: open
+status: fixed
 kind: crash
 stage: Tools
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-1
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: kit_cmd_unload
 signature:
-docs:
+docs: docs/06-testing.md#testing-kit-cmd-unload
 related:
 ---
 
@@ -38,6 +38,8 @@ Observed in code (main efd2e0ba), confidence high for the race, the crash itself
 Not a problem for SK_CMD_MAIN_THREAD / OUTSIDE_FRAME commands: they run on the main thread, which is the one
 unloading.
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): now observed at runtime: `kit.fix cmdkeep 0`, `coop.sample 4000` on the console thread and `mod.unload coop` from a second connection: exception 0xC0000005 executing at 0x74A329A8 (the old coop image) on the console thread, the game crashed (out/lab/20261113-083451).
+
 ## Fix idea
 A per-mod in-flight counter (or a shared lock held for reading by run_cmd of an any-thread command and taken for
 writing by unload_from after commands_remove_all): unload_from waits until the mod's running any-thread commands
@@ -49,11 +51,21 @@ sends `mod.reload coop` 200 ms later; assert the game is alive and answers `ping
 no crash report. Main: a crash (execute fault in the freed image); with the fix: PASS. FAIL twin: `kit.fix cmdkeep 0`.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/console.cpp: every lookup of a mod's command that runs it on the caller's thread (any-thread commands in
+start_next and command_exec_line, the main-thread task lambdas) counts it as running under g_cmd_mu, the lock of the
+lookup itself, and uncounts it when it returns (CmdHeld). sporekit/mods.cpp unload_from: with `kit.fix cmdkeep`
+(new, sporekit/fixes.cpp) the mod's commands are removed first (no new call can start), then commands_wait_idle waits
+up to 10 s for the ones running on other threads, then on_unload and the rest. A command that does not return in time
+(or one on the main thread around the unload, a nested pump) keeps the old image mapped (no FreeLibrary: one DLL copy
+leaks in a dev path) with a log line. The SporeKit log names each wait ("unload of coop waited N ms for 1 running
+command(s) (BUG-1018)"). `kit.fix cmdkeep 0`: the old unload.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test kit_cmd_unload (one game: `kit.test.hang 1500`, `mod.unload coop` queued behind it, `coop.sample 4000` on the
+console thread; then the same with `mod.reload coop`):
+* FAIL `SPORE_FIX_OFF=kit.cmdkeep`: out/lab/20261113-083451 (crash report crash-20261113-083507-i11, execute fault in the freed image).
+* PASS: out/lab/20261113-083520, out/lab/20261113-083551 (both cases waited, sample and unload answered, coop loads again, no fault).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (FAIL/PASS twin).

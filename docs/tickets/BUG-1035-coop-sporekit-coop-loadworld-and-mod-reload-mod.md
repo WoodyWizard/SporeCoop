@@ -1,17 +1,17 @@
 ---
 id: BUG-1035
 title: coop / SporeKit: coop.loadworld and mod.reload / mod.unload / mod.load run inside the frame (SK_CMD_MAIN_THREAD, not outside the frame)
-status: open
+status: fixed
 kind: bug
 stage: Tools
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-6
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: kit_cmd_unload
 signature:
 docs:
 related:
@@ -35,6 +35,8 @@ start_next post SK_CMD_MAIN_THREAD to run_on_main (console.cpp:262, 360), which 
 pump_main_tasks (d3d9hook.cpp:466) or from WM_SK_PUMP (focus.cpp:66-68). Whether DXVK's locks are held at that point
 is inferred (the frame runs before o_Present is called; the message path can be inside it).
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): the flags observed in code; no fault inside the frame was ever seen from them (inferred risk only).
+
 ## Fix idea
 Register them with SK_CMD_OUTSIDE_FRAME (as `window`), and in c_loadworld check every H->sym / manager result and
 convert the arguments with a real UTF-8 to UTF-16 conversion (MultiByteToWideChar CP_UTF8). No switch needed for the
@@ -46,11 +48,16 @@ assert no crash report and the toast system works after the reload (`coop.notify
 most runs (no FAIL seen yet): record `no-fail-run` if it cannot be made to fail. loadworld: no test (debug command).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/commands.cpp: mod.reload / mod.load / mod.unload are SK_CMD_OUTSIDE_FRAME (the window procedure's
+outside-frame pump, as `window`). mods/coop/debug.cpp: coop.loadworld is SK_CMD_OUTSIDE_FRAME, checks all five
+symbols (need_syms) and the persistence manager before it closes the save database, and converts its arguments with
+MultiByteToWideChar(CP_UTF8). No switch (a switch would only bring the bug back).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: running in the frame never failed (the ticket's own expectation); the move is checked by the
+reload paths: kit_cmd_unload out/lab/20261113-083520, out/lab/20261113-083551 (mod.unload / mod.load / mod.reload outside the frame while busy), hotreload
+and reload_update out/lab/20261113-083757 (notify, hotreload, reload_update, kit_cmd_fault) passed. coop.loadworld: debug command with no test (as planned).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).

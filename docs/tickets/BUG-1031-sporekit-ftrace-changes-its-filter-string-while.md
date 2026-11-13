@@ -1,17 +1,17 @@
 ---
 id: BUG-1031
 title: SporeKit: ftrace changes its filter string while the CreateFileW hook reads it on other threads
-status: open
+status: fixed
 kind: bug
 stage: Tools
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-9
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: make test
 signature:
 docs:
 related:
@@ -29,6 +29,8 @@ Observed in code (main efd2e0ba): sporekit/probe.cpp:141 `static std::wstring g_
 without a lock, 168-174 ftrace_set assigns it (commands.cpp:635, `ftrace` is SK_CMD_MAIN_THREAD). The hook, once made,
 stays for the run.
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): the unguarded string observed in code; a fault in the detour was never seen (inferred).
+
 ## Fix idea
 A std::shared_ptr<const std::wstring> swapped atomically (std::atomic_load / store) or a fixed wchar_t buffer behind a
 mutex taken by both; skip the work when the filter is empty without touching the string (an atomic flag). No switch
@@ -40,11 +42,14 @@ while the game loads a stage (many CreateFileW calls); assert no fault in `exc` 
 main; otherwise `no-fail-run: race, not reproducible`.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/probe.cpp: the filter lives behind an SRW lock: the CreateFileW detour reads it shared (only when the
+atomic g_ftrace_on says a filter is set, so with no filter it takes no lock), ftrace_set swaps the new string in
+exclusively and frees the old one after the lock. No switch (debug command; the old side is a use after free).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: a use-after-free race in a debug-only command (`ftrace`) against the game's file threads, not
+reproducible on demand; fixed by inspection. Build and regression out/lab/20261113-083757 (notify, hotreload, reload_update, kit_cmd_fault) passed.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).

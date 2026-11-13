@@ -3,6 +3,19 @@
 ## [Unreleased]
 
 ### Fixed
+- Developer tools: unloading or hot-reloading the co-op mod while one of its console commands still runs on another
+  thread (`coop.sample`) no longer crashes the game; the unload waits for the command (BUG-1018).
+- Developer tools: `mod.reload`, `mod.load`, `mod.unload` and `coop.loadworld` run outside the frame; `coop.loadworld`
+  checks the game's managers and reads non-ASCII paths correctly (BUG-1035).
+- SporeKit: console input and frame commands (`frame.limit`, `move`, `button`, `bg`, ...) no longer race the game's
+  main thread on unguarded state (BUG-1016); settings reads take the settings file's lock, so a read during another
+  instance's conversion of the file no longer returns the default (BUG-1017).
+- SporeKit: the "main menu ready" event is no longer sent after the game's own start failed (BUG-1021); `ftrace` no
+  longer changes its filter under the file threads that read it (BUG-1031).
+- The toast notifications' queue is closed when the mod unloads, so no panel is built after it (BUG-1023);
+  `coop.memcensus` starts its tracker under a lock and its free hook is idle after `track off` (BUG-1060).
+- Space: a fault the game survives inside a planet generation no longer leaves the planet seeding's per-thread
+  state set, which could make a star's planets differ between the games afterwards (BUG-1074).
 - One fault inside a game call that the game survives no longer switches a co-op feature off for the rest of the
   session: Space diplomacy, ship hits, terraforming, a guest's mirror sounds, Civ changes, Cell and Tribe relays and
   others now work again on the next frame (BUG-1047).

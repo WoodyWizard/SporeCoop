@@ -1,19 +1,19 @@
 ---
 id: BUG-1016
 title: SporeKit: console input and frame commands (key, click, move, button, frame.limit, bg) run on the console thread and touch main-thread state without a lock
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-7, KIT-14
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: kit_cmd_fault, kit_cmd_unload
 signature:
-docs:
+docs: docs/06-testing.md#testing-kit-cmd-unload
 related:
 ---
 
@@ -44,6 +44,8 @@ Observed in code (main efd2e0ba), confidence high for the races, low for any vis
   o_ pointer is written only on success).
 Not a player path: the console is the tests' interface. Severity: Low.
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): the flags and the unguarded state observed in code (as above); no visible effect was ever seen at runtime (inferred only).
+
 ## Fix idea
 Move frame.limit and bg to SK_CMD_MAIN_THREAD (they are cheap), or make set_frame_limit only store g_forced
 (atomic) and let the next frame apply it. g_vcursor_last and g_background as std::atomic. ensure_hooks with
@@ -56,11 +58,18 @@ game's kFrameLimitMS (`sk frame` / frame_limit_now) equals the last value set an
 FAIL run: then `no-fail-run: data race, fixed by inspection`.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/commands.cpp: `frame.limit` is SK_CMD_MAIN_THREAD now (set_frame_limit / apply_frame_limit and game_mode_id
+run on the main thread only, as the per-frame call). sporekit/focus.cpp: g_background and g_vcursor_last are
+std::atomic (written by the console thread through `bg`, `move`, `button`, `click`; read by the window hooks and
+vcursor_tick on the main thread). sporekit/input.cpp: ensure_hooks runs once through std::call_once. key / click /
+move / button / drag / wheel / bg stay any-thread: they only post messages and write atomics now. No switch: the old
+side is a data race only, no test could use it.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: data race between the console thread and the main thread on plain variables (and a first-call race
+of hook_create, which MinHook already refuses twice); not reproducible as a failure, fixed by inspection. Regression:
+lab runs out/lab/20261113-083757 (notify, hotreload, reload_update, kit_cmd_fault) (the console's commands in hotreload, notify, kit_cmd_fault, kit_cmd_unload) passed.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).

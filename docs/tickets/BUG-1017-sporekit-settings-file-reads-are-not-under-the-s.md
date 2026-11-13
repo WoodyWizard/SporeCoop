@@ -1,17 +1,17 @@
 ---
 id: BUG-1017
 title: SporeKit: settings file reads are not under the settings lock and log_once runs before it (inifile.cpp)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-8
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: kit_initfail, kit_cmd_unload
 signature:
 docs:
 related:
@@ -35,6 +35,8 @@ Observed in code (main efd2e0ba), confidence high for the code, medium for the e
 Player path: settings are read at start and when the co-op window opens; two game instances on one PC (tests, or a
 player running two copies) or the setup writing coop.ini while the game reads it. Severity: Low.
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): the missing locks observed in code; a default value returned during a replace was never seen (Windows sharing semantics inferred).
+
 ## Fix idea
 Take g_mu (and FileLock with a short wait) around the profile reads; move log_once under g_mu in write_str. Switch:
 the existing skini::g_lock_fix covers it, or a new `kit.fix ini_read_lock`.
@@ -45,11 +47,16 @@ New unit-style kit test (kit_ini_race.py, one instance): a console command conve
 any default is seen under Wine (may not reproduce: Wine's rename semantics differ), PASS with the lock.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/inifile.cpp: read_str (after its make_unicode) and read_int take g_mu and the file's cross-process lock
+(FileLock, at most 500 ms; the read goes on without it after that) around GetPrivateProfileStringW / IntW, the same
+locks as the conversion and the writes. write_str takes g_mu before its log_once (the told set is guarded by g_mu
+everywhere now). Switch: the existing `kit.fix inilock 0` (skini::g_lock_fix) also drops the read locks.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: race with another thread's or instance's MoveFileExW over the file; Wine's rename does not give the
+sharing violation Windows can, so no default could be provoked; fixed by inspection. Regression: every lab run reads
+the settings at start (kit_cmd_unload out/lab/20261113-083520, out/lab/20261113-083551, kit_initfail out/lab/20261113-083655, out/lab/20261113-083723, out/lab/20261113-083757 (notify, hotreload, reload_update, kit_cmd_fault) passed).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).

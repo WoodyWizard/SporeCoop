@@ -7220,3 +7220,22 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   met (a jump to its home star); the host's game must have met it too (its relation flags). Twin:
   `SPORE_FIX_OFF=core.call_guard_reset` (the guard stays set, the contact is never sent).
 * Unit test: `test_call_guard` in tests/npc_tests.cpp (holds, unwind, reset, the switch off).
+
+## Console commands and mod unload (2026-11-13, fix/w49-kit2)
+<a id="testing-kit-cmd-unload"></a>
+
+* `kit_cmd_unload.py` (suite `kit_cmd_unload`, one game, cold, ~30 s; BUG-1018): `kit.test.hang 1500` holds the
+  main thread, a second connection's `mod.unload coop` is queued behind it, then `coop.sample 4000` runs on the
+  console's thread; the main thread runs the unload ~1.2 s into the sample. Then the same with `mod.reload coop`
+  (what `tools/lab.py reload` sends). With `kit.fix cmdkeep` the unload waits ("unload of coop waited N ms for 1
+  running command(s) (BUG-1018)" in the SporeKit log). Twin: `SPORE_FIX_OFF=kit.cmdkeep` (an execute fault at the
+  old coop image on the console thread, the game crashes at once).
+* The order matters: the console's server thread runs any-thread commands inline, so a `mod.unload` sent while
+  `coop.sample` runs waits unread in its socket and never races. The unload has to be queued for the main thread
+  first and the main thread held (`kit.test.hang`) until the sample is running.
+* `mod.reload` / `mod.load` / `mod.unload` and `coop.loadworld` run outside the frame since 0.7.14 (BUG-1035, the
+  window procedure's pump, as `window`); `frame.limit` runs on the main thread (BUG-1016). A reload now also waits
+  up to 10 s for a running any-thread command of the mod; one that runs longer keeps the old image mapped.
+* `kit_initfail.py` also checks that SK_EV_POST_INIT is not fired after the failed Init (BUG-1021; the log line
+  "SK_EV_POST_INIT not fired"). Twin: `SPORE_FIX_OFF=kit.postinit` (written into the test marker file: the switch
+  is off from the start).

@@ -1,17 +1,17 @@
 ---
 id: BUG-1023
 title: UI: notify::shutdown leaves queued outside-frame tasks and the queue; g_last_frame read outside the lock
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-7
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit2
+commits: 702f51dd
+tests: notify, hotreload
 signature:
 docs:
 related:
@@ -34,6 +34,8 @@ Observed in code (main efd2e0ba), confidence high for the code, medium for the e
   (inferred from their callers), so no live race.
 Only the debug unload / reload path reaches the first part; the second is a contract. Severity: Low.
 
+Observed vs inferred (2026-11-13, fix/w49-kit2): observed in code; a panel rebuilt after the unload was never seen (the old image's queued tasks are also dropped by SporeKit's BUG-0060 drop_tasks_in, which leaves only the in-image case).
+
 ## Fix idea
 shutdown(): under g_mu clear g_queue and set a `g_closed` flag that build/animate check first; make g_last_frame a
 std::atomic<double> (or read it only on the main thread). Pair with the unload barrier of the KIT-1 ticket.
@@ -44,11 +46,15 @@ before the reload is in the UI tree after it (coop.ui find) and no fault. FAIL o
 shutdown, PASS with the flag.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+mods/coop/notify.cpp: shutdown() takes g_mu, sets g_closed, clears the queue and the queued-task flags; build,
+animate and show return at once while closed; init() opens it again. g_last_frame is a std::atomic<double>. No switch
+(cleanup on the unload path only).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: the queued build of the same image after shutdown needs the unload between the queueing and the
+outside-frame pump (one message); SporeKit already drops the old image's queued tasks, so no failure could be made;
+fixed by inspection. Regression: notify and hotreload (mod.reload with the toast module) passed out/lab/20261113-083757 (notify, hotreload, reload_update, kit_cmd_fault).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).
