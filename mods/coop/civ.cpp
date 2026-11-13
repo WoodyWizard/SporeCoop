@@ -387,6 +387,36 @@ COOP_FIX("civ.vel_cap_host", "BUG-0787", g_vel_cap_host_fix,
 static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
+// BUG-1053 (class BUG-0426, the live pointer package L2 of 0.7.14): the host's tables g_hv (vehicles) and g_host_cities
+// are rebuilt from the game's lists every kHostInterval; a guest's command (and the held commands drained before
+// host_tick) ran SetOrder / SetMoveOrder on a vehicle or a target the host's game removed since (disbanded, destroyed
+// by a superweapon: still in the table, destroyed and freed a few frames later), and the game's hooks inside its update
+// (h_Capture, h_Convert) and the mod's walks (for_each_owned, for_each_target, own_selection) read such an entry's
+// memory. Now an entry is used only while it is the same object in the game's list (game::alive with the serial the
+// table kept; a city: game::listed), inside a game::LiveScope (one walk). `coop.fix civ.cmd_listed off`: as 0.7.13.
+static bool g_cmd_listed_fix = true;
+COOP_FIX("civ.cmd_listed", "BUG-1053", g_cmd_listed_fix,
+         "civ: the host never runs a guest's order on a vehicle, target or city its game removed since the last table cycle");
+static uint32_t g_cmd_gone;
+constexpr uint32_t kVehicleNoun = 0x18C6DE8;
+// host: v of g_hv is the vehicle its entry was made for and in the game's list now
+static bool hv_live(void* v, const HV& hv)
+{
+    if (!g_cmd_listed_fix || game::alive(game::LiveRef{v, hv.serial, kVehicleNoun}))
+        return true;
+    g_cmd_gone++;
+    return false;
+}
+// host: city i of g_host_cities while the game's list has it (null otherwise or out of range)
+static void* host_city(size_t i)
+{
+    void* c = i < g_host_cities.size() ? g_host_cities[i] : nullptr;
+    if (c && g_cmd_listed_fix && !game::listed(c)) {
+        g_cmd_gone++;
+        return nullptr;
+    }
+    return c;
+}
 static uint16_t g_next_id = 1;
 static double g_last_send;
 static uint16_t g_cycle;
@@ -1875,9 +1905,12 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
             // the city goes to the player whose vehicle is closest (who took it)
             uint8_t owner = 0;
             float bd = 1e18f;
+            game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
             for (auto& [v, hv] : g_hv) {
                 if (hv.owner == 0xFE || (g_fix_orphans && !net::is_player(*C.sess, hv.owner)))
                     continue; // BUG-0031: never a player who is not here
+                if (g_cmd_listed_fix && !hv_live(v, hv))
+                    continue; // BUG-1053: removed by the game since the last cycle
                 float d = net::dist(veh_pos(v), city_pos(city));
                 if (d < bd) {
                     bd = d;
@@ -2069,8 +2102,10 @@ static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
     if (is_host() && active() && city && count > 0) {
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
+        game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
         for (auto& [v, h] : g_hv)
-            if (role(h.owner) == 3 && F<int>(v, kVPurpose) == 2 && net::dist(veh_pos(v), cp) < 200.f) {
+            if (role(h.owner) == 3 && (!g_cmd_listed_fix || hv_live(v, h)) && F<int>(v, kVPurpose) == 2 &&
+                net::dist(veh_pos(v), cp) < 200.f) {
                 preacher = h.owner;
                 break;
             }
@@ -3385,10 +3420,13 @@ static void* resolve_target(const Target& t)
 {
     if (t.kind == 1) {
         auto it = g_hv_by_id.find(t.id);
-        return it == g_hv_by_id.end() ? nullptr : it->second;
+        if (it == g_hv_by_id.end())
+            return nullptr;
+        auto hv = g_hv.find(it->second);
+        return hv != g_hv.end() && hv_live(hv->first, hv->second) ? it->second : nullptr; // (BUG-1053)
     }
     if (t.kind == 2)
-        return t.id < g_host_cities.size() ? g_host_cities[t.id] : nullptr;
+        return host_city(t.id); // (BUG-1053)
     if (t.kind == 3 && t.noun)
         return game::find_object(t.noun, t.pos, 10.f);
     return nullptr;
@@ -3405,6 +3443,10 @@ static void host_command(uint8_t from, net::Reader& r)
         auto it = g_hv_by_id.find(id);
         if (it == g_hv_by_id.end()) {
             snprintf(why, sizeof why, " (vehicle %u: not in the host's game)", (unsigned)id);
+            return nullptr;
+        }
+        if (!hv_live(it->second, g_hv[it->second])) { // BUG-1053: removed by the host's game since the last cycle
+            snprintf(why, sizeof why, " (vehicle %u: gone from the host's game since the last cycle)", (unsigned)id);
             return nullptr;
         }
         if (g_hv[it->second].owner != from) {
@@ -3437,8 +3479,7 @@ static void host_command(uint8_t from, net::Reader& r)
                     g_hv[v].owner = to;
                     given++;
                 }
-            } else if (id < g_host_cities.size()) {
-                void* city = g_host_cities[id];
+            } else if (void* city = host_city(id)) { // (BUG-1053)
                 if (owner_of_city(city) == from) {
                     g_city_owner[city] = to;
                     g_city_gifted.insert(city);
@@ -3502,7 +3543,7 @@ static void host_command(uint8_t from, net::Reader& r)
         thiscall<void>(a_OrderStamp, v, 0);
     } else if (kind == CMD_BUY) {
         uint8_t ci = r.u8(), loco = r.u8();
-        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* city = host_city(ci); // (BUG-1053)
         uint8_t co = city ? owner_of_city(city) : 0xFF;
         if (!r.ok() || !city || (co != from && co != kShared) || loco > 2)
             return reject();
@@ -3528,7 +3569,7 @@ static void host_command(uint8_t from, net::Reader& r)
         uint32_t noun = r.u32();
         net::Vec3 p;
         p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
-        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* city = host_city(ci); // (BUG-1053)
         uint8_t co = city ? owner_of_city(city) : 0xFF;
         float paid = r.ok() && r.left() >= 4 ? r.f32() : 0.f; // BUG-0807 (an older guest: nothing)
         if (!r.ok())
@@ -3554,7 +3595,7 @@ static void host_command(uint8_t from, net::Reader& r)
         uint8_t ci = r.u8();
         float price = kind == 6 ? r.f32() : 0.f;
         int type = kind == 7 ? r.u8() : 2;
-        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* city = host_city(ci); // (BUG-1053)
         void* pc = player_civ();
         bool on = kind == 6 ? g_fix_buy_city && o_CityBuy : g_fix_away_capture;
         if (!r.ok() || !on || !city || !pc || pol_of(city) == pol_of(pc) || !std::isfinite(price) || price < 0 ||
@@ -5032,6 +5073,32 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
 {
     if (!active())
         return;
+    if (g_cmd_listed_fix) { // BUG-1053: only objects the game's list has now (one walk), the callbacks after it
+        struct E {
+            void* o;
+            net::Vec3 p;
+            uint8_t owner;
+            bool city;
+        };
+        std::vector<E> es;
+        {
+            game::LiveScope live;
+            for (auto& [c, o] : g_city_owner)
+                if (c && o != kShared && game::listed(c))
+                    es.push_back({c, city_pos(c), o, true});
+            if (is_host()) {
+                for (auto& [v, hv] : g_hv)
+                    if (hv.owner != 0xFE && hv_live(v, hv))
+                        es.push_back({v, veh_pos(v), hv.owner, false});
+            } else
+                for (auto& [id, g] : g_gv)
+                    if (g.v && g.owner != 0xFE && gv_ok(g))
+                        es.push_back({g.v, veh_pos(g.v), g.owner, false});
+        }
+        for (auto& e : es)
+            fn(e.o, e.p, e.owner, e.city, user);
+        return;
+    }
     for (auto& [c, o] : g_city_owner)
         if (c && game::object_alive(c) && o != kShared)
             fn(c, city_pos(c), o, true, user);
@@ -5053,11 +5120,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
                  "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u sw_unvoted=%u boosts=%u "
-                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u creature_orders=%u/%u\n",
+                 "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u creature_orders=%u/%u cmd_gone=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
                  g_religious_boosts, g_alarms, g_votes, g_sw_unvoted, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
-                 g_max_chunk, g_siege_npc, g_creature_near, g_creature_moves);
+                 g_max_chunk, g_siege_npc, g_creature_near, g_creature_moves, g_cmd_gone);
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
@@ -5113,6 +5180,33 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
 {
     if (!active())
         return;
+    if (g_cmd_listed_fix) { // BUG-1053: only objects the game's list has now (one walk), the callbacks after it
+        struct E {
+            const char* kind;
+            int id, owner;
+            net::Vec3 p;
+        };
+        std::vector<E> es;
+        {
+            game::LiveScope live;
+            for (size_t i = 0; i < g_host_cities.size(); i++)
+                if (void* c = g_host_cities[i]; c && game::listed(c)) {
+                    uint8_t o = owner_of_city(c);
+                    es.push_back({"city", (int)i, o == 0xFF ? -1 : (int)o, city_pos(c)});
+                }
+            if (is_host()) {
+                for (auto& [v, hv] : g_hv)
+                    if (hv.owner != 0xFE && hv_live(v, hv))
+                        es.push_back({"vehicle", hv.id, hv.owner, veh_pos(v)});
+            } else
+                for (auto& [id, g] : g_gv)
+                    if (g.owner != 0xFE && gv_ok(g)) // (BUG-0951)
+                        es.push_back({"vehicle", id, g.owner, veh_pos(g.v)});
+        }
+        for (auto& e : es)
+            fn(e.kind, e.id, e.owner, e.p, user);
+        return;
+    }
     for (size_t i = 0; i < g_host_cities.size(); i++)
         if (void* c = g_host_cities[i]) {
             uint8_t o = owner_of_city(c);
@@ -5537,6 +5631,49 @@ std::string debug(const std::vector<std::string>& a)
         g_hv.erase(it->second);
         g_hv_by_id.erase(it);
         return "dropped from the table";
+    }
+    if (a.size() >= 4 && a[0] == "guestcmd" && is_host()) { // guestcmd <from> <vehicle id> v<vehicle id>|<city> [type]:
+        // tests (BUG-1053), a guest's order (CMD_ORDER on a vehicle or a host city) handled here now, as on_message does;
+        // then the ordered vehicle's current order in the game (mOrders +0xB68: target, type)
+        uint16_t vid = (uint16_t)atoi(a[2].c_str());
+        Target t;
+        void* tp = nullptr;
+        if (a[3][0] == 'v') {
+            t.kind = 1;
+            t.id = (uint16_t)atoi(a[3].c_str() + 1);
+            auto it = g_hv_by_id.find(t.id);
+            tp = it == g_hv_by_id.end() ? nullptr : it->second;
+        } else {
+            t.kind = 2;
+            t.id = (uint16_t)atoi(a[3].c_str());
+            tp = t.id < g_host_cities.size() ? g_host_cities[t.id] : nullptr;
+        }
+        net::Writer w;
+        w.u8(CMD_ORDER);
+        w.u16(vid);
+        w.u32((uint32_t)(a.size() >= 5 ? atoi(a[4].c_str()) : t.kind == 1 ? 1 : 2));
+        w.u32(1);
+        write_target(w, t);
+        uint32_t d0 = g_cmds_done, r0 = g_cmds_rejected, g0 = g_cmd_gone;
+        net::Reader r(w.data.data(), w.data.size());
+        host_command((uint8_t)atoi(a[1].c_str()), r);
+        auto vi = g_hv_by_id.find(vid);
+        void* v = vi == g_hv_by_id.end() ? nullptr : vi->second;
+        void* ot = nullptr;
+        int otype = -1;
+        if (v && game::listed(v, kVehicleNoun)) {
+            uint8_t* ob = F<uint8_t*>(v, kVOrders);
+            uint8_t* oe = F<uint8_t*>(v, kVOrders + 4);
+            if (ob && oe > ob) {
+                ot = *(void**)ob;
+                otype = *(int*)(ob + 0x10);
+            }
+        }
+        char b[240];
+        snprintf(b, sizeof b, "guestcmd: target %p in_table=%d listed=%d done=%u rejected=%u gone=%u | vehicle #%u %p order target=%p type=%d",
+                 tp, (int)(tp != nullptr), (int)(tp && game::listed(tp)), g_cmds_done - d0, g_cmds_rejected - r0, g_cmd_gone - g0,
+                 (unsigned)vid, v, ot, otype);
+        return b;
     }
     if (!a.empty() && a[0] == "world_change") { // the tables' reset of a world change, the world staying (BUG-0773)
         on_world_change();
@@ -6233,13 +6370,14 @@ static void own_selection(std::vector<uint16_t>& vehicles, int& city)
 {
     uint8_t me = C.sess->my_id();
     city = -1;
+    game::LiveScope live; // (BUG-1053: one walk)
     if (C.sess->role() == net::Role::Host) {
         for (auto& [v, h] : g_hv)
-            if (h.owner == me && F<uint8_t>(v, kVSelected))
+            if (h.owner == me && (!g_cmd_listed_fix || hv_live(v, h)) && F<uint8_t>(v, kVSelected))
                 vehicles.push_back(h.id);
     } else
         for (auto& [id, g] : g_gv)
-            if (g.v && g.owner == me && F<uint8_t>(g.v, kVSelected))
+            if (g.v && g.owner == me && (g_cmd_listed_fix ? gv_ok(g) : true) && F<uint8_t>(g.v, kVSelected)) // (BUG-1053)
                 vehicles.push_back(id);
     if (vehicles.empty() && g_ui_city && owner_of_city(g_ui_city) == me)
         city = host_index_of_city(g_ui_city);
