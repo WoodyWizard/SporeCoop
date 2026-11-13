@@ -15,6 +15,7 @@
   suite     every allow(...) of suite.py names an existing ticket and a reason; the players variants
 """
 import os
+import re
 import sys
 import tempfile
 import time
@@ -327,6 +328,19 @@ def field_cases(tmp):
     check(not got, f'monitor: puppet_hp: lines off in opposite directions are the lag at health jumps ({got})')
     got = scenario(tmp, 'f_php_flip_old', *aligned_pair(host_sees=flip, g=dict(hp=5), hs=dict(hp=5)), dict(php_same_way=0))
     check(got == {'puppet_hp'}, f'monitor: puppet_hp: php_same_way 0 judges them as before ({got})')
+    # BUG-1061: two sessions of one test share the session clock (each starts at s 0): the guest's lines of a Creature
+    # session were judged against the guest's own Cell lines of the session before (6/6 at the same s) when those
+    # came closer in time; same_session 0 (the rule before) fails it
+    cell_h, cell_g = aligned_pair(h=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6),
+                                  g=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6),
+                                  hs=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6))
+    cre_h, cre_g = aligned_pair(host_sees=' puppet_hp=18/18', g=dict(hp=18, maxhp=18), hs=dict(hp=18, maxhp=18))
+    shift = lambda lines, d: [re.sub(r'\[s ([\d.]+)\]', lambda m: f'[s {float(m.group(1)) + d:.3f}]', ln) for ln in lines]  # noqa: E731
+    two = (cell_h + shift(cre_h, 0.02), cell_g + shift(cre_g, -0.015))
+    got = scenario(tmp, 'f_php_sessions', *two)
+    check(not got, f'monitor: puppet_hp: a line is judged against the subject\'s own line of the same stage and world ({got})')
+    got = scenario(tmp, 'f_php_sessions_old', *two, dict(same_session=0))
+    check('puppet_hp' in got, f'monitor: puppet_hp: same_session 0 matches the session before at the same clock ({got})')
     h, g = aligned_pair()
     h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded")
     g.append("12:00:00.000 [s 33.1] [INF] coop: damage: 1 hit by proxy owner=npc posse=? amount=2.5 from the host")

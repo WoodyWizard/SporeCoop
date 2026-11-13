@@ -618,7 +618,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
-    H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
+    H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
 
@@ -1310,6 +1310,35 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
         g_walk_variant = atoi(argv[2]);
         H->out_printf(out, "npc.walk variant %d (0 walk goal + place, 1 place only, 2 walk goal + teleport, 3 no teleport when the place was lost)\n", g_walk_variant);
         return 0;
+    } else if (!strcmp(a, "shove") && argc > 7) {
+        // host (tests, BUG-0997): host NPC #id put <m> metres to the side at once (as a hit throws it), then walked
+        // on to x y z at <m/s>: shove <id> <m> x y z <m/s>
+        void* c = host_npc((uint16_t)atoi(argv[2]));
+        if (!is_host() || !c) {
+            H->out_printf(out, "no such host npc\n");
+            return 1;
+        }
+        net::Vec3 p = game::position(c);
+        float l = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (l < 1.f) {
+            H->out_printf(out, "no position\n");
+            return 1;
+        }
+        net::Vec3 n{p.x / l, p.y / l, p.z / l};
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z), m = (float)atof(argv[3]);
+        net::Vec3 q{p.x + u.x / ul * m, p.y + u.y / ul * m, p.z + u.z / ul * m};
+        float g = game::ground_radius(q), ql = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+        if (g > 1.f && ql > 1.f)
+            q = {q.x / ql * g, q.y / ql * g, q.z / ql * g};
+        game::teleport(c, q, game::orientation(c));
+        net::Vec3 to{(float)atof(argv[4]), (float)atof(argv[5]), (float)atof(argv[6])};
+        game::set_speed(c, (float)atof(argv[7]));
+        game::move_to(c, to, 0.5f);
+        H->out_printf(out, "npc %s put from (%.1f %.1f %.1f) to (%.1f %.1f %.1f), walks on to (%.1f %.1f %.1f)\n", argv[2], p.x,
+                      p.y, p.z, q.x, q.y, q.z, to.x, to.y, to.z);
+        return 0;
     } else if (!strcmp(a, "walk") && argc > 6) {
         // host (tests): the game walks host NPC #id to x y z at <m/s> (its own locomotion, MoveTo)
         void* c = host_npc((uint16_t)atoi(argv[2]));
@@ -1906,6 +1935,12 @@ static void check_listed()
 // (at most 0.1 s) along the target's velocity. Off: on the target (0.7.10).
 static bool g_place_now_fix = true;
 COOP_FIX("npc.place_now", "BUG-0757", g_place_now_fix, "creature, tribe: a walking animal's copy is placed where the host has it when the frame is drawn, not a frame behind");
+// BUG-0997: with npc.place_now the walked proxy is aimed a frame ahead, and walk_place's snap (BUG-0361: teleported
+// when over 2.5 m off and the host's path itself jumped this frame) compared that aim with the path point, which never
+// matched for a moving proxy: a host animal thrown aside was closed at the catch-up speed (seconds) instead of at once.
+// Now the snap gets this frame's path point. `coop.fix npc.place_now_snap off`: the aim (0.7.10 .. 0.7.13)
+static bool g_place_now_snap_fix = true;
+COOP_FIX("npc.place_now_snap", "BUG-0997", g_place_now_snap_fix, "creature, tribe: a walking animal's copy jumps with the host's animal when that is thrown aside");
 // BUG-0842: a cached proxy pointer was checked by its own memory (mbIsDestroyed, BUG-0300's list check once a second,
 // BUG-0931's in every frame in Creature only) and by its address: the game frees a destroyed creature some frames
 // later (its last reference goes, 10-40 frames in the lab) and gives the block to the next creature of that species
@@ -2146,6 +2181,10 @@ static void guest_tick(double now)
                 net::Vec3 aim = s.pos;
                 if (g_place_now_fix)
                     aim = {aim.x + vel.x * (float)g_frame_dt, aim.y + vel.y * (float)g_frame_dt, aim.z + vel.z * (float)g_frame_dt};
+                if (g_place_now_snap_fix) { // BUG-0997: the snap compares the path point, not the aim
+                    o.has_path_pos = true;
+                    o.path_pos = s.pos;
+                }
                 drive::walk_place(px.c, aim, s.rot, vel, px.drv, now, o);
                 walked = true;
             } else {

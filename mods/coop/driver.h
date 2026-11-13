@@ -294,6 +294,10 @@ struct WalkPlace {
     // path moved over snap/2 in this frame: a host NPC put 4.8 m to the side stayed 2-7 m off for 2 s when
     // closed at catch_up); needs path_update with this frame's target first; 0: never
     float snap = 0.f;
+    // BUG-0997: the path point of this frame when pos_in is aimed elsewhere (npc.place_now aims a frame ahead along the
+    // velocity): the snap's "the path jumped this frame" test compares it with ds.path.prev; unset: pos_in
+    bool has_path_pos = false;
+    net::Vec3 path_pos{};
     // BUG-0361: when the game does not keep the place (a host NPC thrown back by a hit, 9 m/s slowing down:
     // without the teleport mark the proxy's own locomotion moved it back each frame by as much as it was
     // placed, it stood and ended 4.5 m off), i.e. its error grows over kWalkLostErr for kWalkLostAfter s or
@@ -370,7 +374,7 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     ds.last_err = err;
     // (only when the path itself jumped this frame: a proxy thrown back with its NPC by a hit trails it by
     // more than snap at 30 fps over the player network and was teleported 2.4-4 m, npc_walk_player)
-    if (o.snap > 0 && err > o.snap && net::dist(ds.path.prev, pos_in) < 0.01f &&
+    if (o.snap > 0 && err > o.snap && net::dist(ds.path.prev, o.has_path_pos ? o.path_pos : pos_in) < 0.01f &&
         speed(ds.path.v) * (float)(now - ds.last_step) > 0.5f * o.snap) {
         game::teleport(p, pos, rot);
         ds.teleports++;

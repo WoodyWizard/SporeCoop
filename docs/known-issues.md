@@ -3125,6 +3125,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Creature, Tribe: a host animal knocked aside slides back on the guest instead of jumping (2026-11-13, audit 0.7.14)
 <a id="issue-npc-snap-dead"></a>
+* Fixed (unreleased, fix/w49-small, BUG-0997): the snap compares this frame's path point, not the aim
+  (`npc.place_now_snap`); test npc_snap (median 0.03 s with the fix).
 
 * What happens: when the host's animal is thrown aside or put back by its game while it walks, the guest's copy
   closes the 2-7 m at catch-up speed over up to about 2 s instead of being placed there at once.
@@ -3149,6 +3151,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Tribe: a chief "saved" by a partner's member dies at the next blow (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-chief-rescue-hp"></a>
+* Fixed (unreleased, fix/w49-small, BUG-1052): 30 % of game::max_health (`tribe.rescue_max`); test tribe_chief_rescue
+  (168 hp chief: 50.4 on both games).
 
 * What happens: with the Chief aura setting on (the default), "<A> saved <B>'s chief" leaves the chief 0.3 hit
   points instead of 30 % of its health.
@@ -3170,6 +3174,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Tribe: the guest's copy of a host member keeps a tool the host's member put down (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-tool-zero"></a>
+* Fixed (unreleased, fix/w49-small, BUG-1043): each field has its own accepted range, tool and hunger take 0
+  (`fields.zero_values`); test tribe_zero_fields.
 
 * What happens: the field relay drops the value 0, so "no tool" (and hunger 0) never reaches the guest. The guest's
   copy keeps the old tool type.
@@ -3283,6 +3289,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Creature: after a Cell session the partner's creature shows its own full health for a while (2026-11-13, fix/w49-life)
 <a id="issue-puppet-hp-after-cell"></a>
+* CORRECTION (2026-11-13, fix/w49-small, BUG-1061): not a game desync. Both games had the right health (host 10/10, the
+  guest's puppet of it 10/10); the monitor matched the guest's Creature line at s 30 with the host's own line of the
+  Cell session before it at s 30 (6/6): each session's clock starts at 0. Fixed in tools/tests/monitor.py
+  (`same_session`: only own lines of the stage and world the partner line names).
 
 * What happens: two players play Cell, end the session, load a Creature game and join again: for 10 s or more each
   game shows the partner's creature at its species' own full health (10/10, 18/18) while the partner has 6/6.

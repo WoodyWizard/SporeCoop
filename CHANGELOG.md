@@ -11,6 +11,20 @@
 - Network: one oversized datagram no longer stops the other packets of that frame from being read, in the session
   and in the LAN game list (BUG-1007).
 - Network hardening: more checks on data received from other machines (BUG-1003, BUG-1012, BUG-1041, BUG-1048).
+- Tribe: a chief saved by a partner's member ("<A> saved <B>'s chief") now keeps 30 % of its health; before, it kept
+  0.3 hit points and fell at the next blow (BUG-1052).
+- Tribe: a host's tribe member that puts its tool down, or starves, now shows that on the guests' screens too; before,
+  the guest's copy kept the old tool and its last hunger (BUG-1043).
+- Creature, Tribe: an animal of the host's that is thrown aside while it walks now jumps there on the guests' screens
+  at once instead of sliding back over up to 2 s (BUG-0997).
+- Creature: after the host evolves its creature in place, the guest's world takes the host's new species as the
+  player species also when the new species arrives a few frames late (BUG-1057).
+- Creature: a guest's social game shows the game's social meter also when the first try to open it came too early
+  (BUG-1058).
+- Civilization: while the host is in the menu or the editor, the guest's own game keeps the host's vehicles it now
+  drives on ground they can use (BUG-1056).
+- Creature and all stages: a creation of another player that changes often no longer runs out of package names
+  ("cannot write the package") after a few dozen versions or rejoins in one game session (BUG-0996).
 - Tribe, Civilization: a guest's order on a tribe member or vehicle that had just been removed in the host's game (it
   fell, was disbanded) no longer goes to the removed object in the host's game (BUG-1053).
 - Creature: a guest's social click right after a creature change no longer starts the social game with the wrong

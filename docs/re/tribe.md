@@ -583,7 +583,7 @@ rejected.
 
 cTreeData (✔ runtime + asm): +0x00/+0x04 vtables, **+0x08 refcount**, +0x0C/+0x0E u16,
 **+0x10 Vector3 position** (identical on host and guest: same planet data), +0x1C float,
-+0x20 transform, +0x48/+0x4C u64 bit mask (fruit slots ~, set from random bits when planted in
++0x20 transform, +0x48/+0x4C u64 bit mask (~ superseded (2026-11-13): see the CORRECTION below; fruit slots ~, set from random bits when planted in
 0xB07490), +0x50..+0x58 ids, +0x5C..+0x64 vec3, +0x68 ref-counted model pointer, +0x6C..+0x74
 scale. Ctors: 0xB016A0 (default), 0xB035B0 (copy), 0xB01750 scalar deleting dtor; allocation tags
 "Simulator/cTreeData" (0xB07490, planting), "SP_Simulator/cTreeData/COM" (factory 0xB02020).
@@ -608,6 +608,12 @@ Fields near the village of Cohrach (`coop.tribe trees`, ~ from 30 trees): `+0x0C
 picked empty: such a tree is no gather target), **`+0x4C` all fruit slots** (0x07 small, 0x1F big),
 `+0x50` patch key (0x7B..0x89, = the patch's key), `+0x54` index in the patch, **`+0x58` plant
 species hash** (0x6D60A1CC small fruit plant, 0x029C388A big fruit tree), `+0x6C` scale.
+
+CORRECTION (2026-11-13, fix/w49-small, plan-0.7.14 WLD-22): +0x48 / +0x4C are two u32 masks, not one u64: +0x48 the
+fruit left (a bit per fruit), +0x4C every fruit slot (0x07 on a small plant, 0x1F on a big tree: at most 5 slots).
+Evidence: the runtime values of `coop.tribe trees` above (30 trees: +0x4C only 0x07 / 0x1F, +0x48 a subset of it) and
+the audit's check of the planting (WLD-22: at most 5 fruit slots). The 32-bit reads in tribe.cpp (fruit left),
+census.cpp and worldobj.cpp are right; the "u64 bit mask" reading of the planting code was a guess (~).
 
 **Recipe (tribe.cpp):** the guest sends a tree target as `kind 3 + position (+0x10)`; the host walks
 all patches (`for_each_tree`) and takes the tree within 1 m. `coop.targets objs` lists trees on

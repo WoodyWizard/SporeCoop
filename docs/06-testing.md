@@ -7069,3 +7069,28 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * Lab `join_late_names` (coop_join_late_names.py, creature, 3 games: twoinst + coop_multi.start_extra): late join
   off, an extra game joins with the guest's name Bob (refused), Bob leaves and comes back (admitted by its kept
   token), late join on (the extra joins as "Bob 2"). `SPORE_FIX_OFF=net.join_seen` fails.
+## T1 small fixes of 0.7.14: test commands and tests (2026-11-13, fix/w49-small)
+<a id="testing-t1-small"></a>
+
+* `tribe_chief_rescue` (BUG-1052, tribe, ~2 min): `coop.tribe near 1.5` puts the guest's chief next to the host's,
+  `coop.tribe pincer <chief> <enemy> <hp + 5>` deals the killing blow through TakeDamage; the chief's `hp=` must be
+  30 % of its row's `maxhp=` on both games (`chief_rescues=` of `coop.status` counts the rescue).
+* `tribe_zero_fields` (BUG-1043 / BUG-1044, tribe, ~2 min): `coop.tribe settool <id> 1` then `0`, `coop.tribe hunger
+  <id> 0`; the guest's row `tool=` / `hunger=` follow within 5 s. Then the guest leaves: the host's `coop.fields`
+  statistics of kind npc (id 1 = the guest's id) must stay (BUG-1044's wrong key erased them).
+* `civ_away_ground` (BUG-1056, civ_npc, ~3 min): `coop.civ vput` works on a guest while the host is away (the mirror
+  its own game drives then); the spice node near (-336, 132, 354) is ground the guest's game finds invalid for a land
+  vehicle. `away_ground=` in the guest's `coop.civ` status counts the game's ground checks the fix lets through.
+* `npc_snap` (BUG-0997, creature, 30 fps, ~3 min): `coop.npctrack shove <id> <m> x y z <m/s>` (host) puts a walking
+  NPC m metres to the side and walks it on; the guest's `coop.npctrack dump` frames give the time until the drawn copy
+  is within 1 m of the host's path after the path's jump.
+* `evolve_in_place_late` (BUG-1057, creature, ~6 min): `coop.creations ps_null <n>` (guest) takes the host's evolved
+  species as unknown for n tries; the `world player species` line of `coop.creations` shows `retries` / `lost`.
+* `social_meter_retry` (BUG-1058, creature, ~3 min): `coop.social meter_null <n>` (guest) makes the next n meter
+  tasks find no meter window; `coop.social meter` shows `missed=`.
+* `creations_package_close` (BUG-0996, creature, ~2 min): the guest plays its own creatures A, B, A, B, A; the host's `packages:` line
+  of `coop.creations` (open, closing, closed, kept, renamed): `renamed` counts packages written under `_N` names
+  because the operating system refused the old name (the file still open).
+* The monitor's `same_session` (BUG-1061, default 1): the hp, puppet_hp, drawn and ground rules match a partner line
+  only with the subject's own lines of the stage and world it names (each session's clock starts at s 0, so a test
+  with several sessions has several lines at the same s). gates_selftest has the twin (`same_session=0` fails).
