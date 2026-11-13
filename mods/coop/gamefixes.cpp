@@ -14,6 +14,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "sporekit_game.hpp"
+#include "modes.h"
 #include "world.h"
 
 namespace gamefixes {
@@ -1709,9 +1710,76 @@ static int c_menuhover(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1073 / BUG-1079: the cinematic manager's enabled flag (+0x15F, written by cCinematicManager_SetEnabled 0xADF310;
+// PlayCinematic plays nothing while it is 0). The live Creature -> Tribe change clears it after CRG2TRG and the Tribe start
+// sets it again; the mod's own reload of the host's Tribe right after that change (tribe.host_reload, BUG-0332) can come
+// first, and a load does not set it again: the whole Tribe ran without a cinematic, and so did every stage loaded later
+// in that game (lab 20261113-133xxx lane 5: 0 from 13:40:52 on, through the galaxy menu and the reload). In Civ a
+// capture's cinematic (CVG_Capture) never played, so the captured city never changed hands (its ChangeOwner waits for
+// the cinematic's end); in Space a destroyed ship got no death cinematic. A save loaded into a stage starts with
+// cinematics on (as after the game's start): when a load ends in a stage with the flag 0, it is set again.
+// `coop.fix game.cinematics_on_load off`: left as the load found it (0.7.13).
+static bool g_cine_load_fix = true;
+COOP_FIX("game.cinematics_on_load", "BUG-1073", g_cine_load_fix,
+         "game: a save loaded into a stage plays its cinematics again when an earlier stage change left them off");
+static std::atomic<unsigned> g_cine_restored{0};
+static uint32_t g_cine_prev_mode;
+static uint8_t* cine_mgr()
+{
+    static uintptr_t get = H->sym("Simulator::cCinematicManager::Get");
+    uint8_t* m = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    return m && readable(m, 0x160) ? m : nullptr;
+}
+static void cine_load_frame()
+{
+    uint32_t mode = game::mode_id();
+    uint32_t prev = g_cine_prev_mode;
+    g_cine_prev_mode = mode;
+    if (prev != modes::kLoad || mode == modes::kLoad || !g_cine_load_fix)
+        return;
+    if (mode != modes::kCreature && mode != modes::kTribe && mode != modes::kCiv && mode != modes::kSpace &&
+        mode != modes::kCell)
+        return;
+    uint8_t* m = cine_mgr();
+    static uintptr_t set = H->sym("SporeCoop::cCinematicManager_SetEnabled");
+    if (!m || !set || at<uint8_t>(m, 0x15F))
+        return;
+    skg::thiscall<void>(set, m, 1);
+    g_cine_restored++;
+    H->log(M, SK_WARN, "game fixes: the cinematics were off after the load into mode %08X: on again (BUG-1073)", mode);
+}
+std::string cinematics_state()
+{
+    uint8_t* m = cine_mgr();
+    char b[160];
+    snprintf(b, sizeof b, "cinematics enabled=%d state=%u id=%08X restored_on_load=%u fix=%d", m ? (int)at<uint8_t>(m, 0x15F) : -1,
+             m ? at<uint32_t>(m, 0x2C) : 0u, m ? at<uint32_t>(m, 0x148) : 0u, g_cine_restored.load(), (int)g_cine_load_fix);
+    return b;
+}
+std::string cinematics_set(bool on)
+{
+    uint8_t* m = cine_mgr();
+    static uintptr_t set = H->sym("SporeCoop::cCinematicManager_SetEnabled");
+    if (!m || !set)
+        return "no cinematic manager";
+    skg::thiscall<void>(set, m, on ? 1 : 0);
+    return cinematics_state();
+}
+
+static int c_cine(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) { // tests: as the game's own stage changes
+        H->out_printf(out, "%s\n", cinematics_set(!strcmp(argv[1], "on")).c_str());
+        return 0;
+    }
+    H->out_printf(out, "%s\n", cinematics_state().c_str());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
+    cine_load_frame();
     if (g_areas_checked || !g_get_db)
         return;
     g_areas_checked = true; // the init ran before our hook (hot reload, a late load): check once now
@@ -1857,6 +1925,8 @@ void init(const SkHost* host, SkMod* mod)
                    c_menuhover, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.staleref", "coop.staleref on | off | [creature] - RE / tests (BUG-0926): pointers into the creature destroyed last (or the one at that address), by where they sit",
                    c_staleref, nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.cine", "coop.cine [on | off] - the cinematic manager's enabled flag and the restores after loads; "
+                   "tests (BUG-1073): on / off as the game's own stage changes set it", c_cine, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxlist", "coop.fxlist [creature] - a creature's attached effects (BUG-0575)", c_fxlist, nullptr,
                    SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxcut", "coop.fxcut - tests (BUG-0575): the next model with a running attached effect has it stopped and given a freed part",

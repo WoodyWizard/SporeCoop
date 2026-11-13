@@ -10,6 +10,10 @@ namespace gamefixes {
 void init(const SkHost* host, SkMod* mod);
 void shutdown(); // puts the original bytes back (hot reload)
 std::string status();
+// BUG-1073: the cinematic manager's enabled flag and the restores after loads (coop.cine); tests: set it as the
+// game's own stage changes do (SetEnabled)
+std::string cinematics_state();
+std::string cinematics_set(bool on);
 void frame(); // every frame: a one-time check of the save areas when the startup hook did not see the game's init
 // tests (BUG-0270): the window manager `wm` gets a destroyed object as its modal window
 std::string fake_dead_modal(void* wm);
