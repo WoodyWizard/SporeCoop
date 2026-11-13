@@ -3,7 +3,7 @@
 
   coverage                  every suite test with its last recorded run (out/lab of the main checkout and
                             of every worktree), its result and how often it ran; tests that never ran are
-                            flagged, and tests not run for --days
+                            flagged, and tests not run for --days (a quick run's shortened tests do not count)
   coverage --commit <rev> --require smoke,full,multi
                             the release rule: which tests of the required suites ran on that commit and
                             passed; exit 1 when one is missing or failed
@@ -40,7 +40,8 @@ def runs_by_test(dirs):
     out = collections.defaultdict(list)
     for rundir, data, r in loggates.recorded(dirs):
         t = run_time(rundir)
-        if t is not None:
+        # a quick run's shortened test (lab.py --quick, docs/06-testing.md#testing-lab-speed) is no run of the test
+        if t is not None and not r.get('quick'):
             out[base_name(r['name'])].append((t, rundir, data, r))
     for v in out.values():
         v.sort(key=lambda x: x[0])

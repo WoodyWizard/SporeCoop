@@ -39,6 +39,7 @@ Cases (ticket):
                 "the test script used N MB"; a small one passes with its peak in the result (BUG-0916)
   mem_gate      the memory gate: a 4-game test waits while MemAvailable is short and starts when it is back; the
                 games of a test just started count; with nothing running it fails as not started after the wait
+  quick         lab.py run --quick: the quick entry's shortened command, marked quick, not counted by labcov
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -118,6 +119,12 @@ def lab_cases(tree, tmp):
                               f'print(\'RESULT: OK\' if n else \'the game did not answer\');exit(0 if n else 1)"',
               ('smoke',))
     suite.add('skipper', f'{py} "print(\'RESULT: SKIP (no free lane)\')"', ('smoke',))
+    suite.add('warm_lost', f'{py} "print(\'  (warm reset failed: [Errno 104] Connection reset by peer )\');'
+                           f'print(\'  (warm reset failed: cold start)\');print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('warm_slow', f'{py} "print(\'  (warm reset failed: timed out )\');'
+                           f'print(\'  (warm reset failed: cold start)\');print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('warm_refused', f'{py} "print(\'  (no warm reuse: SPORE_FIX_OFF x left switches off; cold start)\');'
+                              f'print(\'RESULT: OK\')"', ('smoke',))
     a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip=','.join(str(n) for n in range(1, LANE)),
                            lanes=1, no_build=True, cold=False, retry=1)
     out = io.StringIO()
@@ -140,6 +147,10 @@ def lab_cases(tree, tmp):
           'harness_once: no RESULT line, then OK on the retry: ok (flaky)')
     check(res['skipper'].get('skipped') and '| skipper | skip' in summary,
           'skipper: a SKIP result is a skip in results.json and summary.md, not a pass (BUG-0100)')
+    check(not res['warm_lost']['ok'] and res['warm_refused']['ok'] and res['warm_slow']['ok']
+          and any('timed out' in g for g in res['warm_slow'].get('gates', [])),
+          'warm_lost: a game lost in the warm reset fails the test (BUG-0975); a refused warm reuse does not, a console '
+          'that timed out is a note')
     check(rc != 0, 'the run fails')
 
     # BUG-0052: a test past the timeout (a command bash does not exec: a list) leaves nothing behind
@@ -612,6 +623,58 @@ def same_second_case(tree, tmp):
                   f'({runs})')
 
 
+def quick_case(tree, tmp):
+    """lab.py run --quick (docs/06-testing.md#testing-lab-speed): a test with a quick entry runs its shortened command
+    (the flag's value replaced, or appended), is marked quick in results.json and summary.md and gets SPORE_LAB_QUICK=1;
+    the others run as they are; labcov does not count the quick result as a run of the test (release rule)"""
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import lab
+    import labcov
+    import suite
+    root = os.path.join(tmp, 'quick')
+    os.makedirs(os.path.join(root, 'game', 'SporebinEP1', 'mods', 'logs'))
+    git(root, 'init', '-q', '-b', 'main')
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+    lab.ROOT = root
+    lab.preflight = lambda: True
+    lab.ensure_lanes = lambda n: None
+    lab.spore = lambda *a, **k: subprocess.CompletedProcess(a, 0, '', '')
+    lab.lane_game = lambda lane: os.path.join(root, 'game')
+    lab.lane_alive = lambda lane: {2 * lane - 1: False, 2 * lane: False}
+    py = f'{sys.executable} -c "import os, sys; print(sys.argv[1:], os.environ.get(\'SPORE_LAB_QUICK\')); print(\'RESULT: OK\')"'
+    suite.T[:] = []
+    suite.add('longplay', py + ' --minutes 10 --seed 1', ('smoke',), quick={'--minutes': 3, '--rounds': 2})
+    suite.add('plain', py + ' --minutes 10', ('smoke',))
+    check(suite.quick_cmd(suite.T[0]).endswith('--minutes 3 --seed 1 --rounds 2') and
+          suite.quick_cmd(suite.T[1]) == suite.T[1]['cmd'], 'quick_cmd: the flag replaced, a missing one appended, '
+          'a test without quick unchanged')
+    a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip=','.join(str(n) for n in range(1, LANE)),
+                           lanes=1, no_build=True, cold=False, retry=0, quick=True)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = lab.cmd_run(a)
+    base = os.path.join(root, 'out', 'lab')
+    run = [d for d in sorted(os.listdir(base)) if os.path.isdir(os.path.join(base, d))][-1]
+    data = json.load(open(os.path.join(base, run, 'results.json')))
+    res = {r['name']: r for r in data['results']}
+    log = open(os.path.join(base, run, 'longplay.log')).read()
+    plain = open(os.path.join(base, run, 'plain.log')).read()
+    summary = open(os.path.join(base, run, 'summary.md')).read()
+    check(rc == 0 and data.get('quick') and res['longplay'].get('quick') and not res['plain'].get('quick'),
+          'quick: the run and the shortened test are marked quick, the other test is not')
+    check("'--minutes', '3'" in log and "'--rounds', '2'" in log and "] 1" in log and "'--minutes', '10'" in plain and '] 0' in plain,
+          'quick: the shortened command ran with SPORE_LAB_QUICK=1, the other test unchanged with SPORE_LAB_QUICK=0')
+    check('| longplay | ok (quick) |' in summary and 'QUICK run' in summary, 'quick: summary.md says so')
+    runs = labcov.runs_by_test([base])
+    check('longplay' not in runs and 'plain' in runs,
+          'quick: labcov does not count a quick result as a run of the test (the release rule wants the full one)')
+    took = lab.measured_seconds([base])
+    check(('longplay', True) in took and ('plain', False) in took and ('longplay', False) not in took,
+          'schedule: the recorded durations are kept apart for quick and full runs')
+    check(lab.expected_seconds(dict(name='plain', minutes=30), took) == took[('plain', False)] and
+          lab.expected_seconds(dict(name='never', minutes=7), took) == 420,
+          'schedule: a test is expected to take its recorded median, a test without a record its minutes')
+
+
 def kill_case(tree, tmp):
     """lab.py kill's lane selection, with the stubbed spore recording its calls (BUG-0253)"""
     sys.path.insert(0, os.path.join(tree, 'tools'))
@@ -727,23 +790,41 @@ def mem_cases(tree, tmp):
         lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
 
 
+CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case', 'gate_cases',
+         'watch_cases', 'interrupt_cases')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tree', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    ap.add_argument('--case', action='append', help='only these case groups (repeatable), in this process')
+    ap.add_argument('--serial', action='store_true', help='every case group in this process, one after the other')
     a = ap.parse_args()
     tree = os.path.abspath(a.tree)
     print(f'lab self-test of {tree}', flush=True)
-    with tempfile.TemporaryDirectory(prefix='labselftest-') as tmp:
-        lab_cases(tree, tmp)
-        worktree_case(tree, tmp)
-        game_log_case(tree, tmp)
-        kill_case(tree, tmp)
-        mem_cases(tree, tmp)
-        same_second_case(tree, tmp)
-        gate_cases(tree, tmp)
-        watch_cases(tree, tmp)
-        interrupt_cases(tree, tmp)
-    print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
+    if a.case or a.serial:
+        with tempfile.TemporaryDirectory(prefix='labselftest-') as tmp:
+            for name in a.case or CASES:
+                globals()[name](tree, tmp)
+        print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
+        return 0 if not FAILS else 1
+    # feat/lab-speed: the case groups are independent (each its own scratch folder, lab module and fake lane
+    # paths), most of their time is waiting: each in its own process at once (87 s -> ~31 s, the longest group);
+    # their output in the usual order
+    procs = [(name, subprocess.Popen([sys.executable, os.path.abspath(__file__), '--tree', tree, '--case', name],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+             for name in CASES]
+    bad = []
+    for name, p in procs:
+        out = p.communicate()[0]
+        body = [ln for ln in out.splitlines() if not ln.startswith('lab self-test of ')]
+        if not body or not body[-1].startswith('RESULT: OK') or p.returncode:
+            bad.append(name)
+        print('\n'.join(ln for ln in body if not ln.startswith('RESULT:')), flush=True)
+        if p.returncode and (not body or not body[-1].startswith('RESULT:')):
+            print(f'  FAIL {name}: the case group ended with exit {p.returncode} and no RESULT line')
+    FAILS.extend(bad)
+    print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)}: {", ".join(bad)})')
     return 0 if not FAILS else 1
 
 

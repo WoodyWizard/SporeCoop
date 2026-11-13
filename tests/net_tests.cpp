@@ -19,6 +19,7 @@
 #include <tuple>
 #include <type_traits>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include "net/connection.h"
 #include "net/diagmsg.h"
@@ -1311,7 +1312,9 @@ static void test_discovery()
     std::string err;
     other.host(kDefaultPort + kDiscoverPorts - 1, "OtherLane", err);
     Session host;
-    CHECK(host.host(0, "LanHost", err));
+    const std::string name = "LanHost";
+    CHECK(host.host(0, name, err));
+    const unsigned port = host.port();
     host.lobby_info = "Creature - Testworld";
     Discovery d;
     CHECK(d.start());
@@ -1319,22 +1322,29 @@ static void test_discovery()
     d.ports = {host.port()};
     d.interval_ms = 100;
     std::vector<Discovery::Game> found;
+    auto ours = [&] {
+        std::vector<Discovery::Game> v;
+        for (auto& g : d.games(now_ms()))
+            if (g.info.name == name)
+                v.push_back(g);
+        return v;
+    };
     for (int i = 0; i < 200 && found.empty(); i++) {
         d.update(now_ms());
         host.update();
         other.update();
         d.update(now_ms());
-        found = d.games(now_ms());
+        found = ours();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     CHECK(found.size() == 1);
     if (!found.empty()) {
-        CHECK(found[0].info.name == "LanHost");
+        CHECK(found[0].info.name == name);
         CHECK(found[0].info.info == "Creature - Testworld");
         CHECK(found[0].info.players == 1);
         CHECK(found[0].host.port == host.port());
     }
-    printf("discovery ok\n");
+    printf("discovery ok (port %u)\n", port);
 }
 
 static void test_ackbits()
@@ -2249,6 +2259,12 @@ static void test_rejoin_token()
         CHECK(x.name_of(x.my_id()) == "Bob 2" && b.name_of(b.my_id()) == "Bob");
         CHECK(b.connected() && hchat == 1);
     }
+}
+
+// the rest of BUG-0235 in its own tests: each runs seconds of real time, the shards of make test run them at once
+static void test_rejoin_token_full()
+{
+    std::string err;
     { // a crash rejoin into 4/4 with the same token: accepted at once, same name, LEAVE before JOIN
         Session h, g1, g2, g3, g3b;
         g1.rejoin_token = 1;
@@ -2281,8 +2297,13 @@ static void test_rejoin_token()
         CHECK(self_join.empty()); // its own old entry is not in its roster
         CHECK(ev.size() == 2 && ev[0] == "L" + std::to_string(old_id) && ev[1][0] == 'J');
     }
+}
+
+static void rejoin_token_edge(int kind)
+{
+    std::string err;
     { // edge cases: no extension (0.7.2), a live peer with the same token, core.rejoin_name off
-        for (int kind = 0; kind < 3; kind++) {
+        { // kind 0, 1, 2: one test each (seconds of real time each, the shards run them at once)
             Session h, b, x;
             b.rejoin_token = x.rejoin_token = 7;
             if (kind == 0)
@@ -2302,6 +2323,9 @@ static void test_rejoin_token()
         }
     }
 }
+static void test_rejoin_token_edge0() { rejoin_token_edge(0); }
+static void test_rejoin_token_edge1() { rejoin_token_edge(1); }
+static void test_rejoin_token_edge2() { rejoin_token_edge(2); }
 
 // BUG-0236: the co-op window's own hint line, pasted whole, starts with a label
 static void test_address_label()
@@ -3666,6 +3690,17 @@ static void test_restart_in_callback()
     }
 }
 
+// --shard K/N, --only: which of the tests below run (main's table)
+static int g_shard = 1, g_shards = 1;
+static std::string g_only;
+static bool g_times = false;
+static bool run_this(const char* name, size_t index)
+{
+    if (!g_only.empty())
+        return g_only.find("," + std::string(name) + ",") != std::string::npos;
+    return (int)(index % g_shards) == g_shard - 1;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -3697,7 +3732,27 @@ int main(int argc, char** argv)
                 a = b + 1;
             }
         }
-    if (argc == 2 && (std::string(argv[1]) == "--nofix" || std::string(argv[1]) == "--old")) {
+    bool nofix = false;
+    for (int i = 1; i < argc; i++) {
+        std::string a = argv[i];
+        if (a == "--nofix" || a == "--old")
+            nofix = true;
+        else if (a == "--shard" && i + 1 < argc && sscanf(argv[i + 1], "%d/%d", &g_shard, &g_shards) == 2 &&
+                 g_shards > 0 && g_shard >= 1 && g_shard <= g_shards)
+            i++;
+        else if (a == "--only" && i + 1 < argc)
+            g_only = "," + std::string(argv[++i]) + ",";
+        else if (a == "--off")
+            i++;
+        else if (a == "--fakepeer-host" || a == "--old-dbbf" || a == "--old-refpack")
+            ;
+        else {
+            fprintf(stderr, "net_tests: unknown argument '%s'\n", a.c_str());
+            return 2;
+        }
+    }
+    g_times = getenv("NET_TESTS_TIMES") && *getenv("NET_TESTS_TIMES") == '1';
+    if (nofix) {
         // the code before the fixes (tests must fail): every bool of Fixes off
         static_assert(std::is_trivially_copyable_v<Fixes>, "Fixes holds only its bools");
         memset((void*)&g_fix, 0, sizeof g_fix);
@@ -3721,68 +3776,85 @@ int main(int argc, char** argv)
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
         return g_fail ? 1 : 0;
     }
-    test_buffer();
-    test_unreliable_too_big();
-    test_unreliable_chunks();
-    test_dbpf();
-    test_partprops();
-    test_be_keys();
-    test_dbbf();
-    test_refpack_untrusted();
-    test_updater();
-    test_updater_dup();
-    test_updater_paths();
-    test_reliability();
-    test_ackbits();
-    test_bulk();
-    test_bulk_bad_link();
-    test_bulk_busy_receiver();
-    test_session();
-    test_session_end_in_delivery();
-    test_rejoin_same_endpoint();
-    test_unique_names();
-    test_join_rules();
-    test_big_snapshot();
-    test_interp();
-    test_interp_gap();
-    test_lead_late();
-    test_lead_keep();
-    test_lead_fall();
-    test_discovery();
-    test_lobby_roles();
-    test_shared_ledger();
-    test_shared_join_keep();
-    test_big_reliable();
-    test_state_after_leave();
-    test_velocity_jitter();
-    test_velocity_jump_cap();
-    test_velocity_hitch();
-    test_interp_latency_rise();
-    test_alloc_id();
-    test_lost_first_packet();
-    test_interp_wrap();
-    test_refpack_short();
-    test_dbbf_wrap();
-    test_discovery_prune();
-    test_discovery_dedup();
-    test_address_parse();
-    test_address_label();
-    test_old_peer_split();
-    test_old_peer_session();
-    test_rejoin_token();
-    test_peer_versions();
-    test_ip_mask();
-    test_join_by_name();
-    test_pick_pack();
-    test_diag_messages();
-    test_diag_clock();
-    test_diag_compare();
-    test_diag_session();
-    test_diag_conn_stats();
-    test_name_clean();
-    test_discovery_source();
-    test_halfopen();
-    test_restart_in_callback();
+    // every test by name: `--shard K/N` runs every N-th of them (make test runs the shards in parallel),
+    // `--only <name>[,<name>]` chosen ones; NET_TESTS_TIMES=1 prints the time of each
+    static const std::pair<const char*, void (*)()> tests[] = {
+        {"test_buffer", test_buffer},
+        {"test_unreliable_too_big", test_unreliable_too_big},
+        {"test_unreliable_chunks", test_unreliable_chunks},
+        {"test_dbpf", test_dbpf},
+        {"test_partprops", test_partprops},
+        {"test_be_keys", test_be_keys},
+        {"test_dbbf", test_dbbf},
+        {"test_refpack_untrusted", test_refpack_untrusted},
+        {"test_updater", test_updater},
+        {"test_updater_dup", test_updater_dup},
+        {"test_updater_paths", test_updater_paths},
+        {"test_reliability", test_reliability},
+        {"test_ackbits", test_ackbits},
+        {"test_bulk", test_bulk},
+        {"test_bulk_bad_link", test_bulk_bad_link},
+        {"test_bulk_busy_receiver", test_bulk_busy_receiver},
+        {"test_session", test_session},
+        {"test_session_end_in_delivery", test_session_end_in_delivery},
+        {"test_rejoin_same_endpoint", test_rejoin_same_endpoint},
+        {"test_unique_names", test_unique_names},
+        {"test_join_rules", test_join_rules},
+        {"test_big_snapshot", test_big_snapshot},
+        {"test_interp", test_interp},
+        {"test_interp_gap", test_interp_gap},
+        {"test_lead_late", test_lead_late},
+        {"test_lead_keep", test_lead_keep},
+        {"test_lead_fall", test_lead_fall},
+        {"test_discovery", test_discovery},
+        {"test_lobby_roles", test_lobby_roles},
+        {"test_shared_ledger", test_shared_ledger},
+        {"test_shared_join_keep", test_shared_join_keep},
+        {"test_big_reliable", test_big_reliable},
+        {"test_state_after_leave", test_state_after_leave},
+        {"test_velocity_jitter", test_velocity_jitter},
+        {"test_velocity_jump_cap", test_velocity_jump_cap},
+        {"test_velocity_hitch", test_velocity_hitch},
+        {"test_interp_latency_rise", test_interp_latency_rise},
+        {"test_alloc_id", test_alloc_id},
+        {"test_lost_first_packet", test_lost_first_packet},
+        {"test_interp_wrap", test_interp_wrap},
+        {"test_refpack_short", test_refpack_short},
+        {"test_dbbf_wrap", test_dbbf_wrap},
+        {"test_discovery_prune", test_discovery_prune},
+        {"test_discovery_dedup", test_discovery_dedup},
+        {"test_address_parse", test_address_parse},
+        {"test_address_label", test_address_label},
+        {"test_old_peer_split", test_old_peer_split},
+        {"test_old_peer_session", test_old_peer_session},
+        {"test_rejoin_token", test_rejoin_token},
+        {"test_rejoin_token_full", test_rejoin_token_full},
+        {"test_rejoin_token_edge0", test_rejoin_token_edge0},
+        {"test_rejoin_token_edge1", test_rejoin_token_edge1},
+        {"test_rejoin_token_edge2", test_rejoin_token_edge2},
+        {"test_peer_versions", test_peer_versions},
+        {"test_ip_mask", test_ip_mask},
+        {"test_join_by_name", test_join_by_name},
+        {"test_pick_pack", test_pick_pack},
+        {"test_diag_messages", test_diag_messages},
+        {"test_diag_clock", test_diag_clock},
+        {"test_diag_compare", test_diag_compare},
+        {"test_diag_session", test_diag_session},
+        {"test_diag_conn_stats", test_diag_conn_stats},
+        {"test_name_clean", test_name_clean},
+        {"test_discovery_source", test_discovery_source},
+        {"test_halfopen", test_halfopen},
+        {"test_restart_in_callback", test_restart_in_callback},
+    };
+    for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
+        if (!run_this(tests[i].first, i))
+            continue;
+        auto t0 = std::chrono::steady_clock::now();
+        tests[i].second();
+        if (g_times)
+            printf("TIME %8.3f s %s\n",
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), tests[i].first);
+    }
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }
