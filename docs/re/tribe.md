@@ -3740,3 +3740,36 @@ BUG-0564 lines above (the guest's own kind 7 faulting at 0xD521BA after a villag
   null with the game's setter. `coop.drama target [<tribe obj>]` reads / sets the property (tests).
 * ? Whether the vanilla game ever leaves a tribe without its hut in the Tribe stage (no tribe is destroyed there
   outside the mod, inferred): not looked for.
+
+## The caption's tribe name: the Tribe token provider (2026-11-13, fix/w49-fault)
+<a id="tribe-caption-tribe-token"></a>
+
+BUG-1076. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and the campaign's guest log (lab 20261113-082316, lane 4).
+* ✔ (Ghidra) `SporeCoop::TribeHud_ptr` 0x169B41C is the Tribe stage's **text token provider** (vtable
+  `SporeCoop::TribeTokens_vftable` 0x14779D0, 0x20 bytes, made once by the Tribe UI ctor 0xCCCDD0 and registered with
+  the locale manager (cLocaleManager vt 0x20 -> vt 0x1C); never freed or cleared). CORRECTION (2026-11-13,
+  fix/w49-fault): the BUG-0645 line called it a HUD object; its +0x10 (the population cap of the hut upgrade) is one
+  of its tokens. Fields: +0xC / +0x10 ints, +0x14 a creature (token 0xCB37547D reads +0xB38), +0x1C a cTribe* (token
+  0xF7A4AD93 = the tribe's name through vt 0x7C), stored without a reference.
+* ✔ `SporeCoop::TribeTokens_Resolve` 0xCE67E0 (vt 0x10) checks +0x1C for null only. A freed tribe there faults at
+  0xCE69F9 (`mov edx,[ecx]`, the dead object's first dword) or 0xCE69FB (`mov eax,[edx+0x7C]`, vtable 0): the
+  BUG-1076 registers (eax = 0xF7A4AD93 the token hash, ecx = 0x3F400000 / edx = 0). The stack scan's names
+  (App::Property::SetValueFloat+0x185D, FNV_hash+0x126, GlobalUI_FindWindowByID+0x28E4) are stale stack words;
+  LocalizedString ctor frames show a caption text being built.
+* ✔ Writers of +0x1C: `SporeCoop::TribeVillage_Defeated` 0xCDAC90 (the conquered or allied village's tribe, else the
+  player tribe; then TRG_Upgrade through TribeHut_Upgrade 0xCDA4F0, or TRG_TotemPole) and the relation change events
+  of 0xCDF080 (each set right before cUIEventLog::ShowEvent). The conquest captions TRG_TotemPole_Conquer and
+  TRG_Upgrade read it while they play.
+* ✔ (runtime, lab 20261113-082316) How it went stale: the players' hut fell in the host's game (an NPC village raided
+  it back, the campaign's repair came 19 s later); the guest's realign (BUG-0777) gave the guest's own hut the
+  killing blow too. The guest's game then ran its own defeat: `busy cinematic,input_lock`, then paused, and 20 s later
+  `Tribe -> Loading -> Tribe` (its own save reloaded, every conquest gone, the tribes freed). The realign conquered the
+  village again and felled the hut again after each reload: 11 reloads in 6 min (epochs 2..13). A conquest set
+  +0x1C just before such a reload; its captions played after it and read the freed tribe (9 faults, 3-4 s into
+  TRG_Upgrade).
+* ? Whether the host's own game always ends the stage when its players' hut falls: in that run the host's hut stood at
+  state 2 with 0/400 for ~19 s without a defeat (input_lock 0) until the campaign set its health back (the hut stays
+  "dead" with full health: `coop.realign planet hut` fl 3 on the host). In lab 20261113-051634 the host's game did
+  reload after such a raid.
+* Fix `realign.own_hut` (BUG-1076): a guest's own players' hut never takes the realign's blow; its health follows the
+  host's down to 1 hp, the host's game decides the defeat. Test `tribe_own_hut_fall` (docs/06-testing.md#testing-own-hut-fall).

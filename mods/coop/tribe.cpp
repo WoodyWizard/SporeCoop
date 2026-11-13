@@ -6319,6 +6319,22 @@ std::string debug(const std::vector<std::string>& a)
             hp = (float)atof(a[4].c_str());
         return std::string(b) + " -> " + std::to_string((int)hp);
     }
+    // hutfall <x> <y> <z>: tests (BUG-1076, host), the game's own killing blow on the hut within 10 m of the point
+    // (as fell_hut, also while a cinematic plays): the players' own hut falls as when an NPC village raids it back
+    if (a.size() >= 4 && a[0] == "hutfall" && (is_host() || local_play())) {
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        void* h = game::find_object(0x01E4DAAE, p, 10.f);
+        if (!h || !skg::readable(h, 0x160))
+            return "no hut there";
+        if (F<int>(h, 0x120 + 0x34) == 2)
+            return "the hut is down already";
+        static const float zero[3] = {0, 0, 0};
+        float hp = F<float>(h, 0x120 + 0x38);
+        vcall<int>((uint8_t*)h + 0x120, 0x18 / 4, hp + 10.f, 0xFFFFFFFFu, 0, zero, (void*)nullptr);
+        char b[120];
+        snprintf(b, sizeof b, "hut %p: blow of %.0f, state %d", h, hp + 10.f, F<int>(h, 0x120 + 0x34));
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "who") { // who <citizen pointer>: BUG-0620, what a citizen of the object list is
         void* c = (void*)(uintptr_t)strtoul(a[1].c_str(), nullptr, 16);
         bool listed = false;
