@@ -78,6 +78,53 @@ static bool g_guest_attacks_fix = true;
 COOP_FIX("tribe.guest_attacks", "BUG-0564", g_guest_attacks_fix,
          "tribe: a guest's own game starts no creature attack on a village (Drama Manager event of the host's world)");
 
+// BUG-1078: the creature attack event (kind 7) keeps its attacked tribe as a counted reference (object property
+// 0x5F11333): SpawnNpcTribe hands it the Nth NPC tribe the game makes (DramaManager_NoteNpcTribe 0xD516B0). A guest's
+// game makes NPC tribes for the host's (the member sync) and the re-alignment destroys the ones the host's world has
+// not any more (realign.villages, tribe::remove_village after the host's game over and reload): the event's reference
+// keeps the destroyed tribe object, without its hut. On a guest the event is held back (tribe.guest_attacks); once
+// the game is alone (the guest left, or the host did) it starts, and its start (CreatureAttackEvent_Start 0xD51BE0)
+// reads the hut's combatant without a check: 0xD521BA, data 0x120. Before a creature attack starts, an attacked
+// tribe whose place the start reads (its second tool, else its hut) is gone is forgotten (the game's own setter with
+// null): the start takes the tribe of its other branch (the tribe list at its picked index) or none.
+// `coop.fix tribe.attack_target off`: the start reads the stale tribe (0.7.13).
+static bool g_attack_target_fix = true;
+COOP_FIX("tribe.attack_target", "BUG-1078", g_attack_target_fix,
+         "tribe: a creature attack whose attacked village is gone (removed by the re-alignment) forgets it before it starts");
+static uintptr_t a_EvGetObj, a_EvSetObj;
+static unsigned g_targets_dropped;
+constexpr uint32_t kAttackTribeKey = 0x5F11333, kTribeType = 0x4F396A66;
+
+static void* attack_tribe(void* ev)
+{
+    return ev && a_EvGetObj ? skg::thiscall<void*>(a_EvGetObj, ev, kAttackTribeKey, kTribeType) : nullptr;
+}
+
+// what CreatureAttackEvent_Start reads of the attacked tribe: tools (vt 0xBC) [1] when it has more than one, else the
+// hut (vt 0xAC); null: the start would fault
+static void* attack_place(void* tribe)
+{
+    if (!tribe || !skg::readable(tribe, 0x370))
+        return nullptr;
+    void* hut = skg::vcall<void*>(tribe, 0xAC / 4);
+    void** tools = skg::vcall<void**>(tribe, 0xBC / 4);
+    if (tools && skg::readable(tools, 8) && (void**)tools[1] - (void**)tools[0] > 1)
+        return ((void**)tools[0])[1];
+    return hut;
+}
+
+static void drop_stale_attack_tribe(void* ev, const char* why)
+{
+    void* t = attack_tribe(ev);
+    if (!t || attack_place(t) || !a_EvSetObj)
+        return;
+    bool alive = game::object_alive(t);
+    skg::thiscall<void>(a_EvSetObj, ev, kAttackTribeKey, (void*)nullptr);
+    g_targets_dropped++;
+    H->log(M, SK_INFO, "drama: the creature attack's village %p is gone (no hut, %s): forgotten before %s (tribe.attack_target, BUG-1078)",
+           t, alive ? "listed alive" : "destroyed", why);
+}
+
 static void* g_flock_event;  // the summon event started for a puppet (host)
 static void* g_flock_puppet; // that puppet
 static void forget_flock(const char* why)
@@ -111,6 +158,8 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     if (kind == 8 && g_flock_forget && !g_in_summon_for && ev == g_flock_event) { // BUG-0800: the host's own summon
         forget_flock("the game starts it for its own avatar");
     }
+    if (kind == 7 && g_attack_target_fix && game::mode_id() == modes::kTribe)
+        drop_stale_attack_tribe(ev, "its start"); // BUG-1078
     if (kind < 9) {
         g_started[kind]++;
         H->log(M, SK_INFO, "drama: %s event starts (%s)", kKind[kind], is_guest() ? "guest" : "host or alone");
@@ -156,6 +205,10 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
     uintptr_t a = H->sym("SporeCoop::DramaManager_StartEvent");
     a_Get = H->sym("SporeCoop::DramaManager_Get");
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");
+    a_EvGetObj = H->sym("SporeCoop::DramaEvent_GetObject"); // BUG-1078
+    a_EvSetObj = H->sym("SporeCoop::DramaEvent_SetObject");
+    if (!a_EvGetObj || !a_EvSetObj)
+        H->log(M, SK_WARN, "drama: SporeCoop::DramaEvent_GetObject / SetObject missing: a creature attack on a removed village is not held back");
     if (a)
         H->hook_create(M, (void*)a, (void*)h_Start, (void**)&o_Start);
     else // BUG-1059: the message named the wrong symbol
@@ -217,6 +270,26 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
+    if (a.size() >= 1 && a[0] == "target") {
+        // BUG-1078 tests: the creature attack event's attacked tribe (object property 0x5F11333); `target <obj hex>`
+        // sets it with the game's own setter, as SpawnNpcTribe does for the NPC tribe of its pick (0xD516B0)
+        void* ev = g_last_event[7];
+        if (!ev)
+            return "no creature_attack event seen yet (coop.drama start 7 first)\n";
+        if (a.size() >= 2) {
+            void* t = (void*)(uintptr_t)strtoull(a[1].c_str(), nullptr, 16);
+            if (!t || !skg::readable(t, 0x370) || game::cast(t, kTribeType) != t)
+                return "not a tribe\n";
+            if (!a_EvSetObj)
+                return "no setter symbol\n";
+            skg::thiscall<void>(a_EvSetObj, ev, kAttackTribeKey, t);
+        }
+        void* t = attack_tribe(ev);
+        snprintf(b, sizeof b, "attack_target event=%p tribe=%p place=%p alive=%d fix=%d dropped=%u\n", ev, t,
+                 t ? attack_place(t) : nullptr, t ? (int)game::object_alive(t) : -1, (int)g_attack_target_fix,
+                 g_targets_dropped);
+        return b;
+    }
     if (a.size() >= 1 && a[0] == "mate") {
         // BUG-0177 (docs/re/creature.md#creature-mating-call): the mate the drama manager picked near the nest (mgr
         // +0x38 mpMate, marked +0xB58 & 0x10), and the avatar's behaviour tree node (brain +0xB4C, +0x1D8: 02D852F0

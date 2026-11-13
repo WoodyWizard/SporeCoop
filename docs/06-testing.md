@@ -7399,3 +7399,28 @@ species and home within 2 m, `coop.npc archless all`) before its own `coop.save`
 none may be missing, the save strips no empty herd. `SPORE_FIX_OFF=savestrip.our_herds` FAIL 20261113-045930 (72
 stripped, 52 missing), PASS 20261113-045626; BUG-0255's own case still PASSES (save_hygiene_leave 20261113-050134,
 4 empty herds of ours stripped). The restart helper waits for the Civ mode, not for `coop.avatar` (no avatar in Civ).
+## A creature attack on a removed village; the monitor's object hits (2026-11-13, fix/w49-drama)
+<a id="testing-w49-drama"></a>
+
+* **tribe_attack_stale** (`coop_tribe_attack_stale.py`, tribe fixture, cold, ~2.5 min; BUG-1078): the host forms an
+  NPC tribe, the guest's game makes its own for it; `coop.drama start 7` on the guest (held back: it registers the
+  creature attack event) and `coop.drama target <obj>` (the obj= of the guest's `coop.tribe` line) makes that tribe the
+  event's attacked tribe with the game's own setter (the game picks the Nth tribe it makes at random: waiting for it
+  does not reproduce reliably). Then the host's game over and reload (as tribe_bounce_world), the guest's
+  re-alignment removes the tribe (`coop.drama target` reads `place=00000000 alive=0`), the guest `coop.leave`s and
+  starts kind 7 alone. Twin: `SPORE_LAB_FIXOFF="tribe_attack_stale=tribe.attack_target"` faults the guest at
+  0x00D521BA (data 0x120), as lab 20261113-103507 did.
+* `coop.drama target [<tribe obj hex>]`: `attack_target event=... tribe=... place=... alive=... fix=... dropped=...`,
+  the creature attack event's object property 0x5F11333 (docs/re/tribe.md#tribe-attack-event-target); the event must
+  have been seen first (`coop.drama start 7`).
+* **attacker_owner** also checks the monitor's `damage:` line of the UFO's 0.1 hp hit in the host's game log
+  (BUG-1077): `1 hit by object owner=- posse=0`. The new kind `object` (npc.cpp log_hit) is any attacker that is not a
+  creature or citizen noun (UFO, vehicle, turret, building); its creature fields are not read. Before, the line read the
+  UFO's bytes at the creature flags' offset and said `pack ... posse=1` in 3 of 6 runs (the posse_damage gate failed;
+  the gate was right, its input wrong). Twin: `SPORE_LAB_FIXOFF="attacker_owner=npc.hit_log_object"`.
+* **tribe_bounce_world is warm again** (it went back to cold in [the warm batches](#testing-w49-warm) for BUG-1078):
+  `tribe_bounce_world,tribe_member_air --in-order` on lane 7 with the fix, the successor from a warm reset: no fault in
+  20261113-125057 and 20261113-125618 (tribe_member_air itself OK in the second; in the first its own "the guest sees
+  the throws" check failed, which it does now and then cold too). Regression of the branch: tribe_gameover_reload,
+  tribe_bounce_mirrors, tribe_gameover (one warm FAIL after tribe_gameover_reload, OK alone and in the same order on
+  lane 7), play_tribe --quick: OK.

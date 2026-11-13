@@ -8394,7 +8394,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.drama", "coop.drama [start <kind> | mask <hex>] - the game's world events (BUG-0486)",
+    H->command_add(M, "coop.drama", "coop.drama [start <kind> | mask <hex> | mate | target [<tribe obj hex>]] - the game's world events (BUG-0486, BUG-1078)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", drama::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;

@@ -3404,3 +3404,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   Ghidra). Observed in campaign_tc2 lab 20261113-050826 and the fix/w49-tests exploration on lane 4.
 * Next steps: host_command calls SetTargetTribe for a guest's attack / gift on another tribe's object.
 * Ticket: BUG-1068.
+* Fixed (2026-11-13, fix/w49-drama) **BUG-1078** (Tribe, guest, caught fault): a guest that left after the host's game
+  over and reload faulted once in its own creature_attack event (0x00D521BA, data 0x120): the event's attacked tribe
+  was a village the re-alignment had removed (`tribe.attack_target` forgets it before the start;
+  docs/re/tribe.md#tribe-attack-event-target). Test: tribe_attack_stale.
+* Fixed (2026-11-13, fix/w49-drama) **BUG-1077** (test): attacker_owner failed the monitor's posse_damage gate now and
+  then: the monitor's line read the UFO attacker as a creature (`npc.hit_log_object`); the gate was right.

@@ -26,6 +26,10 @@
   the staff in the resting grip) (BUG-1069).
 - Tribe: right after a session starts, the guest's copy of a chief no longer stays in a staff gesture for several
   seconds while the host's chief stands (BUG-1071).
+- Tribe: a guest that leaves a session (or whose host leaves) after the host's game over and reload no longer faults
+  when its own game starts a creature attack on a village the session had removed (BUG-1078).
+- Test lab: the invariant monitor no longer reads a UFO's (or vehicle's, turret's, building's) hit on a player as a
+  hit by the player's own pack, which failed attacker_owner now and then (BUG-1077).
 - Test lab: a second test run started on a lane that another run uses is refused instead of ending that run's games
   (a test's game seemed to vanish without a crash report) (BUG-1070).
 - Tribe: the guest's copy of a chief no longer goes back into a staff gesture after changing its item while the

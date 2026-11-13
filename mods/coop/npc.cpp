@@ -3846,9 +3846,20 @@ namespace npc {
 // `damage: <victim> hit by <kind> owner=<host|guest id|npc|-> posse=<0|1|?> amount=<hp>[ <how>]`, where a hit
 // on a player (its avatar, or its puppet on the host) is applied, forwarded or dropped. kind: none (no
 // attacker), avatar, player (a partner's puppet), proxy (guest: a host NPC's copy), pack / family (the
-// host's own party, cCreatureAnimal +0xB58 & 0x100 / the avatar's herd), npc. posse=1: the attacker is
+// host's own party, cCreatureAnimal +0xB58 & 0x100 / the avatar's herd), object (a UFO, vehicle, turret or
+// building, BUG-1077), npc. posse=1: the attacker is
 // of the hit game's player's party (BUG-0374 class); `?`: not known here (a guest knows only the host's
 // family flag). posse=1 hits that land are written every time, the others rate limited (trace::ev).
+// BUG-1077: since BUG-0790 the attacker of a hit may be a vehicle, UFO, turret or building (the combatant's owner
+// object); the line still read the creature flags (+0xB58 & 0x100 pack, the herd) of every attacker, in a UFO the
+// bytes of whatever lies there: a UFO's hit on the guest's puppet was written "hit by pack ... posse=1" in 3 of 6
+// attacker_owner runs (the monitor's posse_damage gate failed; the hit itself was forwarded as it should). Now an
+// attacker that is no creature or citizen (noun) is written as `object`, never of the party.
+// `coop.fix npc.hit_log_object off`: read as a creature (0.7.13).
+static bool g_hit_log_object = true;
+COOP_FIX("npc.hit_log_object", "BUG-1077", g_hit_log_object,
+         "monitor: a hit by a UFO, vehicle, turret or building is written as an object's hit, not read as a creature's (no false posse=1)");
+
 static void log_hit(uint8_t victim, void* a, float amount, const char* how, bool from_host)
 {
     if (!trace::on() || !C.sess)
@@ -3875,6 +3886,10 @@ static void log_hit(uint8_t victim, void* a, float amount, const char* how, bool
         for (auto& p : C.sess->players())
             if (C.puppet_of && C.puppet_of(p.id) == a)
                 owner = p.id == 0 ? "host" : std::to_string(p.id);
+    } else if (uint32_t noun = g_hit_log_object && game::attacker_owner_fix() ? game::noun_id(a) : 0u;
+               noun && noun != 0x18EB45Eu && noun != 0x18EB4B7u) { // BUG-1077: not a creature (UFO, vehicle, ...)
+        kind = "object";
+        owner = "-";
     } else {
         bool pack = (skg::field<uint32_t>(a, game::kFlagsOff) & 0x100) != 0;
         posse = creature_hp::host_party(a);

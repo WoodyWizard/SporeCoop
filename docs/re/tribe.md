@@ -3709,3 +3709,34 @@ Q1 of 0.7.14 (the campaign's Tribe end), GOG 2024, lane 4, tribe fixture (Zorisp
   played a cinematic with the input lock and then reloaded its save (`Tribe -> Loading -> Tribe` in 0.1 s, members
   24 -> 19, every conquest gone): a game over. Not seen which one (no screenshot); inferred: the NPC village raided back
   the players' empty village. The campaign keeps the players' hut above 80 % of its health since (a noted shortcut).
+
+## The creature attack event's attacked tribe (2026-11-13, fix/w49-drama)
+<a id="tribe-attack-event-target"></a>
+
+BUG-1078. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024). Follows docs/re/creature.md#creature-drama-events and the
+BUG-0564 lines above (the guest's own kind 7 faulting at 0xD521BA after a village removal).
+
+* ✔ cCreatureAttackEvent (kind 7, cast id 0x5ED29D3, vtable .rdata 0x147B320): +0x28 0xD509A0 setup (int property
+  0x5F10CE1 = RandomInt + (int) event +0x20: the pick), +0x30 0xD51BE0 start (`SporeCoop::CreatureAttackEvent_Start`),
+  +0x38 0xD50B30 can start, +0x3C 0xD50BE0 done?, +0x44 0xD50DF0 pre-check. Int properties in a map at event +0x44
+  (0x5649E0 thiscall(map, &key) ret 4 -> int*: find or insert), object properties (counted references) in a map at
+  +0x5C / +0x60 / +0x70: `SporeCoop::DramaEvent_GetObject` 0xD4CEC0 thiscall(event, key, type) ret 8 (no AddRef),
+  `SporeCoop::DramaEvent_SetObject` 0xD4ED80 thiscall(event, key, obj) ret 8 (AddRef new, Release old; null erases
+  through 0xD4E890 thiscall(map, &key) ret 4).
+* ✔ The attacked tribe is object property 0x5F11333. `SporeCoop::DramaManager_NoteNpcTribe` 0xD516B0 (thiscall(mgr,
+  tribe) ret 4, its only caller SpawnNpcTribe at 0xC933F7) counts the NPC tribes the game makes in Tribe (int property
+  0x5F10CDD) and makes the one where the count reaches the pick (0x5F10CE1) the attacked tribe. Without it the start
+  takes the tribe noun list (0x18C6D19) at the index 0x5F10CE1 (none when the index is past the list's end).
+* ✔ The start finds a herd (0x1BE418E) of the event's species near the tribe or makes one, and posts stimulus 0x4000
+  to each member at `[place +0x120]` vt 0xC, where place = the tribe's tools (vt 0xBC) [1] when it has more than one
+  tool, else its hut (vt 0xAC, +0x368). No check: a tribe without its hut (and at most one tool) faults at
+  0xD521BA (`mov edx,[ecx]`, ecx = 0 + 0x120). Registers of lab 20261113-103507 (guest, alone after `coop.leave`):
+  ecx 0x120, ebp 0 (no second tool), esi the herd.
+* ✔ (code) How a guest gets there: its game makes an NPC tribe for each new host tribe (SpawnNpcTribe, so it counts
+  for the pick); after the host's game over and reload the re-alignment destroys the ones the host's world lost
+  (tribe::remove_village, cGameNounManager::DestroyInstance: the hut goes, the tribe object stays allocated while the
+  event holds its reference). The guest's game holds the event back (tribe.guest_attacks); alone it starts.
+  `tribe.attack_target` (drama.cpp): before a kind 7 start in Tribe an attacked tribe whose place is null is set to
+  null with the game's setter. `coop.drama target [<tribe obj>]` reads / sets the property (tests).
+* ? Whether the vanilla game ever leaves a tribe without its hut in the Tribe stage (no tribe is destroyed there
+  outside the mod, inferred): not looked for.
