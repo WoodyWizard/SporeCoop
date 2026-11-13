@@ -10,7 +10,7 @@ role:
 versions: 0.7.13-rc
 fixed_in: unreleased
 branch: fix/w48-fui
-commits: ae79f2aa
+commits: ae79f2aa f4fa2eb9
 tests: find_layout
 signature:
 docs:

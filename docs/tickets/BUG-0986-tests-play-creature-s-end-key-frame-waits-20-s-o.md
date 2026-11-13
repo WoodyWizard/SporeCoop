@@ -10,7 +10,7 @@ role:
 versions: 0.7.13-rc
 fixed_in: unreleased
 branch: fix/w48-fui
-commits:
+commits: f4fa2eb9
 tests: play_creature
 signature:
 docs:

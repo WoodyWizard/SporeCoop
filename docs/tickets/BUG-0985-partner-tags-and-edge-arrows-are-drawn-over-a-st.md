@@ -10,7 +10,7 @@ role:
 versions: 0.7.13-rc
 fixed_in: unreleased
 branch: fix/w48-fui
-commits:
+commits: 7fc88a7e dd572e4b
 tests: tag_cinematic
 signature:
 docs: docs/06-testing.md#testing-tag-cinematic
