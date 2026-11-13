@@ -45,9 +45,7 @@ static std::string module_text(const void* p)
     if (!p || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                   (LPCWSTR)p, &m))
         return "no module";
-    wchar_t path[MAX_PATH];
-    DWORD n = GetModuleFileNameW(m, path, MAX_PATH);
-    std::string full = narrow(std::wstring(path, n));
+    std::string full = narrow(module_path(m)); // BUG-1033
     std::string name = full.substr(full.find_last_of("\\/") + 1);
     std::string low = full, game = narrow(game_dir());
     for (auto& c : low)
@@ -235,6 +233,9 @@ void overlay_text(int x, int y, uint32_t argb, const char* utf8)
 static int g_bb_w, g_bb_h;
 static IDirect3DStateBlock9* g_tri_sb;
 static bool g_tri_failed;
+static bool g_tri_fail_test;  // tests (kit.test.trifail): the next CreateStateBlock is taken as failed (BUG-1026)
+static uint32_t g_tri_drawn;  // overlay_tris calls that drew (tests)
+static int g_tri_test_frames; // tests (kit.test.tri): SporeKit draws a test triangle for this many frames
 
 static void tri_release()
 {
@@ -250,7 +251,12 @@ void overlay_tris(const float* xy, int n, uint32_t argb)
         return;
     if (n > 256)
         n = 256;
-    if (!g_tri_sb && FAILED(g_dev->CreateStateBlock(D3DSBT_ALL, &g_tri_sb))) {
+    bool fail_test = !g_tri_sb && g_tri_fail_test;
+    if (fail_test)
+        g_tri_fail_test = false;
+    if (!g_tri_sb && (fail_test || FAILED(g_dev->CreateStateBlock(D3DSBT_ALL, &g_tri_sb)))) {
+        if (g_tri_sb)
+            g_tri_sb->Release();
         g_tri_sb = nullptr;
         g_tri_failed = true;
         SKLOG(SK_WARN, "overlay: CreateStateBlock failed, no overlay shapes");
@@ -298,6 +304,7 @@ void overlay_tris(const float* xy, int n, uint32_t argb)
     g_dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
     g_dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)n, v, sizeof(V));
     g_tri_sb->Apply();
+    g_tri_drawn++;
 }
 
 int world_to_screen_game(const float* w, float* out);
@@ -413,6 +420,73 @@ static int g_present_depth; // device Present may call the swapchain Present int
 static uintptr_t g_frame_sp;     // stack address of the frame being run
 static DWORD g_frame_tid;
 static uint32_t g_frames_cut;
+// BUG-1024: a fault inside the original Present (the driver, or a window message dispatched there that runs a task)
+// that the game's handler catches unwinds past h_Present's `g_present_depth--`: the depth stayed 1, no frame started
+// again (h_Present and the game loop fallback both need depth 0), in_frame() stayed true and the outside-frame tasks
+// waited for ever. The game drew on, the mod was dead. The outermost Present's stack address and thread are kept; an
+// entry on that thread at or above it (not nested inside it: Present -> swapchain Present is deeper) or the game loop
+// pass after App::Canvas::Tick means that Present was left by an unwind: the depth goes back to 0.
+// A fault in an SK_EV_OVERLAY handler skipped EndScene, the render target's restore and the Release of the back
+// buffer and the old target (one reference of each leaked per fault: a later device Reset fails while the back buffer
+// is held). Those are kept here and released when the frame is found cut off. `kit.fix presentunwind 0`: as before.
+static uintptr_t g_present_sp;
+static DWORD g_present_tid;
+static uint32_t g_presents_cut;
+static IDirect3DSurface9 *g_ov_bb, *g_ov_rt; // the overlay pass's back buffer and the game's render target
+static bool g_ov_scene;                      // the overlay pass's BeginScene is open
+static int g_present_fault;                  // tests (kit.test.presentfault): 1 inside Present, 2 in the overlay pass
+static uint32_t g_overlay_cuts;
+
+static void overlay_cut_off()
+{
+    if (!g_ov_bb && !g_ov_rt && !g_ov_scene)
+        return;
+    g_overlay_cuts++;
+    SKLOG(SK_WARN, "overlay: the overlay pass was cut off by a fault (%u so far): its surfaces are released (BUG-1024)",
+          g_overlay_cuts);
+    // the scene is still open (the game's own BeginScene inside it fails and the game then skips its EndScene: the
+    // overlay pass never began a scene again in the lab) and the render target is still the back buffer: as at the
+    // pass's end. This runs at the start of the next frame, on the device's thread, before the original Present.
+    if (g_ov_scene && g_dev)
+        g_dev->EndScene();
+    if (g_dev && (g_ov_rt || g_ov_bb))
+        g_dev->SetRenderTarget(0, g_ov_rt ? g_ov_rt : g_ov_bb);
+    if (g_ov_rt)
+        g_ov_rt->Release();
+    if (g_ov_bb)
+        g_ov_bb->Release();
+    g_ov_rt = g_ov_bb = nullptr;
+    g_ov_scene = false;
+}
+
+static void present_cut_off(uintptr_t sp)
+{
+    if (!g_present_depth || !fixed(g_fix_presentunwind) || GetCurrentThreadId() != g_present_tid || sp < g_present_sp)
+        return;
+    g_present_depth = 0;
+    g_presents_cut++;
+    SKLOG(SK_WARN, "frames: Present was left by a fault the game's handler caught (%u so far); frames go on (BUG-1024)",
+          g_presents_cut);
+    if (!g_in_frame && !g_in_loop_frame)
+        outside_tasks_resume();
+}
+
+static void present_enter(uintptr_t sp)
+{
+    if (g_present_depth++ == 0) {
+        g_present_sp = sp;
+        g_present_tid = GetCurrentThreadId();
+    }
+}
+
+static void present_fault_test(int where)
+{
+    if (g_present_fault != where)
+        return;
+    g_present_fault = 0;
+    SKLOG(SK_WARN, "tests: a fault %s now (kit.test.presentfault)", where == 1 ? "inside Present" : "in the overlay pass");
+    test_fault_null();
+}
 
 static bool frame_cut_off(uintptr_t sp)
 {
@@ -421,6 +495,8 @@ static bool frame_cut_off(uintptr_t sp)
         return false;
     g_in_frame = g_in_loop_frame = false;
     g_overlay_active = false;
+    if (fixed(g_fix_presentunwind))
+        overlay_cut_off(); // BUG-1024
     g_frames_cut++;
     SKLOG(SK_WARN, "frames: the frame %llu was cut off by a fault the game's handler caught (%u so far); frames go on "
                    "(BUG-0667)", (unsigned long long)g_frame, g_frames_cut);
@@ -462,6 +538,8 @@ static void frame_common()
         run_outside_frame(place_test_window);
     if (g_frame % 10 == 1)
         apply_frame_limit();
+    if (g_frame % 10 == 2)
+        game_mode_cache_tick(); // BUG-1022
 
     vcursor_tick();
     cheats_flush_pending();
@@ -496,15 +574,29 @@ static void on_frame_begin_present()
         IDirect3DSurface9 *bb = nullptr, *old_rt = nullptr;
         if (SUCCEEDED(g_dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb))) {
             g_dev->GetRenderTarget(0, &old_rt);
+            bool keep = fixed(g_fix_presentunwind);
+            if (keep) { // BUG-1024: released by overlay_cut_off when a fault cuts this pass off
+                g_ov_bb = bb;
+                g_ov_rt = old_rt;
+            }
             g_dev->SetRenderTarget(0, bb);
             if (SUCCEEDED(g_dev->BeginScene())) {
+                g_ov_scene = keep;
                 drawn_view_measure();
                 g_overlay_active = true;
+                present_fault_test(2);
                 fire(SK_EV_OVERLAY, g_dev);
+                if (g_tri_test_frames > 0) { // tests (kit.test.tri, BUG-1026): a magenta triangle at the top left
+                    g_tri_test_frames--;
+                    const float xy[6] = {0.f, 0.f, 400.f, 0.f, 0.f, 400.f};
+                    overlay_tris(xy, 1, 0xFFFF00FFu);
+                }
                 g_overlay_active = false;
                 g_dev->EndScene();
+                g_ov_scene = false;
             }
             g_dev->SetRenderTarget(0, old_rt ? old_rt : bb);
+            g_ov_bb = g_ov_rt = nullptr;
             if (old_rt) old_rt->Release();
             bb->Release();
         }
@@ -521,6 +613,9 @@ static void on_frame_begin_present()
 void frame_from_game_loop()
 {
     uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    present_cut_off(sp); // BUG-1024: after App::Canvas::Tick no Present of this thread is running
+    if (fixed(g_fix_taskcut))
+        command_tasks_cut_off(sp); // BUG-0966: no console task of this thread is running here either
     if ((g_in_frame || g_in_loop_frame) && !g_present_depth)
         frame_cut_off(sp);
     if (!g_dev || g_in_frame || g_in_loop_frame || g_present_depth)
@@ -587,9 +682,12 @@ std::string drawn_cam_command(const char* arg)
 static HRESULT WINAPI h_Present(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND w,
                                 const RGNDATA* r)
 {
+    present_cut_off((uintptr_t)__builtin_frame_address(0)); // BUG-1024
     if (dev == g_dev && g_present_depth == 0)
         on_frame_begin_present();
-    g_present_depth++;
+    present_enter((uintptr_t)__builtin_frame_address(0));
+    if (dev == g_dev)
+        present_fault_test(1);
     HRESULT hr = o_Present(dev, a, b, w, r);
     g_present_depth--;
     if (!g_present_depth && !g_in_frame && !g_in_loop_frame)
@@ -600,15 +698,20 @@ static HRESULT WINAPI h_Present(IDirect3DDevice9* dev, const RECT* a, const RECT
 static HRESULT WINAPI h_SwapPresent(IDirect3DSwapChain9* sc, const RECT* a, const RECT* b, HWND w,
                                     const RGNDATA* r, DWORD f)
 {
+    present_cut_off((uintptr_t)__builtin_frame_address(0)); // BUG-1024
+    bool ours = false;
     if (g_present_depth == 0) {
         IDirect3DDevice9* dev = nullptr;
         if (SUCCEEDED(sc->GetDevice(&dev))) {
-            if (dev == g_dev)
+            ours = dev == g_dev;
+            if (ours)
                 on_frame_begin_present();
             dev->Release();
         }
     }
-    g_present_depth++;
+    present_enter((uintptr_t)__builtin_frame_address(0));
+    if (ours)
+        present_fault_test(1);
     HRESULT hr = o_SwapPresent(sc, a, b, w, r, f);
     g_present_depth--;
     if (!g_present_depth && !g_in_frame && !g_in_loop_frame)
@@ -625,6 +728,10 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     if (g_font)
         ((HRESULT(WINAPI*)(void*))vt(g_font)[16])(g_font); // OnLostDevice
     HRESULT hr = o_Reset(dev, pp);
+    if (SUCCEEDED(hr) && fixed(g_fix_trireset) && g_tri_failed) { // BUG-1026: the shapes get another try
+        g_tri_failed = false;
+        SKLOG(SK_INFO, "overlay: the shapes are tried again after the Reset (BUG-1026)");
+    }
     if (SUCCEEDED(hr) && pp) {
         g_bb_w = pp->BackBufferWidth;
         g_bb_h = pp->BackBufferHeight;
@@ -678,6 +785,10 @@ static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWN
         focus_attach_window(g_hwnd);
         font_release();
         g_font_failed = false;
+        if (fixed(g_fix_trireset)) { // BUG-1026: the state block belonged to the old device
+            tri_release();
+            g_tri_failed = false;
+        }
         hook_device(g_dev);
     }
     return hr;
@@ -705,6 +816,40 @@ bool d3d9_install()
     }
     d3d9_note_function("Direct3DCreate9", p);
     return hook_create(&g_kit_mod, p, (void*)h_Direct3DCreate9, (void**)&o_Direct3DCreate9) == 0;
+}
+
+// tests (BUG-1024): kit.test.presentfault present|overlay arms one fault; state: the counters and the back buffer's
+// reference count (GetBackBuffer adds one, the Release returns the count without it)
+std::string present_fault_command(const char* arg)
+{
+    char b[256];
+    if (arg && (!strcmp(arg, "present") || !strcmp(arg, "overlay"))) {
+        g_present_fault = !strcmp(arg, "present") ? 1 : 2;
+        snprintf(b, sizeof b, "armed: a fault %s in the next frame", g_present_fault == 1 ? "inside Present" : "in the overlay pass");
+        return b;
+    }
+    unsigned long refs = 0;
+    IDirect3DSurface9* bb = nullptr;
+    if (g_dev && SUCCEEDED(g_dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)))
+        refs = bb->Release();
+    snprintf(b, sizeof b, "depth=%d presents_cut=%u frames_cut=%u overlay_cuts=%u bb_refs=%lu armed=%d frame=%llu",
+             g_present_depth, g_presents_cut, g_frames_cut, g_overlay_cuts, refs, g_present_fault,
+             (unsigned long long)g_frame);
+    return b;
+}
+
+// tests (BUG-1026): kit.test.tri [frames|fail]: a test triangle for some frames, or the next CreateStateBlock fails
+std::string tri_test_command(const char* arg)
+{
+    if (arg && !strcmp(arg, "fail")) {
+        tri_release(); // made again at the next shape, and that fails
+        g_tri_fail_test = true;
+    } else if (arg && *arg)
+        g_tri_test_frames = atoi(arg);
+    char b[160];
+    snprintf(b, sizeof b, "tri: failed=%d block=%d drawn=%u test_frames=%d fail_next=%d", g_tri_failed ? 1 : 0,
+             g_tri_sb ? 1 : 0, g_tri_drawn, g_tri_test_frames, g_tri_fail_test ? 1 : 0);
+    return b;
 }
 
 void* d3d_device() { return g_dev; }

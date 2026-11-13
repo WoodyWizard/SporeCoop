@@ -3,6 +3,7 @@
 #include "core.h"
 
 #include <memory>
+#include <mutex>
 
 namespace sk {
 
@@ -18,6 +19,28 @@ std::vector<SkMod*> mods_list()
     for (auto& m : g_mods)
         v.push_back(m.get());
     return v;
+}
+
+// BUG-1022: the mods line of a report written off the main thread (watchdog, crash report thread) walked g_mods and
+// m->info while mod.load / mod.reload changed them. A copy of the line is kept under a lock instead, made on the main
+// thread after every load and unload.
+static std::mutex g_line_mu;
+static std::string g_line;
+
+static void mods_line_update()
+{
+    std::string s;
+    for (auto& m : g_mods)
+        if (m->module)
+            s += m->name + (m->info && m->info->version ? std::string(" ") + m->info->version : "") + "  ";
+    std::lock_guard<std::mutex> lk(g_line_mu);
+    g_line = s;
+}
+
+std::string mods_line()
+{
+    std::lock_guard<std::mutex> lk(g_line_mu);
+    return g_line;
 }
 
 static SkMod* find_mod(const std::string& name)
@@ -66,6 +89,7 @@ static bool load_into(SkMod* m, std::string& err)
         return false;
     }
     logf(m, SK_INFO, "loaded %s v%s (gen %d)", m->info->name, m->info->version, m->generation);
+    mods_line_update();
     return true;
 }
 
@@ -97,6 +121,7 @@ static void unload_from(SkMod* m)
     m->module = nullptr;
     m->info = nullptr;
     DeleteFileW(m->live_path.c_str());
+    mods_line_update();
     logf(m, SK_INFO, "unloaded");
 }
 

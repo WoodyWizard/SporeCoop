@@ -20,6 +20,7 @@ static std::mutex g_task_mu;
 struct Task {
     std::function<void()> fn;
     const void* code = nullptr; // a mod's function (h_run_on_main / h_run_outside_frame), else null
+    bool frame_only = false;    // tests (SK_CMD_FRAME_ONLY): run by a frame's pump only, not the window procedure's
 };
 static std::deque<Task> g_tasks;
 static DWORD g_main_tid = 0;
@@ -28,6 +29,16 @@ void set_main_thread() { g_main_tid = GetCurrentThreadId(); }
 DWORD main_thread_id() { return g_main_tid; }
 
 void run_on_main(std::function<void()> fn) { run_on_main_from(nullptr, std::move(fn)); }
+
+// tests (BUG-0966): a task the window procedure's pump leaves for the next frame's (inside the frame the game's own
+// handler catches a fault; a fault in a message the game's loop dispatches ends the game)
+void run_on_main_in_frame(std::function<void()> fn)
+{
+    std::lock_guard<std::mutex> lk(g_task_mu);
+    Task t{std::move(fn), nullptr};
+    t.frame_only = true;
+    g_tasks.push_back(std::move(t));
+}
 
 void run_on_main_from(const void* code, std::function<void()> fn)
 {
@@ -74,6 +85,7 @@ void outside_tasks_resume()
 
 void pump_outside_tasks()
 {
+    command_tasks_cut_off((uintptr_t)__builtin_frame_address(0)); // BUG-0966
     if (in_frame()) { // called from a message dispatched inside Present: try again later
         if (fixed(g_fix_outpump)) {
             g_out_deferred = true;
@@ -119,6 +131,7 @@ void run_after_frames(int frames, std::function<void()> fn)
 
 void pump_main_tasks()
 {
+    command_tasks_cut_off((uintptr_t)__builtin_frame_address(0)); // BUG-0966
     std::vector<std::function<void()>> due;
     {
         std::lock_guard<std::mutex> lk(g_task_mu);
@@ -137,7 +150,7 @@ void pump_main_tasks()
         std::function<void()> fn;
         {
             std::lock_guard<std::mutex> lk(g_task_mu);
-            if (g_tasks.empty())
+            if (g_tasks.empty() || (g_tasks.front().frame_only && !in_frame()))
                 return;
             fn = std::move(g_tasks.front().fn);
             g_tasks.pop_front();
@@ -214,6 +227,63 @@ std::vector<std::string> split_args(const std::string& line)
     return out;
 }
 
+// BUG-0966: a console command run as a main-thread (or outside-frame) task that faults, with the game's own handler
+// catching the fault, never came back: its request was never answered, the client waited for ever (the lab's 90 s
+// timeout) and every later line of that connection queued behind it. Seen with coop.puppet respawn whose destroy
+// faulted in a first version of BUG-0930's fix; the frames went on (BUG-0667). A running task is noted with its stack
+// address (main thread only); the next pump or game loop pass at or above it (not nested inside it) finds the note
+// still there: the task was cut off and its request is answered with an error. `kit.fix taskcut 0`: no answer.
+struct RunningCmd {
+    uint64_t id;
+    uintptr_t sp;
+    std::string name;
+    std::function<void(const std::string&)> answer;
+};
+static std::vector<RunningCmd> g_running; // innermost last; the main thread only
+static uint64_t g_running_ids;
+static uint32_t g_cmds_cut;
+
+static void running_cut(RunningCmd& r)
+{
+    g_cmds_cut++;
+    SKLOG(SK_WARN, "console: the command '%s' was cut off by a fault the game's handler caught (%u so far); "
+                   "it is answered with an error (BUG-0966)", r.name.c_str(), g_cmds_cut);
+    r.answer("error: '" + r.name + "' was cut off by a fault the game's handler caught (the exception is in the "
+             "SporeKit log); the game goes on");
+}
+
+void command_tasks_cut_off(uintptr_t sp)
+{
+    if (g_running.empty() || GetCurrentThreadId() != g_main_tid)
+        return;
+    while (!g_running.empty() && sp >= g_running.back().sp) {
+        RunningCmd r = std::move(g_running.back());
+        g_running.pop_back();
+        running_cut(r);
+    }
+}
+
+static uint64_t running_begin(uintptr_t sp, const std::string& name, std::function<void(const std::string&)> answer)
+{
+    if (!fixed(g_fix_taskcut) || GetCurrentThreadId() != g_main_tid)
+        return 0;
+    uint64_t id = ++g_running_ids;
+    // sp: the task's own frame (a pump or game loop pass later at or above it is not nested inside it)
+    g_running.push_back({id, sp, name, std::move(answer)});
+    return id;
+}
+
+static void running_end(uint64_t id)
+{
+    while (id && !g_running.empty()) {
+        RunningCmd r = std::move(g_running.back());
+        g_running.pop_back();
+        if (r.id == id)
+            return;
+        running_cut(r); // a task nested inside this one that a fault cut off
+    }
+}
+
 static int run_cmd(const Cmd& c, const std::vector<std::string>& args, std::string& out)
 {
     std::vector<const char*> argv;
@@ -263,7 +333,9 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
     req->ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     req->args = args;
     req->name = args[0];
-    auto post = (c.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame : run_on_main;
+    auto post = (c.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame
+                : (c.flags & SK_CMD_FRAME_ONLY)    ? run_on_main_in_frame
+                                                   : run_on_main;
     post([req] {
         Cmd cc;
         {
@@ -276,7 +348,14 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
             }
             cc = it->second;
         }
+        // BUG-0966: answered with an error if a caught fault cuts the command off
+        uint64_t id = running_begin((uintptr_t)__builtin_frame_address(0), req->name, [req](const std::string& t) {
+            req->out = t;
+            req->rc = 1;
+            SetEvent(req->ev);
+        });
         req->rc = run_cmd(cc, req->args, req->out);
+        running_end(id);
         SetEvent(req->ev);
     });
     DWORD w = WaitForSingleObject(req->ev, 60000);
@@ -359,7 +438,9 @@ static void start_next(Client& c)
         c.pending_rc = rc;
         c.pending_done = done;
         std::string name = args[0];
-        auto post = (cmd.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame : run_on_main;
+        auto post = (cmd.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame
+                    : (cmd.flags & SK_CMD_FRAME_ONLY)    ? run_on_main_in_frame
+                                                         : run_on_main;
         post([out, rc, done, args, name] {
             Cmd cc;
             bool ok;
@@ -371,7 +452,15 @@ static void start_next(Client& c)
                     cc = it->second;
             }
             std::string o;
+            // BUG-0966: answered with an error if a caught fault cuts the command off
+            uint64_t id = ok ? running_begin((uintptr_t)__builtin_frame_address(0), name, [out, rc, done](const std::string& t) {
+                std::lock_guard<std::mutex> lk(g_done_mu);
+                *out = t;
+                *rc = 1;
+                *done = true;
+            }) : 0;
             int r = ok ? run_cmd(cc, args, o) : 1;
+            running_end(id);
             std::lock_guard<std::mutex> lk(g_done_mu);
             *out = ok ? o : "command vanished";
             *rc = r;

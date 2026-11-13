@@ -571,8 +571,8 @@ static int c_stack_here(void*, int argc, const char* const* argv, SkOut* o)
             MEMORY_BASIC_INFORMATION mbi;
             if (VirtualQuery((void*)(uintptr_t)v, &mbi, sizeof mbi) && mbi.Type == MEM_IMAGE &&
                 (mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_EXECUTE_READWRITE))) {
-                wchar_t name[MAX_PATH] = L"?";
-                GetModuleFileNameW((HMODULE)mbi.AllocationBase, name, MAX_PATH);
+                std::wstring mp = module_path((HMODULE)mbi.AllocationBase); // BUG-1033
+                const wchar_t* name = mp.empty() ? L"?" : mp.c_str();
                 const wchar_t* b = wcsrchr(name, L'\\');
                 outf(o, "  [%p] 0x%08X %s+0x%X\n", (void*)p, v, narrow(b ? b + 1 : name).c_str(),
                      (unsigned)(v - (uintptr_t)mbi.AllocationBase));
@@ -973,6 +973,27 @@ void register_builtin_commands()
                 (void*)0, M);
     command_add(k, "kit.test.excfault", "kit.test.excfault - a fault inside the exception logger's lock (BUG-0115)",
                 c_test_fault, (void*)1, M);
+    command_add(k, "kit.test.presentfault", "kit.test.presentfault [present|overlay] - tests (BUG-1024): one fault inside Present or in the overlay pass, caught by the game's handler; no argument: the Present depth, the cut-off counts and the back buffer's references",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    outf(out, "%s", present_fault_command(argc > 1 ? argv[1] : nullptr).c_str());
+                    return 0;
+                }, nullptr, M);
+    command_add(k, "kit.test.tri", "kit.test.tri [frames|fail] - tests (BUG-1026): a magenta overlay triangle at the top left for some frames; fail: the next CreateStateBlock fails",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    outf(out, "%s", tri_test_command(argc > 1 ? argv[1] : nullptr).c_str());
+                    return 0;
+                }, nullptr, M);
+    command_add(k, "kit.test.cmdfault", "kit.test.cmdfault - tests (BUG-0966): this command's own task faults inside a frame (the game's handler catches it); the answer must still come",
+                [](void*, int, const char* const*, SkOut* out) {
+                    test_fault_null();
+                    outf(out, "the fault did not happen");
+                    return 1;
+                }, nullptr, M | SK_CMD_FRAME_ONLY);
+    command_add(k, "kit.test.vehedge", "kit.test.vehedge - tests (BUG-1028): a fault with the stack pointer 8 bytes below the end of its stack's committed region; was it recorded?",
+                [](void*, int, const char* const*, SkOut* out) {
+                    outf(out, "%s", exceptions_edge_test().c_str());
+                    return 0;
+                }, nullptr, A);
     command_add(k, "kit.test.hookchurn", "kit.test.hookchurn [rounds] [threads] [nogate] - hook / unhook while threads run the hook (BUG-0132; nogate: also while the hook is made, BUG-0202)",
                 c_test_hookchurn, nullptr, M);
     command_add(k, "kit.test.hooknew", "kit.test.hooknew [rounds] [threads] [split] - make new hooks while threads call the functions; counts detours that ran before their original was set (BUG-0398); split: over several instructions, counts wrong results (BUG-0403)",

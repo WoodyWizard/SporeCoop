@@ -46,7 +46,8 @@ extern "C" void __cdecl sk_probe_record(Probe* p, uint32_t* regs)
     uintptr_t lo = image_base(), hi = image_base() + 0x1000000;
     for (int i = 7; i < 512 && n < 4; i++) {
         MEMORY_BASIC_INFORMATION mbi;
-        if (!VirtualQuery(stack + i, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT)
+        if (!VirtualQuery(stack + i, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+            (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) // BUG-1028: committed is not readable
             break;
         if (stack[i] > lo && stack[i] < hi)
             c.stack_rets[n++] = stack[i];
@@ -150,7 +151,8 @@ static HANDLE WINAPI h_CreateFileW(LPCWSTR name, DWORD acc, DWORD share, LPSECUR
         int n = 0;
         for (int i = 0; i < 1024 && n < 12; i++) {
             MEMORY_BASIC_INFORMATION mbi;
-            if (!VirtualQuery(sp + i, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT)
+            if (!VirtualQuery(sp + i, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+                (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) // BUG-1028
                 break;
             if (sp[i] > lo && sp[i] < hi) {
                 char b[96];

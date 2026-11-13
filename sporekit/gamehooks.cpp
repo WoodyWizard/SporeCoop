@@ -1,6 +1,8 @@
 // Game lifecycle hooks and a few game-aware helpers used by the devkit.
 #include "core.h"
 
+#include <atomic>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -120,6 +122,11 @@ uint32_t game_mode_id()
         return 0;
     return vcall<uint32_t>(mgr, 0x38 / 4); // GetActiveModeID
 }
+
+// BUG-1022: the mode for reports written off the main thread, cached by the main thread (frame_common)
+static std::atomic<uint32_t> g_mode_cached{0};
+void game_mode_cache_tick() { g_mode_cached = game_mode_id(); }
+uint32_t game_mode_cached() { return g_mode_cached; }
 
 const char* game_mode_name(uint32_t id)
 {

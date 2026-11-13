@@ -2,6 +2,7 @@
 // before the game's / Wine's handlers swallow them. Invaluable when a hook breaks a frame.
 #include "core.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
@@ -93,9 +94,7 @@ static bool in_our_code(uintptr_t eip, std::string& name)
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             (LPCWSTR)eip, &m) || !m)
         return false;
-    wchar_t p[MAX_PATH];
-    GetModuleFileNameW(m, p, MAX_PATH);
-    std::wstring w = p;
+    std::wstring w = module_path(m); // BUG-1033
     for (auto& c : w)
         c = (wchar_t)towlower(c);
     name = narrow(w.substr(w.find_last_of(L"\\/") + 1));
@@ -231,9 +230,24 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     uint32_t regs[8] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp};
     memcpy(r.regs, regs, sizeof regs);
     const uint32_t* sp = (const uint32_t*)c->Esp;
+    // BUG-1028: the 12 dwords were copied after a check of esp's page only: with esp near the end of its region (an
+    // off-stack fault into a heap block, BUG-0956) the copy read past it and faulted inside this handler; that second
+    // fault was ignored (SK_TF_IN_EXC) and the first one never recorded. Now the fault is recorded first and the reads
+    // stay inside the readable region. `kit.fix vehbounds 0`: as before.
+    bool vb = fixed(g_fix_vehbounds);
+    if (vb) {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_last_er = *ep->ExceptionRecord;
+        g_last_ctx = *c;
+        g_last_tid = r.tid;
+        g_last_t = now_seconds();
+    }
     MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
-        for (int i = 0; i < 12; i++)
+    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT &&
+        (!vb || !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))) {
+        uintptr_t left = (uintptr_t)mbi.BaseAddress + mbi.RegionSize - (uintptr_t)sp;
+        int words = vb ? (int)std::min<uintptr_t>(12, left / 4) : 12;
+        for (int i = 0; i < words; i++)
             r.stack[i] = sp[i];
         // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
         const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
@@ -247,10 +261,12 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     }
     {
         std::lock_guard<std::mutex> lk(g_mu);
-        g_last_er = *ep->ExceptionRecord;
-        g_last_ctx = *c;
-        g_last_tid = r.tid;
-        g_last_t = now_seconds();
+        if (!vb) {
+            g_last_er = *ep->ExceptionRecord;
+            g_last_ctx = *c;
+            g_last_tid = r.tid;
+            g_last_t = now_seconds();
+        }
         for (auto& x : g_recs)
             if (x.code == code && x.eip == eip) {
                 x.count++;
@@ -265,9 +281,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         HMODULE m = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                (LPCWSTR)eip, &m) && m) {
-            wchar_t n[MAX_PATH];
-            GetModuleFileNameW(m, n, MAX_PATH);
-            std::wstring s = n;
+            std::wstring s = module_path(m); // BUG-1033
+            if (s.empty())
+                s = L"?";
             char off[32];
             snprintf(off, sizeof off, "+0x%X", (unsigned)(eip - (uintptr_t)m));
             r.where = narrow(s.substr(s.find_last_of(L"\\/") + 1)) + off;
@@ -308,9 +324,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             char one[80];
             if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                    (LPCWSTR)(uintptr_t)r.mrets[i], &hm) && hm) {
-                wchar_t n[MAX_PATH];
-                GetModuleFileNameW(hm, n, MAX_PATH);
-                std::wstring w = n;
+                std::wstring w = module_path(hm); // BUG-1033
+                if (w.empty())
+                    w = L"?";
                 snprintf(one, sizeof one, " %s+0x%X", narrow(w.substr(w.find_last_of(L"\\/") + 1)).c_str(),
                          (unsigned)(r.mrets[i] - (uintptr_t)hm));
             } else
@@ -338,6 +354,97 @@ void exceptions_fault_test()
     std::lock_guard<std::mutex> lk(g_mu);
     ThreadFlag tf(SK_TF_IN_EXC);
     page[0] = 1;
+}
+
+// ---- kit.test.vehedge (BUG-1028): a fault whose esp is 8 bytes below the end of its stack's committed region ----
+// A thread of its own gets a stack in a block of ours (the TIB's limits point at it, so the fault is dispatched as
+// usual): 192 KB committed, then reserved pages. It moves esp to 8 bytes below the committed end and reads address
+// 0x10. A last vectored handler sends the thread back to its own stack (also from a second fault inside the fault
+// logger). Recorded: the fault logger's last fault is this one.
+} // namespace sk
+extern "C" uintptr_t sk_edge_saved_sp;
+uintptr_t sk_edge_saved_sp;
+extern "C" void sk_edge_fault(uintptr_t new_sp);
+extern "C" char sk_edge_fault_at[], sk_edge_resume[];
+asm(".text\n"
+    ".globl _sk_edge_fault\n"
+    "_sk_edge_fault:\n"
+    "  pushl %ebp\n"
+    "  pushl %ebx\n"
+    "  pushl %esi\n"
+    "  pushl %edi\n"
+    "  movl 20(%esp), %eax\n"
+    "  movl %esp, _sk_edge_saved_sp\n"
+    "  movl %eax, %esp\n"
+    ".globl _sk_edge_fault_at\n"
+    "_sk_edge_fault_at:\n"
+    "  movl 0x10, %eax\n"
+    ".globl _sk_edge_resume\n"
+    "_sk_edge_resume:\n"
+    "  movl _sk_edge_saved_sp, %esp\n"
+    "  popl %edi\n"
+    "  popl %esi\n"
+    "  popl %ebx\n"
+    "  popl %ebp\n"
+    "  ret\n");
+namespace sk {
+
+static volatile DWORD g_edge_tid;
+static uint8_t* g_edge_block;
+static constexpr size_t kEdgeCommit = 192 * 1024, kEdgeReserve = 256 * 1024;
+static volatile LONG g_edge_faults;
+
+static LONG CALLBACK edge_handler(EXCEPTION_POINTERS* ep)
+{
+    if (!g_edge_tid || GetCurrentThreadId() != g_edge_tid)
+        return EXCEPTION_CONTINUE_SEARCH;
+    InterlockedIncrement(&g_edge_faults);
+    ep->ContextRecord->Eip = (DWORD)(uintptr_t)sk_edge_resume;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+static DWORD WINAPI edge_thread(void*)
+{
+    g_edge_tid = GetCurrentThreadId();
+    auto* tib = (NT_TIB*)NtCurrentTeb();
+    void *base = tib->StackBase, *limit = tib->StackLimit;
+    tib->StackBase = g_edge_block + kEdgeCommit;
+    tib->StackLimit = g_edge_block;
+    sk_edge_fault((uintptr_t)(g_edge_block + kEdgeCommit - 8));
+    tib->StackBase = base;
+    tib->StackLimit = limit;
+    return 0;
+}
+
+std::string exceptions_edge_test()
+{
+    static bool installed;
+    if (!g_edge_block) {
+        g_edge_block = (uint8_t*)VirtualAlloc(nullptr, kEdgeReserve, MEM_RESERVE, PAGE_NOACCESS);
+        if (!g_edge_block || !VirtualAlloc(g_edge_block, kEdgeCommit, MEM_COMMIT, PAGE_READWRITE))
+            return "no memory for the test stack";
+    }
+    if (!installed) {
+        AddVectoredExceptionHandler(0, edge_handler);
+        installed = true;
+    }
+    g_edge_faults = 0;
+    DWORD tid = 0;
+    HANDLE t = CreateThread(nullptr, 0, edge_thread, nullptr, 0, &tid);
+    if (!t)
+        return "no thread";
+    bool ended = WaitForSingleObject(t, 10000) == WAIT_OBJECT_0;
+    CloseHandle(t);
+    g_edge_tid = 0;
+    bool recorded;
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        recorded = g_last_tid == tid && (uintptr_t)g_last_er.ExceptionAddress == (uintptr_t)sk_edge_fault_at;
+    }
+    char b[200];
+    snprintf(b, sizeof b, "vehedge: recorded=%d faults=%ld ended=%d at=%08X vehbounds=%d", recorded ? 1 : 0,
+             (long)g_edge_faults, ended ? 1 : 0, (unsigned)(uintptr_t)sk_edge_fault_at, fixed(g_fix_vehbounds) ? 1 : 0);
+    return b;
 }
 
 // BUG-0676: a fault the game's handler catches lets the game go on; when the same place faults in every frame (the

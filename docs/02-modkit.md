@@ -435,3 +435,58 @@ and destroyed after it is unlocked (sporekit/task_drop.h, tested by validate_tes
 captures may queue another task in their destructors, and `run_on_main` / `run_outside_frame` lock the same
 non-recursive mutex, which deadlocked the thread before. No capture of ours is known to do this; the fix closes the
 class. `run_after_frames` tasks are SporeKit's own (input.cpp), never a mod's, so they are not dropped.
+
+## Faults the game catches inside Present, the overlay pass or a command's task (2026-11-13, fix/w49-kit)
+<a id="modkit-present-unwind"></a>
+
+The game's own handler catches a fault in a SporeKit frame (Present -> h_Present -> the frame's work) and the game
+goes on; SporeKit's frames go on since BUG-0667 (`kit.fix frameunwind`). Three more states were left behind by such
+an unwind (llvm-mingw i686 has no SEH unwinding of our frames: no destructor and no `--` after the call runs):
+* BUG-1024, Present: a fault inside the original Present (the driver, or a task pumped by a message dispatched there)
+  left `g_present_depth` at 1. h_Present starts a frame only at depth 0 and the game loop fallback returns early on
+  it: no frame ran again, in_frame() stayed true, the outside-frame tasks waited for ever. The game drew on, the co-op
+  was dead (lab 20261113-010320: the host's frame counter stopped, the guest's age of the host 35 s and growing).
+  Now the outermost Present's stack address and thread are kept; an entry of Present on that thread at or above it
+  (a nested Present, the device's calling the swapchain's, is deeper) or the game loop pass after App::Canvas::Tick
+  sets the depth back to 0 ("frames: Present was left by a fault the game's handler caught").
+* BUG-1024, the overlay pass: a fault in an SK_EV_OVERLAY handler skipped EndScene, the render target's restore and
+  the Release of the back buffer and the old target. Seen in the lab: the scene stayed open for good (the game's own
+  BeginScene fails inside it and the game then skips its EndScene), so the overlay pass never began a scene again (no
+  labels, no arrows) while the frames went on. The pass's surfaces are kept in statics; the cut-off of the frame
+  (frame_cut_off, at the next frame's start, before the original Present) ends the scene, puts the game's render
+  target back and releases them. Switch for both: `kit.fix presentunwind 0`.
+* BUG-0966, console commands: a main-thread command whose own task faulted inside a frame (coop.puppet respawn with a
+  first version of BUG-0930's fix) never set its request done: the client waited for ever and the later lines of
+  that connection queued behind it. A running task is noted with its stack address (main thread); the next pump or
+  game loop pass at or above it answers the request with "error: '<name>' was cut off by a fault the game's handler
+  caught". `kit.fix taskcut 0`: no answer.
+* Seen in the lab (20261113-010320-2): a fault in a task that the window procedure runs (WM_SK_PUMP /
+  WM_SK_PUMP_OUT, dispatched by App::Canvas::Tick's message loop) is **not** caught by the game: the unhandled
+  exception filter runs and the game ends. Only faults under the frame (Present) reach a handler of the game.
+* Test commands: `kit.test.presentfault present|overlay` (one fault inside Present / in the overlay pass; no argument:
+  depth, cut-off counts, the back buffer's references), `kit.test.cmdfault` (a command flagged SK_CMD_FRAME_ONLY,
+  SporeKit's own: only a frame's pump runs it). Tests kit_present_fault, kit_overlay_fault, kit_cmd_fault.
+
+## Fault logger, reports and the overlay's state block (2026-11-13, fix/w49-kit)
+<a id="modkit-report-safety"></a>
+
+* BUG-1028 (`kit.fix vehbounds`): the fault logger records the fault (g_last_*) before it reads the faulting stack and
+  copies at most the dwords left in esp's region (PAGE_NOACCESS / PAGE_GUARD count as unreadable; probe and ftrace
+  check the same). Before, an esp 8 bytes below the end of its region made the 12-dword copy fault inside the logger:
+  that second fault was ignored (SK_TF_IN_EXC) and the first never recorded. `kit.test.vehedge` runs a thread whose
+  TIB stack limits point at a block of ours (192 KB committed, then reserved pages), moves esp to 8 bytes below the
+  committed end and reads 0x10; a last vectored handler sends it back to its own stack.
+* BUG-1020 (`kit.fix crashcopy`): the crash report thread (and the stack-overflow / off-stack report thread) works on
+  copies of the EXCEPTION_RECORD and CONTEXT in its static job, not on the crashed thread's exception frame, which a
+  handler after us or the teardown reuses once the filter gave up waiting (15 s).
+* BUG-1022 (`kit.fix reportsafe`): a report written off the main thread (watchdog, report thread, a fault storm on a
+  worker) no longer calls IGameModeManager::Get / GetActiveModeID: the main thread caches the mode every 10 frames
+  (game_mode_cached); the mods line is a copy mods.cpp keeps under a lock (mods_line). coop's report text is swapped
+  and copied under one mutex (coop.cpp diag_context_fn returns a per-thread copy).
+* BUG-1026 (`kit.fix trireset`): the overlay shapes' state block is released on a new device and a failed
+  CreateStateBlock is tried again after the next successful Reset (before, the shapes stayed off for the run).
+  `kit.test.tri [frames|fail]`: a magenta test triangle at the top left / the next CreateStateBlock fails.
+  Test kit_overlay_reset (two Alt+Enter Resets).
+* BUG-1033: `module_path(HMODULE)` (core.h) returns "" when GetModuleFileNameW fails or cuts the path; the fault
+  logger and the reports use it. The loader starts the game without mods (and skips the pending updates) when its own
+  path is unknown or cut at MAX_PATH, and checks the room for "sporekit.dll" before lstrcatW.
