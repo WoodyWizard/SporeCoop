@@ -282,6 +282,18 @@ class Player:
             self.note('mode_social' if want == 0 else 'mode_attack')
 
 
+def frame_point(players, w, tol=30):
+    """BUG-0981: before a key frame of a place (a conquered village), every game's view on it through the minimap
+    (as a player clicks it). players: {role: Console}; {role: the view's centre reached, or None}"""
+    out = {}
+    for pid, (role, con) in enumerate(players.items()):
+        p = Player(role, con, pid, random.Random(1), [], 1440, 1080)
+        ok = p.calibrate() and p.look(w, tol)
+        out[role] = tuple(round(v) for v in p.cur) if ok and getattr(p, 'cur', None) else None
+    print(f'  (key frame view at {tuple(round(v) for v in w)}: {out})', flush=True)
+    return out
+
+
 class Game:
     def __init__(self, host, guest, seed, rate):
         self.host, self.guest = host, guest

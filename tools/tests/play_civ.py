@@ -85,6 +85,44 @@ def stat(line, key):
     return int(m.group(1)) if m else 0
 
 
+SPECIALTY = ('Military', 'Religious', 'Economic')  # the captured / bought city's specialty question (a modal box)
+
+
+def answer_specialty(con, wait=0.0):
+    """the specialty question of a bought or captured city, answered like a player (its first choice): the
+    caption pressed, or None when no such box is up (within `wait` s)"""
+    import uifind
+    t0 = time.time()
+    while True:
+        for cap in SPECIALTY:
+            b = uifind.shown(con, cap)
+            if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the box's button, not the HUD's tab label
+                uifind.press(con, cap)
+                time.sleep(1)
+                return cap
+        if time.time() - t0 >= wait:
+            return None
+        time.sleep(0.5)
+
+
+def frame_city(players, pos, answer=True):
+    """BUG-0981: before a key frame of a city, every game's camera on it (W/A/S/D, as a player pans); a specialty
+    question still up is answered first (it pauses the game and covers the city). players: {role: Console};
+    {role: (the answered caption or None, the city's screen point or None)}"""
+    out = {}
+    for role, con in players.items():
+        ans = []
+        while answer and len(ans) < 3:  # (a box per bought / captured city, one over the other)
+            a = answer_specialty(con)
+            if not a:
+                break
+            ans.append(a)
+        sp = Player(role, con, 0, random.Random(1), []).look_at(pos)
+        out[role] = (ans, sp)
+    print(f'  (key frame camera at {tuple(round(v) for v in pos)}: {out})', flush=True)
+    return out
+
+
 class Player:
     """one player at the keyboard: camera, clicks, the city menu, the co-op window"""
 

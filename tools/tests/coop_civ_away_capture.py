@@ -16,6 +16,7 @@ guest and nothing went to the host: the city stayed the other nation's in both g
 import time
 
 from coop_civ import civ, dist
+from play_civ import frame_city
 from twoinst import Checks, keyframe, lane_state, start
 
 
@@ -71,6 +72,7 @@ def main():
     ck(gc_.get('player'), "the guest's game shows the city as the player civilization's")
     ck(hc_.get('owner') == 1 and gc_.get('owner') == 1,
        f"the city is the guest's in both games (host {hc_.get('owner')}, guest {gc_.get('owner')})")
+    frame_city({'host': host, 'guest': guest}, tpos)  # BUG-0981: the city in view, not the capital
     keyframe('away_captured', "the city the guest took, in the player's colours on both screens")
     ck.faults(host=host, guest=guest)
     return ck.result()

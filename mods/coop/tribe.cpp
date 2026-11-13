@@ -4837,6 +4837,13 @@ static bool village_cine(uint32_t id)
     return std::find(std::begin(kVillageCines), std::end(kVillageCines), id) != std::end(kVillageCines);
 }
 constexpr double kVillageCaptionWait = 8.0;
+// BUG-0983: a guest's game plays the same captions when the realign conquers the village there too (BUG-0777) and
+// stood paused (input lock, game time) until the guest clicked it, while the host's tribe went on after 8 s. Now a
+// guest's village caption closes itself after the same 8 s. `coop.fix tribe.conquer_caption_guest off`: it waits for
+// the guest's click (0.7.12).
+static bool g_guest_caption_fix = true;
+COOP_FIX("tribe.conquer_caption_guest", "BUG-0983", g_guest_caption_fix,
+         "tribe: a guest's caption of a village conquered in the session closes itself after 8 s, as the host's does");
 static uint32_t g_village_cine, g_village_captions_closed;
 static double g_village_cine_since;
 static bool g_village_cine_ending;
@@ -4844,6 +4851,7 @@ static void village_caption_tick(double now)
 {
     uint32_t id = world::cinematic_id();
     bool village = village_cine(id);
+    bool host = is_host();
     bool guests = C.sess->players().size() >= 2;
     if (!village) {
         g_village_cine = 0;
@@ -4855,16 +4863,17 @@ static void village_caption_tick(double now)
         g_village_cine = id;
         g_village_cine_since = now;
         g_village_cine_ending = false;
-        H->log(M, SK_INFO, "tribe: the village cinematic %08X plays on the host (BUG-0531)", id);
-        if (guests && C.notice && !chained)
+        H->log(M, SK_INFO, "tribe: the village cinematic %08X plays on the %s (BUG-0531)", id, host ? "host" : "guest");
+        if (host && guests && C.notice && !chained)
             C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the tribe waits for the OK" +
                      (g_conquer_caption_fix ? " (or " + std::to_string((int)kVillageCaptionWait) + " s)" : ""));
     }
-    if (!g_conquer_caption_fix || !guests || g_village_cine_ending || now - g_village_cine_since < kVillageCaptionWait)
+    if (!(host ? g_conquer_caption_fix : g_guest_caption_fix) || !guests || g_village_cine_ending ||
+        now - g_village_cine_since < kVillageCaptionWait)
         return;
     g_village_cine_ending = true;
     H->run_outside_frame(
-        [](void*) {
+        host ? +[](void*) {
             uint32_t now_id = world::cinematic_id();
             if (!village_cine(now_id) || game::mode_id() != modes::kTribe ||
                 !world::end_cinematic("in Tribe after 8 s with guests waiting (BUG-0531)"))
@@ -4872,13 +4881,21 @@ static void village_caption_tick(double now)
             g_village_captions_closed++;
             if (C.notice)
                 C.notice("the caption closed by itself: the tribe goes on");
-        },
+        }
+             : +[](void*) { // BUG-0983: the guest's own game only (no notice: the host's tribe did not wait)
+                   if (!village_cine(world::cinematic_id()) || game::mode_id() != modes::kTribe ||
+                       !world::end_cinematic("in Tribe after 8 s on a guest (BUG-0983)"))
+                       return;
+                   g_village_captions_closed++;
+               },
         nullptr);
 }
 
 static void coop_tick(double now)
 {
     chiefs_tick();
+    if (!is_host())
+        village_caption_tick(now); // BUG-0983
     if (is_host()) {
         village_caption_tick(now);
         grab_spot_tick(now);

@@ -16,6 +16,7 @@ again in turns: the capital to the host, the captured city to the guest, a tick 
 import time
 
 from coop_civ import civ, dist
+from play_civ import frame_city
 from twoinst import Checks, keyframe, start
 
 
@@ -54,6 +55,7 @@ def main():
     g, _ = civ(guest)
     print('  guest cities', {k: (v['owner'], v['player']) for k, v in g.items()}, flush=True)
     ck(cap[0] in g and g[cap[0]]['owner'] in (253, 1), f"the guest still has a city to play from (capital owner {g.get(cap[0], {}).get('owner')})")
+    frame_city({'host': host, 'guest': guest}, hc[tgt]['pos'])  # BUG-0981: the city in view, not the capital
     keyframe('captured', "the captured city with the host's colours on both screens")
     ck.faults(host=host, guest=guest)
     return ck.result()

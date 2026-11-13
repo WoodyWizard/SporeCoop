@@ -402,7 +402,9 @@ def main():
     last_measure = last_prey = 0.0
     ok = True
     try:
-        keyframe('start', 'both cells in the tide pool, the same cells and paints on both screens, name tags over the partner, the HUD in place')
+        # BUG-0980: the guest joins during its own Cell intro (the meteor rock and the letterbox stay a few seconds
+        # after the game's cinematic ends): 8 s with neither game busy first
+        keyframe('start', 'both cells in the tide pool, the same cells and paints on both screens, name tags over the partner, the HUD in place', calm=8)
         kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and ok:
             if not kf_mid[0] and time.time() > t0 + a.minutes * 30:

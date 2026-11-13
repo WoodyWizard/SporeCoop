@@ -18,7 +18,7 @@ import random
 import re
 import time
 
-from play_civ import BTN_ATTACK, Player, civ_state
+from play_civ import BTN_ATTACK, Player, civ_state, frame_city
 from coop_civ import civ, dist
 from twoinst import Checks, keyframe, start
 
@@ -116,6 +116,7 @@ def main():
     ck(g.get(tgt, {}).get('player'), f"the guest's game shows city {tgt} as the player civilization's")
     ck(h.get(tgt, {}).get('owner') == 1 and g.get(tgt, {}).get('owner') == 1,
        f"the city is the guest's in both games (host {h.get(tgt, {}).get('owner')}, guest {g.get(tgt, {}).get('owner')})")
+    frame_city({'host': host, 'guest': guest}, tpos)  # BUG-0981: the city in view, not the capital
     keyframe('captured', "the city the guest's vehicles took, in the player's colours on both screens")
     ck.faults(host=host, guest=guest)
     return ck.result()

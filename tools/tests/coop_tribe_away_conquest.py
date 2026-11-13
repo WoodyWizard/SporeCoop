@@ -21,6 +21,7 @@ from coop_tribe_conquest_guest import near, planet
 from coop_tribe_conquer_orders import HUT
 from coop_tribe_gather_stall import pos_of
 from coop_tribe_tools import dist, members
+from play_tribe import frame_point
 from twoinst import Checks, keyframe, lane_state, start
 
 
@@ -106,6 +107,7 @@ def main():
     ck(hv and hv[2] & 2, f"the host's game has the village conquered ({hv})")
     ck(not hh or hh[2] & 2, f"the host's hut of that village is down ({hh})")
     ck(gv and gv[2] & 2 and (not gh or gh[2] & 2), f"the guest's game still has it conquered ({gv}, hut {gh})")
+    frame_point({'host': host, 'guest': guest}, hp)  # BUG-0981: the village in view, not the home village
     keyframe('conquered', 'the village the guest conquered: down on both screens')
     ck.faults(host=host, guest=guest)
     return ck.result()

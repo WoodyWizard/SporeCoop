@@ -19,6 +19,7 @@ import time
 from coop_tribe_conquer_orders import HUT, huts
 from coop_tribe_gather_stall import pos_of
 from coop_tribe_tools import dist, members
+from play_tribe import frame_point
 from twoinst import Checks, keyframe, start
 
 
@@ -107,6 +108,20 @@ def main():
     ck(hvil and hvil[2] & 2, f"the host's game conquered the village ({hvil})")
     ck(gvil and gvil[2] & 2, f"the guest's game has the village conquered too ({gvil})")
     ck(not ghut or ghut[2] & 2, f"the guest's hut of that village is down ({ghut})")
+    # BUG-0983: the guest's game plays the conquest caption too; it must not stand paused for the guest's click
+    # (the host's closes after 8 s, BUG-0531; the conquest and the upgrade captions: ~16 s)
+    t0, seen = time.time(), []
+    while time.time() - t0 < 40:
+        busy = re.search(r'^busy: (\S+)', guest.call('coop.status')['out'], re.M)
+        busy = busy.group(1) if busy else '-'
+        seen.append(busy)
+        if 'cinematic' not in busy and time.time() - t0 > 4:
+            break
+        time.sleep(2)
+    print(f'  the guest\'s game after the conquest (busy, every 2 s): {seen}', flush=True)
+    ck('cinematic' not in seen[-1], f"the guest's game is not left in the conquest caption ({time.time() - t0:.0f} s, "
+                                    f"busy {seen[-1]})")
+    frame_point({'host': host, 'guest': guest}, hp)  # BUG-0981: the village in view, not the home village
     keyframe('conquered', 'the conquered village on both screens: the hut down, no village members standing')
     ck.faults(host=host, guest=guest)
     return ck.result()

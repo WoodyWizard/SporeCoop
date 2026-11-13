@@ -15,7 +15,7 @@
   --case cap     (BUG-0834, fixture space_empire: three colonies) the old code synced the first 48 colonies of the
                  list only. `coop.space colonyspice cap 1` makes that cap 1 on both games (it is used only with the
                  fix off), so the colonies after the first one stand for the 49th and later. The host's last colony
-                 stores 30 spice per city: the guest's game must get it. SPORE_FIX_OFF=space.colony_spice_all fails.
+                 stores 1.5 spice per city (under the game's cap of 5 per city, BUG-0979): the guest's game must get it. SPORE_FIX_OFF=space.colony_spice_all fails.
 """
 import argparse
 import re
@@ -117,11 +117,20 @@ def case_cap(host, guest, ck):
         return
     last = ids[-1]
     ck(last in gc and len(gc[last]) == len(hc[last]), f'the guest has colony {last} with the same cities')
-    print('  host:', sp(host, 'colonyspice set', last, 30).strip(), flush=True)
-    ok = wait(lambda: spice_of(guest, last) and min(spice_of(guest, last)) >= 29, 25, 1)
-    print('  guest:', spice_of(guest, last), '|', sp(guest, 'colonyspice').splitlines()[0], flush=True)
+    # BUG-0979: a value under the game's own cap (5 per city): 30 was clamped back to 5 by the game within seconds
+    # (the guest's clamp even read as a collection and took it from the host), so the guest showed 5 in 1 of 3 runs
+    # (the guest's must follow the host's down; production may add a little meanwhile: the guest equals the host)
+    print('  host:', sp(host, 'colonyspice set', last, 1.5).strip(), flush=True)
+
+    def same():
+        g, h = spice_of(guest, last), spice_of(host, last)
+        return g and len(g) == len(h) and max(g) < 3.5 and max(abs(a - b) for a, b in zip(g, h)) < 0.3
+
+    ok = wait(same, 25, 1)
+    print('  guest:', spice_of(guest, last), '| host:', spice_of(host, last), '|',
+          sp(guest, 'colonyspice').splitlines()[0], flush=True)
     ck(ok, f'the guest\'s game has the host\'s spice in colony {last} (the {len(ids)}th of the list): '
-           f'{spice_of(guest, last)}')
+           f'{spice_of(guest, last)} (host {spice_of(host, last)})')
 
 
 def main():

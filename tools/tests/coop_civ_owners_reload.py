@@ -21,6 +21,7 @@ import time
 
 import fixtures
 from coop_civ import civ, dist
+from play_civ import frame_city
 from twoinst import Checks, keyframe, start, wait_guest_in
 
 
@@ -70,7 +71,9 @@ def main():
         if c['player'] and c['pos'] not in want:
             want[c['pos']] = c['owner']
     print('  before the load (pos: owner):', {tuple(round(x) for x in p): o for p, o in want.items()}, flush=True)
-    keyframe('bought', 'the two bought cities in the player colours, one per player')
+    gpos = hc[npc[1]]['pos']  # BUG-0981: the guest's bought city in view (the two are too far apart for one frame)
+    frame_city({'host': host, 'guest': guest}, gpos)
+    keyframe('bought', "the guest's bought city in the player colours on both screens")
     time.sleep(3)
     tables = host.call('coop.civ tables')['out']
     print('  host', next((l for l in tables.splitlines() if l.startswith('kept:')), '-'), flush=True)
@@ -103,7 +106,8 @@ def main():
         ck(h and h['owner'] == who and g and g['owner'] == who,
            f'the city at {tuple(round(x) for x in pos)} is still player {who}\'s on both games '
            f'(host {h and h["owner"]}, guest {g and g["owner"]})')
-    keyframe('reloaded', 'after the host\'s load: the same cities in the same players\' colours')
+    frame_city({'host': host, 'guest': guest}, gpos)
+    keyframe('reloaded', "after the host's load: the guest's bought city in the same colours on both screens")
     ck.faults(host=host, guest=guest)
     return ck.result()
 

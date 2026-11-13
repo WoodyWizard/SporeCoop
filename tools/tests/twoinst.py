@@ -139,11 +139,14 @@ def _game_busy(con):
         return []
 
 
-def keyframe_settle(players, settle=None):
+def keyframe_settle(players, settle=None, calm=0):
     """BUG-0924: wait (at most `settle` s) until no game of the frame plays a cinematic or a caption, stands in a
-    pause (the pause menu, a planner), sits in an editor or loads; {role: [reasons]} still busy at the end"""
+    pause (the pause menu, a planner), sits in an editor or loads; {role: [reasons]} still busy at the end.
+    calm (BUG-0980): the games must also stay so for that many seconds (a stage intro's picture, the Cell meteor and
+    its letterbox, stays a few seconds after the game's cinematic and input lock end)."""
     settle = KEYFRAME_SETTLE if settle is None else settle
     t0 = time.time()
+    calm_since = None
     cons = {}
     for r, c in players.items():  # own connections: a bot thread may be using the test's console now
         try:
@@ -153,28 +156,31 @@ def keyframe_settle(players, settle=None):
     try:
         while True:
             busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
-            if not busy or time.time() - t0 >= settle:
-                return busy, time.time() - t0
+            now = time.time()
+            calm_since = None if busy else (calm_since or now)
+            if (not busy and now - calm_since >= calm) or now - t0 >= settle + calm:
+                return busy, now - t0
             time.sleep(0.5)
     finally:
         for c in cons.values():
             c.sock and c.sock.close()
 
 
-def keyframe(tag, note, players=None, kind='key', extra=None, settle=None):
+def keyframe(tag, note, players=None, kind='key', extra=None, settle=None, calm=0):
     """a key frame (docs/06-testing.md#testing-key-frames): every game of the test is shot at the same moment
     (one thread each), stored as a ~960 px JPEG in <run>/frames/<test>/<nn>_<tag>_<role>.jpg with a manifest line
     (the note says what should be visible; each game's mode and position). players: {role: Console}, default the
     host and guest of start(); kind 'key', 'phase' (a campaign's phase end) or 'sameview'. Never fails the test:
     a game that does not answer gets ok=false in the manifest. Returns the manifest entry (None on an error).
     BUG-0924: first waits (settle s, SPORE_KEYFRAME_SETTLE, default 20; 0: at once) until no game is in a cinematic,
-    a pause, an editor or a load; a game still busy then is named in the manifest's extra (`busy role: why`)."""
+    a pause, an editor or a load; a game still busy then is named in the manifest's extra (`busy role: why`).
+    calm: then also that many seconds with no game busy (BUG-0980: a frame right after a stage intro)."""
     import frames
     try:
         players = dict(players or PLAYERS)
         if not players:
             return None
-        busy, waited = keyframe_settle(players, settle) if (settle is None or settle > 0) else ({}, 0.0)
+        busy, waited = keyframe_settle(players, settle, calm) if (settle is None or settle > 0 or calm) else ({}, 0.0)
         if busy or waited >= 1:
             extra = list(extra or []) + [f'busy {r}: {",".join(b)}' for r, b in sorted(busy.items())] + \
                 ([f'waited {waited:.1f} s for the games to settle'] if waited >= 1 else [])
