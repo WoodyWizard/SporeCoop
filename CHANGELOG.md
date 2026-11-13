@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- After an error inside the game's drawing that the game itself recovered from, the co-op no longer stops for good
+  while the game draws on (the partner stood still, chat and console went silent); the on-screen tags and partner
+  arrows no longer vanish for the rest of the game after an error in them (BUG-1024).
+- A console command that hit an error the game recovered from now answers with an error instead of never answering
+  (BUG-0966).
+- The partner arrows come back after a display reset (Alt+Enter) when the game failed to set them up once (BUG-1026).
+- Crash and hang reports are written more safely: the crashed thread's registers are copied first, reports written
+  in the background no longer call into the game, a crash near the end of a stack is recorded, and a very long game
+  folder path no longer overruns a buffer at start (BUG-1020, BUG-1022, BUG-1028, BUG-1033).
+
 ## [0.7.13] - 2026-11-12
 
 A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many

@@ -1,19 +1,19 @@
 ---
 id: BUG-1022
 title: SporeKit: reports written off the main thread call the game's mode manager and read the mod list and coop's report text without a lock
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-3
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit
+commits: 438e1cdb
+tests: kit_watchdog, kit_crash, diag
 signature:
-docs:
+docs: docs/02-modkit.md#modkit-report-safety
 related:
 ---
 
@@ -39,6 +39,10 @@ Observed in code (main efd2e0ba):
 * catch (...) in report_step (diag.cpp:718-731) does not catch SEH faults in this build (llvm-mingw, no /EHa), so a
   fault in game_mode_id on the watchdog thread goes to the crash filter (a crash report about the reporter).
 
+Runtime / fix/w49-kit:
+Observed in code as described above; no runtime failure seen (the windows are tiny: a hang stops the main thread, the
+coop buffer is swapped every 2 s, the mod list changes only with mod.load / mod.reload).
+
 ## Fix idea
 The main thread caches the mode id each frame (an atomic in frame_common) and diag_env reads the cache off the main
 thread; a mutex (or a copy under g_cmd_mu-like lock) around g_mods for readers off the main thread; coop's report
@@ -52,11 +56,17 @@ report has the coop section. A FAIL needs a mode manager torn down at the hang (
 `kit.test.hang` during a stage change; else `no-fail-run: race, not reproducible`.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`kit.fix reportsafe`: diag_env off the main thread reads the mode the main thread caches every 10 frames
+(gamehooks.cpp game_mode_cached, filled from frame_common) instead of calling IGameModeManager::Get / GetActiveModeID,
+and the mods line mods.cpp keeps under a lock (mods_line, rebuilt after every load and unload) instead of walking
+g_mods. mods/coop/coop.cpp: the report buffers swap under g_diag_mu and diag_context_fn returns a per-thread copy made
+under it (no switch: a lock).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: data race / hardening (owner decision 4, 2026-11-13); a FAIL needs a hang inside a mode switch or a hot
+reload during a report. Regression: kit_watchdog (the watchdog's hang report, written off the main thread, with the
+game mode and mods lines), kit_crash and diag PASS: out/lab/20261113-011055 (kit_crash, kit_watchdog, diag).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit (no-fail-run, owner decisions 4/5).

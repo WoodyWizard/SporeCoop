@@ -3249,3 +3249,6 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: sporekit/d3d9hook.cpp (plain g_present_depth++/-- around o_Present / o_SwapPresent; frame_cut_off does not
   reset the depth); observed in code, reachability inferred. Related to BUG-0966 (there the frames went on).
 * Ticket: BUG-1024
+* Fixed (unreleased, fix/w49-kit, 2026-11-13): `kit.fix presentunwind` resets the depth after the unwind and ends
+  the overlay pass's scene; seen at runtime before the fix (lab 20261113-010320: no frames; 20261113-010700-2: the
+  overlay pass dead, the back buffer held). docs/02-modkit.md#modkit-present-unwind

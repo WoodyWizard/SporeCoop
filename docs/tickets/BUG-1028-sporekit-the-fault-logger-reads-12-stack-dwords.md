@@ -1,19 +1,19 @@
 ---
 id: BUG-1028
 title: SporeKit: the fault logger reads 12 stack dwords past the end of the stack's region and loses a fault that faults again inside it
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-6
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-kit
+commits: 438e1cdb, 4ebce297
+tests: kit_vehedge
 signature:
-docs:
+docs: docs/02-modkit.md#modkit-report-safety
 related:
 ---
 
@@ -37,6 +37,12 @@ Audit detail wrong: exe_return_address's `v < lo + 6` (exceptions.cpp:52) lets c
 section, which is the PE header page: mapped and readable, harmless. module_return_address bounds its reads by the
 region (31-35).
 
+Runtime / fix/w49-kit:
+Confirmed at runtime (lane 7, `SPORE_FIX_OFF=vehbounds`, labs 20261113-011047, 20261113-011847-2): `kit.test.vehedge` faults with esp 8 bytes
+below the end of its stack's committed region; the fault logger's 12-dword copy read the reserved page after it and
+faulted inside the logger; that fault was ignored (SK_TF_IN_EXC) and the first one was never recorded (the logger's
+last fault was not it). probe.cpp / ftrace took MEM_COMMIT as readable (code).
+
 ## Fix idea
 One helper `readable_range(p, n)` (MEM_COMMIT, no PAGE_NOACCESS / PAGE_GUARD, the whole range inside the region)
 used by the VEH copy (copy min(12, dwords left in the region)), probe.cpp and the report's stack scan; write the
@@ -48,11 +54,17 @@ fault (the BUG-0956 test does an off-stack fault; reuse its harness). Assert the
 Main: no record of the first fault: FAIL. Lab test on one lane (coop_offstack_report.py extended).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+sporekit/exceptions.cpp, `kit.fix vehbounds`: the fault's record (g_last_*) is written before any read of the faulting
+stack; the copy takes min(12, dwords left in esp's region) and only when the region is not PAGE_NOACCESS /
+PAGE_GUARD. probe.cpp (probe and ftrace stack walks) also stops at PAGE_NOACCESS / PAGE_GUARD. Test command
+`kit.test.vehedge` (a thread whose TIB stack limits point at a block of ours, 192 KB committed then reserved; a last
+vectored handler sends it back).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test kit_vehedge (`kit_freeze.py --case vehedge`, one game):
+* FAIL `SPORE_FIX_OFF=vehbounds`: out/lab/20261113-011047 (recorded=0) and out/lab/20261113-011847-2 (recorded=0, nested=1: the second fault inside the logger).
+* PASS: out/lab/20261113-010700 (recorded=1, faults=1) and out/lab/20261113-011847 (recorded=1, nested=0); kit_freeze (all cases) PASS out/lab/20261113-011847.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-kit (FAIL/PASS twin).

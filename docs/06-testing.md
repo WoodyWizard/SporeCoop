@@ -6936,3 +6936,19 @@ Use and limits:
   (drift, growth, a rare race) shows only in the full runs, so the release still runs them all. The parallel unit
   loads the machine harder for under a minute (8 jobs). The schedule's estimate comes from the out/lab folders of
   this machine; on a fresh checkout it falls back on the suite's minutes.
+
+## Faults the game catches, on purpose (2026-11-13, fix/w49-kit)
+<a id="testing-caught-faults"></a>
+
+* `kit.test.presentfault present|overlay` makes one access violation (a read of 0x10 in sporekit.dll) inside the
+  original Present or in the overlay pass; `kit.test.cmdfault` makes one in a console command's own task inside a
+  frame. The game's handler catches these (the game goes on); tests that use them are `reports=True` and read the
+  faults themselves (kit_present_fault, kit_overlay_fault, kit_cmd_fault; `exc` shows them as sporekit.dll+0x...
+  data=0x00000010).
+* Pitfall: a fault in a task the **window procedure** runs (WM_SK_PUMP / WM_SK_PUMP_OUT from App::Canvas::Tick's
+  message loop) is not caught by the game: the game ends with a crash report. Only faults under the frame (Present)
+  reach a handler of the game. SporeKit's own test commands that must fault in a frame carry SK_CMD_FRAME_ONLY
+  (only a frame's pump runs them).
+* `kit.test.vehedge` (kit_vehedge) faults on a thread of its own whose stack is a block of ours; `kit.test.tri` draws
+  a magenta triangle at the top left of the overlay for N frames (kit_overlay_reset checks its pixels in `shot`, the
+  shot is at half scale).
