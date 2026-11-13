@@ -7424,3 +7424,33 @@ stripped, 52 missing), PASS 20261113-045626; BUG-0255's own case still PASSES (s
   the throws" check failed, which it does now and then cold too). Regression of the branch: tribe_gameover_reload,
   tribe_bounce_mirrors, tribe_gameover (one warm FAIL after tribe_gameover_reload, OK alone and in the same order on
   lane 7), play_tribe --quick: OK.
+## The players' own hut falling on the host (2026-11-13, fix/w49-fault)
+<a id="testing-own-hut-fall"></a>
+
+BUG-1076. `tribe_own_hut_fall` (tribe fixture, warm, ~2 min): the host forms an NPC tribe 45 m away
+(`coop.tribe npc_tribe 3 45`), then gives that village's hut and the players' own hut the game's killing blow
+(`coop.tribe hutfall <x> <y> <z>`, host or local play: the hut's combatant TakeDamage, vt 0x18, with its health + 10
+and no attacker, also while a cinematic plays). For 45 s the guest's game must keep the players' hut standing (its
+combatant state never 2 in `coop.realign planet hut`, fl bit 2) and the same object (a reload of the guest's own save
+makes another). Twin `SPORE_LAB_FIXOFF="tribe_own_hut_fall=realign.own_hut"`: the guest's hut falls 3 s after the
+host's and its key frame shows the game's own "Oh, the humanity! Your tribal hut has been destroyed!" caption (lab
+20261113-132309); with the fix the hut stands, smoking, with `own_hut_kept` counting (20261113-132309-2).
+* The host's own game shows that caption too and waits for its OK; nothing pauses the guests meanwhile (BUG-0960's
+  wait covers the tribe knocked out only).
+## Two copies of one instance: refused (2026-11-13, fix/w49-fault)
+<a id="testing-double-instance"></a>
+
+BUG-1075. In lab 20261113-074535 (lane 4) every cold start of the campaign tests had a second copy of the same
+instance booting next to the first (its log: `console: cannot listen on 127.0.0.1:478NN (err 10013)`; the two pids
+in the crash report and in the lab's copy of sporekit.N.log differ). Both copies use one profile and read and write
+its galaxy save at boot; one such boot crashed in the game's star read (docs/re/space.md#space-star-null-planet-record).
+* `spore.sh run` now refuses (exit 3) a start of an instance that runs on the lane or was started under 20 s ago,
+  until `spore.sh kill` (marker `SporebinEP1/mods/logs/.started.<inst>` in the lane's game folder: shared by every
+  worktree that uses the lane). `SPORE_ALLOW_DOUBLE=1` starts anyway.
+* `lane.run_host()` / `lane.run_guest()` print the refusal as a note and go on: the "did not answer in N s, start it
+  again" paths (twoinst, rejoin tests) wait for the first copy instead of making a second one (BUG-0267 saw such a
+  copy hang).
+* A test that kills one game by pid (`kill_game`) and starts it again at once is not refused: its marker is older
+  than 20 s.
+* Boot loop measurements (fix/w49-fault): 12 cold boots of the tribe fixture's profile under load, 0 faults; 16 with
+  a deliberate double start, 0 crashes, 3 never reached the galaxy menu in 120 s.

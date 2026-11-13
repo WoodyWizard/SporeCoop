@@ -2983,3 +2983,28 @@ Mod-side mechanics (space_rivalry.cpp, space_planets.cpp), no new game addresses
   1`) leaves the game's running list (state 2/3) before 30 s, and a raid started with 0 bombers (StartRaid's last
   argument) is completed by the game at once (state 5): the game keeps no empty raid running on the colony.
 * ✔ (code) BUG-1040: the roster scan's 250-colony cap now ends the scan over all stars (space_map.cpp).
+
+## A star's planet check at boot reads a null planet record (2026-11-13, fix/w49-fault)
+<a id="space-star-null-planet-record"></a>
+
+BUG-1075. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and the crash report of lab 20261113-074535 (fix/w49-tests).
+* ✔ (Ghidra) 0xFEFC03 is not in cMissionManager::ChooseMission (0xFEEBC0 ends before 0xFEFB80; the crash report's
+  nearest name is wrong): it is `SporeCoop::StarRecord_HasGoldilocksPlanet` 0xFEFB80 (cdecl(cStarRecord*,
+  cPlanetRecord** io, bool*, bool*), plain ret). For a single star it loops over GetPlanetRecords (0xBBA900) and
+  reads `[record]+0x28` (the planet's type) without a null check: `mov edx,[eax]; cmp [edx+0x28],2`. The crash had
+  edx = 0: a null pointer inside the star's planet record vector (eax = the vector's data).
+* ✔ The chain (stack scan): ReadStarsFromSaveDB 0xBB8C90 (u"stars.db") -> StarGenerationMessageHandler -> 0xBB2580
+  -> 0xBB2350 -> 0xFEFD20 -> 0xFEFB80, on the main thread at frame 2 of the boot, game mode none: the galaxy save of the
+  profile is read before the galaxy menu.
+* ✔ (Ghidra) GetPlanetRecords 0xBBA900 returns the star's record vector +0x84 as read from the save (or a filtered
+  copy +0x98 when flag 0x40 of +0x5C is set); it does not generate planets. A null entry is a planet record the read
+  did not resolve.
+* ✔ (runtime) The mod's hooks near it did not run: space's RequirePlanetsForStar / RandomInt / RandomFloat /
+  GenerateRandomName / cStarRecord_GetSpeciesProfile hooks (BUG-0185, BUG-1074) log every generation ("space: planets
+  of star ... generated") and the crashed game's log has none; no hook of ours is in the star manager's save read
+  or the resource reads; the mod had no session (offline, game mode none). The crashed game
+  was one of two copies of the same instance started 0.13 s apart with the same profile (pids 448 and 456 of instance
+  7, the second "console: cannot listen on 127.0.0.1:47806 (err 10013)"), both reading the profile's galaxy save
+  (docs/06-testing.md#testing-double-instance).
+* ? Whether a torn read of the shared save files gives the null record: inferred, not reproduced (lab boot loops
+  under load and with a deliberate double start, docs/06-testing.md#testing-double-instance).
