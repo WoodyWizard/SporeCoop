@@ -7249,11 +7249,11 @@ cold time (the median of its last 5 passed runs, `lab.measured_seconds()`), "aft
 starts of a batch run (each lane's first test, a test after a failure, a refused reuse) are in the totals.
 
 **Candidates.** A static read of the 702 cold tests (`warm=False`, comments and docstrings left out): 117 are in
-no smoke / full suite and 68 are generated `players` variants (both left alone); 285 have a reason of their own
+no smoke / full suite and 68 are generated `players` variants (both left alone); 269 have a reason of their own
 to start cold, by the first one found: a load, the galaxy menu or a new game 50, an env prefix of the command
 (`SPORE_NET`, `SPORE_FPS`, a test knob) 45, their own kill / restart / `wait_up` 43, 3-4 games 36, an editor or an
 editor vote 32, a start of their own (`join_in_intro`, `join_at`, `before_join`, `guest_creations=False`, preset
-choices, `keep_holds`) 24, a crash / initfail / `exc` 19, `reports=True` 16, profile files 3, no game 1. Of the 249
+choices, `keep_holds`) 24, a crash / initfail / `exc` 19, `reports=True` 16, profile files 3, no script 1. Of the 248
 left, 17 more stay cold by their script (editor votes in coop_nest_follow, coop_evolve_world,
 coop_rejoin_saved_puppet, coop_editor_*, coop_guest_editor, coop_join_during `--case editor`, tribe_party_editor,
 space_rival_away, space_spice_away; cell_evolve_poll ends the Cell stage; the space_finale* tests end at the
@@ -7311,7 +7311,7 @@ reset (19-22 s) and FAILED; with the switch on each PASSED from a warm reset in 
 
 | test | switch | warm, switch off | warm, switch on |
 |---|---|---|---|
-| cell_ko_poison | cell.ko_no_poison | FAIL 20261113-122313 (no cloud check: 36 -> 57) | PASS 20261113-090414 |
+| cell_ko_poison | cell.ko_no_poison | FAIL 20261113-122313 (clouds 36 -> 57 in 8 s) | PASS 20261113-090414 |
 | cell_kill_refused | cell.kill_refused | FAIL 20261113-122313 | PASS 20261113-090414 |
 | creature_brain_hp | creature.own_brain_hp | FAIL 20261113-122313 (16.0 -> 16.0) | PASS 20261113-094538 |
 | puppet_unground | creature.puppet_unground | FAIL 20261113-122313 (min -0.69 m) | PASS 20261113-094538 |
