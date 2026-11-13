@@ -6954,7 +6954,7 @@ BUG-1055 and its tickets (docs/01-architecture.md#arch-lifecycle-registry).
   session, then a restarted game); the guest's mirror must follow a member the host put 15 m away (`coop.tribe put`).
 * `coop_tribe_host_reload_reset.py` (BUG-1054): `coop.tribe reload arm` makes the host's reload due as the live
   Creature -> Tribe change does; `coop.tribe reload` prints `host_reloads=`.
-* `coop_mirror_fx_keys.py` (BUG-1049): `coop.mirrorfx key start|stop <member> <effect>` (host: the game's pool-1
+* `coop_mirror_fx_keys.py` (BUG-1049): `coop.mirrorfx key start|relay|stop <member> <effect> [key] [pool]` (host: the game's pool
   start / stop on a member, relayed as the hook relays it), `coop.mirrorfx fill <n>` (fake keyed starts),
   `coop.mirrorfx has <member> <key>` (guest: the game's effect of that key on the mirror, active or not).
 * `cell_parts_apart` (BUG-0998): coop_cell_parts.py with `SPORE_FIX_OFF=parts.shared`; with `parts.cell_apart` off too

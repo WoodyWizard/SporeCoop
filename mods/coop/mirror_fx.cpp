@@ -307,8 +307,8 @@ std::string status()
 }
 
 // tests (BUG-1049): coop.mirrorfx fill <n> (host: n keyed starts of no creature into the table, as a long session
-// leaves them); key start|stop <member> <effect> [key] [pool] (host: the game's pool start / stop of an effect on the
-// tribe member, relayed as the effect hook relays one); has <member> <key> (guest: the game's effect of that key on
+// leaves them); key start|relay|stop <member> <effect> [key] [pool] (host: the game's pool start / stop of an effect on the
+// tribe member, relayed as the effect hook relays one; relay: only the relay, so the host's own update cannot stop it); has <member> <key> (guest: the game's effect of that key on
 // the member's mirror is active: 1 / 0)
 static int c_status(void*, int argc, const char* const* argv, SkOut* out)
 {
@@ -320,7 +320,7 @@ static int c_status(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "key") && is_host()) {
-        bool stop = !strcmp(argv[2], "stop");
+        bool stop = !strcmp(argv[2], "stop"), relay_only = !strcmp(argv[2], "relay"); // relay: no start in the host's game
         uint16_t id = (uint16_t)atoi(argv[3]);
         uint32_t eid = (uint32_t)strtoul(argv[4], nullptr, 0);
         uint32_t key = argc > 5 ? (uint32_t)strtoul(argv[5], nullptr, 0) : eid;
@@ -335,9 +335,9 @@ static int c_status(void*, int argc, const char* const* argv, SkOut* out)
         ev.key = key;
         ev.pool = stop ? 0 : pool;
         ev.stop = stop;
-        bool ok = stop ? game::stop_effect(c, key) : game::start_effect(c, {eid, key, pool, false}) != nullptr;
+        bool ok = stop ? game::stop_effect(c, key) : relay_only || game::start_effect(c, {eid, key, pool, false}) != nullptr;
         on_creature_effect(c, ev);
-        H->out_printf(out, "%s %s keys=%zu\n", stop ? "stop" : "start", ok ? "ok" : "failed", g_keys_n);
+        H->out_printf(out, "%s %s keys=%zu\n", argv[2], ok ? "ok" : "failed", g_keys_n);
         return 0;
     }
     if (argc > 3 && !strcmp(argv[1], "has")) {
@@ -360,7 +360,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_Voice, (void**)&o_Voice);
     if (uintptr_t a = H->sym("SporeCoop::Creature_SetSprint"))
         H->hook_create(M, (void*)a, (void*)h_Sprint, (void**)&o_Sprint);
-    H->command_add(M, "coop.mirrorfx", "coop.mirrorfx [fill <n> | key start|stop <member> <effect> [key] [pool] | has <member> <key>] - the host's creature effects, sprints and voices played on a guest's mirrors (BUG-0600; tests BUG-1049)",
+    H->command_add(M, "coop.mirrorfx", "coop.mirrorfx [fill <n> | key start|relay|stop <member> <effect> [key] [pool] | has <member> <key>] - the host's creature effects, sprints and voices played on a guest's mirrors (BUG-0600; tests BUG-1049)",
                    c_status, nullptr, 0);
 }
 
