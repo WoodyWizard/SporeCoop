@@ -966,7 +966,7 @@ add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minut
 # BUG-1073 / BUG-1079: the campaign's jump path on its own planet: the Tribe end not tried (CAMPAIGN_OLD_TRIBE=1: 0.7.13's
 # raids, no village falls), the host loads the civ_npc fixture in game after 12 min, Civ is played and its end comes by
 # the captures with their cinematics (stuck in every jump campaign before the fix), then Space and the finale
-add('campaign_civ_jump', 'CAMPAIGN_OLD_TRIBE=1 ' + P + 'coop_campaign.py --from creature --to space --minutes 2 --advance-minutes 12',
+add('campaign_civ_jump', 'CAMPAIGN_OLD_TRIBE=1 CAMPAIGN_STRICT_TRIBE=0 ' + P + 'coop_campaign.py --from creature --to space --minutes 2 --advance-minutes 12',
     (), minutes=60, timeout=4800)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
