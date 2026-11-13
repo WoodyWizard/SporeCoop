@@ -2955,3 +2955,35 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: answer the box on the host by the guest's choice (forward the question to the buyer), or take the
   city's own specialty for a guest's purchase.
 * Ticket: BUG-0982
+## Tests: walk_start_walkin with every fix off crashed in DXVK after two caught memcpy faults (2026-11-12, test: fix/w48-d3d9)
+<a id="issue-fixoff-dxvk-crash"></a>
+
+* What happens: 18 ms after `coop.fix all off` (solo, Creature, the partner gone 3 s before) the host's game catches
+  a fault in ucrtbase memcpy on the main thread (the console's frame), another 1 s later, then crashes in DXVK 3.1.1's
+  CS thread (d3d9.dll+0x11395B, a command list with a null command pool: damaged heap). Seen once (lab
+  20261112-175447); the same test passed on fix/w48-walk. Only with every fix off; not seen with fixes on.
+* Reproduce: `tools/lab.py run walk_start_walkin --lane N --repeat 10` (not reproduced yet).
+* 2026-11-12 (fix/w48-fui): seen again on lane 3 (rerun 20261112-205503 #1, a caught fault only); 6 clean runs on lanes 4
+  and 5 (walk_start_walkin, fixoff_clean). The fault log now prints `module calls:` (return addresses into our DLLs)
+  to name the caller next time.
+* FIXED (2026-11-12, fix/w48-fui): the cause was core.adapters' off side (Wine's GetAdaptersAddresses on the main
+  thread, BUG-0286); the switch is unsafe now, `all off` leaves it on.
+* Ticket: BUG-0977
+
+## Creature: a joining guest's creature stands inside the host's creature (2026-11-12, key frames: fix/w48-fui)
+<a id="issue-join-same-spot"></a>
+
+* What happens: on a join into Creature both creatures stand at one point, drawn inside each other, until one walks;
+  the two games show the pair in other poses.
+* Reproduce: any test on the creature fixture (key frames of play_creature start, same_view, find_layout).
+* Known: the guest's avatar starts where the host's save has the player's creature (inferred, not analysed).
+* Next steps: put the joining avatar a few metres aside on the game's surface.
+* Ticket: BUG-0989
+
+## Creature: the host's camera looked into the ground at the end of a campaign creature play (2026-11-12, key frames: fix/w48-fui)
+<a id="issue-camera-in-ground"></a>
+
+* What happens: the host's picture was only terrain (no own creature), the guests' normal. Seen once
+  (lab 20261112-175447, campaign_short play-creature).
+* Reproduce: not known.
+* Ticket: BUG-0990

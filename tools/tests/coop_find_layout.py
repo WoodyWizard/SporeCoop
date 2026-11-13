@@ -105,10 +105,20 @@ def main():
     def at(f, r, u):
         return [eye[i] + fwd[i] * f + right[i] * r + up[i] * u for i in range(3)]
 
+    def card_list(h):
+        return [b for b in h if b[0] > W * 0.5 and b[1] > 120 and b[1] < 400 and b[2] - b[0] > 300]
+
+    # The host's card must be the only one: an earlier notice (the guest's own creature swap, 'Bob plays its
+    # own creature', when the lane's worlds.ini has a record for this world) stacks above it, expires about a
+    # second later and the host's card moves up into its place, away from where D was put (final check of
+    # 0.7.13: D was put under the lower card, which then moved off it).
+    t0 = time.time()
+    while card_list(boxes(guest)[1]) and time.time() - t0 < 15:
+        time.sleep(0.5)
     host.call('coop.say hello from the host')  # D: a card on the guest's screen
     time.sleep(2.5)
     labels, hud = boxes(guest)
-    cards = [b for b in hud if b[0] > W * 0.5 and b[1] > 120 and b[1] < 400 and b[2] - b[0] > 300]
+    cards = card_list(hud)
     print(f'  the guest\'s UI windows: {len(hud)}; notification cards: {cards[:2]}', flush=True)
     ck(bool(cards), 'the guest shows the host\'s message on a card')
     ghosts = {201: at(25, -70, 0), 202: at(27, -76, 1.5)}

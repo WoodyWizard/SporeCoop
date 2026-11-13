@@ -54,6 +54,11 @@ def main():
     ck(e is not None and t_close is not None and e['t'] >= t_close,
        'the key frame waited for the guest\'s pause menu to close')
     ck(e is not None and any('waited' in x for x in e.get('extra', [])), 'the manifest says the frame waited')
+    # BUG-0984: the pause menu fades out for about a second after the game plays again (the 0.7.13 final check's
+    # frame had the half-transparent menu over the guest's game, shot 0.4 s after the close).
+    # SPORE_KEYFRAME_FADE=0 must FAIL.
+    gap = e and t_close and e.get('shot_t', e['t']) - t_close
+    ck(gap is not None and gap >= 1.2, f'the guest was shot after the menu\'s fade-out ({gap and round(gap, 2)} s after the close)')
     t2 = time.time()
     b = busy(guest)
     while time.time() - t2 < 5 and 'paused' in b:

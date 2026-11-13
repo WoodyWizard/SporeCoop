@@ -18,11 +18,27 @@ struct ExcRec {
     uint32_t regs[8];
     uint32_t stack[12];
     uint32_t rets[10]; // likely return addresses into the exe found deeper on the stack (0 = none)
+    uint32_t mrets[8]; // BUG-0977: the same into another module's code (our DLLs, the CRT, Wine's): who called in
     uint32_t mark;     // count at the start of the fault storm window (BUG-0676)
     bool storm;        // named as a fault storm already
 };
 
 // a dword on the stack that points just after a call instruction in the exe's code
+// BUG-0977: a dword on the stack that points just after a call instruction in a loaded module other than the exe (a
+// fault in ucrtbase's memcpy listed only exe addresses: the mod function that called it was not named)
+static bool module_return_address(uint32_t v)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (v < 0x10000 || !VirtualQuery((const void*)(uintptr_t)(v - 7), &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        mbi.Type != MEM_IMAGE || !(mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_EXECUTE_READWRITE)) ||
+        (uintptr_t)mbi.BaseAddress + mbi.RegionSize < (uintptr_t)v ||
+        mbi.AllocationBase == (void*)GetModuleHandleW(nullptr))
+        return false;
+    const uint8_t* c = (const uint8_t*)(uintptr_t)v;
+    return c[-5] == 0xE8 || (c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0) ||
+           (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10);
+}
+
 static bool exe_return_address(uint32_t v)
 {
     static uintptr_t lo, hi;
@@ -221,10 +237,13 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             r.stack[i] = sp[i];
         // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
         const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
-        int n = 0;
-        for (const uint32_t* q = sp; q < end && q < sp + 512 && n < 10; q++)
-            if (exe_return_address(*q))
-                r.rets[n++] = *q;
+        int n = 0, m = 0;
+        for (const uint32_t* q = sp; q < end && q < sp + 512 && (n < 10 || m < 8); q++)
+            if (exe_return_address(*q)) {
+                if (n < 10)
+                    r.rets[n++] = *q;
+            } else if (m < 8 && module_return_address(*q))
+                r.mrets[m++] = *q;
     }
     {
         std::lock_guard<std::mutex> lk(g_mu);
@@ -281,6 +300,24 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             named += (i ? " < " : "") + (n.empty() ? std::string("?") : n);
         }
         logf(&g_kit_mod, SK_ERROR, "  called from: %s", named.c_str());
+    }
+    if (r.mrets[0]) { // BUG-0977: return addresses into other modules (module+offset), innermost first
+        std::string ms;
+        for (int i = 0; i < 8 && r.mrets[i]; i++) {
+            HMODULE hm = nullptr;
+            char one[80];
+            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCWSTR)(uintptr_t)r.mrets[i], &hm) && hm) {
+                wchar_t n[MAX_PATH];
+                GetModuleFileNameW(hm, n, MAX_PATH);
+                std::wstring w = n;
+                snprintf(one, sizeof one, " %s+0x%X", narrow(w.substr(w.find_last_of(L"\\/") + 1)).c_str(),
+                         (unsigned)(r.mrets[i] - (uintptr_t)hm));
+            } else
+                snprintf(one, sizeof one, " %08X", (unsigned)r.mrets[i]);
+            ms += one;
+        }
+        logf(&g_kit_mod, SK_ERROR, "  module calls:%s", ms.c_str());
     }
     uintptr_t lo, hi;
     static volatile LONG offstack_told;

@@ -6768,3 +6768,21 @@ BUG-0948, BUG-0929, BUG-0949, BUG-0937 (0.7.13 B1b). All on the creature fixture
   * `tag_height` 1.19 m: the three stills measured the body top at y 461 / 558 / 532 for one tag at y 406-416; in
     still 2 the partner stands among look-alike creatures at a nest, the measured body is not the one under the
     tag (the median 106 px took two such stills). Not analysed further.
+## Key frames and the fixture's notices (2026-11-12, fix/w48-fui)
+<a id="testing-tag-cinematic"></a>
+
+* Key frames after a wait (BUG-0984): the game says it plays again the moment its pause menu closes, but the menu
+  (and a cinematic's end) still fades out for about a second; `twoinst.keyframe` now waits `SPORE_KEYFRAME_FADE`
+  s (default 1.5, 0 = the old behaviour) more after any busy wait. The manifest entry carries `shot_t`.
+* `tag_cinematic` (BUG-0985): the game's own PlayCinematic plays CRG_ClaimNest on the guest (busy
+  cinematic,input_lock, its caption keeps it running until Enter); the overlay's last pass (`coop.find boxes`) is
+  empty during it. `coop.fix find.cinematic off` draws the tags over the cutscene.
+* The creature fixture's guest may swap to its own creation right after the join when the lane's worlds.ini has
+  a record of it in this world (BUG-0928): its notice card "Bob plays its own creature '...'" is up for a few
+  seconds and stacks above later cards. A test that places something under a notice card waits until no card is
+  up first (find_layout, BUG-0978).
+* `play_creature` can end in an evolution (the host's bot at the nest starts the vote, both games go into the
+  editor together): the end key frame then says so (BUG-0986).
+* `fixoff_clean` (BUG-0977): every fix off on the host alone right after the guest left, the commands the walk test
+  sends and 30 address lookups (`coop.adapters stress`), 4 rounds; no fault. The fault log's `module calls:` line
+  (return addresses into DLLs) named Wine's nsi.dll: core.adapters' off side, now unsafe (BUG-0977). `SPORE_PROBE_OFF=<prefix,...>` / `SPORE_PROBE_ON=<name,...>` bisect the switches.

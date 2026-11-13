@@ -124,6 +124,10 @@ PLAYERS = {}  # {'host': Console, 'guest': Console} of the last start(): keyfram
 
 KEYFRAME_BUSY = ('cinematic', 'paused', 'editor', 'loading')  # BUG-0924: a frame at such a moment says nothing
 KEYFRAME_SETTLE = float(os.environ.get('SPORE_KEYFRAME_SETTLE', '20'))
+# BUG-0984: the game's pause menu (and a cinematic's end) fades out for about a second after the game says it plays
+# again: a frame shot right after the busy state ended had the half-transparent menu over the guest's game (0.7.13
+# final check, keyframe_settle). After a wait the frame waits this much longer (0: the old behaviour, the twin).
+KEYFRAME_FADE = float(os.environ.get('SPORE_KEYFRAME_FADE', '1.5'))
 
 
 def _game_busy(con):
@@ -154,12 +158,22 @@ def keyframe_settle(players, settle=None, calm=0):
         except (OSError, ValueError):
             pass
     try:
+        seen = False
         while True:
             busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
             now = time.time()
             calm_since = None if busy else (calm_since or now)
-            if (not busy and now - calm_since >= calm) or now - t0 >= settle + calm:
+            if not busy and seen and KEYFRAME_FADE > 0 and now - calm_since >= calm:  # BUG-0984: the menu's or the cinematic's fade-out
+                time.sleep(KEYFRAME_FADE)
+                busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
+                if not busy:
+                    return busy, time.time() - t0
+                calm_since = None
+            elif (not busy and now - calm_since >= calm) or now - t0 >= settle + calm:
                 return busy, now - t0
+            if busy and time.time() - t0 >= settle + calm:
+                return busy, time.time() - t0
+            seen = True
             time.sleep(0.5)
     finally:
         for c in cons.values():
@@ -188,6 +202,7 @@ def keyframe(tag, note, players=None, kind='key', extra=None, settle=None, calm=
         nn = frames.next_number(d)
         tmp = lane.out_dir('shots', 'keyframes')
         games = {}
+        t_shot = time.time()
 
         def one(role, con):
             g = {'file': frames.frame_file(nn, tag, role), 'ok': False, 'mode': '', 'pos': None}
@@ -218,6 +233,7 @@ def keyframe(tag, note, players=None, kind='key', extra=None, settle=None, calm=
         stage = next((g['mode'] for r, g in sorted(games.items(), key=lambda kv: frames.role_order(kv[0]))
                       if g.get('mode')), '')
         e = frames.now_entry(frames.test_name(), nn, tag, note, kind, stage, games, extra)
+        e['shot_t'] = round(t_shot, 2)  # when the shots were asked for (BUG-0984)
         frames.record(d, e)
         shot_n = sum(1 for g in games.values() if g['ok'])
         print(f'  (key frame {nn:02d} {tag}: {shot_n} of {len(games)} games shot -> {d})', flush=True)
