@@ -1,4 +1,5 @@
 #include "tribe.h"
+#include "call_guard.h"
 #include "lifecycle.h"
 #include "player_life.h"
 
@@ -2112,6 +2113,7 @@ static ThemePlay_t o_ThemePlay;
 static ThemeMove_t o_ThemeMove;
 static ThemeStop_t o_ThemeStop;
 static bool g_theme_relaying; // guest: our own call of the game's functions
+CALL_GUARD("tribe.theme_relaying", g_theme_relaying); // BUG-1047
 static double g_theme_moved_at[24];
 static int g_theme_local[24]; // guest: host slot -> this game's slot (0 none)
 static uint32_t g_theme_sent, g_theme_rx, g_theme_played;
@@ -2192,7 +2194,7 @@ static void on_theme(uint8_t kind, net::Reader& r)
     void* mgr = theme_mgr();
     if (!g_theme_fix || !mgr || !o_ThemePlay)
         return;
-    g_theme_relaying = true;
+    callguard::Hold theme_relaying(g_theme_relaying);
     int& local = g_theme_local[slot];
     if (kind == 4) {
         if (local)
@@ -2206,7 +2208,6 @@ static void on_theme(uint8_t kind, net::Reader& r)
         o_ThemeStop(mgr, local);
         local = 0;
     }
-    g_theme_relaying = false;
 }
 
 // BUG-0646: "the guest does not hear the music of the dance around the fire". The fire pit party (CitizenAction 12 Party
@@ -2228,6 +2229,7 @@ static PlayProc_t o_PlayProc;
 static StopAudio_t o_StopAudio;
 static uintptr_t a_AudioGet;
 static bool g_party_relaying;            // guest: our own call of the game's functions
+CALL_GUARD("tribe.party_relaying", g_party_relaying); // BUG-1047
 static uint32_t g_party_host_track;      // host: the party music's track now (0 none)
 static uint32_t g_party_rx_track, g_party_local; // guest: the host's track and this game's track for it
 static uint32_t g_party_own;             // guest: a party music track its own game plays
@@ -2294,9 +2296,10 @@ static void party_hooks_install()
 static void party_stop_local()
 {
     if (g_party_local && o_StopAudio) {
-        g_party_relaying = true;
-        o_StopAudio(g_party_local, 0);
-        g_party_relaying = false;
+        {
+            callguard::Hold party_relaying(g_party_relaying);
+            o_StopAudio(g_party_local, 0);
+        }
         g_party_stopped++;
     }
     g_party_local = g_party_rx_track = 0;
@@ -2332,9 +2335,10 @@ static void on_party(uint8_t kind, net::Reader& r)
     uint32_t mine = thiscall<uint32_t>(F<uintptr_t>(F<void*>(as, 0), 0x20), as); // a new track (AudioSystem vt 0x20)
     if (!mine)
         return;
-    g_party_relaying = true;
-    o_PlayProc(sound, mine, x, y, z);
-    g_party_relaying = false;
+    {
+        callguard::Hold party_relaying(g_party_relaying);
+        o_PlayProc(sound, mine, x, y, z);
+    }
     g_party_local = mine;
     g_party_rx_track = track;
     g_party_played++;

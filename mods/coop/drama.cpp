@@ -7,6 +7,7 @@
 // death, which keeps a swimmer from leaving the island (docs/re/creature.md#creature-drama-events).
 // `coop.fix creature.guest_events off`: a guest starts every event as before (0.7.4).
 #include "drama.h"
+#include "call_guard.h"
 #include "lifecycle.h"
 
 #include <cstdio>
@@ -65,6 +66,7 @@ static unsigned g_flock_relayed, g_flock_refused;
 static bool g_flock_forget = true;
 COOP_FIX("creature.flock_forget", "BUG-0800", g_flock_forget, "creature: the host's own Summon Flock after a guest's follows the host (the guest's summon event is forgotten)");
 static bool g_in_summon_for = false; // summon_for is starting the event for a puppet now
+CALL_GUARD("drama.summon_for", g_in_summon_for); // BUG-1047
 static unsigned g_flock_forgotten;
 
 // W2 (BUG-0564): in Tribe a guest's own game started a creature attack on a village (kind 7) of its own world:
@@ -182,9 +184,10 @@ bool summon_for(void* puppet)
     unsigned before = g_started[8];
     size_t mark = game::lend_ledger_on() ? game::swap_open(game::swap_undo_u32, &av, (uintptr_t)real, "flock avatar") : 0;
     av = puppet;
-    g_in_summon_for = true;
-    skg::thiscall<void>(a_StartKind, mgr, 8, 0);
-    g_in_summon_for = false;
+    {
+        callguard::Hold in_summon_for(g_in_summon_for);
+        skg::thiscall<void>(a_StartKind, mgr, 8, 0);
+    }
     av = real;
     if (game::lend_ledger_on())
         game::swap_close(mark);

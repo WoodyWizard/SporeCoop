@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "space_ext.h"
+#include "call_guard.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 
@@ -61,7 +62,9 @@ using Spoken_t = void(SK_THISCALL*)(void*);
 static Spoken_t o_Spoken;
 
 static int g_depth;     // inside a hooked relationship call (its inner events are part of it)
+CALL_GUARD_DEPTH("space_diplomacy.depth", g_depth); // BUG-1047
 static bool g_applying; // replaying a partner's change: nothing is sent
+CALL_GUARD("space_diplomacy.applying", g_applying); // BUG-1047
 
 struct Out {
     uint8_t kind;
@@ -345,9 +348,11 @@ static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b,
 {
     if (g_applying || g_depth > 0 || !sharing() || !spaceext::in_space())
         return o_ApplyEv(mgr, map, a, b, ev, scale);
-    g_depth++;
-    float r = o_ApplyEv(mgr, map, a, b, ev, scale);
-    g_depth--;
+    float r;
+    {
+        callguard::Depth d(g_depth);
+        r = o_ApplyEv(mgr, map, a, b, ev, scale);
+    }
     uint32_t me = my_pol();
     if (map == (uint8_t*)mgr + 0x24 && mgr == rel_mgr() && is_empire(a) && is_empire(b) && a != b &&
         (a == me || b == me) && !own_event(ev) && scale != 0.f) {
@@ -371,9 +376,10 @@ static void state_hook(State_t orig, uint8_t what, void* mgr, void* e1, void* e2
     bool watch = !g_applying && g_depth == 0 && sharing() && spaceext::in_space() && me && mgr == rel_mgr() &&
                  (e1 == me) != (other == me) && is_empire(pol_of(e1)) && is_empire(pol_of(other));
     uint32_t before = watch ? flags_with(e1, other) : 0;
-    g_depth++;
-    orig(mgr, e1, e2);
-    g_depth--;
+    {
+        callguard::Depth d(g_depth);
+        orig(mgr, e1, e2);
+    }
     if (!watch)
         return;
     if (flags_with(e1, other) == before)
@@ -393,9 +399,10 @@ static void SK_THISCALL h_Contact(void* empire, int arg)
     uint32_t pol = pol_of(empire);
     bool watch = !g_applying && g_depth == 0 && sharing() && spaceext::in_space() && is_empire(pol) &&
                  pol != my_pol() && !contacted(pol);
-    g_depth++;
-    o_Contact(empire, arg);
-    g_depth--;
+    {
+        callguard::Depth d(g_depth);
+        o_Contact(empire, arg);
+    }
     if (watch && contacted(pol) && !local_mirror(pol)) {
         g_out.push_back({K_CONTACT, pol, 0, kMet, 0, {}});
     }
@@ -407,9 +414,10 @@ static void SK_THISCALL h_Spoken(void* empire)
     uint32_t pol = pol_of(empire);
     bool watch = !g_applying && g_depth == 0 && sharing() && spaceext::in_space() && is_empire(pol) &&
                  pol != my_pol() && !(contact_of(pol) & kContacted);
-    g_depth++;
-    o_Spoken(empire);
-    g_depth--;
+    {
+        callguard::Depth d(g_depth);
+        o_Spoken(empire);
+    }
     if (watch && (contact_of(pol) & kContacted) && !local_mirror(pol))
         g_out.push_back({K_CONTACT, pol, 0, kContacted, 0, {}});
 }
@@ -618,7 +626,7 @@ static void inbox_task(void*)
     g_kept_away = 0;
     auto in = std::move(g_in);
     g_in.clear();
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     for (auto& [from, m] : in) {
         if (m.kind == K_EVENT)
             apply_event(from, m);
@@ -637,7 +645,6 @@ static void inbox_task(void*)
         g_snap_ready = false;
         apply_snapshot();
     }
-    g_applying = false;
 }
 static void schedule();
 // a partner's message to replay (outside the frame)
@@ -1005,7 +1012,7 @@ static std::string debug(const std::vector<std::string>& a)
         void* e = empire_of(npc);
         if (!e || npc == me)
             return "no such empire\n";
-        g_applying = local;
+        callguard::Hold applying(g_applying, local);
         if (v[0] == "contact") {
             if (a_Contact)
                 thiscall<void>(a_Contact, e, 0); // through the hook, as arriving at the empire's star does
@@ -1019,7 +1026,6 @@ static std::string debug(const std::vector<std::string>& a)
             void* f = (void*)(v[0] == "war" ? a_War : v[0] == "ally" ? a_Ally : v[0] == "peace" ? a_Peace : a_Break);
             thiscall<void>((uintptr_t)f, mgr, e, my_empire()); // through the hook like the game's own call
         }
-        g_applying = false;
         snprintf(b, sizeof b, "%s %08X '%s': rel=%.2f flags=%u\n", v[0].c_str(), npc, empire_name(e).c_str(),
                  relation(npc), flags_with(e, my_empire()));
         return b;

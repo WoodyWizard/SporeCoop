@@ -6,6 +6,7 @@
 
 #include <winsock2.h>
 #include "lifecycle.h"
+#include "call_guard.h"
 #include "player_life.h"
 #include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
@@ -1647,6 +1648,7 @@ COOP_FIX("core.own_editor_end", "BUG-0234", g_own_editor_end_fix, "core: a guest
 unsigned g_vote_actions_run; // tests: action votes whose action ran
 unsigned g_votes_dropped;    // tests: votes ended without running their result
 bool g_vote_bypass = false;
+CALL_GUARD("coop.vote_bypass", g_vote_bypass); // BUG-1047
 bool g_vote_opened_ui = false; // the vote opened the co-op window: it closes again afterwards
 double g_vote_last_send = 0;
 using Submit_t = bool(SK_CDECL*)(void*);
@@ -1954,11 +1956,13 @@ bool open_own_editor(uint32_t editor_id)
     void* req = build_editor_request(EditKind::Own, editor_id, game::species_key(av));
     if (!req)
         return false;
-    g_vote_bypass = true;
-    g_own_editor = true; // the editor loads the creature after Submit, on a later frame
-    g_own_editor_charge_due = true; // BUG-0466: its result charges the price
-    bool r = skg::cdecl_call<bool>(submit, req);
-    g_vote_bypass = false;
+    bool r{};
+    {
+        callguard::Hold vote_bypass(g_vote_bypass);
+        g_own_editor = true; // the editor loads the creature after Submit, on a later frame
+        g_own_editor_charge_due = true; // BUG-0466: its result charges the price
+        r = skg::cdecl_call<bool>(submit, req);
+    }
     if (!r) {
         g_own_editor = false;
         if (g_own_editor_flags_fix)
@@ -2034,9 +2038,11 @@ void post_editor_budget(int budget)
 bool submit_now(void* req)
 {
     int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
-    g_vote_bypass = true;
-    bool r = o_Submit(req);
-    g_vote_bypass = false;
+    bool r{};
+    {
+        callguard::Hold vote_bypass(g_vote_bypass);
+        r = o_Submit(req);
+    }
     if (r)
         g_editor_submitted_at = H->time_seconds();
     if (r && budget >= 0)
@@ -6303,6 +6309,35 @@ static int c_lifecycle(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1047: coop.guard [unwind <name> [n] | stick <name>]: the modules' call guards (call_guard.h). `unwind`: the next
+// n holds of that guard end as a fault the game caught ends them (the guard stays set); `stick`: set it now. The frame's
+// swap guard tick clears a guard left set (`coop.fix core.call_guard_reset off`: it stays set).
+static int c_guard(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 2 && !strcmp(argv[1], "unwind")) {
+        bool ok = callguard::unwind(argv[2], argc > 3 ? (uint32_t)atoi(argv[3]) : 1u);
+        SAY(ok ? "unwind %s armed\n" : "no guard %s\n", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "stick")) {
+        callguard::Entry* e = callguard::find(argv[2]);
+        if (!e) {
+            SAY("no guard %s\n", argv[2]);
+            return 0;
+        }
+        if (e->flag)
+            *e->flag = true;
+        else
+            *e->depth = 1;
+        SAY("%s set\n", argv[2]);
+        return 0;
+    }
+    SAY("guards: entries=%zu cleared=%u last=%s\n", callguard::table().size(), callguard::state().cleared,
+        callguard::state().last.empty() ? "none" : callguard::state().last.c_str());
+    SAY("%s", callguard::status().c_str());
+    return 0;
+}
+
 int c_social(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 2 && !strcmp(argv[1], "textfix")) { // tests: off = ability keys also while the cheat console is open (BUG-0149)
@@ -7728,6 +7763,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.players", "coop.players [held <id>] - the per-player state modules keep (BUG-0422)", c_players, nullptr, MT);
+    H->command_add(M, "coop.guard", "coop.guard [unwind <name> [n] | stick <name>] - the call guards of the modules and what the frame reset cleared (BUG-1047)", c_guard, nullptr, MT);
     H->command_add(M, "coop.lifecycle", "coop.lifecycle [held] - the session / world state modules keep and what the last resets left (BUG-1055)", c_lifecycle, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",

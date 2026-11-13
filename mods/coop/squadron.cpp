@@ -1,4 +1,5 @@
 #include "squadron.h"
+#include "call_guard.h"
 #include "civ.h"
 
 #include <algorithm>
@@ -142,6 +143,7 @@ static uint32_t g_zero_keys, g_design_waits, g_designs_used;
 static std::unordered_set<uint32_t> g_unknown_logged;
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checked;
 static bool g_applying;
+CALL_GUARD("squadron.applying", g_applying); // BUG-1047
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
 
 // BUG-0420 (class: hits without a relation filter): a hit between the players' empire and a ship of that same empire
@@ -748,14 +750,13 @@ static void destroy_mirror(void* u, bool explode)
 {
     if (!live(u))
         return;
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     if (explode) { // the game's own death: explosion, removal
         F<uint8_t>(u, kInvincible) = 0;
         float dir[3] = {0, 0, 1};
         o_TakeDamage((uint8_t*)u + kCombat, 1e6f, 0xFFFFFFFFu, 0, dir, nullptr);
     } else
         game::destroy_creature(u); // DestroyInstance works for any cGameData
-    g_applying = false;
 }
 
 static void guest_shots(net::Reader& r, uint8_t n)
@@ -1150,9 +1151,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // a War guest's hit on our empire's ship goes in with no empire (-1); any other with ours, as before (with
         // -1 a hit on a pirate, -1 itself, was dropped: lab 20261113-012657)
         uint32_t apol = war && F<uint32_t>(it->second, kPol) == mine ? 0xFFFFFFFFu : mine;
-        g_applying = true;
-        o_TakeDamage((uint8_t*)it->second + kCombat, dmg, apol, t, dir, puppet ? (uint8_t*)puppet + kCombat : nullptr);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            o_TakeDamage((uint8_t*)it->second + kCombat, dmg, apol, t, dir, puppet ? (uint8_t*)puppet + kCombat : nullptr);
+        }
         g_hits_in++;
     } else if (type == net::MSG_UFO_DAMAGE && is_guest()) {
         float dmg = r.f32();
@@ -1168,15 +1170,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // through the hook (g_applying: straight to the game after the own-ship filter): a lethal hit
         // next to a partner only disables the ship (spacecoop rescue). Calling the original here
         // skipped that, and the guest's ship died in real fights with the partner next to it.
-        g_applying = true;
         uint32_t apol = a ? F<uint32_t>(a, kPol) : 0xFFFFFFFFu;
         if (war_with(0)) { // BUG-1032: the host's escort's hit; its empire id is ours in this game (the host's save)
             apol = 0xFFFFFFFFu;
             g_war_damage_in++;
         }
-        h_TakeDamage((uint8_t*)me + kCombat, dmg, apol, t, dir,
-                     a ? (uint8_t*)a + kCombat : nullptr);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            h_TakeDamage((uint8_t*)me + kCombat, dmg, apol, t, dir, a ? (uint8_t*)a + kCombat : nullptr);
+        }
         g_damage_in++;
     }
 }

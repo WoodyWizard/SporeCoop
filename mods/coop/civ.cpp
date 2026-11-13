@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "call_guard.h"
 #include "squadron.h"
 #include "lifecycle.h"
 #include "player_life.h"
@@ -494,6 +495,7 @@ static uint32_t g_last_chunks, g_max_chunk;        // host: chunks per cycle, la
 static size_t g_chunk_budget = net::kMaxPacket - 48; // host: bytes per chunk (coop.civ chunk <bytes>, tests)
 static bool& g_cycle_order_fix = tribe::g_cycle_order_fix; // tribe.cpp (net.cycle_order, BUG-0612)
 static bool g_applying; // executing a host message: the hooks let the game act
+CALL_GUARD("civ.applying", g_applying); // BUG-1047
 
 // BUG-0186: Vehicle_KeepOnValidGround (0xCA7430, thiscall(v), from the vehicle's movement updates)
 // checks the planet cell under a vehicle against its locomotion (land / sea / air flags) and, when the
@@ -665,6 +667,7 @@ static bool code_in_game(uintptr_t a)
 
 // BUG-0530 (diagnostics): FireTool calls a guest's game makes itself in Civ (not guest_fire's copies), by caller
 static bool g_in_guest_fire;
+CALL_GUARD("civ.guest_fire", g_in_guest_fire); // BUG-1047
 struct LocalFire {
     uint32_t calls = 0, fired = 0;
     uintptr_t owner_vt = 0;
@@ -953,9 +956,10 @@ static void guest_tribes(net::Reader& r)
             continue;
         }
         removed++;
-        g_applying = true;
-        thiscall<void>(a_DestroyInst, nm(), t);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            thiscall<void>(a_DestroyInst, nm(), t);
+        }
         g_tribes_removed++;
         H->log(M, SK_INFO, "civ: the old tribe village at (%.0f %.0f %.0f) is gone on the host: removed here (BUG-0539)", p.x,
                p.y, p.z);
@@ -1084,9 +1088,10 @@ static void release_copy(Shot& s)
     void* mgr = skg::cdecl_call<void*>(a_ToolMgrGet);
     if (!mgr)
         return;
-    g_in_guest_fire = true;
-    thiscall<int>(a_ToolMouseUp, mgr, tool);
-    g_in_guest_fire = false;
+    {
+        callguard::Hold in_guest_fire(g_in_guest_fire);
+        thiscall<int>(a_ToolMouseUp, mgr, tool);
+    }
     g_shot_released++;
 }
 
@@ -1178,10 +1183,12 @@ static void guest_fire(double now)
                       s.aim.z + tp.z - (s.tkind == 3 ? s.tpos.z : tp.z)};
         }
         float aim[3] = {ap.x, ap.y, ap.z};
-        g_in_guest_fire = true;
-        int fired = thiscall<int>(a_FireTool, mgr, tool, (uint8_t*)o + kVSpatial, (const float*)aim, -1, 0,
-                                  t ? (void*)((uint8_t*)t + kVSpatial) : nullptr, 0);
-        g_in_guest_fire = false;
+        int fired{};
+        {
+            callguard::Hold in_guest_fire(g_in_guest_fire);
+            fired = thiscall<int>(a_FireTool, mgr, tool, (uint8_t*)o + kVSpatial, (const float*)aim, -1, 0,
+                                      t ? (void*)((uint8_t*)t + kVSpatial) : nullptr, 0);
+        }
         if (fired & 0xFF) { // FireTool returns a bool in al (BUG-0530)
             note_tool(tool);
             s.done++;
@@ -1813,9 +1820,10 @@ static void guest_roads(net::Reader& r)
         void* b = x[1] < g_host_cities.size() ? g_host_cities[x[1]] : nullptr;
         if (!a || !b || a == b || !city_listed(a) || !city_listed(b) || planner_holds(a) || planner_holds(b) || has_route(a, b))
             continue;
-        g_applying = true;
-        thiscall<void>(a_AddTradeRoute, a, b, (int)x[2]);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            thiscall<void>(a_AddTradeRoute, a, b, (int)x[2]);
+        }
         if (has_route(a, b)) {
             g_roads_added++;
             H->log(M, SK_INFO, "civ: the host's trade route %u-%u (type %u) added here (BUG-0494)", x[0], x[1], x[2]);
@@ -2407,6 +2415,7 @@ static void boost_tick(double now)
 using FireSW_t = bool(SK_THISCALL*)(void*, int, const float*);
 static FireSW_t o_FireSW;
 static bool g_sw_bypass;
+CALL_GUARD("civ.sw_bypass", g_sw_bypass); // BUG-1047
 // BUG-0117: the vote's weapon and target are its own (captured), not statics a second request
 // overwrote. `coop.civ fix sw_vote 0`: the old statics (tests).
 static bool g_fix_sw_vote = true;
@@ -2438,9 +2447,10 @@ static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
         bool has_target = target != nullptr;
         if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
                              [civ, type, p, has_target] {
-                                 g_sw_bypass = true;
-                                 o_FireSW(civ, type, has_target ? p.data() : nullptr);
-                                 g_sw_bypass = false;
+                                 {
+                                     callguard::Hold sw_bypass(g_sw_bypass);
+                                     o_FireSW(civ, type, has_target ? p.data() : nullptr);
+                                 }
                              }))
             g_votes++;
         else {
@@ -2458,9 +2468,10 @@ static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     bool has_target = target != nullptr;
     if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
                          [has_target] {
-                             g_sw_bypass = true;
-                             o_FireSW(s_civ, s_type, has_target ? s_pos : nullptr);
-                             g_sw_bypass = false;
+                             {
+                                 callguard::Hold sw_bypass(g_sw_bypass);
+                                 o_FireSW(s_civ, s_type, has_target ? s_pos : nullptr);
+                             }
                          }))
         g_votes++;
     return false;
@@ -2476,20 +2487,22 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
         return;
     g_sw_last_req = type;
     if (!settings::on(settings::kCivSwVote)) { // F3 (BUG-0768): no vote, the guest's superweapon fires now
-        g_sw_bypass = true;
-        g_sw_fired = type;
-        o_FireSW(pc, type, pos);
-        g_sw_bypass = false;
+        {
+            callguard::Hold sw_bypass(g_sw_bypass);
+            g_sw_fired = type;
+            o_FireSW(pc, type, pos);
+        }
         g_sw_unvoted++;
         return;
     }
     if (g_fix_sw_vote) {
         std::array<float, 3> p{pos[0], pos[1], pos[2]};
         if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p] {
-                g_sw_bypass = true;
-                g_sw_fired = type;
-                o_FireSW(pc, type, p.data());
-                g_sw_bypass = false;
+                {
+                    callguard::Hold sw_bypass(g_sw_bypass);
+                    g_sw_fired = type;
+                    o_FireSW(pc, type, p.data());
+                }
             }))
             g_votes++;
         else { // tell the sender its request was not taken
@@ -2506,10 +2519,11 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     s_type = type; s_civ = pc;
     memcpy(s_pos, pos, sizeof s_pos);
     if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [] {
-            g_sw_bypass = true;
-            g_sw_fired = s_type;
-            o_FireSW(s_civ, s_type, s_pos);
-            g_sw_bypass = false;
+            {
+                callguard::Hold sw_bypass(g_sw_bypass);
+                g_sw_fired = s_type;
+                o_FireSW(s_civ, s_type, s_pos);
+            }
         }))
         g_votes++;
 }
@@ -2612,7 +2626,7 @@ static void guest_turrets(net::Reader& r)
     if (++seen < 2)
         return;
     seen = 0;
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     for (void* t : extra) { // the host has no turret there
         thiscall<void>(a_RemoveTurret, city, t, 0);
         g_turrets_removed++;
@@ -2620,7 +2634,6 @@ static void guest_turrets(net::Reader& r)
     for (size_t i = 0; i < missing; i++) // the next free slot: the order the host's game fills them in
         if (o_AddTurret(city))
             g_turrets_added++;
-    g_applying = false;
 }
 
 static bool save_filter(void* o, uint32_t noun);
@@ -3880,10 +3893,11 @@ static void reconcile_buildings(void* city, size_t n,
     // with no attacker: hp 0, state 2; no capture damage or alarm, those come from the host)
     static const float zero[3] = {0, 0, 0};
     for (void* b : ruin_now) {
-        g_applying = true;
-        thiscall<int>(a_CombatantDamage, (uint8_t*)b + 0x120, F<float>(b, kBuildingState + 4) + 1.f, 0xFFFFFFFFu, 0,
-                      (const float*)zero, (void*)nullptr);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            thiscall<int>(a_CombatantDamage, (uint8_t*)b + 0x120, F<float>(b, kBuildingState + 4) + 1.f, 0xFFFFFFFFu, 0,
+                          (const float*)zero, (void*)nullptr);
+        }
         g_ruins_in++;
     }
     for (auto& [b, p] : off_spot)
@@ -3896,7 +3910,7 @@ static void reconcile_buildings(void* city, size_t n,
     if (++seen < 2)
         return;
     seen = 0;
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     for (void* b : extra) {
         thiscall<void>(a_DestroyBuilding, city, b);
         g_bfix_removed++;
@@ -3925,7 +3939,6 @@ static void reconcile_buildings(void* city, size_t n,
             to_host_spot(b, p); // BUG-0602
         }
     }
-    g_applying = false;
 }
 
 // BUG-0529: the host's hit points of one city's buildings (chunk kHpChunk)
@@ -3978,10 +3991,11 @@ static void guest_building_hp(net::Reader& r)
             continue; // ruined here, whole there: reconcile_buildings (civ.ruin_repair)
         float& hp = F<float>(best, kBuildingState + 4);
         if (hp > b.hp + 0.5f) {
-            g_applying = true;
-            thiscall<int>(a_CombatantDamage, (uint8_t*)best + 0x120, hp - b.hp, 0xFFFFFFFFu, 0, (const float*)zero,
-                          (void*)nullptr);
-            g_applying = false;
+            {
+                callguard::Hold applying(g_applying);
+                thiscall<int>(a_CombatantDamage, (uint8_t*)best + 0x120, hp - b.hp, 0xFFFFFFFFu, 0, (const float*)zero,
+                              (void*)nullptr);
+            }
             if (F<int>(best, kBuildingState) != 2 && std::fabs(hp - b.hp) > 0.5f)
                 hp = b.hp; // the game's damage scaled it: the host's value
             g_hp_lowered++;
@@ -4069,13 +4083,12 @@ static bool save_filter(void* o, uint32_t noun)
 
 static void kill_local(void* v)
 {
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     if (g_fix_mirror_remove && a_VehicleRemove) {
         thiscall<void>(a_VehicleRemove, v, 0); // no refund
         g_exist_frame = ~0ull;                 // freed: the frame's list of vehicles is read again
     } else
         thiscall<void>(a_Die, v, 0, 0xFFFFFFFFu);
-    g_applying = false;
 }
 
 // BUG-0380: the catch-up founded one city per 15 s, so a guest that missed several foundings (the
@@ -4135,13 +4148,14 @@ static void city_catch_up(size_t host_total)
         }
         if (founded >= 0) {
             int n = (int)host_total - founded, made = 0;
-            g_applying = true;
-            for (int i = 0; i < n; i++)
-                if (o_SpawnNextCity(ex, g_instant_found_fix ? 1 : 0, nullptr)) // BUG-0624: late already
-                    made++;
-                else
-                    break; // no free site left
-            g_applying = false;
+            {
+                callguard::Hold applying(g_applying);
+                for (int i = 0; i < n; i++)
+                    if (o_SpawnNextCity(ex, g_instant_found_fix ? 1 : 0, nullptr)) // BUG-0624: late already
+                        made++;
+                    else
+                        break; // no free site left
+            }
             g_last_city_spawn = now;
             g_city_short_since = -1;
             g_cities_caught_up += made;
@@ -4156,9 +4170,10 @@ static void city_catch_up(size_t host_total)
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
     if (!ex)
         return;
-    g_applying = true;
-    o_SpawnNextCity(ex, 0, nullptr);
-    g_applying = false;
+    {
+        callguard::Hold applying(g_applying);
+        o_SpawnNextCity(ex, 0, nullptr);
+    }
     g_last_city_spawn = now;
     g_city_short_since = -1;
     g_cities_caught_up++;
@@ -4202,18 +4217,18 @@ static bool guest_cities(net::Reader& r) // false: the list does not fit the mes
                        c0 + i);
         }
         else if (pol_of(c) != pol) { // captured on the host
-            g_applying = true;
-            thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
-            g_applying = false;
+            {
+                callguard::Hold applying(g_applying);
+                thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
+            }
             g_captures_in++;
         }
         // the siege meter: the guest's city is never hit (its mirrors do not shoot), so its own
         // progress stays 0 (and decays): show the host's (SetCaptureProgress updates the meter)
         if (std::isfinite(capture) && (std::fabs(F<float>(c, kCityCapture) - capture) > 0.5f ||
                                        F<uint32_t>(c, kCityCapture + 4) != capture_by)) {
-            g_applying = true;
+            callguard::Hold applying(g_applying);
             thiscall<void>(a_SetCapture, c, capture_by, capture);
-            g_applying = false;
         }
     }
     return true;
@@ -4231,12 +4246,13 @@ static void guest_nodes_and_buildings(net::Reader& r)
         void* node = game::find_object(kNodeNoun, p, 5.f);
         if (!node || pol_of(node) == pol)
             continue;
-        g_applying = true;
-        if (pol == 0xFFFFFFFFu)
-            thiscall<void>(a_NodeUnclaim, node);
-        else
-            thiscall<void>(a_NodeClaim, node, pol);
-        g_applying = false;
+        {
+            callguard::Hold applying(g_applying);
+            if (pol == 0xFFFFFFFFu)
+                thiscall<void>(a_NodeUnclaim, node);
+            else
+                thiscall<void>(a_NodeClaim, node, pol);
+        }
         g_nodes_in++;
     }
     uint8_t ci = r.u8();
@@ -4691,9 +4707,11 @@ static void guest_build(net::Reader& r)
     p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
     if (r.ok() && ci == kNextCitySite && (noun == 0 || noun == kFoundInstant)) { // the host's planet grew a new city: the same site here
         if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet)) {
-            g_applying = true;
-            bool ok = o_SpawnNextCity(ex, noun == kFoundInstant ? 1 : 0, nullptr); // BUG-0624: as the host founded it
-            g_applying = false;
+            bool ok{};
+            {
+                callguard::Hold applying(g_applying);
+                ok = o_SpawnNextCity(ex, noun == kFoundInstant ? 1 : 0, nullptr); // BUG-0624: as the host founded it
+            }
             g_cities_in++;
             H->log(M, SK_INFO, "civ: the host founded a city: here %s (cities now %u)", ok ? "founded" : "NOT founded",
                    (unsigned)all_cities().size());
@@ -4708,12 +4726,11 @@ static void guest_build(net::Reader& r)
         g_planner_held++;
         return;
     }
-    g_applying = true;
+    callguard::Hold applying(g_applying);
     if (void* b = build_in_city(city, noun, p, false)) {
         g_builds_in++;
         to_host_spot(b, p); // BUG-0602
     }
-    g_applying = false;
 }
 
 static void prune_gone()
@@ -4755,9 +4772,11 @@ static void veh_hunt_tick()
     if (!civ || !a_CreateVehicle)
         return;
     float p[3] = {g_vh.at.x, g_vh.at.y, g_vh.at.z};
-    g_applying = true;
-    void* v = thiscall<void*>(a_CreateVehicle, civ, g_vh.purpose, g_vh.loco, 0u, 0u, 0u, (const float*)p, 0);
-    g_applying = false;
+    void* v{};
+    {
+        callguard::Hold applying(g_applying);
+        v = thiscall<void*>(a_CreateVehicle, civ, g_vh.purpose, g_vh.loco, 0u, 0u, 0u, (const float*)p, 0);
+    }
     g_vh.tries++;
     if (!v)
         return;
@@ -4876,11 +4895,13 @@ static void* space_build_here(const SpaceBuild& sb, bool quiet = false)
 {
     void* city = local_city_near(sb.cp);
     g_build_from = sb.from; // the buyer already has it
-    g_applying = true;      // not sent again by this game's h_AddBuilding
-    void* b = city ? build_in_city(city, sb.noun, sb.p, false) : nullptr;
-    if (b)
-        space_write_city(city); // BUG-0901
-    g_applying = false;
+    void* b{};
+    {
+        callguard::Hold applying(g_applying);      // not sent again by this game's h_AddBuilding
+        b = city ? build_in_city(city, sb.noun, sb.p, false) : nullptr;
+        if (b)
+            space_write_city(city); // BUG-0901
+    }
     g_build_from = -1;
     if (quiet && !b)
         return b;
@@ -6130,9 +6151,11 @@ std::string debug(const std::vector<std::string>& a)
                 send();
             void* pc = player_civ();
             float m0 = pc ? thiscall<float>(a_GetMoney, pc) : 0.f;
-            g_applying = true; // the guest's own copy, as its planner would place it
-            void* b = build_in_city(city, noun, p, true);
-            g_applying = false;
+            void* b{};
+            {
+                callguard::Hold applying(g_applying); // the guest's own copy, as its planner would place it
+                b = build_in_city(city, noun, p, true);
+            }
             paid = b && pc ? std::max(0.f, m0 - thiscall<float>(a_GetMoney, pc)) : 0.f;
             if (g_fix_build_money && b)
                 send(); // only what the guest could build and pay for
@@ -6219,10 +6242,11 @@ std::string debug(const std::vector<std::string>& a)
         static const float zero[3] = {0, 0, 0};
         for (void* bl : vec_of((uint8_t*)city + kCityBuildings))
             if (type_for_noun(game::noun_id(bl)) && F<int>(bl, kBuildingState) != 2) {
-                g_applying = true;
-                thiscall<int>(a_CombatantDamage, (uint8_t*)bl + 0x120, F<float>(bl, kBuildingState + 4) + 1.f, 0xFFFFFFFFu,
-                              0, (const float*)zero, (void*)nullptr);
-                g_applying = false;
+                {
+                    callguard::Hold applying(g_applying);
+                    thiscall<int>(a_CombatantDamage, (uint8_t*)bl + 0x120, F<float>(bl, kBuildingState + 4) + 1.f, 0xFFFFFFFFu,
+                                  0, (const float*)zero, (void*)nullptr);
+                }
                 char b[96];
                 snprintf(b, sizeof b, "building %p ruined here: state %d", bl, F<int>(bl, kBuildingState));
                 return b;
@@ -6410,11 +6434,13 @@ std::string debug(const std::vector<std::string>& a)
         if (!city)
             return "no such city";
         uint32_t noun = a[2] == "factory" ? 0x18EA2CC : a[2] == "fun" ? 0x1A56ABA : 0x18EB106;
-        g_applying = true;
-        void* b = build_in_city(city, noun, city_pos(city), false);
-        if (b)
-            space_write_city(city); // BUG-0901: as space_build_here
-        g_applying = false;
+        void* b{};
+        {
+            callguard::Hold applying(g_applying);
+            b = build_in_city(city, noun, city_pos(city), false);
+            if (b)
+                space_write_city(city); // BUG-0901: as space_build_here
+        }
         char l[96];
         snprintf(l, sizeof l, "%s %08X in s%d", b ? "built" : g_build_fail, noun, ci);
         return l;

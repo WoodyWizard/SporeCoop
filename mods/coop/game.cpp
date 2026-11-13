@@ -11,6 +11,7 @@
 
 #include "sporekit_game.hpp"
 #include "lifecycle.h"
+#include "call_guard.h"
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
@@ -463,6 +464,7 @@ static CreaturePlayAnim_t o_CreaturePlayAnim;
 static IdleRefresh_t o_IdleRefresh;
 static BehaviourAnimListener g_bhv_listener;
 static int g_idle_depth = 0;
+CALL_GUARD_DEPTH("game.idle_depth", g_idle_depth); // BUG-1047
 static uint32_t g_bhv_seen = 0, g_bhv_idle = 0;
 
 static IdleAnimListener g_idle_listener;
@@ -491,9 +493,10 @@ static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
 
 static void SK_THISCALL h_IdleRefresh(void* self, int force)
 {
-    g_idle_depth++;
-    o_IdleRefresh(self, force);
-    g_idle_depth--;
+    {
+        callguard::Depth idle(g_idle_depth);
+        o_IdleRefresh(self, force);
+    }
     if (!g_air.empty())
         air_reassert(self, 2);
 }
@@ -1131,8 +1134,14 @@ static bool g_lend_ledger_fix = true;
 COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_ledger_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer, the player species changed or a relay of the mod switched off");
 bool lend_ledger_on() { return g_lend_ledger_fix; }
 static uint32_t g_guards_reset;
+// BUG-1047: the same rule for every module's call guard registered in call_guard.h (squadron, space_diplomacy,
+// mirror_fx, spacecoop, civ, cellsync, tribe, ...): a guard still set here is a caught fault's leftover. Off
+// (`coop.fix core.call_guard_reset off`): the modules' guards stay set (0.7.13).
+static bool g_call_guard_fix = true;
+COOP_FIX("core.call_guard_reset", "BUG-1047", g_call_guard_fix, "core: a module's call guard (g_applying and the like) left set by a fault the game caught is cleared on the next frame, the module's relay goes on");
 static void reset_call_guards()
 {
+    callguard::reset(g_call_guard_fix);
     if (!g_lend_ledger_fix)
         return;
     if (g_in_puppet_anim || g_in_relay || t_in_anim_fx || t_in_evt)

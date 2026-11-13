@@ -1,4 +1,5 @@
 #include "cellsync.h"
+#include "call_guard.h"
 #include "lifecycle.h"
 #include "census.h"
 #include "coop_ui.h"
@@ -143,6 +144,9 @@ static std::unordered_map<uint32_t, Mirror> g_mirrors;   // host index -> mirror
 static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host index
 static std::unordered_set<uint32_t> g_cycle_seen;
 static bool g_our_destroy, g_food_guard, g_replay;
+CALL_GUARD("cellsync.our_destroy", g_our_destroy); // BUG-1047
+CALL_GUARD("cellsync.food_guard", g_food_guard);
+CALL_GUARD("cellsync.replay", g_replay);
 // what the guest's avatar ate this frame (AddFoodPoints): sent with the eaten cell (MSG_CELL_EAT) so the
 // host adds it only if the cell was still there (eaten once), else on its own at the end of the frame
 static int g_pend_food;
@@ -292,6 +296,7 @@ static bool kill_send_first(uint32_t hidx, double now)
     return g_kill_sent.first(hidx, now, g_fix_kill_once);
 }
 static bool g_in_guest_attack; // BUG-0714: a guest's attack replayed through the game (KillCell inside it counts as the player's kill)
+CALL_GUARD("cellsync.guest_attack", g_in_guest_attack); // BUG-1047
 static uint32_t g_kills_dup_sent, g_kills_dup_refused;
 // BUG-0636: the guest's mirror of a cell it ate (ACT_GONE) was made again from the next state chunk
 // before the host's state dropped it (one round trip) and the guest's game ate it again (its food
@@ -647,6 +652,7 @@ static void ko_expire(double now)
 
 static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt);
 static bool g_ko_dying = false; // cell.respawn_small off: the timed-out knock-out ends in the game's own death
+CALL_GUARD("cellsync.ko_dying", g_ko_dying); // BUG-1047
 static uint32_t g_ko_deaths = 0; // ... how often (coop.cell status: ko_deaths)
 
 static bool go_down(uint8_t* c)
@@ -717,9 +723,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
         g_ko_deaths++;
         if (C.notice)
             C.notice(C.my_name() + " was not revived in time");
-        g_ko_dying = true;
-        h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, 0, 0.f);
-        g_ko_dying = false;
+        {
+            callguard::Hold ko_dying(g_ko_dying);
+            h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, 0, 0.f);
+        }
         return;
     }
     // nobody came: respawn next to the partner, small again
@@ -1816,17 +1823,18 @@ static bool guest_attack(uint32_t from, uint8_t* c, uint8_t* pc, int dmg, int t,
     g_forced.att = pc;
     g_forced.vic = c;
     g_forced.dmg = lethal ? std::max(dmg, hp0) : dmg;
-    g_in_guest_attack = true;
-    // A MSG_CELL_HIT is what the guest's DamageCell decided (a bite's non-lethal part, spikes, a test's hit on any
-    // kind): DamageCell here, whose gate spares what IsDamageable refuses (BUG-0240). The lethal bite (ACT_BREAK)
-    // is Bite's other branch: Bite here, with the damage raised to the victim's hp.
-    if (lethal) // Bite negates its direction for DamageCell (it is the bite's, from the victim)
-        o_Bite(F<uint32_t>(pc, 0), F<uint32_t>(c, 0), at, dir, 0, 1.f / 30.f);
-    else {
-        float back[3] = {-dir[0], -dir[1], 0};
-        o_DamageCell(c, pc, back, t, 0, 1.f / 30.f);
+    {
+        callguard::Hold in_guest_attack(g_in_guest_attack);
+        // A MSG_CELL_HIT is what the guest's DamageCell decided (a bite's non-lethal part, spikes, a test's hit on any
+        // kind): DamageCell here, whose gate spares what IsDamageable refuses (BUG-0240). The lethal bite (ACT_BREAK)
+        // is Bite's other branch: Bite here, with the damage raised to the victim's hp.
+        if (lethal) // Bite negates its direction for DamageCell (it is the bite's, from the victim)
+            o_Bite(F<uint32_t>(pc, 0), F<uint32_t>(c, 0), at, dir, 0, 1.f / 30.f);
+        else {
+            float back[3] = {-dir[0], -dir[1], 0};
+            o_DamageCell(c, pc, back, t, 0, 1.f / 30.f);
+        }
     }
-    g_in_guest_attack = false;
     g_forced.att = g_forced.vic = nullptr;
     g_guest_attacks++;
     g_guest_attack_types[(lethal ? 4 : t) & 7]++;
@@ -3817,9 +3825,8 @@ static void* ref_for(uint32_t inst)
 
 static void destroy_local(uint32_t idx)
 {
-    g_our_destroy = true;
+    callguard::Hold our_destroy(g_our_destroy);
     modes::cell_destroy(idx);
-    g_our_destroy = false;
 }
 
 static void guest_state(net::Reader& r)
@@ -3905,9 +3912,10 @@ static void guest_state(net::Reader& r)
             if ((flags & 3) && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
                 // the host's creature died: the same death here (effect, dying / dead animation,
                 // locks, event 6 -> dead). Its loot is the host's (SpawnLoot is off on the guest).
-                g_replay = true;
-                o_KillCell(c, 0, nullptr, false, 6, 0.f);
-                g_replay = false;
+                {
+                    callguard::Hold replay(g_replay);
+                    o_KillCell(c, 0, nullptr, false, 6, 0.f);
+                }
                 g_death_replays++;
             }
         }
@@ -4818,9 +4826,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
                               g_pend_food);
                     int before = F<int32_t>(s, 0x1C);
-                    g_food_guard = true;
-                    o_AddFood(diff, false); // through the game: level ups happen as usual
-                    g_food_guard = false;
+                    {
+                        callguard::Hold food_guard(g_food_guard);
+                        o_AddFood(diff, false); // through the game: level ups happen as usual
+                    }
                     if (C.food_cause)
                         C.food_cause(0xFF, before, diff);
                 }
@@ -5272,9 +5281,10 @@ std::string debug(const std::vector<std::string>& a)
         return "small";
     }
     if (a.size() >= 2 && a[0] == "foodlocal") { // our total only, as a total the host sent and we missed
-        g_food_guard = true;
-        o_AddFood(atoi(a[1].c_str()), false);
-        g_food_guard = false;
+        {
+            callguard::Hold food_guard(g_food_guard);
+            o_AddFood(atoi(a[1].c_str()), false);
+        }
         return "local food changed";
     }
     if (a.size() >= 2 && a[0] == "leavefix") {

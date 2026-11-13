@@ -1,4 +1,5 @@
 #include "spacecoop.h"
+#include "call_guard.h"
 #include "player_life.h"
 
 #include <algorithm>
@@ -105,6 +106,7 @@ static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last kno
 PLAYER_STATE("spacecoop", [](uint8_t id) { g_partner_down.erase(id); g_last_star.erase(id); },
              [](uint8_t id) -> size_t { return g_partner_down.count(id) + g_last_star.count(id); });
 static bool g_applying;
+CALL_GUARD("spacecoop.applying", g_applying); // BUG-1047
 static float g_terra_acc[3];
 static uint32_t g_terra_planet;
 static double g_terra_last;
@@ -1131,18 +1133,19 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     void* p = cdecl_call<void*>(a_ActivePlanet);
     if (!tm || !p)
         return;
-    g_applying = true;
-    for (int i = 0; i < 3; i++)
-        if (d[i] != 0 && o_Terra[i])
-            o_Terra[i](tm, p, d[i]);
-    if (g_terra_apply_fix && a_TerraSetActive && (d[0] != 0 || d[2] != 0)) { // BUG-0749
-        void* data = !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
-        if (data && !IsBadReadPtr(data, 0x2034) && !F<uint8_t>(data, 0x2030)) {
-            thiscall<void>(a_TerraSetActive, data, 1);
-            g_terra_enabled++;
+    {
+        callguard::Hold applying(g_applying);
+        for (int i = 0; i < 3; i++)
+            if (d[i] != 0 && o_Terra[i])
+                o_Terra[i](tm, p, d[i]);
+        if (g_terra_apply_fix && a_TerraSetActive && (d[0] != 0 || d[2] != 0)) { // BUG-0749
+            void* data = !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
+            if (data && !IsBadReadPtr(data, 0x2034) && !F<uint8_t>(data, 0x2030)) {
+                thiscall<void>(a_TerraSetActive, data, 1);
+                g_terra_enabled++;
+            }
         }
     }
-    g_applying = false;
     g_terra_got++;
 }
 
@@ -1219,6 +1222,7 @@ static SetColors_t o_SetColors;
 static uintptr_t a_TerrainActive;
 static void* g_tool_listener;
 static int g_tool_hit_depth;  // inside a hit of the player's own tool
+CALL_GUARD_DEPTH("spacecoop.tool_hit_depth", g_tool_hit_depth); // BUG-1047
 static double g_own_hit_at = -100;
 static uint32_t g_sculpt_seen, g_sculpt_sent, g_sculpt_got, g_sculpt_applied, g_colour_seen, g_colour_sent,
     g_colour_got, g_colour_applied, g_own_hits;
@@ -1266,10 +1270,8 @@ static bool SK_THISCALL h_ToolHit(void* self, void* tool, const float* pos, int 
         return o_ToolHit(self, tool, pos, hit, x);
     g_own_hits++;
     g_own_hit_at = H->time_seconds();
-    g_tool_hit_depth++;
-    bool r = o_ToolHit(self, tool, pos, hit, x);
-    g_tool_hit_depth--;
-    return r;
+    callguard::Depth d(g_tool_hit_depth);
+    return o_ToolHit(self, tool, pos, hit, x);
 }
 
 static void SK_THISCALL h_SetColors(void* terrain, int ramp, uint32_t a, uint32_t b)
@@ -1390,9 +1392,10 @@ static void apply_sculpt(uint32_t place, uint32_t effect, const uint8_t xf_in[0x
     uint32_t m[16] = {0};
     m[0] = effect;
     m[10] = (uint32_t)(uintptr_t)xf;
-    g_applying = true;
-    o_ToolMsg(g_tool_listener, kMsgSculpt, m);
-    g_applying = false;
+    {
+        callguard::Hold applying(g_applying);
+        o_ToolMsg(g_tool_listener, kMsgSculpt, m);
+    }
     g_sculpt_applied++;
 }
 
@@ -1405,9 +1408,10 @@ static void apply_colour(uint32_t place, int ramp, uint32_t a, uint32_t b)
     void* t = active_terrain();
     if (mine != place || !in_space() || !o_SetColors || !t)
         return;
-    g_applying = true;
-    o_SetColors(t, ramp, a, b);
-    g_applying = false;
+    {
+        callguard::Hold applying(g_applying);
+        o_SetColors(t, ramp, a, b);
+    }
     g_colour_applied++;
 }
 

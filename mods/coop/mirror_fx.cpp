@@ -1,5 +1,6 @@
 // The sounds and effects a mirror's own game never makes (BUG-0600): see mirror_fx.h.
 #include "mirror_fx.h"
+#include "call_guard.h"
 
 #include <windows.h>
 
@@ -202,6 +203,7 @@ static Voice_t o_Voice;
 using Sprint_t = void(SK_THISCALL*)(void*, bool);
 static Sprint_t o_Sprint;
 static bool g_playing; // a guest's own call of the game's function
+CALL_GUARD("mirror_fx.playing", g_playing); // BUG-1047
 
 static uint8_t byte_at(void* c, uint32_t off) { return skg::readable((uint8_t*)c + off, 1) ? *((uint8_t*)c + off) : 0; }
 
@@ -288,7 +290,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_nomirror++;
         return;
     }
-    g_playing = true;
+    callguard::Hold playing(g_playing);
     if (k == K_VOICE && o_Voice) {
         o_Voice(c, on != 0, true);
         g_played[k]++;
@@ -296,7 +298,6 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         o_Sprint(c, on != 0);
         g_played[k]++;
     }
-    g_playing = false;
 }
 
 std::string status()

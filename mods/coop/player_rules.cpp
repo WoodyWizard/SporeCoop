@@ -1,4 +1,5 @@
 #include "player_rules.h"
+#include "call_guard.h"
 #include "savestrip.h"
 
 #include <windows.h>
@@ -141,6 +142,7 @@ typedef bool(SK_THISCALL* AttackTarget_t)(void*, void*, uint32_t, uint32_t);
 static AttackTarget_t o_AttackTarget;
 static uint32_t g_air_dropped, g_air_passed;
 static bool g_air_hit = false; // inside a melee hit on an airborne partner's puppet (its damage and stun stay here)
+CALL_GUARD("player_rules.air_hit", g_air_hit); // BUG-1047
 
 static bool ranged_type(uint32_t t) { return t == 0x20 || t == 0x3D || t == 0x42 || t == 0x48; }
 
@@ -180,9 +182,11 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
                 // puppet in the air, 82 m up, lab 20261104-212957), only its damage and stun are not carried to the
                 // partner (npc.cpp damage_filter, h_Stun): the attack node would not have picked it
                 g_air_dropped++;
-                g_air_hit = true;
-                bool r = o_AttackTarget(attacker, target, idx, a4);
-                g_air_hit = false;
+                bool r{};
+                {
+                    callguard::Hold air_hit(g_air_hit);
+                    r = o_AttackTarget(attacker, target, idx, a4);
+                }
                 return r;
             }
             g_air_passed++;
@@ -593,6 +597,7 @@ static std::vector<Put> g_puts;
 // matched by its position then the other game had no object there, lab 20261106-001636)
 static std::map<void*, net::Vec3> g_synced;
 static bool g_in_relay = false;
+CALL_GUARD("player_rules.carry_relay", g_in_relay); // BUG-1047
 
 static void* spatial_data(void* sp) // the cGameData of a cSpatialObject (0xAE6650 does the same)
 {
@@ -782,7 +787,7 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
         return;
     void* pup = C.puppet_of ? C.puppet_of(player) : nullptr;
     Carried& cr = g_carried[player];
-    g_in_relay = true;
+    callguard::Hold in_relay(g_in_relay);
     if (kind == K_HOLD) {
         g_hold_rx++;
         if (cr.held && cr.obj && pup && obj_listed(cr.obj, cr.noun))
@@ -818,7 +823,6 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
             g_synced[cr.obj] = p;
         }
     }
-    g_in_relay = false;
 }
 
 static std::string carry_dump()
