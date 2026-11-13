@@ -1,19 +1,19 @@
 ---
 id: BUG-1085
 title: Creature: core.editor_now (BUG-0516) skips the vote at the stage-end editor (Creature -> Tribe) and keeps it for the mating editor, the reverse of the design
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-13
 source: Discord player report 2026-11-13 + forwarded analysis
 role: all
 versions: 0.7.11-0.7.13
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-tctl2
+commits: 4d0dd0b1, 6d8d689a, 574d5d8d, 601e7ddf
+tests: stage_end_vote, stage_end_guest, editor_now, creature_mating
 signature:
-docs: docs/re/creations.md, docs/re/creature.md#creature-mating-call, docs/09-coop-design.md
+docs: docs/re/creature.md#creature-editor-tags-runtime, docs/re/creature.md#creature-mating-call, docs/09-coop-design.md, docs/06-testing.md#testing-stage-end-pause-foreign
 related: BUG-0516, BUG-0273, BUG-0315, BUG-0177, BUG-0457
 ---
 
@@ -74,5 +74,37 @@ recipe of docs/re/creature.md#creature-mating-call, the campaign's stage-end pat
 * The guest's own stage-end press: same fixture, `AddEvolutionPoints 3000` on the guest, History and its check on the
   guest first; assert that the guest's game stays in Creature (today, inferred: it reaches Tribe alone).
 
+## Root cause, observed at runtime (2026-11-13, fix/w49-tctl2)
+* The game's own mating: `editor request in Creature: editor 312E9D6A tag 012191CA` (lab 20261113-154950); the stage
+  end the players' way (`coop.dna add 3000`, the brain caption, History and its check): `editor 465C50BA tag 064AA168`
+  (20261113-155733, -154517). So `now_ok` was keyed on the stage-end editor.
+* With the old keying (switch off): the host's stage-end editor opened at once ("vote none") and the guest's window
+  showed "Evolve now" (20261113-155733); the host's mating waited for "Alice wants to evolve (Creature)" and the guest
+  saw "I'm ready" (20261113-154950).
+* The inferred guest path holds: the guest's game offers the stage-end button too (shared DNA: its own brain caption
+  "your brain is fully grown ... evolve to the tribal stage"); its request reached its game, the guest went into its
+  stage-end editor while the host played Creature, and after "done" into a Tribe of its own (Creature 3 s, Tribe 75 s
+  later, the host still [Creature] in the co-op list; 20261113-154923; 20261113-154517 stopped in the editor).
+
+## Fix
+`core.editor_now_tag` (coop.cpp h_Submit): in Creature the mating request (tag 0x12191CA, not the landfall editor
+0xFD4902BD, not within 300 s of a passed Cell -> Creature switch vote) is "an evolution inside the stage" for
+`core.editor_now` (the host's editor at once, "Evolve now" offers); the stage-end request (0x64AA168) is a stage start:
+the host's waits for the vote "<host> wants to move on to the Tribe stage"; a guest's in the host's Creature world is
+refused (BUG-0920's editor-pending flag cleared, the stage stays drawn): its I'm ready during that vote, else the note
+"the host moves everybody on to the Tribe stage (after a vote)". Every Creature request is logged with its editor and
+tag. `coop.vote evolve` builds the mating tag (every test using it meant an in-stage evolution), `coop.vote stageend`
+the stage-end tag; `coop.vote` prints `stage-end votes` and `guest stage-end requests refused`. Off: as 0.7.13.
+
+## Verification
+* stage_end_vote (host's stage end): FAIL with `core.editor_now_tag` off (20261113-155733: editor at once, "Evolve
+  now"); PASS x2 (20261113-160059: the host stays in Creature with the vote, the guest's window "I'm ready", the host's
+  editor after the guest's real click; key frame of the guest's window checked).
+* stage_end_guest (the guest's press first): FAIL off (20261113-154517, -154923: the guest's editor, then Tribe alone);
+  PASS x2 (20261113-155306: both games stay in Creature, the guest's stage drawn; key frames checked).
+* editor_now (now on the game's own mating, not `coop.vote evolve`): FAIL off (20261113-154950: the vote); PASS x2
+  (20261113-155537). creature_mating (updated: the editor at once and the offer) PASS x2 (20261113-155537).
+
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-tctl2 (`core.editor_now_tag`); the guest path confirmed and closed.
