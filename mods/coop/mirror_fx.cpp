@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 
 #include "fixes.h"
 #include "lifecycle.h"
@@ -89,6 +90,7 @@ static bool take_token()
 }
 
 static uint32_t g_sent[3], g_rx[3], g_played[3], g_nomirror, g_dropped, g_bad;
+static std::map<uint64_t, uint32_t> g_rx_stops; // guest (tests, BUG-1049): stops received per (space, id, key)
 
 static void send(Kind k, const net::Writer& w, bool reliable)
 {
@@ -258,6 +260,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_bad++;
             return;
         }
+        if (stop && g_rx_stops.size() < 512)
+            g_rx_stops[((uint64_t)s << 48) | ((uint64_t)id << 32) | key]++; // tests (BUG-1049)
         void* c = mirror(s, id);
         if (!c) {
             g_nomirror++;
@@ -344,7 +348,9 @@ static int c_status(void*, int argc, const char* const* argv, SkOut* out)
         void* c = mirror(S_MEMBER, (uint16_t)atoi(argv[2]));
         uint32_t key = (uint32_t)strtoul(argv[3], nullptr, 0);
         void* fx = c ? game::effect_from_pools(c, key) : nullptr;
-        H->out_printf(out, "mirror=%d effect=%d active=%d\n", c ? 1 : 0, fx ? 1 : 0, fx && game::effect_active(fx) ? 1 : 0);
+        auto it = g_rx_stops.find(((uint64_t)S_MEMBER << 48) | ((uint64_t)(uint16_t)atoi(argv[2]) << 32) | key);
+        H->out_printf(out, "mirror=%d effect=%d active=%d stops=%u\n", c ? 1 : 0, fx ? 1 : 0, fx && game::effect_active(fx) ? 1 : 0,
+                      it == g_rx_stops.end() ? 0u : it->second);
         return 0;
     }
     H->out_printf(out, "%s", status().c_str());
