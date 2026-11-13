@@ -139,3 +139,22 @@ The owner agreed to the orchestrator's proposals:
 9. BUG-1050: the ">" button comes back next to "<" under "Fly to" in 3-4 player Space sessions.
 
 0.7.14 starts only when the owner asks.
+
+## Added by the owner (2026-11-13)
+
+* **V1 Civ wild creatures** (BUG-0973, feature-sized): the host owns the Civ stage's wild creatures, the guests show
+  them (positions, herds, deaths), so a click on a creature means the same creature in both games. Twin test: a host
+  herd moved or killed, the guest's census and a guest's attack order agree (fails without the sync). Lanes: 2.
+* **V2 the buyer gets the specialty question** (BUG-0982): when a guest buys a city, the "choose specialty" question
+  and its pause go to the guest, not the host. Test: civ_buy_city's `specialty question: host ... | guest ...` line
+  (fails today: host Military | guest None).
+* **Q1 the campaign can pass**: the campaign's bots end the Tribe stage (raids conquer the tribes) within its time,
+  so `campaign` no longer fails in every final check since 0.7.10 for the slow path, plus BUG-0991 (the finale's bot
+  does not notice its ship destroyed). A campaign that always fails catches nothing.
+* **Q2 play_tribe catches a desync again** (BUG-0974 on main after the lab-speed merge): an injected delay
+  (`coop.tribe delay 0.6`) must fail play_tribe on 5 and 10 minutes.
+* **Q3 more warm resets**: the ~280 cold-start candidates listed in docs/06-testing.md#testing-lab-speed move to
+  warm reset in batches, each batch with before/after times and twin checks on a sample of bug tests.
+
+Not now (owner): code signing (SignPath) and antivirus vendor submissions (docs/release-trust.md). The inotify
+limit was raised by the owner (fs.inotify.max_user_instances).
