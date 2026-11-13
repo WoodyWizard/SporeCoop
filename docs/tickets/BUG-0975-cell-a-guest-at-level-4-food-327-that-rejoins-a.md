@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w48-cellcull
-commits: 8dd800ce, 561bc917
+commits: 8dd800ce, 561bc917, c4e98537
 tests: cell_level_drop, cell_level_drop_solo
 signature: 0xC0000005 at 0x00E5FA50 Simulator::Cell::ShouldCullCell+0x190 (data 0x00130000) < PopulateTiles+0xFD
 docs: docs/re/cell.md#cell-level-fall, docs/known-issues.md#issue-cell-join-lower-level, docs/06-testing.md#testing-cell-level-drop

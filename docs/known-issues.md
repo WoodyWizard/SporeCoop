@@ -2931,3 +2931,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   only through the mod's shared food total. PopulateTiles writes its active set into a stack buffer of 511 without
   a bound; after a fall of several levels the world scale is still the old one for ~3 s and the set has thousands
   of tiles. No tile pass runs now while the scale is more than one level above its target (`cell.tile_cap`); test cell_level_drop. docs/re/cell.md#cell-level-fall.
+
+## Tests: cell_levelup_view fails about half its runs on the level-ups (2026-11-12, test: fix/w48-cellcull)
+<a id="issue-cell-levelup-view-ups"></a>
+
+* What happens: on a +150 change the guest loses 70-100 % of the cells on its screen while the host's game loses
+  0-60 %; the test's average check fails in about half the runs (also before BUG-0975's fix, and with its switch off).
+* Reproduce: `tools/lab.py run cell_levelup_view --lane N --repeat 4`.
+* Ticket: BUG-0976
