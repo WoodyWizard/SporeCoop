@@ -10,8 +10,8 @@ role: host
 versions: rel/0.7.14
 fixed_in:
 branch: fix/w49-fault
-commits:
-tests:
+commits: c311460f
+tests: tribe_own_hut_fall, tribe_conquest_guest (with the guard)
 signature: SporeApp.exe+0xBEFC03 (0xFEFC03, StarRecord_HasGoldilocksPlanet+0x83; reported as Simulator::cMissionManager::ChooseMission+0x1043) read 0x28
 docs: docs/re/space.md#space-star-null-planet-record, docs/06-testing.md#testing-double-instance
 related: BUG-0267

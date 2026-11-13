@@ -3410,3 +3410,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   docs/re/tribe.md#tribe-attack-event-target). Test: tribe_attack_stale.
 * Fixed (2026-11-13, fix/w49-drama) **BUG-1077** (test): attacker_owner failed the monitor's posse_damage gate now and
   then: the monitor's line read the UFO attacker as a creature (`npc.hit_log_object`); the gate was right.
+* Fixed (2026-11-13, fix/w49-fault) **BUG-1076** (Tribe, guest, caught faults at 0xCE69F9): the players' hut dead in
+  the host's game fell in the guest's game too, which ran its own defeat and reloads in a loop; a village caption after
+  such a reload read the freed tribe (`realign.own_hut`; docs/re/tribe.md#tribe-caption-tribe-token). Test:
+  tribe_own_hut_fall.
+* Open **BUG-1081** (Tribe, host): the host's "Your tribal hut has been destroyed" caption holds the host's game only;
+  the guests play on until the host's OK and reload (BUG-0960's wait covers the tribe knocked out only). Reproduce:
+  `coop.tribe hutfall` on the players' hut in the host's game (docs/06-testing.md#testing-own-hut-fall).

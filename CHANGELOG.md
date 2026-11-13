@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: when the players' own hut falls in the host's game, a guest's game no longer destroys its own copy of the
+  hut and runs its own defeat (the "Your tribal hut has been destroyed" caption and a reload of its own save, again
+  and again); the host's game decides the defeat. The guest's faults while a village caption played after such a
+  reload are gone with it (BUG-1076).
 - Developer tools: unloading or hot-reloading the co-op mod while one of its console commands still runs on another
   thread (`coop.sample`) no longer crashes the game; the unload waits for the command (BUG-1018).
 - Developer tools: `mod.reload`, `mod.load`, `mod.unload` and `coop.loadworld` run outside the frame; `coop.loadworld`
