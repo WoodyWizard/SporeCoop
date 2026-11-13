@@ -40,7 +40,7 @@ mechanic runs for real):
     more members (test setup, and again when the raiders are down to 7); every NPC village is raided until its hut
     falls: the players' real attack right-clicks on the hut first (the host's own click is needed: BUG-1068), then
     `coop.tribe order <id> 15 <hut>` for every member (the DoAction a right-click gives), the hut's health cut to 40
-    once a blow landed (`coop.tribe huthp`; 400-750 hp take the raiders minutes), the players' own hut kept above 80 %
+    once a blow landed (`coop.tribe huthp`; 400-750 hp take the raiders minutes), the players' own hut kept above 80 % of
     its health (an NPC village raids back; its fall is a game over that reloads the save), `coop.tribe form` when no
     village is left before the bar is full. The game's own conquests fill the goal bar; then the advance button, the
     stage card, the caption, the votes, the City Hall and vehicle editors (three parts, a name). When the stage does
