@@ -1,4 +1,5 @@
 #include "tribe.h"
+#include "lifecycle.h"
 #include "player_life.h"
 
 #include <algorithm>
@@ -429,6 +430,26 @@ bool g_cycle_order_fix = true;
 COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot or realign planet-list cycle is dropped, not taken as a new cycle (BUG-0886 too)");
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
+// BUG-1051: the guest's cycle tracker of the host's Tribe snapshots belongs to that host's session and world: a guest
+// that joined another host (or the same one after it restarted its game, whose counter starts at 1 again) dropped
+// every snapshot as "older" until the new counter passed the old one (up to an hour). Reset on every session end and
+// world change (lifecycle.h; the drop counter `older` stays for the status). Off: kept (0.7.13).
+static bool g_cycle_reset_fix = true;
+COOP_FIX("tribe.cycle_reset", "BUG-1051", g_cycle_reset_fix, "tribe: a guest's Tribe snapshot cycle starts over with every session and world, so a new or restarted host's snapshots are not dropped as older");
+LIFECYCLE_STATE("tribe.cycle", lifecycle::kSession | lifecycle::kWorld, &g_cycle_reset_fix, [] {
+    uint32_t older = g_cyc.older;
+    g_cyc.reset();
+    g_cyc.older = older;
+    g_cycle_ids.clear();
+}, []() -> size_t { return (g_cyc.have ? 1 : 0) + g_cycle_ids.size(); });
+// BUG-1055: the host tribe index -> local tribe map points into the old world after a load (its users check it
+// against all_tribes, the test path frametool did not)
+WORLD_STATE("tribe.world_map", nullptr, [] { g_local_tribe_of.clear(); }, []() -> size_t {
+    size_t n = 0;
+    for (void* t : g_local_tribe_of)
+        n += t != nullptr;
+    return n;
+});
 // BUG-0672 (tribe.world_map): the mapping outlived the world it was made in. After a load (a warm reset, a received
 // world) the guest's wobj tool kind made the host's tool in tribe index i before the new world's first tribe state had
 // mapped it again: tribe_of_index gave the old world's freed tribe (its species +0x18CC already released), and the
@@ -715,6 +736,11 @@ static struct {
     uint32_t serial = 0; // BUG-0951
 } g_ring;
 static uint32_t g_rings_drawn = 0;
+// BUG-1055: the guest's own attack order (its ring) ends with its session and its world
+LIFECYCLE_STATE("tribe.ring", lifecycle::kSession | lifecycle::kWorld, nullptr, [] {
+    g_ring.target = nullptr;
+    g_ring.ids.clear();
+}, []() -> size_t { return g_ring.target ? 1 : 0; });
 static uintptr_t a_RingDraw, a_TribeUI;
 using RingsUpdate_t = void(SK_THISCALL*)(void*);
 static RingsUpdate_t o_RingsUpdate;
@@ -4059,6 +4085,11 @@ static uint16_t member_id(void* c)
 }
 
 uint16_t id_of(void* c) { return member_id(c); }
+void* member_of(uint16_t id) // host (tests): the member of this id, listed now
+{
+    auto it = g_hm_by_id.find(id);
+    return it != g_hm_by_id.end() && game::listed(it->second) ? it->second : nullptr;
+}
 void* mirror_of(uint16_t id)
 {
     auto it = g_gm.find(id);
@@ -6351,6 +6382,15 @@ std::string debug(const std::vector<std::string>& a)
         it->second.test_undo_until = H->time_seconds() + std::max(0.0, std::min(10.0, atof(a[2].c_str())));
         it->second.test_undo_at = game::position(it->second.c);
         return "mirror " + a[1] + ": placings without the mark undone for " + a[2] + " s";
+    }
+    if (!a.empty() && a[0] == "reload") { // reload [arm]: tests (BUG-1054), the host's reload after the live Tribe change
+        if (a.size() >= 2 && a[1] == "arm")
+            world::host_reload_after_share();
+        return "host_reloads=" + std::to_string(world::host_reloads()) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "cycle" && is_host()) { // cycle <n>: tests (BUG-1051), the host's snapshot counter as after a restart
+        g_cycle = (uint16_t)strtoul(a[1].c_str(), nullptr, 0);
+        return "tribe cycle=" + std::to_string(g_cycle) + "\n";
     }
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
         g_test_lift = (float)atof(a[1].c_str());

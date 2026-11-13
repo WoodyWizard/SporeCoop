@@ -102,3 +102,28 @@ SporebinEP1/
 Spore picks up every `.package` (DBPF) in `Data/` on its own. If the mod ever needs its own
 UI layouts (`.spui`), localization or prop files, they go into a separate package
 `Data/SporeCoop.package`; DLL code and content are decoupled.
+
+## The lifecycle registry: session and world state (2026-11-13, fix/w49-life)
+<a id="arch-lifecycle-registry"></a>
+
+BUG-1055 (owner decision 3 of docs/plan-0.7.14.md): module state that belongs to one session or one world is
+registered in one place, `mods/coop/lifecycle.h`, next to its definition, so a module added later cannot miss the
+reset (the class of BUG-1051, BUG-1054, BUG-1002, BUG-1049; the per-player twin is `player_life.h`, BUG-0422).
+
+* `SESSION_STATE(name, fix, reset, held)`: reset at every session end (coop.cpp `end_session`, block 3: a Leave, a
+  drop, a new host or join, the unload).
+* `WORLD_STATE(name, fix, reset, held)`: reset when the game's world changes: the sum of the stage counters of
+  `stage_epoch.h` moved (a load, a received world, another stage; an editor visit and the galaxy menu are no new
+  world). Checked once a frame right after `game::stage_epoch_tick`, before any message or module tick.
+* `LIFECYCLE_STATE(name, lifecycle::kSession | lifecycle::kWorld, fix, reset, held)`: both.
+* `fix`: the entry's own `coop.fix` switch (one bug per switch) or null; `core.lifecycle_reset` (BUG-1055) switches
+  every entry off at once. `reset` is mod state only (no game call, no send, no wait: it can run inside
+  `g_sess.update()`) and idempotent; `held` counts what is held.
+* `coop.lifecycle` lists the entries; `coop.lifecycle held` prints what is held now and what the last reset of each
+  scope left (`left session: none (resets N)`, `left world: none (resets N)`): a test reads the record of the reset,
+  not the state the next world fills again (tools/tests/coop_lifecycle_reset.py).
+* A module keeps its own `on_session_end` / `on_world_change` for work that calls the game (despawning mirrors);
+  plain clears go into the registry. Entries of 0.7.14: tribe.cycle, tribe.ring, tribe.world_map, civ.cycle,
+  world.host_reload (world only: a session end in the live Tribe world keeps BUG-0332's reload due), cell.body and
+  cell.own_good (world only), cell.food_queue, cell.join, game.air, parts.cell_queue, mirror_fx.keys, nest.own,
+  social.meter_tasks (the close of BUG-0808 stays queued), social.pending, creature_hp.puppets, drama.last_events.

@@ -1,19 +1,19 @@
 ---
 id: BUG-1051
 title: Tribe: a guest that joins another or a restarted host drops every Tribe snapshot as an older cycle (the cycle tracker is never reset)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-5
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: tribe_cycle_restart, lifecycle_reset
 signature:
-docs: docs/known-issues.md#issue-tribe-cycle-not-reset
+docs: docs/known-issues.md#issue-tribe-cycle-not-reset, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0612, BUG-0616, BUG-0886
 ---
 
@@ -50,11 +50,19 @@ its counter set back to 1), the guest joins again. Assert on the guest's game th
 grows: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The guest's Tribe cycle tracker and the cycle's id set are entry `tribe.cycle` of the lifecycle registry (session
+end and world change; the drop counter `older` is kept for the status). Civ's tracker is entry `civ.cycle` (the session
+end; civ::on_world_change reset it already). Switches `coop.fix tribe.cycle_reset off` / `civ.cycle_reset off`
+(0.7.13). Test command `coop.tribe cycle <n>` (host) sets the snapshot counter (a long session, a restart).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tribe_cycle_restart` (coop_tribe_cycle_restart.py: the host's counter at 20000, the guest leaves, the counter
+back to 1, the guest joins again; the guest's mirror must be where the host puts a member, 15 m away).
+FAIL (SPORE_FIX_OFF=tribe.cycle_reset): out/lab/20261113-011952 (no mirror of the member at all, older_chunks 94 ->
+176). PASS: out/lab/20261113-011705, out/lab/20261113-012647 (and out/lab/20261113-010644 with the counter at 40000, which
+is "older" itself from the guest's side, 49 chunks dropped before the leave). Also in lifecycle_reset (tribe.cycle
+held on the guest, none left after its resets).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).

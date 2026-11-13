@@ -1,6 +1,7 @@
 // World sharing: the host streams its current save folder (AppData\Spore\Games\GameN)
 // to a joining guest, who stores it as a new save slot. See docs/03-gameplay.md 3.2.
 #include "world.h"
+#include "lifecycle.h"
 
 #include <winsock2.h>
 #define WIN32_LEAN_AND_MEAN
@@ -620,6 +621,14 @@ void host_reload_after_share()
         g_reload_due = true;
 }
 uint32_t host_reloads() { return g_host_reloads; }
+// BUG-1054: the reload is due for the world of the live change only. A session that ended before the share went out
+// left it set: after the host loaded another game, its first share of a later session loaded the host's game again
+// (an unexpected reload a few seconds after a guest joined). Reset when the world changes (lifecycle.h); a session end
+// in the same live world keeps it (that world's ground still differs from the share save's, BUG-0332).
+// Off (`coop.fix tribe.host_reload_reset off`): kept until a share goes out (0.7.13).
+static bool g_reload_reset_fix = true;
+COOP_FIX("tribe.host_reload_reset", "BUG-1054", g_reload_reset_fix, "tribe: the host's reload after the live Tribe change is forgotten when the host's world changes before its share went out");
+WORLD_STATE("world.host_reload", &g_reload_reset_fix, [] { g_reload_due = false; }, []() -> size_t { return g_reload_due ? 1 : 0; });
 // BUG-0332: from the reload's start until the host plays Tribe again (at most 60 s): the guests are told why the
 // host left (PF_RESYNC), not "left for the main menu"
 static double g_reload_at = -1;

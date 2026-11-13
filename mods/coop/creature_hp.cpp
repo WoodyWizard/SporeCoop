@@ -1,4 +1,5 @@
 #include "creature_hp.h"
+#include "lifecycle.h"
 
 #include <windows.h>
 
@@ -63,6 +64,10 @@ struct PuppetHp {
     float hp = 0, max = 0;
 };
 static std::unordered_map<void*, PuppetHp> g_puppets;
+// BUG-1055: the reported health of a puppet address ends with the session and the world (h_GetMaxHp answered the
+// kept max for any creature at that address that was a puppet again)
+LIFECYCLE_STATE("creature_hp.puppets", lifecycle::kSession | lifecycle::kWorld, nullptr, [] { g_puppets.clear(); },
+                []() -> size_t { return g_puppets.size(); });
 static uint32_t g_partner_hits_dropped, g_party_hits_dropped, g_puppet_sets;
 
 static void* player_species()

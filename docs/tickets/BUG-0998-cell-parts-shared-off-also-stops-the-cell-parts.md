@@ -1,19 +1,19 @@
 ---
 id: BUG-0998
 title: Cell: parts.shared off also stops the Cell parts sharing (parts.shared_cell), and the queued Cell collect survives the session end
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-16
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: cell_parts_apart
 signature:
-docs:
+docs: docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0401, BUG-0467
 ---
 
@@ -47,11 +47,18 @@ it (the game's own Cell part state, `coop.parts cell` reads the game's array). F
 PASS with the reorder.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+parts.cpp: on_message handles the Cell kinds 3 / 4 with their own switch only; the `parts.shared` check moved below
+them (switch `coop.fix parts.cell_apart off`: 0.7.13). The queued Cell collect is entry `parts.cell_queue` of the
+lifecycle registry (session) and cell_collect_now returns when no session is connected (switch
+`coop.fix parts.cell_queue_reset off`).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_parts_apart` (coop_cell_parts.py with SPORE_FIX_OFF=parts.shared: the Cell parts are still shared both
+ways).
+FAIL (SPORE_FIX_OFF=parts.shared,parts.cell_apart): out/lab/20261113-012254 (neither game got the other's part).
+PASS: out/lab/20261113-010644, out/lab/20261113-012647. The queue reset: no-fail-run for it alone (a part queued in the last
+frame of a session; the general test reads parts.cell_queue, held 0 in every run).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).

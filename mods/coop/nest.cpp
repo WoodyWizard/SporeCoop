@@ -1,4 +1,5 @@
 #include "nest.h"
+#include "lifecycle.h"
 
 #include <windows.h>
 
@@ -177,6 +178,9 @@ struct OwnEgg {
     net::Vec3 host{}, after{}; // the host's place it was put at, where it lay after the snap
 };
 static std::map<uint32_t, OwnEgg> g_own; // host egg id -> this game's own family egg
+// BUG-1055: the bindings to the host's egg ids end with the session (a reconnect into the same world epoch kept the
+// old host's ids; object_alive + serial guarded the use)
+SESSION_STATE("nest.own", nullptr, [] { g_own.clear(); }, []() -> size_t { return g_own.size(); });
 static uint32_t g_epoch = 0;
 static double g_last_snap_tx = 0, g_last_snap_rx = -100;
 static uint32_t g_made = 0, g_removed = 0, g_eats_sent = 0, g_eats_applied = 0, g_snaps_rx = 0, g_snaps_tx = 0;

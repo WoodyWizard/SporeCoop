@@ -1,19 +1,19 @@
 ---
 id: BUG-1055
 title: All: session and world state that no reset clears (Tribe target ring and tribe map, Creature nest bindings, social queues, puppet health table)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-4 WLD-5 WLD-23
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-life
+commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
+tests: lifecycle_reset, lifecycle_reset_cell
 signature:
-docs:
+docs: docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0427, BUG-0422, BUG-0951, BUG-1051, BUG-1054
 ---
 
@@ -63,11 +63,26 @@ held: FAIL. Per item where a player effect exists: the Tribe ring in local play 
 goes to the menu, assert TribeTargetRing_Find has no ring for the old target after the guest's own new order).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+One registry (mods/coop/lifecycle.h, owner decision 3): `SESSION_STATE` / `WORLD_STATE` / `LIFECYCLE_STATE(name,
+scope, fix, reset, held)` next to each module's globals; coop.cpp calls `lifecycle::reset(kSession)` at the end of
+end_session (block 3, every path) and `lifecycle::reset(kWorld)` once a frame when the sum of the stage counters
+(stage_epoch.h) moves. Right after a reset the registry keeps what each entry of that scope still holds;
+`coop.lifecycle held` prints it (`left session: none`, `left world: none`) and what is held now. The items of this
+ticket: tribe.ring (session + world), tribe.world_map (world), nest.own (session), social.meter_tasks (session; the
+close of BUG-0808 stays queued) and social.pending (session), creature_hp.puppets (session + world; coop.cpp
+forget_puppets also forgets the puppet's reported health now). Switch `coop.fix core.lifecycle_reset off`: no entry
+is reset (each module's own resets only, 0.7.13). Not changed: the ring is still drawn for the guest's own order in
+local play (it is the guest's order on its own selected member; at most 120 s, and only while the target lives).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `lifecycle_reset` (coop_lifecycle_reset.py: Creature, Cell, Tribe, Civ, Space on the same two games; the
+host loads each fixture with coop.load, the guest joins and loads it, 20 s of play, the session ends by Leave or by a
+drop; both games' last session / world reset must leave nothing).
+FAIL (SPORE_FIX_OFF=core.lifecycle_reset): out/lab/20261113-011601 (cell.join, cell.own_good, nest.own, mirror_fx.keys
+left at the session ends and world changes). PASS: out/lab/20261113-011223 (old stage order), out/lab/20261113-012450-2, out/lab/20261113-013333.
+The first run out/lab/20261113-010644-2 passed every check and failed on the monitor's puppet_hp gate after Cell ->
+Creature (also with the switch off: BUG-1061, a separate ticket; the test now plays Creature first).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).

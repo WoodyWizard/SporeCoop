@@ -64,6 +64,8 @@ void on_member_anims(uint8_t kind, net::Reader& r);
 uint16_t id_of(void* citizen);
 // guest: the mirror of the host's member #id (null: none)
 void* mirror_of(uint16_t id);
+// host (tests): the member #id itself (null: none or not alive)
+void* member_of(uint16_t id);
 // tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
 std::string object_key(void* obj);
 // tests: the position of every planet tree (cTreeData, fruit trees to gather from)

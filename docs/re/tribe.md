@@ -3526,3 +3526,23 @@ this branch's runs also one of 4.2 s and one of 2.7 s in the gesture 0x04C6CB02)
   pending tracks ended (the game's 0xA02B00; trace `W`): it goes on in the running instance and the hold binds to it.
   A fresh host hold whose animation the mirror still does not play 0.2 s after hold_try started it is held in the
   animation the mirror plays (trace `Q`), ended by the host's end as any bound hold.
+
+## Snapshot cycles after a restart, and effects a mirror keeps (2026-11-13, fix/w49-life)
+<a id="tribe-cycle-restart"></a>
+
+BUG-1051 / BUG-1049, GOG 2024, lab lane 5.
+* ✔ (runtime, out/lab/20261113-010644) The host's Tribe snapshot counter (tribe.cpp g_cycle, u16) set from ~100 to
+  40000 is an "older" cycle for the guest (40000 - 100 >= 0x8000, net::cycle_order): the guest dropped 49 chunks until
+  the counter came round. A test that wants a "long session" sets 20000 (newer). Back to 1 after that (a restarted
+  host) every chunk is older: without the reset the guest made no mirror at all (out/lab/20261113-011952).
+* ✔ (runtime, out/lab/20261113-012450) Pool-2 effect 0x21C934A7 key 0x55559EF (a member behaviour's,
+  #tribe-mirror-fx) started on a host member by SporeCoop's pool start stays active on the guest's mirror (no
+  update of the mirror stops it); `game::stop_effect` of the key stops it there.
+* Negative (out/lab/20261113-010644): pool-1 effect 0x8ADA6617 (the NPC chief's) started the same way never showed
+  as active on a mirror of a player member (three members tried); not followed further (inferred: the creature's own
+  update stops it on a non-chief).
+* ✔ (runtime, lane 4 probe 2026-11-13) Started on a mirror by the relay and read each 0.5 s for 6 s
+  (`coop.mirrorfx has`): 0x21C934A7 and 0x85A02492 (pool 2, key 0x55559EF) are active for under 1 s and end by
+  themselves; 0xE55DC391 key 0x35052B7 (pool 1, the sprint's dust) stays active (the mirror is not sprinting, its
+  Update does not stop it); 0x8ADA6617 is never active (pool 2 too). The keyed effects a 25 s fight of the host's
+  members made: those three only (`coop.effects log on`, fx1k / fx2k lines).
