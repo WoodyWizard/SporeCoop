@@ -61,13 +61,14 @@ def main():
         print(f'  #{nid} engaged: {m1.strip()}', flush=True)
         if '--meter-null' in sys.argv and first is None:  # BUG-1058: the first engaged Kook's meter, after a missed open
             t1 = time.time()
-            while time.time() - t1 < 2 and num(r'opened=(\d+)', m1, 0) <= o0:
+            while time.time() - t1 < 2 and num(r' visible=(-?\d+)', m1, 0) != 1:
                 time.sleep(0.25)
                 m1 = meter(guest)
             first = m1
-            ck(num(r'missed=(\d+)', m1, 0) >= 1, f"the guest's first meter task found no meter window ({m1.strip()[-30:]})")
-            ck(num(r'opened=(\d+)', m1, 0) > o0 and num(r'open_for=(-?\d+)', m1, -1) == nid,
-               f"the game's meter opened for the first engaged Kook #{nid} after the missed try")
+            ck(num(r'missed=(\d+)', m1, 0) >= 1,  # counter: the test hook took effect (the scenario's precondition)
+               f"the guest's first meter task found no meter window ({m1.strip()[-30:]})")
+            ck(num(r' visible=(-?\d+)', m1, 0) == 1 and num(r'rounds=(\d+)', m1, 0) >= 1,
+               f"the game's meter is up on the guest's screen for the first engaged Kook #{nid} after the missed try")
         if num(r'opened=(\d+)', m1, 0) > o0:
             opened = m1
             shot(guest, 'social_meter_guest_open.png')

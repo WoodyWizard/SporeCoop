@@ -7046,7 +7046,7 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   species as unknown for n tries; the `world player species` line of `coop.creations` shows `retries` / `lost`.
 * `social_meter_retry` (BUG-1058, creature, ~3 min): `coop.social meter_null <n>` (guest) makes the next n meter
   tasks find no meter window; `coop.social meter` shows `missed=`.
-* `creations_package_close` (BUG-0996, creature, ~5 min): two leave / join rounds of the guest; the `packages:` line
+* `creations_package_close` (BUG-0996, creature, ~2 min): the guest plays its own creatures A, B, A, B, A; the host's `packages:` line
   of `coop.creations` (open, closing, closed, kept, renamed): `renamed` counts packages written under `_N` names
   because the operating system refused the old name (the file still open).
 * The monitor's `same_session` (BUG-1061, default 1): the hp, puppet_hp, drawn and ground rules match a partner line
