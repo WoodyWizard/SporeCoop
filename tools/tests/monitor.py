@@ -633,11 +633,15 @@ class Ground(Hook):
         def cine_held(tl, r, pid):
             # the end of Tribe (TRG2CVG cinematics between the City Hall and vehicle editors): the game holds the
             # members where they stand while it lays the city's ground (a village stamp removed under a member left it
-            # 18 m up for the 100 s of the change, campaign_tribe_end lab 20261113-125218); the host's own line says
-            # busy=cinematic. agl_cine=0: judged as before
-            o = r if pid is None else self.same_moment(tl, r)[1]
-            m = re.search(r'busy=(\S+)', (o or {}).get('rest', ''))
-            return bool(m and 'cinematic' in m.group(1).split(','))
+            # 16-18 m up for the 76-100 s of the change, campaign_tribe_end lab 20261113-125218 and -153633, every game).
+            # The host's game drives the change: its own line at that moment says busy=cinematic or editor (a guest's
+            # does not). agl_cine=0: judged as before
+            hosts = [w for w, lst in tl.own.items() if lst and lst[-1].get('role') == 'host']
+            for o in [tl.own_at(h, r['t'], c['drawn_dt']) for h in hosts] + ([r] if pid is None else []):
+                m = re.search(r'busy=(\S+)', (o or {}).get('rest', ''))
+                if m and {'cinematic', 'editor'} & set(m.group(1).split(',')):
+                    return True
+            return False
         series = [(who, None, lst) for who, lst in tl.own.items()] + \
             [(viewer, pid, lst) for (viewer, pid), lst in tl.partner.items()]
         for who, pid, lst in series:
