@@ -1685,3 +1685,14 @@ BUG-0970. Lab lane 4, GOG 2024.
   after three removals got the same address 1A7719A0 each time (lab 20261113-022453). A stale table entry is therefore
   quickly another vehicle of the same nation (BUG-0951's serial check covers host_tick; the commands use
   game::alive with the serial, civ.cmd_listed).
+
+## The ground check of mirror vehicles while the host is away (2026-11-13, fix/w49-small)
+<a id="civ-away-ground"></a>
+
+BUG-1056 (owner decision 8 of plan-0.7.14). ✔ runtime (civ_npc fixture, lane 7):
+- While the host is in the menu (local_play), a land mirror put on the spice node near (-336, 132, 354) stays there
+  (0.2-0.4 m after 0.3 s) when Vehicle_KeepOnValidGround is skipped (civ.mirror_place, BUG-0186); with the game's check
+  it is moved about 13 m off within 0.3 s (the same 13 m as BUG-0186's outliers). So the bypass is only right while the
+  host's states place the mirror; in local play the game's own check runs (`civ.away_ground`).
+- A guest's SetPosition (spatial vt 0x38) of a mirror its own game drives is undone by the locomotion within 0.3 s (it
+  ended 630 m away, where it was driving): StopMovement (spatial vt 0xEC) first, as guest_tick does before Teleport.

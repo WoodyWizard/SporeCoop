@@ -39,6 +39,9 @@ struct Field {
     float (*read)(void* obj);
     void (*apply)(void* obj, float v);
     float tol; // relative: |mirror - wanted| > tol * |wanted| is a difference
+    // BUG-1043: the values a receiver accepts (a hostile or broken packet must not make a creature 1e30 m tall).
+    // The default suits a scale; a field whose 0 means something (no tool, hunger 0) gives its own range
+    float lo = 0.001f, hi = 1000.f;
 };
 
 using EachFn = void (*)(void (*cb)(uint16_t id, void* obj, void* u), void* u);

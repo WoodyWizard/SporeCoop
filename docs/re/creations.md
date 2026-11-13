@@ -1385,3 +1385,25 @@ BUG-0852 (BUG-0727's untried case). Code fact, no runtime model of ours has it.
   38 unpacked bytes, is no model.
 * ~ A layer whose id has a byte equal to its neighbour across the boundary (`19 75 75 FE 05`) is also run-packed by
   the game's writer (inferred from the format, not seen in a real model).
+
+## Closing and releasing a creation package (2026-11-13, fix/w49-small)
+<a id="creations-package-close"></a>
+
+BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 2024) ✔:
+
+- DatabasePackedFile primary vtable **0x01436938** (the ctor 0x8DA2A0 stores it at +0; the slots match
+  ModAPI's Database.h): +0x00 scalar deleting dtor 0x8D9CB0 (dtor body 0x8D9700, then `delete_` when bit 0 of the
+  argument), +0x04 Initialize 0x6BBDC0, +0x08 Shutdown 0x8D8970 (if initialized: Close when open, frees the index,
+  releases the stream), +0x0C GetDatabaseType, **+0x10 GetRefCount 0x69D3F0** (reads +0x08), +0x14 Lock,
+  +0x18 Open 0x8D8CA0, **+0x1C Close 0x8D9CD0** (= 0x8D97C0(1): flushes a writable file, closes the stream at
+  +0x260, clears the access flags +0x14; true when it was not open), +0x24 Flush, +0x28 GetLocation,
+  +0x2C SetLocation 0x8D9CE0, +0x30 GetKeyList, +0x34 OpenRecord, +0x38 GetOpenCount, +0x3C CloseRecord, +0x44 Attach.
+- Secondary (refcount) vtable **0x01436924** at +4: +0x00 AddRef 0x8DD4C0, **+0x04 Release 0x69D3C0** (this = db+4:
+  decrements +0x08; at 0 it calls the primary vt[0](1), the deleting dtor, whose Shutdown closes the file).
+- The ctor sets the count to 0: after our AddRef and RegisterDatabase(true) it is 2; RegisterDatabase(false) releases
+  the manager's reference (docs above), leaving ours (1). Our Release then frees the object and closes its file.
+- The mod: dropped packages wait 2 s, then outside the frame Close + Release only when GetRefCount is 1 and no table
+  of creations.cpp still names the package (`coop.fix creations.package_close`). Before, the open file made the next
+  write of the same name fail (`_2.package` ... `_49`, then "cannot write the package").
+- The GOG 2016 addresses in the section above (Close 0x8D9CC0, SetLocation 0x8D9CD0) are 0x10 lower than GOG 2024's
+  (the march2017 port names Close=0x8D9CD0, SetLocation=0x8D9CE0 for dc04aee5): not a contradiction, two builds.

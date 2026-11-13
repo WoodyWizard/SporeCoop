@@ -1,19 +1,19 @@
 ---
 id: BUG-1058
 title: Creature: the social meter is never opened for a social game whose first open found no meter window
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-23
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-small
+commits: f4aca716, 3e2de219
+tests: social_meter_retry
 signature:
-docs:
+docs: docs/06-testing.md#testing-t1-small
 related: BUG-0808
 ---
 
@@ -25,10 +25,9 @@ the meter as open for that animal, so it is never opened again for that game: th
 the meter.
 
 ## Root cause
-Observed in code (main efd2e0ba); whether meter_ui is null at an engagement is inferred (confidence low-medium):
-mods/coop/social.cpp:622 meter_tick sets `g_meter_npc = g_engaged` right after queueing the open (op 0); the task
-meter_run (social.cpp:546) `break`s when `!m` (social.cpp:552) and the open never happens; meter_tick's next pass sees
-g_engaged == g_meter_npc and does nothing.
+Reproduced with a test hook (the first meter task finds no meter window): meter_tick marked the meter open for the
+engaged Kook when it queued the open, the task dropped the open, and the guest played the whole social game without
+the meter (opened=0, visible_at_win=0). Whether meter_ui is null at an engagement on a player's PC is not seen.
 
 ## Fix idea
 Set g_meter_npc only in the task after a real open (the task already does it), or reset it when the task finds no
@@ -40,11 +39,15 @@ frame the creature HUD is not up yet), then the social game; assert the game's m
 (meter_dump visible flag) within 1 s. Main: never visible: FAIL.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Only the task's real open marks the meter open; a missed open is queued again 0.25 s later. Switch
+`coop.fix social.meter_retry off` (0.7.13). Test command `coop.social meter_null <n>`; `coop.social meter` shows
+`missed=`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `social_meter_retry` (coop_creature_social_meter.py --meter-null 1).
+FAIL (SPORE_FIX_OFF=social.meter_retry): out/lab/20261113-031541 (opened=0, visible_at_win=0). PASS: out/lab/20261113-031904,
+out/lab/20261113-033100-2 (open for the first Kook after the miss, up at the win).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-small (package T1).

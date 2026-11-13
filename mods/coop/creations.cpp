@@ -180,17 +180,46 @@ static uint32_t* player_species_slot()
     auto* k = mgr ? (uint32_t*)((uint8_t*)mgr + 0xA4) : nullptr;
     return k && skg::readable(k, 12) ? k : nullptr;
 }
+// BUG-1057: the request was cleared before the species was looked up: a species this game did not know yet in that
+// frame (species_by_key null) lost the write for good and the world kept the host's previous species. Now the
+// request stays while the species is unknown, for kPsRetry s. `coop.fix creations.species_retry off`: one try (0.7.13)
+static bool g_ps_retry_fix = true;
+COOP_FIX("creations.species_retry", "BUG-1057", g_ps_retry_fix, "creations: the world's player species follows the host's evolved one also when that species is known a few frames later");
+constexpr double kPsRetry = 10.0;
+static double g_ps_since;
+static unsigned g_ps_retries, g_ps_lost, g_ps_test_null; // (tests: frames species_by_key is taken as null)
 static void player_species_tick()
 {
     if (!g_ps_to.instance || game::mode_id() != modes::kCreature || !game::avatar())
         return;
     uint32_t* k = player_species_slot();
     Key to = g_ps_to;
-    g_ps_to = {};
-    if (!k || k[0] != g_ps_from.instance || k[1] != to.type || k[2] != to.group)
+    if (!k || k[0] != g_ps_from.instance || k[1] != to.type || k[2] != to.group) {
+        g_ps_to = {};
         return; // a load or another species since
-    if (!game::species_by_key({to.instance, to.type, to.group}))
+    }
+    bool known = game::species_by_key({to.instance, to.type, to.group}) != nullptr;
+    if (g_ps_test_null) { // tests (BUG-1057): the species is not known to this game yet
+        g_ps_test_null--;
+        known = false;
+    }
+    if (!known) {
+        double now = H->time_seconds();
+        if (!g_ps_since)
+            g_ps_since = now;
+        if (g_ps_retry_fix && now - g_ps_since < kPsRetry) {
+            g_ps_retries++;
+            return; // (kept: tried again next frame)
+        }
+        g_ps_to = {};
+        g_ps_since = 0;
+        g_ps_lost++;
+        H->log(M, SK_WARN, "creations: the host's species %08X is not known here: the world's player species stays %08X (BUG-1057)",
+               to.instance, g_ps_from.instance);
         return;
+    }
+    g_ps_to = {};
+    g_ps_since = 0;
     k[0] = to.instance;
     g_ps_set++;
     H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
@@ -1494,6 +1523,67 @@ static bool make_bundle(Kind k, const Key& key, Bundle& b)
 }
 
 // ---- registering a package with the game's resource manager (docs/re/creations.md §3) ----
+// BUG-0996 (docs/re/creations.md#creations-package-close): a package that failed to open or register, or that was
+// dropped (a newer version, the session end's world packages), stayed allocated with its file open for the process:
+// the next write of the same name failed and package_for fell back to "<name>_2.package" ... ("_49", then "cannot
+// write the package"). Now our reference is given back once nobody else holds one: GetRefCount (vt 0x10) == 1 (ours,
+// after RegisterDatabase(false) released the manager's), Close (vt 0x1C) and Release ((db+4) vt[1]: at 0 the
+// scalar deleting dtor, whose Shutdown closes the file too). Dropped packages wait kCloseAfter s and are released
+// outside the frame. `coop.fix creations.package_close off`: kept open (0.7.13).
+static bool g_pkg_close_fix = true;
+COOP_FIX("creations.package_close", "BUG-0996", g_pkg_close_fix, "creations: a dropped or failed creation package is closed and released (its file can be written again)");
+constexpr double kCloseAfter = 2.0;
+struct Closing {
+    void* db;
+    double at;
+    int tries = 0;
+};
+static std::vector<Closing> g_closing;
+static bool g_close_queued;
+static unsigned g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames;
+static bool package_held(void* db); // (below: g_pkgs, g_applied, g_world_pkgs)
+// our last reference to a package nobody uses: closed and released (true), or left as it is (false)
+static bool release_package(void* db)
+{
+    if (!db || package_held(db) || vcall<int>(db, 0x10 / 4) != 1) // GetRefCount: someone else still holds it
+        return false;
+    vcall<bool>(db, 0x1C / 4);            // Close
+    vcall<int>((uint8_t*)db + 4, 1);      // Release -> 0: the deleting dtor
+    g_pkgs_closed++;
+    return true;
+}
+static void close_run(void*)
+{
+    g_close_queued = false;
+    double now = H->time_seconds();
+    for (auto it = g_closing.begin(); it != g_closing.end();) {
+        if (now < it->at) {
+            ++it;
+            continue;
+        }
+        if (release_package(it->db) || ++it->tries >= 10) {
+            if (it->tries >= 10) {
+                g_pkgs_close_kept++;
+                H->log(M, SK_WARN, "creations: a dropped package %p is still held by the game: kept open (BUG-0996)", it->db);
+            }
+            it = g_closing.erase(it);
+        } else {
+            it->at = now + kCloseAfter;
+            ++it;
+        }
+    }
+}
+static void close_tick(double now)
+{
+    if (g_close_queued || g_closing.empty())
+        return;
+    for (auto& c : g_closing)
+        if (now >= c.at) {
+            g_close_queued = true;
+            H->run_outside_frame(close_run, nullptr);
+            return;
+        }
+}
 static void* register_package(const std::wstring& path, int priority)
 {
     if (!a_OpNew || !a_DbCtor || !a_RmPtr)
@@ -1509,10 +1599,14 @@ static void* register_package(const std::wstring& path, int priority)
     vcall<bool>(db, 0x04 / 4);          // Initialize
     if (!vcall<bool>(db, 0x18 / 4, 1, 6, false)) { // Open(read, default, not lazy)
         g_last_error = "Open failed";
+        if (g_pkg_close_fix)
+            release_package(db); // BUG-0996 (only ours: nobody else saw it)
         return nullptr;
     }
     if (!vcall<bool>(rm, 0x50 / 4, true, db, priority)) { // RegisterDatabase
         g_last_error = "RegisterDatabase failed";
+        if (g_pkg_close_fix)
+            release_package(db); // BUG-0996
         return nullptr;
     }
     g_registered++;
@@ -1603,6 +1697,7 @@ static void* package_for(std::wstring path, const std::vector<dbpf::Record>& rec
         }
         if (!ok)
             return nullptr;
+        g_pkg_renames++; // (BUG-0996: the old file of that name is still open)
     }
     void* db = register_package(path, priority);
     if (db)
@@ -1619,6 +1714,21 @@ static void drop_package(void* db)
     unregister_package(db);
     for (auto it = g_pkgs.begin(); it != g_pkgs.end();)
         it = it->second == db ? g_pkgs.erase(it) : std::next(it);
+    if (g_pkg_close_fix && H) // BUG-0996: released a little later, outside the frame, once nobody holds it
+        g_closing.push_back({db, H->time_seconds() + kCloseAfter});
+}
+static bool package_held(void* db)
+{
+    for (auto& [p, d] : g_pkgs)
+        if (d == db)
+            return true;
+    for (auto& [k, a] : g_applied)
+        if (a.db == db)
+            return true;
+    for (auto& [k, w] : g_world_pkgs)
+        if (w.db == db)
+            return true;
+    return false;
 }
 
 // BUG-0469: every model the mod makes this game build from a key it did not create itself (a civ
@@ -2933,6 +3043,7 @@ static void own_world_tick()
 
 void tick(double now)
 {
+    close_tick(now); // BUG-0996 (also after the session: its end drops the world packages)
     if (!C.sess || !C.sess->connected())
         return;
     if (adopt_after_editor(now))
@@ -3164,6 +3275,9 @@ std::string status()
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
+    snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
+             g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996
+    s += b;
     snprintf(b, sizeof b, "  meta_only: fix=%d filled=%u waits=%u refused=%u\n", (int)g_meta_only_fix, g_meta_filled, g_meta_waits,
              g_meta_refused); // BUG-0802
     s += b;
@@ -3183,7 +3297,8 @@ std::string status()
         s += b;
     }
     if (uint32_t* ps = player_species_slot()) { // BUG-0508
-        snprintf(b, sizeof b, "  world player species %08X (set in place %u)\n", ps[0], g_ps_set);
+        snprintf(b, sizeof b, "  world player species %08X (set in place %u, retries %u, lost %u)\n", ps[0], g_ps_set, g_ps_retries,
+                 g_ps_lost);
         s += b;
     }
     for (int k = 0; k < kKinds; k++)
@@ -3206,6 +3321,11 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() >= 2 && a[0] == "ps_null") { // ps_null <frames>: tests (BUG-1057), the host's evolved species is taken as
+        // not known to this game for that many player-species frames (as a species registered a little later)
+        g_ps_test_null = (unsigned)atoi(a[1].c_str());
+        return "player species unknown for " + std::to_string(g_ps_test_null) + " frames";
+    }
     if (a.size() >= 2 && a[0] == "profile") { // tests (BUG-0457): the species profile the game has for a creature key
         uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         void* p = game::species_by_key({inst, kInfo[kCreature].type, kInfo[kCreature].group});

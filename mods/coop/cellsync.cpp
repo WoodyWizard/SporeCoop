@@ -824,6 +824,13 @@ using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int,
 static DamageCell_t o_DamageCell;
 static void hurt_avatar(int dmg, int type);
 
+// BUG-1008: a guest's hit that kills a host NPC (a mouth's last chunk, type 6, or a hit the game's path did not take)
+// kills it in the name of the guest's puppet (KillCell's killer: its species alert 0xE71F00 turns on the puppet, not
+// on the host's cell), and a hit on a dead cell is refused (a second KillCell). Off: the host's avatar is the killer.
+static bool g_fix_chunk_killer = true;
+COOP_FIX("cell.chunk_killer", "BUG-1008", g_fix_chunk_killer, "cell: a guest's lethal hit (a mouth chunk) on a host NPC kills it in the name of the guest's puppet, and a dead cell refuses the hit");
+static uint32_t g_chunk_kills;
+
 // guest: our cell bit the host's cell <hidx> (its mirror here): the host applies it (MSG_CELL_HIT)
 static void send_hit(uint32_t hidx, int dmg, int type)
 {
@@ -2122,6 +2129,23 @@ static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
 static uint32_t g_tiles_unshared, g_tiles_flush, g_tiles_full, g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
+// BUG-0999: a host view box whose centre is not a usable position (not finite, or at the 1e7 edge that view_bad lets
+// through and views::finite_pos refuses) leaves the view set empty: the partner pass skips then (np = size() - 1
+// wrapped to SIZE_MAX and read past both lists). Off: the old unchecked pass (a fault on the host).
+static bool g_fix_views_empty = true;
+COOP_FIX_UNSAFE("cell.views_empty", "BUG-0999", g_fix_views_empty, "cell: the host's partner tile pass is skipped when its view set is empty (its own view centre not usable)");
+static uint32_t g_views_empty_skips;
+static int g_test_view_edge; // tests (BUG-0999): the host's view box at the 1e7 edge for this many tile passes
+// BUG-1000: the tile bookkeeping of a flush. The between-frames check runs after the cleanup of lists a rebuild
+// freed (it logged a false "dead entries" warning after every rebuild and used up the 20 warnings), and a flush of
+// every partner list hands a deleted tile's area only to the host's list (before: also to a shadow in another
+// partner list, often one the same loop flushes next: cells made for a tile deleted a moment later).
+static bool g_fix_flush_handover = true;
+COOP_FIX("cell.flush_handover", "BUG-1000", g_fix_flush_handover, "cell: a flush of the partner tile lists hands deleted tiles only to the host's list, and the between-frames tile check runs after the rebuild cleanup");
+static bool g_flushing;                                   // tiles_delete runs inside the flush of every partner list
+static std::unordered_set<TileList*> g_flush_lists;       // the partner lists that flush (this pass)
+static uint32_t g_handed_flushed;                         // hand-overs into a list flushed in the same pass
+static uint32_t g_tile_check_warns_between;               // "the frame between" warnings
 
 using PopTiles_t = void(SK_CDECL*)(int, TileList*, int);
 static PopTiles_t o_PopTiles;
@@ -2309,6 +2333,8 @@ static void hand_over(int32_t key, TileList* from)
             if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
                 if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
+                    if (g_flushing && g_flush_lists.count(l))
+                        g_handed_flushed++; // BUG-1000: waits in a list this pass deletes
                     g_starved.emplace((uint32_t)e[1], (uint8_t)0xFF);
                     return true;
                 }
@@ -2327,9 +2353,14 @@ static void hand_over(int32_t key, TileList* from)
     };
     if (try_list(host_tiles()))
         return;
+    if (g_flushing && g_fix_flush_handover) // BUG-1000: every partner list goes in this pass
+        return;
     for (auto& [id, pt] : g_ptiles)
-        if (try_list(pt.list))
+        if (try_list(pt.list)) {
+            if (g_flushing && g_flush_lists.count(pt.list))
+                g_handed_flushed++;
             return;
+        }
 }
 
 template <typename Keep>
@@ -2546,6 +2577,8 @@ static void tiles_check(const char* step, int level)
     uint32_t live = F<uint32_t>(g, 0x38 + 0xC);
     if (n != live || dead) {
         g_tile_checks_bad++;
+        if (!strncmp(step, "the frame between", 17) && dead) // dead entries: a list that points at freed tiles
+            g_tile_check_warns_between++;
         std::string fr;
         for (uint32_t i : g_freed_dbg)
             fr += " " + std::to_string(i & 0xFFFF) + "/" + std::to_string(i >> 16);
@@ -2635,7 +2668,25 @@ static bool tiles_overflow(int level)
     return true;
 }
 
+static void pop_tiles(int level, TileList* list, int all);
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
+{
+    float* vb = view_boxes();
+    if (g_test_view_edge > 0 && vb && list && list == host_tiles() && is_host() && in_cell()) {
+        // tests (BUG-0999): the host's own view box with both x edges at 1e7 (a centre views::finite_pos refuses,
+        // a box view_bad lets through) for this pass; the game's box comes back right after it
+        g_test_view_edge--;
+        float keep[12];
+        memcpy(keep, vb, sizeof keep);
+        for (int i : {0, 3, 6, 9})
+            vb[i] = 1e7f;
+        pop_tiles(level, list, all);
+        memcpy(vb, keep, sizeof keep);
+        return;
+    }
+    pop_tiles(level, list, all);
+}
+static void pop_tiles(int level, TileList* list, int all)
 {
     if (view_bad()) { // BUG-0299: the active set from NaN boxes is garbage
         g_nan_pop_skips++;
@@ -2690,13 +2741,16 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         }
         list->end = out;
     }
-    tiles_check("the frame between", level);
+    if (!g_fix_flush_handover)
+        tiles_check("the frame between", level);
     // a rebuild cleared the tile pool (RebuildLevel 0xE80010): our lists point at freed tiles
     for (auto& [id, pt] : g_ptiles)
         if (pt.list && pt.list->begin != pt.list->end && !tile_alive((uint32_t)pt.list->begin[1])) {
             tiles_forget(pt);
             g_tile_resets++;
         }
+    if (g_fix_flush_handover) // BUG-1000: after the lists a rebuild freed are forgotten
+        tiles_check("the frame between", level);
     if (g_shadow_tiles.size() > 4096)
         for (auto it = g_shadow_tiles.begin(); it != g_shadow_tiles.end();)
             it = tile_alive(*it) ? std::next(it) : g_shadow_tiles.erase(it);
@@ -2741,6 +2795,12 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     bool room = F<uint32_t>(tp, 0x18) >= F<uint32_t>(tp, 0xC) + 4 * 0x40;
     bool all_go = all || level != last_level || !room;
     last_level = level;
+    g_flush_lists.clear();
+    if (all_go)
+        for (auto& [id, pt] : g_ptiles)
+            if (pt.list && pt.list->begin != pt.list->end)
+                g_flush_lists.insert(pt.list);
+    g_flushing = all_go;
     for (auto& [id, pt] : g_ptiles) {
         if (all_go && pt.list && pt.list->begin != pt.list->end) {
             g_tiles_flush++;
@@ -2748,6 +2808,8 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         } else
             tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
     }
+    g_flushing = false;
+    g_flush_lists.clear();
     tiles_check("our deletes", level);
     g_freed_dbg.clear();
     g_pass = 0;
@@ -2755,8 +2817,10 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     g_frame_tiles = 0;
     o_PopTiles(level, list, all);
     tiles_check("the host's pass", level);
-    if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
-                                   // world scale refills the host's list from every tile: the partners follow
+    if (g_views.size() == 0 && g_fix_views_empty) // BUG-0999: the host's own centre was not usable this pass
+        g_views_empty_skips++;
+    else if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
+                                        // world scale refills the host's list from every tile: the partners follow
         // BUG-0295: the partners take turns being first, so the one that comes first does not take
         // all the room under the cell budget every frame
         static size_t turn;
@@ -2879,6 +2943,15 @@ static bool SK_CDECL h_PickTargets(uint8_t* c, void* res)
 using SpawnLoot_t = void(SK_CDECL*)(void*, void*, void*, void*, float, int, void*, float, uint32_t*, int*);
 static SpawnLoot_t o_SpawnLoot;
 static uint32_t g_loot_calls, g_loot_cells;
+// BUG-1004: SpawnLoot appends every cell it makes to the list it is given, recursion included, with no bound. The
+// list is a static one of 4096 entries (the cell pool holds 4096 cells: the game can never write more). Off: the
+// old 256-entry stack array (a loot drop of more than 256 cells writes past it on the stack).
+static bool g_fix_loot_list = true;
+COOP_FIX_UNSAFE("cell.loot_list", "BUG-1004", g_fix_loot_list, "cell: the host's list of a loot drop's new cells holds as many as the cell pool (4096), not 256 on the stack");
+static uint32_t g_loot_big_n;        // tests (BUG-1004): the next foreground loot drop makes this many cells of one entry
+static int g_loot_listed_last = -1;  // cells the last listed drop appended (the game's count)
+static int g_loot_listed_big = -1;   // tests: cells the armed drop appended
+static std::string g_loot_seen;      // tests: the entry types of the tables seen while armed
 static std::deque<std::pair<uint32_t, double>> g_loot_recent; // host: cells the last loot drops created
 static uint32_t pool_live()
 {
@@ -2899,17 +2972,68 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
     uint32_t before = fg ? pool_live() : 0;
     // the callers pass no list of the new cells (KillCell, E7ADD0, DestroyCell): ours records them
     // (E771D0 appends every cell it creates when the list is given, recursion included)
-    uint32_t buf[256];
+    static uint32_t big[4096]; // BUG-1004: the pool's size (the game's own recursion passes its list on, never ours again)
+    uint32_t small[256];
+    uint32_t* buf = g_fix_loot_list ? big : small;
+    int cap = g_fix_loot_list ? 4096 : 256;
     int n = 0;
     bool mine = fg && !out && !nout;
+    // tests (BUG-1004): one entry of the drop's table makes g_loot_big_n cells, or a repeat entry repeats g_loot_big_n
+    // times (the other entries weigh 0 for this call)
+    struct Saved { int32_t* e; int32_t count; float weight; };
+    std::vector<Saved> saved;
+    void* holder = nullptr;
+    if (mine && g_loot_big_n && table && a_GetData) {
+        int32_t* t = skg::cdecl_call<int32_t*>(a_GetData, table, &holder);
+        if (g_loot_seen.size() < 200) {
+            g_loot_seen += t ? " n" + std::to_string(t[1]) + ":" : " null";
+            for (int i = 0; t && t[0] && i < t[1] && i < 8; i++)
+                g_loot_seen += std::to_string(((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0]);
+        }
+        if (t && t[0] && t[1] > 0 && t[1] < 64) {
+            bool one = false;
+            int kind = 1; // a cell entry, else a repeat entry (repeated n times, each a drop of its sub-table)
+            for (int i = 0; i < t[1]; i++)
+                if (((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0] == 1)
+                    kind = 1, i = t[1];
+                else if (((int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i))[0] == 2)
+                    kind = 2;
+            for (int i = 0; i < t[1]; i++) {
+                int32_t* e = (int32_t*)((uint8_t*)(uintptr_t)t[0] + 0x1C * i);
+                saved.push_back({e, e[4], ((float*)e)[3]});
+                if (e[0] == kind && !one) {
+                    one = true;
+                    e[4] = (int32_t)g_loot_big_n;
+                    ((float*)e)[3] = 1.f;
+                } else
+                    ((float*)e)[3] = 0.f;
+            }
+            if (!one) { // no cell entry in this table: left as it was
+                for (auto& v : saved)
+                    ((float*)v.e)[3] = v.weight;
+                saved.clear();
+            }
+        }
+        g_loot_big_n = saved.empty() ? g_loot_big_n : 0;
+    }
     o_SpawnLoot(res, key, query, pos, size, level, table, dt, mine ? buf : out, mine ? &n : nout);
+    for (auto& v : saved) {
+        v.e[4] = v.count;
+        ((float*)v.e)[3] = v.weight;
+    }
+    if (holder)
+        --F<int>(holder, 0xC);
+    if (mine)
+        g_loot_listed_last = n;
+    if (mine && !saved.empty())
+        g_loot_listed_big = n;
     if (fg) {
         g_loot_calls++;
         uint32_t after = pool_live();
         if (after > before)
             g_loot_cells += after - before;
         double now = H->time_seconds();
-        for (int i = 0; i < n && i < 256; i++)
+        for (int i = 0; i < n && i < cap; i++)
             g_loot_recent.push_back({buf[i], now});
         while (g_loot_recent.size() > 64)
             g_loot_recent.pop_front();
@@ -3169,6 +3293,10 @@ static void nan_velocity(uint8_t* c)
                     ((float*)(parts + 0x4654 + 12 * (size_t)k))[j] = nan;
         }
 }
+// BUG-1006 (heal_mirror below): a guest's mirror whose soft body went NaN
+static bool g_fix_mirror_nan_heal = true;
+COOP_FIX("cell.mirror_nan_heal", "BUG-1006", g_fix_mirror_nan_heal, "cell: a guest's mirror whose soft body went NaN is rebuilt at the host's pose, and the mirror turn skips a NaN angle");
+static uint32_t g_mirror_nan_heals, g_mirror_nan_turns;
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
 static Soft_t o_Soft;
 static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
@@ -3199,6 +3327,10 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     // row-vector convention (goal = rest * M + centre): the image of the x axis is row 0
     float d = std::atan2(want[1], want[0]) - std::atan2(m[1], m[0]);
     float cs = std::cos(d), sn = std::sin(d);
+    if (g_fix_mirror_nan_heal && !(std::isfinite(cs) && std::isfinite(sn))) { // BUG-1006: a NaN matrix (guest_tick rebuilds it)
+        g_mirror_nan_turns++;
+        return;
+    }
     float cx = 0, cy = 0;
     int used = 0;
     for (int i = 0; i < n; i++) {
@@ -3832,6 +3964,77 @@ COOP_FIX("cell.nan_heal_all", "BUG-0307", g_fix_nan_heal_all, "cell: the own cel
 static float g_own_good_size = 0.5f, g_own_good_tsize = 0.5f, g_own_good_mass = 1.f, g_own_good_imass = 1.f;
 // a NaN in the first frame of a new avatar is not healed to the old world's pose and size
 WORLD_STATE("cell.own_good", &g_fix_session_reset, [] { g_own_good_set = false; }, []() -> size_t { return g_own_good_set ? 1 : 0; });
+// A soft body's particles on a ring of 0.4 x its size about `p` (at rest), its centre there; the goal offsets of the
+// shape matching too when `goals` and they are not finite. The own cell's heal (BUG-0299 / BUG-0307) and a mirror's
+// (BUG-1006).
+static void soft_ring(uint8_t* a, const net::Vec3& p, bool goals)
+{
+    float r = std::isfinite(F<float>(a, kSize)) ? std::clamp(F<float>(a, kSize) * 0.4f, 0.05f, 5.f) : 0.3f;
+    int n = F<int>(a, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(a, 0x248) && parts && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(a, 0x254 + 4 * i);
+            if (k >= 1500)
+                continue;
+            auto* q = (float*)(parts + 4 + 12 * (size_t)k);
+            auto* v = (float*)(parts + 0x4654 + 12 * (size_t)k);
+            float ang = 6.2831853f * (float)i / (float)n;
+            q[0] = p.x + r * std::cos(ang);
+            q[1] = p.y + r * std::sin(ang);
+            q[2] = p.z;
+            v[0] = v[1] = v[2] = 0;
+            auto* goal = (float*)(parts + 0x11944 + 12 * (size_t)k); // the rest offset of the shape matching
+            if (goals && !fin(goal, 3)) {
+                goal[0] = r * std::cos(ang);
+                goal[1] = r * std::sin(ang);
+                goal[2] = 0;
+            }
+        }
+    auto* pos = (float*)(a + 0x4C);
+    auto* prev = (float*)(a + 0x84);
+    pos[0] = prev[0] = p.x;
+    pos[1] = prev[1] = p.y;
+    pos[2] = prev[2] = p.z;
+    F<uint16_t>(a, 0x48) |= 4;
+    F<uint16_t>(a, 0x4A)++;
+}
+
+// BUG-1006: a mirror whose own soft body went NaN in our cell step (its particles, its centre, its fit) is rebuilt at
+// the host's pose: guest_tick moved it by `want - pos` (NaN for every particle) and h_Soft turned it by an angle from
+// its NaN matrix, so it stayed NaN for good (and a NaN mirror makes the own cell NaN through their contacts, BUG-0292).
+// Off: no repair (the old path). The switch is defined at h_Soft.
+static bool heal_mirror(uint8_t* c, const net::Vec3& want, float size)
+{
+    unsigned mask = cell_nonfinite(c);
+    if (!g_fix_mirror_nan_heal || !mask || !views::finite_pos(want))
+        return false;
+    if (mask & NF_SIZE) {
+        float sz = std::isfinite(size) && size > 0 ? size : 0.5f;
+        F<float>(c, kSize) = sz;
+        F<float>(c, kTargetSize) = sz;
+    }
+    if (mask & NF_MASS) {
+        F<float>(c, 0xB8) = 1.f;
+        F<float>(c, 0xBC) = 1.f;
+    }
+    static const float id[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    if (mask & NF_ROT)
+        memcpy(c + kRot, id, sizeof id); // the host's matrix is written right after
+    if (mask & NF_SHAPE)
+        memcpy(c + 0x24, id, sizeof id);
+    if (mask & NF_ACC) {
+        auto* acc = (float*)(c + 0x1C4);
+        acc[0] = acc[1] = acc[2] = 0;
+    }
+    soft_ring(c, want, true);
+    stop_at(c, want);
+    if (g_mirror_nan_heals++ < 20)
+        H->log(M, SK_WARN, "coop: cell: mirror c%u had non-finite fields 0x%X: rebuilt at the host's pose (%.1f %.1f) (BUG-1006)",
+               F<uint32_t>(c, 0), mask, want.x, want.y);
+    return true;
+}
+
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 {
     unsigned mask = g_fix_nan_heal_all ? cell_nonfinite(a) : 0;
@@ -3866,35 +4069,7 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
             memcpy(a + 0x24, id, sizeof id);
         }
     }
-    float r = std::isfinite(F<float>(a, kSize)) ? std::clamp(F<float>(a, kSize) * 0.4f, 0.05f, 5.f) : 0.3f;
-    int n = F<int>(a, 0x250);
-    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
-    if (F<uint32_t>(a, 0x248) && parts && n > 1 && n <= 64)
-        for (int i = 0; i < n; i++) {
-            uint32_t k = F<uint32_t>(a, 0x254 + 4 * i);
-            if (k >= 1500)
-                continue;
-            auto* q = (float*)(parts + 4 + 12 * (size_t)k);
-            auto* v = (float*)(parts + 0x4654 + 12 * (size_t)k);
-            float ang = 6.2831853f * (float)i / (float)n;
-            q[0] = p.x + r * std::cos(ang);
-            q[1] = p.y + r * std::sin(ang);
-            q[2] = p.z;
-            v[0] = v[1] = v[2] = 0;
-            auto* goal = (float*)(parts + 0x11944 + 12 * (size_t)k); // the rest offset of the shape matching
-            if (g_fix_nan_heal_all && !fin(goal, 3)) {
-                goal[0] = r * std::cos(ang);
-                goal[1] = r * std::sin(ang);
-                goal[2] = 0;
-            }
-        }
-    auto* pos = (float*)(a + 0x4C);
-    auto* prev = (float*)(a + 0x84);
-    pos[0] = prev[0] = p.x;
-    pos[1] = prev[1] = p.y;
-    pos[2] = prev[2] = p.z;
-    F<uint16_t>(a, 0x48) |= 4;
-    F<uint16_t>(a, 0x4A)++;
+    soft_ring(a, p, g_fix_nan_heal_all);
     stop_at(a, p);
     if (!g_nan_heals++ || (mask && g_nan_heals <= 20))
         H->log(M, SK_WARN, "coop: cell: our own cell went back to its last finite position (%.1f %.1f), non-finite fields 0x%X (BUG-0299, BUG-0307)",
@@ -4003,6 +4178,7 @@ static void guest_tick(double now)
             // to them alone are undone, and a centre written away from its particles blew the body
             // up (mirrors flew off to 1e10 m on the guest). Move the particles with it and keep them
             // still: the pose is the host's, extrapolated along its velocity.
+            heal_mirror(c, want, m.size * k);
             modes::cell_move(c, want, true);
             auto* acc = (float*)(c + 0x1C4);
             acc[0] = acc[1] = acc[2] = 0;
@@ -4465,10 +4641,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
         uint8_t* c = modes::cell_at(idx);
-        // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet)
-        if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c)) {
+        // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet); BUG-1008: nor on a dead one
+        bool dead = c && g_fix_chunk_killer && F<uint8_t>(c, kDead);
+        if (!r.ok() || !c || F<uint8_t>(c, kDying) || dead || c == avatar() || modes::cell_is_puppet(c)) {
             trace::ev("bite", "refused", "from %u c%u refused: %s", from, idx,
-                      !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : "dying");
+                      !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : dead ? "dead" : "dying");
             return;
         }
         if (g_fix_ko_no_bite && guest_knocked_out(from)) { // BUG-0509: a knocked-out guest bites nothing (an old guest, or one in flight)
@@ -4515,7 +4692,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             F<int>(c, kHp) = hp;
         } else {
             F<int>(c, kHp) = 0;
-            h_KillCell(c, avatar_idx(), F<void*>(avatar(), kRes), true, t, 0.f); // counts as a player kill
+            if (g_fix_chunk_killer) { // BUG-1008: the guest's puppet killed it (as MSG_CELL_EAT's kill does)
+                uint8_t* av = avatar();
+                h_KillCell(c, pc ? F<uint32_t>(pc, 0) : avatar_idx(), pc ? F<void*>(pc, kRes) : av ? F<void*>(av, kRes) : nullptr, true, t, 0.f);
+                g_chunk_kills++;
+            } else
+                h_KillCell(c, avatar_idx(), F<void*>(avatar(), kRes), true, t, 0.f); // counts as a player kill
         }
     } else if (type == net::MSG_CELL_BITTEN && is_host()) {
         // our NPC bit a guest on the guest's machine: what DamageCell does for the attacker after a
@@ -5747,6 +5929,21 @@ std::string debug(const std::vector<std::string>& a)
             v = 1;
         } else if (a[2] == "invuln") {
             F<uint8_t>(c, kInvuln) = v;
+        } else if (a[2] == "alert" && a_GetData && F<void*>(c, kRes)) { // BUG-1008: the species' death alert radius
+            // (KillCell's alert 0xE71F00 runs only when the AI block's +0x2C is not 0: the fixture's level-1 kinds have 0)
+            void* holder = nullptr;
+            uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+            if (holder)
+                --F<int>(holder, 0xC);
+            if (!res)
+                return "no resource data";
+            float r = (float)atof(a[3].c_str());
+            F<float>(res, 0xE0 + 0x2C) = r;
+            if (F<int>(res, 0x248) != -1)
+                F<float>(res, 0x248 + 0x2C) = r;
+            if (F<int>(res, 0x194) != -1)
+                F<float>(res, 0x194 + 0x2C) = r;
+            v = r != 0.f;
         } else if (a[2] == "spare" && a_GetData && F<void*>(c, kRes)) {
             void* holder = nullptr;
             uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
@@ -5756,7 +5953,7 @@ std::string debug(const std::vector<std::string>& a)
                 return "no resource data";
             F<uint8_t>(res, 0x300) = v;
         } else
-            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>";
+            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n> | alert <radius>";
         char b[96];
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
@@ -6280,6 +6477,140 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "column: %d cells moved\n", moved);
         H->log(M, SK_INFO, "cell: %s", b);
         return b;
+    }
+    if (!a.empty() && a[0] == "nanmirror" && is_guest()) { // tests (BUG-1006): `nanmirror [c<key>]`: a soft mirror's particles NaN
+        uint32_t want = a.size() > 1 ? (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10) : 0;
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        uint8_t* best = nullptr;
+        uint32_t key = 0;
+        float bd = 1e30f;
+        for (auto& [h, m] : g_mirrors) {
+            uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
+            int n = c ? F<int>(c, 0x250) : 0;
+            if (!c || !F<uint32_t>(c, 0x248) || n < 2 || n > 64 || (want && h != want) || cell_nonfinite(c) ||
+                F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || strcmp(kind_of(c), "creature"))
+                continue;
+            float d = net::dist(pos_of(c), pos_of(av));
+            if (d < bd) {
+                bd = d;
+                best = c;
+                key = h;
+            }
+        }
+        if (!best || !parts)
+            return "nanmirror: no soft mirror\n";
+        float nan = std::nanf("");
+        int n = F<int>(best, 0x250);
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(best, 0x254 + 4 * i);
+            if (k < 1500)
+                for (int j = 0; j < 3; j++)
+                    ((float*)(parts + 4 + 12 * (size_t)k))[j] = nan;
+        }
+        char b[96];
+        snprintf(b, sizeof b, "nanmirror c%u: %d particles NaN at %.1f m\n", key, n, bd);
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "mirrornf" && is_guest()) { // tests (BUG-1006): a mirror's game state: non-finite fields, centre, particle mean
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        auto it = g_mirrors.find(key);
+        uint8_t* c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+        if (!c)
+            return "mirrornf: gone\n";
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        int n = F<int>(c, 0x250), used = 0;
+        double mx = 0, my = 0;
+        if (parts && F<uint32_t>(c, 0x248) && n > 1 && n <= 64)
+            for (int i = 0; i < n; i++) {
+                uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+                if (k >= 1500)
+                    continue;
+                mx += ((float*)(parts + 4 + 12 * (size_t)k))[0];
+                my += ((float*)(parts + 4 + 12 * (size_t)k))[1];
+                used++;
+            }
+        if (used) {
+            mx /= used;
+            my /= used;
+        }
+        char b[240];
+        snprintf(b, sizeof b, "mirrornf c%u nf=0x%X pos=(%.2f %.2f) pmean=(%.2f %.2f) parts=%d heals=%u turns_skipped=%u\n", key,
+                 cell_nonfinite(c), pos_of(c).x, pos_of(c).y, mx, my, used, g_mirror_nan_heals, g_mirror_nan_turns);
+        return b;
+    }
+    if (!a.empty() && a[0] == "rebuild" && is_host() && G()) { // tests (BUG-1000): the game rebuilds the level next frame
+        // (G+0x51D8, the respawn's request: RebuildLevel 0xE7FD00 clears the tile pool, docs/re/cell.md)
+        F<uint8_t>(G(), 0x51D8) = 1;
+        return "rebuild requested\n";
+    }
+    if (a.size() >= 2 && a[0] == "viewedge" && is_host()) { // tests (BUG-0999): the host's view box at the 1e7 edge for <n> tile passes
+        g_test_view_edge = std::clamp(atoi(a[1].c_str()), 0, 600);
+        return "view box at the 1e7 edge for " + std::to_string(g_test_view_edge) + " tile passes\n";
+    }
+    if (!a.empty() && a[0] == "tilestat") { // tests (BUG-0999, BUG-1000): the host's tile bookkeeping counters
+        char b[320];
+        snprintf(b, sizeof b, "tilestat views_empty_skips=%u flushes=%u handed=%u handed_flushed=%u resets=%u between_warns=%u "
+                 "check_warns=%u passes=%u lists=%u views=%u\n", g_views_empty_skips, g_tiles_flush, g_tiles_handed, g_handed_flushed,
+                 g_tile_resets, g_tile_check_warns_between, g_tile_checks_bad, g_tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size());
+        return b;
+    }
+    if (!a.empty() && a[0] == "lootbig") { // tests (BUG-1004): `lootbig <n>`: the next foreground loot drop makes <n> cells; `lootbig`: the counters
+        if (a.size() > 1)
+            g_loot_big_n = (uint32_t)std::clamp(atoi(a[1].c_str()), 0, 1000);
+        char b[160];
+        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d listed_big=%d pool=%u tables=", g_loot_big_n, g_loot_calls,
+                 g_loot_cells, g_loot_listed_last, g_loot_listed_big, pool_live());
+        return b + g_loot_seen + "\n";
+    }
+    if (a.size() >= 4 && a[0] == "sendhit" && is_guest()) { // tests (BUG-1008): `sendhit c<key> <dmg> <type>`: a MSG_CELL_HIT as it is
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        send_hit(key, atoi(a[2].c_str()), atoi(a[3].c_str()));
+        return "hit sent\n";
+    }
+    if (a.size() >= 3 && a[0] == "herd" && is_host()) { // tests (BUG-1008): `herd c<key> <n>`: <n> cells of its species within 4 m of it
+        uint8_t* v = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
+        if (!v || v == av || modes::cell_is_puppet(v))
+            return "herd: no such NPC\n";
+        void* kind = F<void*>(v, kRes); // KillCell's alert takes the cells of the same resource
+        int want = atoi(a[2].c_str()), moved = 0;
+        net::Vec3 at = pos_of(v);
+        std::string idx;
+        for_each_cell([&](uint8_t* c, uint32_t i) {
+            if (moved >= want || c == v || c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ||
+                F<void*>(c, kRes) != kind || F<void*>(c, kQuery) != fg_query())
+                return;
+            float ang = 6.2831853f * (float)moved / (float)std::max(want, 1);
+            set_pos(c, {at.x + 3.f * std::cos(ang), at.y + 3.f * std::sin(ang), at.z});
+            idx += " " + std::to_string(i);
+            moved++;
+        });
+        return "herd: " + std::to_string(moved) + " moved:" + idx + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "targets") { // tests (BUG-1008): `targets <idx,...>`: each cell's flee (+0x220) and chase (+0x22C) target
+        std::string out;
+        size_t p0 = 0;
+        const std::string& l = a[1];
+        while (p0 <= l.size()) {
+            size_t p1 = l.find(',', p0);
+            if (p1 == std::string::npos)
+                p1 = l.size();
+            uint32_t i = (uint32_t)strtoul(l.substr(p0, p1 - p0).c_str(), nullptr, 10);
+            if (uint8_t* c = i ? modes::cell_at(i) : nullptr) {
+                char b[128];
+                snprintf(b, sizeof b, "target %u flee=%u flee_t=%.2f chase=%u\n", i, F<uint32_t>(c, 0x220), F<float>(c, 0x21C),
+                         F<uint32_t>(c, 0x22C));
+                out += b;
+            }
+            p0 = p1 + 1;
+        }
+        char b[96];
+        snprintf(b, sizeof b, "avatar=%u chunk_kills=%u puppets=", avatar_idx(), g_chunk_kills);
+        out += b;
+        if (C.puppets)
+            for (auto& pp : C.puppets())
+                if (pp.cell)
+                    out += std::to_string(pp.id) + ":" + std::to_string(F<uint32_t>(pp.cell, 0)) + " ";
+        return out + "\n";
     }
     if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
         uint8_t* av = avatar();

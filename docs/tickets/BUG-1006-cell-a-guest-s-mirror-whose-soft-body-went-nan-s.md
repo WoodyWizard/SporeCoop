@@ -1,19 +1,19 @@
 ---
 id: BUG-1006
 title: Cell: a guest's mirror whose soft body went NaN stays NaN (cell_move and the h_Soft turn carry the NaN into every particle)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-19
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-cell
+commits: 23b91609
+tests: cell_mirror_nan
 signature:
-docs: docs/known-issues.md#issue-cell-mirror-nan
+docs: docs/known-issues.md#issue-cell-mirror-nan, docs/re/cell.md#cell-loot-alert, docs/06-testing.md#testing-cell-c1-0714
 related:
 ---
 
@@ -49,11 +49,19 @@ game that the mirror's centre and particles are finite and within 2 m of the hos
 mirror listing). Main: NaN for good (FAIL), fixed: PASS.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+cellsync.cpp `heal_mirror` (guest_tick, before the soft mirror's cell_move): a mirror with any non-finite field
+(`cell_nonfinite`: centre, velocity, matrices, size, mass, particles, goal offsets) gets its size / mass / matrices
+back (the host's size, identity matrices that the host's matrix replaces right after) and its particles on a ring
+at the host's pose (`soft_ring`, now shared with the own cell's heal of BUG-0299 / BUG-0307), at rest. `h_Soft`
+skips the mirror turn when the angle's sine or cosine is not finite. Switch `coop.fix cell.mirror_nan_heal off`.
+Test commands `coop.pool nanmirror [c<key>]`, `coop.pool mirrornf c<key>` (guest).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `cell_mirror_nan` (the guest's nearest soft mirror's particles NaN; 1 s and 3 s later finite and within 2 m of
+the host's pose of that cell).
+FAIL (SPORE_FIX_OFF=cell.mirror_nan_heal): out/lab/20261113-022529 (non-finite fields 0x284 after 1 s, 0x385 after 3 s).
+PASS: out/lab/20261113-022529-2, out/lab/20261113-023438-2.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-cell (package C1).

@@ -7063,3 +7063,57 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * ui (coop_ui.py): layout_problems with 46 px of text borders on every co-op window step (BUG-1065); twin
   `UI_LAYOUT_TWIN="report -12"` (the lobby's "Report a problem" 12 px narrower: it wraps) FAILs, with
   `UI_BUTTON_PAD=30` too (the old rule) it would pass. `coop.uistate nudge <name> <dx> <dy> [dw]` (dw: a width change).
+## Cell package C1 twin tests (2026-11-13, fix/w49-cell)
+<a id="testing-cell-c1-0714"></a>
+
+| Test (suite) | What it checks in the game | FAILS with |
+|---|---|---|
+| `coop_cell_mirror_nan.py` (`cell_mirror_nan`, Cell fixture, ~1 min) | `coop.pool nanmirror` (guest: the particles of its nearest soft mirror NaN); 1 s and 3 s later `coop.pool mirrornf c<key>` (the game's cell +0x4C, the particles' mean, `cell_nonfinite`) is finite and within 2 m of `coop.pool cell c<key>` on the host (BUG-1006) | `SPORE_FIX_OFF=cell.mirror_nan_heal` |
+| `coop_cell_chunk_killer.py` (`cell_chunk_killer`, ~1 min) | the guest's type 6 hit (`coop.pool sendhit c<key> 6 6`) kills a host NPC with 4 cells of its kind round it (`herd`) and a death alert radius (`npcflag c<key> alert 60`: the fixture's kinds have none); `coop.pool targets` on the host: their flee (+0x220) / chase target is the guest's puppet, never the host's cell (BUG-1008). Without `npcflag alert` the alert never runs (SKIP) | `SPORE_FIX_OFF=cell.chunk_killer` |
+| `coop_cell_views_empty.py` (`cell_views_empty`, ~1 min) | `coop.pool viewedge 30` (host: its view box at the 1e7 edge for 30 tile passes, put back after each); `coop.pool tilestat` views_empty_skips grows, no fault, the guest still has its mirrors (BUG-0999) | `SPORE_FIX_OFF=cell.views_empty` (unsafe: the host faults or hangs) |
+| `coop_cell_loot_big.py` (`cell_loot_big`, ~1 min) | `coop.pool lootbig 300` (host: the next foreground drop makes 300 cells: the table's cell entry, or a repeat entry 300 times; `tables=` lists the entry types seen), the host bites creatures until it came; the game's own count `listed_last` is 300 and the pool grew (BUG-1004) | `SPORE_FIX_OFF=cell.loot_list` (unsafe: a stack overrun) |
+| `coop_cell_flush_handover.py` (`cell_flush_handover`, multi, 3 players, ~4 min) | two guests on one spot 30 m from the host (one list holds the tiles, the other their shadows; 12 m apart gave no shadow hand-over at all), four level changes, two rebuilds (`coop.pool rebuild`: G+0x51D8); `coop.pool tilestat`: flushes > 0, `handed_flushed` 0 (made or waiting for room in a list the same pass deletes), no "frame between" warning with dead entries (BUG-1000). The check's 20 warnings are used up by BUG-1066 in two changes | `SPORE_FIX_OFF=cell.flush_handover` |
+| `coop_cell_levelup_view.py` (`cell_levelup_view`, reworked) | BUG-0976: the guest's screen keys are also asked of the host's game: no cell gone only on the guest (at most 10 %); BUG-0635: the host's wipe destroyed no cell on the guest's screen (`wipe_near_lost`, the game's DestroyCell calls from RemoveCellsOfOldScale). The screen shares are printed only: an up change removes 43-91 % of any screen in a game alone too, the host's screen then held as few as 7 cells (the old per-change average failed about half the runs), and round a partner the host's game loses more anyway (BUG-1064) | `SPORE_FIX_OFF=cell.levelup_keep` (the down changes) |
+
+## Net and validation of 0.7.14 N2: unit twins and one lab trio (2026-11-13, fix/w49-net)
+<a id="testing-n2-net"></a>
+
+* `net_tests` (fake transport, next to test_halfopen): `test_join_seen` (BUG-1001: two "Player" games with other
+  tokens, a crash rejoin by token, the limit with a silent same-name entry, no-token names), `test_replace_checked`,
+  `test_welcome_split` (BUG-1005: three guests with 24-emoji names and 255-byte versions over localhost),
+  `test_recv_skip_big` (BUG-1007: `BigNet`, a FakeNet that returns `Session::kRecvSkipped` for a datagram over the
+  buffer; and Discovery over a real socket with a 600-byte datagram first), `test_dbpf_flag4` (BUG-1012). Each fails
+  with `net_tests --off join_seen|replace_checked|welcome_split|recv_skip_big` (BUG-1012: `--nofix`).
+* `test_rejoin_same_endpoint` runs its rejoin for 2.6 s now: a rejoin through the same endpoint without a token
+  replaces the old entry after 2 s of its silence.
+* `validate_tests`: `test_space_dir` (the MSG_SPACE direction table; every `enum Kind` value of the ten space source
+  files must have a direction; it reads mods/coop/*.cpp, so it runs from the repository root as make test does),
+  `test_effect_xf` (BUG-1048). Both fail with `validate_tests --nofix`.
+* Lab `join_late_names` (coop_join_late_names.py, creature, 3 games: twoinst + coop_multi.start_extra): late join
+  off, an extra game joins with the guest's name Bob (refused), Bob leaves and comes back (admitted by its kept
+  token), late join on (the extra joins as "Bob 2"). `SPORE_FIX_OFF=net.join_seen` fails.
+## T1 small fixes of 0.7.14: test commands and tests (2026-11-13, fix/w49-small)
+<a id="testing-t1-small"></a>
+
+* `tribe_chief_rescue` (BUG-1052, tribe, ~2 min): `coop.tribe near 1.5` puts the guest's chief next to the host's,
+  `coop.tribe pincer <chief> <enemy> <hp + 5>` deals the killing blow through TakeDamage; the chief's `hp=` must be
+  30 % of its row's `maxhp=` on both games (`chief_rescues=` of `coop.status` counts the rescue).
+* `tribe_zero_fields` (BUG-1043 / BUG-1044, tribe, ~2 min): `coop.tribe settool <id> 1` then `0`, `coop.tribe hunger
+  <id> 0`; the guest's row `tool=` / `hunger=` follow within 5 s. Then the guest leaves: the host's `coop.fields`
+  statistics of kind npc (id 1 = the guest's id) must stay (BUG-1044's wrong key erased them).
+* `civ_away_ground` (BUG-1056, civ_npc, ~3 min): `coop.civ vput` works on a guest while the host is away (the mirror
+  its own game drives then); the spice node near (-336, 132, 354) is ground the guest's game finds invalid for a land
+  vehicle. `away_ground=` in the guest's `coop.civ` status counts the game's ground checks the fix lets through.
+* `npc_snap` (BUG-0997, creature, 30 fps, ~3 min): `coop.npctrack shove <id> <m> x y z <m/s>` (host) puts a walking
+  NPC m metres to the side and walks it on; the guest's `coop.npctrack dump` frames give the time until the drawn copy
+  is within 1 m of the host's path after the path's jump.
+* `evolve_in_place_late` (BUG-1057, creature, ~6 min): `coop.creations ps_null <n>` (guest) takes the host's evolved
+  species as unknown for n tries; the `world player species` line of `coop.creations` shows `retries` / `lost`.
+* `social_meter_retry` (BUG-1058, creature, ~3 min): `coop.social meter_null <n>` (guest) makes the next n meter
+  tasks find no meter window; `coop.social meter` shows `missed=`.
+* `creations_package_close` (BUG-0996, creature, ~2 min): the guest plays its own creatures A, B, A, B, A; the host's `packages:` line
+  of `coop.creations` (open, closing, closed, kept, renamed): `renamed` counts packages written under `_N` names
+  because the operating system refused the old name (the file still open).
+* The monitor's `same_session` (BUG-1061, default 1): the hp, puppet_hp, drawn and ground rules match a partner line
+  only with the subject's own lines of the stage and world it names (each session's clock starts at s 0, so a test
+  with several sessions has several lines at the same s). gates_selftest has the twin (`same_session=0` fails).

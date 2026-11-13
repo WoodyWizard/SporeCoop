@@ -260,12 +260,21 @@ int UdpSocket::recv_from(Endpoint& from, void* buf, size_t cap)
         return -1;
     sockaddr_in a{};
     socklen_t al = sizeof a;
+#ifdef _WIN32
     int r = (int)recvfrom((decltype(socket(0, 0, 0)))fd_, (char*)buf, (int)cap, 0, (sockaddr*)&a, &al);
+#else
+    // MSG_TRUNC: the real length of a datagram that did not fit (the native tests see what Windows reports)
+    int r = (int)recvfrom((decltype(socket(0, 0, 0)))fd_, (char*)buf, cap, MSG_TRUNC, (sockaddr*)&a, &al);
+    if (r > (int)cap)
+        return -2; // BUG-1007: as WSAEMSGSIZE below
+#endif
     if (r < 0) {
 #ifdef _WIN32
         int e = WSAGetLastError();
         if (e == WSAEWOULDBLOCK || e == WSAECONNRESET)
             return 0;
+        if (e == WSAEMSGSIZE)
+            return -2; // BUG-1007: this datagram was too big for `buf` and is gone; the next ones are still there
 #else
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;

@@ -3125,6 +3125,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Creature, Tribe: a host animal knocked aside slides back on the guest instead of jumping (2026-11-13, audit 0.7.14)
 <a id="issue-npc-snap-dead"></a>
+* Fixed (unreleased, fix/w49-small, BUG-0997): the snap compares this frame's path point, not the aim
+  (`npc.place_now_snap`); test npc_snap (median 0.03 s with the fix).
 
 * What happens: when the host's animal is thrown aside or put back by its game while it walks, the guest's copy
   closes the 2-7 m at catch-up speed over up to about 2 s instead of being placed there at once.
@@ -3149,6 +3151,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Tribe: a chief "saved" by a partner's member dies at the next blow (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-chief-rescue-hp"></a>
+* Fixed (unreleased, fix/w49-small, BUG-1052): 30 % of game::max_health (`tribe.rescue_max`); test tribe_chief_rescue
+  (168 hp chief: 50.4 on both games).
 
 * What happens: with the Chief aura setting on (the default), "<A> saved <B>'s chief" leaves the chief 0.3 hit
   points instead of 30 % of its health.
@@ -3170,6 +3174,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Tribe: the guest's copy of a host member keeps a tool the host's member put down (2026-11-13, audit 0.7.14)
 <a id="issue-tribe-tool-zero"></a>
+* Fixed (unreleased, fix/w49-small, BUG-1043): each field has its own accepted range, tool and hunger take 0
+  (`fields.zero_values`); test tribe_zero_fields.
 
 * What happens: the field relay drops the value 0, so "no tool" (and hunger 0) never reaches the guest. The guest's
   copy keeps the old tool type.
@@ -3186,6 +3192,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   mirror's particles.
 * Known: by code (modes.cpp cell_move adds `want - pos` with a NaN pos to every particle; cellsync.cpp h_Soft turns
   the particles by a NaN angle); no NaN check for mirrors.
+* Fixed (unreleased, fix/w49-cell, BUG-1006): a mirror with a non-finite field is rebuilt at the host's pose before
+  it is moved, and the turn skips a NaN angle (`cell.mirror_nan_heal`).
 * Ticket: BUG-1006
 
 ## Cell: a host creature a guest's jaw finishes off turns its kind against the host (2026-11-13, audit 0.7.14)
@@ -3196,6 +3204,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not seen at runtime; a guest with a jaw part kills a host NPC by chunks.
 * Known: by code (cellsync.cpp MSG_CELL_HIT type 6 calls h_KillCell with the host's avatar as the killer; the eat
   path uses the guest's puppet).
+* Fixed (unreleased, fix/w49-cell, BUG-1008): the kill is the guest's puppet's, and a dead cell refuses the hit
+  (`cell.chunk_killer`).
 * Ticket: BUG-1008
 
 ## Session: with late join off a new player with a name already seen (the default "Player") still joins (2026-11-13, audit 0.7.14)
@@ -3208,6 +3218,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: session.cpp counts any seen name as a rejoin even with the rejoin token on; the old entry of that name is
   not retired (observed in code).
 * Ticket: BUG-1001
+* 2026-11-13 (fix/w49-net): fixed (`coop.fix net.join_seen`): after the start a player comes back only by its rejoin
+  token (kept for the same host and name on a leave), without a token by a name nobody has and that dropped recently;
+  every live entry counts against the limit. Tests: net_tests test_join_seen, lab join_late_names
+  (docs/04-netcode.md#netcode-n2-join-input).
 
 ## Civ, Space: a shared money line names the wrong player or a false "earned" after two spends at once (2026-11-13, audit 0.7.14)
 <a id="issue-shared-cause-floor"></a>
@@ -3279,6 +3293,10 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 ## Creature: after a Cell session the partner's creature shows its own full health for a while (2026-11-13, fix/w49-life)
 <a id="issue-puppet-hp-after-cell"></a>
+* CORRECTION (2026-11-13, fix/w49-small, BUG-1061): not a game desync. Both games had the right health (host 10/10, the
+  guest's puppet of it 10/10); the monitor matched the guest's Creature line at s 30 with the host's own line of the
+  Cell session before it at s 30 (6/6): each session's clock starts at 0. Fixed in tools/tests/monitor.py
+  (`same_session`: only own lines of the stage and world the partner line names).
 
 * What happens: two players play Cell, end the session, load a Creature game and join again: for 10 s or more each
   game shows the partner's creature at its species' own full health (10/10, 18/18) while the partner has 6/6.

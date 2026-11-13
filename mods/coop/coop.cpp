@@ -4888,7 +4888,7 @@ void setup_callbacks()
     };
     g_sess.cb.disconnected = [](const std::string& why) {
         support::on_disconnected(why);
-        rejoin::clear(); // the session ended (BUG-0235)
+        rejoin::clear(net::g_fix.join_seen); // the session ended (BUG-0235); kept for this host and name (BUG-1001)
         settings::on_disconnect();
         sreport::on_disconnect();
         feed("disconnected: " + why);
@@ -5375,7 +5375,7 @@ bool do_join(const std::string& addr, std::string& err)
 {
     end_open_session();
     reset_lobby();
-    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
+    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
     if (!g_sess.join(addr, g_name, err))
         return false;
     { // the chat log goes into problem reports: no public address there
@@ -5390,7 +5390,9 @@ bool do_join(const std::string& addr, std::string& err)
 void do_leave()
 {
     g_sess.leave("user");
-    rejoin::clear(); // a clean leave: the next join is a new player (BUG-0235)
+    // a clean leave: the next join is a new player (BUG-0235), except a join back to this host under this name, which
+    // keeps the token: the host takes it back while it takes no new players (BUG-1001, off with net.join_seen)
+    rejoin::clear(net::g_fix.join_seen);
     end_session(EndPath::Leave, cellsync::voluntary_leave_cleanup_enabled());
     reset_lobby();
 }
@@ -6247,6 +6249,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 1 && !strcmp(argv[1], "games")) { // tests (BUG-0831): the host's social games and their prompts
         SAY("%s", social::games_dump().c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "meter_null")) { // tests (BUG-1058): the next n meter tasks find no meter window
+        social::debug_meter_null((unsigned)atoi(argv[2]));
+        SAY("the next %s meter tasks find no meter window\n", argv[2]);
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen

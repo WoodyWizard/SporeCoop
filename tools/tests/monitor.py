@@ -99,7 +99,7 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0,
                 php_n=2, php_same_way=1, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
-                drawn_scale=1, drawn_age=1.0)
+                drawn_scale=1, drawn_age=1.0, same_session=1)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -261,12 +261,18 @@ class Timeline:
         got = [w for w in self.own if w != viewer and (lambda o: o is not None and o['id'] == pid)(self.own_at(w, t, dt))]
         return got[0] if len(got) == 1 else None
 
-    def window(self, who, t, dt):
-        """the own records of `who` within session time t +- dt"""
+    def window(self, who, t, dt, like=None):
+        """the own records of `who` within session time t +- dt. BUG-1061: the session clock starts at 0 in every
+        session, so one machine's records of two sessions share the same times (a Cell session's line at s 30 and the
+        next Creature session's): with `like` (a partner record) only the records of the stage and world that record
+        names count"""
         ts = self.own_t.get(who)
         if not ts or t is None:
             return []
-        return self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+        w = self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+        if like is not None:
+            w = [r for r in w if r['stage'] == like['stage'] and r['world'] == like['world']]
+        return w
 
     def around(self, who, t):
         """the own records of `who` right before and right after session time t (BUG-0380)"""
@@ -276,15 +282,15 @@ class Timeline:
         i = bisect.bisect_left(ts, t)
         return [self.own[who][j] for j in (i - 1, i) if 0 <= j < len(ts) and ts[j] != float('-inf')]
 
-    def own_at(self, who, t, dt):
-        """the own record of `who` closest to session time t (within dt), None"""
-        w = self.window(who, t, dt)
+    def own_at(self, who, t, dt, like=None):
+        """the own record of `who` closest to session time t (within dt), None (like: see window)"""
+        w = self.window(who, t, dt, like)
         return min(w, key=lambda r: abs(r['t'] - t)) if w else None
 
 
-def own_window(tl, who, t, dt):
+def own_window(tl, who, t, dt, like=None):
     """the own records of `who` within session time t +- dt"""
-    return tl.window(who, t, dt)
+    return tl.window(who, t, dt, like)
 
 
 def playing(r):
@@ -458,12 +464,13 @@ class Hp(Invariant):
                     run, last = [], subj
                     if subj is None:
                         continue
-                o = tl.own_at(subj, p['t'], 5.0) if p['t'] is not None else None
+                like = p if self.c['same_session'] else None  # BUG-1061
+                o = tl.own_at(subj, p['t'], 5.0, like) if p['t'] is not None else None
                 if not o or not p['same'] or not playing(o) or o['maxhp'] <= 0 or p['age'] > 1.0:
                     run = []
                     continue
                 # the subject's own hp unchanged around the moment (a fight changes it between the lines)
-                around = own_window(tl, subj, p['t'], 12.0)
+                around = own_window(tl, subj, p['t'], 12.0, like)
                 if len(around) < 2 or len({(x['hp'], x['maxhp']) for x in around}) != 1:
                     run = []
                     continue
@@ -553,7 +560,11 @@ class Hook(Invariant):
         subj = tl.who_at(p['pid'], p['t'], viewer=p['who'])  # ids are reused after leaves
         if subj is None or p['t'] is None:
             return None, None
-        return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'])
+        return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'], self.like(p))
+
+    def like(self, p):
+        """BUG-1061 (same_session): the subject's records of the stage and world partner record p names; 0: any"""
+        return p if self.c['same_session'] and p.get('stage') and p.get('world') else None
 
 
 class Drawn(Hook):

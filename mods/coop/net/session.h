@@ -28,6 +28,7 @@ struct Peer {
     std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
+    std::string hello_name; // host: the name of its HELLO, cleaned, before " 2" / "guest<id>" (BUG-1001)
     Connection conn;
 };
 
@@ -80,6 +81,10 @@ public:
     static constexpr uint32_t kDiscoverPerSecond = 20; // BUG-0776: discovery answers a second, all senders together
     static constexpr size_t kMaxPeers = 16;            // host: accepted and half-open peers
     static constexpr int kHalfOpenPerIp = 4;           // BUG-0778: half-open peers of one address (a NAT: several games)
+    // BUG-1001: a player without a rejoin token comes back after the start by its name only within this time of its drop
+    static constexpr uint32_t kRejoinNameMs = 10 * 60 * 1000;
+    // BUG-1007: what Transport::recv_from returns for one datagram it had to drop (too big for the buffer): more may follow
+    static constexpr int kRecvSkipped = -2;
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -133,12 +138,16 @@ private:
     void drop_peer(size_t idx, uint8_t reason);
     void send_chat_to(Peer& p, const Chat& c);
     uint8_t alloc_id() const;
-    std::vector<std::string> seen_names_; // host: every name admitted since host() (the late-join rule)
+    std::vector<std::string> seen_names_; // host: every name admitted since host() (the late-join rule before BUG-1001)
+    // BUG-1001, host: the rejoin tokens admitted since host(), and when a name (Peer::hello_name) was last dropped
+    std::vector<uint64_t> seen_tokens_;
+    std::vector<std::pair<std::string, uint32_t>> dropped_names_;
+    bool rejoin_known(const Peer& p, const Hello& h, bool by_token) const; // BUG-1001: may come back after the start
     bool retired(uint32_t conn) const;
     void start_hello(const Endpoint& ep, uint32_t now);
     void restart_leave();                  // BUG-0861: host() / join(): the old session ends now, also in a delivery
     void end_session(const char* why);     // leave() without the deferral
-    static bool carries_hello(const uint8_t* data, size_t n); // BUG-0778
+    static bool carries_hello(const uint8_t* data, size_t n, Hello* out = nullptr); // BUG-0778 (out: BUG-1003)
     void make_room(const Endpoint& from);  // BUG-0778
     bool discovery_answer(const Endpoint& from, uint32_t now); // BUG-0776
     bool poll_lookup(uint32_t now); // false = the session ended or still waits
@@ -173,6 +182,8 @@ private:
     std::vector<std::unique_ptr<Peer>> zombies_;
     uint32_t disc_window_ms_ = 0, disc_in_window_ = 0, disc_answered_ = 0, disc_refused_ = 0; // BUG-0776
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778
+    uint32_t replace_refused_ = 0;                                                              // BUG-1003
+    uint32_t recv_skipped_ = 0;                                                                 // BUG-1007
 };
 
 } // namespace net

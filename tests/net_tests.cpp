@@ -518,7 +518,7 @@ static void test_rejoin_same_endpoint()
     bool back = false;
     g2.cb.connected = [&] { back = true; };
     CHECK(g2.join(addr, "bob", err));
-    run(g2, 600);
+    run(g2, 2600); // BUG-1003: the old entry (no token) goes once it has been silent for 2 s
     CHECK(back);
     CHECK(leaves == 1 && joins == 2);
     CHECK(host.players().size() == 2);
@@ -3690,6 +3690,241 @@ static void test_restart_in_callback()
     }
 }
 
+// ---- 0.7.14 N2: net and validation (each FAILS with its switch off: `net_tests --off <name>`, and with --nofix) ----
+
+// a guest's HELLO with a rejoin token (0 = none, an older SporeCoop)
+static std::vector<uint8_t> hello_tok(uint32_t conn, const std::string& name, uint64_t token)
+{
+    Connection c;
+    c.conn_id = conn;
+    Hello h;
+    h.build = 0x922af7c7;
+    h.name = name;
+    h.has_token = token != 0;
+    h.token = token;
+    Writer w;
+    h.write(w);
+    c.send_reliable(MSG_HELLO, w);
+    std::vector<uint8_t> pkt;
+    c.build_packet(g_fake_ms, pkt);
+    return pkt;
+}
+struct FakeHost {
+    FakeNet net;
+    Session s;
+    bool closed = false;
+    int leaves = 0;
+    explicit FakeHost(int max_players = kMaxPlayers)
+    {
+        s.set_transport(&net);
+        s.clock = fake_ms;
+        s.build = 0x922af7c7;
+        s.max_players = max_players;
+        s.join_closed = [this] { return closed; };
+        s.cb.player_leave = [this](uint8_t, uint8_t) { leaves++; };
+        std::string err;
+        CHECK(s.host(kDefaultPort, "Host", err));
+    }
+    void in(const Endpoint& e, std::vector<uint8_t> d)
+    {
+        net.in.push_back({e, std::move(d)});
+        s.update();
+    }
+    bool has(const std::string& name) const
+    {
+        for (auto& p : s.players())
+            if (p.name == name)
+                return true;
+        return false;
+    }
+};
+
+// BUG-1001 (NET-1): with late join off, a new game whose name was seen in the session (two friends both "Player") came
+// in as "Player 2"; a same-name join while that player was silent for 2 s (a load) was not counted: one over the limit
+static void test_join_seen()
+{
+    printf("after the start a player comes back by its token, a name alone is not enough (BUG-1001)\n");
+    Endpoint e1 = ep4(192, 168, 1, 7, 41000), e2 = ep4(192, 168, 1, 8, 41000), e3 = ep4(192, 168, 1, 7, 41001);
+    { // two friends named Player: the second is new after the start
+        FakeHost h;
+        h.in(e1, hello_tok(0x71, "Player", 0xA));
+        h.closed = true;
+        h.in(e2, hello_tok(0x72, "Player", 0xB));
+        size_t n = h.s.players().size();
+        printf("  a second \"Player\" (another token) after the start: %s\n", n == 2 ? "refused" : "ADMITTED");
+        CHECK(n == 2 && !h.has("Player 2"));
+        // the first one's game crashes and comes back with its token (another port): its entry, its name
+        g_fake_ms += 2100;
+        h.in(e3, hello_tok(0x73, "Player", 0xA));
+        printf("  the crash rejoin by token: %zu players, leaves %d\n", h.s.players().size(), h.leaves);
+        CHECK(h.s.players().size() == 2 && h.has("Player") && h.leaves == 1);
+    }
+    { // the player limit: Bob silent for 2 s (a load), another game "Bob" with another token
+        FakeHost h(2);
+        h.in(e1, hello_tok(0x81, "Bob", 0xA));
+        g_fake_ms += 2100;
+        h.in(e2, hello_tok(0x82, "Bob", 0xB));
+        size_t n = h.s.players().size();
+        printf("  limit 2, \"Bob\" silent, another \"Bob\": %zu players\n", n);
+        CHECK(n == 2);
+    }
+    { // without a token (an older SporeCoop): by name, only when nobody of that name is here and it dropped recently
+        FakeHost h;
+        h.in(e1, hello_tok(0x91, "Old", 0));
+        h.closed = true;
+        h.in(e2, hello_tok(0x92, "Old", 0));
+        bool second = h.s.players().size() == 3;
+        g_fake_ms += 31000; // Old's entry times out
+        h.s.update();
+        CHECK(h.s.players().size() == 1);
+        h.in(e3, hello_tok(0x93, "Old", 0));
+        bool back = h.s.players().size() == 2 && h.has("Old");
+        printf("  no token: a second \"Old\" while one is here %s, \"Old\" after its drop %s\n", second ? "ADMITTED" : "refused",
+               back ? "back" : "REFUSED");
+        CHECK(!second && back);
+        // a name that dropped long ago is a new player
+        FakeHost h2;
+        h2.in(e1, hello_tok(0x94, "Ann", 0));
+        h2.closed = true;
+        g_fake_ms += 31000;
+        h2.s.update();
+        g_fake_ms += Session::kRejoinNameMs + 1000;
+        h2.in(e2, hello_tok(0x95, "Ann", 0));
+        CHECK(h2.s.players().size() == 1);
+    }
+}
+
+// BUG-1003 (private ticket)
+static void test_replace_checked()
+{
+    printf("a new connection from a joined guest's endpoint (BUG-1003)\n");
+    Endpoint e = ep4(192, 168, 1, 7, 41000);
+    { // the guest is live: another connection with another token waits
+        FakeHost h;
+        h.in(e, hello_tok(0x77, "Bob", 0xA));
+        g_fake_ms += 100;
+        h.in(e, header_datagram(0x77));
+        h.in(e, hello_tok(0x99, "Eve", 0xE));
+        bool kept = h.leaves == 0 && h.has("Bob") && !h.has("Eve");
+        printf("  live guest: %s\n", kept ? "kept" : "REPLACED");
+        CHECK(kept);
+        // silent for 2 s: the game is gone, the new connection takes the endpoint
+        g_fake_ms += 2100;
+        h.in(e, hello_tok(0x99, "Eve", 0xE));
+        CHECK(h.leaves == 1 && h.has("Eve"));
+    }
+    { // the same game (its token) replaces its live entry at once
+        FakeHost h;
+        h.in(e, hello_tok(0x77, "Bob", 0xA));
+        g_fake_ms += 100;
+        h.in(e, hello_tok(0x78, "Bob", 0xA));
+        CHECK(h.leaves == 1 && h.has("Bob") && h.s.players().size() == 2);
+    }
+}
+
+// BUG-1005 (NET-3): a WELCOME longer than one reliable piece is split by the host; the joining guest dropped the pieces
+// (peer_split was set only by the WELCOME itself) and timed out. Long names (24 emoji) and version texts make it
+static void test_welcome_split()
+{
+    printf("a WELCOME longer than one packet reaches the joining guest (BUG-1005)\n");
+    std::string emoji;
+    for (int i = 0; i < 24; i++)
+        emoji += "\xF0\x9F\xA6\x96";
+    std::string ver;
+    for (int i = 0; i < 120; i++)
+        ver += "\xE2\x82\xAC"; // 360 bytes, str8 sends 255
+    Session host, a, b, c;
+    host.build = a.build = b.build = c.build = 0x922af7c7;
+    host.version = std::string(255, 'v');
+    a.version = b.version = c.version = ver;
+    std::string err;
+    CHECK(host.host(0, emoji, err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    CHECK(a.join(addr, emoji + "a", err));
+    tick({&host, &a}, 300);
+    CHECK(b.join(addr, "b" + emoji, err));
+    tick({&host, &a, &b}, 300);
+    CHECK(c.join(addr, "c" + emoji, err));
+    tick({&host, &a, &b, &c}, 600);
+    printf("  three guests with long names and versions: %d %d %d connected, host %zu players\n", a.connected(), b.connected(),
+           c.connected(), host.players().size());
+    CHECK(a.connected() && b.connected() && c.connected() && host.players().size() == 4);
+}
+
+// BUG-1007 (NET-4): a datagram bigger than the read buffer (WSAEMSGSIZE on Windows) ended the reads of the frame
+struct BigNet : FakeNet {
+    int recv_from(Endpoint& from, void* buf, size_t cap) override
+    {
+        if (!in.empty() && in.front().second.size() > cap) {
+            in.pop_front();
+            return Session::kRecvSkipped; // what UdpSocket returns for it
+        }
+        return FakeNet::recv_from(from, buf, cap);
+    }
+};
+static void test_recv_skip_big()
+{
+    printf("a datagram too big for the read buffer does not stop the reads (BUG-1007)\n");
+    BigNet net;
+    Session host;
+    host.set_transport(&net);
+    host.clock = fake_ms;
+    host.build = 0x922af7c7;
+    std::string err;
+    CHECK(host.host(kDefaultPort, "Host", err));
+    Endpoint junk = ep4(203, 0, 113, 9, 30000), guest = ep4(192, 168, 1, 7, 41000);
+    net.in.push_back({junk, std::vector<uint8_t>(3000, 0x55)});
+    net.in.push_back({guest, hello_datagram(0x77, "Bob", 0x922af7c7)});
+    host.update();
+    bool in = host.players().size() == 2;
+    printf("  session: a 3000-byte datagram, then a HELLO in the same frame: %s\n", in ? "joined" : "NOT read");
+    CHECK(in);
+    // the LAN discovery over a real socket (Linux reports the cut datagram as Windows does, MSG_TRUNC)
+    Discovery d;
+    CHECK(d.start());
+    d.targets.clear();
+    UdpSocket tx;
+    CHECK(tx.open(0, nullptr));
+    Endpoint to;
+    to.ip = 0x0100007F;
+    to.port = d.port();
+    std::vector<uint8_t> big(600, 0x55); // over the old 512-byte buffer
+    memcpy(big.data(), &kDiscoverReply, 4);
+    CHECK(tx.send_to(to, big.data(), big.size()));
+    DiscoverReply rep;
+    rep.port = 12345;
+    rep.name = "LanHost";
+    rep.players = 1;
+    rep.max_players = 4;
+    Writer w;
+    rep.write(w);
+    CHECK(tx.send_to(to, w.data.data(), w.size()));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    d.update(now_ms());
+    size_t found = d.games(now_ms()).size();
+    printf("  discovery: a 600-byte datagram, then a reply: %zu game(s) found, %u skipped\n", found, d.skipped());
+    CHECK(found == 1);
+}
+
+// BUG-1012 (NET-8): a DBPF index of 4..7 bytes with flag 4 moved the read pointer past the index end
+static void test_dbpf_flag4()
+{
+    printf("a DBPF index with flag 4 and no room for its field (BUG-1012)\n");
+    const bool fix = !g_nofix;
+    const bool was = dbpf::g_bounds_fix;
+    dbpf::g_bounds_fix = fix; // (count 0: the old code moves the pointer only, it reads nothing)
+    uint8_t idx[4] = {4, 0, 0, 0};
+    dbpf::IndexInfo info;
+    info.count = 0;
+    std::vector<dbpf::Entry> out;
+    bool ok0 = dbpf::parse_index(idx, sizeof idx, info, out);
+    info.count = 1;
+    bool ok1 = dbpf::parse_index(idx, sizeof idx, info, out);
+    dbpf::g_bounds_fix = was;
+    printf("  4 bytes, flag 4: count 0 %s, count 1 %s\n", ok0 ? "TAKEN" : "refused", ok1 ? "TAKEN" : "refused");
+    CHECK(!ok0 && !ok1);
+}
+
 // --shard K/N, --only: which of the tests below run (main's table)
 static int g_shard = 1, g_shards = 1;
 static std::string g_only;
@@ -3717,6 +3952,10 @@ int main(int argc, char** argv)
                                                {"lan_only_disc", &g_fix.lan_only_disc},
                                                {"halfopen_cap", &g_fix.halfopen_cap},
                                                {"restart_gen", &g_fix.restart_gen},
+                                               {"join_seen", &g_fix.join_seen},
+                                               {"replace_checked", &g_fix.replace_checked},
+                                               {"welcome_split", &g_fix.welcome_split},
+                                               {"recv_skip_big", &g_fix.recv_skip_big},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -3845,6 +4084,11 @@ int main(int argc, char** argv)
         {"test_discovery_source", test_discovery_source},
         {"test_halfopen", test_halfopen},
         {"test_restart_in_callback", test_restart_in_callback},
+        {"test_join_seen", test_join_seen},
+        {"test_replace_checked", test_replace_checked},
+        {"test_welcome_split", test_welcome_split},
+        {"test_recv_skip_big", test_recv_skip_big},
+        {"test_dbpf_flag4", test_dbpf_flag4},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))

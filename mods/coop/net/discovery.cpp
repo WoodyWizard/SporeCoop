@@ -52,10 +52,14 @@ void Discovery::update(uint32_t now)
                 sock_.send_to(Endpoint{ip, (uint16_t)(kDefaultPort + i)}, w.data.data(), w.size());
         }
     }
-    uint8_t buf[512];
+    uint8_t buf[2048]; // BUG-1007: was 512 (a reply of the format's maximum, 526 bytes, ended the reads of the frame)
     for (int i = 0; i < 64; i++) {
         Endpoint from;
-        int n = sock_.recv_from(from, buf, sizeof buf);
+        int n = sock_.recv_from(from, buf, g_fix.recv_skip_big ? sizeof buf : 512);
+        if (n == -2 && g_fix.recv_skip_big) { // one datagram too big: the next ones are still read
+            skipped_++;
+            continue;
+        }
         if (n <= 0)
             break;
         Reader r(buf, (size_t)n);

@@ -6,12 +6,22 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace rejoin {
 
 static HANDLE g_slot = INVALID_HANDLE_VALUE;
 static bool g_tried = false;
 static uint64_t g_mem = 0; // the token of this process when the file cannot be used
+// BUG-1001: the token of the current join and where it went; the end of that session keeps it in memory for the same
+// host address and name (a few of them: a refused join under another name does not push the player's own out)
+static uint64_t g_cur = 0;
+static std::string g_cur_host, g_cur_name;
+struct Kept {
+    std::string host, name;
+    uint64_t token;
+};
+static std::vector<Kept> g_kept;
 
 static uint64_t fresh()
 {
@@ -76,27 +86,58 @@ static bool write_slot(uint64_t v)
     return true;
 }
 
-uint64_t token_for_join(int instance)
+static uint64_t kept_for(const std::string& host, const std::string& name)
+{
+    for (auto& k : g_kept)
+        if (k.host == host && k.name == name)
+            return k.token;
+    return 0;
+}
+
+static uint64_t join_token(int instance, uint64_t kept)
 {
     open_slot(instance);
     if (g_slot == INVALID_HANDLE_VALUE) {
+        if (kept)
+            g_mem = kept;
         if (!g_mem)
             g_mem = fresh();
         return g_mem;
     }
     if (uint64_t t = read_slot())
         return t; // a crash (or a join before) left it: the host may still hold our old entry
-    uint64_t t = fresh();
+    uint64_t t = kept ? kept : fresh();
     if (!write_slot(t)) {
         if (!g_mem)
-            g_mem = fresh();
+            g_mem = t;
         return g_mem;
     }
     return t;
 }
 
-void clear()
+uint64_t token_for_join(int instance, const std::string& host, const std::string& name)
 {
+    g_cur = join_token(instance, kept_for(host, name));
+    g_cur_host = host;
+    g_cur_name = name;
+    return g_cur;
+}
+
+void clear(bool keep)
+{
+    if (keep && g_cur) {
+        auto it = g_kept.begin();
+        while (it != g_kept.end() && !(it->host == g_cur_host && it->name == g_cur_name))
+            ++it;
+        if (it != g_kept.end())
+            it->token = g_cur;
+        else {
+            if (g_kept.size() >= 8)
+                g_kept.erase(g_kept.begin());
+            g_kept.push_back({g_cur_host, g_cur_name, g_cur});
+        }
+    }
+    g_cur = 0;
     g_mem = 0;
     if (g_slot != INVALID_HANDLE_VALUE)
         write_slot(0);
@@ -105,6 +146,7 @@ void clear()
 void shutdown()
 {
     clear();
+    g_kept.clear();
     if (g_slot != INVALID_HANDLE_VALUE)
         CloseHandle(g_slot);
     g_slot = INVALID_HANDLE_VALUE;

@@ -1,5 +1,6 @@
 // Replicated state fields of mirrored objects (fields.h, docs/sync-architecture-plan.md#sync-fields).
 #include "fields.h"
+#include "fixes.h"
 #include "player_life.h"
 
 #include <windows.h>
@@ -40,8 +41,16 @@ struct Sent {
 // host: guest -> (kind << 24 | field << 16 | id) -> last sent
 static std::map<uint8_t, std::map<uint32_t, Sent>> g_sent;
 // BUG-0422: the values last sent to a departed guest: a newcomer under its id got only the ones that changed since
-PLAYER_STATE("fields", [](uint8_t id) { g_sent.erase(id); g_stats.erase(id); },
-             [](uint8_t id) -> size_t { auto it = g_sent.find(id); return (it == g_sent.end() ? 0 : it->second.size()) + g_stats.count(id); });
+// BUG-1044: g_stats is keyed by kind id, not player id: a leave of player N erased kind N's statistics (1 = npc, 2 = tribe
+// member, ...) and counted them as state of player N. Only g_sent is per player. `coop.fix fields.player_state off`:
+// as 0.7.13
+static bool g_player_state_fix = true;
+COOP_FIX("fields.player_state", "BUG-1044", g_player_state_fix, "fields: a player's leave forgets only that player's sent values, not a kind's statistics");
+PLAYER_STATE("fields", [](uint8_t id) { g_sent.erase(id); if (!g_player_state_fix) g_stats.erase(id); },
+             [](uint8_t id) -> size_t {
+                 auto it = g_sent.find(id);
+                 return (it == g_sent.end() ? 0 : it->second.size()) + (g_player_state_fix ? 0 : g_stats.count(id));
+             });
 static double g_sent_at = 0;
 
 struct Want {
@@ -233,6 +242,11 @@ void tick(double now)
         guest_tick(now);
 }
 
+// BUG-1043: every received value under 0.001 was dropped: a host member that put its tool down (tool 0) or starved
+// (hunger 0) kept its last tool / hunger on the guests' mirrors. Now each field's own range (Field::lo / hi).
+// `coop.fix fields.zero_values off`: 0.001 .. 1000 for every field (0.7.13)
+static bool g_zero_values_fix = true;
+COOP_FIX("fields.zero_values", "BUG-1043", g_zero_values_fix, "fields: a value 0 of a field whose 0 means something (no tool, hunger 0) reaches the guests");
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_FIELDS || !is_guest() || from != 0)
@@ -249,7 +263,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (size_t i = 0; i < nf; i++) {
             const Field* f = field_of(*k, b.fids[i]);
             float v = b.vals[j * nf + i];
-            if (!f || !fields_wire::sane(v, 0.001f, 1000.f))
+            // BUG-1043 (fields.zero_values): the field's own range (a tool type 0 or a hunger 0 is a value)
+            if (!f || !(g_zero_values_fix ? fields_wire::sane(v, f->lo, f->hi) : fields_wire::sane(v, 0.001f, 1000.f)))
                 continue;
             auto& w = g_want[key(k->id, f->id, b.ids[j])];
             if (fields_wire::differs(w.v, v, 1e-4f))
