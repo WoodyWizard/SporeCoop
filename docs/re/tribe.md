@@ -3562,3 +3562,27 @@ BUG-1051 / BUG-1049, GOG 2024, lab lane 5.
   game: the member's order record (ai+0x60C, rec+0 action 7, rec+0x28 target) names the destroyed block. No fault was
   seen in the 50 s after (3 rounds); the block is freed later and the record would then point into freed memory.
 * The host resolves member and target ids only through game::alive (tribe.cmd_listed).
+
+## The end of Tribe by raids: missions, huts, new villages (2026-11-13, fix/w49-tests)
+<a id="tribe-raid-end"></a>
+
+Q1 of 0.7.14 (the campaign's Tribe end), GOG 2024, lane 4, tribe fixture (Zorispe), 2 and 4 players.
+* ✔ (runtime) The tribe fixture has the players' village and one NPC village; the goal bar reads 0/5
+  (`coop.wstate` progress / total). Right after the first conquest the game formed three more villages at once
+  (`coop.realign planet village`: 5 villages, the conquered one fl=2); a fifth NPC village came while the fourth was
+  raided (338 m from the players). Five conquests filled the bar.
+* ✔ (runtime) NPC huts read 400/400 (the fixture's village) and 750/750 (the villages formed later). Raiders hit a hut
+  from 20-30 m (its health falls while none of them is within 14 m of its centre).
+* ✔ (runtime) **Only a conquest of a village the host's own player attacked counts.** Raided with `coop.tribe order <id>
+  15 <hut>` alone (the DoAction a guest's order becomes on the host) the hut fell (state 2), the village got its
+  conquered flag (fl=2), but the bar stayed 0/5 and no conquest cinematic played; with one right-click of the host's
+  player on the hut first, each fall moved the bar by one (0 -> 1 -> 2). In a 4-player campaign a village only Bob and
+  Carol had clicked fell with the bar at 0 (BUG-1068). Inferred: the click's input action makes the village's
+  cTribeToTribeMission (#tribe-wsync), whose completion is the goal.
+* ✔ (runtime) The full bar shows the advance button (0x6454B47); after it the game asked for two votes and two empty
+  editors (City Hall 99E92F05, then the vehicle editor 7D433FAD), each saved with three parts and the dice's name,
+  then Civ (campaign_tc2 lab 20261113-054114: 1152 s from the first raid to Civ, 3 min of it the editors).
+* ~ (runtime, lab 20261113-051634, twice) While the farthest village was raided with every member, the host's game
+  played a cinematic with the input lock and then reloaded its save (`Tribe -> Loading -> Tribe` in 0.1 s, members
+  24 -> 19, every conquest gone): a game over. Not seen which one (no screenshot); inferred: the NPC village raided back
+  the players' empty village. The campaign keeps the players' hut above half its health since (a noted shortcut).

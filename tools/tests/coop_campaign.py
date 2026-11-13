@@ -36,9 +36,15 @@ mechanic runs for real):
     caption, History and its check, as in coop_cell_leave.py.
   * Creature end: `AddEvolutionPoints 3000` on the host (brain upgrade 4, the bar full), then the
     History button and its check, the evolution vote, the creature editor, the fire cinematic, its caption.
-  * Tribe: `coop.tribe spawn` gives each player's share of the tribe more members (test setup), the
-    raids are real orders (play_tribe), their fights are helped by `coop.tribe pincer` (the game's
-    damage path); when the stage does not end in time the host jumps to the next fixture (below).
+  * Tribe (Q1 of 0.7.14, docs/re/tribe.md#tribe-raid-end): `coop.tribe spawn` gives each player's share of the tribe
+    more members (test setup, and again when the raiders are down to 7); every NPC village is raided until its hut
+    falls: the players' real attack right-clicks on the hut first (the host's own click is needed: BUG-1068), then
+    `coop.tribe order <id> 15 <hut>` for every member (the DoAction a right-click gives), the hut's health cut to 40
+    once a blow landed (`coop.tribe huthp`; 400-750 hp take the raiders minutes), the players' own hut kept above half
+    its health (an NPC village raids back; its fall is a game over that reloads the save), `coop.tribe form` when no
+    village is left before the bar is full. The game's own conquests fill the goal bar; then the advance button, the
+    stage card, the caption, the votes, the City Hall and vehicle editors (three parts, a name). When the stage does
+    not end in time the host jumps to the next fixture (below). CAMPAIGN_OLD_TRIBE=1: 0.7.13's raids (pincer on members).
   * Editors that need a creation (the empty spaceship editor): three parts dragged from the palette,
     the dice's random name; "Name Your Captain": the dice; the city specialty dialog: Military.
   * Civ: the cities still to come appear at once (cCivExpansion::SpawnNextCity(ex, 0, 0) as the
