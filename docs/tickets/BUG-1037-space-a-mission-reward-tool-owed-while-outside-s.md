@@ -44,7 +44,7 @@ prints the counts. Switch `coop.fix space.owed_always off` (0.7.13).
 the host (settings force), the guest away, a reward tool owed (`contracts result`), back in Space: the guest game's
 inventory HasTool.
 * FAIL (SPORE_FIX_OFF=space.owed_always): out/lab/20261113-022716 (no tool)
-* PASS: out/lab/20261113-022655
+* PASS: out/lab/20261113-022655, out/lab/20261113-023651-2
 
 ## History
 - 2026-11-13: opened.

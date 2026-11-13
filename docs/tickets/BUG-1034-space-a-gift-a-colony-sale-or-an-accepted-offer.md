@@ -50,7 +50,7 @@ inventory (bomb 9 + 5, the spice on top of its own) and the host's (12 - 5).
 * FAIL (SPORE_FIX_OFF=space.trade_wait_restore): out/lab/20261113-022524 (guest bomb 9, spice 0: both lost; the
   host had given them)
 * PASS: out/lab/20261113-022524-2 (bomb 14, spice 10), out/lab/20261113-023145-2 (the spice check against the own
-  hold: 0 + 10)
+  hold: 0 + 10), out/lab/20261113-023651-2
 Offers (answer_offer) are covered by reading only (Rivals; not in the test).
 
 ## History

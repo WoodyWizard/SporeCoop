@@ -46,7 +46,7 @@ space.allies_end_pending off` (0.7.13).
 coop.menu, a new join. Asserts the guest game's star record owner (`allies star`).
 * FAIL (SPORE_FIX_OFF=space.allies_end_pending): out/lab/20261113-023145 (the star owner is "Zed's empire" again in
   the new session's galaxy)
-* PASS: out/lab/20261113-023145-2 (owner '-', end_pending_done=1)
+* PASS: out/lab/20261113-023145-2 (owner '-', end_pending_done=1), out/lab/20261113-023651-2
 
 ## History
 - 2026-11-13: opened.
