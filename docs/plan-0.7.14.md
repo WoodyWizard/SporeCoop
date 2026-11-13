@@ -119,3 +119,23 @@ Packages are cut by the files and the shared mechanism, so parallel agents do no
 8. **BUG-1056:** in local play (the host away), should the guest's mirrors still bypass the game's KeepGround, or
    does the game get its own check back?
 9. **BUG-1050:** where does the ">" give-target picker go in Space (its place is under the jump button)?
+
+## Owner decisions (2026-11-13)
+
+The owner agreed to the orchestrator's proposals:
+
+1. BUG-1032: in War the host's escort and defenders fight the guest (a war is a war); hits count both ways.
+2. BUG-1029: a newcomer in Rivals starts with 0 (or the stage's starting sum), not with the host's save money.
+3. BUG-1055: one shared reset registry (coop.cpp) for session end and world change, used by every module.
+4. Race-only tickets (1016, 1017, 1022, 1023, 1030, 1031): closed with `no-fail-run:` and the reasoning, plus a
+   stress test where one is cheap.
+5. BUG-1033: closed with `no-fail-run:` (a path of about 250 characters is not worth a lane).
+6. BUG-0786: badges stay personal (as 0.7.13 keeps each player's own on a rejoin) - proposed, owner to confirm.
+7. Net: BUG-1003 and BUG-1041 stay private; 1005 and 1012 are closed by a test that fails once they become
+   reachable. NET-1 (BUG-1001): proposed "with the token on, a rejoin only by token; without a token by name only
+   when nobody of that name is connected and the name dropped recently; a name never bypasses a closed late join";
+   the owner asked why a token on a LAN, answer pending.
+8. BUG-1056: the agent of the Tribe package checks whether KeepGround needs a local-play bypass.
+9. BUG-1050: the ">" button comes back next to "<" under "Fly to" in 3-4 player Space sessions.
+
+0.7.14 starts only when the owner asks.
