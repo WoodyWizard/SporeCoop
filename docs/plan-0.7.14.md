@@ -130,11 +130,11 @@ The owner agreed to the orchestrator's proposals:
 4. Race-only tickets (1016, 1017, 1022, 1023, 1030, 1031): closed with `no-fail-run:` and the reasoning, plus a
    stress test where one is cheap.
 5. BUG-1033: closed with `no-fail-run:` (a path of about 250 characters is not worth a lane).
-6. BUG-0786: badges stay personal (as 0.7.13 keeps each player's own on a rejoin) - proposed, owner to confirm.
+6. BUG-0786: badges stay personal (as 0.7.13 keeps each player's own on a rejoin); confirmed by the owner.
 7. Net: BUG-1003 and BUG-1041 stay private; 1005 and 1012 are closed by a test that fails once they become
    reachable. NET-1 (BUG-1001): proposed "with the token on, a rejoin only by token; without a token by name only
    when nobody of that name is connected and the name dropped recently; a name never bypasses a closed late join";
-   the owner asked why a token on a LAN, answer pending.
+   chosen by the owner (a token matters also on virtual LANs and port forwarding, and with default names).
 8. BUG-1056: the agent of the Tribe package checks whether KeepGround needs a local-play bypass.
 9. BUG-1050: the ">" button comes back next to "<" under "Fly to" in 3-4 player Space sessions.
 
