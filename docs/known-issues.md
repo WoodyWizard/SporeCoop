@@ -3384,3 +3384,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run same_view_tribe --repeat 3` (the `host's chief at the still:` lines next to the sheets).
 * Known: only the main track is relayed and timed; the other playing tracks are not compared yet.
 * Ticket: BUG-1072
+
+* **BUG-1078** (Tribe, guest, caught fault): a guest that leaves after the host's game over and reload faults once
+  in its own creature_attack event (0x00D521BA, data 0x120): the event its Drama Manager held back as a guest starts
+  alone after the leave. Found by the lab's warm resets (fix/w49-warm, lab 20261113-103507); tribe_bounce_world stays
+  cold until it is fixed. Reproduce: `tools/lab.py run tribe_bounce_world,tribe_member_air --in-order --lane N`.
+* **BUG-1077** (test): attacker_owner fails the monitor's posse_damage gate now and then (3 of 6 recent runs, cold).
