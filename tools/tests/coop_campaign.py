@@ -1348,6 +1348,10 @@ class Campaign:
         state['standing'] = [t[0] for t in targets]
         skip = state.get('skip', {})
         pick = [t for t in targets if skip.get(t[0], 0) < time.time()] or targets
+        if home and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+            # the nearest village first: the raiders walk 300 m to a far one and its defenders kill them on the way
+            # (village 4 at 318 m: two raids of 300 s without a fall while one at 170-230 m stood, lab 20261113-142203)
+            pick.sort(key=lambda t: math.dist(t[3], home))
         tk, c, hut, hp = pick[0]
         raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False)
         state['raid'] = raid
