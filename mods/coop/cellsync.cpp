@@ -1,4 +1,5 @@
 #include "cellsync.h"
+#include "lifecycle.h"
 #include "census.h"
 #include "coop_ui.h"
 
@@ -343,6 +344,16 @@ static net::Vec3 down_pos()
 }
 static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
 static float g_body_size = 0; // the target size we wrote, to notice the game resizing the avatar
+// BUG-1002: Cell state of one session or one Cell world that no reset cleared (the food queue, the join after load,
+// the own cell's last good pose, the body factor). Reset by the lifecycle registry; `coop.fix cell.session_reset off`:
+// kept (0.7.13).
+static bool g_fix_session_reset = true;
+COOP_FIX("cell.session_reset", "BUG-1002", g_fix_session_reset, "cell: the food queue, the join after load, the own cell's last good pose and the body factor end with their session or Cell world");
+// the factor of a small respawn belongs to that Cell world (a session end in it keeps the small body growing back)
+WORLD_STATE("cell.body", &g_fix_session_reset, [] {
+    g_body = 1.f;
+    g_body_size = 0;
+}, []() -> size_t { return g_body < 1.f ? 1 : 0; });
 
 static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr, bool helper = false);
 
@@ -1517,6 +1528,9 @@ static bool g_fix_food_in_step = true;
 COOP_FIX("cell.food_in_step", "BUG-0633 BUG-0316", g_fix_food_in_step, "cell: food from a partner or the host's total is added inside the cell step, so a level-up over a world scale line does not leave the avatar's locks set (no part token could be collected)");
 static std::vector<std::pair<double, std::function<void()>>> g_food_q;
 static uint32_t g_food_deferred, g_food_late;
+// a host total or a partner's meal of the last frame of a session or a Cell world is not applied after it
+LIFECYCLE_STATE("cell.food_queue", lifecycle::kSession | lifecycle::kWorld, &g_fix_session_reset, [] { g_food_q.clear(); },
+                []() -> size_t { return g_food_q.size(); });
 static bool in_cell();
 static void food_in_step(std::function<void()> f)
 {
@@ -3816,6 +3830,8 @@ static bool g_own_good_set;
 static bool g_fix_nan_heal_all = true;
 COOP_FIX("cell.nan_heal_all", "BUG-0307", g_fix_nan_heal_all, "cell: the own cell's heal also repairs its matrices, size, velocity and the particles' rest shape, and starts on any non-finite field");
 static float g_own_good_size = 0.5f, g_own_good_tsize = 0.5f, g_own_good_mass = 1.f, g_own_good_imass = 1.f;
+// a NaN in the first frame of a new avatar is not healed to the old world's pose and size
+WORLD_STATE("cell.own_good", &g_fix_session_reset, [] { g_own_good_set = false; }, []() -> size_t { return g_own_good_set ? 1 : 0; });
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 {
     unsigned mask = g_fix_nan_heal_all ? cell_nonfinite(a) : 0;
@@ -3898,6 +3914,12 @@ static double g_join_since = -1;  // when that avatar appeared (-1: decided)
 static double g_join_check = -1;  // when to check that the move held
 static net::Vec3 g_join_to;       // where it was put
 static int g_join_tries;
+// a new avatar of the next session with the old avatar's pool index is seen as new (the guest is put next to the host)
+LIFECYCLE_STATE("cell.join", lifecycle::kSession | lifecycle::kWorld, &g_fix_session_reset, [] {
+    g_join_avatar = 0;
+    g_join_since = g_join_check = -1;
+    g_join_tries = 0;
+}, []() -> size_t { return g_join_avatar || g_join_since >= 0 || g_join_check >= 0 ? 1 : 0; });
 static uint32_t g_joins_load;     // tests: guest moved next to the host after a new avatar
 static void join_after_load(double now)
 {
@@ -4150,6 +4172,8 @@ static void solo_reset()
 
 static void solo_start()
 {
+    if (g_fix_session_reset)
+        g_food_q.clear(); // BUG-1002: the host's totals queued before it went away
     // the host's pool is not simulated now: its mirrors become cells of our game, with their AI.
     // Dying and dead ones keep the locks of their death.
     for (auto& [h, m] : g_mirrors) {

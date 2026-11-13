@@ -1,4 +1,5 @@
 #include "social.h"
+#include "lifecycle.h"
 #include "mouse.h"
 #include "fixes.h"
 #include "creations.h"
@@ -542,6 +543,16 @@ struct MeterTask {
     int rounds;
 };
 static std::vector<MeterTask> g_meter_tasks;
+// BUG-1055: meter steps of an ended session are not shown after it; the close (op 3, BUG-0808) stays queued
+SESSION_STATE("social.meter_tasks", nullptr, [] {
+    g_meter_tasks.erase(std::remove_if(g_meter_tasks.begin(), g_meter_tasks.end(), [](const MeterTask& t) { return t.op != 3; }),
+                        g_meter_tasks.end());
+}, []() -> size_t {
+    size_t n = 0;
+    for (auto& t : g_meter_tasks)
+        n += t.op != 3;
+    return n;
+});
 
 static void meter_run(void*) // outside the frame: the meter is UI
 {
@@ -765,6 +776,8 @@ struct Pending { // applied outside the frame (the result refreshes the creature
     uint16_t npc;
 };
 static std::vector<Pending> g_pending;
+// BUG-1055: a success of the ended session is not paid out after it (apply_success outside the frame)
+SESSION_STATE("social.pending", nullptr, [] { g_pending.clear(); }, []() -> size_t { return g_pending.size(); });
 
 static void send_progress(uint8_t to, uint16_t id, int done, int needed)
 {

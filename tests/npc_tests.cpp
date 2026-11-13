@@ -17,6 +17,7 @@
 #include "world_name.h"
 #include "fields_wire.h"
 #include "realign_rule.h"
+#include "lifecycle.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -546,6 +547,35 @@ static void test_realign_rule()
     CHECK(due.empty() && s.n.empty()); // a host list without the kind while this game has several: no list of the planet
 }
 
+// BUG-1055: the lifecycle registry resets the entries of a scope (with their own switch on), and keeps what a reset left
+static int g_lc_session = 0, g_lc_world = 0, g_lc_both = 0;
+static bool g_lc_fix = true;
+SESSION_STATE("t.session", nullptr, [] { g_lc_session = 0; }, []() -> size_t { return (size_t)g_lc_session; });
+WORLD_STATE("t.world", &g_lc_fix, [] { g_lc_world = 0; }, []() -> size_t { return (size_t)g_lc_world; });
+LIFECYCLE_STATE("t.both", lifecycle::kSession | lifecycle::kWorld, nullptr, [] { g_lc_both = 0; }, []() -> size_t { return (size_t)g_lc_both; });
+static void test_lifecycle()
+{
+    g_lc_session = 2, g_lc_world = 3, g_lc_both = 1;
+    CHECK(lifecycle::held() == "t.session 2\nt.world 3\nt.both 1\n");
+    lifecycle::reset(lifecycle::kSession, !g_nofix);
+    CHECK(g_lc_session == 0 && g_lc_both == 0 && g_lc_world == 3); // a session end keeps the world's state
+    CHECK(lifecycle::left(lifecycle::kSession).empty());
+    g_lc_fix = false; // the entry's own switch off: kept, and listed as left
+    lifecycle::reset(lifecycle::kWorld, true);
+    CHECK(g_lc_world == 3 && lifecycle::left(lifecycle::kWorld) == "t.world 3\n");
+    g_lc_fix = true;
+    g_lc_both = 4;
+    lifecycle::reset(lifecycle::kWorld, true);
+    CHECK(g_lc_world == 0 && g_lc_both == 0 && lifecycle::left(lifecycle::kWorld).empty());
+    g_lc_session = 1;
+    lifecycle::reset(lifecycle::kSession, false); // the registry's switch off: nothing reset
+    CHECK(g_lc_session == 1 && lifecycle::left(lifecycle::kSession) == "t.session 1\n");
+    CHECK(lifecycle::resets(lifecycle::kSession) == 2 && lifecycle::resets(lifecycle::kWorld) == 2);
+    lifecycle::WorldWatch w;
+    CHECK(!w.changed(5)); // the first call only records
+    CHECK(!w.changed(5) && w.changed(6) && !w.changed(6));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -562,6 +592,7 @@ int main(int argc, char** argv)
     test_ledger();
     test_fields_wire();
     test_realign_rule();
+    test_lifecycle();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

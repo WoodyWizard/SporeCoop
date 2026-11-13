@@ -5,6 +5,7 @@
 #endif
 
 #include <winsock2.h>
+#include "lifecycle.h"
 #include "player_life.h"
 #include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
@@ -502,12 +503,19 @@ uint32_t g_strays_removed = 0;
 bool g_strays_fix = true; // tests: off = left-over puppets stay (the bug of BUG-0007, coop_editor_strays.py)
 COOP_FIX("core.strays", "BUG-0007", g_strays_fix, "creature: a partner's puppet left over after an editor is removed");
 
+// BUG-1055: every module's session and world state registered in lifecycle.h is reset on every session end and on
+// every new world (the stage counters moved), and `coop.lifecycle held` lists what a reset left. Off: each module's
+// own on_session_end / on_world_change only (0.7.13).
+static bool g_lifecycle_fix = true;
+COOP_FIX("core.lifecycle_reset", "BUG-1055", g_lifecycle_fix, "core: the session and world state every module registered (lifecycle.h) is reset on every session end and world change");
 void forget_puppets() // world changed or the local player left it (editor, load)
 {
     const modes::Adapter* creature = modes::for_mode(modes::kCreature);
     for (auto& [id, r] : g_remotes) {
         if (r.puppet) {
             game::puppet_unregister(r.puppet);
+            if (g_lifecycle_fix)
+                creature_hp::forget_puppet(r.puppet); // BUG-1055: no reported health kept for this address
             if (r.puppet_adapter == creature && game::creature_listed(r.puppet))
                 g_strays.push_back({r.puppet, game::herd_of(r.puppet), game::species_instance(r.puppet), r.puppet_world,
                                     H->time_seconds()});
@@ -1242,6 +1250,15 @@ static uint32_t g_vote_elsewhere;
 // five modules of 0.7.10 only.
 static bool g_player_forget_fix = true;
 COOP_FIX("core.player_forget", "BUG-0422", g_player_forget_fix, "core: a player who joins under a departed player's id gets nothing of that player's state");
+static lifecycle::WorldWatch g_lifecycle_world;
+static void lifecycle_world_tick() // once a frame, after game::stage_epoch_tick
+{
+    uint32_t sum = 0;
+    for (uint32_t m : {modes::kCell, modes::kCreature, modes::kTribe, modes::kCiv, modes::kSpace})
+        sum += game::stage_epoch(m);
+    if (g_lifecycle_world.changed(sum))
+        lifecycle::reset(lifecycle::kWorld, g_lifecycle_fix);
+}
 
 // "Is the host's world the one I play?" (BUG-0231, GitHub #165; host_world.h has the rule and its
 // semantics). Recomputed on every call from this machine's g_mode / g_world, the host's latest
@@ -3983,6 +4000,7 @@ void on_frame(void*, int, void*)
     modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
     tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
     civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
+    lifecycle_world_tick();   // BUG-1055: a new world resets every WORLD_STATE (lifecycle.h)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -4781,6 +4799,7 @@ void end_session(EndPath path, bool cell)
         settings::on_disconnect();
         sreport::on_session_end();
     }
+    lifecycle::reset(lifecycle::kSession, g_lifecycle_fix); // BUG-1055: every SESSION_STATE (mod state only)
 }
 
 // BUG-0204: the host name lookup of a join runs on a thread that holds a reference to coop.dll,
@@ -6145,6 +6164,34 @@ static int c_players(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     SAY("modules with per-player state: %zu\n", player_life::table().size());
+    return 0;
+}
+
+// BUG-1055: coop.lifecycle [held]: the session / world state the modules registered (lifecycle.h); `held` prints what
+// is held now and what the last reset of each scope left ("left session: none" is what a test wants)
+static int c_lifecycle(void*, int argc, const char* const* argv, SkOut* out)
+{
+    auto lines = [](const std::string& s) {
+        std::string o;
+        for (char c : s)
+            o += c == '\n' ? ',' : c;
+        if (!o.empty() && o.back() == ',')
+            o.pop_back();
+        return o.empty() ? std::string("none") : o;
+    };
+    if (argc > 1 && !strcmp(argv[1], "held")) {
+        SAY("now: %s\n", lines(lifecycle::held()).c_str());
+        SAY("left session: %s (resets %u)\n", lines(lifecycle::left(lifecycle::kSession)).c_str(),
+            lifecycle::resets(lifecycle::kSession));
+        SAY("left world: %s (resets %u)\n", lines(lifecycle::left(lifecycle::kWorld)).c_str(),
+            lifecycle::resets(lifecycle::kWorld));
+        return 0;
+    }
+    SAY("lifecycle: fix=%d entries=%zu\n", (int)g_lifecycle_fix, lifecycle::table().size());
+    for (auto& e : lifecycle::table())
+        SAY("  %s %s%s%s held=%zu\n", e.name, (e.scope & lifecycle::kSession) ? "session" : "",
+            e.scope == (lifecycle::kSession | lifecycle::kWorld) ? "+" : "", (e.scope & lifecycle::kWorld) ? "world" : "",
+            e.held());
     return 0;
 }
 
@@ -7556,6 +7603,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.players", "coop.players [held <id>] - the per-player state modules keep (BUG-0422)", c_players, nullptr, MT);
+    H->command_add(M, "coop.lifecycle", "coop.lifecycle [held] - the session / world state modules keep and what the last resets left (BUG-1055)", c_lifecycle, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {

@@ -7,6 +7,7 @@
 // death, which keeps a swimmer from leaving the island (docs/re/creature.md#creature-drama-events).
 // `coop.fix creature.guest_events off`: a guest starts every event as before (0.7.4).
 #include "drama.h"
+#include "lifecycle.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,16 @@ static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby
 static unsigned g_mask = 1u << 2;
 static unsigned g_started[9], g_refused[9];
 static void* g_last_event[9];
+// BUG-1059: the last events belong to the drama manager of their world (coop.drama read them after a load)
+WORLD_STATE("drama.last_events", nullptr, [] {
+    for (auto& e : g_last_event)
+        e = nullptr;
+}, []() -> size_t {
+    size_t n = 0;
+    for (void* e : g_last_event)
+        n += e != nullptr;
+    return n;
+});
 
 static bool is_guest() { return S && S->role() == net::Role::Client && S->connected(); }
 
@@ -145,10 +156,12 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");
     if (a)
         H->hook_create(M, (void*)a, (void*)h_Start, (void**)&o_Start);
+    else // BUG-1059: the message named the wrong symbol
+        H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
     if (uintptr_t u = H->sym("SporeCoop::SummonEvent_Update"))
         H->hook_create(M, (void*)u, (void*)h_SummonUpdate, (void**)&o_SummonUpdate);
     else
-        H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
+        H->log(M, SK_WARN, "drama: SporeCoop::SummonEvent_Update missing: a flock summoned for a partner follows the host's avatar, not the partner");
 }
 
 bool summon_for(void* puppet)
@@ -234,7 +247,7 @@ std::string debug(const std::vector<std::string>& a)
         if (!ev && !g_started[k] && !g_refused[k])
             continue;
         snprintf(b, sizeof b, "  %-16s started=%u refused=%u event=%p active=%d\n", kKind[k], g_started[k], g_refused[k],
-                 (const void*)ev, ev ? (int)ev[0xC] : -1);
+                 (const void*)ev, ev && skg::readable(ev + 0xC, 1) ? (int)ev[0xC] : -1); // BUG-1059
         out += b;
     }
     return out;

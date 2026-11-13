@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "squadron.h"
+#include "lifecycle.h"
 #include "player_life.h"
 #include "census.h"
 
@@ -448,6 +449,16 @@ static bool g_veh_hold; // tests (BUG-0951): the guest ignores the host's vehicl
 static std::unordered_set<uint16_t> g_cycle_ids;
 static net::CycleTracker g_cyc;                    // the cycle being received and its chunks (BUG-0612)
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
+// BUG-1051 (the Civ part): civ::on_world_change resets the tracker, the session end did not: a guest that joined
+// another (or a restarted) host without a world change in between dropped its Civ snapshots as older. Off: 0.7.13.
+static bool g_cycle_reset_fix = true;
+COOP_FIX("civ.cycle_reset", "BUG-1051", g_cycle_reset_fix, "civ: a guest's Civ snapshot cycle starts over with every session");
+SESSION_STATE("civ.cycle", &g_cycle_reset_fix, [] {
+    uint32_t older = g_cyc.older;
+    g_cyc.reset();
+    g_cyc.older = older;
+    g_cycle_ids.clear();
+}, []() -> size_t { return (g_cyc.have ? 1 : 0) + g_cycle_ids.size(); });
 static uint32_t g_last_chunks, g_max_chunk;        // host: chunks per cycle, largest chunk (bytes)
 static size_t g_chunk_budget = net::kMaxPacket - 48; // host: bytes per chunk (coop.civ chunk <bytes>, tests)
 static bool& g_cycle_order_fix = tribe::g_cycle_order_fix; // tribe.cpp (net.cycle_order, BUG-0612)

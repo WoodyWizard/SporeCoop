@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "sporekit_game.hpp"
+#include "lifecycle.h"
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
@@ -101,6 +102,13 @@ struct AirHold {
     net::Quat rot;
 };
 static std::vector<AirHold> g_air;
+// BUG-0995 (the release part; the serial is package L2's): the holds are matched by address, so none may outlive its
+// session or its world: a creature the game freed with the world and built again at that address (an animal of
+// the next world) would be put in the air at the old spot. air_release_all had no caller. Off: kept (0.7.13).
+static bool g_air_release_fix = true;
+COOP_FIX("game.air_release", "BUG-0995", g_air_release_fix, "creature: no puppet held in the air outlives its session or its world");
+LIFECYCLE_STATE("game.air", lifecycle::kSession | lifecycle::kWorld, &g_air_release_fix, [] { g_air.clear(); },
+                []() -> size_t { return g_air.size(); });
 static uint32_t g_air_regrounded[5]; // by the call after which it was grounded: 0 update, 1 anim, 2 idle, 3 BT anim, 4 low anim
 static void air_reassert(void* c, int where);
 typedef int(SK_THISCALL* AcPlay_t)(void*, uint32_t, int);
@@ -1864,7 +1872,7 @@ void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, cons
         g_air.push_back({c, field<void*>(c, 0xB54), pos, vel, rot});
 }
 
-void air_release_all() { g_air.clear(); }
+void air_release_all() { g_air.clear(); } // (also the lifecycle entry game.air above)
 
 static void air_reassert(void* c, int where)
 {
