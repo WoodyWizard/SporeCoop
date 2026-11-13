@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w49-tribe3
-commits:
+commits: 9051b80c 3756afed 6d72a5d7
 tests: tribe_mirror_stale
 signature:
 docs: docs/re/tribe.md#tribe-chief-load-gesture
@@ -43,8 +43,10 @@ idle news, also with no behaviour start yet, and a member in its locomotion's id
 guest's hold trace of a round that never came back.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tribe_mirror_stale: FAIL 20261113-060910 (lane 7, the build before the fix: round 1 with the host's chief at bhv 0,
+back after 6.4 s), FAIL 20261113-062734 (lane 6, SPORE_FIX_OFF=tribe.mirror_idle_loco, the test's bhvzero rounds 2 and 4
+never back in 9 s: [1.0, 99.0, 0.5, 99.0]); PASS 20261113-062735 (lane 7: [0.5, 1.1, 1.6, 1.9], 2 rounds at bhv 0),
+PASS2_PLACEHOLDER.
 
 ## History
 - 2026-11-13: opened.

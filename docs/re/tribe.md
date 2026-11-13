@@ -3643,8 +3643,15 @@ BUG-1069, BUG-1071. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows #tribe-mir
 * ✔ (same run, tribe_mirror_stale round 1) The host's chief in its idle with `bhv=00000000` and the guest's mirror in a
   returned gesture (relayed 0): no idle news (kind 10) was sent for it at all, because the host read the member's
   animation only when bhv_anim was set; the gesture ran to its own end (6.4 s; 9 s in 20261113-054031-2).
+* ✔ (lab probe 2026-11-13 lane 6, both games' chief rows at 10 Hz for 100 s, `a0=` / `b0=` added to `coop.tribe
+  anims`) The track's **+0xA0 float: -1.0 loops, 1.0 plays once**; **+0xB0 int: the passes done** (the idle 0x02481DE5
+  counts 0, 1, 2 every ~6 s). The host's behaviour starts of 0x04C6CB02 play once (a0 1.0), but a mirror's start of the
+  same id was sometimes a looping track (a0 -1.0; 1 of 6 starts in the probe, after the idle at t 15 s): the phase fix
+  skipped loops, so the mirror stayed in the gesture 8 s after the host's had ended (b0 1). ~ Which start makes the
+  looping track is not known (CreaturePlayAnim's vt 0xC(track, current loops ? 1 : 0), #tribe-anim-queued-start).
 * Fixes: `tribe.mirror_phase_any` (the moment of any current animation that is neither a loop nor the locomotion's
-  idle / walk as MSG_NPC_ANIM kind 15, same layout as 14; a guest sets differences up to 60 s), `tribe.hold_restart`
+  idle / walk as MSG_NPC_ANIM kind 15, same layout as 14; a guest sets differences up to 60 s, and a mirror track of
+  that id that loops is made a single pass first: +0xA0 = 1.0, +0xB0 = 0; `unlooped=` in `coop.tribe anims`), `tribe.hold_restart`
   (a relayed restart of the animation a host's hold bound to under 0.5 s before is skipped while the mirror plays it,
   trace `D`), `tribe.mirror_idle_loco` (the host reads every member's animation for the idle news, and a member whose
   behaviour start is its locomotion's idle / walk goes as idle news, not as kind 3).

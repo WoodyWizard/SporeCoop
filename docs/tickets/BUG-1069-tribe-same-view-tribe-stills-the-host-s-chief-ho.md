@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w49-tribe3
-commits: 3756afed
+commits: 9051b80c 3756afed 6d72a5d7
 tests: tribe_chief_still, same_view_tribe (the chief rows at each still)
 signature:
 docs: docs/re/tribe.md#tribe-chief-load-gesture
@@ -52,7 +52,7 @@ Not the hold relay alone: the gesture's moment, in three ways (observed, docs/re
 ## Verification
 tribe_chief_still: FAIL 20261113-060910 (lane 7, the build before the fix: hold differs 1.4 s and 1.1 s, the same
 gesture 5.6 s apart for 4.1 s), FAIL 20261113-062027 (lane 6, SPORE_FIX_OFF=tribe.mirror_phase_any,tribe.hold_restart:
-the gesture 5.4-14 s apart in 4 stretches, 2-10 s long); PASS 20261113-062025 (lane 7), PASS2_PLACEHOLDER.
+the gesture 5.4-14 s apart in 4 stretches, 2-10 s long); PASS 20261113-062025 (lane 7), PASS 20261113-062735 (lane 7).
 
 ## History
 - 2026-11-13: opened.

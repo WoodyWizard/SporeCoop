@@ -104,7 +104,8 @@ def main():
 
     def moment_differs(t):  # BUG-1069: the same gesture (not a loop) at another moment of it
         h, g = at(hr, t), at(gr, t)
-        return bool(h and g and h[1] == g[1] and h[4] == 0 and g[4] == 0 and h[1] not in LOCO and abs(h[3] - g[3]) > 0.5)
+        # (the host's track not a loop; the mirror's may be one: a start of the relay that loops is still another moment)
+        return bool(h and g and h[1] == g[1] and h[4] == 0 and h[1] not in LOCO and abs(h[3] - g[3]) > 0.5)
 
     def anim_differs(t):
         h, g = at(hr, t), at(gr, t)
@@ -132,7 +133,8 @@ def main():
     bad_moment = stretches(ts, moment_differs, 2.0)
     for s, e in bad_moment:
         h, g = at(hr, s), at(gr, s)
-        print(f'    moment differs {s - t0:.1f}-{e - t0:.1f} s: {h[1]} host t={h[3]:.2f}, guest t={g[3]:.2f}', flush=True)
+        print(f'    moment differs {s - t0:.1f}-{e - t0:.1f} s: {h[1]} host t={h[3]:.2f} loop={h[4]}, guest t={g[3]:.2f} '
+              f'loop={g[4]}', flush=True)
     bad_item = stretches(hts, item_differs, 3.0)
     for s, e in bad_item:
         print(f'    hand item differs {s - t0:.1f}-{e - t0:.1f} s: host {runs(hands["host"], s, e)}; '

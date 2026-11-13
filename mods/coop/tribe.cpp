@@ -1810,7 +1810,7 @@ static bool loco_anim(uint32_t a)
 static bool g_mirror_phase_fix = true;
 COOP_FIX("tribe.mirror_phase", "BUG-0988", g_mirror_phase_fix,
          "tribe: a guest's copy of a member is at the same moment of a gesture as the host's member (the chief's staff pointed another way)");
-static uint32_t g_phase_sent, g_phase_rx, g_phase_set;
+static uint32_t g_phase_sent, g_phase_rx, g_phase_set, g_phase_unlooped;
 static double g_phase_last_off;
 static void on_idle_anim(void* c, uint32_t anim)
 {
@@ -2468,8 +2468,18 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             if (!g_mirror_phase_fix || it == g_gm.end() || !mirror_ok(it->second) || !std::isfinite(t) || t < 0)
                 continue;
             uint8_t* tr = main_track(it->second.c);
-            if (!tr || track_loops(tr) || *(uint32_t*)(tr + 0xD8) != anim)
+            if (!tr || *(uint32_t*)(tr + 0xD8) != anim)
                 continue;
+            if (track_loops(tr)) {
+                // BUG-1069: the host's track of it plays once (only those are sent); the mirror's start of it loops
+                // when the game made the new track looping (lab probe: a0 -1.0, b0 counting passes, the mirror in the
+                // gesture 8 s after the host's had ended): made a single pass like the host's (+0xA0 1.0, +0xB0 0)
+                if (!g_phase_any_fix)
+                    continue;
+                *(float*)(tr + 0xA0) = 1.0f;
+                *(int*)(tr + 0xB0) = 0;
+                g_phase_unlooped++;
+            }
             double& tm = *(double*)(tr + 0xA8), want = t + d;
             // (BUG-1069: up to 60 s apart with tribe.mirror_phase_any: the chief's staff gestures run 10-50 s, and a
             // mirror whose instance began 5.6 s before the host's restart was never set)
@@ -6771,15 +6781,15 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "anims") {
         std::string o;
-        char b[160];
+        char b[224];
         auto line = [&](uint16_t id, void* c, uint32_t bhv, uint32_t idle) {
             uint32_t an = 0;
             if (c && game::object_alive(c) && game::drawn_state(c, nullptr, &an)) {
                 net::Vec3 p = game::position(c);
                 uint8_t* tr = main_track(c);
-                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f) idle=%08X hold=%d t=%.3f loop=%d now=%.3f\n", id, an,
+                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f) idle=%08X hold=%d t=%.3f loop=%d now=%.3f a0=%.3f b0=%d\n", id, an,
                          bhv, p.x, p.y, p.z, idle, has_body(c) && hold_modifier(c, false) ? 1 : 0, tr ? *(double*)(tr + 0xA8) : -1.0,
-                         tr ? (int)track_loops(tr) : -1, H->time_seconds());
+                         tr ? (int)track_loops(tr) : -1, H->time_seconds(), tr ? *(float*)(tr + 0xA0) : 0.f, tr ? *(int*)(tr + 0xB0) : 0);
                 o += b;
             }
         };
@@ -6795,7 +6805,7 @@ std::string debug(const std::vector<std::string>& a)
                " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
                " stale_cut=" + std::to_string(g_stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
-               " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) +
+               " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) + " unlooped=" + std::to_string(g_phase_unlooped) +
                " last_off=" + std::to_string(g_phase_last_off) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
                " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +

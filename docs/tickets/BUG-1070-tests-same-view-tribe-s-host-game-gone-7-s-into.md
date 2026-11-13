@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w49-tribe3
-commits: 30dd6a2f
+commits: 30dd6a2f 9051b80c
 tests: tools/tests/lab_selftest.py lane_lock (make test); same_view_tribe x6 lane 7, play_tribe --quick x3 lane 6
 signature:
 docs: docs/06-testing.md#testing-lane-lock
@@ -58,7 +58,9 @@ starts on lane 10 1.5 s later. FAIL with the lab of rel/0.7.14 (`--tree ../../re
 `spore.sh kill` on lane 10 three times while a's test runs), FAIL with `SPORE_LAB_NO_LANE_LOCK=1`, PASS on
 fix/w49-tribe3 (b exits 1 "in use by another lab run", no kill; a passes).
 no-fail-run: lab tooling, shown by the self-test (no game); the game-side cause is ruled out by the repeats below.
-REPEATS_PLACEHOLDER
+Repeats with all of 0.7.14's mirror changes on: same_view_tribe x6 lane 7 (20261113-060215, all passed, 6 cold
+starts), play_tribe --quick x3 lane 6 (20261113-060217, all passed), same_view_tribe --cold x3 lane 6 (FINAL6A), and every
+other lab run of this branch: no game lost without a report.
 
 ## History
 - 2026-11-13: opened.
