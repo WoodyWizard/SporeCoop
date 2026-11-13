@@ -3298,3 +3298,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: seen at 150 and 170 px; the cause is not analysed (the button's wrap width).
 * Ticket: BUG-1062
 * Fixed (unreleased, fix/w49-space2, 2026-11-13): `core.ui_give_fit`; FAIL lab 20261113-024426, PASS 20261113-024531-2.
+
+## Cell: the first level down after a partner moved away culls most of the few cells round it in the host's game (2026-11-13, fix/w49-cell2 test)
+<a id="issue-cell-first-down-partner"></a>
+
+* What happens: on the first level down after the guest swam off (cell_levelup_area change 2) the host's game removed
+  most of the cells in the box round the partner (10 of 10, 5 of 7, 16 of 17) against about a quarter of its own.
+  Later down changes are even. The partner's view centre was right (BUG-1064 fixed).
+* Reproduce: `tools/lab.py run cell_levelup_area --lane N`, the line of change 2.
+* Known: by the cull 0xE7C3E6 (and once 0xE78B6E, the room a hatching cell clears); the area held only 7-17 cells.
+* Not checked: whether those cells had a parent, which tiles were active round the partner then.
+* Ticket: BUG-1080

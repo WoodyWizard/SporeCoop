@@ -2302,3 +2302,42 @@ BUG-1004, BUG-1008, BUG-1006, BUG-0999. GOG 2024, Ghidra (out/ghidra-2024) and l
   (particle positions, then the centre, velocity and matrix: cell_move adds `want - pos` with pos NaN).
 * ✔ (code, BUG-0999) the host's view set is empty whenever its own view box centre fails views::finite_pos: with
   cell.nan_guard on that is still reachable with both x edges at exactly 1e7 (view_bad refuses only > 1e7).
+
+## A level change round a partner in the host's game; the rescale and the food drain (2026-11-13, fix/w49-cell2)
+<a id="cell-levelup-partner-area"></a>
+
+BUG-1064, BUG-1066. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2 / 3.
+
+* ✔ (Ghidra) the cell cull **0xE5F8C0** (cdecl `bool(cell*)`, called from the cell update 0xE7C080 at 0xE7C3AF): a
+  cell with level +0x358 == -1 is kept; a cell whose level + 1 is below the current level (0xE4EE40) gets target size
+  +0xB4 = 0 (it shrinks away: the old tier of an up change; its DestroyCell comes from 0xE7BFB0, return address
+  0xE7C03C); else, with no +0x36C parent, the tile under it {fg / bg, level, floor(pos / tile size)} (tile size
+  TileSizes[level] / world scale x step 0xE51FD0 x 0.85, as PopulateTiles) goes to IsTileActive, and when that says no
+  (and +0x354 is 0, and it is not G+0x51B0) 0xE7C080 destroys it (DestroyCell return address **0xE7C3E6**). So the
+  cells kept round a partner during a level change are the ones whose tile is inside a box of `g_view_boxes`
+  (h_TileActive's union), recomputed every frame from the view centres.
+* ✔ (runtime, `coop.pool areas`, `coop_cell_levelup_area.py`, the guest 60 m left of and 40 m below the host) per
+  change in the host's game the cells of its own visible box and of the same box round the partner: on an up change
+  nearly all are removed by 0xE7C03C (the old tier), on a down change by the cull 0xE7C3E6. With the partner's view
+  centre as it came the host's game lost more round the partner: down 52 % against 10 % of its own (lab
+  20261113-044709). Cause, measured (`centre_err`): coop.cpp noted the partner's centre (`views::note`) from its
+  state's pose, which is in the PARTNER's world scale (BUG-0519); each world rescales over ~3.5 s at its own moment
+  (and the state is sampled ~0.1 s late), so while the scale moved the centre was 17-37 m from where the host's game
+  draws the partner's cell (settled: 0-7 m), and the cull took the cells round the partner whose tiles were then
+  outside every box. Fix `cell.view_centre_scale` (coop.cpp view_pos): the centre times partner scale / own scale,
+  as cell_drive draws the cell (BUG-0519). With it the error is 0.7-2.5 m and the partner's area loses down 11 %
+  against 20 % (lab 20261113-044709-2).
+* ✔ (runtime) the Cell fixture's host sits near the level's right edge (x ~100 at world scale 0.5): `coop.pool tp 200
+  0` left the guest 5 m from the host (clamped), so the two areas were one. +-150 food is one world-scale step here
+  (0.5 <-> 1.5: distances to a third and back), and the host's view box (the camera) trails its cell by up to 40 m
+  right after a down change.
+* ✔ (runtime, BUG-1066) `food_drain` (BUG-0633: the food of a partner or of the shared total, applied inside the
+  step) runs in h_WorldScale right before the game's WorldScaleStep; its AddFoodPoints sets the target scale
+  G+0x5150, so the very step it runs in rescales (0xE6DB70 empties the host's list cCellGame+0x4128 and fills it from
+  every tile object of the pool, the last object of a key wins). The flush of our tiles looked at `scale_moving()`
+  before the drain: our tiles were in the pool for that first rescale, our shadow of a shared key replaced the host's
+  own populated tile in the host's list, h_PopTiles took ours out again (`unshared`, 15 a change) and the host's own
+  tile objects of those keys stayed live in no list (pool live 55, list entries 40), never deleted by anyone. The
+  tile check (`tiles_check`) logged it and its 21-warning budget was gone after two changes. Fix
+  `cell.scale_food_flush` (cellsync.cpp h_WorldScale): the flush runs after the drain. With it 0 unshared, 0
+  mismatches in 6 changes (lab 20261113-033642); off: 15 per change, 21 warnings (lab 20261113-033642-2).

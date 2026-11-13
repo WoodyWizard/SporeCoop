@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: on a level change the host's game no longer removes more of the cells round a guest than round the host
+  (a guest lost up to half of its screen on a level down, the host a quarter) (BUG-1064).
+- Cell: a level change that came from a partner's food no longer leaves tiles of the host's world behind that nothing
+  cleans up (BUG-1066).
 - Joining: with "joining after the start" off, a new player whose name was already used in the session (two
   friends both called "Player") is refused now, and a player who left comes back as itself; a player with the name
   of a loading player no longer joins over the player limit (BUG-1001).

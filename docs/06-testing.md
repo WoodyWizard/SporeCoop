@@ -7069,3 +7069,16 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 * Lab `join_late_names` (coop_join_late_names.py, creature, 3 games: twoinst + coop_multi.start_extra): late join
   off, an extra game joins with the guest's name Bob (refused), Bob leaves and comes back (admitted by its kept
   token), late join on (the extra joins as "Bob 2"). `SPORE_FIX_OFF=net.join_seen` fails.
+
+## Cell level changes round a partner, 0.7.14 C2 (2026-11-13, fix/w49-cell2)
+<a id="testing-cell-c2-0714"></a>
+
+| Test (suite) | What it checks in the game | FAILS with |
+|---|---|---|
+| `coop_cell_levelup_area.py` (`cell_levelup_area`, Cell fixture, ~4 min) | the guest 60 m left of and 40 m below the host (the fixture's host is near the level's right edge: `tp 200 0` ended 5 m away, the areas one), six level changes (+-150, world scale 0.5 <-> 1.5); before each the host marks the cells in its visible box and in the same box round the guest's cell (`coop.pool areas mark`), 5 s later `coop.pool areas`: per area gone, and the DestroyCell caller (0xE7C03C the old tier shrinking away, 0xE7C3E6 the cull). Pooled over the up and over the down changes the partner's area loses at most 10 points more than the host's own (BUG-1064); `coop.pool tilestat` check_warns did not grow (every live tile of the pool in a list, BUG-1066); the partner's view centre within 5 m of its cell while the scale moved (`centre_err`; 17-37 m without the fix) | `SPORE_FIX_OFF=cell.view_centre_scale` (the areas), `SPORE_FIX_OFF=cell.scale_food_flush` (the tile pool) |
+
+* Per change the two shares are noisy (5-100 cells an area; an up change removes 50-97 % of either): only the pooled
+  shares are asserted. `coop.pool tilestat` also prints `unshared=` (our tiles taken out of the host's list after a
+  rescale) and `scale_flushes=` (flushes before a moving-scale step). `coop.pool areas` also prints each view centre
+  with its cell and tile count, and `centre_err settled / moving` (the farthest a partner's centre was from its cell
+  since the mark).
