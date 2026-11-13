@@ -1256,10 +1256,13 @@ class Campaign:
                 self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in 300 s ({hs.strip()[:80]})')
                 state['raid'] = None
                 return
-            if not raid.get('host_click'):  # no attack click of the host yet: no mission, the conquest would be no goal
-                self.tribe_clicks(raid)
-                return
             alive = self.tribe_raiders()
+            if not raid.get('host_click'):  # no attack click of the host yet: no mission, the conquest would be no goal
+                if len(alive) < 8:
+                    self.host.call('coop.tribe spawn 6')
+                self.tribe_clicks(raid)
+                self.tribe_order(raid)
+                return
             if len(alive) < 8:
                 # the village's defenders kill raiders; under the tribe's minimum the game ends the stage (game over,
                 # its save reloaded: every conquest of the run gone, lab 20261113-051634 twice)
@@ -1313,6 +1316,15 @@ class Campaign:
         if g is None:
             return
         tk = raid['tribe']
+        own = re.findall(r'#\d+ \S+ owner=0 .*?hp=([\d.]+)', self.host.call('coop.tribe'))
+        if sum(1 for h in own if float(h) > 0) < 4:
+            # play_tribe raids only with 4 or more own members alive (fewer: it gathers); the host's share of the
+            # tribe after the play on the campaign's own planet was 1-2 (lab 20261113-060756 / -060758: no host click)
+            self.note('shortcut: coop.tribe spawn 6 (the host\'s own members for its raid click)')
+            self.host.call('coop.tribe spawn 6')
+            time.sleep(3)
+        for pl in g.p:
+            pl.busy.clear()  # a player sends members that are on another job too
         g.plan = lambda: 'raid'
         g.target_for = lambda pl, kind, st, centres, enemies, tk=tk: (centres.get(tk, raid['hut']),
                                                                        lambda o: o[0] == f'hut{tk}')

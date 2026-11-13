@@ -955,6 +955,10 @@ add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes
 # guest's mirror of the host's tribe leader went missing in the whole campaign)
 add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no-finale', (),
     minutes=45, timeout=3600, quick={'--minutes': 2})
+# Q1 of 0.7.14: the end of Tribe the players' way on the campaign's own planet (the live Creature -> Tribe change first,
+# then raids on every village until the goal bar is full, the City Hall and vehicle editors, Civ): no jump
+add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale', ('campaign',),
+    minutes=45, timeout=3600)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran

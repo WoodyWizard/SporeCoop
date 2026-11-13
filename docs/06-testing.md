@@ -1583,6 +1583,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
     members two villages fell in 30 minutes (run 20261029-011243) and the stage did not end, so the
     campaign gives it 20 minutes (`ADVANCE_MIN`) and then jumps to the civ_npc fixture (an `info`
     finding). An automated Tribe end needs a faster conquest or the alliance path (open).
+    CORRECTION (2026-11-13, fix/w49-tests): the raids now end Tribe the players' way (every village's hut raided,
+    the host's own attack click, the advance button, the City Hall and vehicle editors): see #testing-w49-tests.
   * Civ: `SpawnNextCity` gave 6 more cities (9 of other nations on civ_npc), `cCity::Capture(city,
     playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
     owner=1 in `coop.civ`); a captured city may ask "choose the city's specialty" (Economic and
@@ -5969,6 +5971,8 @@ BUG-0925 (found with BUG-0926: the 0.7.12 final check's long_creature host stopp
   every tribe in time)" is the expected slow path (see the campaign section: the Tribe stage's end by raids is not
   sure to come in time, the host jumps): also in the final checks of 0.7.10 (20261107-141346) and 0.7.11
   (20261108-114435).
+  CORRECTION (2026-11-13, fix/w49-tests): it was the bots: no village ever fell (the pincer raids hit members, never a
+  hut). Since Q1 of 0.7.14 the campaign ends Tribe by real conquests (#testing-w49-tests).
 * Test `herd_help_stale` (coop_herd_help_stale.py, 2 min, creature fixture, BUG-0926): the guest fights a host NPC,
   the host's creature kills it (`coop.npc hit <id> 1000` now also works on the host: its own creature hits its NPC),
   the puppet is removed (`coop.puppet respawn 7`); no NPC stimulus may name the removed puppet (sender +0x2C or the
@@ -7136,3 +7140,46 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   proxies stood (her own were removed by the sync, so any is a saved proxy; they walk for the 10 s after the load).
   SPORE_FIX_OFF=savestrip.on: 6 of 10 came back (FAIL). Run outside the lab with `SPORE_LANE=4 SPORE_LANE_B=5` to
   keep Carol on a lane of your own (the lab takes the first free lane from 2).
+
+## Test quality of 0.7.14: the campaign ends Tribe, play_tribe's plant, Civ herds (2026-11-13, fix/w49-tests)
+<a id="testing-w49-tests"></a>
+
+**Q1: the campaign's Tribe end the players' way.** CORRECTION (2026-11-13, fix/w49-tests): the Tribe end "by raids is
+not sure to come in time" (#testing-campaign) was the bots, not the game: no village fell in any campaign since
+0.7.10 (every summary.txt of the final checks: "1 other tribes left" for 20 min), because the raids helped by
+`coop.tribe pincer` hit members, never a hut, and a village falls with its hut only. coop_campaign.py's kick_tribe now
+raids every NPC village until its hut falls (docs/re/tribe.md#tribe-raid-end):
+* the players' real attack right-clicks on the hut first (play_tribe's raid with the target set to that hut). **The
+  host's own click is required**: only a village the host's player attacked counts for the goal bar (BUG-1068: a
+  village only guests raided falls without a goal; campaign_tc2 lab 20261113-050826);
+* then the shortcuts, printed as `shortcut:`: `coop.tribe order <id> 15 <hut>` for every member (the DoAction a
+  right-click gives), the hut's health cut to 40 once a blow landed (`coop.tribe huthp`; huts have 400-750 hp),
+  `coop.tribe spawn 6` when the raiders are down to 7 or the host has fewer than 4 own members (play_tribe raids only
+  with 4), the players' own hut kept above half its health (a game over reloaded the save twice in lab
+  20261113-051634), `coop.tribe form` when no village is left before the bar is full;
+* the game's conquests fill the goal bar (`coop.wstate` progress / total, 5 in the tribe fixture: the game forms new
+  villages after the first conquest), then the advance button (0x6454B47), the stage card, the caption, the votes
+  and the City Hall and vehicle editors (three parts from TRIBE_EDITOR_PARTS, the dice's name) as the Services
+  answer them. `CAMPAIGN_OLD_TRIBE=1`: 0.7.13's raids.
+* New suite entry `campaign_tribe_end` (`--from creature --to civ --minutes 2`, ~35 min): the live Creature -> Tribe
+  change and the Tribe end on the campaign's own planet. `CAMPAIGN_GUEST_CMDS="cmd;cmd"`: console commands on every
+  guest at the start (a planted problem for the campaign's twin).
+* Runs: campaign_tc2 `--quick` PASS lab 20261113-054114 (Tribe -> Civ in 1152 s, no jump; before the cut-on-first-blow
+  change one raid took 300 s).
+* Found by the campaign on the way: BUG-1073 (after an in-game load of civ_npc from Tribe, a capture with its
+  cinematic never gives the city: Civ -> Space stuck; lab 20261113-060756, -060758; campaign_space without a jump
+  captures all, lab 20261113-072523).
+
+**Q2: play_tribe's planted desync (BUG-0974).** The check is `sync t*: 90% within 1.5 m of the host's path over
+0.32 s`. The plant `coop.tribe delay` only set the mirror buffer's `delay`, which the lead (BUG-0425, `drive.lead`,
+2026-11-06) never reads: since then the plant did nothing. `net::SnapshotBuffer::test_lag` holds the lead target back
+by the planted delay (`tribe.test_delay_lead`). `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"`: FAIL `--quick`
+20261113-050258, full 20261113-051512; without it PASS `--quick` 20261113-050904, full 20261113-052641; the plant with
+`SPORE_FIX_OFF=tribe.test_delay_lead` PASS 20261113-053810 (the 0.7.13 state). The probe's best lag reads 0.45 s with
+the plant: that is PROBE_S, the longest lag it tries.
+
+**BUG-1067: `civ_save_herds`** (coop_civ_save_herds.py, civ fixture, 2 games, ~2 min): the host's Civ herds (by
+species and home within 2 m, `coop.npc archless all`) before its own `coop.save` and after a load of that save alone;
+none may be missing, the save strips no empty herd. `SPORE_FIX_OFF=savestrip.our_herds` FAIL 20261113-045930 (72
+stripped, 52 missing), PASS 20261113-045626; BUG-0255's own case still PASSES (save_hygiene_leave 20261113-050134,
+4 empty herds of ours stripped). The restart helper waits for the Civ mode, not for `coop.avatar` (no avatar in Civ).
