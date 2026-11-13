@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many
+more found by the tests and by looking at their screenshots, in every stage. Among them: Civilization vehicles that
+got faster and faster, a crash when a guest further on in the Cell stage joined a host, a guest stuck in the
+conquest caption in the Tribe stage, partner tags drawn over cutscenes, and screen tearing with Spore ModAPI.
+Both players should update: the versions can still play together, but several fixes need both sides.
+
 ### Fixed
 - Tribe: when the host's tribe conquers a village, the guest's game no longer stands still in the "You have destroyed
   the village" caption until the guest clicks it: it closes itself after 8 s, as the host's does (BUG-0983).
