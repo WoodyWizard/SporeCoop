@@ -5,12 +5,15 @@ A level change runs RemoveCellsOfOldScale in each game (docs/re/cell.md#cell-lev
 its screen on an up change anyway (the cells of the old tier), little on a down change. In co-op the guest's cells are
 the host's, so what counts is the host's game: the area round a partner must lose about what the host's own area loses.
 
-Two games in the Cell fixture, the guest 200 m from the host (20 m after an up change: the areas stay apart). Each round the host changes the shared food by +150 /
--150 (three levels: one change of the world scale). Right before it the host's game marks its cells in its own visible
+Two games in the Cell fixture, the guest 60 m left of and 40 m below the host (the fixture's host is near the level's
+right edge: `tp 200 0` ended 5 m away; a third of it after an up change, the areas still apart). Each round the host
+changes the shared food by +150 / -150 (three levels: one change of the world scale). Right before it the host's game marks its cells in its own visible
 box and in the same box round the guest's cell (`coop.pool areas mark`); 5 s later it tells how many of each are gone
 and which DestroyCell caller removed them (`coop.pool areas`). Checked, pooled over the up changes and over the down
-changes: the partner's area lost at most 10 points more than the host's own (BUG-1064); and the host's tile pool held
-no live tile outside its tile lists after the changes (BUG-1066: `coop.pool tilestat` check_warns, the host's own count
+changes: the level change (the callers in LEVEL_CHANGE; meals and the like are printed only) removed at most 10 points
+more of the partner's area than of the host's own (BUG-1064); and the host's tile pool held
+no live tile outside its tile lists after the changes; the partner's view centre stayed within 5 m of its cell while
+the scale moved (`centre_err`) (BUG-1066: `coop.pool tilestat` check_warns, the host's own count
 of the game's pool G+0x38 against the lists).
 
   coop_cell_levelup_area.py [--rounds 6]   (SPORE_FIX_OFF=cell.view_centre_scale or cell.scale_food_flush: fails)
@@ -31,6 +34,16 @@ def areas(con):
     return r, out.strip()
 
 
+# the DestroyCell callers of a level change (docs/re/cell.md#cell-levelup-partner-area): the old tier shrunk away
+# (0xE7BFB0), the cull of a cell whose tile is not active (0xE7C080 after 0xE5F8C0), RemoveCellsOfOldScale. The others
+# are play (a meal, a swallow, the room a hatching cell clears) and are only printed
+LEVEL_CHANGE = {'00E7C03C', '00E7C3E6', '00E7CDA1'}
+
+
+def level_gone(by):
+    return sum(int(n) for ra, n in (x.split(':') for x in by.split()) if ra in LEVEL_CHANGE)
+
+
 def tilestat(con):
     return {k: int(v) for k, v in re.findall(r'\b(\w+)=(\d+)', con.call('coop.pool tilestat')['out'])}
 
@@ -38,24 +51,28 @@ def tilestat(con):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=6)
-    ap.add_argument('--dist', type=int, default=200)
+    ap.add_argument('--dx', type=int, default=-60)
+    ap.add_argument('--dy', type=int, default=-40)
     a = ap.parse_args()
     host, guest = start('cell')
     ck = Checks()
     time.sleep(3)
     host.call('coop.pool invulnfor 600')
     guest.call('coop.pool invulnfor 600')
-    # far enough that the two areas stay apart after an up change too (the world shrinks about tenfold: 30 m became 3 m
-    # and the partner's area was the host's)
-    ap_dist = a.dist
-    guest.call(f'coop.pool tp {ap_dist} 0')
+    # far enough that the two areas stay apart after an up change too (the world scale goes 0.5 -> 1.5: distances to a
+    # third), towards the level's middle (the fixture's host is near its right edge)
+    guest.call(f'coop.pool tp {a.dx} {a.dy}')
     time.sleep(10)
     t0 = tilestat(host)
+    err = 0.0
     pooled = {'up': {'host': [0, 0], 'partner': [0, 0]}, 'down': {'host': [0, 0], 'partner': [0, 0]}}
     for i in range(a.rounds):
         time.sleep(3)
         way = 'up' if i % 2 == 0 else 'down'
         print(f'  change {i + 1} ({way}) mark: ' + host.call('coop.pool areas mark')['out'].strip(), flush=True)
+        for line in areas(host)[1].splitlines():
+            if line.startswith('centre'):
+                print('    before: ' + line, flush=True)
         host.call(f'coop.pool food {150 if way == "up" else -150}')
         time.sleep(5)
         r, out = areas(host)
@@ -65,11 +82,20 @@ def main():
                 parts.append(f'{who}: none marked')
                 continue
             marked, gone, nodestroy, by = r[who]
-            pooled[way][who][0] += gone
+            pooled[way][who][0] += level_gone(by)
             pooled[way][who][1] += marked
             parts.append(f'{who}: {gone} of {marked} gone ({gone / max(1, marked):.0%}; {nodestroy} without DestroyCell; by {by})')
         print(f'  change {i + 1} ({way}) in the host\'s game: ' + '; '.join(parts), flush=True)
+        for line in out.splitlines():
+            if line.startswith('centre'):
+                print('    ' + line, flush=True)
+            m = re.match(r'centre_err settled ([\d.]+) moving ([\d.]+)', line)
+            if m:
+                err = max(err, float(m.group(2)))
         print('    ' + host.call('coop.pool tilestat')['out'].strip(), flush=True)
+    # the cause (BUG-1064): the centre the host keeps the world round, against where the game draws the partner's cell
+    ck(err <= 5.0, f'the partner\'s view centre was at most {err:.1f} m from its cell in the host\'s game while the world '
+                   f'scale moved (5 m; the pose in the partner\'s own scale: 17-37 m, lab 20261113-044709)')
     t1 = tilestat(host)
     # BUG-1066: every live tile object of the host's tile pool G+0x38 is in one list (the host's or a partner's): the
     # game's own pool count against the lists, checked by the host after each step (`check_warns`)
@@ -80,7 +106,7 @@ def main():
         h, p = pooled[way]['host'], pooled[way]['partner']
         ck(h[1] >= 10 and p[1] >= 10, f'{way}: cells marked in both areas (host {h[1]}, partner {p[1]})')
         hs, ps = h[0] / max(1, h[1]), p[0] / max(1, p[1])
-        ck(ps <= hs + 0.10, f'{way} changes: the host\'s game lost {ps:.0%} of the area round the partner ({p[0]} of {p[1]}), '
+        ck(ps <= hs + 0.10, f'{way} changes: the host\'s game\'s level change removed {ps:.0%} of the area round the partner ({p[0]} of {p[1]}), '
                             f'{hs:.0%} of its own ({h[0]} of {h[1]}): at most 10 points more')
     ck.faults(host=host, guest=guest)
     return ck.result()

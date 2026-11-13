@@ -1323,6 +1323,7 @@ struct AreaMark {
     uint32_t by; // DestroyCell's return address (rebased), 0 while not destroyed
 };
 static std::unordered_map<uint32_t, AreaMark> g_area_mark;
+static float g_centre_err_max, g_centre_err_moving; // tests (BUG-1064): the farthest a partner's view centre was from its cell (settled / scale moving)
 // host: is the cell's sphere inside a partner's visible box (as 0xE5CDE0 tests the host's own box)?
 static bool in_partner_view(uint8_t* c)
 {
@@ -2799,6 +2800,14 @@ static void pop_tiles(int level, TileList* list, int all)
         for (size_t i = 0; i < n; i++)
             g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
     }
+    for (auto& v : g_views.list()) // tests (BUG-1064): how far each partner's centre is from where its cell is drawn
+        if (v.player)
+            if (uint8_t* pc = puppet_cell(v.player)) {
+                float e = std::hypot(v.pos.x - pos_of(pc).x, v.pos.y - pos_of(pc).y);
+                float& m = scale_moving() ? g_centre_err_moving : g_centre_err_max;
+                if (std::isfinite(e) && e > m)
+                    m = e;
+            }
     g_view_boxes.clear();
     for (auto& v : g_views.list()) {
         float dx = v.pos.x - hb.cx(), dy = v.pos.y - hb.cy();
@@ -6580,6 +6589,7 @@ std::string debug(const std::vector<std::string>& a)
         float* vb = view_boxes();
         if (a.size() > 1 && a[1] == "mark") {
             g_area_mark.clear();
+            g_centre_err_max = g_centre_err_moving = 0;
             if (!vb)
                 return "areas: no view boxes\n";
             float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
@@ -6631,6 +6641,19 @@ std::string debug(const std::vector<std::string>& a)
                 out += b;
             }
             out += "\n";
+        }
+        { // where the host keeps the world round each partner, and where the partner's cell is
+            char b[200];
+            snprintf(b, sizeof b, "centre_err settled %.1f moving %.1f\n", g_centre_err_max, g_centre_err_moving);
+            out += b;
+            for (auto& v : g_views.list()) {
+                uint8_t* pc = v.player ? puppet_cell(v.player) : avatar();
+                auto pt = g_ptiles.find(v.player);
+                int n = pt != g_ptiles.end() && pt->second.list ? (int)((pt->second.list->end - pt->second.list->begin) / 2) : -1;
+                snprintf(b, sizeof b, "centre %d (%.1f %.1f) cell (%.1f %.1f) tiles %d scale %.4f target %.4f\n", v.player, v.pos.x, v.pos.y,
+                         pc ? pos_of(pc).x : 0.f, pc ? pos_of(pc).y : 0.f, n, world_scale(), F<float>(G(), 0x5150));
+                out += b;
+            }
         }
         return out.empty() ? std::string("areas: none marked\n") : out;
     }
