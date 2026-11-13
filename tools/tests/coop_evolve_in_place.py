@@ -22,6 +22,11 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
     (cSpeciesManager +0xA4) is the host's new species.
 
   SPORE_FIX_OFF=world.evolve_in_place: the old reload: FAIL (the guest goes through the galaxy menu).
+
+  --species-late N (Creature, BUG-1057): the guest's game takes the host's evolved species as not known for the first N
+  frames it tries to write the world's player species (`coop.creations ps_null N`, as a species registered a little
+  later); its world's player species must still become the host's new one.
+  SPORE_FIX_OFF=creations.species_retry with --species-late: the write is lost (FAIL).
 """
 import re
 import sys
@@ -219,6 +224,9 @@ def main():
     time.sleep(3)
     if '--nosave' in sys.argv:  # BUG-0517: no save of the host after its editor (as a host alone or without a share)
         print('  host:', host.call('coop.evokey nosave')['out'].strip(), flush=True)
+    if '--species-late' in sys.argv:  # BUG-1057
+        n = sys.argv[sys.argv.index('--species-late') + 1]
+        print('  guest:', guest.call(f'coop.creations ps_null {n}')['out'].strip(), flush=True)
     m_stage = 'Cell' if stage == 'cell' else 'Creature'
     h0 = host_own(host, stage)
     g0 = own_model(guest, stage)
@@ -284,6 +292,7 @@ def main():
     if stage != 'cell':
         ws_h, ws_g = world_species(host), world_species(guest)
         print(f'  world player species: host {ws_h}, guest {ws_g}', flush=True)
+        print(' ', [ln.strip() for ln in creations(guest).splitlines() if 'world player species' in ln], flush=True)
         ck(ws_g and ws_g == ws_h == h1, f"the guest's world player species is the host's new species ({ws_g} / {ws_h})")
     shot(guest, f'evolve_in_place_{stage}_guest.png')
     shot(host, f'evolve_in_place_{stage}_host.png')

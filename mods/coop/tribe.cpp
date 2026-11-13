@@ -937,7 +937,7 @@ static void apply_leader(void* c, float v)
         H->log(M, SK_INFO, "tribe: member #%u leads its tribe here too, as in the host's game (the leader was %s, BUG-0652)",
                member_id(c), old ? ("#" + std::to_string(member_id(old))).c_str() : "none");
 }
-static const fields::Field kHeldTool{fields::F_TOOL, "tool", read_held_tool, apply_held_tool, 0.01f};
+static const fields::Field kHeldTool{fields::F_TOOL, "tool", read_held_tool, apply_held_tool, 0.01f, 0.f, 32.f}; // (0: no tool, BUG-1043)
 static const fields::Field kToolFields[] = {kHeldTool};
 
 // BUG-0906: what a member holds in its hand (+0xFFC mCurrentHandheldItem: 0x11 the chief's staff, 1..4 / 0xD..0x10 /
@@ -1208,7 +1208,7 @@ static void apply_hunger(void* c, float v)
                F<float>(c, kHungerOff), v);
     thiscall<void>(a_SetHunger, c, v);
 }
-static const fields::Field kHunger{fields::F_HUNGER, "hunger", read_hunger, apply_hunger, 0.02f};
+static const fields::Field kHunger{fields::F_HUNGER, "hunger", read_hunger, apply_hunger, 0.02f, 0.f, 100.f}; // (0: starving, BUG-1043)
 static const fields::Field kHungerFields[] = {kHunger};
 
 static int tool_type(void* tool) { return vcall<int>(tool, 0x58 / 4); }
@@ -4086,6 +4086,11 @@ PLAYER_STATE("tribe", [](uint8_t id) { g_chief.erase(id); for (auto& [t, m] : g_
                  return n;
              });
 static std::unordered_map<void*, double> g_chief_saved;                         // chief -> last rescue
+// BUG-1052: the chief aura's rescue left the saved chief 30 % of +0x5D4 (combatant +0x2C, 1.0: BUG-0745), i.e. 0.3 hit
+// points, so it fell at the next blow. Now 30 % of cCombatant::GetMaxHitPoints (game::max_health).
+// `coop.fix tribe.rescue_max off`: the field +0x5D4 (0.7.13)
+static bool g_fix_rescue_max = true;
+COOP_FIX("tribe.rescue_max", "BUG-1052", g_fix_rescue_max, "tribe: a chief saved by a partner's member keeps 30 % of its real maximum health");
 static uint32_t g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills;
 static void* g_epic;
 static uint32_t g_epic_serial; // BUG-0951
@@ -4327,7 +4332,8 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
         // a chief about to fall next to a partner's member: the tribe protects it
         if (vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
-            float hp = F<float>(victim, 0x5E0), mx = F<float>(victim, 0x5D4);
+            // BUG-1052 (tribe.rescue_max): 30 % of its real maximum (game::max_health), as the heal hook (BUG-0745)
+            float hp = F<float>(victim, 0x5E0), mx = g_fix_rescue_max ? game::max_health(victim) : F<float>(victim, 0x5D4);
             uint8_t o = owner_of(victim);
             if (dmg >= hp && mx > 0 && now - g_chief_saved[victim] > 60) {
                 for (void* m : members(pt)) {

@@ -6234,6 +6234,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::games_dump().c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "meter_null")) { // tests (BUG-1058): the next n meter tasks find no meter window
+        social::debug_meter_null((unsigned)atoi(argv[2]));
+        SAY("the next %s meter tasks find no meter window\n", argv[2]);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
         SAY("%s", social::meter_dump().c_str());
         return 0;

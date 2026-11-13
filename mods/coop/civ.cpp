@@ -505,9 +505,21 @@ static KeepGround_t o_KeepGround;
 static bool g_mirror_place_fix = true;
 COOP_FIX("civ.mirror_place", "BUG-0186", g_mirror_place_fix,
          "civ: a guest's game does not move a mirrored vehicle off ground it finds invalid (the host's vehicle stands there)");
-static uint32_t g_mirror_place_skipped;
+static uint32_t g_mirror_place_skipped, g_away_ground_checks;
+// BUG-1056: while the host is away (local_play, BUG-0151) the guest's own game drives its mirrors and nothing puts
+// them back where the host's vehicle is: the game's own ground check runs for them again (a mirror driven onto ground
+// its locomotion does not allow is moved off it, as in the host's game). `coop.fix civ.away_ground off`: skipped
+// also while the host is away (0.7.13).
+static bool g_away_ground_fix = true;
+COOP_FIX("civ.away_ground", "BUG-1056", g_away_ground_fix,
+         "civ: while the host is away the guest's game keeps its mirror vehicles on valid ground (its own ground check)");
 static void SK_THISCALL h_KeepGround(void* v)
 {
+    if (g_away_ground_fix && local_play() && g_gv_of.count(v)) {
+        g_away_ground_checks++;
+        o_KeepGround(v);
+        return;
+    }
     if (g_mirror_place_fix && !g_applying && is_guest() && game::mode_id() == modes::kCiv && g_gv_of.count(v)) {
         g_mirror_place_skipped++;
         return;
@@ -5129,10 +5141,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u off_slot=%u moved=%u ruins_in=%u ruins_differ=%u incomplete=%u older_chunks=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u removed_local=%u\n",
+                 "buildings_fixed=+%u/-%u off_slot=%u moved=%u ruins_in=%u ruins_differ=%u incomplete=%u older_chunks=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u away_ground=%u removed_local=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_incomplete, g_cyc.older, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
+                 g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_incomplete, g_cyc.older, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_away_ground_checks, g_removed_local);
     char pl[260];
     snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d build_refunds=%u/%.0f\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
@@ -5582,7 +5594,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     // vput <id> <x> <y> <z>: that vehicle put there (spatial SetPosition vt 0x38; host; tests, BUG-0775: a host vehicle
     // standing nearer the city than the besiegers)
-    if (a.size() >= 5 && a[0] == "vput" && is_host()) {
+    // vput <id> <x> <y> <z>: tests, the vehicle's SetPosition (host: its own; a guest while the host is away: its
+    // mirror, which its own game drives then: BUG-1056)
+    if (a.size() >= 5 && a[0] == "vput" && (is_host() || local_play())) {
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
         if (!v || !exists(v))
             return "no such vehicle";

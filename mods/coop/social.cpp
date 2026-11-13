@@ -554,11 +554,28 @@ SESSION_STATE("social.meter_tasks", nullptr, [] {
     return n;
 });
 
+// BUG-1058: meter_tick marked the meter open for the engaged animal when it queued the open; a task that found no meter
+// window (meter_ui null) dropped the open and the meter never came for that social game. Now only the task's real open
+// marks it (the queue's own check keeps a second open away meanwhile); a missed open is queued again after
+// kMeterRetry s. `coop.fix social.meter_retry off`: marked at the queue (0.7.13)
+static bool g_meter_retry_fix = true;
+COOP_FIX("social.meter_retry", "BUG-1058", g_meter_retry_fix, "creature: a guest's social meter opens also when the first try found no meter window");
+constexpr double kMeterRetry = 0.25;
+static double g_meter_missed_at;
+static unsigned g_meter_missed, g_meter_test_null; // (tests: meter tasks that find no meter window)
 static void meter_run(void*) // outside the frame: the meter is UI
 {
     auto v = std::move(g_meter_tasks);
     g_meter_tasks.clear();
     void* m = meter_ui();
+    if (g_meter_test_null && m) { // tests (BUG-1058): as if the meter window were not there yet
+        g_meter_test_null--;
+        m = nullptr;
+    }
+    if (!m && !v.empty()) {
+        g_meter_missed++;
+        g_meter_missed_at = H->time_seconds();
+    }
     for (auto& t : v) {
         void* px = t.npc >= 0 ? npc::proxy((uint16_t)t.npc) : nullptr;
         if (!m || !a_MeterVisible)
@@ -626,20 +643,25 @@ static void meter_tick()
         return;
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
+        if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
+            return; // (BUG-1058: a missed open, tried again shortly)
         if (px && !game::impressed(px) && social_mode(px) != 0)
             meter_task(0, g_engaged, 0, rounds_needed(px));
         else
             return;
-        g_meter_npc = g_engaged; // (set again by the task; no second open meanwhile)
+        if (!g_meter_retry_fix)
+            g_meter_npc = g_engaged; // (0.7.13: marked before the task opened it)
     } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
         meter_task(3, g_meter_npc);
     }
 }
 
+void debug_meter_null(unsigned n) { g_meter_test_null = n; } // tests (BUG-1058)
+
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[300];
+    char b[400];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
@@ -648,9 +670,9 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
              "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
-             "frac_set=%.2f\n",
+             "frac_set=%.2f missed=%u\n",
              m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
-             g_stage_msg_win, g_meter_frac);
+             g_stage_msg_win, g_meter_frac, g_meter_missed);
     return b;
 }
 

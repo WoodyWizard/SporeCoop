@@ -8,8 +8,13 @@ the win's message 0x60B4123 (the creature-stage handler rolls the species' part 
 on the guest. Real input on the guest: the social stance, a click on a Kook, clicks on the sing button.
 Checked on the guest's game: the meter object is opened with the Kook's rounds when the Kook is engaged, the
 meter's layout is visible when the host's win arrives, hidden after it, and the creature-stage handler of the guest's game got 0x60B4123.
-SPORE_FIX_OFF=social.guest_meter must FAIL."""
+SPORE_FIX_OFF=social.guest_meter must FAIL.
+
+--meter-null N (BUG-1058): the guest's first N meter tasks find no meter window (`coop.social meter_null N`, as an
+engagement in a frame the creature HUD is not up yet); the meter must still open for the engaged Kook.
+SPORE_FIX_OFF=social.meter_retry with --meter-null: never opened for that game (FAIL)."""
 import re
+import sys
 import time
 
 from coop_creature_social import KOOK, num, social
@@ -26,6 +31,8 @@ def meter(con):
 def main():
     host, guest = start('creature')
     ck = Checks()
+    if '--meter-null' in sys.argv:  # BUG-1058
+        print('  guest:', guest.call(f'coop.social meter_null {sys.argv[sys.argv.index("--meter-null") + 1]}')['out'].strip(), flush=True)
     for c in (host, guest):
         c.call('coop.team hp 1000')
     time.sleep(2)
@@ -44,7 +51,7 @@ def main():
     print(f'  guest before: {m0.strip()}', flush=True)
     w0 = num(r'stage_win_msgs=(\d+)', m0, 0)
     o0 = num(r'opened=(\d+)', m0, 0)
-    done = opened = None
+    done = opened = first = None
     for nid in kooks[:3]:
         if not engage(guest, nid, 40):
             print(f'  #{nid}: not engaged', flush=True)
@@ -52,6 +59,15 @@ def main():
         time.sleep(1)
         m1 = meter(guest)
         print(f'  #{nid} engaged: {m1.strip()}', flush=True)
+        if '--meter-null' in sys.argv and first is None:  # BUG-1058: the first engaged Kook's meter, after a missed open
+            t1 = time.time()
+            while time.time() - t1 < 2 and num(r'opened=(\d+)', m1, 0) <= o0:
+                time.sleep(0.25)
+                m1 = meter(guest)
+            first = m1
+            ck(num(r'missed=(\d+)', m1, 0) >= 1, f"the guest's first meter task found no meter window ({m1.strip()[-30:]})")
+            ck(num(r'opened=(\d+)', m1, 0) > o0 and num(r'open_for=(-?\d+)', m1, -1) == nid,
+               f"the game's meter opened for the first engaged Kook #{nid} after the missed try")
         if num(r'opened=(\d+)', m1, 0) > o0:
             opened = m1
             shot(guest, 'social_meter_guest_open.png')
