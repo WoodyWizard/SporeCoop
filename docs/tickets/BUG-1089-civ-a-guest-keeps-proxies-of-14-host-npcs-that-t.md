@@ -1,7 +1,7 @@
 ---
 id: BUG-1089
 title: Civ: a guest keeps proxies of 14 host NPCs that the host's game has at the planet's centre (0 0 0), 525 m apart (sync-check MISMATCH)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-13
@@ -9,11 +9,11 @@ source: lab
 role: guest
 versions: 
 fixed_in:
-branch:
+branch: fix/w49-proxy
 commits:
-tests: campaign (lab gate sync-check)
+tests: civ_wild_pooled, campaign (lab gate sync-check)
 signature:
-docs:
+docs: docs/re/civ.md#civ-wild-parked, docs/06-testing.md#testing-civ-wild-pooled
 related: BUG-0339, BUG-0274, BUG-0973
 ---
 
@@ -30,14 +30,34 @@ Reproduce: the full campaign (`lab.py run =campaign`), look for "n: .. apart" wi
 ## Root cause
 Not analysed (outside fix/w49-camp's package). Inferred: Civ NPCs of a herd the host's game keeps (BUG-0973's host-owned
 wild creatures) parked at the centre while they are not in play, still listed for the guests.
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (fix/w49-proxy): the 14 are wild creatures the host's game took back into its pool (the planet's centre, herd
+0) while its simulation stood. Logs of 20261113-160426: the host's trace has `busy=paused` at 17:00:21, the
+MISMATCH is at 17:00:23 (2 checks 3 s apart); the BUG-0339 diagnostic "npc N is updated at the planet's centre" (once
+per stay, in host_tick) never fired for ids 1269-1282, so host_tick never saw them updated there: they went to the
+centre in frames without creature updates. Mod side: in Tribe and Civ host_tick returned at once in such frames
+(npc.frozen_send / npc.frozen_pooled are the Creature stage's per-guest relevance pass and were skipped for the RTS
+stages), so no despawn went out until the game went on; Civ has no distance rule that would drop them (kCivRelevance).
+The sync-check reads the last running frame's table with the current positions: (0 0 0) on the host.
+Reproduced (civ_wild_pooled, npc.frozen_pooled_rts off, lab 20261113-174015): host in its pause menu, camera panned to
+the other side of the planet: the game parked a herd of 14 (species 066742CD) by itself and the sync-check gate
+reported the campaign's signature "n: 14 apart (n139 536.6 ...)"; the guest also kept the 3 creatures the test pooled
+(`coop.npc pool`). So the Civ relevance pass parks creatures during the pause menu.
+Not these: dead or hidden NPCs, vehicles, BUG-0973's `npc.civ_wild` itself (it only made the class visible in Civ,
+where every guest gets every wild creature). The guest should not show them: they are out of the host's world.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`npc.frozen_pooled_rts` (npc.cpp): in Tribe and Civ, every 0.5 s of a freeze (no creature updated) the host retires
+the tracked NPCs that are no creature of the world any more or are within 50 m of the planet's centre (despawn at
+every guest, the id forgotten): the pooled part of frozen_send (now `frozen_pooled_pass`, shared with the Creature
+stage), without the per-guest relevance sends. `coop.fix npc.frozen_pooled_rts off`: kept until the host's game goes
+on (0.7.13).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+civ_wild_pooled (tools/tests/coop_civ_wild_pooled.py, civ_npc):
+FAIL with SPORE_LAB_FIXOFF=civ_wild_pooled=npc.frozen_pooled_rts: out/lab/20261113-174015 (lane 4: the guest kept
+[1, 2, 3] for the whole check, and the sync-check gate "n: 14 apart" as in the campaign).
+PASS: out/lab/20261113-174017 (lane 5) and out/lab/20261113-174223 (lane 5): none kept, no MISMATCH.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fix/w49-proxy: root cause (parked during the host's pause, no freeze pass in Tribe / Civ), fix npc.frozen_pooled_rts, test civ_wild_pooled; fixed.

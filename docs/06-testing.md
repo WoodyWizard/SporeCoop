@@ -7635,3 +7635,17 @@ MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 o
 20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
 full campaign 20261113-142203), BUG-1089 (a guest's proxies of Civ NPCs the host has at the planet's centre,
 full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113-163143).
+
+## civ_wild_pooled (2026-11-13, fix/w49-proxy)
+<a id="testing-civ-wild-pooled"></a>
+
+* `civ_wild_pooled` (BUG-1089, civ_npc, ~110 s): both cameras on the herd, the guest shows it (census by net id,
+  `coop.census creatures`); the host opens its pause menu (Esc; `frozen_s` of `coop.npc` must grow), its camera pans
+  to the other side of the planet (the relevance pass may park creatures by itself, printed), then `coop.npc pool <id>`
+  on up to 3 herd members still in the world; for 6 s of the pause the guest must show no live proxy of a pooled id.
+  Twin: `SPORE_LAB_FIXOFF="civ_wild_pooled=npc.frozen_pooled_rts"` FAILs (the guest keeps [1, 2, 3]) and also trips
+  the sync-check gate with the campaign's own signature ("n: 14 apart", ~525 m: a second herd the game parked by
+  itself during the pause), lab 20261113-174015.
+* Pitfall: plain `coop.census` lists no Civ wild creatures with a net id for the test's purpose; use
+  `coop.census creatures` (as civ_wild_sync does).
+
