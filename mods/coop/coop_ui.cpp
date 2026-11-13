@@ -1424,8 +1424,9 @@ static void refresh_lobby()
     Rect r_next = pick_space ? Rect{694, 430, 720, 460} : Rect{520, 430, 560, 460};
     Rect r_give = pick_space ? Rect{520, 430, 690, 460} : Rect{570, 430, 720, 460};
     Rect r_jump = pick_space ? Rect{400, 430, 515, 460} : Rect{400, 430, 560, 460};
-    if (g_give_fit_fix) { // BUG-1062: right to left, each button as wide as its caption needs (+34: the frame)
-        auto need = [](const std::string& c, float base) { return std::max(base, std::round(caption_width(demo_text(c)) + 34)); };
+    if (g_give_fit_fix) { // BUG-1062: right to left, each button as wide as its caption needs (+48: the button's text
+        // borders are 23 px left and right, IButton +0x50: docs/08-ui.md#ui-give-fit)
+        auto need = [](const std::string& c, float base) { return std::max(base, std::round(caption_width(demo_text(c)) + 48)); };
         r_give.x1 = r_give.x2 - need(give_cap, r_give.x2 - r_give.x1);
         if (pick && !space) // Tribe / Civ: ">" left of the give button
             r_next = Rect{r_give.x1 - 50, 430, r_give.x1 - 10, 460};

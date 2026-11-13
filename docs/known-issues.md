@@ -3028,6 +3028,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: give a tool within about 20 s of the guest's rejoin; not run.
 * Known: by code, K_TOOL / K_SELL / answer_offer do not wait for inv_restore_pending (space_trade.cpp).
 * Ticket: BUG-1034
+* Fixed (unreleased, fix/w49-space2, 2026-11-13): gifts and sales wait for the restore, offers too (`space.trade_wait_restore`); FAIL lab 20261113-022524, PASS 20261113-022524-2.
 
 ## Space: old partners' colonies come back as allies in a new session (2026-11-13, audit 0.7.14)
 <a id="issue-allies-end-pending"></a>
@@ -3037,6 +3038,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not run; the steps in the ticket.
 * Known: by code (space_allies.cpp tick returns outside Space before the pending cleanup); trigger 5 of BUG-0038.
 * Ticket: BUG-1036
+* Fixed (unreleased, fix/w49-space2, 2026-11-13): `space.allies_end_pending`; FAIL lab 20261113-023145, PASS 20261113-023145-2.
 
 ## Space: a mission reward tool is never given while the host has Space contracts off (2026-11-13, audit 0.7.14)
 <a id="issue-owed-tool-contracts-off"></a>
@@ -3046,6 +3048,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not run.
 * Known: by code, owed_tick runs only in the contracts feature's tick.
 * Ticket: BUG-1037
+* Fixed (unreleased, fix/w49-space2, 2026-11-13): `space.owed_always`; FAIL lab 20261113-022716, PASS 20261113-022655.
 
 ## Space: an armada wave without ships waits forever (2026-11-13, audit 0.7.14)
 <a id="issue-armada-empty-wave"></a>
@@ -3055,6 +3058,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not run (needs a raid that brings no ships).
 * Known: by code, space_contracts.cpp armada_tick.
 * Ticket: BUG-1038
+* Not reproduced (fix/w49-space2, 2026-11-13): the game keeps no empty raid running for 30 s (labs 20261113-022716, 20261113-023145); the abort is kept as hardening (`space.armada_empty_wave`). BUG-1038.
 
 ## Space: the host's colony spice drops after a world load in the session (2026-11-13, audit 0.7.14)
 <a id="issue-colony-spice-old-world"></a>

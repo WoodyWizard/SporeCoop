@@ -1,19 +1,19 @@
 ---
 id: BUG-1040
 title: Space: the 250 colony cap of a roster only ends the planets of one star
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-23
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-space2
+commits: daac928c
+tests: 
 signature:
-docs:
+docs: docs/re/space.md#space-restore-window
 related:
 ---
 
@@ -31,11 +31,13 @@ Stop both loops (a flag or a lambda with return). No switch needed.
 No twoinst test needed: a unit test of the scan is not possible without the game; check by reading, or a debug command that fakes 300 colonies. no-fail-run is acceptable (cosmetic cap).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+space_map.cpp: the roster scan checks the 250-colony cap before every star too, so it ends the whole scan. No switch
+(a cap only; the ticket's fix idea).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: an empire of more than 250 colonies is not reachable in a test (a debug faking 300 colonies would test
+the fake); checked by reading; the roster tests (space_map, space_allies) run the scan.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-space2 (the cap ends both loops).

@@ -2977,6 +2977,9 @@ Mod-side mechanics (space_rivalry.cpp, space_planets.cpp), no new game addresses
   feature off). space_contracts pays its owed rewards (BUG-0694, also K_MISSION tools) there; `coop.space contracts
   owed` prints the counts (`paid_while_off`). Switch `space.owed_always`.
 * ✔ (code) BUG-1038: correction of the audit (SPC-12): with `contracts.wave_resume` on, a fresh wave's empty raid was
-  resumed once (30 s more), then aborted by the resumed-wave branch; not forever. Now the 30 s branch aborts the empty
-  raid (SetState 7) for a fresh wave too and the next ready tick starts a new one. Switch `space.armada_empty_wave`.
+  resumed once (30 s more), then aborted by the resumed-wave branch; not forever. The 30 s branch now aborts the empty
+  raid (SetState 7) for a fresh wave too (hardening, switch `space.armada_empty_wave`). ✔ (runtime, lab
+  20261113-022716 / 023145) the case was not reached: a raid whose ships the mod does not count (`contracts hideships
+  1`) leaves the game's running list (state 2/3) before 30 s, and a raid started with 0 bombers (StartRaid's last
+  argument) is completed by the game at once (state 5): the game keeps no empty raid running on the colony.
 * ✔ (code) BUG-1040: the roster scan's 250-colony cap now ends the scan over all stars (space_map.cpp).

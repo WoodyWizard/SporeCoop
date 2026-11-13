@@ -10,8 +10,6 @@
   and joined another session, the old partner's colonies no longer come back as a frozen ally (BUG-1036).
 - Space: a mission reward tool earned while outside Space is now given back in Space also when the host has Space
   contracts switched off in the session settings (BUG-1037).
-- Space: an armada contract wave whose raid brings no ships now starts a new raid after 30 s instead of waiting
-  another 30 s on the same empty raid (BUG-1038).
 - Co-op window: "Give 10 to <player>" (Space) and "Give to <player>" are as wide as their caption; before, the
   caption wrapped onto two lines cut by the button's frame (BUG-1062).
 - Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
