@@ -615,6 +615,7 @@ static void test_big_snapshot()
     CHECK(chunks == 3 * 43);
 }
 
+static bool k4_on(const char* name);
 static void test_interp()
 {
     printf("snapshot interpolation\n");
@@ -647,6 +648,29 @@ static void test_interp()
         SnapshotBuffer::scale_lerp = false;
         CHECK(c.sample(5.0 + 0.325, q) && q.pos.x > 6.f); // the old blend (cell.puppet_scale off)
         SnapshotBuffer::scale_lerp = true;
+    }
+    {   // BUG-1092 (drive.agl_lerp): a hop's start, state 4 on the ground (no agl), state 5 1.5 m up (agl 1.5): half-way
+        // between them the target is 0.75 m up and so is its agl (drive::at_sender_agl places the puppet by the agl;
+        // the newer state's full 1.5 m put the puppet 1.5 m up in the first frame of the rise)
+        SnapshotBuffer c;
+        c.delay = 0.1;
+        for (int i = 0; i <= 10; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 50;
+            s.pos = {100.f + (i < 5 ? 0.f : 1.5f), 0, 0};
+            if (i >= 5) {
+                s.flags = PF_JUMPING;
+                s.agl = 1.5f;
+            }
+            c.push(s, 5.0 + i * 0.05);
+        }
+        g_agl_lerp_fix = k4_on("drive.agl_lerp"); // (SPORE_FIX_OFF=drive.agl_lerp: the newer state's 1.5 m, FAIL)
+        PlayerState q;
+        CHECK(c.sample(5.0 + 0.325, q)); // half-way between the states 4 and 5
+        CHECK(std::fabs(q.pos.x - 100.75f) < 0.01f && (q.flags & PF_JUMPING));
+        CHECK(std::fabs(q.agl - 0.75f) < 0.01f);
+        CHECK(c.sample(5.0 + 0.45, q) && std::fabs(q.agl - 1.5f) < 0.01f); // both states up: as sent
+        g_agl_lerp_fix = true;
     }
     CHECK(b.sample(5.0 + 0.6, o)); // extrapolate 0 s past newest: x=10
     CHECK(std::fabs(o.pos.x - 10.0f) < 0.01f);
