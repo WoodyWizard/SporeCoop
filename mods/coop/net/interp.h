@@ -224,6 +224,31 @@ constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
 // 20261113-185217). The agl is blended with the position (a state without agl: its height over the newer state's
 // ground, 0 m on the ground; a state already up but not yet marked airborne at its height). Off: 0.7.13.
 inline bool g_agl_lerp_fix = true;
+// BUG-1093 (`coop.fix net.send_phase`): the own state goes out every kStatePeriod s. Sent at the first frame at least
+// kStatePeriod after the last send, a game whose frames are a little shorter than that (48 ms at 21 fps, 40 ms at 25 fps)
+// sent every other frame: states 80-100 ms apart, half the rate (the lab's host at 21 fps: 91-95 ms). The partner's puppet
+// (interpolated 0.1 s back) then ran past its newest state in 17-26 % of the frames, its usual horizon (the fall's knee)
+// grew to 0.04-0.06 s, and a stop known late was shown walking on: the target stepped back 0.6-0.7 m and the puppet stood
+// 0.37-0.66 m past the stop (puppet_stops, lab 20261113-193854, 20261113-204729 #2). With the fix the schedule keeps its
+// phase (the next send is due kStatePeriod after the last one was due, not after the frame that sent it; after a hitch of
+// over two periods it starts again from now), so the rate stays 1 / kStatePeriod down to that frame rate, and a creature
+// that walked (over 1 m/s in the last state sent) and stands now (under 0.3 m/s) is sent at once: the stop's news does
+// not wait up to a period. Off: 0.7.13 (the first frame kStatePeriod after the last send).
+inline bool g_send_phase_fix = true;
+constexpr double kStatePeriod = 0.05; // s
+// whether the own state goes out at `now`; `last`: when the last one was due (updated when one goes out); `sent_sp` the
+// speed in the last state sent, `sp` the creature's speed now (m/s, 0 0 outside Creature)
+inline bool state_due(double now, double& last, float sent_sp = 0, float sp = 0, double period = kStatePeriod)
+{
+    if (g_send_phase_fix && sent_sp > 1.f && sp < 0.3f) {
+        last = now; // a stop: at once, the schedule from here
+        return true;
+    }
+    if (now - last < period)
+        return false;
+    last = g_send_phase_fix && now - last < 2 * period ? last + period : now;
+    return true;
+}
 // the median of the last N horizons (how far past the newest state a body was moved on when the next state came)
 template <size_t N> struct HorizonMedian {
     std::array<float, N> h{};
@@ -369,6 +394,13 @@ public:
             snaps_.pop_front();
     }
 
+    // diagnostics (BUG-1093, coop.track): the knee of the interpolated extrapolation's fall (s past the newest state at
+    // the full speed) and the median arrival horizon less the one-way latency
+    double fall_knee() const
+    {
+        return hz_.n >= 8 ? std::max(0.0, (double)hz_.med - g_one_way - delay) + kPuppetFallMargin : kPuppetFallMargin;
+    }
+    double horizon_med() const { return hz_.n ? (double)hz_.med - g_one_way : 0; }
     bool empty() const { return snaps_.empty(); }
     const PlayerState& latest() const { return snaps_.back().s; }
     double age(double local_now) const

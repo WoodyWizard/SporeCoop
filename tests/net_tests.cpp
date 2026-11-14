@@ -1166,6 +1166,68 @@ static float puppet_stop_past(bool fix, bool* slowed)
 }
 
 
+// BUG-1093 (net.send_phase): the walker at 21 fps (48 ms frames) sends its state by state_due, walks +x at 4.75 m/s and
+// stops at once (a halt) at one of 48 phases of its frames; each state reaches the observer (also ~21 fps) 30-280 ms
+// later (a loaded lab pair of games: the states' age p90 0.2 s, deterministic). The puppet's buffer (interpolated, delay
+// 0.1, interp_fall): the largest distance of the shown target past the stop, its p90 over the 48 stops, the worst one,
+// and the walker's states per second
+static void puppet_lowfps_past(bool fix, double* rate, float* p90, float* worst)
+{
+    const bool was = g_send_phase_fix, was_fall = g_puppet_fall_fix;
+    const double was_ow = g_one_way;
+    g_send_phase_fix = fix && k4_on("net.send_phase");
+    g_puppet_fall_fix = true;
+    g_one_way = 0.04;
+    const double frame = 0.048;
+    std::vector<float> past;
+    int sent = 0;
+    for (int ph = 0; ph < 48; ph++) {
+        SnapshotBuffer b;
+        b.delay = 0.1;
+        b.interp_fall = true;
+        const double t_stop = 3.0 + ph * frame / 48;
+        const float x_stop = (float)t_stop * 4.75f;
+        std::vector<std::pair<double, PlayerState>> arr;
+        double last = -1;
+        float sent_sp = 0;
+        uint32_t seed = 7u + ph;
+        for (double ts = 0; ts < 4.5; ts += frame) {
+            const bool moving = ts < t_stop;
+            if (!state_due(ts, last, sent_sp, moving ? 4.75f : 0.f))
+                continue;
+            PlayerState st;
+            st.time_ms = (uint32_t)(1000 + ts * 1000.0 + 0.5);
+            st.flags = PF_IN_WORLD;
+            st.pos = {moving ? (float)ts * 4.75f : x_stop, 0.f, 0.f};
+            st.vel = {moving ? 4.75f : 0.f, 0.f, 0.f};
+            sent_sp = st.vel.x;
+            seed = seed * 1103515245u + 12345u;
+            arr.push_back({ts + 0.03 + 0.25 * ((seed >> 16) & 1023) / 1023.0, st});
+            if (ph == 0 && ts < 2.5)
+                sent++;
+        }
+        std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+        size_t k = 0;
+        PlayerState o;
+        float w = 0;
+        for (double now = 0.02; now < 4.5; now += 0.0477) {
+            while (k < arr.size() && arr[k].first <= now)
+                b.push(arr[k].second, now), k++;
+            if (!b.sample(now, o) || now < 2.5)
+                continue;
+            w = std::max(w, o.pos.x - x_stop);
+        }
+        past.push_back(w);
+    }
+    std::sort(past.begin(), past.end());
+    *rate = sent / 2.5;
+    *p90 = past[past.size() * 9 / 10];
+    *worst = past.back();
+    g_send_phase_fix = was;
+    g_puppet_fall_fix = was_fall;
+    g_one_way = was_ow;
+}
+
 // BUG-0675 / BUG-0651 (drive.lead_throw): a member walking at 9.5 m/s whose loaded sender stamps its states off its frames
 // (positions every 1/30 s, the times alternately 6 ms early and late: every other pair of states 21 ms apart in its time,
 // a 15 m/s path): the mean distance of the shown target from the member (its sender time now)
@@ -1304,6 +1366,15 @@ static void test_lead_fall()
     CHECK(p_off > 0.5f);
     CHECK(p_on < 0.3f);
     CHECK(sl_on && !sl_off);
+    double r_on = 0, r_off = 0;
+    float q_on = 0, q_off = 0, w_on = 0, w_off = 0;
+    puppet_lowfps_past(true, &r_on, &q_on, &w_on);
+    puppet_lowfps_past(false, &r_off, &q_off, &w_off);
+    printf("  a walker at 21 fps halts: target past the stop p90 %.2f max %.2f m at %.1f states/s (0.7.13 p90 %.2f max %.2f m "
+           "at %.1f/s)\n", q_on, w_on, r_on, q_off, w_off, r_off);
+    CHECK(r_off < 12 && r_on > 19);
+    CHECK(w_off > 0.45f && w_on < w_off - 0.1f);
+    CHECK(q_on < q_off);
 }
 
 static void test_lead_keep()

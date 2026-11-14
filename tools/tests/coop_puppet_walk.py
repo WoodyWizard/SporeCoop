@@ -84,7 +84,9 @@ def dump(con):
                          'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None,
                          # BUG-1093: the target's extrapolation past its newest state and that state's age (s); the
                          # own avatar: the time since its last state was sent
-                         'ex': float(f[31]) if len(f) > 32 else None, 'age': float(f[32]) if len(f) > 32 else None})
+                         'ex': float(f[31]) if len(f) > 32 else None, 'age': float(f[32]) if len(f) > 32 else None,
+                         'knee': float(f[33]) if len(f) > 35 else None, 'hz': float(f[34]) if len(f) > 35 else None,
+                         'ow': float(f[35]) if len(f) > 35 else None})
     return rows
 
 

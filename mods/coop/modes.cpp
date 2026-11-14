@@ -619,6 +619,7 @@ COOP_FIX("drive.lead_smooth", "BUG-0619", net::g_lead_smooth_fix, "tribe, creatu
 COOP_FIX("drive.lead_keep", "BUG-0651", net::g_lead_keep_fix, "tribe: the members are shown where the host has them now over any link (the lead no longer goes off over 100 ms, a late state is caught up at up to twice the walk)");
 COOP_FIX("drive.lead_fall", "BUG-0674", net::g_lead_fall_fix, "every stage: a remote body is moved on past its last state at a falling speed through a latency spike or a loss burst (members 8-9 m off, NPCs teleported, ships past a stop)");
 COOP_FIX("drive.puppet_fall", "BUG-0680", net::g_puppet_fall_fix, "creature: the partner's creature stops where the partner stopped in a latency spike instead of walking on past it");
+COOP_FIX("net.send_phase", "BUG-1093", net::g_send_phase_fix, "creature: the partner's creature stops where the partner stopped on a slow PC instead of walking on past it (the own state goes out 20 times a second at any frame rate)");
 COOP_FIX("drive.agl_lerp", "BUG-1092", net::g_agl_lerp_fix, "creature: the partner's creature rises with the partner at the start of a hop instead of stepping up at once");
 COOP_FIX("drive.lead_throw", "BUG-0675", net::g_lead_throw_fix, "creature, tribe: the copy of a thrown NPC flies with it instead of waiting for each of its states");
 COOP_FIX("drive.lead_low", "BUG-0651", net::g_lead_low_fix, "tribe: the member lead stays on over a player network and on a loaded PC (the rule reads the link's own latency, not the mean round trip)");
