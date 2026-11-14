@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.14
 fixed_in:
 branch: fix/w49-spacegfx
-commits:
+commits: 7e17a5fb
 tests: campaign_space
 signature:
 docs: docs/known-issues.md#issue-gpu-overcommit-garbage, docs/06-testing.md#testing-gpu-overcommit
