@@ -7160,8 +7160,12 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
 
 * `tribe_hold_cut` (BUG-0993, tribe, ~2 min): the guest at 25 fps (`frame.limit 40`) puts the staff into its mirror's
   hand of the host's chief (`coop.tribe hand <id> 17`) 10 times; `coop.tribe holdtrace <id>` gives the hand set (`H`)
-  and the cut (`C`) on the game clock: every cut within 0.55 s. Rounds in which the game took no hold (the mirror in
-  a walk) or the host held in between (`S` / `T`) are not counted.
+  and the cut (`C`) on the game clock: every cut within 0.55 s of the start of the hold it ended (`B`: the frame the
+  game began that hold modifier, looked for every frame for 3 s after `H` whatever the switches; BUG-1105). Rounds in
+  which the game took no hold (the mirror in a walk) or the host held in between (`S` / `T`) are not counted; a round
+  starts only when the host's chief and its mirror are in their idle / walk (two samples), and rounds go on until
+  ROUNDS are counted (at most `--secs` 300 s): the host's own holds made it SKIP in 8 of 10 rounds before; a hold
+  that its mirror's walk ends within 0.3 s is not counted either (one run: 72 such rounds, still 10 counted).
 * `tribe_mirror_stale` (BUG-0972, tribe, ~3-5 min): when the host's chief stands or walks, the guest's mirror plays
   the gesture 0x04C6CB02 as a returned start (`coop.tribe mplay <id> <anim>`: the game's CreaturePlayAnim, the last
   relayed animation left as it is); the mirror must be in its idle / walk within 4.5 s. Rounds in which the host's

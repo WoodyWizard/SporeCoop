@@ -3601,6 +3601,14 @@ BUG-0972, BUG-0988, BUG-0993. GOG 2024, lab lanes 6 / 7, tribe fixture. Follows 
 * Fix `tribe.hold_cut_frame` (BUG-0993): held_items_tick looks at the mirrors' own holds every frame (hold_try keeps
   its 0.25 s tick): the BUG-0962 cut comes 0.41-0.43 s after the hold began at 25 fps (before 0.59-0.78 s there, up to
   1.05 s at 26 fps with hitches). Trace `H`: a hand set by `coop.tribe hand` (tests).
+* The cut's delay is measured from the hold's start, not from the hand set (BUG-1105, 2026-11-14, lab lane 3): the
+  game begins the kind 5 hold modifier of `coop.tribe hand` one frame later as a rule (0.02-0.06 s at 25 fps,
+  `hold=0` in the command's own answer), now and then a few tenths later (rel/0.7.14 rerun 20261114-022615: `HOC`,
+  0.836 s from H while the cut always comes kHoldUnsent + a frame after O), and the hand set's hold can end with the
+  mirror's gesture within 0.1 s and a relayed animation take the staff again (`HBOROC`). Trace `B` (tests): for 3 s
+  after H the guest looks at that mirror's hand every frame whatever the switches; `B` on each frame a hold modifier
+  begins (a new handle). Measured from the last `B` before C: 0.35-0.48 s at 25 fps; `tribe.hold_cut_frame` off
+  0.52-0.78 s.
 
 ## A member's thought bubble: the chat effect and its pictogram (2026-11-13, fix/w49-mirror)
 <a id="tribe-bubble-icons"></a>

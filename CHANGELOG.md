@@ -196,6 +196,9 @@
   elsewhere or the host's game ran slowly (BUG-1082).
 - Tests: a tribe member swimming counts as on the ground (its height over the water's surface, not over the sea bed);
   the lab's ground check no longer fails a campaign on members crossing a lake (BUG-1088).
+- Tests: tribe_hold_cut measures a cut from the start of the hold it ended (the game can begin the hold a few tenths
+  after the test's hand set) and waits for the host's chief and its copy to stand in their idle before each round, so
+  it no longer fails on a late hold or skips when the host's chief swings its staff itself (BUG-1105).
 
 ## [0.7.13] - 2026-11-12
 
