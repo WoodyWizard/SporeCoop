@@ -322,6 +322,10 @@ struct WalkPlace {
     // is held to (2 x lead_speed + catch_up - the walk's speed) x dt: a frame never draws more than 0.7.8's
     // (2 x speed + 3 m/s). Placed from the last placing instead, the next walk came on top (1-1.3 m frames)
     float lead_speed = 0.f;
+    // BUG-0440 (npc.proxy_hold): a held placing (teleport with the mark) is also kept through the game's next creature
+    // and physics update (game::place_hold): Tribe animal proxies were moved back by the game's update at 6-7 m/s while
+    // placed every frame (walk err 3-8 m, `held 1`, pushed back 6.9 m/s with the call itself taken)
+    bool hold_after = false;
 };
 constexpr float kCatchTime = 0.25f;     // s
 constexpr float kWalkLostErr = 0.75f;   // m
@@ -407,9 +411,11 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
     }
-    if (o.variant == 2 || ds.held) // held: closed at the same speed, but with the mark (the game keeps it)
+    if (o.variant == 2 || ds.held) { // held: closed at the same speed, but with the mark (the game keeps it)
         game::teleport(p, to, rot);
-    else
+        if (o.hold_after && ds.held)
+            game::place_hold(p, to, rot, pos);
+    } else
         game::place(p, to, rot);
     ds.readback_ema += (net::dist(game::position(p), to) - ds.readback_ema) * 0.15f; // BUG-0440 diagnostics
     ds.placed_to = to;

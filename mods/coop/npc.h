@@ -95,7 +95,11 @@ std::string debug_rxkeep(int n, float secs); // guest (tests, BUG-0611): only th
 std::string debug_lift(uint16_t id, float m, float secs); // host (tests, BUG-0550): NPC #id held m over its ground for secs s
 std::string debug_sink(uint16_t id, float m, bool mark = false); // guest (tests, BUG-0399): the proxy m under this game's ground once
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode = 0); // guest (tests, BUG-0281)
-std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0); // host (tests, BUG-0305): NPC #id dashes back and forth
+std::string debug_bhv(uint16_t id, uint32_t anim); // host (tests, BUG-0440): NPC #id plays a behaviour animation, relayed
+std::string debug_pushback(uint16_t id, float mps, float secs); // guest (tests, BUG-0440): the proxy moved back in its updates
+std::string debug_raised(float r, const net::Vec3* at = nullptr); // tests (BUG-0440): nests near the avatar and the raised ground there
+std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0,
+                       const net::Vec3* to = nullptr, float vel_k = 1.f); // host (tests, BUG-0305): NPC #id dashes back and forth
 int host_id(void* creature);     // host: net id of an NPC, -1
 int proxy_id(void* creature);    // guest: net id of a proxy, -1
 bool test_hit_now();             // guest: a test's hit (coop.npc hit) is being applied (BUG-0021 social.no_bite)

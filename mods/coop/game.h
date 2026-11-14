@@ -126,6 +126,14 @@ void set_grounded(void* c, bool on);
 // BUG-0532: puppet c is held in the air at pos (modes.cpp, every frame while the partner is airborne): put back there
 // and marked not grounded right after an animation start or an update of the game that grounded it
 void air_hold(void* c, bool on, const net::Vec3& pos = {}, const net::Quat& rot = {}, const net::Vec3& vel = {});
+// BUG-0440 (npc.proxy_hold): a body placed with the teleport mark this frame (drive::walk_place held) is put back where
+// it was placed when the game's next creature update or physics update moves it farther from `aim` (its target). An
+// entry lives for one frame (place_hold again every frame it is held)
+void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim);
+uint32_t place_holds_kept(); // how often an update's move back was undone
+// tests (BUG-0440, `coop.npc pushback`): in the game's next creature update (before it) c is moved m/s x the update's
+// time along dir (the class of the reports: the game moves a held proxy back while it is placed every frame)
+void test_push(void* c, const net::Vec3& dir, float mps);
 void air_release_all();
 std::string air_status();
 

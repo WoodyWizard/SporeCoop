@@ -153,14 +153,99 @@ static Update_t o_Update;
 static std::vector<void*> g_seen, g_seen_out;
 static UpdateFilter g_update_filter;
 
+// BUG-0440: see place_hold (game.h)
+struct PlaceHold {
+    void* c;
+    net::Vec3 pos, aim;
+    net::Quat rot;
+    double t;
+};
+static std::vector<PlaceHold> g_place_hold;
+static uint32_t g_place_holds_kept = 0;
+struct TestPush {
+    void* c;
+    net::Vec3 dir;
+    float mps;
+    double t;
+};
+static std::vector<TestPush> g_test_push;
+static float vdist(const net::Vec3& a, const net::Vec3& b)
+{
+    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
+}
+static void place_reassert(void* c)
+{
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_place_hold.size(); i++)
+        if (PlaceHold& h = g_place_hold[i]; h.c == c) {
+            if (now - h.t > 0.1) { // (not placed held this frame)
+                g_place_hold.erase(g_place_hold.begin() + i);
+                return;
+            }
+            net::Vec3 p = position(c);
+            if (vdist(p, h.aim) > vdist(h.pos, h.aim) + 0.02f) {
+                teleport(c, h.pos, h.rot);
+                g_place_holds_kept++;
+            }
+            return;
+        }
+}
+void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim)
+{
+    double now = H->time_seconds();
+    for (auto& h : g_place_hold)
+        if (h.c == c) {
+            h = {c, pos, aim, rot, now};
+            return;
+        }
+    for (size_t i = 0; i < g_place_hold.size();) // (stale ones)
+        if (now - g_place_hold[i].t > 0.1)
+            g_place_hold.erase(g_place_hold.begin() + i);
+        else
+            i++;
+    if (g_place_hold.size() < 64)
+        g_place_hold.push_back({c, pos, aim, rot, now});
+}
+uint32_t place_holds_kept() { return g_place_holds_kept; }
+void test_push(void* c, const net::Vec3& dir, float mps)
+{
+    double now = H->time_seconds();
+    for (auto& e : g_test_push)
+        if (e.c == c) {
+            e = {c, dir, mps, now};
+            return;
+        }
+    if (g_test_push.size() < 8)
+        g_test_push.push_back({c, dir, mps, now});
+}
+static void test_push_apply(void* c, int dt_ms)
+{
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_test_push.size(); i++)
+        if (TestPush& e = g_test_push[i]; e.c == c) {
+            if (now - e.t > 0.1) {
+                g_test_push.erase(g_test_push.begin() + i);
+                return;
+            }
+            float s = e.mps * (float)std::min(std::max(dt_ms, 0), 100) / 1000.f;
+            net::Vec3 p = position(c);
+            teleport(c, {p.x + e.dir.x * s, p.y + e.dir.y * s, p.z + e.dir.z * s}, orientation(c));
+            return;
+        }
+}
+
 static void SK_THISCALL h_Update(void* self, int dt)
 {
     g_seen.push_back(self);
     if (g_update_filter && !g_update_filter(self))
         return;
+    if (!g_test_push.empty())
+        test_push_apply(self, dt);
     o_Update(self, dt);
     if (!g_air.empty())
         air_reassert(self, 0);
+    if (!g_place_hold.empty())
+        place_reassert(self);
 }
 
 const std::vector<void*>& creatures_updated()
@@ -1803,6 +1888,15 @@ void mound_hold(void* c, const net::Vec3& tgt)
 
 void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), after the game's update
 {
+    if (!g_place_hold.empty()) { // BUG-0440 (a copy: reassert may drop entries)
+        void* cs[64];
+        size_t n = std::min<size_t>(g_place_hold.size(), 64);
+        for (size_t i = 0; i < n; i++)
+            cs[i] = g_place_hold[i].c;
+        for (size_t i = 0; i < n; i++)
+            if (creature_listed(cs[i]))
+                place_reassert(cs[i]);
+    }
     if (!g_culled_ground_fix || g_mound.empty())
         return;
     double now = H->time_seconds();
