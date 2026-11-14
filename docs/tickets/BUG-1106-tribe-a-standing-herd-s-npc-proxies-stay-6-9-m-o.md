@@ -1,7 +1,7 @@
 ---
 id: BUG-1106
 title: Tribe: a standing herd's NPC proxies stay 6-9 m off the host's NPCs on one guest at the same spot of the campaign planet (monitor proxies gate)
-status: open
+status: not-reproduced
 kind: desync
 stage: Tribe
 reported: 2026-11-14
