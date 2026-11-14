@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Space: opening the captain screen (or a Galactic Adventures mission screen) no longer crashes the game when your
+  empire has no captain, as after a "Name Your Captain" that could not copy your species: the screen shows your
+  species instead (BUG-1111, GitHub #202).
+
 ## [0.7.14] - 2026-11-14
 
 A bug-fix update: problems found by a review of the code and by the tests, in every stage. Among them: wild

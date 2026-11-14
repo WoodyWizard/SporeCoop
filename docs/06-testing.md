@@ -7896,3 +7896,19 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   FAIL: 20261114-045701 (`npc.ai_lookup_live` off: engaged #1; `npc.proxy_identity` off: driven [1, 2]).
 * In that twin run creature_kills (cold, the first test) failed "killed host NPC #20 with real input (3 combat
   keys)"; it passed in the 6 runs before on this branch and its code is not touched (seen once).
+
+## A Space world without a captain (space_captain_none, 2026-11-14, fix/w50-captain)
+<a id="testing-captain-none"></a>
+
+* `coop_space_captain_none.py` (suite `space_captain_none`, warm, `space` fixture, ~75 s cold): the host's captain
+  key goes to 0 (`call Simulator::GetPlayerEmpire` + `mem.write` at +0xC4), `coop.save`, `coop.share`; the guest's
+  game asks "Name Your Captain" ~5 s after the share (probe `SporeCoop::NameCaptainDialog_Show`). The dialog's dice is
+  at (916, 555), its check at (937, 631) at 1440x1080; the check is greyed out while the name is empty.
+  `coop.captain species 1BADBEEF` before the check makes the copy of the species fail (the game sets captain 0),
+  `coop.captain species restore` after it. `coop.captain open` opens the screen as the Space update does (the
+  adventure mission screen, Decline / Accept, with the captain's portrait): without the fix the guest crashes at
+  0xA055B5 at once (the reporter's signature). Opened this way without an offer, Decline may not close it (Esc).
+* The rank badge of a captain-less empire runs the captain screen's equipment panel first, which faults inside the
+  game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
+  the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
+* Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
