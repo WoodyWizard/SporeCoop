@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.14
 fixed_in: unreleased
 branch: fix/w49-edworld
-commits:
+commits: 535d9dbd, b9d5beb7
 tests: tribe_editor_world
 signature: tribe_editor_world "the guest loaded the shared world after 150 s", host log "evolved in place: Bob keeps its world"
 docs: docs/re/tribe.md#tribe-stage-epoch, docs/06-testing.md#testing-w5-world
