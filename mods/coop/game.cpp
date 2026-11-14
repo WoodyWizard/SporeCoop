@@ -2087,6 +2087,17 @@ void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, cons
 
 void air_release_all() { g_air.clear(); } // (also the lifecycle entry game.air above)
 
+bool air_held(void* c, net::Vec3* pos)
+{
+    for (auto& h : g_air)
+        if (h.c == c) {
+            if (pos)
+                *pos = h.pos;
+            return true;
+        }
+    return false;
+}
+
 static void air_reassert(void* c, int where)
 {
     for (size_t i = 0; i < g_air.size(); i++)

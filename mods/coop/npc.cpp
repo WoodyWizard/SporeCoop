@@ -4214,16 +4214,23 @@ void monitor_tick(double now)
                 }
             uint32_t cur_anim = 0;
             game::drawn_state(px.c, nullptr, &cur_anim);
+            // BUG-1106 (diagnostics): what stands where the host's NPC is (a building or rock of this game only?) and
+            // whether a hold in the air puts the body back
+            net::Vec3 hold_at{};
+            const bool air_held = game::air_held(px.c, &hold_at);
+            char hold_b[48];
+            snprintf(hold_b, sizeof hold_b, air_held ? "%.1f m from it" : "none", net::dist(hold_at, p));
             trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
                         "%.1f m; objects within 3 m: %s; pushed back %.1f m/s, off its placing after the call %.2f m, game "
                         "speed %.1f m/s; raised ground (surface over the terrain) under it %.2f m, at its target %.2f m; anim %08X, "
-                        "loco mode %d, grounded %d, nest herd %d, host's speed %.1f, walk speed %.1f (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        "loco mode %d, grounded %d, nest herd %d, host's speed %.1f, walk speed %.1f; objects within 3 m of its target: %s; "
+                        "air hold %s (BUG-0440, BUG-1106)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
                         (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d,
                         game::objects_near(p, 3.f, px.c).c_str(), px.drv.back_ema, px.drv.readback_ema,
                         drive::speed(game::velocity(px.c)), game::surface_radius(p) - game::ground_radius(p),
                         game::surface_radius(t) - game::ground_radius(t), cur_anim, *(int32_t*)((uint8_t*)px.c + game::kLocoModeOff),
                         (int)game::grounded(px.c), game::herd_of(px.c) && game::herd_nest(game::herd_of(px.c)) ? 1 : 0,
-                        drive::speed(s.vel), px.walk_sp);
+                        drive::speed(s.vel), px.walk_sp, game::objects_near(t, 3.f, px.c).c_str(), hold_b);
         }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "

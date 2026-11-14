@@ -140,6 +140,8 @@ uint32_t place_holds_kept(); // how often an update's move back was undone
 void test_push(void* c, const net::Vec3& dir, float mps);
 void air_release_all();
 std::string air_status();
+// BUG-1106 (diagnostics): c's hold in the air, if any (its position): an old hold puts a creature back there
+bool air_held(void* c, net::Vec3* pos = nullptr);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
