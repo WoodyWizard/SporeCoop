@@ -1460,6 +1460,67 @@ static void test_lead_keep()
     CHECK(on < 0.15f);
 }
 
+// BUG-1094 (drive.agl_extrap): the host's NPC thrown straight up at 9.8 m/s, a state every 0.1 s, its proxy's buffer as
+// npc.cpp makes it (the lead, late_lead, smoothing). drive::at_sender_agl places it at this game's ground + the sample's
+// agl: with the newest state's agl the height stood for a state period and then stepped ~1 m (the proxy stood in
+// 128 of 166 frames, lab 20261113-221929 #2); with the fix it rises with the target in every frame
+static void test_agl_extrap()
+{
+    printf("a thrown body's agl moved on with its position\n");
+    const bool was_late = g_lead_late_fix, was_fall = g_lead_fall_fix;
+    const double was_ow = g_one_way;
+    g_agl_extrap_fix = k4_on("drive.agl_extrap"); // (SPORE_FIX_OFF=drive.agl_extrap: stands, FAIL)
+    g_lead_late_fix = g_lead_fall_fix = true;
+    g_one_way = 0.05;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    b.late_lead = true;
+    b.smooth_max = 8.f;
+    const float ground = 500.f, up = 9.8f; // (the terrain flat at radius 500 on both games)
+    auto state = [&](double st) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        const float h = st > 2.0 ? (float)(st - 2.0) * up : 0.f;
+        s.pos = {ground + h, 0.f, 0.f};
+        s.vel = {st > 2.0 ? up : 0.f, 0.f, 0.f};
+        s.agl = st > 2.0 ? h : kNoAgl;
+        return s;
+    };
+    int frames = 0, stood = 0;
+    float max_step = 0, max_off = 0;
+    float last = -1;
+    size_t k = 0;
+    for (double now = 10.0; now < 12.9; now += 1.0 / 60) {
+        while (10.0 + k * 0.1 + 0.05 <= now)
+            b.push(state(k * 0.1), 10.0 + k * 0.1 + 0.05), k++;
+        PlayerState o;
+        if (!b.sample(now, o) || !agl_known(o.agl))
+            continue;
+        const float shown = ground + o.agl; // (drive::at_sender_agl's radius)
+        if (now > 12.3 && last > 0) {
+            frames++;
+            if (shown - last < 0.02f)
+                stood++;
+            max_step = std::max(max_step, std::fabs(shown - last));
+            max_off = std::max(max_off, std::fabs(shown - o.pos.x));
+        }
+        last = shown;
+    }
+    printf("  %d frames in the air: stood %d, the largest step %.2f m, off the target %.2f m\n", frames, stood, max_step, max_off);
+    CHECK(frames > 20);
+    CHECK(stood == 0);
+    CHECK(max_step < 0.3f);
+    CHECK(max_off < 0.05f);
+    g_agl_extrap_fix = true;
+    g_lead_late_fix = was_late;
+    g_lead_fall_fix = was_fall;
+    g_one_way = was_ow;
+}
+
 static void test_discovery()
 {
     // BUG-0969: an ephemeral port, asked alone: a fixed port of the discovery range collided with another lane's unit
@@ -4203,6 +4264,7 @@ int main(int argc, char** argv)
         {"test_lead_late", test_lead_late},
         {"test_lead_keep", test_lead_keep},
         {"test_lead_fall", test_lead_fall},
+        {"test_agl_extrap", test_agl_extrap},
         {"test_discovery", test_discovery},
         {"test_lobby_roles", test_lobby_roles},
         {"test_shared_ledger", test_shared_ledger},

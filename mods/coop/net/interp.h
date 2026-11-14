@@ -221,7 +221,7 @@ inline bool g_puppet_fall_fix = true;
 // states came 0.2-0.3 s late was slowed to 0.1-1.8 m/s past each newest state: its puppet (placed on the target in the
 // air) stalled in mid-air and was put 0.9-1.1 m on when the next state came (puppet_stops "no jump of the puppet while it
 // walks", lab 20261113-203423 #4, 20261113-211453 #1). In the air it is moved on at the state's velocity up to max_extrap
-// as before BUG-0680 (its height stays the state's agl over this game's ground, drive.sender_agl). Off: 0.7.13.
+// as before BUG-0680 (its agl goes with it: drive.agl_extrap, BUG-1094). Off: 0.7.13.
 inline bool g_puppet_air_keep_fix = true;
 constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
 // BUG-1092 (`coop.fix drive.agl_lerp`): a state between two snapshots took the newer one's height over the sender's
@@ -231,6 +231,19 @@ constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
 // 20261113-185217). The agl is blended with the position (a state without agl: its height over the newer state's
 // ground, 0 m on the ground; a state already up but not yet marked airborne at its height). Off: 0.7.13.
 inline bool g_agl_lerp_fix = true;
+// BUG-1094 (`coop.fix drive.agl_extrap`): a state moved on past the newest snapshot (the lead of the host's NPCs, the
+// interpolation's extrapolation, the smoothing's offset) kept the newest state's height over the sender's terrain (agl)
+// while its position went on at the state's velocity, and drive::at_sender_agl places a body in the air by that agl: a
+// thrown NPC flying up at 9.8 m/s was put back to the same height in every frame of a state period and stepped 0.6-1.1 m
+// when the next state came (npc_walk "a thrown proxy flies with its NPC", stood in 128 of 166 frames, lab
+// 20261113-221929 #2). The agl goes with the position's radial move. Off: 0.7.13.
+inline bool g_agl_extrap_fix = true;
+// the agl of `out` after its position was moved from one at radius r0 (BUG-1094)
+inline void agl_follow(PlayerState& out, float r0)
+{
+    if (g_agl_extrap_fix && agl_known(out.agl) && r0 > 1.f)
+        out.agl += dist(Vec3{}, out.pos) - r0;
+}
 // BUG-1093 (`coop.fix net.send_phase`): the own state goes out every kStatePeriod s. Sent at the first frame at least
 // kStatePeriod after the last send, a game whose frames are a little shorter than that (48 ms at 21 fps, 40 ms at 25 fps)
 // sent every other frame: states 80-100 ms apart, half the rate (the lab's host at 21 fps: 91-95 ms). The partner's puppet
@@ -476,8 +489,11 @@ public:
         // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
         // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
         // two is a jump of the raw target that the offset takes
-        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && (member_rules() || proxy_smooth()))
+        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && (member_rules() || proxy_smooth())) {
+            const float r0 = dist(Vec3{}, out.pos);
             smooth(local_now, out, out.vel, false);
+            agl_follow(out, r0);
+        }
         return ok;
     }
 
@@ -542,6 +558,7 @@ private:
                         sm_shown_ = out.pos;
                     }
                 }
+                agl_follow(out, dist(Vec3{}, n.s.pos));
                 return true;
             }
             if (use)
@@ -604,6 +621,7 @@ private:
         out.pos.x += n.s.vel.x * (float)dt;
         out.pos.y += n.s.vel.y * (float)dt;
         out.pos.z += n.s.vel.z * (float)dt;
+        agl_follow(out, dist(Vec3{}, n.s.pos));
         if (fr < 1.f)
             out.vel = {n.s.vel.x * fr, n.s.vel.y * fr, n.s.vel.z * fr};
         return true;

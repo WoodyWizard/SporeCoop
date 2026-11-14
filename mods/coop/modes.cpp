@@ -622,6 +622,7 @@ COOP_FIX("drive.puppet_fall", "BUG-0680", net::g_puppet_fall_fix, "creature: the
 COOP_FIX("drive.air_keep", "BUG-1095", net::g_puppet_air_keep_fix, "creature: the partner's creature in the air flies on when its news is late instead of stopping in mid-air and jumping on");
 COOP_FIX("net.send_phase", "BUG-1093", net::g_send_phase_fix, "creature: the partner's creature stops where the partner stopped on a slow PC instead of walking on past it (the own state goes out 20 times a second at any frame rate)");
 COOP_FIX("drive.agl_lerp", "BUG-1092", net::g_agl_lerp_fix, "creature: the partner's creature rises with the partner at the start of a hop instead of stepping up at once");
+COOP_FIX("drive.agl_extrap", "BUG-1094", net::g_agl_extrap_fix, "creature, tribe: a thrown animal's copy flies with it instead of standing and jumping about 1 m every tenth of a second");
 COOP_FIX("drive.lead_throw", "BUG-0675", net::g_lead_throw_fix, "creature, tribe: the copy of a thrown NPC flies with it instead of waiting for each of its states");
 COOP_FIX("drive.lead_low", "BUG-0651", net::g_lead_low_fix, "tribe: the member lead stays on over a player network and on a loaded PC (the rule reads the link's own latency, not the mean round trip)");
 COOP_FIX("drive.lead_late", "BUG-0650", net::g_lead_late_fix, "tribe: a member's state that arrives late (a latency spike) is brought in over time, not at once (members jumped ~0.9 m per frame at a walk start in a spike)");
