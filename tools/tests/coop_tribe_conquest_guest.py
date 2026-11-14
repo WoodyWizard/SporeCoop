@@ -66,10 +66,10 @@ def click_at_close(guest):
         print('  the guest\'s game played no caption within 40 s of the fall', flush=True)
         return False
     guest.call(f'move {CAPTION_OK[0]} {CAPTION_OK[1]}')
-    while time.time() < since + 7.5:
+    while time.time() < since + 7.0:
         time.sleep(0.05)
     n = 0
-    while time.time() < since + 8.7:
+    while time.time() < since + 9.6:
         guest.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
         n += 1
         time.sleep(0.12)
@@ -83,6 +83,7 @@ def main():
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
+    print('  guest: ' + guest.call('coop.pauses trace')['out'].strip(), flush=True)  # BUG-1101: who pauses
     time.sleep(5)
     mem = members(guest)
     own = sorted(i for i, o in mem.items() if o != 0)[:3]

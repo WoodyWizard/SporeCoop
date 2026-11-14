@@ -1031,6 +1031,59 @@ bool time_paused()
     return tm && (tm[0x48] & 1);
 }
 
+static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* arr, std::vector<std::pair<uint32_t, int>>& out,
+                       int depth)
+{
+    if (!n || n == anchor || depth > 64 || !skg::readable(n, 0x18))
+        return;
+    pause_walk(*(const uint8_t* const*)(n + 4), anchor, arr, out, depth + 1);
+    int idx = *(const int*)(n + 0x14);
+    int cnt = idx >= 0 && idx < 256 && skg::readable(arr + idx * 8, 4) ? *(const int*)(arr + idx * 8) : 0;
+    if (cnt)
+        out.push_back({*(const uint32_t*)(n + 0x10), cnt});
+    pause_walk(*(const uint8_t* const*)n, anchor, arr, out, depth + 1);
+}
+
+std::vector<std::pair<uint32_t, int>> pause_reasons()
+{
+    std::vector<std::pair<uint32_t, int>> out;
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    const uint8_t* tm = get ? skg::cdecl_call<const uint8_t*>(get) : nullptr;
+    if (!tm || !skg::readable(tm, 0x6C))
+        return out;
+    const uint8_t* anchor = tm + 0x50;
+    pause_walk(*(const uint8_t* const*)(anchor + 8), anchor, *(const uint8_t* const*)(tm + 0x68), out, 0);
+    return out;
+}
+
+void time_pause(uint32_t reason, bool on)
+{
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get"), pause = H->sym("Simulator::cGameTimeManager::Pause"),
+                     resume = H->sym("Simulator::cGameTimeManager::Resume");
+    void* tm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (tm && pause && resume)
+        skg::thiscall<int>(on ? pause : resume, tm, reason);
+}
+
+uint32_t cinematic_pause_slot()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && skg::readable(cm + 0x160, 4) ? *(uint32_t*)(cm + 0x160) : 0;
+}
+
+bool cinematic_pause_resume()
+{
+    if (!cinematic_pause_slot())
+        return false;
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    static uint8_t data[0x40];
+    if (!mm)
+        return false;
+    skg::vcall<void>(mm, 0x14 / 4, 0x46AC986u, (void*)data, 0); // MessageSend (as EndCinematic sends its end)
+    return true;
+}
+
 bool end_cinematic(const char* where)
 {
     uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");

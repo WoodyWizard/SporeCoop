@@ -4021,3 +4021,35 @@ village at (327 -5 303)):
   view did not reach the hut") and every later box found no own member (they were sent to that village); the guests'
   bots gave no order in the whole Tribe. A target outside the minimap window would do all of that; three runs with the
   diagnostics (20261113-190337, -193334, -200131 with the failing seed) did not hit it.
+
+## The game time under a village caption: who pauses, who leaves a pause counted (2026-11-14, fix/w49-pause)
+<a id="tribe-caption-pause-leak"></a>
+
+BUG-1101. GOG 2024, Ghidra and lab lanes 5 / 7 (`coop.pauses trace` logs every Pause / Resume with its caller;
+tools/tests/coop_tribe_pause_leak.py, coop_tribe_conquest_guest.py --click-at-close). Follows #tribe-game-time-pauses
+and #tribe-conquer-caption.
+
+* ✔ (runtime) TRG_TotemPole_Conquer (5418B038) pauses nothing itself (busy `cinematic,input_lock` for its 8 s);
+  TRG_Upgrade (94D17D9F, queued by the upgrade 0xCDA4F0 with PlayCinematic(..., 1, 1, ...) while the conquest plays,
+  started by the manager's update 0xAE0050 ~15 ms after the conquest's end) pauses 0x4BF38A5 at its start and switches
+  to 0x600C4AE 6.46 s later (its script's `pause -pauseGraphics`); its end (forced or the OK) resumes that one. The
+  "paused" of a guest in the caption is that, plus the host's wait 0x4BF38A7 (BUG-1086: the host's own caption stands
+  its game, which counts as a host pause).
+* ✔ (Ghidra) The cinematic's pause is one slot, cCinematicManager +0x160 (0, 1 = 0x4BF38A5, 2 = 0x600C4AE), set by
+  the message 0x46AC0AC (a script's "pause" step, 0xADA430) and lifted by 0x46AC986 ("resume", 0xADA520) or the
+  cleanup 0xADF7C0 of every end (`SporeCoop::cCinematicManager_HandleMessage` 0xAE0DB0). The handler does not check
+  that a cinematic plays, and the next cinematic's start clears the slot without a Resume (0xAD8A90 ends with +0x160 =
+  0): a pause step that lands while no cinematic plays stays counted for the rest of the stage, no later caption lifts
+  it.
+* ✔ The time manager's counts are not clamped: Resume takes a count under 0 (Pause / Resume 0xB32330 / 0xB32360 add
+  -1 / +1, 0xB320B0 sets the stood flag when any count is > 0), so a stray Resume swallows the reason's next pause;
+  Toggle 0xB32390 flips a count only when it is 0 or 1.
+* ✔ (runtime, lane 7) The player's own stands on a guest in Tribe: Esc (the pause menu), F1, F2, Tab: **0x4BF38A4**
+  (flags 3, a modal window: UTFWin window manager +0x82C); P: **0x4BF38A8** (flags 7, no modal). CORRECTION
+  (2026-11-14, fix/w49-pause): #tribe-game-time-pauses names 0x4BF38A4 the end-of-Tribe stage card only; the pause
+  menu uses it too.
+* ✘ Not the cause of the campaign's stands (lab 20261114-034941 .. -040530, 9 conquests with the guest's click 7-9.6 s
+  into the caption, 7 x the caption's messages 0x44EE075 / 0x44EE076 sent or posted before / after the forced end in
+  the same call, frame caps 120 / 250 ms, main-thread stalls of 1.2-2.6 s around the pause step): every Pause had its
+  Resume. The reason the campaign's guests kept was not read; the fix is the safety net `tribe.guest_pause_net`
+  (released reasons logged: the next stand names its reason and caller with `coop.pauses trace`).

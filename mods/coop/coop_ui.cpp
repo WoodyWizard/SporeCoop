@@ -1912,6 +1912,7 @@ bool step_aside(int x, int y, double secs)
     return true;
 }
 int input_lock_now() { return input_lock(); }
+bool game_modal_up() { return game_modal() != nullptr; }
 
 void tick()
 {

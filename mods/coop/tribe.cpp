@@ -2684,6 +2684,107 @@ static void gameover_guest_tick(double now)
         gameover_pause(false, "no news from the host for 10 s");
 }
 
+// BUG-1101: in campaign_tribe_noclick (0.7.14 final check) two guests' game time stood (`busy=paused`: no cinematic, no
+// input lock, no box, no wait of ours) from a village caption's forced end (BUG-0983) to the end of Tribe (30 / 16
+// min): their world froze, proxies hung in the air. Which pause the game left counted was not caught (the runs that
+// followed, with every Pause / Resume logged, never left one; docs/re/tribe.md#tribe-caption-pause-leak). ✔ (Ghidra)
+// one way the game can leave one: the cinematic manager's own pause (+0x160, a script's "pause" step) is cleared
+// without a Resume when the next cinematic starts (0xAD8A90), so a pause step taken while no cinematic plays stays
+// counted for good. A safety net instead of the unknown cause: a guest's game time that stands 20 s in Tribe with
+// only the reasons a caption or a modal of the game counts (0x4BF38A5 / 0x600C4AE the cinematic's, 0x4BF38A7 the UI
+// modal one) while nothing holds it (no cinematic, input lock, modal window, the host's wait) is released: the
+// cinematic's own pause through its "resume" message, the rest by Resume, logged with the reasons. The player's own
+// stands (P 0x4BF38A8, the pause menu 0x4BF38A4, an editor) are never touched; a released reason whose owner resumes
+// it later is paused back to 0 (a count under 0 would swallow the reason's next pause).
+// Old (`coop.fix tribe.guest_pause_net off`): the guest's game stands until the stage ends.
+static bool g_pause_net_fix = true;
+COOP_FIX("tribe.guest_pause_net", "BUG-1101", g_pause_net_fix,
+         "tribe: a guest's game time left standing 20 s by a caption's pause that nothing holds is released (logged)");
+constexpr double kPauseNetWait = 20.0;
+static double g_net_since, g_net_checked, g_net_ran_at;
+static uint32_t g_net_releases, g_net_rebalanced;
+static std::map<uint32_t, int> g_net_released; // reason -> counts the net resumed (paused back if they go under 0)
+static bool net_reason(uint32_t r) { return r == 0x4BF38A5u || r == 0x600C4AEu || r == 0x4BF38A7u; }
+static std::string reasons_text(const std::vector<std::pair<uint32_t, int>>& rs)
+{
+    std::string t;
+    char b[32];
+    for (auto& [r, c] : rs) {
+        snprintf(b, sizeof b, " %08X=%d", r, c);
+        t += b;
+    }
+    return t.empty() ? " none" : t;
+}
+
+static void pause_net_release(void*)
+{
+    if (game::mode_id() != modes::kTribe || world::cinematic_playing() || g_go_paused)
+        return;
+    std::string before = reasons_text(world::pause_reasons()), how;
+    if (world::cinematic_pause_slot() && world::cinematic_pause_resume())
+        how = " the cinematic's own pause by its resume;";
+    for (auto& [r, c] : world::pause_reasons())
+        if (net_reason(r) && c > 0) {
+            for (int k = 0; k < c; k++)
+                world::time_pause(r, false);
+            g_net_released[r] += c;
+            char b[48];
+            snprintf(b, sizeof b, " %08X x%d by Resume;", r, c);
+            how += b;
+        }
+    g_net_releases++;
+    H->log(M, SK_WARN, "tribe: this game's time stood %.0f s with nothing holding it (reasons:%s): released%s now%s, paused=%d "
+           "(BUG-1101, %u)", kPauseNetWait, before.c_str(), how.empty() ? " nothing" : how.c_str(),
+           reasons_text(world::pause_reasons()).c_str(), (int)world::time_paused(), g_net_releases);
+}
+
+// guest, every tick (cheap: once a second)
+static void pause_net_tick(double now)
+{
+    if (now - g_net_checked < 1.0)
+        return;
+    g_net_checked = now;
+    if (game::mode_id() != modes::kTribe) {
+        g_net_since = g_net_ran_at = 0;
+        g_net_released.clear();
+        return;
+    }
+    auto rs = world::pause_reasons();
+    for (auto it = g_net_released.begin(); it != g_net_released.end();) { // the owner's late Resume: back to 0
+        int c = 0;
+        for (auto& [r, n] : rs)
+            if (r == it->first)
+                c = n;
+        int k = c < 0 ? std::min(-c, it->second) : 0;
+        for (int i = 0; i < k; i++)
+            world::time_pause(it->first, true);
+        if (k) {
+            it->second -= k;
+            g_net_rebalanced += k;
+            H->log(M, SK_INFO, "tribe: the pause %08X released by the net was resumed by its owner too: counted back to 0 "
+                   "(BUG-1101)", it->first);
+        }
+        it = it->second > 0 ? std::next(it) : g_net_released.erase(it);
+    }
+    bool paused = world::time_paused();
+    if (!paused)
+        g_net_ran_at = now; // (the stage's own entry stand, BUG-0313, comes before the game ever ran)
+    bool held = world::cinematic_playing() || coop_ui::input_lock_now() > 0 || coop_ui::game_modal_up() || g_go_paused;
+    bool own = false; // a reason of the player's (P, the pause menu), an editor's, the stage card's ...
+    for (auto& [r, c] : rs)
+        own |= c > 0 && !net_reason(r);
+    if (!g_pause_net_fix || !paused || held || own || !g_net_ran_at || !is_guest()) {
+        g_net_since = 0;
+        return;
+    }
+    if (!g_net_since)
+        g_net_since = now;
+    if (now - g_net_since < kPauseNetWait)
+        return;
+    g_net_since = 0;
+    H->run_outside_frame(pause_net_release, nullptr);
+}
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
@@ -5573,6 +5674,29 @@ COOP_FIX("tribe.conquer_caption_guest", "BUG-0983", g_guest_caption_fix,
 static uint32_t g_village_cine, g_village_captions_closed;
 static double g_village_cine_since;
 static bool g_village_cine_ending;
+// tests (BUG-1101, `coop.tribe caption_race <msg hex> <send|post> <before|after>`): the guest's next forced end of a
+// village caption also sends (MessageSend, at once) or posts (MessagePost, the game's next message pump) that message
+// of the caption's buttons, before or after its own EndCinematic: a player's OK in the same moment
+static uint32_t g_race_msg;
+static bool g_race_post, g_race_before;
+static void caption_race(bool before)
+{
+    if (!g_race_msg || before != g_race_before)
+        return;
+    uint32_t msg = g_race_msg;
+    g_race_msg = 0;
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    static uint8_t data[0x40];
+    if (!mm)
+        return;
+    if (g_race_post)
+        skg::vcall<void>(mm, 0x18 / 4, msg, (void*)nullptr, (void*)nullptr, 0);
+    else
+        skg::vcall<void>(mm, 0x14 / 4, msg, (void*)data, 0);
+    H->log(M, SK_INFO, "tribe: tests: the caption's message %08X %s %s the forced end (now %08X, BUG-1101)", msg,
+           g_race_post ? "posted" : "sent", before ? "before" : "after", world::cinematic_id());
+}
 static void village_caption_tick(double now)
 {
     uint32_t id = world::cinematic_id();
@@ -5609,10 +5733,13 @@ static void village_caption_tick(double now)
                 C.notice("the caption closed by itself: the tribe goes on");
         }
              : +[](void*) { // BUG-0983: the guest's own game only (no notice: the host's tribe did not wait)
-                   if (!village_cine(world::cinematic_id()) || game::mode_id() != modes::kTribe ||
-                       !world::end_cinematic("in Tribe after 8 s on a guest (BUG-0983)"))
+                   if (!village_cine(world::cinematic_id()) || game::mode_id() != modes::kTribe)
+                       return;
+                   caption_race(true);
+                   if (!world::end_cinematic("in Tribe after 8 s on a guest (BUG-0983)"))
                        return;
                    g_village_captions_closed++;
+                   caption_race(false);
                },
         nullptr);
 }
@@ -5809,6 +5936,8 @@ void tick(double now)
     tribe_hunt_tick();
     if (is_guest() || g_go_paused)
         gameover_guest_tick(now); // BUG-0960 (also outside Tribe: the wait ends there)
+    if (is_guest())
+        pause_net_tick(now); // BUG-1101
     foreign_note_tick(now); // BUG-1087
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
@@ -6109,6 +6238,9 @@ std::string status()
              (int)g_go_host_up, (unsigned)g_go_why, g_go_hut_ups, g_go_sent, (int)g_go_paused, g_go_pauses, g_go_resumes, g_hp_ups,
              g_foreign_clicks, g_foreign_told, g_body_cards, g_hold_only_ended);
     out += b;
+    snprintf(b, sizeof b, "tribe pause net: releases=%u rebalanced=%u standing=%.0f s (BUG-1101)\n", g_net_releases,
+             g_net_rebalanced, g_net_since ? H->time_seconds() - g_net_since : 0.0);
+    out += b;
     std::string chiefs;
     for (auto& [o, c] : g_chief)
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
@@ -6290,6 +6422,27 @@ std::string debug(const std::vector<std::string>& a)
                  (int)(tc != nullptr), (int)(tc && game::listed(tc, 0x18EB4B7u)), g_cmds_done - d0, g_cmds_rejected - r0,
                  g_last_cmd.c_str());
         return std::string(b) + (mc && game::listed(mc, 0x18EB4B7u) ? ai_line(mc) : std::string("gone"));
+    }
+    if (a.size() >= 4 && a[0] == "caption_race") { // see caption_race (BUG-1101)
+        g_race_msg = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        g_race_post = a[2] == "post";
+        g_race_before = a[3] == "before";
+        return "armed " + a[1] + " " + a[2] + " " + a[3];
+    }
+    if (a.size() >= 2 && a[0] == "cine") { // cine <name> (tests, BUG-1101): this game plays that cinematic, outside the frame
+        static std::string name;
+        name = a[1];
+        H->run_outside_frame(
+            +[](void*) {
+                uintptr_t get = H->sym("Simulator::cCinematicManager::Get"),
+                          play = H->sym("Simulator::cCinematicManager::PlayCinematic");
+                void* cm = get ? skg::cdecl_call<void*>(get) : nullptr;
+                if (cm && play)
+                    thiscall<int>(play, cm, name.c_str(), 1, 1, 0, 0, 0);
+                H->log(M, SK_INFO, "tribe: tests: played the cinematic %s (now %08X)", name.c_str(), world::cinematic_id());
+            },
+            nullptr);
+        return "playing " + name;
     }
     if (a.size() >= 2 && a[0] == "stale_chief") { // stale_chief <id>: as if a former chief's freed block
         // now held this member (another tribe's citizen): the next chiefs_tick must leave it alone

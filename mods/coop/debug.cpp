@@ -82,8 +82,40 @@ static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* a
         out += b;
     pause_walk(*(const uint8_t* const*)n, anchor, arr, out, depth + 1);
 }
-int c_pauses(void*, int, const char* const*, SkOut* out)
+// `coop.pauses trace` (tests, BUG-1101): every Pause / Resume of the game's time is logged with its reason, the
+// count after it and the caller (the return address), to name who leaves a reason counted
+typedef int(SK_THISCALL* TimeReason_t)(void*, uint32_t);
+static TimeReason_t o_TimePause, o_TimeResume;
+static int SK_THISCALL h_TimePause(void* tm, uint32_t reason)
 {
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    int n = o_TimePause(tm, reason);
+    H->log(g_self, SK_INFO, "pauses: Pause(%08X) -> %d from %08X (BUG-1101 trace)", reason, n, (unsigned)ret);
+    return n;
+}
+static int SK_THISCALL h_TimeResume(void* tm, uint32_t reason)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    int n = o_TimeResume(tm, reason);
+    H->log(g_self, SK_INFO, "pauses: Resume(%08X) -> %d from %08X (BUG-1101 trace)", reason, n, (unsigned)ret);
+    return n;
+}
+int c_pauses(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "trace")) {
+        if (!o_TimePause) {
+            H->hook_create(g_self, (void*)H->sym("Simulator::cGameTimeManager::Pause"), (void*)h_TimePause, (void**)&o_TimePause);
+            H->hook_create(g_self, (void*)H->sym("Simulator::cGameTimeManager::Resume"), (void*)h_TimeResume, (void**)&o_TimeResume);
+        }
+        SAY("pause trace %s", o_TimePause && o_TimeResume ? "on" : "failed");
+        return o_TimePause && o_TimeResume ? 0 : 1;
+    }
+    if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "sub"))) { // tests (BUG-1101): one raw Pause / Resume
+        uint32_t r = (uint32_t)strtoul(argv[2], nullptr, 16);
+        world::time_pause(r, !strcmp(argv[1], "add"));
+        SAY("%s %08X: paused=%d", argv[1], r, (int)world::time_paused());
+        return 0;
+    }
     uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
     const uint8_t* tm = get ? skg::cdecl_call<const uint8_t*>(get) : nullptr;
     if (!tm || !skg::readable(tm, 0x6C)) {
@@ -1070,7 +1102,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z> | target none|<puppet address> [any] | walk [raw] | walkto <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
+    host->command_add(self, "coop.pauses", "coop.pauses [trace | add <hex> | sub <hex>] - the game's pause reasons counted now (tests, BUG-0313); trace: log every Pause / Resume; add / sub: one Pause / Resume of a reason (BUG-1101)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.msglisteners", "coop.msglisteners [hex id] - the game's listeners of a message (RE, BUG-0956; default 0x212D3E7, the mode change)",
                       c_msglisteners, nullptr, SK_CMD_MAIN_THREAD);
