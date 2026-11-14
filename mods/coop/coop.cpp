@@ -6076,6 +6076,12 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_settle(atof(argv[2])).c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "chunk")) { // tests (BUG-1099): chunk p<proxy id> | <hex address>
+        void* t = argv[2][0] == 'p' ? npc::debug_proxy_creature((uint16_t)atoi(argv[2] + 1))
+                                    : (void*)strtoul(argv[2], nullptr, 16);
+        SAY("%s", npc::debug_chunk(t).c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "reusehunt")) {
         if (argc < 3) {
             SAY("%s", npc::debug_reuse_status().c_str());
@@ -6118,13 +6124,16 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         const char* bb = strchr(fl, 'b');
         int burst = bb ? std::max(1, atoi(bb + 1)) : 1;
         // k: the misses stay alive until the hunt ends (their blocks do not go back first); e<N>: a try every N frames
-        // f<N>: once the target's heap chunk is free, at most N more tries (BUG-0825)
+        // f<N>: once the target's heap chunk is free, at most N more tries (BUG-0825); w<N>: no try before it is free, the round ends
+        // when it is not free after N frames (default 60, BUG-1099)
         const char* ee = strchr(fl, 'e');
         const char* ff = strchr(fl, 'f');
         SAY("%s%s", x ? "destroyed by the game; " : "",
             npc::debug_reuse_hunt(t, argc > 3 ? atoi(argv[3]) : 120, sp, now_tries, burst, herd, &at, false,
                                   strchr(fl, 'r') != nullptr, // r: Create with its reuse flag
                                   strchr(fl, 'k') != nullptr, ee ? atoi(ee + 1) : 1).c_str());
+        if (const char* ww = strchr(fl, 'w'))
+            npc::debug_reuse_free_first(atoi(ww + 1));
         if (ff)
             npc::debug_reuse_wait_free(atoi(ff + 1) > 0 ? atoi(ff + 1) : 20);
         SAY("%s", npc::debug_reuse_status().c_str());

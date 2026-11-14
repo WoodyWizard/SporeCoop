@@ -7875,3 +7875,24 @@ put 0.8-2 m under the ground is on it again within 1 s (the game's physics does 
 placing can be what the campaigns' monitor saw. `coop.tribe airprobe -1000` lists every member (`surf=` over the
 game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-player campaigns hit the real case
 (8 trace lines in November, in raids and epic fights): look for the tribe watch's `is .. m under the ground` line.
+## Reuse hunts that wait for the free (2026-11-14, fix/w49-reuse)
+<a id="testing-w49-reuse"></a>
+
+* BUG-1099: `npc_ai_lookup` and `proxy_identity` needed a new creature in a freed proxy's block and got it by luck
+  (0 of 21 rounds in the final check 20261114-005006). Their hunt is now `coop.npc reusehunt p<id> 300 xwkb4f40`:
+  `w<N>` makes no creature until the block is free (the free check also sees a merged chunk now, the target's own
+  header grown, [docs/re/creature.md#creature-reuse-merged](re/creature.md#creature-reuse-merged)) and ends the round
+  when it is not free after N frames (60); `k` keeps the misses, `b4` 4 a frame, `f40` 40 tries after the free; a
+  target whose chunk before is free (header bit 0 clear) ends the hunt at once. The tests take proxies whose heap
+  neighbours are in use first (`coop.npc chunk p<id>`: `size= prev_used= used= next_used= refs=`), hunt a proxy made
+  again once more, up to 60 rounds in 170 s. `SPORE_REUSE_FLAGS=x` (the hunt before), `SPORE_REUSE_SETTLE`,
+  `SPORE_REUSE_FRAMES`, `SPORE_REUSE_ROUNDS`, `SPORE_REUSE_HUNT_S`; `SPORE_REUSE_DIAG=1` prints the chunk per round,
+  `SPORE_REUSE_STALE=1` also `coop.staleref` (a 7 s scan: fails the hitch gate).
+* Measured on lane 6, each after 5 warm tests (creations_package_close, creature_kills, creature_join_apart,
+  social_meter_retry, kit_present_fault; `--in-order`): before (old hunt, 20261114-031112) npc_ai_lookup 1 reuse in 8
+  rounds, proxy_identity 2 in 10 (passing by luck; the final check 0 in 21); after: 20261114-043831, -044423,
+  -045018 all PASS, npc_ai_lookup reused in round 1 each time, proxy_identity 2 reuses in 2-3 rounds; one cold guest
+  hunted to the end: 21 of 27 rounds. proxy_identity_tribe PASS (20261114-045609, 1 reuse in 3 rounds). Twins still
+  FAIL: 20261114-045701 (`npc.ai_lookup_live` off: engaged #1; `npc.proxy_identity` off: driven [1, 2]).
+* In that twin run creature_kills (cold, the first test) failed "killed host NPC #20 with real input (3 combat
+  keys)"; it passed in the 6 runs before on this branch and its code is not touched (seen once).

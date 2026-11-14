@@ -4696,3 +4696,27 @@ BUG-1093. Follows tribe.md#tribe-lead-fall (drive.puppet_fall, BUG-0680). Lanes 
   0.7 s) then filled half of it: knee 0.15-0.17 s, a stop in the spike shown 0.46 m past (bodyrec 0.52 m). With
   net.send_phase the puppets' knee reads the last 64 horizons (kHorizonLongN, 3.2 s again); the members' and proxies'
   lead keeps its 32.
+
+## A destroyed creature's block merges with its own blocks behind it (2026-11-14, fix/w49-reuse)
+<a id="creature-reuse-merged"></a>
+
+BUG-1099 (npc_ai_lookup 0 reuses in 21 rounds, final check 20261114-005006). Follows #creature-freed-in-cinematic.
+Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chunk p<id>` and the status's new
+`hdr_now= next_now= refs_now=` (lane 6, 2026-11-14).
+
+* ✔ Outside a cinematic the game frees a proxy's creature block at once (DestroyInstance) in nearly every round, and
+  the freed chunk merges with the chunk after it: the header before the creature grows from 0x16A9 to 0x2451-0x9229
+  (the creature's own blocks behind it, freed with it: #creature-freed-in-cinematic names the cModifiers block right
+  after it). The old free check (bit 0 of the next chunk's header at creature - 4 + 0x16A8) then reads a stale word:
+  it said "not freed" in 13 of 14 such rounds while the header had grown (the inference "the guest's heap seldom
+  hands the block back" in docs/known-issues.md#issue-npc-ai-lookup-reuse was this).
+* ✔ A header with bit 0 clear (0x16A8: the chunk before is free) merges backward: no creation then starts at the
+  creature's address; 8 of 21 proxies of a cold guest had it after a few hunts (neighbouring proxies are adjacent
+  blocks, a hunt frees one).
+* ✔ A creation right after the free takes the merged chunk's start often: with the tries starting in the frame the
+  header changes (`w`), 4 a frame, the misses kept until 40 tries after it (`kb4f40`), 21 of 27 rounds reused the
+  address (one cold guest, 2026-11-14); the old hunt (a creature a frame from the destroy on, each miss destroyed at
+  once) 0 of 21 (final check), 1 of 8 and 2 of 10 (aged lane 6, 20261114-031112). The misses destroyed at once give
+  their own fresh blocks back, which the next try takes again.
+* The object's +8 before the destroy (13-21) says nothing about whether the block comes back; the distance to the
+  guest's avatar neither (hits at 76-101 m and misses at 7-110 m).
