@@ -1408,6 +1408,8 @@ class Campaign:
                 break
         self.note(f'tribe: raid clicks on the hut of village {tk} by {raid.get("clicks", [])}'
                   + (f' (the host\'s click: {raid["why"]})' if raid.get('why') else ''))
+        print('  BUG-1091 diag: bot step counts ' + '; '.join(f'{pl.name} {sorted(pl.count.items())}' for pl in g.p),
+              flush=True)
 
     def tribe_host_click(self, g, pl, raid):
         """the host's own attack click on the raided hut, as a player gives it: the view on its members, a box round
@@ -1430,12 +1432,14 @@ class Campaign:
                 break
         if not sel:
             raid['why'] = f'no member selected ({len(mine)} own)'
+            self.tribe_click_diag(pl, st, mine, raid)
             return False
         pl.mode(1)
         if not pl.look(raid['hut']):
             pl.calibrate()  # the view turned: the minimap's map again
             if not pl.look(raid['hut']):
                 raid['why'] = 'the view did not reach the hut'
+                self.tribe_click_diag(pl, st, mine, raid)
                 return False
         pl.centre()
         tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
@@ -1447,6 +1451,29 @@ class Campaign:
         ok = pl.given > n0 and 'action=15' in pl.last_order()[0]
         raid['why'] = '' if ok else f'the click gave {pl.last_order()[0][:60]!r}'
         return ok
+
+    def tribe_click_diag(self, pl, st, mine, raid):
+        """BUG-1091 (diagnostics): where the host's view is when its box finds no own member"""
+        import play_tribe
+        try:
+            objs = play_tribe.screen(pl.con)
+            ons = pl.on_screen(objs)
+            own_on = [o for o in ons if o[0].startswith('member') and int(o[0][6:]) in mine]
+            mem_on = [o for o in ons if o[0].startswith('member')]
+            c = pl.centre()
+            pos = {i: tuple(round(v) for v in st[i]['pos']) for i in mine[:8]}
+            sel = [i for i, v in play_tribe.tribe_state(pl.con).items() if v['sel']]
+            n = raid['diag'] = raid.get('diag', 0) + 1
+            shot = os.path.join(lane.out_dir('shots'), f'bug1091_{time.strftime("%H%M%S")}.png') if n <= 3 else None
+            if shot:
+                self.host.call('shot ' + shot)
+            print(f'  BUG-1091 diag: own on screen {len(own_on)}/{len(mine)}, members on screen {len(mem_on)}, '
+                  f'objs {len(objs)}, view centre {tuple(round(v) for v in c) if c else None}, cur '
+                  f'{tuple(round(v) for v in pl.cur) if getattr(pl, "cur", None) else None}, zoom {pl.zoom}, '
+                  f'selected now {sel[:8]}, own at {pos}, status {play_tribe.status(pl.con)[:300]!r}, shot {shot}',
+                  flush=True)
+        except Exception as e:  # (diagnostics only)
+            print(f'  BUG-1091 diag failed: {e!r}', flush=True)
 
     def tribe_order(self, raid):
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction
