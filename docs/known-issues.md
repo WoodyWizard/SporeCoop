@@ -3457,6 +3457,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   row (sync-check MISMATCH, `t: 1 apart`), the other guests match.
 * Reproduce: campaign_tribe_end (lab 20261113-125221, 4 s after a `coop.tribe spawn 6` during the raids).
 * Ticket: BUG-1082.
+* Fixed (2026-11-13, fix/w49-raid2): the host's member was in the air (114 m and 12 m, purely radial), the guest's
+  mirror on its ground: `tribe.mirror_hang` + `game.air_culled` (docs/re/tribe.md#tribe-member-hang), test
+  tribe_member_hang. Why the host's game holds members up there is not known (below the ticket).
 
 ## Tribe: caught faults at 0xC23469 on a guest while the host edits the City Hall (2026-11-13, fix/w49-camp)
 <a id="issue-tribe-holdbundle-fault"></a>
@@ -3473,6 +3476,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the Tribe play; the monitor's ground gate fails the campaign.
 * Reproduce: the full campaign (lab 20261113-142203, member #16 of Carol).
 * Ticket: BUG-1088.
+* Fixed (2026-11-13, fix/w49-raid2): the member was swimming (radius 499.77, the planet's water surface), the game's
+  own; the mod's member heights count over the water's surface now (`monitor.tribe_water`,
+  docs/re/tribe.md#tribe-member-swim), test tribe_member_air.
 
 ## Civ: a guest's proxies of host NPCs that the host has at the planet's centre (2026-11-13, fix/w49-camp)
 <a id="issue-civ-npc-centre"></a>

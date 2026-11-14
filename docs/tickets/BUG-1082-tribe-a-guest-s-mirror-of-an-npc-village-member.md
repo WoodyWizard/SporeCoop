@@ -1,19 +1,19 @@
 ---
 id: BUG-1082
 title: Tribe: a guest's copy of a member 12-114 m off the host's (sync-check MISMATCH) during the campaign's raids
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-13
 source: lab
 role: guest
-versions: rel/0.7.14
-fixed_in:
-branch:
-commits:
-tests: campaign_tribe_end (lab gate sync-check)
+versions: 0.7.13 and earlier
+fixed_in: unreleased
+branch: fix/w49-raid2
+commits: 22c48f58
+tests: tribe_member_hang, campaign_tribe_end (lab gate sync-check)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-member-hang
 related:
 ---
 
@@ -32,16 +32,35 @@ bt=FFFFFFFF`: 11.9 m apart on two checks 3 s apart (the host and Dave only). The
 Reproduce: `lab.py run campaign_tribe_end` and look for "sync-check: MISMATCH ... t: 1 apart" in the game logs.
 
 ## Root cause
-Not analysed (outside fix/w49-camp's package). Inferred candidates: the raided village's members killed and replaced
-while the guest kept the old mirror id, or a member the conquest moved to another village.
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (logs): both mismatches were a member in the air on the host and its mirror on the guest's ground: the two
+positions lie on one radial line (direction equal to 4 decimals), radius 617.9 vs 504.0 (NPC member #45, 114 m up,
+node 0x04625F64) and 518.0 vs 506.2 (Dave's #15, 12-14 m up, node 0x0485FD10, 12.9 m/s). Node 0x0485FD10 is the
+citizen's airborne node (static: its tick 0xDA7AE0 runs while the grounded byte is 0, anim 0x0493840C, the one in the
+mismatch); the same campaigns logged members in it 3-15 m up with speed 0 for 7-28 s.
+Observed (runtime, tribe fixture, `coop.tribe hang` holding host members 12/60/110 m up): the guests' mirror stood on
+its terrain for three reasons in tribe.mirror_air (BUG-0946): (1) heights over drive::g_agl_max 30 m are never placed;
+(2) the guest's physics update puts a creature off the guest's screen onto the plain terrain without setting the
+grounded byte, so the hold's reassert never acts (lab 20261113-182546: list received 5 times a second, mirror placed
+every frame, on its ground in 12 of 14 reads); (3) the list's 0.35 s freshness against a slow host (frames 0.2-0.4 s
+apart in the 4-player campaigns) and 64 members a list.
+Not found (inferred open): why the host's game holds a member up there with speed 0. Not the mod (no hold on host
+members), not reproduced in 3 raid probes with the co-op epic (one host-only). The game's own state; the fix makes
+every guest show it as the host has it.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`tribe.mirror_hang` (tribe.cpp send_member_air / guest_tick): any height (2000 m), the air list held 1 s, sent in lists
+of 64 as often as needed, and a landing (a member of the last list on its ground) sent once with height 0.
+`game.air_culled` (game.cpp after_physics): after the game's physics update a creature the mod holds in the air that
+is more than 0.5 m under its hold is put back (not grounded, the hold's velocity). Off: `coop.fix tribe.mirror_hang
+off`, `coop.fix game.air_culled off` (0.7.13). Diagnostics: `coop.tribe airprobe`, `coop.tribe hang`, the
+`culled_lifts=` / `landed=` counters in `coop.tribe anims`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tribe_member_hang (new, host at 10 fps over the player network): SPORE_FIX_OFF=tribe.mirror_hang,game.air_culled FAIL
+out/lab/20261113-183101 (mirror within 3 m in 4/14, 1/14, 3/13 reads, on its ground); PASS out/lab/20261113-182858 and
+out/lab/20261113-183101-2 (14/14, 14/14, 14/14; culled_lifts every frame). The campaign itself was not rerun (80 min);
+final check: campaign_tribe_end's sync-check gate.
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: fixed on fix/w49-raid2 (tribe.mirror_hang, game.air_culled; test tribe_member_hang).

@@ -3842,3 +3842,56 @@ BUG-1072. GOG 2024, Ghidra and lab lane 7 (a probe reading both games' animation
   +0xA0 / +0xB0 and time + RTT / 2 when 0.1 s or more off. `tracks fix= sent= rx= set=` in `coop.tribe anims`.
 * ? Which animations 0x05EF4EE1 / 0x0354559B are (names not found) and what starts them (likely the citizen's tool /
   posture code: the chief with its staff); not needed for the fix.
+
+## Members held in the air on the host, and their mirrors (2026-11-13, fix/w49-raid2)
+<a id="tribe-member-hang"></a>
+
+BUG-1082. GOG 2024, campaign logs of fix/w49-camp, lanes 2 and 3 (tribe fixture, `coop.tribe airprobe`, the test
+tribe_member_hang).
+* ✔ (logs) Both sync-check mismatches of the campaign's raids were a host member off its ground, the guest's mirror on
+  its own: the two positions lie on one radial line (direction equal to 4 decimals), host radius 617.9 vs 504.0 (an
+  NPC village member 114 m up, node 0x04625F64, health full, speed 0.1) and 518.0 vs 506.2 (Dave's member 12-14 m up,
+  node 0x0485FD10, moving at 12.9 m/s). The same campaigns logged player members in node 0x0485FD10 at 3-15 m with
+  speed 0 for 7-28 s (20261113-125221, -142311, -160426-2), each a few minutes after "an epic creature comes!".
+* ✔ (static, objdump) Node **0x0485FD10** (action table 0x1593BC0: enter 0xDB1BA0, tick 0xDA7AE0, exit 0xDA7B80) is the
+  citizen's airborne node: its tick keeps it running while the grounded byte +0x137 is 0 (playing anim 0x0493840C, the
+  one both games had in the mismatch) or while +0x110 & 0x100 (anim 0x048601C0); grounded, it ends through 0xC0C070.
+  So the member was not grounded and not falling (speed 0) on the host. ? What holds it there: not found. Not the mod
+  (no air_hold / set_grounded on a host member outside the tests), not seen in the lab: 3 raid probes on the fixture
+  with the co-op epic (one with the host alone) had no member in 0x0485FD10.
+* ✔ (runtime) A guest's mirror of a member the host holds up (test: `coop.tribe hang <id> <m> <s>`, placed after every
+  physics update) stood on the guest's terrain for three reasons of tribe.mirror_air (BUG-0946):
+  1. a height over drive::g_agl_max (30 m) is never placed (the 114 m member; 60 and 110 m in the test: every read);
+  2. **the guest's physics update puts a creature off its screen onto the plain terrain** (the BUG-0434 path,
+     docs/re/creature.md#creature-culled-ground-fix) without setting the grounded byte, so air_reassert (grounded only)
+     never acts: lab 20261113-182546, the air list received 5 times a second and the mirror placed every frame, read on
+     its ground in 12 of 14 reads (12 m), only with the guest's camera on it did it stay up (earlier runs);
+  3. the list's 0.35 s freshness against a host whose frames come 0.2-0.4 s apart (a 4-player host at 18-20 fps with
+     200-360 ms hitches sends every 0.12 s of its own frames), and at most 64 members a list.
+* Fix `tribe.mirror_hang` (tribe.cpp): any height (2000 m), the list held 1 s, lists of 64 as often as needed, and a
+  member of the last list now on its ground sent once with height 0 (a landing ends the hold at once). Fix
+  `game.air_culled` (game.cpp after_physics): after the game's physics update every creature the mod holds in the air
+  that is more than 0.5 m under its hold on its radial line (moved under 2 m sideways) is put back at the hold, not
+  grounded, with the hold's velocity (`coop.tribe anims`: `culled_lifts=`, every frame of an off-screen hold).
+* `coop.tribe airprobe [min m]`: every member of every tribe over <min> m (node, locomotion mode +0x2B0, grounded
+  +0x137, velocity, container +0x34, the nearest epic) and every live epic, with the planet's water radius.
+
+## Swimming members: the water's surface, not the sea bed (2026-11-13, fix/w49-raid2)
+<a id="tribe-member-swim"></a>
+
+BUG-1088. GOG 2024, lanes 2 and 3, tribe fixture (raid probes 20261113-174018, -175131 host alone, -175142).
+* ✔ (static, objdump) The planet's water surface as a radius: the terrain kind 0xB83110 (a cPlanetModel method, docs
+  above) takes the terrain object as GetHeightAt does (cPlanetModel +0x24, vt 0xC) and compares
+  `terrain+0x34 + terrain+0x38 * terrain+0x3C` with GetHeightAt: more is water. `game::water_radius()`, printed by
+  `coop.ground` (`water <r> over_water <m>`) and `coop.tribe airprobe`.
+* ✔ (runtime) The fixture's water radius reads 499.98. Swimming members are 0.6-3.1 m under it (their size: NPC members
+  498.1-499.4, the scaled leader 496.85), 3-28 m over the sea bed (GetHeightAt), in locomotion mode 3, not grounded,
+  6-7 m/s along the surface, for 10-20 s while crossing; a knocked-out one floats with its velocity falling
+  (-43 m/s) and its position held. The same with no session (the guest left first, 20261113-175131): the game's own.
+  Raided NPC defenders fled into the water this way in every raid probe.
+* ✔ (logs) BUG-1088's member #16 (full campaign 20261113-142203) was at radius 499.77 (Cadian's water about 499.7,
+  docs/re/creature.md#creature-deep-water), the swimmers of campaign_tribe_end 20261113-153633 at 498.85; the BUG-1082
+  members above were 10-118 m over any water.
+* Fix `monitor.tribe_water` (coop.cpp member_agl_of): over water a member's height is min(height over the terrain,
+  max(0, radius - water radius)): the trace's agl / agl_hi / agl_held and the "tribe: member #.. is .. m over the
+  ground" lines read 0 for a swimmer and the height over the water for one higher up.

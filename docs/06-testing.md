@@ -7635,3 +7635,21 @@ MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 o
 20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
 full campaign 20261113-142203), BUG-1089 (a guest's proxies of Civ NPCs the host has at the planet's centre,
 full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113-163143).
+
+## Members in the air: tribe_member_hang, tribe_member_air part 1 (2026-11-13, fix/w49-raid2)
+<a id="testing-w49-raid2"></a>
+
+* `tribe_member_hang` (coop_tribe_member_hang.py, tribe fixture, host at 10 fps over the player network, ~2.5 min,
+  BUG-1082): three player members held 12, 60 and 110 m up on the host (`coop.tribe hang <id> <m> <s>`, after every
+  physics update, game::test_hang); the guest's mirror must be within 3 m of the host's member in 80 % of the reads
+  and up in the air. Members whose node places them themselves (busy ones) drop out of the hold: the test takes the
+  newest members first (`coop.tribe spawn 6`) and another one when the host's own reads go down. It prints the air
+  counters (`coop.tribe anims`: sent / rx / placed / landed / culled_lifts). `SPORE_FIX_OFF=tribe.mirror_hang,game.air_culled`
+  FAIL 20261113-183101; PASS 20261113-182858, 20261113-183101-2.
+* `tribe_member_air` part 1 (BUG-1088) now expects a member floating on deep water to read as on the ground: at the
+  water's surface (coop.ground's `water`), agl_hi under 3 m on two trace marks; the suite's monitor allowance for it is
+  gone. `SPORE_FIX_OFF=monitor.tribe_water` FAIL 20261113-183402-2 (agl_hi 15.18); PASS 20261113-183656,
+  20261113-183656-2.
+* Reading a ground finding or a member "over the ground" line now: a swimmer reads 0 (its height over the water's
+  surface); what is left is a member really over the terrain or the water. For a sync-check `t: 1 apart` compare the
+  two positions' directions: the same direction and different radii is a member in the air on one game.
