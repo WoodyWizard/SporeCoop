@@ -3522,3 +3522,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   on at its velocity but kept the newest state's height over the host's terrain (agl), and the air placing goes by
   that agl, so the proxy was put at one height for a whole state period. The agl now goes with the position.
 * Ticket: BUG-1094
+
+## Tests: npc_ai_lookup finds no freed proxy block reused on a well-used guest game (2026-11-14, fix/w49-warmfault)
+<a id="issue-npc-ai-lookup-reuse"></a>
+
+* What happens: `npc_ai_lookup` fails "a social click on a new creature at a freed proxy's address (0 reuses, 0
+  posted)": the reuse hunt (`coop.npc reusehunt`, 150 creatures per proxy) found no new creature at any of the 21
+  freed addresses (final check 20261114-005006, lane 4, warm run 7 of these games).
+* Reproduce: not reproduced; seen once. It passed cold (20261114-022615, hit on the 5th proxy) and warm
+  (20261113-025531, 20261114-030034, hit on the 1st).
+* Known: not the fault inheritance of BUG-1097 (those faults are on the host, the hunt on the guest). Inferred:
+  the guest's heap after many tests seldom hands the freed block to the next creature.
+* Not checked: a heap census of the guest in the failing run.
+* Next steps: `warm=False` for npc_ai_lookup and proxy_identity(_tribe), or a hunt that tries harder.
+* Ticket: BUG-1099

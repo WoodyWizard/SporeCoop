@@ -7774,3 +7774,19 @@ editor's own pause and input lock and the trace lines are the same in both runs;
 * campaign_tribe_noclick 20261113-231423 (lane 6) of the same batch is another case: the City Hall editor ended in 37 s;
   the planted 18 min of lost clicks plus the loaded machine (raids of 185-321 s) brought the goal bar to 5/5 only at
   23:50:53, and the 30 min of the Tribe advance ran out back in Tribe after the City Hall, before the vehicle editor's vote.
+## A warm reset clears the fault count of the tests before (2026-11-14, fix/w49-warmfault)
+<a id="testing-w49-warmfault"></a>
+
+* BUG-1097: `Checks.faults()` reads SporeKit's exception logger (`exc`), which counts from the game's start. A
+  warm reset kept the count, so a test started warm after `kit_cmd_fault`, `kit_present_fault` or
+  `kit_overlay_fault` (`reports=True`: they fault the host on purpose and check that themselves) failed on their
+  faults ("FAIL lab: faults in the log: host faults: total faults: 5", 0xC0000005 at sporekit.dll+0x33ABB; seen as
+  same_view and npc_ai_lookup in the 0.7.14 final check 20261114-005006). `twoinst.warm_reset()` now calls
+  `exc clear` on both games first (`clear_faults()`; the reset's own faults count for the new test) and prints
+  "(warm reset: the faults of the tests before cleared: host N, guest M)" when there were any. The fault tests stay
+  warm. A fault test's own `exc` line now shows only its own faults (kit_overlay_fault 3, it showed 5 after
+  kit_cmd_fault).
+* Twin: `SPORE_WARM_KEEP_FAULTS=1 tools/lab.py run kit_cmd_fault,same_view --lane 6 --retry 0 --no-build
+  --in-order` FAILS (20261114-025716), without it PASSES (20261114-025857, 20261114-030034).
+* Another warm-only failure of that check is not this one: npc_ai_lookup's "0 reuses" (BUG-1099,
+  [known issue](known-issues.md#issue-npc-ai-lookup-reuse)) is the guest's heap, the faults are on the host.

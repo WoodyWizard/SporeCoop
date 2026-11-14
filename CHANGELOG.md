@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tests: a test that the lab starts on running games right after one of the fault tests (`kit_cmd_fault`,
+  `kit_present_fault`, `kit_overlay_fault`) no longer fails on the faults those tests make on purpose; the games'
+  fault count starts again at each such start (BUG-1097).
 - Creature, Tribe: an animal the host's creature throws into the air with a hit now flies up and comes down on the
   guest's screen with it, instead of hanging still and jumping about a metre every tenth of a second (BUG-1094).
 - Tests: the campaign bot no longer stays in an empty City Hall, vehicle or spaceship editor for 30 minutes when its
