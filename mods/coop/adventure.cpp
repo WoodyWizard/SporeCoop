@@ -218,10 +218,10 @@ void poll(double now)
 // their hits on a body reach that partner (MSG_DAMAGE). A guest's scenario creatures have no AI of their
 // own: they follow the host's states (positions, facing, health), and the guest captain's hits on them
 // go to the host, which applies them. `coop.fix adventure.enemies off`: each game simulates its own (44).
-// OFF by default in 44: the host's creatures choose a partner's body as their target (npc partner_picks)
-// but never strike it, so a guest whose creatures follow the host was never hurt by them (only by
-// buildings). Positions, health, deaths by key and corpses were verified (docs/re/space.md#space-adventure-host-creatures).
-bool g_fix_enemies = false;
+// Off by default in 44 (the creatures never struck a partner's body): on since BUG-9200 (bodies have the
+// captain's side) and BUG-9201 (a guest's leftovers are removed, a creature the host's game killed dies
+// here). Positions, health, deaths by key and corpses: docs/re/space.md#space-adventure-host-creatures.
+bool g_fix_enemies = true;
 COOP_FIX("adventure.enemies", "BUG-9114", g_fix_enemies,
          "adventure: the host's game moves the scenario's creatures for everyone, they attack partners' bodies, guests' hits go to the host");
 void* (*body_of)(uint8_t player);
@@ -239,6 +239,17 @@ std::unordered_map<uint32_t,GuestActor> guest_actors; // guest: host key -> this
 std::unordered_map<void*,uint32_t> guest_key_of;     // guest: creature -> host key
 bool guest_driving;                                   // guest: scenario creatures follow the host now
 unsigned batches_in, unpaired_now, hits_out, damage_dropped;
+double batch_first, batch_last;                       // guest: when the host's states started / last came
+// BUG-9201: a guest's scenario creature that no host creature drives (the guest's own waves spawned from
+// markers, a copy whose host creature died while it was unpaired) stood there without AI, often at 0 hp,
+// and took the guest captain's hits for nothing. Unpaired for kExtraGrace while the host's states arrive,
+// it is removed here. Off (`coop.fix adventure.guest_extras off`): it stays, as in 44.
+bool g_fix_extras = true;
+COOP_FIX("adventure.guest_extras", "BUG-9201", g_fix_extras,
+         "adventure: a guest's creature that no host creature drives is removed; one whose host creature died dies");
+constexpr double kExtraGrace = 5.0;
+std::map<std::pair<void*,uint32_t>,double> extra_since; // guest: (creature, serial) -> unpaired since
+unsigned extras_now, extras_removed;
 
 bool enemies_on()
 {
@@ -343,7 +354,10 @@ void guest_drive(double now)
             continue;
         }
         if (g.dead) { // the host's creature died: exactly this one dies here (its corpse is placed next frame)
-            if (killed_here.insert({o,g.serial}).second) kill(o,kCreatureNoun);
+            if (killed_here.insert({o,g.serial}).second) kill(o,kCreatureNoun); // health 0
+            // BUG-9201: a creature dies in its AI (the behaviour tree's death node calls Die,
+            // docs/re/creature.md 14.1), which a guest skips for these: it stood at 0 hp. The game's Die here.
+            if (g_fix_extras && !game::is_dead(o)) game::play_death(o);
             continue;
         }
         g.drv.drawn=game::position(o);
@@ -358,6 +372,26 @@ void guest_drive(double now)
         }
         if (s.health>0) game::set_health(o,s.health); // the host's health (the guest's own hits went there)
     }
+    // BUG-9201: what no host creature drives (the pairing above had its chance) goes after a grace time,
+    // a corpse too (the host's corpse is gone: its key timed out)
+    extras_now=0;
+    const bool streaming=batch_last>0 && now-batch_last<1.5 && now-batch_first>3*kFullEvery;
+    std::map<std::pair<void*,uint32_t>,double> since;
+    for (auto [o,id]:q.list) {
+        if (guest_key_of.count(o) || game::destroy_pending(o)) continue;
+        ++extras_now;
+        if (!streaming) continue;
+        std::pair<void*,uint32_t> k{o,game::object_serial(o)};
+        auto it=extra_since.find(k);
+        const double t=it!=extra_since.end() ? it->second : now;
+        if (g_fix_extras && now-t>=kExtraGrace) {
+            game::destroy_creature(o);
+            ++extras_removed;
+            continue;
+        }
+        since[k]=t;
+    }
+    extra_since=std::move(since);
 }
 
 bool ai_skip(void* c)
@@ -554,7 +588,7 @@ void reset()
     known.clear(); spatial_ids.clear(); killed_here.clear(); deaths_local.clear(); deaths_wanted.clear(); deaths_told.clear();
     applied_objects.clear(); host_outcome=0; host_ending=false; poll_at=0;
     host_actors.clear(); guest_actors.clear(); guest_key_of.clear(); guest_driving=false; stream_at=full_at=0;
-    unpaired_now=0;
+    unpaired_now=0; extra_since.clear(); extras_now=0; batch_first=batch_last=0;
 }
 
 void set_body_lookup(void* (*fn)(uint8_t player)) { body_of=fn; }
@@ -589,6 +623,8 @@ void actors_message(uint8_t from, net::Reader& r)
         b.mission!=mission || !host_run || b.run!=host_run || !g_fix_enemies) return;
     const double now=H->time_seconds();
     ++batches_in;
+    if (!batch_last || now-batch_last>3.0) batch_first=now; // (again) after a gap: the grace starts over
+    batch_last=now;
     for (const auto& a:b.actors) {
         auto it=guest_actors.find(a.key);
         if (it==guest_actors.end()) {
@@ -649,7 +685,8 @@ std::string debug_hit(uint32_t cls, float damage)
     game::for_each_object([](void* o, uint32_t noun, void* u) {
         auto q=(Q*)u;
         if (noun!=kCreatureNoun || !scenario_creature(o,q->av) || *(uint32_t*)((uint8_t*)o+0x1C)!=q->cls ||
-            !game::object_alive(o) || game::is_dead(o)) return true;
+            !game::object_alive(o) || game::is_dead(o) || !(game::health(o)>0)) return true;
+        if (guest_driving && !guest_key_of.count(o)) return true; // a guest: one the host drives
         float d=net::dist(game::position(o),q->me);
         if (d<q->d) { q->d=d; q->best=o; }
         return true;
@@ -657,7 +694,10 @@ std::string debug_hit(uint32_t cls, float damage)
     if (!q.best) return "no live creature of that class";
     float before=game::health(q.best);
     game::hit(q.best,damage,0,q.av);
-    char b[128]; snprintf(b,sizeof b,"hit %08X %.0f m away: hp %.1f -> %.1f here",object_id(q.best),q.d,before,game::health(q.best));
+    uint32_t key=0;
+    if (auto it=guest_key_of.find(q.best); it!=guest_key_of.end()) key=it->second;
+    char b[160]; snprintf(b,sizeof b,"hit %08X key=%08X %.0f m away: hp %.1f -> %.1f here",object_id(q.best),key,q.d,before,
+                          game::health(q.best));
     return b;
 }
 
@@ -693,17 +733,19 @@ std::string debug_kill(uint32_t cls)
 
 std::string status()
 {
-    char b[640];
+    char b[768];
     unsigned paired=0;
     for (auto& [k,g]:guest_actors) paired+=g.obj!=nullptr;
     snprintf(b,sizeof b,"adventure: run=%08X journal=%u applied=%u held=%u objects=%u deaths_out=%u deaths_in=%u "
              "mirrored_kills=%u failures_held=%u outcomes_out=%u host_outcome=%d\n"
              "creatures: shared=%d host_actors=%u batches_out=%u actors_out=%u hits_in=%u hits_applied=%u hits_stale=%u "
-             "guest_driving=%d guest_actors=%u paired=%u unpaired=%u batches_in=%u hits_out=%u damage_dropped=%u",
+             "guest_driving=%d guest_actors=%u paired=%u unpaired=%u batches_in=%u hits_out=%u damage_dropped=%u "
+             "extras=%u extras_removed=%u",
              host_run,(unsigned)journal.size(),applied,credits_held,(unsigned)known.size(),deaths_out,deaths_in,
              mirrored_kills,blocked_failures,outcomes_out,host_outcome,
              (int)enemies_on(),(unsigned)host_actors.size(),batches_out,actors_out,hits_in,hits_applied,hits_stale,
-             (int)guest_driving,(unsigned)guest_actors.size(),paired,unpaired_now,batches_in,hits_out,damage_dropped);
+             (int)guest_driving,(unsigned)guest_actors.size(),paired,unpaired_now,batches_in,hits_out,damage_dropped,
+             extras_now,extras_removed);
     return b;
 }
 
