@@ -1228,6 +1228,50 @@ static void puppet_lowfps_past(bool fix, double* rate, float* p90, float* worst)
     g_one_way = was_ow;
 }
 
+// BUG-1095 (drive.air_keep): a partner in the air (PF_JUMPING) flying +x at 9.5 m/s, its states of [2.9, 3.3) 0.25 s
+// late. The puppet's buffer (interpolated, delay 0.1, interp_fall), sampled at 60 fps: the largest step of the shown
+// target in one frame (a flight at 9.5 m/s moves 0.16 m per frame)
+static float puppet_air_step(bool fix)
+{
+    const bool was = g_puppet_air_keep_fix, was_fall = g_puppet_fall_fix;
+    const double was_ow = g_one_way;
+    g_puppet_air_keep_fix = fix && k4_on("drive.air_keep");
+    g_puppet_fall_fix = true;
+    g_one_way = 0.05;
+    SnapshotBuffer b;
+    b.delay = 0.1;
+    b.interp_fall = true;
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 150; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.flags = PF_IN_WORLD | PF_MOVING | PF_JUMPING;
+        s.pos = {(float)st * 9.5f, 0.f, 0.f};
+        s.vel = {9.5f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.9 && st < 3.3 ? 0.25 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    float step = 0, prev = 0;
+    bool have = false;
+    for (double now = 10.0; now < 14.5; now += 1.0 / 60) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, now), k++;
+        if (!b.sample(now, o))
+            continue;
+        if (have && now > 12.0)
+            step = std::max(step, std::fabs(o.pos.x - prev));
+        prev = o.pos.x;
+        have = true;
+    }
+    g_puppet_air_keep_fix = was;
+    g_puppet_fall_fix = was_fall;
+    g_one_way = was_ow;
+    return step;
+}
+
 // BUG-0675 / BUG-0651 (drive.lead_throw): a member walking at 9.5 m/s whose loaded sender stamps its states off its frames
 // (positions every 1/30 s, the times alternately 6 ms early and late: every other pair of states 21 ms apart in its time,
 // a 15 m/s path): the mean distance of the shown target from the member (its sender time now)
@@ -1375,6 +1419,11 @@ static void test_lead_fall()
     CHECK(r_off < 12 && r_on > 19);
     CHECK(w_off > 0.45f && w_on < w_off - 0.1f);
     CHECK(q_on < q_off);
+    float a_on = puppet_air_step(true), a_off = puppet_air_step(false);
+    printf("  a partner in the air at 9.5 m/s, its states 0.25 s late: the target's largest step in a 60 fps frame %.2f m "
+           "(0.7.13 %.2f m)\n", a_on, a_off);
+    CHECK(a_off > 0.8f);
+    CHECK(a_on < 0.4f);
 }
 
 static void test_lead_keep()

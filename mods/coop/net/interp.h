@@ -180,6 +180,7 @@ constexpr double kKeepRate = 1.0;
 constexpr double kKeepTau = 0.25; // s
 constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's one-way latency line with the fix
 constexpr size_t kHorizonN = 32;
+constexpr size_t kHorizonLongN = 64; // BUG-1093: the puppets' knee (20 states/s: 3.2 s)
 constexpr double kLateNews = 0.05; // s
 constexpr float kLateLost = 1.5f;  // m
 // BUG-0674 (K4, `coop.fix drive.lead_fall`): a body is moved on past its newest state at its velocity only as far as
@@ -216,6 +217,12 @@ inline float fall_rate(double dt, double knee, double tau = kFallTau, bool on = 
 // 1 stop in 10-14). With the fix it is moved on at the full speed for kPuppetFallMargin s only, then falling with
 // kPuppetFallTau, its velocity too (creature.puppet_stop then holds it where the target slows down). Off: 0.7.10.
 inline bool g_puppet_fall_fix = true;
+// BUG-1095 (`coop.fix drive.air_keep`): not for a state in the air (PF_JUMPING). A partner in the air at 9-10 m/s whose
+// states came 0.2-0.3 s late was slowed to 0.1-1.8 m/s past each newest state: its puppet (placed on the target in the
+// air) stalled in mid-air and was put 0.9-1.1 m on when the next state came (puppet_stops "no jump of the puppet while it
+// walks", lab 20261113-203423 #4, 20261113-211453 #1). In the air it is moved on at the state's velocity up to max_extrap
+// as before BUG-0680 (its height stays the state's agl over this game's ground, drive.sender_agl). Off: 0.7.13.
+inline bool g_puppet_air_keep_fix = true;
 constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
 // BUG-1092 (`coop.fix drive.agl_lerp`): a state between two snapshots took the newer one's height over the sender's
 // terrain (agl) with a position blended between them: at a hop's start (the partner put 1.5 m up between two states)
@@ -331,6 +338,7 @@ public:
         lt_have_ = false;
         age_n_ = 0;
         hz_.clear();
+        hz_long_.clear();
         lt_excess_ = 0;
     }
 
@@ -385,6 +393,7 @@ public:
         if (!snaps_.empty()) {
             const double h = local_now - offset_ + g_one_way - snaps_.back().t;
             hz_.add(h);
+            hz_long_.add(h);
             lt_excess_ = std::max(0.0, h - (double)hz_.med);
         }
         age_n_++; // BUG-0650: a new state for late_time
@@ -398,9 +407,9 @@ public:
     // the full speed) and the median arrival horizon less the one-way latency
     double fall_knee() const
     {
-        return hz_.n >= 8 ? std::max(0.0, (double)hz_.med - g_one_way - delay) + kPuppetFallMargin : kPuppetFallMargin;
+        return interp_knee();
     }
-    double horizon_med() const { return hz_.n ? (double)hz_.med - g_one_way : 0; }
+    double horizon_med() const { return hz_.n ? (double)(g_send_phase_fix ? hz_long_.med : hz_.med) - g_one_way : 0; }
     bool empty() const { return snaps_.empty(); }
     const PlayerState& latest() const { return snaps_.back().s; }
     double age(double local_now) const
@@ -583,9 +592,9 @@ private:
         last_extrap = dt;
         // BUG-0680 (g_puppet_fall_fix, interp_fall): past the usual horizon (in render time) at a falling speed
         float fr = 1.f;
-        if (interp_fall && !(lead && g_lead_fix)) {
-            const double knee = hz_.n >= 8 ? std::max(0.0, (double)hz_.med - g_one_way - delay) + kPuppetFallMargin
-                                           : kPuppetFallMargin;
+        // BUG-1095 (g_puppet_air_keep_fix): not for a state in the air (PF_JUMPING): it can not stop there
+        if (interp_fall && !(lead && g_lead_fix) && !(g_puppet_air_keep_fix && (n.s.flags & PF_JUMPING))) {
+            const double knee = interp_knee();
             fr = dt > max_extrap ? 0.f : fall_rate(dt, knee, kPuppetFallTau, g_puppet_fall_fix);
             dt = fall_time(dt, knee, kPuppetFallTau, g_puppet_fall_fix);
         }
@@ -807,6 +816,17 @@ private:
     size_t age_n_ = 0; // states since clear()
     // BUG-0410: the lead horizons at the last kHorizonN states and the newest one's excess over their median (s)
     HorizonMedian<kHorizonN> hz_;
+    // BUG-1093 (g_send_phase_fix): the interpolated extrapolation's knee over the last kHorizonLongN horizons: 32 states
+    // were 3.2 s at 10 states/s but 1.6 s at 20/s, and a spike of the player network (+250 ms for 0.7 s) then filled half
+    // of them: the knee rose to 0.15-0.17 s and a stop in the spike was shown 0.46 m past (lab 20261113-211453 #3)
+    HorizonMedian<kHorizonLongN> hz_long_;
+    // the knee of the interpolated extrapolation (BUG-0680): the usual render horizon + kPuppetFallMargin
+    double interp_knee() const
+    {
+        const double med = g_send_phase_fix ? (double)hz_long_.med : (double)hz_.med;
+        return hz_.n >= 8 ? std::max(0.0, med - g_one_way - delay) + kPuppetFallMargin : kPuppetFallMargin;
+    }
+
     double lt_excess_ = 0;
     mutable bool lt_have_ = false, lt_new_ = false;
     mutable float lt_rate_ = 1.f; // the shown sender time's rate this frame (catching up: 1 + kLateRate)
