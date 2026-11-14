@@ -3043,7 +3043,7 @@ BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode colum
   kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
   a hit 0.58 s in 56 hits with the old code).
 
-## A thrown NPC's proxy placed in the air stands and jumps (2026-11-13, fix/w49-npcwalk, open)
+## A thrown NPC's proxy placed in the air stands and jumps (2026-11-13, fix/w49-npcwalk; cause found on fix/w49-throw)
 <a id="creature-air-place-lost"></a>
 
 BUG-1094. coop.npctrack rows of npc_walk (out/lane4/track/npc_walk_creature_*.json of fix/w49-proxy2 and older runs):
@@ -3092,6 +3092,34 @@ BUG-1094. coop.npctrack rows of npc_walk (out/lane4/track/npc_walk_creature_*.js
   - no velocity written while kept: 75 of 87 (lab 20261113-230443 #4);
   - the relayed animations off (`SPORE_FIX_OFF=npc.anims`): 74 of 88 and 69 of 81 (lab 20261113-223923): not the relay.
   Open: which update after the physics restores the position (the 0.1 s period, the growing offset per window).
+* ✔ (fix/w49-throw, the same rows split into the radial and the sideways part) **Not the game: the mod's own target
+  height.** The throw is straight up (sideways 0.00-0.01 m between `d`, `p` and the target). In every standing frame
+  `p` (right after the placing) is 0.10-0.15 m *under* the drawn position (= the written velocity x the frame) and the
+  target rises away from `p` by one frame's rise per frame (0.16, 0.39 ... 0.91 m), back to 0.0-0.2 m at each new
+  state (out/lane4/track/npc_walk_creature_20261113-222314.json, id 20). So the placing itself went to the same
+  height for a whole state period, the game's update moved it up by its velocity (drawn = placed + v x dt) and the
+  next placing put it back: what the earlier bullets read as "the game puts it back".
+* ✔ (code) The height comes from `drive::at_sender_agl(s.pos, s.agl)`: this game's ground + the sample's agl (the
+  host's height over its terrain). The NPC proxies' SnapshotBuffer runs the lead (`drive.lead`): the newest state
+  moved on by its velocity, and `out = n.s` kept that state's agl unchanged; so did the interpolation's
+  extrapolation past the newest state (the partner's puppet, BUG-1095's air keep) and the smoothing's offset. Only
+  the blend between two states moved the agl (BUG-1092, `drive.agl_lerp`). A body moving up or down past its newest
+  state was therefore pinned to that state's height until the next one came (every 0.1 s, npc.cpp kStateInterval):
+  the 0.1 s period and the 0.6-1.1 m steps (9.8-6 m/s x 0.1 s). The guest-only test throw of fix/w49-npcwalk did not
+  show it because its states carried no such lead (inferred).
+* ✔ The fix (`coop.fix drive.agl_extrap`, net/interp.h `agl_follow`): the agl goes with the position's radial move
+  wherever the sample moves a state's position (lead, extrapolation, smoothing). net_tests test_agl_extrap (a body
+  thrown up at 9.8 m/s, the proxy's buffer settings, 60 fps): with the fix it rises in every frame (largest step
+  0.22 m, 0.00 m off the target); `SPORE_FIX_OFF=drive.agl_extrap`: stood in 30 of 36 frames, steps of 0.98 m.
+  The agl moved on is never taken under the sender's ground (a fall extrapolated past its newest state on a slow
+  host went 2.7 m under it at the landing, lab 20261113-234048 #2).
+* ✔ (runtime, with the fix) Two smaller steps at the throw's start: a walked proxy trails its target 0.8-0.9 m and the
+  lead's target itself leaps 1-1.5 m at the first air state (the newest state moved on at the throw's 9 m/s); placed
+  on the target at once that was a 0.94-1.07 m step in a 15-19 ms frame (labs 20261113-235647 #2, 20261114-000525
+  #3). `npc.air_catch` (npc.cpp): the drawn proxy goes toward its air target at no more than 1.2x its speed + 8 m/s,
+  the game's own move by the written velocity after the placing allowed for (drawn = placed + v x dt, above).
+* ✔ (runtime, host rows) The host's game itself puts a thrown NPC onto its ground at the landing: 2.79 m in one frame
+  (lm 3 -> 0, +0x137 0 -> 1; lab 20261114-001415 #2, id 38): the guest shows that step as the host has it.
 
 ## Creature collisions: the contact handler skips creature pairs (2026-11-06, fix/w45-remote-bodies-2)
 <a id="creature-contact-pairs"></a>

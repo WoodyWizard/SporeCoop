@@ -2543,8 +2543,11 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   BUG-1094: also a thrown proxy (placed in the air, coop.npctrack how 5, while its target moves over 0.05 m in the
   frame) stands in at most 15 % of those frames, on the screen or off it, judged from 20 such frames on: the flee
   hit throws a walker on the host in about a third to a half of the runs at 52-67 fps (none in 7 runs at 20-35 fps on
-  a loaded lab). Fails on the code of 0.7.14 so far (BUG-1094 open): 128-148 of 166-174 frames standing (lab
-  20261113-221929); the "no jump" check saw it only when the walker was on the screen near 60 fps.
+  a loaded lab). Failed on 0.7.14 before fix/w49-throw: 128-148 of 166-174 frames standing (lab 20261113-221929); the
+  "no jump" check saw it only when the walker was on the screen near 60 fps. `SPORE_FIX_OFF=drive.agl_extrap` fails it
+  again in a run with a throw (lab 20261113-234018 #3: 39 of 53). Unit twin: net_tests test_agl_extrap.
+  A jump the host's own NPC made too (its game puts a thrown NPC onto its ground at the landing, 2.8 m in one frame:
+  host rows within 0.5 s, at least half the guest's step) is listed as "the host's NPC jumped too", not judged.
 * Pitfall: a creature far from the camera is updated in bursts (no movement for 0.5 s, then 1 m at
   once); judge what the player sees (on-screen frames), report the rest.
 ## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)

@@ -3516,6 +3516,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   every ~0.1 s (0.6-1.1 m steps). On 0.7.13's code too (rows back to 20261106). npc_walk now judges thrown proxies on
   and off the screen ("a thrown proxy flies with its NPC"), which fails in every run with a throw (live: lab
   20261113-221929 #2, #3: 128 of 166, 148 of 174 frames standing).
-* Not fixed: the teleport mark, putting the hold back after the creature and physics updates, no velocity, the
-  animation relay off: all still stand (docs/re/creature.md#creature-air-place-lost).
+* Not fixed by: the teleport mark, putting the hold back after the creature and physics updates, no velocity, the
+  animation relay off: all still stood (docs/re/creature.md#creature-air-place-lost).
+* Fixed (fix/w49-throw, `coop.fix drive.agl_extrap`): the mod's own target height. The lead moved a thrown NPC's state
+  on at its velocity but kept the newest state's height over the host's terrain (agl), and the air placing goes by
+  that agl, so the proxy was put at one height for a whole state period. The agl now goes with the position.
 * Ticket: BUG-1094
