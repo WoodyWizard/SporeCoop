@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tests: the two tests that need the game to build a new animal where a removed copy was (`npc_ai_lookup`,
+  `proxy_identity`) no longer pass or fail by luck; their search waits until the game has let go of the old one and
+  then makes new animals at once (BUG-1099).
 - Tests: a test that the lab starts on running games right after one of the fault tests (`kit_cmd_fault`,
   `kit_present_fault`, `kit_overlay_fault`) no longer fails on the faults those tests make on purpose; the games'
   fault count starts again at each such start (BUG-1097).

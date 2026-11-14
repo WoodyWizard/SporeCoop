@@ -3535,4 +3535,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the guest's heap after many tests seldom hands the freed block to the next creature.
 * Not checked: a heap census of the guest in the failing run.
 * Next steps: `warm=False` for npc_ai_lookup and proxy_identity(_tribe), or a hunt that tries harder.
+* Fixed (2026-11-14, fix/w49-reuse): the hunt waits for the free and the free check sees a merged chunk; see
+  [06-testing](06-testing.md#testing-w49-reuse). CORRECTION (2026-11-14, fix/w49-reuse): "seldom hands the freed block to
+  the next creature" was the hunt: the block was freed and merged, the old check read a stale header
+  ([re](re/creature.md#creature-reuse-merged)).
 * Ticket: BUG-1099
