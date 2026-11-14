@@ -73,6 +73,9 @@ Suite `campaign_tribe_noclick` (campaign_tribe_end with `CAMPAIGN_PLANT_NOCLICK=
   villages only after the first conquest, so that plant cannot tell the drivers apart (changed in d18f2a0f).
 - campaign_tribe_end with the diagnostics only (before the fix): 20261113-190337, 20261113-193334, 20261113-200131
   (seed 492354972 of the failing run): the Tribe end came each time (the last failed the lab's sync-check gate, BUG-1082).
+- campaign_tribe_end with the fix: 20261113-224609: 5/5 in 12 min, Civ after 869 s, campaign RESULT: OK (the lab failed
+  it on the sync-check gate, a tribe member 13 m apart on a guest: BUG-1082's class, not this ticket). The FAIL twin run
+  20261113-212331 also failed the ground gate (a host member 8.8 m up for 21 s: BUG-1088's class).
 
 ## History
 - 2026-11-13: opened.
