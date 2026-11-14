@@ -33,3 +33,5 @@ no-fail-run: the PASS run was not reached live. FAIL: the press above (before th
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on feat/lineages-47 (decision 3B, Claude's pick).
+- 2026-11-14 (3Q A): still not seen live: the setup (the guest's villager about 220 m away from the nearest rival hut
+  on the DuoQAJiffStand copy, the camera on that hut) was left to the owner's own test of the installed build.

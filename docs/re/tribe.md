@@ -3786,3 +3786,14 @@ rival's raiders kill the new villagers. Its data: [+0] 0147B844, [+4] 0, [+8] ch
 (vt 0x98, age 1) for a non-player founder village did not count as living at the next event (health or +0xB5E), cause
 not found. After party_wipe the newest ally is a rival (relation -5) and raids at once.
 
+## Who starts the population game over (2026-11-14, feat/lineages-47)
+<a id="tribe-gameover-routes"></a>
+
+BUG-9184. Steam QA copy, `coop.memfind <value> <max> code` (scans executable and read-only memory, unaligned).
+* ✔ "TRG_PRE_PopDestroyed" (0x1477678 at image base 0x400000) is the only string with "PopDestroyed"; one code
+  reference: the push at CD8B01 in the Tribal listener
+  CD81F0 (the 05C80207 branch, section "Founder population recovery").
+* ✔ 05C80207 appears in code at C26B80 (the poster: `push 0; push data; push 0x5C80207; call [msgmgr vt+0x14]`,
+  msgmgr from 0x67DC80) and CD8208 (the listener); also at 0147746C (data, ~ a listener registration table).
+* ✔ FBCD6489 (the game over cinematic) is no constant in the code: a hashed name.
+* ? Another listener of 05C80207, or a route that starts FBCD6489 by name, is not ruled out.

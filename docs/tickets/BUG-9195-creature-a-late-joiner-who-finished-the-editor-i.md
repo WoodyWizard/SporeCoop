@@ -33,3 +33,8 @@ no-fail-run: the reload stays by design; the cover is to be checked live (a join
 ## History
 - 2026-11-13: opened.
 - 2026-11-13 (later): the notice replaced by the loading screen over the reload (ui.reload_cover).
+- 2026-11-14 (3Q A): a plain rejoin loads once (Tribe, TITAN: leave, join: Tribe -> galaxy menu -> Loading -> Tribe, one
+  world received). The second load is only a Creature late joiner's (its new nest needs a fresh world, BUG-9128). A
+  joiner who brings a creature could load once if the host waited for its creature and nest (with a member, BUG-9167)
+  before the first share; a joiner without one gets the editor inside the world (join_editor_tick needs the Creature
+  stage), so it keeps two loads. Decision 3S.

@@ -2186,7 +2186,8 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   the native "Alas! Your population has fallen below the minimum" caption with no population event through the mod's
   hold before it. OK reloads the last save; play goes on.
 * Reproduce: not on demand (once in about an hour on the DuoQAJiffStand copy).
-* Known: the TRG_* cinematic support log (tribe.cpp) names the caller the next time.
+* Known: the cinematic support log (tribe.cpp, every cinematic in the Tribe stage since 2026-11-14) names the
+  caller the next time; the static search: docs/re/tribe.md#tribe-gameover-routes.
 * Ticket: BUG-9184.
 
 ## Space: a guest's homeworld card is blank after a personal launch (2026-11-13, BUG-9188)

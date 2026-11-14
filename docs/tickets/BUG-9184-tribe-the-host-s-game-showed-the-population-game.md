@@ -32,3 +32,10 @@ Not found yet. Inferred: the game over came by another route than message 05C802
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-14 (feat/lineages-47, 3Q A): not reproduced: two `coop.tribe wipe 0` 60 s apart on the DuoQAJiffStand copy
+  (host + one guest) brought no game over (the test wipe runs the mod's party wipe, not the game's population count).
+  Static search on the Steam QA copy (`coop.memfind <value> <max> code`, new: code and read-only data): the string
+  TRG_PRE_PopDestroyed is the only "PopDestroyed" string and is pushed at CD8B01 only (the hooked listener's branch);
+  05C80207 is posted at C26B80 only (message manager vt+0x14, so other listeners may get it too); FBCD6489 is no code
+  constant (a hashed name). Open hypotheses: another listener of 05C80207, or a state that a party wipe's reload brings
+  back. The support log now names every cinematic started in the Tribe stage (1ddb33ba), so the next one shows its route.
