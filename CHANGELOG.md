@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: on a slower PC (about 20-25 frames per second) your game now sends your creature's position 20 times a
+  second as planned (it was 10), and at once when you stop; the other player no longer sees your creature walk on
+  half a metre past where you stopped and step back (BUG-1093).
+- Creature: the other player's creature in the air (a jump, a fall from a slope) keeps flying on your screen when
+  its news comes late, instead of stopping in mid-air and jumping a metre on (BUG-1095).
 - Tests: the Tribe editor-visit test (`tribe_editor_world`) waited for a world share after the host's editor that the
   game no longer makes since 0.7.10 (the guest keeps its world); it now checks the epic is still the co-op one and
   makes the share save itself (BUG-1090).

@@ -1,19 +1,19 @@
 ---
 id: BUG-1095
 title: Creature: a puppet in the air stalls when the partner's states come late and jumps 1 m when they come (drive.puppet_fall in the air)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w49-stops
+commits: 124a9ea9, 3a749886
+tests: puppet_stops, net_tests
 signature:
-docs:
+docs: docs/re/creature.md#creature-puppet-stop-send-phase
 related: BUG-1093, BUG-0680, BUG-0376
 ---
 
@@ -29,14 +29,27 @@ airborne state, which cannot stop in the air. Reproduce: `lab.py run puppet_stop
 loaded lab).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (track rows ex / age / rv of 20261113-204611 and 20261113-211453 #1, guest sees host at 21 fps: flags 11, the
+target at rv 0.1-0.3 m/s with ex 0.15-0.2 s, then a 0.9 m step at the next state): SnapshotBuffer's interpolated
+extrapolation past the newest state falls (drive.puppet_fall, BUG-0680) for every state, an airborne one too; in the
+air creature_drive places the puppet on the target (not walked), so the puppet stood still in mid-air and was put on at
+once. Inferred: the fall is right for a walker that may have stopped, wrong for a body in flight.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix drive.air_keep` (net/interp.h, SnapshotBuffer::sample_raw): no fall for a newest state with PF_JUMPING; it is
+moved on at its velocity up to max_extrap 0.25 s as before BUG-0680. The height in the air stays the state's agl over
+this game's ground (drive.sender_agl), so a landing inside a spike does not take the puppet under the ground. Off:
+0.7.13. Unit test: tests/net_tests.cpp puppet_air_step (a flight at 9.5 m/s with its states 0.25 s late: the target's
+largest step in a 60 fps frame 0.96 -> 0.16 m; `SPORE_FIX_OFF=drive.air_keep` fails).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL (without the fix): out/lab/20261113-203423 #4 (host sees guest, a 1.02 m step at 22.82 s), out/lab/20261113-211453
+  #1 (guest sees host, 1.13 m at 15.83 s, 21 fps); `SPORE_FIX_OFF=drive.air_keep build/host/net_tests` FAILED (1)
+  (the target's step 0.96 m).
+- PASS (with it): out/lab/20261113-212915 (puppet_stops 3 of 3 at 21 fps), out/lab/20261113-212918 (puppet_stops,
+  puppet_walk, puppet_air, puppet_jump, puppet_fight), out/lab/20261113-214145 (puppet_stops 2 of 2): no jump of the
+  puppet while it walks in any; net_tests ALL OK (0.16 m).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13 (fix/w49-stops): fixed (drive.air_keep) on the way of BUG-1093.

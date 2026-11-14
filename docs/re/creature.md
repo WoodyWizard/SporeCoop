@@ -4589,3 +4589,32 @@ BUG-1092. Follows #creature-puppet-air-anim. Lanes 2 and 3, puppet_air (`coop_pu
   screen) failed with and without the fix when the walker hopped often: the walker's own avatar had a walk gait in
   73-86 % of its moving frames (none in the air), the puppet 70-79 %. With `--air` the bar is now the walker's own
   share less 10 points (at most 80 %).
+
+## A stop at a low frame rate: the puppet shown past it, half-rate states (2026-11-13, fix/w49-stops)
+<a id="creature-puppet-stop-send-phase"></a>
+
+BUG-1093. Follows tribe.md#tribe-lead-fall (drive.puppet_fall, BUG-0680). Lanes 2 and 3, puppet_stops
+(`--stop-walk`, the guest at 30 fps), with and without `SPORE_FPS=21`.
+* ✔ (code, coop.cpp) The own state went out at the first frame at least 0.05 s after the last send. With frames a
+  little shorter than 50 ms (21-25 fps) that is every other frame: the walker's own track rows (age = time since the
+  last send) give send intervals p50 91-95 ms on a host at 21 fps, 63-66 ms on the guest at ~31 fps (lab
+  20261113-205731 / -205734). With `net.send_phase` 50 ms on both (20261113-210507 / -210510).
+* ✔ (track columns ex / knee) At 10 states/s the puppet's buffer (delay 0.1 s) runs past its newest state in 17-26 % of
+  the frames and the fall's knee (the usual horizon, BUG-0680) is 0.04-0.05 s (up to 0.14 s); at 20/s 9-16 % and
+  0.020 s (the kPuppetFallMargin floor). A stop known 0.2-0.3 s late was shown at the full speed past it: target 0.6 m
+  past, puppet 0.37 m (bodyrec) at 21 fps (20261113-204729 #2 / track 205159).
+* ✔ (lab) 21 fps, 8 runs: without the fix 8 of 234 track stops had the target over 0.3 m past (a few of them turns,
+  the projection is rough), bodyrec max 0.37 m; with it 0 of 134, bodyrec max 0.06 m.
+* ~ A spike of 0.2-0.3 s still overshoots (kPuppetFallMargin + kPuppetFallTau at the walker's speed, 0.33 m at 4.75
+  m/s in the unit model); the interpolation can not know about the stop before its state comes.
+* ✔ (test) puppet_stops' bodyrec stop slide measured 1.5 s after the stop while the stop walk's next walk starts 1.0-1.2
+  s after it (and its gopos teleports the walker 10-15 m): those "slides" were the puppet following the next walk;
+  now cut where the walker leaves its stop.
+* ✔ (track json 20261113-204611 and 20261113-211453 #1, BUG-1095) drive.puppet_fall also slowed an airborne state's
+  extrapolation: a partner in the air at 7-10 m/s whose states came 0.2-0.3 s late stalled in mid-air (rv 9.7 -> 1.8
+  m/s) and the puppet was put 0.9-1.1 m on when the next state came. `drive.air_keep`: no fall for a PF_JUMPING state.
+* ✔ (track 20261113-212332, lab 20261113-211453 #3, with net.send_phase) The knee is the median of the last 32 arrival
+  horizons: 3.2 s of states at 10/s but 1.6 s at 20/s, and the player network's spikes (SPORE_NET=player: +250 ms for
+  0.7 s) then filled half of it: knee 0.15-0.17 s, a stop in the spike shown 0.46 m past (bodyrec 0.52 m). With
+  net.send_phase the puppets' knee reads the last 64 horizons (kHorizonLongN, 3.2 s again); the members' and proxies'
+  lead keeps its 32.
