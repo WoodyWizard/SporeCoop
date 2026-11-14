@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w49-holdcut
-commits:
+commits: 5e218346
 tests: tribe_hold_cut
 signature:
 docs: docs/re/tribe.md#tribe-mirror-pose-phase, docs/06-testing.md#testing-t2-mirror
