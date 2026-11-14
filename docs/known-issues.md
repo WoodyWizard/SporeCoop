@@ -3492,3 +3492,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-1090.
 * Fixed (2026-11-13, fix/w49-proxy): creatures the host's game parked in its pool during a pause; `npc.frozen_pooled_rts`,
   test civ_wild_pooled (BUG-1089).
+
+## Creature: a hit animal's copy steps about 1 m in single frames while it flees (2026-11-13, test npc_walk)
+<a id="issue-npc-walk-hit-jumps"></a>
+
+* What happens: npc_walk's check "no jump of a moving proxy" fails now and then: one of the two walkers the host hits
+  steps 0.75-1.13 m in single frames on the guest's screen, in two bursts of 3 at t 45.3-45.6 s and 47.0-47.3 s.
+* Reproduce: `tools/lab.py run npc_walk --lane 4 --repeat 3` (3 of 6 runs failed on fix/w49-proxy2, labs
+  20261113-202612, -204146 #2, -204750).
+* Known: also with BUG-0440's npc.proxy_hold off in Creature (-204750); not run on rel/0.7.14 itself.
+* Not checked: the cause (inferred: walk_place's keep_lost / snap after the hit's throw, BUG-0409's class).
+* Ticket: BUG-1094

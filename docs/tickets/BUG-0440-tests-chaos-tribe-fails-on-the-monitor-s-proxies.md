@@ -1,19 +1,19 @@
 ---
 id: BUG-0440
 title: Tests: chaos_tribe fails on the monitor's proxies gate (one Tribe NPC proxy over 3 m off the host's NPC)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-01
 source: fix/w34-ability-pop smoke (lab 20261101-173425)
 role: guest
 versions: 0.7.3.3+
-fixed_in:
-branch: fix/w46-k3-bodies
-commits: aed2f801
-tests: chaos_tribe, play_tribe
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w49-proxy2
+commits: 01810f64, 4faa517d, 0af3d56b
+tests: tribe_proxy_held (tools/tests/coop_tribe_proxy_held.py), chaos_tribe, play_tribe
+signature: audit line `proxy N: walk err 3-8 m, held 1, ... pushed back 5-10 m/s, off its placing after the call 0.00 m` with the host's NPC at 2.5 m/s near a nest; the monitor's proxies gate
+docs: docs/re/tribe.md#tribe-proxy-held-nest, docs/re/tribe.md#tribe-proxy-held-back, docs/06-testing.md#testing-tribe-proxy-held
 related: BUG-0402, BUG-0503, BUG-0425, BUG-0610
 ---
 
@@ -34,11 +34,48 @@ placed proxy suggests the host's NPC jumped (a teleport or a snap by the host's 
 The same lines are in the pre-merge branch runs of 0.7.7 (fix/w43-detector2 20261104-203017: 5, fix/w43-world-state
 20261104-210354: 5, fix/w43-transitions 20261104-232331: 8) and 0.7.4-0.7.6 runs (1 each): not a 0.7.7 regression.
 
+Root cause (2026-11-13, fix/w49-proxy2; docs/re/tribe.md#tribe-proxy-held-nest):
+* Observed (logs): the 2.5 m/s cases sit at the same few spots of a planet in 35+ runs, each 0.8-4.9 m from a herd's
+  nest, and the same proxy stops at the same spot on every guest at once (identical positions to 0.1-0.5 m).
+* Observed (runtime, the full probe; lab 20261113-191751 chaos_tribe#4, 1 case in 5 runs): proxy 29 (species 0680AA69)
+  6.8 m off for 2.1 s, `held 1`, **pushed back 6.9 m/s, off its placing after the call 0.00 m**, game speed 4.3 m/s,
+  anim 731EA3EA, loco mode 0, grounded, in a nest herd. The marked teleport is taken; the game's own frame then moves
+  the body back by 6.9 m/s x the frame, more than walk_place's catch-up gives it (target speed + 5.5 m/s), so it creeps
+  at 0-3 m/s and stays 3-8 m behind until drive::step's 8 m snap.
+* Ruled out (runtime): a nest mound (no raised collision surface at these nests), the nest itself (an animal walked
+  through it at 2.5 m/s, with its idle animation 731EA3EA relayed, with its velocity reported backwards: never 3 m off;
+  labs 20261113-191308, -193212, -193506).
+* Inferred / not known: which game code moves the held body back (the nest's herd, the locomotion's own goal, the
+  behaviour animation); the fix does not depend on it.
+
 ## Fix
-No fix: the gate failure is not reproduced on 0.7.9. Diagnostics added (aed2f801): the audit line now has a second line with the driving's own view (its walk error, held, place lost, teleports, walked) and the nearest other proxy.
+`coop.fix npc.proxy_hold` (npc.cpp; game.cpp place_hold; driver.h WalkPlace::hold_after): an NPC proxy that walk_place
+holds (teleports with the mark every frame) is put back where it was placed after the game's creature update
+(cCreatureAnimal::Update hook) and after its physics update (the BUG-0449 hook) whenever they moved it farther from
+its target than its own walk does in a frame ((walk speed x 1.2 + 0.5 m/s) x the frame), once the hold lasts (held
+over 1.5 m for 0.3 s, then until it is on the path again), and not while the game throws it (loco mode != 0, BUG-0409).
+Tribe only: in Creature it made npc_walk's fleeing proxy after a hit step 0.75-1.13 m in single frames a few times
+(labs 20261113-202612, -204146 #2; fix off 0, -204521); every reported hold was Tribe. Off: placed only (0.7.13). Counter `proxy_holds=` in `coop.npc`. Diagnostics on the audit line: raised ground, the
+animation, loco mode, grounded, nest herd, host's and walk speed. Test commands: `coop.npc dashto`, `coop.npc bhv`,
+`coop.npc pushback`, `coop.npc raised`, `coop.npc objnear`.
+Earlier (aed2f801, 0fca43c3): the audit line's driving view, `pushed back` and `off its placing after the call`.
 
 ## Verification
-no-fail-run: not reproduced on 0.7.10 code (rel/0.7.10 + fix/w46-k3-bodies, drive.lead_keep, tribe.mirror_keep, drive.lead_late_npc), the gate never fired and no audit line had a stuck proxy: chaos_tribe out/lab/20261107-101948 (3 of 3, lane 6), at 30 fps over SPORE_NET=player out/lab/20261107-103414 (2 of 2, lane 7) and out/lab/20261107-112617-2 (2 of 2, lane 7); every one of the 81 `proxy_stuck=` audit lines of those runs reads 0. Earlier (0.7.9): 8 runs of fix/w45-remote-bodies-2 (below). The single cases there (a proxy the guest's game moves back next to a herd mate, `place lost`) are BUG-0386's class: tribe.mirror_keep gives the member mirrors the proxies' keep_lost rule, which the proxies have had since BUG-0361.
+Test tribe_proxy_held (`coop_tribe_proxy_held.py`): the host walks an animal at 2.5 m/s through its nest and back
+(replaying 731EA3EA), the guest's game moves its proxy back at the measured 6.9 m/s in each update (planted with
+`coop.npc pushback`).
+* FAIL (SPORE_LAB_FIXOFF=tribe_proxy_held=npc.proxy_hold): out/lab/20261113-194207 (p90 3.58 m, 2.8 s over 3 m, the
+  monitor's proxies gate with the case's own audit line: held 1, pushed back 7.9 m/s), out/lab/20261113-202612 (final
+  code but the Tribe-only / loco mode rules, which the planted case does not reach: p90 5.07 m, 2.3 s over 3 m, pushed
+  back 10.4 m/s).
+* PASS (final code 0af3d56b): out/lab/20261113-204750 (p90 1.32 m, never over 3 m, 115 placings kept) and
+  out/lab/20261113-205654 (p90 1.11 m, 31 kept); before the last two rules out/lab/20261113-202024 (2 of 2: p90 1.32 /
+  1.15 m).
+* Regression (lane 4): final code: npc_walk_tribe, tribe_npc_dash (lag -0.033 s), chaos_tribe out/lab/20261113-204750,
+  npc_walk out/lab/20261113-205654; 4faa517d: tribe_npc_dash 2 of 2 out/lab/20261113-202024, npc_walk_tribe, play_tribe
+  (quick), creature_npc_dash, chaos_tribe out/lab/20261113-202612. npc_walk failed in -202612, -204146 #2 and -204750
+  (also with the hold off in Creature: BUG-1094, not this fix). An earlier version without the walk / duration limits failed tribe_npc_dash's lag check (labs
+  20261113-194347, -195017, -195627, -200431, -201345: the copy turned early at reversals) and is not kept.
 
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
@@ -89,4 +126,7 @@ no-fail-run: not reproduced on 0.7.10 code (rel/0.7.10 + fix/w46-k3-bodies, driv
     (whether the teleport call itself was taken) and the proxy's game speed. The next occurrence tells whether the
     game undoes the marked teleport during its update (pushed back ~ speed + catch-up) or refuses the call (off after
     the call > 0). Blocker for a fix: one such line.
+- 2026-11-13 (fix/w49-proxy2): cause observed with the full probe (lab 20261113-191751 chaos_tribe#4: the taken marked
+  teleport moved back by the game's frame at 6.9 m/s, near a nest; the stuck spots of the history are nests). Fixed
+  by npc.proxy_hold, test tribe_proxy_held with the hold planted at the measured rate. Status fixed.
 

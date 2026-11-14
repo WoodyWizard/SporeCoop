@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a wild animal walking near its nest no longer shows on a guest's screen creeping several metres
+  behind where the host has it for seconds (on every guest at once); the guest's game moved the copy back in each of
+  its updates while the mod put it on the host's path, and now the copy is kept there through the update (BUG-0440).
 - Tribe: a guest's members that were busy when the host came back from an editor or the main menu (taking up food
   from the ground, carrying it home) start afresh at the host's next editor visit, instead of going on with food that
   was taken away in between; that could make the guest's game fault (caught faults at 0xC23469, seen at the end of
