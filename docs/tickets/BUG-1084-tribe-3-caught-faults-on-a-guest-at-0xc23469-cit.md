@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.14
 fixed_in: unreleased
 branch: fix/w49-bundle
-commits:
+commits: aa000f38
 tests: tribe_away_bundle, campaign_tribe_end (lab fault check)
 signature: 0xC0000005 at 0x00C23469 SporeCoop::Citizen_HoldBundle+0x9 (data 0x34, edi 0) < Citizen_SetHandheldItem+0xF8D < BT_HealTick+0x30FD
 docs: docs/re/tribe.md#tribe-away-tree-end, docs/06-testing.md#testing-w49-bundle
@@ -69,7 +69,11 @@ bundle the guest's game no longer lists; no faults):
   members (20261113-174056); a gather order delivers inside the gather node (20261113-174359, -175118); the gift runs
   0x0462855E (20261113-180958); food in hand + held at state 10 or a ground bundle held at state 1 / 2: the node ended
   without a fault, fix off (20261113-181834, -182102, -182336).
-REGRESSION_PLACEHOLDER
+- Regression on the final code (lanes 6 / 7): play_tribe --quick OK, tribe_away OK (the guest's log: "the host is
+  back: 7 mirror trees left running by the away play ended"), tribe_away_conquest OK, tribe_civ OK, civ_village_bundle
+  (BUG-0684's test) OK (lab 20261113-183059, 20261113-183102). tribe_editor_world FAILED on a host-side check (the
+  co-op epic alive after the share save) with this fix on and off alike (20261113-183059, -184244, -184241 off): not
+  this change, BUG-1090.
 
 ## History
 - 2026-11-13: opened.

@@ -3481,3 +3481,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   shows their new proxies on the ground 525 m away (sync-check MISMATCH `n: 14 apart`).
 * Reproduce: the full campaign (lab 20261113-160426, Civ, 17:00:23).
 * Ticket: BUG-1089.
+
+## Tribe: tribe_editor_world fails: the co-op epic outlives the editor's share save on the host (2026-11-13, fix/w49-bundle)
+<a id="issue-tribe-editor-epic"></a>
+
+* What happens: after the host's editor visit and the share that follows, the host's game still has the co-op epic
+  alive and tracked (`live_epics=2`), where the test expects it to have left before the share save (BUG-0121's guard).
+* Reproduce: `lab.py run tribe_editor_world` (3 of 3 on rel/0.7.14 + fix/w49-bundle, also with BUG-1084's switch off:
+  lab 20261113-183059, -184241, -184244).
+* Ticket: BUG-1090.
