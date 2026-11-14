@@ -1194,10 +1194,15 @@ uint32_t g_dna_owed_world = 0; // host: the stage world g_dna_owed was owed in
 uint32_t g_stage_world = 0;    // the world of the last stage this machine played
 uint32_t g_solo_dropped = 0, g_owed_dropped = 0; // tests
 // why the host is not playing our stage: 'm' main menu, 'e' editor, 'l' loading, 0 it is (or unknown)
+// tests (BUG-1084, `coop.awaytest 1|0`, a guest): the host counts as in an editor (its game's editor without the
+// editor: its states go on, the away rules hold them off) until it is turned off again
+bool g_away_test = false;
 char host_out_of_stage()
 {
     if (g_sess.role() != net::Role::Client || !g_sess.connected() || !stage_mode(g_mode) || !g_local)
         return 0;
+    if (g_away_test)
+        return 'e';
     auto it = g_remotes.find(0);
     if (it == g_remotes.end() || it->second.buf.empty())
         return 0;
@@ -1571,7 +1576,7 @@ void host_away_tick(double now)
     // an editor or a load counts after 4 s: a host passing through the loading screen between two
     // places, or the shared editor of a vote opening a moment later here, is not away
     char why = g_host_away ? 0 : host_out_of_stage();
-    bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : why != 0;
+    bool change = g_host_away ? (host_here() && !g_away_test) || !g_sess.connected() || !stage_mode(g_mode) : why != 0;
     if (!change)
         g_host_away_since = -1;
     else if (g_host_away_since < 0)
@@ -7923,6 +7928,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                nullptr);
                            SAY("jump to act %d queued", s_act);
                        }
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.awaytest", "coop.awaytest 1|0 - tests (BUG-1084, a guest): the host counts as in an editor (away after 4 s) until 0",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1)
+                           g_away_test = atoi(argv[1]) != 0;
+                       SAY("awaytest=%d host_away=%d", (int)g_away_test, (int)g_host_away);
                        return 0;
                    },
                    nullptr, MT);

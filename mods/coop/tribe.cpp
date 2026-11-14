@@ -486,6 +486,15 @@ static BTTick_t o_BTTick;
 static uint32_t g_bt_skipped, g_bt_calls; // diagnostics (coop.tribe): mirrors' AI ticks skipped / all ticks
 // tests (BUG-0667): `coop.tribe localbt <member id> 1|0` on a guest: that mirror's tree runs as while the host is away
 static std::unordered_set<void*> g_bt_local;
+// tests (BUG-1084, `coop.tribe freezeat <id> <node> [state]`): a guest's mirror whose tree reaches that node (in that
+// state or a later one) while the host is away is held there (skipped as if the host were back) until the host is back
+struct FreezeAt {
+    uint32_t node;
+    int state; // the lowest state
+    int ticks; // ticks in that node and state before it is held
+};
+static std::unordered_map<void*, FreezeAt> g_bt_freeze_at;
+static std::unordered_set<void*> g_bt_frozen;
 // BUG-0667: cTribe_ReleaseSlot (a behaviour node's exit giving a layout spot back) with no tribe is skipped
 using ReleaseSlot_t = void(SK_THISCALL*)(void*, int, int);
 static ReleaseSlot_t o_ReleaseSlot;
@@ -585,10 +594,26 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
         g_bt_skipped++;
         return 0;
     }
+    if (g_bt_frozen.count((void*)self)) { // (tests, BUG-1084)
+        g_bt_skipped++;
+        return 0;
+    }
     if (!is_guest()) // BUG-0531 (diagnostics): does a host member's tree run
         if (auto it = g_hm.find((void*)self); it != g_hm.end())
             it->second.bt_ticks++;
-    return o_BTTick(a0, a1, a2, a3, self, a5, a6, a7, a8);
+    int r = o_BTTick(a0, a1, a2, a3, self, a5, a6, a7, a8);
+    if (!g_bt_freeze_at.empty()) // (tests, BUG-1084)
+        if (auto it = g_bt_freeze_at.find((void*)self); it != g_bt_freeze_at.end()) {
+            uint8_t* ai = F<uint8_t*>((void*)self, 0xB4C);
+            int depth = ai && skg::readable(ai, 0x620) ? *(int*)(ai + 0x1DC) : -1;
+            int st = depth >= 1 && depth < 16 ? *(int*)(ai + 0x1D0 + 4 * (0xF + 0x2B * (depth - 1))) : -1;
+            if (depth >= 1 && *(uint32_t*)(ai + 0x1D8) == it->second.node && st >= it->second.state && it->second.ticks-- <= 0) {
+                H->log(M, SK_INFO, "tribe: test: citizen %p held in node %08X state %d (BUG-1084)", (void*)self, it->second.node, st);
+                g_bt_frozen.insert((void*)self);
+                g_bt_freeze_at.erase(it);
+            }
+        }
+    return r;
 }
 
 // BUG-1087: a click, a box or a roster card on another player's member selected nothing and said nothing: a new player
@@ -4493,6 +4518,44 @@ static void mirror_drive(GMember& g, double now)
     mirror_step(g, pos, rot, vel, now, age);
 }
 
+// BUG-1084 (docs/re/tribe.md#tribe-away-tree-end): while the host is away the guest's game runs its mirrors' trees
+// (tribe.away); when the host is back they are skipped again (h_BTTick), frozen in whatever node they were, and the
+// world-object sync then changes what the mirror holds (a carried bundle the host's game has not is removed,
+// wobj.bundle_carried). At the host's next away the frozen node went on with its bundle gone: the food delivery node
+// 0x04623E0C (state 3, 0xC25BB0) found the member's container empty and called Citizen_HoldBundle 0xC23460 with null
+// (caught faults at 0xC23469, campaign_tribe_end). tribe.away_tree_end: in the frame the host is back every mirror's
+// running tree is ended (Citizen_BTTerminate: the nodes' exits run while what they hold is still there, its tribe
+// set), so the next away starts the trees afresh. Off: the trees stay frozen mid-node (0.7.13).
+static bool g_away_tree_end_fix = true;
+COOP_FIX("tribe.away_tree_end", "BUG-1084", g_away_tree_end_fix,
+         "tribe: a guest's member busy with food when the host comes back does not fault at the host's next away");
+static uint32_t g_away_trees_ended;
+static void away_tree_end_tick()
+{
+    static bool was_local;
+    bool local = local_play();
+    bool back = was_local && !local;
+    was_local = local;
+    if (back) { // (tests: the held trees go with the host's return)
+        g_bt_frozen.clear();
+        g_bt_freeze_at.clear();
+    }
+    if (!back || !g_away_tree_end_fix || !a_BTTerminate || game::mode_id() != modes::kTribe)
+        return;
+    uint32_t n = 0;
+    for (auto& [id, g] : g_gm) {
+        if (!mirror_ok(g) || g_detached.count(g.c) || g_bt_local.count(g.c) || !F<void*>(g.c, 0x1014))
+            continue;
+        uint8_t* ai = F<uint8_t*>(g.c, 0xB4C);
+        if (!ai || !skg::readable(ai, 0x620) || *(int*)(ai + 0x1D0) == -1) // (no tree running)
+            continue;
+        skg::cdecl_call<void>(a_BTTerminate, g.c);
+        n++;
+    }
+    g_away_trees_ended += n;
+    H->log(M, SK_INFO, "tribe: the host is back: %u mirror trees left running by the away play ended (BUG-1084)", n);
+}
+
 static void guest_tick(double now)
 {
     if (local_play())
@@ -5715,6 +5778,7 @@ void tick(double now)
     if (is_host())
         host_tick(now);
     else if (is_guest()) {
+        away_tree_end_tick(); // BUG-1084
         guest_tick(now);
         held_items_tick(now); // BUG-0906
     }
@@ -5806,6 +5870,8 @@ void on_session_end()
         if (game::object_alive(c))
             restore_body_tribe(c, t);
     g_detached.clear();
+    g_bt_frozen.clear();
+    g_bt_freeze_at.clear();
     g_bt_local.clear(); // (g_left_tribe stays until the world goes: its citizens are torn down later)
     theme_forget(); // BUG-0568
     party_forget(); // BUG-0646
@@ -5974,12 +6040,12 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u away_trees_ended=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
-                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown);
+                 g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -6678,6 +6744,16 @@ std::string debug(const std::vector<std::string>& a)
         else
             g_bt_local.erase(c);
         return std::string("mirror's tree ") + (g_bt_local.count(c) ? "runs" : "skipped");
+    }
+    if (a.size() >= 3 && a[0] == "freezeat" && is_guest()) { // freezeat <member id> <node hex> [state [ticks]]: tests
+        // (BUG-1084), the mirror's tree is held in that node from the tick it is there in that state or a later one
+        // (after that many more ticks) (while the host is away) until the host is back
+        void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such mirror";
+        g_bt_freeze_at[c] = {(uint32_t)strtoul(a[2].c_str(), nullptr, 16), a.size() >= 4 ? atoi(a[3].c_str()) : 0,
+                             a.size() >= 5 ? atoi(a[4].c_str()) : 0};
+        return "armed; held now: " + std::to_string(g_bt_frozen.size());
     }
     if (a.size() >= 2 && a[0] == "eat" && is_guest()) { // eat <member id>: tests (BUG-0667), the mirror's own Eat
         // (CitizenAction 0) at its tribe's food mat (+0x260) in this game, as a click on the mat gives it

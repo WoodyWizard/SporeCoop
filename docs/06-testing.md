@@ -7635,3 +7635,21 @@ MISMATCH, 20261113-125221), BUG-1084 (BUG-0684's null bundle fault at 0xC23469 o
 20261113-142311), BUG-1088 (a player member in the fight node 3-8.75 m up for 36 s in the Tribe play, the ground gate,
 full campaign 20261113-142203), BUG-1089 (a guest's proxies of Civ NPCs the host has at the planet's centre,
 full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113-163143).
+
+## The guest's frozen trees at the host's next away (2026-11-13, fix/w49-bundle)
+<a id="testing-w49-bundle"></a>
+
+* `tribe_away_bundle` (coop_tribe_away_bundle.py, tribe fixture, 2 games, warm, ~3 min; BUG-1084): the guest counts the
+  host as in an editor (`coop.awaytest 1`), its member is ordered to take up food the test puts on the ground
+  (`coop.wobj bundle ground`, `coop.tribe order <id> 14 <spot> 18C431C`), its tree is held in the bundle node
+  0x04623E0C state 3 (`coop.tribe freezeat <id> 04623E0C 3 5`), the host is back (`coop.awaytest 0`): 10 s later the
+  member's tree must hold no bundle the guest's game no longer lists; then a second away of 25 s, no faults.
+  `SPORE_LAB_FIXOFF="tribe_away_bundle=tribe.away_tree_end"` FAILS on the stale bundle (the fault itself was not forced).
+* `coop.awaytest 1|0` (a guest): the host counts as in an editor (away after 4 s, back 1 s after 0) while the host's
+  game plays on: the editor stand-in for tests. A `coop.menu` + `coop.load` instead renumbers the host's members (the
+  guest's mirrors are made again, `coop.tribe ai <id>` says "no such member"), unlike an editor visit.
+* `coop.tribe freezeat <id> <node hex> [state [ticks]]` (a guest): that mirror's tree is held in the node from the tick
+  it is there in that state or a later one (after that many more ticks), until the host is back.
+* Pitfalls: a member sent to gather by the guest's own game (`order <id> 2`) keeps gathering (the order record stays)
+  and does its delivery inside the gather node (states 19, 0x12-0x14), never in 0x04623E0C; the gift (`order <id> 9`)
+  runs node 0x0462855E. 0x04623E0C comes with an order to take up a ground bundle (14) or food in hand.

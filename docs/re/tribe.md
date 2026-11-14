@@ -439,7 +439,7 @@ tick, exit}`; tick = cdecl, **arg1 = the creature**, plain `ret`, returns bool):
 | **0xB46E8803** | **0xDA2FA0** | social performance with instruments (tool types 4/5/6 pick anims; chief has own anims) |
 | 0x546E8804 | - | NPC side "being socialised" (chooser returns InputAction 0x2D) |
 | 0x562C0FB | 0xDB9B20 | heal (section C) |
-| 0x4623E0C | 0xDBC790 | gift food |
+| 0x4623E0C | 0xDBC790 | gift food (~ superseded (2026-11-13): takes up / carries a bundle; the gift is 0x0462855E, see [#tribe-away-tree-end](#tribe-away-tree-end)) |
 | 0x461300F | 0xDABDE0 | eat |
 | 0x4611FF4 | 0xDAF810 | sleep (heals) |
 
@@ -3842,3 +3842,41 @@ BUG-1072. GOG 2024, Ghidra and lab lane 7 (a probe reading both games' animation
   +0xA0 / +0xB0 and time + RTT / 2 when 0.1 s or more off. `tracks fix= sent= rx= set=` in `coop.tribe anims`.
 * ? Which animations 0x05EF4EE1 / 0x0354559B are (names not found) and what starts them (likely the citizen's tool /
   posture code: the chief with its staff); not needed for the fix.
+## A guest's frozen tree resumed at the host's next away: the bundle node (2026-11-13, fix/w49-bundle)
+<a id="tribe-away-tree-end"></a>
+
+BUG-1084, GOG 2024 (Ghidra; lab lanes 6 / 7, `tools/tests/coop_tribe_away_bundle.py`). Follow-up of
+[the carried bundles](#tribe-carried-bundles) and [the bundles outside Tribe](#tribe-bundles-outside-tribe).
+* ✔ (Ghidra) The fault's caller 0xC2602D (crash lines said `Citizen_SetHandheldItem+0xF8D`) is in 0xC25BB0
+  (`SporeCoop::Citizen_BundleStep`, thiscall(citizen, bundle) ret 4): when its bundle is null or its amount (+0x134)
+  is 0 or less it plays the pick-up animations 0x2796B30 / 0xBFA50B5A and then calls Citizen_HoldBundle 0xC23460
+  with the first bundle of the citizen's own container (0xCEE490(c+0x34)): null with an empty container, the fault at
+  0xC23469. Callers of 0xC23460: 0xC244E0, 0xC25BB0, 0xD73E30, 0xD73FD0 (the gather node, BUG-0684), 0xD75520 (the
+  gather exit), 0xDB1320 (the bundle node's exit), 0xE8CF30.
+* ✔ (Ghidra) 0xC25BB0 is called from 0xDBC730 (`SporeCoop::BT_BundleNodeTick`), the tick of node 0x04623E0C (action
+  table .data 0x1593B40 {node, enter 0xDB1060, tick 0xDBC730, exit 0xDB1320}) in state 3, with the bundle its memory
+  +0x14 holds. The campaign's stack (`< BT_HealTick+0x30FD` = 0xDBCBBD) is this call.
+* ✔ (runtime, `coop.tribe ai` on a guest playing alone, lab 20261113-181834 / -182102 / -182336) node 0x04623E0C is the
+  game's bundle node, not only the gift: a member ordered to take up a ground bundle (`coop.tribe order <id> 14 <spot>
+  18C431C`, CitizenAction 14 Bundle) enters it with that bundle in +0x14, state 0/1 (walk to it), 2 (at it), 3 (the
+  pick-up, 0xC25BB0); a member given food in its hand (`coop.wobj bundle carry`) enters it at state 10 (walk to the
+  food mat, ~45 s), 11, 12. The gift order (CitizenAction 9) runs node **0x0462855E** (states 6, 15 walk to the
+  village, 16, 19, 7 back), not 0x04623E0C. CORRECTION (2026-11-13, fix/w49-bundle): the table of section B (above)
+  names 0x4623E0C "gift food"; in GOG 2024 the gift is 0x0462855E and 0x04623E0C takes up / carries a bundle.
+* ✔ (code) The guest's mirrors' trees run only while the host is away (h_BTTick, tribe.away); when the host is back
+  they are skipped again mid-node, and the world-object sync goes on: an own bundle of the guest's game with no host
+  partner (ground: after kOwnGrace snapshots; carried: wobj.bundle_carried) is removed (RemoveBundles: destroyed).
+  BUG-0684's rule (`wobj.bundle_civ_carried`) leaves carried bundles alone only outside Tribe, so it does not cover this.
+* ✔ (runtime, `tribe_away_bundle` with `tribe.away_tree_end` off, lab 20261113-182629 / -182823) a member held in node
+  0x04623E0C state 3 when the host is back still holds its bundle 10 s later while the guest's game lists none (the
+  sync removed it: `removed=2`); at the next away the node went on with the freed bundle and ended (0x05524115 /
+  0x04601D70) without a fault. From state 1 / 2 / 10 the same (lab 20261113-182102, -182336, -181834): 0 faults.
+* ~ (inferred) The fault needs the freed bundle to read an amount of 0 or less when state 3 goes on (RemoveBundles
+  takes the whole amount, then frees it; a reused block reads something else), so it depends on the heap; the lab's
+  runs did not force it. The campaign (lab 20261113-142311 lane 5, Dave = extra2): the host's first away (the Tribe
+  end's City Hall editor, s 1403-1438) let the guest's game run its members (food 41 -> 50); the faults came 12 s
+  into the second away (the Civ editors after the evolve vote, s 1506 on).
+* Rule (`tribe.away_tree_end`): in the frame the guest sees the host back, every mirror's running tree (ai+0x1D0 not
+  -1; not a detached body, not a `localbt` test mirror, tribe set) is ended with Citizen_BTTerminate 0xC0D500: the
+  nodes' exits run while what they hold is still there (lab 20261113-182632 / -182826: the member's tree empty, its
+  bundle left on the ground, listed); the next away starts the trees afresh (the member then idles, 0x05524115).
