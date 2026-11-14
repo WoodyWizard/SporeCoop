@@ -2430,8 +2430,10 @@ static uint32_t g_guest_pops_held;
 // h_TribeMessage before it (TITAN 2026-11-13 14:18): which code starts a Tribe cinematic (TRG_*), and from where
 static void* SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e)
 {
+    // every cinematic in the Tribe stage, not only TRG_*: the game over's own one (FBCD6489, a hashed name, no code
+    // constant; TRG_PRE_PopDestroyed is pushed at CD8B01 only) may come by another name (BUG-9184, 2026-11-14)
     static unsigned logs = 0;
-    if (name && !IsBadReadPtr(name, 4) && !strncmp(name, "TRG_", 4) && logs++ < 60)
+    if (name && !IsBadReadPtr(name, 4) && (!strncmp(name, "TRG_", 4) || game::mode_id() == modes::kTribe) && logs++ < 200)
         H->log(M, SK_INFO, "tribe: cinematic %s started from %08X (host=%d)", name,
                (unsigned)((uintptr_t)__builtin_return_address(0) - H->rebase(0)), (int)is_host());
     return o_PlayCinematic(mgr, name, a, b, c, d, e);

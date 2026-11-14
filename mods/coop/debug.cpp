@@ -582,21 +582,37 @@ int c_loadhook(void*, int, const char* const*, SkOut* out)
     SAY("LoadGame logging hook installed");
     return 0;
 }
-// memfind <hex dword> [max]: every aligned dword in committed read-write memory equal to the value
-// (who points at an object: RE of containers at runtime)
+// memfind <hex dword> [max] [code]: every aligned dword in committed read-write memory equal to the value
+// (who points at an object: RE of containers at runtime); "code": any dword (unaligned) in executable read-only
+// or read-only memory instead (which code pushes an address, the text of a string: BUG-9184)
 int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 2) {
-        SAY("usage: coop.memfind <hex dword> [max]");
+        SAY("usage: coop.memfind <hex dword> [max] [code]");
         return 1;
     }
     uint32_t v = (uint32_t)strtoul(argv[1], nullptr, 16);
     int max = argc > 2 ? atoi(argv[2]) : 20, n = 0;
+    const bool code = argc > 3 && !strcmp(argv[3], "code");
     MEMORY_BASIC_INFORMATION mi;
     for (uint8_t* a = (uint8_t*)0x10000; a < (uint8_t*)0x7FFF0000 && VirtualQuery(a, &mi, sizeof mi) == sizeof mi;
          a = (uint8_t*)mi.BaseAddress + mi.RegionSize) {
-        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
-            !(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
+        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)))
+            continue;
+        if (code) {
+            if (!(mi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_READONLY)))
+                continue;
+            const uint8_t* b = (const uint8_t*)mi.BaseAddress;
+            for (size_t i = 0; i + 4 <= mi.RegionSize && n < max; i++)
+                if (*(const uint32_t*)(b + i) == v) {
+                    SAY("%p\n", (void*)(b + i));
+                    n++;
+                }
+            if (n >= max)
+                break;
+            continue;
+        }
+        if (!(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
             continue;
         uint32_t* p = (uint32_t*)mi.BaseAddress;
         uint32_t* e = (uint32_t*)((uint8_t*)mi.BaseAddress + mi.RegionSize);
