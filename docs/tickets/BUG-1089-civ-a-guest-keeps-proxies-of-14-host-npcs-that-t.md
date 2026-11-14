@@ -8,9 +8,9 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w49-proxy
-commits:
+commits: 1856ff2e, cea47222
 tests: civ_wild_pooled, campaign (lab gate sync-check)
 signature:
 docs: docs/re/civ.md#civ-wild-parked, docs/06-testing.md#testing-civ-wild-pooled
