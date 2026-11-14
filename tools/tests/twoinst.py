@@ -545,12 +545,32 @@ def warm_refusal(st, host=None, guest=None):
     return ''
 
 
+def clear_faults(**cons):
+    """BUG-1097: the exception logger's count (`exc`) lives in the game process: a warm reset kept it, and the next
+    test's Checks.faults() counted the faults an earlier test made on purpose (kit_cmd_fault, kit_present_fault,
+    kit_overlay_fault: reports=True, they check their own) as its own. The test before has read and judged them; a warm
+    reset starts the count at 0 like a cold start (faults of the reset itself count for the new test). Returns
+    {name: the count cleared}. SPORE_WARM_KEEP_FAULTS=1: the old way (the count goes on; the twin of BUG-1097)"""
+    if os.environ.get('SPORE_WARM_KEEP_FAULTS') == '1':
+        return {}
+    cleared = {}
+    for name, con in cons.items():
+        out = (con.call('exc clear').get('out') or '').splitlines() or ['']
+        m = re.search(r'total faults: (\d+)', out[0])
+        cleared[name] = int(m.group(1)) if m else 0
+    if any(cleared.values()):
+        print('  (warm reset: the faults of the tests before cleared: '
+              + ', '.join(f'{n} {c}' for n, c in cleared.items()) + ')', flush=True)
+    return cleared
+
+
 def warm_reset(host, guest, fixture, planet):
     """the running games of the lane start the test again: the fixture goes into a fresh save
     slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
     t0 = time.time()
     st = lane_state()
     slot = 10 + (st.get('slot', 9) - 9) % 10
+    clear_faults(host=host, guest=guest)
     for c in (guest, host):
         c.call('coop.leave')
         c.call('coop.uistate 0')  # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it)

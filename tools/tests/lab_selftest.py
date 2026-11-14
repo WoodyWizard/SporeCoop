@@ -347,6 +347,23 @@ def game_log_case(tree, tmp):
                        capture_output=True, text=True)
     check('checks failed' in r.stdout, 'fixture: a fixture that lacks its facts fails Checks.faults() (BUG-0124): '
           + (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:]])[-1])
+    # BUG-1097: a warm reset clears the exception logger's count of the tests before (`exc clear` on both games);
+    # SPORE_WARM_KEEP_FAULTS=1 (the twin) keeps it
+    code = ('import sys; sys.path.insert(0, "tools/tests"); import twoinst\n'
+            'class E:\n'
+            '    def __init__(self, n): self.n, self.calls = n, []\n'
+            '    def call(self, line):\n'
+            '        self.calls.append(line); out = f"total faults: {self.n}"\n'
+            '        if line == "exc clear": self.n = 0\n'
+            '        return {"ok": True, "out": out}\n'
+            'h, g = E(5), E(0)\n'
+            'print("got:", twoinst.clear_faults(host=h, guest=g), h.calls, g.calls, h.n)\n')
+    for keep, want in (('0', "got: {'host': 5, 'guest': 0} ['exc clear'] ['exc clear'] 0"),
+                       ('1', 'got: {} [] [] 5')):
+        r = subprocess.run([sys.executable, '-c', code], cwd=wt,
+                           env=dict(os.environ, SPORE_LANE='2', SPORE_WARM_KEEP_FAULTS=keep), capture_output=True, text=True)
+        got = ([ln for ln in r.stdout.splitlines() if ln.startswith('got:')] or [r.stderr.strip()[-200:]])[-1]
+        check(got == want, f'warm reset: the faults of the tests before are cleared (BUG-1097, keep={keep}): {got}')
     # BUG-0430: a switch or knob set through any console (also a test's own) keeps these games from a warm reuse,
     # whether or not the test set it back; a query does not; the game's own switch report differing from the cold
     # start's refuses them too
