@@ -571,7 +571,9 @@ def cmd_notes_check(a):
             if not t:
                 problems.append(f'{tid}: named under Fixed but there is no ticket docs/tickets/{tid}-*.md')
             elif t['_private']:
-                print(f'note: {tid} is a private ticket (out/tickets/): released now, publish it (CLAUDE.md 1)')
+                # CI has no out/tickets: a private id in the notes fails the tag's build there
+                problems.append(f'{tid}: a private ticket (out/tickets/) named in the notes: drop the id from the '
+                                f'notes or publish the ticket first (the release build cannot see it)')
             elif t.get('status') != 'fixed' and not honest.search(item):
                 problems.append(f'{tid}: named under Fixed but its ticket is {t.get("status")} '
                                 f'(say "still open" / "not reproduced" in that item, or drop it)')

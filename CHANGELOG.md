@@ -144,7 +144,7 @@ Both players should update: the versions can still play together, but several fi
   4-player session) (BUG-1005).
 - Network: one oversized datagram no longer stops the other packets of that frame from being read, in the session
   and in the LAN game list (BUG-1007).
-- Network hardening: more checks on data received from other machines (BUG-1003, BUG-1012, BUG-1041, BUG-1048).
+- Network hardening: more checks on data received from other machines (BUG-1012, BUG-1048).
 - Tribe: a chief saved by a partner's member ("<A> saved <B>'s chief") now keeps 30 % of its health; before, it kept
   0.3 hit points and fell at the next blow (BUG-1052).
 - Tribe: a host's tribe member that puts its tool down, or starves, now shows that on the guests' screens too; before,
