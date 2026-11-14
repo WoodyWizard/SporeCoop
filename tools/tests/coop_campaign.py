@@ -111,24 +111,41 @@ TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows i
 # clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
+# BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: an editor's parts are dragged once only (a drag lost at low fps: "done" forever)
+OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}
 
 
-def drag_slow(con, sx, sy, tx, ty):
-    """hold the button and move in steps: a plain `drag` is too fast for the editors"""
+def drag_slow(con, sx, sy, tx, ty, pace=1.0):
+    """hold the button and move in steps: a plain `drag` is too fast for the editors. pace stretches every
+    wait (BUG-1096: at 3-15 fps with hitches of seconds the game saw the press, the moves and the release in
+    one or two frames and picked nothing up)"""
     con.call(f'move {sx} {sy}')
-    time.sleep(0.3)
+    time.sleep(0.3 * pace)
     con.call(f'button {sx} {sy} down')
-    time.sleep(0.3)
+    time.sleep(0.3 * pace)
     for i in range(1, 11):
         con.call(f'move {sx + (tx - sx) * i // 10} {sy + (ty - sy) * i // 10}')
-        time.sleep(0.08)
-    time.sleep(0.3)
+        time.sleep(0.08 * pace)
+    time.sleep(0.3 * pace)
     con.call(f'button {tx} {ty} up')
-    time.sleep(1)
+    time.sleep(1 * pace)
+
+
+def editor_parts_due(n):
+    """the pace of the parts' drag at this "done" try of an editor, or None (no drag now). The first drag
+    comes at the third try (an editor with a creation leaves before); BUG-1096: when the editor is still up
+    4 tries later the parts did not land (the game at a few fps took the drag for a click: "You need at
+    least 3 parts to Save" for 30 min of "done", lab 20261113-231423-2): drag again, slower each time.
+    CAMPAIGN_OLD_EDITOR_DRAG=1: one drag only (before the fix)"""
+    if n == 2:
+        return 1.0
+    if OLD_EDITOR_DRAG or n < 6 or (n - 2) % 4:
+        return None
+    return min(1.0 + (n - 2) // 4, 4.0)
 
 
 def stands(con):
@@ -634,13 +651,18 @@ class Campaign:
         n = self.edits.get(p.name, 0)
         self.edits[p.name] = n + 1
         time.sleep(self.rng.uniform(3, 6))  # a look at the creation
-        if n == 2:
+        pace = editor_parts_due(n)
+        if pace:
             # the end of Tribe opens the City Hall and the vehicle editor empty: their palette and plot
             # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ
             moves = TRIBE_EDITOR_PARTS if self.stage == 'tribe' else list(zip(EDITOR_PARTS, EDITOR_PLACES))
             for (sx, sy), (tx, ty) in moves:
-                drag_slow(con, sx, sy, tx, ty)
-            self.note(f'{p.name}: three parts dragged into an empty editor')
+                drag_slow(con, sx, sy, tx, ty, pace)
+            if n == 2:
+                self.note(f'{p.name}: three parts dragged into an empty editor')
+            else:
+                self.note(f'{p.name}: the editor still up after {n} "done": three parts dragged again (pace {pace:g}, '
+                          f'BUG-1096)')
         if n >= 3:
             con.call(f'move {EDITOR_DICE[0]} {EDITOR_DICE[1]}')
             time.sleep(0.4)

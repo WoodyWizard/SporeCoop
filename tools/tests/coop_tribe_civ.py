@@ -25,6 +25,10 @@ check, the caption of TRG2CVG_PreEditor, the guest's "I'm ready". Checked:
     SPORE_FIX_OFF=tribe.graduation_save fails: the join's share save faults in the game's serializer at 0xBCAB07
     (data 0x60C; the fork saw the same address) and writes part of the slot (lab 20261112-021437).
 
+  --player-editor (BUG-1096): the editors are left the campaign driver's way (coop_campaign.editor_parts_due,
+    drag_slow); with SPORE_FPS=host:4 the host's game at a campaign's loaded-machine fps. CAMPAIGN_OLD_EDITOR_DRAG=1
+    (one drag only, before the fix) fails when that drag is lost: the host stays in the City Hall editor.
+
   SPORE_FIX_OFF=core.editor_own_pause: the old gate: FAIL (the editor opens 60 s or more after the vote).
   SPORE_FIX_OFF=tribe.food_fx_mat: FAIL (the host faults at cTribe::UpdateFoodVisuals+0x28 and freezes).
 """
@@ -34,6 +38,7 @@ import sys
 import time
 
 import lane
+import uifind
 import worlddiff
 
 from coop_ui import Ui
@@ -98,6 +103,30 @@ def finish_editor(con):
     con.call('click %d %d' % DONE)
 
 
+def leave_editor_player(con, tries=14):
+    """--player-editor (BUG-1096): leave the editor the campaign driver's way (coop_campaign: "done" every few
+    seconds, the parts dragged at the third try and, after the fix, again every 4 tries slower while the editor
+    stays up), counting the tries; the City Hall's "You need at least 3 parts to Save" shown is printed"""
+    import coop_campaign as cc
+    n = 0
+    while n < tries and 'Editor' in mode(con):
+        time.sleep(4)
+        pace = cc.editor_parts_due(n)
+        if pace:
+            for (sx, sy), (tx, ty) in PARTS:
+                cc.drag_slow(con, sx, sy, tx, ty, pace)
+            print(f'  try {n}: parts dragged (pace {pace:g}); "need 3 parts" shown: '
+                  f'{bool(uifind.shown(con, "You need at least 3 parts to Save"))}', flush=True)
+        if n >= 3:
+            con.call('click %d %d' % DICE)
+            time.sleep(1)
+        con.call('click %d %d' % DONE)
+        n += 1
+        wait(lambda: 'Editor' not in mode(con), 4, 0.5)
+    print(f'  editor left: {"Editor" not in mode(con)} after {n} "done" tries', flush=True)
+    return n
+
+
 def vote_active(con):
     return 'vote active' in con.call('coop.vote')['out']
 
@@ -159,6 +188,7 @@ def main():
     ck = Checks()
     host, guest = start(fixture='tribe')
     rejoin = '--rejoin' in sys.argv
+    player_editor = '--player-editor' in sys.argv
     pf = host_slot()
     t_cityhall = None
     ck('Tribe' in mode(host) and 'Tribe' in mode(guest), 'both games in Tribe')
@@ -202,7 +232,7 @@ def main():
     editors = 0
     checked_end = False
     end_writes = []
-    while time.time() - t0 < 300 and 'Civ' not in mode(host):
+    while time.time() - t0 < (900 if player_editor else 300) and 'Civ' not in mode(host):
         m = mode(host)
         if t_cityhall and editors < 2 and 'Editor' not in m and newest_write(pf) > t_cityhall:
             end_writes.append(newest_write(pf) - t_cityhall)
@@ -217,7 +247,15 @@ def main():
                     time.sleep(2)
                 ck(host.call('game.mode') and 'total faults: 0' in host.call('exc')['out'],
                    "the host's game takes the guest's food changes in the vehicle editor without a fault")
-            finish_editor(host)
+            if player_editor:
+                left = leave_editor_player(host)
+                ck('Editor' not in mode(host), f'the host leaves editor {editors} the players\' way ({left} "done" tries, '
+                   'BUG-1096)')
+                if 'Editor' in mode(host):
+                    shot(host, 'tribe_civ_editor_stuck')
+                    return ck.result()
+            else:
+                finish_editor(host)
             wait(lambda: 'Editor' not in mode(host), 20)
             if editors == 1 and not checked_end and 'Tribe' in mode(host):
                 checked_end = True
