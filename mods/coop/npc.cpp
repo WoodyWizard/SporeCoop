@@ -200,14 +200,16 @@ static bool g_proxy_hold_fix = true;
 COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
 static bool g_air_fix = true;
 COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the air on the host (flying, jumping, thrown) is in the air on the guest too");
-// BUG-1094 (`coop.fix npc.air_enter`): a walked proxy trails its target (0.8-0.9 m at a 2.4 m/s walk); the first placing in
-// the air put it on the target at once, a 0.94 m step in one 15 ms frame at the throw's start (npc_walk "no jump of a
-// moving proxy", lab 20261113-235647 #2). The proxy's offset from its target when it leaves the ground is kept and
-// closed over kAirEnterTau s (dropped over kAirEnterMax m: a teleport anyway). Off: placed on the target at once.
-static bool g_air_enter_fix = true;
-COOP_FIX("npc.air_enter", "BUG-1094", g_air_enter_fix, "creature, tribe: an animal's copy that is thrown while it walks goes into the air from where it is drawn, no step of a metre at the throw");
-constexpr float kAirEnterTau = 0.08f, kAirEnterMax = 3.f;
-static uint32_t g_air_enter_blends = 0;
+// BUG-1094 (`coop.fix npc.air_catch`): the first placings in the air put a proxy on its target at once: a walked proxy
+// that trailed it 0.9 m stepped 0.94 m in one 15 ms frame at the throw's start, and the lead's target itself leaps
+// 1-1.5 m there (the newest state moved on at the throw's 9 m/s; lab 20261113-235647 #2, 20261114-000525 #3: 1.07 m
+// in 19 ms). The drawn proxy is moved toward its target at no more than its speed x kAirCatchK + kAirCatchMps per
+// second (the game adds the written velocity x the frame after the placing: allowed for); farther than kAirCatchMax m
+// it is placed on the target. Off: placed on the target in every frame.
+static bool g_air_catch_fix = true;
+COOP_FIX("npc.air_catch", "BUG-1094", g_air_catch_fix, "creature, tribe: an animal's copy that is thrown goes into the air from where it is drawn, no step of a metre at the throw");
+constexpr float kAirCatchK = 1.2f, kAirCatchMps = 8.f, kAirCatchMax = 3.f;
+static uint32_t g_air_catches = 0;
 // BUG-0710 (class BUG-0419): NpcSpawn.max_health was sent and never applied: a proxy had its species' adult max on the
 // guest (a baby NPC: max 5 on the host, 10 on the guest; detector Creature:max_hp, 20 of 23 comparisons). Off: 0.7.10.
 static bool g_max_hp_fix = true;
@@ -296,7 +298,6 @@ struct Proxy {
     double push_until = 0;   // tests (BUG-0440, `coop.npc pushback`): its game's update moves it back until then
     float push_mps = 0;
     bool air = false;        // BUG-0550: placed in the air (the host's NPC off its ground) last frame
-    net::Vec3 air_off{};     // BUG-1094 (npc.air_enter): the offset from the target still to close in the air
     uint32_t airs = 0;       // BUG-0550 (coop.npc list): frames placed in the air
     float meat_seen = -1e9f; // BUG-0557: the body's meat (+0xB84) as last read or set here (-1e9: not a body yet)
 };
@@ -2315,19 +2316,16 @@ static void guest_tick(double now)
         if (air) {
             px.kinematic = false;
             net::Vec3 at = drive::at_sender_agl(s.pos, s.agl);
-            if (g_air_enter_fix) {
-                if (!px.air) { // it leaves the ground: from where it is drawn
-                    px.air_off = {drawn.x - at.x, drawn.y - at.y, drawn.z - at.z};
-                    if (drive::speed(px.air_off) > kAirEnterMax)
-                        px.air_off = {};
-                    else if (drive::speed(px.air_off) > 0.05f)
-                        g_air_enter_blends++;
+            if (g_air_catch_fix && g_frame_dt > 0) {
+                // where the next drawing shows it when placed at `at` (the game moves it on by the velocity)
+                const float dt = (float)g_frame_dt;
+                const net::Vec3 next{at.x + s.vel.x * dt - drawn.x, at.y + s.vel.y * dt - drawn.y, at.z + s.vel.z * dt - drawn.z};
+                const float len = drive::speed(next), lim = (drive::speed(s.vel) * kAirCatchK + kAirCatchMps) * dt;
+                if (len > lim && net::dist(drawn, at) < kAirCatchMax) {
+                    const float k = lim / len;
+                    at = {drawn.x + next.x * k - s.vel.x * dt, drawn.y + next.y * k - s.vel.y * dt, drawn.z + next.z * k - s.vel.z * dt};
+                    g_air_catches++;
                 }
-                const float k = std::exp(-(float)g_frame_dt / kAirEnterTau);
-                px.air_off = {px.air_off.x * k, px.air_off.y * k, px.air_off.z * k};
-                if (drive::speed(px.air_off) < 0.01f)
-                    px.air_off = {};
-                at = {at.x + px.air_off.x, at.y + px.air_off.y, at.z + px.air_off.z};
             }
             drive::air_place(px.c, at, s.rot, s.vel, px.drv, now);
             px.air = true;
@@ -3287,12 +3285,12 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_enter_blends=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
-                 game::place_holds_kept(), g_air_enter_blends);
+                 game::place_holds_kept(), g_air_catches);
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
