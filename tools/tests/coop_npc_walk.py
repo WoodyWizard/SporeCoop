@@ -207,7 +207,24 @@ def air_follow(rows):
     return n, still, per
 
 
-def analyse(rows, W, H, phases):
+def host_jumps(hrows):
+    """BUG-1094: the host's own NPC put somewhere in one frame (its game sets a thrown NPC onto its ground at the landing:
+    2.79 m in one frame, lab 20261114-001415 #2): {id: [(t, step)]}"""
+    by, out = {}, {}
+    for r in hrows or []:
+        by.setdefault(r['id'], []).append(r)
+    for nid, rs in by.items():
+        rs.sort(key=lambda r: r['t'])
+        for a, b in zip(rs, rs[1:]):
+            if 0 < b['t'] - a['t'] <= 0.25:
+                st = math.dist(a['d'], b['d'])
+                if st > TP_MIN:
+                    out.setdefault(nid, []).append((b['t'], st))
+    return out
+
+
+def analyse(rows, W, H, phases, hrows=None):
+    hj = host_jumps(hrows)
     by = {}
     for r in rows:
         by.setdefault(r['id'], []).append(r)
@@ -251,6 +268,9 @@ def analyse(rows, W, H, phases):
                 # once, Tribe animals 70-100 m away): counted, not judged
                 if step > lim:
                     res.setdefault('jumps_off', []).append((nid, round(b['t'], 2), round(step, 2)))
+            elif step > lim and any(abs(ht - b['t']) < 0.5 and hs >= 0.5 * step for ht, hs in hj.get(nid, ())):
+                # BUG-1094: the host's own NPC made that jump (the landing of a throw): shown as the host has it
+                res.setdefault('jumps_host', []).append((nid, round(b['t'], 2), round(step, 2)))
             elif step > lim and b['tp'] == a['tp']:
                 res['jumps'].append((nid, round(b['t'], 2), round(step, 2), round(dt * 1000)))
                 pw['jumps'] += 1
@@ -450,7 +470,7 @@ def main():
         json.dump({'rows': rows, 'host': hrows, 'phases': phases, 'log': log}, f)
     print(f'  per-frame samples: {path} ({len(rows)} rows)', flush=True)
     print('  ' + '; '.join(log)[:1500], flush=True)
-    r = analyse(rows, W, H, phases)
+    r = analyse(rows, W, H, phases, hrows)
     fps = 1 / (sum(r['dts']) / len(r['dts'])) if r['dts'] else 0
     win = r['win']
     stand = sum(1 for w in win if w < 0.3) / len(win) if win else 1
@@ -470,7 +490,8 @@ def main():
         print(f'    of them on the guest\'s screen: {len(won)}, stand {sum(1 for w in won if w < 0.3) / len(won):.0%}, '
               f'matched {sum(1 for w in won if 0.6 <= w <= 1.4) / len(won):.0%}', flush=True)
     print(f'    jumps on the guest\'s screen (id, t, m, frame ms): {len(r["jumps"])} {r["jumps"][:12]}; off it: '
-          f'{len(r.get("jumps_off", []))} {r.get("jumps_off", [])[:6]}', flush=True)
+          f'{len(r.get("jumps_off", []))} {r.get("jumps_off", [])[:6]}; the host\'s NPC jumped too (not judged): '
+          f'{len(r.get("jumps_host", []))} {r.get("jumps_host", [])[:6]}', flush=True)
     print(f'    walk gait in {near_gait:.0%} of the {r["near"]} moving frames on the guest\'s screen', flush=True)
     walked = [x for x in rows if x['how'] == 3 and x['rv'] > 0.5]
     if walked:  # diagnostics (one lab run had gait 0 on every proxy, cause unknown)
