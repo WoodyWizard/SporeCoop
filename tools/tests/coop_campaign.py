@@ -111,7 +111,8 @@ TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows i
 # clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
-# BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: an editor's parts are dragged once only (a drag lost at low fps: "done" forever)
+# BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
+# or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
@@ -119,20 +120,47 @@ HOME_GUARD = 3              # members (besides the chiefs) that stay home in the
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}
 
 
+def frames(con, n):
+    """BUG-1096: wait n of the game's frames (and do nothing with CAMPAIGN_OLD_EDITOR_DRAG=1, the old driver: waits in
+    seconds only). A game at 3 fps runs one frame in 333 ms: the seconds of a wait tuned at 60 fps are a frame or two"""
+    if not OLD_EDITOR_DRAG and n > 0:
+        con.call(f'wait.frames {int(n)} {max(10000, int(n) * 2000)}')
+
+
 def drag_slow(con, sx, sy, tx, ty, pace=1.0):
     """hold the button and move in steps: a plain `drag` is too fast for the editors. pace stretches every
     wait (BUG-1096: at 3-15 fps with hitches of seconds the game saw the press, the moves and the release in
-    one or two frames and picked nothing up)"""
+    one or two frames and picked nothing up). Every wait is also at least some of the game's frames (frames()):
+    the hover before the press, the press, every step, the release each seen by the game in a frame of its own"""
     con.call(f'move {sx} {sy}')
     time.sleep(0.3 * pace)
+    frames(con, 3)
     con.call(f'button {sx} {sy} down')
     time.sleep(0.3 * pace)
+    frames(con, 3)
     for i in range(1, 11):
         con.call(f'move {sx + (tx - sx) * i // 10} {sy + (ty - sy) * i // 10}')
         time.sleep(0.08 * pace)
+        frames(con, 1)
     time.sleep(0.3 * pace)
+    frames(con, 3)
     con.call(f'button {tx} {ty} up')
     time.sleep(1 * pace)
+    frames(con, 4)
+
+
+def editor_click(con, x, y, settle=1.0):
+    """hover, click and wait until the click is over. The kit's `click` presses 3 frames and releases 6 frames
+    after the call (sporekit input_click), and the next command's move takes the cursor away at once: at 3 fps a
+    click of the name panel's dice followed 1 s later by "done" was released over "done" and the name never
+    came ("You must give your creation a name before you can save" for 20 tries, BUG-1096). Waited in frames;
+    CAMPAIGN_OLD_EDITOR_DRAG=1: in seconds only (before)"""
+    con.call(f'move {x} {y}')
+    time.sleep(0.4)
+    frames(con, 2)
+    con.call(f'click {x} {y}')
+    time.sleep(settle)
+    frames(con, 8)
 
 
 def editor_parts_due(n):
@@ -664,13 +692,8 @@ class Campaign:
                 self.note(f'{p.name}: the editor still up after {n} "done": three parts dragged again (pace {pace:g}, '
                           f'BUG-1096)')
         if n >= 3:
-            con.call(f'move {EDITOR_DICE[0]} {EDITOR_DICE[1]}')
-            time.sleep(0.4)
-            con.call(f'click {EDITOR_DICE[0]} {EDITOR_DICE[1]}')
-            time.sleep(1)
-        con.call(f'move {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
-        time.sleep(0.4)
-        con.call(f'click {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
+            editor_click(con, *EDITOR_DICE)
+        editor_click(con, *EDITOR_DONE, settle=0)
         return 'editor done'
 
     def vote_open(self):
