@@ -2423,7 +2423,7 @@ BUG-9113. GOG 2024 code (Steam QA copy), instances 9 + 8.
 ## Host-simulated Adventure creatures (2026-11-10, feat/adventure-bodies)
 <a id="space-adventure-host-creatures"></a>
 
-BUG-9114 (switch `adventure.enemies`, off in 44).
+BUG-9114 (switch `adventure.enemies`, off in 44, on by default since 2026-11-14: BUG-9200, BUG-9201).
 * City Assault has about 85 scenario creatures (noun 18EB45E with a scenario marker): classes 1026 /
   1027 (two armies, 94 / 102 hp), 1083 / 1141 / 1152 (city defenders, 22-208 hp), 1069 / 1096 / 1145
   (50000 hp, characters near the start). Soldiers spawned from one marker share the object id
@@ -2733,4 +2733,21 @@ BUG-9200 (BUG-9114). Steam QA copy, City Assault, two games.
 * ✔ +0x24 is the object serial (the key of the actor stream); +0xE88 is a per-creature small id (0x201 for the
   captain, 0x10D.. 0x2103 for others, 0 for the spawned body), not a side.
 * ✔ City Assault at 10 FPS: the allied army ends the mission (play state 5) about 8 minutes after the intro.
-* ~ Guests keep unpaired scenario creatures standing at 0 hp (BUG-9114, open).
+* ~ superseded (2026-11-14): Guests keep unpaired scenario creatures standing at 0 hp (BUG-9114, open).
+  CORRECTION (2026-11-14, feat/lineages-47): fixed by BUG-9201, see #space-adventure-guest-leftovers.
+
+## Adventure: a guest's leftover creatures and deaths (2026-11-14, feat/lineages-47)
+<a id="space-adventure-guest-leftovers"></a>
+
+BUG-9201 (BUG-9114). Steam QA copy, City Assault, two games, adventure.enemies on.
+* ✔ A guest's scenario spawns its own waves from markers: with the host driving the creatures, the guest had
+  80 living creatures with no host key after ~3 minutes (about one every 2 s), 56 of them at 0 hp. The pairing
+  (same object id, nearest first) takes as many as the host has; the rest have no AI and nothing removes them.
+* ✔ A guest's creature the host killed gets 0 hp from `kill()` (TakeDamage) but stays alive (`is_dead` 0): the
+  death runs in the behaviour tree (docs/re/creature.md 14.1), skipped on the guest. `game::play_death` (Die +
+  the death animation) makes it a corpse (dead=1 within a tick).
+* ✔ Removing a guest's creature unpaired for 5 s (game::destroy_creature) while the host's states arrive keeps
+  the guest's count with the host's (85-98 to 78-89); about 190 removed in 4 minutes. No fault, the mission
+  ends on both (play state 5). Corpses go the same way once the host's corpse is gone (its key times out after 5 s).
+* ✔ A guest captain's hit on a paired creature goes to the host (Packet Hit, hits_in = hits_applied) and the
+  host's health comes back with the states (22 -> 17 hp on both).

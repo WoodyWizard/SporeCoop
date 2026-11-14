@@ -2,8 +2,10 @@
 
 ## [Unreleased]
 
-- Adventures (test switch adventure.enemies, still off): the host's enemies
-  now attack a partner's body, and the damage reaches that partner (BUG-9200).
+- Adventures: the host's game now runs the enemies for everyone, so all
+  players see the same fight. The enemies attack a partner too (BUG-9200), a
+  partner's hits count on the host, and a partner's game no longer keeps
+  extra enemies or ones that should be dead (BUG-9201, BUG-9114).
 - Space: enemy ships are as strong as the number of players in that system
   (raids: the players online), not the reserved seats (BUG-9199).
 - Space: a partner who rejoins under another name keeps their wars,

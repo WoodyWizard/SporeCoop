@@ -1,17 +1,17 @@
 ---
 id: BUG-9114
 title: Adventure creatures move differently in each game; the host should simulate them for everyone
-status: open
+status: fixed
 kind: feature
 stage: Adventure
 reported: 2026-11-10
 source: owner request (44-dev)
 role: host guest
 versions: 0.7.3.6-lineages44-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/adventure-bodies
-commits:
-tests: tests/adventure_sync_tests.cpp (hits, creature batches); QA compare of `coop.adventure actors` on both games
+commits: 1e547391 6b282874
+tests: tests/adventure_sync_tests.cpp (hits, actor batches); tools/qa_win (QA compare of `coop.adventure actors` on both games)
 signature: enemies' positions differ between games; host creatures pick a partner body but never strike it
 docs: docs/re/space.md#space-adventure-host-creatures
 related: BUG-9089 BUG-9113 BUG-0016
@@ -66,3 +66,18 @@ host) was not exercised before the mission ended. Not tested: two PCs, 3-4 playe
   * The guest captain's hit on a host creature (Packet Hit -> host) is still not exercised: `coop.adventure hit
     <class>` on the guest picks the nearest creature of the class, which was a stale 0-hp copy (hits_out 0). Next:
     the test hit picks a paired creature.
+
+## 2026-11-14 (feat/lineages-47, roadmap 3O A): on by default
+
+* The two open points are fixed in BUG-9201: a guest's leftover creatures are removed after 5 s, and a creature
+  the host killed dies on the guest (the game's Die). The guest captain's hits go to the host and are applied
+  there (hits_in = hits_applied, the host's health comes back to the guest; a lethal hit kills on both).
+* `adventure.enemies` is on by default (6b282874). Live: two City Assault missions to the end on TITAN, the guest
+  following the host's creatures (85-98 creatures to the host's 78-89), 0 faults.
+* Not tested yet: two PCs, 3-4 players, other adventures than City Assault.
+
+## Verification
+
+Live, two TITAN QA games, City Assault (2026-11-14): BUG-9200 (the strike: 0 hits with its switch off, 5-8 with it
+on) and BUG-9201 (leftovers and deaths: FAIL with its switch off, PASS on). no-fail-run: not a lab run (TITAN QA
+games, by hand; the FAIL/PASS pairs are in BUG-9200 and BUG-9201).

@@ -728,7 +728,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9111](BUG-9111-player-cells-in-cell-stage.md) | fixed | feature | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Player cells (Lineages cells) appear in the Cell stage as native NPC species |
 | [BUG-9112](BUG-9112-foreign-creations-replaces-share-onward.md) | fixed | feature | All | 2026-11-10 | 0.7.3.6-lineages43-dev | Foreign Creations (the receiver's choice) replaces Share Onward (the author's choice) |
 | [BUG-9113](BUG-9113-adventure-partner-bodies.md) | fixed | feature | Adventure | 2026-11-10 | 0.7.3.6-lineages44-dev | Adventure partners are captain bodies of the right size, not name tags |
-| [BUG-9114](BUG-9114-adventure-host-creatures.md) | open | feature | Adventure | 2026-11-10 |  | Adventure creatures move differently in each game; the host should simulate them for everyone |
+| [BUG-9114](BUG-9114-adventure-host-creatures.md) | fixed | feature | Adventure | 2026-11-10 | unreleased | Adventure creatures move differently in each game; the host should simulate them for everyone |
 | [BUG-9115](BUG-9115-guest-alpha-marks.md) | fixed | desync | Creature | 2026-11-10 |  | a guest does not see the host's nest alphas as alphas (and sees other creatures as alphas) |
 | [BUG-9116](BUG-9116-depth-cube-direction-and-size.md) | fixed | bug | Editor | 2026-11-11 |  | the editor depth cube pushes along the line from the spine, not straight in and out, and keeps one pixel size at every zoom |
 | [BUG-9117](BUG-9117-coop-window-polish.md) | fixed | bug | All | 2026-11-11 | 0.7.8-lineages48-dev | co-op window looks unpolished (wrapping text, uneven rows, unframed difficulty, ping wraps, cluttered lobby) |
@@ -815,3 +815,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9198](BUG-9198-space-rivalry-and-ally-lists-keyed-by-name-a-ren.md) | fixed | bug | space | 2026-11-14 | unreleased | Space rivalry and ally lists keyed by name: a rename or rejoin loses or duplicates them |
 | [BUG-9199](BUG-9199-space-difficulty-scales-by-reserved-seats-not-by.md) | fixed | feature | space | 2026-11-14 | unreleased | Space difficulty scales by reserved seats, not by the party in the system (decision 2B) |
 | [BUG-9200](BUG-9200-adventure-enemies-pick-a-partner-s-body-but-neve.md) | fixed | bug | Adventure | 2026-11-14 | unreleased | Adventure enemies pick a partner's body but never strike it: the body has no political id |
+| [BUG-9201](BUG-9201-adventure-a-guest-keeps-scenario-creatures-no-ho.md) | fixed | bug | Adventure | 2026-11-14 | unreleased | Adventure: a guest keeps scenario creatures no host creature drives, standing without AI at 0 hp |
