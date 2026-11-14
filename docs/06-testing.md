@@ -7765,6 +7765,8 @@ editor's own pause and input lock and the trace lines are the same in both runs;
   the driver's way, at most 20 tries each; checks the host leaves each editor). FAIL with `CAMPAIGN_OLD_EDITOR_DRAG=1`
   20261114-000115 (the first drag lost at 3 fps: one part on the plot, "You need at least 3 parts to Save", 14 tries),
   PASS 20261114-000120 (the City Hall left after the drags of tries 2, 6, 10: 14 tries; the vehicle editor 8; Civ).
+* Load only: the same rel/0.7.14 code with the old driver passed campaign_tribe_end 20261114-001918 once the load was
+  gone (the host at 60-65 fps, one drag per editor, Civ after 936 s of the Tribe advance).
 * `coop.ui find` does not see the red "You need at least 3 parts to Save" line (always False): the retry counts tries.
 * campaign_tribe_noclick 20261113-231423 (lane 6) of the same batch is another case: the City Hall editor ended in 37 s;
   the planted 18 min of lost clicks plus the loaded machine (raids of 185-321 s) brought the goal bar to 5/5 only at

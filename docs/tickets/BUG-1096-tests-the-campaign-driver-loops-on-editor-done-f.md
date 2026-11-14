@@ -59,7 +59,9 @@ left the driver's way), suite `tribe_civ_editor_slow` (`SPORE_FPS=host:3`).
 - PASS: 20261114-000120 (lane 6, the fix): the City Hall editor left after the drags of tries 2, 6 and 10 (14 tries), the
   vehicle editor after 8, both games in Civ, no faults. (The try cap was raised from 14 to 20 after this run: the
   City Hall needed all 14.)
-- campaign_tribe_end not rerun (40 min on a machine at load 30).
+- Load only, confirmed: campaign_tribe_end 20261114-001918 (lane 5, rel/0.7.14's mod code and its old driver,
+  `CAMPAIGN_OLD_EDITOR_DRAG=1`, after the foreign load ended at 00:15): PASS in 1614 s; the host at 60-65 fps left the
+  City Hall and vehicle editors after the one drag each (4 "done" tries each), Civ after 936 s of the Tribe advance.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
