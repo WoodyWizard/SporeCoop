@@ -3043,6 +3043,56 @@ BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode colum
   kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
   a hit 0.58 s in 56 hits with the old code).
 
+## A thrown NPC's proxy placed in the air stands and jumps (2026-11-13, fix/w49-npcwalk, open)
+<a id="creature-air-place-lost"></a>
+
+BUG-1094. coop.npctrack rows of npc_walk (out/lane4/track/npc_walk_creature_*.json of fix/w49-proxy2 and older runs):
+* ✔ (observed) The flee phase's hit (`coop.npc hosthit <id> 0.5`) throws one walker on the host in about half of the
+  runs: locomotion mode +0x2B0 = 3, +0x137 = 0 for ~2 s, 9.8 m/s slowing to ~1 m/s, moving smoothly in every host
+  frame. The guest places its proxy in the air (NF_AIR, `drive::air_place`: `game::place` without the teleport mark,
+  not grounded, the host's velocity written; coop.npctrack how 5).
+* ✔ (observed) The guest's game does not keep that place: in 70-77 of the 83-91 air frames whose target moved
+  (66 fps) the drawn position is exactly where it was a frame before (step 0.00-0.01 m) while the target moves
+  0.1-0.2 m per frame and the written velocity reads back 9 m/s; every ~0.1 s (6-7 frames) one placing is let
+  through and the proxy steps 0.6-1.1 m at once (the model's position +0xB54 -> +0x04 moves one frame before it).
+  Runs 20261113-203655, -204512, -204934, 20261110-180639, 20261108-112359, -111809, 20261106-080021, -032933,
+  -025945 (all at 14-16 ms frames). At 32-33 ms frames (20261107-112955, 20261106-011542) it stood in 16-29 of 44-53
+  frames with shorter steps, under the test's 0.75 m: hidden there, as BUG-1092 at 20 fps.
+* ✔ (observed) The proxy stood (driven by drive::step, how 0) just before the throw in every such run; in the
+  runs where the hit threw nobody (the other half) npc_walk passed.
+* ✔ (observed) Both games play 035EE23C, 035EE245 (an attack animation, #creature-bt-anims above) and 02481DFC in the
+  throw: the hit NPC fights back; the host's locomotion mode 3 there may be the attack's leap (one of the other
+  writers of +0x2B0 = 3 listed in #creature-hit-throw), not TakeDamage's knockback. The guest gets the animations
+  through npc.anims.
+* ✔ (observed, lane 4 at 19-26 fps, the lab loaded to ~29 on 12 cores) Not reproduced without the host's throw: the
+  guest taking a standing proxy's state as thrown (a test command tried on fix/w49-npcwalk and removed: NF_AIR, 9.5
+  m/s sideways, up and down, with and without the relayed 035EE23C start) stood in 2-6 of 138-184 such frames with
+  the first fix off (labs 20261113-215005, -215238, -215555, -215802). The host's own hits (`hosthit <id> 0.5`,
+  also with a push, on a standing and a walking NPC) did not throw it off its ground in those runs (+0x137 stayed 1,
+  mode 3 for 1-3 frames: -211634, -212433, -212846), and npc_walk's flee hit threw nobody in 7 runs of that evening
+  (-213112, -213753: 22-35 fps). Why the guest-only throw was kept (its frame rate, or something only the real
+  throw has) is open; the animation relay is ruled out below.
+* Inferred: the same as BUG-0361's walked proxy thrown back by a hit ("placed without the mark, the proxy's own
+  locomotion moved it back each frame by as much as it was placed", #creature-hit-throw above): the standing
+  creature's locomotion restores its own position in its update and takes a new one only at an interval of ~0.1 s
+  (not identified in the binary: which update and why that period).
+* ✔ (runtime, coop.npctrack `p` = the position right after the mod's placing, lab 20261113-203655 rows) The placing
+  itself is taken in the jump frames only: in the standing frames `p` equals the drawn position (|p - d| 0.00-0.01 m),
+  in the frame every ~0.1 s it is the target (0.7-0.94 m); the model's position (+0xB54 -> +0x04) equals `p` in every
+  frame.
+* Tried and dropped (fix/w49-npcwalk, 2026-11-13; each with npc_walk's new air check, labs at 52-67 fps):
+  - the rest of the air phase placed with the teleport mark (`game::teleport`) once a place was not kept: still 55 of
+    66 and 75 of 88 frames standing (lab 20261113-222533 #1, #3);
+  - in addition the hold put back after the creature update (cCreatureAnimal::Update hook) and after the physics
+    update (gamefixes.cpp's PhysicsManager_Update hook) when it was moved off its flight: the update moved it back by
+    a constant 0.94, 1.89, 2.72 m per ~0.1 s window (off its hold, in every frame), the physics left it at the hold
+    (0.00 m), and the next frame drew it standing again (35 of 60, 75 of 91, 132 of 154, 73 of 88: labs
+    20261113-223254 #1, -224612 #1, -225641; "holds put back so far 122" in 1.5 s); so something after the physics
+    update and before the drawing puts it back, too;
+  - no velocity written while kept: 75 of 87 (lab 20261113-230443 #4);
+  - the relayed animations off (`SPORE_FIX_OFF=npc.anims`): 74 of 88 and 69 of 81 (lab 20261113-223923): not the relay.
+  Open: which update after the physics restores the position (the 0.1 s period, the growing offset per window).
+
 ## Creature collisions: the contact handler skips creature pairs (2026-11-06, fix/w45-remote-bodies-2)
 <a id="creature-contact-pairs"></a>
 

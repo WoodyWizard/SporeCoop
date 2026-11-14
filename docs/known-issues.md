@@ -3511,5 +3511,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `tools/lab.py run npc_walk --lane 4 --repeat 3` (3 of 6 runs failed on fix/w49-proxy2, labs
   20261113-202612, -204146 #2, -204750).
 * Known: also with BUG-0440's npc.proxy_hold off in Creature (-204750); not run on rel/0.7.14 itself.
-* Not checked: the cause (inferred: walk_place's keep_lost / snap after the hit's throw, BUG-0409's class).
+* Cause (2026-11-13, fix/w49-npcwalk): not the test. The walker the hit throws is placed in the air every frame
+  (drive::air_place); the guest's game puts it back where it was in ~6 of 7 frames at 52-67 fps and takes one placing
+  every ~0.1 s (0.6-1.1 m steps). On 0.7.13's code too (rows back to 20261106). npc_walk now judges thrown proxies on
+  and off the screen ("a thrown proxy flies with its NPC"), which fails in every run with a throw (live: lab
+  20261113-221929 #2, #3: 128 of 166, 148 of 174 frames standing).
+* Not fixed: the teleport mark, putting the hold back after the creature and physics updates, no velocity, the
+  animation relay off: all still stand (docs/re/creature.md#creature-air-place-lost).
 * Ticket: BUG-1094

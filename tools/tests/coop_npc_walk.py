@@ -63,6 +63,12 @@ FAR_OUTSIDE = 100.0  # m: the walkers outside the host's pack / family (BUG-0417
 # MATCHED_MIN_TRIBE and up to JUMPS_TRIBE steps under JUMP_MAX_TRIBE m; on the path instead: the drawn proxy's
 # median distance from the host's path at most ERR_P50_TRIBE (with the fix 0.01-0.03 m, without 0.23-0.33 m).
 MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.10
+# BUG-1094: a proxy placed in the air (coop.npctrack how 5: the flee hit threw its host NPC 9-10 m/s off its ground for
+# 1-2 s) while its target moves over AIR_MOVE m in the frame stands (moves under a quarter of the target's step) in at
+# most AIR_STILL of those frames, on the guest's screen or off it (placed without the teleport mark the guest's game put
+# it back in 70-77 of 83-91 such frames at 66 fps, one placing let through every ~0.1 s: 0.6-1.1 m steps on the screen);
+# judged from AIR_FRAMES such frames on (the flee hit throws a walker in about half of the runs)
+AIR_MOVE, AIR_STILL, AIR_FRAMES = 0.05, 0.15, 20
 
 
 # BUG-0394: a window spans at least WIN_FRAMES frames: at 21-29 fps a 0.1 s window held 1-3 frames and its speed
@@ -180,6 +186,25 @@ class Watch(threading.Thread):
 def pct(xs, q):
     xs = sorted(xs)
     return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
+
+
+def air_follow(rows):
+    """BUG-1094: the frames in which a proxy is placed in the air while its target moves: (frames, standing, per id)"""
+    by, n, still, per = {}, 0, 0, {}
+    for r in rows:
+        by.setdefault(r['id'], []).append(r)
+    for nid, rs in by.items():
+        rs.sort(key=lambda r: r['t'])
+        for a, b in zip(rs, rs[1:]):
+            ts = math.dist(a['tgt'], b['tgt'])
+            if a['how'] != 5 or b['how'] != 5 or not 0 < b['t'] - a['t'] < 0.25 or ts < AIR_MOVE:
+                continue
+            st = math.dist(a['d'], b['d']) < 0.25 * ts
+            n += 1
+            still += st
+            f, s_ = per.get(nid, (0, 0))
+            per[nid] = (f + 1, s_ + st)
+    return n, still, per
 
 
 def analyse(rows, W, H, phases):
@@ -480,6 +505,12 @@ def main():
         print(f'    #{nid}: windows {pw["win"]} stand {pw["stand"]} matched {pw["matched"]} on screen {pw["near"]} '
               f'gait {pw["gait"]} jumps {pw["jumps"]}', flush=True)
     ck(len(win) > 100, f'the host\'s NPCs moved near the guest ({len(win)} windows of moving NPCs)')
+    an, ast, aper = air_follow(rows)
+    print(f'    placed in the air while the target moved (BUG-1094): {an} frames, the proxy stood in {ast}; per id '
+          f'(frames, stood) {aper}', flush=True)
+    if an >= AIR_FRAMES:
+        ck(ast <= AIR_STILL * an, f'a thrown proxy flies with its NPC (stood in {ast} of {an} frames in the air, '
+           f'at most {AIR_STILL:.0%})')
     if FIXTURE == 'tribe':
         big = [j for j in r['jumps'] if j[2] > JUMP_MAX_TRIBE]
         ck(len(r['jumps']) <= JUMPS_TRIBE and not big,
