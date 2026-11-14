@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.14
 fixed_in: unreleased
 branch: fix/w49-civedit
-commits:
+commits: 8ab36fd1, bb09b2b3
 tests: tribe_civ_editor_slow, campaign_tribe_end
 signature:
 docs: docs/06-testing.md#testing-w49-civedit
