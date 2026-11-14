@@ -174,6 +174,11 @@
   loaded the planets of that star (BUG-1042).
 - Space, 3-4 players: "Give 10 to <player>" now gives the spice to the player the button names, and ">" picks the
   recipient in Space too (BUG-1050).
+- Tribe: a tribe member the host's game holds up in the air (during raids, at any height) is up in the air on the
+  guests' screens too; before, a guest showed it standing on the ground below, also whenever the guest looked
+  elsewhere or the host's game ran slowly (BUG-1082).
+- Tests: a tribe member swimming counts as on the ground (its height over the water's surface, not over the sea bed);
+  the lab's ground check no longer fails a campaign on members crossing a lake (BUG-1088).
 
 ## [0.7.13] - 2026-11-12
 

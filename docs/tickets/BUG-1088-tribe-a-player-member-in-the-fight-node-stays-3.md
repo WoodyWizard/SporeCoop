@@ -1,19 +1,19 @@
 ---
 id: BUG-1088
 title: Tribe: a player member in the fight node stays 3-8.75 m over the ground for 36 s on every game (monitor ground gate fails the full campaign)
-status: open
-kind: bug
+status: fixed
+kind: test
 stage: Tribe
 reported: 2026-11-13
 source: lab
 role: host
-versions: 
-fixed_in:
-branch:
-commits:
-tests: campaign (lab gate monitor ground)
+versions: 0.7.13 and earlier
+fixed_in: unreleased
+branch: fix/w49-raid2
+commits: 22c48f58
+tests: tribe_member_air, campaign (lab gate monitor ground)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-member-swim
 related: BUG-0945
 ---
 
@@ -29,16 +29,26 @@ Reproduce: the full campaign (`lab.py run =campaign`), look for "tribe: member #
 long "down again after".
 
 ## Root cause
-Not analysed (outside fix/w49-camp's package). Inferred: a member thrown in a fight landed on something the terrain
-height does not include (a rock, a creature's body) or kept its upward toss; the reading is the host's own game.
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: the member was swimming. Its radius 499.77 is Cadian's water surface (about 499.7,
+docs/re/creature.md#creature-deep-water); the mod's heights were over GetHeightAt, the sea bed. Runtime (tribe
+fixture, raid probes 20261113-174018, -175142 and -175131 with the host alone after the guest left): members crossing
+water are 0.6-3.1 m under the planet's water radius (499.98, game::water_radius: terrain +0x34 + +0x38 * +0x3C as the
+terrain kind 0xB83110 reads it), 3-28 m over the sea bed, locomotion mode 3, not grounded, 6-7 m/s, for 10-20 s; the
+same with no session. So it is the game's own (also the guests' mirrors float on their own water: Carol's agl_hi
+4.87-6.50), not a fault of the mod; the gate read the wrong ground. The campaign_tribe_end swimmers of 20261113-153633
+were at radius 498.85 the same way.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`monitor.tribe_water` (coop.cpp member_agl_of, used by the trace's agl / agl_hi / agl_held and the "member is .. m
+over the ground" lines): over water a member's height is min(height over the terrain, max(0, radius - water radius)).
+A swimmer reads 0; a member high over water still counts. Off: `coop.fix monitor.tribe_water off`. `coop.ground`
+prints `water <r> over_water <m>`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tribe_member_air part 1 (a member floating on deep water): SPORE_FIX_OFF=monitor.tribe_water FAIL
+out/lab/20261113-183402-2 (agl_hi 15.18 on both marks); PASS out/lab/20261113-183656 and out/lab/20261113-183656-2
+(agl_hi 0.0, the member 3.1 m under the water radius). The full campaign was not rerun (80 min).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: root cause: a swimming member (the game's own); the gate's height now counts over the water (fix/w49-raid2).

@@ -91,6 +91,8 @@ std::string destroy_deferred_status();
 // BUG-0434 (creature.culled_ground): this frame's target of a puppet, lifted to after the physics update when the game grounds it
 void mound_hold(void* c, const net::Vec3& tgt);
 void after_physics();
+uint32_t air_culled_lifts(); // BUG-1082: held creatures put back up after the physics update
+void test_hang(void* c, float agl, double secs); // tests (BUG-1082): held at agl m over the terrain after each physics update
 bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel);
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes
@@ -111,6 +113,7 @@ float ground_radius(const net::Vec3& pos);
 // the surface on pos's radial line as the game's snap finds it (cPlanetModel_SurfacePoint: the terrain or a collision
 // object over it, a nest mound, a rock; only where the collision is loaded, near this game's camera); 0: none
 float surface_radius(const net::Vec3& pos);
+float water_radius(); // BUG-1088: the planet's water surface radius (0: unknown)
 void set_scale(void* c, float s);
 // BUG-0360 (coop.track): the creature's Anim::AnimatedCreature (cCreatureBase +0xB54): where its
 // model is drawn (+0x04) and the id of its current animation (vt 0x58 GetCurrentAnimation, 0 when

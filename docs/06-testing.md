@@ -7666,3 +7666,23 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
 * Pitfall: plain `coop.census` lists no Civ wild creatures with a net id for the test's purpose; use
   `coop.census creatures` (as civ_wild_sync does).
 
+## Members in the air: tribe_member_hang, tribe_member_air part 1 (2026-11-13, fix/w49-raid2)
+<a id="testing-w49-raid2"></a>
+
+* `tribe_member_hang` (coop_tribe_member_hang.py, tribe fixture, host at 10 fps over the player network, ~2.5 min,
+  BUG-1082): three player members held 12, 60 and 110 m up on the host (`coop.tribe hang <id> <m> <s>`, after every
+  physics update, game::test_hang); the guest's mirror must be within 3 m of the host's member in 80 % of the reads
+  and up in the air. Members whose node places them themselves (busy ones) drop out of the hold: the test takes the
+  newest members first (`coop.tribe spawn 6`) and another one when the host's own reads go down. It prints the air
+  counters (`coop.tribe anims`: sent / rx / placed / landed / culled_lifts). `SPORE_FIX_OFF=tribe.mirror_hang,game.air_culled`
+  FAIL 20261113-183101; PASS 20261113-182858, 20261113-183101-2.
+* `tribe_member_air` part 1 (BUG-1088) now expects a member floating on deep water to read as on the ground: at the
+  water's surface (coop.ground's `water`), agl_hi under 3 m on two trace marks; the suite's monitor allowance for it is
+  gone. `SPORE_FIX_OFF=monitor.tribe_water` FAIL 20261113-183402-2 (agl_hi 15.18); PASS 20261113-183656,
+  20261113-183656-2.
+* Reading a ground finding or a member "over the ground" line now: a swimmer reads 0 (its height over the water's
+  surface); what is left is a member really over the terrain or the water. For a sync-check `t: 1 apart` compare the
+  two positions' directions: the same direction and different radii is a member in the air on one game.
+* Regression of the branch (lanes 2 and 3): play_tribe --quick, tribe_member_air, tribe_member_hang, tribe_mirror_ground,
+  tribe_mirror_jump, npc_air PASS (20261113-184358, -184358-2); puppet_air FAILs "no jump of the puppet while it walks"
+  on the base rel/0.7.14 too (20261113-185616) and with game.air_culled off (20261113-185217-2): BUG-1092.
