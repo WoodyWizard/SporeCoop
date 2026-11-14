@@ -1801,8 +1801,86 @@ void mound_hold(void* c, const net::Vec3& tgt)
         g_mound.push_back({c, tgt, now});
 }
 
+// tests (BUG-1082, coop.tribe hang): creatures held at a height over the terrain after every physics update
+struct TestHang {
+    void* c;
+    float agl;
+    double until;
+};
+static std::vector<TestHang> g_test_hang;
+void test_hang(void* c, float agl, double secs)
+{
+    for (auto& h : g_test_hang)
+        if (h.c == c) {
+            h = {c, agl, H->time_seconds() + secs};
+            return;
+        }
+    g_test_hang.push_back({c, agl, H->time_seconds() + secs});
+}
+static void test_hang_apply()
+{
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_test_hang.size();) {
+        auto& h = g_test_hang[i];
+        if (now > h.until || !object_alive(h.c)) {
+            if (object_alive(h.c))
+                air_hold(h.c, false);
+            g_test_hang.erase(g_test_hang.begin() + i);
+            continue;
+        }
+        net::Vec3 p = position(h.c);
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), g = ground_radius(p);
+        if (r > 1.f && g > 1.f) {
+            float k = (g + h.agl) / r;
+            net::Vec3 to{p.x * k, p.y * k, p.z * k};
+            net::Quat q = orientation(h.c);
+            place(h.c, to, q);
+            set_grounded(h.c, false);
+            field<net::Vec3>(h.c, kVelOff) = {0, 0, 0};
+            air_hold(h.c, true, to, q, {0, 0, 0});
+        }
+        i++;
+    }
+}
+
+// BUG-1082 (docs/re/tribe.md#tribe-member-hang): a guest's mirror placed in the air (air_place / air_hold: a member the
+// host's game holds 12-110 m up) stood on the guest's terrain in most reads whenever the guest's camera was elsewhere:
+// the guest's physics update puts a creature off its screen onto the plain terrain (the BUG-0434 path) and air_reassert
+// only acts on the grounded byte, which that path does not set (lab 20261113-182546: the list received 5 times a
+// second, the mirror placed every frame, read on its ground in 12 of 14 reads). After the game's physics update every
+// held creature that is more than 0.5 m under its hold on its radial line is put back at the hold (not grounded, the
+// hold's velocity). `coop.fix game.air_culled off`: as 0.7.13.
+static bool g_air_culled_fix = true;
+COOP_FIX("game.air_culled", "BUG-1082", g_air_culled_fix,
+         "a creature the mod holds in the air (a partner's, a mirror, a proxy) stays there off the screen too");
+static uint32_t g_air_culled_lifts = 0;
+uint32_t air_culled_lifts() { return g_air_culled_lifts; }
+static void air_culled_apply()
+{
+    for (auto& h : g_air) {
+        if (!object_alive(h.c) || (h.serial && object_serial(h.c) != h.serial))
+            continue;
+        net::Vec3 p = position(h.c);
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), rh = std::sqrt(h.pos.x * h.pos.x + h.pos.y * h.pos.y + h.pos.z * h.pos.z);
+        if (r < 1.f || rh - r < 0.5f)
+            continue;
+        float k = rh / r; // (the point on the hold's height over where the game put it: its walk across the frame stays)
+        net::Vec3 up{p.x * k - h.pos.x, p.y * k - h.pos.y, p.z * k - h.pos.z};
+        if (up.x * up.x + up.y * up.y + up.z * up.z > 4.f) // moved more than 2 m sideways: not a drop onto the terrain
+            continue;
+        place(h.c, h.pos, h.rot);
+        set_grounded(h.c, false);
+        field<net::Vec3>(h.c, kVelOff) = h.vel;
+        g_air_culled_lifts++;
+    }
+}
+
 void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), after the game's update
 {
+    if (!g_test_hang.empty())
+        test_hang_apply();
+    if (g_air_culled_fix && !g_air.empty())
+        air_culled_apply();
     if (!g_culled_ground_fix || g_mound.empty())
         return;
     double now = H->time_seconds();
@@ -2048,6 +2126,25 @@ float surface_radius(const net::Vec3& pos)
     thiscall<float*>(surf, pm, o, (const float*)in, 0);
     float r2 = o[0] * o[0] + o[1] * o[1] + o[2] * o[2];
     return r2 > 1.f ? std::sqrt(r2) : 0.f;
+}
+
+// BUG-1088: the planet's water surface as a radius (0: no planet / no terrain). The terrain kind 0xB83110 (docs/re/tribe.md,
+// a cPlanetModel method) takes the terrain object as GetHeightAt does (cPlanetModel +0x24, vt 0xC) and compares
+// `terrain+0x34 + terrain+0x38 * terrain+0x3C` with GetHeightAt there: water deeper than 0 m is over water.
+float water_radius()
+{
+    static uintptr_t get = H->sym("Simulator::cPlanetModel::Get");
+    void* pm = get ? cdecl_call<void*>(get) : nullptr;
+    if (!pm || !skg::readable(pm, 0x28))
+        return 0.f;
+    void* holder = field<void*>(pm, 0x24);
+    if (!holder || !skg::readable(holder, 4))
+        return 0.f;
+    void* t = vcall<void*>(holder, 0xC / 4);
+    if (!t || !skg::readable(t, 0x40))
+        return 0.f;
+    float w = field<float>(t, 0x34) + field<float>(t, 0x38) * field<float>(t, 0x3C);
+    return std::isfinite(w) && w > 1.f ? w : 0.f;
 }
 
 void set_scale(void* c, float s) { vcall<void>(spatial(c), 0x40 / 4, s); } // SetScale

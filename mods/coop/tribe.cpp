@@ -1757,31 +1757,59 @@ COOP_FIX("tribe.mirror_air", "BUG-0946", g_mirror_air_fix, "tribe: a member thro
 static uint32_t g_air_sent, g_air_rx, g_air_placed;
 constexpr double kMirrorAirFresh = 0.35;
 constexpr float kMirrorAirMin = 0.5f; // m over the host's ground: off it whatever the grounded byte says
+// BUG-1082 (docs/re/tribe.md#tribe-member-hang): the campaign's raids failed the sync-check on members the host's game
+// held up for 15-28 s (the airborne node 0x0485FD10, 5-15 m, speed 0; an NPC village member 114 m up) while the
+// guests' mirrors stood on their ground, 11.9 and 113.9 m apart. Three limits of tribe.mirror_air let a mirror down:
+// a height over drive::g_agl_max (30 m: the 114 m member was never placed), the 0.35 s freshness (a 4-player host at
+// 18-20 fps with 200-360 ms hitches sends the list every 0.12 s of its own frames, i.e. 0.25-0.4 s apart; one late
+// list and the mirror walked on its ground until the next), and 64 members per list (a cycle's others not sent).
+// tribe.mirror_hang: any height (kMirrorHangMax), the list kept for kMirrorHangHold s, lists of 64 as often as
+// needed, and a member that was in the last list and is on its ground now is sent once with height 0 (a landing:
+// the guest walks it at once, not after the hold; guests before it read 0 as "on the ground" too). Off: 0.7.13.
+static bool g_mirror_hang_fix = true;
+COOP_FIX("tribe.mirror_hang", "BUG-1082", g_mirror_hang_fix,
+         "tribe: a member the host's game holds up in the air (any height, any frame rate) is up on the guests' screens too");
+constexpr double kMirrorHangHold = 1.0;
+constexpr float kMirrorHangMax = 2000.f;
+static std::unordered_set<uint16_t> g_air_last; // the ids of the last list (their landing is sent)
+static uint32_t g_air_landed;
 static void send_member_air()
 {
     if (!g_mirror_air_fix)
         return;
     std::vector<std::pair<uint16_t, float>> v;
+    std::unordered_set<uint16_t> up;
     for (auto& [c, m] : g_hm) {
-        if (v.size() >= 64 || !kept_alive(c, m.serial, 0x18EB4B7u) || game::is_dead(c))
+        if ((!g_mirror_hang_fix && v.size() >= 64) || !kept_alive(c, m.serial, 0x18EB4B7u) || game::is_dead(c))
             continue;
         // (a thrown member can keep the grounded byte +0x137 for part of its flight: its height over the ground counts)
         float agl = drive::over_ground(game::position(c));
-        if (agl > kMirrorAirMin || drive::body_airborne(c))
+        if (agl > kMirrorAirMin || drive::body_airborne(c)) {
             v.push_back({m.id, agl});
+            up.insert(m.id);
+        }
     }
-    if (v.empty())
-        return;
-    net::Writer w;
-    w.u8(9);
-    w.u8((uint8_t)v.size());
-    for (auto& [id, agl] : v) {
-        w.u16(id);
-        w.f32(agl);
+    if (g_mirror_hang_fix) {
+        for (uint16_t id : g_air_last)
+            if (!up.count(id)) { // landed (or gone: a guest ignores an unknown id)
+                v.push_back({id, 0.f});
+                g_air_landed++;
+            }
+        g_air_last.swap(up);
     }
-    for (auto& p : C.sess->players())
-        if (p.id != 0)
-            C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    for (size_t at = 0; at < v.size(); at += 64) {
+        size_t n = std::min<size_t>(64, v.size() - at);
+        net::Writer w;
+        w.u8(9);
+        w.u8((uint8_t)n);
+        for (size_t i = at; i < at + n; i++) {
+            w.u16(v[i].first);
+            w.f32(v[i].second);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    }
     g_air_sent += (uint32_t)v.size();
 }
 
@@ -2915,6 +2943,10 @@ static void test_vel_tick(double now)
         ++it;
     }
 }
+
+// tests (BUG-1082): `coop.tribe hang <id> <m> <s>` holds a host member <m> m over its ground (not grounded, no velocity)
+// for s seconds after every physics update (game::test_hang), as the host's game held members in the campaign's raids
+// (the airborne node 0x0485FD10 at 5-15 m with speed 0, an NPC village member 114 m up: docs/re/tribe.md#tribe-member-hang)
 
 // BUG-0841 (evidence): members the host's game moved from one tribe to another (none seen: the game adds only new
 // citizens to a tribe, docs/re/tribe.md#tribe-member-moves); unowned: into the player tribe with owner 0xFE
@@ -4524,8 +4556,9 @@ static void guest_tick(double now)
             g_ko_replaced++;
             continue;
         }
-        if (g_mirror_air_fix && now - g.air_at < kMirrorAirFresh && g.air_agl > drive::kAirOver &&
-            g.air_agl < drive::g_agl_max) { // BUG-0946: at the host's height over this game's ground
+        if (g_mirror_air_fix && now - g.air_at < (g_mirror_hang_fix ? kMirrorHangHold : kMirrorAirFresh) &&
+            g.air_agl > drive::kAirOver && g.air_agl < (g_mirror_hang_fix ? kMirrorHangMax : drive::g_agl_max)) {
+            // BUG-0946: at the host's height over this game's ground (BUG-1082: any height, held 1 s, a landing ends it)
             net::Vec3 pos, vel;
             net::Quat rot;
             double age;
@@ -5322,6 +5355,7 @@ static void place_chiefs(double now)
 // state within 3 m of its walk's goal is set onto the goal facing the tool, and the game's behaviour goes on
 // (arrival, the grab animation, SetSpecializedTool). `coop.fix tribe.grab_spot off`: it stands there.
 static uint32_t bt_node(void* c);
+static uint32_t cur_anim(void* c);
 static bool g_grab_spot_fix = true;
 COOP_FIX("tribe.grab_spot", "BUG-0505", g_grab_spot_fix,
          "tribe: a member that cannot reach its spot at a tool rack is set onto it and takes the tool");
@@ -6253,6 +6287,59 @@ std::string debug(const std::vector<std::string>& a)
                  n.herds, n.ours, n.enabled, n.epics, g_epic, g_resets, g_world_checks_fired, game::stage_epoch(modes::kTribe));
         return b;
     }
+    if (!a.empty() && a[0] == "airprobe") { // BUG-1082/1088 (diagnostics): members off their ground, every live epic
+        // airprobe [min m]: one line per member of any tribe more than <min> m (default 1) over the terrain: id, owner,
+        // height, node, locomotion mode +0x2B0, grounded byte +0x137, velocity, container +0x34, the nearest epic's distance
+        float mn = a.size() > 1 ? (float)atof(a[1].c_str()) : 1.f;
+        std::vector<void*> eps;
+        uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
+        struct EU {
+            uintptr_t is_epic;
+            std::vector<void*>* v;
+        } eu{is_epic, &eps};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* up) {
+                auto* u = (EU*)up;
+                if (noun == 0x18EB45E && game::object_alive(o) && !game::is_dead(o) && u->is_epic && thiscall<bool>(u->is_epic, o))
+                    u->v->push_back(o);
+                return true;
+            },
+            &eu);
+        std::string out;
+        char b[400];
+        snprintf(b, sizeof b, "t=%.3f water=%.2f\n", H->time_seconds(), game::water_radius());
+        out += b;
+        for (void* e : eps) {
+            net::Vec3 p = game::position(e), v = game::velocity(e);
+            snprintf(b, sizeof b, "E %p pos=(%.2f %.2f %.2f) agl=%.2f lm=%d gr=%d v=(%.2f %.2f %.2f) scale=%.2f hp=%.0f ours=%d\n", e, p.x,
+                     p.y, p.z, drive::over_ground(p), F<int>(e, 0x2B0), (int)F<uint8_t>(e, 0x137), v.x, v.y, v.z, game::scale(e),
+                     game::health(e), (int)(e == g_epic));
+            out += b;
+        }
+        for (void* t : all_tribes())
+            for (void* c : members(t)) {
+                net::Vec3 p = game::position(c);
+                float h = drive::over_ground(p);
+                if (!(h > mn))
+                    continue;
+                auto it = g_hm.find(c);
+                uint16_t id = it != g_hm.end() ? it->second.id : 0;
+                net::Vec3 v = game::velocity(c);
+                float de = 1e9f;
+                void* ne = nullptr;
+                for (void* e : eps) {
+                    float d = net::dist(game::position(e), p);
+                    if (d < de)
+                        de = d, ne = e;
+                }
+                snprintf(b, sizeof b, "M #%u %p owner=%d agl=%.2f pos=(%.2f %.2f %.2f) %s lm=%d gr=%d v=(%.2f %.2f %.2f) cont=%p "
+                         "epic=%p d_epic=%.2f anim=%08X\n", id, c, owner_of(c) == 0xFF ? -1 : (int)owner_of(c), h, p.x, p.y, p.z,
+                         member_brief(c).c_str(), F<int>(c, 0x2B0), (int)F<uint8_t>(c, 0x137), v.x, v.y, v.z, F<void*>(c, 0x34), ne,
+                         ne ? de : -1.f, cur_anim(c));
+                out += b;
+            }
+        return out + "end";
+    }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "stats") { // BUG-0515: every live epic, its herd's tuning, its blows
         struct U {
             uintptr_t is_epic;
@@ -6766,6 +6853,13 @@ std::string debug(const std::vector<std::string>& a)
                          H->time_seconds() + atof(a[5].c_str())};
         return "velocity held";
     }
+    if (a.size() >= 4 && a[0] == "hang" && is_host()) { // hang <id> <m> <s>: tests (BUG-1082), above
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        game::test_hang(c, (float)atof(a[2].c_str()), atof(a[3].c_str()));
+        return "member held up";
+    }
     // hunger <member id> <v>: tests (BUG-0935), the member's (host) or mirror's (guest) hunger through the game's setter,
     // as minutes of the game's own hunger update leave it (a guest's mirror that never eats: 0)
     if (a.size() >= 3 && a[0] == "hunger") {
@@ -7150,7 +7244,7 @@ std::string debug(const std::vector<std::string>& a)
         return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_air_sent) +
-               " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
+               " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " landed=" + std::to_string(g_air_landed) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
                " stale_cut=" + std::to_string(g_stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
                " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) + " unlooped=" + std::to_string(g_phase_unlooped) +

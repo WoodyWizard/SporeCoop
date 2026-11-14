@@ -3699,6 +3699,26 @@ static bool agl_of(const net::Vec3& p, float& h)
     return std::isfinite(h);
 }
 
+// BUG-1088 (docs/re/tribe.md#tribe-member-swim): a member swimming is at the water's surface (its centre 0.6-1.9 m under
+// it), over a sea bed that GetHeightAt gives as the ground: 3-28 m "over the ground" for as long as it swims, on every
+// game (the guests' mirrors float on their own water) and also with no session (lab 20261113-175131, the host alone).
+// The full campaign's ground gate failed on such a member (20261113-142203: #16 at radius 499.77, Cadian's water
+// 499.7). Over water (the planet's water radius above the terrain there) a member's height counts over the water's
+// surface, 0 at most for one in it: a member high over the water still counts. `coop.fix monitor.tribe_water off`:
+// over the terrain (0.7.13).
+static bool g_tribe_water_fix = true;
+COOP_FIX("monitor.tribe_water", "BUG-1088", g_tribe_water_fix,
+         "tests: a tribe member swimming counts as on the ground (its height over the water's surface, not the sea bed)");
+static bool member_agl_of(const net::Vec3& p, float& h)
+{
+    if (!agl_of(p, h))
+        return false;
+    float w = g_tribe_water_fix ? game::water_radius() : 0.f, r = drive::speed(p);
+    if (w > 1.f && r - h < w) // (the ground r - h is under the water's surface: over water)
+        h = std::min(h, std::max(0.f, r - w));
+    return true;
+}
+
 // Tribe: the lowest and highest of the player tribe's members of `owner` as this game draws them
 // (host: its own members; guest: the mirrors, drawn before this frame's driving)
 static bool tribe_agl(uint8_t owner, float& lo, float& hi)
@@ -3712,7 +3732,7 @@ static bool tribe_agl(uint8_t owner, float& lo, float& hi)
         [](const tribe::TrackMember& m, void* u) {
             auto* a = (Acc*)u;
             float h;
-            if (m.owner != a->owner || !agl_of(m.drawn ? *m.drawn : game::position(m.c), h))
+            if (m.owner != a->owner || !member_agl_of(m.drawn ? *m.drawn : game::position(m.c), h))
                 return;
             a->lo = std::min(a->lo, h);
             a->hi = std::max(a->hi, h);
@@ -3757,7 +3777,7 @@ static void tribe_air_watch(double now)
             auto* a = (Acc*)u;
             net::Vec3 p = m.drawn ? *m.drawn : game::position(m.c);
             float h;
-            if (!agl_of(p, h) || h <= kAirOver)
+            if (!member_agl_of(p, h) || h <= kAirOver)
                 return;
             auto it = g_air.find(m.id);
             if (it != g_air.end()) {

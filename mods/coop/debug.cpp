@@ -278,6 +278,9 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
         if (sr > 1.f)
             SAY(" surface %.2f over_surface %.2f", sr, r - sr);
     }
+    float w = game::water_radius(); // BUG-1088: the planet's water surface (radius), over water where it is above the ground
+    if (w > 1.f)
+        SAY(" water %.2f over_water %.2f", w, r - std::max(w, g));
     return 0;
 }
 

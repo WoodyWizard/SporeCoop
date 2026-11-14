@@ -15,11 +15,12 @@ member's stay over 3 m (`tribe: member #.. is .. m over the ground ...` and `...
    tribe.mirror_air; before, the mirror stayed within 0.06 m of its ground). SPORE_FIX_OFF=tribe.mirror_air fails.
 1. A member put into deep water while it idles (node 0x04601D70; one with somewhere to go, node 0x05524115 or just
    out of it, swims back to the land within 2-15 s: the test waits for the idle node and tries again, up to three
-   times, when the member left) floats on it, 10 m and
-   more over the sea bed (the terrain), and stays: the host's
-   trace lines then carry agl_hi over 3 m with agl_held of 5 s and more, twice in a row. That is what the monitor's
-   ground rule fails on: the suite allows that finding for this test (allow monitor BUG-0945), so the lab's gate
-   line "allowed gate monitor: ... over the ground" in the run is part of the proof.
+   times, when the member left) floats on it, 10 m and more over the sea bed (the terrain). BUG-1088: that is a member
+   swimming, on every game and also with no session (the full campaign's ground gate failed on one): the mod's
+   heights of members count over the water's surface where the planet's water is over the terrain
+   (monitor.tribe_water). Checks: the member swims at the water's surface (coop.ground's `water`, 0.6-3.1 m under it by its size), and in
+   two trace marks with it there the host's trace has agl_hi under 3 m and the log names no member over the ground.
+   `SPORE_FIX_OFF=monitor.tribe_water` fails (the old reading: 10 m and more, the monitor's ground finding).
 """
 import math
 import re
@@ -53,6 +54,13 @@ def members(con):
 def ground(con, p):
     m = re.search(r'ground ([-\d.]+) point ([-\d.]+) above ([-\d.]+)', con.call('coop.ground %.2f %.2f %.2f' % tuple(p))['out'])
     return (float(m.group(1)), float(m.group(3))) if m else (0.0, 0.0)
+
+
+def water(con, p):
+    """(the planet's water radius, the point's radius) or None (BUG-1088: coop.ground's `water`)"""
+    out = con.call('coop.ground %.2f %.2f %.2f' % tuple(p))['out']
+    m, r = re.search(r'water ([-\d.]+)', out), re.search(r'point ([-\d.]+)', out)
+    return (float(m.group(1)), float(r.group(1))) if m and r else None
 
 
 def log_since(con, mark):
@@ -106,7 +114,7 @@ def main():
     # and right after that node has turned into the idle one (0x04601D70) it still left within 2 s (7 runs of 15,
     # lab 20261111-210637); idle for a while it floats for 27 s and more. So: put it there when it idles, watch
     # that it is still up, and bring it home and try again when it left.
-    up, held, stays = 0.0, [], []
+    up, marks, named, wat = 0.0, [], [], None
     for attempt in range(3):
         t0, node = time.time(), ''
         while time.time() - t0 < 30:
@@ -114,7 +122,6 @@ def main():
             if node == IDLE:
                 break
             time.sleep(1)
-        mark = log_mark(host)
         print(f'  #{lead} (node {node}, after {time.time() - t0:.0f} s) onto the water:',
               host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *p))['out'][:60], flush=True)
         up, t0 = 0.0, time.time()
@@ -122,28 +129,35 @@ def main():
             time.sleep(1)
             h = members(host).get(lead)
             up = ground(host, h['pos'])[1] if h else 0.0
+        h = members(host).get(lead)
+        wat = water(host, h['pos']) if h else None
         gm = members(guest).get(lead)
-        print(f'    the member floats {up:.1f} m over the sea bed on the host; the guest\'s mirror: '
+        print(f'    the member floats {up:.1f} m over the sea bed on the host (water {wat}); the guest\'s mirror: '
               f'{ground(guest, gm["pos"])[1] if gm else -1:.1f} m over its sea bed', flush=True)
+        mark = log_mark(host)  # the trace marks from now on: the member is on the water
         t0, now = time.time(), up
-        while now > 3 and time.time() - t0 < 32:  # two trace marks (10 s apart) with 5 s and more behind them
+        while now > 3 and time.time() - t0 < 32:  # two trace marks (10 s apart) while it floats
             time.sleep(1)
             lines = log_since(host, mark)
-            held = [(float(m.group(3)), float(m.group(4))) for m in map(TRACE.search, lines) if m and m.group(4) is not None]
-            stays = [x for x in held if x[0] > 3 and x[1] >= 5.0]
-            if len(stays) >= 2:
-                break
+            marks = [float(m.group(3)) for m in map(TRACE.search, lines) if m]
+            named = [m for m in map(OVER.search, lines) if m and int(m.group(2)) == lead]
             h = members(host).get(lead)
             now = ground(host, h['pos'])[1] if h else 0.0
-        if len(stays) >= 2:
+            if len(marks) >= 2:
+                break
+        if len(marks) >= 2 and now > 3:
             break
         h = members(host).get(lead, {})
         print(f'    it left the water after {time.time() - t0:.0f} s (node {h.get("bt")}, {now:.1f} m over the ground; '
-              f'trace {held}): home and again', flush=True)
+              f'trace {marks}): home and again', flush=True)
         host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *ms[lead]['pos']))
         time.sleep(5)
     ck(up > 3, f'the member floats {up:.1f} m over the sea bed on the host')
-    ck(len(stays) >= 2, f'the host\'s trace lines say a member stays up: agl_hi / agl_held {held}')
+    ck(wat is not None and -1.0 < wat[0] - wat[1] < 5.0,  # (a swimmer's position is 0.6-3.1 m under it: its size)
+       f'it swims at the water\'s surface (water radius, its radius: {wat})')
+    ck(len(marks) >= 2 and all(x <= 3 for x in marks),
+       f'the host\'s trace lines while it swims: agl_hi {marks} (a member swimming is on the ground, BUG-1088)')
+    ck(not named, f'the host\'s log names no member over the ground for it ({[m.group(4) for m in named]})')
     host.call('coop.tribe put %d %.2f %.2f %.2f' % (lead, *ms[lead]['pos']))  # home again
     time.sleep(12)  # past the next trace mark: the lines of part 2 start on the ground
 
