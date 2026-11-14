@@ -7846,3 +7846,21 @@ Lab 20261114-005006 (rel/0.7.14 4dd8d2be, 6 lanes) and its rerun 20261114-022615
 * npc_walk_tribe (drawn error p50 0.11 > 0.1): load. Over the 13 recorded runs of Nov 10-14 the p50 follows the
   guest's frame rate: 0.02-0.03 m at 46-66 fps, 0.05-0.08 at 28-32, 0.11 at 22 (this run), 0.14 at 14.
 * puppet_walk (traceback): BUG-1103, a test bug (a remote line without a state reads pos (0 0 0)).
+
+## Game-time pause tests and tools (2026-11-14, fix/w49-pause)
+<a id="testing-pause-leak"></a>
+
+BUG-1101.
+* `coop.pauses trace` (any instance): every cGameTimeManager Pause / Resume is logged as
+  `pauses: Pause(<reason>) -> <count> from <return address>`; `coop.pauses add|sub <hex>`: one raw Pause / Resume of a
+  reason (a planted leak). The reasons a player's own stand counts on a guest in Tribe: 0x4BF38A4 (Esc, F1, F2, Tab,
+  modal), 0x4BF38A8 (P, no modal).
+* `coop.tribe cine <name>` plays a cinematic on that game (TRG_TotemPole_Conquer, TRG_Upgrade: played while the first
+  plays, it is queued, as the game's upgrade does); `coop.tribe caption_race <msg hex> <send|post> <before|after>` arms
+  the guest's next forced end of a village caption (BUG-0983) to also send / post that message of the caption (the OK
+  0x44EE075, the skip 0x44EE076, the script's pause step 0x46AC0AC) before or after its EndCinematic.
+* tribe_pause_leak (~2.5 min): the planted leak (the pause step after the end) is released after the net's 20 s, a raw
+  0x4BF38A7 too, the owner's late Resume is counted back to 0, P stays paused 30 s. FAIL with
+  SPORE_FIX_OFF=tribe.guest_pause_net (lab 20261114-041620), PASS 20261114-041605, -042104.
+* tribe_caption_race = tribe_conquest_guest `--click-at-close` (clicks 7-9.6 s into the caption, ~1.5 min): never
+  reproduced the campaign's stand (lab 20261114-035207, -035953 x3, -040018 x3).

@@ -3570,6 +3570,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: not yet; `coop_tribe_conquest_guest.py --click-at-close` (3 runs, lab 20261114-031126) had no caption in
   two runs and no stuck pause in the third. `coop.pauses` on the stuck guest names the reason left.
 * Next steps: catch the reason with `coop.pauses`; then guard the forced end against a cinematic already ending.
+* UPDATE (2026-11-14, fix/w49-pause): mitigated, the cause still unknown. A guest's game time that stands 20 s in
+  Tribe with only a caption's or a UI modal's pause counted and nothing holding it is released and logged
+  ("this game's time stood 20 s with nothing holding it (reasons: ...): released", `coop.fix tribe.guest_pause_net`):
+  the stand now lasts about 20 s instead of the stage. Not reproduced with the click (9 conquests) nor with the caption's
+  messages sent or posted around the forced end in the same call, slow frames or stalls
+  (docs/re/tribe.md#tribe-caption-pause-leak); one way the game leaves such a pause is known (the cinematic's pause
+  slot cleared without a Resume by the next start). Next hit: the net's log line names the reason; with
+  `coop.pauses trace` on the guest also its caller.
 * Ticket: [BUG-1101](tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
 
 ## Tribe: a partner's member 1.0-1.5 m under the host's ground for 10-20 s (2026-11-14, final check 0.7.14)

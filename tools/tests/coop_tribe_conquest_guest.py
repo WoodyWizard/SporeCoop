@@ -14,8 +14,8 @@ guest's copy of the hut at 1 hp at least, so the guest's game never conquered th
    SPORE_FIX_OFF=realign.hut_fall: the guest's village stands unconquered with its hut: FAIL.
 4. (BUG-0983) the guest's conquest caption closes itself; then the guest's game runs again (no cinematic, the game
    time not standing).
---click-at-close (suite tribe_caption_race, BUG-1101): the guest clicks the caption's check about when the mod closes
-   it after 8 s (a player who reads it for 8 s; the campaign's driver clicks after 6-10 s): a click and the forced end
+--click-at-close (suite tribe_caption_race, BUG-1101): the guest clicks the caption's check 7-9.6 s after it came up,
+   about when the mod closes it after 8 s (a player who reads it for 8 s; the campaign's driver clicks after 6-10 s): a click and the forced end
    in the same moment left the game time standing for the rest of the stage (Carol 30 min, Dave 16 min in
    campaign_tribe_noclick of the 0.7.14 final check).
 """
@@ -54,7 +54,7 @@ def busy_of(con):
 
 
 def click_at_close(guest):
-    """BUG-1101: the guest's conquest caption comes up; clicks on its check from 7.5 to 8.7 s after (the mod's forced
+    """BUG-1101: the guest's conquest caption comes up; clicks on its check from 7 to 9.6 s after (the mod's forced
     end comes at 8 s)"""
     t0, since = time.time(), None
     while time.time() - t0 < 40 and since is None:
@@ -73,7 +73,7 @@ def click_at_close(guest):
         guest.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
         n += 1
         time.sleep(0.12)
-    print(f'  the guest clicked the caption\'s check {n} times 7.5-8.7 s after it came up', flush=True)
+    print(f'  the guest clicked the caption\'s check {n} times 7-9.6 s after it came up', flush=True)
     return True
 
 

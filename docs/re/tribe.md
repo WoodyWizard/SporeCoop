@@ -1626,6 +1626,8 @@ BUG-0576, BUG-0585. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lane 4 
   (runtime, lane 4/5: the stage card 0x4BF38A4, a stage entry / hints 0x4BF38A7, the editor 0x4BF38A6).
 * ✔ Reasons seen: **0x4BF38A6** an editor is coming (above); **0x4BF38A7** a UI modal / tutorial hint / the stage
   entry (90 call sites); **0x4BF38A4** the stage card (History screen) of the end of Tribe.
+  CORRECTION (2026-11-14, fix/w49-pause): 0x4BF38A4 is also the pause menu (Esc, F1, F2, Tab); P is 0x4BF38A8; the
+  cinematics' own are 0x4BF38A5 / 0x600C4AE (#tribe-caption-pause-leak).
 * ✔ **BUG-0313** (observed, lane 5, GOG 2024, 2 runs): a guest's game after its world load in Tribe stands on a
   black screen with the single pause reason **0x4BF38A7** for 7.6 / 8.7 s, the host none. It is the Tribe stage's
   own entry: the mode-change handler 0xCDEE00 (vtable 0x1477578) pauses 0x4BF38A7 on entering Tribe and the entry
