@@ -8,7 +8,7 @@
    In the editor and after it the epic is still the tracked one.
 3. Since BUG-0508 (v0.7.10) the guest keeps its world after the host's editor ("evolved in place"):
    no share save follows the editor and the epic stays alive and tracked in the host's game. The
-   test then shares the world itself (`coop.share`, the save of a joining guest's share): the epic
+   test then makes a share due (`coop.share due`, with the share save of a joining guest): the epic
    left before that save (BUG-0121's guard), so the host's game has no co-op epic any more.
    (With `world.evolve_in_place` off the editor's own share does it, as before 0.7.10; BUG-1090.)
    (The guest's game lists no live epic at all, the planet's own one included: printed only.)
@@ -109,7 +109,7 @@ def main():
 
     # 3. after the editor ("evolved the species") the guest keeps its world in place (BUG-0508) or,
     # with world.evolve_in_place off, gets the world again. Kept in place: the epic is still the tracked
-    # one (no save was made); then a share save of the test's own (coop.share) must leave it out.
+    # one (no save was made); then a share save of the test's own (coop.share due) must leave it out.
     def loaded():
         return num(herds(guest)[0], 'resets', 0) > g0 and mode(guest) == m0 and guest.call('coop.tribe')['ok']
 
@@ -127,7 +127,7 @@ def main():
             return ck.result()
         ck(num(hk, 'live_epics') == base + 1 and hk.get('tracked') == h1.get('tracked'),
            'kept in place (no save): the co-op epic is still alive and tracked')
-        print(' ', host.call('coop.share')['out'].strip())
+        print(' ', host.call('coop.share due')['out'].strip())  # the share with its save, as for a joining guest
         t0 = time.time()
         while time.time() - t0 < 150 and not loaded():
             time.sleep(2)
