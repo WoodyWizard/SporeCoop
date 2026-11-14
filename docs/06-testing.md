@@ -7816,3 +7816,33 @@ DXVK) over a base of ~3.9 GB (desktop, other programs). The card has 16.0 GB (16
   clean twice (20261114-025653, 20261114-031143).
 * Key frame review: garbage in the scene, the textures and the HUD at once on one game of a loaded run is this; repeat
   the test alone before opening a mod bug. A quick look at the count: `pgrep -x SporeApp.exe | wc -l`.
+
+## The 0.7.14 final check's gate failures (2026-11-14, fix/w49-fcgates)
+<a id="testing-fcgates-0714"></a>
+
+Lab 20261114-005006 (rel/0.7.14 4dd8d2be, 6 lanes) and its rerun 20261114-022615. Verdicts:
+* campaign (monitor `ground`, host: partner 1's members 1.26 m under, 2 lines from s 1790): not BUG-1088's water rule
+  (member_agl_of never gives a value under 0 that the terrain reading did not), a rare class seen since 0.7.10 (lab
+  20261107-141346, -1.16) and in three campaign_tribe_end lines of Nov 13; nothing named the member. BUG-1104: the
+  tribe watch now logs `tribe: member #N of player P is X m under the ground at (...)` (node, speed, height over the
+  game's surface and the water); open in known-issues.
+* campaign_tribe_noclick (sync-check n204 9.1 on Carol, n204 8.1 on Dave): Carol's game time stood (`busy=paused`)
+  from s 610 to the end of Tribe (30 min), Dave's from s 1440 (16 min): an epic's proxy made 7 m up could not come
+  down. Each began when the driver's caption click and the mod's forced end of the village caption (BUG-0983) came in
+  the same second; BUG-1101, open. tribe_conquest_guest now also checks that the guest's game time runs after the
+  conquest (`paused` not in busy) and prints `coop.pauses`; `--click-at-close` clicks the caption's check 7.5-8.7 s
+  after it comes up (not reproduced in 3 runs: lab 20261114-031126, two of them had no caption at all).
+* campaign_civ_jump (hitch 2312 ms on extra1, Tribe): load. extra2 stalled 1065 ms at the same moment, nothing logged
+  on either; the minute before extra1 ran 10 fps (min 2); the same run has Tribe hitches of 1954 / 1577 ms in campaign
+  and 29 over 1 s in all; no 0.7.14 change adds work per frame in Tribe (game.air_culled walks at most 64 holds).
+* civ_wild_pooled (n129 690.9): BUG-1100, fixed (`npc.frozen_reused`); test `civ_wild_reused`.
+* tribe_attack_stale (4 checks from "the game-over caption is up on the host"): the scenario did not happen: no member
+  of the host's tribe died in the 60 s of `coop.tribe pincer` (members 30 -> 36, no knock-out, no cinematic) where the
+  rerun's tribe was out at s 40; the later checks follow from it. Test noise (precondition), not a mod finding.
+* tribe_foreign_click ("the guest's screen says whose member it is ([])"): the note was logged (s 29.1, "That member
+  is Alice's") but not seen on the screen in the 4 s window and not in the key frame; passed 3 of 3 on lane 7
+  (20261114-030318). Not explained; watch it.
+* tribe_away_bundle (t: 2 apart): BUG-1102, the test's forced host-away rounds; now sync-force windows.
+* npc_walk_tribe (drawn error p50 0.11 > 0.1): load. Over the 13 recorded runs of Nov 10-14 the p50 follows the
+  guest's frame rate: 0.02-0.03 m at 46-66 fps, 0.05-0.08 at 28-32, 0.11 at 22 (this run), 0.14 at 14.
+* puppet_walk (traceback): BUG-1103, a test bug (a remote line without a state reads pos (0 0 0)).

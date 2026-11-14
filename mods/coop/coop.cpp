@@ -3776,11 +3776,17 @@ struct AirTime {
 };
 static std::unordered_map<uint16_t, AirTime> g_air;
 static constexpr float kAirOver = 3.f;
+// BUG-1104: the monitor's ground rule found partner 1's members 1.26 m under the host's ground for 20 s in the 0.7.14
+// final check's campaign and nothing named the member (lab 20261114-005006). The same watch: a member more than 0.5 m
+// under (the rule's limit) is logged once with its node, speed, and its height over the game's surface and the water.
+static std::unordered_map<uint16_t, AirTime> g_under;
+static constexpr float kUnderAt = -0.5f;
 static void tribe_air_watch(double now)
 {
     static double next = 0;
     if (g_mode != modes::kTribe || !g_sess.connected()) {
         g_air.clear();
+        g_under.clear();
         return;
     }
     if (now < next)
@@ -3794,7 +3800,25 @@ static void tribe_air_watch(double now)
             auto* a = (Acc*)u;
             net::Vec3 p = m.drawn ? *m.drawn : game::position(m.c);
             float h;
-            if (!member_agl_of(p, h) || h <= kAirOver)
+            if (!member_agl_of(p, h))
+                return;
+            if (h < kUnderAt) { // BUG-1104: name a member under the ground too (once per stay)
+                auto u = g_under.find(m.id);
+                if (u != g_under.end()) {
+                    u->second.last = a->now;
+                    u->second.top = std::min(u->second.top, h);
+                    return;
+                }
+                g_under[m.id] = {a->now, a->now, h, m.owner};
+                float sr = game::surface_radius(p), r = drive::speed(p), w = game::water_radius();
+                net::Vec3 v = game::velocity(m.c);
+                H->log(M, SK_INFO, "tribe: member #%u of player %u is %.2f m under the ground at (%.1f %.1f %.1f): %s speed=%.1f "
+                       "(up %.1f) over the game's surface %.2f, over the water %.2f",
+                       (unsigned)m.id, (unsigned)m.owner, -h, p.x, p.y, p.z, tribe::member_brief(m.c).c_str(), drive::speed(v),
+                       r > 1 ? (v.x * p.x + v.y * p.y + v.z * p.z) / r : 0.f, sr > 1.f ? r - sr : -999.f, w > 1.f ? r - w : -999.f);
+                return;
+            }
+            if (h <= kAirOver)
                 return;
             auto it = g_air.find(m.id);
             if (it != g_air.end()) {
@@ -3811,6 +3835,15 @@ static void tribe_air_watch(double now)
                    r > 1 ? (v.x * p.x + v.y * p.y + v.z * p.z) / r : 0.f, sr > 1.f ? r - sr : -999.f);
         },
         &a);
+    for (auto it = g_under.begin(); it != g_under.end();) {
+        if (it->second.last >= now) {
+            ++it;
+            continue;
+        }
+        H->log(M, SK_INFO, "tribe: member #%u of player %u is on the ground again (or gone) after %.1f s under it, lowest %.2f m",
+               (unsigned)it->first, (unsigned)it->second.owner, it->second.last - it->second.since + 0.25, -it->second.top);
+        it = g_under.erase(it);
+    }
     for (auto it = g_air.begin(); it != g_air.end();) {
         if (it->second.last >= now) {
             ++it;
@@ -6269,6 +6302,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "killfix")) { // tests: off = the guest's kill list survives skipped frames (BUG-0082)
         npc::set_kill_clear(strcmp(argv[2], "off") != 0);
         SAY("kill list cleared every frame: %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "kill")) { // host (tests, BUG-1100): kill <id>: the NPC's object marked dead
+        SAY("%s", npc::debug_kill((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "reuse")) { // host (tests): reuse <id>: a dead NPC's object alive again (BUG-0044)

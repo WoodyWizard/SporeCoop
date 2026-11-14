@@ -1583,6 +1583,15 @@ COOP_FIX("npc.frozen_pooled", "BUG-0339", g_frozen_pooled_fix,
 static bool g_frozen_pooled_rts_fix = true;
 COOP_FIX("npc.frozen_pooled_rts", "BUG-1089", g_frozen_pooled_rts_fix,
          "tribe, civ: an animal the host's game parks in its pool while the game stands still (a pause) is removed at the guests");
+// BUG-1100: the game's pool gave the object of a tracked NPC out again as another creature while the host's game stood
+// (civ_wild_pooled, 0.7.14 final check: #129 species 06538C80 became 065CBF12, 517 m from the centre): the frozen pass
+// saw a live creature off the centre and kept its id, so the guest kept the old creature 690 m away. Such an object is
+// retired like a pooled one (host_tick gives the new creature a new id when the game goes on).
+// `coop.fix npc.frozen_reused off`: kept (0.7.14 rc).
+static bool g_frozen_reused_fix = true;
+COOP_FIX("npc.frozen_reused", "BUG-1100", g_frozen_reused_fix,
+         "an NPC object the game reuses for another creature while the host's game stands is a new NPC at the guests");
+static uint32_t g_frozen_reused;
 // host, frozen: the tracked NPCs that are still creatures of the world in a herd off the planet's centre (with their
 // positions); those that are not (freed, pooled) are retired when npc.frozen_pooled is on
 static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
@@ -1607,6 +1616,22 @@ static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
     for (void* c : a.live) {
         net::Vec3 p = game::position(c);
         bool centre = p.x * p.x + p.y * p.y + p.z * p.z < 2500.f;
+        // BUG-1100: pooled and given out again as another creature between two passes (the same object, another
+        // species, back on the ground): host_tick's reuse check (BUG-0044) does not run in a freeze, so the id stayed
+        if (!centre && g_frozen_reused_fix) {
+            auto it = g_host_npcs.find(c);
+            if (it != g_host_npcs.end() &&
+                npc_object_reused(it->second.species, it->second.dead, game::species_instance(c), game::is_dead(c))) {
+                if (g_frozen_reused < 40) // (diagnostics: what the object is now)
+                    H->log(M, SK_INFO, "npc: NPC %u's object %p is another creature while the host's game stands: species "
+                           "%08X -> %08X, dead %d -> %d, at (%.1f %.1f %.1f) herd %p: retired (BUG-1100)", it->second.id, c,
+                           it->second.species, game::species_instance(c), (int)it->second.dead, (int)game::is_dead(c), p.x, p.y,
+                           p.z, game::herd_of(c));
+                gone.push_back(c);
+                g_frozen_reused++;
+                continue;
+            }
+        }
         if (centre)
             gone.push_back(c);
         if (!game::herd_of(c) || centre) // pooled (BUG-0274, BUG-0339)
@@ -3269,9 +3294,9 @@ std::string status()
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
         char b2[256]; // BUG-0512
-        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u\n",
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u frozen_reused=%u\n",
                  g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,
-                 g_frozen_spawns, g_frozen_despawns, g_frozen_retired);
+                 g_frozen_spawns, g_frozen_despawns, g_frozen_retired, g_frozen_reused);
         char b3[128]; // F3 (BUG-0768)
         snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
                  g_pvp_in, g_pvp_relayed);
@@ -3833,6 +3858,20 @@ std::string debug_reuse(uint16_t id)
              game::species_instance(c), (int)game::is_dead(c));
     *((uint8_t*)c + game::kDeadOff) = 0;
     game::set_health(c, game::max_health(c));
+    return b;
+}
+
+// host (tests, BUG-1100): NPC #id's object marked dead (the death flag set, health 0): the state debug_reuse starts from,
+// where no hit reaches the NPC (Civ: the host's own blows are not a creature's)
+std::string debug_kill(uint16_t id)
+{
+    void* c = host_npc(id);
+    if (!is_host() || !c)
+        return "not the host or no such npc";
+    game::set_health(c, 0.f);
+    *((uint8_t*)c + game::kDeadOff) = 1;
+    char b[96];
+    snprintf(b, sizeof b, "npc #%u %p species %08X: dead (flag set)", id, c, game::species_instance(c));
     return b;
 }
 

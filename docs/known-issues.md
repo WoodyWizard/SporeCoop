@@ -3555,3 +3555,28 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: keep the final check's games at once under ~18 (VRAM under the card), or repeat a test whose key frames
   show this alone on a quiet lane before judging it.
 * Ticket: [BUG-1098](tickets/BUG-1098-space-guests-screens-show-broken-textures-a-whit.md)
+## Tribe: a guest's game time stays paused after a village caption it clicks as it closes itself (2026-11-14, final check 0.7.14)
+<a id="issue-guest-caption-click-pause"></a>
+
+* What happens: after a village conquest on the host, the guest's game plays TRG_TotemPole_Conquer and TRG_Upgrade too
+  and the mod ends each after 8 s (BUG-0983). In campaign_tribe_noclick (lab 20261114-005006) Carol's game time then
+  stood (`busy=paused`, no input lock, no cinematic) for the rest of Tribe (30 min), Dave's from a later conquest
+  (16 min): its world frozen, an epic's proxy hanging 9 m up (sync-check n204 9.1).
+* Known (logs): both began in the second where the campaign's driver clicked the caption's check ("Carol: caption ok"
+  01:01:02, the forced end 01:01:02.486; "Dave: caption ok" 01:14:50, the end 01:14:50.030); the six other caption
+  ends of the run (clicks a second or more apart) left nothing. BUG-1086's wait was balanced (up / gone pairs).
+  Inferred: the OK and the forced EndCinematic both end the cinematic and the stage's end listener runs twice (a pause
+  counted twice, lifted once).
+* Reproduce: not yet; `coop_tribe_conquest_guest.py --click-at-close` (3 runs, lab 20261114-031126) had no caption in
+  two runs and no stuck pause in the third. `coop.pauses` on the stuck guest names the reason left.
+* Next steps: catch the reason with `coop.pauses`; then guard the forced end against a cinematic already ending.
+* Ticket: [BUG-1101](tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
+
+## Tribe: a partner's member 1.0-1.5 m under the host's ground for 10-20 s (2026-11-14, final check 0.7.14)
+<a id="issue-tribe-member-under-host"></a>
+
+* What happens: the monitor's ground rule on the host: "the tribe members of partner 1 1.26 m under the ground (Tribe)
+  on 2 lines" (campaign, lab 20261114-005006); single lines in campaign_tribe_end (Nov 13) and the 0.7.10 campaign.
+* Known: not the water rule (BUG-1088); only in the 4-player campaigns under load; the member was never named.
+* Next steps: the tribe watch logs the member now (BUG-1104): read its node and height over the water in the next hit.
+* Ticket: [BUG-1104](tickets/BUG-1104-tests-the-monitor-s-ground-rule-names-no-tribe-m.md)
