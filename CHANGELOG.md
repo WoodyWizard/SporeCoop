@@ -5,6 +5,8 @@
 ### Fixed
 - Creature, Tribe: an animal the host's creature throws into the air with a hit now flies up and comes down on the
   guest's screen with it, instead of hanging still and jumping about a metre every tenth of a second (BUG-1094).
+- Tests: the campaign bot no longer stays in an empty City Hall, vehicle or spaceship editor for 30 minutes when its
+  drag of the parts was lost on a slow, loaded PC; it drags them again, slower, while the editor stays up (BUG-1096).
 - Creature: on a slower PC (about 20-25 frames per second) your game now sends your creature's position 20 times a
   second as planned (it was 10), and at once when you stop; the other player no longer sees your creature walk on
   half a metre past where you stopped and step back (BUG-1093).
