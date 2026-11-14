@@ -31,6 +31,10 @@ void paint(IDirect3DDevice9* device, D3DPRIMITIVETYPE type, const std::vector<Pt
 
 bool enabled() { return g_on; }
 
+static float g_luma = -1;
+static double g_luma_at = -100;
+float scene_luma(double now) { return now - g_luma_at < 0.5 ? g_luma : -1.f; }
+
 void loading(const SkHost* host, int sw, int sh, float x, float y, float radius, float progress, double now)
 {
     auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
@@ -46,9 +50,29 @@ void loading(const SkHost* host, int sw, int sh, float x, float y, float radius,
         if (SUCCEEDED(device->CreateRenderTarget(qw, qh, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &quarter, nullptr)) &&
             SUCCEEDED(device->CreateRenderTarget(tw, th, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &tiny, nullptr)) &&
             SUCCEEDED(device->StretchRect(back, nullptr, quarter, nullptr, D3DTEXF_LINEAR)) &&
-            SUCCEEDED(device->StretchRect(quarter, nullptr, tiny, nullptr, D3DTEXF_LINEAR)) &&
-            SUCCEEDED(device->StretchRect(tiny, nullptr, quarter, nullptr, D3DTEXF_LINEAR)))
-            device->StretchRect(quarter, nullptr, back, nullptr, D3DTEXF_LINEAR);
+            SUCCEEDED(device->StretchRect(quarter, nullptr, tiny, nullptr, D3DTEXF_LINEAR))) {
+            // BUG-9202: how bright the game's own frame is under the screen (the 1/16 copy read back, 32-bit formats):
+            // the game is in the stage mode while it still shows black for up to ~10 s
+            IDirect3DSurface9* sys = nullptr;
+            if ((bd.Format == D3DFMT_X8R8G8B8 || bd.Format == D3DFMT_A8R8G8B8) &&
+                SUCCEEDED(device->CreateOffscreenPlainSurface(tw, th, bd.Format, D3DPOOL_SYSTEMMEM, &sys, nullptr)) &&
+                SUCCEEDED(device->GetRenderTargetData(tiny, sys))) {
+                D3DLOCKED_RECT lr{};
+                if (SUCCEEDED(sys->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+                    double sum = 0;
+                    for (UINT y = 0; y < th; y++) {
+                        const uint8_t* row = (const uint8_t*)lr.pBits + y * lr.Pitch;
+                        for (UINT x = 0; x < tw; x++) sum += (row[x * 4] + row[x * 4 + 1] + row[x * 4 + 2]) / 3.0;
+                    }
+                    sys->UnlockRect();
+                    g_luma = (float)(sum / (tw * th));
+                    g_luma_at = now;
+                }
+            }
+            if (sys) sys->Release();
+            if (SUCCEEDED(device->StretchRect(tiny, nullptr, quarter, nullptr, D3DTEXF_LINEAR)))
+                device->StretchRect(quarter, nullptr, back, nullptr, D3DTEXF_LINEAR);
+        }
         if (tiny) tiny->Release();
         if (quarter) quarter->Release();
     }
@@ -62,6 +86,11 @@ void loading(const SkHost* host, int sw, int sh, float x, float y, float radius,
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE); // BUG-9202: the Tribe night fog tinted the ring dark blue
+    device->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
@@ -104,6 +133,11 @@ void vignette(const SkHost* host, int sw, int sh, float strength)
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE); // BUG-9202: the Tribe night fog tinted the ring dark blue
+    device->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
@@ -145,6 +179,11 @@ void panel(const SkHost* host, float x0, float y0, float x1, float y1, float rad
     device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE); // BUG-9202: the Tribe night fog tinted the ring dark blue
+    device->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
@@ -190,6 +229,11 @@ void arrow(const SkHost* host, float x, float y, float size, bool left, uint32_t
     device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE); // BUG-9202: the Tribe night fog tinted the ring dark blue
+    device->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
@@ -224,6 +268,11 @@ void draw(const SkHost* host, float x, float y, float radius, float left, float 
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE); // BUG-9202: the Tribe night fog tinted the ring dark blue
+    device->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE); // the disc is see-through
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);

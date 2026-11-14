@@ -63,6 +63,9 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
+// guest: it plays its own planet-side Space intro (the personal launch, BUG-9071): the host's world waits for its
+// launch, so a queued load is not coming now (BUG-9202: the loading screen stayed over the playable Civ stage)
+bool local_intro_running();
 // guest: a world from the host is arriving now; `fraction` its share received (0..1) (BUG-9195: the loading screen)
 bool incoming(float& fraction);
 extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour

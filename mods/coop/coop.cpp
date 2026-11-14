@@ -4581,6 +4581,9 @@ static void draw_downed_hud(int sw, int sh)
 static bool g_reload_cover = true;
 COOP_FIX("ui.reload_cover", "BUG-9195", g_reload_cover,
          "ui: the loading screen covers a world reload that comes in the middle of a stage (the galaxy menu and the load)");
+static bool g_join_cover = true;
+COOP_FIX("ui.join_cover", "BUG-9202", g_join_cover,
+         "ui: the loading screen covers a guest's join (the galaxy menu while the host's world comes, and its load)");
 // ---- the Party panel (the owner's mockup 2026-11-13, coop_ui::set_party_hud) ----
 // decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
 // (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
@@ -4720,35 +4723,96 @@ void on_overlay(void*, int, void*)
     // it?"): a world from the host arriving while this guest plays a stage (its own new nest, a party wipe, a reload)
     // took it through the galaxy menu and a load in plain sight. The loading screen covers it from the first byte until
     // it plays the stage again (2 s settled; 120 s at most). `coop.fix ui.reload_cover off`: the galaxy menu shows.
+    // BUG-9202: the join itself (the galaxy menu while the host saves and sends, then a black load) had no loading
+    // screen: the same screen covers it, from the moment the host plays a stage while this guest is in the menu or
+    // loading, until it plays the stage (2 s settled; 180 s at most; not while the Co-op window is open, so a stuck
+    // join can still be left). `coop.fix ui.join_cover off`: the galaxy menu and the black load show.
     {
         static double s_since = -1, s_back_at = -1;
-        static bool s_nest = false;
+        static bool s_nest = false, s_join = false;
         const double now = H->time_seconds();
         float got = 0;
-        const bool arriving = g_sess.role() == net::Role::Client && g_sess.connected() && world::incoming(got);
+        const bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+        const bool arriving = guest && world::incoming(got);
         const bool in_stage = g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kTribe ||
                               g_mode == modes::kCiv || g_mode == modes::kSpace;
-        if (g_reload_cover && s_since < 0 && arriving && in_stage) {
+        const bool in_menu = g_mode == modes::kMenu || g_mode == modes::kLoad;
+        bool host_plays = false;
+        if (auto it = g_remotes.find(0); it != g_remotes.end() && !it->second.buf.empty())
+            host_plays = stage_mode(it->second.buf.latest().mode);
+        if (g_reload_cover && s_since < 0 && arriving && in_stage && !world::local_intro_running()) {
             s_since = now;
             s_back_at = -1;
+            s_join = false;
             s_nest = g_mode == modes::kCreature; // in Creature mid-play: the own nest's world (BUG-9167) as a rule
         }
+        if (g_join_cover && s_since < 0 && guest && in_menu && (arriving || host_plays) && !coop_ui::is_open()) {
+            s_since = now;
+            s_back_at = -1;
+            s_join = true;
+            s_nest = false;
+        }
         if (s_since >= 0) {
-            if (in_stage && !arriving && !world::load_queued()) {
+            // back in the stage: the player's own creature / tribe / city is there and no cinematic runs (the game is in
+            // the stage mode while its own black loading and the entry fade still run, ~10 s on the MSI, 2026-11-14)
+            static double s_stage_at = -1, s_cine_s = 0, s_last = 0;
+            if (!in_stage) s_stage_at = -1;
+            else if (s_stage_at < 0) s_stage_at = now;
+            const bool cine = in_stage && world::cinematic_playing();
+            if (cine) s_cine_s += std::min(0.5, now - s_last);
+            s_last = now;
+            // and the game's frame under the screen is no longer black (a dark place passes after 60 s of it; the
+            // Tribe join showed 30 s of black in the stage mode on the MSI, 2026-11-14)
+            static double s_ready_at = -1;
+            const bool ready = in_stage && !arriving && (!world::load_queued() || world::local_intro_running()) && g_local &&
+                               !cine;
+            if (!ready) s_ready_at = -1;
+            else if (s_ready_at < 0) s_ready_at = now;
+            const float luma = ring_timer::scene_luma(now);
+            const bool dark = luma >= 0 && luma < 16.f && now - s_ready_at < 60;
+            if (ready && !dark) {
                 if (s_back_at < 0) s_back_at = now;
             } else
                 s_back_at = -1;
-            if ((s_back_at >= 0 && now - s_back_at > 2 && now - s_since > 4) || now - s_since > 120 || !g_sess.connected())
+            const char* why = (s_back_at >= 0 && now - s_back_at > 2 && now - s_since > 4) ? "playing"
+                              : now - s_since > (s_join ? 180 : 120)                    ? "time limit"
+                              : !g_sess.connected()                                     ? "disconnected"
+                              : s_join && coop_ui::is_open()                            ? "co-op window"
+                              : s_join && !in_menu && !in_stage                         ? "other mode"
+                                                                                        : nullptr;
+            if (why) {
+                H->log(M, SK_INFO, "ui: the %s loading screen ended (%s) after %.1f s, %.1f s of it in the stage, %.1f s "
+                       "cinematic, %.1f s ready but black, brightness %.0f (BUG-9202)", s_join ? "join" : "reload", why,
+                       now - s_since, s_stage_at >= 0 ? now - s_stage_at : 0.0, s_cine_s,
+                       s_ready_at >= 0 && s_back_at >= 0 ? s_back_at - s_ready_at : -1.0, luma);
                 s_since = -1;
+                s_stage_at = -1;
+                s_cine_s = 0;
+            }
         }
         if (s_since >= 0 && sw > 0) {
-            const float p = arriving ? 0.6f * got : std::min(0.95f, 0.6f + (float)(now - s_since) * 0.01f);
+            // the join: 0..0.1 while the host saves, the transfer to 0.7, then the load
+            static double s_recv_end = -1;
+            if (arriving || s_recv_end < 0 && (in_stage || g_mode == modes::kLoad)) s_recv_end = now;
+            if (now - s_since < 0.05) s_recv_end = -1; // a new cover
+            const bool saving = s_join && !arriving && s_recv_end < 0;
+            const float p = s_join ? (arriving ? 0.1f + 0.6f * got
+                                     : saving ? std::min(0.1f, (float)(now - s_since) * 0.01f)
+                                              : std::min(0.95f, 0.7f + (float)(now - s_recv_end) * 0.02f))
+                           : arriving ? 0.6f * got : std::min(0.95f, 0.6f + (float)(now - s_since) * 0.01f);
+            // only forward: a second world during the same join (a Tribe joiner's new village) restarts the share
+            static float s_shown = 0;
+            if (now - s_since < 0.05) s_shown = 0;
+            s_shown = std::max(s_shown, p);
             const float cx = sw / 2.f, cy = sh * 0.45f, r = std::max(22.f, sh * 0.05f);
-            ring_timer::loading(H, sw, sh, cx, cy, r, p, now);
+            ring_timer::loading(H, sw, sh, cx, cy, r, s_shown, now);
             const std::string host = g_sess.name_of(0);
-            const char* title = s_nest ? "Bringing your nest" : "Getting the latest world";
-            const std::string step = arriving ? "Receiving " + host + "'s world..." : in_stage ? "Final touches..." : "Loading...";
-            bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
+            const std::string title = s_join ? "Joining " + host : s_nest ? "Bringing your nest" : "Getting the latest world";
+            const std::string step = arriving ? "Receiving " + host + "'s world..."
+                                     : in_stage ? "Final touches..."
+                                     : saving ? host + " is saving the world..."
+                                     : "Loading...";
+            bold((int)(cx - text_width(title.c_str()) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title.c_str());
             H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
             return; // nothing else over the loading screen
         }

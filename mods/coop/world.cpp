@@ -1181,6 +1181,11 @@ static void drop_share_loads()
 
 bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on); }
 
+bool local_intro_running()
+{
+    return g_local_intro && !g_intro_planet.empty() && modes::current_world_name() == g_intro_planet;
+}
+
 bool incoming(float& fraction)
 {
     if (!g_in.active) return false;
