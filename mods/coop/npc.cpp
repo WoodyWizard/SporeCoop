@@ -197,7 +197,7 @@ COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
 // Now such a placing is put back after the game's creature update and its physics update whenever they moved it away
 // from its target (game::place_hold). `coop.fix npc.proxy_hold off`: placed only (0.7.13).
 static bool g_proxy_hold_fix = true;
-COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "creature / tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
+COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
 static bool g_air_fix = true;
 COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the air on the host (flying, jumping, thrown) is in the air on the guest too");
 // BUG-0710 (class BUG-0419): NpcSpawn.max_health was sent and never applied: a proxy had its species' adult max on the
@@ -2329,7 +2329,9 @@ static void guest_tick(double now)
                 o.snap = 2.5f;
                 o.keep_lost = true;
                 o.catch_prop = true; // BUG-0425
-                o.hold_after = g_proxy_hold_fix; // BUG-0440
+                // BUG-0440 (Tribe only: in Creature, npc_walk's fleeing proxy after a hit stepped 0.8-1.1 m a few times
+                // with it, labs 20261113-202612, -204146 #2; all the reported holds were Tribe)
+                o.hold_after = g_proxy_hold_fix && rts;
                 o.variant = g_walk_variant;
                 // BUG-0757 (npc.place_now): aimed where the target is when the placing shows up, a frame later
                 net::Vec3 aim = s.pos;

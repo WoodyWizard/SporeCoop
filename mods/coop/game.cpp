@@ -183,6 +183,8 @@ static void place_reassert(void* c)
                 g_place_hold.erase(g_place_hold.begin() + i);
                 return;
             }
+            if (field<int32_t>(c, kLocoModeOff) != 0) // (thrown by a hit, abducted: the game's own move, BUG-0409)
+                return;
             net::Vec3 p = position(c);
             if (vdist(p, h.aim) > vdist(h.pos, h.aim) + std::max(0.02f, h.back_m)) {
                 teleport(c, h.pos, h.rot);
