@@ -7653,3 +7653,6 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
 * Reading a ground finding or a member "over the ground" line now: a swimmer reads 0 (its height over the water's
   surface); what is left is a member really over the terrain or the water. For a sync-check `t: 1 apart` compare the
   two positions' directions: the same direction and different radii is a member in the air on one game.
+* Regression of the branch (lanes 2 and 3): play_tribe --quick, tribe_member_air, tribe_member_hang, tribe_mirror_ground,
+  tribe_mirror_jump, npc_air PASS (20261113-184358, -184358-2); puppet_air FAILs "no jump of the puppet while it walks"
+  on the base rel/0.7.14 too (20261113-185616) and with game.air_culled off (20261113-185217-2): BUG-1092.
