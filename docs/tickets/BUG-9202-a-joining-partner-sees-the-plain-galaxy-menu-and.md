@@ -35,3 +35,4 @@ Two PCs, 2026-11-14, 1024x768, not lab runs (no-fail-run: two-PC QA by hand; the
 ## History
 - 2026-11-14: opened.
 - 2026-11-14: found by the owner's loading screen check (3S A); fixed and checked on both PCs.
+- 2026-11-14: installed on the owner's PC and the MSI (coop.dll MD5 58770b87).
