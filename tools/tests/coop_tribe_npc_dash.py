@@ -304,6 +304,8 @@ def main():
         line = [l.strip() for l in guest.call('coop.npc list')['out'].splitlines() if re.match(rf'\s*#{i}\s', l)]
         print(f'  guest proxy #{i}:', line[0][:300] if line else '-', flush=True)
     guest.call('frame.limit auto')
+    m = re.search(r'proxy_holds=(\d+)', guest.call('coop.npc')['out'])  # BUG-0440: placings kept through the update
+    print(f'  guest: npc.proxy_hold kept {m.group(1) if m else "?"} placings', flush=True)
     ck(len(keys) == 2 and min(per.values()) >= 30, f'samples of both animals on both machines ({per})')
     p90_rows, n_rows, along = judge_rows(host, guest, keys, t0_rows, t1_rows, windows)
     if errs:

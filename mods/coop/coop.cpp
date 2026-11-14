@@ -6120,6 +6120,30 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
                                   argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
         return 0;
     }
+    if (argc > 7 && !strcmp(argv[1], "dashto")) { // host (tests, BUG-0440): dashto <id> <x> <y> <z> <m/s> <s> [vel factor]
+        net::Vec3 to{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
+        SAY("%s", npc::debug_dash((uint16_t)atoi(argv[2]), 0.f, (float)atof(argv[6]), (float)atof(argv[7]), 0.f, 0, 0.f, &to,
+                                  argc > 8 ? (float)atof(argv[8]) : 1.f).c_str());
+        return 0;
+    }
+    if (argc > 5 && !strcmp(argv[1], "objnear")) { // tests (BUG-0440): objnear <x> <y> <z> <r>: the objects (nouns) within r m
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        SAY("%s", game::objects_near(p, (float)atof(argv[5]), nullptr, 40).c_str());
+        return 0;
+    }
+    if (argc > 3 && !strcmp(argv[1], "bhv")) { // host (tests, BUG-0440): bhv <id> <anim hex>
+        SAY("%s", npc::debug_bhv((uint16_t)atoi(argv[2]), (uint32_t)strtoul(argv[3], nullptr, 16)).c_str());
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "pushback")) { // guest (tests, BUG-0440): pushback <id> <m/s> <s>
+        SAY("%s", npc::debug_pushback((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])).c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "raised")) { // tests (BUG-0440): raised <r> [x y z]
+        net::Vec3 at{argc > 5 ? (float)atof(argv[3]) : 0.f, argc > 5 ? (float)atof(argv[4]) : 0.f, argc > 5 ? (float)atof(argv[5]) : 0.f};
+        SAY("%s", npc::debug_raised((float)atof(argv[2]), argc > 5 ? &at : nullptr).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "nanvel")) { // host (tests, BUG-0894): nanvel <s> [id|-1] [air]
         SAY("%s", npc::debug_nanvel((float)atof(argv[2]), argc > 3 ? atoi(argv[3]) : -1, argc > 4 && !strcmp(argv[4], "air")).c_str());
         return 0;

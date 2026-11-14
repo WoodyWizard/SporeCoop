@@ -3952,3 +3952,44 @@ BUG-1088. GOG 2024, lanes 2 and 3, tribe fixture (raid probes 20261113-174018, -
 * Fix `monitor.tribe_water` (coop.cpp member_agl_of): over water a member's height is min(height over the terrain,
   max(0, radius - water radius)): the trace's agl / agl_hi / agl_held and the "tribe: member #.. is .. m over the
   ground" lines read 0 for a swimmer and the height over the water for one higher up.
+* Answered (2026-11-13, fix/w49-proxy2): the game's update undoes the taken teleport, see
+  [the held proxies at their nests](#tribe-proxy-held-nest).
+
+## Animal proxies held back at their nests: the game's update moves them back (2026-11-13, fix/w49-proxy2)
+<a id="tribe-proxy-held-nest"></a>
+
+BUG-0440. GOG 2024, lab lane 4, tribe fixture (Zorispe.spo); follows [the log statistics](#tribe-proxy-held-back).
+* ✔ (logs) The stuck proxies of the 2.5 m/s class sit at the same few spots of the planet in 35+ runs of different
+  branches, one cluster per species (06808ACA at (351-368, -14..6, 348-364), 067A147A at (291-308, -86..-70, 393-402),
+  16DE4FEA, 0680AA69, 0680AA66), and the same proxy stops at the same spot on every guest of a 4-player campaign (e.g.
+  campaign_ct#1 of 20261108-081330-2: proxy 159 at (50.5 -501.0 -77.4) on extra1 and extra2, 0.5 m away on the guest).
+  Every cluster is 0.8-4.9 m from a nest (cNest 0x52AA6122, with an object of noun 036BE27E at the same place),
+  `coop.npc objnear` on both games (lab 20261113-191114).
+* ✔ (runtime) No mound there: `cPlanetModel_SurfacePoint` equals GetHeightAt at and around these nests on the guest
+  (`coop.ground`, `coop.npc raised`: 0.00 m at 0-8 m from the centre); the nest areas are flat terrain.
+* ✔ (runtime) The nest alone does not hold a proxy: a host animal walked at 2.5 m/s through the nest's centre and 8 m
+  past it (`coop.npc dashto`), with or without its herbivore idle animation 731EA3EA relayed, or with its velocity
+  reported backwards: p90 0.30-0.88 m, never 3 m off (labs 20261113-191308, -193212, -193506).
+* ✔ (runtime, the full probe) A natural case in chaos_tribe#4 of lab 20261113-191751 (5 runs, 1 case): proxy 29 (species
+  0680AA69) 6.8 m off for 2.1 s, `held 1`, place lost 310, **pushed back 6.9 m/s, off its placing after the call 0.00 m**,
+  game speed 4.3 m/s, anim 731EA3EA, loco mode 0, grounded 1, in a nest herd, host's speed 2.5 m/s. So the teleport
+  with the mark is taken (the body is where it was put right after the call) and the game's own frame (its creature
+  update / physics) moves the body back by 6.9 m/s x the frame, against the placing's at most target speed + 5.5 m/s.
+* ? Which game code moves it back (the herd of the nest, the locomotion's own goal, the behaviour animation): not
+  found; the planted push of the same size reproduces every line of the case (below), which is what the fix needs.
+* ✔ Fix `npc.proxy_hold` (game.cpp place_hold, driver.h WalkPlace::hold_after): a held placing of an NPC proxy is put
+  back after the game's creature update (the cCreatureAnimal::Update hook) and after the physics update (the BUG-0449
+  hook) when they moved the body farther from its target by more than its own walk in that frame ((walk speed x 1.2 +
+  0.5 m/s) x the frame), and only once the hold lasts (held over 1.5 m for 0.3 s, then until it is on the path again);
+  entries live one frame; not while the game throws it (loco mode +0x2B0 != 0); Tribe only. Counter `proxy_holds=` in
+  `coop.npc`.
+* ✔ (runtime) In Creature the hold made npc_walk's fleeing proxy after a hit step 0.75-1.13 m in single frames a few
+  times (labs 20261113-202612, -204146 #2, also with the loco mode rule; 0 with the fix off, -204521): kept for Tribe,
+  where every reported hold was.
+* ✔ (runtime) Without those two limits the fix broke tribe_npc_dash (6.5 m/s zigzag, guest at 15 fps): the brief holds
+  at every reversal were kept through the update too and the copy turned early, lag along the path -0.046 .. -0.163 s
+  (limit -0.043 s; labs 20261113-194347, -195017, -195627, -200431, -201345); with them -0.008 / -0.033 s (lab
+  20261113-202024). Test tribe_proxy_held: `coop.npc pushback <id> 6.9 <s>` moves the proxy back in each of its game's updates
+  (before the update runs): fix off p90 3.58 m, 2.8 s over 3 m and the monitor's gate with the case's own audit line
+  (pushed back 7.9 m/s, held 1); on p90 0.98 m, never over 3 m.
+

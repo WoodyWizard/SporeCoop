@@ -191,6 +191,13 @@ COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
 // guest places such a proxy at that height over its own terrain, not grounded (drive::air_place, as the partner's
 // puppet in a jump, BUG-0376). On its ground the proxy stays on the guest's ground as before.
 // `coop.fix npc.air off`: no NF_AIR sent, the proxy walked and driven (0.7.7).
+// BUG-0440: an animal proxy placed with the teleport mark every frame (walk_place held: its error grew) was moved back
+// by the guest's game in its update at 6-7 m/s (lab 20261113-191751 chaos_tribe#4: pushed back 6.9 m/s, the teleport
+// itself taken), so it crept at 0-3 m/s 3-8 m behind its walking host animal for seconds (the monitor's proxies gate).
+// Now such a placing is put back after the game's creature update and its physics update whenever they moved it away
+// from its target (game::place_hold). `coop.fix npc.proxy_hold off`: placed only (0.7.13).
+static bool g_proxy_hold_fix = true;
+COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
 static bool g_air_fix = true;
 COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the air on the host (flying, jumping, thrown) is in the air on the guest too");
 // BUG-0710 (class BUG-0419): NpcSpawn.max_health was sent and never applied: a proxy had its species' adult max on the
@@ -278,6 +285,8 @@ struct Proxy {
     uint32_t tuning_set = 0; // the key last given to its creature
     double anim_fix_at = 0;  // BUG-0464: when the snapshot last played the host's animation on it
     double anim_rx_at = 0;   // BUG-0464: when the host's last start of an animation of it came
+    double push_until = 0;   // tests (BUG-0440, `coop.npc pushback`): its game's update moves it back until then
+    float push_mps = 0;
     bool air = false;        // BUG-0550: placed in the air (the host's NPC off its ground) last frame
     uint32_t airs = 0;       // BUG-0550 (coop.npc list): frames placed in the air
     float meat_seen = -1e9f; // BUG-0557: the body's meat (+0xB84) as last read or set here (-1e9: not a body yet)
@@ -1021,6 +1030,7 @@ struct Dash {
     double t0 = 0, until = 0;
     uint16_t mate = 0; // a second NPC on the same path, `off` m to the side (a herd that flees together)
     float off = 0;
+    float vel_k = 1.f; // BUG-0440 (tests, `coop.npc dashto ... <k>`): the velocity written and sent, times k
     // BUG-0753: what the last dash_tick wrote (index 0 the dasher, 1 the mate), for host_state's velocity
     net::Vec3 w[2], v[2];
     bool wrote[2] = {false, false};
@@ -1082,7 +1092,7 @@ static void dash_tick(double now)
     net::Vec3 q{p0.x + (p1.x - p0.x) * f, p0.y + (p1.y - p0.y) * f, p0.z + (p1.z - p0.z) * f};
     net::Vec3 v{};
     if (moving && leg[k] > 0) {
-        float sc = g_dash.speed / leg[k] * (back ? -1.f : 1.f);
+        float sc = g_dash.speed / leg[k] * (back ? -1.f : 1.f) * g_dash.vel_k; // (vel_k: BUG-0440 tests)
         v = {(p1.x - p0.x) * sc, (p1.y - p0.y) * sc, (p1.z - p0.z) * sc};
     }
     for (int m = 0; m < 2; m++) {
@@ -1101,6 +1111,73 @@ static void dash_tick(double now)
         g_dash.v[m] = v;
         g_dash.wrote[m] = true;
     }
+}
+// tests (BUG-0440): `coop.npc raised <r> [x y z]`: the nests (cNest 0x52AA6122) within r m of the avatar (or the point) and how far this
+// game's surface with its collision objects (cPlanetModel_SurfacePoint: a nest mound, a rock) lies over the plain
+// terrain (GetHeightAt) at their centre and 2 / 4 / 6 / 8 m from it
+std::string debug_raised(float rad, const net::Vec3* at)
+{
+    void* av = game::avatar();
+    if (!av && !at)
+        return "no avatar";
+    struct U {
+        net::Vec3 a;
+        float r;
+        std::string s;
+        int n;
+    } u{at ? *at : game::position(av), rad, "", 0};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            net::Vec3 q;
+            if (noun != 0x52AA6122u || u->n >= 12 || !game::object_position(o, q) || net::dist(q, u->a) > u->r)
+                return true;
+            float qr = drive::speed(q);
+            net::Vec3 n{q.x / qr, q.y / qr, q.z / qr};
+            net::Vec3 e = std::fabs(n.x) < 0.9f ? net::Vec3{0, -n.z, n.y} : net::Vec3{-n.z, 0, n.x};
+            float el = drive::speed(e);
+            e = {e.x / el, e.y / el, e.z / el};
+            char b[160];
+            snprintf(b, sizeof b, "nest (%.1f %.1f %.1f) %.1f m away, raised:", q.x, q.y, q.z, net::dist(q, u->a));
+            u->s += b;
+            for (int m = 0; m <= 8; m += 2) {
+                net::Vec3 w{q.x + e.x * m, q.y + e.y * m, q.z + e.z * m};
+                snprintf(b, sizeof b, " %d m %.2f", m, game::surface_radius(w) - game::ground_radius(w));
+                u->s += b;
+            }
+            u->s += "\n";
+            u->n++;
+            return true;
+        },
+        &u);
+    return u.s.empty() ? "no nest" : u.s;
+}
+// tests (BUG-0440): `coop.npc bhv <id> <anim hex>` (host): NPC #id plays a behaviour animation as its BT does
+// (SporeCoop::CreaturePlayAnim), reported to the relay as the BT's own starts are
+std::string debug_bhv(uint16_t id, uint32_t anim)
+{
+    void* c = host_npc(id);
+    if (!is_host() || !c)
+        return "no such host npc";
+    bool ok = game::play_behaviour_anim(c, anim, 0, 1, -1);
+    if (ok)
+        on_behaviour_anim(c, anim, 0, 1, -1);
+    char b[96];
+    snprintf(b, sizeof b, "npc %u plays %08X: %s", id, anim, ok ? "started" : "not played");
+    return b;
+}
+// tests (BUG-0440): `coop.npc pushback <id> <m/s> <s>` (guest): while the proxy is walked, the game's update moves it
+// back (away from its target) at m/s for s seconds: the hold seen in the reports, planted
+std::string debug_pushback(uint16_t id, float mps, float secs)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c)
+        return "no such spawned proxy";
+    it->second.push_until = H->time_seconds() + secs;
+    it->second.push_mps = mps;
+    char b[96];
+    snprintf(b, sizeof b, "proxy %u pushed back at %.1f m/s for %.0f s in its game's updates", id, mps, secs);
+    return b;
 }
 // tests (BUG-0339): host NPC #id goes back to the game's creature pool, as the relevance pass does it
 // (creature vt 0xC8, thiscall(c, 1): push 1 at 0xACE88C in Relevance_Update)
@@ -1171,20 +1248,30 @@ std::string debug_sink(uint16_t id, float m, bool mark)
              q.z, drive::over_ground(game::position(c)));
     return b;
 }
-std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off)
+std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off, const net::Vec3* to, float vel_k)
 {
     void* c = host_npc(id);
-    if (!is_host() || !c || len <= 0 || speed <= 0)
+    if (!is_host() || !c || (len <= 0 && !to) || speed <= 0)
         return "no such host npc";
     net::Vec3 p = game::position(c);
     float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     net::Vec3 up = r > 1 ? net::Vec3{p.x / r, p.y / r, p.z / r} : net::Vec3{0, 0, 1};
     net::Vec3 a = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
+    if (to) { // BUG-0440 (`coop.npc dashto`): straight towards a point and back (the zigzag's legs on one line)
+        net::Vec3 d{to->x - p.x, to->y - p.y, to->z - p.z};
+        float k = d.x * up.x + d.y * up.y + d.z * up.z;
+        a = {d.x - up.x * k, d.y - up.y * k, d.z - up.z * k};
+        len = drive::speed(a);
+        if (len < 1.f)
+            return "the point is too near";
+        width = 0;
+    }
     float al = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
     a = {a.x / al, a.y / al, a.z / al};
     net::Vec3 b{up.y * a.z - up.z * a.y, up.z * a.x - up.x * a.z, up.x * a.y - up.y * a.x}; // up x a
     void* mc = host_npc(mate);
     g_dash = {id, p, a, b, len, speed, width, H->time_seconds(), H->time_seconds() + secs, mc ? mate : (uint16_t)0, off};
+    g_dash.vel_k = vel_k;
     char t[192];
     snprintf(t, sizeof t, "npc %u dashes %.1f m (zigzag %.1f m) at %.1f m/s for %.0f s from (%.1f %.1f %.1f), mate %u %.1f m beside", id,
              len, width, speed, secs, p.x, p.y, p.z, g_dash.mate, off);
@@ -2242,6 +2329,9 @@ static void guest_tick(double now)
                 o.snap = 2.5f;
                 o.keep_lost = true;
                 o.catch_prop = true; // BUG-0425
+                // BUG-0440 (Tribe only: in Creature, npc_walk's fleeing proxy after a hit stepped 0.8-1.1 m a few times
+                // with it, labs 20261113-202612, -204146 #2; all the reported holds were Tribe)
+                o.hold_after = g_proxy_hold_fix && rts;
                 o.variant = g_walk_variant;
                 // BUG-0757 (npc.place_now): aimed where the target is when the placing shows up, a frame later
                 net::Vec3 aim = s.pos;
@@ -2250,6 +2340,14 @@ static void guest_tick(double now)
                 if (g_place_now_snap_fix) { // BUG-0997: the snap compares the path point, not the aim
                     o.has_path_pos = true;
                     o.path_pos = s.pos;
+                }
+                if (now < px.push_until) { // tests (BUG-0440): the game's next update moves it back, away from its target
+                    net::Vec3 cp = game::position(px.c), d{cp.x - aim.x, cp.y - aim.y, cp.z - aim.z};
+                    float dl = drive::speed(d);
+                    if (dl < 0.05f) // (on its target: back along the host's path)
+                        d = {-vel.x, -vel.y, -vel.z}, dl = drive::speed(vel);
+                    if (dl > 0.01f)
+                        game::test_push(px.c, {d.x / dl, d.y / dl, d.z / dl}, px.push_mps);
                 }
                 drive::walk_place(px.c, aim, s.rot, vel, px.drv, now, o);
                 walked = true;
@@ -3165,11 +3263,12 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied);
+                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
+                 game::place_holds_kept());
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
@@ -3999,12 +4098,18 @@ void monitor_tick(double now)
                         near_id = oid;
                     }
                 }
+            uint32_t cur_anim = 0;
+            game::drawn_state(px.c, nullptr, &cur_anim);
             trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
                         "%.1f m; objects within 3 m: %s; pushed back %.1f m/s, off its placing after the call %.2f m, game "
-                        "speed %.1f m/s (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        "speed %.1f m/s; raised ground (surface over the terrain) under it %.2f m, at its target %.2f m; anim %08X, "
+                        "loco mode %d, grounded %d, nest herd %d, host's speed %.1f, walk speed %.1f (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
                         (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d,
                         game::objects_near(p, 3.f, px.c).c_str(), px.drv.back_ema, px.drv.readback_ema,
-                        drive::speed(game::velocity(px.c)));
+                        drive::speed(game::velocity(px.c)), game::surface_radius(p) - game::ground_radius(p),
+                        game::surface_radius(t) - game::ground_radius(t), cur_anim, *(int32_t*)((uint8_t*)px.c + game::kLocoModeOff),
+                        (int)game::grounded(px.c), game::herd_of(px.c) && game::herd_nest(game::herd_of(px.c)) ? 1 : 0,
+                        drive::speed(s.vel), px.walk_sp);
         }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "

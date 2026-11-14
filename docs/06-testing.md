@@ -7693,3 +7693,18 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
 * Regression of the branch (lanes 2 and 3): play_tribe --quick, tribe_member_air, tribe_member_hang, tribe_mirror_ground,
   tribe_mirror_jump, npc_air PASS (20261113-184358, -184358-2); puppet_air FAILs "no jump of the puppet while it walks"
   on the base rel/0.7.14 too (20261113-185616) and with game.air_culled off (20261113-185217-2): BUG-1092.
+
+## A held animal proxy: tribe_proxy_held (2026-11-13, fix/w49-proxy2)
+<a id="testing-tribe-proxy-held"></a>
+
+* `coop_tribe_proxy_held.py` (`tribe_proxy_held`, ~2 min, tribe fixture, BUG-0440): the host walks one of its animals
+  at 2.5 m/s through the nearest nest and back (`coop.npc dashto <id> <x> <y> <z> <m/s> <s> [vel factor]`, written on
+  the terrain after the states went out, as `coop.npc dash`), replaying the herbivore idle animation 731EA3EA
+  (`coop.npc bhv <id> <anim>`, host: played and reported to the relay as the BT's own starts); on the guest
+  `coop.npc pushback <id> <m/s> <s>` moves the proxy back in each of its game's creature updates (planted hold, the
+  6.9 m/s measured in a natural case). Judged on the guest's own proxy error (`coop.npc list` err). Fix off
+  (`SPORE_FIX_OFF=npc.proxy_hold`) fails, also on the monitor's proxies gate. `NEST_PUSH=0`: the walk alone.
+* Probe commands added with it: `coop.npc raised <r> [x y z]` (nests within r m and the surface over the terrain at
+  0-8 m from them), `coop.npc objnear <x> <y> <z> <r>` (the nouns within r m).
+* Natural cases are rare: 1 in 5 chaos_tribe runs (lab 20261113-191751), ~10-19 % of play_tribe / chaos_tribe runs in
+  the lab history, almost all near a herd's nest.
