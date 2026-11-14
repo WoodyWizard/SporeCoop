@@ -1127,7 +1127,7 @@ static void hold_try(GMember& g, double now);
 struct HoldEv {
     double t;
     uint16_t id;
-    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests)
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests), B a hold of that mirror's hand begins this frame (tests, 3 s after H)
     uint32_t a, b;
 };
 static HoldEv g_hold_ev[4096];
@@ -1143,8 +1143,27 @@ static void hold_ev(uint16_t id, char what, uint32_t a, uint32_t b)
 static bool g_hold_cut_frame_fix = true;
 COOP_FIX("tribe.hold_cut_frame", "BUG-0993", g_hold_cut_frame_fix,
          "tribe: a guest's mirror lets go of an item its own animation took 0.35 s after it took it at any frame rate (the 0.25 s tick made it 0.5-1.05 s)");
+// tests (BUG-1105): for 3 s after `coop.tribe hand <id> <item>` the guest looks every frame (whatever the switches)
+// at the mirror's hand: trace B on each frame a hold modifier begins (a new handle), the start of the hold a cut
+// belongs to (the trace's O comes on held_items_tick's 0.25 s tick with tribe.hold_cut_frame off)
+static uint16_t g_hand_probe_id;
+static uint32_t g_hand_probe_handle;
+static double g_hand_probe_until;
+static void hand_probe_tick(double now)
+{
+    if (!g_hand_probe_id || now > g_hand_probe_until || now < g_hand_probe_until - 3.0) {
+        g_hand_probe_id = 0;
+        return;
+    }
+    void* c = member_mirror(g_hand_probe_id);
+    uint32_t h = has_body(c) ? hold_modifier(c, false) : 0;
+    if (h && h != g_hand_probe_handle)
+        hold_ev(g_hand_probe_id, 'B', h, 0);
+    g_hand_probe_handle = h;
+}
 static void held_items_tick(double now)
 {
+    hand_probe_tick(now);
     static double last;
     bool slow = !(now - last < 0.25 && now >= last);
     if (!slow && !g_hold_cut_frame_fix)
@@ -6864,8 +6883,12 @@ std::string debug(const std::vector<std::string>& a)
         if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
             thiscall<void>(a_SetHandheldItem, c, 0, -1);
             set_hand(c, atoi(a[2].c_str()));
-            if (is_guest())
+            if (is_guest()) {
                 hold_ev((uint16_t)atoi(a[1].c_str()), 'H', (uint32_t)atoi(a[2].c_str()), 0); // tests (BUG-0993): the hand set here
+                g_hand_probe_id = (uint16_t)atoi(a[1].c_str());
+                g_hand_probe_handle = 0;
+                g_hand_probe_until = H->time_seconds() + 3.0;
+            }
         }
         if (a.size() >= 3 && a[2] == "end")
             return "end " + std::to_string(hold_modifier(c, true) ? 1 : 0);

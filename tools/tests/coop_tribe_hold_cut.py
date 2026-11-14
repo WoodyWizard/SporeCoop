@@ -7,16 +7,20 @@ saw the hold, 0.5-0.85 s after the hold began, and over 1.0 s at 26 fps with hit
 20261112-222723 #3: 1.05 s).
 
 1. Two games on the tribe fixture; the guest at ~25 fps (`frame.limit 40`, a weak PC).
-2. ROUNDS times: the guest puts the staff into its mirror's hand of the host's chief (`coop.tribe hand <id> 17`, the
+2. ROUNDS times, each when the host's chief and its mirror are in their idle / walk (two samples 0.3 s apart; the
+   chief's gestures take its staff and such a host hold binds the mirror's; a hold taken in the mirror's gesture ends
+   with it: neither round is counted, BUG-1105) for at most --secs: the guest puts the staff into its mirror's hand of the host's chief (`coop.tribe hand <id> 17`, the
    game's Citizen_SetHandheldItem: a started kind 5 modifier the host never sent, as when the mirror's own gesture
    takes it), then samples the game's own hand state (`hold=`) for 1.6 s.
-3. The guest's hold trace (`coop.tribe holdtrace <id>`, game seconds): the time from the hand set (H) to the cut (C).
-   A round with a host's hold of the chief in between (S / T), or in which the game took no hold or its animation ended
-   the hold by itself within 0.55 s, is not counted; fewer than ROUNDS / 2 counted: SKIP.
+3. The guest's hold trace (`coop.tribe holdtrace <id>`, game seconds): the time from the start of the hold the cut
+   ended (B, the guest's every-frame look at the hand for 3 s after the hand set H, whatever the switches) to the cut
+   (C). (BUG-1105: from H the test counted the game's late start of the hold, HOC 0.836 s, and a hold that ended by
+   itself plus the next one a relayed animation took, HBOROC 1.42 s, as the cut's delay.) A round with a host's hold of the chief in between (S / T), or in which the game took no hold or its animation ended
+   the hold by itself within 0.55 s, is not counted; fewer than ROUNDS / 2 counted in --secs: SKIP.
 Checked: every cut within 0.55 s of the hold's start (game clock); the game's `hold=` back to 0 within 1.0 s of the
 first sample that showed it. SPORE_FIX_OFF=tribe.hold_cut_frame: 0.6-0.9 s (FAIL).
 
-  SPORE_LANE=6 python3 tools/tests/coop_tribe_hold_cut.py [--rounds 10] [--fps 25]
+  SPORE_LANE=6 python3 tools/tests/coop_tribe_hold_cut.py [--rounds 10] [--fps 25] [--secs 300]
 """
 import argparse
 import re
@@ -24,11 +28,19 @@ import time
 
 from twoinst import Checks, game_runs, start
 
+LOCO = {'02481DE5', '04866D8E', '04866DAB', '04866DD4'}  # the chief's locomotion idle / walk (tribe_mirror_stale)
+
+
+def anim(con, cid):
+    m = re.search(r'cur ' + cid + r' anim=(\w+)', con.call('coop.tribe anims')['out'])
+    return m.group(1) if m else None
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=10)
     ap.add_argument('--fps', type=float, default=25)
+    ap.add_argument('--secs', type=float, default=300, help='at most this long for the rounds')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -40,8 +52,16 @@ def main():
     if a.fps:
         print('  guest: ' + guest.call(f'frame.limit {round(1000 / a.fps)}')['out'].strip(), flush=True)
     time.sleep(3)
-    cuts, sampled, skipped = [], [], 0
-    for r in range(a.rounds):
+    cuts, sampled, skipped, r, t_all = [], [], 0, -1, time.time()
+    while len(cuts) < a.rounds and time.time() - t_all < a.secs:
+        h1, g1 = anim(host, cid), anim(guest, cid)
+        time.sleep(0.3)
+        h2, g2 = anim(host, cid), anim(guest, cid)
+        # (the host's chief in a gesture: its own hold may come; the mirror in a gesture: the hold ends with it)
+        if not {h1, h2, g1, g2} <= LOCO:
+            time.sleep(0.5)
+            continue
+        r += 1
         out = guest.call(f'coop.tribe hand {cid} 17')['out'].strip()
         if r == 0:
             print(f'  guest hand: {out}', flush=True)
@@ -66,6 +86,8 @@ def main():
             print(f'  round {r + 1}: no hand event in the trace', flush=True)
             continue
         tail = ev[hs[-1]:]
+        print('    before ' + ' '.join(f'{w}{t - tail[0][0]:.3f}' for t, w in ev[:hs[-1]] if t > tail[0][0] - 4), flush=True)
+        print('    trace ' + ' '.join(f'{w}+{t - tail[0][0]:.3f}' for t, w in tail), flush=True)
         if any(w in 'ST' for _, w in tail):
             skipped += 1
             print(f'  round {r + 1}: a host hold came in between ({"".join(w for _, w in tail)}), not counted', flush=True)
@@ -84,9 +106,14 @@ def main():
             print(f'  round {r + 1}: no cut ({"".join(w for _, w in tail)}); sampled hold {held} s', flush=True)
             cuts.append(9.9)
             continue
-        cuts.append(round(end - tail[0][0], 3))
-        print(f'  round {r + 1}: cut {cuts[-1]} s after the hand set ({"".join(w for _, w in tail)}); sampled hold '
-              f'{held} s', flush=True)
+        # (BUG-1105: from the start of the hold the cut ended, the last B before it: the frame the game began that
+        # hold modifier. The game can begin it a few tenths after the hand set (lab 20261114-022615: HOC 0.836 s, the
+        # cut comes 0.35 s after O), and the hand set's hold can end by itself and a relayed animation take the item
+        # again (lab 20261114-031120 #2: B+0.04, hold= 0 after 0.09 s, R+0.93, O+1.05, C+1.46: 1.42 s from the first B))
+        began = max((t for t, w in tail if w == 'B' and t <= end), default=tail[0][0])
+        cuts.append(round(end - began, 3))
+        print(f'  round {r + 1}: cut {cuts[-1]} s after the hold began ({round(began - tail[0][0], 3)} s after the hand '
+              f'set; {"".join(w for _, w in tail)}); sampled hold {held} s', flush=True)
         time.sleep(0.5)
     if a.fps:
         guest.call('frame.limit auto')
