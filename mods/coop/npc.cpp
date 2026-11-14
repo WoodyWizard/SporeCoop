@@ -3652,6 +3652,10 @@ struct ReuseHunt {
     uint64_t freed_frame = 0;
     int wait_free = 0;     // f<N>: once the chunk is free, at most N more tries (the game frees a destroyed creature when
                            // its last reference goes; the first creation after it takes the block, or none will)
+    bool free_first = false; // w (BUG-1099): no creation until the chunk is seen free (the frames still count), then the
+                             // tries at once (docs/re/creature.md#creature-reuse-merged): the creations before the
+                             // free only fed other free blocks
+    int free_wait = 60, waited = 0; // w<N>: at most N frames waiting for the free
 };
 static ReuseHunt g_reuse;
 static void reuse_watch_chunk()
@@ -3663,7 +3667,10 @@ static void reuse_watch_chunk()
     if (sz < 16 || sz > 0x100000 || !skg::readable(t - 8, sz + 8))
         return;
     uint32_t next = *(uint32_t*)(t - 8 + sz + 4);
-    if (next & 1)
+    // free: the next chunk's header says so, or (BUG-1099) the target's own header changed: the block was freed and
+    // merged with the free chunk after it (the creature's own blocks behind it, freed with it), the old next header
+    // is stale then (it read "in use" in 13 of 14 rounds that looked never freed, the header had grown: lab 2026-11-14)
+    if ((next & 1) && *(uint32_t*)(t - 4) == g_reuse.hdr0)
         return;
     g_reuse.freed_at = g_reuse.tries;
     g_reuse.freed_frame = H->frame_index();
@@ -3688,6 +3695,13 @@ static void reuse_tick()
     if (g_reuse.left <= 0 || !g_reuse.target)
         return;
     g_reuse.left--;
+    if (g_reuse.free_first && g_reuse.freed_at < 0) {
+        // (BUG-1099: the frames run, no creation yet; a block the game has not freed within free_wait frames: the
+        // round ends)
+        if (++g_reuse.waited >= g_reuse.free_wait)
+            g_reuse.left = 0;
+        return;
+    }
     if (g_reuse.every > 1 && g_reuse.left % g_reuse.every)
         return;
     if (g_reuse.unlisted_at < 0 && !game::listed(g_reuse.target))
@@ -3761,6 +3775,39 @@ std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tr
     snprintf(b, sizeof b, "reuse hunt for %p: %d frames, species %p\n", target, frames, species);
     return b;
 }
+std::string debug_chunk(void* obj)
+{
+    // tests (BUG-1099): the heap chunk of an object (docs/re/creature.md#creature-freed-in-cinematic): its size, whether
+    // the chunk before it and the one after it are in use. A freed block merges with a free neighbour: then no new
+    // object of the size starts at its address (the reuse hunts miss)
+    uint8_t* t = (uint8_t*)obj;
+    char b[160];
+    if (!t || !skg::readable(t - 4, 4)) {
+        snprintf(b, sizeof b, "chunk %p: not readable\n", obj);
+        return b;
+    }
+    uint32_t hdr = *(uint32_t*)(t - 4), sz = hdr & ~7u;
+    int self = -1, next = -1;
+    if (sz >= 16 && sz <= 0x100000 && skg::readable(t - 8 + sz, 8)) {
+        uint32_t nh = *(uint32_t*)(t - 8 + sz + 4), nsz = nh & ~7u; // the next chunk's header (bit 0: this one in use)
+        self = (int)(nh & 1);
+        if (nsz >= 16 && nsz <= 0x1000000 && skg::readable(t - 8 + sz + nsz + 4, 4))
+            next = (int)(*(uint32_t*)(t - 8 + sz + nsz + 4) & 1);
+    }
+    int refs = skg::readable(t + 8, 4) ? *(int*)(t + 8) : -1; // the object's reference count (+8)
+    snprintf(b, sizeof b, "chunk %p size=%X prev_used=%d used=%d next_used=%d refs=%d\n", obj, sz, (int)(hdr & 1), self,
+             next, refs);
+    return b;
+}
+void debug_reuse_free_first(int frames)
+{
+    g_reuse.free_wait = frames > 0 ? frames : 60;
+    // (only with a heap chunk header that reads as one in use; otherwise the hunt tries at once, as before)
+    uint32_t sz = g_reuse.hdr0 & ~7u;
+    g_reuse.free_first = sz >= 16 && sz <= 0x100000;
+    if (g_reuse.free_first && !(g_reuse.hdr0 & 1))
+        g_reuse.left = 0; // the chunk before is free: the freed block merges into it, no creation starts at the target
+}
 void debug_reuse_wait_free(int tries)
 {
     // (only with a heap chunk header that reads as one)
@@ -3781,9 +3828,15 @@ std::string debug_reuse_status()
              (void*)g_reuse.target, g_reuse.left, g_reuse.tries, g_reuse.unlisted_at, g_reuse.hit, g_reuse.hit_serial,
              (unsigned long long)g_reuse.hit_frame, (unsigned long long)H->frame_index(), (int)game::listed(g_reuse.target), (unsigned)g_reuse.kept.size());
     std::string s = b;
-    snprintf(b, sizeof b, "chunk hdr=%08X freed_at=%d freed_frame=%llu hdr_free=%08X next_free=%08X foot_free=%08X\n",
+    uint8_t* tt = g_reuse.target;
+    uint32_t hsz = g_reuse.hdr0 & ~7u;
+    uint32_t hdr_now = tt && skg::readable(tt - 4, 4) ? *(uint32_t*)(tt - 4) : 0;
+    uint32_t next_now = tt && hsz >= 16 && hsz <= 0x100000 && skg::readable(tt - 8 + hsz + 4, 4) ? *(uint32_t*)(tt - 8 + hsz + 4) : 0;
+    int refs_now = tt && skg::readable(tt + 8, 4) ? *(int*)(tt + 8) : -1;
+    snprintf(b, sizeof b, "chunk hdr=%08X freed_at=%d freed_frame=%llu hdr_free=%08X next_free=%08X foot_free=%08X"
+             " hdr_now=%08X next_now=%08X refs_now=%d\n",
              g_reuse.hdr0, g_reuse.freed_at, (unsigned long long)g_reuse.freed_frame, g_reuse.hdr_free, g_reuse.next_free,
-             g_reuse.foot_free);
+             g_reuse.foot_free, hdr_now, next_now, refs_now);
     s += b;
     if (g_reuse.hit && !g_reuse.herds) { // the new object at the freed address: what the game does with it now
         bool l = game::listed(g_reuse.hit, 0x18EB45Eu) && game::object_serial(g_reuse.hit) == g_reuse.hit_serial;
