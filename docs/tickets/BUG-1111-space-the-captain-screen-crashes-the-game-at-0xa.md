@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.13
 fixed_in: unreleased
 branch: fix/w50-captain
-commits: 6a0cfbf0
+commits: 6a0cfbf0 3aaba7d3 4efe5f69 6dfc9c94
 tests: space_captain_none
 signature: 3010a413:SporeApp.exe SporeCoop::AnimatedCreature_SetEpicFlag+0x9B5 (0xC0000005 at 0xA055B5, write of 0x54; now SporeCoop::AnimWorld_vt40+0x15), calls 00AE8D88 <- 01072C75 (SpaceGameUI_ShowCaptainScreen) <- 0107367D (rank badge handler)
 docs: docs/re/space.md#space-captain-portrait-null, docs/known-issues.md#issue-captain-uncopyable-species, docs/06-testing.md#testing-captain-none
