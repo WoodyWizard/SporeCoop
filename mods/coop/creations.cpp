@@ -1622,6 +1622,38 @@ uint32_t portrait_of(uint8_t player)
 static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data);
 static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority, std::wstring* used);
 static uint32_t* player_species_slot();
+// BUG-9188: a guest's Space homeworld card (and whatever shows the species' thumbnail) was blank: the host's own
+// creature reaches a guest as its model and metadata only (kOwnSpecies), no thumbnail. The host's creature picture
+// (the Party panel's, below) is registered as that species' plain thumbnail too (the creature group + 1), under the
+// host's key and the guest's key of it. Off (`coop.fix space.species_card off`): no thumbnail, as before.
+static bool g_species_cards = true;
+COOP_FIX("space.species_card", "BUG-9188", g_species_cards,
+         "creations: a guest gets the host's creature picture as its species thumbnail (the Space homeworld card)");
+static std::map<uint32_t, std::vector<uint8_t>> g_host_png; // guest: the host's species instance -> its picture
+static unsigned g_species_cards_set;
+static void species_card(uint32_t host_inst)
+{
+    auto p = g_host_png.find(host_inst);
+    if (!g_species_cards || is_host() || p == g_host_png.end() || !find_paths())
+        return;
+    auto here = g_remap.find(host_inst);
+    const uint32_t ours = here != g_remap.end() ? here->second : 0u;
+    std::vector<dbpf::Record> recs;
+    for (uint32_t inst : {host_inst, ours})
+        for (uint32_t group : {kInfo[kCreature].group, kInfo[kCreature].group + 1}) // the card's 128x128, the plain one
+            if (inst) {
+                dbpf::Record r;
+                r.key = {inst, kPngType, group};
+                r.data = p->second;
+                recs.push_back(std::move(r));
+            }
+    std::wstring path = g_dir + L"\\card_" + std::to_wstring(host_inst) + L"_" + std::to_wstring(ours) + L".package";
+    const bool ok = package_for(path, recs, kPrioWorld, nullptr) != nullptr;
+    if (ok) g_species_cards_set++;
+    H->log(M, ok ? SK_INFO : SK_WARN, "creations: the host's creature picture %s as the thumbnail of %08X%s (BUG-9188)",
+           ok ? "registered" : "could not be registered", host_inst, ours ? (" and " + trace::hex(ours)).c_str() : "");
+}
+
 // the picture of player `owner`'s creature (the message: u32 instance, then the png) under that instance in the
 // mod's portrait group
 static void apply_portrait(uint8_t owner, const std::vector<uint8_t>& data)
@@ -1640,6 +1672,10 @@ static void apply_portrait(uint8_t owner, const std::vector<uint8_t>& data)
     }
     H->log(M, ok ? SK_INFO : SK_WARN, "creations: player %u's creature picture (%zu bytes) %s under %08X (BUG-9191)", owner,
            r.data.size(), ok ? "registered" : "could not be registered", inst);
+    if (ok && owner == 0 && !is_host()) { // BUG-9188
+        g_host_png[inst] = r.data;
+        species_card(inst);
+    }
 }
 // this player's creature picture to the others, once per creature: the plain thumbnail (group+1) or the Sporepedia
 // card (the model group) from My Creations, under the creature's key on every game (its shared key; the host that
@@ -2596,6 +2632,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     g_remap[b.key.instance] = ours;
     g_unmap[ours] = b.key.instance;
     g_own_in++;
+    species_card(b.key.instance); // BUG-9188 (when its picture came first)
     if (cell) {
         H->log(M, SK_INFO, "creations: the host's Lineages cell %08X is %08X here", b.key.instance, ours);
         return;
