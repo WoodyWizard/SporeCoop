@@ -168,7 +168,9 @@ def walk(con, rng, secs, jumps=0.0):
                 # or the way there does not get closer: go there (latency_step_ingame, lab 20261101-180254: 'back 17m
                 # (not found)' for the whole walk)
                 b = re.search(r'remote \d+ .*? pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.status')['out'])
-                if b:
+                # BUG-1103: a remote line without a state to sample (state=no: a gap in the partner's states under load)
+                # prints pos=(0 0 0); beside_pos divided by its length 0 and the test died (final check 20261114-005006)
+                if b and sum(float(x) ** 2 for x in b.groups()) > 1.0:
                     con.call('coop.npc gopos %.1f %.1f %.1f' % tuple(beside_pos([float(x) for x in b.groups()], 4.0)))
                     log.append('to the partner (gopos)')
                     time.sleep(2.0)
