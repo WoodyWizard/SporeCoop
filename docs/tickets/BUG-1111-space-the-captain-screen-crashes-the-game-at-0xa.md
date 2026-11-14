@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: GitHub issue #202
 role: guest
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.14.1
 branch: fix/w50-captain
 commits: 6a0cfbf0 3aaba7d3 4efe5f69 6dfc9c94
 tests: space_captain_none
@@ -65,3 +65,4 @@ SpaceGameUI_ShowCaptainScreen, cEmpire_GetCaptainKey / SetCaptainKey, NameCaptai
 ## History
 - 2026-11-14: opened from GitHub #202 (0.7.13); root cause at the portrait (captain key 0), "Name Your Captain"
   failing on an uncopyable species found; guard game.captain_portrait, test space_captain_none (fix/w50-captain).
+- 2026-11-14: released in 0.7.14.1.

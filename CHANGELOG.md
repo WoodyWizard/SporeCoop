@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.14.1] - 2026-11-14
+
+A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update
+so the versions match.
+
+### Fixed
 - Space: opening the captain screen (or a Galactic Adventures mission screen) no longer crashes the game when your
   empire has no captain, as after a "Name Your Captain" that could not copy your species: the screen shows your
   species instead (BUG-1111, GitHub #202).
