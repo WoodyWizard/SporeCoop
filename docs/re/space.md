@@ -3032,7 +3032,9 @@ reporter's minidump.
   copies fine. A guest that loads a world without a captain is asked like the host.
 * ✔ The captain screen (`SporeCoop::SpaceGameUI_ShowCaptainScreen` 0x1072810, thiscall(SpaceGameUI, bool, editorId)
   ret 8; `SporeCoop::SpaceGameUI_Get` 0x10666B0) copies the captain key first, then either builds the screen and calls
-  the equipment panel 0xFE7560(1) (a UI whose `[ui+0x694]+0x28` is 0: the Space update's opener 0xFDF5A0) or, from the
+  the equipment panel 0xFE7560(1) (a UI whose `[ui+0x694]+0x28` is 0: the Space update's opener 0xFDF5A0; runtime: this
+  path shows the Galactic Adventures mission screen, "Mission Name", Decline / Accept, with the captain's portrait on
+  the left; 0xFDF5A0 opens it when `GetActivePlanetRecord` has a planet, ~ the adventure offer of a planet) or, from the
   rank badge (window 0x7BB7790, handler 0x1073678, which sets +0x28 = 1 first), the full panel 0xFE7560(0): 0xF179E0
   (the captain's items, property list (instance, group | 0xE500), the BUG-0304 fault at 0x5971D4 when there is none)
   and 0xFE7140 (`cSpeciesManager::GetSpeciesProfile(captain)` passed to 0xC02A10 without a check: a handled fault at
