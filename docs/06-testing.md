@@ -7864,3 +7864,14 @@ BUG-1101.
   SPORE_FIX_OFF=tribe.guest_pause_net (lab 20261114-041620), PASS 20261114-041605, -042104.
 * tribe_caption_race = tribe_conquest_guest `--click-at-close` (clicks 7-9.6 s into the caption, ~1.5 min): never
   reproduced the campaign's stand (lab 20261114-035207, -035953 x3, -040018 x3).
+## Probing a tribe member under the host's ground (2026-11-14, fix/w49-under)
+<a id="testing-tribe-under"></a>
+
+BUG-1104 (not reproduced; docs/re/tribe.md#tribe-member-under). `tribe_under_probe` (extended, tribe fixture, the host
+at 10 fps, about 4 min): coop_tribe_under.py with modes for each suspect (throws with `kit.test.hang` long frames,
+`--sinks` members put under the ground with `coop.tribe sink`, `--raid` the fixture's NPC hut, `--stomp` the co-op
+epic put on a member with `coop.tribe epic on`, `--bodies`, `--racks`, `--secs` an epic fight). Its one check: a member
+put 0.8-2 m under the ground is on it again within 1 s (the game's physics does it in 0.1-0.3 s), the reason no single
+placing can be what the campaigns' monitor saw. `coop.tribe airprobe -1000` lists every member (`surf=` over the
+game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-player campaigns hit the real case
+(8 trace lines in November, in raids and epic fights): look for the tribe watch's `is .. m under the ground` line.

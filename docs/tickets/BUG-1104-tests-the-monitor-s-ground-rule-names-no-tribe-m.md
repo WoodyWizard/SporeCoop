@@ -1,7 +1,7 @@
 ---
 id: BUG-1104
 title: Tests: the monitor's ground rule names no tribe member under the ground (host: partner 1's members 1.26 m under for 20 s in the campaign)
-status: open
+status: not-reproduced
 kind: test
 stage: Tribe
 reported: 2026-11-14
@@ -9,12 +9,12 @@ source: final check 0.7.14, lab 20261114-005006 campaign
 role: host
 versions: rel/0.7.14 4dd8d2be
 fixed_in:
-branch: fix/w49-fcgates
-commits: 0a79fb2e
-tests: campaign (the monitor gate), gates_selftest
+branch: fix/w49-under
+commits: 0a79fb2e 4c61f2a6
+tests: campaign (the monitor gate), gates_selftest, tribe_under_probe
 signature: MONITOR-VIOLATION ground host: the tribe members of partner N 1.26 m under the ground (Tribe) on 2 lines
-docs: docs/06-testing.md#testing-fcgates-0714
-related: BUG-0945, BUG-1088, BUG-0444
+docs: docs/06-testing.md#testing-fcgates-0714, docs/re/tribe.md#tribe-member-under, docs/06-testing.md#testing-tribe-under, docs/known-issues.md#issue-tribe-member-under-host
+related: BUG-0945, BUG-1088, BUG-0444, BUG-1082, BUG-0505
 ---
 
 ## Report
@@ -41,9 +41,31 @@ tracked member more than 0.5 m under the ground once per stay ("tribe: member #N
 again; the monitor's ground finding for Tribe points to that line. The next campaign that hits it names the member,
 its behaviour node and whether it stands in water. Left open as a class in docs/known-issues.md.
 
+## Investigation (fix/w49-under)
+Not reproduced; docs/re/tribe.md#tribe-member-under.
+* Logs (all November labs, main checkout and worktrees): 8 host trace lines in 6 runs, all 4-player campaigns; each
+  campaign_tribe_end one inside a raid on an NPC hut, each campaign one 13-25 s after the epic came. In three runs a
+  member of the same player was launched 10 m up at 22-23 m/s (node 0x0485FD10) 0.3-8 s later, i.e. pushed out of the
+  ground; in one (20261113-200131) a member of the same player stood 3.3 m up at the raided hut at speed 0, the
+  BUG-1082 hold, until the hut fell.
+* Runtime (tribe fixture, host at 10 fps, lane 2): a member put 0.8-2 m under the ground (`coop.tribe sink`, also not
+  grounded and still) is on the ground again within 0.1-0.3 s, 8 of 8 (20261114-041623, -041959). So neither the
+  mod's placings on the host (put_chief onto GetHeightAt, grab_spot onto the game's walk goal) nor any single placing
+  explains 10-20 s under the ground. Throws with 300-1000 ms frames (-035913), bodies (-040900: lie at 0, removed at
+  ~32 s), the epic put on a member (-042301), epic fights (-034621, -034957) and a 240 s raid on the fixture's hut
+  (-042624): never under 0.5 m.
+* Inferred: the game's own state on the host's screen (a crowd of raiders against the hut or the epic holds a member
+  in the ground, as BUG-1082's hold keeps members up at the hut), not the mod; the guests never show it. Neither a mod
+  fix nor an exact gate can be backed by a run that shows it; the monitor finding stays as it is and its log line
+  names the member next time. More diagnostics: airprobe `surf=` and body rows, `coop.tribe layout` agl, the
+  grab spot move logged; test setup `coop.tribe sink`, `coop.tribe epic on`.
+
 ## Verification
-no-fail-run: diagnostics only (a log line and a finding text); gates_selftest and make test pass.
+no-fail-run: not reproduced (diagnostics and a probe only); tribe_under_probe passes (lab 20261114-043205; its check: a member put under
+the ground is on it within 1 s), gates_selftest and make test pass.
 
 ## History
 - 2026-11-14: opened on fix/w49-fcgates (final check 0.7.14 triage); diagnostics added, the cause stays open in
   known-issues (the next run names the member).
+- 2026-11-14: fix/w49-under: not reproduced (probes on the fixture at 10 fps, log study of all November labs: raids
+  and epic fights only, the game's physics undoes any single placing within 0.3 s); not-reproduced, known issue stays.
