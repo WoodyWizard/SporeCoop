@@ -3043,6 +3043,44 @@ BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode colum
   kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
   a hit 0.58 s in 56 hits with the old code).
 
+## A thrown NPC's proxy placed in the air without the mark stands and jumps (2026-11-13, fix/w49-npcwalk)
+<a id="creature-air-place-lost"></a>
+
+BUG-1094. coop.npctrack rows of npc_walk (out/lane4/track/npc_walk_creature_*.json of fix/w49-proxy2 and older runs):
+* ✔ (observed) The flee phase's hit (`coop.npc hosthit <id> 0.5`) throws one walker on the host in about half of the
+  runs: locomotion mode +0x2B0 = 3, +0x137 = 0 for ~2 s, 9.8 m/s slowing to ~1 m/s, moving smoothly in every host
+  frame. The guest places its proxy in the air (NF_AIR, `drive::air_place`: `game::place` without the teleport mark,
+  not grounded, the host's velocity written; coop.npctrack how 5).
+* ✔ (observed) The guest's game does not keep that place: in 70-77 of the 83-91 air frames whose target moved
+  (66 fps) the drawn position is exactly where it was a frame before (step 0.00-0.01 m) while the target moves
+  0.1-0.2 m per frame and the written velocity reads back 9 m/s; every ~0.1 s (6-7 frames) one placing is let
+  through and the proxy steps 0.6-1.1 m at once (the model's position +0xB54 -> +0x04 moves one frame before it).
+  Runs 20261113-203655, -204512, -204934, 20261110-180639, 20261108-112359, -111809, 20261106-080021, -032933,
+  -025945 (all at 14-16 ms frames). At 32-33 ms frames (20261107-112955, 20261106-011542) it stood in 16-29 of 44-53
+  frames with shorter steps, under the test's 0.75 m: hidden there, as BUG-1092 at 20 fps.
+* ✔ (observed) The proxy stood (driven by drive::step, how 0) just before the throw in every such run; in the
+  runs where the hit threw nobody (the other half) npc_walk passed.
+* ✔ (observed) Both games play 035EE23C, 035EE245 (an attack animation, #creature-bt-anims above) and 02481DFC in the
+  throw: the hit NPC fights back; the host's locomotion mode 3 there may be the attack's leap (one of the other
+  writers of +0x2B0 = 3 listed in #creature-hit-throw), not TakeDamage's knockback. The guest gets the animations
+  through npc.anims.
+* ✔ (observed, lane 4 at 19-26 fps, the lab loaded to ~29 on 12 cores) Not reproduced without the host's throw: the
+  guest taking a standing proxy's state as thrown (a test command tried on fix/w49-npcwalk and removed: NF_AIR, 9.5
+  m/s sideways, up and down, with and without the relayed 035EE23C start) stood in 2-6 of 138-184 such frames with
+  drive.air_mark off (labs 20261113-215005, -215238, -215555, -215802). The host's own hits (`hosthit <id> 0.5`,
+  also with a push, on a standing and a walking NPC) did not throw it off its ground in those runs (+0x137 stayed 1,
+  mode 3 for 1-3 frames: -211634, -212433, -212846), and npc_walk's flee hit threw nobody in 7 runs of that evening
+  (-213112, -213753: 22-35 fps). Which of the frame rate and the attack animation makes the game keep its own
+  position is open.
+* Inferred: the same as BUG-0361's walked proxy thrown back by a hit ("placed without the mark, the proxy's own
+  locomotion moved it back each frame by as much as it was placed", #creature-hit-throw above): the standing
+  creature's locomotion restores its own position in its update and takes a new one only at an interval of ~0.1 s
+  (not identified in the binary: which update and why that period).
+* ✔ The fix (`drive.air_mark`, driver.h `air_place`): when the body is not where last frame's place and the
+  velocity written with it put it (over max(0.1 m, 0.5 x speed x frame)), the rest of that air phase is placed with
+  the mark (`game::teleport`), which the game keeps, as walk_place's keep_lost does on the ground. Shared by NPC
+  proxies and Tribe member mirrors (tribe.cpp's air placing); the partner's puppet has its own air path (modes.cpp).
+
 ## Creature collisions: the contact handler skips creature pairs (2026-11-06, fix/w45-remote-bodies-2)
 <a id="creature-contact-pairs"></a>
 
