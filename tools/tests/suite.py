@@ -973,7 +973,7 @@ add('campaign_tc2', P + 'coop_campaign.py --from tribe --to civ --minutes 8 --no
 # then raids on every village until the goal bar is full, the City Hall and vehicle editors, Civ): no jump
 add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale', ('campaign',),
     minutes=45, timeout=3600)
-# BUG-1091: campaign_tribe_end with a village the bots' clicks never reach for 18 min (planted): the raids go to the other
+# BUG-1091: campaign_tribe_end with a village the bots' clicks never reach for 18 min (planted, the first one raided while another stands): the raids go to the other
 # villages meanwhile and the Tribe end still comes (CAMPAIGN_OLD_RAID_SKIP=1: the nearest village again after every raid,
 # stuck as lab 20261113-181333)
 add('campaign_tribe_noclick', 'CAMPAIGN_PLANT_NOCLICK=18 ' + P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale',

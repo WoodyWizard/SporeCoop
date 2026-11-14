@@ -108,7 +108,7 @@ TRIBE_HUT = '1E4DAAE'        # the hut noun (a village falls with its hut)
 TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows in place of History
 # BUG-1091: CAMPAIGN_OLD_RAID_SKIP=1: a raid without the host's click is not put aside (0.7.14 before the fix: the nearest
 # village again after every 300 s raid); CAMPAIGN_PLANT_NOCLICK=<min>: for that many minutes from the first raid the bots'
-# clicks on the first village raided never come (a planted view that does not reach it, the test's twin)
+# clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
@@ -1371,7 +1371,7 @@ class Campaign:
             # (village 4 at 318 m: two raids of 300 s without a fall while one at 170-230 m stood, lab 20261113-142203)
             pick.sort(key=lambda t: math.dist(t[3], home))
         tk, c, hut, hp = pick[0]
-        raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False)
+        raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False, standing=len(targets))
         state['raid'] = raid
         self.note(f'tribe: raid on village {tk} ({len(targets)} standing, goal bar {pr}), its hut {hut} '
                   f'{math.dist(hp, home) if home else -1:.0f} m from the players\' village')
@@ -1388,9 +1388,9 @@ class Campaign:
             return
         tk = raid['tribe']
         if PLANT_NOCLICK:  # (the twin: no bot's click on the first village raided ever comes)
-            self.plant_tk = getattr(self, 'plant_tk', tk)
-            self.plant_t0 = getattr(self, 'plant_t0', time.time())
-            if tk == self.plant_tk and time.time() - self.plant_t0 < PLANT_NOCLICK * 60:
+            if not hasattr(self, 'plant_tk') and raid.get('standing', 0) > 1:  # (with another village to raid)
+                self.plant_tk, self.plant_t0 = tk, time.time()
+            if tk == getattr(self, 'plant_tk', None) and time.time() - self.plant_t0 < PLANT_NOCLICK * 60:
                 raid['why'] = 'planted: CAMPAIGN_PLANT_NOCLICK'
                 time.sleep(110)  # as long as the failed tries took (127 s and 149 s for village 2 in 20261113-181333)
                 self.note(f'tribe: raid clicks on the hut of village {tk} by [] (the host\'s click: {raid["why"]})')
