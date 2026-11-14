@@ -1048,6 +1048,104 @@ static void __fastcall ufo_set_visible_guard(void* gfx, void*, uint32_t visible)
     g_ufo_visible_orig(gfx, visible);
 }
 
+// BUG-1111 (docs/re/space.md#space-captain-portrait-null): the creature portrait of a UI window
+// (SporeCoop::CreatureDisplay_Show 0xAE8C80, thiscall(display, const Key* key, kind, const Vector3* scale,
+// const char* name, int slot, IWindow*) ret 0x18) loads the animated creature with Anim::IAnimWorld::LoadCreature
+// (by the key, or by the name when the key's instance is 0) and hands the result to the anim world's vt 0x40
+// (0xA055A0), which writes [creature+0x54] without a null check: a write of 0x54 at 0xA055B5 when nothing was
+// loaded. The Space captain screen (SporeCoop::SpaceGameUI_ShowCaptainScreen 0x1072810) shows the player
+// empire's captain (cEmpire +0xC4) there; a player whose "Name Your Captain" gave no captain (the game sets the
+// key to 0 when it cannot copy the world's player species) crashed on opening it (GitHub #202, a guest in the
+// host's Space world). The guard gives a portrait that cannot load (no key and no name, or a key no database
+// of this game has) the world's player species (cSpeciesManager +0xA4) when this game has it, else skips the
+// portrait (the screen keeps its previous one; the game's 0xAE7D90 checks the slot). Off: the game's code (0.7.14).
+using CreatureShowFn = void(__thiscall*)(void*, const uint32_t*, uint32_t, const void*, const char*, int, void*);
+static CreatureShowFn g_creature_show_orig;
+static bool g_portrait_fix = true;
+COOP_FIX("game.captain_portrait", "BUG-1111", g_portrait_fix,
+         "gamefixes: a creature portrait whose creature this game cannot load (the captain screen of a captain-less "
+         "empire) shows the world's species or nothing instead of a crash at 0xA055B5");
+static std::atomic<unsigned> g_portrait_species{0}, g_portrait_skipped{0};
+static constexpr uint32_t kCreatureType = 0x2B978C46;
+
+static bool creature_key_known(const uint32_t* key)
+{
+    creations::Key k;
+    k.instance = key[0];
+    k.type = key[1] ? key[1] : kCreatureType;
+    k.group = key[2];
+    return creations::key_known(k);
+}
+
+static void __fastcall creature_show_guard(void* display, void*, const uint32_t* key, uint32_t kind, const void* scale,
+                                           const char* name, int slot, void* window)
+{
+    if (g_portrait_fix && key && readable(key, 12)) {
+        bool by_name = !key[0] && name && readable(name, 1) && *name;
+        if (!by_name && (!key[0] || !creature_key_known(key))) {
+            static uintptr_t spm_get = H->sym("Editors::cSpeciesManager::Get");
+            const uint8_t* spm = spm_get ? skg::cdecl_call<const uint8_t*>(spm_get) : nullptr;
+            uint32_t sp[3] = {};
+            if (spm && readable(spm + 0xA4, 12))
+                memcpy(sp, spm + 0xA4, sizeof sp);
+            bool use = sp[0] && creature_key_known(sp);
+            unsigned n = use ? ++g_portrait_species : ++g_portrait_skipped;
+            if (n <= 8 || n % 100 == 0)
+                H->log(M, SK_WARN, "game fixes: a creature portrait of %08X/%08X/%08X (slot %d) cannot be loaded here: %s "
+                       "%08X/%08X/%08X (BUG-1111, %u)", key[0], key[1], key[2], slot,
+                       use ? "the world's species" : "skipped, the world's species is not here either", sp[0], sp[1], sp[2], n);
+            if (!use)
+                return;
+            g_creature_show_orig(display, sp, kind, scale, name, slot, window);
+            return;
+        }
+    }
+    g_creature_show_orig(display, key, kind, scale, name, slot, window);
+}
+
+// coop.captain (BUG-1111): the player empire's captain, the world's species, the guard's counts; tests: `open` shows the
+// captain screen as the game's Space update does (SpaceGameUI_ShowCaptainScreen(ui, 0, 0): a UI whose rank badge was
+// never clicked builds it and goes on to the portrait, the reporter's path), `species <hex>` / `species restore` points
+// the species manager's player species at another instance (a species this game cannot copy, as the "Name Your
+// Captain" of the reporter's game met) and back
+static uint32_t g_species_saved;
+static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
+{
+    static uintptr_t emp_get = H->sym("Simulator::GetPlayerEmpire"), spm_get = H->sym("Editors::cSpeciesManager::Get");
+    static uintptr_t ui_get = H->sym("SporeCoop::SpaceGameUI_Get"), show = H->sym("SporeCoop::SpaceGameUI_ShowCaptainScreen");
+    uint8_t* emp = emp_get ? skg::cdecl_call<uint8_t*>(emp_get) : nullptr;
+    uint8_t* spm = spm_get ? skg::cdecl_call<uint8_t*>(spm_get) : nullptr;
+    if (spm && !readable(spm + 0xA4, 12))
+        spm = nullptr;
+    if (argc > 2 && !strcmp(argv[1], "species") && spm) {
+        uint32_t& inst = *(uint32_t*)(spm + 0xA4);
+        if (!strcmp(argv[2], "restore")) {
+            if (g_species_saved)
+                inst = g_species_saved;
+            g_species_saved = 0;
+        } else {
+            if (!g_species_saved)
+                g_species_saved = inst;
+            inst = (uint32_t)strtoul(argv[2], nullptr, 16);
+        }
+    } else if (argc > 1 && !strcmp(argv[1], "open")) {
+        void* ui = ui_get ? skg::cdecl_call<void*>(ui_get) : nullptr;
+        if (game::mode_id() != modes::kSpace || !ui || !show) {
+            H->out_printf(out, "no Space UI\n");
+            return 1;
+        }
+        skg::thiscall<void>(show, ui, 0, 0);
+        H->out_printf(out, "captain screen shown\n");
+    }
+    const uint32_t* ck = emp && readable(emp + 0xC4, 12) ? (const uint32_t*)(emp + 0xC4) : nullptr;
+    const uint32_t* sk = spm ? (const uint32_t*)(spm + 0xA4) : nullptr;
+    H->out_printf(out, "captain=%08X/%08X/%08X species=%08X/%08X/%08X%s portraits: species %u skipped %u fix=%d\n",
+                  ck ? ck[0] : 0, ck ? ck[1] : 0, ck ? ck[2] : 0, sk ? sk[0] : 0, sk ? sk[1] : 0, sk ? sk[2] : 0,
+                  g_species_saved ? " (species changed by a test)" : "", g_portrait_species.load(), g_portrait_skipped.load(),
+                  (int)g_portrait_fix);
+    return 0;
+}
+
 // BUG-0686 (docs/re/space.md#space-ufo-gfx-null): the ship gfx factory (SporeCoop::UfoGfx_Create 0xE994D0, slot 2 of
 // the gfx vtable 0x1486F6C, thiscall(any, cUFO*) ret 4) news a cUFOGfx (0xD8 bytes, ctor 0xE993A0), runs its
 // InitFromUfo (vt 0x24), then, outside game mode 0x1654C10, writes GetModel() (vt 0x2C) +4 |= 0x20 without a null
@@ -1891,6 +1989,14 @@ void init(const SkHost* host, SkMod* mod)
                    H->hook_create(M, (void*)ugc, (void*)&ufo_gfx_create_guard, (void**)&g_ufo_create_orig) == 0 &&
                    H->hook_create(M, (void*)ugm, (void*)&ufo_gfx_msg_guard, (void**)&g_ufo_msg_orig) == 0;
     H->log(M, SK_INFO, "game fixes: ship gfx null model guard %s (BUG-0686)", ufo_gfx ? "on" : "off");
+    uintptr_t cs = H->sym("SporeCoop::CreatureDisplay_Show");
+    bool portrait = cs && H->hook_create(M, (void*)cs, (void*)&creature_show_guard, (void**)&g_creature_show_orig) == 0;
+    if (!portrait)
+        g_creature_show_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: creature portrait guard %s (BUG-1111)", portrait ? "on" : "off");
+    H->command_add(M, "coop.captain", "coop.captain [open | species <hex> | species restore] - the player empire's captain and the "
+                   "world's species (BUG-1111); tests: open the captain screen as the game's Space update does, point the "
+                   "player species at another instance and back", c_captain, nullptr, SK_CMD_OUTSIDE_FRAME);
     if (HMODULE exe = GetModuleHandleW(nullptr)) { // the game's code section (the vtable slot checks of BUG-0575)
         auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
         auto* sec = IMAGE_FIRST_SECTION(nt);
@@ -1965,7 +2071,8 @@ std::string status()
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
            std::to_string(g_ufo_invisible_skipped.load()) + "), ship gfx made without a model " +
            std::to_string(g_ufo_gfx_null.load()) + " (their messages skipped " + std::to_string(g_ufo_msg_skipped.load()) +
-           ")" + ", broken model effects dropped " +
+           ")" + ", creature portraits that cannot load: the world's species " + std::to_string(g_portrait_species.load()) +
+           ", skipped " + std::to_string(g_portrait_skipped.load()) + ", broken model effects dropped " +
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
            ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +

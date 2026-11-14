@@ -259,3 +259,6 @@ SporeCoop::DramaEvent_GetObject ; BUG-1078: tribe.attack_target: a creature atta
 SporeCoop::DramaEvent_SetObject ; BUG-1078: tribe.attack_target: a creature attack on a removed village is not held back (old behaviour)
 SporeCoop::Cell_CullDestroy_ret ; BUG-1064: tests only: `coop.pool areas` prints no per-cull diagnostics (cull lines)
 SporeCoop::cCinematicManager_SetEnabled ; BUG-1073: game.cinematics_on_load: a load does not turn the cinematics on again (old behaviour)
+SporeCoop::CreatureDisplay_Show ; BUG-1111: the captain portrait guard (game.captain_portrait) is off on GOG 2016
+SporeCoop::SpaceGameUI_Get ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)
+SporeCoop::SpaceGameUI_ShowCaptainScreen ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)

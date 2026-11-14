@@ -832,6 +832,7 @@ add('space_stray_window', P + 'coop_space_stray_window.py', warm=True, minutes=4
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 add('space_finale_gone', P + 'coop_space_finale_gone.py', minutes=9)  # the core does not wait for a partner who entered it and flew away (BUG-0820; SPORE_FIX_OFF=space.finale_entered fails)
 add('space_captain', P + 'coop_space_captain.py', minutes=4, reports=True)  # BUG-0303: a captain screen left open (rank badge) blocks the finale's wheel zoom-out; the tool closes it (OLD_FINALE_TOOL=1 fails); BUG-0304: the game's own fault when it opens
+add('space_captain_none', P + 'coop_space_captain_none.py', warm=True, minutes=5, fixture='space', reports=True)  # BUG-1111 (GitHub #202): a Space world without a captain ("Name Your Captain" could not copy the species): the captain screen's portrait must not crash at 0xA055B5 (SPORE_FIX_OFF=game.captain_portrait fails); reports=True: the screen's own handled faults (BUG-0304 family) are checked by the test
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent
