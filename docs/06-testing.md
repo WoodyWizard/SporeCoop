@@ -7771,6 +7771,14 @@ editor's own pause and input lock and the trace lines are the same in both runs;
 * Load only: the same rel/0.7.14 code with the old driver passed campaign_tribe_end 20261114-001918 once the load was
   gone (the host at 60-65 fps, one drag per editor, Civ after 936 s of the Tribe advance).
 * `coop.ui find` does not see the red "You need at least 3 parts to Save" line (always False): the retry counts tries.
+* fix/w49-edslow (the final check failed the test 2 of 2, 20261114-005006 / 20261114-022615): the parts were placed but
+  the creation had no name ("You must give your creation a name before you can save"). The kit's `click` presses 3 and
+  releases 6 frames after the call, and the next command's move takes the cursor at once: at 3 fps the dice click 1 s
+  before "done" was released over "done". Now `coop_campaign.editor_click` and `drag_slow` also wait in the game's
+  frames (`wait.frames`; at 60 fps the old seconds still dominate). Rule for drivers: after a `click` that another
+  input follows, wait at least 6-8 frames, not a fixed second. PASS 20261114-030645, 20261114-031607 (4 tries per
+  editor), FAIL with `CAMPAIGN_OLD_EDITOR_DRAG=1` 20261114-032537 (one part, "need 3 parts"). The end-of-Tribe check
+  polls `stage_end` up to 60 s (7-8 s at 3 fps).
 * campaign_tribe_noclick 20261113-231423 (lane 6) of the same batch is another case: the City Hall editor ended in 37 s;
   the planted 18 min of lost clicks plus the loaded machine (raids of 185-321 s) brought the goal bar to 5/5 only at
   23:50:53, and the 30 min of the Tribe advance ran out back in Tribe after the City Hall, before the vehicle editor's vote.

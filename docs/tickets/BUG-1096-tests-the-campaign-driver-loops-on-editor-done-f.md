@@ -9,8 +9,8 @@ source: lab 20261113-231423-2 campaign_tribe_end
 role: host
 versions: rel/0.7.14
 fixed_in: unreleased
-branch: fix/w49-civedit
-commits: 8ab36fd1, bb09b2b3
+branch: fix/w49-civedit, fix/w49-edslow
+commits: 8ab36fd1, bb09b2b3, 247eda45, 9a2cc3e8, 98534272
 tests: tribe_civ_editor_slow, campaign_tribe_end
 signature:
 docs: docs/06-testing.md#testing-w49-civedit
@@ -51,6 +51,17 @@ up the parts are dragged again every 4 tries (n = 6, 10, 14, ...), each slower (
 at most 4x), noted `the editor still up after N "done": three parts dragged again (pace P, BUG-1096)`.
 `CAMPAIGN_OLD_EDITOR_DRAG=1`: one drag only (before). New test option `coop_tribe_civ.py --player-editor` (the editors
 left the driver's way), suite `tribe_civ_editor_slow` (`SPORE_FPS=host:3`).
+Second part (fix/w49-edslow, after the 0.7.14 final check failed tribe_civ_editor_slow 2 of 2: 20261114-005006 editor 1,
+20261114-022615 editor 2): the parts were on the plot (the stuck screenshots: three parts), but the red line was "You
+must give your creation a name before you can save" and the name field stayed empty. The kit's `click` presses 3 frames
+and releases 6 frames after the call (sporekit input_click); the driver clicked the name panel's dice and 1 s later
+"done", whose move took the cursor away at once: at 3 fps (333 ms a frame) the dice's press and release came 1-2 s
+later, over "done", and the dice never gave a name. Now every editor click (`editor_click`) and every step of
+`drag_slow` also waits for the game's frames (`wait.frames`: 2 before a click, 8 after it; 3 around the press and
+release, 1 per move step), on top of the old seconds (unchanged at 60 fps). `CAMPAIGN_OLD_EDITOR_DRAG=1` keeps the old
+driver whole (one drag, waits in seconds). The test: screenshots after each drag and of the name panel
+(shots/tribe_civ_editor<k>_try<n>.png); the end-of-Tribe check polls `stage_end` up to 60 s (at 3 fps it came 7-8 s
+after the City Hall editor, after the old fixed 4 s).
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
@@ -62,9 +73,16 @@ left the driver's way), suite `tribe_civ_editor_slow` (`SPORE_FPS=host:3`).
 - Load only, confirmed: campaign_tribe_end 20261114-001918 (lane 5, rel/0.7.14's mod code and its old driver,
   `CAMPAIGN_OLD_EDITOR_DRAG=1`, after the foreign load ended at 00:15): PASS in 1614 s; the host at 60-65 fps left the
   City Hall and vehicle editors after the one drag each (4 "done" tries each), Civ after 936 s of the Tribe advance.
+- fix/w49-edslow, lane 2, `SPORE_FPS=host:3`: PASS 20261114-030645 and 20261114-031607 (each editor left after 4 "done"
+  tries: one drag at try 2, the dice's name, done; Civ on both games, no faults). FAIL with `CAMPAIGN_OLD_EDITOR_DRAG=1`
+  20261114-032537 (one part on the plot, "You need at least 3 parts to Save", 20 tries in the City Hall editor).
+  20261114-025705 (before the stage_end poll): both editors left in 4 tries, failed only the fixed 4 s stage_end check.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-14: opened.
 - 2026-11-14: fixed on fix/w49-civedit (test driver); FAIL 20261114-000115, PASS 20261114-000120.
+- 2026-11-14: the 0.7.14 final check failed tribe_civ_editor_slow 2 of 2 (20261114-005006, 20261114-022615): the
+  name's dice click released over "done" at 3 fps. Fixed on fix/w49-edslow (waits in game frames); PASS 20261114-030645,
+  20261114-031607, FAIL with the old driver 20261114-032537.
