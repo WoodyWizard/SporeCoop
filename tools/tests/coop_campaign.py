@@ -106,6 +106,11 @@ VK_F9 = '0x78'
 REWARD_CHECK = (932, 844)
 TRIBE_HUT = '1E4DAAE'        # the hut noun (a village falls with its hut)
 TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows in place of History
+# BUG-1091: CAMPAIGN_OLD_RAID_SKIP=1: a raid without the host's click is not put aside (0.7.14 before the fix: the nearest
+# village again after every 300 s raid); CAMPAIGN_PLANT_NOCLICK=<min>: for that many minutes from the first raid the bots'
+# clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
+OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
+PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
@@ -1274,14 +1279,26 @@ class Campaign:
             if time.time() - raid['t0'] > 300:
                 self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in 300 s ({hs.strip()[:80]})')
                 state['raid'] = None
+                if not raid.get('host_click') and not OLD_RAID_SKIP and len(state.get('standing', [])) > 1:
+                    # BUG-1091: a raid without the host's click never gets its hut cut and never falls; the nearest
+                    # village was raided again and again (lab 20261113-181333: village 2 for 25 min, 750/750)
+                    state.setdefault('skip', {})[raid['tribe']] = time.time() + 240
+                    self.note(f'tribe: no attack click of the host on village {raid["tribe"]} in its raid: another '
+                              f'village first')
                 return
             alive = self.tribe_raiders()
             if not raid.get('host_click'):  # no attack click of the host yet: no mission, the conquest would be no goal
-                raid['tries'] = raid.get('tries', 0) + 1
-                if raid['tries'] >= 3 and len(state.get('standing', [])) > 1:
+                # (BUG-1091: counted per village over its raids; a raid's own count never reached 3 in its 300 s,
+                # tribe_clicks takes 1.5-2 min a try)
+                tries = raid if OLD_RAID_SKIP else state.setdefault('tries', {})
+                key = 'tries' if OLD_RAID_SKIP else raid['tribe']
+                tries[key] = tries.get(key, 0) + 1
+                if tries[key] >= 3 and len(state.get('standing', [])) > 1:
                     # a far village the players' view does not reach (the minimap's look misses it, lab
                     # 20261113-073952: 316 m, 9 min without a click): another village first, this one later
                     state.setdefault('skip', {})[raid['tribe']] = time.time() + 240
+                    if not OLD_RAID_SKIP:
+                        state['tries'][raid['tribe']] = 0
                     self.note(f'tribe: no attack click of the host on village {raid["tribe"]} in 3 tries: another village first')
                     state['raid'] = None
                     return
@@ -1349,11 +1366,12 @@ class Campaign:
         skip = state.get('skip', {})
         pick = [t for t in targets if skip.get(t[0], 0) < time.time()] or targets
         if home and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
+            # (BUG-1091: the villages on the skip list stay out of the pick; the sort keeps the nearest of the rest)
             # the nearest village first: the raiders walk 300 m to a far one and its defenders kill them on the way
             # (village 4 at 318 m: two raids of 300 s without a fall while one at 170-230 m stood, lab 20261113-142203)
             pick.sort(key=lambda t: math.dist(t[3], home))
         tk, c, hut, hp = pick[0]
-        raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False)
+        raid = dict(tribe=tk, hut=hp, ptr=hut, t0=time.time(), cut=False, standing=len(targets))
         state['raid'] = raid
         self.note(f'tribe: raid on village {tk} ({len(targets)} standing, goal bar {pr}), its hut {hut} '
                   f'{math.dist(hp, home) if home else -1:.0f} m from the players\' village')
@@ -1369,6 +1387,14 @@ class Campaign:
         if g is None:
             return
         tk = raid['tribe']
+        if PLANT_NOCLICK:  # (the twin: no bot's click on the first village raided ever comes)
+            if not hasattr(self, 'plant_tk') and raid.get('standing', 0) > 1:  # (with another village to raid)
+                self.plant_tk, self.plant_t0 = tk, time.time()
+            if tk == getattr(self, 'plant_tk', None) and time.time() - self.plant_t0 < PLANT_NOCLICK * 60:
+                raid['why'] = 'planted: CAMPAIGN_PLANT_NOCLICK'
+                time.sleep(110)  # as long as the failed tries took (127 s and 149 s for village 2 in 20261113-181333)
+                self.note(f'tribe: raid clicks on the hut of village {tk} by [] (the host\'s click: {raid["why"]})')
+                return
         own = re.findall(r'#\d+ \S+ owner=0 .*?hp=([\d.]+)', self.host.call('coop.tribe'))
         if sum(1 for h in own if float(h) > 0) < 4:
             # play_tribe raids only with 4 or more own members alive (fewer: it gathers); the host's share of the
@@ -1408,6 +1434,8 @@ class Campaign:
                 break
         self.note(f'tribe: raid clicks on the hut of village {tk} by {raid.get("clicks", [])}'
                   + (f' (the host\'s click: {raid["why"]})' if raid.get('why') else ''))
+        print('  BUG-1091 diag: bot step counts ' + '; '.join(f'{pl.name} {sorted(pl.count.items())}' for pl in g.p),
+              flush=True)
 
     def tribe_host_click(self, g, pl, raid):
         """the host's own attack click on the raided hut, as a player gives it: the view on its members, a box round
@@ -1428,14 +1456,22 @@ class Campaign:
             sel = g.select_idle(pl, st, mine, group)  # lab 20261113-120534, "no member selected (6 own)")
             if sel:
                 break
+        if not sel and not OLD_RAID_SKIP:
+            # BUG-1091: the members picked were out raiding where the view did not reach: the view on the village, a
+            # box round the host's members there (its home guard and the members spawned for this click)
+            home = play_tribe.tribe_centres(pl.con).get('p')
+            if home and pl.look(home):
+                sel = pl.select(mine, play_tribe.screen(pl.con), group=True)
         if not sel:
             raid['why'] = f'no member selected ({len(mine)} own)'
+            self.tribe_click_diag(pl, st, mine, raid)
             return False
         pl.mode(1)
         if not pl.look(raid['hut']):
             pl.calibrate()  # the view turned: the minimap's map again
             if not pl.look(raid['hut']):
                 raid['why'] = 'the view did not reach the hut'
+                self.tribe_click_diag(pl, st, mine, raid)
                 return False
         pl.centre()
         tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
@@ -1447,6 +1483,29 @@ class Campaign:
         ok = pl.given > n0 and 'action=15' in pl.last_order()[0]
         raid['why'] = '' if ok else f'the click gave {pl.last_order()[0][:60]!r}'
         return ok
+
+    def tribe_click_diag(self, pl, st, mine, raid):
+        """BUG-1091 (diagnostics): where the host's view is when its box finds no own member"""
+        import play_tribe
+        try:
+            objs = play_tribe.screen(pl.con)
+            ons = pl.on_screen(objs)
+            own_on = [o for o in ons if o[0].startswith('member') and int(o[0][6:]) in mine]
+            mem_on = [o for o in ons if o[0].startswith('member')]
+            c = pl.centre()
+            pos = {i: tuple(round(v) for v in st[i]['pos']) for i in mine[:8]}
+            sel = [i for i, v in play_tribe.tribe_state(pl.con).items() if v['sel']]
+            n = raid['diag'] = raid.get('diag', 0) + 1
+            shot = os.path.join(lane.out_dir('shots'), f'bug1091_{time.strftime("%H%M%S")}.png') if n <= 3 else None
+            if shot:
+                self.host.call('shot ' + shot)
+            print(f'  BUG-1091 diag: own on screen {len(own_on)}/{len(mine)}, members on screen {len(mem_on)}, '
+                  f'objs {len(objs)}, view centre {tuple(round(v) for v in c) if c else None}, cur '
+                  f'{tuple(round(v) for v in pl.cur) if getattr(pl, "cur", None) else None}, zoom {pl.zoom}, '
+                  f'selected now {sel[:8]}, own at {pos}, status {play_tribe.status(pl.con)[:300]!r}, shot {shot}',
+                  flush=True)
+        except Exception as e:  # (diagnostics only)
+            print(f'  BUG-1091 diag failed: {e!r}', flush=True)
 
     def tribe_order(self, raid):
         """shortcut: every player member gets the raid order on the hut (`coop.tribe order <id> 15 <hut>`: the DoAction

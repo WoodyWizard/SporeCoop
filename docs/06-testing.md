@@ -7718,3 +7718,27 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
   state's age, drive.puppet_fall's knee, the median arrival horizon less the one-way latency, the one-way latency; the
   own avatar's row: age = time since its state was due). coop_puppet_walk's track json also holds both games' bodyrec
   rows (`body_walker`, `body_observer`), so a stop can be analysed after the run.
+
+## The campaign's Tribe end: a village the bots' clicks never reach (2026-11-13, fix/w49-camp2)
+<a id="testing-w49-camp2"></a>
+
+BUG-1091. campaign_tribe_end 20261113-181333 (fix/w49-proxy, lane 5) stuck in the Tribe advance at 1/5: from the
+second village on no bot's raid click came ("the view did not reach the hut", then "no member selected (4-7 own)"), so
+the hut was never cut (the cut waits for the host's click: without it the conquest gives no goal) and 15 ordered members
+left it at 750/750. Not a mod bug: the cinematics were on (village cinematics played on the host at 18:25:55), nothing
+in the four games' logs differs from a passing run but the bots' missing orders (the guests sent 0-1 orders in the
+whole Tribe, 4-11 in passing runs). The driver then raided the same village for 25 min: a raid of 300 s without the
+host's click ended and the nearest-first pick took that village again; its "3 tries, another village first" rule
+counted per raid and never reached 3 (a try of tribe_clicks takes 1.5-2.5 min).
+* Now (coop_campaign.py): the tries count per village over its raids, and a raid that ends without the host's click
+  puts its village aside for 4 min (when another stands), printed `tribe: no attack click of the host on village N in
+  its raid: another village first`. When the host's box finds no own member (they are out raiding where the view does
+  not reach) it looks at the players' village and boxes its members there. `CAMPAIGN_OLD_RAID_SKIP=1`: before.
+* The host's click prints `BUG-1091 diag:` when it fails (own members on screen, the view's centre, the bots' step
+  counts, a screenshot in out/lane<N>/shots/bug1091_*.png for the first three).
+* Twin: suite `campaign_tribe_noclick` (`CAMPAIGN_PLANT_NOCLICK=18`: for 18 min the bots' clicks on the first village
+  raided while another stands never come, each try takes 110 s as in the failing run). See the ticket for the runs.
+* Not reproduced naturally in three runs with the diagnostics (20261113-190337, -193334, and -200131 with the failing
+  run's seed 492354972: Tribe ended in 13-15 min). The minimap's reach: docs/re/tribe.md#tribe-minimap-map.
+* Planting the first village raided does not work: the game forms the other villages only after the first conquest
+  ("1 standing"), so no rule can go elsewhere (20261113-204040: 22 min on village 1, then 3/5 at the timeout).
