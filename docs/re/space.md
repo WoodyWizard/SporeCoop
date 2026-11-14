@@ -2751,3 +2751,15 @@ BUG-9201 (BUG-9114). Steam QA copy, City Assault, two games, adventure.enemies o
   ends on both (play state 5). Corpses go the same way once the host's corpse is gone (its key times out after 5 s).
 * ✔ A guest captain's hit on a paired creature goes to the host (Packet Hit, hits_in = hits_applied) and the
   host's health comes back with the states (22 -> 17 hp on both).
+
+## A guest's homeworld card: the species picture (2026-11-14, feat/lineages-47)
+<a id="space-guest-species-card"></a>
+
+BUG-9188. Steam QA copy, 1024x768.
+* ✔ The homeworld card left of the palette is window 0x05D646C8; its picture is window 0x036C0957 with an
+  ImageDrawable (vt 01B63248 in this run): drawable +0x28 is the image, image +0x04 its texture, +0x1C / +0x20 its
+  size (128 x 128 when loaded, 1 x 1 and no texture when not).
+* ✔ It shows the species' png 0x2F7D0004 in the creature group 0x40626200 (the Sporepedia card); group + 1 (the
+  plain thumbnail) alone did not fill it. A guest lacks it for the host's own creature (sent as model and metadata).
+* ~ Not checked: whether NPC empires' cards on a guest have the same gap for other host creations (their pictures
+  are not sent).

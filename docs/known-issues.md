@@ -2192,6 +2192,8 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 ## Space: a guest's homeworld card is blank after a personal launch (2026-11-13, BUG-9188)
 <a id="issue-space-guest-blank-card"></a>
 
+Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creature.
+
 * What happens: the communication card next to the minimap shows a blank white picture on every guest; the host's
   shows its species. Cosmetic.
 * Reproduce: the four-founder launch (profile DuoQAJiffSpaceReady, docs/re/space.md#space-four-founder-launch).

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Space: a partner's homeworld card shows the species' picture, not a blank
+  white box (BUG-9188).
 - Adventures: the host's game now runs the enemies for everyone, so all
   players see the same fight. The enemies attack a partner too (BUG-9200), a
   partner's hits count on the host, and a partner's game no longer keeps
