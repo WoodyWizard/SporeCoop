@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.14 4dd8d2be
 fixed_in:
 branch: fix/w49-under
-commits: 0a79fb2e
+commits: 0a79fb2e 4c61f2a6
 tests: campaign (the monitor gate), gates_selftest, tribe_under_probe
 signature: MONITOR-VIOLATION ground host: the tribe members of partner N 1.26 m under the ground (Tribe) on 2 lines
 docs: docs/06-testing.md#testing-fcgates-0714, docs/re/tribe.md#tribe-member-under, docs/06-testing.md#testing-tribe-under, docs/known-issues.md#issue-tribe-member-under-host
@@ -61,7 +61,7 @@ Not reproduced; docs/re/tribe.md#tribe-member-under.
   grab spot move logged; test setup `coop.tribe sink`, `coop.tribe epic on`.
 
 ## Verification
-no-fail-run: not reproduced (diagnostics and a probe only); tribe_under_probe passes (its check: a member put under
+no-fail-run: not reproduced (diagnostics and a probe only); tribe_under_probe passes (lab 20261114-043205; its check: a member put under
 the ground is on it within 1 s), gates_selftest and make test pass.
 
 ## History
