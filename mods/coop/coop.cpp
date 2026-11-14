@@ -774,6 +774,9 @@ struct TrackSample {
     float ppm = 0;
     // BUG-0434: the physics' simple-path inputs (PhysicsManager_Update 0xB4C5D5): the drawn flag +0xF90, the LOD +0xEAC
     int8_t f90 = -1, lod = -1;
+    // BUG-1093: the puppet: how far past its newest state the target ran (SnapshotBuffer::last_extrap, s) and that
+    // state's age (s past its usual arrival); the own avatar: 0 and the time since its last state was sent (s)
+    float ex = 0, age = 0;
 };
 static std::deque<TrackSample> g_track;
 // tests (BUG-0367): `coop.track lift <m>`: this game takes the partners' Creature states <m> further from
@@ -874,6 +877,7 @@ void track_tick(double now)
         TrackSample& x = track_one(255, g_local, nullptr, 0, now);
         x.ranims = g_own_anims; // the own avatar: its animations sent (MSG_ANIM)
         x.ranim = g_own_anim_last;
+        x.age = (float)(now - g_last_send);
     }
     for (auto& [id, r] : g_remotes) {
         void* pp = puppet_now(r);
@@ -885,6 +889,8 @@ void track_tick(double now)
             TrackSample& x = track_one((uint8_t)id, pp, &s, (uint16_t)r.drv.teleports, now, g_puppet_hold ? nullptr : &r.drv.drawn);
             x.ranims = r.anims;
             x.ranim = r.anim_last;
+            x.ex = (float)r.buf.last_extrap;
+            x.age = (float)r.buf.age(now);
         }
     }
 }
@@ -918,14 +924,14 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
         // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state vis sx sy
         // hd ht (BUG-0366: heights over the ground) id (BUG-0365: the Tribe member id, 0 in Creature) ranims ranim
         // (BUG-0414: the partner's animations played on the puppet so far, the last one) ppm (BUG-0436: pixels per metre on
-        // the screen); new columns go at the
+        // the screen) f90 lod ex age (BUG-1093: the target's extrapolation and its newest state's age); new columns go at the
         // end (parsers take >= the columns they know)
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f %d %d\n", x.t,
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f %d %d %.3f %.3f\n", x.t,
                 x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
-                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm, x.f90, x.lod);
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm, x.f90, x.lod, x.ex, x.age);
         }
         return 0;
     }
