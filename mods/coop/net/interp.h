@@ -238,11 +238,15 @@ inline bool g_agl_lerp_fix = true;
 // when the next state came (npc_walk "a thrown proxy flies with its NPC", stood in 128 of 166 frames, lab
 // 20261113-221929 #2). The agl goes with the position's radial move. Off: 0.7.13.
 inline bool g_agl_extrap_fix = true;
-// the agl of `out` after its position was moved from one at radius r0 (BUG-1094)
+// the agl of `out` after its position was moved from one at radius r0 (BUG-1094); never under the sender's ground: a
+// fall moved on past its newest state (late states of a slow host) went 2.7 m under it at the landing (npc_walk, lab
+// 20261113-234048 #2), and the next state put the proxy back up 2.6 m in one frame
 inline void agl_follow(PlayerState& out, float r0)
 {
-    if (g_agl_extrap_fix && agl_known(out.agl) && r0 > 1.f)
-        out.agl += dist(Vec3{}, out.pos) - r0;
+    if (!g_agl_extrap_fix || !agl_known(out.agl) || r0 <= 1.f)
+        return;
+    const float a = out.agl + dist(Vec3{}, out.pos) - r0;
+    out.agl = out.agl >= 0.f ? std::max(a, 0.f) : a;
 }
 // BUG-1093 (`coop.fix net.send_phase`): the own state goes out every kStatePeriod s. Sent at the first frame at least
 // kStatePeriod after the last send, a game whose frames are a little shorter than that (48 ms at 21 fps, 40 ms at 25 fps)

@@ -1515,6 +1515,30 @@ static void test_agl_extrap()
     CHECK(stood == 0);
     CHECK(max_step < 0.3f);
     CHECK(max_off < 0.05f);
+    // a fall moved on past its newest state (the next states late): its agl stops at the sender's ground, not under it
+    {
+        SnapshotBuffer f;
+        f.delay = 0.15;
+        f.lead = true;
+        for (int i = 0; i <= 20; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 100;
+            s.mode = 0x1654C01;
+            s.world = 7;
+            s.flags = PF_IN_WORLD | PF_MOVING;
+            const float h = 18.2f - 0.9f * (float)i; // (down at 9 m/s, 0.2 m up at the last state)
+            s.pos = {ground + h, 0.f, 0.f};
+            s.vel = {-9.f, 0.f, 0.f};
+            s.agl = h;
+            f.push(s, 20.0 + i * 0.1 + 0.05);
+        }
+        PlayerState o;
+        CHECK(f.sample(20.0 + 2.0 + 0.05 + 0.2, o) && agl_known(o.agl)); // 0.2 s past the newest state: 1.6 m under
+        printf("  a fall 0.2 s past its newest state (0.2 m up at 9 m/s): agl %.2f m, %.2f m under the newest\n", o.agl,
+               dist(Vec3{}, f.latest().pos) - dist(Vec3{}, o.pos));
+        if (g_agl_extrap_fix)
+            CHECK(o.agl >= 0.f && o.agl < 0.01f);
+    }
     g_agl_extrap_fix = true;
     g_lead_late_fix = was_late;
     g_lead_fall_fix = was_fall;
