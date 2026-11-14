@@ -3481,3 +3481,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   shows their new proxies on the ground 525 m away (sync-check MISMATCH `n: 14 apart`).
 * Reproduce: the full campaign (lab 20261113-160426, Civ, 17:00:23).
 * Ticket: BUG-1089.
+* Fixed (2026-11-13, fix/w49-proxy): creatures the host's game parked in its pool during a pause; `npc.frozen_pooled_rts`,
+  test civ_wild_pooled (BUG-1089).
