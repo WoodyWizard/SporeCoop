@@ -652,7 +652,9 @@ class Ground(Hook):
                     playing(r) if pid is None else (r['same'] and r['puppet'] == 'shown' and not r['flags'] & PF_DEAD))
             for a, b in self.runs(lst, lambda r: ok(r) and r['agl'] < c['agl_under'], n, None):
                 out.append((who, f'{who}: {what if b["stage"] == "Creature" else ("the tribe members of " + (who if pid is None else f"partner {pid}"))} '
-                                 f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}',
+                                 f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}'
+                                 + (' (the game log names the member: "tribe: member #.. is .. m under the ground", BUG-1104)'
+                                    if b['stage'] == 'Tribe' else ''),
                             (who, pid, 'under', a['t'])))
 
             def held(b):  # Tribe: whose members, how long one has been up, where the game log names it
