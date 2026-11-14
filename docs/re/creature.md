@@ -4560,3 +4560,32 @@ items) at runtime; `h_Submit` logs every Creature request now (`editor request i
   host played Creature, and after "done" into a Tribe of its own: Creature 3 s later, Tribe 75 s later ("Tribal Stage"
   loading card, the host still [Creature] in the co-op list; lab 20261113-154923). Refused in h_Submit (with
   BUG-0920's flag clear) the guest's game stays in its Creature stage, drawn, with the HUD.
+
+## A hop's start: the puppet stepped up to the partner's full height in one frame (2026-11-13, fix/w49-puppet)
+<a id="creature-puppet-agl-lerp"></a>
+
+BUG-1092. Follows #creature-puppet-air-anim. Lanes 2 and 3, puppet_air (`coop_puppet_walk.py --dir guest --jumps 0.9
+--air`, hops by `coop.abilities lift 1.5`: the guest's own creature is put 1.5 m up in one frame).
+
+* ✔ (track json, lab 20261113-185217 #1, host sees guest) Every "jump of the puppet" is a 1.45-1.56 m step at a hop's
+  start: in the first frame with PF_JUMPING the puppet's placed position (`p`) is already the full 1.5 m up while its
+  target (`tgt`, the interpolated position, `ht` 0.36-0.51 m over the observer's ground) rises over the next 2-3 frames
+  (0.36, 0.78, 1.16, 1.5 m). The test's `--air` exemption (a step that follows a step of the target) does not cover it.
+* ✔ (code) SnapshotBuffer::sample between two states takes the newer state's fields (`out = b.s`) and blends only
+  `pos` / `rot`; `agl` (the partner's height over its own terrain, sent with PF_JUMPING) was the newer state's 1.5 m.
+  creature_drive places a PF_JUMPING puppet at drive::at_sender_agl(pos, agl) = this game's ground + agl on pos's
+  radial line, so the blended height was thrown away and the puppet stood 1.5 m up at once.
+* ✔ (lab) Not a 0.7.14 change: v0.7.13 built alone fails the same way 3 of 3 (20261113-190621: 4, 7, 13 steps); in
+  the 0.7.5-0.7.6 runs (fix/w41-puppet-look, fix/w42-creature-left) the same 1-1.5 m steps failed about 1 run of 3.
+  ~ The lab's frame rate now (40+ fps after the warm-up) makes a 1.5 m step in a 15 ms frame more likely than the
+  allowance for a hitch frame covers; at 20 fps (50-70 ms frames) it mostly passed.
+* Fix `drive.agl_lerp` (net/interp.h): between two states the agl is blended with the position. A state without agl
+  counts at its own height over the newer state's ground (the newer state's radius less its agl): 0 m on the ground.
+  Off: 0.7.13. Unit test: tests/net_tests.cpp test_interp (`SPORE_FIX_OFF=drive.agl_lerp` fails).
+* ✔ (lab 20261113-192634-2 #2, a first version that took 0 m for a state without agl) The hop's first state can
+  already be 1.5 m up without PF_JUMPING (the walker's grounded byte is still set in the frame of the lift): blended
+  from 0 m the puppet was placed 1.27 m under its target and drawn 0.87 m lower for a frame.
+* ✔ (lab 20261113-191644, -191329 #1, -190457 #1) The test's walk gait check (>= 80 % of the frames on the observer's
+  screen) failed with and without the fix when the walker hopped often: the walker's own avatar had a walk gait in
+  73-86 % of its moving frames (none in the air), the puppet 70-79 %. With `--air` the bar is now the walker's own
+  share less 10 points (at most 80 %).
