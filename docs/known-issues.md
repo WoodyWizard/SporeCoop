@@ -3490,3 +3490,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run tribe_editor_world` (3 of 3 on rel/0.7.14 + fix/w49-bundle, also with BUG-1084's switch off:
   lab 20261113-183059, -184241, -184244).
 * Ticket: BUG-1090.
+* Fixed (2026-11-13, fix/w49-proxy): creatures the host's game parked in its pool during a pause; `npc.frozen_pooled_rts`,
+  test civ_wild_pooled (BUG-1089).

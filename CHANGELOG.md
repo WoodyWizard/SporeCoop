@@ -7,6 +7,9 @@
   from the ground, carrying it home) start afresh at the host's next editor visit, instead of going on with food that
   was taken away in between; that could make the guest's game fault (caught faults at 0xC23469, seen at the end of
   Tribe with the host in the City Hall editor) (BUG-1084).
+- Civilization, Tribe: wild animals the host's game puts away while its game is paused (it keeps them only near the
+  camera) now go from the guests' screens too; before, a guest kept them standing where they were for the whole pause
+  (the co-op self-check reported them 525 m apart) (BUG-1089).
 - Creature: the end of the stage (the evolve button to Tribe) waits for every player's "I'm ready" again ("Alice wants
   to move on to the Tribe stage"); before, the host went on alone and the guests got a pointless "Evolve now". The
   host's evolution after a mating now opens at once with an "Evolve now" offer to the others, as planned for 0.7.11

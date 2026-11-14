@@ -1793,3 +1793,26 @@ reading `[0x167EB50]` +0x15F / +0x2C / +0x148 every 5 s; `coop.cine` shows the s
   view moves of a minimap or card click go through the cinematic manager and do nothing while it is off.
 * Fix (coop.dll, gamefixes `game.cinematics_on_load`): when a load ends in Cell / Creature / Tribe / Civ / Space with
   +0x15F 0, SetEnabled(1). A boot + load starts with 1, so a loaded stage never needs 0.
+
+## Wild creatures parked while the host's game stands still (2026-11-13, fix/w49-proxy)
+<a id="civ-wild-parked"></a>
+
+BUG-1089. GOG 2024, lab lanes 4 and 5, civ_npc.
+* ✔ (runtime) The host NPCs at (0 0 0) of the full campaign's sync-check MISMATCH (lab 20261113-160426, 14 of
+  species 067A147A, hp 8-16) are wild creatures the game took back into its pool (the planet's centre, no herd) while
+  the host's simulation stood (the host's trace says `busy=paused` at 17:00:21; the BUG-0339 diagnostic "is updated at
+  the planet's centre" never fired for them, so host_tick never saw them updated there: they were parked in frames
+  without creature updates). The sync-check's entries are the last running frame's table (npc.entries_listed), the
+  positions are read now: (0 0 0) on the host, the proxies on Bob's ground.
+* ✔ (runtime, civ_wild_pooled with npc.frozen_pooled_rts off, lab 20261113-174015) With the host in its pause menu
+  and its camera panned to the other side of the planet, the game parked a herd of 14 (species 066742CD) by itself:
+  the same MISMATCH "n: 14 apart" (519-537 m). So the Civ relevance pass (#civ-wild-sync) runs during the pause menu
+  and parks creatures although no creature is updated.
+* Mod side: host_tick returned at once in Tribe / Civ frames without creature updates (the Creature stage's frozen
+  pass, BUG-0413 / BUG-0339, is relevance per guest and was skipped for the RTS stages), so nothing was despawned until
+  the game went on. Fix `npc.frozen_pooled_rts`: every 0.5 s of such a freeze the tracked NPCs that are no creature of
+  the world any more or are within 50 m of the centre are retired (despawned at every guest).
+* ~ Seen, not changed: dead creatures the game keeps updating at the centre (BUG-0339's corpse case, 4 lines at
+  17:01:03 in the same campaign) are not despawned in Civ by distance (every guest gets every wild creature); not
+  compared by the sync-check (dead), not looked at here.
+

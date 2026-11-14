@@ -67,3 +67,26 @@ no-fail-run: not reproduced on 0.7.10 code (rel/0.7.10 + fix/w46-k3-bodies, driv
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): 8 chaos_tribe runs (6 with the lead, 2 without), no gate failure; 2 single audit lines with the new diagnostics (an offset the guest's game keeps next to a herd mate); closed not-reproduced, the blocker named.
 - 2026-11-07 (fix/w46-k3-bodies, K3): one more attempt on the current build, with a low fps and bad network variant (30 fps, SPORE_NET=player): 7 of 7 chaos_tribe pass, no stuck proxy in any audit line. Stays not-reproduced, closed with these runs.
 - 2026-11-13: seen again (fix/w49-camp): campaign_tribe_end lab 20261113-163143 failed on the proxies gate, extra1 and extra2 at s 610 and extra2 at s 1140 (Tribe raids; the proxy stuck with citizens 018EB45E within 1-2 m, BUG-0440's own log line). Also in the full campaign 20261113-101808 of fix/w49-tests.
+- 2026-11-13 (fix/w49-proxy): reopened case analysed with data, not reproduced, no fix; the gate stays.
+  * The campaign_tribe_end lines (lab 20261113-163143 of fix/w49-camp): proxy 66 (species 0654E5BC) off on extra1 AND
+    extra2 at the same moment (4.8 / 6.9 m for 2.1 s; walk err 5.1 m, held 1, place lost 198, 2 teleports), host's NPC
+    at 2.5 m/s, its largest step 0.8 m per 0.25 s (no host jump), the proxy moved 3.8-4.2 m in 2.1 s (1.8-2.0 m/s),
+    herd mates (proxies 65 / 84) 1.0-1.7 m from it; at s 1140 proxy 242 (species 067A147A) 6.4-6.7 m behind for 4.5 s,
+    moving 2.2 m/s, held, place lost 189, nothing within 3 m. Not during a raid (16:42:16, between the raids).
+  * History (all 523 distinct `off the host's NPC ... placed on the host's path` audit lines in the lab output of the
+    worktrees): 269 (51 %) at a host speed of exactly 2.5 m/s, then 0.0 (63), 4.0 (45), 7.5 (36); in the 2.5 m/s class
+    the walk error is 3-8 m with `held 1` (the drive teleports with the mark every frame) and the proxy moves 0-3 m/s
+    (median ~1.9 m/s): the marked teleports, which should close the error at speed + up to 5.5 m/s, are not kept in
+    those frames. The gap of ~8 m is the upper end because walk_place is used only within 8 m (drive::step beyond).
+    So: a real desync (the guest's game holds the placed proxy back), the gate measures it right; what holds it
+    (the herd mates' collision is in some cases only) is still not known.
+  * Reproduction tries on rel/0.7.14 + this branch, lanes 4 / 5: play_tribe 20261113-175204, 20261113-180215,
+    183413 (quick), chaos_tribe 20261113-174834 #2 / #3, 183413, campaign_tribe_end 20261113-180327 and
+    20261113-181333: no stuck audit line at all (play_tribe 174528 and chaos_tribe #1 of 174834 were killed by another
+    agent's `lab.py kill` at 17:51, not counted).
+  * Diagnostics added: the first audit line now also prints `pushed back <m/s>` (how fast the game moved the body back
+    from last frame's place, against the direction to its target, smoothed), `off its placing after the call <m>`
+    (whether the teleport call itself was taken) and the proxy's game speed. The next occurrence tells whether the
+    game undoes the marked teleport during its update (pushed back ~ speed + catch-up) or refuses the call (off after
+    the call > 0). Blocker for a fix: one such line.
+

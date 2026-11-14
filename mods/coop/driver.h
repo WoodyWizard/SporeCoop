@@ -42,6 +42,10 @@ struct State {
     uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
     double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
     bool held = false;       // BUG-0361: teleported (with the mark) onto the path until it is on it again
+    // BUG-0440 (diagnostics): per frame of walk_place, smoothed over ~0.25 s: how fast the game moved the body back
+    // from last frame's place, against the direction to the target (m/s, negative: on towards it), and how far the
+    // body is from the place right after the placing call (m: the call itself not taken)
+    float back_ema = 0, readback_ema = 0;
     net::Vec3 jump_from;    // BUG-0499: the target of the frame before (a jump of the target: the puppet jumps too)
     bool jump_have = false;
     uint32_t jumps = 0;     // BUG-0499: puppets put at a target that jumped
@@ -357,6 +361,15 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     net::Vec3 cur = game::position(p);
     float err = net::dist(cur, pos);
     double dt = was && now > ds.last_step ? std::min(now - ds.last_step, o.max_dt) : 1.0 / 60;
+    if (was && dt > 0) { // BUG-0440 diagnostics
+        net::Vec3 d{pos.x - ds.placed_to.x, pos.y - ds.placed_to.y, pos.z - ds.placed_to.z};
+        float dl = speed(d);
+        if (dl > 0.05f) {
+            float back = -((cur.x - ds.placed_to.x) * d.x + (cur.y - ds.placed_to.y) * d.y + (cur.z - ds.placed_to.z) * d.z) /
+                         dl / (float)dt;
+            ds.back_ema += (back - ds.back_ema) * 0.15f;
+        }
+    }
     if (o.keep_lost && o.variant != 3) {
         bool lost = was && net::dist(cur, ds.placed_to) > std::max(0.5f, 2.f * (sp + o.catch_up) * (float)dt);
         if (was && err > kWalkLostErr && err > ds.last_err + 0.005f) {
@@ -398,6 +411,7 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         game::teleport(p, to, rot);
     else
         game::place(p, to, rot);
+    ds.readback_ema += (net::dist(game::position(p), to) - ds.readback_ema) * 0.15f; // BUG-0440 diagnostics
     ds.placed_to = to;
     ds.last_step = now;
     ds.track = Track{};

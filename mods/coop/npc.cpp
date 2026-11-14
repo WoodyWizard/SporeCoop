@@ -1477,11 +1477,19 @@ static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0, g_frozen_retired = 0
 static bool g_frozen_pooled_fix = true;
 COOP_FIX("npc.frozen_pooled", "BUG-0339", g_frozen_pooled_fix,
          "creature: an NPC the host's game takes back into its pool while the game stands still is despawned at the guests");
-static void frozen_send(double now)
+// BUG-1089: the same retirement in the Tribe and Civ stages. host_tick returned at once there while the simulation stood
+// (frozen_send is the Creature stage's relevance), so NPCs the host's game took back into its pool during a pause (Civ:
+// its camera moved on, the relevance pass parks the herd at the planet's centre) kept their proxies on every guest
+// for the whole pause: a herd of 14 standing on Bob's ground, 525 m from the host's objects at (0 0 0) (campaign lab
+// 20261113-160426, sync-check MISMATCH; in Civ every guest gets every wild creature, no distance drops them).
+// `coop.fix npc.frozen_pooled_rts off`: Tribe and Civ keep them until the host's game goes on (0.7.13).
+static bool g_frozen_pooled_rts_fix = true;
+COOP_FIX("npc.frozen_pooled_rts", "BUG-1089", g_frozen_pooled_rts_fix,
+         "tribe, civ: an animal the host's game parks in its pool while the game stands still (a pause) is removed at the guests");
+// host, frozen: the tracked NPCs that are still creatures of the world in a herd off the planet's centre (with their
+// positions); those that are not (freed, pooled) are retired when npc.frozen_pooled is on
+static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
 {
-    if (now - g_frozen_send_at < 0.5)
-        return;
-    g_frozen_send_at = now;
     struct Acc {
         std::vector<void*> live;
     } a;
@@ -1522,6 +1530,14 @@ static void frozen_send(double now)
             g_host_npcs.erase(it);
             g_frozen_retired++;
         }
+    return live;
+}
+static void frozen_send(double now)
+{
+    if (now - g_frozen_send_at < 0.5)
+        return;
+    g_frozen_send_at = now;
+    const auto live = frozen_pooled_pass();
     for (auto& p : C.sess->players()) {
         if (p.id == 0 || (C.in_place && !C.in_place(p.id)))
             continue;
@@ -1561,6 +1577,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         g_frozen_since = g_frozen_since > 0 ? g_frozen_since : now;
         if (g_frozen_send_fix && !rts && now - g_frozen_since > 0.5) // BUG-0413
             frozen_send(now);
+        else if (rts && g_frozen_pooled_rts_fix && now - g_frozen_since > 0.5 && now - g_frozen_send_at >= 0.5) {
+            g_frozen_send_at = now; // BUG-1089: no relevance sends (the RTS stages have none per guest), the pool only
+            frozen_pooled_pass();
+        }
         return;
     }
     if (g_frozen_since > 0) { // the frozen time does not count as unseen
@@ -3980,9 +4000,11 @@ void monitor_tick(double now)
                     }
                 }
             trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
-                        "%.1f m; objects within 3 m: %s (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        "%.1f m; objects within 3 m: %s; pushed back %.1f m/s, off its placing after the call %.2f m, game "
+                        "speed %.1f m/s (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
                         (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d,
-                        game::objects_near(p, 3.f, px.c).c_str());
+                        game::objects_near(p, 3.f, px.c).c_str(), px.drv.back_ema, px.drv.readback_ema,
+                        drive::speed(game::velocity(px.c)));
         }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "

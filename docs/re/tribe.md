@@ -3880,3 +3880,17 @@ BUG-1084, GOG 2024 (Ghidra; lab lanes 6 / 7, `tools/tests/coop_tribe_away_bundle
   -1; not a detached body, not a `localbt` test mirror, tribe set) is ended with Citizen_BTTerminate 0xC0D500: the
   nodes' exits run while what they hold is still there (lab 20261113-182632 / -182826: the member's tree empty, its
   bundle left on the ground, listed); the next away starts the trees afresh (the member then idles, 0x05524115).
+
+## Animal proxies held back while placed: the 2.5 m/s class (2026-11-13, fix/w49-proxy)
+<a id="tribe-proxy-held-back"></a>
+
+BUG-0440. Log statistics, no runtime reproduction in this branch.
+* ✔ (logs) Of 523 distinct audit lines "proxy N ... off the host's NPC ... (placed on the host's path)" in all lab
+  output of the worktrees, 269 have the host's NPC at exactly 2.5 m/s (then 0.0: 63, 4.0: 45, 7.5: 36). In that class
+  walk_place is in its held mode (`held 1`: marked teleports every frame, at the target's speed plus up to 5.5 m/s of
+  catch-up) and yet the proxy moves only 0-3 m/s (median ~1.9) while 3-8 m behind: the marked teleports are not kept
+  in those frames. In BUG-0386's planted hold (`coop.tribe undo`) marked teleports are kept, so the real hold is
+  something else. Sometimes herd mates stand 1-2 m from it, sometimes nothing is within 3 m.
+* ? Which game behaviour moves the walking animals at 2.5 m/s (a herd's wander or regroup walk?) and what undoes
+  the placing. The audit line now prints `pushed back` (m/s against the target, smoothed) and `off its placing
+  after the call` (m) to tell an undo in the game's update from a refused call.

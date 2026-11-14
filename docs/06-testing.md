@@ -7653,3 +7653,16 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
 * Pitfalls: a member sent to gather by the guest's own game (`order <id> 2`) keeps gathering (the order record stays)
   and does its delivery inside the gather node (states 19, 0x12-0x14), never in 0x04623E0C; the gift (`order <id> 9`)
   runs node 0x0462855E. 0x04623E0C comes with an order to take up a ground bundle (14) or food in hand.
+## civ_wild_pooled (2026-11-13, fix/w49-proxy)
+<a id="testing-civ-wild-pooled"></a>
+
+* `civ_wild_pooled` (BUG-1089, civ_npc, ~110 s): both cameras on the herd, the guest shows it (census by net id,
+  `coop.census creatures`); the host opens its pause menu (Esc; `frozen_s` of `coop.npc` must grow), its camera pans
+  to the other side of the planet (the relevance pass may park creatures by itself, printed), then `coop.npc pool <id>`
+  on up to 3 herd members still in the world; for 6 s of the pause the guest must show no live proxy of a pooled id.
+  Twin: `SPORE_LAB_FIXOFF="civ_wild_pooled=npc.frozen_pooled_rts"` FAILs (the guest keeps [1, 2, 3]) and also trips
+  the sync-check gate with the campaign's own signature ("n: 14 apart", ~525 m: a second herd the game parked by
+  itself during the pause), lab 20261113-174015.
+* Pitfall: plain `coop.census` lists no Civ wild creatures with a net id for the test's purpose; use
+  `coop.census creatures` (as civ_wild_sync does).
+
