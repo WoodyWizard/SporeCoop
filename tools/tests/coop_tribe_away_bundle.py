@@ -36,7 +36,7 @@ import time
 from coop_tribe_gather_stall import ai, pos_of
 from coop_tribe_tools import dist, members
 from coop_world_objects import objs
-from twoinst import Checks, start
+from twoinst import Checks, lab_mark, start
 
 BUNDLE_NODE = '04623E0C'
 BUNDLE_NOUN = '18C431C'
@@ -69,6 +69,10 @@ def main():
         return ck.result()
     held = None
     for rnd in range(3):
+        # BUG-1102: the guest plays the host's tribes alone while it counts the host as away, but the host's game still
+        # runs them in Tribe: the sync-check compares the two on purpose apart (an away host is never compared: it is
+        # in an editor or the menu)
+        lab_mark('sync-force', 'on')
         print(' ', guest.call('coop.awaytest 1')['out'].strip(), flush=True)
         if not ck(wait_away(guest, True, 90) is not None, f'round {rnd + 1}: the guest knows the host is away'):
             return ck.result()
@@ -99,6 +103,7 @@ def main():
             time.sleep(1)
         print(f'  {time.time() - t0:.0f} s: {out}', flush=True)
         print(' ', guest.call('coop.awaytest 0')['out'].strip(), flush=True)
+        lab_mark('sync-force', 'off')
         t0, at_back = time.time(), (out, node, st)
         while time.time() - t0 < 60 and away(guest):
             r = ai(guest, mid)
@@ -131,6 +136,7 @@ def main():
     ck(not target or target in listed, f'the guest\'s member holds no bundle its game removed in a node that goes on at '
        f'the next away (node {node}, bundle {target}, listed {target in listed if target else "-"})')
     f0 = guest_faults(guest)
+    lab_mark('sync-force', 'on')
     print(' ', guest.call('coop.awaytest 1')['out'].strip(), flush=True)
     ck(wait_away(guest, True, 90) is not None, 'the host is away again')
     for i in range(5):
@@ -139,6 +145,7 @@ def main():
     f1 = guest_faults(guest)
     ck(f1 == f0 == 0, f'no caught fault on the guest while its trees run again ({f0} -> {f1})')
     print(' ', guest.call('coop.awaytest 0')['out'].strip(), flush=True)
+    lab_mark('sync-force', 'off')
     ck(wait_away(guest, False, 60) is not None, 'the host is back again')
     time.sleep(4)
     ck.faults(host=host, guest=guest)
