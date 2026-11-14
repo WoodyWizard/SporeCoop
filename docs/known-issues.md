@@ -3617,3 +3617,20 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: at the next occurrence read the audit line's new fields; a Tribe fixture of the campaign world near
   the host's village would make a focused test possible.
 * Ticket: BUG-1106
+
+## Space: "Name Your Captain" can leave the empire without a captain (2026-11-14, GitHub #202, fix/w50-captain)
+<a id="issue-captain-uncopyable-species"></a>
+
+* What happens: a Space world without a captain asks "Name Your Captain" after the load; when the game cannot copy
+  the world's player species, the check button sets no captain (key 0) and the game does not ask again until the next
+  load. The captain screen then shows the world's species as the portrait (BUG-1111 guard; before: a crash at
+  0xA055B5), its equipment panel faults inside the game (handled, 0x5971D4 / 0xC02A14).
+* Reproduce: `space_captain_none` (the species manager pointed at an unknown species with `coop.captain species`).
+* Known: docs/re/space.md#space-captain-portrait-null. A host creation that the mod registered on the guest copies
+  fine (lab).
+* Not checked: why the reporter's species could not be copied on the guest (its log has no line on the species or
+  the captain), and how the reporter's world lost its captain in the first place (the host's naming, or a guest's).
+  Whether "Enter Outfitter" with captain 0 is safe.
+* Next steps: a log line when the captain is set to 0 (hook `SporeCoop::cEmpire_SetCaptainKey`), so the next report
+  names the species; then give such a world a captain from a species this game has.
+* Ticket: BUG-1111

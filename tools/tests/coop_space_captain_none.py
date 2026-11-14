@@ -13,9 +13,10 @@ all-zero captain key and does not ask again (lab 2026-11-14). Here:
   2. the guest's game asks "Name Your Captain" after the load; while its species manager points at a species this
      game does not have (`coop.captain species`, the reporter's uncopyable species), the guest names the captain
      with real clicks (the dice, the check): the game sets no captain;
-  3. the captain screen is opened as the game's Space update opens it (`coop.captain open`: a Space UI whose rank
-     badge was never clicked builds the screen and goes on to the portrait, the reporter's path; the badge itself
-     first runs the screen's equipment panel, which faults and stops in the lab's saves, BUG-0304);
+  3. the screen is opened as the game's Space update opens it (`coop.captain open`: a Space UI whose rank badge was
+     never clicked builds the Galactic Adventures mission screen, Decline / Accept, and goes on to the captain's
+     portrait, the reporter's crash site; the badge itself first runs the captain screen's equipment panel, which
+     faults and stops for a captain-less empire in the lab, BUG-0304 family);
   4. the rank badge with a real click, then the screen is closed.
 Both games must keep running. `SPORE_FIX_OFF=game.captain_portrait` (the game's code) must FAIL: the guest crashes
 at 0xA055B5 in step 3.
@@ -27,6 +28,7 @@ import time
 
 import coop_space_finale as fz
 import play_space
+import uifind
 from twoinst import Checks, shot, start
 
 BADGE = (1390, 890)            # the rank badge over the ship's picture, 1440x1080
@@ -107,10 +109,18 @@ def main():
     time.sleep(3)
     if not ck(alive(guest), 'guest: still runs after the captain screen opened (no crash at 0xA055B5)'):
         return ck.result()
-    ck(play_space.captain_open(guest), 'guest: the captain screen is up')
+    # this path of the screen is the Galactic Adventures mission screen with the captain's portrait (Decline, Accept)
+    up = fz.wait(lambda: uifind.shown(guest, 'Decline') is not None, 10)
+    ck(up, 'guest: the screen with the captain\'s portrait is up (Decline, Accept)')
     print('  guest:', captain(guest)[2])
     shot(guest, 'captain_none_open.png')
-    ck(play_space.close_captain(guest), 'guest: the captain screen closes (OK)')
+    p = uifind.shown(guest, 'Decline')
+    if p:
+        guest.call(f'move {p[0]} {p[1]}')
+        time.sleep(0.3)
+        guest.call(f'click {p[0]} {p[1]}')
+        time.sleep(2)
+    ck(uifind.shown(guest, 'Decline') is None, 'guest: the screen closes (Decline)')
 
     # 4. the rank badge with a real click
     guest.call(f'move {BADGE[0]} {BADGE[1]}')

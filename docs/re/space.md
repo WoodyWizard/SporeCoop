@@ -3008,3 +3008,50 @@ BUG-1075. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and the crash report
   (docs/06-testing.md#testing-double-instance).
 * ? Whether a torn read of the shared save files gives the null record: inferred, not reproduced (lab boot loops
   under load and with a deliberate double start, docs/06-testing.md#testing-double-instance).
+
+## The captain screen of an empire without a captain, "Name Your Captain" (2026-11-14, fix/w50-captain)
+<a id="space-captain-portrait-null"></a>
+
+BUG-1111 (GitHub #202). GOG 2024 (dc04aee5; Steam 3010a413 the same code), objdump, runtime probes on lane 2, the
+reporter's minidump.
+* ✔ The player empire's captain is a creature key at `cEmpire +0xC4` (`SporeCoop::cEmpire_GetCaptainKey` 0xC310F0,
+  setter `SporeCoop::cEmpire_SetCaptainKey` 0xC31100, which also applies the cPlayer stage traits +0x10FC..+0x110C
+  to it through 0xC75B40). It is set by: `cPlayer mInitCaptainKey` (+0x1290, from the game start info +0x58 in
+  0xB271D0) at a Space enter (0xC75BF0, from 0x1007225 / 0x1007606), the captain editors' result (0xFE2C7B), and the
+  "Name Your Captain" dialog (below). 0 = no captain. The lab's `space` fixture has captain 2905CC0C (the world's
+  species is the premade 065CBAB0).
+* ✔ "Name Your Captain": `cAppModeSpace` (`[0x16D9938]`, vtable 0x1493FC8) checks once per Space load in its update
+  0xFE0F30 (one-shot flag mode +0x131, not while `[0xB3D5D0()]+0x2C` is 1 or 2): a captain key with instance 0 opens
+  the dialog (`SporeCoop::NameCaptainDialog_Show` 0xE1DC50, a text field, a dice for a random name, a check button
+  that is greyed out while the name is empty). Its check (`SporeCoop::NameCaptainDialog_OnButton` 0xE1DC60, button 1)
+  copies the world's player species (`cSpeciesManager +0xA4`, 0x4DF470) into a new creature with that name
+  (0x6462E0, 0x5BF4A0) and sets it as the captain (0xE1DD8C). Runtime: a fresh name gives a new key (29224791 on the
+  guest, 29224792 on the host, ids from each profile's own sequence). **When the species cannot be copied the game
+  sets an all-zero captain** and does not ask again in that load: with the species manager pointed at 1BADBEEF the
+  setter got 0/0/0. A host creation the mod registered (29224792, 'the host's own creation ... is 7DF959ED here')
+  copies fine. A guest that loads a world without a captain is asked like the host.
+* ✔ The captain screen (`SporeCoop::SpaceGameUI_ShowCaptainScreen` 0x1072810, thiscall(SpaceGameUI, bool, editorId)
+  ret 8; `SporeCoop::SpaceGameUI_Get` 0x10666B0) copies the captain key first, then either builds the screen and calls
+  the equipment panel 0xFE7560(1) (a UI whose `[ui+0x694]+0x28` is 0: the Space update's opener 0xFDF5A0) or, from the
+  rank badge (window 0x7BB7790, handler 0x1073678, which sets +0x28 = 1 first), the full panel 0xFE7560(0): 0xF179E0
+  (the captain's items, property list (instance, group | 0xE500), the BUG-0304 fault at 0x5971D4 when there is none)
+  and 0xFE7140 (`cSpeciesManager::GetSpeciesProfile(captain)` passed to 0xC02A10 without a check: a handled fault at
+  0xC02A14 for captain 0). A fault there ends the call (the game's handler): the rest is skipped. Then the tail shows
+  the portrait: `SporeCoop::CreatureDisplay_Show` 0xAE8C80 (thiscall(display, &key, 0x4D594C50, &scale, name, slot,
+  window) ret 0x18) -> Anim::IAnimWorld::LoadCreature 0xA0B1C0 (by key, by name "%s.blocks" when the instance is 0;
+  null when nothing loads) -> the anim world's vt 0x40 (`SporeCoop::AnimWorld_vt40` 0xA055A0) writes
+  `[creature+0x54]`: **the crash at 0xA055B5 (write of 0x54) for a captain that cannot be loaded**.
+* ✔ With a real named captain (the host's 29224792) the badge path has no fault and reaches the portrait (probes:
+  0xF179E0, 0xAE8C80 from 0x1072C75). This corrects the inference of
+  [the captain screen section](#space-captain-screen-fault) (BUG-0304): the 0x5971D4 fault comes from a captain
+  without captain items (the fixture's 2905CC0C, or none), not from every Space game.
+* ✔ The reporter's dump (0.7.13, a guest 6.5 min into the host's Space world, 0.6 s after landing): the portrait's key
+  (the screen's local copy of the captain) was 0/0/0, the call chain 0xAE8D88 <- 0x1072C75 <- the badge handler
+  0x107367D, no other fault in the session. ? Why the reporter's badge path did not stop at 0xF179E0 / 0xFE7140 first
+  (they fault for captain 0 in the lab) is not known; the Space update's opener reaches the portrait without them.
+* ? Why the reporter's captain was 0: inferred, "Name Your Captain" could not copy the world's species (the host's
+  creation) on the guest's PC; the log has no line on it (docs/known-issues.md#issue-captain-uncopyable-species).
+* Fix `game.captain_portrait` (gamefixes.cpp): a portrait whose creature cannot load (no key and no name, or a key no
+  database has) gets the world's species when this game has it, else is skipped (0xAE7D90 checks the slot).
+  `coop.captain [open | species <hex> | species restore]` prints the captain and the species; tests open the screen as
+  the Space update does and emulate an uncopyable species. Test `space_captain_none`.
