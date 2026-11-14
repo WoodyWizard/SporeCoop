@@ -670,6 +670,20 @@ static void test_interp()
         CHECK(std::fabs(q.pos.x - 100.75f) < 0.01f && (q.flags & PF_JUMPING));
         CHECK(std::fabs(q.agl - 0.75f) < 0.01f);
         CHECK(c.sample(5.0 + 0.45, q) && std::fabs(q.agl - 1.5f) < 0.01f); // both states up: as sent
+        // the hop's first state already up but not marked airborne (no agl): its height over the next state's ground
+        SnapshotBuffer e;
+        e.delay = 0.1;
+        for (int i = 0; i <= 10; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 50;
+            s.pos = {100.f + (i < 4 ? 0.f : 1.5f), 0, 0};
+            if (i >= 5) {
+                s.flags = PF_JUMPING;
+                s.agl = 1.5f;
+            }
+            e.push(s, 5.0 + i * 0.05);
+        }
+        CHECK(e.sample(5.0 + 0.325, q) && std::fabs(q.pos.x - 101.5f) < 0.01f && std::fabs(q.agl - 1.5f) < 0.01f);
         g_agl_lerp_fix = true;
     }
     CHECK(b.sample(5.0 + 0.6, o)); // extrapolate 0 s past newest: x=10

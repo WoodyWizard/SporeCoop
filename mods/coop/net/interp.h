@@ -221,7 +221,8 @@ constexpr double kPuppetFallMargin = 0.02, kPuppetFallTau = 0.05; // s
 // terrain (agl) with a position blended between them: at a hop's start (the partner put 1.5 m up between two states)
 // the target rose over 2-3 frames but drive::at_sender_agl put the partner's puppet at the newer state's full 1.5 m in
 // the first of them (the puppet's step 1.5 m in one 15 ms frame, puppet_air "no jump of the puppet while it walks", lab
-// 20261113-185217). The agl is blended with the position (a state on the ground, no agl: 0 m). Off: 0.7.13.
+// 20261113-185217). The agl is blended with the position (a state without agl: its height over the newer state's
+// ground, 0 m on the ground; a state already up but not yet marked airborne at its height). Off: 0.7.13.
 inline bool g_agl_lerp_fix = true;
 // the median of the last N horizons (how far past the newest state a body was moved on when the next state came)
 template <size_t N> struct HorizonMedian {
@@ -536,7 +537,9 @@ private:
                 out.pos = lerp(ap, b.s.pos, f);
                 out.rot = nlerp(a.s.rot, b.s.rot, f);
                 if (g_agl_lerp_fix && agl_known(b.s.agl)) {
-                    const float aa = agl_known(a.s.agl) ? a.s.agl : 0.f;
+                    // a state without agl (not marked airborne yet: the hop's first frame can already be up) is at its
+                    // own height over b's ground (b's radius less b's agl), not at 0 m
+                    const float aa = agl_known(a.s.agl) ? a.s.agl : dist(Vec3{}, ap) - (dist(Vec3{}, b.s.pos) - b.s.agl);
                     out.agl = aa + (b.s.agl - aa) * f;
                 }
                 return true;
