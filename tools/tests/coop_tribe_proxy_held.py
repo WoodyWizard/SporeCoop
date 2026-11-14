@@ -16,7 +16,7 @@ moves the body back by 6.9 m/s x the frame, while the placing closes at most the
    before it runs (`coop.npc pushback`: the measured 6.9 m/s), for the walk.
 3. The guest's proxy against its own target (`coop.npc list` err) every 0.2 s.
 
-PASS: the proxy is never more than 3 m off its target for 2 s in a row (the monitor's rule) and its p90 is under 1.5 m.
+PASS: the proxy is never more than 3 m off its target for 2 s in a row (the monitor's rule) and its p90 is under 2 m.
 Switch: SPORE_FIX_OFF=npc.proxy_hold must FAIL (the case: held at 3-8 m).
 NEST_PUSH=0: no planted hold (the walk alone, the control).
 
@@ -39,7 +39,7 @@ ANIM_EVERY = 1.5  # s: the host's NPC starts it again (its BT's idle node repeat
 SECONDS = 30    # of walking back and forth through the nest
 OFF = 3.0       # m: the monitor's proxies rule
 OFF_FOR = 2.0   # s
-P90 = 1.5       # m
+P90 = 2.0       # m (the fix keeps a hold only after 0.3 s over 1.5 m: the brief holds of a turn stay the game's)
 
 
 def dist(a, b):

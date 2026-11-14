@@ -127,9 +127,10 @@ void set_grounded(void* c, bool on);
 // and marked not grounded right after an animation start or an update of the game that grounded it
 void air_hold(void* c, bool on, const net::Vec3& pos = {}, const net::Quat& rot = {}, const net::Vec3& vel = {});
 // BUG-0440 (npc.proxy_hold): a body placed with the teleport mark this frame (drive::walk_place held) is put back where
-// it was placed when the game's next creature update or physics update moves it farther from `aim` (its target). An
-// entry lives for one frame (place_hold again every frame it is held)
-void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim);
+// it was placed when the game's next creature update or physics update moves it farther from `aim` (its target) by
+// more than back_m (its own walk in one frame: a turn or a reversal stays). An entry lives for one frame (place_hold
+// again every frame it is held)
+void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim, float back_m);
 uint32_t place_holds_kept(); // how often an update's move back was undone
 // tests (BUG-0440, `coop.npc pushback`): in the game's next creature update (before it) c is moved m/s x the update's
 // time along dir (the class of the reports: the game moves a held proxy back while it is placed every frame)

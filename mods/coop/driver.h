@@ -42,6 +42,8 @@ struct State {
     uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
     double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
     bool held = false;       // BUG-0361: teleported (with the mark) onto the path until it is on it again
+    double held_since = 0;   // BUG-0440: since when it is held
+    bool hold_on = false;    // BUG-0440: held placings kept through the game's update (WalkPlace::hold_after)
     // BUG-0440 (diagnostics): per frame of walk_place, smoothed over ~0.25 s: how fast the game moved the body back
     // from last frame's place, against the direction to the target (m/s, negative: on towards it), and how far the
     // body is from the place right after the placing call (m: the call itself not taken)
@@ -330,6 +332,12 @@ struct WalkPlace {
 constexpr float kCatchTime = 0.25f;     // s
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
+constexpr float kHoldErr = 1.5f;        // m (BUG-0440)
+constexpr double kHoldAfter = 0.3;      // s (BUG-0440)
+// BUG-0440: a move back by the game's update up to (walk speed x kHoldWalkK + kHoldWalkAdd) x the frame is its own walk
+// (a turn, a reversal of the host's path: kept through the update the copy ran a frame ahead, tribe_npc_dash); the
+// reported hold moved it back at 6.9 m/s with the host animal walking at 2.5 m/s
+constexpr float kHoldWalkK = 1.2f, kHoldWalkAdd = 0.5f; // -, m/s
 
 inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
                        const WalkPlace& o = {})
@@ -382,9 +390,11 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
             lost = lost || now - ds.stuck_since > kWalkLostAfter;
         } else if (err <= kWalkLostErr)
             ds.stuck_since = 0;
-        if (lost)
+        if (lost) {
+            if (!ds.held)
+                ds.held_since = now;
             ds.held = true;
-        else if (err < 0.2f)
+        } else if (err < 0.2f)
             ds.held = false;
         ds.place_lost += ds.held;
     }
@@ -411,10 +421,17 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
     }
+    if (!ds.held)
+        ds.hold_on = false;
     if (o.variant == 2 || ds.held) { // held: closed at the same speed, but with the mark (the game keeps it)
         game::teleport(p, to, rot);
-        if (o.hold_after && ds.held)
-            game::place_hold(p, to, rot, pos);
+        // (only a hold that lasts: held over kHoldErr for kHoldAfter s, then until it is on the path again, and only a
+        // move back faster than its walk: the brief holds of a turning or reversing walk are the game's; kept through
+        // the update the copy turned early, tribe_npc_dash's lag along the path -0.05 .. -0.16 s)
+        if (o.hold_after && ds.held && (ds.hold_on || (err > kHoldErr && now - ds.held_since > kHoldAfter)))
+            ds.hold_on = true;
+        if (ds.hold_on)
+            game::place_hold(p, to, rot, pos, (walk_sp * kHoldWalkK + kHoldWalkAdd) * (float)dt);
     } else
         game::place(p, to, rot);
     ds.readback_ema += (net::dist(game::position(p), to) - ds.readback_ema) * 0.15f; // BUG-0440 diagnostics
