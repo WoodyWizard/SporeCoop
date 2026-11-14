@@ -1816,3 +1816,23 @@ BUG-1089. GOG 2024, lab lanes 4 and 5, civ_npc.
   17:01:03 in the same campaign) are not despawned in Civ by distance (every guest gets every wild creature); not
   compared by the sync-check (dead), not looked at here.
 
+
+## A pooled wild creature given out again during the host's stand (2026-11-14, fix/w49-fcgates)
+<a id="civ-wild-reused-frozen"></a>
+
+BUG-1100. GOG 2024, lab lane 7, civ_npc. Follows #civ-wild-parked.
+* ✔ (logs, civ_wild_pooled of the 0.7.14 final check, lab 20261114-005006) While the host stood in its pause menu
+  (`busy=paused` at s 40 and 50), its object 10E5C360 of NPC #129 read species 065CBF12 at 517 m from the centre with
+  `moved64=507.1` (it went through the planet's centre within its last 64 updates); the guest's proxy #129 was species
+  06538C80, last news 15.4 s old, at (-387 -328 0): 690.9 m apart (sync-check MISMATCH n129). So the game's pool took
+  a creature back and gave the same object out again as another species within one stand of the host's game, between
+  two 0.5 s frozen passes (npc.frozen_pooled_rts saw neither "gone" nor "at the centre").
+* Inferred: the Civ relevance pass during the pause (the camera moved) both parks and brings out herds; it reuses the
+  pooled objects for the new ones. A natural reuse could not be forced in the lab (as for BUG-0044): the test makes the
+  same state with `coop.npc kill <id>` (the death flag) and `coop.npc reuse <id>` (alive again) during the pause.
+* Fix `npc.frozen_reused`: the frozen pass retires a tracked object that npc_object_reused calls another creature
+  (another species, or alive after dead), as host_tick does while the game runs.
+* ✔ (runtime, civ_wild_pooled 20261114-033051 with the BUG-1100 log line) In the host's stand right after the civ_npc
+  fixture's start the game rebuilt 14 tracked objects of species 06689607 as 065276AC / 066742CD within 2 s, several
+  at unplaced points with z = 0 ((0 524.8 0), (-368.7 -347.0 0)), the rest at their new herds: the reuse in a stand is
+  common, and the guest's #129 at (-387.0 -327.7 0.0) of the final check was such an unplaced object.

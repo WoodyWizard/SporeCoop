@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Civ: while the host's game is paused, a wild creature its game turns into another creature no longer stays on the
+  guests' screens where the old one stood (690 m from the host's) until the host goes on (BUG-1100).
+- Tests: tribe_away_bundle no longer fails the lab's sync-check gate in its own forced host-away rounds (BUG-1102);
+  puppet_walk no longer dies on a partner line without a state (BUG-1103).
 - Creature, Tribe: an animal the host's creature throws into the air with a hit now flies up and comes down on the
   guest's screen with it, instead of hanging still and jumping about a metre every tenth of a second (BUG-1094).
 - Tests: the campaign bot no longer stays in an empty City Hall, vehicle or spaceship editor for 30 minutes when its
