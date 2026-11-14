@@ -3894,3 +3894,24 @@ BUG-0440. Log statistics, no runtime reproduction in this branch.
 * ? Which game behaviour moves the walking animals at 2.5 m/s (a herd's wander or regroup walk?) and what undoes
   the placing. The audit line now prints `pushed back` (m/s against the target, smoothed) and `off its placing
   after the call` (m) to tell an undo in the game's update from a refused call.
+
+## The Tribe minimap: which planet point a click centres the view on (2026-11-13, fix/w49-camp2)
+<a id="tribe-minimap-map"></a>
+
+BUG-1091 (the campaign's raid clicks on a village the view did not reach). Probe on the tribe fixture (lane 5, host,
+1440x1080, `click x y` on the minimap, then the planet point under the screen's centre from `coop.avatar`; the players'
+village at (327 -5 303)):
+* ✔ (runtime) The minimap is a fixed map of the planet, not one that moves with the view: the same pixel gives the same
+  point whatever the view was before, and neighbouring pixels give neighbouring points.
+* ✔ Its axes are the planet's own, not the screen's: a row of the minimap is a constant planet z (y 1023: z -30..-65,
+  y 935: z ~410), a column a constant angle around z (x 115: atan2(y, x) ~0 deg). So the vertical is a latitude from the
+  z axis and the horizontal a longitude around it, ~1.6 px per degree both ways (y 935..1023: latitude 53 -> -4 deg; x
+  40..205: longitude -46 -> 54 deg on row 1015).
+* ✔ The part the bots click (play_tribe.Player.solve clamps x 15..205, y 940..1025) is a window of ~100 x 55 degrees,
+  not the whole planet; outside the drawn map (x 10, y 935 / 1015 / 1023 at the edges) a click does not move the view
+  (the probe read the previous point again). The village sat 7-10 degrees under the window's top edge: a target more
+  than ~60-90 m "north" of it (planet z) is out of the bots' reach by one minimap click.
+* ~ (inferred, not reproduced) campaign_tribe_end 20261113-181333: the host's look at village 2's hut failed twice ("the
+  view did not reach the hut") and every later box found no own member (they were sent to that village); the guests'
+  bots gave no order in the whole Tribe. A target outside the minimap window would do all of that; three runs with the
+  diagnostics (20261113-190337, -193334, -200131 with the failing seed) did not hit it.
