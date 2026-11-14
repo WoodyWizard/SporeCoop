@@ -372,10 +372,14 @@ def steps(rows, kinds='t', over=5.0, frame=0.1):
     return sorted(out, reverse=True)
 
 
-def stop_slides(ref_rows, copy_rows, kinds='p', win=1.5):
+def stop_slides(ref_rows, copy_rows, kinds='p', win=1.5, cut=True):
     """BUG-0408: per stop of a reference body (moving > 1.5 m/s over 0.3 s, then within 0.15 m for the next second): how
     far its copy went past where it stopped, on both games' own rows at the same moment: [(slide m, key, t, off at
-    the stop m)]; slide = the copy's largest distance from the stopped body in `win` s less the distance at the stop"""
+    the stop m)]; slide = the copy's largest distance from the stopped body in `win` s less the distance at the stop.
+    BUG-1093 (`cut`): only while the reference body still stands there (within 0.15 m of the stop): the stop walk's next
+    walk starts 1.0-1.2 s after a stop and its "to the partner" teleports the walker 10-15 m, inside the 1.5 s, and the
+    copy that followed that new walk counted as gone past the stop (0.35 m at +1.50 s with the walker off at +1.03 s,
+    lab 20261113-202523 #2; 10.9 / 12.7 m after a teleport, 20261113-195009, -200403)"""
     out = []
     rb, cb = _by_key(ref_rows), _by_key(copy_rows)
     for key, rv in rb.items():
@@ -390,7 +394,10 @@ def stop_slides(ref_rows, copy_rows, kinds='p', win=1.5):
             post = [x for x in rv[k:k + 400] if x[0] < t + 1.0]
             if (len(prev) >= 3 and math.dist(prev[0][1], p) / (t - prev[0][0]) > 1.5 and len(post) > 5 and
                     post[-1][0] - t > 0.8 and math.dist(post[0][1], post[-1][1]) < 0.15):
-                i0, i1 = bisect.bisect_left(ct, t), bisect.bisect_right(ct, t + win)
+                end = t + win
+                if cut:  # (BUG-1093) until the reference body leaves the stop
+                    end = next((x[0] for x in rv[k:] if x[0] < end and math.dist(x[1], p) > 0.15), end)
+                i0, i1 = bisect.bisect_left(ct, t), bisect.bisect_right(ct, end)
                 seg = cv[i0:i1]
                 if len(seg) > 5:
                     rg = _norm(p)

@@ -7708,3 +7708,13 @@ full campaign 20261113-160426); BUG-0440 seen again (campaign_tribe_end 20261113
   0-8 m from them), `coop.npc objnear <x> <y> <z> <r>` (the nouns within r m).
 * Natural cases are rare: 1 in 5 chaos_tribe runs (lab 20261113-191751), ~10-19 % of play_tribe / chaos_tribe runs in
   the lab history, almost all near a herd's nest.
+* puppet_stops (BUG-1093, fix/w49-stops): the bodyrec stop slide (`body_trail.stop_slides`) is judged only while the
+  walker's own creature still stands within 0.15 m of its stop: the stop walk's next walk starts 1.0-1.2 s after a stop,
+  inside the 1.5 s window, and its gopos teleports the walker 10-15 m (false FAILs of 0.35, 10.9, 12.7 m). The uncut
+  measure is printed (`uncut (BUG-1093, not judged)`). `SPORE_FPS=21` makes the walker's game send every other frame
+  without `net.send_phase` (states ~95 ms apart): the twin for that fix (FAIL 20261113-204729 #2, about 1 run in 6;
+  `build/host/net_tests` with `SPORE_FIX_OFF=net.send_phase` fails deterministically).
+* coop.track dump has new columns at the end: ex age knee hz ow (the puppet's extrapolation past its newest state, that
+  state's age, drive.puppet_fall's knee, the median arrival horizon less the one-way latency, the one-way latency; the
+  own avatar's row: age = time since its state was due). coop_puppet_walk's track json also holds both games' bodyrec
+  rows (`body_walker`, `body_observer`), so a stop can be analysed after the run.

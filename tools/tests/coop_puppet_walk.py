@@ -81,7 +81,12 @@ def dump(con):
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
                          'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22]),
                          'ppm': float(f[28]) if len(f) > 28 else None,
-                         'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None})
+                         'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None,
+                         # BUG-1093: the target's extrapolation past its newest state and that state's age (s); the
+                         # own avatar: the time since its last state was sent
+                         'ex': float(f[31]) if len(f) > 32 else None, 'age': float(f[32]) if len(f) > 32 else None,
+                         'knee': float(f[33]) if len(f) > 35 else None, 'hz': float(f[34]) if len(f) > 35 else None,
+                         'ow': float(f[35]) if len(f) > 35 else None})
     return rows
 
 
@@ -554,6 +559,10 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'p90 {body_trail.pct([x[0] for x in sl], .9):.2f} max {max([x[0] for x in sl], default=0):.2f} m; '
           + ', '.join(f'{d:.2f} m at {t - min(x[0] for x in bw):.1f} s' for d, _, t, _ in sl[:4]), flush=True)
     BODY_STOPS.extend(sl)
+    # BUG-1093: the measure before the cut (the copy's way in the whole 1.5 s, the walker's next walk in it): printed only
+    sl_all = body_trail.stop_slides(bw, bo, cut=False)
+    print(f'  {oname} sees {wname} (bodyrec): uncut (BUG-1093, not judged): {sum(1 for x in sl_all if x[0] > BODY_PAST)} '
+          f'of {len(sl_all)} stops over {BODY_PAST} m, max {max([x[0] for x in sl_all], default=0):.2f} m', flush=True)
     if STOP_WALK and sl:
         # BUG-0408 on both games' own positions: the puppet never goes past where the walker's own creature stopped
         past = [x for x in sl if x[0] > BODY_PAST]
@@ -561,7 +570,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
            f'{BODY_PAST} m after {len(past)} of {len(sl)} stops, coop.bodyrec)')
     path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
-        json.dump({'observer': obs, 'walker': wal}, f)
+        json.dump({'observer': obs, 'walker': wal, 'body_walker': bw, 'body_observer': bo}, f)
     print(f'  per-frame samples: {path}', flush=True)
     r = analyse(obs, wal, f'{oname} watches {wname}', air_exempt=air)
     print(f'  {wname} walked: {"; ".join(log)}', flush=True)
