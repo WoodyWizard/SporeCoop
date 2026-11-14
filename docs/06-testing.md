@@ -7846,3 +7846,15 @@ Lab 20261114-005006 (rel/0.7.14 4dd8d2be, 6 lanes) and its rerun 20261114-022615
 * npc_walk_tribe (drawn error p50 0.11 > 0.1): load. Over the 13 recorded runs of Nov 10-14 the p50 follows the
   guest's frame rate: 0.02-0.03 m at 46-66 fps, 0.05-0.08 at 28-32, 0.11 at 22 (this run), 0.14 at 14.
 * puppet_walk (traceback): BUG-1103, a test bug (a remote line without a state reads pos (0 0 0)).
+
+## Probing a tribe member under the host's ground (2026-11-14, fix/w49-under)
+<a id="testing-tribe-under"></a>
+
+BUG-1104 (not reproduced; docs/re/tribe.md#tribe-member-under). `tribe_under_probe` (extended, tribe fixture, the host
+at 10 fps, about 4 min): coop_tribe_under.py with modes for each suspect (throws with `kit.test.hang` long frames,
+`--sinks` members put under the ground with `coop.tribe sink`, `--raid` the fixture's NPC hut, `--stomp` the co-op
+epic put on a member with `coop.tribe epic on`, `--bodies`, `--racks`, `--secs` an epic fight). Its one check: a member
+put 0.8-2 m under the ground is on it again within 1 s (the game's physics does it in 0.1-0.3 s), the reason no single
+placing can be what the campaigns' monitor saw. `coop.tribe airprobe -1000` lists every member (`surf=` over the
+game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-player campaigns hit the real case
+(8 trace lines in November, in raids and epic fights): look for the tribe watch's `is .. m under the ground` line.

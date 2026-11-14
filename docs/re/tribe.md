@@ -4021,3 +4021,45 @@ village at (327 -5 303)):
   view did not reach the hut") and every later box found no own member (they were sent to that village); the guests'
   bots gave no order in the whole Tribe. A target outside the minimap window would do all of that; three runs with the
   diagnostics (20261113-190337, -193334, -200131 with the failing seed) did not hit it.
+
+## Members under the host's ground in raids and epic fights (2026-11-14, fix/w49-under)
+<a id="tribe-member-under"></a>
+
+BUG-1104. GOG 2024. Logs of every lab run of November (main checkout and all worktrees), probes on the tribe fixture
+with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not reproduced.
+* ✔ (logs) Eight host trace lines in all of November read a player tribe's lowest member under -0.5 m (six runs:
+  campaign 20261114-005006 -1.26 x2, 0.7.10 campaign 20261107-141346 -1.16, campaign_tribe_end 20261113-092426 -1.05,
+  -120528 -1.95 x2 (the host's own members), -190337 -1.50, -200131 -1.15); none in any other test. Two lines in a row
+  read the same depth to the centimetre: a member standing still under the ground for 10-20 s, then on it again.
+* ✔ (logs) Every campaign_tribe_end line falls inside a raid on an NPC hut (between the bot's raid clicks and "the hut
+  of village N fell"); both campaign lines 13-25 s after "an epic creature comes!" (no raid yet). In three of the six,
+  0.3-8 s later a member **of the same player** is logged in the airborne node 0x0485FD10 launched at 22-23 m/s (10-12
+  m/s up, 9.7-10.7 m high, about 2.5 s up): far harder than a blow's throw (5-6 m/s up, about 5 m,
+  #tribe-member-toss), i.e. a body pushed out of the ground. In 200131 a member of the same player stood 3.3 m up at
+  the raided hut in that node at speed 0, 0.3 s after the line, as the BUG-1082 members did (#tribe-member-hang); those
+  stood up there until the hut fell.
+* ✔ (runtime) The game's physics puts a member put under the ground back onto GetHeightAt within 0.1-0.3 s at 10 fps:
+  1.3 / 2.0 / 0.8 / 1.3 m deep (`coop.tribe sink <id> <m>`), idle (0x04601D70) or walking home (0x05524115), and
+  the same with the grounded byte cleared and no velocity (`sink ... air`, the airborne node's state): 8 of 8 (labs
+  20261114-041623, -041959). So no single placing (the mod's or the game's) leaves a member 1-2 m under the ground for
+  10-20 s: something keeps pushing it there or holds it.
+* ✔ (runtime) Not seen on the fixture: members thrown by 100 hp blows land on the ground with the host's main thread
+  held 300 / 600 / 1000 ms during the throw (`kit.test.hang`, the campaign's long frames; 7 throws, -035913); bodies lie
+  at 0.00 m until the game removes them about 32 s after the death (no sinking, read every 0.1 s, 4 bodies, -040900);
+  the co-op epic put onto a member pushes it aside on the ground (-042301); 150 s and 60 s of a fight with the co-op
+  epic (-034621, -034957) and 240 s of a 5-member raid on the fixture's NPC hut (-042624): no member under 0.5 m, none
+  over 3 m. The grab spots of a weapon rack lie on the ground (`coop.tribe layout`: agl 0.00, -041432).
+* Not the mod (inferred): on the host the mod moves a real member only in put_chief (onto GetHeightAt) and grab_spot
+  (BUG-0505, onto the game's walk goal next to a grab spot on the ground; now logged); either would be undone by the
+  physics within 0.3 s (above). The guests' mirrors are put onto their own ground (BUG-0444), so only the host's
+  screen has it.
+* ? What pushes or holds the member: inferred, a crowd of members against a large collider in the 4-player raids (the
+  NPC hut, a dozen or more raiders and defenders) or the epic, the same unknown hold as BUG-1082's members up at the
+  hut at speed 0; and the launch at 22 m/s when it lets go. The fixture's raids (5 raiders) and epic fights never
+  showed either.
+* Diagnostics: the tribe watch logs the member at once (`tribe: member #N of player P is X m under the ground at
+  (...): <node> speed=.. over the game's surface .., over the water ..`, BUG-1104 on fix/w49-fcgates);
+  `coop.tribe airprobe` rows have `surf=` (height over cPlanetModel_SurfacePoint) and `B` rows for the bodies the host
+  still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
+  member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
+  `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.

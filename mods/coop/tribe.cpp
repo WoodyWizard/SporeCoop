@@ -5537,6 +5537,9 @@ static void grab_spot_tick(double now)
             continue;
         net::Vec3 tp = goal;
         game::object_position((void*)(uintptr_t)m[1], tp);
+        H->log(M, SK_INFO, "tribe: member #%u stood %.1f s %.2f m short of its grab spot: set onto it at (%.1f %.1f %.1f), %.2f m over "
+               "the ground (BUG-0505, BUG-1104)", (unsigned)member_id(c), now - it->second.since, d, goal.x, goal.y, goal.z,
+               drive::over_ground(goal));
         game::teleport(c, goal, facing(goal, tp));
         g_grab_spot_moves++;
         g_grab_watch.erase(c);
@@ -6391,7 +6394,7 @@ std::string debug(const std::vector<std::string>& a)
             },
             &eu);
         std::string out;
-        char b[400];
+        char b[480];
         snprintf(b, sizeof b, "t=%.3f water=%.2f\n", H->time_seconds(), game::water_radius());
         out += b;
         for (void* e : eps) {
@@ -6417,12 +6420,26 @@ std::string debug(const std::vector<std::string>& a)
                     if (d < de)
                         de = d, ne = e;
                 }
-                snprintf(b, sizeof b, "M #%u %p owner=%d agl=%.2f pos=(%.2f %.2f %.2f) %s lm=%d gr=%d v=(%.2f %.2f %.2f) cont=%p "
-                         "epic=%p d_epic=%.2f anim=%08X\n", id, c, owner_of(c) == 0xFF ? -1 : (int)owner_of(c), h, p.x, p.y, p.z,
+                float sr = game::surface_radius(p); // BUG-1104: the height over the game's own surface point too
+                snprintf(b, sizeof b, "M #%u %p owner=%d agl=%.2f surf=%.2f pos=(%.2f %.2f %.2f) %s lm=%d gr=%d v=(%.2f %.2f %.2f) cont=%p "
+                         "epic=%p d_epic=%.2f anim=%08X\n", id, c, owner_of(c) == 0xFF ? -1 : (int)owner_of(c), h,
+                         sr > 1.f ? drive::speed(p) - sr : -999.f, p.x, p.y, p.z,
                          member_brief(c).c_str(), F<int>(c, 0x2B0), (int)F<uint8_t>(c, 0x137), v.x, v.y, v.z, F<void*>(c, 0x34), ne,
                          ne ? de : -1.f, cur_anim(c));
                 out += b;
             }
+        // BUG-1104: the bodies the host still tracks (out of their tribe's list, dead, BUG-0620): every one, any height
+        for (auto& [c, hm] : g_hm) {
+            if (!hm.body_since || !kept_alive(c, hm.serial, 0x18EB4B7u))
+                continue;
+            net::Vec3 p = game::position(c);
+            float sr = game::surface_radius(p);
+            snprintf(b, sizeof b, "B #%u %p owner=%d agl=%.2f surf=%.2f pos=(%.2f %.2f %.2f) %s lm=%d gr=%d body_age=%.1f anim=%08X\n",
+                     hm.id, c, (int)hm.owner, drive::over_ground(p), sr > 1.f ? drive::speed(p) - sr : -999.f, p.x, p.y, p.z,
+                     member_brief(c).c_str(), F<int>(c, 0x2B0), (int)F<uint8_t>(c, 0x137), H->time_seconds() - hm.body_since,
+                     cur_anim(c));
+            out += b;
+        }
         return out + "end";
     }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "stats") { // BUG-0515: every live epic, its herd's tuning, its blows
@@ -6459,6 +6476,16 @@ std::string debug(const std::vector<std::string>& a)
         p.x += 6.f;
         game::teleport(g_epic, p, game::orientation(g_epic));
         return "epic moved next to #" + a[2];
+    }
+    if (a.size() >= 3 && a[0] == "epic" && a[1] == "on" && is_host()) { // epic on <member id> [dx]: tests (BUG-1104), the co-op
+        // epic put onto the member (dx m off along x), quieted (its herd's idle: it stands there)
+        void* c = local_of((uint16_t)atoi(a[2].c_str()));
+        if (!g_epic || !c || !epic_listed())
+            return "no epic / member";
+        net::Vec3 p = game::position(c);
+        p.x += a.size() > 3 ? (float)atof(a[3].c_str()) : 0.f;
+        game::teleport(g_epic, p, game::orientation(g_epic));
+        return "epic put on #" + a[2];
     }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "quiet") { // RE: quiet every epic herd of ours now
         std::string out;
@@ -6681,8 +6708,9 @@ std::string debug(const std::vector<std::string>& a)
         std::string s = b;
         for (uint8_t* q = sb; q && q < se && skg::readable(q, 0x18); q += 0x18) {
             void* o = *(void**)(q + 4);
-            snprintf(b, sizeof b, "  slot used=%u obj=%p member=%d pos=(%.1f %.1f %.1f)\n", q[0], o,
-                     is_citizen(o) ? (int)member_id(o) : -1, *(float*)(q + 0xC), *(float*)(q + 0x10), *(float*)(q + 0x14));
+            net::Vec3 sp{*(float*)(q + 0xC), *(float*)(q + 0x10), *(float*)(q + 0x14)};
+            snprintf(b, sizeof b, "  slot used=%u obj=%p member=%d pos=(%.1f %.1f %.1f) agl=%.2f\n", q[0], o,
+                     is_citizen(o) ? (int)member_id(o) : -1, sp.x, sp.y, sp.z, drive::over_ground(sp)); // (BUG-1104: agl)
             s += b;
         }
         return s;
@@ -6698,6 +6726,24 @@ std::string debug(const std::vector<std::string>& a)
         game::teleport(c, p, game::orientation(c));
         char b[96];
         snprintf(b, sizeof b, "put #%s at (%.1f %.1f %.1f)", a[1].c_str(), p.x, p.y, p.z);
+        return b;
+    }
+    if (a.size() >= 3 && a[0] == "sink" && is_host()) { // sink <member id> <m>: test setup (BUG-1104), <m> under the ground once
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        net::Vec3 p = game::position(c);
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), m = (float)atof(a[2].c_str());
+        if (g < 1.f || pl < 1.f)
+            return "no ground";
+        p = {p.x / pl * (g - m), p.y / pl * (g - m), p.z / pl * (g - m)};
+        game::teleport(c, p, game::orientation(c));
+        if (a.size() > 3 && a[3] == "air") { // not grounded, standing still (the airborne node's state, BUG-1082)
+            game::set_grounded(c, false);
+            F<net::Vec3>(c, game::kVelOff) = {0, 0, 0};
+        }
+        char b[128];
+        snprintf(b, sizeof b, "sunk #%s to (%.2f %.2f %.2f), %.2f m over the ground", a[1].c_str(), p.x, p.y, p.z, drive::over_ground(p));
         return b;
     }
     // order <member id> <action> <x> <y> <z>: test setup (BUG-0531, host), the member's DoAction as an order gives it:

@@ -3579,4 +3579,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   on 2 lines" (campaign, lab 20261114-005006); single lines in campaign_tribe_end (Nov 13) and the 0.7.10 campaign.
 * Known: not the water rule (BUG-1088); only in the 4-player campaigns under load; the member was never named.
 * Next steps: the tribe watch logs the member now (BUG-1104): read its node and height over the water in the next hit.
+* Known (2026-11-14, fix/w49-under, not reproduced): every hit falls in a raid on an NPC hut (campaign_tribe_end) or
+  an epic fight (campaign); in three a member of the same player was launched 10 m up at 22 m/s seconds later (pushed
+  out of the ground), in one a member of the same player stood 3.3 m up at the raided hut at speed 0 (the BUG-1082
+  hold). The game's physics puts a member placed under the ground back within 0.3 s, so no placing (the mod's
+  either) explains 10-20 s there: inferred the game's own crowd/collider state, on the host's screen only.
+  The fixture's raids and epic fights do not show it (labs 20261114-034621 .. -042624, `tribe_under_probe`);
+  docs/re/tribe.md#tribe-member-under.
 * Ticket: [BUG-1104](tickets/BUG-1104-tests-the-monitor-s-ground-rule-names-no-tribe-m.md)
