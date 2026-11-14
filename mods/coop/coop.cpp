@@ -6271,6 +6271,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("kill list cleared every frame: %s", strcmp(argv[2], "off") ? "on" : "off");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "kill")) { // host (tests, BUG-1100): kill <id>: the NPC's object marked dead
+        SAY("%s", npc::debug_kill((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "reuse")) { // host (tests): reuse <id>: a dead NPC's object alive again (BUG-0044)
         SAY("%s", npc::debug_reuse((uint16_t)atoi(argv[2])).c_str());
         return 0;
