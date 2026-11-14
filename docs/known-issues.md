@@ -3599,3 +3599,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   The fixture's raids and epic fights do not show it (labs 20261114-034621 .. -042624, `tribe_under_probe`);
   docs/re/tribe.md#tribe-member-under.
 * Ticket: [BUG-1104](tickets/BUG-1104-tests-the-monitor-s-ground-rule-names-no-tribe-m.md)
+
+## Tribe: a standing herd's animals stay 6-9 m off on one guest at one spot of the campaign planet (2026-11-14, rel/0.7.14 final check)
+<a id="issue-tribe-proxy-spot-cadian"></a>
+
+* What happens: in the full campaign's Tribe world (Cadian) one guest's proxies of a standing herd (6 animals) stay
+  5.7-9.8 m from the host's NPCs for 70 s, at the same two points, although the driver teleports them about 5 times a
+  second; the other guests are fine. The lab's monitor gate `proxies` failed `campaign` once (out/lab/20261114-050940,
+  extra2, s 3340-3400, after the host came back from its Tribe editor).
+* Reproduce: only in the full `campaign` (lane 2, about 55 min in). Seen at the same spot in rel/0.7.11
+  (20261108-114435 campaign extra2 s 1584, one trace line).
+* Known: not a 0.7.14 regression and not one of 0.7.14's Tribe proxy switches (BUG-1106 Root cause). Inferred: the
+  host's NPCs stand where this guest's game does not let a creature stand (an object of this game only, near the
+  host's village), and every teleport is pushed out again.
+* Not checked: what stands at the host NPC's spot on that guest. The audit line prints it now (`objects within 3 m of
+  its target`, `air hold`).
+* Next steps: at the next occurrence read the audit line's new fields; a Tribe fixture of the campaign world near
+  the host's village would make a focused test possible.
+* Ticket: BUG-1106
