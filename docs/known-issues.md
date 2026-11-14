@@ -3536,3 +3536,22 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: a heap census of the guest in the failing run.
 * Next steps: `warm=False` for npc_ai_lookup and proxy_identity(_tribe), or a hunt that tries harder.
 * Ticket: BUG-1099
+## Lab: broken textures, a white wedge, garbage geometry and a smeared HUD on key frames when the GPU memory is overcommitted (2026-11-14, fix/w49-spacegfx)
+<a id="issue-gpu-overcommit-garbage"></a>
+
+* What happens: on a loaded final check a game draws its scene with wrong buffer contents: flat coloured rectangles
+  and a mosaic of small squares instead of textures, big translucent white wedges, stripes of garbage geometry, and
+  the HUD smeared into streaks at its place (it looks gone). The game goes on, its logs are clean, the test passes.
+  Seen: rel/0.7.14 final check 20261114-005006, campaign_space 02/03 (guest-Bob, guest-Carol), with 22 test games
+  running at once.
+* Reproduce: not on a quiet lane (campaign_space on lane 4 alone: 20261114-025653 and 20261114-031143, all frames
+  clean). It needs the whole lab: more games than the 16 GB of VRAM hold (about 0.66 GB a game over a ~3.9 GB base;
+  docs/06-testing.md#testing-gpu-overcommit) and little free RAM.
+* Known: not a mod bug (no mod or SporeKit line, no fault, no hidden UI: the HUD is drawn, from a bad buffer); the same
+  Space entry of the same build was clean on campaign_civ_jump 5 min later in the same run. How to tell it on a key
+  frame: the garbage is in the 3D scene, the textures and the HUD at once, and the HUD's own colours are in the streaks.
+  A mod bug that hides a UI layer leaves a clean scene without the panel.
+* Not checked: the driver level (no amdgpu error in the kernel log); whether fewer games at once removes it for good.
+* Next steps: keep the final check's games at once under ~18 (VRAM under the card), or repeat a test whose key frames
+  show this alone on a quiet lane before judging it.
+* Ticket: [BUG-1098](tickets/BUG-1098-space-guests-screens-show-broken-textures-a-whit.md)
