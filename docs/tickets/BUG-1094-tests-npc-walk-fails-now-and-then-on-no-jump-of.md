@@ -1,16 +1,16 @@
 ---
 id: BUG-1094
 title: Tests: npc_walk fails now and then on 'no jump of a moving proxy' (a hit NPC's fleeing proxy steps 0.75-1.13 m in single frames at t 45-47 s)
-status: fixed
+status: open
 kind: bug
 stage: Creature
 reported: 2026-11-13
 source: fix/w49-proxy2 regression (lane 4)
 role: guest
 versions: 0.7.14 (rel/0.7.14 + fix/w49-proxy2)
-fixed_in: unreleased
+fixed_in:
 branch: fix/w49-npcwalk
-commits: 1471d307
+commits:
 tests: npc_walk
 signature: npc_walk `FAIL no jump of a moving proxy (4-6)`, all of one hit walker, 0.75-1.13 m steps of 12-16 ms frames at t 45.3-45.6 and 47.0-47.3 s
 docs: docs/known-issues.md#issue-npc-walk-hit-jumps, docs/re/creature.md#creature-air-place-lost, docs/06-testing.md#testing-npc-track
@@ -24,51 +24,46 @@ always in two bursts of 3 about 0.11 s apart at t 45.3-45.6 s and 47.0-47.3 s (t
 out/lab/20261113-202612 (4 jumps, #18), -204146 #2 (6, #35), -204750 (5, #20). Passed: -194347, -204146 #1, -204521.
 
 ## Root cause
-Not a test tolerance: the guest's game really drew the copy standing and jumping (docs/re/creature.md#creature-air-place-lost).
+Not a test tolerance and not the test's frame rate: the guest's game really draws the copy standing and jumping
+(docs/re/creature.md#creature-air-place-lost).
 
 Observed (coop.npctrack rows saved by npc_walk, out/lane4/track/npc_walk_creature_*.json):
-- Every failing run is the one walker the flee hit threw on the host (+0x2B0 = 3, +0x137 = 0 for ~2 s, 9.8 m/s
-  slowing to ~1 m/s, smooth in every host frame). The guest places its proxy in the air (NF_AIR,
-  `drive::air_place`: `game::place` without the teleport mark, not grounded, the host's velocity written; how 5).
-- In 70-77 of the 83-91 air frames whose target moved (66 fps) the drawn proxy is exactly where it was a frame
-  before (step 0.00-0.01 m) while its target moves 0.1-0.2 m per frame; every ~0.1 s one placing is taken and it
-  steps 0.6-1.1 m. Same pattern in 9 older runs back to 20261106 (also on 0.7.13's code: the air placing is
-  BUG-0550's, 0.7.7); in 4 of them the walker was off the screen, so the check did not see it. At 32-33 ms frames
-  it stood in 16-29 of 44-53 frames with steps under the 0.75 m limit: hidden at a low frame rate, the kind of
-  BUG-1092. The passing runs had no throw at all (the hit throws a walker in about half of the runs).
-- Not drive.agl_lerp / SnapshotBuffer::sample: the target (the sampled state) moves smoothly; the game does not keep
-  the place.
-- Not BUG-1093 (puppet_stops: the partner's walk stop, modes.cpp): a different path.
+- Every failing run is a walker the flee hit threw on the host (+0x2B0 = 3, +0x137 = 0 for ~2 s, 9.8 m/s slowing to
+  ~1 m/s, smooth in every host frame). The guest places its proxy in the air every frame (NF_AIR,
+  `drive::air_place`: `game::place`, not grounded, the host's velocity; how 5).
+- In 66-79 of the 77-91 air frames whose target moved (52-67 fps) the drawn proxy is where it was a frame before while
+  its target moves 0.1-0.2 m per frame; every ~0.1 s one placing is taken and it steps 0.6-1.1 m. In the standing
+  frames even the position right after the mod's placing (`p`) equals the drawn one. The same in 9 older runs back
+  to 20261106 (0.7.13's code; the air placing is BUG-0550's, 0.7.7); in 4 of them the walker was off the screen. At
+  32-33 ms frames it stood in 16-29 of 44-53 frames with steps under the 0.75 m limit: hidden at a low frame rate,
+  the kind of BUG-1092. The passing runs had no throw (the hit throws a walker in a third to a half of the runs).
+- Not SnapshotBuffer::sample / drive.agl_lerp: the target moves smoothly. Not the animation relay (npc.anims off:
+  still 69-74 of 81-88 standing). Not BUG-1093 (puppet_stops: the partner's walk stop in modes.cpp).
+- Putting the hold back after the creature update and the physics update does not help: the update moves it back off
+  its hold in every frame by a constant per ~0.1 s window (0.94, 1.89, 2.72 m), the physics update leaves it there,
+  and the next frame is drawn standing again.
 
-Inferred: as BUG-0361's walked proxy thrown back by a hit, the creature's own update restores its position and takes a
-new one only every ~0.1 s; which update, and whether the relayed attack animation (035EE23C / 035EE245, played on both
-games) or the frame rate decides it, is not identified (a state-only throw on the guest did not reproduce it at 19-26
-fps, see the RE section).
+Inferred: a game update after the physics update (or one that keeps its own copy of the position, refreshed every
+~0.1 s) owns a thrown, ungrounded creature's position; not identified.
 
 ## Fix
-`drive::air_place` (driver.h, shared by NPC proxies and Tribe member mirrors) checks whether the game kept last
-frame's place: when the body is more than max(0.1 m, 0.5 x speed x frame) from that place moved on by the velocity
-written with it, the rest of that air phase is placed with the teleport mark (`game::teleport`), which the game keeps,
-as walk_place's keep_lost does on the ground (BUG-0361). A place the game keeps (a lift, a mirror held up, a jump
-that flies) is never switched. `coop.fix drive.air_mark off`: always without the mark (0.7.13).
-npc_walk also judges a thrown proxy now, on the screen or off it: placed in the air while its target moved, it may
-stand in at most 15 % of those frames (judged from 20 such frames on).
+Not fixed on fix/w49-npcwalk. Tried and dropped (each FAILED with the new check, run ids in the RE section): the rest
+of the air phase placed with the teleport mark; also put back after cCreatureAnimal::Update and PhysicsManager_Update
+(`drive.air_keep`); no velocity written while kept. Kept on the branch: npc_walk's air check (it fails in every run
+with a throw, on or off the screen, so the bug is no longer hidden by the camera or the frame rate).
 
 ## Verification
-- FAIL (without the fix; recorded runs of fix/w49-proxy2 = rel/0.7.14 before this branch, judged again by the new
-  check `air_follow` from their saved rows): out/lab/20261113-202612 (stood 73 of 84 air frames), 20261113-204146 #2
-  (77 of 89), 20261113-204750 (72 of 83); also 20261110-180639 (72/85), 20261108-112359 (75/87). Their own run
-  result: FAIL "no jump of a moving proxy (4-6)".
-- PASS (with the fix): out/lab/20261113-213112 npc_walk 3/3 (one throw: 19 air frames, under the 20 the check
-  needs, at 35 fps; the lab at load ~29 on 12 cores all evening).
-- With `SPORE_FIX_OFF=drive.air_mark`: out/lab/20261113-213753 npc_walk 4/4 PASS: the flee hit threw nobody (0-2
-  air frames at 22-28 fps), so no live FAIL run of the switch: the throw comes from the host's game in about half
-  of the runs at 66 fps and was not seen once at the evening's 20-35 fps (7 runs).
-- Not verified live: the fixed proxy in a real 66 fps throw (no throw happened in the runs with the fix).
-- Regression: see History.
+- FAIL (base code, live, the new check): out/lab/20261113-221929 npc_walk #2 (stood 148 of 174), #3 (128 of 166);
+  recorded runs judged again from their rows: 20261113-202612 (73/84), -204146 #2 (77/89), -204750 (72/83).
+- PASS: none (not fixed). Runs with the tried changes: 20261113-222533, -223254, -224612, -225641, -230443 (all FAIL
+  in the runs with a throw).
+- no-fail-run: not applicable (open).
 
 ## History
 - 2026-11-13: opened.
-- 2026-11-13 (fix/w49-npcwalk): cause from the saved rows (air_place not kept by the game), fix drive.air_mark,
-  npc_walk's air check; tries for a deterministic twin (host hits with and without push, a guest-side throw) did not
-  reproduce it at the loaded lab's 19-26 fps.
+- 2026-11-13 (fix/w49-npcwalk): cause narrowed from the saved rows and live runs (the game does not keep an air
+  placing of a thrown proxy); three fixes tried and dropped; npc_walk's air check added; left open for a dedicated
+  RE pass (which update owns the position after the physics update).
+- 2026-11-13 (fix/w49-npcwalk): a deterministic twin tried and dropped: host hits with and without a push and a
+  guest-side state-only throw did not reproduce it (the host's hit then did not throw; the guest-only throw was
+  kept at 19-26 fps).

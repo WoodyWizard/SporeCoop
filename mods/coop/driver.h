@@ -52,10 +52,6 @@ struct State {
     bool jump_have = false;
     uint32_t jumps = 0;     // BUG-0499: puppets put at a target that jumped
     uint32_t airs = 0;      // BUG-0376: frames placed in the air (the partner off the ground)
-    double air_at = 0;       // BUG-1094 (air_place): the time of the last placing in the air
-    net::Vec3 air_vel{};     // BUG-1094: the velocity written with it
-    bool air_mark = false;   // BUG-1094: this air phase is placed with the teleport mark (the game did not keep a place)
-    uint32_t air_lost = 0;   // BUG-1094: air phases switched to the mark so
     double stop_until = 0;  // BUG-0408: held where the partner stopped until then
     uint32_t stop_holds = 0; // BUG-0408: frames held so
     double under_since = -1; // BUG-0683: since when the standing puppet is under this game's terrain (-1: not)
@@ -458,38 +454,11 @@ inline void walk_end(void* p, const net::Vec3& pos, State& ds, double now)
 // marked not grounded (+0x137 = 0) with the sender's velocity (its fall speed: left to the game it grew frame by
 // frame while the placing held it up and one update took it 1-1.6 m down), and held there through the game's
 // animation starts and updates (game::air_hold, BUG-0532). walk_end first: it walks again after the landing.
-// BUG-1094 (drive.air_mark): the game did not keep last frame's place in the air: the body is not where that place and
-// the velocity written with it put it after one frame (more than max(kAirLostMin, kAirLostK x the velocity x the frame)
-// off). A host NPC thrown by a hit (9-10 m/s, its proxy driven standing just before) was put back by the guest's game
-// to where it stood in ~6 of every 7 frames at 66 fps (one placing taken every ~0.1 s: 0.6-1.1 m steps in single
-// frames, npc_walk labs 20261113-202612, -204146, -204750; the same at 30 fps with steps under 0.75 m): the rest of
-// that air phase is placed with the teleport mark (the game keeps it, as walk_place's keep_lost, BUG-0361).
-// `coop.fix drive.air_mark off`: always without the mark (0.7.13).
-inline bool g_air_mark_fix = true;
-constexpr float kAirLostMin = 0.1f, kAirLostK = 0.5f; // m, -
 inline void air_place(void* p, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
                       bool hold = true)
 {
-    const double adt = now - ds.air_at;
-    if (adt <= 0 || adt > 0.25) // a new air phase: without the mark until the game does not keep a place
-        ds.air_mark = false;
-    else if (g_air_mark_fix && !ds.air_mark) {
-        const net::Vec3 cur = game::position(p), want{ds.placed_to.x + ds.air_vel.x * (float)adt,
-                                                       ds.placed_to.y + ds.air_vel.y * (float)adt,
-                                                       ds.placed_to.z + ds.air_vel.z * (float)adt};
-        if (net::dist(cur, want) > std::max(kAirLostMin, kAirLostK * speed(ds.air_vel) * (float)adt)) {
-            ds.air_mark = true;
-            ds.air_lost++;
-        }
-    }
     walk_end(p, pos, ds, now);
-    if (ds.air_mark && g_air_mark_fix)
-        game::teleport(p, pos, rot);
-    else
-        game::place(p, pos, rot);
-    ds.placed_to = pos;
-    ds.air_vel = vel;
-    ds.air_at = now;
+    game::place(p, pos, rot);
     game::set_grounded(p, false);
     *(net::Vec3*)((uint8_t*)p + game::kVelOff) = vel;
     game::air_hold(p, hold, pos, rot, vel);

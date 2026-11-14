@@ -3,8 +3,6 @@
 ## [Unreleased]
 
 ### Fixed
-- Creature: an animal that the host's creature hits and that flies off its feet no longer stands still and jumps about
-  1 m every tenth of a second on a guest's screen; the copy flies with it (BUG-1094).
 - Tests: the Tribe editor-visit test (`tribe_editor_world`) waited for a world share after the host's editor that the
   game no longer makes since 0.7.10 (the guest keeps its world); it now checks the epic is still the co-op one and
   makes the share save itself (BUG-1090).

@@ -2542,9 +2542,9 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (matched 72-77 %).
   BUG-1094: also a thrown proxy (placed in the air, coop.npctrack how 5, while its target moves over 0.05 m in the
   frame) stands in at most 15 % of those frames, on the screen or off it, judged from 20 such frames on: the flee
-  hit throws a walker on the host in about half of the runs at 66 fps (none in 7 runs at 20-35 fps on a loaded lab).
-  Without `drive.air_mark` the saved rows of 5 runs stood 72-77 of 83-89 frames; the "no jump" check saw it only when
-  the walker was on the screen and the game ran near 60 fps.
+  hit throws a walker on the host in about a third to a half of the runs at 52-67 fps (none in 7 runs at 20-35 fps on
+  a loaded lab). Fails on the code of 0.7.14 so far (BUG-1094 open): 128-148 of 166-174 frames standing (lab
+  20261113-221929); the "no jump" check saw it only when the walker was on the screen near 60 fps.
 * Pitfall: a creature far from the camera is updated in bursts (no movement for 0.5 s, then 1 m at
   once); judge what the player sees (on-screen frames), report the rest.
 ## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)
