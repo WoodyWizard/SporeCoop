@@ -1340,7 +1340,9 @@ registry (`mods/coop/fixes.h`, BUG-0116):
 
 * `tribe_editor_world` (BUG-0217): the host opens an editor in Tribe through `coop.vote editor`
   (works in Tribe now: a member's species) and leaves with the red X (1380, 1062), since Done is
-  blocked for the tribe species. Checks the host's game: no co-op epic after the share save and
+  blocked for the tribe species. Since BUG-0508 the guest keeps its world after that editor
+  (evolved in place), so the test checks the epic is still tracked and then shares itself
+  (`coop.share due`, BUG-1090). Checks the host's game: no co-op epic after the share save and
   after the session. `SPORE_FIX_OFF=tribe.editor_world` fails.
 * `civ_null_local` (BUG-0223): `coop.civ nulllocal <frames>` forces Civ's/Tribe's local entity
   null (the real trigger of the old world change). Checks the guest's vehicle objects and its

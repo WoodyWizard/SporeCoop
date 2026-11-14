@@ -727,6 +727,11 @@ BUG-0217. GOG 2024, lane 5.
 * ✔ On a guest `coop.tribe epic herds` lists `live_epics=0` before and after the host's world
   arrives, the planet's own epic included: the guest's game is no oracle for "the epic came with
   the save" (the host's game after the share save is).
+* ✔ Since BUG-0508 (v0.7.10, switch `world.evolve_in_place`) no share follows the host's editor in
+  Tribe: the guest keeps its world ("evolved in place: Bob keeps its world", host log), so the
+  co-op epic stays alive and tracked in the host's game (`live_epics` 2, the same `tracked`) until
+  the next host save; that save (a share, the pause menu) leaves it out through the BUG-0121 guard.
+  `tribe_editor_world` triggers the save with `coop.share due` (BUG-1090; a bare `coop.share` resends the last files without a save).
 * Not measured (issue #151 step 0): the pause-menu Load, the game-over bounce back and Civ to
   Space routes frame by frame. A route that reloads without any non-stage frame relies on the
   in-stage signals.
