@@ -816,3 +816,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9199](BUG-9199-space-difficulty-scales-by-reserved-seats-not-by.md) | fixed | feature | space | 2026-11-14 | unreleased | Space difficulty scales by reserved seats, not by the party in the system (decision 2B) |
 | [BUG-9200](BUG-9200-adventure-enemies-pick-a-partner-s-body-but-neve.md) | fixed | bug | Adventure | 2026-11-14 | unreleased | Adventure enemies pick a partner's body but never strike it: the body has no political id |
 | [BUG-9201](BUG-9201-adventure-a-guest-keeps-scenario-creatures-no-ho.md) | fixed | bug | Adventure | 2026-11-14 | unreleased | Adventure: a guest keeps scenario creatures no host creature drives, standing without AI at 0 hp |
+| [BUG-9202](BUG-9202-a-joining-partner-sees-the-plain-galaxy-menu-and.md) | open | bug | all | 2026-11-14 |  | A joining partner sees the plain galaxy menu and a black screen while the host's world arrives and loads: no loading screen |

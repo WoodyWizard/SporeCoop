@@ -5366,3 +5366,22 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * Close every test game (TITAN's QA copies and the MSI's, `tools/qa_win/msi.ps1 stop`) as soon as a live test is done
   (the owner 2026-11-13): running ones count as Steam playtime on the owner's account and keep the owner from starting
   Spore. Start them again only for the next test.
+
+## Loading screens on two PCs (2026-11-14, feat/lineages-47)
+<a id="testing-loading-screens"></a>
+
+BUG-9202 (the owner's 3S A: "confirm all loading screens work and play when things are loading. Use both PCs").
+* The setup: a host on one PC (TITAN QA copy or the MSI), the other joins; one guest-side sampler
+  (scratchpad `ldsample.py <msi|N> <seconds> <tag> [every]`) asks `frame` every 0.4 s (it answers on any thread, also
+  while the main thread loads), `game.mode` every 2 s and takes a `shot` every 1-2 s; a forced mid-stage reload is
+  `coop.worldfix queue <guest id>` on the host. A guest's support log names how each screen ended:
+  `ui: the join|reload loading screen ended (playing|time limit|...) after N s, ... s ready but black, brightness B`.
+* Timings seen (MSI guest, 1024x768): the join's galaxy-menu wait 20-25 s (the host saves, then 5-9 MB at ~390 KB/s);
+  then the game is in the stage mode while it still shows black: Creature 2-10 s, Civ 7 s, Cell a 5.6 s cinematic,
+  Tribe 5-30 s (at ~21 fps; 60+ fps once the world shows). The player's own object exists during that black and no
+  cinematic runs, so the screen waits for the frame's brightness (ring_timer::scene_luma).
+* Frames never stopped in any load (longest gap 0.8 s): the ring keeps turning.
+* Pitfall: telling a covered screenshot from a plain one by the ring's yellow fails in Civ (the yellow city hall in
+  the middle); the support log line is the reliable record.
+* A Space join is the personal launch (BUG-9071): the guest plays its own Civ homeworld while the host's world waits
+  as a queued load; the screen must lift there (world::local_intro_running).

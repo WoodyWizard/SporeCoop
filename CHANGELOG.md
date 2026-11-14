@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Joining: a partner who joins now sees the loading screen ("Joining <host>",
+  the host saving, the world arriving, loading) instead of the plain galaxy
+  menu and a black screen. It and the mid-game reload screen stay up until the
+  world is really shown, and lift as soon as a Space partner can play their own
+  homeworld (BUG-9202).
 - Space: a partner's homeworld card shows the species' picture, not a blank
   white box (BUG-9188).
 - Adventures: the host's game now runs the enemies for everyone, so all

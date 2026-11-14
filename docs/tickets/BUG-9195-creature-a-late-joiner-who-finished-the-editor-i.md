@@ -38,3 +38,5 @@ no-fail-run: the reload stays by design; the cover is to be checked live (a join
   joiner who brings a creature could load once if the host waited for its creature and nest (with a member, BUG-9167)
   before the first share; a joiner without one gets the editor inside the world (join_editor_tick needs the Creature
   stage), so it keeps two loads. Decision 3S.
+- 2026-11-14: decision 3S A (kept). The two-PC loading screen check (BUG-9202) saw the nest's world go out
+  4 s into a join, before the first load, so that joiner loaded once; the reload cover itself checked live on both PCs.
