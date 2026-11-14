@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.14 4dd8d2be
 fixed_in: unreleased
 branch: fix/w49-pause
-commits: 41d85d9f, f1f27e2a
+commits: 41d85d9f, 73aeec65, f1f27e2a
 tests: tribe_pause_leak, tribe_caption_race, tribe_conquest_guest (the game-time check)
 signature: guest trace busy=paused (no input_lock, no cinematic) for minutes after "cinematic 5418B038 still playing in Tribe after 8 s on a guest (BUG-0983): ended it" in the second of a caption click
 docs: docs/known-issues.md#issue-guest-caption-click-pause, docs/06-testing.md#testing-fcgates-0714, docs/06-testing.md#testing-pause-leak, docs/re/tribe.md#tribe-caption-pause-leak
