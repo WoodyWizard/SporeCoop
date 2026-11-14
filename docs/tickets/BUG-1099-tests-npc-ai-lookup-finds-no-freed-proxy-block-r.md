@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: lab 20261114-005006 npc_ai_lookup
 role: guest
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-reuse
 commits: 9b1a6c93
 tests: npc_ai_lookup, proxy_identity, proxy_identity_tribe
@@ -55,3 +55,4 @@ rounds in 170 s; `SPORE_REUSE_FLAGS=x` is the hunt before. Test-only commands: n
 ## History
 - 2026-11-14: opened (fix/w49-warmfault, while checking BUG-1097).
 - 2026-11-14: fixed on fix/w49-reuse (9b1a6c93).
+- 2026-11-14: released in 0.7.14.

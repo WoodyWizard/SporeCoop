@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: final check 0.7.14, lab 20261114-005006 civ_wild_pooled
 role: guest
 versions: rel/0.7.14 4dd8d2be
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-fcgates
 commits: cbe4dced
 tests: civ_wild_reused, civ_wild_pooled
@@ -52,3 +52,4 @@ Test civ_wild_reused (civ_npc, lane 7): an NPC killed (`coop.npc kill`), the hos
 
 ## History
 - 2026-11-14: opened and fixed on fix/w49-fcgates (final check 0.7.14 triage).
+- 2026-11-14: released in 0.7.14.

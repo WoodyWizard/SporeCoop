@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-15
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-small
 commits: f4aca716
 tests: npc_snap
@@ -56,3 +56,4 @@ out/lab/20261113-031904 (median 0.03 s, slowest 0.04 s in the first).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-small (package T1).
+- 2026-11-14: released in 0.7.14.

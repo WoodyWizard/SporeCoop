@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: fix/w34-ability-pop smoke (lab 20261101-173425)
 role: guest
 versions: 0.7.3.3+
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-proxy2
 commits: 01810f64, 4faa517d, 0af3d56b
 tests: tribe_proxy_held (tools/tests/coop_tribe_proxy_held.py), chaos_tribe, play_tribe
@@ -129,4 +129,4 @@ Test tribe_proxy_held (`coop_tribe_proxy_held.py`): the host walks an animal at 
 - 2026-11-13 (fix/w49-proxy2): cause observed with the full probe (lab 20261113-191751 chaos_tribe#4: the taken marked
   teleport moved back by the game's frame at 6.9 m/s, near a nest; the stuck spots of the history are nests). Fixed
   by npc.proxy_hold, test tribe_proxy_held with the hold planted at the measured rate. Status fixed.
-
+- 2026-11-14: released in 0.7.14.

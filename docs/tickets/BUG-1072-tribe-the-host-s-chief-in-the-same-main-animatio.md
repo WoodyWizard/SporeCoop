@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-tribe3 final check, lab 20261113-070558 #3 view 4, 20261113-063317 #3 view 1
 role: guest
 versions: 0.7.13 - rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-chief
 commits: 5ea0bc18
 tests: tribe_chief_tracks
@@ -64,3 +64,4 @@ show the same staff angle with small differences of the free arm (the shots are 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: cause found (the chief's other tracks run unsynced) and fixed on fix/w49-chief (tribe.mirror_phase_tracks).
+- 2026-11-14: released in 0.7.14.

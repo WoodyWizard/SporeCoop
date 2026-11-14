@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-last same_view_tribe lab 20261112-172240 (#1)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-mirror
 commits: 093807dc
 tests: tribe_mirror_stale, same_view_tribe
@@ -56,3 +56,4 @@ out/lab/20261113-045727-2 (0.7-2.1 s), and the final check runs (see History).
 - 2026-11-13: cause found and fixed on fix/w49-mirror (package T2 of 0.7.14).
 - 2026-11-13: fix/w49-mirror final check: one round of 12 (the first of a session) not cut in 9 s: BUG-1071.
 - 2026-11-13: fix/w49-mirror final check: tribe_mirror_stale PASS 20261113-052132 (lane 7), 20261113-054031 and 20261113-054834-2 (lane 6); same_view_tribe PASS 20261113-051820-2, 20261113-054834, 20261113-054834-2 (key frames looked at: poses agree; the staff grip differed in one still, BUG-1069).
+- 2026-11-14: released in 0.7.14.

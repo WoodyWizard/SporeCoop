@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-13
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space
 commits: f95e96fe
 tests: space_shot_count
@@ -57,3 +57,4 @@ weapon (fired=0, lab 20261113-012916-2); on a planet it fires.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space: the shot count outlives the 1 s list; FAIL/PASS in the lab (case A).
+- 2026-11-14: released in 0.7.14.

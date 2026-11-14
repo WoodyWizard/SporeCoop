@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-8
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit2
 commits: 702f51dd
 tests: kit_initfail, kit_cmd_unload
@@ -60,3 +60,4 @@ the settings at start (kit_cmd_unload out/lab/20261113-083520, out/lab/20261113-
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).
+- 2026-11-14: released in 0.7.14.

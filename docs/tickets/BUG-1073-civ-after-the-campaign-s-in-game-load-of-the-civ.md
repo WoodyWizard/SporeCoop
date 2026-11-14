@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-camp
 commits: 2623e169
 tests: cine_load, campaign_civ_jump, campaign (the jump path)
@@ -88,3 +88,4 @@ the cinematic must play and the city must be the player civilization's in the ho
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: root cause found and fixed on fix/w49-camp (game.cinematics_on_load), test cine_load.
+- 2026-11-14: released in 0.7.14.

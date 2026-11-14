@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-20
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell
 commits: 23b91609, bb9e3b4a
 tests: cell_chunk_killer
@@ -64,3 +64,4 @@ The first runs (20261113-022529-2, 20261113-022622) were SKIP: the fixture's kin
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-cell (package C1).
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: rel/0.7.14 final check 20261114-005006 (SKIP), rerun 20261114-022615 lane 7 (FAIL)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-holdcut
 commits: 5e218346
 tests: tribe_hold_cut
@@ -51,3 +51,4 @@ idle / walk gate fixed.
 ## History
 - 2026-11-14: opened.
 - 2026-11-14: fixed on fix/w49-holdcut (tribe_hold_cut measures from the hold's start, round gate).
+- 2026-11-14: released in 0.7.14.

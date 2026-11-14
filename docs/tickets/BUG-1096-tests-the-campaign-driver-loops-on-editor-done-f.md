@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: lab 20261113-231423-2 campaign_tribe_end
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-civedit, fix/w49-edslow
 commits: 8ab36fd1, bb09b2b3, 247eda45, 9a2cc3e8, 98534272
 tests: tribe_civ_editor_slow, campaign_tribe_end
@@ -86,3 +86,4 @@ after the City Hall editor, after the old fixed 4 s).
 - 2026-11-14: the 0.7.14 final check failed tribe_civ_editor_slow 2 of 2 (20261114-005006, 20261114-022615): the
   name's dice click released over "done" at 3 fps. Fixed on fix/w49-edslow (waits in game frames); PASS 20261114-030645,
   20261114-031607, FAIL with the old driver 20261114-032537.
+- 2026-11-14: released in 0.7.14.

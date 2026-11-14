@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-fault
 commits: 3a96a1f6
 tests: tribe_own_hut_fall
@@ -71,3 +71,4 @@ caption after it; the FAIL run's guest stood in its defeat caption for 45 s with
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: analysed and fixed on fix/w49-fault (realign.own_hut); BUG-1081 opened for the host's hut caption.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-stops
 commits: 124a9ea9, 3a749886
 tests: puppet_stops, net_tests
@@ -53,3 +53,4 @@ largest step in a 60 fps frame 0.96 -> 0.16 m; `SPORE_FIX_OFF=drive.air_keep` fa
 ## History
 - 2026-11-13: opened.
 - 2026-11-13 (fix/w49-stops): fixed (drive.air_keep) on the way of BUG-1093.
+- 2026-11-14: released in 0.7.14.

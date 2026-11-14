@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-mirror, lab 20261113-054031-2 lane 7
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tribe3
 commits: 9051b80c 3756afed 6d72a5d7
 tests: tribe_mirror_stale
@@ -51,3 +51,4 @@ PASS 20261113-063318 (lane 7: [1.0, 0.5, 0.5, 0.5]), PASS 20261113-065855 (lane 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: cause found and fixed on fix/w49-tribe3.
+- 2026-11-14: released in 0.7.14.

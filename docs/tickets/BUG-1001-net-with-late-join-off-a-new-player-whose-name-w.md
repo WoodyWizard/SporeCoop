@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-1
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: net_tests test_join_seen); lab join_late_names (coop_join_late_names.py); regression settings_creature
@@ -63,3 +63,4 @@ So that a player who left can still come back as itself with late join off (coop
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-net (0.7.14 N2): rejoin after the start by token (kept for the same host and name on a leave), without a token by a name nobody has that dropped recently; every live entry counts; FAIL/PASS unit and lab runs.
+- 2026-11-14: released in 0.7.14.

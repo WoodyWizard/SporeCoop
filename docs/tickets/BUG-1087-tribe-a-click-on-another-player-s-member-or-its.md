@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: Discord player report 2026-11-13 + forwarded analysis
 role: guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tctl2
 commits: 4d0dd0b1, 6d8d689a, 601e7ddf
 tests: tribe_foreign_click
@@ -72,3 +72,4 @@ members" on the guest's Tribe.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tctl2 (`tribe.foreign_note`).
+- 2026-11-14: released in 0.7.14.

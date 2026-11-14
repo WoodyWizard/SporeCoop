@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: BUG-1047 audit (fix/w49-guard)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit2
 commits: 530f1cd2 702f51dd
 tests: make test
@@ -53,3 +53,4 @@ game code; fixed by inspection. Build passed.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).
+- 2026-11-14: released in 0.7.14.

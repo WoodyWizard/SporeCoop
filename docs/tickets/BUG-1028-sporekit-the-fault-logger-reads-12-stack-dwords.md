@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-6
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit
 commits: 438e1cdb, 4ebce297
 tests: kit_vehedge
@@ -68,3 +68,4 @@ Test kit_vehedge (`kit_freeze.py --case vehedge`, one game):
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit (FAIL/PASS twin).
+- 2026-11-14: released in 0.7.14.

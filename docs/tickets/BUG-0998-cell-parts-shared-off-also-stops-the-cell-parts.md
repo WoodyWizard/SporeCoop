@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-life
 commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
 tests: cell_parts_apart
@@ -62,3 +62,4 @@ frame of a session; the general test reads parts.cell_queue, held 0 in every run
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-life (package L1, the lifecycle registry of BUG-1055).
+- 2026-11-14: released in 0.7.14.

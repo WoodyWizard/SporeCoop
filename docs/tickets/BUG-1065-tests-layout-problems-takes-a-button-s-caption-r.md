@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-space2 (BUG-1062 key frame)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: ui
@@ -51,3 +51,4 @@ which layout_problems now matches). Twin: `UI_LAYOUT_TWIN="report -12"` narrows 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-ui (46 px on every co-op window step).
+- 2026-11-14: released in 0.7.14.

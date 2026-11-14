@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: lab 20261114-005006 same_view, npc_ai_lookup (final check of 0.7.14)
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-warmfault
 commits: 3c921cc7
 tests: kit_cmd_fault + same_view (--in-order), lab_selftest
@@ -50,3 +50,4 @@ non-`reports` test fails on them, a `reports` test checks them itself. The kit f
 ## History
 - 2026-11-14: opened.
 - 2026-11-14: fixed on fix/w49-warmfault (3c921cc7).
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-proxy2 regression (lane 4)
 role: guest
 versions: 0.7.14 (rel/0.7.14 + fix/w49-proxy2)
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-throw
 commits: d8a778b3, 97715d0c, 0dbe6cab, 4dd00036, 2d0c47bf
 tests: npc_walk, net_tests test_agl_extrap
@@ -84,3 +84,4 @@ Inferred: the guest-only test throw of fix/w49-npcwalk was kept because its stat
 - 2026-11-14 (fix/w49-throw): cause found in the saved rows (the radial split): the lead kept the newest state's agl;
   fixed with `drive.agl_extrap` (clamped at the ground), `npc.air_catch` for the throw's start; npc_walk leaves out
   the host's own landing step.
+- 2026-11-14: released in 0.7.14.

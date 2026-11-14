@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 final check out/lab/20261112-175447 (key-frame review)
 role: 
 versions: 0.7.13-rc
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-mirror
 commits: 0db432fb
 tests: creature_join_apart, play_creature
@@ -45,3 +45,4 @@ key frame: side by side), and the final check runs (see History).
 - 2026-11-12: re-check key frames (out/lab/20261112-225741, sheet 013): at the guest's join ('loading the world of Alice') the guest's tag 'Alice' hangs over the guest's own creature for a moment, Alice's creature stands to the left; right on the next frame (014). Likely the same spawn point cause.
 - 2026-11-13: fixed on fix/w49-mirror (package T2 of 0.7.14).
 - 2026-11-13: fix/w49-mirror final check: creature_join_apart PASS 20261113-051820-2 and 20261113-052132 (key frames: side by side); play_creature --quick PASS 20261113-052132.
+- 2026-11-14: released in 0.7.14.

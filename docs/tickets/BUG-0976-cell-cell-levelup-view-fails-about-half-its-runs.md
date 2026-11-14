@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-cellcull labs 20261112-195306-2, 20261112-200916, 20261112-202450
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell
 commits: 23b91609, 23cc5481
 tests: cell_levelup_view
@@ -52,3 +52,4 @@ wipe destroyed 628 cells on the guest's screen). PASS: out/lab/20261113-024127-2
 ## History
 - 2026-11-12: opened.
 - 2026-11-13: closed on fix/w49-cell (package C1): the test, not a loss of cells; BUG-1064 opened for the extra loss round a partner.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-6
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-live
 commits: ba498632, b46e8265
 tests: tribe_cmd_listed, civ_cmd_listed, play_tribe, play_civ
@@ -82,3 +82,4 @@ PASS: out/lab/20261113-022545, out/lab/20261113-023224-2, out/lab/20261113-02471
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-live (package L2): table entries through game::alive / listed (tribe.cmd_listed, civ.cmd_listed); FAIL/PASS twins tribe_cmd_listed, civ_cmd_listed.
+- 2026-11-14: released in 0.7.14.

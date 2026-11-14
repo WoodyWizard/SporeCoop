@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: final check 0.7.14, lab 20261114-005006 puppet_walk
 role: guest
 versions: rel/0.7.14 4dd8d2be
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-fcgates
 commits: d88810ad
 tests: puppet_walk
@@ -37,3 +37,4 @@ no-fail-run: test only (a traceback on a missing state; the walk's checks are un
 
 ## History
 - 2026-11-14: opened and fixed on fix/w49-fcgates (final check 0.7.14 triage).
+- 2026-11-14: released in 0.7.14.

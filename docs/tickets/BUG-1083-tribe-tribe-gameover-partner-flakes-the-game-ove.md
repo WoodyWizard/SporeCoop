@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-hutwait, lab 20261113-140322 lane 6
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-chief
 commits: 5ea0bc18
 tests: tribe_gameover_partner
@@ -63,3 +63,4 @@ comma list of victims (one frame).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: root cause found (the game's up list, two falls in one tick), the test fixed on fix/w49-chief.
+- 2026-11-14: released in 0.7.14.

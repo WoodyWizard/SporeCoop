@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-camp
 commits: 2623e169
 tests: campaign (finale)
@@ -53,3 +53,4 @@ new ship since the play): added again"; `OLD_FINALE_DRIVE=1`: the old bot. BUG-1
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: root cause found on fix/w49-camp (a new ship without the bots' drive after a forced respawn, BUG-1073); the finale bot fixed.
+- 2026-11-14: released in 0.7.14.

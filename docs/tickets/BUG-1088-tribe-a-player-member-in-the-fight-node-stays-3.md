@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: 0.7.13 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-raid2
 commits: 22c48f58
 tests: tribe_member_air, campaign (lab gate monitor ground)
@@ -52,3 +52,4 @@ out/lab/20261113-183402-2 (agl_hi 15.18 on both marks); PASS out/lab/20261113-18
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: root cause: a swimming member (the game's own); the gate's height now counts over the water (fix/w49-raid2).
+- 2026-11-14: released in 0.7.14.

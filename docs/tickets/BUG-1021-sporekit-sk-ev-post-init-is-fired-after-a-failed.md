@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-15
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit2
 commits: 702f51dd
 tests: kit_initfail
@@ -51,3 +51,4 @@ Test kit_initfail, new check "SK_EV_POST_INIT is not fired after the failed Init
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit2 (FAIL/PASS twin).
+- 2026-11-14: released in 0.7.14.

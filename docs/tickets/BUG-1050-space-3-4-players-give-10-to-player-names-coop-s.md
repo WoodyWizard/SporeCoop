@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SEAM-1
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space
 commits: f95e96fe
 tests: space_give_pick
@@ -61,3 +61,4 @@ golden steps are 2-player).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space: the spice goes to the named player, ">" in Space; FAIL/PASS in the lab.
+- 2026-11-14: released in 0.7.14.

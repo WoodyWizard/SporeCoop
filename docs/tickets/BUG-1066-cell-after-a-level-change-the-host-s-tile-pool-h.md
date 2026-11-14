@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-cell labs 20261113-024334, 20261113-025004-2 (cell_flush_handover)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell2
 commits: d7f41e27, 58c4aad0
 tests: cell_levelup_area, cell_flush_handover
@@ -54,3 +54,4 @@ cell_flush_handover (3 players, the check no longer used up) PASS out/lab/202611
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: cause found (the flush ran before the food drain that starts the rescale), fixed on fix/w49-cell2.
+- 2026-11-14: released in 0.7.14.

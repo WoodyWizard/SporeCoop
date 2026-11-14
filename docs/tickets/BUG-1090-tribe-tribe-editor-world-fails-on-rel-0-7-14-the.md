@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab 20261113-183059 tribe_editor_world
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-edworld
 commits: 535d9dbd, b9d5beb7
 tests: tribe_editor_world
@@ -59,3 +59,4 @@ epic before that save (BUG-0121). A bare `coop.share` is not enough: it resends 
 - 2026-11-13: opened.
 - 2026-11-13: fixed in fix/w49-edworld: a test problem (the in-place evolution of BUG-0508); the test makes the share
   save itself.
+- 2026-11-14: released in 0.7.14.

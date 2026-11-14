@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-life lab (coop_lifecycle_reset.py, monitor puppet_hp)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-small
 commits: f4aca716
 tests: lifecycle_reset, gates_selftest
@@ -49,3 +49,4 @@ SPORE_STAGES=cell,creature, no monitor violation).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-small (package T1).
+- 2026-11-14: released in 0.7.14.

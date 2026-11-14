@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: final check 0.7.14, lab 20261114-005006 campaign_tribe_noclick
 role: guest
 versions: rel/0.7.14 4dd8d2be
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-pause
 commits: 41d85d9f, 73aeec65, f1f27e2a
 tests: tribe_pause_leak, tribe_caption_race, tribe_conquest_guest (the game-time check)
@@ -64,3 +64,4 @@ conquest and prints `coop.pauses`.
 ## History
 - 2026-11-14: opened on fix/w49-fcgates (final check 0.7.14 triage); cause inferred from the logs, not reproduced.
 - 2026-11-14: fix/w49-pause: pause trace, the cinematic pause slot RE, not reproduced; safety net tribe.guest_pause_net, test tribe_pause_leak.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-7
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-live
 commits: ff031065
 tests: npc_air_live, lifecycle_reset, npc_air
@@ -68,3 +68,4 @@ PASS: out/lab/20261113-023052, out/lab/20261113-023224 (10.4 m: it stayed where 
 - 2026-11-13: opened.
 - 2026-11-13: fix/w49-life (package L1): the release part done: the holds are entry `game.air` of the lifecycle registry (session end and world change; switch `coop.fix game.air_release off`), so no hold outlives its session or world. Held 0 at every reset of the lifecycle_reset runs (the forget paths release them already), so no FAIL run for this part. The serial check of air_reassert stays open for package L2 (plan-0.7.14).
 - 2026-11-13: fixed on fix/w49-live (package L2): the serial check of air_reassert (game.air_live); FAIL/PASS twin npc_air_live.
+- 2026-11-14: released in 0.7.14.

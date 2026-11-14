@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: Discord player report 2026-11-13 + forwarded analysis
 role: guest
 versions: 0.7.x
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tctl2
 commits: 4d0dd0b1, 601e7ddf, 640ad2c1
 tests: tribe_host_pause
@@ -80,3 +80,4 @@ tribe_gameover_wait in the regression run (below).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tctl2 (`tribe.host_pause_wait`).
+- 2026-11-14: released in 0.7.14.

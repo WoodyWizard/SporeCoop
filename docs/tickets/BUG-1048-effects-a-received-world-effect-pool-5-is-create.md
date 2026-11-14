@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-19
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: validate_tests test_effect_xf)
@@ -40,3 +40,4 @@ The pool-5 checks of `valid_message` (effects.cpp) moved into `net::effect_xf_ok
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-net (0.7.14 N2): the received scale is checked (net::effect_xf_ok); FAIL/PASS unit runs.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-cell labs 20261113-021621, 20261113-022529-2 (BUG-0976 analysis)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell2, fix/w49-cell3
 commits: d7f41e27, 5f75d936, 58c4aad0, 19ea35f8
 tests: cell_levelup_area, cell_levelup_view
@@ -115,3 +115,4 @@ out/lab/20261113-172241, play_cell --quick PASS out/lab/20261113-172243.
 - 2026-11-13: fix/w49-cell3: the remaining down-change loss measured with the areas apart: the test's guest had stood
   next to the host (its partner area was the band round the host's box); apart, no excess beyond noise in 20 runs, the
   rest is the game's own whole-tile cull. Test asserts the shares; fixed (the co-op cause: cell.view_centre_scale).
+- 2026-11-14: released in 0.7.14.

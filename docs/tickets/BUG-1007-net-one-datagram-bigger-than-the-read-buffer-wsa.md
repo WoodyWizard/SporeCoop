@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-4
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: net_tests test_recv_skip_big)
@@ -55,3 +55,4 @@ count in coop.net stats.
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-net (0.7.14 N2): an oversized datagram is skipped, the reads go on; discovery buffer 2048; FAIL/PASS unit runs.
+- 2026-11-14: released in 0.7.14.

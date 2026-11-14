@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-mirror final check, lab 20261113-052132 lane 7
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tribe3
 commits: 30dd6a2f 9051b80c
 tests: tools/tests/lab_selftest.py lane_lock (make test); same_view_tribe x6 lane 7, play_tribe --quick x3 lane 6
@@ -65,3 +65,4 @@ other lab run of this branch: no game lost without a report.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: explained on fix/w49-tribe3: a second lab run on lane 7 killed the lane's games; lab lane lock (30dd6a2f).
+- 2026-11-14: released in 0.7.14.

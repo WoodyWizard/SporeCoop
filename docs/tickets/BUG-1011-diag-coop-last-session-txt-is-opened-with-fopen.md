@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-7
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: menu_diag
@@ -53,3 +53,4 @@ Under Wine (ACP 1252) fopen with the UTF-8 path wrote nothing: the bug reproduce
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).
+- 2026-11-14: released in 0.7.14.

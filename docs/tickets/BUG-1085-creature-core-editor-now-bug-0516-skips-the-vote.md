@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: Discord player report 2026-11-13 + forwarded analysis
 role: all
 versions: 0.7.11-0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tctl2
 commits: 4d0dd0b1, 6d8d689a, 574d5d8d, 601e7ddf
 tests: stage_end_vote, stage_end_guest, editor_now, creature_mating
@@ -112,3 +112,4 @@ the stage-end tag; `coop.vote` prints `stage-end votes` and `guest stage-end req
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tctl2 (`core.editor_now_tag`); the guest path confirmed and closed.
+- 2026-11-14: released in 0.7.14.

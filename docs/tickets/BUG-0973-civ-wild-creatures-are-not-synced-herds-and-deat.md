@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab
 role: 
 versions: 0.7.12
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-civ
 commits: 409f7c75, edfaef2c
 tests: civ_wild_sync, civ_guest_creature, civ_save_strip, play_civ
@@ -69,3 +69,4 @@ PASS out/lab/20261113-044109.
 ## History
 - 2026-11-12: opened from the BUG-0970 analysis; not part of 0.7.13 (bug release), planned later.
 - 2026-11-13 (fix/w49-civ): fixed for 0.7.14 (package V1): host-owned wild creatures in Civ, test civ_wild_sync.
+- 2026-11-14: released in 0.7.14.

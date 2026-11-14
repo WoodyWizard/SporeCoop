@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-11
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space
 commits: f95e96fe
 tests: space_finale_fly
@@ -53,3 +53,4 @@ harm was the 200 hp taken with no energy, and the disabled ship's flight.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space: the galaxy step goes through teleport_in_galaxy; FAIL/PASS in the lab.
+- 2026-11-14: released in 0.7.14.

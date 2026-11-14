@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-10, KIT-16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit
 commits: 438e1cdb
 tests: kit_crash, diag
@@ -69,3 +69,4 @@ module_path in the reports: out/lab/20261113-011055 (kit_crash, kit_watchdog, di
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit (no-fail-run, owner decisions 4/5).
+- 2026-11-14: released in 0.7.14.

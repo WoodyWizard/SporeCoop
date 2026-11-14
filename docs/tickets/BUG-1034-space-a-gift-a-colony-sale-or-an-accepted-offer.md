@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-4
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space2
 commits: daac928c, 8d73e8a9
 tests: space_trade_restore
@@ -56,3 +56,4 @@ Offers (answer_offer) are covered by reading only (Rivals; not in the test).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space2 (gifts and sales wait for the restore; offers wait for it).
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-drama
 commits: 4c33c54d
 tests: tribe_attack_stale; tribe_bounce_world (then any Tribe test that starts warm after it)
@@ -80,3 +80,4 @@ tribe_gameover_reload on lane 7 20261113-130900; play_tribe --quick OK 20261113-
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: root cause found and fixed on fix/w49-drama (tribe.attack_target), test tribe_attack_stale.
+- 2026-11-14: released in 0.7.14.

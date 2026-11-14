@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-24
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: make test (re_lint; no-fail-run)
@@ -65,3 +65,4 @@ package (its thread flag, BUG-1018 family). No switch: debug and test commands o
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).
+- 2026-11-14: released in 0.7.14.

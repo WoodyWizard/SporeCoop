@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-5
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space2
 commits: daac928c, 8d73e8a9
 tests: space_allies_end_pending
@@ -51,3 +51,4 @@ coop.menu, a new join. Asserts the guest game's star record owner (`allies star`
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space2 (the pending end finishes outside Space; a new session ends the old mirrors first).
+- 2026-11-14: released in 0.7.14.

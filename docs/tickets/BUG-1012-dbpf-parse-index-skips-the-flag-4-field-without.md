@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-8
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: net_tests test_dbpf_flag4)
@@ -46,3 +46,4 @@ the fix returns false for both; on main count 0 returns true (FAIL). tests/fuzz_
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-net (0.7.14 N2): the flag-4 skip is bounds-checked; FAIL/PASS unit runs.
+- 2026-11-14: released in 0.7.14.

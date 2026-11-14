@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-stops
 commits: 46105539, 124a9ea9, 3a749886
 tests: puppet_stops, net_tests
@@ -83,3 +83,4 @@ saved in the track json; scripts in the branch's analysis, numbers below).
 - 2026-11-13 (fix/w49-stops): two causes: the test's stop window ran into the next walk / gopos, and the walker's
   state rate halved at 21-25 fps (the first-frame send rule). Fixed: `stop_slides(cut=True)`, `net.send_phase` (phase
   kept, a stop sent at once, the puppets' knee over 64 horizons). BUG-1095 opened and fixed on the way (drive.air_keep).
+- 2026-11-14: released in 0.7.14.

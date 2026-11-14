@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-hutwait
 commits: 710a1593
 tests: tribe_hut_defeat_wait
@@ -59,3 +59,4 @@ Switch: `coop.fix tribe.hut_defeat_wait off` (only the tribe knocked out holds t
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-hutwait (`tribe.hut_defeat_wait`), test tribe_hut_defeat_wait.
+- 2026-11-14: released in 0.7.14.

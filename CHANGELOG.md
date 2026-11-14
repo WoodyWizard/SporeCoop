@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-11-14
+
+A bug-fix update: problems found by a review of the code and by the tests, in every stage. Among them: wild
+creatures in Civilization that differed between the players' games (the host's game now runs them for everyone), the
+"choose the city's specialty" question that went to the host when a guest bought a city, a guest's game that stayed
+paused for the rest of the Tribe stage, tribe members held up in the air that guests saw on the ground, smoother
+jumps and falls of the other player's creature on slower PCs, and more checks on data from the network.
+Both players should update: the versions can still play together, but several fixes need both sides.
+
 ### Fixed
 - Tribe: a guest's game no longer stays paused for the rest of the stage when the game leaves a caption's pause behind
   (seen after a village conquest's caption closed by itself): a pause that nothing holds any more is lifted after

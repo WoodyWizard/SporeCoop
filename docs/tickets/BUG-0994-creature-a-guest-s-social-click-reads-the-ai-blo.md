@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-1
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-live
 commits: ff031065
 tests: npc_ai_lookup, npc_handler_live, proxy_identity
@@ -68,3 +68,4 @@ PASS: out/lab/20261113-022929, out/lab/20261113-023224-2 (`engaged -1 -> -1, loo
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-live (package L2): proxy_id_of_ai over live proxies only (npc.ai_lookup_live); FAIL/PASS twin npc_ai_lookup.
+- 2026-11-14: released in 0.7.14.

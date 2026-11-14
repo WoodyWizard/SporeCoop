@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-puppet
 commits: 215adcfb, 7c5c6f20, 59a155c8
 tests: puppet_air, net_tests test_interp
@@ -70,3 +70,4 @@ Reproduce: `lab.py run puppet_air --repeat 2`.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-puppet (drive.agl_lerp); the cause predates 0.7.14 (v0.7.13 fails the same way).
+- 2026-11-14: released in 0.7.14.

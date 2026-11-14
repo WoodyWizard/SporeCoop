@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-proxy lab 20261113-181333
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-camp2
 commits: 95775cac, b71f4c3a, d18f2a0f
 tests: campaign_tribe_noclick, campaign_tribe_end
@@ -80,3 +80,4 @@ Suite `campaign_tribe_noclick` (campaign_tribe_end with `CAMPAIGN_PLANT_NOCLICK=
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: analysed on fix/w49-camp2: a test-driver problem (the raid loop on a village without the host's click); fixed in the campaign driver, twin campaign_tribe_noclick.
+- 2026-11-14: released in 0.7.14.

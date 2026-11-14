@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) KIT-2
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit
 commits: 438e1cdb
 tests: kit_crash, diag
@@ -70,3 +70,4 @@ a failed archive, the crashed thread's id) and diag (crash report) PASS with the
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit (no-fail-run, owner decisions 4/5).
+- 2026-11-14: released in 0.7.14.

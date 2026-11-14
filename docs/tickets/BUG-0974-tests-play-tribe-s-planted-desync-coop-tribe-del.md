@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: feat/lab-speed lab 20261112-174746 and 20261112-174029
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tests
 commits: 5bad62c6
 tests: play_tribe
@@ -64,3 +64,4 @@ restores the delay or gives play_tribe another planted desync.
 - 2026-11-12: opened (feat/lab-speed).
 - 2026-11-13 (fix/w49-tests): root cause: the lead (BUG-0425) never reads the buffer's delay; the plant now holds
   the lead target back (tribe.test_delay_lead); FAIL with the plant on --quick and full, PASS without.
+- 2026-11-14: released in 0.7.14.

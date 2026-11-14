@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-guard
 commits: 03edbe89 530f1cd2
 tests: call_guard
@@ -74,3 +74,4 @@ destructor skipped), not made by the game, as BUG-0882's and BUG-0110's tests do
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-guard (core.call_guard_reset).
+- 2026-11-14: released in 0.7.14.

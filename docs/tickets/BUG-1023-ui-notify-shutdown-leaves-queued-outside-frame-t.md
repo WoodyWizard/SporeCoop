@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-7
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit2
 commits: 702f51dd
 tests: notify, hotreload
@@ -58,3 +58,4 @@ fixed by inspection. Regression: notify and hotreload (mod.reload with the toast
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-kit2 (no-fail-run, decision 4).
+- 2026-11-14: released in 0.7.14.

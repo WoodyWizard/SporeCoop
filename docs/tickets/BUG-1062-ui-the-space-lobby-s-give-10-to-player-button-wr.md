@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-space key frame, lab 20261113-015206
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space2
 commits: daac928c, 98058c5c
 tests: space_give_pick
@@ -51,3 +51,4 @@ layout_problems; the key frame shows the caption on one line.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space2 (the give row sized to its captions with the real 23 px text borders).
+- 2026-11-14: released in 0.7.14.

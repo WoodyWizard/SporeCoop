@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-drama
 commits: 4c33c54d
 tests: attacker_owner
@@ -50,3 +50,4 @@ attacker_owner, lane 7, cold: FAIL with `SPORE_LAB_FIXOFF="attacker_owner=npc.hi
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-drama (the log line, not the gate); test extended.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-1
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-money
 commits: d500f3b0
 tests: space_rival_merge
@@ -64,3 +64,4 @@ game money must be 0, and the merge gives the host's budget only.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-money (d500f3b0): the merge credits every roster guest, no correction with an unknown budget, newcomers start at 0; FAIL/PASS in the lab.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-3
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: net_tests test_welcome_split)
@@ -53,3 +53,4 @@ The guest sets `peer_split` on its connection in `start_hello` when its HELLO an
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-net (0.7.14 N2): the joining guest joins the WELCOME's pieces; reachable with long names and versions (the guard idea dropped); FAIL/PASS unit runs.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-ftribe lab 20261112-222723 #3
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-mirror
 commits: 55e9d13b
 tests: tribe_hold_cut, tribe_hold_guest
@@ -50,3 +50,4 @@ and the final check runs (see History).
 - 2026-11-12: opened.
 - 2026-11-13: fixed on fix/w49-mirror (package T2 of 0.7.14).
 - 2026-11-13: fix/w49-mirror final check: tribe_hold_cut PASS out/lab/20261113-052132 (lane 7), out/lab/reruns 20261113-054031 (lane 6) and 20261113-054834 (lane 7), the test made to SKIP when the host held in most rounds); tribe_hold_guest PASS x2 (20261113-051820-2, 20261113-052132).
+- 2026-11-14: released in 0.7.14.

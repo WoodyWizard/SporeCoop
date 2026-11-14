@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: fix/w48-rest, lab 20261112-133753-2 / -134051 / -134349 (a fault of an unreleased first version of BUG-0930)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-kit
 commits: 438e1cdb
 tests: kit_cmd_fault
@@ -61,3 +61,4 @@ Test kit_cmd_fault (`kit_present_fault.py --case task`):
 ## History
 - 2026-11-12: opened.
 - 2026-11-13: fixed on fix/w49-kit (FAIL/PASS twin).
+- 2026-11-14: released in 0.7.14.

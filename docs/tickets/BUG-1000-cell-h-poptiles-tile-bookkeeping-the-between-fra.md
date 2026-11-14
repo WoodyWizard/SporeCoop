@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-21
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell
 commits: 23b91609, 64795658
 tests: cell_flush_handover
@@ -66,3 +66,4 @@ Earlier runs with the guests 12 m apart showed no shadow hand-over either way (2
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-cell (package C1); BUG-1066 opened (the tile pool mismatch seen in its runs).
+- 2026-11-14: released in 0.7.14.

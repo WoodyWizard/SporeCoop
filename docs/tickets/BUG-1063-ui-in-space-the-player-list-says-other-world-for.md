@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-space (S1) observation, checked by code on fix/w49-space2
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: space_other_world
@@ -54,3 +54,4 @@ guest in the galaxy view (its place 0).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-ui (0.7.14 P2).
+- 2026-11-14: released in 0.7.14.

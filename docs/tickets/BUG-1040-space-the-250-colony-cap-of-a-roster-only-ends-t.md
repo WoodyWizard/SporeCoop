@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-23
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space2
 commits: daac928c
 tests: space_map
@@ -41,3 +41,4 @@ the fake); checked by reading; the roster tests (space_map, space_allies) run th
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space2 (the cap ends both loops).
+- 2026-11-14: released in 0.7.14.

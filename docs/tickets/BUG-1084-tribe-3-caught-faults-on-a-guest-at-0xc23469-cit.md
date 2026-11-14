@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-bundle
 commits: aa000f38
 tests: tribe_away_bundle, campaign_tribe_end (lab fault check)
@@ -78,3 +78,4 @@ bundle the guest's game no longer lists; no faults):
 ## History
 - 2026-11-13: opened.
 - 2026-11-13 (fix/w49-bundle): analysed (node 0x04623E0C state 3, frozen across the host's return) and fixed (tribe.away_tree_end); tribe_away_bundle FAIL x2 / PASS x2.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-18
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-cell
 commits: 23b91609, bb9e3b4a, cbd1da51
 tests: cell_loot_big
@@ -55,3 +55,4 @@ PASS: out/lab/20261113-023438-2, out/lab/20261113-023819.
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-cell (package C1).
+- 2026-11-14: released in 0.7.14.

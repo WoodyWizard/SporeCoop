@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-raid
 commits: 1d4fb2cd
 tests: tribe_guest_raid_goal
@@ -71,3 +71,4 @@ must rise within 30 s of the fall; then the guest's gift on a village the host f
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-raid (tribe.guest_mission), test tribe_guest_raid_goal.
+- 2026-11-14: released in 0.7.14.

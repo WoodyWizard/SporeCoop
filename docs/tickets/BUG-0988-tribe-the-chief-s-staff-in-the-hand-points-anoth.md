@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: 0.7.13 final check key frames, lab 20261112-175447
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-mirror
 commits: f3f432ff
 tests: tribe_mirror_phase, tribe_mirror_hold, same_view_tribe
@@ -50,3 +50,4 @@ FAIL (SPORE_FIX_OFF=tribe.mirror_phase): out/lab/20261113-050335-2 (median 0.099
 - 2026-11-13: fixed on fix/w49-mirror (package T2 of 0.7.14).
 - 2026-11-13: fix/w49-mirror final check: the phase is the host's (tribe_mirror_phase PASS on both lanes), but the same_view_tribe stills still showed the chief's staff in the hand on one game and in the grip on the other: a hold difference, not the phase; opened BUG-1069.
 - 2026-11-13: fix/w49-mirror final check: tribe_mirror_phase PASS 20261113-051820-2 and 20261113-052132.
+- 2026-11-14: released in 0.7.14.

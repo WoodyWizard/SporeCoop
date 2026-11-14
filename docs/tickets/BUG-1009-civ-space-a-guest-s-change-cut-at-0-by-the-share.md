@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-5
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-money
 commits: d500f3b0
 tests: res_cause_floor
@@ -57,3 +57,4 @@ Tested on the Tribe food (same code path as Civ / Space money, no city income no
 ## History
 - 2026-11-13: opened from the 0.7.14 audit (plan/0.7.14), verified by code reading on main efd2e0ba.
 - 2026-11-13: fixed on fix/w49-money (d500f3b0): applied / causes count what the floor let through; FAIL/PASS in the lab.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-2
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space
 commits: f95e96fe
 tests: space_terra_far
@@ -56,3 +56,4 @@ read ended on a record with no planets). The case "outside Space" is covered by 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-space: the record is looked up only for a generated planet of a known star, in Space; FAIL/PASS in the lab.
+- 2026-11-14: released in 0.7.14.

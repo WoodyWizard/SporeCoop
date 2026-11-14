@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: lab-final-0.7.13
 role: host
 versions: 0.7.13
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-civ
 commits: 409f7c75
 tests: civ_buy_city
@@ -54,3 +54,4 @@ PASS: out/lab/20261113-040703 and 20261113-041352 (host None | guest Economic, s
 ## History
 - 2026-11-12: opened from the 0.7.13 final check's key frames (fix/w48-fmisc); not fixed.
 - 2026-11-13 (fix/w49-civ): fixed for 0.7.14 (package V2): the question goes to the buyer.
+- 2026-11-14: released in 0.7.14.

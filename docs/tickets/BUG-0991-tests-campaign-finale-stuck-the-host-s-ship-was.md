@@ -8,7 +8,7 @@ reported: 2026-11-12
 source: rel/0.7.13 final check out/lab/20261112-175447 campaign, out/lane2/campaign/20261112-175451
 role: 
 versions: 0.7.13-rc
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-space
 commits: f95e96fe
 tests: space_finale_death, campaign (finale)
@@ -58,3 +58,4 @@ keeps the drive the bots added (`tool add` said "already there").
 ## History
 - 2026-11-12: opened.
 - 2026-11-13: fixed on fix/w49-space: the finale bot confirms the death caption and repairs before the finale; twin test.
+- 2026-11-14: released in 0.7.14.

@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-8
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-small
 commits: f4aca716, 3e2de219
 tests: creations_package_close
@@ -58,3 +58,4 @@ closed=4).
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-small (package T1).
+- 2026-11-14: released in 0.7.14.

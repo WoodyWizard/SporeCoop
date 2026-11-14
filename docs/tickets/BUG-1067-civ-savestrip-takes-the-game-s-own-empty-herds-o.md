@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: host
 versions: rel/0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tests
 commits: b359498b
 tests: civ_save_herds, save_hygiene_leave, civ_save_strip
@@ -55,3 +55,4 @@ BUG-0255 still holds (an empty herd made for a partner's puppet is stripped): sa
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on fix/w49-tests (game::our_herd, savestrip.our_herds), twin test civ_save_herds.
+- 2026-11-14: released in 0.7.14.

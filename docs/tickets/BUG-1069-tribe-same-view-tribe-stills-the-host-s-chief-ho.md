@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: fix/w49-mirror final check, lab 20261113-051820-2 same_view_tribe
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-tribe3
 commits: 9051b80c 3756afed 6d72a5d7 930d8352 809c71f2
 tests: tribe_chief_still, same_view_tribe (the chief rows at each still)
@@ -65,3 +65,4 @@ same_view_tribe x3 --cold 20261113-070558 (lane 6, final code: the chief's anima
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: cause found and fixed on fix/w49-tribe3.
+- 2026-11-14: released in 0.7.14.

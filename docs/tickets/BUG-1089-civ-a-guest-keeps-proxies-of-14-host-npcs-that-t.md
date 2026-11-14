@@ -8,7 +8,7 @@ reported: 2026-11-13
 source: lab
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14
 branch: fix/w49-proxy
 commits: 1856ff2e, cea47222
 tests: civ_wild_pooled, campaign (lab gate sync-check)
@@ -61,3 +61,4 @@ PASS: out/lab/20261113-174017 (lane 5) and out/lab/20261113-174223 (lane 5): non
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fix/w49-proxy: root cause (parked during the host's pause, no freeze pass in Tribe / Civ), fix npc.frozen_pooled_rts, test civ_wild_pooled; fixed.
+- 2026-11-14: released in 0.7.14.
