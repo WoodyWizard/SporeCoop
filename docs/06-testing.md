@@ -7747,3 +7747,25 @@ counted per raid and never reached 3 (a try of tribe_clicks takes 1.5-2.5 min).
   run's seed 492354972: Tribe ended in 13-15 min). The minimap's reach: docs/re/tribe.md#tribe-minimap-map.
 * Planting the first village raided does not work: the game forms the other villages only after the first conquest
   ("1 standing"), so no rule can go elsewhere (20261113-204040: 22 min on village 1, then 3/5 at the timeout).
+
+## The campaign's editors at a few fps: a lost parts drag (2026-11-14, fix/w49-civedit)
+<a id="testing-w49-civedit"></a>
+
+BUG-1096. campaign_tribe_end 20261113-231423-2 (rel/0.7.14, lane 5): the goal bar 5/5, the vote 4/4, the host in the
+City Hall editor at 23:35:50, then "Alice: editor done" every 8 s for 30 min. The host's screenshot at the timeout: the
+City Hall editor empty, "You need at least 3 parts to Save". The driver drags the three parts once (the third "done"
+try, 23:36:15); that drag was lost: the machine was loaded (load average 25-31, an unrelated process at ~780% CPU), the
+host ran 11-14 fps with hitches up to 2.7 s, the three other games 3-7 fps. A passing run of fix/w49-camp2
+(20261113-224609) had the same clicks at 65 fps and left both editors in about 35 s each. Not a mod bug: the vote, the
+editor's own pause and input lock and the trace lines are the same in both runs; nothing waits or refuses in the mod.
+* Now (coop_campaign.editor_parts_due): while the editor stays up the parts are dragged again every 4 tries (the 7th,
+  11th, ...), each time slower (`drag_slow(..., pace)`: 2x, 3x, at most 4x the waits), printed `the editor still up
+  after N "done": three parts dragged again`. `CAMPAIGN_OLD_EDITOR_DRAG=1`: one drag only (before).
+* Test: suite `tribe_civ_editor_slow` (`SPORE_FPS=host:3`, `coop_tribe_civ.py --player-editor`: the editors are left
+  the driver's way, at most 20 tries each; checks the host leaves each editor). FAIL with `CAMPAIGN_OLD_EDITOR_DRAG=1`
+  20261114-000115 (the first drag lost at 3 fps: one part on the plot, "You need at least 3 parts to Save", 14 tries),
+  PASS 20261114-000120 (the City Hall left after the drags of tries 2, 6, 10: 14 tries; the vehicle editor 8; Civ).
+* `coop.ui find` does not see the red "You need at least 3 parts to Save" line (always False): the retry counts tries.
+* campaign_tribe_noclick 20261113-231423 (lane 6) of the same batch is another case: the City Hall editor ended in 37 s;
+  the planted 18 min of lost clicks plus the loaded machine (raids of 185-321 s) brought the goal bar to 5/5 only at
+  23:50:53, and the 30 min of the Tribe advance ran out back in Tribe after the City Hall, before the vehicle editor's vote.

@@ -103,7 +103,7 @@ def finish_editor(con):
     con.call('click %d %d' % DONE)
 
 
-def leave_editor_player(con, tries=14):
+def leave_editor_player(con, tries=20):
     """--player-editor (BUG-1096): leave the editor the campaign driver's way (coop_campaign: "done" every few
     seconds, the parts dragged at the third try and, after the fix, again every 4 tries slower while the editor
     stays up), counting the tries; the City Hall's "You need at least 3 parts to Save" shown is printed"""
