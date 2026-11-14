@@ -3962,6 +3962,11 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   next frame draws the puppet at least half as high in >= 80 % (at least 5 hops). With `--air` a drawn frame step that
   follows a step of the target itself (the hop is a teleport of the walker's own creature) is no jump of the driving.
   `SPORE_FIX_OFF=creature.puppet_air` fails (5 %; with the fix 99 %).
+  BUG-1092: the "no jump of the puppet while it walks" check fails with `drive.agl_lerp` off only at the lab's usual
+  40-70 fps (a 1.5 m step at a hop's start in a 15 ms frame); in a slow cold run (28 fps, 50-70 ms frames) the hitch
+  allowance covers it, so a FAIL claim needs `--repeat 2` or more (lab 20261113-191329: #1 28 fps no step, #2 67 fps 9).
+  With `--air` the walk gait check holds the puppet to the walker's own gait share less 10 points (at most 80 %): a
+  walker that hops often has no gait in the air either.
 * `--mound x,y,z` (suite `puppet_mound`, cold: `--goto`): the walker stands 10 s 0.5 m over that point (it lands on
   the fixture's nest mound, lower part at -128.4,-487.5,-67.4), then walks; checks that of the frames with the target
   over 0.15 m above GetHeightAt and the puppet on the screen at most 10 % are drawn 0.15 m under the walker's height.

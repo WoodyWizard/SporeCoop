@@ -47,6 +47,7 @@ WALK_ANIMS = {0x04866D8E, 0x0452B634, 0x05CB2176, 0x04866DB9, 0x04866DC3, 0x0486
               0x05CB2177, 0x044828E9, 0x04482906}
 STAND_MAX, MATCHED_MIN = 0.05, 0.85
 GAIT_MIN = 0.80
+GAIT_AIR_SLACK = 0.10  # BUG-1092 (--air): the puppet's walk gait share may be this much under the walker's own
 GAIT_PPM = 10.0  # BUG-0436: pixels per metre on the observer's screen (a walking puppet near its camera: 25-90)
 
 
@@ -651,8 +652,12 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         print(f'  NOT MEASURED {r["label"]}: the walk gait: the observer\'s camera is far away ({len(far)} frames under '
               f'{GAIT_PPM:.0f} px/m, {r["near"]} near): its game animates a creature that far without a gait', flush=True)
     else:
-        ck(r['near'] >= 150 * fps_k and r['near_gait'] >= GAIT_MIN,
-           f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
+        # BUG-1092: with --air the walker hops every second or so and its own avatar has no walk gait in the air either
+        # (its own 73-86 % in the runs where the puppet had 70-79 %, lab 20261113-191644, -191329 #1, -190457 #1): the
+        # puppet is held to its walker's own share then, less GAIT_AIR_SLACK
+        gmin = min(GAIT_MIN, r['own_gait'] - GAIT_AIR_SLACK) if air else GAIT_MIN
+        ck(r['near'] >= 150 * fps_k and r['near_gait'] >= gmin,
+           f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {gmin:.0%} '
            f'of {r["near"]} frames on its screen)')
 
 

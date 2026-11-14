@@ -1464,6 +1464,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * FIXED (2026-11-04, fix/w41-puppet-look, unreleased): the partner's game sends PF_JUMPING while its creature is off
   the terrain; the puppet is placed in the air and marked not grounded (`creature.puppet_air`, suite `puppet_air`).
   Not checked with a creature that can really jump (the fixture's cannot).
+* FIXED (2026-11-13, fix/w49-puppet, unreleased): at a hop's start the puppet stepped up to the partner's full
+  height in one frame while its interpolated target rose over 2-3 frames (puppet_air "no jump of the puppet while it
+  walks", also on v0.7.13); the height over the ground is now blended with the position (`drive.agl_lerp`,
+  BUG-1092, docs/re/creature.md#creature-puppet-agl-lerp).
   on the observer; check with a creature that can jump.
 * Ticket: BUG-0376
 

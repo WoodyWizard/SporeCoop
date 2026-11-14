@@ -6,6 +6,8 @@
 - Tests: the Tribe editor-visit test (`tribe_editor_world`) waited for a world share after the host's editor that the
   game no longer makes since 0.7.10 (the guest keeps its world); it now checks the epic is still the co-op one and
   makes the share save itself (BUG-1090).
+- Creature: when the other player's creature leaves the ground (a hop, a jump), your screen shows it rising with
+  them instead of stepping up to its full height in one frame (BUG-1092).
 - Tribe: a guest's members that were busy when the host came back from an editor or the main menu (taking up food
   from the ground, carrying it home) start afresh at the host's next editor visit, instead of going on with food that
   was taken away in between; that could make the guest's game fault (caught faults at 0xC23469, seen at the end of
