@@ -13,7 +13,7 @@ branch: fix/w31-creature-gate
 commits: 50bfff7
 tests: old_species (tools/tests/coop_old_species.py)
 signature: creations: player N asks for species XXXXXXXX: not found here
-docs: docs/re/creations.md#creations-old-species, docs/known-issues.md#issue-own-old-species
+docs: docs/re/creations.md#creations-old-species, docs/archive/known-issues-2026.md#issue-own-old-species
 related: BUG-0278
 switch: creations.old_species
 ---

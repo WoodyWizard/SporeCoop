@@ -2447,7 +2447,7 @@ BUG-0504. Lane 9, probes (no test kept).
 ## The skin painter's own effects and the effects relay in Tribe / Civ (2026-11-04, fix/w41-effects-stages)
 <a id="creature-effects-painter"></a>
 
-BUG-0451, the other stages (docs/known-issues.md#issue-effects-civ-space). GOG 2024, lane 4, runtime counters
+BUG-0451, the other stages (docs/archive/known-issues-2026.md#issue-effects-civ-space). GOG 2024, lane 4, runtime counters
 (`coop.effects`: `effects foreign world:`), the 0.7.4 fault logs (rel/0.7.4 out/lab/20261103-215559 and -223036).
 
 * ✔ The skin painter (`Skinner::cSkinPainterPipeline::ExecutePipeline`, it paints a creature model's skin when the
@@ -4709,7 +4709,7 @@ Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chu
   (the creature's own blocks behind it, freed with it: #creature-freed-in-cinematic names the cModifiers block right
   after it). The old free check (bit 0 of the next chunk's header at creature - 4 + 0x16A8) then reads a stale word:
   it said "not freed" in 13 of 14 such rounds while the header had grown (the inference "the guest's heap seldom
-  hands the block back" in docs/known-issues.md#issue-npc-ai-lookup-reuse was this).
+  hands the block back" in docs/archive/known-issues-2026.md#issue-npc-ai-lookup-reuse was this).
 * ✔ A header with bit 0 clear (0x16A8: the chunk before is free) merges backward: no creation then starts at the
   creature's address; 8 of 21 proxies of a cold guest had it after a few hunts (neighbouring proxies are adjacent
   blocks, a hunt frees one).

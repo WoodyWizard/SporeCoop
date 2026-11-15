@@ -13,7 +13,7 @@ branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: text_lines, tests/text_tests.cpp
 signature:
-docs: docs/known-issues.md#issue-locked-edit-utf8, docs/06-testing.md#testing-p2-ui
+docs: docs/archive/known-issues-2026.md#issue-locked-edit-utf8, docs/06-testing.md#testing-p2-ui
 related:
 switch: core.ui_locked_edit_utf16
 ---

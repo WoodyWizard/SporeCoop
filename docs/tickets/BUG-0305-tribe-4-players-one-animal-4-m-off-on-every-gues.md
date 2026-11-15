@@ -3,7 +3,7 @@ id: BUG-0305
 title: tribe, 4 players: one animal ~4 m off on every guest at once (campaign desync n 3.7-4.4), not a regression of the view centres
 status: fixed
 kind: desync
-stage: tribe
+stage: Tribe
 reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 
@@ -13,7 +13,7 @@ branch: fix/w12-tribe-npc
 commits: 8623721, 07c3c07
 tests: tribe_npc_dash (coop_tribe_npc_dash.py), coop_sync_multi --fixture tribe, campaign
 signature:
-docs: docs/re/tribe.md#tribe-animal-proxy-trail, docs/known-issues.md#issue-tribe-npc-4m
+docs: docs/re/tribe.md#tribe-animal-proxy-trail, docs/archive/known-issues-2026.md#issue-tribe-npc-4m
 related: BUG-0281, BUG-0275, BUG-0280, BUG-0291
 ---
 

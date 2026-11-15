@@ -7801,7 +7801,7 @@ editor's own pause and input lock and the trace lines are the same in both runs;
 * Twin: `SPORE_WARM_KEEP_FAULTS=1 tools/lab.py run kit_cmd_fault,same_view --lane 6 --retry 0 --no-build
   --in-order` FAILS (20261114-025716), without it PASSES (20261114-025857, 20261114-030034).
 * Another warm-only failure of that check is not this one: npc_ai_lookup's "0 reuses" (BUG-1099,
-  [known issue](known-issues.md#issue-npc-ai-lookup-reuse)) is the guest's heap, the faults are on the host.
+  [known issue](archive/known-issues-2026.md#issue-npc-ai-lookup-reuse)) is the guest's heap, the faults are on the host.
 
 ## GPU memory of the lab: garbage on key frames above the card's VRAM (2026-11-14, fix/w49-spacegfx)
 <a id="testing-gpu-overcommit"></a>
@@ -7812,7 +7812,7 @@ during two campaign_space runs on lane 4 with other agents' lanes running): 5.2 
 DXVK) over a base of ~3.9 GB (desktop, other programs). The card has 16.0 GB (16368 MB): about 18 games fit.
 * The rel/0.7.14 final check 20261114-005006 ran 22 games at 01:18 (five 4-player tests and play_space on six lanes;
   the "6 lanes" rule of 6.19 counted 2-player lanes): ~18.4 GB wanted, MemAvailable down to 4.9 GB. Two guests of
-  campaign_space drew garbage (docs/known-issues.md#issue-gpu-overcommit-garbage); the same test alone on lane 4 was
+  campaign_space drew garbage (docs/archive/known-issues-2026.md#issue-gpu-overcommit-garbage); the same test alone on lane 4 was
   clean twice (20261114-025653, 20261114-031143).
 * Key frame review: garbage in the scene, the textures and the HUD at once on one game of a loaded run is this; repeat
   the test alone before opening a mod bug. A quick look at the count: `pgrep -x SporeApp.exe | wc -l`.
@@ -8050,3 +8050,50 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   the full campaign still runs once in the final check.
 * **Twin of the reporting:** `CAMPAIGN_PLANT_STUCK=<stage>[,<stage>]`: that stage change is not tried and counts as
   stuck (the lab records the knob as a twin, the ledger leaves the run out).
+## Kept-state key, out-of-range budgets and coop.kick (2026-11-15, fix/w51-net)
+<a id="testing-kept-key-kick"></a>
+
+* `space_kept_key` (coop_space_kept_key.py, Space, cold, about 9 min, two rejoins): Rivals; the guest leaves, another
+  game named Bob joins (`coop.space keptkey other on`: a fresh rejoin token for the next joins, never written to the
+  token slot nor kept) and must start with 0, then Bob's own game again (`keptkey other off`) must get its kept
+  budget back (BUG-1107, twin `SPORE_FIX_OFF=space.kept_token`). Then the guest reports a budget above the game's range
+  for 40 s (`coop.space rivalry fakemoney <v> [s]`, tests only) and the host merges to Allies: both games' own money
+  must be the sum of the real budgets (twin `SPORE_FIX_OFF=space.money_range`).
+* `kick` (coop_kick.py, Creature, warm, about 3 min): `coop.kick` from a guest and for the host itself are refused;
+  `coop.kick Bob` ends the guest's session, its co-op chat log (coop.status `chat:` lines) says "the host removed you
+  from the session", the host is alone; the guest may join again.
+* The per-guest limits of the host (`net.queue_cap`, `net.relay_budget`, docs/04-netcode.md#netcode-limits) are
+  unit tested only (net_tests `test_queue_cap`, `test_relay_budget`, `test_kick`; `--off queue_cap` / `--off
+  relay_budget` fail); a lab run shows the session's peaks in coop.status (`limits:`) and in sporekit.log
+  (`net limits: new peak ...`, at each doubling from 64 KB).
+## Crash triage with the debug symbols of the report's version (2026-11-15, feat/w51-build)
+<a id="testing-crash-symbols"></a>
+
+* From 0.7.15 the release job publishes `SporeCoop-<ver>-debug-symbols.tar.xz` (B5, BUG-1123): the
+  unstripped coop.dll, sporekit.dll and steam_api.sporekit.dll (DWARF, ~14 MB as xz; the zip, the pack
+  and the setup keep their stripped DLLs) and `SYMBOLS.txt` (commit, sha256 of each file and of the
+  shipped stripped copy with its `pe_version.py --repro-sha256`). `tools/symbols_pack.sh` writes it
+  (called by `tools/package.sh`); the asset is also in SHA256SUMS.txt and attested.
+* `tools/crash_triage.py <report>` prints, after the signature lines, `symbols    coop <ver>: <source>`
+  and one `symbol     coop.dll+0x...  function+0xN  file:line` per own frame (the fault first, then the
+  chain; chain frames are return addresses, symbolised at -1; an inlined frame shows the inlined
+  function, its line and `(inlined into <outer>+0xN)`). Where the symbols come from, in order:
+  `--symbols <dir|tar.xz>` (its coop.dll must be the report's version: VERSIONINFO, or the
+  `SporeCoop <ver>` string in builds before 0.7.12; another version is refused, since the offsets
+  would name wrong code), the cache (`$SPORECOOP_SYMBOLS_CACHE`, default `~/.cache/sporecoop/symbols/<ver>`),
+  then `gh release download v<ver>` checked against the release's SHA256SUMS.txt (a mismatch is refused
+  and not cached). `--no-symbols` skips it. Versions before 0.7.15 have no asset: build the tag
+  (`d=$(mktemp -d) && git archive v<ver> | tar -x -C $d && make -C $d -j8 coop sporekit loader`,
+  ~30 s) and pass `--symbols $d/build`.
+* llvm-symbolizer comes from the pinned llvm-mingw (`make toolchain-path`; `LLVM_SYMBOLIZER` or
+  `LLVM_MINGW` override). CORRECTION (2026-11-15, feat/w51-build): the note in the frozen-game section
+  above that llvm-symbolizer "is not installed on the lab machine" is outdated: it ships in llvm-mingw.
+* Proof: BUG-0688's frame `coop.dll+0x4158E` of 0.7.9, with a build of tag v0.7.9 from `git archive`,
+  is `civ::weapon_of(void*)  mods/coop/civ.cpp  (inlined into civ::tick(double)+0x5DE)`, the root cause
+  in the ticket.
+* Test `tools/tests/triage_symbols_check.py` (make test part `unit-symbols`, ~13 s, needs the build):
+  packs the local build with symbols_pack.sh, symbolises a made-up report through `--symbols` (tarball
+  and build folder), refuses another version, and runs the download path with a fake `gh` on PATH (no
+  network): fetch + sha256 + cache, cache reuse with gh failing, a wrong sha256, gh failing without a
+  cache, a pre-0.7.15 report that never calls gh. Against the old tool (`SELFTEST_TRIAGE=<copy>`) 12
+  checks FAIL.

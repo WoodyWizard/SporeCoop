@@ -3,7 +3,7 @@ id: BUG-0947
 title: Tribe: a guest that rejoins in Tribe has the ground round a village the host made live 4.5-4.9 m lower than the host (its copy stamps the ground differently)
 status: fixed
 kind: desync
-stage: tribe
+stage: Tribe
 reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, campaign, Carol after its rejoin)
 role: guest

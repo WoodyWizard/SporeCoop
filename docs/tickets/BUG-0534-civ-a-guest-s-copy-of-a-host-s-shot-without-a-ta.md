@@ -3,7 +3,7 @@ id: BUG-0534
 title: Civ: a guest's copy of a host's shot without a target faults in the weapon update
 status: fixed
 kind: crash
-stage: civ
+stage: Civ
 reported: 2026-11-04
 source: lab final 0.7.5
 role: guest

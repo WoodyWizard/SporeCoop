@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <new>
 #include <stdexcept>
@@ -27,8 +28,8 @@ const char* build_name()
 {
     static std::string name;
     std::string b = symbols_build(), e = exe_sha256();
-    if (b.rfind("922af7c7", 0) == 0)
-        name = "GOG 2016";
+    if (*unsupported_build_text())
+        name = "GOG 2016 (not supported: co-op off)";
     else if (b.rfind("dc04aee5", 0) == 0)
         name = e.rfind("dc04aee5", 0) == 0   ? "GOG 2024"
                : e.rfind("3010a413", 0) == 0 ? "Steam (the GOG 2024 code)"
@@ -518,7 +519,23 @@ static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
             break;
         i = e + 1;
     }
+    out = mask_paths(out); // BUG-1124: a path in a setting (a save folder, a mod's path)
     return std::vector<uint8_t>(out.begin(), out.end());
+}
+
+// BUG-1124: the text files of an archive (logs, reports) without private paths, also those written by an older
+// version or before the masks were right (logs of earlier runs); minidumps and screenshots stay as they are
+static void masked_text(const std::string& name, std::vector<uint8_t>& d)
+{
+    auto ends = [&](const char* x) {
+        size_t n = strlen(x);
+        return name.size() >= n && name.compare(name.size() - n, n, x) == 0;
+    };
+    if (!ends(".log") && !ends(".txt"))
+        return;
+    std::string s(d.begin(), d.end()), m = mask_paths(s);
+    if (m.size() != s.size() || m != s)
+        d.assign(m.begin(), m.end());
 }
 
 // the archive of a problem the game had (a crash, a hang, a fault before the game ended): named in
@@ -620,6 +637,7 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
             left_out.push_back(name);
             return;
         }
+        masked_text(name, d); // BUG-1124
         total += d.size();
         z.push_back({name, std::move(d)});
     };

@@ -421,3 +421,33 @@ switch off (`net_tests --off <name>`, and with `--nofix`).
   every `enum Kind` of the space sources and fails for a kind without a direction.
 * **World effect scale** (BUG-1048, `effects.scale_check`): a received pool-5 effect needs 0 < scale <= 1000 (the
   sender's range, `copy_transform`), `net::effect_xf_ok`.
+
+## Per-guest limits of the host and coop.kick (2026-11-15, fix/w51-net)
+<a id="netcode-limits"></a>
+
+Plan 0.7.15 A11 (owner decisions 8 and 9: a console kick, robustness rather than anti-cheat). The host keeps two
+limits per joined guest in `Session::limits` (every `update`); normal play stays far below both. A guest over one is
+dropped with a log line (`player N (name) dropped: ...`) and a REJECT that tells it why; its game shows
+"disconnected: rejected: <text>" and ends the session, as for every refused join.
+
+* **Queued reliable bytes** (`net.queue_cap`, `Session::queue_cap`, default `kQueueCap` = 32 MB): the payload bytes of
+  the reliable messages the host has queued for that guest and the guest has not acknowledged
+  (`Connection::pending_bytes`). The world transfer is paced by its own window and counts.
+* **What one guest's messages make the host queue** (`net.relay_budget`, a token bucket: `relay_rate` = 2 MB/s,
+  `relay_burst` = 32 MB): every reliable message the host queues while it handles a joined guest's message (a relay to
+  the other guests, an answer) is charged to that guest (`Session::charge`, set around `handle_msg`). A guest's own
+  join (WELCOME, the join callbacks) is not charged.
+* **Measured peaks** (`coop.status` line `limits:`, sporekit.log `net limits: new peak ...` at each doubling from
+  64 KB), 2026-11-15 on lanes 6 / 7 (out/lab/20261115-*): the reliable backlog of one guest peaks when it joins
+  (the world transfer): 560 KB in Creature (`kick`), 315 KB in Space (`play_space --quick`), 154 KB in Civ
+  (`play_civ --quick`), 152 KB with three players in Space (`party_space_names`). What one guest's messages made the
+  host queue stayed under 64 KB in every 1 s of these runs (10 bytes in `kick`), with three players too; a guest sent
+  at most 75 KB in 1 s. The limits are about 60x (backlog) and over 30x (2 MB/s, 32 MB at once) above that. Not
+  measured: four players, a session report (its pieces go to the host and are not relayed), a slow internet link.
+* **`coop.kick <id | name>`** (host, console only; net/kick.h): drops the guest the same way with "the host removed you
+  from the session". Not a ban: the player may join again under the join rules (late join, BUG-1001).
+* **Compatibility**: no message changes. The REJECT to a joined guest has the new reason value 5 (`REJ_KICKED`); a
+  0.7.14 guest reads any REJECT the same way (it shows the text and leaves). The REJECT goes out unreliably, three
+  times, before the peer is removed (its Connection goes with it).
+* Twins: net_tests `test_queue_cap` (`--off queue_cap`: the queue of a guest that stopped reading grows past the cap),
+  `test_relay_budget` (`--off relay_budget`: the sender stays), `test_kick`; lab test `kick`.

@@ -35,7 +35,7 @@ void out_vappend(Out* o, const char* fmt, va_list ap)
     va_end(ap2);
 }
 
-static void outf(SkOut* o, const char* fmt, ...)
+SK_PRINTF(2, 3) static void outf(SkOut* o, const char* fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);

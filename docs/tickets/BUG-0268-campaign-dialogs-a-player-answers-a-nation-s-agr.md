@@ -3,7 +3,7 @@ id: BUG-0268
 title: campaign: dialogs a player answers (a nation's 'Agreed. Bye for now.', a badge's Reward panel) block civ -> space and the finale
 status: fixed
 kind: tooling
-stage: 
+stage: Tools
 reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: 

@@ -1,14 +1,15 @@
 # SporeCoop - rules for everyone working here (people, Claude sessions, subagents, test bots)
 
 Co-op mod for Spore (the GOG 2024 build, `SporeApp.exe` 24 895 536 bytes, and Steam; the GOG 2016
-build, 24 888 320 bytes, is no longer supported; see docs/05-re-notes.md 5.1.1) on the SporeKit framework, run under Wine/Bottles
-on Linux and on Windows. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
+build, 24 888 320 bytes, is not supported; see docs/05-re-notes.md 5.1.1) on the SporeKit framework, run
+under Wine/Bottles on Linux and on Windows. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
 
-**Builds (decided 2026-11-05, the owner):** GOG 2016 (`922af7c7`) is **no longer supported from 0.7.8
-on**; the GOG 2024 build (`dc04aee5`, and Steam, the same code) is the only supported build. New code
-needs symbols for GOG 2024 only, tests run on GOG 2024 lanes only, no time goes into GOG 2016 (no
-tests, no fixes, no crash analysis); the GOG 2016 files stay frozen until they are removed.
-(Before: decided 2026-10-23 that 0.7.x is the last release line for GOG 2016.)
+**Builds:** the GOG 2024 build (`dc04aee5`, and Steam, the same code) is the only supported build:
+symbols, tests and lanes are GOG 2024 only. GOG 2016 (`922af7c7`) is not supported since 0.7.8
+(decided 2026-11-05, the owner) and its code, symbol files and texts were removed in 0.7.15 (owner
+decision 3 of docs/plan-0.7.15.md, BUG-1125): SporeKit still knows its exe hash and shows "this game
+version (GOG 2016) is not supported" instead of loading the mod, the setup says the same. No time goes
+into GOG 2016 (no tests, no fixes, no crash analysis); lane 8 is the owner's.
 
 ## 1. Knowledge first: write down what you learn
 
@@ -17,13 +18,13 @@ seconds. **Before analysing anything in the game, search what is already known; 
 anything new, write it down in the same change.**
 
 * Where knowledge lives:
-  * `data/symbols/overrides_922af7c7.sym`: every game function / global / vtable we use:
+  * `data/symbols/overrides_dc04aee5.sym` (GOG 2024): every game function / global / vtable we use:
     `Namespace::Name=0xADDRESS ; <confidence> <calling convention + signature + what it does>`.
     Confidence is one of `verified` (prologue / `ret N` / call sites checked, or seen working at
     runtime), `likely` (role sure, details inferred), `unknown`. `tools/re_lint.py` (in `make test`)
     fails when the code asks for a symbol that is not there or an entry has no confidence word.
-    A new symbol goes into `overrides_dc04aee5.sym` (GOG 2024 build) too, with that build's
-    address: it is usually not the GOG 2016 address plus the neighbours' shift (05-re-notes 5.1.1).
+    `march2017_dc04aee5.sym` is the generated base (ModAPI's March2017 addresses); a name the code
+    uses needs its checked entry in the overrides file (05-re-notes 5.1.1).
   * `docs/re/<area>.md` (cell, tribe, civ, space, creations, …) - structures, field offsets, how a
     game system works, recipes ("to spawn an epic: …"), with ✔ / ~ / ? marks. One file per game
     area; append a section rather than starting a new file.
@@ -39,7 +40,7 @@ anything new, write it down in the same change.**
     how to reproduce it, fix it only when it is part of their task, and list the new tickets in
     their report.
   * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them), each with its
-    ticket id.
+    ticket id; an entry whose tickets are all closed moves to `docs/archive/known-issues-2026.md`.
   * `docs/06-testing.md`: test tools, fixtures, how long things take, test pitfalls.
 * Code never uses a raw game address: ask SporeKit by name (`H->sym("…")`) and add the name to the
   `.sym` file.
@@ -124,8 +125,9 @@ anything new, write it down in the same change.**
   merge button: it writes the account's e-mail into the merge commit. Commits use the GitHub
   no-reply address.
 * Releases: add the version's section to `CHANGELOG.md`, bump `COOP_VERSION` (mods/coop/coop.cpp),
-  run `tools/tickets.py release X.Y.Z` (fixed tickets get the version), push a tag `vX.Y.Z`: GitHub
-  Actions builds the zip and publishes the release.
+  run `tools/tickets.py release X.Y.Z` (fixed tickets get the version), `make release-dry` must pass, push
+  main, and only when main's CI run is green push the tag `vX.Y.Z`: GitHub Actions builds the zip and
+  publishes the release. A published tag is never moved (docs/10-dev-pipeline.md#pipeline-release-dry).
 * Shared append-only files (`CHANGELOG.md`, `docs/known-issues.md`, `docs/06-testing.md`,
   `docs/re/*.md`) merge with git's `union` driver (`.gitattributes`): parallel additions do not
   conflict. After such a merge check the file for duplicated or interleaved text.

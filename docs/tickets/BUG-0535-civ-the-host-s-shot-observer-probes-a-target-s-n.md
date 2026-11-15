@@ -3,7 +3,7 @@ id: BUG-0535
 title: Civ: the host's shot observer probes a target's non-vtable and logs a fault per shot
 status: fixed
 kind: bug
-stage: civ
+stage: Civ
 reported: 2026-11-04
 source: lab final 0.7.5
 role: host

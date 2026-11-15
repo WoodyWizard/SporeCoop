@@ -32,6 +32,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   laa       tools/laa.py on a fake 32-bit exe: set writes a verified backup and changes only the
             Characteristics flag and the PE checksum (still valid), set again and a Steam .bind exe are
             refused, restore brings back the original's sha256; a damaged backup is refused (BUG-0862)
+  wtgc      tools/wt_gc.py on a temporary repository: only merged, clean, unused, old worktrees and merged branches
+            go, and only with --apply (BUG-1127)
   symlist   upd::kSymbolFiles (updater/winupdate.h, what the uninstall deletes) names every
             data/symbols/*.sym a release installs (BUG-0851)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
@@ -56,6 +58,7 @@ RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'releas
 TRIAGE = os.environ.get('SELFTEST_TRIAGE', os.path.join(ROOT, 'tools', 'crash_triage.py'))
 LAATOOL = os.environ.get('SELFTEST_LAA', os.path.join(ROOT, 'tools', 'laa.py'))
 HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
+WTGC = os.environ.get('SELFTEST_WTGC', os.path.join(ROOT, 'tools', 'wt_gc.py'))
 fails = []
 
 
@@ -230,25 +233,32 @@ def test_tickets():
     subprocess.run(['git', '-C', repo, 'commit', '-qm', 'init'], env=env, check=True)
     wt = os.path.join(TMP, 'wt-a')
     git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/a')
-    first = run(wt, 'new', 'found on the way').stdout.strip()
+    first = run(wt, 'new', 'found on the way', '--stage', 'Tools').stdout.strip()
     subprocess.run(['git', '-C', wt, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', wt, 'commit', '-qm', 'ticket'], env=env, check=True)
     git(repo, 'worktree', 'remove', wt)
-    second = run(repo, 'new', 'another one').stdout.strip()
+    second = run(repo, 'new', 'another one', '--stage', 'Tools').stdout.strip()
     check(os.path.basename(first).startswith('BUG-0001') and os.path.basename(second).startswith('BUG-0002'),
           f'an id committed on a branch without a worktree is not reused (BUG-0057): '
           f'{os.path.basename(first)}, {os.path.basename(second)}')
     wt = os.path.join(TMP, 'wt-sec')
     git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/sec')
-    sec = run(wt, 'new', 'open security hole', '--kind', 'security', '--private').stdout.strip()
+    sec = run(wt, 'new', 'open security hole', '--kind', 'security', '--stage', 'All', '--private').stdout.strip()
     found = run(repo, 'find', 'security hole').stdout
     check('open security hole' in found, f'a private ticket made in a worktree is found from the main checkout '
           f'(BUG-0062): {sec}')
     git(repo, 'worktree', 'remove', '--force', wt)
     found = run(repo, 'find', 'security hole').stdout
-    nxt = run(repo, 'new', 'next', '--private').stdout.strip()
+    nxt = run(repo, 'new', 'next', '--stage', 'Tools', '--private').stdout.strip()
     check('open security hole' in found and not os.path.basename(nxt).startswith(os.path.basename(sec)[:8]),
           f'it survives the worktree\'s removal and its id is not given out again ({os.path.basename(nxt)})')
+    # BUG-1126: the stage of a new ticket is one of the list; an alias is written as its stage
+    r = run(repo, 'new', 'on the moon', '--stage', 'Moon')
+    check(r.returncode != 0 and 'one of' in r.stderr and not r.stdout.strip(), 'new refuses a stage that is no stage')
+    r = run(repo, 'new', 'no stage')
+    check(r.returncode != 0, 'new needs a --stage')
+    p = run(repo, 'new', 'an alias', '--stage', 'civilization/tribe').stdout.strip()
+    check(p.endswith('.md') and 'stage: Tribe, Civ\n' in open(p).read(), f'new writes an alias list as "Tribe, Civ"')
 
 
 # ---------------------------------------------------------------- tickets check (BUG-0215)
@@ -257,7 +267,7 @@ id: {id}
 title: t
 status: fixed
 kind: bug
-stage: Cell
+stage: {stage}
 reported: 2026-10-28
 source: x
 role: both
@@ -300,7 +310,7 @@ def test_tickets_check():
     g('commit', '-qm', 'new fix (BUG-0001)')
     new = g('rev-parse', '--short', 'HEAD').strip()
     path = os.path.join(repo, 'docs', 'tickets', 'BUG-0001-t.md')
-    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='',
+    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='', stage='Cell',
                 verif='FAIL with SPORE_FIX_OFF=pool.purge: out/lab/20261028-101010. PASS: 20261028-111111.')
 
     def check(cwd=repo, **kw):
@@ -320,6 +330,10 @@ def test_tickets_check():
         (dict(tests='no_such_test'), 'names no lab suite', 'a test name that resolves nowhere: fails'),
         (dict(verif='/tmp/x/run.log ' + good['verif']), 'outside the repository', 'a path outside the repository: fails'),
         (dict(extra='switch: session_end\n'), 'unknown coop.fix name', 'an unknown switch: name fails (BUG-0214)'),
+        (dict(stage='civ'), 'is written "Civ"', 'a stage alias (civ) fails with the stage to write (BUG-1126)'),
+        (dict(stage='Tribe/Civ'), 'is written "Tribe, Civ"', 'a stage list in another form fails (BUG-1126)'),
+        (dict(stage='Moon'), 'is not one of', 'a stage that is no stage fails (BUG-1126)'),
+        (dict(stage=''), 'is not one of', 'an empty stage fails (BUG-1126)'),
         (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.'), 'names no twin switch',
          'a fixed bug that names no twin switch and no reason: fails (BUG-0430)'),
         (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.', extra='switch: none\n'),
@@ -378,29 +392,26 @@ def test_relint():
     check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
     check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
           f'a second overrides entry of {dup} without a confidence word is flagged')
-    # BUG-0216: a name looked up through a table, only in the GOG 2024 overrides: used, missing on the
-    # frozen build, and it needs its frozen_off line; a plain "free" is no symbol
+    # BUG-0216: a name looked up through a table needs its .sym entry like a sym("...") call; a plain "free" is
+    # no symbol (the frozen GOG 2016 build and its frozen_off list are gone since BUG-1125)
     shutil.copy(RELINT, os.path.join(tree, 'tools', 're_lint.py'))
     shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
-    with open(ovr, 'a') as f:
-        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\nfree=0x00401000 ; verified test entry\n')
     open(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'), 'w').write(
         'static const char* t[] = {"Simulator::FooTable", "free"};\n')
+    with open(os.path.join(tree, 'data', 'symbols', 'march2017_dc04aee5.sym'), 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; high m17=0x00401000\n')  # known (generated), so the literal counts
     r = lint()
-    check(r.returncode == 1 and 'Simulator::FooTable' in r.stdout and 'frozen_off' in r.stdout,
-          'a table-looked-up GOG 2024-only name needs a frozen_off line')
+    check(r.returncode == 1 and 'unchecked symbol Simulator::FooTable' in r.stdout,
+          'a table-looked-up name only in a generated .sym needs its overrides entry')
     check('free (used' not in r.stdout and ' free,' not in r.stdout, 'a literal "free" is not counted as a symbol')
-    fo = os.path.join(tree, 'data', 'symbols', 'frozen_off_922af7c7.txt')
-    with open(fo, 'a') as f:
-        f.write('Simulator::FooTable ; a test feature (BUG-0001)\n')
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\n')
     r = lint()
-    check(r.returncode == 0, f'with its line it passes ({r.stdout.strip().splitlines()[-1:]})')
+    check(r.returncode == 0, f'with its overrides entry it passes ({r.stdout.strip().splitlines()[-1:]})')
     os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
-    r = lint()
-    check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
     # BUG-0430: a test tool's `call <Name>` needs the name too; a float result needs the entry's `returns:` note
-    os.remove(fo)
-    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'frozen_off_922af7c7.txt'), fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'march2017_dc04aee5.sym'),
+                os.path.join(tree, 'data', 'symbols', 'march2017_dc04aee5.sym'))
     shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
     os.makedirs(os.path.join(tree, 'tools', 'tests'), exist_ok=True)
     tool = os.path.join(tree, 'tools', 'tests', 'coop_zz.py')
@@ -489,6 +500,15 @@ def test_triage():
     check('GOG 2024' in out and 'coop 0.7.2.3' in out and 'mode Creature' in out, 'build, version and stage read')
     check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
+    # BUG-1125: a GOG 2016 report is named and answered "not supported", not analysed
+    rep16 = os.path.join(TMP, 'crash-20261025-000001.txt')
+    open(rep16, 'w').write('SporeCoop crash 20261025-000001\n\n== Environment\n'
+                           'SporeKit 0.3.4, game GOG 2016 (exe 922af7c7908af261), frames from Present\n'
+                           'game mode: Creature, frame 1, up 1 s\nmods: coop 0.7.7  \n\n== Exception\n'
+                           '0xC0000005 access violation at 0x00C6AE60 SporeApp.exe Foo::Bar+0x20 (thread 1)\n')
+    out16 = subprocess.run([sys.executable, '-I', tool, rep16], capture_output=True, text=True).stdout
+    check('GOG 2016' in out16 and 'not supported' in out16 and 'signature' not in out16 and 'BUG-0018' not in out16,
+          'a GOG 2016 report: "not supported", no signature, no ticket search (BUG-1125)')
 
     # BUG-0247: one signature per place, whatever thread wrote the report and whatever file it is
     def sigs(name, text):
@@ -1078,11 +1098,94 @@ def test_bootfault():
         check(want_ok == (not counted or counted.group(1) == '0'), f'faults line the lab reads, {what}')
 
 
+# ---------------------------------------------------------------- wt_gc (BUG-1127)
+def test_wtgc():
+    """BUG-1127: wt_gc.py removes only merged, clean, unused, old worktrees (and merged branches), never with a dry
+    run; a tree in use (a process in it, a held lab lane lock), with uncommitted work, unmerged, kept by a glob or
+    recently changed stays"""
+    print('wtgc: wt_gc.py on a temporary repository')
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('wt_gc', WTGC)
+    gc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gc)
+    env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+               GIT_COMMITTER_EMAIL='t@t')
+    base = os.path.join(TMP, 'w')
+    repo = os.path.join(base, 'repo')
+    os.makedirs(repo)
+    g = lambda *a, cwd=repo: subprocess.run(['git', '-C', cwd, *a], env=env, capture_output=True, text=True,
+                                            check=True).stdout
+    g('init', '-q', '-b', 'main')
+    open(os.path.join(repo, '.gitignore'), 'w').write('build/\nout/\n')
+    open(os.path.join(repo, 'a.txt'), 'w').write('a')
+    g('add', '-A')
+    g('commit', '-qm', 'init')
+    wt = lambda b: os.path.join(base, 'wt', b.replace('/', '-'))
+    for b in ('fix/a', 'fix/b', 'fix/c', 'fix/d', 'fix/h', 'x/keep-1', 'rel/1'):
+        g('worktree', 'add', '-q', wt(b), '-b', b)
+    g('branch', 'fix/f')
+    open(os.path.join(wt('fix/c'), 'c.txt'), 'w').write('c')  # an unmerged commit
+    g('add', '-A', cwd=wt('fix/c'))
+    g('commit', '-qm', 'c', cwd=wt('fix/c'))
+    open(os.path.join(wt('fix/b'), 'new.txt'), 'w').write('work')  # untracked: uncommitted work
+    os.makedirs(os.path.join(wt('fix/a'), 'build'))
+    open(os.path.join(wt('fix/a'), 'build', 'blob'), 'wb').write(os.urandom(200_000))
+    os.makedirs(os.path.join(wt('fix/a'), 'out', 'lab', '20260101-000000'))
+    busy = subprocess.Popen(['sleep', '60'], cwd=wt('fix/d'))  # an agent / lab in fix/d
+    # a lab run of fix/h holds a lane lock (the lock files sit next to the lane-1 game folder: the main
+    # checkout's parent's parent)
+    lock = os.path.join(TMP, '.lab-run-lane7.lock')
+    holder = subprocess.Popen([sys.executable, '-c', 'import fcntl, os, sys, time\n'
+                               f'f = open({lock!r}, "a+"); fcntl.flock(f, fcntl.LOCK_EX)\n'
+                               'f.write(f"run 1 pid {os.getpid()} since 00:00\\n"); f.flush()\n'
+                               'print("held", flush=True); time.sleep(60)'],
+                              cwd=wt('fix/h'), stdout=subprocess.PIPE, text=True)
+    holder.stdout.readline()
+    try:
+        here = os.getcwd()
+        os.chdir(TMP)
+        later = time.time() + 72 * 3600
+        p = gc.plan(repo, keep=['x/keep-*'], now=later)
+        gone = {w['branch'] for w in p['remove']}
+        why = dict((k.split(' [')[1].rstrip(']'), v) for k, v in p['kept'])
+        check(gone == {'fix/a'}, f'only the merged, clean, unused, old tree goes ({sorted(gone)})')
+        check(why.get('fix/b', '').startswith('uncommitted'), f'uncommitted work stays ({why.get("fix/b")})')
+        check(why.get('fix/c', '').startswith('not merged'), f'an unmerged branch stays ({why.get("fix/c")})')
+        check(why.get('fix/d', '').startswith('in use'), f'a tree a process uses stays ({why.get("fix/d")})')
+        check(why.get('fix/h', '').startswith('a lab run holds'), f'a held lane lock keeps it ({why.get("fix/h")})')
+        check(why.get('x/keep-1', '').startswith('kept branch') and why.get('rel/1', '').startswith('kept branch'),
+              'a --keep glob and rel/* stay')
+        check(set(p['branches']) == {'fix/a', 'fix/f'}, f'merged branches to delete: fix/a, fix/f ({p["branches"]})')
+        check('fix/c' in p['unmerged'], 'the unmerged branch is listed for a person')
+        check(p['remove'][0].get('bytes', 0) >= 200_000, f'the size of build/ and out/ is counted '
+              f'({p["remove"][0].get("bytes")})')
+        now = gc.plan(repo, keep=['x/keep-*'], sizes=False)
+        check(not now['remove'] and dict((k.split(' [')[1].rstrip(']'), v) for k, v in now['kept'])
+              .get('fix/a', '').startswith('changed'), 'a tree changed in the last 48 hours stays')
+        r = subprocess.run([sys.executable, '-I', WTGC, '--repo', repo, '--keep', 'x/keep-*', '--min-age', '0'],
+                           capture_output=True, text=True)
+        check(r.returncode == 0 and 'dry run' in r.stdout and os.path.isdir(wt('fix/a'))
+              and 'fix/f' in g('branch'), f'the dry run changes nothing ({r.stdout.strip().splitlines()[-1:]})')
+        r = subprocess.run([sys.executable, '-I', WTGC, '--repo', repo, '--keep', 'x/keep-*', '--min-age', '0',
+                            '--apply'], capture_output=True, text=True)
+        branches = g('branch', '--format=%(refname:short)').split()
+        check(r.returncode == 0 and not os.path.exists(wt('fix/a')) and 'fix/a' not in branches
+              and 'fix/f' not in branches, f'--apply removes the tree and both branches ({r.stdout[-300:]})')
+        check(all(os.path.isdir(wt(b)) for b in ('fix/b', 'fix/c', 'fix/d', 'fix/h', 'x/keep-1', 'rel/1'))
+              and 'fix/c' in branches and 'fix/b' in branches, 'every kept tree and branch is still there')
+    finally:
+        os.chdir(here)
+        for pr in (busy, holder):
+            pr.kill()
+            pr.wait()
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
           'worldstate': test_worldstate, 'testlint': test_testlint,
-          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist, 'bootfault': test_bootfault}
+          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist, 'bootfault': test_bootfault,
+          'wtgc': test_wtgc}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

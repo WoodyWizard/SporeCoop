@@ -26,7 +26,6 @@ namespace terrain_diag {
 namespace {
 const SkHost* H;
 SkMod* M;
-double g_last_stamp; // the time of the last live stamp call (apply, remove, clear)
 uint32_t g_live_calls;
 
 struct Call {
@@ -72,7 +71,6 @@ uint32_t SK_THISCALL h_Apply(void* self, const uint8_t* xf, void* prop)
         c.scale = f[3];
     }
     note(c);
-    g_last_stamp = H->time_seconds();
     g_live_calls++;
     return id;
 }
@@ -81,7 +79,6 @@ void SK_THISCALL h_Remove(void* self, uint32_t id, int flag)
 {
     note(Call{H->time_seconds(), 2, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, id, (void*)(intptr_t)flag});
     o_Remove(self, id, flag);
-    g_last_stamp = H->time_seconds();
     g_live_calls++;
 }
 
@@ -89,7 +86,6 @@ void SK_THISCALL h_Clear(void* self)
 {
     note(Call{H->time_seconds(), 3, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, 0, nullptr});
     o_Clear(self);
-    g_last_stamp = H->time_seconds();
     g_live_calls++;
 }
 

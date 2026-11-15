@@ -3,7 +3,7 @@ id: BUG-0925
 title: a C runtime error box on the main thread (pure virtual call, abort) stops the game with nothing in the log but the box's title
 status: fixed
 kind: tooling
-stage: all
+stage: All
 reported: 2026-11-11
 source: 0.7.12 final check, lab 20261111-044257 long_creature
 role: host,guest

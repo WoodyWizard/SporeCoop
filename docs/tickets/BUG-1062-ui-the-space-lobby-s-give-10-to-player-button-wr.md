@@ -13,7 +13,7 @@ branch: fix/w49-space2
 commits: daac928c, 98058c5c
 tests: space_give_pick
 signature:
-docs: docs/08-ui.md#ui-give-fit, docs/known-issues.md#issue-give-caption-wrap
+docs: docs/08-ui.md#ui-give-fit, docs/archive/known-issues-2026.md#issue-give-caption-wrap
 related: BUG-1050
 ---
 

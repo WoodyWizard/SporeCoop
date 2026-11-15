@@ -3,7 +3,7 @@ id: BUG-0949
 title: Find each other: partner arrows and name tags are drawn over each other, over notification cards and over the minimap and the bottom bar (unreadable labels)
 status: fixed
 kind: bug
-stage: Core
+stage: All
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-151535
 role: host,guest

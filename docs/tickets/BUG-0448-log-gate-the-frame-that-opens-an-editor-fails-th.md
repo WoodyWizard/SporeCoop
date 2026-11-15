@@ -3,7 +3,7 @@ id: BUG-0448
 title: log gate: the frame that opens an editor fails the hitch gate (logged just before its stage line)
 status: fixed
 kind: tooling
-stage: all
+stage: All
 reported: 2026-11-01
 source: lab 20261101-223011 vote_net_4p
 role: host

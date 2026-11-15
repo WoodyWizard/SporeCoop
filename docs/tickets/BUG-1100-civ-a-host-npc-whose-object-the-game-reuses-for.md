@@ -3,7 +3,7 @@ id: BUG-1100
 title: Civ: a host NPC whose object the game reuses for another creature during a pause keeps its id; the guest shows the old one 690 m away (sync-check MISMATCH in civ_wild_pooled)
 status: fixed
 kind: desync
-stage: Civilization
+stage: Civ
 reported: 2026-11-14
 source: final check 0.7.14, lab 20261114-005006 civ_wild_pooled
 role: guest

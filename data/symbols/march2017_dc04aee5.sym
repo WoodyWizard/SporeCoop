@@ -2,7 +2,7 @@
 # exe_sha256=dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37
 # code_sha256=5a8267b23a1b916d7e920942d8375ea7fdb2d10a12aca0e603168a8a649f5f8f (tools/exe_info.py: an exe with this code and another exe_sha256 uses these files too)
 # build: GOG SPORE Collection 2024 update (SporeApp.exe 24 895 536 bytes, PE timestamp 2024-09-30), code layout of ModAPI "March2017"
-# source=the m17 column of gog2016_922af7c7.sym (ModAPI March2017 addresses, used as they are)
+# source=the m17 column of the former gog2016_922af7c7.sym (ModAPI March2017 addresses, used as they are; that file was removed with GOG 2016 support in 0.7.15)
 # format: name=0xVA ; confidence
 ?_type_info_dtor_internal_method@type_info@@QAEXXZ=0x011E172A ; high
 ?terminate@@YAXXZ=0x011E1352 ; medium

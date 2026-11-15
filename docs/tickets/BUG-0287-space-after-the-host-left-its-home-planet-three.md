@@ -3,7 +3,7 @@ id: BUG-0287
 title: space: after the host left its home planet, three guests loaded its world and their ships went down to the planet while the host stayed in the solar system
 status: fixed
 kind: bug
-stage: space
+stage: Space
 reported: 2026-10-29
 source: lab 20261029-174717 campaign#2 (lane 4)
 role: 

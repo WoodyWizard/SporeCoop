@@ -18,7 +18,7 @@ void init(const SkHost* host, SkMod* mod)
     M = mod;
 }
 
-static void write(const char* kind, const char* fmt, va_list ap)
+__attribute__((format(printf, 2, 0))) static void write(const char* kind, const char* fmt, va_list ap)
 {
     if (!H)
         return;

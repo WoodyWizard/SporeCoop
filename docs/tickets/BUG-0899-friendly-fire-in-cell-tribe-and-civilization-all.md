@@ -3,7 +3,7 @@ id: BUG-0899
 title: Friendly fire in Cell, Tribe and Civilization (all.friendly_fire covers the Creature stage only)
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: plan-0.7.12 F3 (BUG-0768 follow-up)
 role: 

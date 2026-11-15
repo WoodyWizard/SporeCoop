@@ -29,8 +29,8 @@ namespace sk {
 
 // log.cpp
 void log_init(const std::wstring& path);
-void logf(SkMod* mod, int level, const char* fmt, ...);
-void logv(SkMod* mod, int level, const char* fmt, va_list ap);
+void logf(SkMod* mod, int level, const char* fmt, ...) SK_PRINTF(3, 4);
+void logv(SkMod* mod, int level, const char* fmt, va_list ap) SK_PRINTF(3, 0);
 std::vector<std::string> log_tail(size_t n);
 extern int g_log_level;
 void log_session_clock(double offset, int on); // "[s <now + offset>]" in every line (on = 0: none)
@@ -65,6 +65,8 @@ bool symbols_load(); // picks file by exe hash
 // code (symbols_try_unpacked from the first call of the game's own code)
 bool symbols_pending();
 bool symbols_try_unpacked(); // true: the code in memory is the build's, its symbols are loaded
+// BUG-1125: "" or the message for a game build that is known and not supported (GOG 2016): no symbols, no mods
+const char* unsupported_build_text();
 uintptr_t sym(const char* name);
 uintptr_t image_base();
 uintptr_t rebase(uintptr_t va);
@@ -112,7 +114,7 @@ struct Out {
     std::string text;
 };
 // append printf output to a command's output (BUG-0388: up to 1 MB per call, kit.fix longout)
-void out_vappend(Out* o, const char* fmt, va_list ap);
+void out_vappend(Out* o, const char* fmt, va_list ap) SK_PRINTF(2, 0);
 bool console_start(int port);
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags);

@@ -68,6 +68,7 @@
 #include "net/fixes.h"
 #include "net/give_target.h"
 #include "net/interp.h"
+#include "net/kick.h"
 #include "net/lobby.h"
 #include "net/session.h"
 #include "net/utf8.h"
@@ -1041,7 +1042,6 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
 // once that the partner is not responding and when it plays again. Off: 0.7.3.6.
 static bool g_partner_silent_fix = true;
 COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
-uint32_t g_silent_notices = 0; // tests
 // BUG-0923: a partner's creation record arrives 0.3-0.4 s after its first puppet (at a join) or later (a new body):
 // the puppet is rebuilt with that look, and each making told "<name> appeared in the world" (twice at every join on
 // the host). Off: every puppet made is told (0.7.11)
@@ -1056,7 +1056,6 @@ static void silent_tick(Remote& r, double now)
     double age = r.buf.age(now);
     if (!r.silent_said && age > 5.0 && g_sess.connected()) {
         r.silent_said = true;
-        g_silent_notices++;
         feed(r.name + " is not responding (game minimized or frozen?)");
     } else if (r.silent_said && age < 1.0) {
         r.silent_said = false;
@@ -1717,7 +1716,6 @@ unsigned g_switch_votes, g_switch_held, g_switch_guest_held, g_switch_arrivals; 
 bool g_editor_now_fix = true;
 // F5 (BUG-0769): the session setting creature.mode = host (everybody plays the host's creature) is in force here
 bool host_creature_mode() { return settings::get(settings::kCreatureMode) == 1; }
-uint32_t g_one_evolutions = 0, g_one_refused = 0; // its host evolutions / refused guest editor requests (coop.status)
 // BUG-0920: an editor request the mod took and will never submit (evo_flag_tick clears the game's flag at once)
 bool g_evo_flag_refused = false;
 COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Creature evolution editor opens at once; each guest gets an Evolve now offer instead of the ready vote");
@@ -2063,7 +2061,6 @@ bool share_save_due() { return (world::save_busy() || world::save_pending()) && 
 bool g_editor_budget_fix = true;
 COOP_FIX("cell.editor_budget", "BUG-0560", g_editor_budget_fix,
          "cell: an editor opened after the vote gets the stage's DNA budget, not the editor's start budget");
-unsigned g_budgets_posted; // tests
 void post_editor_budget(int budget)
 {
     uintptr_t get = H->sym("App::IMessageManager::Get"), nw = H->sym("GeneralAllocator::new_");
@@ -2081,7 +2078,6 @@ void post_editor_budget(int budget)
     m[2] = (uint32_t)budget;
     m[6] = 1;
     skg::vcall<void>(mm, 0x18 / 4, 0x90A03FDFu, (void*)m, (void*)nullptr, 0); // MessagePost (queued)
-    g_budgets_posted++;
     LOG("cell: DNA budget %d posted again to the held editor (BUG-0560)", budget);
 }
 
@@ -2169,7 +2165,6 @@ void hold_submit(void* req)
 
 // the held request goes to the game once the save is written (at most 15 s later), outside the
 // frame: editors create D3D resources
-unsigned g_submits_after_swap; // tests (BUG-0318): editor requests that waited for the avatar's new body
 void submit_tick(double now)
 {
     if (!g_submit_later || (share_save_due() && now - g_submit_held_at < 15.0))
@@ -2313,7 +2308,6 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
 static void dna_spend_note(float d);
 bool g_own_editor_dna_fix = true;
 COOP_FIX("creations.own_editor_dna", "BUG-0466", g_own_editor_dna_fix, "creature: the parts a guest adds in its own editor cost DNA (the editor's price is charged)");
-static unsigned g_own_editor_charged = 0;
 typedef bool(SK_THISCALL* CreatureGameMsg_t)(void*, uint32_t, void*);
 CreatureGameMsg_t o_CreatureGameMsg;
 static void* g_creature_game; // BUG-0720 tests: the creature game whose handler builds the evolution request
@@ -2331,7 +2325,6 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
             g_own_editor_charge_due = false;
             if (g_own_editor_dna_fix && !cancelled && left >= 0 && left < now) {
                 game::dna_add_raw((float)left - now); // the editor's price, as the evolution's return sets it
-                g_own_editor_charged++;
                 dna_spend_note((float)left - now); // a spend of ours: to the host (core.dna_spend)
                 feed("your new parts cost " + std::to_string((int)(now - left)) + " DNA");
             }
@@ -2408,11 +2401,9 @@ bool SK_CDECL h_Submit(void* req)
         // a guest's own editor request is refused (the game's nest / mating call of a guest)
         bool one = host_creature_mode() && (mode == modes::kCell || mode == modes::kCreature);
         if (one && g_sess.role() == net::Role::Host) {
-            g_one_evolutions++;
             LOG("evolution: creature.mode host: the host's editor opens at once, every player gets the result");
             notice(g_name + " evolves the creature of everybody", -1);
         } else if (one) {
-            g_one_refused++;
             LOG("evolution: creature.mode host: this guest's editor request is refused (the host evolves)");
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
@@ -2455,7 +2446,6 @@ bool SK_CDECL h_Submit(void* req)
         hold_submit(req); // BUG-0318: after the new body is built (submit_tick)
         LOG("the editor waits until the avatar's new body is built");
         feed("your editor opens in a moment (your creature is still being built)");
-        g_submits_after_swap++;
         return false;
     }
     if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && share_save_due()) {
@@ -3566,7 +3556,6 @@ void own_editor_tick(double now)
         return;
     if (host_creature_mode() && g_sess.role() == net::Role::Client) { // F5 (BUG-0769): the host evolves for everybody
         g_own_editor_due = 0;
-        g_one_refused++;
         return;
     }
     unsigned b = g_own_editor_busy_fix ? game_busy() & busy::kEditorGate : 0u;
@@ -7690,6 +7679,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.kick", "coop.kick <id | name> - host: remove a player from the session (it is told why; BUG-1108)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", net::kick_command(g_sess, std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.sreport", "coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk - the session report (F4, BUG-0767): the host asks every guest for its report",
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",

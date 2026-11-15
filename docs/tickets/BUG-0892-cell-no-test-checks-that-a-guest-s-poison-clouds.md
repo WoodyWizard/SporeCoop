@@ -13,7 +13,7 @@ branch: fix/w48-small
 commits: aff0790d 9d537f59 4cca6fc0
 tests: cell_poison
 signature:
-docs: docs/known-issues.md#issue-cell-guest-poison-damage, docs/06-testing.md#testing-p1-g1, docs/re/cell.md#cell-poison-damage
+docs: docs/archive/known-issues-2026.md#issue-cell-guest-poison-damage, docs/06-testing.md#testing-p1-g1, docs/re/cell.md#cell-poison-damage
 related: BUG-0716, BUG-0428, BUG-0715, BUG-0799, BUG-0835
 ---
 
@@ -26,7 +26,7 @@ Severity: medium. Confidence: high.
 * Observed (code): tools/tests/coop_cell_parts_attack.py:108, for --part poison the only check is `puppet_clouds > 0`, a mod counter incremented at mods/coop/cellsync.cpp:753.
 * Observed (code): tools/tests/coop_cell_parts_attack.py:111-112, for poison the creature's health is only printed (the electric case asserts it at :110).
 * Observed (code): tools/tests/suite.py:319 says "they hurt the host's creatures", which the test does not check.
-* Observed (ticket): BUG-0716 "Not verified: the clouds' damage": one run lost 2 hp, the other none; with the grafted model data even the host's own avatar's clouds hurt nothing. Only docs/known-issues.md#issue-cell-guest-poison-damage records it, no ticket.
+* Observed (ticket): BUG-0716 "Not verified: the clouds' damage": one run lost 2 hp, the other none; with the grafted model data even the host's own avatar's clouds hurt nothing. Only docs/archive/known-issues-2026.md#issue-cell-guest-poison-damage records it, no ticket.
 * Inferred (medium): the graft writes only model data +0x1270..+0x1278; a real poison part carries more.
 
 ## Fix idea

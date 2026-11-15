@@ -3,7 +3,7 @@ id: BUG-0280
 title: Creature: the host's game keeps NPCs only around the host's avatar; a guest far from it sees nest members appear and vanish every few seconds
 status: fixed
 kind: desync
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: fix/w7-npc BUG-0274 analysis
 role: 

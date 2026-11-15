@@ -3,7 +3,7 @@ id: BUG-0659
 title: Civ: planet rows village, tribe_hut, tribe_tool, tribe_food_mat in organic play_civ, 3-5 rows a run on rel/0.7.9 vs 1 on 0.7.8 (the BUG-0539 raid case passes)
 status: fixed
 kind: desync
-stage: Civilization
+stage: Civ
 reported: 2026-11-06
 source: lab log sweep follow-up 2026-11-06 (detector rows rel/0.7.8 vs rel/0.7.9)
 role: 

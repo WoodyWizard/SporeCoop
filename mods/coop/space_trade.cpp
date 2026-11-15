@@ -1309,13 +1309,14 @@ static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
 
 struct KeptInv {
     Inv inv;
+    std::string name; // its session name when last seen (status only; the map's key is spaceext::kept_key, BUG-1107)
     bool have = false;
     uint8_t id = 0xFF;      // its session id now, 0xFF = not here
     bool restoring = false; // sent back, no answer yet
     uint32_t serial = 0;
     double sent = 0;
 };
-static std::map<std::string, KeptInv> g_kept_inv; // host: player name -> its own hold
+static std::map<std::string, KeptInv> g_kept_inv; // host: player key (spaceext::kept_key, BUG-1107) -> its own hold
 static uint32_t g_kept_inv_epoch, g_inv_serial, g_inv_holds, g_inv_sent_back, g_inv_done;
 // guest
 static bool g_inv_join_seen;
@@ -1589,10 +1590,11 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
     if (kind == K_INV || kind == K_INV_DONE) {
         if (!spaceext::is_host())
             return;
-        std::string name = spaceext::name_of(origin);
-        if (name.empty() || name == "?")
+        std::string key = spaceext::kept_key(origin);
+        if (key.empty() || key == "?")
             return;
-        KeptInv& k = g_kept_inv[name];
+        KeptInv& k = g_kept_inv[key];
+        k.name = spaceext::name_of(origin);
         if (kind == K_INV_DONE) {
             if (k.restoring && k.id == origin && id == k.serial) {
                 k.restoring = false;
@@ -1705,7 +1707,7 @@ static std::string inv_status()
              g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held);
     s += b;
     for (auto& [n, k] : g_kept_inv) {
-        snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", n.c_str(), k.id == 0xFF ? -1 : k.id,
+        snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(), k.id == 0xFF ? -1 : k.id,
                  (int)k.have, (int)k.restoring, (unsigned)k.inv.items.size(), k.inv.slots);
         s += b;
     }

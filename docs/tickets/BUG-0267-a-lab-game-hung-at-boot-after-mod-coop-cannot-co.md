@@ -3,7 +3,7 @@ id: BUG-0267
 title: A lab game hung at boot after 'mod coop: cannot copy coop.dll (err 32)'
 status: fixed
 kind: tooling
-stage: 
+stage: Tools
 reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: 

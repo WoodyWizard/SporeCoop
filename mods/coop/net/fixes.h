@@ -36,6 +36,9 @@ struct Fixes {
     bool replace_checked = true; // BUG-1003: a joined guest's entry is replaced by a new connection only when checked
     bool welcome_split = true;   // BUG-1005: a joining guest that announced CAP_SPLIT joins the pieces of the host's WELCOME
     bool recv_skip_big = true;   // BUG-1007: a datagram too big for the read buffer is skipped, the reads of the frame go on
+    // 0.7.15 (A11)
+    bool queue_cap = true;    // BUG-1108: host: a guest with far more queued reliable data than normal play is dropped
+    bool relay_budget = true; // BUG-1108: host: a guest whose messages make the host queue far more than normal play is dropped
 };
 inline Fixes g_fix;
 

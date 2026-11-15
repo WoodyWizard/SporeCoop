@@ -13,7 +13,7 @@ branch: fix/w49-space2
 commits: daac928c
 tests: space_owed_contracts_off
 signature:
-docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-owed-tool-contracts-off
+docs: docs/re/space.md#space-restore-window, docs/archive/known-issues-2026.md#issue-owed-tool-contracts-off
 related: BUG-0694, BUG-0768
 ---
 

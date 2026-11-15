@@ -3,7 +3,7 @@ id: BUG-0981
 title: key frames: civ and tribe capture tests shoot the home city, not the city or village they check
 status: fixed
 kind: test
-stage: civ
+stage: Civ
 reported: 2026-11-12
 source: lab-final-0.7.13
 role: both

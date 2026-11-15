@@ -13,7 +13,7 @@ branch: fix/w49-money
 commits: d500f3b0
 tests: space_rival_merge
 signature:
-docs: docs/re/space.md#space-rival-merge-known, docs/known-issues.md#issue-rivals-merge-unknown-budget
+docs: docs/re/space.md#space-rival-merge-known, docs/archive/known-issues-2026.md#issue-rivals-merge-unknown-budget
 related: BUG-0192, BUG-0813, BUG-0422
 ---
 

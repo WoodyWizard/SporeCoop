@@ -3,7 +3,7 @@ id: BUG-0449
 title: Tribe: the guest's game faults every frame in the physics update at 0xB4C5B4 (a body with no owner; dc04aee5:SporeApp.exe+0x74C5B4)
 status: fixed
 kind: crash
-stage: tribe
+stage: Tribe
 reported: 2026-11-01
 source: lab: tribe_walk, out/lab/20261101-204356 (lane 6)
 role: guest

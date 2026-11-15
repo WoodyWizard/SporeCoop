@@ -3,7 +3,7 @@ id: BUG-0688
 title: Civ: a guest crashes when it copies a host turret's shot: the turret's weapon is read through the building combatant offset (3010a413:coop.dll civ weapon_of, AV at 0xCCCCCCCC)
 status: fixed
 kind: crash
-stage: civ
+stage: Civ
 reported: 2026-11-07
 source: GitHub #198
 role: guest

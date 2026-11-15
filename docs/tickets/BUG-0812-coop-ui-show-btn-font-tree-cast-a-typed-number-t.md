@@ -3,7 +3,7 @@ id: BUG-0812
 title: coop.ui show/btn/font/tree cast a typed number to a window pointer: a control id crashes the game
 status: fixed
 kind: crash
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9108 (commit 6c8c4b2, lineages42-dev)
 role: host guest

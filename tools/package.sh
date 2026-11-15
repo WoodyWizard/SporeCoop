@@ -24,9 +24,10 @@ https://github.com/WoodyWizard/SporeCoop
 Discord (players, help, reports): https://discord.gg/7Yre7u4b8x
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
-Supported builds of SporebinEP1\\SporeApp.exe: GOG 2024 (sha256 dc04aee5...), Steam (3010a413...: the
-same game code under Steam's DRM) and, until 0.7.x, GOG 2016 (922af7c7...).
-Tested: GOG 2016 and 2024 on Linux (Wine), GOG 2024 on Windows 11, Steam on Linux (Proton); EA app and disc not tested
+Supported builds of SporebinEP1\\SporeApp.exe: GOG 2024 (sha256 dc04aee5...) and Steam (3010a413...: the
+same game code under Steam's DRM). The old GOG 2016 build (922af7c7..., 24 888 320 bytes) is not supported:
+please update it to the current GOG version (GOG Galaxy) or use Steam.
+Tested: GOG 2024 on Linux (Wine) and Windows 11, Steam on Linux (Proton); EA app and disc not tested
 (the full list: INSTALL.txt, section 2). All players need the same game build.
 
 Host: main menu -> Co-op -> name -> Host, then load or start a game. The window shows the
@@ -38,8 +39,8 @@ In game F9 opens the lobby: players, stage, ping, ready, chat, "Send my world", 
 Evolution (editor, next stage) is decided by a vote: everybody presses "I'm ready".
 Cheat console (Ctrl+Shift+C) works too: coop host | coop join <ip> | coop leave.
 EOF
-# the toolchain the Makefile uses (LLVM_MINGW ?= ... there), unless set in the environment
-LLVM_MINGW="${LLVM_MINGW:-$(sed -n 's/^LLVM_MINGW ?= //p' "$ROOT/Makefile" | sed 's/\$(HOME)/$HOME/; s|\$HOME|'"$HOME"'|')}"
+# the toolchain the Makefile uses (tools/toolchain.env), unless set in the environment
+LLVM_MINGW="${LLVM_MINGW:-$(make -s --no-print-directory -C "$ROOT" toolchain-path)}"
 STRIP="$LLVM_MINGW/bin/llvm-strip"
 cp "$ROOT/LICENSE" "$STAGE/LICENSE.txt"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.txt"
@@ -54,6 +55,8 @@ cp "$ROOT/build/SporeCoopSetup.exe" "$STAGE/SporeCoopSetup.exe"
 python3 "$ROOT/tools/pe_version.py" --expect "$VER" "$STAGE/SporeCoopSetup.exe" "$STAGE/SporeCoop/steam_api.sporekit.dll" \
     "$STAGE/SporeCoop/sporekit.dll" "$STAGE/SporeCoop/mods/coop.dll" >&2
 cp "$STAGE/SporeCoop-$VER.pack" "$STAGE/SporeCoopSetup.exe" "$ROOT/out/dist/"
+# B5 (BUG-1123): the unstripped DLLs as the release's debug-symbols asset (for tools/crash_triage.py)
+"$ROOT/tools/symbols_pack.sh" "$ROOT/build" "$VER" "$ROOT/out/dist" "$STAGE" >&2
 sed -i 's/\r*$/\r/' "$STAGE"/*.bat "$STAGE"/*.txt "$STAGE/SporeCoop/ini.exclude"  # Windows line endings for cmd.exe and Notepad
 (cd "$STAGE" && rm -f "../SporeCoop-$VER.zip" && zip -qr "../SporeCoop-$VER.zip" .)
 echo "$ROOT/out/dist/SporeCoop-$VER.zip"

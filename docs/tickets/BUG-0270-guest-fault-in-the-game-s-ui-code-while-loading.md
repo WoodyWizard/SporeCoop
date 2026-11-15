@@ -3,7 +3,7 @@ id: BUG-0270
 title: Guest fault in the game's UI code while loading a shared Space world after a fixture jump (dc04aee5:0x0095904B, jump to 0x65)
 status: fixed
 kind: crash
-stage: space
+stage: Space
 reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: guest

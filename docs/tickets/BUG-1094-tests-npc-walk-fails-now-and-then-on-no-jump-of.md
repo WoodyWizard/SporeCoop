@@ -13,7 +13,7 @@ branch: fix/w49-throw
 commits: d8a778b3, 97715d0c, 0dbe6cab, 4dd00036, 2d0c47bf
 tests: npc_walk, net_tests test_agl_extrap
 signature: npc_walk `FAIL no jump of a moving proxy (4-6)`, all of one hit walker, 0.75-1.13 m steps of 12-16 ms frames at t 45.3-45.6 and 47.0-47.3 s
-docs: docs/known-issues.md#issue-npc-walk-hit-jumps, docs/re/creature.md#creature-air-place-lost, docs/06-testing.md#testing-npc-track
+docs: docs/archive/known-issues-2026.md#issue-npc-walk-hit-jumps, docs/re/creature.md#creature-air-place-lost, docs/06-testing.md#testing-npc-track
 related: BUG-0409, BUG-0440, BUG-0445
 ---
 

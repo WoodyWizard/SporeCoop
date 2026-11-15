@@ -13,7 +13,7 @@ branch: fix/w49-ui
 commits: 8bc5ebf9, 66f43dd7
 tests: menu_diag
 signature:
-docs: docs/known-issues.md#issue-summary-non-ascii-path, docs/06-testing.md#testing-p2-ui
+docs: docs/archive/known-issues-2026.md#issue-summary-non-ascii-path, docs/06-testing.md#testing-p2-ui
 related:
 switch: diag.summary_wide
 ---

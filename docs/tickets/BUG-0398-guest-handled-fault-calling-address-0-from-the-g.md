@@ -13,7 +13,7 @@ branch: fix/w33-null-call
 commits: 60671e6, 793e207
 tests: kit_hooknew, kit_freeze
 signature: 0xC0000005 at 0x00000000 on the main thread, [esp] = sporekit.dll h_GetAsyncKeyState+0xC (after `call [o_GetAsyncKeyState]`), esi = the virtual key, eax 0 or 1; scanned "calls" (exe only) 008D33C6 (IsMouseButtonDown: call [GetAsyncKeyState IAT 0xFCC694]) or stale ones (0070693E / 007946DE 004234E8 0041DDF4 00537FF0) (GOG 2024)
-docs: docs/02-modkit.md#modkit-hook-original, docs/06-testing.md, docs/known-issues.md#issue-cell-4th-player-faults
+docs: docs/02-modkit.md#modkit-hook-original, docs/06-testing.md, docs/archive/known-issues-2026.md#issue-cell-4th-player-faults
 related: BUG-0309, BUG-0202, BUG-0403, BUG-0337
 ---
 

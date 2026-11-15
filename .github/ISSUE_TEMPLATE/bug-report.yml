@@ -20,7 +20,7 @@ body:
     id: build
     attributes:
       label: Game
-      options: [GOG (Galaxy, 2024 update), Steam, GOG (older 2016 build), EA app, Disc, I don't know]
+      options: [GOG (Galaxy, 2024 update), Steam, GOG (older 2016 build, not supported), EA app, Disc, I don't know]
     validations:
       required: true
   - type: dropdown

@@ -13,7 +13,7 @@ branch: fix/w34-vote-cinematic
 commits: ddb7f14, 3b83b29
 tests: vote_during_cinematic, busy_gate (tools/tests/coop_vote_cinematic.py); npc_tests test_busy_gate
 signature:
-docs: docs/re/creature.md#creature-busy-states, docs/06-testing.md#testing-busy-gate, docs/known-issues.md#issue-vote-during-evolution-cinematic
+docs: docs/re/creature.md#creature-busy-states, docs/06-testing.md#testing-busy-gate, docs/archive/known-issues-2026.md#issue-vote-during-evolution-cinematic
 related: BUG-0371, BUG-0273, BUG-0019, BUG-0331, BUG-0336, BUG-0319
 switch: core.editor_cinematic, core.own_editor_busy, core.vote_action_busy
 ---

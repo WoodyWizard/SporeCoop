@@ -1,6 +1,7 @@
 # Append-only shared files: parallel branches add to them, git keeps both sides (CLAUDE.md 4).
 CHANGELOG.md          merge=union
 docs/known-issues.md  merge=union
+docs/archive/known-issues-2026.md merge=union
 docs/06-testing.md    merge=union
 docs/re/*.md          merge=union
 docs/tickets/README.md merge=union

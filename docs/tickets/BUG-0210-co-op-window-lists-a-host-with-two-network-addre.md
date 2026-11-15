@@ -13,7 +13,7 @@ branch: fix/w13-net
 commits: 6b7cab0, 19779be
 tests: tools/tests/coop_lan_dedup.py (suite lan_dedup), tests/net_tests.cpp test_discovery_dedup
 signature:
-docs: docs/known-issues.md#issue-lan-host-twice, docs/06-testing.md#testing-lan-dedup
+docs: docs/archive/known-issues-2026.md#issue-lan-host-twice, docs/06-testing.md#testing-lan-dedup
 related: BUG-0183, BUG-0039
 ---
 

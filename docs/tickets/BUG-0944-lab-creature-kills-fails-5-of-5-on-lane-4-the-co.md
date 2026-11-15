@@ -3,7 +3,7 @@ id: BUG-0944
 title: Lab: creature_kills fails 5 of 5 on lane 4: the combat stance click is sent into the guest's stage-entry pause and lost, the hunt is played in the social stance
 status: fixed
 kind: test
-stage: creature
+stage: Creature
 reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, 20261111-170604)
 role: guest

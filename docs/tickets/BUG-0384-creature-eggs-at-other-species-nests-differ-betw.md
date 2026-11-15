@@ -13,7 +13,7 @@ branch: fix/w32-nest-eggs
 commits: 2a77943
 tests: tools/tests/coop_nest_eggs.py (suite nest_eggs), tools/tests/coop_nest_objects.py (fix/w30-npc-walk, not in a suite)
 signature:
-docs: docs/re/creature.md#creature-nest-eggs, docs/known-issues.md#issue-nest-eggs-floating, docs/06-testing.md#testing-nest-eggs
+docs: docs/re/creature.md#creature-nest-eggs, docs/archive/known-issues-2026.md#issue-nest-eggs-floating, docs/06-testing.md#testing-nest-eggs
 related: BUG-0332
 ---
 
@@ -38,7 +38,7 @@ members (the mod removes the guest's own NPCs), so the guest's game never lays t
 the host's nest the guest had 0. An egg eaten on one game (the eat node 0xDBD460, cEgg::SetState(4))
 stays on the other in the same way. That is the "desync".
 
-Floating: not reproduced (docs/known-issues.md#issue-nest-eggs-floating). Eggs in the nest's bowl lie
+Floating: not reproduced (docs/archive/known-issues-2026.md#issue-nest-eggs-floating). Eggs in the nest's bowl lie
 0.74-1.2 m over the terrain (the nest model; screenshots show them in the nest), a freshly laid egg is
 up to ~1 m over the ground for a few seconds before it falls; nothing floated on the guest.
 

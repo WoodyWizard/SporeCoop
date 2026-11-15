@@ -3,7 +3,7 @@ id: BUG-0303
 title: campaign finale: a guest stays near the core, the Space bot had opened the captain screen (the wheel zoom-out is blocked)
 status: fixed
 kind: tooling
-stage: space
+stage: Space
 reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 

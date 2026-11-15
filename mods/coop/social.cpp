@@ -166,7 +166,6 @@ static void refresh_cards(void*) // outside the frame: card texts are UI
 // `coop.fix social.nest_ally off`: the flag stays as the guest's own game set it (0.7.6).
 static bool g_nest_ally_fix = true;
 COOP_FIX("social.nest_ally", "BUG-0561", g_nest_ally_fix, "creature: an allied species' nests show the ally face on the guest's map too");
-static uint32_t g_nest_ally_set = 0;
 
 static void herds_follow_table()
 {
@@ -188,10 +187,8 @@ static void herds_follow_table()
             void* sp = game::herd_species(o);
             for (auto& [s, allied] : q->sp)
                 if (s == sp) {
-                    if ((field<uint8_t>(o, 0x191) != 0) != allied) {
+                    if ((field<uint8_t>(o, 0x191) != 0) != allied)
                         thiscall<void>(q->set, o, (int)allied);
-                        g_nest_ally_set++;
-                    }
                     break;
                 }
             return true;
@@ -499,7 +496,6 @@ COOP_FIX("social.guest_meter", "BUG-0179", g_meter_fix, "creature: a guest's soc
 static uintptr_t a_StrategyGet, a_ExecuteAction, a_MeterReset, a_MeterVisible, a_MeterRounds, a_MeterFace, a_MeterBar,
     a_MeterFinish;
 static int g_meter_npc = -1;   // proxy id the meter is open for
-static int g_meter_rounds = 1; // rounds shown on it
 static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_msgs = 0;
 static float g_meter_frac = 0;
 static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
@@ -587,7 +583,6 @@ static void meter_run(void*) // outside the frame: the meter is UI
             thiscall<void>(a_MeterFace, m, relation_to(px));
             thiscall<void>(a_MeterVisible, m, 1);
             g_meter_npc = t.npc;
-            g_meter_rounds = t.rounds;
             g_meter_frac = 0;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {

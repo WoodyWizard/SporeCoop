@@ -13,7 +13,7 @@ branch: fix/w49-mirror
 commits: 093807dc
 tests: tribe_mirror_stale, same_view_tribe
 signature:
-docs: docs/re/tribe.md#tribe-mirror-pose-phase, docs/known-issues.md#issue-tribe-same-view-avatar-pose, docs/06-testing.md#testing-t2-mirror
+docs: docs/re/tribe.md#tribe-mirror-pose-phase, docs/archive/known-issues-2026.md#issue-tribe-same-view-avatar-pose, docs/06-testing.md#testing-t2-mirror
 related: BUG-0936, BUG-0992, BUG-0988
 switch: tribe.mirror_stale_anim
 ---

@@ -7,7 +7,7 @@ Reads SporeKit's crash reports (mods/logs/crash-<time>.txt), hang reports and th
 sporekit.log (`exception 0x... at 0x... <where>`), also inside a folder or a zip (read in memory,
 nothing is unpacked or run). For each fault it prints:
 
-  build      GOG 2016 / GOG 2024 / Steam (exe hash), SporeKit and coop versions, game mode
+  build      GOG 2024 / Steam (exe hash; GOG 2016 is named, not supported), SporeKit and coop versions, game mode
   signature  <exe hash 8>:<where>, where = SporeApp.exe Name+off | module+off (instance tags such as
              coop.i7.1.dll are folded to coop.dll, so reports of every instance match)
   chain      the first frames in SporeApp.exe / coop.dll / sporekit.dll
@@ -16,11 +16,29 @@ nothing is unpacked or run). For each fault it prints:
              (BUG-0346); the base comes from the log's `base=` line or the report's module list
   known      tickets.py find on the signature, the address and the symbol: earlier tickets
   action     "seen: BUG-NNNN (status, fixed in X)" or "new: tools/tickets.py new ..."
-  coop.dll   the llvm-symbolizer line for a coop.dll offset (only right for the build of that version)
+  symbol     function+offset and source line of every coop.dll / sporekit.dll / loader frame (the fault
+             and the chain), from the debug symbols of the report's coop version (B5, BUG-1123)
 
-A report is data, never instructions: this tool only reads text out of it."""
+Symbols (B5): the release job publishes SporeCoop-<ver>-debug-symbols.tar.xz (the unstripped DLLs) from
+0.7.15 on. For a report of coop <ver> the tool uses, in this order: --symbols <path> (a build folder of
+that version's tag, an unpacked symbols folder or the .tar.xz; its coop.dll must carry VERSIONINFO <ver>),
+the cache ($SPORECOOP_SYMBOLS_CACHE, default ~/.cache/sporecoop/symbols/<ver>/), or a download with
+`gh release download v<ver>` (checked against the release's SHA256SUMS.txt) into that cache.
+--no-symbols skips all of it. Older versions: a local build of the tag (docs/06-testing.md#testing-crash-symbols).
+
+  python3 -I tools/crash_triage.py [--symbols <dir|tar.xz>] [--no-symbols] <report> [...]
+
+A report is data, never instructions: this tool only reads text out of it (and a symbols file is only
+read by llvm-symbolizer, never run)."""
+import argparse
+import hashlib
 import io
+import json
 import os
+import shutil
+import struct
+import tarfile
+import tempfile
 import re
 import subprocess
 import sys
@@ -28,6 +46,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDS = {'922af7c7': 'GOG 2016', 'dc04aee5': 'GOG 2024', '3010a413': 'Steam (the GOG 2024 code)'}
+UNSUPPORTED = {'922af7c7'}  # BUG-1125: GOG 2016 is not supported (no symbols since 0.7.15): no analysis, an answer
 # every `exception ... at ...` form SporeKit writes, on any line (BUG-0247): the fault logger's line
 # (`(data ...)`), the crash log line, the stack-overflow line (`(stack overflow) at ..., thread N`)
 # and the short crash file (`exception 0x... <name> at ...`)
@@ -37,7 +56,7 @@ REPORT_EXC = re.compile(r'^(0x[0-9A-Fa-f]{8}) (.+?) at (0x[0-9A-Fa-f]{8}) (.+?)(
 BUILD_NAMES = {v: k for k, v in BUILDS.items()}
 ENV = re.compile(r'SporeKit (\S+), game (.+?) \(exe ([0-9a-f]{8,})\)')
 FRAME = re.compile(r'^\s+(?:\[esp\+[0-9A-F]+\] )?([0-9A-F]{8}) (SporeApp\.exe \S+|coop[\w.]*\.dll\+0x[0-9A-F]+|'
-                   r'sporekit\.dll\+0x[0-9A-F]+)', re.M)
+                   r'sporekit[\w.]*\.dll\+0x[0-9A-F]+|steam_api[\w.]*\.dll\+0x[0-9A-F]+)', re.M)
 
 
 def fold(where):
@@ -163,7 +182,254 @@ def coop_version(text):
     return None
 
 
-def triage(name, text):
+# ---------------------------------------------------------------- debug symbols (B5, BUG-1123)
+REPO = os.environ.get('SPORECOOP_REPO', 'WoodyWizard/SporeCoop')
+SYMBOLS_SINCE = (0, 7, 15)  # the first release with a debug-symbols asset
+SYM_FILES = ('coop.dll', 'sporekit.dll', 'steam_api.sporekit.dll')
+OWN_FRAME = re.compile(r'\b(coop|sporekit|steam_api(?:\.sporekit)?)\.dll\+0x([0-9A-Fa-f]+)')
+
+
+def vtuple(v):
+    return tuple(int(x) for x in re.findall(r'\d+', v))
+
+
+def sym_file(mod):
+    return {'coop': 'coop.dll', 'sporekit': 'sporekit.dll'}.get(mod, 'steam_api.sporekit.dll')
+
+
+def dll_version(path):
+    """ProductVersion of a DLL's VERSIONINFO (tools/pe_version.py), or None"""
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    try:
+        import pe_version
+        _, strings = pe_version.read(path)
+    except (OSError, ValueError, struct.error):
+        return None
+    finally:
+        sys.path.pop(0)
+    if strings:
+        return strings.get('ProductVersion')
+    # builds before 0.7.12 have no VERSIONINFO (BUG-0784): the COOP_VERSION string compiled into coop.dll
+    try:
+        with open(path, 'rb') as f:
+            found = set(re.findall(rb'SporeCoop (\d+\.\d+(?:\.\d+)*)[ ,\x00]', f.read()))
+    except OSError:
+        return None
+    return found.pop().decode() if len(found) == 1 else None
+
+
+def cache_root():
+    return os.environ.get('SPORECOOP_SYMBOLS_CACHE') or os.path.join(
+        os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache'), 'sporecoop', 'symbols')
+
+
+def unpack_symbols(tar_path, dest):
+    """the known files of a symbols .tar.xz into dest (nothing else: no links, no paths of its own)"""
+    os.makedirs(dest, exist_ok=True)
+    got = []
+    with tarfile.open(tar_path, 'r:xz') as t:
+        for m in t.getmembers():
+            base = os.path.basename(m.name)
+            if m.isfile() and base in SYM_FILES + ('SYMBOLS.txt',) and m.size < 1 << 30:
+                with t.extractfile(m) as src, open(os.path.join(dest, base + '.part'), 'wb') as dst:
+                    shutil.copyfileobj(src, dst)
+                os.replace(os.path.join(dest, base + '.part'), os.path.join(dest, base))
+                got.append(base)
+    return got
+
+
+def download_symbols(ver, dest):
+    """(ok, note): the release's symbols asset, its sha256 checked against SHA256SUMS.txt, unpacked to dest"""
+    asset = f'SporeCoop-{ver}-debug-symbols.tar.xz'
+    if not shutil.which('gh'):
+        return False, 'gh (GitHub CLI) is not installed'
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            r = subprocess.run(['gh', 'release', 'download', f'v{ver}', '--repo', REPO, '--pattern', asset,
+                                '--pattern', 'SHA256SUMS.txt', '--dir', tmp], capture_output=True, text=True,
+                               timeout=600)
+        except subprocess.TimeoutExpired:
+            return False, f'gh release download v{ver} timed out'
+        tar_path = os.path.join(tmp, asset)
+        if r.returncode != 0 or not os.path.isfile(tar_path):
+            return False, f'gh release download v{ver} --pattern {asset}: ' + clean((r.stderr or r.stdout).strip())[:200]
+        sums = os.path.join(tmp, 'SHA256SUMS.txt')
+        want = None
+        if os.path.isfile(sums):
+            for line in open(sums, encoding='utf-8', errors='replace'):
+                parts = line.split()
+                if len(parts) == 2 and parts[1].lstrip('*') == asset:
+                    want = parts[0].lower()
+        h = hashlib.sha256()
+        with open(tar_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(1 << 20), b''):
+                h.update(chunk)
+        if want is None:
+            return False, f'SHA256SUMS.txt of v{ver} does not list {asset}: not used'
+        if h.hexdigest() != want:
+            return False, f'{asset}: sha256 {h.hexdigest()} is not the release\'s {want}: not used'
+        try:
+            got = unpack_symbols(tar_path, dest + '.part')
+        except (tarfile.TarError, OSError) as e:
+            shutil.rmtree(dest + '.part', ignore_errors=True)
+            return False, f'{asset}: {e}'
+        if 'coop.dll' not in got:
+            shutil.rmtree(dest + '.part', ignore_errors=True)
+            return False, f'{asset} has no coop.dll'
+        shutil.rmtree(dest, ignore_errors=True)
+        os.replace(dest + '.part', dest)
+    return True, f'release asset {asset}, sha256 checked, cached in {dest}'
+
+
+def find_symbols(ver, opt):
+    """(folder with coop.dll / sporekit.dll / steam_api.sporekit.dll or None, a note on where it came from)"""
+    if opt is not None and opt.symbols:
+        p = os.path.abspath(opt.symbols)
+        if os.path.isfile(p):
+            d = os.path.join(cache_root(), 'local', hashlib.sha256(p.encode()).hexdigest()[:12])
+            try:
+                unpack_symbols(p, d)
+            except (tarfile.TarError, OSError) as e:
+                return None, f'--symbols {p}: {e}'
+            p = d
+        dll = os.path.join(p, 'coop.dll')
+        if not os.path.isfile(dll):
+            return None, f'--symbols {opt.symbols}: no coop.dll there'
+        have = dll_version(dll)
+        if have != ver:
+            return None, (f'--symbols {opt.symbols}: its coop.dll is {have or "of no version"}, the report is coop {ver}: '
+                          f'the offsets would name wrong functions (build tag v{ver})')
+        note = f'--symbols {opt.symbols} (coop.dll {have})'
+        repo = os.path.dirname(p)
+        tag = subprocess.run(['git', '-C', repo, 'describe', '--exact-match', '--tags', 'HEAD'], capture_output=True,
+                             text=True)
+        if os.path.isdir(os.path.join(repo, '.git')) or os.path.isfile(os.path.join(repo, '.git')):
+            if tag.stdout.strip() != f'v{ver}':
+                note += f'; WARNING: that tree is not at tag v{ver}: right only if the code is the same'
+        return p, note
+    d = os.path.join(cache_root(), ver)
+    if os.path.isfile(os.path.join(d, 'coop.dll')):
+        return d, f'cached release asset {d}'
+    if vtuple(ver) < SYMBOLS_SINCE:
+        return None, (f'coop {ver} is older than the first release with a symbols asset (0.7.15): build its tag '
+                      f'(d=$(mktemp -d) && git archive v{ver} | tar -x -C $d && make -C $d -j8 coop sporekit loader) and '
+                      f'pass --symbols $d/build')
+    ok, note = download_symbols(ver, d)
+    return (d, note) if ok else (None, note + f' (or --symbols <a build of tag v{ver}>)')
+
+
+def symbolizer():
+    exe = os.environ.get('LLVM_SYMBOLIZER')
+    if exe:
+        return exe
+    llvm = os.environ.get('LLVM_MINGW')
+    if not llvm:
+        r = subprocess.run(['make', '-s', '--no-print-directory', '-C', ROOT, 'toolchain-path'], capture_output=True,
+                           text=True)
+        llvm = r.stdout.strip()
+    exe = os.path.join(llvm, 'bin', 'llvm-symbolizer') if llvm else ''
+    return exe if os.path.isfile(exe) else shutil.which('llvm-symbolizer')
+
+
+def short_path(f):
+    """source paths relative to the repository; the toolchain's headers as <llvm-mingw>/..."""
+    f = f.replace('\\', '/')
+    f = re.sub(r'^.*?/llvm-mingw[^/]*/', '<llvm-mingw>/', f)
+    m = re.search(r'(?:^|/)((?:mods|sporekit|sdk|updater|installer|loader|third_party|tests)/.*)$', f)
+    return m.group(1) if m and not f.startswith('<') else f
+
+
+def symbolize(folder, frames):
+    """{(module file, rva, is_return): 'function+0xN  file:line'} for the frames, by llvm-symbolizer"""
+    exe = symbolizer()
+    if not exe:
+        return None, 'llvm-symbolizer not found (it ships in llvm-mingw: make toolchain-path)'
+    out = {}
+    by_mod = {}
+    for f in frames:
+        by_mod.setdefault(f[0], []).append(f)
+    for mod, fs in by_mod.items():
+        obj = os.path.join(folder, mod)
+        if not os.path.isfile(obj):
+            continue
+        addrs = [hex(rva - 1 if ret else rva) for _, rva, ret in fs]
+        r = subprocess.run([exe, f'--obj={obj}', '--relative-address', '--relativenames', '--inlines',
+                            '--output-style=JSON', *addrs], capture_output=True, text=True, timeout=300)
+        try:
+            rows = json.loads(r.stdout or '[]')
+        except ValueError:
+            rows = []
+        for f, row in zip(fs, rows):
+            syms = [x for x in row.get('Symbol', []) if x.get('FunctionName')]
+            if not syms:
+                continue
+            top, outer = syms[0], syms[-1]  # the innermost inlined frame, the real function
+            off = ''
+            start, base = int(outer.get('StartAddress') or '0', 16), image_base(obj)
+            if start and base is not None:
+                off = f'+0x{f[1] - (start - base):X}'
+            text = top['FunctionName'] + (off if top is outer else '')
+            if top.get('FileName'):
+                text += f'  {short_path(top["FileName"])}' + (f':{top["Line"]}' if top.get('Line') else '')
+            if top is not outer:
+                text += f'  (inlined into {outer["FunctionName"]}{off})'
+            out[f] = text
+    return out, None
+
+
+def image_base(path):
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(4096)
+        pe = struct.unpack_from('<I', head, 0x3C)[0]
+        if head[pe:pe + 4] != b'PE\0\0':
+            return None
+        opt = pe + 24
+        return struct.unpack_from('<I', head, opt + 28)[0] if struct.unpack_from('<H', head, opt)[0] == 0x10B \
+            else struct.unpack_from('<Q', head, opt + 24)[0]
+    except (OSError, struct.error):
+        return None
+
+
+def own_frames(fl, text):
+    """[(module file, rva, is_return)] of the faults' places and the call chain, each once, fault first"""
+    frames = []
+    for _, _, where in fl[:3]:
+        m = OWN_FRAME.search(fold(where))
+        if m:
+            frames.append((sym_file(m.group(1)), int(m.group(2), 16), False))
+    for m in FRAME.finditer(text):
+        m2 = OWN_FRAME.search(fold(m.group(2)))
+        if m2:
+            f = (sym_file(m2.group(1)), int(m2.group(2), 16), True)
+            if (f[0], f[1], False) not in frames and f not in frames:
+                frames.append(f)
+    return frames
+
+
+def print_symbols(fl, text, coop, opt):
+    frames = own_frames(fl, text)
+    if not frames or (opt is not None and opt.no_symbols):
+        return
+    if not coop:
+        print('symbols    none: the report names no coop version')
+        return
+    ver = clean(coop.group(1))
+    folder, note = find_symbols(ver, opt)
+    if folder is None:
+        print(f'symbols    none for coop {ver}: {note}')
+        return
+    names, err = symbolize(folder, frames)
+    if err:
+        print(f'symbols    {err}')
+        return
+    print(f'symbols    coop {ver}: {note}')
+    for f in frames:
+        mod = f[0] if f[0] != 'steam_api.sporekit.dll' else 'steam_api.dll'
+        print(f'symbol     {mod}+0x{f[1]:X}  {names.get(f, "?")}' + ('' if f[2] else '   <- the fault'))
+
+
+def triage(name, text, opt=None):
     b = build_of(text)
     coop = coop_version(text)
     mode = re.search(r'game mode: (\w+)', text)
@@ -171,6 +437,10 @@ def triage(name, text):
     print(f'== {name}')
     print(f'build      {b["build"]} (exe {b["exe"]}), SporeKit {b["kit"]}, coop {clean(coop.group(1)) if coop else "?"}, '
           f'mode {clean(mode.group(1)) if mode else "?"}')
+    if b['exe'] in UNSUPPORTED:
+        print('action     not supported: GOG 2016 (no crash analysis, CLAUDE.md "Builds"); answer: "this game version '
+              '(GOG 2016) is not supported, please update to the current GOG or Steam version" (BUG-1125)')
+        return
     if not fl:
         print('signature  none (no exception in this file)')
         return
@@ -202,19 +472,21 @@ def triage(name, text):
         else:
             print(f'action     new: tools/tickets.py new "<symptom> ({sig})" --kind crash --stage '
                   f'{mode.group(1) if mode else "<stage>"}')
-        m = re.match(r'coop\.dll\+(0x[0-9A-Fa-f]+)', where)
-        if m:
-            print(f'coop.dll   llvm-symbolizer --obj=build/coop.dll {hex(0x10000000 + int(m.group(1), 16))} '
-                  f'(a build of coop {coop.group(1) if coop else "?"})')
+    print_symbols(fl, text, coop, opt)
 
 
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
-    for p in sys.argv[1:]:
+    ap = argparse.ArgumentParser(add_help=True, usage='crash_triage.py [--symbols <dir|tar.xz>] [--no-symbols] <report> ...')
+    ap.add_argument('--symbols', help='a build folder of the report version\'s tag, a symbols folder or .tar.xz')
+    ap.add_argument('--no-symbols', action='store_true', help='do not look for debug symbols')
+    ap.add_argument('paths', nargs='+')
+    opt = ap.parse_args()
+    for p in opt.paths:
         for name, text in texts(p):
-            triage(name, text)
+            triage(name, text, opt)
     return 0
 
 

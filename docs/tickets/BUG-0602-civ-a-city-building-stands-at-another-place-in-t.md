@@ -3,7 +3,7 @@ id: BUG-0602
 title: Civ: a city building stands at another place in the guest's game (detector planet:building_industry / house / entertainment, campaign_space)
 status: fixed
 kind: desync
-stage: Civilization
+stage: Civ
 reported: 2026-11-05
 source: detector, campaign_space lab 20261105-132636 (fix/w44-world-state2); rel/0.7.7 final 20261105-015350
 role: guest

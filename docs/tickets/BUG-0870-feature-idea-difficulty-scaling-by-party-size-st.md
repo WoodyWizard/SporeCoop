@@ -3,7 +3,7 @@ id: BUG-0870
 title: Feature idea: difficulty scaling by party size (stage progress, enemy health and damage, hunger, takeover, raids)
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36/41-dev, BUG-9100 (founders.h CampaignRules)
 role: 

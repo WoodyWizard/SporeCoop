@@ -14,7 +14,6 @@
 namespace teamplay {
 
 static const SkHost* H;
-static SkMod* M;
 static Ctx C;
 static bool g_on = true;
 static double g_last_rescue = -1000, g_last_regen = 0;
@@ -27,7 +26,6 @@ COOP_FIX("team.hunt_hits", "BUG-0099", g_hits.fix, "creature: the joint-hunt hit
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
-    M = mod;
     C = std::move(ctx);
     // the session settings creature.pack_rescue / pack_heal / joint_hunt decide each bonus (coop.ini teamplay is
     // their default); g_on is the console's switch for all of them (`coop.team off`)

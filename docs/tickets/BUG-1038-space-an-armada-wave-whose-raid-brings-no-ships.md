@@ -13,7 +13,7 @@ branch: fix/w49-space2
 commits: daac928c, 8d73e8a9
 tests: 
 signature:
-docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-armada-empty-wave
+docs: docs/re/space.md#space-restore-window, docs/archive/known-issues-2026.md#issue-armada-empty-wave
 related: BUG-0046, BUG-0227
 ---
 

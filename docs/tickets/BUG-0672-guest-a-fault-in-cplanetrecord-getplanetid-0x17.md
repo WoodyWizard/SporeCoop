@@ -3,7 +3,7 @@ id: BUG-0672
 title: guest: a fault in cPlanetRecord_GetPlanetID+0x17 (0xCE6AE7, data 0x554) under the tribe slot release 0xC98A71 right after a Tribe world load, then the game froze
 status: fixed
 kind: crash
-stage: tribe
+stage: Tribe
 reported: 2026-11-07
 source: lab rel/0.7.10 20261107-073512 tribe_play (lane 9)
 role: guest

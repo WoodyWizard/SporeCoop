@@ -3,7 +3,7 @@ id: BUG-0276
 title: tribe: after a stage change three guests were not in the host's world within 300 s (they got there after a rejoin)
 status: fixed
 kind: bug
-stage: tribe
+stage: Tribe
 reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 

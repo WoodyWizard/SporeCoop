@@ -3,7 +3,7 @@ id: BUG-0272
 title: Smoke test select is flaky: the partner is not on the screen (coop.team point 0)
 status: fixed
 kind: test
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: lab 20261029-120208 smoke
 role: 
@@ -13,7 +13,7 @@ branch: fix/w9-tests
 commits: 2db65c9
 tests: select
 signature:
-docs: docs/known-issues.md#issue-select-partner-off-screen
+docs: docs/archive/known-issues-2026.md#issue-select-partner-off-screen
 related:
 ---
 
