@@ -7088,7 +7088,7 @@ void setup_callbacks()
         }
         auto& r = g_remotes[p.id];
         r.id = p.id;
-        r.name = p.name;
+        r.name = net::g_fix.shown_names ? utf8::shown_name(p.name) : p.name; // BUG-9222: name tags without the tag
         r.join_serial = ++g_join_serial; // BUG-0231: the tag of this guest's shares
         r.share_tries = 0;
         r.share_try_key = 0;

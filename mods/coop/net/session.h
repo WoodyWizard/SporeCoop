@@ -113,8 +113,12 @@ public:
     Role role() const { return role_; }
     uint8_t my_id() const { return my_id_; }
     bool connected() const { return role_ == Role::Host || (role_ == Role::Client && welcomed_); }
+    // BUG-9222: the names as players read them ("MSI-NoShare-" is "MSI"); name_raw_of / players_raw: as typed (the
+    // tag marks a test player for the Lineages Cache; the wire always carries the raw name)
     std::string name_of(uint8_t id) const;
+    std::string name_raw_of(uint8_t id) const;
     std::vector<PlayerInfo> players() const; // including self
+    std::vector<PlayerInfo> players_raw() const;
     std::string status() const;
     uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown

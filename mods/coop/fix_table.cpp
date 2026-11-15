@@ -23,6 +23,7 @@ COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host address
 COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
 COOP_FIX("net.bulk_acks", "BUG-0405", net::g_fix.bulk_acks, "net: a busy receiver acks every 48 packets; a sender resends only after a later packet was acked or a long silence");
 COOP_FIX("net.pacing", "BUG-9098", net::g_fix.pacing, "net: reliable packets are paced at the delivery rate the peer acknowledges (no bursts into a slow link)");
+COOP_FIX("net.shown_names", "BUG-9222", net::g_fix.shown_names, "net: player names shown without the -NoShare- tag");
 COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
 COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("net.lan_dedup", "BUG-0210", net::g_fix.lan_dedup, "net: a host answering on two addresses is one LAN game");

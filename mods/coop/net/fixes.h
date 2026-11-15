@@ -27,6 +27,7 @@ struct Fixes {
     bool bulk_acks = true; // BUG-0405: an ack every 48 packets received; resend only on a later ack or a long silence
     // Lineages 54
     bool pacing = true; // BUG-9098: reliable packets are paced at the receiver's measured delivery rate (no bursts into a slow link)
+    bool shown_names = true; // BUG-9222: name_of / players() give names without the -NoShare- tag
     // 0.7.13 (N1)
     bool name_clean = true;     // BUG-0774: names from the network lose control characters and are cut to kNameMax
     bool lan_only_disc = true;  // BUG-0776: LAN discovery is answered only from local networks, rate limited

@@ -290,6 +290,20 @@ uint8_t Session::alloc_id() const
 
 std::string Session::name_of(uint8_t id) const
 {
+    return g_fix.shown_names ? utf8::shown_name(name_raw_of(id)) : name_raw_of(id);
+}
+
+std::vector<PlayerInfo> Session::players() const
+{
+    auto v = players_raw();
+    if (g_fix.shown_names)
+        for (auto& p : v)
+            p.name = utf8::shown_name(p.name);
+    return v;
+}
+
+std::string Session::name_raw_of(uint8_t id) const
+{
     if (id == my_id_ && role_ != Role::None)
         return my_name_;
     if (role_ == Role::Host) {
@@ -304,7 +318,7 @@ std::string Session::name_of(uint8_t id) const
     return "player" + std::to_string(id);
 }
 
-std::vector<PlayerInfo> Session::players() const
+std::vector<PlayerInfo> Session::players_raw() const
 {
     std::vector<PlayerInfo> v;
     if (role_ == Role::Host) {
@@ -719,7 +733,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             Welcome wl;
             wl.your_id = p.id;
             wl.world = world;
-            wl.players = players();
+            wl.players = players_raw(); // BUG-9222: the guests keep the tag too
             wl.ext = send_caps;
             wl.host_version = version;
             wl.campaign_profile = campaign_profile;

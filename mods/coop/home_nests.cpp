@@ -11,6 +11,7 @@
 #include "creations.h"
 #include "fixes.h"
 #include "founders.h"
+#include "net/utf8.h"
 #include "game.h"
 #include "net/interp.h"
 #include "party.h"
@@ -86,9 +87,29 @@ static std::string g_last;
 static bool is_host();
 static bool host_home(net::Vec3& out);
 static void* nest_herd_near(void* profile, const net::Vec3& home, float r, net::Vec3* at);
+// BUG-9215 (MSI tour 2026-11-15): a player who joined while the host was on its death screen got the world saved with
+// the host's dead avatar, arrived dead at the host's spot and saw "You were killed in battle". The joiner's world now
+// waits while the host is dead (the hold's 2 minutes at most) and the host is told once to respawn. Off: shared at once.
+static bool g_dead_hold = true;
+COOP_FIX("creature.join_after_respawn", "BUG-9215", g_dead_hold,
+         "creature: a player joining while the host is dead gets the world once the host respawned (2 min at most)");
+static double g_dead_told;
+
 // BUG-9210: `player`'s own nest is about to be made (or waits for its first member): its world waits
 static bool nest_due(uint8_t player, uint64_t waited_ms)
 {
+    if (g_dead_hold && is_host() && game::in_creature_stage()) {
+        void* av = game::avatar();
+        if (av && game::is_dead(av)) {
+
+            const double now = GetTickCount64() / 1000.0;
+            if (C.notice && now - g_dead_told > 30) {
+                g_dead_told = now;
+                C.notice(utf8::shown_name(C.sess->name_of(player)) + " is joining: respawn so they can enter the world");
+            }
+            return true;
+        }
+    }
     if (!g_fix || !g_nest_first || !is_host() || !game::in_creature_stage()) return false;
     // the host on its death screen: no nest is made until it respawns (MSI tour 2026-11-15: a 120 s hold for nothing)
     if (void* av = game::avatar(); !av || game::is_dead(av)) return false;

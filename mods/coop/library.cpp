@@ -84,13 +84,13 @@ COOP_FIX("library.no_share", "BUG-9222", g_no_share_fix,
          "Lineages Cache: a player whose name holds -NoShare- shares no creations, and none of theirs are kept");
 static uint32_t g_no_share_dropped;
 static void offer(const Entry &e) {
-    if (g_no_share_fix && e.local && utf8::no_share_name(S->name_of(S->my_id())))
+    if (g_no_share_fix && e.local && utf8::no_share_name(S->name_raw_of(S->my_id())))
         return;
     if (!S->connected() || !g_offered.insert(e.item.hash).second)
         return;
     auto item = e.item;
     if (e.local)
-        item.sharer = S->name_of(S->my_id());
+        item.sharer = S->name_raw_of(S->my_id());
     g_offers.push_back(std::move(item));
 }
 static bool g_roots_added = false;
@@ -421,7 +421,7 @@ static void scan_one() {
     e.item.author = clean(e.item.author);
     e.item.name = clean(e.item.name);
     e.item.source = g_identity;
-    e.item.sharer = clean(S->name_of(S->my_id()));
+    e.item.sharer = clean(S->name_raw_of(S->my_id()));
     if (!atomic_file(object_path(hash), png)) {
         g_error = "Cannot cache authored creation.";
         return;
@@ -634,7 +634,7 @@ static void offer_all() {
 }
 
 static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
-    if (g_no_share_fix && (utf8::no_share_name(S->name_of(peer)) || utf8::no_share_name(item.sharer))) {
+    if (g_no_share_fix && (utf8::no_share_name(S->name_raw_of(peer)) || utf8::no_share_name(item.sharer))) {
         if (!g_no_share_dropped++)
             H->log(M, SK_INFO, "library: a creation from a -NoShare- player is not kept (BUG-9222)");
         return true; // taken and dropped: the sender moves on
@@ -659,7 +659,7 @@ static bool store_item(uint8_t peer, const library_sync::Item &item, const std::
     e.item = item;
     // The direct sender's co-op name is transport attribution, not an EA author ID.
     if (S->role() == net::Role::Host)
-        e.item.sharer = clean(S->name_of(peer));
+        e.item.sharer = clean(S->name_raw_of(peer));
     auto old = g_entries.find(item.hash);
     if (old == g_entries.end()) {
         g_entries.emplace(item.hash, std::move(e));
