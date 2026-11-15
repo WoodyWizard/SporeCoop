@@ -1759,14 +1759,25 @@ static void apply_portrait(uint8_t owner, const std::vector<uint8_t>& data)
 // this player's creature picture to the others, once per creature: the plain thumbnail (group+1) or the Sporepedia
 // card (the model group) from My Creations, under the creature's key on every game (its shared key; the host that
 // plays its world's species has none: that species' key, which every game of its world knows)
+// BUG-9216: the host's card had no picture on its guests when the host's creature had none in its own My Creations (a
+// creature from Sporepedia, another player or a shared save: its picture is in Pollination or another package), and in
+// Cell the creature's picture was looked for, not the cell's. On: the picture also from the package the game loaded the
+// creation from (records_from_game, once per creation), and in Cell the cell's. Off: My Creations and the creature
+// only (56-dev).
+static bool g_portrait_any_fix = true;
+COOP_FIX("creations.portrait_any_package", "BUG-9216", g_portrait_any_fix,
+         "creations: a player's card picture also from Sporepedia's cache (a creature not made by this player), the cell's in Cell");
+static uint32_t g_portrait_tried_key, g_portraits_found_elsewhere;
+static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out);
 static void portrait_tick(double now)
 {
     if (!g_portraits || !g_es_ok || now < g_portrait_next) return;
     g_portrait_next = now + 3;
     const uint8_t me = C.sess->my_id();
-    Key src = mine(kCreature).key;
-    uint32_t inst = player_key(me, kCreature).instance;
-    if (!src.instance && is_host())
+    const Kind kind = g_portrait_any_fix && game::mode_id() == modes::kCell ? kCell : kCreature;
+    Key src = mine(kind).key;
+    uint32_t inst = player_key(me, kind).instance;
+    if (!src.instance && is_host() && kind == kCreature)
         if (uint32_t* ps = player_species_slot()) {
             src = {ps[0], kInfo[kCreature].type, kInfo[kCreature].group};
             inst = ps[0];
@@ -1777,6 +1788,23 @@ static void portrait_tick(double now)
         for (auto& e : g_es.entries())
             if (e.key.instance == src.instance && e.key.type == kPngType && e.key.group == group && g_es.read(e, png)) break;
         if (!png.empty()) break;
+    }
+    if (png.empty() && g_portrait_any_fix && g_portrait_tried_key != src.instance) {
+        g_portrait_tried_key = src.instance; // the package's index is read once per creation
+        std::vector<dbpf::Record> recs;
+        records_from_game(src, recs);
+        for (uint32_t group : {src.group + 1, src.group}) {
+            for (auto& r : recs)
+                if (r.key.instance == src.instance && r.key.type == kPngType && r.key.group == group && !r.data.empty()) {
+                    png = r.data;
+                    break;
+                }
+            if (!png.empty()) break;
+        }
+        if (!png.empty()) g_portraits_found_elsewhere++;
+        H->log(M, png.empty() ? SK_WARN : SK_INFO, "creations: own %s %08X: picture %s (BUG-9216)",
+               kind == kCell ? "cell" : "creature", src.instance,
+               png.empty() ? "in no package the game reads" : "from the package the game loaded it from");
     }
     if (png.empty()) return;
     g_portrait_sent_key = inst;
