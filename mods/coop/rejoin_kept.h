@@ -5,8 +5,10 @@
 // player's colonies, hold, badges or budget back. The file keeps those tokens next to the slot files, one line per
 // (host, name) pair, under a salted 64-bit hash of the pair: the file holds no readable host address or name. An entry
 // is used only for a join to the same host address under the same name (never sent to another host or under another
-// name: "no stable id follows a player from host to host" stays true), expires after kTtl and the file keeps at most
-// kMax entries (the oldest go first).
+// name: "no stable id follows a player from host to host" stays true), expires after `ttl` (a day; 30 days with
+// net.rejoin_month, BUG-1150: the per-player store on the host's disk, player_store.h, finds a player by this token, and
+// the next evening of a weekly game is more than a day later) and the file keeps at most kMax entries (the oldest go
+// first).
 //
 // Portable (no Windows): tests/space_tests.cpp runs it natively.
 #pragma once
@@ -21,8 +23,10 @@ namespace rejoin {
 
 class KeptFile {
 public:
-    static constexpr int64_t kTtl = 24 * 3600; // s: an entry older than a day is gone
-    static constexpr size_t kMax = 16;         // entries
+    static constexpr int64_t kTtl = 24 * 3600;           // s: an entry older than a day is gone (net.rejoin_month off)
+    static constexpr int64_t kTtlMonth = 30 * 24 * 3600; // s: ... older than 30 days (BUG-1150, net.rejoin_month)
+    static constexpr size_t kMax = 16;                   // entries
+    int64_t ttl = kTtl; // the caller's choice of the two
 
     struct Entry {
         uint64_t key = 0, token = 0;
@@ -108,11 +112,12 @@ public:
         return h ? h : 1;
     }
 
-    // drop the entries older than kTtl (and any from the future: a clock set back). true: something went
+    // drop the entries older than ttl (and any from the future: a clock set back). true: something went
     bool expire(int64_t now)
     {
         size_t n = e_.size();
-        e_.erase(std::remove_if(e_.begin(), e_.end(), [now](const Entry& x) { return x.at > now || now - x.at > kTtl; }),
+        int64_t t = ttl;
+        e_.erase(std::remove_if(e_.begin(), e_.end(), [now, t](const Entry& x) { return x.at > now || now - x.at > t; }),
                  e_.end());
         return e_.size() != n;
     }
@@ -122,7 +127,7 @@ public:
     {
         uint64_t k = key(host, name);
         for (auto& x : e_)
-            if (k && x.key == k && x.at <= now && now - x.at <= kTtl)
+            if (k && x.key == k && x.at <= now && now - x.at <= ttl)
                 return x.token;
         return 0;
     }

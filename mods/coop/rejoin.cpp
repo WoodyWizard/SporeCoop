@@ -33,9 +33,16 @@ static std::vector<Kept> g_kept;
 // memory only (a restart sends a fresh token).
 static bool g_disk_fix = true;
 COOP_FIX("net.rejoin_disk", "BUG-1135", g_disk_fix,
-         "net: the token of a clean leave is kept on disk for that host and name (hashed, a day), so after a restart of "
+         "net: the token of a clean leave is kept on disk for that host and name (hashed), so after a restart of "
          "the game the host gives the player's kept things back");
 static std::wstring g_kept_path; // of the slot taken (empty: no slot, no disk)
+// BUG-1150: a day was too short for the per-player store on the host's disk (player_store.h finds a player by its
+// token): a weekly game's next evening came with a fresh token and the guest was a new player. 30 days now.
+// `coop.fix net.rejoin_month off`: a day (0.7.15 before E1).
+static bool g_month_fix = true;
+COOP_FIX("net.rejoin_month", "BUG-1150", g_month_fix,
+         "net: the token of a clean leave is kept on disk for 30 days (not a day), so the host's store of the player's "
+         "things finds the player the next week too");
 
 static uint64_t fresh()
 {
@@ -104,6 +111,7 @@ static bool write_slot(uint64_t v)
 static bool disk_load(KeptFile& f)
 {
     f = KeptFile();
+    f.ttl = g_month_fix ? KeptFile::kTtlMonth : KeptFile::kTtl;
     if (g_kept_path.empty())
         return false;
     HANDLE h = CreateFileW(g_kept_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,

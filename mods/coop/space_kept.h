@@ -171,6 +171,41 @@ public:
         kept_++;
     }
 
+    // E1 (player_store.h, BUG-1149): a value read from the host's disk when the world opened: kept, nobody bound. The
+    // player's next join binds it, and its first report is then answered with it as after a rejoin. An entry that
+    // already holds a value of this session is left as it is. true: taken
+    bool restore(const std::string& key, const std::string& name, T v)
+    {
+        Entry<T>& e = map_[key];
+        if (e.have)
+            return false;
+        e.value = std::move(v);
+        e.have = true;
+        if (e.name.empty())
+            e.name = name;
+        restored_++;
+        return true;
+    }
+    // the host's word (`coop.store adopt`): the entry of key `from` becomes key `to`'s (to's own entry goes); the
+    // binding stays to's. true: moved
+    bool rekey(const std::string& from, const std::string& to)
+    {
+        auto it = map_.find(from);
+        if (from == to || it == map_.end() || !it->second.have)
+            return false;
+        Entry<T> e = std::move(it->second);
+        map_.erase(it);
+        Entry<T>& d = map_[to];
+        uint8_t id = d.id;
+        std::string name = d.name.empty() ? e.name : d.name;
+        d = std::move(e);
+        d.id = id;
+        d.name = name;
+        d.restoring = false;
+        return true;
+    }
+    uint32_t restored() const { return restored_; }
+
     void clear() { map_.clear(); }
     Map& entries() { return map_; }
     const Map& entries() const { return map_; }
@@ -181,7 +216,7 @@ public:
 
 private:
     Map map_;
-    uint32_t epoch_ = 0, serial_ = 0, sent_back_ = 0, done_ = 0, kept_ = 0;
+    uint32_t epoch_ = 0, serial_ = 0, sent_back_ = 0, done_ = 0, kept_ = 0, restored_ = 0;
 };
 
 // The guest's side: which Space world's state is its own and whether the host's kept copy may still replace it.

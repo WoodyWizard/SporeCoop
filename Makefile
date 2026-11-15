@@ -172,6 +172,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/npc_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
 	$(B)/host/space_tests
+	@# E1 of 0.7.15: the per-player store on the host's disk (BUG-1149)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/store_tests tests/store_tests.cpp
+	$(B)/host/store_tests
 	@# wave C of 0.7.15: mirror registry, snapshot receiver, world id and lifecycle observers, host-busy model
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/core_tests tests/core_tests.cpp
 	$(B)/host/core_tests
