@@ -42,6 +42,9 @@
   phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
 - Test lab: the games start without fixed pauses (each step waits for the game to be ready), the lab draws on two
   hidden test displays and starts a test only when the machine has room for its games (BUG-1112, BUG-1113, BUG-1114).
+- Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
+  one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
+  the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
 
 ## [0.7.14.1] - 2026-11-14
 

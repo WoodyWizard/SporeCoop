@@ -515,12 +515,17 @@ static void busy_classify()
     // a tutorial box: the UI-modal reason with a modal window
     CHECK(classify(stand({{kReasonModal, 1}}, true)).state == State::Paused);
     // the game's own stands are no pause: the Tribe entry (0x4BF38A7 without a window, BUG-0313), a caption's cinematic
-    // pause, an editor coming
+    // pause
     Classified entry = classify(stand({{kReasonModal, 1}}));
     CHECK(entry.state == State::None && (entry.why & kWhyCaption));
     CHECK(classify(stand({{kReasonCine1, 1}}, false, true)).state == State::None);
     CHECK(classify(stand({{kReasonModal, 1}, {kReasonCine2, 1}}, true, true)).state == State::None); // the host's caption
-    CHECK(classify(stand({{kReasonEditor, 1}})).state == State::None);
+    // the Sporepedia (lane 4: 0x4BF38A6, flags 1) is a pause; the same reason while an editor is coming is not
+    CHECK(classify(stand({{kReasonEditor, 1}})).state == State::Paused);
+    CHECK(classify(stand({{kReasonEditor, 1}})).why & kWhySporepedia);
+    Reading coming = stand({{kReasonEditor, 1}});
+    coming.editor_coming = true;
+    CHECK(classify(coming).state == State::None && (classify(coming).why & kWhyCaption));
     // Cell (lane 4, 2026-11-15): its pause menu sets no time manager reason; its window is the sign
     Reading cell;
     cell.pause_menu_window = true;

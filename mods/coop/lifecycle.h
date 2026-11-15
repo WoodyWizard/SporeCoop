@@ -120,11 +120,13 @@ struct WorldWatch {
 // Portable (no Windows, no SporeKit): tests/core_tests.cpp checks the order, the queue, re-entrancy and a throwing
 // hook. docs/01-architecture.md#arch-world-id.
 enum Event : uint8_t { kSessionEnd = 1, kWorldChange = 2, kPlayerJoin = 4, kPlayerLeave = 8 };
+constexpr uint8_t kCellToo = 1;
 
 struct Ctx {
     uint8_t event = 0;
     uint8_t player = 0xFF;        // kPlayerJoin / kPlayerLeave: the id
     uint8_t path = 0;             // kSessionEnd: the caller's EndPath (coop_state.h), 0 if none
+    uint8_t flags = 0;            // kSessionEnd: kCellToo (end_session's `cell`: the Cell modules end too)
     uint32_t from_world = 0;      // kWorldChange: world_id serial before / now (world_id.h)
     uint32_t to_world = 0;
     int8_t from_stage = -1, to_stage = -1;

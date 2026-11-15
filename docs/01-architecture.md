@@ -250,3 +250,244 @@ that, off the main thread, counts the call per call site (its return address in 
 game's original on the game's own thread) and through typedef'd function pointers are not counted. Any count above
 0 is a bug: a hook the game calls from another thread that does game work, or an any-thread command that calls the
 game.
+
+## Wave C of 0.7.15: the shared mechanisms and how a stage adopts them (2026-11-15, feat/w51-ccore)
+<a id="arch-wave-c"></a>
+
+Plan items C1-C4 of docs/plan-0.7.15.md (audit docs/audit-0.7.15/stages.md STG-1..4, core.md CORE-3 / CORE-4).
+Rule "unit first": each mechanism is a portable header with unit tests (tests/core_tests.cpp, in `make test` under
+ASan / UBSan and TSan) before any stage uses it. This branch adds the headers only; no stage file changed. Each stage
+then adopts them one at a time, behind one switch per stage and mechanism, runs its existing lab tests with the switch
+on and off, and deletes the old path (and the switch) in the same release (plan rule "a shared mechanism replaces a
+stage path behind a switch"). Tickets: BUG-1140 (C1), BUG-1141 (C2), BUG-1142 (C3), BUG-1143 (C4); they stay open until
+the stage adoptions land.
+
+Common recipe for a stage agent (each mechanism below adds its own steps):
+1. A `COOP_FIX("<stage>.<mechanism>", "<ticket>", g_x, "...")` switch, on by default; the old code stays in the
+   `else` branch untouched.
+2. The new path only through the header's API; the stage keeps its game calls (spawn, RemoveMember, kill_local,
+   despawn) in the callbacks it hands to the header.
+3. Proof: `make test`; the stage's lab tests named below with the switch on (PASS) and off (PASS: refactoring, same
+   behaviour), run dirs in the ticket; for C3, a behaviour change, the new class test FAILS with the switch off.
+4. Delete: the old branch, its globals, its LIFECYCLE_STATE entries and the switch, in one commit after the PASS runs;
+   `tools/ratchet_lint.py --lower` when an `object_alive(` count went down.
+
+## The mirror registry: ids and game objects (2026-11-15, feat/w51-ccore)
+<a id="arch-mirror-registry"></a>
+
+C1, BUG-1140. `mods/coop/mirror_registry.h`, `mirror::Registry<Id, Data>`: one entry per net id with the object bound
+to it (`mirror::Ref{p, serial, noun}`, the fields of `game::LiveRef`, or none yet), whether the mod made it, and the
+stage's own `Data`. The reverse index (object -> id) is the registry's, so the two directions cannot drift (the
+`g_gv_of[v] == id` checks of BUG-0951 go). No game call inside; liveness is injected.
+
+| API | What | Replaces |
+|---|---|---|
+| `Registry(name, alive)` | `alive`: `[](const mirror::Ref& r) { return game::alive(game::LiveRef{r.p, r.serial, r.noun}); }`; Civ guest vehicles pass their own rule (below) | `px_alive`, `mirror_ok`, `gv_ok`, `hm_live`, `hv_live`, `kept_alive` on table entries |
+| `at(id)`, `find(id)`, `has`, `erase`, `detach(id)` | the entry (made empty: a mirror named before its object exists); `detach` forgets the object, keeps the entry | `g_gm[id]`, `g_proxies[id]`, `px.c = nullptr` |
+| `bind(id, ref, made)` | binds; a pointer bound to another id is refused (`refused`) | `g_gid_of[c] = id`, `g_gv_of[v] = id`, `g_proxy_of[c] = id` |
+| `adopt(ref, alloc, on_reused, out)` | host: the id of an object of the game's lists; another serial at a known address retires the old id (`on_reused`) and gets a new one | tribe host_tick's serial check (BUG-0951), civ's pol / serial check, npc's id allocation |
+| `id_of(p)`, `id_of_live(p)`, `get_live(id)`, `live(entry)`, `for_each_live`, `check_live()` | lookups; a dead object found is detached (`stale`) | `g_hm.find(c)` + `hm_live`, `check_identity` (BUG-0842) |
+| `sweep(seen, decide, remove)` | after a complete snapshot (C4) or a host table pass: every unseen entry is `Remove` (the stage destroys a live object), `Keep` (held) or `Defer` | the sweeps of tribe / civ guest_state, npc's stale drop, tribe / civ host_tick's erase of unseen members |
+| `defer(ref)`, `pump(hold, destroy)`, `deferred(p)` | the deferred removal path: once a frame, gone objects are dropped, held ones wait, the rest destroyed | civ `g_kill_later` + `hold_removal` (BUG-0493) |
+| `ours(p, noun, all_bound)` | the save filter: bound and made by us (Tribe), any bound one (Civ), or deferred | tribe `g_ours_c` / `ours_in`, civ `save_filter` |
+| `clear()`, `held()`, `consistent()`, `stats()`, `status()` | lifecycle and coop.status (the counters survive `clear`) | per-stage counters (`g_mirror_stale`, `g_veh_stale`, `g_identity_retired`, `g_removed`) |
+
+Which tables map to it, and what stays in the stage:
+
+| Stage | Table today | Registry | Stays stage-specific |
+|---|---|---|---|
+| NPC host | `g_host_npcs` (creature -> HostNpc) / `g_host_by_id` (npc.cpp:101) | `Registry<uint16_t, HostNpc>("npc.host")`, `adopt` with `npc::alloc_npc_id` as `alloc`, noun 0x18EB45E | the species / dead reuse rule `npc_object_reused` (BUG-0044, BUG-1100: calls `erase` + `retire` until open question 1 below is answered), `retire_pooled` (a pooled creature: herd null or at the centre, BUG-0274), `g_known` per guest, the diagnostics fields |
+| NPC guest | `g_proxies` (id -> Proxy) / `g_proxy_of` (npc.cpp:304, 343) | `Registry<uint16_t, Proxy>("npc.proxies")`, `made` true (spawned); `Proxy::c` / `serial` become the entry's ref | the stale drop's rule (5 s without a state while states flow, BUG-0611's thaw: `Keep`) as the sweep's `seen` / `decide`; herds, the kinematic driving, meat, flock effects |
+| Tribe host | `g_hm` / `g_hm_by_id` (tribe.cpp:303) | `Registry<uint16_t, HMember>("tribe.hm")`, `adopt` with `net::alloc_id`, noun 0x18EB4B7 | the owner split (players in turns, `g_born_for`), the bodies out of a list (BUG-0620: `Keep` in the host sweep while `kBodyMax`), the tribe pointer |
+| Tribe guest | `g_gm` / `g_gid_of` (tribe.cpp:357, 429) | `Registry<uint16_t, GMember>("tribe.gm")`, `made` true for `spawn_member`, false for a bound local member | the bind candidate (the nearest unbound member within 6 m of the mapped tribe, else spawn), `remove_member`, the orphan sweep of local members the host has not, `g_ours_t` (made NPC tribes), the driving |
+| Civ host | `g_hv` / `g_hv_by_id` (civ.cpp:390) | `Registry<uint16_t, HV>("civ.hv")`, `adopt`, noun 0x18C6DE8 | the political id check (BUG-0059: a pol change is an `erase` + new id), owners and orphans (BUG-0031) |
+| Civ guest | `g_gv` / `g_gv_of` (civ.cpp:456) and `g_kill_later` (civ.cpp:4013) | `Registry<uint16_t, GV>("civ.gv")` with `alive` = the serial in the vehicle's memory (`object_alive && object_serial == serial`: a vehicle the mod just made joins the game's list later; the one `object_alive` the registry keeps, on a pointer `prune_gone` checked this frame); sweep `decide` = `hold_removal ? Defer : Remove`; `pump(hold_removal, kill_local)` | the bind candidate (same pol / purpose / loco within 25 m, else CreateVehicle; `bound_design`), the orphan sweep of local vehicles (through `defer` when held), `prune_gone`, the velocity estimate |
+| Cell | `g_mirrors` / `g_host_of` (cellsync.cpp:143) | none (pool slots with a generation; audit "not worth doing") | all |
+| Squadron | `g_mirrors` / `g_mirror_of` (squadron.cpp:97) | optional, not in C1's order | (C4 only) |
+
+Migration steps (order of the plan: NPC, Tribe, Civ; host tables before guest tables inside a stage is not required):
+1. Switch `npc.registry` / `tribe.registry` / `civ.registry` (one per stage, BUG-1140).
+2. Move the stage's fields that are not the pointer / serial into `Data`; the registry is a file-scope object next to
+   the old maps; every `object_alive(` on an entry becomes `live` / `get_live`.
+3. Host pass: `adopt` each object of the game's lists, then `sweep(seen-this-pass, decide, retire)`.
+4. Guest snapshot: with C4 (below) `rx.finish(reg, decide, remove)`; NPC's stale drop: `sweep` with its time rule.
+5. The save filter and the `coop.<stage>` status line read the registry; the LIFECYCLE_STATE / on_world_change clears
+   of the old maps become `reg.clear()` in the stage's hook (C2).
+6. Lab, on and off: npc: coop_npc_herd_identity, the proxy identity tests of BUG-0842 / BUG-0931, civ_wild_reused,
+   civ_wild_pooled; tribe: tribe_mirror_* (lifetime, anims, ground), tribe_chief_removed; civ: civ_mirror_lifetime,
+   civ_pause_city, the save strip tests (BUG-0470, BUG-0495); the chaos lane. Then delete the old maps and the switch.
+
+## The snapshot receiver: chunked host snapshots (2026-11-15, feat/w51-ccore)
+<a id="arch-snapshot-rx"></a>
+
+C4, BUG-1143. `mods/coop/net/snapshot_rx.h`, `net::SnapshotReceiver<Id>` with a `net::SnapshotPolicy`:
+`begin(cycle, chunk, chunks)` (false: drop the chunk: a bad header, more chunks than the policy, a late chunk of an
+older cycle), `saw(id)` per entry read, `end(parsed_ok)` (true once, on the chunk that completes the cycle; a cut chunk
+does not count), `finish(registry, decide, remove)` (the hand-off: `mirror::Registry::sweep` with "not named by this
+cycle"), `reset()` (session / world: BUG-1051; the counters stay), `held()`, `generation` (+1 per cycle started).
+Counters: `chunks_in bad older cut incomplete abandoned complete`.
+
+| Stage | Today | Policy |
+|---|---|---|
+| Tribe | `g_cyc` (net::CycleTracker) + `g_cycle_ids` + `g_incomplete`, tribe.cpp:430-450 and guest_state | default: `{255, g_cycle_order_fix, 0x8000, true, true}` (keep_order follows `net.cycle_order`, BUG-0612, read every chunk) |
+| Civ | the same copy, civ.cpp:481-493 and guest_state | the same as Tribe |
+| Squadron | `g_rx_cycle`, `g_rx_mask`, `g_rx_done`, `g_partial_cycles`, `g_stale_chunks`, squadron.cpp:100-110 and guest_state | `{31, true, 99, true, false}`: at most 31 chunks, 99 behind is older (farther: a restarted host), any chunk that fills the set completes it (a late chunk 0) |
+
+Migration (switches `tribe.snapshot_rx`, `civ.snapshot_rx`, `fleet.snapshot_rx`): replace `cycle_chunk_ok` +
+`g_cyc.begin` + `g_cycle_ids.clear()` by `rx.begin`, each `g_cycle_ids.insert(id)` by `rx.saw(id)`, the tail
+(`if (!r.ok()) return; g_cyc.add; if (chunk + 1 < chunks) return; if (!complete) ...`) by `if (!rx.end(r.ok()))
+return;`, the sweep loop by `rx.finish(reg, ...)` (with C1) or by the stage's own loop over `!rx.seen(id)` (before
+C1). The LIFECYCLE_STATE "tribe.cycle" / "civ.cycle" call `rx.reset()`. One behaviour difference, on purpose: a
+duplicate of a completed cycle's last chunk does not sweep a second time (`sweep_once`; the second sweep removed
+nothing new). The squadron's `coop.fleet chunkfix 0` path (BUG-0037, the removal on the last chunk without the
+completeness check) has no policy: it stays the switch-off branch until B1 retires it. Lab: tribe and civ loss tests
+(sync_burst, the cycle-order test of BUG-0612, BUG-1051's rejoin), squadron chunk tests (`coop.fleet drop`).
+
+## The world identity and the lifecycle observers (2026-11-15, feat/w51-ccore)
+<a id="arch-world-id"></a>
+
+C2, BUG-1141. Owner decision 2: **an editor visit is the host away (C3), not a world change**; the mirrors stay and an
+object the game rebuilt meanwhile is caught per object by C1's liveness. A world change is only a change of the world
+id: another stage, another save (planet file), the stage entered again (a load, a received world).
+
+`mods/coop/world_id.h`: `world_id::Tracker::step(Frame{mode, count, save, anchor}, &from, &why)` once a frame;
+`world_id::Id{stage, serial, mode, save}`; `Why` = Opened / Closed / Stage / Count / Save / Anchor. The rule and the RE
+facts are in the header; in short: mode a stage -> open, new when the stage, its `stage_epoch` counter, the known save
+crc (known -> another known) or the non-null root object (Tribe: the player tribe, Civ: the player civilization,
+Space: the player cEmpire; Creature and Cell: none) changed; the stage's editors (and kScenario in Space) keep it; any
+other mode closes it. The first frame only records. `serial` names a world of this process; across machines a world is
+{stage mode, save} (PlayerState `world`, MSG_HOST_WORLD).
+
+The three detectors it replaces: coop.cpp `avatar_change_check` (the local entity's pointer changed, an editor visit
+included: npc, nest, fields, wobj and forget_puppets), `tribe::world_check` / `civ::world_check` (a byte copy of
+stage_epoch.h Watch plus "left for a non-editor mode"), `lifecycle_world_tick` (the stage counters' sum). The
+counters next to them: `game::world_epoch` (Creature, BUG-0119) and `spaceext::world_epoch` (Space, BUG-0225) become
+`world_id` serial reads.
+
+`mods/coop/lifecycle.h` observers: `LIFECYCLE_HOOK(name, events, order, fn, needs_game)` with events `kSessionEnd |
+kWorldChange | kPlayerJoin | kPlayerLeave` and `fn(const lifecycle::Ctx&)` (`path`, `flags` kCellToo, `player`,
+`from_world` / `to_world`, `from_stage` / `to_stage`). `lifecycle::fire(ctx, game_ok)` runs the hooks by `order`
+(equal orders: registration order), with the LIFECYCLE_STATE resets of the event's scope at order 0 (hooks < 0 before:
+a despawn that reads its table; >= 0 after). `needs_game` hooks run only when `game_ok` (on_frame, outside
+`g_sess.update()`, BUG-0029); else they are queued for `lifecycle::pump_game()` (on_frame, phase 1). A `fire` inside a
+hook is queued and runs after the fan-out (no nesting); a hook that throws is counted (`faults`, `last_fault`) and the
+fan-out goes on; `set_runner` lets the game glue call hooks under SporeKit's fault guard. `hooks_status(event)` for
+`coop.lifecycle`. tools/ratchet_lint.py already counts a function named in a LIFECYCLE_HOOK as registered.
+
+Proposed orders (today's call order of end_session block 1 and avatar_change_check):
+
+| Order | kSessionEnd (end_session) | kWorldChange | needs_game |
+|---|---|---|---|
+| -100 | pfind, support | puppets (forget_puppets; with decision 2 only on a real world change) | yes |
+| -90 .. -60 | npc, nest, fields, wobj, realign, parts, effects | npc, nest, fields, wobj | yes |
+| -55 .. -25 | social, tribe, cellsync (`flags & kCellToo`), creations, civ, squadron, spacecoop | tribe, civ, Space modules (new: Space joins lifecycle.h) | yes |
+| -20 | the remotes despawned, views | | yes |
+| 0 | LIFECYCLE_STATE resets (block 3 moves here, CORE-3 step 2) | WORLD_STATE resets | no |
+| > 0 | notices, feed | | no |
+
+Migration (the core agent first: switch `core.world_id`; then each module `<module>.world_hooks`):
+1. coop.cpp frame_observe: one `world_id::Tracker` stepped right after `game::stage_epoch_tick` with `modes::
+   current_world()` (only a real planet file: world_name.h) and the stage's anchor (tribe / civ / spaceext export
+   one `void* world_anchor()`); a change -> `lifecycle::fire({kWorldChange, ...}, true)`. `lifecycle_world_tick`
+   goes (its resets run at order 0 of that fire). Note: WORLD_STATE now also resets when a world closes (menu, load);
+   the resets are idempotent, but `world.host_reload` (BUG-0332) must be checked on the Tribe reload path.
+2. end_session: `fire({kSessionEnd, path, cell ? kCellToo : 0}, !inside_update)`; the three hand lists (and the
+   "before BUG-0033" ones, B1) go; block 3's globals move into SESSION_STATE entries.
+3. The player callbacks: `fire({kPlayerJoin / kPlayerLeave, id})`; `player_life::forget_all` becomes the hook
+   "core.player_life" at order 0; the duplicated `g_ready.erase` and the hand call of `npc::on_player_leave` go.
+4. Each module registers its `on_world_change` / `on_session_end` as a hook and drops its own detector:
+   `tribe::world_check` + `g_world_watch` + `g_world_left`, the same in civ, the `editor_world_fix` /
+   `world_epoch_fix` branches of avatar_change_check. Its plain clears go into LIFECYCLE_STATE.
+5. Decision 2 in the Creature-stage modules (npc, nest, fields, wobj, puppets): an editor visit no longer calls their
+   `on_world_change`; each stored object they keep across the editor is a LiveRef / registry entry instead
+   (BUG-0426's rule), so a rebuilt object is caught where it is used.
+6. Lab: coop_lifecycle_reset (+ `coop.lifecycle held`), lifecycle_reset_cell, wsync_transitions, the editor round
+   trips per stage (tribe_editor_world, the creature editor tests), coop_world_reload (BUG-0119), the leave / rejoin /
+   id-reuse tests; for decision 2 a test that the host's Creature editor visit keeps the guests' NPC proxies (FAIL
+   with `npc.world_hooks` off: today they are despawned and rebuilt).
+
+## The host-busy model: away, editor, pause (2026-11-15, feat/w51-ccore)
+<a id="arch-busy-model"></a>
+
+C3, BUG-1142. Owner decision 1: **the host's explicit pause (P, the pause menu, the Sporepedia, a tutorial box) makes
+the guests wait in every stage, with the line "<host> paused the game"; not in Rivals mode; a guest's pause stops
+nobody; host away / editor stays its own state.** `mods/coop/busy_model.h`:
+
+* `classify(Reading)` (host): Away (main menu `kWhyMenu`, loading `kWhyLoad`), Editor, Paused (the pause menu reason
+  0x4BF38A4, also My Collections; P 0x4BF38A8; the Sporepedia 0x4BF38A6 while no editor is coming; the UI-modal
+  0x4BF38A7 with a modal window up; Cell: the pause menu's window), None. The
+  game's own stands (a caption's cinematic pause, a stage entry, an editor coming) are None with `kWhyCaption`. The
+  reason table: docs/re/host-centric.md#host-centric-pause-reasons.
+* `Announcer` (host): the state once on each change (a pause after 1 s, BUG-1086's rule; its end and every other
+  state at once), and `current()` for a guest that joins. `encode` / `decode` of the message (below).
+* `HostView` (guest): the message of the host (id 0 only: a guest's pause stops nobody; an older seq dropped), else
+  the 0.7.14 fallback (`Fallback{host_out_of_stage, tribe kind 21}`); the 0.7.14 waits (menu 1.5 s, editor / load 4 s,
+  back 1 s); `step()` returns the `Edge` (NPC destroys its proxies on the edge into Away; the notes are said on edges,
+  `note(edge, host, act)`).
+* Rows (`rows()`, `row_of(stage)`, `act(stage, edge, rivals)`): Paused -> Wait in every stage (On in Rivals), the
+  game's own stand -> Wait in Tribe only (BUG-1086 keeps its caption wait), Editor / Away -> Local in Cell, Creature,
+  Tribe, Civ (local_play, npc away locals, cell's own pool), On in Space; commands held in Tribe and Civ, the "waits"
+  note in Civ.
+* `HeldPump`: `hold(row, from, bytes, world, now)` on the host when its stage cannot run a command, `tick(row,
+  active, world, now, run)` (the 1 s active gap and the kSettle of tribe.cpp / civ.cpp tick), `say_due` (Civ's 5 s note
+  throttle), `forget(id)` for player_life.
+
+Which code maps to it:
+
+| Stage | Today | With the model |
+|---|---|---|
+| core | coop.cpp `host_out_of_stage`, `host_away_tick` (the waits and the feed lines), `host_absent_for` | host: classify + Announcer, send MSG_HOST_BUSY; guest: one HostView, `C.host_busy()` for the modules; the away feed lines come from `note` |
+| Cell | cellsync.cpp:4530 own pool on `host_away / elsewhere / host_left` | row cell: away / editor Local (elsewhere / host_left stay own_world's); Paused: Wait (new; see the open question on how a Cell guest stands) |
+| Creature (npc, nest, realign, worldobj) | npc.cpp's shadow `g_host_away` and its edge, nest.cpp:531, realign.cpp:401, worldobj.cpp:1474 each read `C.host_away` | row creature: the edge into Away destroys the proxies (npc), Paused: Wait (new) |
+| Tribe | `local_play` (tribe.cpp:66), the held-command wiring (5829, 5946), kinds 20 / 21 and their waits (2526-2680), the pause net (BUG-1101) | row tribe; the host sends MSG_HOST_BUSY and, for one version, still kind 21 for 0.7.14 guests; a guest that heard MSG_HOST_BUSY ignores kind 21; kind 20 (the game over) stays Tribe's; the pause net counts the shared wait as "held" |
+| Civ | `local_play` (civ.cpp:75), held commands (1432, 4818), `say_host_away` | row civ, HeldPump with `say_due` |
+| Space | no pause relay | row space: Paused Wait (new), Rivals: On (`spaceext::rivals()`) |
+
+The wire need, **MSG_HOST_BUSY** (for the manifest agent to add; not in the net tables yet):
+* Type: the next free top-level type, proposed 70 (after MSG_HOST_WORLD 69). Direction: host -> every guest, reliable,
+  Session class (taken wherever the guest plays: away / editor are about the host, not the world). The host-side
+  direction gate (B3) drops it from a guest.
+* Payload v1, 14 bytes little endian: `u8 version (1) | u8 state (0 none, 1 paused, 2 editor, 3 away) | u16 why
+  (kWhy* bits: 1 menu, 2 load, 4 pause menu, 8 P, 16 modal, 32 caption, 64 time stands, 128 Sporepedia) | u32 mode (the host's mode
+  id) | u32 world (the host's save crc, 0 unknown) | u16 seq (+1 per message in the host's session)`. A reader takes a
+  longer payload (a newer host's tail) and drops a shorter one or an unknown state. Golden bytes in
+  tests/core_tests.cpp (busy_codec).
+* When: on every change of the classified state (debounced as above) and once to each guest that joins (after
+  WELCOME). Nothing periodic: the reliable channel delivers it; a session that dies ends the state with it.
+* Compatibility: a 0.7.14 guest gets an unknown type: its session hands it to `cb.custom`, which has no case for it
+  (and, when the guest is elsewhere, the world gate drops it as an unknown type): ignored. A 0.7.14 host sends none:
+  a 0.7.15 guest stays on the fallback (its PlayerState mode for away / editor / load, Tribe's kind 21 for the pause),
+  so it waits for a 0.7.14 host's pause in Tribe only, as 0.7.14 did. A 0.7.15 host keeps sending Tribe's kind 21 /
+  20 for one version (0.7.14 guests in Tribe). Family revision (B6): a new member of the Session family; a mismatch
+  does not refuse a join (optional message).
+
+Migration (switches: `core.host_busy` for the host's send and the guests' HostView; per stage `cell.busy_model`,
+`npc.busy_model`, `tribe.busy_model`, `civ.busy_model`, `space.busy_model`):
+1. Core: the Reading from game_busy's readings plus `world::pause_reasons()`, `coop_ui::game_modal_up()` and the pause
+   menu window (coop.cpp already looks it up 5 times a second) and `editor_coming` (vote.cpp's editor-pending
+   flag, BUG-0920, and a submitted editor request); Announcer on the host, HostView on guests; `C.host_busy`
+   in the module context returns the settled Edge; `C.host_away` becomes `act(...) == Act::Local`.
+2. The guest's wait (Act::Wait): one pause of ours on the guest's game (cGameTimeManager::Pause with the UI-modal
+   reason 0x4BF38A7, as Tribe's wait does today) and the note; resume on the edge back, on a session end, a stage end,
+   or the host's Away. Tribe's `gameover_pause` becomes the shared wait plus its kind-20 reasons.
+3. Each stage reads its row through `act()` instead of its own `local_play` / `g_host_away` copy; Tribe and Civ use
+   `HeldPump` (the PLAYER_STATE entries call `forget`).
+4. Lab, a behaviour change: one class test per stage, `coop_host_pause.py --stage cell|creature|tribe|civ|space` (from
+   coop_tribe_host_pause.py: the host opens its pause menu 30 s, the guest's game stands within 6 s with the note, the
+   guest's order made meanwhile runs after the host resumes, both worlds compared), FAIL with the stage's switch off;
+   one Rivals run in Space (the guest does not wait); one run where the guest pauses and the host's game runs on. The
+   existing away / editor tests (tribe_away, civ_away, cell away, npc away locals, the held-command tests of BUG-0693)
+   pass on and off. CHANGELOG and the announcement get one player line ("When the host pauses, everybody waits").
+
+Open RE questions (for the stage agents):
+* Cell: the pause menu sets no cGameTimeManager reason (lane 4, 2026-11-15); how a Cell guest's simulation is stood by
+  the mod (SimUpdate does not run under the pause menu, docs/re/cell.md) is not known; P in Cell sets no reason and
+  shows no window (not known whether it pauses at all).
+* The Sporepedia shares its reason 0x4BF38A6 with "an editor is coming" (lane 4): the host must tell them apart by
+  its own editor-pending state (`Reading::editor_coming`); the flags differ (Sporepedia 1), the editor's flags are not
+  measured. The Civ planner's reason is not measured (docs/re/civ.md: not known); decision 1 does not list it.
+  F1 / F2 open nothing in the probe's games (the docs' lane 7 Tribe guest saw 0x4BF38A4 for them).
+* A tutorial box: assumed the UI-modal reason 0x4BF38A7 with a modal window (docs/re/tribe.md#tribe-game-time-pauses);
+  not measured with a real tutorial box.
+* Whether a pause reason of our own (not 0x4BF38A7) can be used for the guest's wait (the reason map at
+  cGameTimeManager +0x4C may need a known key).

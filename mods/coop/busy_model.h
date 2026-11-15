@@ -12,7 +12,8 @@
 //   1. Host side, classify(): the host's state from what its game shows this frame (busy.h's readings plus the
 //      pause reasons of cGameTimeManager, docs/re/host-centric.md#host-centric-pause-reasons): Away (main menu,
 //      loading), Editor, Paused (an explicit pause: the pause menu reason 0x4BF38A4, P 0x4BF38A8, the UI-modal
-//      reason 0x4BF38A7 while a modal window of the game is up; in Cell, which sets no reason, the pause menu's
+//      reason 0x4BF38A7 while a modal window of the game is up, the Sporepedia's 0x4BF38A6 while no editor is
+//      coming (My Collections uses the pause menu's reason); in Cell, which sets no reason, the pause menu's
 //      window), None. A stand of the game's own (a caption's
 //      cinematic pause 0x4BF38A5 / 0x600C4AE, a stage entry, an editor coming 0x4BF38A6) is not Paused; it is
 //      reported as the Caption bit for the stages whose row waits on it (Tribe, BUG-1086's behaviour).
@@ -61,7 +62,8 @@ inline const char* state_name(State s)
 constexpr uint32_t kReasonMenu = 0x4BF38A4;     // the pause menu (Esc), F1 / F2 / Tab windows; the end-of-Tribe card
 constexpr uint32_t kReasonKeyP = 0x4BF38A8;     // P
 constexpr uint32_t kReasonModal = 0x4BF38A7;    // a UI modal, a tutorial / hint box, a stage's entry, Tribe's wait
-constexpr uint32_t kReasonEditor = 0x4BF38A6;   // an editor is coming (a planner, City Hall, the launch)
+constexpr uint32_t kReasonEditor = 0x4BF38A6;   // an editor is coming (City Hall, the launch) AND the Sporepedia
+                                                // (lane 4, 2026-11-15: the Creature HUD's Sporepedia button, flags 1)
 constexpr uint32_t kReasonCine1 = 0x4BF38A5;    // a cinematic script's pause (slot 1)
 constexpr uint32_t kReasonCine2 = 0x600C4AE;    // a cinematic script's pause (slot 2, -pauseGraphics)
 
@@ -74,6 +76,7 @@ enum : uint16_t {
     kWhyModal = 1u << 4,    // Paused: a modal / tutorial box of the game (its reason with a modal window up)
     kWhyCaption = 1u << 5,  // the game stands on its own (a caption, a cinematic pause): not Paused, Tribe waits
     kWhyStill = 1u << 6,    // the game time stands for any reason (busy.h kPaused)
+    kWhySporepedia = 1u << 7, // Paused: the Sporepedia (reason 0x4BF38A6 while no editor is coming)
 };
 
 // what the host's game shows this frame (the game glue fills it: game::mode_id, busy.h readings, world::pause_reasons,
@@ -86,6 +89,8 @@ struct Reading {
     bool time_stands = false; // cGameTimeManager +0x48 bit 0
     bool cinematic = false;  // cCinematicManager +0x2C
     bool modal_window = false; // a modal window of the game (UTFWin +0x82C)
+    bool editor_coming = false; // an editor request is on its way (the vote's / the guest's own editor, BUG-0920's
+                                // pending flag; a planner): its 0x4BF38A6 is not the Sporepedia
     bool pause_menu_window = false; // the pause menu ("Options", control 0x0615B50D) is shown: the Cell stage's only
                                     // sign (its pause menu sets no cGameTimeManager reason; SimUpdate stops)
     std::vector<std::pair<uint32_t, int>> reasons; // the pause reasons counted now (> 0)
@@ -135,7 +140,9 @@ inline Classified classify(const Reading& r)
         c.why |= kWhyKeyP;
     if (count_of(r, kReasonModal) > 0 && r.modal_window && !r.cinematic)
         c.why |= kWhyModal;
-    if (c.why & (kWhyPauseMenu | kWhyKeyP | kWhyModal))
+    if (count_of(r, kReasonEditor) > 0 && !r.editor_coming)
+        c.why |= kWhySporepedia;
+    if (c.why & (kWhyPauseMenu | kWhyKeyP | kWhyModal | kWhySporepedia))
         c.state = State::Paused;
     else
         c.why |= kWhyCaption; // the game's own stand (a caption, an entry, an editor coming)
