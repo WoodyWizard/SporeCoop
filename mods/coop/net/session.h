@@ -29,6 +29,15 @@ struct Peer {
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
     std::string hello_name; // host: the name of its HELLO, cleaned, before " 2" / "guest<id>" (BUG-1001)
+    // BUG-1108, host: what this guest's messages made the host queue for the players (a token bucket in bytes: refilled
+    // at Session::relay_rate up to relay_burst), the time of its last refill, and a drop asked for (coop.kick, a limit)
+    double relay_tokens = -1; // < 0 before its first refill: full
+    uint32_t relay_t = 0;
+    bool relay_started = false;
+    uint32_t win_t = 0;                         // measuring: the 1 s window of the peaks below
+    uint64_t win_relay = 0, win_in = 0, in_seen = 0;
+    bool drop_asked = false;
+    std::string drop_text; // what the guest is told (REJECT)
     Connection conn;
 };
 
@@ -85,6 +94,25 @@ public:
     static constexpr uint32_t kRejoinNameMs = 10 * 60 * 1000;
     // BUG-1007: what Transport::recv_from returns for one datagram it had to drop (too big for the buffer): more may follow
     static constexpr int kRecvSkipped = -2;
+    // BUG-1108, host: robustness limits per guest (net.queue_cap, net.relay_budget). Normal play stays far below them
+    // (docs/04-netcode.md#netcode-limits has the measured peaks); a guest over one is dropped with a log line and told
+    // why. Members, not constants: the unit tests lower them
+    static constexpr size_t kQueueCap = 32u << 20;     // reliable bytes waiting for one guest
+    static constexpr uint32_t kRelayRate = 2u << 20;   // bytes/s the host queues for the players because of one guest
+    static constexpr uint32_t kRelayBurst = 32u << 20; // ... and at most this much above that rate at once
+    size_t queue_cap = kQueueCap;
+    uint32_t relay_rate = kRelayRate, relay_burst = kRelayBurst;
+    // host: drop guest `id` at the next update(), with a REJECT that tells it `text` (coop.kick, BUG-1108). false = no
+    // such guest (the host itself, or not here)
+    bool kick(uint8_t id, const std::string& text);
+    // host, measuring (BUG-1108): the largest reliable backlog of one guest, the most bytes one guest's messages made the
+    // host queue in 1 s, the most reliable bytes received from one guest in 1 s, and the guests dropped by each limit
+    struct LimitStats {
+        size_t queue_peak = 0;
+        uint64_t relay_peak = 0, in_peak = 0;
+        uint32_t queue_drops = 0, relay_drops = 0, kicks = 0;
+    };
+    const LimitStats& limit_stats() const { return lim_; }
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -107,6 +135,11 @@ public:
     uint8_t my_id() const { return my_id_; }
     bool connected() const { return role_ == Role::Host || (role_ == Role::Client && welcomed_); }
     std::string name_of(uint8_t id) const;
+    // BUG-1107, host: a stable key of a player for state the host keeps across its rejoin (Space colonies, cargo hold,
+    // badges, Rivals budget). From its rejoin token when its HELLO had one (hashed: the key is never sent or shown),
+    // else from its session name (an older SporeCoop). The same game after a crash or a leave has the same key; a
+    // different game under a departed player's name does not. "" = no such player. A guest knows no tokens: name.
+    std::string player_key(uint8_t id) const;
     std::vector<PlayerInfo> players() const; // including self
     std::string status() const;
     uint16_t port() const { return tr_->local_port(); }
@@ -184,6 +217,14 @@ private:
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778
     uint32_t replace_refused_ = 0;                                                              // BUG-1003
     uint32_t recv_skipped_ = 0;                                                                 // BUG-1007
+    // BUG-1108: the guest whose message is being handled (its id; 0xFF = none): what the host sends meanwhile is charged
+    // to it. limits(): the drops and the peaks, every update
+    uint8_t charge_id_ = 0xFF;
+    void charge(size_t bytes);
+    void limits(uint32_t now);
+    void drop_told(size_t idx, const std::string& text);
+    LimitStats lim_;
+    uint64_t queue_logged_ = 0, relay_logged_ = 0, in_logged_ = 0;
 };
 
 } // namespace net

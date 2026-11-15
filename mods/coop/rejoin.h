@@ -24,5 +24,9 @@ uint64_t token_for_join(int instance, const std::string& host, const std::string
 // no new players; never written to the file, never sent to another host or under another name
 void clear(bool keep = false);
 void shutdown();           // mod unload: clear and close the slot (the reloaded DLL takes it again)
+// tests (BUG-1107): while on, every join of this game sends a fresh token that is neither written to the slot nor kept
+// by the leave, as another game under the same name would; off: the joins take the kept token again. Memory only
+void test_other(bool on);
+bool test_other_on();
 
 } // namespace rejoin

@@ -55,6 +55,7 @@ void Connection::send_reliable(uint8_t type, const Writer& w)
             m.rel_id = next_rel_id_++;
             m.payload.assign(w.data.begin() + off, w.data.begin() + off + n);
             m.more = off + n < w.data.size();
+            rel_out_bytes_ += m.payload.size();
             rel_out_.push_back(std::move(m));
         }
         return;
@@ -63,11 +64,13 @@ void Connection::send_reliable(uint8_t type, const Writer& w)
     m.type = type;
     m.rel_id = next_rel_id_++;
     m.payload = w.data;
+    rel_out_bytes_ += m.payload.size();
     rel_out_.push_back(std::move(m));
 }
 
 void Connection::deliver_reliable(uint8_t type, uint8_t flags, const uint8_t* p, size_t len, const Deliver& deliver)
 {
+    stats.rel_bytes_in += len; // BUG-1108: what the peer sends, pieces counted as they come
     bool more = (flags & 2) != 0;
     if (!more && !frag_on_) {
         Reader pr(p, len);
@@ -257,8 +260,10 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
     for (uint16_t id : p.rel_ids) {
         auto it = std::find_if(rel_out_.begin(), rel_out_.end(),
                                [id](const OutMsg& m) { return m.rel_id == id; });
-        if (it != rel_out_.end())
+        if (it != rel_out_.end()) {
+            rel_out_bytes_ -= it->payload.size();
             rel_out_.erase(it);
+        }
     }
 }
 

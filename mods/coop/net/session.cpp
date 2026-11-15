@@ -288,6 +288,34 @@ std::string Session::name_of(uint8_t id) const
     return "player" + std::to_string(id);
 }
 
+std::string Session::player_key(uint8_t id) const
+{
+    if (role_ == Role::None)
+        return "";
+    if (role_ == Role::Host && id != my_id_) {
+        for (auto& p : peers_)
+            if (p->accepted && p->id == id) {
+                if (!p->has_token)
+                    return "n:" + p->name;
+                // splitmix64 finalizer: the token itself never leaves the session (logs, status, other players)
+                uint64_t x = p->token ^ 0x5C0F7E11ull;
+                x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+                x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+                x ^= x >> 31;
+                char b[24];
+                snprintf(b, sizeof b, "t:%016llx", (unsigned long long)x);
+                return b;
+            }
+        return "";
+    }
+    if (id == my_id_)
+        return "n:" + my_name_;
+    for (auto& r : roster_)
+        if (r.id == id)
+            return "n:" + r.name;
+    return "";
+}
+
 std::vector<PlayerInfo> Session::players() const
 {
     std::vector<PlayerInfo> v;
@@ -368,6 +396,12 @@ std::string Session::status() const
                  disc_answered_, halfopen_refused_, halfopen_evicted_, replace_refused_);
         s += b;
     }
+    if (role_ == Role::Host) { // BUG-1108: the peaks of this session against the limits, and the drops
+        snprintf(b, sizeof b, "limits: queue_peak=%zu/%zu relay_peak=%llu in_peak=%llu (1 s) budget=%u/s+%u drops: queue=%u relay=%u kicked=%u\n",
+                 lim_.queue_peak, queue_cap, (unsigned long long)lim_.relay_peak, (unsigned long long)lim_.in_peak, relay_rate,
+                 relay_burst, lim_.queue_drops, lim_.relay_drops, lim_.kicks);
+        s += b;
+    }
     if (recv_skipped_) { // BUG-1007
         snprintf(b, sizeof b, "datagrams skipped (too big): %u\n", recv_skipped_);
         s += b;
@@ -391,8 +425,10 @@ std::string Session::status() const
 void Session::broadcast_reliable(uint8_t type, const Writer& w, int except_id)
 {
     for (auto& p : peers_)
-        if (p->accepted && (int)p->id != except_id)
+        if (p->accepted && (int)p->id != except_id) {
             p->conn.send_reliable(type, w);
+            charge(w.size());
+        }
 }
 
 bool Session::send_reliable_to(uint8_t id, uint8_t type, const Writer& w)
@@ -400,6 +436,7 @@ bool Session::send_reliable_to(uint8_t id, uint8_t type, const Writer& w)
     for (auto& p : peers_)
         if ((p->accepted || role_ == Role::Client) && p->id == id) {
             p->conn.send_reliable(type, w);
+            charge(w.size());
             return true;
         }
     return false;
@@ -408,8 +445,123 @@ bool Session::send_reliable_to(uint8_t id, uint8_t type, const Writer& w)
 void Session::send_event(uint8_t type, const Writer& w)
 {
     for (auto& p : peers_)
-        if (p->accepted || role_ == Role::Client)
+        if (p->accepted || role_ == Role::Client) {
             p->conn.send_reliable(type, w);
+            charge(w.size());
+        }
+}
+
+// BUG-1108: what the host queues while it handles a guest's message (a relay, an answer) is that guest's doing
+void Session::charge(size_t bytes)
+{
+    if (charge_id_ == 0xFF || role_ != Role::Host)
+        return;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == charge_id_) {
+            if (p->relay_started)
+                p->relay_tokens -= (double)bytes;
+            p->win_relay += bytes;
+            return;
+        }
+}
+
+bool Session::kick(uint8_t id, const std::string& text)
+{
+    if (role_ != Role::Host || id == my_id_)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && !p->bye && p->id == id) {
+            p->drop_asked = true; // the next update() (never inside the delivery of its own packet, BUG-0029)
+            p->drop_text = text;
+            return true;
+        }
+    return false;
+}
+
+// BUG-1108: the guest is told why (REJECT, unreliable and sent now, three times: its Connection goes with drop_peer, a
+// queued reliable REJECT would never leave). A guest of any 0.7.x shows "rejected: <text>" and ends its session
+void Session::drop_told(size_t idx, const std::string& text)
+{
+    auto& p = peers_[idx];
+    Reject rej;
+    rej.reason = REJ_KICKED;
+    rej.text = text;
+    Writer w;
+    rej.write(w);
+    uint32_t now = this->now();
+    std::vector<uint8_t> pkt;
+    for (int i = 0; i < 3; i++) {
+        p->conn.send_unreliable(MSG_REJECT, w, true);
+        if (p->conn.build_packet(now + 1000, pkt))
+            tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
+    }
+    drop_peer(idx, 0);
+}
+
+// BUG-1108, host, every update: the drops asked for, the limits (normal play stays far below them) and the peaks
+void Session::limits(uint32_t now)
+{
+    auto peak = [&](uint64_t v, uint64_t& logged, const char* what, uint8_t id) {
+        if (v >= 64 * 1024 && v >= logged * 2) { // a new peak (doubling steps): one line each, for the measurements
+            logged = v;
+            logf(cb, "net limits: new peak %s %llu bytes (player %u)", what, (unsigned long long)v, id);
+        }
+    };
+    for (size_t i = 0; i < peers_.size();) {
+        Peer& p = *peers_[i];
+        if (!p.accepted || p.bye) {
+            i++;
+            continue;
+        }
+        // the 1 s windows of what this guest made the host queue and what it sent
+        uint64_t in = p.conn.stats.rel_bytes_in;
+        p.win_in += in - p.in_seen;
+        p.in_seen = in;
+        if (now - p.win_t >= 1000) {
+            lim_.relay_peak = std::max(lim_.relay_peak, p.win_relay);
+            lim_.in_peak = std::max(lim_.in_peak, p.win_in);
+            peak(p.win_relay, relay_logged_, "queued for the players because of one guest in 1 s:", p.id);
+            peak(p.win_in, in_logged_, "received from one guest in 1 s:", p.id);
+            p.win_relay = p.win_in = 0;
+            p.win_t = now;
+        }
+        size_t q = p.conn.pending_bytes();
+        if (q > lim_.queue_peak) {
+            lim_.queue_peak = q;
+            peak(q, queue_logged_, "reliable backlog of one guest:", p.id);
+        }
+        // the budget: refilled at relay_rate up to relay_burst
+        if (!p.relay_started) {
+            p.relay_started = true;
+            p.relay_tokens = relay_burst;
+            p.relay_t = now;
+        } else {
+            p.relay_tokens = std::min<double>(relay_burst, p.relay_tokens + (double)relay_rate * (now - p.relay_t) / 1000.0);
+            p.relay_t = now;
+        }
+        std::string text;
+        if (p.drop_asked) {
+            lim_.kicks++;
+            logf(cb, "player %u (%s) removed by the host", p.id, p.name.c_str());
+            text = p.drop_text;
+        } else if (g_fix.queue_cap && q > queue_cap) {
+            lim_.queue_drops++;
+            logf(cb, "player %u (%s) dropped: %zu bytes wait for it (limit %zu)", p.id, p.name.c_str(), q, queue_cap);
+            text = "the host closed the connection: too much data was waiting for this game";
+        } else if (g_fix.relay_budget && p.relay_tokens < 0) {
+            lim_.relay_drops++;
+            logf(cb, "player %u (%s) dropped: its messages went over the session's data budget", p.id, p.name.c_str());
+            text = "the host closed the connection: this game sent more data than the session allows";
+        }
+        if (text.empty()) {
+            i++;
+            continue;
+        }
+        const uint32_t g0 = gen_;
+        drop_told(i, text); // the peer is gone: the same index is the next one
+        if (role_ != Role::Host || gen_ != g0)
+            return; // a leave callback ended the session
+    }
 }
 
 bool Session::send_unreliable_to(uint8_t id, uint8_t type, const Writer& w)
@@ -463,9 +615,11 @@ void Session::send_chat_to(Peer& p, const Chat& c)
         Writer wc;
         cut.write(wc);
         p.conn.send_reliable(MSG_CHAT, wc);
+        charge(wc.size());
         return;
     }
     p.conn.send_reliable(MSG_CHAT, w);
+    charge(w.size());
 }
 
 void Session::send_chat(const std::string& text)
@@ -546,6 +700,14 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     // BUG-0861: a callback started a new session: nothing more of this message for the old one
     auto restarted = [&] { return g_fix.restart_gen && gen_ != g0; };
     if (role_ == Role::Host) {
+        // BUG-1108: what the host sends while it handles a joined guest's message is charged to that guest
+        struct Charge {
+            uint8_t& slot;
+            uint8_t was;
+            ~Charge() { slot = was; }
+        } charge_scope{charge_id_, charge_id_};
+        if (p.accepted)
+            charge_id_ = p.id;
         if (type == MSG_HELLO) {
             if (p.accepted)
                 return;
@@ -1113,6 +1275,9 @@ void Session::update()
             else
                 i++;
         }
+        limits(now);
+        if (role_ == Role::None)
+            return;
     }
     flush(now);
 }

@@ -31,6 +31,7 @@
 #include "net/shared_ledger.h"
 #include "net/session.h"
 #include "net/ipmask.h"
+#include "net/kick.h"
 #include "net/utf8.h"
 
 using namespace net;
@@ -4179,6 +4180,192 @@ static bool run_this(const char* name, size_t index)
     return (int)(index % g_shards) == g_shard - 1;
 }
 
+// ---- 0.7.15 A10 / A11 ----
+
+static uint8_t id_named(const Session& s, const std::string& name)
+{
+    for (auto& p : s.players())
+        if (p.name == name)
+            return p.id;
+    return 0xFF;
+}
+
+// BUG-1107: the host's key of a player's kept state is its rejoin token, not the name it got in join order
+static void test_player_key()
+{
+    printf("kept state key: the same game by its token, not the join-order name (BUG-1107)\n");
+    Endpoint e1 = ep4(192, 168, 1, 7, 41000), e2 = ep4(192, 168, 1, 8, 41000), e3 = ep4(192, 168, 1, 8, 41001),
+             e4 = ep4(192, 168, 1, 7, 41001), e5 = ep4(192, 168, 1, 9, 41000);
+    FakeHost h;
+    h.in(e1, hello_tok(0xA1, "Player", 0xA));
+    h.in(e2, hello_tok(0xA2, "Player", 0xB));
+    uint8_t ia = id_named(h.s, "Player"), ib = id_named(h.s, "Player 2");
+    std::string ka = h.s.player_key(ia), kb = h.s.player_key(ib);
+    CHECK(ia != 0xFF && ib != 0xFF && ka != kb && ka.rfind("t:", 0) == 0 && kb.rfind("t:", 0) == 0);
+    CHECK(ka != "t:000000000000000a" && ka.find("Player") == std::string::npos); // the token itself is not in it
+    g_fake_ms += 31000; // both games are gone (no BYE): their entries time out
+    h.s.update();
+    CHECK(h.s.players().size() == 1);
+    // they come back in the other order: B first gets the name "Player", A gets "Player 2"
+    h.in(e3, hello_tok(0xA3, "Player", 0xB));
+    h.in(e4, hello_tok(0xA4, "Player", 0xA));
+    uint8_t nb = id_named(h.s, "Player"), na = id_named(h.s, "Player 2");
+    std::string kb2 = h.s.player_key(nb), ka2 = h.s.player_key(na);
+    printf("  swapped rejoin: B is now \"%s\" (the name A had), its key %s; A's key %s\n", h.s.name_of(nb).c_str(),
+           kb2 == kb ? "its own" : "NOT ITS OWN", ka2 == ka ? "its own" : "NOT ITS OWN");
+    CHECK(kb2 == kb && ka2 == ka);
+    // a game without a token (an older SporeCoop): by its name; unknown ids: none
+    h.in(e5, hello_tok(0xA5, "Old", 0));
+    CHECK(h.s.player_key(id_named(h.s, "Old")) == "n:Old");
+    CHECK(h.s.player_key(0) == "n:Host" && h.s.player_key(77).empty());
+}
+
+// a host that relays a guest's MSG_SPACE to the other guests as spacecoop.cpp does (raw, the sender left out)
+static void relay_space(Session& h)
+{
+    h.cb.custom = [&h](uint8_t type, uint8_t from, Reader& r) {
+        if (type != MSG_SPACE)
+            return;
+        Writer w;
+        w.raw(r.cur(), r.left());
+        h.broadcast_reliable(MSG_SPACE, w, from);
+    };
+}
+
+static Writer blob(size_t n)
+{
+    Writer w;
+    w.u8(200); // a kind no feature owns
+    w.u8(1);
+    std::vector<uint8_t> v(n, 0x5A);
+    w.raw(v.data(), v.size());
+    return w;
+}
+
+// BUG-1108: a guest that stops acknowledging while another sends a lot: the host's queue for it is capped
+static void test_queue_cap()
+{
+    printf("a guest whose queue grows far past normal play is dropped (BUG-1108)\n");
+    const bool fix = g_fix.queue_cap;
+    const bool was_budget = g_fix.relay_budget;
+    g_fix.relay_budget = false; // this test: the queue cap alone
+    Session h, a, b;
+    a.rejoin_token = 1;
+    b.rejoin_token = 2;
+    h.queue_cap = 2u << 20;
+    relay_space(h);
+    std::string err, why;
+    b.cb.disconnected = [&](const std::string& w) { why = w; };
+    CHECK(h.host(0, "Alice", err));
+    std::string addr = "127.0.0.1:" + std::to_string(h.port());
+    CHECK(a.join(addr, "Bob", err) && b.join(addr, "Carol", err));
+    tick({&h, &a, &b}, 400);
+    uint8_t ib = b.my_id();
+    size_t most = 0;
+    for (int i = 0; i < 30; i++) { // 30 x 200 KB from A; B's game is blocked (no reads, no acks)
+        a.send_event(MSG_SPACE, blob(200 * 1024));
+        tick({&h, &a}, 60);
+        if (Connection* c = h.conn_to(ib))
+            most = std::max(most, c->pending_bytes());
+    }
+    tick({&h, &a}, 300);
+    bool b_in = id_named(h, "Carol") != 0xFF;
+    printf("  queue for the blocked guest: most %zu bytes (cap %zu), still in: %d, drops %u\n", most, h.queue_cap, (int)b_in,
+           h.limit_stats().queue_drops);
+    if (fix) {
+        CHECK(!b_in && h.limit_stats().queue_drops == 1 && most <= h.queue_cap + 256 * 1024);
+        tick({&h, &a, &b}, 300); // B's game runs again: it reads why
+        printf("  the dropped guest: '%s'\n", why.c_str());
+        CHECK(why.find("too much data") != std::string::npos && !b.connected());
+        CHECK(id_named(h, "Bob") != 0xFF); // A is still there: only the queue was over
+    } else
+        CHECK(!b_in && most <= h.queue_cap + 256 * 1024); // fails: the queue grows past the cap
+    g_fix.relay_budget = was_budget;
+    h.leave();
+    a.leave();
+    b.leave();
+}
+
+// BUG-1108: the host's budget of what one guest's messages make it queue for the players
+static void test_relay_budget()
+{
+    printf("a guest whose messages make the host queue far more than normal play is dropped (BUG-1108)\n");
+    const bool fix = g_fix.relay_budget;
+    Session h, a, b;
+    a.rejoin_token = 1;
+    b.rejoin_token = 2;
+    h.relay_rate = 100 * 1024;
+    h.relay_burst = 1u << 20;
+    relay_space(h);
+    std::string err, why;
+    a.cb.disconnected = [&](const std::string& w) { why = w; };
+    CHECK(h.host(0, "Alice", err));
+    std::string addr = "127.0.0.1:" + std::to_string(h.port());
+    CHECK(a.join(addr, "Bob", err) && b.join(addr, "Carol", err));
+    tick({&h, &a, &b}, 400);
+    // normal: 400 KB in 2 s stays in the budget
+    for (int i = 0; i < 4; i++) {
+        a.send_event(MSG_SPACE, blob(100 * 1024));
+        tick({&h, &a, &b}, 500);
+    }
+    bool kept = id_named(h, "Bob") != 0xFF;
+    // then 4 MB at once
+    for (int i = 0; i < 20; i++) {
+        a.send_event(MSG_SPACE, blob(200 * 1024));
+        tick({&h, &a, &b}, 50);
+    }
+    tick({&h, &a, &b}, 1000);
+    bool a_in = id_named(h, "Bob") != 0xFF;
+    printf("  400 KB in 2 s: %s; 4 MB at once: %s (drops %u) '%s'; the other guest in: %d\n", kept ? "kept" : "DROPPED",
+           a_in ? "STILL IN" : "dropped", h.limit_stats().relay_drops, why.c_str(), (int)(id_named(h, "Carol") != 0xFF));
+    CHECK(kept && id_named(h, "Carol") != 0xFF);
+    CHECK(!a_in); // fails with net.relay_budget off
+    if (fix)
+        CHECK(h.limit_stats().relay_drops == 1 && why.find("more data than the session allows") != std::string::npos);
+    h.leave();
+    a.leave();
+    b.leave();
+}
+
+// BUG-1108 (owner decision 8): coop.kick drops a guest; it sees why, the others see it leave
+static void test_kick()
+{
+    printf("coop.kick: the host removes a guest, it is told why (BUG-1108)\n");
+    Session h, a, b;
+    a.rejoin_token = 1;
+    b.rejoin_token = 2;
+    std::string err, why_a, why_b;
+    a.cb.disconnected = [&](const std::string& w) { why_a = w; };
+    b.cb.disconnected = [&](const std::string& w) { why_b = w; };
+    int a_saw_leave = 0;
+    a.cb.player_leave = [&](uint8_t, uint8_t) { a_saw_leave++; };
+    CHECK(h.host(0, "Alice", err));
+    std::string addr = "127.0.0.1:" + std::to_string(h.port());
+    CHECK(a.join(addr, "Bob", err) && b.join(addr, "Bob", err)); // "Bob" and "Bob 2"
+    tick({&h, &a, &b}, 400);
+    CHECK(kick_command(a, {"2"}).find("only the host") != std::string::npos);
+    CHECK(kick_command(h, {"0"}).find("does not remove itself") != std::string::npos);
+    CHECK(kick_command(h, {"Nobody"}).find("no guest") != std::string::npos);
+    std::string out = kick_command(h, {"Bob", "2"});
+    printf("  coop.kick Bob 2: %s", out.c_str());
+    CHECK(out.find("removing player") != std::string::npos);
+    tick({&h, &a, &b}, 500);
+    printf("  kicked guest: '%s' connected=%d; the other: connected=%d saw a leave=%d; host players=%zu kicks=%u\n",
+           why_b.c_str(), (int)b.connected(), (int)a.connected(), a_saw_leave, h.players().size(), h.limit_stats().kicks);
+    CHECK(!b.connected() && why_b == std::string("rejected: ") + kKickText);
+    CHECK(a.connected() && why_a.empty() && a_saw_leave == 1 && h.players().size() == 2 && h.limit_stats().kicks == 1);
+    // by id; not a ban: it may join again
+    CHECK(kick_command(h, {std::to_string(a.my_id())}).find("removing") != std::string::npos);
+    tick({&h, &a}, 400);
+    CHECK(!a.connected() && h.players().size() == 1);
+    CHECK(a.join(addr, "Bob", err));
+    tick({&h, &a}, 400);
+    CHECK(a.connected() && h.players().size() == 2);
+    h.leave();
+    a.leave();
+    b.leave();
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -4199,6 +4386,8 @@ int main(int argc, char** argv)
                                                {"replace_checked", &g_fix.replace_checked},
                                                {"welcome_split", &g_fix.welcome_split},
                                                {"recv_skip_big", &g_fix.recv_skip_big},
+                                               {"queue_cap", &g_fix.queue_cap},
+                                               {"relay_budget", &g_fix.relay_budget},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -4333,6 +4522,10 @@ int main(int argc, char** argv)
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
         {"test_dbpf_flag4", test_dbpf_flag4},
+        {"test_player_key", test_player_key},
+        {"test_queue_cap", test_queue_cap},
+        {"test_relay_budget", test_relay_budget},
+        {"test_kick", test_kick},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))

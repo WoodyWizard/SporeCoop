@@ -59,6 +59,7 @@ struct ConnStats {
     // to kAckWindow packets later does not have them) and the round trip
     // samples since the last take_window()
     uint64_t bytes_sent = 0, bytes_recv = 0;
+    uint64_t rel_bytes_in = 0; // BUG-1108: reliable payload bytes received (pieces of a split message counted as they come)
     uint32_t lost = 0;
     float rtt_min = 0, rtt_max = 0, rtt_sum = 0;
     uint32_t rtt_n = 0;
@@ -103,6 +104,7 @@ public:
     // first: ahead of what is queued (the player state must not wait behind a big snapshot)
     void send_unreliable(uint8_t type, const Writer& w, bool first = false);
     size_t pending_reliable() const { return rel_out_.size(); }
+    size_t pending_bytes() const { return rel_out_bytes_; } // BUG-1108: payload bytes of the reliable messages not acked yet
     // the rel_id the next reliable message (or its first piece) gets; with it a caller marks the
     // messages it sends: [before, after) of one send
     uint16_t next_rel_id() const { return next_rel_id_; }
@@ -168,6 +170,7 @@ private:
     std::deque<SentPkt> sent_;
     uint16_t next_rel_id_ = 0;
     std::deque<OutMsg> rel_out_;
+    size_t rel_out_bytes_ = 0; // the payload bytes in rel_out_ (BUG-1108)
     uint16_t next_rel_expected_ = 0;
     struct InMsg {
         uint8_t type, flags;

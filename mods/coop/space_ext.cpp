@@ -8,6 +8,7 @@
 #include "settings.h"
 #include "game.h"
 #include "modes.h"
+#include "rejoin.h"
 #include "sporekit_game.hpp"
 #include "world.h"
 
@@ -37,6 +38,19 @@ bool connected() { return C && C->sess && C->sess->connected(); }
 bool is_host() { return connected() && C->sess->role() == net::Role::Host; }
 uint8_t my_id() { return C && C->sess ? C->sess->my_id() : 0; }
 std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "?"; }
+static bool g_kept_token_fix = true;
+COOP_FIX("space.kept_token", "BUG-1107", g_kept_token_fix,
+         "space: the host gives a player's kept colonies, hold, badges and budget back to the same game (its rejoin token), not to the name");
+std::string kept_key(uint8_t id)
+{
+    if (!C || !C->sess)
+        return "";
+    if (!g_kept_token_fix) {
+        std::string n = C->sess->name_of(id);
+        return n == "?" ? "" : n;
+    }
+    return C->sess->player_key(id);
+}
 static bool g_away;
 bool away() { return g_away; }
 void set_away(bool on) { g_away = on; }
@@ -306,6 +320,21 @@ bool debug(const std::vector<std::string>& args, std::string& out)
         char b[96];
         snprintf(b, sizeof b, "world=%u open=%d saves_noted=%u game=", g_epoch, (int)g_space_open, g_saves_noted);
         out = b + (g_space_open ? game_key() : std::string()) + "\n";
+        return true;
+    }
+    if (args[0] == "keptkey") { // BUG-1107: how the host keys each player's kept state (never the key itself)
+        if (args.size() > 2 && args[1] == "other") { // tests: the next joins of this game come as another game
+            rejoin::test_other(args[2] == "on" || args[2] == "1");
+            out = std::string("next joins with another game's token: ") + (rejoin::test_other_on() ? "on" : "off") + "\n";
+            return true;
+        }
+        out = std::string("kept_token fix=") + (g_kept_token_fix ? "1" : "0") + " other=" + (rejoin::test_other_on() ? "1" : "0") + "\n";
+        if (connected())
+            for (auto& p : C->sess->players()) {
+                std::string k = kept_key(p.id);
+                out += "  [" + std::to_string(p.id) + "] " + p.name + ": " +
+                       (k.rfind("t:", 0) == 0 ? "token" : k.empty() ? "none" : "name") + "\n";
+            }
         return true;
     }
     if (args[0] == "rows") { // tests: what the Space page shows (n: text | button)

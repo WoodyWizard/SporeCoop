@@ -186,9 +186,10 @@ static bool get_badges(net::Reader& r, Badges& b)
     return r.ok();
 }
 
-// ---- host: the badges kept per player name ----
+// ---- host: the badges kept per player (spaceext::kept_key: its rejoin token, BUG-1107) ----
 struct Kept {
     Badges b;
+    std::string name; // its session name when last seen (status only; the map's key is spaceext::kept_key, BUG-1107)
     bool have = false;
     uint8_t id = 0xFF;
     bool restoring = false;
@@ -314,10 +315,11 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     if (kind == K_BADGES || kind == K_BADGES_DONE) {
         if (!spaceext::is_host() || to != 0)
             return;
-        std::string name = spaceext::name_of(origin);
-        if (name.empty() || name == "?")
+        std::string key = spaceext::kept_key(origin);
+        if (key.empty() || key == "?")
             return;
-        Kept& k = g_kept[name];
+        Kept& k = g_kept[key];
+        const std::string& name = k.name = spaceext::name_of(origin);
         if (kind == K_BADGES_DONE) {
             if (k.restoring && k.id == origin && id == k.serial) {
                 k.restoring = false;
@@ -415,7 +417,7 @@ static std::string debug(const std::vector<std::string>& a)
     char b[96];
     if (a.size() >= 1 && a[0] == "kept") {
         for (auto& [n, k] : g_kept) {
-            snprintf(b, sizeof b, "kept %s: %u badges, id %u, restoring %d\n", n.c_str(), (unsigned)k.b.badge.size(), k.id,
+            snprintf(b, sizeof b, "kept %s: %u badges, id %u, restoring %d\n", k.name.c_str(), (unsigned)k.b.badge.size(), k.id,
                      (int)k.restoring);
             s += b;
         }
