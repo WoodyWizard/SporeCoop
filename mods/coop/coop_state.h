@@ -103,5 +103,294 @@ extern SkMod* M;
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
 namespace coop_core {
+
+// ---- types and constants (moved from coop.cpp) ----
+enum class EditKind { Own, Edit, Evolve };
+constexpr uint32_t kTagMating = 0x12191CAu, kTagStageEnd = 0x64AA168u, kEditorLandfall = 0xFD4902BDu;
+// BUG-0720 tests (coop.editreq): a request captured at Submit instead of being submitted
+struct ReqImage {
+    bool have = false;
+    uint8_t bytes[0x9C] = {};
+    std::vector<uint32_t> vec70; // the +0x70 vector's contents
+};
+typedef bool(SK_THISCALL* CreatureGameMsg_t)(void*, uint32_t, void*);
+struct Remote {
+    uint8_t id = 0;
+    std::string name;
+    net::SnapshotBuffer buf;
+    void* puppet = nullptr;
+    drive::State drv;
+    const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
+    uint32_t puppet_world = 0; // the place `puppet` was made in
+    bool echo = false; // local loopback test remote
+    bool silent_said = false; // BUG-0513: "is not responding" was told (core.partner_silent)
+    uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
+    double other_mode_since = -1; // host: since when the guest plays another mode
+    bool joined_phase = false; // host: the guest played the host's mode after the last world send
+    bool needs_world = false;  // host: joined while the host was not playing; send the world later
+    double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
+    // host, BUG-0508 (world.evolve_in_place): after the host's editor this guest was in the same world and
+    // stage, so it may take the new body without the whole world; evo_check_until: until then its avatar
+    // must have left the host's pre-editor species (Creature), or it gets the world after all
+    bool evo_inplace = false;
+    double evo_check_until = 0;
+    // host, BUG-0231 (core.share_retry): a failed share is retried; dropped with the entry at the
+    // session end (g_remotes.clear())
+    uint32_t join_serial = 0; // this guest's join (the share's tag: an id reused by a newcomer is not it)
+    bool share_at_join = false; // the last share was the join's (a retry waits for needs_world)
+    int share_tries = 0;        // retries in this phase (share_try_key)
+    uint64_t share_try_key = 0;
+    double retry_at = 0;        // no share for this guest before
+    // the invariant monitor (docs/06-testing.md#testing-monitor): the puppet read back from the game at
+    // the start of the mod's frame (before any driving: where the game drew it) on a frame that writes
+    // the trace lines; drawn_at = that frame's time, -1: not read
+    net::PlayerState drawn_st;
+    double drawn_at = -1;
+    // coop.track (BUG-0414): the partner's animations played on its puppet (MSG_ANIM), the last one's id
+    uint32_t anims = 0, anim_last = 0;
+    // BUG-0923 (notify.appeared_once): the shown puppet was taken away to be built again with the partner's new
+    // look (creations' appearance_changed): the puppet made next is the same appearance, not told again
+    bool relook = false;
+};
+// Creature puppets the game did not destroy when we forgot them: the creature stage world stays
+// through the editor (the local avatar is gone meanwhile), so the old puppet stood on as an
+// unregistered creature, an NPC with its own AI in the nestless herd made for it. Its behaviour
+// tree then searched land around that herd's home, which could lie deep inside the planet, and
+// read past the planet's cube map (host crash 0xB88BEA, 2026-10-25; docs/re/creature.md 10).
+// Such puppets are removed once the player is back in the same world.
+struct Stray {
+    void* c;
+    void* herd;
+    uint32_t species;
+    uint32_t world;
+    double since;
+};
+// ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
+// until every player is ready (or 60 s / "Start now"), then the game goes on ----
+struct Vote {
+    bool active = false;
+    void* request = nullptr; // Editors::EditorRequest*, one reference held
+    double t0 = 0;
+    std::string text;
+    int left = 0;
+    uint32_t editor = 0; // the editor the host opens (EditorRequest+0xC); guests open the same for their own creature
+    uint32_t mode = 0;   // host: the stage and world the vote belongs to (BUG-0043)
+    uint32_t world = 0;
+    bool arrival = false; // host (BUG-0315): the first Creature editor after a passed switch vote: a guest that arrived is ready
+};
+
+// ---- defined in coop.cpp ----
+int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out);
+void* collected_parts();
+int c_track(void*, int argc, const char* const* argv, SkOut* out);
+uint16_t default_port();
+bool do_host(uint16_t port, std::string& err);
+bool do_join(const std::string& addr, std::string& err);
+void do_leave();
+int editor_pause_count();
+int evo_flag_now();
+void feed(const std::string& s);
+void finish_vote(const char* why);
+extern const modes::Adapter* g_adapter;
+unsigned game_busy();
+extern bool g_anim_log;
+extern uint32_t g_anims_dropped;
+extern uint32_t g_anims_not_creature;
+extern uint32_t g_anims_played;
+extern uint32_t g_anims_rx;
+extern uint32_t g_anims_unlisted;
+extern uint32_t g_appeared_quiet;
+extern uint32_t g_appeared_told;
+extern bool g_away_dna_fix;
+extern bool g_away_editor_fix;
+extern bool g_away_test;
+extern std::deque<std::string> g_chat;
+extern uint32_t g_cine_hidden;
+extern void* g_creature_game;
+extern float g_dbg_sc[3];
+extern uint32_t g_despawns_dropped;
+extern uint32_t g_despawns_unlisted;
+extern net::Discovery g_disc;
+extern uint32_t g_dna_fwd;
+extern uint32_t g_dna_noticed;
+extern dna_ledger::Notices g_dna_notices;
+extern float g_dna_owed;
+extern uint32_t g_dna_owed_paid;
+extern uint32_t g_dna_owed_world;
+extern uint32_t g_dna_own;
+extern bool g_dna_pace_fix;
+extern float g_dna_pending;
+extern uint32_t g_dna_rx;
+extern float g_dna_seen;
+extern bool g_dna_seen_ok;
+extern float g_dna_spend;
+extern float g_dna_spend_owed;
+extern uint32_t g_dna_spends_got;
+extern uint32_t g_dna_spends_sent;
+extern bool g_echo;
+extern double g_echo_delay;
+extern float g_echo_offset;
+extern std::deque<std::pair<double, net::PlayerState>> g_echo_q;
+extern bool g_editor_request_fix;
+extern bool g_editreq_capture;
+extern ReqImage g_editreq_game;
+extern unsigned g_evo_fallback;
+extern unsigned g_evo_flags_cleared;
+extern unsigned g_evo_inplace;
+extern bool g_evo_key_done;
+extern uint32_t g_evo_keys_set;
+extern double g_evo_key_until;
+extern unsigned g_evo_saves;
+extern bool g_evo_save_test_off;
+extern bool g_frame_fix;
+extern bool g_give_pick_fix;
+extern bool g_gopos_ground_fix;
+extern bool g_host_away;
+extern uint32_t g_host_away_count;
+extern bool g_host_away_fix;
+extern uint32_t g_host_save;
+extern uint32_t g_host_save_heard;
+extern bool g_id_reuse_fix;
+int give_selected_to(uint8_t to);
+uint8_t give_target();
+void give_target_cycle();
+extern std::thread* g_keepalive;
+extern bool g_keepalive_ptr_fix;
+extern int g_lan_fake_n;
+extern uint32_t g_lan_fake_until;
+extern bool g_lifecycle_fix;
+extern void* g_local;
+extern uint32_t g_local_refused;
+extern uint32_t g_menu_hidden;
+extern std::atomic<bool> g_menu_up;
+extern uint32_t g_mode;
+extern std::string g_name;
+extern uint32_t g_offer_editor;
+extern unsigned g_offers_expired;
+extern unsigned g_offers_got;
+extern unsigned g_offers_sent;
+extern unsigned g_offers_taken;
+float gopos_onto_surface(net::Vec3& p);
+extern bool g_overlay;
+extern uint32_t g_owed_dropped;
+extern bool g_own_editor;
+extern uint32_t g_own_editor_due;
+extern double g_own_editor_hold_until;
+extern unsigned g_own_editor_items_set;
+extern unsigned g_own_editor_waits;
+extern unsigned g_own_keep_ctor;
+extern uint32_t g_paced;
+extern float g_paced_in;
+extern float g_paced_out;
+extern int g_pace_heard;
+extern unsigned g_part_list_waivers;
+extern bool g_partner_pass_fix;
+extern uint32_t g_pass_hover_skipped;
+extern volatile bool g_pass_on;
+extern uint32_t g_pass_pairs;
+extern uint32_t g_pass_phantom_own;
+extern uint32_t g_pass_phantom_pairs;
+extern uint32_t g_pass_phantom_partner;
+extern void* volatile g_pass_puppets[8];
+extern uint32_t g_pass_seen_own;
+extern uint32_t g_place_dropped;
+extern bool g_place_fix;
+extern double g_puppet_hide_until;
+extern bool g_puppet_hold;
+extern uint32_t g_puppet_refused;
+extern unsigned g_quits_delayed;
+extern net::LookupFn g_real_lookup;
+extern std::map<uint8_t, Remote> g_remotes;
+extern unsigned g_req_own_busy;
+extern bool g_role_fix;
+extern std::map<uint8_t, uint8_t> g_roles;
+extern unsigned g_select_guards;
+extern net::Session g_sess;
+extern bool g_session_end_fix;
+extern bool g_settings_in;
+extern bool g_share_cine_fix;
+extern double g_share_due_at;
+extern uint32_t g_share_retries;
+extern std::atomic<int> g_slow_dns_ms;
+extern float g_solo_dna;
+extern uint32_t g_solo_dropped;
+extern uint32_t g_solo_mode;
+extern uint32_t g_solo_stale_totals;
+extern std::string g_space_key;
+extern uint32_t g_space_load_shares;
+extern unsigned g_stage_end_guest_refused;
+extern unsigned g_stage_end_votes;
+extern unsigned g_stage_msg_guards;
+extern unsigned g_stage_msg_other;
+extern uint32_t g_state_mode_override;
+extern double g_state_mode_until;
+extern std::array<int, 4> g_status_block;
+extern bool g_status_block_fix;
+extern std::vector<Stray> g_strays;
+extern uint32_t g_strays_removed;
+extern unsigned g_submit_cines_ended;
+extern void* g_submit_later;
+extern unsigned g_submits_after_cine;
+extern unsigned g_submits_held;
+extern unsigned g_submits_own_pause;
+extern unsigned g_submits_repeated;
+extern unsigned g_switch_arrivals;
+extern unsigned g_switch_guest_held;
+extern unsigned g_switch_held;
+extern unsigned g_switch_votes;
+extern uint32_t g_tags_drawn;
+extern bool g_tag_self;
+extern bool g_text_fix;
+extern std::atomic<bool> g_text_up;
+extern double g_trace_at;
+extern double g_trace_body_at;
+extern double g_trace_stage_at;
+bool guest_elsewhere();
+bool guest_space_other();
+extern Vote g_vote;
+extern std::function<void()> g_vote_action_due;
+extern unsigned g_vote_actions_run;
+extern unsigned g_vote_actions_waited;
+extern uint32_t g_vote_elsewhere;
+extern bool g_vote_scope_fix;
+extern unsigned g_votes_dropped;
+extern uint32_t g_world;
+extern uint32_t g_world_announced;
+extern bool g_world_gate_fix;
+bool host_elsewhere(bool unknown = false);
+uint32_t host_save_known();
+std::string join_apart_status();
+void keepalive_start();
+void keepalive_stop();
+void* local_now();
+net::PlayerState local_state();
+extern CreatureGameMsg_t o_CreatureGameMsg;
+void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool to_target);
+void on_remote_anim(const net::AnimEvent& ev);
+int pace_div();
+bool parts_census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<std::pair<uint32_t, uint32_t>>* locked = nullptr);
+ReqImage req_image(void* req);
+void set_role(uint8_t role);
+bool slow_lookup(const std::string& host, uint32_t& ip);
+std::vector<syncdbg::Entry> sync_all();
+std::string targets(int all);
+void add_mark(uint8_t from, const net::Vec3& p, uint32_t mode);
+void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k);
+const char* role_name(uint8_t r);
+bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
+void start_vote(void* req, const std::string& text);
+bool creature_puppet(const modes::Adapter* a);
+void despawn(Remote& r);
+void* puppet_now(const Remote& r);
+bool same_place(const net::PlayerState& s);
+
+// ---- defined in coop_cmds.cpp ----
+void register_commands_cell();
+void register_commands_civ();
+void register_commands_core();
+void register_commands_editor();
+void register_commands_stages();
+void register_commands_ui();
+
 } // namespace coop_core
 using namespace coop_core;
