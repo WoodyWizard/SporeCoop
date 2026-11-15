@@ -24,9 +24,10 @@ https://github.com/WoodyWizard/SporeCoop
 Discord (players, help, reports): https://discord.gg/7Yre7u4b8x
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
-Supported builds of SporebinEP1\\SporeApp.exe: GOG 2024 (sha256 dc04aee5...), Steam (3010a413...: the
-same game code under Steam's DRM) and, until 0.7.x, GOG 2016 (922af7c7...).
-Tested: GOG 2016 and 2024 on Linux (Wine), GOG 2024 on Windows 11, Steam on Linux (Proton); EA app and disc not tested
+Supported builds of SporebinEP1\\SporeApp.exe: GOG 2024 (sha256 dc04aee5...) and Steam (3010a413...: the
+same game code under Steam's DRM). The old GOG 2016 build (922af7c7..., 24 888 320 bytes) is not supported:
+please update it to the current GOG version (GOG Galaxy) or use Steam.
+Tested: GOG 2024 on Linux (Wine) and Windows 11, Steam on Linux (Proton); EA app and disc not tested
 (the full list: INSTALL.txt, section 2). All players need the same game build.
 
 Host: main menu -> Co-op -> name -> Host, then load or start a game. The window shows the

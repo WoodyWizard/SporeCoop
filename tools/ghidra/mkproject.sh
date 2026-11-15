@@ -1,18 +1,18 @@
 #!/bin/bash
 # Builds (or refreshes the names of) the private Ghidra project of one game build.
 #
-#   tools/ghidra/mkproject.sh [--build 2016|2024] [--exe <SporeApp.exe>]   full import + analysis
-#   tools/ghidra/mkproject.sh [--build 2016|2024] --names                  re-apply the .sym names
+#   tools/ghidra/mkproject.sh [--build 2024] [--exe <SporeApp.exe>]   full import + analysis
+#   tools/ghidra/mkproject.sh [--build 2024] --names                  re-apply the .sym names
 #
 # Full build: import + Ghidra auto-analysis (about 15 min), then tools/ghidra/SporeSetup.java:
 # extra functions at call rel32 / data pointer targets, and the names and notes of every
 # data/symbols/*_<sha8>.sym of this checkout (base files first, overrides win). The project is
 # built next to the old one and swapped in at the end, so q.sh keeps working meanwhile.
-# Projects: <main checkout>/out/ghidra-full (2016), out/ghidra-2024 (2024). Never writes the exe.
+# Project: <main checkout>/out/ghidra-2024 (GOG 2024, the only supported build). Never writes the exe.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-BUILD=2016; EXE=""; NAMES=0
+BUILD=2024; EXE=""; NAMES=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build) BUILD="$2"; shift 2 ;;

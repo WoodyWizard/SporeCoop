@@ -7,7 +7,7 @@ Reads SporeKit's crash reports (mods/logs/crash-<time>.txt), hang reports and th
 sporekit.log (`exception 0x... at 0x... <where>`), also inside a folder or a zip (read in memory,
 nothing is unpacked or run). For each fault it prints:
 
-  build      GOG 2016 / GOG 2024 / Steam (exe hash), SporeKit and coop versions, game mode
+  build      GOG 2024 / Steam (exe hash; GOG 2016 is named, not supported), SporeKit and coop versions, game mode
   signature  <exe hash 8>:<where>, where = SporeApp.exe Name+off | module+off (instance tags such as
              coop.i7.1.dll are folded to coop.dll, so reports of every instance match)
   chain      the first frames in SporeApp.exe / coop.dll / sporekit.dll
@@ -28,6 +28,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDS = {'922af7c7': 'GOG 2016', 'dc04aee5': 'GOG 2024', '3010a413': 'Steam (the GOG 2024 code)'}
+UNSUPPORTED = {'922af7c7'}  # BUG-1125: GOG 2016 is not supported (no symbols since 0.7.15): no analysis, an answer
 # every `exception ... at ...` form SporeKit writes, on any line (BUG-0247): the fault logger's line
 # (`(data ...)`), the crash log line, the stack-overflow line (`(stack overflow) at ..., thread N`)
 # and the short crash file (`exception 0x... <name> at ...`)
@@ -171,6 +172,10 @@ def triage(name, text):
     print(f'== {name}')
     print(f'build      {b["build"]} (exe {b["exe"]}), SporeKit {b["kit"]}, coop {clean(coop.group(1)) if coop else "?"}, '
           f'mode {clean(mode.group(1)) if mode else "?"}')
+    if b['exe'] in UNSUPPORTED:
+        print('action     not supported: GOG 2016 (no crash analysis, CLAUDE.md "Builds"); answer: "this game version '
+              '(GOG 2016) is not supported, please update to the current GOG or Steam version" (BUG-1125)')
+        return
     if not fl:
         print('signature  none (no exception in this file)')
         return

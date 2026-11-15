@@ -378,29 +378,26 @@ def test_relint():
     check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
     check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
           f'a second overrides entry of {dup} without a confidence word is flagged')
-    # BUG-0216: a name looked up through a table, only in the GOG 2024 overrides: used, missing on the
-    # frozen build, and it needs its frozen_off line; a plain "free" is no symbol
+    # BUG-0216: a name looked up through a table needs its .sym entry like a sym("...") call; a plain "free" is
+    # no symbol (the frozen GOG 2016 build and its frozen_off list are gone since BUG-1125)
     shutil.copy(RELINT, os.path.join(tree, 'tools', 're_lint.py'))
     shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
-    with open(ovr, 'a') as f:
-        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\nfree=0x00401000 ; verified test entry\n')
     open(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'), 'w').write(
         'static const char* t[] = {"Simulator::FooTable", "free"};\n')
+    with open(os.path.join(tree, 'data', 'symbols', 'march2017_dc04aee5.sym'), 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; high m17=0x00401000\n')  # known (generated), so the literal counts
     r = lint()
-    check(r.returncode == 1 and 'Simulator::FooTable' in r.stdout and 'frozen_off' in r.stdout,
-          'a table-looked-up GOG 2024-only name needs a frozen_off line')
+    check(r.returncode == 1 and 'unchecked symbol Simulator::FooTable' in r.stdout,
+          'a table-looked-up name only in a generated .sym needs its overrides entry')
     check('free (used' not in r.stdout and ' free,' not in r.stdout, 'a literal "free" is not counted as a symbol')
-    fo = os.path.join(tree, 'data', 'symbols', 'frozen_off_922af7c7.txt')
-    with open(fo, 'a') as f:
-        f.write('Simulator::FooTable ; a test feature (BUG-0001)\n')
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\n')
     r = lint()
-    check(r.returncode == 0, f'with its line it passes ({r.stdout.strip().splitlines()[-1:]})')
+    check(r.returncode == 0, f'with its overrides entry it passes ({r.stdout.strip().splitlines()[-1:]})')
     os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
-    r = lint()
-    check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
     # BUG-0430: a test tool's `call <Name>` needs the name too; a float result needs the entry's `returns:` note
-    os.remove(fo)
-    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'frozen_off_922af7c7.txt'), fo)
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'march2017_dc04aee5.sym'),
+                os.path.join(tree, 'data', 'symbols', 'march2017_dc04aee5.sym'))
     shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
     os.makedirs(os.path.join(tree, 'tools', 'tests'), exist_ok=True)
     tool = os.path.join(tree, 'tools', 'tests', 'coop_zz.py')

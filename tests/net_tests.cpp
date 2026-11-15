@@ -1894,8 +1894,7 @@ static void test_updater_paths()
     std::vector<std::string> real = {"SporebinEP1/steam_api.dll", "SporebinEP1/sporekit.dll", "SporebinEP1/mods/coop.dll",
                                      "Data/SporeCoop.package", "SporebinEP1/mods/sporecoop.version",
                                      "SporebinEP1/mods/sporekit.ini", "SporebinEP1/mods/coop.ini"};
-    for (const char* sym : {"gog2016_922af7c7.sym", "march2017_dc04aee5.sym", "overrides_922af7c7.sym",
-                            "overrides_dc04aee5.sym"})
+    for (const char* sym : {"march2017_dc04aee5.sym", "overrides_dc04aee5.sym"})
         real.push_back(std::string("SporebinEP1/mods/sporekit/symbols/") + sym);
     upd::Pack rp;
     rp.version = "9";
