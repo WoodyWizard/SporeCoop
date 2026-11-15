@@ -1873,17 +1873,32 @@ COOP_FIX("npc.hatch", "BUG-0014", g_hatch_on, "creature: a waiting hatchling gro
 static double g_hatch_wait = 0, g_hatch_last = 0;
 static uint32_t g_hatch_helped = 0;
 void set_hatch_help(bool on) { g_hatch_on = on; }
-constexpr double kGuestHatchWait = 4.0, kHostHatchWait = 40.0;
+// BUG-9206 (owner play test 2026-11-14: "so small they're practically invisible until they grow"): the guest's hatchling
+// stays at the egg's size (0.1) until it grows up: it now grows 1 s after the hatch scene, not 4 s
+constexpr double kGuestHatchWait = 1.0, kHostHatchWait = 40.0;
 
 static void hatch_tick(double now, bool simulating)
 {
     double dt = now - g_hatch_last;
     g_hatch_last = now;
     void* av = game::avatar();
+    static bool s_sized = false;
     if (!g_hatch_on || !C.sess || !C.sess->connected() || !game::in_creature_stage() || !av || game::is_dead(av) ||
         !game::hatchling_waiting(av)) {
         g_hatch_wait = 0;
+        s_sized = false;
         return;
+    }
+    // BUG-9206: a guest's hatchling has no family to greet it, and the greeting is what gives it its hatchling size: it
+    // stayed at the egg's 0.1, an empty nest through the egg scene. Sized at once, as the greeting does
+    if (!s_sized && is_guest() && g_enabled && !g_host_away) {
+        s_sized = true;
+        const float want = game::hatchling_scale(av);
+        if (want > 0 && game::scale(av) < want * 0.9f) {
+            H->log(M, SK_INFO, "creature: the hatchling gets its size %.2f (was %.2f; nobody greets a guest's)", want,
+                   game::scale(av));
+            game::set_scale(av, want);
+        }
     }
     if (!simulating || world::cinematic_playing() || dt > 1.0) // paused, a cinematic, a caption, a long frame
         return;

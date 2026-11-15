@@ -231,6 +231,15 @@ bool hatchling_waiting(void* c)
     return bt && skg::readable(bt + 0x1D8, 4) && field<uint32_t>(bt, 0x1D8) == kHatchlingTree;
 }
 
+// the size the game gives a hatchling when its family greets it (the greeting node 0xD64A30, state 2 at 0xD64C6A: the
+// creature's vt 0x80(0), then SetScale with it; runtime disassembly 2026-11-14), not the egg's 0.1
+float hatchling_scale(void* c)
+{
+    if (!c || !skg::readable(c, 4)) return 0;
+    const float s = vcall<float>(c, 0x80 / 4, 0);
+    return std::isfinite(s) && s > 0.05f && s < 10.f ? s : 0.f;
+}
+
 bool grow_up(void* c)
 {
     static uintptr_t grow = H->sym("SporeCoop::cCreatureAnimal_GrowTo");

@@ -3236,6 +3236,10 @@ void begin_new_creature()
     g_adopt_until = 0;
 }
 void cancel_new_creature() { g_new_creature_world = 0; }
+// BUG-9203: worlds where this guest's own creature (a co-op window pick, which holds everywhere, BUG-0345) was first
+// played in this run: a world new to it, where it still gets its own editor (BUG-9164) like a guest with no creature
+static std::set<uint32_t> g_own_new_worlds;
+bool own_creature_new_here() { return g_own_new_worlds.count(modes::current_world()) != 0; }
 bool plays_own_creature()
 {
     if (!C.sess || C.sess->role() != net::Role::Client) return false;
@@ -3705,6 +3709,8 @@ static void own_world_tick()
     Key here = own_key_here(k), now = k == kCreature ? avatar_species_key() : cell_key();
     if (!here.instance || !(here == now))
         return; // not (yet) applied
+    if (k == kCreature && !world_record(k, world))
+        g_own_new_worlds.insert(world); // BUG-9203: the first time this guest's own creature plays here
     world_record_set(k, world, o.key.instance);
     if (g_own_told.insert({(int)k, world, o.key.instance}).second && C.notice) {
         std::string who = C.name_of ? C.name_of(C.sess->my_id()) : std::string("A guest");

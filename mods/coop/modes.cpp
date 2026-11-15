@@ -57,6 +57,12 @@ static bool own_airborne(void* av)
            drive::over_ground(game::position(av)) > kAirOver;
 }
 
+// BUG-9206 (owner play test 2026-11-14): a partner's body was always an adult made 15 % bigger, whatever the partner's
+// own size: after evolving, a hatchling (size 0.1, growing) looked bigger than the host. Each player now sends its own
+// size in Creature too (the Adventure captain's field, BUG-9113) and the partner's body copies it (coop.cpp
+// drive_puppet). `coop.fix creature.size_sync off`: as before.
+bool g_size_sync = true;
+COOP_FIX("creature.size_sync", "BUG-9206", g_size_sync, "creature: a partner's body has the partner's own size (a hatchling too)");
 static void creature_fill(void* av, net::PlayerState& st)
 {
     st.flags |= net::PF_IN_WORLD;
@@ -81,8 +87,8 @@ static void creature_fill(void* av, net::PlayerState& st)
     // 3G: the hunger meter (+0xBBC, 0..100, CreatureSetHunger) for the Party card's second bar, in Creature only
     if (game::mode_id() == kCreature) st.energy = std::clamp(skg::field<float>(av, 0xBBC) / 100.f, 0.f, 1.f);
     st.species = game::species_instance(av);
-    if (game::mode_id() == kScenario) // BUG-9113: the scenario scales each captain; the partner's body copies it
-        st.captain_scale = game::scale(av);
+    if (game::mode_id() == kScenario || (g_size_sync && game::mode_id() == kCreature)) // BUG-9113, BUG-9206
+        st.captain_scale = game::scale(av); // the own size: partners' bodies copy it (Creature: a hatchling, a new body)
 }
 
 // BUG-0507: a guest crashed in drive_puppet -> creature_drive -> walk_place -> set_speed on a puppet whose
@@ -149,7 +155,8 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
         return nullptr;
     game::puppet_register(p);
     game::teleport(p, s.pos, s.rot);
-    game::set_scale(p, game::scale(p) * 1.15f);
+    // BUG-9206: the partner's own size when it came with its state (else, as before, an adult 15 % bigger)
+    game::set_scale(p, g_size_sync && s.captain_scale > 0 ? s.captain_scale : game::scale(p) * 1.15f);
     puppet_alive_note(p);
     return p;
 }

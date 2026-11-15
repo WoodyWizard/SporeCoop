@@ -958,6 +958,10 @@ void drive_puppet(Remote& r, double now)
         evolve::puppet_back(r.id, r.puppet, r.cocoon, now);
         if (r.cocoon.state) return; // still in the cocoon where it stood
     }
+    // BUG-9206: the partner's own size (a hatchling, a new body), out of the cocoon only (the cocoon shrinks it)
+    if (modes::g_size_sync && g_mode == modes::kCreature && s.captain_scale > 0 &&
+        std::fabs(game::scale(r.puppet) - s.captain_scale) > 0.02f * s.captain_scale)
+        game::set_scale(r.puppet, s.captain_scale);
     modes::g_drive_extrap = r.buf.last_extrap; // BUG-0388 diagnostics (coop.fleet track)
     if (!g_puppet_hold)
         g_adapter->drive(r.puppet, s, r.drv, now);
@@ -2468,6 +2472,9 @@ static void send_migrate(uint8_t by, int to /* -1: every guest */, uint8_t skip)
 static bool g_join_editor = true;
 COOP_FIX("creature.join_editor_first", "BUG-9164", g_join_editor,
          "creature: a guest without a creature of their own gets their own editor after joining; what they save is theirs");
+static bool g_new_world_editor = true;
+COOP_FIX("creature.new_world_editor", "BUG-9203", g_new_world_editor,
+         "creature: a guest with an old co-op creature pick still gets its own editor in a world new to it");
 static double g_join_since = -1;
 static uint32_t g_join_done_world, g_join_editors;
 static void join_editor_tick(double now)
@@ -2483,14 +2490,16 @@ static void join_editor_tick(double now)
     if (world::progress(got, total) || world::load_queued()) { g_join_since = now; return; }
     if (game_busy() || mode_switch_pending() || creature_rescue::down() || game::is_dead(g_local)) return;
     g_join_done_world = g_world;
-    if (creations::plays_own_creature()) return;
+    // BUG-9203: an old co-op window pick (it holds everywhere) is no creature of this world yet: in a world new to it the
+    // guest gets the editor too, starting from that pick (decision 3T A). Off: a pick skips the editor
+    if (creations::plays_own_creature() && !(g_new_world_editor && creations::own_creature_new_here())) return;
     H->run_outside_frame([](void*) {
         const int r = submit_evolution_request();
         LOG("join: own editor for a creature of our own -> %d (BUG-9164)", r);
         if (r < 0) return; // 0: Submit said false, the editor opened all the same (2026-11-13)
         ++g_join_editors;
         feed("Make a creature of your own: what you save is your creature for this game (Done without a change keeps the "
-             "shared one).");
+             "current one).");
         notice(g_name + " is making a creature of their own", -1);
     }, nullptr);
 }
@@ -4156,6 +4165,8 @@ static float mate_response(void* creature)
     return score;
 }
 
+static bool g_mate_retries = true;
+COOP_FIX("creature.mate_retries", "BUG-9175", g_mate_retries, "creature: a stalled mating approach is restarted every 2.5 s, 5 times");
 static bool (*g_native_mate_step)(void*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uint32_t*);
 static bool (SK_THISCALL* g_mate_position_reached)(void*);
 
@@ -4186,11 +4197,16 @@ static bool mate_step(void* avatar, uintptr_t a2, uintptr_t a3, uintptr_t a4, ui
                 retries = 0;
         } else {
             const double now = H->time_seconds();
+            // BUG-9175 (owner play test 2026-11-14: "needed to spam click their mate"): one retry 4 s in did not move a
+            // mate that stood still; the owner's clicks did. Now every 2.5 s, 5 times (`coop.fix creature.mate_retries
+            // off`: twice, every 4 s), each logged with the pair's spots
+            const double every = g_mate_retries ? 2.5 : 4.0;
+            const unsigned most = g_mate_retries ? 5 : 2;
             if (!retry_at)
-                retry_at = now + 4.0;
-            if (now >= retry_at && retries < 2) {
+                retry_at = now + every;
+            if (now >= retry_at && retries < most) {
                 ++retries;
-                retry_at = now + 4.0;
+                retry_at = now + every;
                 void* mate = g_get_animal_target(avatar);
                 if (mate && !game::is_dead(mate) && !game::is_puppet(mate) &&
                     game::herd_of(mate) == game::herd_of(avatar) &&
@@ -4198,7 +4214,11 @@ static bool mate_step(void* avatar, uintptr_t a2, uintptr_t a3, uintptr_t a4, ui
                      !g_mate_position_reached((uint8_t*)mate + 0xC0))) {
                     // The mate already responded, but its roaming can replace
                     // the approach goal. Ask Spore to stage the pair again.
-                    trace::line("creature", "restarting the paired mating approach (retry %u)", retries);
+                    trace::line("creature", "restarting the paired mating approach (retry %u): state %d %d, at its spot: "
+                                "avatar %d, mate %d, %.1f m apart", retries, (int)state[0], (int)state[1],
+                                (int)g_mate_position_reached((uint8_t*)avatar + 0xC0),
+                                (int)g_mate_position_reached((uint8_t*)mate + 0xC0),
+                                net::dist(game::position(avatar), game::position(mate)));
                     state[1] = 0;
                 }
             }
@@ -4581,6 +4601,8 @@ static void draw_downed_hud(int sw, int sh)
 static bool g_reload_cover = true;
 COOP_FIX("ui.reload_cover", "BUG-9195", g_reload_cover,
          "ui: the loading screen covers a world reload that comes in the middle of a stage (the galaxy menu and the load)");
+static bool g_editor_cover = true;
+COOP_FIX("ui.editor_cover", "BUG-9205", g_editor_cover, "ui: the loading screen covers the black after the Creature editor (until the egg scene shows)");
 static bool g_join_cover = true;
 COOP_FIX("ui.join_cover", "BUG-9202", g_join_cover,
          "ui: the loading screen covers a guest's join (the galaxy menu while the host's world comes, and its load)");
@@ -4727,9 +4749,14 @@ void on_overlay(void*, int, void*)
     // screen: the same screen covers it, from the moment the host plays a stage while this guest is in the menu or
     // loading, until it plays the stage (2 s settled; 180 s at most; not while the Co-op window is open, so a stuck
     // join can still be left). `coop.fix ui.join_cover off`: the galaxy menu and the black load show.
+    // BUG-9205 (owner play test 2026-11-14: "When Titan finished evolving, they were stuck on a black screen for a while"):
+    // the return from the Creature editor is the game's own black while it builds the new body, then its fade and the egg
+    // scene (12-22 s at 10 fps). The same screen covers the black only: from the step out of the editor until the frame is
+    // no longer dark (0.5 s), so the egg scene shows. `coop.fix ui.editor_cover off`: the black shows.
     {
         static double s_since = -1, s_back_at = -1;
-        static bool s_nest = false, s_join = false;
+        static bool s_nest = false, s_join = false, s_editor = false;
+        static uint32_t s_prev_mode = 0;
         const double now = H->time_seconds();
         float got = 0;
         const bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
@@ -4743,7 +4770,7 @@ void on_overlay(void*, int, void*)
         if (g_reload_cover && s_since < 0 && arriving && in_stage && !world::local_intro_running()) {
             s_since = now;
             s_back_at = -1;
-            s_join = false;
+            s_join = s_editor = false;
             s_nest = g_mode == modes::kCreature; // in Creature mid-play: the own nest's world (BUG-9167) as a rule
         }
         if (g_join_cover && s_since < 0 && guest && in_menu && (arriving || host_plays) && !coop_ui::is_open()) {
@@ -4751,6 +4778,15 @@ void on_overlay(void*, int, void*)
             s_back_at = -1;
             s_join = true;
             s_nest = false;
+            s_editor = false;
+        }
+        const bool from_editor = (s_prev_mode == modes::kEdit || s_prev_mode == modes::kEditor) && g_mode == modes::kCreature;
+        if (g_mode) s_prev_mode = g_mode;
+        if (g_editor_cover && s_since < 0 && from_editor && g_sess.connected()) {
+            s_since = now;
+            s_back_at = -1;
+            s_join = s_nest = false;
+            s_editor = true;
         }
         if (s_since >= 0) {
             // back in the stage: the player's own creature / tribe / city is there and no cinematic runs (the game is in
@@ -4764,8 +4800,9 @@ void on_overlay(void*, int, void*)
             // and the game's frame under the screen is no longer black (a dark place passes after 60 s of it; the
             // Tribe join showed 30 s of black in the stage mode on the MSI, 2026-11-14)
             static double s_ready_at = -1;
-            const bool ready = in_stage && !arriving && (!world::load_queued() || world::local_intro_running()) && g_local &&
-                               !cine;
+            const bool ready = s_editor ? in_stage && g_local // (the egg scene after it shows)
+                                        : in_stage && !arriving && (!world::load_queued() || world::local_intro_running()) &&
+                                              g_local && !cine;
             if (!ready) s_ready_at = -1;
             else if (s_ready_at < 0) s_ready_at = now;
             const float luma = ring_timer::scene_luma(now);
@@ -4774,20 +4811,22 @@ void on_overlay(void*, int, void*)
                 if (s_back_at < 0) s_back_at = now;
             } else
                 s_back_at = -1;
-            const char* why = (s_back_at >= 0 && now - s_back_at > 2 && now - s_since > 4) ? "playing"
-                              : now - s_since > (s_join ? 180 : 120)                    ? "time limit"
+            const char* why = (s_back_at >= 0 && now - s_back_at > (s_editor ? 0.5 : 2) && now - s_since > (s_editor ? 1 : 4)) ? "playing"
+                              : now - s_since > (s_join ? 180 : s_editor ? 60 : 120)    ? "time limit"
                               : !g_sess.connected()                                     ? "disconnected"
                               : s_join && coop_ui::is_open()                            ? "co-op window"
                               : s_join && !in_menu && !in_stage                         ? "other mode"
+                              : s_editor && g_mode != modes::kCreature                  ? "other mode"
                                                                                         : nullptr;
             if (why) {
                 H->log(M, SK_INFO, "ui: the %s loading screen ended (%s) after %.1f s, %.1f s of it in the stage, %.1f s "
-                       "cinematic, %.1f s ready but black, brightness %.0f (BUG-9202)", s_join ? "join" : "reload", why,
+                       "cinematic, %.1f s ready but black, brightness %.0f (BUG-9202)", s_join ? "join" : s_editor ? "editor return" : "reload", why,
                        now - s_since, s_stage_at >= 0 ? now - s_stage_at : 0.0, s_cine_s,
                        s_ready_at >= 0 && s_back_at >= 0 ? s_back_at - s_ready_at : -1.0, luma);
                 s_since = -1;
                 s_stage_at = -1;
                 s_cine_s = 0;
+                s_ready_at = -1; // BUG-9205: the next cover's black is counted from its own start
             }
         }
         if (s_since >= 0 && sw > 0) {
@@ -4807,8 +4846,9 @@ void on_overlay(void*, int, void*)
             const float cx = sw / 2.f, cy = sh * 0.45f, r = std::max(22.f, sh * 0.05f);
             ring_timer::loading(H, sw, sh, cx, cy, r, s_shown, now);
             const std::string host = g_sess.name_of(0);
-            const std::string title = s_join ? "Joining " + host : s_nest ? "Bringing your nest" : "Getting the latest world";
-            const std::string step = arriving ? "Receiving " + host + "'s world..."
+            const std::string title = s_join ? "Joining " + host : s_editor ? "Evolving" : s_nest ? "Bringing your nest" : "Getting the latest world";
+            const std::string step = s_editor ? "Building your new body..."
+                                     : arriving ? "Receiving " + host + "'s world..."
                                      : in_stage ? "Final touches..."
                                      : saving ? host + " is saving the world..."
                                      : "Loading...";
@@ -6134,7 +6174,8 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
     }
 
     if (g_adapter->mode == modes::kCreature) // age +0xB34 (0 hatchling, 1 adult), the hatchling waiting for its family
-        SAY(" age=%d hatchling_waiting=%d", *(int*)((uint8_t*)av + 0xB34), (int)game::hatchling_waiting(av));
+        SAY(" age=%d hatchling_waiting=%d scale=%.3f radius=%.2f", *(int*)((uint8_t*)av + 0xB34),
+            (int)game::hatchling_waiting(av), game::scale(av), game::bounding_radius(av));
     if (g_adapter->mode == modes::kScenario) {
         int act, state, completed;
         if (modes::adventure_progress(act, state, completed))
@@ -6685,6 +6726,8 @@ std::string ui_world_line()
     // the host is evolving in an editor: everybody gets the new body afterwards
     uint32_t host_mode = g_sess.role() == net::Role::Host ? g_mode
                          : (g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().mode : 0);
+    if ((host_mode == modes::kEdit || host_mode == modes::kEditor) && g_sess.role() == net::Role::Client && !g_local)
+        return g_sess.name_of(0) + " is making a new world: it comes to you when they finish"; // BUG-9203: not evolving
     if (host_mode == modes::kEdit || host_mode == modes::kEditor)
         return g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
     if (g_sess.role() == net::Role::Host && g_mode == modes::kTribe) // BUG-9135 phase 4: a partner without a village

@@ -3103,10 +3103,18 @@ static bool ph_build()
 // the top of Spore's own UI at the right edge, below the screen's top quarter: the windows of the HUD layouts that
 // reach the right edge (the avatar / ship / cell card, the Pack list, the Tribe and Military tabs); the screen's bottom
 // bar's top when none. Drawn places: a scaled piece (ui.native_scale) is taller than its layout
+// BUG-9191 (owner play test 2026-11-14): in an editor the stats panel at the top right reaches below the top quarter
+// (its ability icons), so the cards stacked above those icons and covered the stats: in an editor only the bottom
+// half's right-edge windows count, and the cards sit above the editor's bottom buttons, clear of the stats
+static bool g_ph_editor_spot = true;
+COOP_FIX("ui.party_editor_spot", "BUG-9191", g_ph_editor_spot,
+         "ui: in an editor the Party cards sit low at the right edge, not over the editor's stats");
 static float measure_right_floor(int sw, int sh)
 {
     Win main = sui::main_window();
     float floor = (float)sh - 64;
+    const bool editor = g_ph_editor_spot && (g_ph_own_stage == modes::kEditor || g_ph_own_stage == modes::kEdit);
+    const float from = sh * (editor ? 0.5f : 0.25f);
     if (!main) return floor;
     struct It { Win w; int depth; };
     std::vector<It> stack{{main, 0}};
@@ -3118,7 +3126,7 @@ static float measure_right_floor(int sw, int sh)
             if (!sui::visible(c) || c == g_ph.root || c == D.root) continue;
             const Rect r = sui::screen_rect(c);
             const bool layer = r.w() >= sw * 0.9f && r.h() >= sh * 0.9f;
-            if (!layer && r.x2 >= sw - 14 && r.x1 >= sw * 0.6f && r.y1 >= sh * 0.25f && r.y1 < floor &&
+            if (!layer && r.x2 >= sw - 14 && r.x1 >= sw * 0.6f && r.y1 >= from && r.y1 < floor &&
                 r.h() < sh * 0.6f && r.w() > 8 && r.h() > 8 && (sui::drawable(c) || !sui::caption(c).empty()))
                 floor = r.y1;
             if (it.depth < 9) stack.push_back({c, it.depth + 1});

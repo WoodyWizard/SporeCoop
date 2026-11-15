@@ -594,6 +594,22 @@ static void ring_cleanup(void*)
            f.out.size());
 }
 
+// BUG-9204 (owner play test 2026-11-14: "The nests are visible on the map, they're just '?'. They're not 'Discovered'"):
+// a nest is "?" on the game's minimap until its player has been near it (minimap 0xD425A0: nest +0x124 bit 0 clear gives
+// the icon flag 0x80000; runtime 2026-11-14: setting the bit turned a seat nest's "?" into the friendly face at once).
+// The host marks every party seat's nest as discovered; the guests get it with the world (the shares carry the save).
+// `coop.fix creature.party_nests_known off`: as before.
+static bool g_known_fix = true;
+COOP_FIX("creature.party_nests_known", "BUG-9204", g_known_fix, "creature: every party seat's nest is discovered on the minimap");
+static void mark_known(void* herd)
+{
+    uint8_t* nest = g_known_fix && live_herd(herd) ? (uint8_t*)game::herd_nest(herd) : nullptr;
+    if (nest && game::object_alive(nest) && skg::readable(nest + 0x124, 1) && !(nest[0x124] & 1)) {
+        nest[0x124] |= 1;
+        H->log(M, SK_INFO, "home nests: a party nest marked discovered on the minimap (BUG-9204)");
+    }
+}
+
 void host_tick(double now)
 {
     if (!g_fix || !is_host() || now < g_next || g_queued)
@@ -625,6 +641,7 @@ void host_tick(double now)
         if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
             g_nests[seat] = {herd, at, species, g_nests[seat].herd == herd ? g_nests[seat].rate : 0};
             note_nest(seat, at);
+            mark_known(herd); // BUG-9204
             if (party::player_of_seat((int)seat) != party::kNobody)
                 family_back(seat, herd); // (an offline player's nest is the AI's: it may die out, decision 8)
             continue;

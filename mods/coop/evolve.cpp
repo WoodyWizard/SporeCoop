@@ -50,7 +50,9 @@ double g_family_at;
 bool g_direct = true;
 COOP_FIX("creature.mating_direct", "BUG-9175", g_direct,
          "creature: a mating whose pairing has not reached the egg scene after 30 s ends in the editor directly");
-constexpr double kStallAfter = 30.0;  // the game's pairing has this long to reach its egg scene (12 s seen on the host)
+// the game's pairing has this long to reach its egg scene (12 s seen on the host); BUG-9175 (2026-11-14): 30 s felt broken
+// to the owner (they clicked the mate again and again), 18 s now
+constexpr double kStallAfter = 18.0;
 constexpr uint32_t kMating = 0x02D852F0u, kMatingAtNest = 0xD23FE7CAu; // the avatar's actions (coop.cpp mate_response)
 int g_mate_stage;      // 0 none, 1 in the mating action, 2 in the cocoon, 3 the request made (until the action ends)
 double g_mate_at;      // when the stage began
@@ -189,6 +191,35 @@ static void keep(void* puppet, Cocoon& c, double now)
     }
 }
 
+// BUG-9194 (owner play test 2026-11-14: "they stand still, the cocoon appears, then disappears, then a new cocoon appears
+// and shrinks them"): the first shell (~2 s) faded before the step to the hold at kEnterSeconds, and that step treated the
+// body as a new one (c.puppet cleared): a second shell and the shrink to kShrunk at once. Now one cocoon from start to
+// end: while going in the shell is laid again on time and the creature shrinks with the spin; the step to the hold keeps
+// the body and its shell timer (the hold pose and the sac only). `coop.fix creature.cocoon_smooth off`: as before.
+static bool g_smooth = true;
+COOP_FIX("creature.cocoon_smooth", "BUG-9194", g_smooth, "creature: one cocoon while going in (no second shell), the creature shrinks with the spin");
+static void entering(void* c, Cocoon& cc, double now)
+{
+    if (now - cc.shell_at >= kShellEvery) {
+        if (void* fx = effect_at(c, kFxCreate, cc.radius, &cc.spot)) game::release_world_effect(fx);
+        cc.shell_at = now;
+    }
+    if (!cc.size) {
+        cc.size = game::scale(c);
+        if (!(cc.size > 0) || !std::isfinite(cc.size)) cc.size = 1.f;
+    }
+    const float t = (float)std::clamp((now - cc.at) / kEnterSeconds, 0.0, 1.0);
+    const float want = cc.size * (1.f - (1.f - kShrunk) * t);
+    if (std::fabs(game::scale(c) - want) > 0.002f) game::set_scale(c, want);
+}
+// the step from going in to holding: the same body, the hold pose and its sac now (keep() lays the next shell on time)
+static void to_hold(void* c, Cocoon& cc, double now)
+{
+    if (g_smooth) cc.played = -1e9; // the hold pose at once
+    else cc.puppet = nullptr;        // (before: a new body for keep(), a second shell)
+    keep(c, cc, now);
+}
+
 // BUG-9181: the family's cocoons (below)
 static void family_in(uint8_t who, void* body, double now);
 static void family_keep(uint8_t who, double now);
@@ -210,12 +241,12 @@ void puppet_editing(uint8_t player, void* puppet, Cocoon& c, double now)
     }
     family_keep(player, now);
     if (c.state == 1 && now - c.at >= kEnterSeconds) {
-        c.puppet = nullptr; // the hold and its sac now
-        keep(puppet, c, now);
+        to_hold(puppet, c, now); // the hold and its sac now
         c.state = 2;
         c.at = now;
         return;
     }
+    if (c.state == 1 && g_smooth) entering(puppet, c, now);
     if (c.state == 2) keep(puppet, c, now);
 }
 
@@ -312,11 +343,15 @@ static void family_keep(uint8_t who, double now)
     for (auto& w : it->second) {
         if (!wrapped_alive(w)) continue;
         if (w.cc.state == 1 && now - w.cc.at >= kEnterSeconds) {
-            w.cc.puppet = nullptr; // the hold and its sac now
+            if (!g_smooth) w.cc.puppet = nullptr; // the hold and its sac now
+            else w.cc.played = -1e9;
             w.cc.state = 2;
         }
+        if (w.cc.state == 1 && g_smooth) entering(w.c, w.cc, now);
         if (w.cc.state == 2) keep(w.c, w.cc, now);
-        if (net::dist(game::position(w.c), w.at) > 0.2f) game::teleport(w.c, w.at, w.rot);
+        // (while going in, the spin's own small hop is left alone: back only when it wandered off)
+        const float off = g_smooth && w.cc.state == 1 ? 1.5f : 0.2f;
+        if (net::dist(game::position(w.c), w.at) > off) game::teleport(w.c, w.at, w.rot);
     }
 }
 
