@@ -90,7 +90,6 @@ void destroy_untracked(void* c); // tests (BUG-0507): the game's destroy without
 void destroy_instance(void* obj); // cGameNounManager::DestroyInstance of a game object that is no creature (a fruit, BUG-0584)
 void destroy_deferred_tick(); // once per frame
 void set_destroy_defer(bool on); // tests (off: at once)
-void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves the puppet list at once, BUG-0066)
 bool cinematic_playing(); // cCinematicManager +0x2C != 0 (W2: no destroy of a village meanwhile)
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
