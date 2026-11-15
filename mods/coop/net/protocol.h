@@ -107,6 +107,8 @@ enum MsgType : uint8_t {
     MSG_IDENTITY = 83, // reliable guest -> host (BUG-9135): u64 the player's persistent identity (identity.h)
     MSG_TRIBE_LATE = 84, // reliable host -> guest (BUG-9159): u8 kind (1: make your creature in the editor now), u32 world
     MSG_DNA_OWN = 85, // reliable host -> guest (BUG-9162): f32 DNA of that guest's own (its kill paid on the host's game)
+    MSG_START_PARTS = 87, // reliable host -> guests (3Z B): u16 n, n x {u32 key lo, u32 key hi, u8 state}: the part states of
+                          // the parts list of the host's new-world start editor (its diet's mouth unlocked)
     MSG_MIGRATE = 86, // reliable (BUG-9163): u8 kind 1 (a migration started), u8 the player whose evolution started it, u32 world
     MSG_DRAMA = 82, // reliable host -> guests (BUG-9131): u8 Drama Manager event kind the host started (meteor, rain)
     MSG_PROGRESS_DEBT = 81, // reliable host -> guests (BUG-9119): u32 stage mode, u32 world, f32 the party's progress debt

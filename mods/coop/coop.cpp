@@ -1681,7 +1681,59 @@ static bool late_create_offered()
 // of the sea: legs and hands only, a few parts, a small budget), as the game asks for it from the galaxy menu (the
 // host's request logged 2026-11-14: editor 0xE46C381E, return mode +0x1C the galaxy menu, the tag +0x90 0x13C5A95E)
 constexpr uint32_t kCreatureStartEditor = 0xE46C381Eu;
-static bool submit_new_creature_request(uint32_t editor = 0x465C50BAu)
+// The start editor's palette comes from its request's parts list (+0x94, a cCollectableItems the wizard makes): the
+// diet card leaves its mouth unlocked there (owner 2026-11-15: "Clicking one of those unlocked the corresponding
+// mouth"); with no list the editor offers no mouth at all. The list's part states (its state map +0x4D00: buckets
+// +0x4D04, their count +0x4D08, nodes {u32 lo, u32 hi, u8 state, ..., next +0x10}; bit 0 unlocked, 4 seen; read live
+// 2026-11-15: the herbivore card left 32AC9620 / FE534766 seen) go from the host to the guests (MSG_START_PARTS); a
+// guest makes its own list the game's way (0x5BF2E0: new 0x6DAC, the constructor) with the same states.
+struct StartPart {
+    uint32_t lo, hi;
+    uint8_t state;
+};
+static std::vector<StartPart> g_start_parts; // guest: the host's, received
+static bool g_test_unlock_start = false;
+COOP_FIX("creature.test_unlock_start", "BUG-9207", g_test_unlock_start,
+         "tests: the game's own new-world start editor gets every part of its parts list unlocked");
+static double g_start_parts_at = -1;
+static std::vector<StartPart> item_states(void* items)
+{
+    std::vector<StartPart> out;
+    if (!items || !skg::readable((char*)items + 0x4D00, 0x10)) return out;
+    void** buckets = skg::field<void**>(items, 0x4D04);
+    const uint32_t n = skg::field<uint32_t>(items, 0x4D08);
+    if (!buckets || n == 0 || n > 4096 || !skg::readable(buckets, n * 4)) return out;
+    for (uint32_t i = 0; i < n && out.size() < 2000; i++)
+        for (void* node = buckets[i]; node && skg::readable(node, 0x14) && out.size() < 2000;
+             node = skg::field<void*>(node, 0x10))
+            out.push_back({skg::field<uint32_t>(node, 0), skg::field<uint32_t>(node, 4), skg::field<uint8_t>(node, 8)});
+    return out;
+}
+static void* make_items(const std::vector<StartPart>& states)
+{
+    uintptr_t ctor = H->sym("SporeCoop::CollectableItems_ctor"), unlock = H->sym("Simulator::cCollectableItems::UnlockPart"),
+              lock = H->sym("Simulator::cCollectableItems::LockPart");
+    if (!ctor || !unlock || !lock) return nullptr;
+    void* items = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x6DAC, "cCollectableItems", 0, 0, 0, 0);
+    if (!items) return nullptr;
+    skg::thiscall<void*>(ctor, items);
+    for (const auto& p : states) {
+        if (p.state & 1) skg::thiscall<bool>(unlock, items, p.lo, p.hi, 0);
+        else skg::thiscall<bool>(lock, items, p.lo, p.hi);
+    }
+    // the exact state bytes (bit 2 "seen": a locked mouth of another diet shows its diet's silhouette, not a shield,
+    // as on the host, 2026-11-15)
+    void** buckets = skg::field<void**>(items, 0x4D04);
+    const uint32_t n = skg::field<uint32_t>(items, 0x4D08);
+    if (buckets && n && n <= 4096 && skg::readable(buckets, n * 4))
+        for (uint32_t i = 0; i < n; i++)
+            for (void* node = buckets[i]; node && skg::readable(node, 0x14); node = skg::field<void*>(node, 0x10))
+                for (const auto& p : states)
+                    if (p.lo == skg::field<uint32_t>(node, 0) && p.hi == skg::field<uint32_t>(node, 4))
+                        skg::field<uint8_t>(node, 8) = p.state;
+    return items;
+}
+static bool submit_new_creature_request(uint32_t editor = 0x465C50BAu, const std::vector<StartPart>* parts = nullptr)
 {
     uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
     if (!ctor || !submit) return false;
@@ -1709,6 +1761,14 @@ static bool submit_new_creature_request(uint32_t editor = 0x465C50BAu)
         skg::field<uint32_t>(req, 0x64) = 1;
         skg::field<uint32_t>(req, 0x6C) = 0x00010100u;
         skg::field<uint32_t>(req, 0x90) = 0x13C5A95Eu;
+        uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign");
+        if (parts && assign)
+            if (void* items = make_items(*parts)) {
+                skg::thiscall<void*>(assign, (char*)req + 0x94, items); // (the request holds it)
+                int unlocked = 0;
+                for (const auto& p : *parts) unlocked += p.state & 1;
+                LOG("start editor: our parts list from %zu part states (%d unlocked) (3Z B)", parts->size(), unlocked);
+            }
     }
     g_vote_bypass = true; // the player's own editor, no vote
     g_own_editor = true;  // the part-list error is waived as in the own editor (h_BlockingErrors)
@@ -2186,6 +2246,27 @@ bool SK_CDECL h_Submit(void* req)
             hex += b;
         }
         LOG("editor request from the galaxy menu: %s", hex.c_str());
+        if (g_test_unlock_start && skg::field<uint32_t>(req, 0xC) == kCreatureStartEditor) { // tests (3Z B)
+            void* items = skg::field<void*>(req, 0x94);
+            for (const auto& p : item_states(items))
+                skg::thiscall<bool>(H->sym("Simulator::cCollectableItems::UnlockPart"), items, p.lo, p.hi, 0);
+            LOG("start editor: tests: the game's parts list unlocked (%zu)", item_states(items).size());
+        }
+        if (g_sess.role() == net::Role::Host && g_sess.connected() && skg::field<uint32_t>(req, 0xC) == kCreatureStartEditor) {
+            const auto states = item_states(skg::field<void*>(req, 0x94)); // 3Z B: the guests' editors get the same
+            net::Writer w;
+            w.u16((uint16_t)states.size());
+            int unlocked = 0;
+            for (const auto& p : states) {
+                w.u32(p.lo);
+                w.u32(p.hi);
+                w.u8(p.state);
+                unlocked += p.state & 1;
+            }
+            for (auto& p : g_sess.players())
+                if (p.id != g_sess.my_id()) g_sess.send_reliable_to(p.id, net::MSG_START_PARTS, w);
+            LOG("start editor: our parts list's %zu part states (%d unlocked) to the guests (3Z B)", states.size(), unlocked);
+        }
     }
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
@@ -2559,6 +2640,10 @@ COOP_FIX("creature.first_before_world", "BUG-9208", g_first_before_world,
          "creature: a guest joining a world where it has no creature makes its first one before the world loads");
 constexpr uint32_t kEditorCheck = 0x058A3350u;
 static bool g_pregame_open;        // this guest's editor is the pre-game one
+static bool g_pregame_start;       // 3Z B: it is the host's start editor with the host's parts list
+static bool g_same_start_parts = true;
+COOP_FIX("creature.same_start_parts", "BUG-9207", g_same_start_parts,
+         "creature: guests get the host's new-world start editor with the host's parts (its diet's mouth); off: the Creator");
 static bool g_pregame_check_off;   // we greyed its check
 static uint32_t g_pregame_editors; // tests
 static void pregame_editor_tick(double now)
@@ -2634,11 +2719,20 @@ static void pregame_editor_tick(double now)
         if (s_done || !host_editing || s_host_before != modes::kMenu || world::load_queued() || receiving) return;
         const uint32_t he = g_remotes[0].buf.latest().editor; // creatures only: the Creator, or the stage start editor (a new
         if (he != 0x465C50BAu && he != kCreatureStartEditor) return; // world from the galaxy wizard, 2026-11-14)
+        // 3Z B: the host's start editor: the same, with the host's parts list (sent at its request; a host without it,
+        // an older one: the Creator after 4 s)
+        static double s_waited = -1;
+        if (s_waited < 0) s_waited = now;
+        const bool parts = g_start_parts_at >= 0 && now - g_start_parts_at < 600;
+        if (he == kCreatureStartEditor && !parts && now - s_waited < 4) return;
+        s_waited = -1;
+        g_pregame_start = he == kCreatureStartEditor && parts && g_same_start_parts;
         s_done = true;
     }
     H->run_outside_frame([](void* late) {
         creations::begin_first_creature();
-        const bool r = submit_new_creature_request();
+        const bool r = !late && g_pregame_start ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
+                                                : submit_new_creature_request();
         LOG("pregame editor: the creature editor with the base creature %s -> %d (BUG-%s)",
             late ? "before the host's world (no own creature there)" : "while the host makes a new world", (int)r,
             late ? "9208" : "9207");
@@ -5666,6 +5760,22 @@ void setup_callbacks()
             }
             return;
         }
+        if (type == net::MSG_START_PARTS && from == 0 && g_sess.role() == net::Role::Client) { // 3Z B
+            const uint16_t n = r.u16();
+            std::vector<StartPart> parts;
+            for (uint16_t i = 0; i < n && r.ok() && i < 2000; i++) {
+                StartPart p{};
+                p.lo = r.u32();
+                p.hi = r.u32();
+                p.state = r.u8();
+                parts.push_back(p);
+            }
+            if (!r.ok()) return;
+            g_start_parts = std::move(parts);
+            g_start_parts_at = H->time_seconds();
+            LOG("start editor: the host's parts list, %zu part states (3Z B)", g_start_parts.size());
+            return;
+        }
         if (type == net::MSG_MIGRATE) { // BUG-9163: a player's evolution started the migration
             const uint8_t kind = r.u8(), by = r.u8();
             const uint32_t world = r.u32();
@@ -8136,7 +8246,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.newcreature", "coop.newcreature - tests (BUG-9207): the creature editor with the base creature, "
                    "here (from the galaxy menu: as a new world's first editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
-                       const bool r = submit_new_creature_request(argc > 1 ? (uint32_t)strtoul(argv[1], nullptr, 16) : 0x465C50BAu);
+                       std::vector<StartPart> parts; // (lo:state, the part type 0x40626000)
+                       for (int i = 2; i < argc; i++) {
+                           const char* c = strchr(argv[i], ':');
+                           parts.push_back({(uint32_t)strtoul(argv[i], nullptr, 16), 0x40626000u,
+                                            (uint8_t)(c ? strtoul(c + 1, nullptr, 16) : 5)});
+                       }
+                       const bool r = submit_new_creature_request(argc > 1 ? (uint32_t)strtoul(argv[1], nullptr, 16) : 0x465C50BAu,
+                                                                  argc > 2 ? &parts : nullptr);
                        SAY("new creature editor -> %d\n", (int)r);
                        return 0;
                    },
