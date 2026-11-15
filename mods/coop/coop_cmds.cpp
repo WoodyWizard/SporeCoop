@@ -1528,9 +1528,9 @@ void register_commands_core()
     H->command_add(M, "coop.cellgone", "coop.cellgone - tests (BUG-0271): cell reads refused once the game freed the cell pool",
                    [](void*, int, const char* const*, SkOut* out) {
                        const auto& c = modes::cell_gone_stats();
-                       SAY("fix=%d checks=%u outside=%u pool_gone=%u refused=%u windows=%u frames_gone=%u local_refused=%u "
+                       SAY("fix=1 checks=%u outside=%u pool_gone=%u refused=%u windows=%u frames_gone=%u local_refused=%u "
                            "puppet_refused=%u",
-                           (int)modes::stale_fix, c.checks, c.outside, c.pool_gone, c.refused, c.windows, c.frames_gone,
+                           c.checks, c.outside, c.pool_gone, c.refused, c.windows, c.frames_gone,
                            g_local_refused, g_puppet_refused);
                        return 0;
                    },
