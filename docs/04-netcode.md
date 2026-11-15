@@ -137,7 +137,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | cell (Cell) | 5 | 1.0 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN` |
 | tribe (Tribe) | 6 | 1.0 | Tribe | `TRIBE_STATE`, `TRIBE_CMD` |
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
-| space (Space) | 8 | 1.1 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
+| space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.0 | every stage and the menus | `CREATION` |
 
@@ -194,8 +194,9 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 85 | badges | `K_BADGES` | guest |
 | 86 | badges | `K_BADGES_KEPT` | host |
 | 87 | badges | `K_BADGES_DONE` | guest |
+| 90 | eco | `K_ECO` | any |
 
-Feature ranges: spacecoop 1..9, map 10..19, contracts 20..29, diplomacy 30..39, finale 40..49, rivalry 50..59, allies 60..69, trade 70..79, planets 80..84, badges 85..89; 90..255 free.
+Feature ranges: spacecoop 1..9, map 10..19, contracts 20..29, diplomacy 30..39, finale 40..49, rivalry 50..59, allies 60..69, trade 70..79, planets 80..84, badges 85..89, eco 90..94; 95..255 free.
 
 <!-- end of manifest tables -->
 

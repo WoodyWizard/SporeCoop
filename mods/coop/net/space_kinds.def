@@ -30,7 +30,8 @@ FEATURE(allies, 60, 69)     // partner colonies as an allied empire
 FEATURE(trade, 70, 79)      // tool gifts and trade between players
 FEATURE(planets, 80, 84)    // a shared colony's stored spice (BUG-0537)
 FEATURE(badges, 85, 89)     // badges kept across a rejoin
-// 90..255 free
+FEATURE(eco, 90, 94)        // a planet's ecosystem: its plant and animal species (BUG-1148)
+// 95..255 free
 
 KIND(1,  spacecoop, DOWN,          Any)
 KIND(2,  spacecoop, RAID,          Any)
@@ -83,6 +84,7 @@ KIND(81, planets,   SPICE_TAKEN,   Guest)
 KIND(85, badges,    BADGES,        Guest)
 KIND(86, badges,    BADGES_KEPT,   Host)
 KIND(87, badges,    BADGES_DONE,   Guest)
+KIND(90, eco,       ECO,           Any)
 
 #undef FEATURE
 #undef KIND

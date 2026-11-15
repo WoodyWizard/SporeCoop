@@ -8,7 +8,7 @@ npc 1 0 7a6dd3c2ea2ecf5a
 cell 1 0 7fbf9d5eda123743
 tribe 1 0 a6eb598ce32e518d
 civ 1 0 48e0f86eae490081
-space 1 1 2ca2af7f133ab1c6
+space 1 2 33ee7e052e3b21e3
 shared 1 0 c29c6202f6ae9b35
 creations 1 0 606c630c37dd957b
 # rebased space: C6 (BUG-1133): the Space wire structs join the lock; golden bytes identical (tests/wire_tests.cpp)
