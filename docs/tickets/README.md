@@ -1123,3 +1123,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1125](BUG-1125-a5-remove-gog-2016-support-code-symbols-texts-a.md) | fixed | tooling | All | 2026-11-15 | unreleased | A5: remove GOG 2016 support (code, symbols, texts); a GOG 2016 exe gets a not-supported message |
 | [BUG-1126](BUG-1126-a12-ticket-stage-field-validated-and-normalised.md) | fixed | tooling | Tools | 2026-11-15 | unreleased | A12: ticket stage field validated and normalised; known-issues.md pruned to open entries |
 | [BUG-1127](BUG-1127-a13-tools-wt-gc-py-lists-merged-worktrees-and-br.md) | fixed | tooling | Tools | 2026-11-15 | unreleased | A13: tools/wt_gc.py lists merged worktrees and branches to delete |
+| [BUG-1130](BUG-1130-a14-one-game-on-main-a-counter-of-game-calls-mad.md) | open | tooling | All | 2026-11-15 |  | A14: one game::on_main(), a counter of game calls made off the main thread, a Threads section |
+| [BUG-1131](BUG-1131-b4-ratchet-lints-in-make-test-object-alive-count.md) | open | tooling | All | 2026-11-15 |  | B4: ratchet lints in make test: object_alive count, CALL_GUARD around o_* calls, lifecycle registration of on_* functions |
