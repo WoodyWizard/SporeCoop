@@ -231,6 +231,61 @@ struct SpaceBuild {
 };
 using AddTurret_t = int(__fastcall*)(void*);
 
+using ToolMouseUp_t = int(SK_THISCALL*)(void*, void*);
+
+using VTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
+
+struct LocalFire {
+    uint32_t calls = 0, fired = 0;
+    uintptr_t owner_vt = 0;
+};
+
+struct Shot {
+    uint8_t kind = 0;   // 1 vehicle (host net id), 3 turret (its position)
+    uint16_t id = 0;
+    net::Vec3 at{};     // turret: where it stands
+    net::Vec3 aim{};
+    uint8_t tkind = 0;  // its target (FireTool's, a spatial: object + 0x34): 0 none, 1 vehicle id, 3 noun + position
+    uint16_t tid = 0;
+    uint32_t tnoun = 0;
+    net::Vec3 tpos{};
+    double seen = -100; // host: the last FireTool; guest: until when it fires
+    double tried = -100; // guest: the last FireTool of the mirror
+    uint8_t count = 0;   // BUG-0530: host: the shots that left (FireTool true); guest: the host's count
+    uint8_t done = 0;    // guest: the host's shots this game fired (FireTool true)
+    bool counted = false; // guest: a list of the host's fired shots (chunk kShotChunkFired)
+    bool stopped = false; // BUG-0530: the host's game stopped this weapon (cToolManager::OnMouseUp)
+    bool released = false; // guest: this game's copy of the weapon was stopped too
+};
+
+using SpawnNextCity_t = bool(SK_THISCALL*)(void*, int, void*);
+
+struct BldRekey {
+    uint32_t orig[3];
+    uint32_t ours;
+};
+
+using AddMoney_t = void(SK_THISCALL*)(void*, float, int);
+
+using CityBuy_t = void(SK_THISCALL*)(void*, uint32_t, float);
+
+using SetMoveOrder_t = int(SK_THISCALL*)(void*, float, float, float, int);
+
+using SetOrder_t = int(SK_THISCALL*)(void*, void*, int, int);
+
+struct HeldBuild {
+    uint8_t from;
+    void* city;
+    uint32_t noun;
+    net::Vec3 pos;
+    float paid = 0; // BUG-0807: what the guest paid for it in its planner
+};
+
+struct PendingCapture {
+    uint8_t owner;
+    double at;
+};
+
 // ---- the vehicle tables (civ_tables.cpp) ----
 extern mirror::Registry<uint16_t, HV> g_hvr;
 extern mirror::Registry<uint16_t, GV> g_gvr;
@@ -397,4 +452,133 @@ void* veh_mirror(uint16_t id);
 net::Vec3 veh_pos(void* v);
 void write_target(net::Writer& w, const Target& t);
 
+extern uintptr_t a_FireTool;
+extern uintptr_t a_ToolMgrGet;
+extern uintptr_t a_ToolMouseUp;
+bool cosmetic_hit(void* att);
+extern bool g_fix_creature_target;
+extern bool g_fix_shot_fired;
+extern bool g_fix_turret_weapon;
+extern uintptr_t g_hit_att_vt;
+extern uint32_t g_hits_dropped;
+extern std::map<uintptr_t, LocalFire> g_local_fire;
+extern std::map<uint32_t, uint32_t> g_shot_tools;
+extern std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots;
+extern uint32_t g_shots_fired;
+extern std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots_in;
+extern uint32_t g_shots_nomirror;
+extern uint32_t g_shots_notool;
+extern uint32_t g_shots_rx;
+extern uint32_t g_shots_seen;
+extern uint32_t g_shots_tx;
+extern std::unordered_map<void*, int> g_tribe_extra_seen;
+extern std::unordered_set<void*> g_turret_shooters;
+void guest_fire(double now);
+void guest_tribes(net::Reader& r);
+int SK_THISCALL h_ToolMouseUp(void* mgr, void* tool);
+int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a);
+void host_send_shots(double now);
+void host_send_tribes(double now);
+constexpr float kCreatureReach = 40.f;
+constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
+constexpr uint8_t kShotChunkFired = 0xFC;  // MSG_CIV_STATE chunk index of a counted shot list (chunks 0)
+constexpr uint8_t kTribeChunk = 0xFA;
+constexpr uintptr_t kVModelKey = 0xC4;
+extern ToolMouseUp_t o_ToolMouseUp;
+extern VTakeDamage_t o_VTakeDamage;
+void on_destroy_instance(void* obj, uintptr_t ra);
+uint32_t pos_key(const net::Vec3& p);
+void guest_shots(net::Reader& r, bool counted);
+bool vtable_in_game(const void* obj);
+extern uintptr_t a_ChangeOwner;
+extern uintptr_t a_CreateVehicle;
+extern uintptr_t a_ExpansionGet;
+extern uintptr_t a_NodeClaim;
+extern uintptr_t a_NodeUnclaim;
+extern uintptr_t a_SetCapture;
+void drop_foreign_selection();
+extern std::unordered_map<void*, BldRekey> g_bld_rekeyed;
+extern size_t g_cities_waiting_told;
+extern double g_city_short_since;
+extern bool& g_cycle_order_fix;
+extern bool g_extrap_fix;
+extern bool g_instant_found_fix;
+extern double g_last_city_spawn;
+extern bool g_place_now_fix;
+extern bool g_vel_cap_fix;
+extern bool g_vel_cap_host_fix;
+void guest_build(net::Reader& r);
+void guest_building_hp(net::Reader& r);
+void guest_roads(net::Reader& r);
+void guest_state(net::Reader& r);
+void host_buildings_session_end();
+constexpr uint32_t kFoundInstant = 1; // MSG_CIV_BUILD kNextCitySite noun: the host founded it instantly
+constexpr uint8_t kNextCitySite = 0xFF; // MSG_CIV_BUILD city index: "found the next city site", noun 0
+constexpr uint32_t kNodeNoun = 0x403DF5C;
+constexpr uint8_t kRoadList = 0xFE; // MSG_CIV_BUILD city index: the host's trade routes follow
+constexpr double kVehAhead = 0.15;
+constexpr double kVehLead = 0.3; // BUG-0425
+extern SpawnNextCity_t o_SpawnNextCity;
+bool planner_holds(void* city);
+bool planner_moves(void* v);
+void prune_gone();
+int slot_of(void* city, void* b, const net::Vec3& p, float* nearest, void** occ);
+void to_host_spot(void* b, const net::Vec3& p);
+void veh_hunt_tick();
+
+void* local_city_near(const net::Vec3& p);
+void save_end();
+bool save_filter(void* o, uint32_t noun);
+void save_start();
+extern uintptr_t a_AddBuilding;
+extern uintptr_t a_CinematicMgr;
+extern uintptr_t a_CreateInstance;
+extern uintptr_t a_DestroyInstance;
+extern uintptr_t a_SetBuildingModel;
+extern uintptr_t a_SnapToSlot;
+extern uintptr_t a_SpendMoney;
+extern uintptr_t a_VehicleCost;
+bool building_model_ok(void* city, uint32_t type, uint32_t noun);
+void caption_disarm();
+extern int g_build_from;
+extern float g_build_refunded;
+extern std::unordered_map<void*, PendingCapture> g_capture_by;
+extern int g_capture_for;
+extern std::vector<claims::Spot> g_city_spots;
+extern uint16_t g_cycle;
+extern bool g_fix_away_capture;
+extern bool g_fix_buy_city;
+extern bool g_fix_capture_keeps;
+extern std::vector<HeldBuild> g_held_builds;
+extern std::unordered_map<void*, std::pair<uint32_t, double>> g_hp_sent;
+extern double g_kept_at;
+extern bool g_kept_tried;
+extern double g_last_send;
+extern int g_pending_owner;
+extern std::map<std::string, uint8_t> g_present;
+extern std::vector<uint8_t> g_split_for;
+extern int g_trade_pairs;
+extern int g_trade_total;
+extern std::vector<claims::Spot> g_veh_spots;
+void* host_city(size_t i);
+void host_send_roads(double now);
+void host_send_turrets(size_t ci, void* city, double now);
+void host_specialty_answer(uint8_t from, net::Reader& r);
+void host_superweapon_request(uint8_t from, net::Reader& r);
+void host_tick(double now);
+bool hv_live(const HvRef& x);
+constexpr uint8_t kCmdSpecialty = 8; // host -> owner: u8 city, u32 capture type; guest -> host: u8 city, u8 take, u32 type
+constexpr uint8_t kHpChunk = 0xFD;
+void* nearest_player_city(const net::Vec3& p, uint8_t* owner = nullptr);
+extern AddMoney_t o_AddMoney;
+extern CityBuy_t o_CityBuy;
+extern SetMoveOrder_t o_SetMoveOrder;
+extern SetOrder_t o_SetOrder;
+uint8_t owner_of_vehicle(void* v);
+int present_id(const std::string& key);
+Target read_target(net::Reader& r);
+uint8_t role(uint8_t p);
+net::Quat veh_rot(void* v);
+
+void caption_arm();
 } // namespace civ

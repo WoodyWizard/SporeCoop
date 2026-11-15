@@ -3,7 +3,11 @@
   "total": 146,
   "per_file": {
    "mods/coop/census.cpp": 2,
-   "mods/coop/civ.cpp": 11,
+   "mods/coop/civ.cpp": 3,
+   "mods/coop/civ_debug.cpp": 3,
+   "mods/coop/civ_host.cpp": 1,
+   "mods/coop/civ_shots.cpp": 3,
+   "mods/coop/civ_tables.cpp": 1,
    "mods/coop/coop.cpp": 1,
    "mods/coop/coop_cmds.cpp": 1,
    "mods/coop/creations.cpp": 1,
