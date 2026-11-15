@@ -8,7 +8,7 @@
              window is open; with the window closed, a notification panel starts below the block
              (at 1280x720, where they met)
 
-  --old      the fixes off (`coop.corefix window_recenter 0`, `status_block 0`): both cases FAIL
+  --old      the fixes off (`coop.fix core.window_recenter off`, `core.status_block off`): both cases FAIL
 
   SPORE_LANE=3 python3 tools/tests/coop_window_layout.py [--old]
 """
@@ -118,8 +118,8 @@ def main():
     ck = Checks()
     old = '--old' in sys.argv
     c = start_host(ck)
-    for sw in ('window_recenter', 'status_block'):
-        print('  ', c.call(f'coop.corefix {sw} {0 if old else 1}')['out'].strip().splitlines()[-1:])
+    for sw in ('core.window_recenter', 'core.status_block'):
+        print('  ', c.call(f'coop.fix {sw} {"off" if old else "on"}')['out'].strip().splitlines()[-1:])
     ui = Ui(c, 'host')
     res = {}
     first = None

@@ -486,7 +486,7 @@ def forget_settings():
 # the game's own report of its switches, compared with the cold start's.
 KNOBS = re.compile(r'\s*(?:'
                    r'(?:coop|kit)\.fix\s+\S+\s+\S+'  # coop.fix <name> on|off, coop.fix all off, kit.fix <name> 0
-                   r'|coop\.\w+fix\s+\S+'  # coop.worldfix retry 0, coop.corefix <name> 0, coop.sessionfix 0, coop.framefix 0
+                   r'|coop\.\w+fix\s+\S+|coop\.settingsin\s+\S+'  # coop.worldfix retry 0, coop.framefix 0, coop.settingsin 0
                    r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
                    r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
                    r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings

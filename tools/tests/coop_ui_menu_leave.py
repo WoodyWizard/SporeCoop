@@ -8,7 +8,7 @@ item's place while the game leaves the menu; the item pointer must be gone withi
 the mode change, and the game must not fault.
 
   SPORE_LANE=2 python3 tools/tests/coop_ui_menu_leave.py [--without-fix]
-  (--without-fix: coop.corefix menu_drop 0, the test must FAIL)"""
+  (--without-fix: coop.fix core.menu_drop off, the test must FAIL)"""
 import re
 import sys
 import time
@@ -25,7 +25,7 @@ def main():
     lane.sh('kill')
     lane.sh('fixture', 'restore', 'creature', lane.HOST_PROFILE)
     c = start_host(ck)
-    print(' ', c.call(f'coop.corefix menu_drop {0 if without else 1}')['out'].strip().replace('\n', ', '))
+    print(' ', c.call(f'coop.fix core.menu_drop {"off" if without else "on"}')['out'].strip().replace('\n', ', '))
     st = ''
     for _ in range(20):
         st = c.call('coop.uistate')['out']
@@ -56,7 +56,7 @@ def main():
         if c.call('coop.avatar')['ok']:
             break
         time.sleep(2)
-    c.call('coop.corefix menu_drop 1')
+    c.call('coop.fix core.menu_drop on')
     ck.faults(host=c)
     lane.sh('kill', check=False)
     return ck.result()

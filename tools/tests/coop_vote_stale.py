@@ -9,7 +9,7 @@ the freed civilization of the planet the host had left).
   2. an action vote (coop.vote action, the superweapon's kind), then the host leaves the stage for
      the galaxy menu and the guest presses "I'm ready": the action must not run
 
-  coop_vote_stale.py [--without-fix]   (--without-fix: coop.corefix vote_scope 0, the test must FAIL)"""
+  coop_vote_stale.py [--without-fix]   (--without-fix: coop.fix core.vote_scope off, the test must FAIL)"""
 import re
 import sys
 import time
@@ -45,7 +45,7 @@ def main():
     host, guest = start()
     ck = Checks()
     gu = Ui(guest, 'guest')
-    print(' ', host.call(f'coop.corefix vote_scope {0 if without else 1}')['out'].strip())
+    print(' ', host.call(f'coop.fix core.vote_scope {"off" if without else "on"}')['out'].strip())
     time.sleep(2)
 
     # 1. a vote from the previous session must not open the editor in the next one
@@ -97,7 +97,7 @@ def main():
     ck(ran == ran0, 'the action of the vote did not run after the stage was left')
     ck('vote none' in vote(host), 'the vote ended with its stage')
 
-    host.call('coop.corefix vote_scope 1')
+    host.call('coop.fix core.vote_scope on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

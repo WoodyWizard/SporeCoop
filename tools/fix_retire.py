@@ -328,8 +328,87 @@ def main(argv=None):
     return cmd_check(a)
 
 
+def retired():
+    """({name: line} of the retired switches, [old commands removed with them]) from tools/fix_retired.txt"""
+    names, cmds = {}, []
+    if not os.path.exists(RETIRED):
+        return names, cmds
+    for line in open(RETIRED, encoding='utf-8'):
+        line = line.split('#', 1)[0].strip()
+        if line.startswith('command '):
+            cmds.append(line[len('command '):].strip())
+        elif line:
+            names[line.split()[0]] = line
+    return names, cmds
+
+
+# where a retired switch must not be named any more: the tests and the lab's tools (any mention), the current docs (a
+# use: `coop.fix <name>`, SPORE_FIX_OFF=..., SPORE_LAB_FIXOFF=...). History keeps its names: the tickets, the
+# CHANGELOG, docs/archive, the audits and plans, and docs/re's labels of a fix ("(pool.ko_grace, BUG-0238)")
+HISTORY = re.compile(r'^(docs/(tickets|archive|audit-[\d.]+)/|docs/plan-|CHANGELOG\.md$)')
+DOC_USE = r'coop\.fix\s+{n}\b|SPORE_(?:LAB_)?FIX_?OFF=[^\s`)]*(?<![\w.]){n}(?![\w])'
+
+
+def doc_files():
+    out = []
+    for d, _, fs in os.walk(ROOT):
+        rel = os.path.relpath(d, ROOT)
+        if rel.split(os.sep)[0] in ('.git', 'build', 'out', 'third_party', 'sdk', 'node_modules'):
+            continue
+        for f in fs:
+            if f.endswith('.md'):
+                p = os.path.normpath(os.path.join(rel, f))
+                if not HISTORY.match(p):
+                    out.append(p)
+    return sorted(out)
+
+
+def check():
+    """[problem] (empty: clean)"""
+    names, cmds = retired()
+    if not names and not cmds:
+        return []
+    out = []
+    regs = {r['name']: r for r in registrations()}
+    for n in names:
+        if n in regs:
+            out.append(f'mods/coop/{regs[n]["file"]}:{regs[n]["line"]}: retired switch {n} is registered again '
+                       '(a new fix takes a new name)')
+    tok = {n: re.compile(r'(?<![\w.])' + re.escape(n) + r'(?![\w])') for n in names}
+    cmd = [(c, re.compile(r'(?<![\w.])' + re.escape(c) + r'(?![\w])')) for c in cmds]
+    for p, text in test_files().items():
+        for i, line in enumerate(text.split('\n'), 1):
+            for n, rx in tok.items():
+                if rx.search(line):
+                    out.append(f'{p}:{i}: names the retired switch {n}')
+            for c, rx in cmd:
+                if rx.search(line):
+                    out.append(f'{p}:{i}: uses the removed command `{c}`')
+    uses = {n: re.compile(DOC_USE.format(n=re.escape(n))) for n in names}
+    for p in doc_files():
+        for i, line in enumerate(open(os.path.join(ROOT, p), encoding='utf-8', errors='replace'), 1):
+            for n, rx in uses.items():
+                if rx.search(line):
+                    out.append(f'{p}:{i}: switches off the retired switch {n}')
+            for c, rx in cmd:
+                if rx.search(line):
+                    out.append(f'{p}:{i}: uses the removed command `{c}`')
+    for f in sorted(os.listdir(COOP)):
+        if f.endswith(('.cpp', '.h')):
+            for i, line in enumerate(open(os.path.join(COOP, f), encoding='utf-8', errors='replace'), 1):
+                for c, rx in cmd:
+                    if rx.search(line):
+                        out.append(f'mods/coop/{f}:{i}: names the removed command `{c}`')
+    return out
+
+
 def cmd_check(a):
-    return 0
+    names, cmds = retired()
+    probs = check()
+    for x in probs:
+        print(x)
+    print(f'fix_retire check: {len(names)} retired switches, {len(cmds)} removed commands, {len(probs)} problem(s)')
+    return 1 if probs else 0
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@
 then a short one. Both must reach the host's chat (what its chat window shows), and the guest's
 connection must not be stuck (pending messages) or flood the host with empty packets.
 
-  coop_chat_long.py [--without-fix]   (--without-fix: coop.corefix big_reliable 0 on the guest, the
+  coop_chat_long.py [--without-fix]   (--without-fix: coop.fix net.big_reliable off on the guest, the
                                        code before the fix, so the test must FAIL)"""
 import re
 import sys
@@ -23,7 +23,7 @@ def main():
     host, guest = start()
     ck = Checks()
     if without:
-        print(' ', guest.call('coop.corefix big_reliable 0')['out'].strip().replace('\n', ' '))
+        print(' ', guest.call('coop.fix net.big_reliable off')['out'].strip().replace('\n', ' '))
     long_text = 'L' + 'x' * 1498 + 'Z'
     print(' ', guest.call('coop.say ' + long_text)['out'].strip())
     print(' ', guest.call('coop.say after-the-long-one')['out'].strip())
@@ -45,7 +45,7 @@ def main():
     ck(pending is not None and pending < 5, f'nothing stays queued on the guest ({pending})')
     ck(0 <= rate < 300, f'no flood of empty packets ({rate:.0f} packets/s; a stuck message made ~5000/s on a LAN)')
     if without:
-        guest.call('coop.corefix big_reliable 1')
+        guest.call('coop.fix net.big_reliable on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

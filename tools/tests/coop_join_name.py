@@ -6,7 +6,7 @@ server that answers late), and the guest joins `localhost:<port>`. The game's fr
 while the name is looked up (the lookup ran in the join command on the main thread: the frames
 stopped for the whole lookup), and the guest must end up in the host's world again.
 
-  coop_join_name.py [--without-fix]   (--without-fix: coop.corefix async_resolve 0, the old
+  coop_join_name.py [--without-fix]   (--without-fix: coop.fix net.async_resolve off, the old
                                        behaviour: FAILS)"""
 import re
 import sys
@@ -33,7 +33,7 @@ def main():
     without = '--without-fix' in sys.argv
     host, guest = start('creature')
     ck = Checks()
-    guest.call(f'coop.corefix async_resolve {0 if without else 1}')
+    guest.call(f'coop.fix net.async_resolve {"off" if without else "on"}')
     guest.call('coop.leave')
     time.sleep(2)
     ck('offline' in guest.call('coop.status')['out'], 'the guest left the session')
@@ -83,7 +83,7 @@ def main():
     ck(gone and 'cannot resolve no-such-host.invalid' in log, 'an unknown name ends the join with "cannot resolve"')
     print(f'  (unknown name: the join command took {secs:.1f} s)')
 
-    guest.call('coop.corefix async_resolve 1')
+    guest.call('coop.fix net.async_resolve on')
     guest.call(lane.JOIN)  # leave the lane joined for the next test
     wait_guest_in(host, guest, timeout=180)
     ck.faults(host=host, guest=guest)

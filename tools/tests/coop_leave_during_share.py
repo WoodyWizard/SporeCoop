@@ -8,7 +8,7 @@ true and every quit message (0x4715068) was posted again, so the game never left
   2. the host leaves the stage for the galaxy menu (coop.menu posts the quit message): the game's
      own mode must reach GalaxyGameEntry
 
-  coop_leave_during_share.py [--without-fix]   (--without-fix: coop.corefix share_reset 0, must FAIL)"""
+  coop_leave_during_share.py [--without-fix]   (--without-fix: coop.fix core.share_reset off, must FAIL)"""
 import re
 import sys
 import time
@@ -21,7 +21,7 @@ def main():
     without = '--without-fix' in sys.argv
     host, guest = start()
     ck = Checks()
-    print(' ', host.call(f'coop.corefix share_reset {0 if without else 1}')['out'].strip().replace('\n', ', '))
+    print(' ', host.call(f'coop.fix core.share_reset {"off" if without else "on"}')['out'].strip().replace('\n', ', '))
     time.sleep(3)
     guest.call('coop.leave')
     time.sleep(3)
@@ -51,7 +51,7 @@ def main():
     print(f'  galaxy menu after {in_menu and round(in_menu)} s, quit held {held and held.group(1)} times')
     ck(in_menu is not None, "the host's game left the stage for the galaxy menu")
 
-    host.call('coop.corefix share_reset 1')
+    host.call('coop.fix core.share_reset on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

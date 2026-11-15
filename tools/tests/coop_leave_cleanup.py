@@ -4,10 +4,9 @@ Leave and the host's ships it showed (mirrors) must be gone from its game, not f
 own AI; then the guest rejoins and starts hosting while still connected, and the old remote must
 not carry over into the new session.
 
-  coop_leave_cleanup.py [--without-fix]   (--without-fix: coop.sessionfix 0, the old per-path
-                                           cleanup, so the test must FAIL)"""
+  coop_leave_cleanup.py   (its switch session.end was retired in 0.7.15, BUG-1138: FAIL run
+                           20261115-030257 on record)"""
 import re
-import sys
 
 REMOTE = re.compile(r"^(\s+\[\d+\] |remote \d+ ')", re.M)  # a player or a remote line of coop.status
 import time
@@ -23,11 +22,8 @@ def ships(con):
 
 
 def main():
-    without = '--without-fix' in sys.argv
     host, guest = start('space')
     ck = Checks()
-    if without:
-        print(' ', guest.call('coop.sessionfix 0')['out'].strip())
     time.sleep(3)
     print(' ', host.call('coop.fleet spawn 2')['out'].strip())
     mirrors = {}
@@ -68,7 +64,6 @@ def main():
     ck(not [p for p in gs2.values() if p in mirrors.values()], 'no ship of the old session is left')
     guest.call('coop.leave')
 
-    guest.call('coop.sessionfix 1')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

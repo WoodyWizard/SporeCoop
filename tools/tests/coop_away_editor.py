@@ -16,7 +16,8 @@ card reward (MSG_SOCIAL K_GOAL) that reached the host in its editor (no creature
 Steps 2 and 5 are printed, not checked: after its own editor the guest's planet held no creatures to
 watch, and the reload was shorter than the away delay (BUG-0205 History). The check is step 4.
 
---nofix: `coop.corefix away_editor 0` and `away_goal 0` on both (the code before BUG-0205): must FAIL.
+--nofix: `coop.fix core.away_goal off` on both (the goal part of BUG-0205; its away part's switch was retired in
+0.7.15, FAIL run 20261101-145308 on record: not verified that the goal part alone fails).
 
   SPORE_LANE=7 python3 tools/tests/coop_away_editor.py [--nofix]
 """
@@ -68,8 +69,7 @@ def main():
     gu = Ui(guest, 'guest')
     if a.nofix:
         for c in (host, guest):
-            c.call('coop.corefix away_editor 0')
-            c.call('coop.corefix away_goal 0')
+            c.call('coop.fix core.away_goal off')
     time.sleep(8)
     # 1. a species of the planet the host's table calls allied (relation 6)
     sp = re.findall(r'species ([0-9A-F]{8})/2B978C46/40626200 relation=(-?\d+)', host.call('coop.social species')['out'])

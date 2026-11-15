@@ -10,7 +10,7 @@ presses 1 again. Judged on what the games play (BUG-0891: before, only the host'
 the game (`coop.social abil -1`: `anim=`, GetAnimationID(0)); none of them may play on either game
 while the console was open, and the press after the close must play one on both.
 
-  coop_social_console.py [--without-fix]   (--without-fix or SPORE_FIX_OFF=social.text: must FAIL)
+  coop_social_console.py   (its switch was retired in 0.7.15, BUG-1138: FAIL run 20261112-122958 on record)
 
 The console opens only while the cheat manager's flag +0x64 is set (cCheatManager vt 0x4C,
 SetEnabled; AppShortcuts_OnKeyDown -> vt 0x44 -> 0x67E730 returns at once without it). It is 0 on
@@ -19,7 +19,6 @@ code at 0xDEA3D0 sets it to 1, 0xDEB450 to 0): the test sets it first, as the ga
 (docs/re/creature.md#creature-cheat-console-flag).
 """
 import re
-import sys
 import time
 
 from coop_creature_social import KOOK, engage, hold, num, social
@@ -55,11 +54,8 @@ def console(con):
 
 
 def main():
-    without = '--without-fix' in sys.argv
     host, guest = start('creature')
     ck = Checks()
-    if without:
-        print(' ', guest.call('coop.social textfix off')['out'].strip())
     for c in (host, guest):
         c.call('coop.team hp 1000')
     time.sleep(3)

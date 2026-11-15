@@ -12,6 +12,7 @@
   lab.py coverage [--days 7]           every suite test with its last run (main + worktrees), never-run ones
   lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
   lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
+  lab.py fixcheck --retire [--upto 0.7.9] [--all]   the fix switches that may retire, with their evidence (B1)
   lab.py gates [out/lab dirs]          the log gates over recorded results, report only (tools/loggates.py)
   lab.py flaky [--branch 'rel/*']      the flake ledger over every worktree's results (twins left out; tools/labverdict.py)
   lab.py impact --why [--base rev]     the tests a change can break (tools/labimpact.py); `run impact` runs them
@@ -1206,7 +1207,11 @@ def main():
     cv.add_argument('--days', type=float, default=7.0)
     cv.add_argument('--commit')
     cv.add_argument('--require', default='smoke,full')
-    sub.add_parser('fixcheck')
+    fc = sub.add_parser('fixcheck')
+    fc.add_argument('--retire', action='store_true', help='the switches that may retire, with their evidence '
+                    '(tools/fix_retire.py list; docs/10-dev-pipeline.md#pipeline-fix-retire)')
+    fc.add_argument('--upto', help='with --retire: only fixes released in this version or earlier')
+    fc.add_argument('--all', action='store_true', help='with --retire: also the kept switches and why')
     fk = sub.add_parser('flaky', help='the flake ledger over every results.json of the main checkout and all worktrees')
     fk.add_argument('--days', type=float, help='only results of the last N days')
     fk.add_argument('--branch', help="only these branches (a glob: 'rel/*', main)")
@@ -1219,6 +1224,9 @@ def main():
     gt = sub.add_parser('gates')
     gt.add_argument('dirs', nargs='*')
     a = ap.parse_args()
+    if a.cmd == 'fixcheck' and a.retire:
+        import fix_retire
+        return fix_retire.main(['list'] + (['--upto', a.upto] if a.upto else []) + (['--all'] if a.all else []))
     if a.cmd in ('coverage', 'fixcheck'):
         import labcov
         return labcov.cmd_coverage(a) if a.cmd == 'coverage' else labcov.cmd_fixcheck(a)

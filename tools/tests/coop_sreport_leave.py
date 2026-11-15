@@ -10,7 +10,7 @@ Ask (BUG-0783). Two games, Cell (0.7.12 F3 / F4, docs/REPORTING.md#reporting-ses
   C. BUG-0770, the host: it asks, the guest is sending; the host leaves: no round left (round=none); hosting again,
      its "Ask the players" is not "Already asking".
   D. BUG-0770, the settings: the host forces all.dna_pace to a value the guest does not have; the guest gets it,
-     leaves and joins a host that sends no table (`coop.corefix settings_in 0`: a host older than 0.7.12): the
+     leaves and joins a host that sends no table (`coop.settingsin 0`: a host older than 0.7.12): the
      guest plays with its own value, `coop.settings` does not say "the host's table".
   E. BUG-0780: the host's disk is slow (`coop.sreport writedelay 3000`: 3 s per MB of the zip): the host's game keeps
      answering (every console answer under 1 s) while the session zip is written.
@@ -130,7 +130,7 @@ def main():
     out = host.call(f'coop.settings force all.dna_pace {other}')['out'].strip()
     got = wait(lambda: pace(guest) == other, 10)
     ck(got, f'[D] the guest plays with the host\'s all.dna_pace={other} (own {own}; host: {out!r})')
-    guest.call('coop.corefix settings_in 0')
+    guest.call('coop.settingsin 0')
     ok = rejoin(host, guest)
     ck(ok, '[D] the guest leaves and joins a host that sends no settings table')
     lst = guest.call('coop.settings list')['out']
@@ -138,7 +138,7 @@ def main():
     print(f'  [D] guest: {lst.splitlines()[0] if lst else ""}; all.dna_pace={now}', flush=True)
     ck(now == own and "the host's table" not in lst,
        f'[D] the old host\'s table ended with its session: the guest plays with its own all.dna_pace={own} ({now})')
-    guest.call('coop.corefix settings_in 1')
+    guest.call('coop.settingsin 1')
     host.call(f'coop.settings force all.dna_pace {own}')
 
     # E. BUG-0780: the session zip on a slow disk (test knob: 3 s per MB written) does not stop the host's game

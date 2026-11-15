@@ -7,7 +7,7 @@ One game of the lane, at the galaxy menu:
   * `coop.fix all off` turns every safe one off and skips the unsafe ones ("N off, M unsafe
     skipped"), `all off --unsafe` turns every one off, `coop.fix all on` back on;
   * a switch and its old command see the same bool (`coop.pool fix`, `coop.npc strays`,
-    `coop.worldfix`, `coop.corefix`, `coop.creations worlddrop`), both ways;
+    `coop.worldfix`, `coop.creations worlddrop`), both ways (`coop.corefix` is gone since 0.7.15, BUG-1138);
   * an unknown name is refused, an old issue's name gets the registry name as a hint.
 
   SPORE_LANE=6 python3 tools/tests/coop_fix_registry.py"""
@@ -71,7 +71,6 @@ def main():
         # the old commands read the same bools
         ck('purge=0' in c.call('coop.pool fix')['out'], 'coop.pool fix shows purge off')
         ck('busy_slot 0' in c.call('coop.worldfix')['out'], 'coop.worldfix shows busy_slot off')
-        ck('vote_scope 0' in c.call('coop.corefix')['out'], 'coop.corefix shows vote_scope off')
 
         ck('all %d fixes on' % len(names) in c.call('coop.fix all on')['out'], 'coop.fix all on answers')
         _, st = states(c)
@@ -91,8 +90,7 @@ def main():
 
         # BUG-0214: the switches that were outside the registry, through their old commands
         # (coop.fleet keepposse answers "not in space" at the galaxy menu: fleet.posse is in the list above)
-        for cmd, name in (('coop.creations worlddrop off', 'creations.world_drop'),
-                          ('coop.corefix async_resolve 0', 'net.async_resolve')):
+        for cmd, name in (('coop.creations worlddrop off', 'creations.world_drop'),):
             c.call(cmd)
             _, st = states(c)
             ck(st.get(name) is False, f'{cmd} shows as {name} off')

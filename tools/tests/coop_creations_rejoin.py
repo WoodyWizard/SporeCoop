@@ -4,7 +4,7 @@ and comes back under the same player id with "the world's own" creature (no crea
 The host must show it with the world's species, not with the creature of the player who had the id
 before (ids are reused: alloc_id takes the lowest free one).
 
-  coop_creations_rejoin.py [--without-fix]   (--without-fix: coop.corefix creations_leave 0 and
+  coop_creations_rejoin.py [--without-fix]   (--without-fix: coop.fix core.creations_leave off and
                                               id_reuse 0 on the host, the code before the fix, so
                                               the test must FAIL)"""
 import re
@@ -30,8 +30,8 @@ def main():
     host, guest = start()
     ck = Checks()
     if without:
-        for sw in ('creations_leave 0', 'id_reuse 0'):
-            host.call('coop.corefix ' + sw)
+        for sw in ('core.creations_leave', 'core.id_reuse'):
+            host.call(f'coop.fix {sw} off')
         print('  fix switches off on the host')
     # BUG-0345: a guest plays its own creature by default only in a world it played it in: choose it,
     # then wait until the host has it (not the world's species it may have announced first)
@@ -87,8 +87,8 @@ def main():
     ck(hp2 == h_av, f'it is shown with the world\'s species {h_av}')
     shot(host, 'creations_rejoin_host.png')
     if without:
-        for sw in ('creations_leave 1', 'id_reuse 1'):
-            host.call('coop.corefix ' + sw)
+        for sw in ('core.creations_leave', 'core.id_reuse'):
+            host.call(f'coop.fix {sw} on')
     creations_state.restore(guest, st0)  # the profile as it was (BUG-0345)
     ck.faults(host=host, guest=guest)
     return ck.result()
