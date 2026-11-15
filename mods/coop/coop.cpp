@@ -9343,12 +9343,12 @@ void init_ui()
         const auto& c = findx::kPalette[idx];
         std::string why;
         if (!pfind::request_color(idx, &why)) {
-            line = std::string(ru ? c.ru : c.en) + (ru ? ": этот цвет у другого игрока" : ": another player has this colour");
+            line = std::string(ru ? c.ru : c.en) + (ru ? ": этот цвет у другого игрока" : ": another player has this color");
             return false;
         }
         s_try = -1;
         line = g_sess.role() == net::Role::Client ? std::string(ru ? "Цвет запрошен у хоста: " : "Asked the host for ") + (ru ? c.ru : c.en)
-                                                  : std::string(ru ? "Ваш цвет: " : "Your colour: ") + (ru ? c.ru : c.en);
+                                                  : std::string(ru ? "Ваш цвет: " : "Your color: ") + (ru ? c.ru : c.en);
         return true;
     };
     a.world_line = ui_world_line;

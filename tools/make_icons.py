@@ -4,7 +4,7 @@
 - toast_<kind>: notification panels (Spore-like dark blue glass, a coloured edge and icon)
 - lineages_downed_panel: the downed screen's SPECTATING box (the Co-op window's panel colour, see-through, its inner
   boxes' edge, rounded; drawn cut in thirds by sui::std_drawable_tooltip, so the corners keep their size)
-- lineages_button_<gold|red>_<normal|disabled|hover|pressed>: every button of the mod (the owner 2026-11-13: the game's
+- lineages_button_<gold|red|grey|blue>_<normal|disabled|hover|pressed>: every button of the mod (the owner 2026-11-13: the game's
   gold and its shaded red "look a bit dim and grimy", brighter but not max brightness or saturation); the game's pill
   shape (a dark rim, a light top edge), drawn cut 40% from each side like the game's button (sui::std_drawable_states)
 Names as arguments write only those images."""
@@ -155,6 +155,9 @@ def downed_panel(third=12, radius=10, fill=(0x20, 0x3A, 0x4A, 0x66), edge=(0x78,
 BUTTON_LOOKS = {
     'gold': ((246, 214, 98), (224, 184, 58), (184, 146, 34)),
     'red': ((226, 92, 74), (198, 60, 46), (150, 38, 30)),
+    # BUG-9220 (the owner 2026-11-15): grey around #2B2F36 (the helpers), a Spore-like blue (the page buttons)
+    'grey': ((70, 76, 86), (43, 47, 54), (30, 33, 38)),
+    'blue': ((92, 160, 232), (52, 118, 204), (32, 82, 156)),
 }
 BUTTON_STATES = ('normal', 'disabled', 'hover', 'pressed')  # StdDrawable images[0..3]
 
@@ -172,6 +175,8 @@ def button(look, state, w=50, h=30):
     """a pill: a 1 px dark rim, a vertical gradient body, a light line under the top rim (as the game's buttons)"""
     top, mid, bot = BUTTON_LOOKS[look]
     k = {'normal': 1.0, 'hover': 1.12, 'pressed': 0.82, 'disabled': 0.72}[state]
+    if look == 'grey' and state == 'hover':
+        k = 1.35  # a dark body needs a bigger step to show the hover
     top, mid, bot = (_shade(c, k) for c in (top, mid, bot))
     if state == 'disabled':
         top, mid, bot = (_grey(c, 0.65) for c in (top, mid, bot))

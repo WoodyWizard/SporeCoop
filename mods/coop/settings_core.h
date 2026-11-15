@@ -79,7 +79,7 @@ inline const Def kDefs[kCount] = {
      "on: an arrow at the screen edge points to every partner off screen (never in Rivals mode); off: no arrows",
      1, 0, 1, Scope::Live, nullptr, true},
     {"all.partner_map", "All stages", "Partners on the minimap",
-     "on: every partner shows on the minimap (Creature, Tribe) as a triangle in its colour; off: not shown",
+     "on: every partner shows on the minimap (Creature, Tribe) as a triangle in its color; off: not shown",
      1, 0, 1, Scope::Live, nullptr, false},
     {"all.dna_pace", "All stages", "Progress at the single-player pace",
      "on: every gain of DNA / food counts 1/N for N players (a solo game's pace); off: every player's gain counts whole",

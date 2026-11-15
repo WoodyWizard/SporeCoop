@@ -87,6 +87,27 @@ constexpr uint32_t kDangerButtonShade = 0xFFAD535D; // the red without our image
 // mod (all copy D.like_button) draws data/ui/lineages_button_gold_*, the red ones lineages_button_red_* (tools/
 // make_icons.py), in the game's button layout; without the images (an older package) the game's look and the shade
 static void* g_red_look; // the red buttons' drawable, null: shade the gold
+// BUG-9220 (the owner 2026-11-15: "add a grey (2B2F36) and a blue, put them in appropriate locations"): gold for the
+// actions, red for leaving / deleting / reporting, blue for the buttons that go to another page (Settings, Space >,
+// < Lobby, the page arrows), grey for the small helpers (the color button, Copy Host Address, the chat and choice
+// arrows, Refresh, Save Server, Check for Updates, Don't Send). Off: every button gold (red as before).
+static void* g_grey_look, *g_blue_look;
+static bool g_button_roles = true;
+COOP_FIX("ui.button_roles", "BUG-9220", g_button_roles,
+         "ui: page buttons blue, small helper buttons grey (the color button too); off: all gold");
+static void* role_look(const std::string& name)
+{
+    if (!g_button_roles)
+        return nullptr;
+    static const char* const kBlue[] = {"settings", "space", "setback", "sback", "setprev", "setnext", "sprev", "snext"};
+    static const char* const kGrey[] = {"colour", "copyinvite", "chatup", "chatdown", "cprev", "cnext", "givenext",
+                                        "refreshlan", "saveserver", "update", "rnosend"};
+    for (const char* n : kBlue)
+        if (name == n) return g_blue_look;
+    for (const char* n : kGrey)
+        if (name == n) return g_grey_look;
+    return nullptr;
+}
 static bool g_bright_buttons = true;
 COOP_FIX("ui.bright_buttons", "BUG-9179", g_bright_buttons,
          "ui: the mod's buttons draw their own brighter gold and red (the game's: dim and grimy, the owner 2026-11-13)");
@@ -156,6 +177,13 @@ COOP_FIX("ui.polish", "BUG-9117", g_label_width_fix, "ui: the co-op window's lab
 // wider colour column. Off: the 0.7.12 pre-release layout.
 static bool g_layout_fix = true;
 COOP_FIX("core.ui_layout", "BUG-0905", g_layout_fix, "ui: labels fitted by the glyphs' widths, short Settings caption, room for the colour button");
+// BUG-9219 (owner 2026-11-15, decision 4I A: Settings "looks like it's floating"): the Settings button is a row of
+// the World & Session panel, in Ask for Reports' place (the host's Report Issue asks every guest too, BUG-0767); a
+// guest's in the row of its Ready / Create button while that is hidden; no Settings while a vote runs (no free row).
+// Off: Settings top left, the host's Ask for Reports row (upstream 0.7.12 F3 / F4).
+static bool g_settings_in_panel = true;
+COOP_FIX("ui.settings_in_panel", "BUG-9219", g_settings_in_panel,
+         "ui: Settings in the World & Session panel instead of top left; no Ask for Reports button");
 // BUG-9218: the own row's colour button (F2) covered the first letter of the own name. On: names start 6 px further
 // right, the stage column 10 px. Off: the merge's layout (0.7.14.1 + Lineages 55-dev).
 static bool g_color_gap_fix = true;
@@ -614,6 +642,8 @@ static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, c
     page.push_back(w);
     g_named[name] = w;
     g_cache[w] = Cache{t, 0, 1};
+    if (void* look = role_look(name)) // BUG-9220
+        sui::set_drawable(w, look);
     sui::add_handler(w, [fn, w, name = std::string(name)](Win, const sui::Msg& m) {
         if (g_log_msgs && m.type != 8 && m.type != 0xC && m.type != 0xD)
             H->log(M, SK_DEBUG, "ui msg %s 0x%X src=%p %08X %08X %08X", name.c_str(), m.type, m.source, m.a, m.b, m.c);
@@ -1132,6 +1162,8 @@ static void build_dialog()
         void* game_look = sui::drawable(login);
         void* gold = button_look(game_look, "gold");
         g_red_look = gold ? button_look(game_look, "red") : nullptr;
+        g_grey_look = gold ? button_look(game_look, "grey") : nullptr;
+        g_blue_look = gold ? button_look(game_look, "blue") : nullptr;
         if (gold) sui::set_drawable(login, gold);
         H->log(M, gold && g_red_look ? SK_INFO : SK_WARN, "ui: bright buttons: gold %p red %p%s (BUG-9179)", gold,
                g_red_look, gold ? "" : ": the game's look (no lineages_button images in the package, or another class)");
@@ -1994,7 +2026,8 @@ static void refresh_lobby()
     const int offer = A.evolve_offer && !one && !host ? A.evolve_offer() : 0;
     show(D.ready_btn, vote || offer > 0);
     text(D.ready_btn, offer > 0 ? T("Evolve Now", "Эволюция") : A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
-    show(D.create_btn, late && !vote && offer <= 0 && !host && A.create_creature_offered && A.create_creature_offered());
+    const bool create = late && !vote && offer <= 0 && !host && A.create_creature_offered && A.create_creature_offered();
+    show(D.create_btn, create);
     // BUG-9111, owner 2026-11-12: the host's rows from the top: the vote's Start Now (only while a vote runs), Player
     // Cells, Foreign Creations (hidden during a vote), the vote's Ready (outside a vote: Ask for Reports, F4)
     const bool start_now = host && vote;
@@ -2021,10 +2054,16 @@ static void refresh_lobby()
     }
     const Rect ready_row = host ? next_row() : Rect{445, 249, 706, 285};
     sui::set_area(D.ready_btn, ready_row);
-    show(D.ask_btn, host && !vote);
+    show(D.ask_btn, host && !vote && !g_settings_in_panel);
     if (host && D.ask_btn)
         sui::set_area(D.ask_btn, ready_row);
     enable(D.ask_btn, !round);
+    if (g_settings_in_panel && D.settings_btn) { // BUG-9219: Settings in the panel's free row (none during a vote)
+        const bool free_row = host ? !vote : !(vote || offer > 0 || create);
+        if (free_row && std::abs(sui::area(D.settings_btn).y1 - ready_row.y1) > 0.5f)
+            sui::set_area(D.settings_btn, ready_row);
+        show(D.settings_btn, free_row);
+    }
     enable(D.share_btn, true);
     const auto leave_title = host ? T("Stop Hosting", "Закрыть игру") : T("Leave", "Выйти");
     text(D.leave_btn, leave_title);
@@ -3141,7 +3180,7 @@ static const char* tip_for(const std::string& name)
         {"sprev", "Previous page", "Предыдущая страница"},
         {"snext", "Next page", "Следующая страница"},
         // upstream 0.7.12's lobby buttons (F2 colour, F3 settings, F4 reports)
-        {"colour", "Next colour", "Следующий цвет"},
+        {"colour", "Next color", "Следующий цвет"},
         {"settings", "Session settings", "Настройки сессии"},
         {"askreports", "Ask every player for a problem report", "Попросить отчёты у игроков"},
         {"rsend", "Send your report to the host", "Отправить отчёт хосту"},
