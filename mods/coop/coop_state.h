@@ -198,6 +198,8 @@ typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
 using Submit_t = bool(SK_CDECL*)(void*);
 using CollEnabled_t = uint8_t*(SK_THISCALL*)(void*, uint8_t*, uint8_t*, uint8_t*);
 using HoverFilter_t = bool(SK_CDECL*)(void**);
+using LocalAddr = adapters::Addr;
+enum class EndPath { Leave, Unload, Restart, Disconnect };
 // ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
 // until every player is ready (or 60 s / "Start now"), then the game goes on ----
 struct Vote {
@@ -426,6 +428,19 @@ bool stage_mode(uint32_t m);
 extern double g_last_send;
 extern std::map<uint8_t, int> g_lobby_rtt;
 const char* share_wait_reason();
+bool adventure_sky_own(uint32_t mode);
+uint32_t build_id();
+void chat_log(const std::string& s, uint32_t argb = 0);
+void feed_kind(const std::string& s, const char* kind);
+bool gate_drops(uint8_t type);
+extern std::deque<uint32_t> g_chat_col;
+extern bool g_disc_on;
+extern double g_host_away_since;
+extern double g_last_lobby;
+extern bool g_player_forget_fix;
+extern bool g_share_world;
+extern bool g_vote_world_fix;
+std::vector<LocalAddr> local_addresses();
 
 // ---- defined in dna.cpp ----
 void dna_host_gain(const dna_ledger::Part& p, float before);
@@ -508,6 +523,19 @@ void remove_strays(double now);
 const char* role_str();
 void trace_tick(double now);
 void track_tick(double now);
+
+// ---- defined in session_glue.cpp ----
+void evo_key_tick(double now);
+void follow_phase(double now);
+extern uint8_t g_give_pick;
+void lobby_tick(double now);
+void on_mode_change(uint32_t from, uint32_t to);
+void set_ready(bool on);
+void setup_callbacks();
+int share_all();
+void share_failed(uint8_t peer, uint32_t tag, bool planet_missing);
+void share_wait_tick();
+void end_session(EndPath path, bool cell);
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
