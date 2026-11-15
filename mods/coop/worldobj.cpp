@@ -55,7 +55,7 @@ struct Follow {
 };
 struct Kind {
     const char* name;  // as the divergence detector names the noun (tools/tests/worlddiff.py)
-    bool* fix;         // its coop.fix switch (off: each game keeps its own, the old behaviour)
+    bool* fix;         // its coop.fix switch (off: each game keeps its own, the old behaviour; nullptr: always on)
     uint8_t stages;    // kStCreature | kStTribe
     float tol;         // m: a guest's copy is the host's object within this distance
     float range;       // m around a guest: the objects the host sends
@@ -109,6 +109,7 @@ struct Kind {
     bool* reclass = nullptr;
     uint8_t reclass_stages = 0; // the stages it acts in
 };
+static bool kind_on(const Kind& K) { return !K.fix || *K.fix; }
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
 static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), bool (*take)(void*) = nullptr,
@@ -1192,7 +1193,7 @@ static void host_tick(double now)
     uint8_t sb = stage_bit();
     for (int k = 0; k < kKinds && k < 16; k++) {
         Kind& K = g_kinds[k];
-        if (!*K.fix || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
+        if (!kind_on(K) || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
             continue;
         g_last_tx[k] = now;
         Items all;
@@ -1450,7 +1451,7 @@ static void drive_frame(double now, uint8_t sb, bool away)
     for (int k = 0; k < kKinds; k++) {
         Kind& K = g_kinds[k];
         GuestKind& G = g_g[k];
-        if (!K.drive || !*K.fix || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
+        if (!K.drive || !kind_on(K) || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
             continue;
         Items local;
         K.collect(local);
@@ -1479,7 +1480,7 @@ static void guest_tick(double now)
     bool away = C.host_away && C.host_away();
     for (int k = 0; k < kKinds; k++) {
         GuestKind& G = g_g[k];
-        if (!*g_kinds[k].fix || !(g_kinds[k].stages & sb) || away || now - G.snap.at > kStale) {
+        if (!kind_on(g_kinds[k]) || !(g_kinds[k].stages & sb) || away || now - G.snap.at > kStale) {
             G.binds.clear();
             G.own.clear();
             continue;
@@ -1515,7 +1516,7 @@ static void on_snap(net::Reader& r, double now)
         s.objs[id] = {p, st, cls, aux};
     }
     Kind& K = g_kinds[k];
-    if (!*K.fix || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
+    if (!kind_on(K) || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
         return;
     g_st[k].rx++;
     g_g[k].snap = std::move(s);
@@ -1531,7 +1532,7 @@ static void on_act(uint8_t from, net::Reader& r)
     if (!r.ok() || k >= kKinds)
         return;
     Kind& K = g_kinds[k];
-    if (!*K.fix || !(K.stages & stage_bit()))
+    if (!kind_on(K) || !(K.stages & stage_bit()))
         return;
     g_st[k].req_rx++;
     Items all;
@@ -1590,7 +1591,7 @@ std::string status()
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
         snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u reclassed=%u\n",
-                 g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
+                 g_kinds[k].name, (int)kind_on(g_kinds[k]), g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated, t.reclassed);
         s += b;
     }
@@ -1787,7 +1788,7 @@ static std::set<void*> g_cit_live;
 static void* citizen_mirror(uint16_t id)
 {
     int k = citizen_kind();
-    if (k < 0 || !*g_kinds[k].fix)
+    if (k < 0 || !kind_on(g_kinds[k]))
         return nullptr;
     for (auto& [hid, b] : g_g[k].binds) {
         if ((uint16_t)(hid & 0xFFFF) != id)
@@ -1816,7 +1817,7 @@ struct LiveSet {
 static void* bound_mirror(const char* kind, uint16_t id, LiveSet& ls)
 {
     int k = kind_of_name(kind);
-    if (k < 0 || !*g_kinds[k].fix)
+    if (k < 0 || !kind_on(g_kinds[k]))
         return nullptr;
     for (auto& [hid, b] : g_g[k].binds) {
         if ((uint16_t)(hid & 0xFFFF) != id)
