@@ -3432,3 +3432,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   its own save and not MakeContact: the fault came in the guest's home system 2.7 s after a save during the session
   (the allies mirror out for the save), in 0xC32810 called by the NPC visitor spawn with a null empire; reproduced on
   purpose and fixed (`allies.near_rebuild`, docs/re/space.md#space-near-stars).
+
+## The lab's together monitor fails space_allies after the galaxy view (2026-11-15, fix/w51-space2)
+<a id="issue-monitor-together-galaxy"></a>
+
+* What happens (lab only): space_allies passes every check, but the gate monitor reports "guest sees host elsewhere
+  (same_place=0) for 10 s" over the stretch the test spends in the galaxy view (12 s that run).
+* Reproduce: `lab.py run space_allies --repeat 12 --lane N` (1 of 4 runs in out/lab/20261115-042849 of fix/w51-space2).
+* Ticket: BUG-1145 (fixed, unreleased, fix/w51-tests): the monitor reads the galaxy view's `world=-` lines and
+  counts world `-` as no place (docs/06-testing.md#testing-monitor-nowhere).
+
+## space_rivalry fails warm after space_rivalry (2026-11-15, fix/w51-space2)
+<a id="issue-rivalry-warm-counters"></a>
+
+* What happens (test only): the second space_rivalry on warm games sees the first one's hit counters (hits_got 43)
+  and fails its neutral and lethal-hit checks; cold it passes.
+* Reproduce: `lab.py run space_rivalry --repeat 2 --lane N` (warm, the second run), out/lab/20261115-042847.
+* Ticket: BUG-1146 (fixed, unreleased, fix/w51-tests): the counters are diagnostics no player sees; the test reads
+  them as deltas from its start (docs/06-testing.md#testing-monitor-nowhere).

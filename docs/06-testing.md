@@ -2658,7 +2658,7 @@ session clock `[s T]`) and evaluates:
 
 | invariant | violation (each needs its state on several lines in a row) |
 |---|---|
-| together | two machines' own trace lines say the same stage and world (both playing: avatar, no vote, in world) for 20 s, but one's partner line says `same_place=0` |
+| together | two machines' own trace lines say the same stage and world (both playing: avatar, no vote, in world) for 20 s, but one's partner line says `same_place=0`; `world=-` (world 0, the Space galaxy view) is no place ([testing-monitor-nowhere](#testing-monitor-nowhere)) |
 | puppet | a partner line with `same_place=1`, alive and in a world, `puppet=hidden: not spawned (yet)` or `state older than 5 s` on 2 lines |
 | link | clean network only (no SPORE_NET): resends / sent between two lines over 0.5 (at least 50 sent), `pending` over 400 or a state 5 s old in the same place, 3 lines in a row |
 | totals | the shared totals of the own lines (dna in Creature, the stage's `food=` / `money=` ...; `(unsynced)` values left out) of a guest outside every value the host had within 6 s, beyond 1 point or 2 %, on 3 comparisons spanning 20 s |
@@ -8326,3 +8326,19 @@ warm on one lane.
 Also on this branch: `space_allies_near` (BUG-1144, `coop.space allies near` prints the game's list of owned stars
 nearby, docs/re/space.md#space-near-stars) and `space_badges_rejoin` switches the twin's fixes off in the restarted
 guest too (BUG-1135, `net.rejoin_disk`).
+
+## The monitor reads world=- lines; warm tests read counters as deltas (2026-11-15, fix/w51-tests)
+<a id="testing-monitor-nowhere"></a>
+
+* The trace lines say `world=-` where the mod's world is 0: no planet or star system, in Space the galaxy view
+  (`to_galaxy` of space_allies). The monitor's patterns took only hex worlds, so those own and partner lines were
+  dropped, and `Together` paired the galaxy view's partner lines (`same_place=0`, right: the mod's `same_place()` is
+  never 1 in world 0) with the own line from just before or after the zoom (up to 6 s off, still the system's world):
+  "guest sees host elsewhere for 10 s" while every check passed (BUG-1145, 3 of 13 space_allies runs). Now the lines
+  are read and world `-` is no place for `together`; a real separation (both own lines in the system, `same_place=0`)
+  still fails (gates_selftest `together_space_apart`). `monitor.py report` over every recorded passed result: only
+  one earlier `together` of campaign_space went away, no new violation.
+* Counters of the mod that are diagnostics only (no player sees them, e.g. `coop.space rivalry` hits_got / dmg_got /
+  pvp_deaths) count since the game started: a warm game keeps the previous test's. A test reads them as deltas from
+  its own start, as coop_space_rival_away does with `restored` (BUG-1146, space_rivalry warm after space_rivalry).
+  State a player sees belongs in the lifecycle registry instead (docs/01-architecture.md#arch-lifecycle-registry).

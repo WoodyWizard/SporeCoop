@@ -33,6 +33,8 @@
   family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
 - Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
   (BUG-1139).
+- Lab: the invariant monitor reads the Space galaxy view's trace lines (no false "not together" in space_allies), and
+  space_rivalry passes warm after itself (BUG-1145, BUG-1146).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
   main thread (none in the smoke tests); `make test` has ratchet lints for `object_alive` calls, call guards around
   the game's original functions and lifecycle registration (BUG-1130, BUG-1131).
