@@ -863,8 +863,6 @@ void avatar_change_check()
         wobj::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
-        if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
-            civ::on_world_change(); // BUG-0059
     }
     g_last_avatar = local;
 }
