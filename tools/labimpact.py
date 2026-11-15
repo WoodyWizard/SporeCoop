@@ -18,7 +18,7 @@ How a changed file maps to tests (map(), in this order):
   the lab's own tools (LAB_TOOLS)         `unit` (their self-tests run in make test)
   tests/*.cpp, tests/*                    `unit`
   a stage module (STAGE_FILES)            every `full` test of that stage, every `full` test without a known stage
-                                          (cross-stage: about a fifth of full), the tests that name a switch, message or
+                                          (cross-stage: 93 of 802 on 2026-11-15), the tests that name a switch, message or
                                           symbol the change touches (below)
   data/symbols/*.sym                      the stages of the files that ask for the changed names (a core file among
                                           them: everything)

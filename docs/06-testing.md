@@ -7912,3 +7912,103 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
+
+## Lab verdicts, failure reasons, the flaky ledger and the repeat rule (2026-11-15, feat/w51-labverdict)
+<a id="testing-lab-verdicts"></a>
+
+0.7.15 A7, A8, A15 (BUG-1116, BUG-1117, BUG-1118; audit docs/audit-0.7.15/tests.md TST-2, TST-8 and its open
+question 2, owner decision 11). Code: tools/labverdict.py (pure), wired in tools/lab.py and tools/labcov.py; unit
+tests: tools/tests/labverdict_selftest.py (`make test`, part `unit-verdict`).
+
+**Verdicts.** Every result has `verdict` PASS, FAIL or INCONCLUSIVE in results.json.
+* INCONCLUSIVE: the test says its own precondition did not happen: `RESULT: INCONCLUSIVE <why>`; the older
+  `RESULT: SKIP <why>` (56 places in tools/tests today) means the same and needs no change. A RESULT: FAIL anywhere in
+  the output wins. Use it only where the scenario did not happen by luck, load or the bot (no second free lane, the
+  case did not come in the time, a slow host); never where the mod can be what prevents the scenario (then it is a
+  FAIL).
+* It is never a pass: the console shows `INC`, summary.md `INCONCLUSIVE`, the count line "N INCONCLUSIVE (not
+  passed)"; results.json keeps `ok: true, skipped: true` for it (older tools read those), `why` holds the reason.
+  One INCONCLUSIVE does not fail the run (as SKIP before).
+* Several in a row fail: when the test was INCONCLUSIVE in its last runs and this one makes `INCONCLUSIVE_STREAK` (3)
+  in a row (the ledger below: every worktree, any branch, twins and quick runs left out), the result becomes FAIL with
+  `FAIL lab: INCONCLUSIVE 3 runs in a row (<why>): the precondition never happens; ticket candidate`. It stays a
+  failure in every later run until the test passes or fails on its own; summary.md and `lab.py flaky` list it under
+  "Ticket candidates". Open a ticket for it (kind test, or the mod's kind when the mod prevents the scenario).
+  Measured 2026-11-15 over 17 456 recorded results: no test is 3 in a row on all branches today (content_civ is 3 in a
+  row on rel/* alone), so the rule fails nothing that passed before.
+* Neither half of a twin: `lab.py fixcheck` leaves INCONCLUSIVE results out (also those the streak rule made FAIL):
+  before, a fix-off run that only printed RESULT: SKIP counted as the FAIL that confirms a "SPORE_FIX_OFF=x fails"
+  claim. The release rule (`lab.py coverage --commit`) lists an INCONCLUSIVE result as `INCONCLUSIVE (not a pass ...)`
+  and fails only on the streak FAIL.
+
+**Failure reasons.** `fails` of a result: the lab's own FAIL lines and the test's FAIL lines as before; a failed test
+without any gets one from its output: a campaign's findings (`FINDING [stuck] ...` -> `FAIL stuck: ...`, info findings
+never), else the campaign report's `[kind] HH:MM:SS stage/phase: text` lines, else the exception of its last
+traceback (`FAIL harness: TimeoutError: timed out`), `FAIL lab: the test ran past its timeout`, `FAIL harness: no
+RESULT line` or "printed RESULT: FAIL without a FAIL line". Replay over the records (2026-11-15,
+`labverdict_selftest.py --replay`): 144 campaign failures, 61 with an empty reason (`[stuck]` only: 47; a traceback
+in the start: 14); every one of the 61 gets a reason now.
+
+**Twins in results.json.** `fix_off`: the SPORE_FIX_OFF the test ran with (the lab's environment, or SPORE_LAB_FIXOFF
+for that test); `twin`: knobs of the lab's environment that plant an old behaviour (`labverdict.TWIN_ENV`: `*_OLD*`,
+`OLD_*`, `*PLANT*`, `*_TWIN`, `SPORE_*_FIX=0`, `*_GUEST_CMDS`; e.g. `CAMPAIGN_OLD_TRIBE=1`, `UI_GOLDEN_TWIN=...`).
+Limits: a knob with another name is not seen; a knob in a suite entry's own command (campaign_tribe_noclick's
+`CAMPAIGN_PLANT_NOCLICK=18`) is part of that test, not a twin. Results written before the field: the
+`SPORE_FIX_OFF: <x> off` lines in the first 64 KB of the test log (1873 of 17 456 results).
+
+**The flaky ledger: `lab.py flaky [--days N] [--branch 'rel/*'] [--test X] [--all] [--top N]`.** Every results.json
+under the main checkout's and every worktree's out/lab (`loggates.lab_dirs`, ~1 s for 4850 runs; the log scan for
+older fix-off lines ~3 s cold). Per test: fails / runs (INCONCLUSIVE apart), the same on rel/* and main, commits with
+both a PASS and a FAIL ("mixed"), INCONCLUSIVE and its streak, twin runs left out, the last failure's reason; worst on
+the release branches first. Twins (fix_off, twin, or a fix-off line in the log) and quick runs are never in a rate.
+Checked against the audit's numbers: campaign 38 of 63 on rel/main, partner_pass 6 of 8, tribe_camera_null 5 of 7,
+1873 twin results (the audit found 1901 by a looser match). Each run's summary.md lists, for every failed, flaky or
+INCONCLUSIVE test, its history before the run (`known flake: 5 of 11 failed on rel/main, ... mixed on 3 commit(s)`;
+"fails every run"; "no history") and the run's console prints the same lines at the end. This replaces the summary's
+"Unstable tests (all runs)" from `out/lab/flaky.json` (one checkout's own history, twins counted as failures); the
+file is still written.
+
+**`--repeat N` and `--until`.** The copies of a repeated test (`X#1` .. `X#N`) stop as soon as the answer cannot
+change any more; the copies not yet started are dropped (those running finish and count):
+* `--until clear` (default): stop when PASS and FAIL were both seen (the test is mixed: flaky, or a one-in-N bug), or
+  each of the first 3 decided runs FAILED (fails at least about half the time: the 90 % Wilson lower bound of 3 of 3
+  is 0.53), or each of the first 3 runs was INCONCLUSIVE (the precondition does not happen). A test that only passes
+  runs all N: a one-in-N bug needs them (to show a 1-in-3 bug with 90 % takes about 6 runs, a 1-in-10 bug 22).
+* `--until fail`: fail fast, stop at the first FAIL (a reproduction is all that is wanted).
+* `--until all`: every copy (the old behaviour; to measure a rate).
+At the end (console, summary.md "Repeats", results.json `repeat`): `repeat X: FAIL k of n (r %, 90 % interval lo-hi
+%), INCONCLUSIVE i; m of N runs, stopped early (why)`. The interval is Wilson's (z 1.645). For a fix proof run the
+fix-on side with `--until clear` (any FAIL stops it: the fix does not hold) and the twin with `--until fail`.
+
+## Test impact selection: lab.py run impact (2026-11-15, feat/w51-labverdict)
+<a id="testing-impact"></a>
+
+0.7.15 D5 (BUG-1119, audit TST-7). Code: tools/labimpact.py (its docstring is the map); `lab.py impact [--base <rev>]
+[--why]` prints the selection and the reason for each test, `lab.py run impact [--base <rev>] ...` runs it. For fix
+branches and the integration runs between merges only: **the final check and the release rule stay full.**
+
+* The change: `git diff <merge base of base and HEAD>` plus uncommitted and untracked files. Default base: of `main`
+  and the local `rel/*` branches the one with the nearest merge base (a branch made from rel/0.7.15 gets rel/0.7.15).
+* How the map is built (in this order, labimpact.select): docs / *.md / .claude: nothing; a changed `add(...)` line of
+  suite.py: that test; the lab's own tools (lab.py, labcov, labverdict, labimpact, loggates, tickets, the lints, the
+  *_selftest.py): `unit`; a test script or helper under tools/: every suite entry whose script is it or imports it,
+  transitively (the `import` lines of tools/*.py and tools/tests/*.py); tests/*: `unit`; a stage module
+  (labimpact.STAGE_FILES: cellsync / cell_logic.h -> Cell; npc, nest, creature_hp, hunt_hits, drama, social, teamplay,
+  parts, hud_portrait -> Creature; tribe -> Tribe; civ -> Civ; space*, squadron -> Space): every `full` test of that
+  stage plus every `full` test without a known stage (cross-stage); a .sym change: the stages of the files that ask
+  for the changed names (a core file among them: all); anything else (coop.cpp, debug.cpp, game.cpp, world.cpp, net/,
+  sporekit/, sdk/, loader/, updater/, Makefile, an unknown path): core, all of `full`. Always: the `smoke` suite and
+  `unit`. The changed lines of C++ files add the tests that name a fix switch (COOP_FIX) whose name or variable is on
+  them (`SPORE_FIX_OFF=<switch>` in suite.py, as labcov's claims, or the name in the test's script), and the stages of
+  the stage modules that handle a `MSG_*` named on them.
+* The stage of a test: its fixture (tools/tests/fixtures.py `stage`), else `--fixture X` in its command, else a stage
+  word in its name (`npc_walk_tribe` -> Tribe); none: cross-stage (93 of the 802 `full` tests).
+* Replay over the 83 merges v0.7.10..v0.7.14 (the current suite, 802 `full` tests, 3942 suite-minutes): 67 merges
+  touched a core file (coop.cpp alone 49 of them) and select all of full; 6 stage-only merges select a median of 274
+  tests (1462 suite-minutes, 37 %); 10 tests / tools / docs merges a median of 32 tests (122 suite-minutes, 3 %). So
+  today it pays for tests-only and stage-only changes; for the rest coop.cpp has to shrink first (B2 of the plan).
+* Limits: the map knows files, not behaviour. A stage module can break another stage through shared state (such a
+  regression shows only in the final check); a test that reaches code through a console command defined in a core
+  file (debug.cpp) is found only by its stage; tests outside `full` (nightly-only, players, extended, campaign, multi)
+  are selected only when their own script or entry changed; a new stage module must be added to STAGE_FILES, else it
+  counts as core (safe, not narrow).
