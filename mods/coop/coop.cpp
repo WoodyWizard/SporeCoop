@@ -4,6 +4,7 @@
 #define COOP_VERSION "0.7.8-lineages54-dev"
 #endif
 
+#include <set>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
@@ -1692,6 +1693,8 @@ struct StartPart {
     uint8_t state;
 };
 static std::vector<StartPart> g_start_parts; // guest: the host's, received
+static std::vector<StartPart> g_host_start_parts; // host: ours, while in the start editor
+static std::set<uint8_t> g_host_start_sent;      // host: the players that have them
 static bool g_test_unlock_start = false;
 COOP_FIX("creature.test_unlock_start", "BUG-9207", g_test_unlock_start,
          "tests: the game's own new-world start editor gets every part of its parts list unlocked");
@@ -2263,8 +2266,13 @@ bool SK_CDECL h_Submit(void* req)
                 w.u8(p.state);
                 unlocked += p.state & 1;
             }
+            g_host_start_parts = states; // (a guest joining while we are in this editor gets them too)
+            g_host_start_sent.clear();
             for (auto& p : g_sess.players())
-                if (p.id != g_sess.my_id()) g_sess.send_reliable_to(p.id, net::MSG_START_PARTS, w);
+                if (p.id != g_sess.my_id()) {
+                    g_sess.send_reliable_to(p.id, net::MSG_START_PARTS, w);
+                    g_host_start_sent.insert(p.id);
+                }
             LOG("start editor: our parts list's %zu part states (%d unlocked) to the guests (3Z B)", states.size(), unlocked);
         }
     }
@@ -2640,6 +2648,27 @@ COOP_FIX("creature.first_before_world", "BUG-9208", g_first_before_world,
          "creature: a guest joining a world where it has no creature makes its first one before the world loads");
 constexpr uint32_t kEditorCheck = 0x058A3350u;
 static bool g_pregame_open;        // this guest's editor is the pre-game one
+static double g_first_result_wait = -1; // BUG-9209: left the pre-game editor, its result not read yet (since)
+static uint32_t g_late_world = 0;       // BUG-9208: the host's world the late editor was opened for (once)
+static bool g_first_retry = true;
+COOP_FIX("creature.first_retry", "BUG-9209", g_first_retry,
+         "creature: a guest who leaves the first creature's editor without saving gets it again, not the old creature");
+static bool g_letterbox_wait = true;
+COOP_FIX("creature.editor_after_intro", "BUG-9209", g_letterbox_wait,
+         "creature: the guests' first-creature editor waits until the galaxy menu's intro bars are gone");
+// the galaxy menu's fly-in shows Spore's cinematic bars (letterbox_top / letterbox_bottom); an editor opened under them
+// kept the bars, and they took the clicks meant for the name field (BUG-9209, 2026-11-15)
+static bool letterbox_shown() // (sui::Win)
+{
+    sui::Win main = sui::main_window();
+    for (const char* cap : {"letterbox_top", "letterbox_bottom"}) {
+        sui::Win w = main ? sui::find_caption(main, cap) : nullptr;
+        if (!w || !sui::visible(w)) continue;
+        const sui::Rect r = sui::screen_rect(w);
+        if (r.h() > 4 && r.y2 > 0 && r.y1 < sui::area(main).y2) return true;
+    }
+    return false;
+}
 static bool g_pregame_start;       // 3Z B: it is the host's start editor with the host's parts list
 static bool g_same_start_parts = true;
 COOP_FIX("creature.same_start_parts", "BUG-9207", g_same_start_parts,
@@ -2648,6 +2677,26 @@ static bool g_pregame_check_off;   // we greyed its check
 static uint32_t g_pregame_editors; // tests
 static void pregame_editor_tick(double now)
 {
+    if (g_sess.role() == net::Role::Host && !g_host_start_parts.empty()) { // 3Z B: a guest joining during our editor
+        const uint32_t m = game::mode_id();
+        if (m != modes::kEditor && m != modes::kEdit) {
+            g_host_start_parts.clear();
+        } else {
+            for (auto& p : g_sess.players())
+                if (p.id != g_sess.my_id() && !g_host_start_sent.count(p.id)) {
+                    net::Writer w;
+                    w.u16((uint16_t)g_host_start_parts.size());
+                    for (const auto& sp : g_host_start_parts) {
+                        w.u32(sp.lo);
+                        w.u32(sp.hi);
+                        w.u8(sp.state);
+                    }
+                    g_sess.send_reliable_to(p.id, net::MSG_START_PARTS, w);
+                    g_host_start_sent.insert(p.id);
+                    LOG("start editor: our parts list to %s, who joined during it (3Z B)", g_sess.name_of(p.id).c_str());
+                }
+        }
+    }
     static uint32_t s_host_before = 0; // the host's last mode outside an editor
     static bool s_done = false;        // opened (or tried) for this editor of the host's
     static double s_check_at = 0;
@@ -2662,8 +2711,22 @@ static void pregame_editor_tick(double now)
     if (g_pregame_open && mode != modes::kEditor && mode != modes::kEdit && mode != modes::kLoad &&
         !mode_switch_pending()) {
         g_pregame_open = g_pregame_check_off = false; // left the editor
-        world::hold_for_editor(false);                 // BUG-9208: the held world loads now
+        // BUG-9209: the world waits until the editor's result is read (a creature saved, or none: then the late path
+        // below opens the base creature's editor again instead of loading the world with the old creature)
+        if (g_first_retry && creations::first_creature_pending()) {
+            world::hold_for_editor(true);
+            g_first_result_wait = now;
+        } else
+            world::hold_for_editor(false); // BUG-9208: the held world loads now
         return;
+    }
+    if (g_first_result_wait >= 0) {
+        if (creations::first_creature_pending() && now - g_first_result_wait < 40) return;
+        g_first_result_wait = -1;
+        world::hold_for_editor(false); // a creature was saved (or 40 s): the late path decides with it
+        const bool made = creations::first_creature_made();
+        if (!made) g_late_world = 0; // none: the base creature's editor again (the late path), not the old creature
+        LOG("pregame editor: its result read: %s (BUG-9209)", made ? "a creature" : "none saved, the editor again");
     }
     if (g_pregame_open) { // the check waits for the host's world (or the host's return to the menu, or no host)
         if (now - s_check_at < 0.25) return;
@@ -2684,22 +2747,22 @@ static void pregame_editor_tick(double now)
     // the galaxy menu while the host plays Creature in a world where this guest has no creature of its own makes it
     // here first; the host's world (arriving or arrived) is held for the editor and loads when it is left, so no old
     // body, family, nest or cocoon appears in the world before. Once per world. Switch: creature.first_before_world.
-    static uint32_t s_late_world = 0;
     static double s_late_at = -1; // the world is held for the editor since (-1: not waiting)
     const uint32_t host_world = guest && g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().world : 0;
     if (!g_pregame_editor || !guest || mode != modes::kMenu || g_local) {
         if (s_late_at >= 0) { s_late_at = -1; world::hold_for_editor(false); }
         return;
     }
-    if (g_first_before_world && s_late_at < 0 && host_mode == modes::kCreature && host_world && host_world != s_late_world &&
+    if (g_first_before_world && s_late_at < 0 && host_mode == modes::kCreature && host_world && host_world != g_late_world &&
         creations::needs_first_creature(host_world)) {
-        s_late_world = host_world;
+        g_late_world = host_world;
         s_late_at = now;
         world::hold_for_editor(true); // at once: the world arriving now waits for the editor
         LOG("pregame editor: no creature of our own in the host's world %08X: it waits for our first creature (BUG-9208)",
             host_world);
     }
     if ((game_busy() & busy::kEditorGate) || mode_switch_pending()) return; // (a held world counts as loading)
+    if (g_letterbox_wait && letterbox_shown()) return; // BUG-9209: not under the galaxy intro's bars
     uint32_t got = 0, total = 0;
     const bool receiving = world::progress(got, total);
     bool late = false;
@@ -2715,8 +2778,11 @@ static void pregame_editor_tick(double now)
         if (receiving || !world::load_queued()) return;
         s_late_at = -1;
         late = true;
+        // 3Z B: the host's start editor's parts known (a new world, the editor again after none was saved): the same
+        g_pregame_start = g_same_start_parts && g_start_parts_at >= 0 && now - g_start_parts_at < 900;
     } else {
-        if (s_done || !host_editing || s_host_before != modes::kMenu || world::load_queued() || receiving) return;
+        const bool host_from_menu = s_host_before == modes::kMenu || (s_host_before == 0 && host_world == g_world);
+        if (s_done || !host_editing || !host_from_menu || world::load_queued() || receiving) return;
         const uint32_t he = g_remotes[0].buf.latest().editor; // creatures only: the Creator, or the stage start editor (a new
         if (he != 0x465C50BAu && he != kCreatureStartEditor) return; // world from the galaxy wizard, 2026-11-14)
         // 3Z B: the host's start editor: the same, with the host's parts list (sent at its request; a host without it,
@@ -2731,7 +2797,7 @@ static void pregame_editor_tick(double now)
     }
     H->run_outside_frame([](void* late) {
         creations::begin_first_creature();
-        const bool r = !late && g_pregame_start ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
+        const bool r = g_pregame_start ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
                                                 : submit_new_creature_request();
         LOG("pregame editor: the creature editor with the base creature %s -> %d (BUG-%s)",
             late ? "before the host's world (no own creature there)" : "while the host makes a new world", (int)r,

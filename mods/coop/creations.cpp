@@ -3247,6 +3247,8 @@ void begin_first_creature()
     g_adopt_until = 0;
 }
 void cancel_first_creature() { g_first_pending = false; }
+bool first_creature_pending() { return g_first_pending; } // BUG-9209
+bool first_creature_made() { return g_first_key != 0; }
 // BUG-9208: a guest about to enter the host's world `world` (PlayerState.world) has no creature of its own there yet:
 // none recorded (worlds.ini, BUG-0345), no campaign creature for it (choices.ini [landfall]), no first creature made
 // or being made, and it did not choose to play the world's own species
