@@ -8393,3 +8393,10 @@ store's reading) is off when it matters. The store's own status: `coop.store` (w
   terra_pend_applied= terra_kept= terra_resent=` in `coop.space`.
 * Do not run `make` while a lane's games of this tree run: once the games of lane 6 stopped answering (no log line
   after it) when the tree was rebuilt under them (2026-11-15; the cause was not looked into).
+* Seams of these tests: `coop.space allies colonycities <PlanetID>` (my civilization's cities in a planet record:
+  spice, size, turrets, buildings and their class ids, names), `coop.space allies citytest <PlanetID>` (a colony's
+  cities as a player's after a while: two cities, spice, turrets, three real building entries of the home planet),
+  `coop.space allies npcstar [<StarID>] [force]` (an NPC empire's star near the guest, or of an empire it met, becomes
+  its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
+  space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
+  ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.
