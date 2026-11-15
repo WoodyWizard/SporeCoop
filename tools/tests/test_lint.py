@@ -67,7 +67,8 @@ COUNTER_ALLOW = {
 
 
 def mod_counter_keys(root):
-    """keys printed as `key=%u` from a g_ variable (or its size) of the mod and never from anything else"""
+    """keys printed as `key=%u` from a g_ variable, a member of one (civ.cpp's g_n.<counter>, C8 of 0.7.15) or its size,
+    of the mod and never from anything else"""
     counters, other = set(), set()
     spec = re.compile(r'%[-+ #0-9.]*(?:ll|l|z|h)?[udixXfgcsp]')
     for f in glob.glob(os.path.join(root, 'mods', 'coop', '**', '*.cpp'), recursive=True):
@@ -94,7 +95,7 @@ def mod_counter_keys(root):
                 km = re.search(r'(\w+)=$', fmt[:sm.start()])
                 if km:
                     a = re.sub(r'^\((?:unsigned|int|double|float|long|uint32_t|size_t)\)\s*', '', args[i])
-                    (counters if re.fullmatch(r'\(?g_\w+(?:\.size\(\))?\)?', a) else other).add(km.group(1))
+                    (counters if re.fullmatch(r'\(?g_(?:n\.)?\w+(?:\.size\(\))?\)?', a) else other).add(km.group(1))
     return counters - other
 
 
