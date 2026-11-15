@@ -230,25 +230,32 @@ def test_tickets():
     subprocess.run(['git', '-C', repo, 'commit', '-qm', 'init'], env=env, check=True)
     wt = os.path.join(TMP, 'wt-a')
     git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/a')
-    first = run(wt, 'new', 'found on the way').stdout.strip()
+    first = run(wt, 'new', 'found on the way', '--stage', 'Tools').stdout.strip()
     subprocess.run(['git', '-C', wt, 'add', '-A'], check=True)
     subprocess.run(['git', '-C', wt, 'commit', '-qm', 'ticket'], env=env, check=True)
     git(repo, 'worktree', 'remove', wt)
-    second = run(repo, 'new', 'another one').stdout.strip()
+    second = run(repo, 'new', 'another one', '--stage', 'Tools').stdout.strip()
     check(os.path.basename(first).startswith('BUG-0001') and os.path.basename(second).startswith('BUG-0002'),
           f'an id committed on a branch without a worktree is not reused (BUG-0057): '
           f'{os.path.basename(first)}, {os.path.basename(second)}')
     wt = os.path.join(TMP, 'wt-sec')
     git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/sec')
-    sec = run(wt, 'new', 'open security hole', '--kind', 'security', '--private').stdout.strip()
+    sec = run(wt, 'new', 'open security hole', '--kind', 'security', '--stage', 'All', '--private').stdout.strip()
     found = run(repo, 'find', 'security hole').stdout
     check('open security hole' in found, f'a private ticket made in a worktree is found from the main checkout '
           f'(BUG-0062): {sec}')
     git(repo, 'worktree', 'remove', '--force', wt)
     found = run(repo, 'find', 'security hole').stdout
-    nxt = run(repo, 'new', 'next', '--private').stdout.strip()
+    nxt = run(repo, 'new', 'next', '--stage', 'Tools', '--private').stdout.strip()
     check('open security hole' in found and not os.path.basename(nxt).startswith(os.path.basename(sec)[:8]),
           f'it survives the worktree\'s removal and its id is not given out again ({os.path.basename(nxt)})')
+    # BUG-1126: the stage of a new ticket is one of the list; an alias is written as its stage
+    r = run(repo, 'new', 'on the moon', '--stage', 'Moon')
+    check(r.returncode != 0 and 'one of' in r.stderr and not r.stdout.strip(), 'new refuses a stage that is no stage')
+    r = run(repo, 'new', 'no stage')
+    check(r.returncode != 0, 'new needs a --stage')
+    p = run(repo, 'new', 'an alias', '--stage', 'civilization/tribe').stdout.strip()
+    check(p.endswith('.md') and 'stage: Tribe, Civ\n' in open(p).read(), f'new writes an alias list as "Tribe, Civ"')
 
 
 # ---------------------------------------------------------------- tickets check (BUG-0215)
@@ -257,7 +264,7 @@ id: {id}
 title: t
 status: fixed
 kind: bug
-stage: Cell
+stage: {stage}
 reported: 2026-10-28
 source: x
 role: both
@@ -300,7 +307,7 @@ def test_tickets_check():
     g('commit', '-qm', 'new fix (BUG-0001)')
     new = g('rev-parse', '--short', 'HEAD').strip()
     path = os.path.join(repo, 'docs', 'tickets', 'BUG-0001-t.md')
-    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='',
+    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='', stage='Cell',
                 verif='FAIL with SPORE_FIX_OFF=pool.purge: out/lab/20261028-101010. PASS: 20261028-111111.')
 
     def check(cwd=repo, **kw):
@@ -320,6 +327,10 @@ def test_tickets_check():
         (dict(tests='no_such_test'), 'names no lab suite', 'a test name that resolves nowhere: fails'),
         (dict(verif='/tmp/x/run.log ' + good['verif']), 'outside the repository', 'a path outside the repository: fails'),
         (dict(extra='switch: session_end\n'), 'unknown coop.fix name', 'an unknown switch: name fails (BUG-0214)'),
+        (dict(stage='civ'), 'is written "Civ"', 'a stage alias (civ) fails with the stage to write (BUG-1126)'),
+        (dict(stage='Tribe/Civ'), 'is written "Tribe, Civ"', 'a stage list in another form fails (BUG-1126)'),
+        (dict(stage='Moon'), 'is not one of', 'a stage that is no stage fails (BUG-1126)'),
+        (dict(stage=''), 'is not one of', 'an empty stage fails (BUG-1126)'),
         (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.'), 'names no twin switch',
          'a fixed bug that names no twin switch and no reason: fails (BUG-0430)'),
         (dict(verif='FAIL: out/lab/20261028-101010. PASS: 20261028-111111.', extra='switch: none\n'),
@@ -486,6 +497,15 @@ def test_triage():
     check('GOG 2024' in out and 'coop 0.7.2.3' in out and 'mode Creature' in out, 'build, version and stage read')
     check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
+    # BUG-1125: a GOG 2016 report is named and answered "not supported", not analysed
+    rep16 = os.path.join(TMP, 'crash-20261025-000001.txt')
+    open(rep16, 'w').write('SporeCoop crash 20261025-000001\n\n== Environment\n'
+                           'SporeKit 0.3.4, game GOG 2016 (exe 922af7c7908af261), frames from Present\n'
+                           'game mode: Creature, frame 1, up 1 s\nmods: coop 0.7.7  \n\n== Exception\n'
+                           '0xC0000005 access violation at 0x00C6AE60 SporeApp.exe Foo::Bar+0x20 (thread 1)\n')
+    out16 = subprocess.run([sys.executable, '-I', tool, rep16], capture_output=True, text=True).stdout
+    check('GOG 2016' in out16 and 'not supported' in out16 and 'signature' not in out16 and 'BUG-0018' not in out16,
+          'a GOG 2016 report: "not supported", no signature, no ticket search (BUG-1125)')
 
     # BUG-0247: one signature per place, whatever thread wrote the report and whatever file it is
     def sigs(name, text):
