@@ -211,6 +211,7 @@ enum PlayerFlags : uint16_t { // Lineages + upstream 0.7.14: 9 flags (u16 on the
     PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
     PF_DOWNED = 128,  // Lineages: knocked down (creature_rescue), 64 before the 0.7.8 merge
     PF_RESYNC = 256,  // BUG-0332 (upstream 128): the host loads the shared world once for everybody (tribe.host_reload)
+    PF_PAUSED = 512,  // BUG-9227 (Lineages): the host's game time stands (its pause, a caption) for a second or more
 };
 
 // BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)

@@ -609,7 +609,8 @@ struct PendingShare {
     bool waited = false;    // BUG-9166: logged once
     bool held = false;      // BUG-9210: logged once
 };
-static std::function<bool(uint8_t, uint64_t)> g_share_hold; // BUG-9210: home_nests: this player's own nest comes first
+static std::function<bool(uint8_t, uint64_t)> g_share_hold;
+static uint32_t g_shared_loads; // BUG-9223: loads of a received copy of the host's world (coop.cpp own_dna_tick) // BUG-9210: home_nests: this player's own nest comes first
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
@@ -2574,6 +2575,7 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     // the menu intro must not survive into the stage (see end_menu_intro); in the menu nothing else plays
     end_menu_intro(game::mode_id() == modes::kMenu, "at the load");
     skg::thiscall<void>(loadby, mgr, name.c_str());
+    g_shared_loads++; // BUG-9223: a copy of the host's world is loaded here
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;
 }
@@ -2906,5 +2908,6 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
 
 // BUG-9210
 void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold) { g_share_hold = std::move(hold); }
+uint32_t shared_loads() { return g_shared_loads; }
 
 } // namespace world

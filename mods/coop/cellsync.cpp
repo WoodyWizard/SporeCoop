@@ -469,7 +469,7 @@ static void set_body(uint8_t* a, float factor)
 }
 
 // ---- what everybody sees ----
-enum : uint8_t { KO_UP = 0, KO_OUT = 1, KO_REVIVED = 2, KO_RESPAWNED = 3 };
+enum : uint8_t { KO_UP = 0, KO_OUT = 1, KO_REVIVED = 2, KO_RESPAWNED = 3, KO_WIPE = 4 }; // KO_WIPE: BUG-9226
 struct Ko {
     uint8_t state = KO_UP;
     float left = 0, hold = 0;
@@ -686,6 +686,13 @@ static bool g_ko_dying = false; // cell.respawn_small off: the timed-out knock-o
 CALL_GUARD("cellsync.ko_dying", g_ko_dying); // BUG-1047
 static uint32_t g_ko_deaths = 0; // ... how often (coop.cell status: ko_deaths)
 
+// BUG-9226 (owner play test 2026-11-15: "When all party members die, it doesn't force the respawn"): the last standing
+// cell dies the game's way (alone in the pool), but the knocked-out partners kept waiting out their timer for a revive
+// nobody could give. On: the last one tells them (MSG_CELL_KO state KO_WIPE) and they respawn at once. Off: they wait.
+static bool g_wipe_fix = true;
+COOP_FIX("cell.party_wipe", "BUG-9226", g_wipe_fix, "cell: when the last standing cell falls, the knocked-out ones respawn at once");
+static bool g_wipe_respawn;
+static uint32_t g_wipes_sent, g_wipes_got;
 static bool go_down(uint8_t* c)
 {
     if (!c || c != avatar() || !C.sess || !C.sess->connected() || g_ko_dying)
@@ -694,8 +701,18 @@ static bool go_down(uint8_t* c)
     if (!g_downed && !settings::on(settings::kCellKnockout))
         return false;
     if (!g_downed) {
-        if (nearest_partner(1e9f, nullptr, nullptr, true).empty())
+        if (nearest_partner(1e9f, nullptr, nullptr, true).empty()) {
+            bool others_down = false;
+            for (auto& [id, k] : g_ko)
+                others_down |= k.state == KO_OUT;
+            if (g_wipe_fix && others_down) { // BUG-9226: the whole party is down: the others respawn now
+                send_ko(KO_WIPE, 0, 0);
+                ++g_wipes_sent;
+                if (C.notice)
+                    C.notice("The whole party is down: everyone respawns");
+            }
             return false; // alone in the pool: the vanilla death
+        }
         g_downed = true;
         g_down_since = H->time_seconds();
         g_hold = 0;
@@ -741,6 +758,9 @@ static uint32_t g_spec_idx, g_spec_switches, g_spec_sets;
 static bool g_spec_tab, g_box_shown;
 static int g_spec_step; // a < > press of the downed box (coop.cpp), used by spectate_tick
 static std::string g_spec_name;
+static bool g_spec_snap_fix = true;
+COOP_FIX("cell.spectate_snap", "BUG-9225", g_spec_snap_fix, "cell: the spectator camera jumps to the watched partner instead of crawling");
+constexpr float kSpecTrail = 8.f; // the camera may trail the watched partner by this much before it jumps
 static void spectate_off(uint8_t* a)
 {
     uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
@@ -797,10 +817,23 @@ static void spectate_tick(uint8_t* a)
     g_spec_tab = tab;
     if (at->idx != g_spec_idx)
         ++g_spec_sets;
+    const bool changed = at->idx != g_spec_idx;
     g_spec_id = at->id;
     g_spec_name = at->name;
     g_spec_idx = at->idx;
     F<uint32_t>(ui, 0xE0) = at->idx;
+    // BUG-9225 (owner play test 2026-11-15: "Spectator cam on Cell is slow to reach the other player"): the camera eases
+    // its point (+0x48) by factors from the avatar's speed, and the knocked-out cell stands: it crawled to the partner.
+    // On: the point jumps to the partner when the watch starts or switches, and whenever it trails by more than
+    // kSpecTrail. Off: the game's easing only (58-dev).
+    if (g_spec_snap_fix && skg::readable(ui + 0x48, 0xC))
+        if (uint8_t* tc = modes::cell_at(at->idx)) {
+            const net::Vec3 tp = pos_of(tc);
+            const float* cam = (const float*)(ui + 0x48);
+            const float dx = cam[0] - tp.x, dy = cam[1] - tp.y, dz = cam[2] - tp.z;
+            if (changed || dx * dx + dy * dy + dz * dz > kSpecTrail * kSpecTrail)
+                camera_snap(tp);
+        }
 }
 
 static void downed_tick(uint8_t* a, double now, double dt)
@@ -830,9 +863,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
             C.notice(helper + " revived " + C.my_name());
         return;
     }
-    if (give_up::held(H, now) || g_give_up_now) // BUG-9118: as if the timer ran out
+    if (give_up::held(H, now) || g_give_up_now || g_wipe_respawn) // BUG-9118: as if the timer ran out (BUG-9226: a wipe)
         g_down_since = now - down_time();
     g_give_up_now = false;
+    g_wipe_respawn = false;
     if (now - g_down_since < down_time())
         return;
     g_downed = false;
@@ -5441,6 +5475,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             w.u8(id); w.u8(state); w.u8(left); w.u8(hold); w.u8(watching);
             C.sess->broadcast_reliable(net::MSG_CELL_KO, w, from);
         }
+        if (state == KO_WIPE && id != C.sess->my_id()) { // BUG-9226: the last standing cell fell
+            ++g_wipes_got;
+            if (g_wipe_fix && g_downed)
+                g_wipe_respawn = true;
+            state = KO_UP;
+        }
         if (id != C.sess->my_id()) {
             on_ko(id, state, left / 10.f, hold / 255.f);
             g_ko[id].watching = state == KO_OUT ? watching : 0xFF;
@@ -8181,9 +8221,16 @@ bool give_up()
 bool own_down() { return g_downed && in_cell(); }
 std::string spectated() { return g_downed && g_spec_idx ? g_spec_name : std::string(); }
 void spectate_step(int dir) { g_spec_step = dir; }
+// BUG-9224 (owner play test 2026-11-15: "The timer was not going down on Cell"): the downed ring takes the fraction of
+// the time left (as Creature's), this gave the seconds (60): the ring stayed full to the last second. On: the fraction.
+// Off: the seconds (58-dev).
+static bool g_ring_fraction_fix = true;
+COOP_FIX("cell.ring_fraction", "BUG-9224", g_ring_fraction_fix, "cell: the knocked-out ring empties over the time left");
 float own_left()
 {
-    return g_downed ? (float)std::max(0.0, down_time() - (H->time_seconds() - g_down_since)) : 0.f;
+    if (!g_downed) return 0.f;
+    const double left = std::max(0.0, down_time() - (H->time_seconds() - g_down_since));
+    return g_ring_fraction_fix ? ring_timer::fraction(left, down_time()) : (float)left;
 }
 float own_revive() { return g_downed ? (float)std::min(1.0, g_hold / kReviveHold) : 0.f; }
 void set_box_shown(bool shown) { g_box_shown = shown; }

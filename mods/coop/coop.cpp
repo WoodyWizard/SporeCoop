@@ -833,6 +833,9 @@ static uint32_t open_editor_id()
     return req && skg::readable(req, 0x10) ? skg::field<uint32_t>(req, 0xC) : 0;
 }
 
+static bool g_paused_cover = true;
+COOP_FIX("ui.paused_cover", "BUG-9227", g_paused_cover, "ui: guests see a 'Paused by host' cover while the host's game is paused");
+bool stage_mode(uint32_t m);
 net::PlayerState local_state()
 {
     net::PlayerState st;
@@ -845,6 +848,15 @@ net::PlayerState local_state()
         st.gate = adventure::outgoing();
     if ((st.mode == modes::kCreature || st.mode == modes::kScenario) && creature_rescue::down())
         st.flags |= net::PF_DOWNED;
+    { // BUG-9227: the host's game time stands for a second or more in a stage (its pause menu, a caption)
+        static double s_paused_since = -1;
+        const double now = H->time_seconds();
+        const bool paused = g_paused_cover && g_sess.role() == net::Role::Host && stage_mode(st.mode) && world::time_paused() &&
+                            !world::cinematic_playing();
+        s_paused_since = paused ? (s_paused_since < 0 ? now : s_paused_since) : -1;
+        if (paused && now - s_paused_since >= 1.0)
+            st.flags |= net::PF_PAUSED;
+    }
     if (g_sess.role() == net::Role::Host && world::host_reloading())
         st.flags |= net::PF_RESYNC; // BUG-0332
     return st;
@@ -1663,6 +1675,15 @@ COOP_FIX("creature.keep_own_dna", "BUG-9165", g_keep_own_dna,
          "creature: a guest's own DNA is put back after the host's world is loaded again (the save holds the host's)");
 unsigned game_busy();
 bool mode_switch_pending();
+// BUG-9223 (owner play test 2026-11-15: "BigTexas went into editor with 14 DNA, added an Eye for 5 DNA, then went back
+// ingame, still said 14 DNA"): the put-back took any new Creature epoch for a load, and the own editor of the mating call
+// (with its cocoon) raises the epoch too: the DNA from before the editor came back, the spend was free. On: put back only
+// after a load of a received copy of the host's world (world::shared_loads), once that copy is open. Off: by the epoch.
+static bool g_own_dna_load_fix = true;
+COOP_FIX("creature.own_dna_after_load", "BUG-9223", g_own_dna_load_fix,
+         "creature: a guest's own DNA is put back only after a load of the host's world (an editor's spend stays spent)");
+static uint32_t g_own_dna_loads, g_own_dna_wait_epoch;
+static bool g_own_dna_pending;
 static float g_own_dna = -1;
 static uint32_t g_own_dna_world, g_own_dna_epoch, g_own_dna_restores;
 static double g_own_dna_written_at = -100;
@@ -1682,7 +1703,29 @@ static void own_dna_tick(double now)
         g_own_dna_epoch = 0; // a loaded world: put the note back
         g_own_dna_written = g_own_dna;
     }
-    if (epoch != g_own_dna_epoch) {
+    if (g_own_dna_load_fix) {
+        if (world::shared_loads() != g_own_dna_loads) { // a copy of the host's world is loading: put back once it is open
+            g_own_dna_loads = world::shared_loads();
+            g_own_dna_pending = true;
+            g_own_dna_wait_epoch = epoch;
+        }
+        if (g_own_dna_epoch == 0 && !g_own_dna_pending) { // the first sight of this world (its note)
+            g_own_dna_pending = true;
+            g_own_dna_wait_epoch = 0xFFFFFFFFu;
+        }
+        g_own_dna_epoch = epoch;
+        if (g_own_dna_pending) {
+            if ((g_own_dna_wait_epoch != 0xFFFFFFFFu && epoch == g_own_dna_wait_epoch) || game_busy() || mode_switch_pending())
+                return; // the loaded copy is not open yet: nothing recorded from it until the own DNA is back
+            if (g_own_dna >= 0 && std::fabs(game::dna() - g_own_dna) > 0.5f) {
+                LOG("dna: own DNA %.0f put back after a load of the world (the save had %.0f, BUG-9165)", g_own_dna, game::dna());
+                game::dna_sync_raw(g_own_dna, game::evolution_bar());
+                g_dna_seen = g_own_dna;
+                ++g_own_dna_restores;
+            }
+            g_own_dna_pending = false;
+        }
+    } else if (epoch != g_own_dna_epoch) {
         if (game_busy() || mode_switch_pending())
             return; // a new copy of the world: nothing recorded from it until the own DNA is back
         if (g_own_dna >= 0 && std::fabs(game::dna() - g_own_dna) > 0.5f) {
@@ -6197,6 +6240,8 @@ static float ui_scale()
     return value;
 }
 void open_sporepedia_of(uint8_t player); // below (the portrait's click)
+static bool g_party_editor_hide = true;
+COOP_FIX("ui.party_editor_hide", "BUG-9228", g_party_editor_hide, "ui: the Party cards are hidden while an editor is open");
 static bool update_party_panel(bool labels)
 {
     std::vector<coop_ui::PartyRow> rows;
@@ -6227,7 +6272,10 @@ static bool update_party_panel(bool labels)
     }
     (void)labels;
     // not over the Sporepedia, the pause menu or a caption: the game time stands then (busy kPaused / kInputLock)
-    const bool show = !(game_busy() & (busy::kPaused | busy::kInputLock));
+    // BUG-9228 (owner play test 2026-11-15: "Party is covering the next page button in the editor for painting"): not in
+    // an editor (its pages' buttons sit at the bottom right where the cards go). `coop.fix ui.party_editor_hide off`.
+    const bool editor = g_party_editor_hide && (g_mode == modes::kEditor || g_mode == modes::kEdit);
+    const bool show = !(game_busy() & (busy::kPaused | busy::kInputLock)) && !editor;
     return coop_ui::set_party_hud(show, rows, ui_scale(), open_sporepedia_of);
 }
 
@@ -6507,6 +6555,24 @@ void on_overlay(void*, int, void*)
             bold((int)(cx - text_width(title.c_str()) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title.c_str());
             H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
             return; // nothing else over the loading screen
+        }
+    }
+    // BUG-9227 (owner play test 2026-11-15: "When host pauses, it should add the loading overlay without the loading icon
+    // saying paused by host"): while the host's state says its game time stands (PF_PAUSED) and this guest plays the same
+    // stage of the same world, the loading screen's cover without its ring and "Paused by host".
+    if (g_paused_cover && g_sess.role() == net::Role::Client && g_sess.connected() && sw > 0) {
+        auto it = g_remotes.find(0);
+        if (it != g_remotes.end() && !it->second.buf.empty()) {
+            const auto& hs = it->second.buf.latest();
+            if ((hs.flags & net::PF_PAUSED) && same_place(hs) && it->second.buf.age(H->time_seconds()) < 3.0) {
+                const float cx = sw / 2.f, cy = sh * 0.45f;
+                ring_timer::loading(H, sw, sh, cx, cy, 0.f, 0.f, H->time_seconds());
+                const char* title = "Paused by host";
+                bold((int)(cx - text_width(title) / 2.f), (int)(cy - 10), 0xFFFFFFFFu, title);
+                const std::string step = g_sess.name_of(0) + " paused the game";
+                H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + 14), 0xFFF0C040u, step.c_str());
+                return; // nothing else over the cover
+            }
         }
     }
     // BUG-9159 (owner decision 1P A): a late joiner whose own creature is chosen (after the editor) waits for their

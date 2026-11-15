@@ -38,7 +38,8 @@ float scene_luma(double now) { return now - g_luma_at < 0.5 ? g_luma : -1.f; }
 void loading(const SkHost* host, int sw, int sh, float x, float y, float radius, float progress, double now)
 {
     auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
-    if (!device || sw <= 0 || sh <= 0 || !std::isfinite(x) || !std::isfinite(y) || !(radius > 2)) return;
+    // radius 0: the cover only, no ring (BUG-9227: "Paused by host")
+    if (!device || sw <= 0 || sh <= 0 || !std::isfinite(x) || !std::isfinite(y) || (radius != 0 && !(radius > 2))) return;
     // the blur: the frame down to a 1/4 and a 1/16 copy and back up, each step filtered (a render target made per frame,
     // as progress_debt's: nothing of ours in D3DPOOL_DEFAULT when the device resets); a failed step leaves it sharp
     IDirect3DSurface9* back = nullptr;
@@ -109,6 +110,11 @@ void loading(const SkHost* host, int sw, int sh, float x, float y, float radius,
     const DWORD dim = 0x80081018; // the Co-op window's dark blue, half see-through
     Vertex q[4] = {{0, 0, 0, 1, dim}, {w, 0, 0, 1, dim}, {w, h, 0, 1, dim}, {0, h, 0, 1, dim}};
     device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, q, sizeof(Vertex));
+    if (radius == 0) {
+        saved->Apply();
+        saved->Release();
+        return;
+    }
     const float r_out = radius, r_in = radius * 0.78f, p = std::clamp(progress, 0.f, 1.f);
     paint(device, D3DPT_TRIANGLELIST, pie(x, y, r_out + 3.f, 1.f), kDisc);
     paint(device, D3DPT_TRIANGLESTRIP, arc_strip(x, y, r_in, r_out, 0.f, 1.f), 0xFF20303Cu);

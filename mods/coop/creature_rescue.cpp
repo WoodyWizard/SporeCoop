@@ -70,6 +70,10 @@ struct Rescue {
     bool gave_up = false; // BUG-9118: the downed player gave up (as if the timer ran out)
 };
 bool local_give_up; // this game's downed player asked to give up (sent / applied by the next tick)
+bool g_wipe_fix = true; // BUG-9226 (see the host's tick)
+COOP_FIX("creature.party_wipe", "BUG-9226", g_wipe_fix, "creature: when the whole party is down, every timer runs out at once (respawn at the nests)");
+double wipe_seen = -1;  // the host: since then nobody stands (-1: someone stands)
+unsigned wipes = 0;
 double own_near_since = -1; // BUG-9141: this downed player: a standing partner within reach since then (seen here)
 Rescue watches[net::kMaxPlayers];
 // A departed seat may be reused before its timer expires. Keep only the old
@@ -282,6 +286,26 @@ void tick(uint32_t world, void* avatar, const std::vector<net::PlayerState>& par
         if (now - it->begin < window_s()) { ++it; continue; }
         charge(it->name);
         it = departed.erase(it);
+    }
+    // BUG-9226 (owner play test 2026-11-15: "When all party members die, it doesn't force the respawn"): with every
+    // player down nobody can revive anyone; each waited out its 60 s. On: then every timer runs out at once (the game's
+    // own death and respawn at the nest, the usual loss). Off: each waits (58-dev).
+    if (g_wipe_fix) {
+        bool any = false, all_down = down() || (body && game::health(body) <= 0);
+        for (const auto& p : peers)
+            if (standing(p) && !(p.id < net::kMaxPlayers && watches[p.id].active)) all_down = false;
+        for (const auto& w : watches) any |= w.active;
+        if (!any || !all_down)
+            wipe_seen = -1;
+        else if (wipe_seen < 0)
+            wipe_seen = now;
+        else if (now - wipe_seen > 2.0) { // 2 s with nobody standing (not one frame between two states)
+            for (auto& w : watches)
+                if (w.active) w.begin = now - window_s();
+            notice("The whole party is down: everyone respawns.", -1);
+            wipe_seen = -1;
+            ++wipes;
+        }
     }
     for (uint8_t victim = 0; victim < net::kMaxPlayers; ++victim) {
         auto& w = watches[victim];
