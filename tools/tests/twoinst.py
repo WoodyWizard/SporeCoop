@@ -15,6 +15,7 @@ import lane  # noqa: E402
 import fixtures  # noqa: E402
 from lane import APPDATA, sh  # noqa: E402,F401
 import memprobe  # noqa: E402
+import startwait  # noqa: E402
 
 memprobe.start()  # SPORE_MEMPROBE=1|trace: the test script's own memory (BUG-0916)
 
@@ -27,8 +28,22 @@ def wait_up(inst, t=120):
                 return True
         except OSError:
             pass
-        time.sleep(1)
+        time.sleep(1 if startwait.fixed() else startwait.STEP)  # A9: a 0.25 s poll (was 1 s)
     return False
+
+
+def lane_down(timeout=2.0):
+    """A9 (BUG-1112): after `spore.sh kill`, until no process of the lane is left (`spore.sh procs`), at most the
+    old fixed 2 s; seconds waited, None at the bound"""
+    return startwait.until(lambda: not subprocess.run([lane.SPORE, 'procs'], capture_output=True, text=True,
+                                                      timeout=10).stdout.strip(), timeout)
+
+
+def game_process_up(inst, timeout=2.0):
+    """A9: after a launch, until the instance's game process runs (its sandbox and wineserver are up: the next
+    launch no longer races it on the bottle), at most the old fixed 2 s between the two launches"""
+    return startwait.until(lambda: subprocess.run([lane.SPORE, 'pids', str(inst)], capture_output=True, text=True,
+                                                  timeout=10).stdout.strip(), timeout)
 
 
 def host_frame(con):
@@ -611,9 +626,11 @@ def warm_reset(host, guest, fixture, planet):
         time.sleep(0.3)
     phases.append(('guest in game', time.time() - t0))
     lane_state(**{**st, 'slot': slot, 'fixture': fixture, 'planet': planet, 'warm_runs': st.get('warm_runs', 0) + 1})
-    time.sleep(3)
+    settled = startwait.settle([host, guest], 3)  # A9: was a fixed 3 s
+    phases.append(('settled', time.time() - t0))
     print(f'  (warm reset in {time.time() - t0:.0f} s: ' + ', '.join(f'{n} {t:.0f}' for n, t in phases)
-          + f'; warm run {st.get("warm_runs", 0) + 1} of these games)', flush=True)
+          + f'; warm run {st.get("warm_runs", 0) + 1} of these games; settle '
+          + (f'{settled:.1f} s' if settled is not None else 'at the 3 s bound') + ')', flush=True)
     return True
 
 
@@ -747,7 +764,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             print('  (warm reset failed: cold start)', flush=True)
     lane_state()  # (the state is rewritten below once the games run)
     sh('kill')
-    time.sleep(2)
+    lane_down()  # A9: was a fixed 2 s
     sh('deploy')
     sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
     restore_creations(guest_creations)
@@ -763,11 +780,14 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
         with open(os.path.join(d, 'choices.ini'), 'w', newline='\r\n') as f:
             f.write('[creations]\n' + ''.join(f'{k}={v}\n' for k, v in lines.items()))
     t_start = time.time()
+    menu = startwait.MenuFrames()  # A9: frames each game has drawn in its galaxy menu
     # join_in_intro: the guest starts once the host is in its world, so that its menu intro comes
     # after the host is ready (the guest joins at the start of it)
     if not join_in_intro:
         lane.run_guest()
-        time.sleep(2)  # two sandboxes starting at the very same moment can race on the bottle
+        # two sandboxes starting at the very same moment can race on the bottle: the host starts once the guest's
+        # game process runs (A9: was a fixed 2 s, the bound)
+        game_process_up(lane.GUEST)
     lane.run_host()
     for inst, run in ((lane.GUEST, lane.run_guest), (lane.HOST, lane.run_host))[1 if join_in_intro else 0:]:
         if not wait_up(inst, 90):  # two sandboxes starting together sometimes lose one: start it again
@@ -776,10 +796,10 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             # games first, then start both again.
             print(f'  (instance {inst} did not answer in 90 s: the lane starts again)', flush=True)
             sh('kill')
-            time.sleep(2)
+            lane_down()
             if not join_in_intro:
                 lane.run_guest()
-                time.sleep(2)
+                game_process_up(lane.GUEST)
             lane.run_host()
             for i in ((lane.HOST,) if join_in_intro else (lane.GUEST, lane.HOST)):
                 assert wait_up(i), f'instance {i} did not start'
@@ -787,19 +807,24 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     phases = [('wine up', time.time() - t_start)]
     host, guest = Console(lane.HOST), Console(lane.GUEST)
     if planet:  # GameN/Planet of the fixture, loaded through the mod (works from the galaxy menu)
-        for _ in range(180):
+        t0 = time.time()
+        while time.time() - t0 < 180:
+            if not join_in_intro and 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+                menu.note('guest', guest)  # A9: the guest's menu frames count from here
             if 'GalaxyGameEntry' in host.call('game.mode')['out']:
                 break
-            time.sleep(1)
+            time.sleep(1 if startwait.fixed() else startwait.STEP)  # A9: a 0.25 s poll (was 1 s)
         phases.append(('host menu', time.time() - t_start))
         host.call('wait.frames 240 90000')  # the galaxy menu settles (8 s)
         slot, name = planet.split('/')
         host.call(f'coop.load {slot} {name}')
         t0 = time.time()
         while time.time() - t0 < 240 and not host.call('coop.avatar')['ok']:
-            time.sleep(2)
+            time.sleep(2 if startwait.fixed() else startwait.STEP)  # A9: a 0.25 s poll (was 2 s)
         phases.append(('host in game', time.time() - t_start))
-        time.sleep(4)
+        # A9: was a fixed 4 s; the host's frames move and its game time runs (the stage entry's pause is over)
+        startwait.settle([host], 4)
+        phases.append(('host settled', time.time() - t_start))
     else:
         subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', str(lane.HOST), *load_args],
                        capture_output=True, text=True, timeout=600)
@@ -815,8 +840,9 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             if (_menu_up_time(lane.GUEST) or 0) > t_start:  # this start's line, not an older session's
                 break
         elif 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+            menu.note('guest', guest)
             break
-        time.sleep(1 if join_at is None else 0.25)
+        time.sleep(1 if join_at is None and startwait.fixed() else 0.25)
     t_menu = time.time()
     phases.append(('guest menu', time.time() - t_start))
     if join_at is not None:
@@ -828,7 +854,9 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
         t_menu = _menu_up_time(lane.GUEST) or t_menu
         time.sleep(max(0.0, t_menu + join_at - time.time()))
     else:
-        guest.call('wait.frames 200 60000')
+        # A9: 200 frames of the guest's menu, counted from the first poll that saw it (often long done: the guest's
+        # menu came up while the host loaded); was `wait.frames 200` from here
+        menu.wait_menu('guest', guest, 200)
     if join_in_intro:  # the intro starts ~16 s after the menu came up and runs ~10 s
         for _ in range(120):
             if '(menu intro)' in guest.call('coop.status')['out']:
@@ -846,9 +874,10 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
         print('  (the guest is not in the host\'s world after 240 s: '
               + guest.call('coop.status')['out'].strip().splitlines()[0][:160] + ')', flush=True)
     phases.append(('guest in game', time.time() - t_start))
-    time.sleep(4)
+    settled = startwait.settle([host, guest], 4)  # A9: was a fixed 4 s
     print(f'  (both games ready in {time.time() - t_start:.0f} s: '
-          + ', '.join(f'{n} {t:.0f}' for n, t in phases) + ')', flush=True)
+          + ', '.join(f'{n} {t:.0f}' for n, t in phases) + '; settle '
+          + (f'{settled:.1f} s' if settled is not None else 'at the 4 s bound') + ')', flush=True)
     lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations,
                start_state={'host': start_state(host), 'guest': start_state(guest)})
     watch(lane.HOST, lane.GUEST)

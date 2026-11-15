@@ -162,7 +162,8 @@ cmd_run() {
     local display=()
     if [[ "${SPORE_HEADLESS:-1}" == 1 ]] && command -v gnome-shell >/dev/null; then
         local hl
-        hl=$("$ROOT/tools/headless.sh" up) || { echo "the headless test display did not start" >&2; exit 1; }
+        # A16 (BUG-1113): the lane's own one of the lab's headless shells (headless.sh: lane N on (N - 1) % displays)
+        hl=$(SPORE_LANE="$LANE" "$ROOT/tools/headless.sh" up) || { echo "the headless test display did not start" >&2; exit 1; }
         # shellcheck disable=SC2206
         display=(env -u WAYLAND_DISPLAY $hl)
         sk_ini_set test_monitor grid
@@ -276,7 +277,19 @@ cmd_kill() {
     local procs owner
     procs=$(lane_procs)
     for p in $(awk '$1 == "game" {print $2}' <<< "$procs"); do kill "$p" 2>/dev/null || true; done
-    sleep 1
+    # A9 (BUG-1112): up to 1 s for the games to end on the TERM (the old fixed `sleep 1`), checked every 0.1 s;
+    # SPORE_START_FIXED=1: the old fixed second
+    if [[ -n "$(awk '$1 == "game"' <<< "$procs")" ]]; then
+        if [[ "${SPORE_START_FIXED:-0}" == 1 ]]; then
+            sleep 1
+        else
+            local i
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+                sleep 0.1
+                [[ -z "$(cmd_pids)" ]] && break
+            done
+        fi
+    fi
     # a deadlocked Wine process can stay half-dead (zombie leader + live threads) and keep its
     # UDP/TCP sockets bound: SIGKILL the whole thread group (lane_procs finds it by a live thread)
     procs=$(lane_procs)
@@ -293,6 +306,12 @@ cmd_kill() {
     for p in $(awk '$1 == "wrapper" {print $2}' <<< "$procs"); do kill "$p" 2>/dev/null || true; done
     rm -f "$MODS/logs/.started."* # BUG-1075: the lane's instances may start again
     echo "killed"
+}
+
+# every process of the lane kill would end ("<kind> <pid>": games, launch sandboxes, wrappers; no owner's game):
+# empty once the lane is down (twoinst waits for it after a kill, A9 / BUG-1112)
+cmd_procs() {
+    lane_procs | awk '$1 != "owner"'
 }
 
 # the PIDs of this lane's games (of instance $1 when given): what kill would end (no owner's game)
@@ -394,8 +413,9 @@ case "${1:-}" in
     run) shift; cmd_run "$@" ;;
     kill) cmd_kill ;;
     pids) shift; cmd_pids "${1:-}" ;;
+    procs) cmd_procs ;;
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-1}" ;;
     fixture) shift; cmd_fixture "$@" ;;
-    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile] [-x game-arg]|kill|pids [inst]|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
+    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile] [-x game-arg]|kill|pids [inst]|procs|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
 esac

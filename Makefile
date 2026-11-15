@@ -150,6 +150,7 @@ unit-lab:
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
 	python3 tools/tests/dash_selftest.py
+	python3 tools/tests/labstart_selftest.py
 
 # the lab's verdicts, reasons, flaky ledger, repeat rule and impact selection (0.7.15 A6-A8, A15, D5): its own part (its
 # fake lab runs wait ~40 s, beside unit-lab's)

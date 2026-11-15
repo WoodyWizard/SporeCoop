@@ -7913,6 +7913,133 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
 
+## Start-up waits on a signal instead of fixed sleeps (2026-11-15, feat/w51-labstart)
+<a id="testing-start-waits"></a>
+
+Plan 0.7.15 A9, BUG-1112. The cold start and the warm reset of `twoinst.start` (and the extra guests of
+`coop_multi.start_extra`, the lane starts of `lab.py run`, `spore.sh kill`) slept fixed times between their steps.
+Each wait now polls a real signal (`tools/tests/startwait.py`), with the old sleep as its upper bound: a signal that
+never comes costs the old time, never more.
+
+| step | was | now (bound = the old value) |
+|---|---|---|
+| after `spore.sh kill` (cold start) | `sleep 2` | until `spore.sh procs` (new: every process of the lane kill would end) is empty |
+| `spore.sh kill`: between TERM and KILL | `sleep 1` | until the lane's games are gone, checked every 0.1 s (no game: no wait) |
+| between the guest's and the host's launch | `sleep 2` | until the guest's game process runs (`spore.sh pids <inst>`: its sandbox and wineserver are up) |
+| console up, host menu, host in its world | polls of 1 s, 1 s, 2 s | 0.25 s polls |
+| after the host is in its world | `sleep 4` | `startwait.settle`: its frame counter moves and its game time runs (`coop.pauses` paused=0) |
+| before the guest's join | `wait.frames 200` from that moment | 200 frames of the guest's galaxy menu counted from the first poll that saw it (`MenuFrames`: the menu came up while the host loaded, usually nothing is left) |
+| after the guest is in (cold) / the warm reset | `sleep 4` / `sleep 3` | `settle` on both games |
+| extra guests (coop_multi) | `sleep 2` between launches, 1 s menu polls, `wait.frames 200` | the same three signals |
+| `lab.py run`: between two lanes' starts | `sleep 5` | until the lane's first game process runs (a test without a game: the 5 s) |
+
+The host's `wait.frames 240` in its menu (a frame count, not a sleep) is unchanged. The start lines now say how long
+the settle took: `(both games ready in 26 s: ..., host settled 14, ...; settle 0.5 s)`, `settle at the 4 s bound`
+when the signal did not come (a guest standing on its stage entry's pause: `twoinst.game_runs` waits for that where a
+test needs it). `SPORE_START_FIXED=1` is the twin: every wait sleeps its old time. Unit test:
+`tools/tests/labstart_selftest.py` (fake consoles and clock: a signal at once, later, never; a frozen counter; a game
+that does not answer; the menu frames).
+
+Measured 2026-11-15 (lanes 4 and 5, `team,select,frames_loop`, the old code from a detached checkout of rel/0.7.15
+beside the new one at the same moment, then the lanes swapped; the machine at load 14-40 on 12 cores from other
+agents' lanes): four run pairs, 56 start-ups a side.
+
+| | old (labs 20261115-012709, -014126, -015204, -020417) | new (20261115-012729, -014106, -015224, -020357) |
+|---|---|---|
+| cold start, median (min-max) | 39.5 s (27-71), n 28 | 25.5 s (18-74), n 28 |
+| of it: after the host is in, before the join, after the guest is in | 4 + 4 + 4 = 12 s | 2 + 0 + 2 = 4 s |
+| warm reset, median (min-max) | 20 s (18-23), n 14 | 17 s (15-22), n 14 |
+| of it: the settle after the guest is in | 3 s | 1 s |
+| the four runs together | 2831 s | 2488 s (-12 %) |
+| results | 41 OK, 1 FAIL | 41 OK, 1 FAIL |
+
+The one FAIL on each side is frames_loop's frame count at a load of 34-40 (old and new alike, see
+[the budget](#testing-lab-budget)); every other run of each test (14 on the new code: team, select, frames_loop) passed.
+The cold figures include the second display (lane 4 of the new code drew on it, see below). The other stages on the
+new code, 5 runs each of tribe_coop, cell_coop, civ_coop and space_coop (labs 20261115-022047 on lane 5,
+20261115-022517 on lane 4, cold and warm): 20 of 20 passed, the settles 0.3-1.7 s, 2 at the 4 s bound. The twin
+`SPORE_START_FIXED=1` (lab 20261115-022027, team x3 cold): 29-32 s, every settle at its bound, as before. Earlier on the same day
+on a calmer machine (load 6-10, old code): cold 29-38 s (labs 20261115-010610, -011356), warm 18-21 s; the 0.7.14
+record (docs/audit-0.7.15/tests.md): cold median 33 s (p90 45), warm 19 s (p90 23).
+
+## A second headless display (2026-11-15, feat/w51-labstart)
+<a id="testing-two-displays"></a>
+
+Plan 0.7.15 A16 (owner decision 12), BUG-1113, after [BUG-0663](#testing-xwayland-saturation). `tools/headless.sh`
+keeps `SPORE_HEADLESS_DISPLAYS` headless GNOME Shells (default 2). Each is its own `setsid` + `dbus-run-session` with
+its own runtime folder `$XDG_RUNTIME_DIR/<name>` (config, state, cache, D-Bus, its Wayland socket and its Xwayland's
+auth file), as the first one always had: a headless shell that shares the real runtime folder unmounts the Flatpak
+document portal when it stops (the global rule; `/run/user/$UID/doc` stayed mounted through 3 up / down cycles of the
+second shell on 2026-11-15). Lane N draws on shell `(N - 1) % displays`: `sporecoop-headless` (lanes 1, 3, 5, 7, 9,
+the shell of before) and `sporecoop-headless-2` (lanes 2, 4, 6, 8, 10); a 4-lane final check on lanes 2-5 puts two
+lanes on each. `spore.sh run` passes its lane; `headless.sh name` prints the lane's shell, `headless.sh list` every lab
+shell that runs with its DISPLAY. `SPORE_HEADLESS_NAME` names one shell outright (trials); `SPORE_HEADLESS_DISPLAYS=1`
+is the one shared shell of before. Both shells have the same two 5760x3240 virtual monitors (two D3D9 adapters,
+6.20; the grid of 1440x1080 cells). `tools/labbudget.py display_name` has the same rule (the self-test compares both
+for lanes 1-10 and 1-3 shells); `lab.py`'s Xwayland sampler (the `(load)` verdict) samples the lane's own Xwayland and
+`results.json` names it (`xwayland.display`). Never the owner's session: nothing here talks to `/run/user/$UID`'s
+own Wayland or D-Bus sockets.
+* VRAM of the second shell (sampled around 3 down / up cycles with 8-12 games running): 0.5-1.4 GB, about one to two
+  games' worth. With both shells up the card holds about 16 games, not 18: the budget below reads the VRAM, so it
+  holds the line by itself.
+* Games of other worktrees on code before this branch still draw on `sporecoop-headless`, whatever their lane.
+* The load it takes off: in the A/B of [the start waits](#testing-start-waits) the shared Xwayland (old code on lane 5,
+  with every other agent's games) peaked at 70-88 % of a core per test (lab 20261115-014126), the second one serving
+  lane 4 alone at 4-5 % (20261115-014106, `xwayland.display` sporecoop-headless-2), at the same time.
+
+## The machine budget and fps-scaled limits (2026-11-15, feat/w51-labstart)
+<a id="testing-lab-budget"></a>
+
+Plan 0.7.15 D1, BUG-1114 (TST-3 of docs/audit-0.7.15/tests.md). The lab capped lanes, not games: the 0.7.14 final check
+ran 22 games where about 18 fit the card (BUG-1098), and one Xwayland served them all (BUG-0663). `tools/labbudget.py`
+is a second gate after the memory gate: a test starts only when the machine has room for the games it adds.
+* Its games: `suite.games(t)` (the metadata: `games=` of its entry, 4 for a campaign, N of `--players N`, 2 otherwise,
+  0 for `make test`); the games its lane already runs count as its own (a warm test adds none).
+* Machine-wide (other runs and worktrees too): every `SporeApp.exe` (`pgrep -x`; its lane from its working directory,
+  its display from its environment's `DISPLAY`), the card's VRAM (`/sys/class/drm/card*/device/mem_info_vram_used`,
+  no root), each lab Xwayland's share of a core over the last 10 s. Games of tests started in the last 90 s that are
+  not up yet count as starting (their VRAM fading over the 90 s, as the memory gate does).
+* Rules (env to change them): at most 18 games (`SPORE_LAB_GAMES`); used VRAM + 0.66 GB a game still to come
+  (`SPORE_LAB_GAME_VRAM_GB`) under the card less 0.5 GB (`SPORE_LAB_VRAM_FREE_GB`); at most 10 games on one display
+  (`SPORE_LAB_DISPLAY_GAMES`) and its Xwayland under 80 % of a core (`SPORE_LAB_XW_ADMIT`); while a load-sensitive test
+  runs, or for one to start, at most 12 games (`SPORE_LAB_LS_GAMES`). A load-sensitive test held by that rule alone
+  for 10 min (`SPORE_LAB_LS_WAIT`) starts anyway and says so; a test that cannot start while nothing of its run runs
+  fails as `not started` after 30 min (`SPORE_LAB_BUDGET_WAIT`). `SPORE_LAB_BUDGET=0`: no budget.
+* Load-sensitive (`suite.load_sensitive`, `LOAD_SENSITIVE` prefixes, or `load_sensitive=` on an entry): npc_walk*,
+  puppet_walk*, puppet_stops, tribe_walk*, tribe_npc_dash, creature_npc_dash, body_trail* (32 entries): the top of
+  the mixed-result list of TST-3.
+* A lane whose worker has nothing left ends its warm games at once (they counted against the lanes still running).
+* The lane cap of 6.19 (`SPORE_MAX_LANES`, 6) stays as an upper bound; the final check stays on 4 lanes.
+* The 5 s between the lanes' starts waits for the lane's first game process instead ([start waits](#testing-start-waits)).
+* Seen at work (lab 20261115-012729, lane 5, other agents' runs on the old code all on the first display):
+  `(budget: team#3 on lane 5 waits: 10 games on its display sporecoop-headless, 0 starting there, 2 of its own: over
+  10 on one Xwayland (BUG-0663))`, then `starts after 5 s: 8 games run`.
+
+**fps-scaled limits** (`tools/tests/fpslimit.py scaled(fps, base, per_frame, cap)`: `per_frame / fps` kept between the
+limit at full speed and a cap under every recorded FAIL of the twin). Evidence: the logs of every lab run under
+`SporeCoop/out/lab` and `SporeCoop-wt/*/*/out/lab` (Oct 23 - Nov 14), per test the value of each check, the observer's
+printed fps and the `SPORE_FIX_OFF` lines.
+* **npc_walk_tribe, the drawn error p50 (changed)**: fix on (no switch off), by the guest's fps: 0.02-0.04 m at 46-69
+  fps, 0.04-0.09 at 26-32, 0.11 at 22 (the 0.7.14 final check 20261114-005006, failed), 0.11-0.17 at 16-18 (rel/0.7.14
+  20261114-050940 failed at 16 fps, 0.17), 0.12-0.14 at 12-14; twin `SPORE_FIX_OFF=npc.walk_tribe` 0.27-0.29 at 35-56
+  fps (20261101-085037-fix-w30-npc-walk). The fixed 0.10 sat at a quarter of the gap at full speed and under the fix's
+  own values below 25 fps. Now `3.0 / fps` within 0.10 (30 fps and faster: unchanged) and 0.20 (every twin value is
+  over it at any fps); the check line prints the limit and the fps. `SPORE_NPCWALK_FIXED_P50=1`: the fixed 0.10.
+* **puppet_walk, the step check (unchanged)**: before Nov 3 it failed at low fps (fix on: matched p10 71 % under 25 fps,
+  82 % at 25-34), since then 100 % matched at 25-65 fps in every recorded run (BUG-0407's windows): no case left.
+* **body_trail_tribe_player (unchanged)**: it runs at a fixed 30 fps (`SPORE_FPS=30`), so its failures are not the
+  fps; and its twin overlaps it (members' longest stretch over 2 m: fix on 0.37-2.91 s, `drive.lead` off 0.30-4.17 s;
+  p90 1.05-3.35 m against 1.83-2.97 m): no limit between the ranges exists; moving it would let twins pass.
+* **tribe_walk_mobile, tribe_npc_dash, puppet_stops, npc_walk (unchanged)**: since Nov 10 every recorded failure of
+  their checks without a switch off came from branches fixing those bugs at the time (fix/w49-proxy2, -npcwalk,
+  -throw, -puppet, -stops), at 25-66 fps; none on a rel branch. tribe_walk_mobile already leaves frames after a hitch
+  out and stops judging on a loaded machine (`LOADED`).
+* **frames_loop, "frames go on without Present" (unchanged, no twin)**: more than 30 guest frames in 3 s of
+  `frames.source loop`; 303 recorded runs: median 193 frames, passes from 31; it failed with 17-29 only under a
+  load of 34-40 on 12 cores (20261106-221554 and both sides of this branch's A/B, 20261115-012709 / -012729: base and
+  new code alike). The bug it guards (frames stop) gives none, so a limit of a few frames would still catch it, but
+  no switch brings that bug back to show the twin FAIL: left as it is (the budget keeps such loads away from the
+  lab's own runs).
 ## Lab verdicts, failure reasons, the flaky ledger and the repeat rule (2026-11-15, feat/w51-labverdict)
 <a id="testing-lab-verdicts"></a>
 
