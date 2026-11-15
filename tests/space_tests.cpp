@@ -5,8 +5,10 @@
 #include <map>
 #include <set>
 
+#include "rejoin_kept.h"
 #include "space_kept.h"
 #include "space_logic.h"
+#include <string>
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -346,6 +348,65 @@ static void test_restore_window()
     CHECK(w.join == 0 && w.from_host(7) && w.is_fresh(4) && w.applied == 4 && w.none == 0);
 }
 
+// BUG-1135: the tokens of clean leaves on disk: same host and name only, no readable host or name, expiry, bound
+static void test_rejoin_kept()
+{
+    printf("rejoin kept file\n");
+    using rejoin::KeptFile;
+    const int64_t t0 = 1'800'000'000;
+    KeptFile f;
+    CHECK(f.find("127.0.0.1:47820", "Bob", t0) == 0); // no salt yet: nothing, and put does nothing either
+    f.put("127.0.0.1:47820", "Bob", 0x1111, t0);
+    CHECK(f.size() == 0);
+    f.ensure_salt(0xABCDEF0123456789ull);
+    f.put("127.0.0.1:47820", "Bob", 0x1111, t0);
+    f.put("127.0.0.1:47820", "Carol", 0x2222, t0);
+    f.put("10.0.0.5:47820", "Bob", 0x3333, t0);
+    CHECK(f.find("127.0.0.1:47820", "Bob", t0 + 60) == 0x1111);
+    CHECK(f.find("127.0.0.1:47820", "Carol", t0 + 60) == 0x2222);
+    CHECK(f.find("10.0.0.5:47820", "Bob", t0 + 60) == 0x3333); // another host: its own token, never Bob's of the first
+    CHECK(f.find("127.0.0.1:47820", "bob", t0) == 0);         // another name (case matters, as the session's names)
+    CHECK(f.find("127.0.0.1:47821", "Bob", t0) == 0);         // another port is another host address
+    CHECK(f.find("127.0.0.1:47820", "Bo", t0) == 0 && f.find("127.0.0.1:47820B", "ob", t0) == 0); // no shifted split
+    // the text holds no host address, no name and no port
+    std::string t = f.text();
+    CHECK(t.find("127.0.0.1") == std::string::npos && t.find("Bob") == std::string::npos &&
+          t.find("47820") == std::string::npos && t.find("10.0.0.5") == std::string::npos);
+    // round trip
+    KeptFile g;
+    CHECK(g.parse(t) && g.size() == 3 && g.find("127.0.0.1:47820", "Bob", t0 + 1) == 0x1111);
+    // another salt (another PC, a new file): the same pair has another key
+    KeptFile h;
+    h.ensure_salt(0x1234);
+    CHECK(h.key("127.0.0.1:47820", "Bob") != f.key("127.0.0.1:47820", "Bob"));
+    // the pair's newer leave replaces its token
+    f.put("127.0.0.1:47820", "Bob", 0x4444, t0 + 100);
+    CHECK(f.size() == 3 && f.find("127.0.0.1:47820", "Bob", t0 + 101) == 0x4444);
+    // expiry: a day
+    CHECK(f.find("127.0.0.1:47820", "Carol", t0 + KeptFile::kTtl) == 0x2222);
+    CHECK(f.find("127.0.0.1:47820", "Carol", t0 + KeptFile::kTtl + 1) == 0);
+    CHECK(f.find("127.0.0.1:47820", "Carol", t0 - 10) == 0); // a clock set back: not used
+    CHECK(f.expire(t0 + KeptFile::kTtl + 50) && f.size() == 1 && f.find("127.0.0.1:47820", "Bob", t0 + KeptFile::kTtl + 50) == 0x4444);
+    // bounded: the oldest go
+    KeptFile b;
+    b.ensure_salt(7);
+    for (int i = 0; i < 40; i++)
+        b.put("h", "p" + std::to_string(i), 100 + i, t0 + i);
+    CHECK(b.size() == KeptFile::kMax);
+    CHECK(b.find("h", "p0", t0 + 40) == 0 && b.find("h", "p39", t0 + 40) == 139 && b.find("h", "p24", t0 + 40) == 124);
+    CHECK(b.find("h", "p23", t0 + 40) == 0);
+    // a damaged or foreign file is an empty store; a truncated line is skipped
+    KeptFile d;
+    CHECK(!d.parse("garbage\n0123 4567 8\n") && d.size() == 0);
+    CHECK(!d.parse("") && d.size() == 0);
+    CHECK(d.parse("sporecoop-rejoin 1 00000000000000ff\n00000000000000aa 00000000000000bb 5\nzz\n") && d.size() == 1);
+    // more lines than the bound: only kMax are read
+    std::string big = "sporecoop-rejoin 1 0000000000000001\n";
+    for (int i = 1; i <= 50; i++)
+        big += std::to_string(1000 + i) + " " + std::to_string(2000 + i) + " 5\n";
+    CHECK(d.parse(big) && d.size() == KeptFile::kMax);
+}
+
 int main()
 {
     test_jump_target();
@@ -356,6 +417,7 @@ int main()
     test_kept_map();
     test_kept_rivals();
     test_restore_window();
+    test_rejoin_kept();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

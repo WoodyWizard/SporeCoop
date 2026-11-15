@@ -2130,7 +2130,7 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
-    rejoin::shutdown();
+    rejoin::shutdown(net::g_fix.join_seen); // a game closed in a session keeps its token for that host (BUG-1135)
     end_session(EndPath::Unload, true);
 }
 
