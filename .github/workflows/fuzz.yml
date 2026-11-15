@@ -1,0 +1,40 @@
+# C6 (NET-10, BUG-1133): the decoder fuzzer (tests/fuzz_decoders.cpp) as a coverage-guided libFuzzer target over every
+# decoder of the protocol and of mods/coop/wire: 2 minutes on every push and pull request, 20 minutes once a week and on
+# demand. `make test` (build.yml) keeps running its fixed-seed build; this job only adds the long, guided run.
+# A finding uploads its crash-* input; `make fuzz` locally, then `build/host/fuzz_lib <file>` replays it
+# (docs/04-netcode.md#netcode-wire-structs).
+name: fuzz
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-22.04
+    steps:
+      # every action pinned by its commit SHA (the tag it was resolved from in the comment), as build.yml (A3, BUG-1121)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: libFuzzer run (clang, ASan + UBSan)
+        run: |
+          secs=120
+          if [ "$GITHUB_EVENT_NAME" = schedule ] || [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then secs=1200; fi
+          clang++ --version | head -1
+          make fuzz FUZZ_CXX=clang++ FUZZ_SECONDS=$secs
+      - name: the input that failed
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-findings
+          path: |
+            build/host/crash-*
+            build/host/leak-*
+            build/host/timeout-*
+            build/host/oom-*
+          if-no-files-found: ignore

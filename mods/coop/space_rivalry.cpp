@@ -96,7 +96,7 @@ COOP_FIX("space.rival_budget_world", "BUG-0813", g_budget_world_fix,
          "space rivals: a guest's own budget is not reset to the host's copy after an editor or an adventure");
 static uint32_t g_budget_kept;
 // BUG-1029: the Allies merge counted only the guests the host had a K_MONEY of: a rejoiner (still loading the host's
-// save, or before the K_SET answer) was left out, the host wiped its kept budget (g_budget_name), and the guest then
+// save, or before the K_SET answer) was left out, the host wiped its kept budget (now g_store), and the guest then
 // sent its whole game money as the correction: the save's money (or the shared total that reached it first) instead
 // of its budget. Now the host credits every guest of the roster with the budget it knows (its last K_MONEY, its kept
 // one by name, 0 for a newcomer), a guest whose budget is not known in this world sends no correction (the host's copy
@@ -128,32 +128,17 @@ static std::vector<NameProp> g_props_names;
 static uint16_t g_split_seq, g_merge_seq;
 static int g_split_total, g_split_share;
 static std::map<uint8_t, int> g_merge_credit_of; // the budgets the last merge counted
-static std::map<std::string, int> g_budget_name;  // player key (spaceext::kept_key, BUG-1107) -> its last reported budget (rejoins)
-// C5: the same through space_kept.h (`coop.fix space.kept_store`; g_budget_name goes once the lab passed)
+// player key (spaceext::kept_key, BUG-1107) -> its last reported budget (rejoins): space_kept.h (C5)
 static spacekept::KeptStore<int> g_store;
-static void budget_put(const std::string& key, int v)
-{
-    if (spaceext::kept_store())
-        g_store.put(key, v);
-    else
-        g_budget_name[key] = v;
-}
+static void budget_put(const std::string& key, int v) { g_store.put(key, v); }
 static const int* budget_find(const std::string& key)
 {
-    if (spaceext::kept_store()) {
-        auto* e = g_store.find(key);
-        return e ? &e->value : nullptr;
-    }
-    auto it = g_budget_name.find(key);
-    return it != g_budget_name.end() ? &it->second : nullptr;
+    auto* e = g_store.find(key);
+    return e ? &e->value : nullptr;
 }
-static void budget_clear()
-{
-    g_store.clear();
-    g_budget_name.clear();
-}
+static void budget_clear() { g_store.clear(); }
 // BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
-// g_budget_name keeps a rejoiner's own)
+// budget store keeps a rejoiner's own)
 PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
              [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id); });
 static std::vector<std::pair<uint8_t, std::string>> g_roster;

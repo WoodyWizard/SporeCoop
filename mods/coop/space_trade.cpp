@@ -1038,7 +1038,7 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
 // host's world again in a session) loads the host's share save, so its own hold was replaced by the
 // host's (Discord 2026-11-07: "their items disappear and the host's items appear").
 // The guest sends its hold to the host whenever it changes (K_INV; the first one of every Space world
-// it loaded from the host is marked fresh). The host keeps the last one per player name for the Space
+// it loaded from the host is marked fresh). The host keeps the last one per player key (space_kept.h) for the Space
 // world it plays (world_epoch, memory only, like the kept colonies of space_map.cpp, BUG-0195); a fresh
 // hold of a player it kept one for is the host's copy: the host sends the kept one back (K_INV_KEPT),
 // takes no hold of that player until the answer (K_INV_DONE, resent after 10 s), and the guest makes its
@@ -1275,18 +1275,8 @@ static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
     return failed;
 }
 
-struct KeptInv {
-    Inv inv;
-    std::string name; // its session name when last seen (status only; the map's key is spaceext::kept_key, BUG-1107)
-    bool have = false;
-    uint8_t id = 0xFF;      // its session id now, 0xFF = not here
-    bool restoring = false; // sent back, no answer yet
-    uint32_t serial = 0;
-    double sent = 0;
-};
-static std::map<std::string, KeptInv> g_kept_inv; // host: player key (spaceext::kept_key, BUG-1107) -> its own hold
-static uint32_t g_kept_inv_epoch, g_inv_serial, g_inv_holds, g_inv_sent_back, g_inv_done;
-static spacekept::KeptStore<Inv> g_store; // C5, host: player key (spaceext::kept_key) -> its own hold
+static uint32_t g_inv_holds, g_inv_sent_back, g_inv_done;
+static spacekept::KeptStore<Inv> g_store; // host: player key (spaceext::kept_key, BUG-1107) -> its own hold (C5)
 // guest: the Space world of its join, the fresh / restored / "nothing kept" worlds (C5: space_kept.h)
 static spacekept::RestoreWindow g_win;
 static uint32_t g_inv_sent;
@@ -1454,24 +1444,8 @@ static bool inv_restore_pending()
     return g_win.pending(e, H->time_seconds(), 20.0);
 }
 
-static void send_kept_inv(uint8_t id, KeptInv& k)
-{
-    net::Writer w;
-    w.u8(id);
-    w.u32(k.serial = ++g_inv_serial);
-    w.u8(1); // a hold follows
-    put_inv(w, k.inv);
-    spaceext::send(K_INV_KEPT, w);
-    k.restoring = true;
-    k.sent = H->time_seconds();
-    g_inv_sent_back++;
-    H->log(M, SK_INFO, "trade: the own hold of %s (%u items) sent back to it (BUG-0678)", spaceext::name_of(id).c_str(),
-           (unsigned)k.inv.items.size());
-}
-
-// C5: the host's side through space_kept.h (`coop.fix space.kept_store`; the hand path above and below goes once the
-// lab passed)
-static void send_kept_inv_s(spacekept::Entry<Inv>& k)
+// the host's side: space_kept.h (C5)
+static void send_kept_inv(spacekept::Entry<Inv>& k)
 {
     tw::InvKept m;
     m.to = k.id;
@@ -1492,23 +1466,9 @@ static void inv_tick(double now)
         rec_tick(now); // BUG-0679: the own hold while away
         return;
     }
-    if (spaceext::is_host() && spaceext::kept_store()) {
-        g_store.world(spaceext::world_epoch()); // another Space world: the holds kept were of the old one
-        g_store.tick(now, partner_here, [](spacekept::Entry<Inv>& k) { send_kept_inv_s(k); }); // left; no answer: again
-        return;
-    }
     if (spaceext::is_host()) {
-        uint32_t e = spaceext::world_epoch();
-        if (e && e != g_kept_inv_epoch) { // another Space world: the holds kept were of the old one
-            g_kept_inv.clear();
-            g_kept_inv_epoch = e;
-        }
-        for (auto& [n, k] : g_kept_inv) {
-            if (k.id != 0xFF && !partner_here(k.id))
-                k.id = 0xFF, k.restoring = false; // left
-            else if (k.id != 0xFF && k.restoring && now - k.sent > 10.0)
-                send_kept_inv(k.id, k); // no answer (lost, the guest still loading)
-        }
+        g_store.world(spaceext::world_epoch()); // another Space world: the holds kept were of the old one
+        g_store.tick(now, partner_here, [](spacekept::Entry<Inv>& k) { send_kept_inv(k); }); // left; no answer: again
         return;
     }
     g_win.joined(spaceext::in_space(), spaceext::world_epoch());
@@ -1573,8 +1533,8 @@ static void inv_tick(double now)
     spaceext::send(K_INV, w);
 }
 
-// the host's side of K_INV / K_INV_DONE (decoded), C5 path
-static void inv_host_s(uint8_t kind, uint8_t origin, net::Reader& r)
+// the host's side of K_INV / K_INV_DONE
+static void inv_host(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     std::string key = spaceext::kept_key(origin);
     if (key.empty() || key == "?")
@@ -1590,7 +1550,7 @@ static void inv_host_s(uint8_t kind, uint8_t origin, net::Reader& r)
         return;
     auto& k = g_store.bind(key, origin, spaceext::name_of(origin), false); // its first hold since it joined: bound
     if (m.fresh && k.have && g_keep_items_fix) { // the host's copy: its own goes back
-        send_kept_inv_s(k);
+        send_kept_inv(k);
         return;
     }
     if (m.fresh) { // nothing kept (a first join): the guest keeps the save's hold, no restore to wait for
@@ -1608,51 +1568,9 @@ static void inv_host_s(uint8_t kind, uint8_t origin, net::Reader& r)
 
 static void inv_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
-    if ((kind == K_INV || kind == K_INV_DONE) && spaceext::kept_store()) {
-        if (spaceext::is_host())
-            inv_host_s(kind, origin, r);
-        return;
-    }
     if (kind == K_INV || kind == K_INV_DONE) {
-        tw::Head h;
-        h.read(r);
-        uint32_t id = h.id;
-        if (!spaceext::is_host())
-            return;
-        std::string key = spaceext::kept_key(origin);
-        if (key.empty() || key == "?")
-            return;
-        KeptInv& k = g_kept_inv[key];
-        k.name = spaceext::name_of(origin);
-        if (kind == K_INV_DONE) {
-            if (k.restoring && k.id == origin && id == k.serial) {
-                k.restoring = false;
-                g_inv_done++;
-            }
-            return;
-        }
-        bool fresh = r.u8() != 0;
-        Inv v;
-        if (!get_inv(r, v))
-            return;
-        if (k.id != origin) // its first hold since it joined
-            k.id = origin, k.restoring = false;
-        if (fresh && k.have && g_keep_items_fix) { // the host's copy: its own goes back
-            send_kept_inv(origin, k);
-            return;
-        }
-        if (fresh) { // nothing kept (a first join): the guest keeps the save's hold, no restore to wait for
-            net::Writer w;
-            w.u8(origin);
-            w.u32(0);
-            w.u8(0);
-            spaceext::send(K_INV_KEPT, w);
-        }
-        if (k.restoring)
-            return; // the old copy, sent before it got its own back
-        k.inv = std::move(v);
-        k.have = true;
-        g_inv_holds++;
+        if (spaceext::is_host())
+            inv_host(kind, origin, r);
         return;
     }
     // K_INV_KEPT, for me
@@ -1707,8 +1625,6 @@ static void inv_session_end()
     g_inv_last.clear();
     g_inv_next = 0;
     g_store.session_end();
-    for (auto& [n, k] : g_kept_inv)
-        k.id = 0xFF, k.restoring = false;
 }
 
 static std::string inv_text(const Inv& v)
@@ -1732,21 +1648,13 @@ static std::string inv_status()
     snprintf(b, sizeof b,
              "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
              "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u own_save_held=%u\n",
-             (int)g_keep_items_fix, (unsigned)(spaceext::kept_store() ? g_store.size() : g_kept_inv.size()), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
+             (int)g_keep_items_fix, (unsigned)g_store.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
              g_inv_failed, g_inv_removed, g_win.join, g_win.applied, spaceext::world_epoch(), g_inv_slots_removed,
              g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held);
     s += b;
-    if (spaceext::kept_store()) {
-        for (auto& [n, k] : g_store.entries()) {
-            snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(),
-                     k.id == spacekept::kNoId ? -1 : k.id, (int)k.have, (int)k.restoring, (unsigned)k.value.items.size(), k.value.slots);
-            s += b;
-        }
-        return s;
-    }
-    for (auto& [n, k] : g_kept_inv) {
-        snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(), k.id == 0xFF ? -1 : k.id,
-                 (int)k.have, (int)k.restoring, (unsigned)k.inv.items.size(), k.inv.slots);
+    for (auto& [n, k] : g_store.entries()) {
+        snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(),
+                 k.id == spacekept::kNoId ? -1 : k.id, (int)k.have, (int)k.restoring, (unsigned)k.value.items.size(), k.value.slots);
         s += b;
     }
     return s;

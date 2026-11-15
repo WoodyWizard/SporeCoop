@@ -285,9 +285,16 @@ static void test_space_trade()
         b.inv = inv;
         b.inv.items[0].ammo = -2;
         rejects<t::InvMsg>("trade K_INV ammo below -1", enc(b));
-        net::Writer many;
+        net::Writer many; // 251 whole items (the writer cuts at 250)
         many.u8(0); many.u32(3); many.u8(1); many.u16(0); many.u16(251);
+        for (int i = 0; i < 251; i++) {
+            many.u8(2);
+            for (uint32_t k : key.v) many.u32(k);
+            many.u32(1); many.u32((uint32_t)-1);
+        }
         rejects<t::InvMsg>("trade K_INV 251 items", many.data);
+        many.data[8] = 250; // the same, 250 items: one item's bytes left over
+        accepts<t::InvMsg>("trade K_INV 250 items", many.data);
     }
     t::InvKept ik;
     ik.to = 1; ik.id = 4; ik.have = true; ik.inv = inv;
@@ -344,6 +351,12 @@ static void test_space_badges()
         b::Table bad = tb;
         bad.b.badge[0].second = 17;
         rejects<b::Table>("badges K_BADGES state 17", enc(bad));
+        net::Writer many; // 1001 whole counter entries (the writer cuts at 1000)
+        many.u8(0); many.u32(5); many.u8(1);
+        many.u16(0); many.u16(0); many.u16(1001);
+        for (int i = 0; i < 1001; i++) { many.u32((uint32_t)i); many.u32(1); }
+        many.u32(0);
+        rejects<b::Table>("badges K_BADGES 1001 counters", many.data);
     }
     b::Kept kp;
     kp.to = 1; kp.serial = 6; kp.have = true; kp.b = t;

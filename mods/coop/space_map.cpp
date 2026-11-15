@@ -435,11 +435,9 @@ static spacekept::RestoreWindow g_win;                      // C5, guest: the Sp
 // BUG-0195 (kept colonies, below): the guest's side
 static std::vector<uint32_t> g_restore;    // guest: the host's list, still to apply
 static bool g_restore_on;
-// guest: the Space world when it joined. The host's list arrives with the guest's first roster, which may
-// come from the guest's own world before the host's arrives (lab 20261104-100007: applied there, lost with
+// guest (g_win.join): the Space world when it joined. The host's list arrives with the guest's first roster, which
+// may come from the guest's own world before the host's arrives (lab 20261104-100007: applied there, lost with
 // the load): it is applied once a world was loaded since the join (the host shares its world on every join)
-static uint32_t g_join_epoch;
-static bool g_join_seen;
 
 static void roster_end()
 {
@@ -452,8 +450,7 @@ static void roster_end()
     g_last_bytes.clear();
     g_requested = false;
     g_force_send = false;
-    g_join_seen = false; // BUG-0195: the next session's join
-    g_win.session_end();
+    g_win.session_end(); // BUG-0195: the next session's join
     g_restore.clear();
     g_restore_on = false;
     for (uint8_t id : ids)
@@ -465,7 +462,7 @@ static void roster_end()
 // running game, and a guest that leaves and joins again loads the host's world without it (the host
 // shows it meanwhile as a city of the guest's mirror empire, space_allies.cpp, undone before every
 // save). The host keeps each guest's own colonies (its roster's colonies that are not the host's) by
-// the player's name for the Space world it plays (world_epoch); when that player joins again the
+// the player's key (space_kept.h) for the Space world it plays (world_epoch); when that player joins again the
 // host sends them (K_KEPT) and the guest makes each one a record-level colony of its own empire
 // (spaceext::colonize_own) before it answers (K_KEPT_DONE with the planets it could not take: a star
 // of another empire now). Until that answer the host does not take the guest's roster for the list
@@ -474,15 +471,7 @@ static void roster_end()
 // `coop.fix space.keep_colonies off`: nothing kept, the colonies are gone after the rejoin (0.7.5).
 static bool g_keep_fix = true;
 COOP_FIX("space.keep_colonies", "BUG-0195", g_keep_fix, "space: a guest's own colonies come back when it rejoins (the host keeps them)");
-struct Kept {
-    std::vector<uint32_t> planets;
-    std::string name;       // its session name when last seen (status only; the map's key is spaceext::kept_key)
-    uint8_t id = 0xFF;      // the session id it has now, 0xFF = not here
-    bool restoring = false; // sent, no answer yet
-    double sent = 0;
-};
-static std::map<std::string, Kept> g_kept; // host: player key (spaceext::kept_key, BUG-1107) -> its own colonies
-static uint32_t g_kept_epoch;
+// The host's list per player key (spaceext::kept_key, BUG-1107) is g_store (space_kept.h, C5).
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
 // BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
 // and the newcomer gets the lowest free id: the same one. kept_tick never saw the player missing, k.id stayed, and
@@ -494,167 +483,13 @@ COOP_FIX("space.kept_leave", "BUG-0810", g_kept_leave_fix,
 static uint32_t g_kept_left;
 PLAYER_STATE("space_map_kept",
              [](uint8_t id) {
-                 if (!g_kept_leave_fix)
-                     return;
-                 if (spaceext::kept_store()) {
+                 if (g_kept_leave_fix)
                      g_kept_left += (uint32_t)g_store.leave(id);
-                     return;
-                 }
-                 for (auto& [n, k] : g_kept)
-                     if (k.id == id) {
-                         k.id = 0xFF;
-                         k.restoring = false;
-                         g_kept_left++;
-                     }
              },
-             [](uint8_t id) -> size_t {
-                 if (spaceext::kept_store())
-                     return g_store.bound(id);
-                 size_t n = 0;
-                 for (auto& [nm, k] : g_kept)
-                     n += k.id == id;
-                 return n;
-             });
+             [](uint8_t id) -> size_t { return g_store.bound(id); });
 
-static void send_kept(uint8_t id, Kept& k)
-{
-    net::Writer w;
-    w.u8(id);
-    uint8_t n = (uint8_t)std::min<size_t>(k.planets.size(), 200);
-    w.u8(n);
-    for (uint8_t i = 0; i < n; i++)
-        w.u32(k.planets[i]);
-    spaceext::send(K_KEPT, w);
-    k.restoring = true;
-    k.sent = H->time_seconds();
-    g_kept_sent++;
-    H->log(M, SK_INFO, "space map: %u own colonies of %s sent back to it (BUG-0195)", (unsigned)n,
-           spaceext::name_of(id).c_str());
-}
-
-static void kept_roster_s(uint8_t id);
-static void kept_roster(uint8_t id)
-{
-    if (spaceext::kept_store())
-        return kept_roster_s(id);
-    if (!g_keep_fix || !spaceext::is_host() || id == spaceext::my_id() || !roster_of(spaceext::my_id()))
-        return;
-    std::string key = spaceext::kept_key(id);
-    if (key.empty())
-        return;
-    Kept& k = g_kept[key];
-    k.name = spaceext::name_of(id);
-    if (k.id != id) { // this player's first roster since it joined: its colonies back first
-        for (auto& [n, o] : g_kept)
-            if (o.id == id)
-                o.id = 0xFF;
-        k.id = id;
-        k.restoring = false;
-        if (!k.planets.empty()) {
-            send_kept(id, k);
-            return;
-        }
-    }
-    if (k.restoring)
-        return;
-    std::vector<uint32_t> own;
-    for (auto& c : g_rosters[id].colonies)
-        if (!c.home && own_colony(id, c))
-            own.push_back(c.planet);
-    k.planets = std::move(own);
-}
-
-static void kept_tick_s(double now);
-static void kept_tick(double now)
-{
-    if (spaceext::kept_store())
-        return kept_tick_s(now);
-    if (spaceext::is_host()) {
-        uint32_t e = spaceext::world_epoch();
-        if (e && e != g_kept_epoch) { // another Space world: its players' colonies are not this one's
-            g_kept.clear();
-            g_kept_epoch = e;
-        }
-        std::set<uint8_t> here;
-        for (auto& p : spaceext::ctx().sess->players())
-            here.insert(p.id);
-        for (auto& [n, k] : g_kept) {
-            if (k.id != 0xFF && !here.count(k.id))
-                k.id = 0xFF, k.restoring = false; // left
-            else if (k.id != 0xFF && k.restoring && now - k.sent > 10.0)
-                send_kept(k.id, k); // no answer (a lost message, the guest still loading)
-        }
-        return;
-    }
-    if (!g_join_seen) {
-        g_join_seen = true;
-        g_join_epoch = spaceext::in_space() ? spaceext::world_epoch() : 0;
-    }
-    if (!g_restore_on || !spaceext::in_space() || spaceext::world_epoch() == g_join_epoch)
-        return;
-    std::vector<uint32_t> failed, wait;
-    for (uint32_t p : g_restore) {
-        std::string why = spaceext::colonize_own(p);
-        if (why == "wait")
-            wait.push_back(p);
-        else if (!why.empty()) {
-            failed.push_back(p);
-            g_restore_failed++;
-            H->log(M, SK_WARN, "space map: kept colony %08X can not be mine again: %s", p, why.c_str());
-        } else
-            g_restored++;
-    }
-    g_restore = std::move(wait);
-    if (!g_restore.empty())
-        return;
-    g_restore_on = false;
-    net::Writer w;
-    w.u8((uint8_t)failed.size());
-    for (uint32_t p : failed)
-        w.u32(p);
-    spaceext::send(K_KEPT_DONE, w);
-    g_force_send = true; // the roster with them, at once
-    if (g_restored)
-        spaceext::notice(spaceext::tr("Your colonies are back in your empire.", "Ваши колонии снова в вашей империи."));
-}
-
-static void on_kept_s(uint8_t origin, net::Reader& r, bool done);
-static void on_kept(uint8_t origin, net::Reader& r, bool done)
-{
-    if (spaceext::kept_store())
-        return on_kept_s(origin, r, done);
-    if (done) {
-        if (!spaceext::is_host())
-            return;
-        uint8_t n = r.u8();
-        std::set<uint32_t> failed;
-        for (uint8_t i = 0; i < n && r.ok(); i++)
-            failed.insert(r.u32());
-        for (auto& [name, k] : g_kept)
-            if (k.id == origin && k.restoring) {
-                k.restoring = false;
-                k.planets.erase(std::remove_if(k.planets.begin(), k.planets.end(),
-                                               [&](uint32_t p) { return failed.count(p) != 0; }),
-                                k.planets.end());
-                g_kept_done++;
-            }
-        return;
-    }
-    uint8_t target = r.u8(), n = r.u8();
-    if (!r.ok() || target != spaceext::my_id() || spaceext::is_host())
-        return;
-    (void)origin;
-    std::vector<uint32_t> v;
-    for (uint8_t i = 0; i < n && r.ok(); i++)
-        v.push_back(r.u32());
-    if (!r.ok())
-        return;
-    g_restore = std::move(v);
-    g_restore_on = true;
-}
-
-// ---- C5: the same through space_kept.h (`coop.fix space.kept_store`; the paths above go once the lab passed) ----
-static void send_kept_s(spacekept::Entry<std::vector<uint32_t>>& k)
+// ---- the host keeps them in g_store, the guest restores in the window of g_win (space_kept.h, C5) ----
+static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k)
 {
     wire::space_map::Kept m;
     m.to = k.id;
@@ -668,7 +503,7 @@ static void send_kept_s(spacekept::Entry<std::vector<uint32_t>>& k)
            spaceext::name_of(k.id).c_str());
 }
 
-static void kept_roster_s(uint8_t id)
+static void kept_roster(uint8_t id)
 {
     if (!g_keep_fix || !spaceext::is_host() || id == spaceext::my_id() || !roster_of(spaceext::my_id()))
         return;
@@ -678,7 +513,7 @@ static void kept_roster_s(uint8_t id)
     bool first = false;
     auto& k = g_store.bind(key, id, spaceext::name_of(id), true, &first);
     if (first && !k.value.empty()) { // this player's first roster since it joined: its colonies back first
-        send_kept_s(k);
+        send_kept(k);
         return;
     }
     if (k.restoring)
@@ -690,7 +525,7 @@ static void kept_roster_s(uint8_t id)
     g_store.keep(k, std::move(own));
 }
 
-static void kept_tick_s(double now)
+static void kept_tick(double now)
 {
     if (spaceext::is_host()) {
         g_store.world(spaceext::world_epoch()); // another Space world: its players' colonies are not this one's
@@ -698,7 +533,7 @@ static void kept_tick_s(double now)
         for (auto& p : spaceext::ctx().sess->players())
             here.insert(p.id);
         g_store.tick(now, [&](uint8_t id) { return here.count(id) != 0; },
-                     [](spacekept::Entry<std::vector<uint32_t>>& k) { send_kept_s(k); }); // no answer: again
+                     [](spacekept::Entry<std::vector<uint32_t>>& k) { send_kept(k); }); // no answer: again
         return;
     }
     g_win.joined(spaceext::in_space(), spaceext::world_epoch());
@@ -730,7 +565,7 @@ static void kept_tick_s(double now)
         spaceext::notice(spaceext::tr("Your colonies are back in your empire.", "Ваши колонии снова в вашей империи."));
 }
 
-static void on_kept_s(uint8_t origin, net::Reader& r, bool done)
+static void on_kept(uint8_t origin, net::Reader& r, bool done)
 {
     if (done) {
         wire::space_map::KeptDone d;
@@ -750,11 +585,11 @@ static void on_kept_s(uint8_t origin, net::Reader& r, bool done)
     g_restore_on = true;
 }
 
-static std::string kept_status_s()
+static std::string kept_status()
 {
     std::string s;
     char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u store=1\n", (int)g_keep_fix,
+    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u\n", (int)g_keep_fix,
              (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
              g_kept_left);
     s += b;
@@ -763,29 +598,6 @@ static std::string kept_status_s()
                  (int)k.restoring, (unsigned)k.value.size());
         s += b;
         for (uint32_t p : k.value) {
-            snprintf(b, sizeof b, " %08X", p);
-            s += b;
-        }
-        s += "\n";
-    }
-    return s;
-}
-
-static std::string kept_status()
-{
-    if (spaceext::kept_store())
-        return kept_status_s();
-    std::string s;
-    char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u\n", (int)g_keep_fix,
-             (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
-             g_kept_left);
-    s += b;
-    for (auto& [n, k] : g_kept) {
-        snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", k.name.c_str(), k.id == 0xFF ? -1 : k.id,
-                 (int)k.restoring, (unsigned)k.planets.size());
-        s += b;
-        for (uint32_t p : k.planets) {
             snprintf(b, sizeof b, " %08X", p);
             s += b;
         }

@@ -8,7 +8,7 @@
 // host's save, so a guest that left and joined again (or loaded the host's world again) got the host's badges,
 // counters and rank: the same class as the cargo hold (BUG-0678, space_trade.cpp K_INV).
 // The same scheme as the hold: the guest sends its badge tables to the host when they change (K_BADGES; the first
-// one of every Space world loaded from the host is marked fresh). The host keeps the last one per player name for the
+// one of every Space world loaded from the host is marked fresh). The host keeps the last one per player key (space_kept.h) for the
 // Space world it plays; a fresh table of a player it kept one for is the host's copy: the kept one goes back
 // (K_BADGES_KEPT, resent after 10 s until K_BADGES_DONE) and the guest's game gets it written into its manager the
 // way the game's own Read does (the maps freed and filled again by their operator[]), then a progress refresh. (No
@@ -138,19 +138,9 @@ static int rank()
     return m ? thiscall<int>(a_Rank, m) : -1;
 }
 
-// ---- host: the badges kept per player (spaceext::kept_key: its rejoin token, BUG-1107) ----
-struct Kept {
-    Badges b;
-    std::string name; // its session name when last seen (status only; the map's key is spaceext::kept_key, BUG-1107)
-    bool have = false;
-    uint8_t id = 0xFF;
-    bool restoring = false;
-    uint32_t serial = 0;
-    double sent = 0;
-};
-static std::map<std::string, Kept> g_kept;
-static uint32_t g_kept_epoch, g_serial, g_tables, g_sent_back, g_done;
-static spacekept::KeptStore<Badges> g_store; // C5: the same through space_kept.h (`coop.fix space.kept_store`)
+// ---- host: the badges kept per player (spaceext::kept_key: its rejoin token, BUG-1107), space_kept.h (C5) ----
+static uint32_t g_tables, g_sent_back, g_done;
+static spacekept::KeptStore<Badges> g_store;
 // ---- guest: the Space world of its join, the fresh and restored worlds (C5: space_kept.h) ----
 static spacekept::RestoreWindow g_win;
 static uint32_t g_sent, g_restored, g_own_held;
@@ -172,25 +162,8 @@ static bool partner_here(uint8_t id)
 
 static bool own_save() { return own_world::space_other(); } // BUG-0816: a Space save of the guest's own
 
-static void send_kept(uint8_t id, Kept& k)
-{
-    bw::Kept m;
-    m.to = id;
-    m.serial = k.serial = ++g_serial;
-    m.have = true;
-    m.b = k.b;
-    net::Writer w;
-    m.write(w);
-    spaceext::send(K_BADGES_KEPT, w);
-    k.restoring = true;
-    k.sent = H->time_seconds();
-    g_sent_back++;
-    H->log(M, SK_INFO, "badges: the own badges of %s (%u badges, %u counters) sent back to it (BUG-0786)",
-           spaceext::name_of(id).c_str(), (unsigned)k.b.badge.size(), (unsigned)k.b.event.size());
-}
-
-// C5: the host's side through space_kept.h
-static void send_kept_s(spacekept::Entry<Badges>& k)
+// the host's side: space_kept.h (C5)
+static void send_kept(spacekept::Entry<Badges>& k)
 {
     bw::Kept m;
     m.to = k.id;
@@ -228,23 +201,9 @@ static void tick(double now)
         return; // off: nothing read, sent or kept (0.7.12)
     if (!spaceext::connected())
         return;
-    if (spaceext::is_host() && spaceext::kept_store()) {
-        g_store.world(spaceext::world_epoch()); // another Space world: the badges kept were of the old one
-        g_store.tick(now, partner_here, [](spacekept::Entry<Badges>& k) { send_kept_s(k); });
-        return;
-    }
     if (spaceext::is_host()) {
-        uint32_t e = spaceext::world_epoch();
-        if (e && e != g_kept_epoch) { // another Space world: the badges kept were of the old one
-            g_kept.clear();
-            g_kept_epoch = e;
-        }
-        for (auto& [n, k] : g_kept) {
-            if (k.id != 0xFF && !partner_here(k.id))
-                k.id = 0xFF, k.restoring = false;
-            else if (k.id != 0xFF && k.restoring && now - k.sent > 10.0)
-                send_kept(k.id, k);
-        }
+        g_store.world(spaceext::world_epoch()); // another Space world: the badges kept were of the old one
+        g_store.tick(now, partner_here, [](spacekept::Entry<Badges>& k) { send_kept(k); });
         return;
     }
     g_win.joined(spaceext::in_space(), spaceext::world_epoch());
@@ -281,8 +240,8 @@ static void tick(double now)
     spaceext::send(K_BADGES, w);
 }
 
-// C5: K_BADGES / K_BADGES_DONE on the host through space_kept.h
-static void host_s(uint8_t kind, uint8_t origin, net::Reader& r)
+// K_BADGES / K_BADGES_DONE on the host
+static void host_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     std::string key = spaceext::kept_key(origin);
     if (key.empty() || key == "?")
@@ -298,7 +257,7 @@ static void host_s(uint8_t kind, uint8_t origin, net::Reader& r)
         return;
     auto& k = g_store.bind(key, origin, spaceext::name_of(origin), false);
     if (m.fresh && k.have && g_fix) { // the host's copy: the player's own go back
-        send_kept_s(k);
+        send_kept(k);
         return;
     }
     if (m.fresh) { // nothing kept (a first join): the save's badges stay
@@ -329,49 +288,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     if (kind == K_BADGES || kind == K_BADGES_DONE) {
         if (!spaceext::is_host() || h.to != 0)
             return;
-        if (spaceext::kept_store())
-            return host_s(kind, origin, r);
-        std::string key = spaceext::kept_key(origin);
-        if (key.empty() || key == "?")
-            return;
-        Kept& k = g_kept[key];
-        const std::string& name = k.name = spaceext::name_of(origin);
-        if (kind == K_BADGES_DONE) {
-            if (k.restoring && k.id == origin && h.serial == k.serial) {
-                k.restoring = false;
-                g_done++;
-            }
-            return;
-        }
-        bw::Table m;
-        if (!m.read(r))
-            return;
-        bool fresh = m.fresh;
-        Badges& b = m.b;
-        if (k.id != origin)
-            k.id = origin, k.restoring = false;
-        if (fresh && k.have && g_fix) { // the host's copy: the player's own go back
-            send_kept(origin, k);
-            return;
-        }
-        if (fresh) { // nothing kept (a first join): the save's badges stay
-            bw::Kept none;
-            none.to = origin;
-            none.serial = 0;
-            none.have = false;
-            net::Writer w;
-            none.write(w);
-            spaceext::send(K_BADGES_KEPT, w);
-        }
-        if (k.restoring)
-            return; // the old copy, sent before it got its own back
-        k.b = std::move(b);
-        k.have = true;
-        g_tables++;
-        H->log(M, SK_INFO, "badges: %s's table kept: %u badges (%u earned), %u counters%s", name.c_str(), (unsigned)k.b.badge.size(),
-               (unsigned)std::count_if(k.b.badge.begin(), k.b.badge.end(), [](auto& x) { return x.second == 1; }),
-               (unsigned)k.b.event.size(), fresh ? " (fresh)" : "");
-        return;
+        return host_message(kind, origin, r);
     }
     if (kind != K_BADGES_KEPT || spaceext::is_host() || h.to != spaceext::my_id())
         return;
@@ -400,8 +317,6 @@ static void on_session_end()
     g_store.session_end();
     g_have_last = false;
     g_next = 0;
-    for (auto& [n, k] : g_kept)
-        k.id = 0xFF, k.restoring = false;
 }
 
 static std::string status()
@@ -409,7 +324,7 @@ static std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "badges: fix=%d rank=%d kept=%u tables=%u sent_back=%u done=%u | guest sent=%u restored=%u own_save=%u",
-             (int)g_fix, rank(), (unsigned)(spaceext::kept_store() ? g_store.size() : g_kept.size()), g_tables, g_sent_back, g_done, g_sent, g_restored, g_own_held);
+             (int)g_fix, rank(), (unsigned)g_store.size(), g_tables, g_sent_back, g_done, g_sent, g_restored, g_own_held);
     return b;
 }
 
@@ -434,16 +349,8 @@ static std::string debug(const std::vector<std::string>& a)
     std::string s = status() + "\n";
     char b[96];
     if (a.size() >= 1 && a[0] == "kept") {
-        if (spaceext::kept_store()) {
-            for (auto& [n, k] : g_store.entries()) {
-                snprintf(b, sizeof b, "kept %s: %u badges, id %u, restoring %d\n", k.name.c_str(), (unsigned)k.value.badge.size(),
-                         k.id, (int)k.restoring);
-                s += b;
-            }
-            return s;
-        }
-        for (auto& [n, k] : g_kept) {
-            snprintf(b, sizeof b, "kept %s: %u badges, id %u, restoring %d\n", k.name.c_str(), (unsigned)k.b.badge.size(), k.id,
+        for (auto& [n, k] : g_store.entries()) {
+            snprintf(b, sizeof b, "kept %s: %u badges, id %u, restoring %d\n", k.name.c_str(), (unsigned)k.value.badge.size(), k.id,
                      (int)k.restoring);
             s += b;
         }

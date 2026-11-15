@@ -51,10 +51,6 @@ std::string kept_key(uint8_t id)
     }
     return C->sess->player_key(id);
 }
-static bool g_kept_store_fix = true;
-COOP_FIX("space.kept_store", "BUG-1132", g_kept_store_fix,
-         "space: a rejoiner's kept colonies, hold, badges and budget go through one store (C5), not four hand-built paths");
-bool kept_store() { return g_kept_store_fix; }
 static bool g_away;
 bool away() { return g_away; }
 void set_away(bool on) { g_away = on; }

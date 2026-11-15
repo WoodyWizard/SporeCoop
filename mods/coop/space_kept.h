@@ -1,7 +1,7 @@
 // The state the host keeps for a Space guest across its rejoin (C5 of docs/plan-0.7.15.md, audit NET-1): one store
 // and one restore window for the four features that keep something (space_map: own colonies, BUG-0195; space_trade:
 // the cargo hold, BUG-0678; space_badges: badges and rank, BUG-0786; space_rivalry: the Rivals budget, BUG-1029).
-// Portable (no game, no session): tests/space_tests.cpp runs the state machine. docs/09-coop-design.md#design-kept-store.
+// Portable (no game, no session): tests/space_tests.cpp runs the state machine. docs/01-architecture.md#arch-space-kept-store.
 //
 // Every player flies in a copy of the host's save, so what a guest owns only in its own game (a colony it founded, its
 // hold, its badges, its budget) is gone when it rejoins and loads the host's world again. The handshake, the same for

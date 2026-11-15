@@ -206,9 +206,10 @@ involved. `fuzz_decoders --seed S --iters N` runs longer; built with `-DFUZZ_LIB
 Checked that it catches real mistakes: removing the `o + 3 > n` check of the RefPack 3-byte code or
 the `r.left() < len` check of `on_packet` makes it fail with a heap-buffer-overflow.
 
-Not covered: the `on_message` handlers of the game modules (tribe, civ, cell, space ...) read their
-payloads next to game calls and do not build without the game; their common checks live in
-`validate.h` (tests/validate_tests.cpp).
+Not covered: the `on_message` handlers of the Tribe, Civ, Cell and NPC modules read their payloads next to game
+calls and do not build without the game; their common checks live in `validate.h` (tests/validate_tests.cpp). The
+Space features and the shared pools decode into portable structs since 0.7.15 (fuzzed: see
+[wire structs](#netcode-wire-structs)).
 
 Found on the way: `Reader::raw(nullptr, 0)` (an empty payload read into an empty vector's `data()`)
 passed nullptr to memcpy (undefined behaviour, harmless on the compilers we use): it skips the copy
@@ -451,3 +452,54 @@ dropped with a log line (`player N (name) dropped: ...`) and a REJECT that tells
   times, before the peer is removed (its Connection goes with it).
 * Twins: net_tests `test_queue_cap` (`--off queue_cap`: the queue of a guest that stopped reading grows past the cap),
   `test_relay_budget` (`--off relay_budget`: the sender stays), `test_kick`; lab test `kick`.
+
+## Wire structs of the Space features and the shared pools (2026-11-15, feat/w51-space)
+<a id="netcode-wire-structs"></a>
+
+C6 of docs/plan-0.7.15.md (audit NET-4, NET-10, BUG-1133). Every MSG_SPACE kind (49 kinds in 1..87) and the shared
+pools' MSG_RES / MSG_RES_ADD have a payload struct in a portable header, one per feature, with the same
+`write(Writer&)` / `bool read(Reader&)` shape as `protocol.h`:
+
+| Header | Kinds | Structs |
+|---|---|---|
+| `wire/space_core.h` (spacecoop.cpp) | 1..9 | Down, Raid, Mission, Terra / TerraRec, Gift (5, 6), Sculpt, Colour |
+| `wire/space_map.h` | 10..13 | Roster (one part; `head_ok` for the parts bookkeeping of a cut part), RosterReq, Kept, KeptDone |
+| `wire/space_contracts.h` | 20..22 | State (the deadline as seconds from now), Accept, Result |
+| `wire/space_diplomacy.h` | 30..34 | Event, State, Snap (100 events per empire), Ask, Contact |
+| `wire/space_finale.h` | 40..42 | State, Wait, Reached |
+| `wire/space_rivalry.h` | 50..57 | State, Req, Event, Hit, Money, MergeFix, Ask, Set |
+| `wire/space_allies.h` | 60, 61 | Raids (50 at most), Defended |
+| `wire/space_trade.h` | 70..79 | Head {to, id}, Tool, ToolAck, Sell, SellAck, Offer, OfferAck, OfferCancel, InvMsg, InvKept, InvDone |
+| `wire/space_planets.h` | 80, 81 | Spice, SpiceTaken (48 colonies, 16 values: the old cut, quirk included) |
+| `wire/space_badges.h` | 85..87 | Table, Kept, Done |
+| `wire/shared_res.h` (shared.cpp) | MSG_RES, MSG_RES_ADD | Res (optional acks, then optional causes), ResAdd (optional seq) |
+
+Rules (`wire/common.h`): the kind numbers stay in each feature's `enum Kind` (validate_tests reads them there);
+`write` gives the bytes of the hand-written writer it replaced; `read` returns false for what the old parse rejected as
+a whole (cut, a count over its limit, a value no peer sends) and holds no switch-dependent check (those stay in the
+handler: `space.money_range`, `space.gift_refund`); an optional trailing field of an older peer is a `has_x` flag read
+from `r.left()`; trailing bytes are left alone. Handlers decode, check against local state, apply. Inside
+`mods/coop/wire/` includes are relative ("common.h", "../net/buffer.h"): the MinGW build has no `-Imods/coop`.
+
+Proofs: `tests/wire_tests.cpp` (in `make test`, unit-cpp): per kind a fixed value is written and compared with a
+pinned hex string and with the old writer's calls copied verbatim (59 shapes, `wire_tests: N message kinds, ALL OK`),
+read back with nothing left; `rejects()` / `accepts()` pin every refusal and every lenient trailing field.
+`tests/fuzz_decoders.cpp` `fuzz_wire` runs every struct through `fuzz_struct` (round trip, every strict prefix below
+the base rejected, mutations) and lists them in `kWireDecoders` for the libFuzzer build (first byte 12, the second
+picks the struct). MSG_FIELDS (`fields_wire.h`) is in it too (`FieldsPacket`).
+
+Behaviour changes (malformed input only; a SporeCoop peer never sends these):
+
+* K_KEPT_DONE (13) cut inside its list: not used (before: the planets read before the cut were dropped and the
+  restore counted as answered; now the host keeps waiting and sends K_KEPT again after 10 s).
+* K_MERGE_FIX (55) with -2^31: refused (before: `std::abs` of it overflowed and in practice let it through, the host
+  added -2^31 to the merged money).
+* Everything else is refused exactly where the old parse refused it; side effects that ran before a refusal stay
+  (space_finale's peer entry of a cut K_STATE, shared.cpp's ledger steps before a cut ack list, a cut roster part
+  dropping the parts received so far).
+
+libFuzzer (NET-10): `make fuzz [FUZZ_SECONDS=60]` builds the same file with `-DFUZZ_LIBFUZZER
+-fsanitize=fuzzer,address,undefined` (clang) and runs it over `build/host/fuzz-corpus` (kept between local runs);
+a finding is a `crash-*` file in build/host, replayed by `build/host/fuzz_lib <file>`. CI
+(`.github/workflows/fuzz.yml`, actions pinned by SHA, checked by tools/ci_lint.py) runs it 2 minutes on every push and
+pull request and 20 minutes weekly and on demand, and uploads the input of a failure.
