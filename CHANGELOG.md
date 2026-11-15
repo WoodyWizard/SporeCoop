@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Creature: a player who joins while the host is dead no longer arrives dead:
+  their world waits until the host respawns (2 minutes at most), and the host
+  is told someone is joining (BUG-9215).
+- The "-NoShare-" tag is now hidden everywhere a name shows: name tags, Party
+  cards, messages (BUG-9222).
+
 ## [0.7.14.1-lineages57-dev] - 2026-11-15
 
 - Co-op window: even spacing throughout; Stop Hosting / Leave sit bottom right,

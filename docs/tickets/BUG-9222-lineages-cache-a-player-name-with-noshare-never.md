@@ -10,7 +10,7 @@ role: all
 versions: 0.7.14.1-lineages56-dev
 fixed_in: 0.7.14.1-lineages57-dev
 branch: feat/lineages-47
-commits: 79b4806b
+commits: 79b4806b, cd602569
 tests: manual Windows QA: the MSI, two games, tests/text_tests.cpp
 signature:
 docs:
@@ -25,7 +25,7 @@ Not a bug: every player's saved creations were offered to every partner (BUG-911
 
 ## Fix
 - utf8::no_share_name: "-NoShare-" in any case anywhere in the name. The sender offers none of its own creations; a receiver keeps no creation whose direct sender or recorded sharer has the tag (both sides, so an older QA build cannot slip one into a newer owner build). Switch library.no_share; counter no_share_dropped in coop.library status.
-- The tag is not shown in the player list or the joined / left lines (utf8::shown_name: "MSI-NoShare-" shows as "MSI").
+- The tag is not shown anywhere a name is shown: net::Session::name_of and players() give the shown name (utf8::shown_name: "MSI-NoShare-" shows as "MSI"; switch net.shown_names), name_raw_of / players_raw the typed one (the Lineages Cache checks and the WELCOME roster, so every game keeps the tag); the remote players' name tags take the shown name too.
 - A name over 24 letters keeps its tag: the name before it is cut (utf8::player_name). A name typed with a space in a console command ends at the space (coop.join takes one word).
 - QA scripts and tools/qa_win/README.md use the tagged names.
 
@@ -36,3 +36,4 @@ no-fail-run: the live exchange was not seen on the MSI (two games, MSICivHost an
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done.
+- 2026-11-15: the tag also hidden on name tags, Party cards and the pack line (seen on TITAN + the MSI).

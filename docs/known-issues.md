@@ -2330,6 +2330,8 @@ Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creatur
 * Reproduce: host loads a save where it dies (Vandh.spo, Vantiegan.spo), a player joins before the host respawns.
 * Known: inferred, the shared world is saved with the host's avatar dead and the joiner takes its place.
 * Ticket: BUG-9215
+* FIXED (2026-11-15, feat/lineages-47, BUG-9215): the joiner's world waits until the host respawned (2 minutes at
+  most) and the host is told to respawn; checked on TITAN + the MSI.
 
 ## Party: the host's picture is blank on a guest's Party card (2026-11-15, overnight tour)
 <a id="issue-host-party-picture"></a>
@@ -3670,6 +3672,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (2026-11-13, fix/w49-tctl2; `tribe.foreign_note`, test tribe_foreign_click) **BUG-1087** (Tribe, guest): a
   click on another player's member or its roster card selected nothing and said nothing (the split of the player tribe
   is by design). Reproduce: Tribe, two players, the guest clicks a host member.
+* UPDATE (2026-11-15, Lineages): BUG-1068 is fixed upstream in 0.7.14; Lineages has it since 56-dev (the 0.7.14.1 merge).
+
 ## Cell: a level down removes more of the cells round a partner than round the host in the host's game (2026-11-13, fix/w49-cell2 test)
 <a id="issue-cell-first-down-partner"></a>
 
@@ -3818,6 +3822,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   slot cleared without a Resume by the next start). Next hit: the net's log line names the reason; with
   `coop.pauses trace` on the guest also its caller.
 * Ticket: [BUG-1101](tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
+* UPDATE (2026-11-15, Lineages): upstream's BUG-1101 net (0.7.14) is in Lineages since 56-dev: the stand lasts about
+  20 s, not the stage. Not reproduced in Lineages.
 
 ## Tribe: a partner's member 1.0-1.5 m under the host's ground for 10-20 s (2026-11-14, final check 0.7.14)
 <a id="issue-tribe-member-under-host"></a>

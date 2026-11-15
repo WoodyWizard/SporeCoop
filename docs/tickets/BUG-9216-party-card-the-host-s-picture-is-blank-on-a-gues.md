@@ -31,3 +31,4 @@ no-fail-run: open, not fixed yet
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: seen again with the MSI hosting a copied save (no PNG in its My Creations). A host who made its creature in the editor has the PNG; kept open as a test-profile gap (a fallback picture would need the game's thumbnail renderer).
