@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner 2026-11-15 (decision 4I A)
 role: all
 versions: 0.7.14.1-lineages56-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages57-dev
 branch: feat/lineages-47
 commits: 6e8f678e
 tests: manual Windows QA: the MSI, two games (host MSICivHost, guest MSIGuest), Abber.spo

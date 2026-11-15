@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner 2026-11-15
 role: all
 versions: 0.7.14.1-lineages56-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages57-dev
 branch: feat/lineages-47
 commits: 79b4806b
 tests: manual Windows QA: the MSI, two games

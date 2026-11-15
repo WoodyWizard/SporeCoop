@@ -4,7 +4,7 @@
 
 Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/SporeCoop) for a co-op campaign where every player evolves their own species in one shared Spore world, from the tide pool to the galaxy. It is built on upstream SporeCoop 0.7.14.1 and keeps its crash guards, network code and tools.
 
-**Current build:** `0.7.14.1-lineages56-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
+**Current build:** `0.7.14.1-lineages57-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
 
 ## What Lineages adds
 
@@ -23,7 +23,7 @@ Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading sc
 - Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
 - Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
 
-<details><summary>Build history (41-dev to 56-dev)</summary>
+<details><summary>Build history (41-dev to 57-dev)</summary>
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
@@ -45,6 +45,7 @@ Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), mete
 Done in 52-dev: a connected player with their own custom creature gets their own village and chief again (Tribe, Civilization).
 Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
+Done in 57-dev: a tidier Co-op window (even spacing, Settings in the World & Session box, Stop Hosting bottom right, Copy Server IP, blue page buttons and grey helpers), and "-NoShare-" test names whose creations never reach anyone's Lineages Cache.
 Done in 56-dev: built on upstream SporeCoop 0.7.14.1 (its crash and network fixes, player colours, session settings, problem reports), Creature stage end by the host's vote for the whole party, tidier shared-money notices.
 Done in 55-dev: every partner gets a Party card in their stage's style, Interface Size scales Spore's whole UI, joining shows a loading screen, a new player makes their first creature with the host's start parts before the world loads, shared Adventure and Space enemies, and fixes from the 2026-11-15 play test (naming, nests, Settings, cells shared as creatures).
 

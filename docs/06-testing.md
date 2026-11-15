@@ -8897,6 +8897,7 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   55-dev / 54-dev files restored, with any profile and instance, and with no mods at all (steam_api_orig.dll as
   steam_api.dll: exit code 0 within seconds). Not the free disk space modulo 4 GB (a pad file changing it did not help).
   The MSI (Steam client 1792618285, not updated) started the same 56-dev files fine.
-* Still open: whether the owner's own Steam Spore starts after the update (not tried: the owner's install is theirs).
+* The owner's own Steam Spore starts after the update (the owner, 2026-11-15): the failure is the QA copy's (a copy
+  outside Steam's library), not Spore's. Still open: why.
   Until it is understood, cross-PC tests use the MSI's two games (`msi.ps1 start -Instance 2`, qa target msi2).
 

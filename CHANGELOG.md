@@ -2,13 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages57-dev] - 2026-11-15
+
 - Co-op window: even spacing throughout; Stop Hosting / Leave sit bottom right,
   "Copy Host Address" is now "Copy Server IP" in the row above, and long names
   are cut short instead of running into the stage column (BUG-9221).
 - A player name with "-NoShare-" added (for example "MSI-NoShare-") shares none
   of its creations and none are kept in anyone's Lineages Cache; the tag is
   hidden in the player list. Test games use it (BUG-9222).
-
 - Co-op window: Settings is a button of the World & Session box instead of
   floating above it; the Ask for Reports button is gone (Report Issue already
   asks every player for their report) (decision 4I A, BUG-9219).
