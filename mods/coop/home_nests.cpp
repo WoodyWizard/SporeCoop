@@ -90,6 +90,8 @@ static void* nest_herd_near(void* profile, const net::Vec3& home, float r, net::
 static bool nest_due(uint8_t player, uint64_t waited_ms)
 {
     if (!g_fix || !g_nest_first || !is_host() || !game::in_creature_stage()) return false;
+    // the host on its death screen: no nest is made until it respawns (MSI tour 2026-11-15: a 120 s hold for nothing)
+    if (void* av = game::avatar(); !av || game::is_dead(av)) return false;
     const int seat = party::seat_of_player(player);
     const auto& roster = party::roster();
     // a player who just joined: its creature (and so its seat's species) comes a few seconds after (15 s at most)
