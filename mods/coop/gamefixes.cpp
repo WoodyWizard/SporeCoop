@@ -476,7 +476,7 @@ static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
         }
     }
     g_phys_orig(mgr, dt);
-    game::after_physics(); // BUG-0434 (creature.culled_ground)
+    game::after_physics(); // BUG-0434
 }
 
 // BUG-0719 (class BUG-0432, tests): the fill of the game's fixed object pools every stage uses (the physics
@@ -1124,7 +1124,7 @@ static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
 // the gfx vtable 0x1486F6C, thiscall(any, cUFO*) ret 4) news a cUFOGfx (0xD8 bytes, ctor 0xE993A0), runs its
 // InitFromUfo (vt 0x24), then, outside game mode 0x1654C10, writes GetModel() (vt 0x2C) +4 |= 0x20 without a null
 // check: a read of 0x4 at 0xE99524 when the model world made no model for the ship's key (SetModel keeps none; the
-// game.ufo_model substitute needs a known ship model, which a Creature game has not). Seen on the host when the
+// BUG-0546 substitute needs a known ship model, which a Creature game has not). Seen on the host when the
 // Creature Drama Manager's UFO visit started while the evolution vote held the editor request (lab lanes 2 and 3,
 // whose Sporepedia caches hold UFO summaries only). The gfx's message listener (this = gfx + 0x3C,
 // SporeCoop::UfoGfx_HandleMessage 0xE9A7A0, thiscall(listener, id, data) ret 8) writes GetModel()+0x18 on message

@@ -103,7 +103,7 @@ std::string debug_dash(uint16_t id, float len, float speed, float secs, float wi
                        const net::Vec3* to = nullptr, float vel_k = 1.f); // host (tests, BUG-0305): NPC #id dashes back and forth
 int host_id(void* creature);     // host: net id of an NPC, -1
 int proxy_id(void* creature);    // guest: net id of a proxy, -1
-bool test_hit_now();             // guest: a test's hit (coop.npc hit) is being applied (BUG-0021 social.no_bite)
+bool test_hit_now();             // guest: a test's hit (coop.npc hit) is being applied (BUG-0021)
 int proxy_id_of_ai(void* ai);    // guest: the proxy whose AI block (+0xB4C) this is, -1
 uint32_t ai_lookup_gone();       // BUG-0994 (tests): proxies proxy_id_of_ai skipped as gone
 void set_enabled(bool on);
