@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages55-dev] - 2026-11-15
+
+- Creature: the first creature's editor no longer opens under the galaxy menu's
+  intro bars, which took the clicks meant for the name field. Leaving it
+  without saving brings it back once, then the world loads (BUG-9209).
+- Creature: a joining player's own nest is made before their world is sent, so
+  they no longer load a second time ("Bringing your nest") after spawning
+  (BUG-9210).
+- Settings: the Settings window keeps Spore's own layout, so opening it again
+  after Accept no longer shows the Options buttons over it, and the Borderless
+  button shows its state again. The Interface Size stays within what the
+  screen holds (BUG-9211).
+- Lineages Cache: a creature fresh from the Cell stage is no longer shared
+  while it still carries its cell picture (partners saw a cell as its icon and
+  Sporepedia card) (BUG-9213).
+- Stability: a crash guard (stale stimulus senders, BUG-0456) and the Civ guard
+  that keeps relayed shots from hurting vehicles twice (BUG-0477) were silently
+  off, because two hooks claimed the same game function. Both work again
+  (BUG-9214, from upstream's BUG-0623).
 - Creature: guests making their first creature while the host makes a new world get the host's own start editor
   with the same parts (the host's diet mouth), not the full Creature Creator (decision 3Z B, BUG-9207).
 - Interface Size: checked in every stage and the galaxy menu; editors open at 100 % (BUG-9191). A new world from the

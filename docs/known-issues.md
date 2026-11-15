@@ -2200,3 +2200,44 @@ Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creatur
 * Reproduce: the four-founder launch (profile DuoQAJiffSpaceReady, docs/re/space.md#space-four-founder-launch).
 * Ticket: BUG-9188.
 
+
+## Creature: the first creature's name field does not open on one profile (2026-11-15, owner play test and overnight tour)
+<a id="issue-pregame-name-field"></a>
+
+* What happens: a player joining a world where they have no creature gets the pre-game creature editor; a click on
+  "Name Your Creature" raises the description and tags panel, but the name stays a label (no text box, no dice), so
+  typing goes nowhere and the check says a name is needed.
+* Reproduce: the MSI test PC with its long-used profile MSIGuest, joining TITAN's Vantiegan.spo (no own creature there).
+* Known: the name edit window (control C7CEB1BD) stays hidden. Not the cause (each names fine): a fresh profile on the
+  same PC, TITAN at 1280 x 960, ui_scale=100, the Creepy & Cute pack, a background window, the profile's old
+  SporeCoopportrait packages, Preferences.prop. The in-world editor named fine on the same profile. Since 55-dev a
+  second unsaved exit loads the world (the player is never trapped).
+* Not checked: the profile's EditorSaves and Games contents; the Discord overlay (on the MSI only).
+* Ticket: BUG-9209
+
+## Creature: creatures keep away from a guest (2026-11-15, owner play test)
+<a id="issue-npc-keep-away"></a>
+
+* What happens (owner): walking up to creatures, they moved away at the same speed, so the guest could not attack or
+  impress them.
+* Reproduce: not reproduced twice (Vandh.spo; the owner's Dorger.spo on TITAN): the guest reached 1 m of a standing herd,
+  it did not move, and attacked.
+* Next steps: the next play test with the host's view of the guest's puppet recorded.
+* Ticket: BUG-9212
+
+## Creature: a player who joins while the host is dead arrives dead (2026-11-15, overnight tour)
+<a id="issue-join-host-dead"></a>
+
+* What happens: if the host is on its death screen when a player joins, the player arrives at the host's spot with 0
+  health and sees "You were killed in battle". OK respawns them at their nest.
+* Reproduce: host loads a save where it dies (Vandh.spo, Vantiegan.spo), a player joins before the host respawns.
+* Known: inferred, the shared world is saved with the host's avatar dead and the joiner takes its place.
+* Ticket: BUG-9215
+
+## Party: the host's picture is blank on a guest's Party card (2026-11-15, overnight tour)
+<a id="issue-host-party-picture"></a>
+
+* What happens: in Cell, Tribe and Civ the guest's card of the host shows no picture (Creature showed it).
+* Known: the host sends its picture only when its creature has a PNG in its own My Creations; the QA host profiles were
+  made from copied saves. Probably a test-profile gap.
+* Ticket: BUG-9216
