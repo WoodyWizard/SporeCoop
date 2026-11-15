@@ -156,6 +156,10 @@ COOP_FIX("ui.polish", "BUG-9117", g_label_width_fix, "ui: the co-op window's lab
 // wider colour column. Off: the 0.7.12 pre-release layout.
 static bool g_layout_fix = true;
 COOP_FIX("core.ui_layout", "BUG-0905", g_layout_fix, "ui: labels fitted by the glyphs' widths, short Settings caption, room for the colour button");
+// BUG-9218: the own row's colour button (F2) covered the first letter of the own name. On: names start 6 px further
+// right. Off: the merge's layout (0.7.14.1 + Lineages 55-dev).
+static bool g_color_gap_fix = true;
+COOP_FIX("ui.color_gap", "BUG-9218", g_color_gap_fix, "ui: the player list's names start clear of the colour button");
 
 // width of a text in the dialog font (+30: the box's margins), measured at 1080p (the caption widths of the give
 // row, BUG-1062, and the label boxes with ui.polish off)
@@ -1369,7 +1373,9 @@ static void build_dialog()
         // the colour swatch (F2), name and stage from the left, the ping ending at the column's right edge ("103 ms"
         // never wraps)
         D.row_color[i] = add_label(L, {45, y, 67, y + 26}, "", kDim);
-        D.row_name[i] = add_label(L, {69, y, 186, y + 26}, "", kWhite);
+        // BUG-9218: the colour button's pill is drawn a few pixels wider than its area and covered the name's first
+        // letter: the name starts 6 px further right (ui.color_gap)
+        D.row_name[i] = add_label(L, {g_color_gap_fix ? 75.f : 69.f, y, 186, y + 26}, "", kWhite);
         D.row_stage[i] = add_label(L, {189, y, 296, y + 26}, "", kWhite);
         D.row_ping[i] = add_label(L, {298, y, 362, y + 26}, "", kDim, sui::kAlignRight);
         D.row_ready[i] = add_label(L, {364, y, 382, y + 26}, "", kDim, sui::kAlignCenter);

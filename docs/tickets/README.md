@@ -1330,3 +1330,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9214](BUG-9214-two-coop-hooks-fail-with-mh-error-already-create.md) | fixed | bug | Civ | 2026-11-15 | unreleased | Two coop hooks fail with MH_ERROR_ALREADY_CREATED: stale stimulus guard and civ vehicle cosmetic guard off |
 | [BUG-9215](BUG-9215-a-player-who-joins-while-the-host-is-dead-arrive.md) | open | bug | Creature | 2026-11-15 |  | A player who joins while the host is dead arrives dead at the host's spot |
 | [BUG-9216](BUG-9216-party-card-the-host-s-picture-is-blank-on-a-gues.md) | open | bug | All | 2026-11-15 |  | Party card: the host's picture is blank on a guest when the host's creature has no picture in its My Creations |
+| [BUG-9217](BUG-9217-shared-money-notices-stack-up-in-civ-one-per-inc.md) | open | bug | civ | 2026-11-15 |  | Shared money notices stack up in Civ (one per income tick) |
+| [BUG-9218](BUG-9218-co-op-window-the-colour-button-covers-the-first.md) | open | bug | menu | 2026-11-15 |  | Co-op window: the colour button covers the first letter of the own name |

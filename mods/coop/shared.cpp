@@ -217,15 +217,44 @@ static std::function<void(const std::string&)> g_feed;
 static uint32_t g_causes_shown;
 static constexpr double kCauseMin = 25; // a change below it is not said (the cities' income, a single food)
 static const char* label(const Res& r) { return r.id == 1 ? "food" : "money"; }
+static void show_cause(const std::string& name, const char* what, double v)
+{
+    char b[160];
+    snprintf(b, sizeof b, "%s %s %.0f %s (shared)", name.c_str(), v > 0 ? "earned" : "spent", std::fabs(v), what);
+    g_feed(b);
+    g_causes_shown++;
+}
+// BUG-9217: a Civ host's city income arrives every few seconds, each one a notice ("Host earned 40 money (shared)"),
+// and the feed filled with them. On: one player's earnings (and, apart, spendings) of one resource are summed and said
+// at most once per kCauseGap seconds; a change after a quiet gap is said at the next tick. Off: every change at once.
+static bool g_cause_merge_fix = true;
+COOP_FIX("shared.cause_merge", "BUG-9217", g_cause_merge_fix,
+         "shared: a player's money / food changes are summed into one notice every few seconds");
+static constexpr double kCauseGap = 10;
+struct CauseSum { std::string name; const char* what = ""; double v = 0; double last = -1e9; };
+static std::map<uint32_t, CauseSum> g_cause_sums; // key: player << 16 | resource id << 1 | (spent)
 static void say_cause(net::Session& s, const Res& r, uint8_t player, double v)
 {
     if (!g_feed || std::fabs(v) < kCauseMin || player == s.my_id())
         return;
-    char b[160];
-    snprintf(b, sizeof b, "%s %s %.0f %s (shared)", s.name_of(player).c_str(), v > 0 ? "earned" : "spent", std::fabs(v),
-             label(r));
-    g_feed(b);
-    g_causes_shown++;
+    if (!g_cause_merge_fix) {
+        show_cause(s.name_of(player), label(r), v);
+        return;
+    }
+    auto& c = g_cause_sums[(uint32_t)player << 16 | (uint32_t)r.id << 1 | (v < 0 ? 1u : 0u)];
+    c.name = s.name_of(player);
+    c.what = label(r);
+    c.v += v;
+}
+static void flush_causes(double now)
+{
+    for (auto& [key, c] : g_cause_sums)
+        if (c.v != 0 && now - c.last >= kCauseGap) {
+            if (g_feed)
+                show_cause(c.name, c.what, c.v);
+            c.v = 0;
+            c.last = now;
+        }
 }
 // BUG-1009: a guest's change the floor (0) or the money cap cut was counted in full in `applied` and in the guest's
 // cause: the next total's own part (v - synced - applied) then named the difference as the host's earning or spending
@@ -320,7 +349,9 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         mode = modes::kEditor; // tests: an editor visit as the tick sees it
     g_mode = mode;
     g_hold = g_elsewhere_fix && elsewhere && s.role() == net::Role::Client;
+    flush_causes(now);
     if (s.role() == net::Role::None) {
+        g_cause_sums.clear();
         on_session_end(); // nothing changed offline is ever reported to a host (BUG-0049)
         return;
     }
