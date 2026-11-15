@@ -81,9 +81,6 @@ static bool rts_stage() { return game::mode_id() == 0x1654C02 || civ_stage(); }
 // player tribe; a guest looking farther away saw none there (its own are removed by the update
 // filter). Now also those within kRelevance of the guest's view centre (its pointer,
 // view_centres.h); the game keeps them alive there (npc.view_centres_tribe).
-// `coop.fix npc.rts_views off`: around the tribe only (0.7.3.x).
-static bool g_rts_views_fix = true;
-COOP_FIX("npc.rts_views", "BUG-0291", g_rts_views_fix, "tribe: the host sends a guest the animals around the guest's own view too");
 
 // ------------------------------------------------------------------ host side
 struct HostNpc {
@@ -116,19 +113,11 @@ COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 
 // BUG-0305: proxies of animals that run side by side (a herd fleeing a Tribe hunt) push each other off
 // the path on a guest and cannot run faster than the animal: one trailed 2-4 m behind the host's on
 // every guest at once. A proxy more than 1.5 m off for 0.5 s without closing in is put in place.
-// `coop.fix npc.trail off`: the driving before (0.7.3.x).
 // BUG-0281: in the Creature stage a proxy given a MoveTo again and again (the host's NPC runs on) hardly
 // walked (own speed 0-3 m/s while the NPC ran at 4) and our pulls towards the path were undone by its
 // locomotion (5-10 % kept): running NPCs were 3-6 m off on a 15 fps guest. While the host's NPC moves
 // its proxy is now placed on the interpolated host path every frame with the host's velocity (the
 // game animates from it); standing, the driving (walk, nudge, stuck/stall/trail) works as before.
-// `coop.fix npc.kinematic off`: always the driving.
-static bool g_kinematic_fix = true;
-static bool g_kinematic_sync_fix = true;
-COOP_FIX("npc.kinematic_sync", "BUG-0334", g_kinematic_sync_fix, "creature: a running NPC's proxy gets its health, death and impressed flag too");
-COOP_FIX("npc.kinematic", "BUG-0281", g_kinematic_fix, "creature: the proxy of a running NPC follows the host's path exactly");
-static bool g_trail_fix = true;
-COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
 // BUG-0361: npc.kinematic (BUG-0281) teleported a moving NPC's proxy onto the host's path every frame.
 // A teleport (vt 0x44) sets the teleport mark +0xB5D, which restarts the animation's walk gait: the
 // proxies of walking and running NPCs slid over the ground in the idle pose (walk gait on in 4 % of
@@ -137,18 +126,13 @@ COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m o
 // ahead on its path given again only when the direction turns, at most every 0.3 s, at least every
 // 1.5 s) and game::place (teleport, then +0xB5D = 0) puts it on the interpolated path every frame;
 // an error left from standing is closed at kWalkCatchUp faster than the NPC. The end of a walk is
-// a MoveTo to the stop point. `coop.fix npc.walk off`: the teleport of npc.kinematic (0.7.3.3).
-static bool g_walk_fix = true;
-COOP_FIX("npc.walk", "BUG-0361", g_walk_fix, "creature: a walking or running NPC's proxy walks on its path instead of sliding in the idle pose");
+// a MoveTo to the stop point.
 // Tribe: the moving animals' proxies were driven by drive::step (a MoveTo again every 0.1 s, pulls, the
 // stall / trail teleports): in 0.1 s windows of a moving host animal they stood in 4 % and moved at its
 // speed in only 77 %, with 0.8-2.3 m jumps (coop_npc_walk.py, TRACK_FIXTURE=tribe). They are walked and
 // placed as in the Creature stage now, at the guest's own ground height (BUG-0329).
-// `coop.fix npc.walk_tribe off`: the driving (0.7.3.3).
 // BUG-0394: an NPC of the host can move without reporting a speed (carried by an animation, a hit): its proxy
-// was driven as standing. `coop.fix npc.path`: off, the proxy walks only with a reported speed.
-static bool g_path_fix = true;
-COOP_FIX("npc.path", "BUG-0394", g_path_fix, "creature, tribe: an NPC's proxy also walks where the NPC moves without a speed (moves carried by an animation)");
+// also walks with the speed of its path.
 // tests (BUG-0394): `coop.npctrack novel 1`: the host's NPC states without their speed (as a move carried by an
 // animation reports none)
 static bool g_npc_novel = false;
@@ -173,24 +157,18 @@ COOP_FIX("npc.proxy_ground_creature", "BUG-0752", g_proxy_ground_creature, "crea
 // `coop.fix npc.walk_ground off`: on the host's path exactly.
 static bool g_walk_ground_fix = true;
 COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking NPC's proxy is placed onto the ground, so it does not keep starting to fall downhill");
-static bool g_walk_tribe_fix = true;
-COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
 // BUG-0503: walk_place closes a proxy's error at (speed + catch_up) x the frame time, the frame time capped at
 // WalkPlace::max_dt (0.1 s). A guest at 3-5 fps (0.2-0.5 s frames under load, or a weak PC) closed 0.7 m per frame
 // of a host NPC that walked 1-2 m: the placed proxy fell 0.2-0.4 m further behind every frame, 3-8 m off for 2-11 s
 // until the NPC stood (the monitor's `proxies` rule in play_tribe / long_tribe). The Tribe mirrors take 0.4
-// (BUG-0365); `coop.fix npc.proxy_slow_frames off`: 0.1 as before. BUG-0590: the Creature stage's proxies lagged the
+// (BUG-0365): a proxy's cap is 0.4 s too (BUG-0503). BUG-0590: the Creature stage's proxies lagged the
 // same way (4 fps guest: 2.5-5.9 s over 3 m, placed p90 2.7-3.6 m): the same cap on every stage.
-static bool g_proxy_slow_frames_fix = true;
-COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
-         "creature / tribe: an animal's proxy keeps up with the host's animal on a guest at a low frame rate");
 // BUG-0550 / BUG-0425: an NPC off its ground on the host (a flier 9-14 m up, a jump, thrown by a hit: the game's
 // grounded byte +0x137 = 0) was drawn on the ground on a guest (sync-check `n apart` 9-14 m, `want_agl=10.56
-// made_agl=0`): its proxy was walked and the guest's game put the grounded proxy back onto its terrain. With
-// npc.air the host sends NF_AIR and its NPC's height over the host's terrain (the batch's agl trailer) and the
+// made_agl=0`): its proxy was walked and the guest's game put the grounded proxy back onto its terrain. Now
+// the host sends NF_AIR and its NPC's height over the host's terrain (the batch's agl trailer) and the
 // guest places such a proxy at that height over its own terrain, not grounded (drive::air_place, as the partner's
 // puppet in a jump, BUG-0376). On its ground the proxy stays on the guest's ground as before.
-// `coop.fix npc.air off`: no NF_AIR sent, the proxy walked and driven (0.7.7).
 // BUG-0440: an animal proxy placed with the teleport mark every frame (walk_place held: its error grew) was moved back
 // by the guest's game in its update at 6-7 m/s (lab 20261113-191751 chaos_tribe#4: pushed back 6.9 m/s, the teleport
 // itself taken), so it crept at 0-3 m/s 3-8 m behind its walking host animal for seconds (the monitor's proxies gate).
@@ -198,8 +176,6 @@ COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
 // from its target (game::place_hold). `coop.fix npc.proxy_hold off`: placed only (0.7.13).
 static bool g_proxy_hold_fix = true;
 COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
-static bool g_air_fix = true;
-COOP_FIX("npc.air", "BUG-0550", g_air_fix, "creature, tribe: an animal in the air on the host (flying, jumping, thrown) is in the air on the guest too");
 // BUG-1094 (`coop.fix npc.air_catch`): the first placings in the air put a proxy on its target at once: a walked proxy
 // that trailed it 0.9 m stepped 0.94 m in one 15 ms frame at the throw's start, and the lead's target itself leaps
 // 1-1.5 m there (the newest state moved on at the throw's 9 m/s; lab 20261113-235647 #2, 20261114-000525 #3: 1.07 m
@@ -237,18 +213,15 @@ void set_stall_fix(bool on) { g_stall_fix = on; }
 // BUG-0562 (docs/re/creature.md#creature-nest-mound-proxy): a game simulates the creatures far from its own camera
 // without the collision objects (a nest mound): the host's NPC of a nest the host's camera is not at stands on the
 // plain terrain, 0.4-0.7 m inside the mound, and the guest's proxy of it was drawn there, in the nest (the guest's
-// camera is at the nest: its mound is solid, and the game does not lift a creature put that far under). With
-// npc.proxy_mound a standing proxy's target under this game's surface (cPlanetModel_SurfacePoint: the mound) by more
+// camera is at the nest: its mound is solid, and the game does not lift a creature put that far under). Now
+// a standing proxy's target under this game's surface (cPlanetModel_SurfacePoint: the mound) by more
 // than kMoundMin and less than kMoundMax, where that surface is over the plain terrain, is put kMoundSink under the
-// surface (the game sets it onto it). `coop.fix npc.proxy_mound off`: at the host's position (0.7.8).
-static bool g_proxy_mound_fix = true;
-COOP_FIX("npc.proxy_mound", "BUG-0562", g_proxy_mound_fix,
-         "creature: an animal of a nest the host is far from stands on its nest mound on the guest, not inside it");
+// surface (the game sets it onto it).
 static uint32_t g_mound_lifts, g_mound_targets;
 static net::Vec3 proxy_on_mound(const net::Vec3& p)
 {
     constexpr float kMoundMin = 0.1f, kMoundMax = 2.5f, kMoundSink = 0.05f;
-    if (!g_proxy_mound_fix || !game::in_creature_stage())
+    if (!game::in_creature_stage())
         return p;
     float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), sr = game::surface_radius(p), g = game::ground_radius(p);
     if (r < 1.f || sr <= 0.f || g <= 0.f || sr - r <= kMoundMin || sr - r >= kMoundMax || sr <= g + kMoundMin)
@@ -306,9 +279,7 @@ static std::map<uint16_t, Proxy> g_proxies;
 // while the guest was more than 110 m away, killed by another NPC before its proxy was made, a body that lay
 // there when the guest joined): the host's player saw the body, the guest saw nothing. Now the proxy of a body
 // is made too and plays the death where the host's body lies, unless the guest's game had made and removed
-// it already (eaten, decayed). `coop.fix npc.dead_proxy off`: no proxy for a body (0.7.3.3).
-static bool g_dead_proxy_fix = true;
-COOP_FIX("npc.dead_proxy", "BUG-0383", g_dead_proxy_fix, "creature: a guest shows the bodies of NPCs that were dead before it came near");
+// it already (eaten, decayed).
 // BUG-0557 / BUG-0383: eating a body is each game's own act (the eat node 0xD70FD0 takes meat +0xB84 off the body in
 // the eater's game): a body the guest's creature ate stayed whole in the host's game and the host's body (eaten by the
 // host, its pack) stayed whole on the guest; a body eaten out in one game lay there in the other with all its meat
@@ -361,10 +332,6 @@ static double g_last_states_rx = -100; // guest: the last NPC state batch from t
 // 24 of 25 host NPCs 2 s after the brain upgrade caption that followed another caption (transition_net, lab
 // 20261101-145528 of feat/w33-tests-session), and the host, standing still again, counted them as known and
 // sent nothing. Now the 5 s count from when the states flow again (g_states_flow_since).
-// `coop.fix npc.thaw_stale off`: counted from the proxy's last state (0.7.8).
-static bool g_thaw_stale_fix = true;
-COOP_FIX("npc.thaw_stale", "BUG-0611", g_thaw_stale_fix,
-         "creature: a guest keeps the host's NPCs when the host's game goes on after standing still (a caption)");
 static double g_states_flow_since = -100; // guest: the first batch after a time without any
 static uint32_t g_thaw_kept = 0;          // guest: stale drops the thaw rule held back (tests)
 // tests (BUG-0611): `coop.npc rxkeep <n> <s>` (guest): for s seconds each MSG_NPC_STATE batch keeps only its
@@ -414,9 +381,6 @@ bool enabled() { return g_enabled; }
 
 // called from inside the game's creature update loop: keep it cheap
 // BUG-0556: the guest's proxies of a host's summoned flock show the event's hearts as the host's do
-// (`coop.fix npc.flock_hearts off`: no hearts on the guest, 0.7.6)
-static bool g_flock_fx_fix = true;
-COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's summoned flock shows its hearts on the guest's screen too");
 static constexpr uint32_t kFlockFx = 0x6A17B05A;
 static uintptr_t a_StartFx2, a_StopFx;
 
@@ -428,10 +392,6 @@ static uintptr_t a_StartFx2, a_StopFx;
 // was (the away state needs 4 s of the host in its editor), and nothing brought them back. Now the
 // leave hands the proxies over to the guest's game like the host's going away (in the next frame, the
 // same world only), and a guest that mirrors nothing keeps its own NPCs until the host plays its world.
-// `coop.fix npc.leave_locals off`: 0.7.8.
-static bool g_leave_locals_fix = true;
-COOP_FIX("npc.leave_locals", "BUG-0412", g_leave_locals_fix,
-         "creature: a guest that leaves, or joins while the host edits, keeps the creatures of its planet");
 
 static bool update_filter(void* c)
 {
@@ -441,7 +401,7 @@ static bool update_filter(void* c)
         return true;
     if (g_host_away) // the host left the world: the guest plays on alone with its own NPCs
         return true;
-    if (g_leave_locals_fix && g_proxies.empty() && C.host_here && !C.host_here()) // BUG-0412: the host is not here yet
+    if (g_proxies.empty() && C.host_here && !C.host_here()) // BUG-0412: the host is not here yet
         return true;
     if (void* h = game::herd_of(c))
         if (h != game::avatar_herd()) {
@@ -512,9 +472,6 @@ static void* ai_target(void* c)
 // size per individual of the species, and a grown-up's for a young one: babies were shown as alphas).
 // The proxies are one kind of the field replication (fields.h): the host reads every NPC's scale, the
 // guest sets it on its proxy whenever the proxy's own differs (made later, grown by the game).
-// `coop.fix npc.scale off`: proxies keep their own size (0.7.3.6).
-static bool g_scale_fix = true;
-COOP_FIX("npc.scale", "BUG-0461", g_scale_fix, "creature: NPC proxies get the host NPC's size (young ones small)");
 // BUG-0710: the host NPC's maximum health follows it after the spawn (a baby that grows up: 5 -> 10)
 static float read_max_hp(void* c) { return game::max_health(c); }
 static void apply_max_hp(void* c, float v)
@@ -555,9 +512,7 @@ static void* npc_mirror(uint16_t id)
 // while the guest was in another world, a world change on the guest) dropped those states for good: a
 // host NPC near the guest without a proxy, or a proxy whose death / health never came. Now the guest
 // asks the host for the spawn of every id it gets states for and does not know (at most once per id in
-// kResyncEvery s), and the host sends it again. `coop.fix npc.resync off`: states of unknown ids dropped.
-static bool g_resync_fix = true;
-COOP_FIX("npc.resync", "BUG-0487", g_resync_fix, "creature: a guest asks the host again for an NPC it gets states of and has no proxy of");
+// kResyncEvery s), and the host sends it again.
 constexpr double kResyncEvery = 2.0;
 static std::map<uint16_t, double> g_unknown_ids; // guest: id -> when it was asked for last (0: not yet)
 static double g_resync_at = 0;
@@ -566,7 +521,7 @@ static void destroy_proxy(uint16_t id);
 
 static void resync_tick(double now)
 {
-    if (!g_resync_fix || g_unknown_ids.empty() || now - g_resync_at < 0.5)
+    if (g_unknown_ids.empty() || now - g_resync_at < 0.5)
         return;
     g_resync_at = now;
     std::vector<uint16_t> ask;
@@ -646,7 +601,7 @@ std::string debug_gamekill(uint16_t id)
 std::string resync_status()
 {
     char b[200];
-    snprintf(b, sizeof b, "npc resync: fix=%d unknown=%zu asked=%u spawns_resent=%u forgotten=%u\n", g_resync_fix ? 1 : 0,
+    snprintf(b, sizeof b, "npc resync: unknown=%zu asked=%u spawns_resent=%u forgotten=%u\n",
              g_unknown_ids.size(), g_resync_asked, g_resync_sent, g_forgotten);
     return b;
 }
@@ -664,7 +619,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
-    fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
+    fields::add_kind({fields::K_NPC, "npc", nullptr, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
@@ -676,9 +631,6 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 // was made without tuning, so its relation came from the diet / size rule (1, hostile, where the host's NPC
 // had 3). The tuning is a node of that map: its key is the dword before it. The host sends the key after
 // the spawn; the guest gives the proxy the same tuning (SetTuning 0xC0C2E0) when it has another or none.
-// `coop.fix npc.tuning off`: the proxy keeps the tuning its own Create picked.
-static bool g_tuning_fix = true;
-COOP_FIX("npc.tuning", "BUG-0462", g_tuning_fix, "creature: an animal on the guest has the host's archetype (its relation, social game and behaviour data)");
 static uint32_t g_tunings_set = 0, g_tunings_missing = 0, g_puppet_tunings_set = 0; // (puppets: BUG-0722)
 
 static uint32_t tuning_key(void* c)
@@ -696,7 +648,7 @@ static void* tuning_of_key(uint32_t key)
 
 static void proxy_tuning(Proxy& px)
 {
-    if (!g_tuning_fix || !px.c || !px.tuning || px.tuning_set == px.tuning)
+    if (!px.c || !px.tuning || px.tuning_set == px.tuning)
         return;
     px.tuning_set = px.tuning;
     if (tuning_key(px.c) == px.tuning)
@@ -765,7 +717,7 @@ std::string debug_untune(uint16_t id)
 std::string tuning_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u puppets_set=%u epic_steps=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing, g_puppet_tunings_set,
+    snprintf(b, sizeof b, "npc tuning: set=%u missing=%u puppets_set=%u epic_steps=%u\n", g_tunings_set, g_tunings_missing, g_puppet_tunings_set,
              g_epic_steps_set);
     return b;
 }
@@ -779,9 +731,6 @@ std::string tuning_status()
 // mirror the NPC (MSG_NPC_ANIM); the guest plays the same call on the proxy. The proxy's own idle / walk
 // choice stays the game's: cCreatureAnimal::Update asks the idle refresh only when no main animation is left,
 // so a played behaviour animation runs to its end there as on the host (docs/re/creature.md#creature-bt-anims).
-// `coop.fix npc.anims off`: nothing sent, nothing played (0.7.3.4).
-static bool g_anims_fix = true;
-COOP_FIX("npc.anims", "BUG-0464", g_anims_fix, "creature: a guest sees the host's animals eat, look around, fight and answer as on the host");
 struct NpcAnim {
     uint16_t id;
     uint32_t anim;
@@ -798,7 +747,7 @@ static float g_anim_snap_quiet = 1.5f; // guest: no snapshot play this soon afte
 static void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
 {
     tribe::on_behaviour_anim(c, anim, how, a, b); // BUG-0569: a member's (its own checks)
-    if (!g_anims_fix || !is_host() || !npc_stage())
+    if (!is_host() || !npc_stage())
         return;
     auto it = g_host_npcs.find(c);
     if (it == g_host_npcs.end() || it->second.dead)
@@ -875,9 +824,9 @@ std::string anims_status()
     uint32_t seen = 0, idle = 0;
     game::behaviour_anim_counts(&seen, &idle);
     char b[256];
-    snprintf(b, sizeof b, "npc anims: fix=%d seen=%u idle=%u sent=%u dropped=%u rx=%u played=%u noproxy=%u failed=%u "
+    snprintf(b, sizeof b, "npc anims: seen=%u idle=%u sent=%u dropped=%u rx=%u played=%u noproxy=%u failed=%u "
              "snap_sent=%u snap_rx=%u snap_played=%u\n",
-             (int)g_anims_fix, seen, idle, g_anims_sent, g_anims_dropped, g_anims_rx, g_anims_played, g_anims_noproxy,
+             seen, idle, g_anims_sent, g_anims_dropped, g_anims_rx, g_anims_played, g_anims_noproxy,
              g_anims_failed, g_anims_snap_sent, g_anims_snap_rx, g_anims_snap_played);
     return b;
 }
@@ -936,7 +885,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     // is not kept: then its own)
     dash_velocity(id, s.pos, s.vel);
     s.health = game::health(c);
-    s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
+    s.flags = (!game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
               (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
@@ -993,8 +942,6 @@ static void retire(uint16_t id, void* c)
 // host: tracked NPCs that did not update this frame and are no creature in the world any more: freed
 // (not in the noun list) or back in the creature pool (still listed, no herd, at (0 0 0)). Their ids
 // go now. Fields are read only of objects still in the noun list (a freed one may be any memory).
-static bool g_pool_fix = true;
-COOP_FIX("npc.pooled", "BUG-0274", g_pool_fix, "creature: an NPC the game puts back into its pool is despawned at once");
 static uint32_t g_pooled_retired = 0;
 static void retire_pooled()
 {
@@ -1489,12 +1436,10 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
 // BUG-0512: the host's pack (+0xB58 & 0x100) and family (the avatar's herd) take the host's fights as theirs:
 // a partner's puppet the host targeted (a click sets the avatar's +0xE7C to the puppet), or one that got into
 // a pack member's "attacked" stimuli, became the pack's target and the pack chased and bit the partner on both
-// screens (npc.party_peace, BUG-0374, only drops the damage). With npc.pack_spares_partners the host clears, for
+// screens (npc.party_peace, BUG-0374, only drops the damage). Now the host clears, for
 // every pack or family member the game updates, a target (+0xE7C, a combatant: inside the creature) on a
 // partner's puppet with the creature's own SetTarget (vt 0x84, (null, 1, 0): the BUG-0453 guard ends an attack
-// node left without a target) and its stimuli naming the puppet. Off: 0.7.3.6.
-static bool g_pack_spares_fix = true;
-COOP_FIX("npc.pack_spares_partners", "BUG-0512", g_pack_spares_fix, "creature: the host's pack and family never take a partner as their target");
+// node left without a target) and its stimuli naming the puppet.
 static uint32_t g_pack_targets_cleared = 0, g_pack_stimuli_cleared = 0;
 constexpr size_t kTargetOff = 0xE7C, kCreatureSpan = 0x1700;
 
@@ -1508,7 +1453,7 @@ static void* partner_puppet_at(const void* sub)
 
 static void pack_spares_partners(const std::vector<void*>& creatures)
 {
-    if (!g_pack_spares_fix || !game::in_creature_stage() || game::puppets().empty())
+    if (!game::in_creature_stage() || game::puppets().empty())
         return;
     // the pack (cGameNounManager +0x5C..+0x60, it may not be in the update list) and the creatures updated
     std::vector<void*> party;
@@ -1541,10 +1486,6 @@ static void pack_spares_partners(const std::vector<void*>& creatures)
 // Every 0.5 s of a freeze the host now runs the guests' relevance on its tracked NPCs that are still
 // creatures of its world (in the noun list, alive, in a herd, not at the planet's centre): newly near
 // ones are spawned (their state does not change while frozen, the spawn carries it), far ones go.
-// `coop.fix npc.frozen_send off`: nothing sent while frozen (0.7.8).
-static bool g_frozen_send_fix = true;
-COOP_FIX("npc.frozen_send", "BUG-0413", g_frozen_send_fix,
-         "creature: while the host's game stands still (a caption) a guest that moves still gets the host's NPCs near it");
 static double g_frozen_send_at = 0;
 // BUG-0385: a creature of a save made while a partner's puppet existed (untuned, in a herd like ours) is
 // removed by remove_saved_strays once a second; host_tick gave it an NPC id and sent it in the frames
@@ -1571,9 +1512,6 @@ static bool saved_stray(void* c)
            !game::destroy_pending(c) && own_kind_herd(game::herd_of(c));
 }
 static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0, g_frozen_retired = 0;
-static bool g_frozen_pooled_fix = true;
-COOP_FIX("npc.frozen_pooled", "BUG-0339", g_frozen_pooled_fix,
-         "creature: an NPC the host's game takes back into its pool while the game stands still is despawned at the guests");
 // BUG-1089: the same retirement in the Tribe and Civ stages. host_tick returned at once there while the simulation stood
 // (frozen_send is the Creature stage's relevance), so NPCs the host's game took back into its pool during a pause (Civ:
 // its camera moved on, the relevance pass parks the herd at the planet's centre) kept their proxies on every guest
@@ -1593,7 +1531,7 @@ COOP_FIX("npc.frozen_reused", "BUG-1100", g_frozen_reused_fix,
          "an NPC object the game reuses for another creature while the host's game stands is a new NPC at the guests");
 static uint32_t g_frozen_reused;
 // host, frozen: the tracked NPCs that are still creatures of the world in a herd off the planet's centre (with their
-// positions); those that are not (freed, pooled) are retired when npc.frozen_pooled is on
+// positions); those that are not (freed, pooled) are retired (BUG-0339)
 static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
 {
     struct Acc {
@@ -1642,16 +1580,14 @@ static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
     // creature (the host's respawn at its nest with a caption up, lab 20261031-083425 campaign#2): host_tick's
     // retire_pooled does not run then, and they were skipped here, so a guest kept their proxies where
     // they had stood for the whole freeze (no despawn, no states: no stale drop either). They go now.
-    // `coop.fix npc.frozen_pooled off`: kept until the host's game goes on (0.7.8).
-    if (g_frozen_pooled_fix)
-        for (void* c : gone) {
-            auto it = g_host_npcs.find(c);
-            if (it == g_host_npcs.end())
-                continue;
-            retire(it->second.id, c);
-            g_host_npcs.erase(it);
-            g_frozen_retired++;
-        }
+    for (void* c : gone) {
+        auto it = g_host_npcs.find(c);
+        if (it == g_host_npcs.end())
+            continue;
+        retire(it->second.id, c);
+        g_host_npcs.erase(it);
+        g_frozen_retired++;
+    }
     return live;
 }
 static void frozen_send(double now)
@@ -1697,7 +1633,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     // and got them again when the host went on (play_creature.py 2026-10-23)
     if (creatures.empty()) {
         g_frozen_since = g_frozen_since > 0 ? g_frozen_since : now;
-        if (g_frozen_send_fix && !rts && now - g_frozen_since > 0.5) // BUG-0413
+        if (!rts && now - g_frozen_since > 0.5) // BUG-0413
             frozen_send(now);
         else if (rts && g_frozen_pooled_rts_fix && now - g_frozen_since > 0.5 && now - g_frozen_send_at >= 0.5) {
             g_frozen_send_at = now; // BUG-1089: no relevance sends (the RTS stages have none per guest), the pool only
@@ -1772,7 +1708,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     // (0 0 0), no more updates) and the nest spawns it again when it misses a member. It used to keep
     // its id for the 2 s below, so a guest near it kept the proxy where it stood (504 m from the
     // host's object at the planet's centre in the census) and got it again with the next respawn.
-    if (g_pool_fix && g_seen_now.size() < g_host_npcs.size())
+    if (g_seen_now.size() < g_host_npcs.size())
         retire_pooled();
     if (g_ntrack_on) // coop.npctrack on the host: its own NPCs (the reference for the guest's proxies)
         for (void* c : g_seen_now) {
@@ -1827,7 +1763,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         } else if (rts) {
             gp = center;
             relevance = kRtsRelevance;
-            has_view = g_rts_views_fix && views::of(p.id, game::mode_id(), now, view);
+            has_view = views::of(p.id, game::mode_id(), now, view);
         } else if (!C.player_pos(p.id, gp)) {
             for (uint16_t id : known)
                 send_despawn(p.id, id);
@@ -1881,11 +1817,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             w.u8((uint8_t)n);
             for (size_t j = 0; j < n; j++)
                 batch[i + j].write(w);
-            if (g_air_fix)
-                for (size_t j = 0; j < n; j++) {
-                    float a = drive::over_ground(batch[i + j].pos) * 100.f;
-                    w.u16((uint16_t)(int16_t)std::max(-32000.f, std::min(32000.f, std::round(a))));
-                }
+            for (size_t j = 0; j < n; j++) { // BUG-0550: the agl trailer
+                float a = drive::over_ground(batch[i + j].pos) * 100.f;
+                w.u16((uint16_t)(int16_t)std::max(-32000.f, std::min(32000.f, std::round(a))));
+            }
             C.sess->send_unreliable_to(p.id, net::MSG_NPC_STATE, w);
         }
         if (g_meat_fix && send_states) { // BUG-0557: the meat left on the bodies this guest mirrors
@@ -1914,9 +1849,9 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 C.sess->send_unreliable_to(p.id, net::MSG_NPC_MEAT, w);
             }
         }
-        if (g_anims_fix && !g_anim_out.empty())
+        if (!g_anim_out.empty())
             send_anims(p.id, known); // BUG-0464
-        if (g_anims_fix && send_snap)
+        if (send_snap)
             send_anim_snapshot(p.id, known);
     }
     g_anim_out.clear();
@@ -2208,7 +2143,7 @@ static void guest_tick(double now)
         std::vector<uint16_t> stale;
         for (auto& [id, px] : g_proxies)
             if (now - px.last_rx > 5.0) {
-                if (g_thaw_stale_fix && now - g_states_flow_since <= 5.0) {
+                if (now - g_states_flow_since <= 5.0) { // BUG-0611
                     g_thaw_kept++;
                     continue;
                 }
@@ -2244,7 +2179,7 @@ static void guest_tick(double now)
             px.drv = drive::State{};
             g_proxy_lost++;
         }
-        if (!px.c && (s.flags & net::NF_DEAD) && (px.ever || !g_dead_proxy_fix))
+        if (!px.c && (s.flags & net::NF_DEAD) && px.ever)
             continue;
         if (!px.c) {
             void* species = game::species_by_key(px.key);
@@ -2294,7 +2229,6 @@ static void guest_tick(double now)
         const net::Vec3 drawn = game::position(px.c); // where the game drew it (before this frame's driving)
         bool placed = false, walked = false;
         const bool rts = rts_stage();
-        const bool walking = g_walk_fix || rts;
         // BUG-0361: the last 0.1 s of a walk is interpolated towards a state that stands (velocity 0): a
         // walked proxy goes on with the speed of its path to the stop point instead of standing there
         net::Vec3 vel = s.vel;
@@ -2302,7 +2236,7 @@ static void guest_tick(double now)
         drive::path_update(px.drv, s.pos, now);
         {
             const drive::PathTrack& pt = px.drv.path;
-            if (walking && px.kinematic && drive::speed(vel) <= 0.3f) {
+            if (px.kinematic && drive::speed(vel) <= 0.3f) {
                 // not faster than it walked: at a stop the target can jump back up to 1 m (the extrapolation
                 // past the newest state corrected), which made a 37 m/s "path" and a 0.8 m jump of the proxy
                 float ps = drive::speed(pt.v);
@@ -2310,7 +2244,7 @@ static void guest_tick(double now)
                     float k = px.walk_sp > 0.3f && ps > px.walk_sp ? px.walk_sp / ps : 1.f;
                     vel = {pt.v.x * k, pt.v.y * k, pt.v.z * k};
                 }
-            } else if (walking && g_path_fix && drive::speed(vel) <= 0.3f) {
+            } else if (drive::speed(vel) <= 0.3f) {
                 // BUG-0394: a host NPC that moves without a speed of its own (2.2 m/s at speed 0): driven as
                 // standing, its pulls were undone by its locomotion, it fell 2.7 m behind and was teleported
                 vel = drive::path_velocity(px.drv);
@@ -2320,13 +2254,13 @@ static void guest_tick(double now)
                 // the game walks the proxy at the path's speed, or its walk between two placings runs ahead
                 // (Tribe: 0.6-1.4x the path in 77 % of the 0.1 s windows where the path was slower than the speed)
                 float ps = std::max(pt.sp_ema * 1.1f, 0.5f);
-                if (walking && ps < px.walk_sp)
+                if (ps < px.walk_sp)
                     walk_speed = ps; // (only the walk: scaling the placing too made it trail at every start, creature_npc_dash)
             }
         }
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
-        const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
+        const bool air = !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
         if (!air && !px.killed && !(s.flags & net::NF_DEAD)) { // BUG-0562: the host's NPC inside this game's mound
             const net::Vec3 up = proxy_on_mound(s.pos);
             if (up.x != s.pos.x || up.y != s.pos.y || up.z != s.pos.z) {
@@ -2356,61 +2290,46 @@ static void guest_tick(double now)
             px.air = false;
             game::air_hold(px.c, false); // (its game lands it)
         }
-        if (!placed && !px.killed && ((g_kinematic_fix && game::in_creature_stage()) || (g_walk_tribe_fix && rts)) &&
-            drive::speed(vel) > 0.3f && net::dist(game::position(px.c), s.pos) < 8.f) {
-            // BUG-0281: a running NPC's proxy follows the host's path itself (see g_kinematic_fix)
-            if (walking) { // BUG-0361: the game walks it, placed on the path
-                if (!px.kinematic)
-                    px.drv.kinematic = false; // a new walk: its first goal at once
-                drive::WalkPlace o;
-                o.own_height = rts;     // BUG-0329
-                // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
-                o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
-                o.walk_speed = walk_speed;
-                if (g_proxy_slow_frames_fix)
-                    o.max_dt = 0.4; // BUG-0503 (as the Tribe mirrors, BUG-0365); Creature too (BUG-0590)
-                o.snap = 2.5f;
-                o.keep_lost = true;
-                o.catch_prop = true; // BUG-0425
-                // BUG-0440 (Tribe only: in Creature, npc_walk's fleeing proxy after a hit stepped 0.8-1.1 m a few times
-                // with it, labs 20261113-202612, -204146 #2; all the reported holds were Tribe)
-                o.hold_after = g_proxy_hold_fix && rts;
-                o.variant = g_walk_variant;
-                // BUG-0757 (npc.place_now): aimed where the target is when the placing shows up, a frame later
-                net::Vec3 aim = s.pos;
-                if (g_place_now_fix)
-                    aim = {aim.x + vel.x * (float)g_frame_dt, aim.y + vel.y * (float)g_frame_dt, aim.z + vel.z * (float)g_frame_dt};
-                if (g_place_now_snap_fix) { // BUG-0997: the snap compares the path point, not the aim
-                    o.has_path_pos = true;
-                    o.path_pos = s.pos;
-                }
-                if (now < px.push_until) { // tests (BUG-0440): the game's next update moves it back, away from its target
-                    net::Vec3 cp = game::position(px.c), d{cp.x - aim.x, cp.y - aim.y, cp.z - aim.z};
-                    float dl = drive::speed(d);
-                    if (dl < 0.05f) // (on its target: back along the host's path)
-                        d = {-vel.x, -vel.y, -vel.z}, dl = drive::speed(vel);
-                    if (dl > 0.01f)
-                        game::test_push(px.c, {d.x / dl, d.y / dl, d.z / dl}, px.push_mps);
-                }
-                drive::walk_place(px.c, aim, s.rot, vel, px.drv, now, o);
-                walked = true;
-            } else {
-                if (!px.kinematic)
-                    game::stop(px.c);
-                game::teleport(px.c, s.pos, s.rot);
-                *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
-                px.drv.last_step = now;
+        if (!placed && !px.killed && (game::in_creature_stage() || rts) && drive::speed(vel) > 0.3f &&
+            net::dist(game::position(px.c), s.pos) < 8.f) {
+            // BUG-0281: a running NPC's proxy follows the host's path itself
+            // BUG-0361: the game walks it, placed on the path
+            if (!px.kinematic)
+                px.drv.kinematic = false; // a new walk: its first goal at once
+            drive::WalkPlace o;
+            o.own_height = rts;     // BUG-0329
+            // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
+            o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
+            o.walk_speed = walk_speed;
+            o.max_dt = 0.4; // BUG-0503 (as the Tribe mirrors, BUG-0365); Creature too (BUG-0590)
+            o.snap = 2.5f;
+            o.keep_lost = true;
+            o.catch_prop = true; // BUG-0425
+            // BUG-0440 (Tribe only: in Creature, npc_walk's fleeing proxy after a hit stepped 0.8-1.1 m a few times
+            // with it, labs 20261113-202612, -204146 #2; all the reported holds were Tribe)
+            o.hold_after = g_proxy_hold_fix && rts;
+            o.variant = g_walk_variant;
+            // BUG-0757 (npc.place_now): aimed where the target is when the placing shows up, a frame later
+            net::Vec3 aim = s.pos;
+            if (g_place_now_fix)
+                aim = {aim.x + vel.x * (float)g_frame_dt, aim.y + vel.y * (float)g_frame_dt, aim.z + vel.z * (float)g_frame_dt};
+            if (g_place_now_snap_fix) { // BUG-0997: the snap compares the path point, not the aim
+                o.has_path_pos = true;
+                o.path_pos = s.pos;
             }
+            if (now < px.push_until) { // tests (BUG-0440): the game's next update moves it back, away from its target
+                net::Vec3 cp = game::position(px.c), d{cp.x - aim.x, cp.y - aim.y, cp.z - aim.z};
+                float dl = drive::speed(d);
+                if (dl < 0.05f) // (on its target: back along the host's path)
+                    d = {-vel.x, -vel.y, -vel.z}, dl = drive::speed(vel);
+                if (dl > 0.01f)
+                    game::test_push(px.c, {d.x / dl, d.y / dl, d.z / dl}, px.push_mps);
+            }
+            drive::walk_place(px.c, aim, s.rot, vel, px.drv, now, o);
+            walked = true;
             px.kinematic = true;
             placed = true;
             // BUG-0334: health, death and the impressed flag below are synced for a running NPC too
-            // (0.7.3.2's first npc.kinematic went on to the next proxy here: a fleeing NPC kept its
-            // old health on the guest and did not die there until it stopped).
-            // `coop.fix npc.kinematic_sync off`: that first version.
-            if (!g_kinematic_sync_fix) {
-                ntrack_row(id, px, s, drawn, walked ? 3 : 1, now, rv_rep);
-                continue;
-            }
         }
         if (!placed && px.kinematic) { // it stands again: the driving takes over from here
             px.kinematic = false;
@@ -2423,7 +2342,7 @@ static void guest_tick(double now)
             // placed on the host's path this frame: no driving
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, true, rts_stage(), // own height in Tribe (BUG-0329)
                         (rts_stage() || (g_proxy_ground_creature && game::in_creature_stage())) &&
                             drive::g_out_of_ground_fix); // and never under the ground (BUG-0399, BUG-0752)
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
@@ -2476,7 +2395,7 @@ static void guest_tick(double now)
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
         px.host_pack = (s.flags & net::NF_PACK) != 0;
         // BUG-0556: a summoned flock's member wears the event's hearts (cSummonCreatureEvent update 0xD512A0)
-        bool summoned = g_flock_fx_fix && !px.killed && (s.flags & net::NF_SUMMONED);
+        bool summoned = !px.killed && (s.flags & net::NF_SUMMONED);
         if (summoned != px.flock_fx && a_StartFx2 && a_StopFx) {
             if (summoned)
                 skg::thiscall<void*>(a_StartFx2, px.c, 1, kFlockFx, kFlockFx);
@@ -2595,9 +2514,6 @@ static void hatch_tick(double now, bool simulating)
 // living proxy in a nest herd of the game is now replaced by a creature of the game of the same
 // species in the same herd at the same place (cCreatureAnimal::Create, as the nest does), so the
 // guest keeps the animals it saw. Proxies in herds of our own (no nest) are only removed, as before.
-// `coop.fix npc.away_locals off`: the proxies just go (0.7.3.1).
-static bool g_away_locals_fix = true;
-COOP_FIX("npc.away_locals", "BUG-0180", g_away_locals_fix, "creature: the host leaves: a guest's proxies become NPCs of its own game");
 static uint32_t g_away_locals = 0;
 // what the guest showed of the host's NPCs (the last non-empty set, every 0.5 s): the host's world
 // change (its menu) despawns them all a few seconds before the guest learns that the host is away
@@ -2712,8 +2628,7 @@ static void tick_frame(double now)
             for (auto& [id, px] : g_proxies)
                 ids.push_back(id);
             g_away_proxies += (uint32_t)ids.size();
-            if (g_away_locals_fix)
-                away_locals(now);
+            away_locals(now);
             for (uint16_t id : ids)
                 destroy_proxy(id);
             g_herds.clear();
@@ -2722,7 +2637,7 @@ static void tick_frame(double now)
         if (!away) {
             guest_tick(now);
             resync_tick(now); // BUG-0487
-            if (g_away_locals_fix && game::in_creature_stage())
+            if (game::in_creature_stage())
                 away_snapshot(now);
         }
     }
@@ -2841,7 +2756,7 @@ void on_session_end()
     // BUG-0412: a guest that leaves plays on in this world: its game takes over the NPCs it showed
     // (the snapshot of away_snapshot, at most 0.5 s old; away_locals runs next frame, outside the
     // session's update)
-    if (g_leave_locals_fix && g_away_locals_fix && g_was_guest && !g_host_away && game::in_creature_stage() &&
+    if (g_was_guest && !g_host_away && game::in_creature_stage() &&
         H->time_seconds() - g_away_snap_at < 2.0)
         g_leave_locals_due = true;
     g_was_guest = false;
@@ -2935,7 +2850,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             const net::NpcState& st = sts[i];
             auto it = g_proxies.find(st.net_id);
             if (it == g_proxies.end()) {
-                if (g_resync_fix && !g_unknown_ids.count(st.net_id) && g_unknown_ids.size() < 4000)
+                if (!g_unknown_ids.count(st.net_id) && g_unknown_ids.size() < 4000)
                     g_unknown_ids[st.net_id] = 0; // BUG-0487: ask for its spawn (resync_tick)
                 continue;
             }
@@ -3006,7 +2921,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     break;
                 g_anims_snap_rx++;
                 auto it = g_proxies.find(id);
-                if (!g_anims_fix || it == g_proxies.end())
+                if (it == g_proxies.end())
                     continue;
                 Proxy& px = it->second;
                 uint32_t cur = 0;
@@ -3030,8 +2945,6 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (!r.ok())
                 break;
             g_anims_rx++;
-            if (!g_anims_fix)
-                continue;
             auto it = g_proxies.find(id);
             void* c = it == g_proxies.end() ? nullptr : handler_c(it->second); // BUG-0805
             if (!c || it->second.killed || game::is_destroyed(c) || game::is_dead(c)) {
@@ -3047,7 +2960,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         break;
     }
     case net::MSG_NPC_RESYNC: { // host: a guest gets states of NPCs it has no spawn of (BUG-0487)
-        if (!is_host() || !g_resync_fix)
+        if (!is_host())
             return;
         uint8_t n = r.u8();
         auto& known = g_known[from];

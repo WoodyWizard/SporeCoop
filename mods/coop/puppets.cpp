@@ -98,7 +98,7 @@ double g_state_mode_until = 0;
 // coop.status / coop.avatar read a freed cell while the game went Cell -> Creature, with the mode
 // already Creature). The local entity counts only while the mode is still the frame's, the stage is
 // not being left and the adapter still finds it; a puppet only while the mode is the frame's and its
-// adapter still sees it alive. Inside on_frame these always agree. `coop.fix core.stale_local off`.
+// adapter still sees it alive. Inside on_frame these always agree.
 static bool frame_world_now()
 {
     return game::mode_id() == g_mode && !game::leaving_stage();
@@ -108,7 +108,7 @@ uint32_t g_local_refused, g_puppet_refused; // coop.cellgone (tests)
 
 void* local_now()
 {
-    if (!g_adapter || !g_local || !modes::stale_fix)
+    if (!g_adapter || !g_local)
         return g_local;
     if (frame_world_now() && g_adapter->local() == g_local)
         return g_local;
@@ -236,7 +236,7 @@ bool SK_CDECL h_HoverFilter(void** hit)
 
 void* puppet_now(const Remote& r)
 {
-    if (!r.puppet || !r.puppet_adapter || !modes::stale_fix)
+    if (!r.puppet || !r.puppet_adapter)
         return r.puppet;
     if (!frame_world_now() || (r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet))) {
         g_puppet_refused++;

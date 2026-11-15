@@ -80,11 +80,9 @@ bool cell_sap_room();
 uint32_t cell_sap_held();
 extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
-// BUG-0271 (core.stale_local): no cell is read from a pool block the game already freed
-extern bool stale_fix;
-void own_ground_tick(double now); // BUG-0592 (creature.own_ground): once per frame, before the drives
+void own_ground_tick(double now); // BUG-0592: once per frame, before the drives
 extern uint32_t g_own_grounded;       // BUG-0592: times the own creature was put onto its ground
-extern uint32_t g_puppets_gone_alive; // BUG-0507: Creature puppets found freed by the game (creature.puppet_alive)
+extern uint32_t g_puppets_gone_alive; // BUG-0507: Creature puppets found freed by the game
 bool cell_usable(void* cell);     // the local cell or a puppet, still live in a mapped pool
 // our frame scope (on_frame, on_overlay): no game code runs inside, so the pool check is cached
 void cell_scope(bool enter);
@@ -134,16 +132,16 @@ void cell_forget();               // the Cell stage was left: forget the puppets
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
 uint32_t cell_unknown_models(); // BUG-0455: cells not made because their model's creation is not here
 void cell_destroy(uint32_t idx);
-// BUG-0308: the Cell stage is being left (quit posted for a world load or the menu) and coop.fix
-// cell.leave_guard is on: no mirror creation and no pool write of ours until the mode changes
+// BUG-0308: the Cell stage is being left (quit posted for a world load or the menu): no mirror creation
+// and no pool write of ours until the mode changes
 bool cell_leaving();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);
 void mat_to_quat(const float* m, net::Quat& q);
 void quat_to_mat(const net::Quat& q, float* m);
-// BUG-0499 (creature.puppet_jump): the speed a partner's states may not be blended over (0: off)
+// BUG-0499: the speed a partner's states may not be blended over
 float puppet_jump_speed();
-// BUG-0376 (creature.puppet_air), tests: coop.track air <v>
+// BUG-0376, tests: coop.track air <v>
 extern int g_puppet_air_variant;
 // BUG-0929 (creature.tag_height), tests: the last partner name tag's height and what it came from (coop.find tagh)
 std::string tag_info();
