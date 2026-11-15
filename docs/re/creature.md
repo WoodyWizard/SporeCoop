@@ -3419,9 +3419,20 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
   parts list (cCollectableItems) made by the wizard.
 * ✔ The same request built by the mod with no parts list (`coop.newcreature E46C381E`) opens the same editor with the
   same palette and budget on any profile (a guest's too).
-* ? In every profile tried (fresh, DuoQAJiffStand, DuoQAStageGuest) the start editor offers no mouth, and its check
-  says "Your creation needs a mouth": no creature can be finished there. The owner's own run (2026-11-14, 308 s in
+* ~ superseded (2026-11-15): see the CORRECTION below. In every profile tried (fresh, DuoQAJiffStand, DuoQAStageGuest)
+  the start editor offers no mouth, and its check says "Your creation needs a mouth": no creature can be finished there.
+* CORRECTION (2026-11-15, feat/lineages-47, the owner asked whether the mouth tab was opened): the second tab (the
+  hand icon) holds the mouths and eyes; only the first (legs) had been looked at. The start editor does offer mouths. The owner's own run (2026-11-14, 308 s in
   the editor, a new creation 'Griscale' after it) finished one: how it got a mouth is not known (a Sporepedia creature
   picked and edited? the owner's profile's parts?).
 * A test profile's first start shows the Spore account dialog; closing it asks "Quit registration?" (OK).
+* ✔ (runtime) The diet card's effect: the wizard's parts list (+0x94) has field +0xC = 1 (unknown items offered), no
+  unlockable items, no unlocked list, and two part states: the other diets' mouths (for herbivore 32AC9620 and
+  FE534766, type 0x40626000) state 4 (seen, locked). The second tab then shows the chosen diet's mouth and the other two
+  as locked diet silhouettes (a state without bit 2 shows a plain shield).
+* ✔ A parts list made the game's way (0x5BF2E0: GeneralAllocator::new_ 0x6DAC, the constructor 0x597E00
+  SporeCoop::CollectableItems_ctor, then UnlockPart / LockPart and the state bytes) on a request for 0xE46C381E gives
+  the same palette on another game (MSG_START_PARTS, 24b86cb6).
+* Test copies: a new .sym entry needs the QA copy's mods/sporekit/symbols/overrides_dc04aee5.sym too (copied by hand;
+  the DLL alone did not find the new symbol).
 

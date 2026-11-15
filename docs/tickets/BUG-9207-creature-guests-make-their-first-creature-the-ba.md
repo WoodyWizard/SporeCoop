@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits: 2ddb7877
+commits: 2ddb7877 e4278a12 24b86cb6
 tests: tools/qa_win (TITAN, host 9 + guest 8 over 127.0.0.1, 2026-11-14 night)
 signature:
 docs: docs/re/creature.md#creature-pregame-guest-editor
@@ -34,3 +34,4 @@ no-fail-run: manual on TITAN (no Windows lab lane). FAIL (22:09:30, switch off o
 - 2026-11-14 (night): built (creature.pregame_editor; creations::begin_first_creature makes the saved creation the pick and keeps it from the BUG-9203 editor); live test pending.
 - 2026-11-14 (night): live on TITAN, FAIL/PASS above. Open: the guest's editor is the full Creature Creator (all parts, a 2,000 budget), not a stage editor; ships (a Space start) not covered.
 - 2026-11-15: decision 3Z B (the guests' parts as the host's editor's): the host's real new-world editor is the stage start editor 0xE46C381E (logged), not the Creator, so the guests' editor did not start for it: fixed (e4278a12), checked live (the host's 0xE46C381E from the menu, the guest's editor 1 s later). Guests still get the Creator: the start editor offers no mouth on every profile tried, so it cannot be finished there (docs/re/creature.md#creature-stage-start-editor). Open: how the owner's creature got its mouth.
+- 2026-11-15: decision 3Z B done (24b86cb6): the guests get the host's start editor with the host's parts list (MSG_START_PARTS). FAIL (01:46, creature.same_start_parts off): the guest's editor the full Creator (every part, 2,000); PASS (01:49): the guest's editor the start editor, second tab the herbivore mouth and the other diets' mouths locked as on the host (out/shots/3zb/guest_fail.png, guest_pass.png, host_pass.png). The owner's question "are you sure you're just not switching to the mouth tab?" corrected the earlier "no mouth" note.
