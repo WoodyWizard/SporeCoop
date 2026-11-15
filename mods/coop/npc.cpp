@@ -102,42 +102,26 @@ struct HostNpc {
 // stage's data; the reverse index (creature -> id) is the registry's, so the two directions cannot drift. Liveness is
 // game::alive (the game's object list of the frame and the serial). What stays here: the species / dead reuse rule
 // (BUG-0044, BUG-1100), retire_pooled (BUG-0274), the 5 s stale drop and its thaw (BUG-0611), herds, the driving.
-// `coop.fix npc.registry off`: the two hand-kept maps per side (0.7.14). The switch is taken while both tables are
-// empty (a session's or a world's start): flipped inside a world it takes effect at the next one.
-static bool g_registry_fix = true;
-COOP_FIX_UNSAFE("npc.registry", "BUG-1140", g_registry_fix,
-                "creature, tribe, civ: the NPC id tables are the shared mirror registry (one table per side, identity by the object list and serial)");
-static bool g_reg = true; // the tables in use: g_registry_fix as it was when they were last empty
+// (The hand-kept maps of 0.7.14 and their switch npc.registry went in 0.7.15 after the stage's tests passed with it.)
 static constexpr uint32_t kCreatureNoun = 0x18EB45Eu; // cCreatureAnimal
 static bool ref_alive(const mirror::Ref& r) { return game::alive(game::LiveRef{r.p, r.serial, r.noun}); }
 using HostReg = mirror::Registry<uint16_t, HostNpc>;
 static HostReg g_hreg("npc.host", ref_alive);
-// npc.registry off: the hand-kept maps
-static std::unordered_map<void*, HostNpc> g_host_npcs;  // creature -> id
-static std::unordered_map<uint16_t, void*> g_host_by_id;
 // the host entry of creature `c` (a pointer compare: safe on a freed one), null when it has none
 static HostNpc* hn_of(const void* c)
 {
-    if (g_reg) {
-        uint16_t id;
-        HostReg::Entry* e = g_hreg.id_of(c, id) ? g_hreg.find(id) : nullptr;
-        return e ? &e->data : nullptr;
-    }
-    auto it = g_host_npcs.find(const_cast<void*>(c));
-    return it == g_host_npcs.end() ? nullptr : &it->second;
+    uint16_t id;
+    HostReg::Entry* e = g_hreg.id_of(c, id) ? g_hreg.find(id) : nullptr;
+    return e ? &e->data : nullptr;
 }
 // the creature of host id `id` (no liveness check), null when the id is not given
 static void* hn_obj(uint16_t id)
 {
-    if (g_reg) {
-        HostReg::Entry* e = g_hreg.find(id);
-        return e ? e->ref.p : nullptr;
-    }
-    auto it = g_host_by_id.find(id);
-    return it == g_host_by_id.end() ? nullptr : it->second;
+    HostReg::Entry* e = g_hreg.find(id);
+    return e ? e->ref.p : nullptr;
 }
-static bool hn_used(uint16_t id) { return g_reg ? g_hreg.has(id) : g_host_by_id.count(id) != 0; }
-static size_t hn_count() { return g_reg ? g_hreg.size() : g_host_npcs.size(); }
+static bool hn_used(uint16_t id) { return g_hreg.has(id); }
+static size_t hn_count() { return g_hreg.size(); }
 // for (auto [c, hn] : hn_walk()): every host entry (an entry forgotten during the walk must not be touched after it)
 struct HnRow {
     void* c;
@@ -146,28 +130,13 @@ struct HnRow {
 static std::vector<HnRow> hn_walk()
 {
     std::vector<HnRow> v;
-    if (g_reg) {
-        v.reserve(g_hreg.size());
-        g_hreg.for_each([&](HostReg::Entry& e) { v.push_back({e.ref.p, e.data}); });
-    } else
-        for (auto& [c, hn] : g_host_npcs)
-            v.push_back({c, hn});
+    v.reserve(g_hreg.size());
+    g_hreg.for_each([&](HostReg::Entry& e) { v.push_back({e.ref.p, e.data}); });
     return v;
 }
-// the entry of id / creature goes (no game call; retire() told the guests)
-static void hn_forget(uint16_t id, void* c)
-{
-    if (g_reg)
-        g_hreg.erase(id);
-    else
-        g_host_npcs.erase(c);
-}
-static void hn_clear()
-{
-    g_hreg.clear();
-    g_host_npcs.clear();
-    g_host_by_id.clear();
-}
+// the entry of id goes (no game call; retire() told the guests)
+static void hn_forget(uint16_t id) { g_hreg.erase(id); }
+static void hn_clear() { g_hreg.clear(); }
 static std::map<uint8_t, std::set<uint16_t>> g_known;  // guest -> net ids it mirrors
 static uint16_t g_next_id = 1;
 static double g_last_state = 0;
@@ -348,40 +317,20 @@ struct Proxy {
 using ProxyReg = mirror::Registry<uint16_t, Proxy>;
 using PxE = ProxyReg::Entry;
 static ProxyReg g_px("npc.proxies", ref_alive);
-// npc.registry off: the hand-kept maps
-static std::map<uint16_t, PxE> g_proxies;
-static std::unordered_map<void*, uint16_t> g_proxy_of;
-static PxE* px_find(uint16_t id)
-{
-    if (g_reg)
-        return g_px.find(id);
-    auto it = g_proxies.find(id);
-    return it == g_proxies.end() ? nullptr : &it->second;
-}
+static PxE* px_find(uint16_t id) { return g_px.find(id); }
 // the entry of `id`, made empty when there is none
-static PxE& px_make(uint16_t id)
-{
-    if (g_reg)
-        return g_px.at(id);
-    PxE& e = g_proxies[id];
-    e.id = id;
-    return e;
-}
-static bool px_has(uint16_t id) { return g_reg ? g_px.has(id) : g_proxies.count(id) != 0; }
-static size_t px_count() { return g_reg ? g_px.size() : g_proxies.size(); }
+static PxE& px_make(uint16_t id) { return g_px.at(id); }
+static bool px_has(uint16_t id) { return g_px.has(id); }
+static size_t px_count() { return g_px.size(); }
 static bool px_empty() { return px_count() == 0; }
 // every entry, in the order of the ids (the walks of 0.7.14 went by id); an entry erased during the walk must not be
 // touched after it
 static std::vector<PxE*> px_list()
 {
     std::vector<PxE*> v;
-    if (g_reg) {
-        v.reserve(g_px.size());
-        g_px.for_each([&](PxE& e) { v.push_back(&e); });
-        std::sort(v.begin(), v.end(), [](const PxE* a, const PxE* b) { return a->id < b->id; });
-    } else
-        for (auto& [id, e] : g_proxies)
-            v.push_back(&e);
+    v.reserve(g_px.size());
+    g_px.for_each([&](PxE& e) { v.push_back(&e); });
+    std::sort(v.begin(), v.end(), [](const PxE* a, const PxE* b) { return a->id < b->id; });
     return v;
 }
 // for (auto [id, pe, px] : px_walk()): every proxy with its entry, by id
@@ -400,26 +349,12 @@ static std::vector<PxRow> px_walk()
 // the id of the proxy whose creature is `c` (a pointer compare: safe on a freed one)
 static bool px_id_of(const void* c, uint16_t& id)
 {
-    if (!c)
-        return false;
-    if (g_reg)
-        return g_px.id_of(c, id);
-    auto it = g_proxy_of.find(const_cast<void*>(c));
-    if (it == g_proxy_of.end())
-        return false;
-    id = it->second;
-    return true;
+    return c && g_px.id_of(c, id);
 }
 static uint32_t g_px_rebound = 0; // a new creature at the address another entry still named (that entry let go)
 // `c` is the creature made for proxy `e` now (with `serial`, its cGameData::mID)
 static void px_bind(PxE& e, void* c, uint32_t serial)
 {
-    if (!g_reg) {
-        e.ref = {c, serial, kCreatureNoun};
-        e.made = true;
-        g_proxy_of[c] = e.id;
-        return;
-    }
     uint16_t other;
     if (g_px.id_of(c, other) && other != e.id) { // its creature is gone (this one was just made there)
         g_px.detach(other);
@@ -428,55 +363,14 @@ static void px_bind(PxE& e, void* c, uint32_t serial)
     g_px.bind(e.id, {c, serial, kCreatureNoun}, true);
 }
 // the proxy has no creature any more (no game call)
-static void px_detach(PxE& e)
-{
-    if (!e.ref.p)
-        return;
-    if (g_reg) {
-        g_px.detach(e.id);
-        return;
-    }
-    g_proxy_of.erase(e.ref.p);
-    e.ref = {};
-    e.made = false;
-}
-static void px_erase(uint16_t id)
-{
-    if (g_reg) {
-        g_px.erase(id);
-        return;
-    }
-    auto it = g_proxies.find(id);
-    if (it == g_proxies.end())
-        return;
-    if (it->second.ref.p)
-        g_proxy_of.erase(it->second.ref.p);
-    g_proxies.erase(it);
-}
-static void px_clear()
-{
-    g_px.clear();
-    g_proxies.clear();
-    g_proxy_of.clear();
-}
+static void px_detach(PxE& e) { g_px.detach(e.id); }
+static void px_erase(uint16_t id) { g_px.erase(id); }
 // tests (BUG-0931, coop.npc ghost): the entry names `p` (no creature) as if its creature had been freed behind the mod
 static void px_rename(PxE& e, void* p)
 {
     uint32_t serial = e.ref.serial;
     px_detach(e);
-    if (g_reg)
-        g_px.bind(e.id, {p, serial, kCreatureNoun}, true);
-    else
-        e.ref = {p, serial, kCreatureNoun}; // (0.7.14: not in the reverse map)
-}
-// the tables in use follow the switch while they are empty (a session's or a world's start)
-static void reg_latch()
-{
-    if (g_reg != g_registry_fix && px_empty() && hn_count() == 0) {
-        g_reg = g_registry_fix;
-        px_clear();
-        hn_clear();
-    }
+    g_px.bind(e.id, {p, serial, kCreatureNoun}, true);
 }
 // BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
 // while the guest was more than 110 m away, killed by another NPC before its proxy was made, a body that lay
@@ -1139,11 +1033,6 @@ static void retire(uint16_t id, void* c)
     for (auto& [g, ks] : g_known)
         if (ks.erase(id))
             send_despawn(g, id);
-    if (!g_reg) { // (npc.registry: the entry goes with hn_forget / adopt)
-        auto b = g_host_by_id.find(id);
-        if (b != g_host_by_id.end() && b->second == c)
-            g_host_by_id.erase(b);
-    }
     g_ai_target.erase(c);
     teamplay::forget_target(c);
 }
@@ -1154,54 +1043,23 @@ static void retire(uint16_t id, void* c)
 static uint32_t g_pooled_retired = 0;
 static void retire_pooled()
 {
-    if (g_reg) { // C1: the entry's object is the one the id was given to and in the game's list now (game::alive)
-        std::vector<std::pair<uint16_t, void*>> gone;
-        g_hreg.for_each([&](HostReg::Entry& e) {
-            void* c = e.ref.p;
-            if (!c || g_seen_now.count(c))
-                return;
-            bool g = !ref_alive(e.ref);
-            if (!g) {
-                net::Vec3 p = game::position(c);
-                g = !game::herd_of(c) || (p.x == 0.f && p.y == 0.f && p.z == 0.f);
-            }
-            if (g)
-                gone.push_back({e.id, c});
-        });
-        for (auto& [id, c] : gone) {
-            retire(id, c);
-            g_hreg.erase(id);
-            g_pooled_retired++;
-        }
-        return;
-    }
-    struct Acc {
-        std::unordered_set<void*> unseen, listed;
-    } a;
-    for (auto [c, hn] : hn_walk())
-        if (!g_seen_now.count(c))
-            a.unseen.insert(c);
-    if (a.unseen.empty())
-        return;
-    game::for_each_object(
-        [](void* o, uint32_t noun, void* u) {
-            auto* a = (Acc*)u;
-            if (noun == 0x18EB45Eu && a->unseen.count(o) && game::object_alive(o))
-                a->listed.insert(o);
-            return true;
-        },
-        &a);
-    for (void* c : a.unseen) {
-        bool gone = !a.listed.count(c);
-        if (!gone) {
+    // C1: the entry's object is the one the id was given to and in the game's list now (game::alive)
+    std::vector<std::pair<uint16_t, void*>> gone;
+    g_hreg.for_each([&](HostReg::Entry& e) {
+        void* c = e.ref.p;
+        if (!c || g_seen_now.count(c))
+            return;
+        bool g = !ref_alive(e.ref);
+        if (!g) {
             net::Vec3 p = game::position(c);
-            gone = !game::herd_of(c) || (p.x == 0.f && p.y == 0.f && p.z == 0.f);
+            g = !game::herd_of(c) || (p.x == 0.f && p.y == 0.f && p.z == 0.f);
         }
-        if (!gone)
-            continue;
-        HostNpc* it = hn_of(c);
-        retire(it->id, c);
-        hn_forget(it->id, c);
+        if (g)
+            gone.push_back({e.id, c});
+    });
+    for (auto& [id, c] : gone) {
+        retire(id, c);
+        g_hreg.erase(id);
         g_pooled_retired++;
     }
 }
@@ -1767,21 +1625,12 @@ static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
     struct Acc {
         std::vector<void*> live;
     } a;
-    if (g_reg) // C1: each entry's object, the one its id was given to, in the game's list now (game::alive)
-        g_hreg.for_each([&](HostReg::Entry& e) {
-            void* o = e.ref.p;
-            if (o && ref_alive(e.ref) && !game::is_puppet(o) && o != game::avatar() && !game::is_destroyed(o))
-                a.live.push_back(o);
-        });
-    else
-        game::for_each_object(
-            [](void* o, uint32_t noun, void* u) {
-                if (noun == 0x18EB45Eu && g_host_npcs.count(o) && game::object_alive(o) && !game::is_puppet(o) &&
-                    o != game::avatar() && !game::is_destroyed(o))
-                    ((Acc*)u)->live.push_back(o);
-                return true;
-            },
-            &a);
+    // C1: each entry's object, the one its id was given to, in the game's list now (game::alive)
+    g_hreg.for_each([&](HostReg::Entry& e) {
+        void* o = e.ref.p;
+        if (o && ref_alive(e.ref) && !game::is_puppet(o) && o != game::avatar() && !game::is_destroyed(o))
+            a.live.push_back(o);
+    });
     std::vector<std::pair<void*, net::Vec3>> live;
     std::vector<void*> gone; // BUG-0339: tracked, no creature of the world any more (freed, or pooled at the centre)
     std::unordered_set<void*> listed(a.live.begin(), a.live.end());
@@ -1822,7 +1671,7 @@ static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
         if (!it)
             continue;
         retire(it->id, c);
-        hn_forget(it->id, c);
+        hn_forget(it->id);
         g_frozen_retired++;
     }
     return live;
@@ -1901,7 +1750,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             // the game freed this NPC and built another one in the same object (BUG-0044): the
             // guests drop the old one, the new one gets a new id and a spawn with its species
             retire(it->id, c);
-            hn_forget(it->id, c);
+            hn_forget(it->id);
             it = nullptr;
             g_reused++;
         }
@@ -1911,33 +1760,21 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         if (!it && g_stray_ids_fix && !civ && saved_stray(c))
             continue;
         auto alloc = [] { return alloc_npc_id(g_next_id, [](uint16_t i) { return hn_used(i); }, g_id_fix); };
-        if (g_reg) {
-            // C1: the id of this object; another object at a known address (another serial: freed and built again
-            // there) loses the old id at the guests first and gets a new one (BUG-0044's class by the serial)
-            uint16_t id = 0;
-            bool fresh = false;
-            if (!g_hreg.adopt(mirror::Ref{c, game::object_serial(c), kCreatureNoun}, alloc,
-                              [&](uint16_t old) {
-                                  retire(old, c);
-                                  g_reused++;
-                              },
-                              id, &fresh))
-                continue; // (65534 NPCs at once: not in this world)
-            it = &g_hreg.find(id)->data;
-            if (fresh)
-                *it = {id, now, species, dead};
-            else {
-                it->last_seen = now;
-                it->dead = dead;
-            }
-        } else if (!it) {
-            uint16_t id = alloc();
-            if (!id) // 65534 NPCs at once: not in this world
-                continue;
-            g_host_npcs[c] = {id, now, species, dead};
-            g_host_by_id[id] = c;
-            it = &g_host_npcs[c];
-        } else {
+        // C1: the id of this object; another object at a known address (another serial: freed and built again
+        // there) loses the old id at the guests first and gets a new one (BUG-0044's class by the serial)
+        uint16_t id = 0;
+        bool fresh = false;
+        if (!g_hreg.adopt(mirror::Ref{c, game::object_serial(c), kCreatureNoun}, alloc,
+                          [&](uint16_t old) {
+                              retire(old, c);
+                              g_reused++;
+                          },
+                          id, &fresh))
+            continue; // (65534 NPCs at once: not in this world)
+        it = &g_hreg.find(id)->data;
+        if (fresh)
+            *it = {id, now, species, dead};
+        else {
             it->last_seen = now;
             it->dead = dead;
         }
@@ -1994,7 +1831,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         if (now - hn.last_seen > 2.0) {
             const uint16_t id = hn.id;
             retire(id, c);
-            hn_forget(id, c);
+            hn_forget(id);
         }
     bool send_states = now - g_last_state >= kStateInterval;
     if (send_states)
@@ -2217,8 +2054,6 @@ static uint32_t g_identity_retired;
 // the proxy's creature is the object it made, now (the object list of this frame and the serial)
 static bool px_alive(const PxE& pe) { return pe.ref.p && ref_alive(pe.ref); }
 // ... (npc.proxy_identity off: it is set)
-// C1: the proxy's creature is the object it made, now (npc.registry off: its mbIsDestroyed byte, 0.7.14)
-static bool px_ok(const PxE& pe) { return g_reg ? px_alive(pe) : game::object_alive(pe.ref.p); }
 static bool px_live(const PxE& pe) { return pe.ref.p && (!g_proxy_identity_fix || px_alive(pe)); }
 // BUG-0805 (class BUG-0426): the message handlers (the host's hit on the guest with a proxy as the attacker, the
 // social prompt and result, the NPC's animations and fight effects, a body's meat) took the proxy's creature as it
@@ -2410,40 +2245,24 @@ static void guest_tick(double now)
     // standing). A host that stands still (pause menu) sends no states at all: nothing is dropped.
     // (D3: the rule is npc_rules::stale; C1: the registry's sweep, Keep while the states thaw, BUG-0611)
     if (g_stale_fix && npc_rules::states_flow(now, g_last_states_rx)) {
-        if (g_reg) {
-            g_stale_dropped += (uint32_t)g_px.sweep(
-                [&](uint16_t id) {
-                    const PxE* e = g_px.find(id);
-                    return !e || npc_rules::stale(now, e->data.last_rx, g_states_flow_since) == npc_rules::Stale::Fresh;
-                },
-                [&](PxE& e, bool) { // (not Fresh: Thaw or Drop)
-                    if (npc_rules::stale(now, e.data.last_rx, g_states_flow_since) == npc_rules::Stale::Thaw) {
-                        g_thaw_kept++;
-                        return mirror::Unseen::Keep;
-                    }
-                    return mirror::Unseen::Remove;
-                },
-                [&](PxE& e, bool) {
-                    const mirror::Ref r = e.ref;
-                    g_px.detach(e.id);
-                    if (r.p)
-                        destroy_proxy_object(r);
-                });
-        } else {
-            std::vector<uint16_t> stale;
-            for (auto [id, pe, px] : px_walk())
-                if (now - px.last_rx > 5.0) {
-                    if (now - g_states_flow_since <= 5.0) { // BUG-0611
-                        g_thaw_kept++;
-                        continue;
-                    }
-                    stale.push_back(id);
+        g_stale_dropped += (uint32_t)g_px.sweep(
+            [&](uint16_t id) {
+                const PxE* e = g_px.find(id);
+                return !e || npc_rules::stale(now, e->data.last_rx, g_states_flow_since) == npc_rules::Stale::Fresh;
+            },
+            [&](PxE& e, bool) { // (not Fresh: Thaw or Drop)
+                if (npc_rules::stale(now, e.data.last_rx, g_states_flow_since) == npc_rules::Stale::Thaw) {
+                    g_thaw_kept++;
+                    return mirror::Unseen::Keep;
                 }
-            for (uint16_t id : stale) {
-                destroy_proxy(id);
-                g_stale_dropped++;
-            }
-        }
+                return mirror::Unseen::Remove;
+            },
+            [&](PxE& e, bool) {
+                const mirror::Ref r = e.ref;
+                g_px.detach(e.id);
+                if (r.p)
+                    destroy_proxy_object(r);
+            });
     }
     // BUG-0931: in every frame, before any proxy is driven (g_listed_now_fix); once a second before
     if ((g_listed_now_fix || now - g_listed_at >= 1.0) && game::in_creature_stage()) { // (Creature only: the case seen; Tribe untouched)
@@ -2833,7 +2652,7 @@ static void away_snapshot(double now)
     s_last = now;
     std::vector<AwaySnap> v;
     for (auto [id, pe, px] : px_walk()) {
-        if (!px_live(pe) || px.killed || !px_ok(pe) || game::is_dead(pe.ref.p) || game::destroy_pending(pe.ref.p))
+        if (!px_live(pe) || px.killed || !px_alive(pe) || game::is_dead(pe.ref.p) || game::destroy_pending(pe.ref.p))
             continue;
         void* h = game::herd_of(pe.ref.p);
         if (!h || !game::herd_nest(h)) // a herd of our own: no nest of the game to go on in
@@ -2985,7 +2804,6 @@ static void puppet_tuning_tick(double now)
 static void reuse_tick();
 void tick(double now)
 {
-    reg_latch(); // C1 (npc.registry)
     reuse_tick();
     tick_frame(now);
     puppet_tuning_tick(now);
@@ -3484,14 +3302,10 @@ static std::string meat_status() // BUG-0557
     return b;
 }
 
-// C1 (BUG-1140): the two id tables (mirror::Registry counters; npc.registry off: the hand-kept maps' sizes)
+// C1 (BUG-1140): the two id tables (mirror::Registry counters)
 static std::string registry_status()
 {
     char b[96];
-    if (!g_reg) {
-        snprintf(b, sizeof b, "npc registry: off host=%zu proxies=%zu\n", g_host_npcs.size(), g_proxies.size());
-        return b;
-    }
     snprintf(b, sizeof b, " rebound=%u\n", g_px_rebound);
     return "npc registry: " + g_hreg.status() + "\nnpc registry: " + g_px.status() + b;
 }
@@ -3805,9 +3619,7 @@ void* host_npc(uint16_t id)
     void* c = hn_obj(id);
     if (!c || !g_seen_now.count(c))
         return nullptr;
-    if (g_reg) // C1: the object the id was given to, in the game's list now (its serial)
-        return ref_alive(g_hreg.find(id)->ref) ? c : nullptr;
-    return game::object_alive(c) ? c : nullptr;
+    return ref_alive(g_hreg.find(id)->ref) ? c : nullptr; // C1: the object the id was given to, in the list now
 }
 
 int host_id(void* c)
@@ -4254,7 +4066,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     char k[8];
     const double now = H->time_seconds();
     for (auto [id, pe, px] : px_walk())
-        if (px_live(pe) && px.diag_have && px_ok(pe) && !px.killed) {
+        if (px_live(pe) && px.diag_have && px_alive(pe) && !px.killed) {
             snprintf(k, sizeof k, "q%u", (unsigned)id);
             fn(k, px.diag_want, user);
             if (!px.buf.empty()) { // u<id>: M1's raw lead now (const: no late_time, no smoothing; changes no state)
@@ -4384,7 +4196,7 @@ void monitor_tick(double now)
         auto& a = g_audit[id];
         a.seen = now;
         net::PlayerState s;
-        if (!px_live(pe) || px.killed || game::is_destroyed(pe.ref.p) || !px_ok(pe) ||
+        if (!px_live(pe) || px.killed || game::is_destroyed(pe.ref.p) || !px_alive(pe) ||
             game::destroy_pending(pe.ref.p) || game::is_dead(pe.ref.p) || !px.buf.sample(now, s) || (s.flags & net::NF_DEAD)) {
             a.under_since = a.off_since = -1;
             continue;
@@ -4424,7 +4236,7 @@ void monitor_tick(double now)
             float near_d = 1e9f;
             uint16_t near_id = 0;
             for (auto [oid, oe, ox] : px_walk())
-                if (oid != id && px_live(oe) && !ox.killed && px_ok(oe)) {
+                if (oid != id && px_live(oe) && !ox.killed && px_alive(oe)) {
                     float d = net::dist(game::position(oe.ref.p), p);
                     if (d < near_d) {
                         near_d = d;
