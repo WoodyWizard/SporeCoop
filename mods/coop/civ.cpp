@@ -16,6 +16,7 @@
 #include <unordered_set>
 
 #include "game.h"
+#include "gamefixes.h"
 #include "shared.h"
 #include "stage_epoch.h"
 #include "modes.h"
@@ -772,21 +773,19 @@ static void guest_shots(net::Reader& r, bool counted)
 // BUG-0539 (diagnostics): who destroys a Tribe stage tribe in Civ, and when the count of tribes changes
 constexpr uint32_t kTribeNoun = 0x018C6D19;
 static bool g_tribe_gone; // BUG-0539, host: a tribe was destroyed since the last list
-using DestroyInstance_t = void(SK_THISCALL*)(void*, void*);
-static DestroyInstance_t o_DestroyInstance;
 static std::map<uintptr_t, uint32_t> g_tribe_destroys;
-static void SK_THISCALL h_DestroyInstance(void* mgr, void* obj)
+// BUG-0623: a listener of gamefixes' DestroyInstance hook (a second hook of the function failed and switched off
+// the stale stimulus sender guard, BUG-0456)
+static void on_destroy_instance(void* obj, uintptr_t ra)
 {
     if (obj && game::mode_id() == modes::kCiv && !IsBadReadPtr(obj, 4) && vtable_in_game(obj) &&
         game::noun_id(obj) == kTribeNoun) {
-        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
         if (is_host())
             g_tribe_gone = true; // BUG-0539: the guests hear of it with the next tribe list
         if (g_tribe_destroys[ra]++ == 0 && g_tribe_destroys.size() <= 8)
             H->log(M, SK_INFO, "civ: a tribe of the Tribe stage is destroyed here (%s), DestroyInstance from 0x%08X",
                    is_host() ? "host" : is_guest() ? "guest" : "alone", (unsigned)ra);
     }
-    o_DestroyInstance(mgr, obj);
 }
 // BUG-0539: the host's NPC vehicles raid the old Tribe stage villages (a behaviour tree action, 0xDCAAB0 "HR":
 // money and an event, then DestroyInstance of the tribe at 0xDCB2B2, its huts, tools, food mat and bundles go with
@@ -1119,14 +1118,7 @@ static bool cosmetic_hit(void* att)
 }
 bool hit_is_cosmetic(void* attacker) { return cosmetic_hit(attacker); }
 
-using VTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
-static VTakeDamage_t o_VTakeDamage;
-static int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
-{
-    if (cosmetic_hit(a))
-        return 0;
-    return o_VTakeDamage(s, d, pol, t, dir, a);
-}
+// BUG-0477's vehicle guard lives in h_VehicleDamage (BUG-9214)
 
 static uint32_t g_removed_local; // the guest's own vehicles removed (civ_ai_spawn: not the host's departed ones)
 static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in;
@@ -2487,9 +2479,15 @@ static float combat_damage(void* target_combat, uintptr_t target_offset, float d
 
 using VehicleDamage = int(SK_THISCALL*)(void*,float,uint32_t,int,const void*,void*);
 static VehicleDamage o_VehicleDamage, o_TurretDamage;
+static bool g_vehicle_cosmetic_fix = true;
+COOP_FIX("civ.vehicle_cosmetic", "BUG-9214", g_vehicle_cosmetic_fix,
+         "Civ: a relayed (cosmetic) shot does not damage a vehicle (the BUG-0477 guard in the vehicle damage hook)");
 static int SK_THISCALL h_VehicleDamage(void* combat, float damage, uint32_t faction, int type,
                                        const void* direction, void* attacker)
 {
+    // BUG-0477 (h_VTakeDamage's guard; that second hook of the same function never installed: MinHook allows one)
+    if (g_vehicle_cosmetic_fix && cosmetic_hit(attacker))
+        return 0;
     return o_VehicleDamage(combat,combat_damage(combat,0x508,damage,faction,attacker),faction,type,direction,attacker);
 }
 static int SK_THISCALL h_TurretDamage(void* combat, float damage, uint32_t faction, int type,
@@ -3107,7 +3105,6 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     } opts[] = {
         {"Simulator::cBuilding::TakeDamage", (void*)h_BTakeDamage, (void**)&o_BTakeDamage},
         {"Simulator::cCityHall::TakeDamage", (void*)h_HallTakeDamage, (void**)&o_HallTakeDamage},
-        {"Simulator::cVehicle::TakeDamage", (void*)h_VTakeDamage, (void**)&o_VTakeDamage}, // BUG-0477
         {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
         {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
         {"SporeCoop::City_PreachTick", (void*)h_PreachTick, (void**)&o_PreachTick},
@@ -3129,7 +3126,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     else
         a_AddTurret = 0;
     if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) { // BUG-0539
-        H->hook_create(M, (void*)di, (void*)h_DestroyInstance, (void**)&o_DestroyInstance);
+        gamefixes::set_destroy_listener(on_destroy_instance); // BUG-0623: gamefixes owns the hook
         a_DestroyInst = di;
     }
     a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)

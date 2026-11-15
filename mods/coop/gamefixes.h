@@ -31,5 +31,10 @@ unsigned clear_stimuli_from(void* c, void* sender);
 // BUG-9153: the Tribe camera looks at `pos` (a guest's own village after the swap); false before the stage set-up
 bool tribe_camera_to(const float pos[3]);
 std::string camera_status();
+// BUG-0623: the one hook of cGameNounManager::DestroyInstance is gamefixes' (MinHook allows one per function: civ.cpp's
+// own hook made the stale stimulus sender guard fail with MH_ERROR_ALREADY_CREATED since 0.7.5); other code listens
+// here: fn(obj, return address of the game's call), called before the object is destroyed, on the caller's thread
+using DestroyListener = void (*)(void* obj, uintptr_t ret);
+void set_destroy_listener(DestroyListener fn);
 
 } // namespace gamefixes
