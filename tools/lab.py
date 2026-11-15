@@ -844,6 +844,10 @@ def cmd_run(a):
         while True:
             t = take(last if warm_ok else None)
             if t is None:
+                # D1 (BUG-1114): a lane with nothing left ends its warm games now, not at the end of the run: they
+                # count against the machine's game budget of the lanes still running
+                if not stopping.is_set() and labbudget.enabled():
+                    spore(tree, lane, 'kill')
                 return
             got = gated(t, lane, warm_ok)
             if got is None:

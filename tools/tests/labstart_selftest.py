@@ -249,6 +249,18 @@ def case_budget():
         ev = threading.Event()
         ev.set()
         check(g.admit(dict(name='int', games=2), 4, ev, poll=0.05) is None, 'an interrupt ends the wait')
+        # a load-sensitive test held by its own rule only (other work keeps 13 games up) starts after LS_WAIT, said
+        old_ls = labbudget.LS_WAIT
+        labbudget.LS_WAIT = 0.2
+        try:
+            g2 = labbudget.Gate(said.append, games_of=lambda t: 2, sensitive_of=lambda t: True,
+                                snap=lambda: snap(13, {A: 7, B: 6}, {}, 10.0))
+            g2.held.append([time.time(), 9, A, 2, False])  # something of the run runs (no "not started")
+            r = g2.admit(dict(name='walk'), 4, poll=0.05)
+            check(isinstance(r, list) and any('walk starts after' in x and 'still it measures' in x for x in said),
+                  'a load-sensitive test held by its rule alone starts after SPORE_LAB_LS_WAIT and says so')
+        finally:
+            labbudget.LS_WAIT = old_ls
         os.environ['SPORE_LAB_BUDGET'] = '0'
         check(g.admit(dict(name='off', games=4), 4) == [], 'SPORE_LAB_BUDGET=0: no budget')
     finally:

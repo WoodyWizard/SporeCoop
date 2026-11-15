@@ -39,6 +39,7 @@ VRAM_FREE_GB = _f('SPORE_LAB_VRAM_FREE_GB', 0.5)
 DISPLAY_GAMES = int(_f('SPORE_LAB_DISPLAY_GAMES', 10))  # BUG-0663: one Xwayland saturated at 10-14 games
 XW_ADMIT = _f('SPORE_LAB_XW_ADMIT', 0.8)  # TST-3: a new test waits while its display's Xwayland is over 80 %
 LS_GAMES = int(_f('SPORE_LAB_LS_GAMES', 12))
+LS_WAIT = _f('SPORE_LAB_LS_WAIT', 600)  # a load-sensitive test held this long by its rule alone starts anyway (said)
 RAMP = 90.0  # seconds in which a started test's games count as still to come (cold start median 33 s, p90 45)
 POLL = 5.0
 WAIT = _f('SPORE_LAB_BUDGET_WAIT', 1800)  # with nothing of the run running: "not started" after this
@@ -279,12 +280,19 @@ class Gate:
                 now = self.clock()
                 snap = self._snap()
                 ls_running = any(h[4] for h in self.held)
-                why = decide(need, lane, disp, snap, self.pending(now, snap), self.cfg, sens, ls_running)
+                pend = self.pending(now, snap)
+                why = decide(need, lane, disp, snap, pend, self.cfg, sens, ls_running)
+                late = ''
+                if why and now - t0 >= LS_WAIT and not decide(need, lane, disp, snap, pend, self.cfg):
+                    # held by the load-sensitive rule only (the machine stays busy with other work): a preference, not
+                    # a limit of the card or the display; the test starts and says so
+                    late, why = why, ''
                 if not why:
                     tok = [now, lane, disp, need, sens]
                     self.held.append(tok)
                     if said:
-                        self.out(f'  (budget: {t["name"]} starts after {now - t0:.0f} s: {snap["games"]} games run)')
+                        self.out(f'  (budget: {t["name"]} starts after {now - t0:.0f} s: {snap["games"]} games run'
+                                 + (f'; still {late}' if late else '') + ')')
                     return tok
                 running = len(self.held)
             if not said:
