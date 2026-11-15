@@ -4,7 +4,8 @@
   "per_file": {
    "mods/coop/census.cpp": 2,
    "mods/coop/civ.cpp": 14,
-   "mods/coop/coop.cpp": 3,
+   "mods/coop/coop.cpp": 1,
+   "mods/coop/coop_cmds.cpp": 1,
    "mods/coop/creations.cpp": 1,
    "mods/coop/creature_hp.cpp": 3,
    "mods/coop/debug.cpp": 1,
@@ -18,6 +19,7 @@
    "mods/coop/player_rules.cpp": 6,
    "mods/coop/realign.cpp": 1,
    "mods/coop/savestrip.cpp": 1,
+   "mods/coop/session_glue.cpp": 1,
    "mods/coop/social.cpp": 2,
    "mods/coop/space_contracts.cpp": 1,
    "mods/coop/spacecoop.cpp": 6,
@@ -28,10 +30,7 @@
    "mods/coop/wsync.cpp": 4
   }
  },
- "call_guard": {
-  "game::g_in_puppet_anim": 2,
-  "game::g_in_relay": 2
- },
+ "call_guard": {},
  "lifecycle": {
   "cellsync::on_player_leave": 1,
   "cellsync::on_session_end": 1,
