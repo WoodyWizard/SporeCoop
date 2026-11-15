@@ -190,6 +190,8 @@ unit-lint:
 	python3 tools/ci_lint.py
 	python3 tools/ratchet_lint.py
 	python3 tools/ratchet_lint.py --self-test
+	python3 tools/msg_manifest.py check
+	python3 tools/msg_manifest.py --self-test > $(B)/host/msg_manifest_selftest.txt || { cat $(B)/host/msg_manifest_selftest.txt; exit 1; }
 
 unit-tools:
 	python3 tools/tests/tools_selftest.py

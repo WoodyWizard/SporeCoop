@@ -784,6 +784,7 @@ add('space_rivalry', P + 'coop_space_rivalry.py', warm=True, minutes=8, fixture=
 add('space_rival_away', P + 'coop_space_rival_away.py', minutes=4, fixture='space')  # rivals: a guest's own budget is not reset to the host's copy after an editor trip (BUG-0813; SPORE_FIX_OFF=space.rival_budget_world fails)
 add('space_rival_merge', P + 'coop_space_rival_merge.py', minutes=10, fixture='space')  # rivals -> allies inside a rejoiner's load merges its kept budget; a newcomer to rivals starts with 0 (BUG-1029; SPORE_FIX_OFF=space.merge_known_budget fails)
 add('kick', P + 'coop_kick.py', warm=True, minutes=3, fixture='creature')  # A11: coop.kick removes a guest: its session ends and its co-op window says why; the host is alone; it may join again
+add('compat', P + 'coop_compat.py', warm=True, minutes=4, fixture='creature')  # B3 / B6 (BUG-1136, BUG-1137): a guest's crafted host-only MSG_DNA is dropped by the host's direction gate (SPORE_FIX_OFF=net.dir_gate fails); a planted Creature family revision on the Creature host refuses the guest with a text naming both versions (SPORE_FIX_OFF=net.family_check fails); a Space revision does not
 add('space_kept_key', P + 'coop_space_kept_key.py', minutes=9, fixture='space')  # A10: another game under a departed guest's name gets none of its kept Rivals budget, the guest's own game gets it back (BUG-1107; SPORE_FIX_OFF=space.kept_token fails); an out-of-range budget report does not reach the allies merge (SPORE_FIX_OFF=space.money_range fails)
 # 0.7.14 S1 (fix/w49-space): Space combat, finale, gifts
 add('space_war_escort', P + 'coop_space_war_escort.py', warm=True, minutes=4, fixture='space')  # Rivals at War: the host's escort damages the guest's ship in the guest's game and the guest's shots the escort in the host's game; Allies again: friendly (BUG-1032; SPORE_FIX_OFF=space.war_npc_hits fails)
@@ -1074,9 +1075,12 @@ add('vote_net_4p', 'SPORE_NET=players ' + P + 'coop_vote_net_4p.py', ('multi', '
 # the previous release and this build in one session: suite `mixed`, only when asked for. The test also takes the
 # neighbour lane (SPORE_LANE_B, default lane+1, lane 10: 9), which must be idle: `lab.py run mixed --lane 9` alone
 # (lane 10 free). Not `exclusive` (that needs lanes 1-5, for the LAN tests)
-add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's host: version lines, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)
-add('mixed_version_host', P + 'coop_mixed_version.py --old host', ('mixed',), minutes=7)  # this build joins a v0.7.3.3 host
-add('mixed_version_tribe', P + 'coop_mixed_version.py --old guest --fixture tribe', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's Tribe host (chunks with the time trailer)
+add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('mixed',), minutes=7)  # the previous release (v0.7.14; MIXED_OLD_TAG / --old-tag another) joins this build's host: version lines, the B6 warning on both sides, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)
+add('mixed_version_host', P + 'coop_mixed_version.py --old host', ('mixed',), minutes=7)  # this build joins a host of the previous release
+add('mixed_version_tribe', P + 'coop_mixed_version.py --old guest --fixture tribe', ('mixed',), minutes=7)  # the previous release joins this build's Tribe host (chunks with the time trailer)
+add('mixed_plant_guest', P + 'coop_mixed_version.py --old guest --plant creature', ('mixed',), minutes=6)  # B6 (BUG-1137): this build's Creature host with a planted Creature family revision refuses the previous release's guest, which shows a text naming both versions (SPORE_FIX_OFF=net.family_check fails)
+add('mixed_plant_host', P + 'coop_mixed_version.py --old host --plant creature', ('mixed',), minutes=6)  # B6: this build's guest with a planted Creature revision refuses the previous release's Creature host by its first state
+add('mixed_plant_unused', P + 'coop_mixed_version.py --old guest --plant space --expect-join', ('mixed',), minutes=7)  # B6: a planted Space revision does not stop a Creature join of the previous release
 
 # ---------------- generated variants: the conditions of real players (docs/06-testing.md#testing-degraded)
 # `lab.py run players`: each chosen test again with the guest at 15 fps (frame.limit, twoinst.apply_fps), over
