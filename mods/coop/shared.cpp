@@ -409,11 +409,12 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
     // decode first (wire/shared_res.h); the cut ack list of a MSG_RES is refused where it was before (below)
     wire::shared_res::Res res;
     wire::shared_res::ResAdd add;
-    bool full = type == net::MSG_RES_ADD ? add.read(rd) : res.read(rd);
-    if (type == net::MSG_RES_ADD ? !full : !res.head_ok)
+    bool is_res = type == net::MSG_RES; // (else MSG_RES_ADD: the dispatch hands only these two here)
+    bool full = is_res ? res.read(rd) : add.read(rd);
+    if (is_res ? !res.head_ok : !full)
         return;
-    uint8_t id = type == net::MSG_RES_ADD ? add.id : res.id;
-    double v = type == net::MSG_RES_ADD ? add.v : res.v;
+    uint8_t id = is_res ? res.id : add.id;
+    double v = is_res ? res.v : add.v;
     for (auto& r : g_res) {
         if (r.id != id)
             continue;

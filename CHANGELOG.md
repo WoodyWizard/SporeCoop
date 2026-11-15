@@ -40,6 +40,9 @@
   settings and warnings as errors.
 - The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
   phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
+- Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
+  instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
+  golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 

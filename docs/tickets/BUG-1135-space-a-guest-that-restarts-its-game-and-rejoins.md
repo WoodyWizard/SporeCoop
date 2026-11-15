@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-1107, BUG-1001, BUG-0786, BUG-1132
 ---
 
 ## Report
@@ -33,11 +33,17 @@ another game under the same name (exactly what coop_space_kept_key's `keptkey ot
 swapped it). Not caused by C5: the same FAIL with the hand-built paths of rel/0.7.15 (Verification).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed here (found by C5, outside its package; the key is A10's). It needs a decision on BUG-1001's privacy rule:
+the guest could keep the token of a clean leave per host address and name on disk (today: memory only), so the same
+game after a restart is the same player to that host; a different game under the same name still is not. Until then
+`coop.fix space.kept_token off` gives 0.7.14's name key (restarts work, same-name players swap).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL on rel/0.7.15 d0cdc8ea (the hand-built kept paths, before C5): space_badges_rejoin, run 20261115-025652 of the
+  worktree feat/w51-space-base ("Bob's table kept ... (fresh)" after the restart, rank 0).
+- FAIL on feat/w51-space with the store: run 20261115-023819 (same symptom).
+- PASS on feat/w51-space with SPORE_LAB_FIXOFF=space_badges_rejoin=space.kept_token: run 20261115-025652 of
+  feat/w51-space (the store restores by the name key).
 
 ## History
 - 2026-11-15: opened.
