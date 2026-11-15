@@ -6227,16 +6227,13 @@ void on_world_change()
 
 // BUG-0217: which Tribe world is open. Before, any frame without the stage's local entity (every
 // editor: no adapter) counted as a world change, so an editor visit dropped the live co-op epic
-// untracked into the share save that follows. Now: the stage counter (game::stage_epoch: a load,
-// a received world, another stage), leaving Tribe for a mode that is not an editor, and the
-// in-stage signals (another player tribe object, another save name). Limit: a reload of the same
-// save that reuses the player tribe's address and never shows a non-stage frame is not seen.
-static stage_epoch::Watch g_world_watch;
-static bool g_world_left = true; // the Tribe world is not open (forgotten when it was left)
+// untracked into the share save that follows. C2 (BUG-1141): world_id.h is the one answer (the stage
+// counter: a load, a received world, another stage; leaving Tribe for a mode that is not an editor;
+// another player tribe object or save file in the stage); coop.cpp fires the hook below.
 static uint32_t g_world_checks_fired;
 
-// C2 (BUG-1141, `core.world_id` on): the Tribe world that was open changed or closed (world_id.h fires it; an editor
-// visit keeps it, decision 2); world_check below stands down
+// C2 (BUG-1141): the Tribe world that was open changed or closed (world_id.h fires it; an editor
+// visit keeps it, decision 2)
 LIFECYCLE_HOOK("tribe.world", lifecycle::kWorldChange, -50, [](const lifecycle::Ctx& c) {
     if (c.from_stage != stage_epoch::index_of(modes::kTribe))
         return;
@@ -6249,31 +6246,6 @@ LIFECYCLE_HOOK("tribe.world", lifecycle::kWorldChange, -50, [](const lifecycle::
 // the Tribe world's root object for world_id.h (coop.cpp): the player tribe, null outside Tribe
 const void* world_anchor() { return g_ok && game::mode_id() == modes::kTribe ? player_tribe() : nullptr; }
 
-void world_check()
-{
-    if (lifecycle::world_events_on())
-        return;
-    uint32_t m = game::mode_id();
-    bool in = m == modes::kTribe;
-    bool editor = m == modes::kEdit || m == modes::kEditor;
-    void* pt = in && g_ok ? player_tribe() : nullptr;
-    bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kTribe), in, pt,
-                                   in ? modes::current_world() : 0);
-    bool fire = false;
-    if (!in && !editor) { // the Tribe world is gone (menu, load, another stage)
-        fire = !g_world_left;
-        g_world_left = true;
-    } else if (in) {
-        fire = ch && !g_world_left; // a new world while one was open (in-stage signals)
-        g_world_left = false;
-    }
-    if (fire) {
-        g_world_checks_fired++;
-        if (g_ok)
-            H->log(M, SK_INFO, "tribe: the world changed (mode %08X, epoch %u)", m, game::stage_epoch(modes::kTribe));
-        on_world_change();
-    }
-}
 
 bool center(net::Vec3& pos)
 {
