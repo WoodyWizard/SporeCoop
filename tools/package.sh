@@ -38,8 +38,8 @@ In game F9 opens the lobby: players, stage, ping, ready, chat, "Send my world", 
 Evolution (editor, next stage) is decided by a vote: everybody presses "I'm ready".
 Cheat console (Ctrl+Shift+C) works too: coop host | coop join <ip> | coop leave.
 EOF
-# the toolchain the Makefile uses (LLVM_MINGW ?= ... there), unless set in the environment
-LLVM_MINGW="${LLVM_MINGW:-$(sed -n 's/^LLVM_MINGW ?= //p' "$ROOT/Makefile" | sed 's/\$(HOME)/$HOME/; s|\$HOME|'"$HOME"'|')}"
+# the toolchain the Makefile uses (tools/toolchain.env), unless set in the environment
+LLVM_MINGW="${LLVM_MINGW:-$(make -s --no-print-directory -C "$ROOT" toolchain-path)}"
 STRIP="$LLVM_MINGW/bin/llvm-strip"
 cp "$ROOT/LICENSE" "$STAGE/LICENSE.txt"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.txt"

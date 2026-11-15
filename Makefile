@@ -1,5 +1,7 @@
 # SporeCoop build (Linux host, llvm-mingw cross toolchain, 32-bit Windows targets)
-LLVM_MINGW ?= $(HOME)/.local/opt/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64
+# the pinned toolchain version (and its tarball's SHA-256 for CI): tools/toolchain.env (A3, BUG-1121)
+include tools/toolchain.env
+LLVM_MINGW ?= $(HOME)/.local/opt/llvm-mingw-$(LLVM_MINGW_VERSION)-ucrt-ubuntu-22.04-x86_64
 CC  := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang
 CXX := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang++
 HOSTCXX ?= clang++
@@ -170,6 +172,7 @@ unit-lint:
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
+	python3 tools/ci_lint.py
 
 unit-tools:
 	python3 tools/tests/tools_selftest.py
@@ -211,5 +214,10 @@ $(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.
 
 clean:
 	rm -rf $(B)
+
+# the toolchain folder this Makefile uses (tools/package.sh, tools/tests/update_check.py ask here)
+.PHONY: toolchain-path
+toolchain-path:
+	@echo $(LLVM_MINGW)
 
 -include $(KIT_OBJ:.o=.d) $(COOP_OBJ:.o=.d)

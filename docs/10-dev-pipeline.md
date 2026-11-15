@@ -212,3 +212,23 @@ that never applies) or when CHANGELOG.md has no `## [X.Y.Z]` section, and writes
 section as the release notes (not the X.Y.Z.N sections after it) (BUG-0097). Before a release
 also check README (Compatibility, footnotes) and INSTALL, which name no patch versions any more
 (BUG-0165).
+
+## CI supply chain: pinned actions and toolchain (2026-11-15, feat/w51-build)
+<a id="pipeline-ci-pins"></a>
+
+* `tools/toolchain.env` is the one place for the build environment: the llvm-mingw version and the
+  SHA-256 of its tarball, the CI runner's Python (`CI_PYTHON`) and Pillow. The Makefile includes it
+  (`make toolchain-path` prints the folder it uses), `tools/package.sh` and `tools/release_dry.sh`
+  ask the Makefile, and the workflow copies its `KEY=value` lines into `$GITHUB_ENV`.
+* The workflow checks the tarball with `sha256sum -c` before unpacking it (a changed or replaced
+  asset fails the job), installs `pillow==$PILLOW_VERSION`, and fails when the runner's `python3`
+  is not `CI_PYTHON` (then `make release-dry` would test another Python than CI runs).
+* Every action is pinned by its commit SHA, the tag it was resolved from in a comment
+  (`actions/checkout@<sha> # v4.4.0`). New version: `gh api repos/<owner>/<action>/commits/<tag>
+  --jq .sha`. The pinned tags are the latest of the majors that ran green (v4 / v2); GitHub runs
+  their Node 20 code on Node 24 with a warning. A major bump is its own change with a CI run.
+* New toolchain: download the tarball, `sha256sum` it, compare with the asset's `digest` in
+  `gh api repos/mstorsjo/llvm-mingw/releases/tags/<version>`, update both lines.
+* `tools/ci_lint.py` (in `make test`) fails on an action without a SHA or tag comment, a workflow
+  that does not check the tarball or pins a toolchain version of its own, unpinned Pillow, or a
+  malformed `toolchain.env` (BUG-1121).
