@@ -2346,6 +2346,8 @@ Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creatur
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
   ground difference when it happens)
+* FIXED (2026-11-15, feat/lineages-47, BUG-9216): the picture also comes from the package the game loaded the creation
+  from (Pollination etc.), and in Cell the cell's; checked on TITAN + the MSI in Creature and Cell.
 
 ## A remote body's error at the start of a walk over a bad network (2026-11-06, fix/w45-remote-bodies)
 <a id="known-walk-start-latency"></a>

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Party cards: the host's picture no longer stays blank when its creature came
+  from Sporepedia, another player or a shared save, and in Cell the card shows
+  the cell (BUG-9216).
+
 - Creature: a player who joins while the host is dead no longer arrives dead:
   their world waits until the host respawns (2 minutes at most), and the host
   is told someone is joining (BUG-9215).
