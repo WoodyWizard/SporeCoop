@@ -327,10 +327,6 @@ static uint32_t g_bodies_sent;
 // not see (a body is kept, BUG-0620); the guest binds a mirror to its object and sweeps after a complete snapshot (C4).
 // Liveness is the registry's injected rule: the object listed now with its serial (game::LiveRef), or its own memory
 // with the old switches off (tribe.kept_refs on the host, tribe.mirror_member_lifetime on the guest).
-// `coop.fix tribe.registry off`: the open-coded table pass and snapshot bind / sweep of 0.7.14 on the same tables.
-static bool g_registry_fix = true;
-COOP_FIX("tribe.registry", "BUG-1140", g_registry_fix,
-         "tribe: the host's member table and the guest's mirrors run on the shared mirror registry");
 constexpr uint32_t kMemberNoun = 0x18EB4B7; // (kCitizenNoun, below)
 static bool hm_alive(const mirror::Ref& r) { return kept_alive(r.p, r.serial, r.noun); }
 using HReg = mirror::Registry<uint16_t, HMember>;
@@ -493,9 +489,6 @@ constexpr float kMirrorSmoothMax = 6.f; // m
 constexpr float kMirrorWalkAcc = 40.f; // m/s2 (BUG-0619)
 constexpr float kMirrorWalkOver = 3.f; // m/s: walked at most this faster than the lead itself (BUG-0619)
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
-static std::unordered_set<uint16_t> g_cycle_ids;
-static net::CycleTracker g_cyc;                    // the cycle being received and its chunks (BUG-0612)
-static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
 // BUG-0612 (the older-cycle part of BUG-0425's umbrella): a late chunk of an older snapshot cycle started that cycle
 // again (the newer cycle's chunks forgotten, older states over newer ones). Off: 0.7.8 (any other cycle restarts).
 bool g_cycle_order_fix = true;
@@ -511,20 +504,13 @@ COOP_FIX("tribe.cycle_reset", "BUG-1051", g_cycle_reset_fix, "tribe: a guest's T
 // C4 of 0.7.15 (BUG-1143, docs/01-architecture.md#arch-snapshot-rx): the chunked receive of the host's snapshot
 // cycles (the older-cycle drop of BUG-0612, a cut chunk that counts for nothing, the sweep only after a complete
 // cycle) is net::SnapshotReceiver's, shared with Civ and the squadron. One difference on purpose: a duplicate of a
-// completed cycle's last chunk does not sweep a second time (sweep_once). Off: g_cyc + g_cycle_ids (0.7.14).
-static bool g_snapshot_rx_fix = true;
-COOP_FIX("tribe.snapshot_rx", "BUG-1143", g_snapshot_rx_fix,
-         "tribe: a guest receives the host's Tribe snapshots through the shared snapshot receiver");
+// completed cycle's last chunk does not sweep a second time (sweep_once).
 // policy: 255 chunks, keep_order = net.cycle_order (read with every chunk), 0x8000 behind is older, sweep once, the last
 // chunk completes a cycle
 static net::SnapshotReceiver<uint16_t> g_snap;
 LIFECYCLE_STATE("tribe.cycle", lifecycle::kSession | lifecycle::kWorld, &g_cycle_reset_fix, [] {
-    uint32_t older = g_cyc.older;
-    g_cyc.reset();
-    g_cyc.older = older;
-    g_cycle_ids.clear();
     g_snap.reset(); // (its counters stay)
-}, []() -> size_t { return (g_cyc.have ? 1 : 0) + g_cycle_ids.size() + g_snap.held(); });
+}, []() -> size_t { return g_snap.held(); });
 // BUG-1055: the host tribe index -> local tribe map points into the old world after a load (its users check it
 // against all_tribes, the test path frametool did not)
 WORLD_STATE("tribe.world_map", nullptr, [] { g_local_tribe_of.clear(); }, []() -> size_t {
@@ -3334,21 +3320,7 @@ static void host_tick(double now)
             const mirror::Ref ref{c, game::object_serial(c), kMemberNoun};
             uint16_t id = 0;
             bool fresh = false;
-            if (!g_registry_fix) { // (0.7.14's open-coded pass on the same table)
-                HEntry* it = hm_of(c);
-                // BUG-0951: another citizen the game built at a freed member's address is a new member (a new id, its owner)
-                if (it && g_kept_refs_fix && it->ref.serial && it->ref.serial != ref.serial) {
-                    g_kept_stale++;
-                    g_hm.erase(it->id);
-                    it = nullptr;
-                }
-                if (!it) {
-                    id = net::alloc_id(g_next_id, HIds{}); // BUG-0154: never a live id, never 0
-                    g_hm.bind(id, ref, false);
-                    fresh = true;
-                } else
-                    id = it->id;
-            } else if (!g_kept_refs_fix && g_hm.id_of(c, id)) {
+            if (!g_kept_refs_fix && g_hm.id_of(c, id)) {
                 // (tribe.kept_refs off: the entry at the address stays that member's whatever was built there)
             } else if (!g_hm.adopt(ref, [] { return net::alloc_id(g_next_id, HIds{}); }, // BUG-0154, BUG-0951
                                    [](uint16_t) { g_kept_stale++; }, id, &fresh))
@@ -3390,23 +3362,9 @@ static void host_tick(double now)
         entries.push_back({e.id, (uint8_t)(ti - tribes.begin()), e.data.owner, F<uint8_t>(c, kAgeOff), c, true});
         return true;
     };
-    if (g_registry_fix)
-        g_hm.sweep([&](uint16_t id) { return seen.count(id) != 0; },
-                   [&](HEntry& e, bool alive_obj) { return body(e, alive_obj) ? mirror::Unseen::Keep : mirror::Unseen::Remove; },
-                   [](HEntry&, bool) {}); // (no game call: the game removed the member)
-    else {
-        std::vector<uint16_t> gone;
-        g_hm.for_each([&](HEntry& e) {
-            if (seen.count(e.id))
-                return;
-            if (body(e, kept_alive(e.ref.p, e.ref.serial, kMemberNoun))) // (BUG-0951)
-                seen.insert(e.id);
-            else
-                gone.push_back(e.id);
-        });
-        for (uint16_t id : gone)
-            g_hm.erase(id);
-    }
+    g_hm.sweep([&](uint16_t id) { return seen.count(id) != 0; },
+               [&](HEntry& e, bool alive_obj) { return body(e, alive_obj) ? mirror::Unseen::Keep : mirror::Unseen::Remove; },
+               [](HEntry&, bool) {}); // (no game call: the game removed the member)
     // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
     // is dropped by the connection: with 24 members per chunk (fixed until 2026-10-23) the first
     // chunk (the player tribe first) never arrived once the planet had 24 citizens, and the guest
@@ -4522,23 +4480,10 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
     if (!r.ok())
         return;
-    if (g_snapshot_rx_fix) { // C4 (BUG-1143)
-        g_snap.policy.keep_order = g_cycle_order_fix; // (BUG-0612's switch, read with every chunk)
-        if (!g_snap.begin(cycle, chunk, chunks))
-            return; // a bad header or a late chunk of an older cycle
-    } else {
-        if (!net::cycle_chunk_ok(chunk, chunks))
-            return;
-        bool started = false;
-        if (!g_cyc.begin(cycle, g_cycle_order_fix, &started))
-            return; // a late chunk of an older cycle
-        if (started)
-            g_cycle_ids.clear();
-    }
-    auto cut = [] { // a chunk read only in part counts for nothing
-        if (g_snapshot_rx_fix)
-            g_snap.end(false);
-    };
+    g_snap.policy.keep_order = g_cycle_order_fix; // C4 (BUG-1143; BUG-0612's switch, read with every chunk)
+    if (!g_snap.begin(cycle, chunk, chunks))
+        return; // a bad header or a late chunk of an older cycle
+    auto cut = [] { g_snap.end(false); }; // a chunk read only in part counts for nothing
     std::vector<std::pair<net::Vec3, bool>> htribes;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
@@ -4595,10 +4540,7 @@ static void guest_state(net::Reader& r)
         m.hp = r.f32();
         if (!r.ok())
             return cut();
-        if (g_snapshot_rx_fix)
-            g_snap.saw(id);
-        else
-            g_cycle_ids.insert(id);
+        g_snap.saw(id);
         GEntry& e = g_gm.at(id);
         GMember& g = e.data;
         void* c = e.ref.p;
@@ -4652,27 +4594,16 @@ static void guest_state(net::Reader& r)
             continue;
         }
         // bind to the nearest unbound local member of that tribe, else spawn one
-        if (g_registry_fix) { // (D3: tribe_logic::pick_bind)
+        {
             auto ms = members(t);
             std::vector<tribe_logic::Candidate> cand;
             for (void* lc : ms) {
                 net::Vec3 q = game::position(lc);
                 cand.push_back({q.x, q.y, q.z, g_gm.bound(lc)});
             }
-            int k = tribe_logic::pick_bind(cand, m.pos.x, m.pos.y, m.pos.z);
+            int k = tribe_logic::pick_bind(cand, m.pos.x, m.pos.y, m.pos.z); // (D3)
             if (k >= 0)
                 c = ms[k];
-        } else {
-            float best = 6.f;
-            for (void* lc : members(t)) {
-                if (g_gm.bound(lc))
-                    continue;
-                float d = net::dist(game::position(lc), m.pos);
-                if (d < best) {
-                    best = d;
-                    c = lc;
-                }
-            }
         }
         bool made = false;
         if (!c) {
@@ -4698,20 +4629,8 @@ static void guest_state(net::Reader& r)
         g.not_made = nullptr;
         g_gm.bind(id, mirror::Ref{c, game::object_serial(c), kMemberNoun}, made); // (BUG-0844: its serial)
     }
-    if (g_snapshot_rx_fix) { // C4: true once, on the chunk that completes the cycle (a cut one counts for nothing)
-        if (!g_snap.end(r.ok()))
-            return;
-    } else {
-        if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
-            return;
-        g_cyc.add(chunk);
-        if (chunk + 1 < chunks)
-            return;
-        if (!g_cyc.complete(chunks)) { // a chunk of this cycle was lost or comes late: keep everything
-            g_incomplete++;
-            return;
-        }
-    }
+    if (!g_snap.end(r.ok())) // C4: true once, on the chunk that completes the cycle (a cut one counts for nothing)
+        return;
     // end of a full snapshot: members the host no longer has go away, and so do local members
     // the host does not know (the guest's tribes are only mirrors)
     auto remove = [](GEntry& e, bool alive) {
@@ -4723,23 +4642,7 @@ static void guest_state(net::Reader& r)
         g_removed++;
     };
     // C1 + C4: every mirror the cycle did not name goes (the registry's sweep; a dead one is only forgotten)
-    if (g_registry_fix && g_snapshot_rx_fix)
-        g_snap.finish(g_gm, [](GEntry&, bool) { return mirror::Unseen::Remove; }, remove);
-    else if (g_registry_fix)
-        g_gm.sweep([](uint16_t id) { return g_cycle_ids.count(id) != 0; }, [](GEntry&, bool) { return mirror::Unseen::Remove; },
-                   remove);
-    else {
-        std::vector<uint16_t> gone;
-        g_gm.for_each([&](GEntry& e) {
-            if (!(g_snapshot_rx_fix ? g_snap.seen(e.id) : g_cycle_ids.count(e.id) != 0))
-                gone.push_back(e.id);
-        });
-        for (uint16_t id : gone) {
-            GEntry* e = g_gm.find(id);
-            remove(*e, mirror_ok(*e)); // (BUG-0844)
-            g_gm.erase(id);
-        }
-    }
+    g_snap.finish(g_gm, [](GEntry&, bool) { return mirror::Unseen::Remove; }, remove);
     for (void* t : g_local_tribe_of) // the orphans: members of this game the host has not
         if (t)
             for (void* lc : members(t))
@@ -6487,16 +6390,15 @@ std::string status()
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
                  "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u away_trees_ended=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_snapshot_rx_fix ? g_snap.incomplete : g_incomplete,
-                 g_snapshot_rx_fix ? g_snap.older : g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_snap.incomplete, g_snap.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
-    out += "tribe registry: fix=" + std::to_string((int)g_registry_fix) + " " + g_hm.status() + "; " + g_gm.status() + "\n";
-    snprintf(b, sizeof b, "tribe snapshot rx: fix=%d chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
-             (int)g_snapshot_rx_fix, g_snap.chunks_in, g_snap.bad, g_snap.older, g_snap.cut, g_snap.incomplete, g_snap.abandoned,
+    out += "tribe registry: " + g_hm.status() + "; " + g_gm.status() + "\n";
+    snprintf(b, sizeof b, "tribe snapshot rx: chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
+             g_snap.chunks_in, g_snap.bad, g_snap.older, g_snap.cut, g_snap.incomplete, g_snap.abandoned,
              g_snap.complete, g_snap.generation);
     out += b;
     if (!g_last_cmd.empty())
