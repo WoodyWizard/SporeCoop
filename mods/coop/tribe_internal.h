@@ -124,8 +124,24 @@ struct HMember {
     uint32_t bt_ticks = 0; // BUG-0531 (diagnostics, `coop.tribe ai`): its behaviour tree's ticks in the host's game
 };
 
+extern bool g_kept_refs_fix;
+extern uint32_t g_kept_stale;
 bool kept_alive(void* o, uint32_t serial, uint32_t noun);
+
+constexpr double kBodyMax = 60.0;
+constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
+
 extern std::unordered_map<void*, void*> g_detached;
+
+// C1 of 0.7.15 (BUG-1140, docs/01-architecture.md#arch-mirror-registry): the host's member table (g_hm / g_hm_by_id,
+// keyed both ways by hand) and the guest's mirrors (g_gm / g_gid_of) are mirror::Registry tables: one entry per net
+// id with its object (pointer, serial, noun), the reverse index kept by the registry. The host adopts every member of
+// the tribes' lists (another serial at a known address is a new member: BUG-0951) and sweeps the entries its pass did
+// not see (a body is kept, BUG-0620); the guest binds a mirror to its object and sweeps after a complete snapshot (C4).
+// Liveness is the registry's injected rule: the object listed now with its serial (game::LiveRef), or its own memory
+// with the old switches off (tribe.kept_refs on the host, tribe.mirror_member_lifetime on the guest).
+constexpr uint32_t kMemberNoun = 0x18EB4B7; // (kCitizenNoun, below)
+
 bool hm_alive(const mirror::Ref& r);
 
 using HReg = mirror::Registry<uint16_t, HMember>;
@@ -144,10 +160,18 @@ extern HostTable g_host;
 HEntry* hm_of(const void* c);
 void* hm_obj(uint16_t id);
 bool hm_ok(const HEntry& e);
+
+// net::alloc_id's view of the ids in use
+struct HIds {
+    size_t count(uint16_t id) const { return g_host.members.has(id) ? 1 : 0; }
+};
+
+extern double g_last_send;
 extern uint16_t g_cycle;
 extern uint32_t g_cmds_done;
 extern uint32_t g_cmds_rejected;
 extern std::string g_last_cmd;
+extern uint32_t g_gifts;
 extern float g_test_lift;
 
 // one guest mirror of a host member (tribe.gm): its id (the host's member id), object and serial are the registry entry's
@@ -227,6 +251,7 @@ struct Target {
 };
 
 void write_target(net::Writer& w, const Target& t);
+Target read_target(net::Reader& r);
 
 enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3, CMD_CONQUER = 4 };
 
@@ -352,7 +377,23 @@ extern uintptr_t a_NpcCtrl;
 void theme_hooks_install();
 void party_hooks_install();
 void party_forget();
+void baby_tick(double now);
 void on_idle_anim(void* c, uint32_t anim);
+void arrival_place_due(double now);
+
+constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4; // one member in a tribe state chunk
+constexpr uint32_t kStateTrailer = 0x54435354u; // BUG-0365: a chunk's trailer, magic + the host's ms
+constexpr size_t kTrailerSize = 8;
+
+// BUG-0381: an NPC tribe the host's game formed during play (cNpcTribeController, 0xCC6440: "a new
+// tribe has appeared") is formed by the host's game only: the guests' games never formed it (2 of 5
+// tribes on every guest for minutes in a 4-player campaign) and the host's members of it had no
+// tribe to be mirrored into on a guest (sync-check "t: 27 missing on the guest"). The host appends
+// each tribe's species and archetype to its state chunks (after the clock trailer); a guest makes a
+// host NPC tribe it has no tribe for (Simulator::SpawnNpcTribe at the host's tribe position, no
+// members: the mirrors are spawned into it as for any tribe).
+constexpr uint32_t kTribeInfoTag = 0x49425254u; // "TRBI": the tribe table's species / archetype after the trailer
+constexpr size_t kTribeInfo = 12 + 1;           // species key (instance, type, group) + archetype (0xFF: none)
 
 struct TribeInfo {
     game::Key key{};
@@ -407,6 +448,7 @@ extern bool g_party_fix;
 extern bool g_party_stop_fix;
 extern uint32_t g_party_stops_outside;
 void on_party(uint8_t kind, net::Reader& r);
+void gameover_host_tick(double now);
 
 // tests (BUG-0759): `coop.tribe setvel <id> <vx> <vy> <vz> <s>` holds a host member's velocity field (cLocomotiveObject
 // mVelocity) at that value for s seconds, as the game left the chief's in campaign_tc2 (119.7 m/s while it slept)
@@ -416,10 +458,26 @@ struct TestVel {
 };
 
 extern std::unordered_map<void*, TestVel> g_test_vel;
+void test_vel_tick(double now);
+extern uint32_t g_member_moves;
+extern uint32_t g_member_moves_unowned;
+extern bool g_owners_fix;
+extern std::unordered_map<void*, std::string> g_member_claim;
+extern std::unordered_map<void*, uint8_t> g_member_flags;
+extern uint32_t g_mclaims_held;
+extern uint32_t g_mclaims_moved;
+extern uint32_t g_mclaims_read;
+extern uint32_t g_mclaims_serial;
+extern bool g_members_matched;
+void member_claim(void* c, uint8_t owner, uint8_t flag);
+void host_tick(double now);
 extern uint32_t g_fruit_orders_moved;
 
 static constexpr uint32_t kFruitNoun = 0x2C9CC91;
 
+extern bool g_cmd_listed_fix;
+extern uint32_t g_cmd_gone;
+void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& ids);
 extern bool g_guest_baby_fix;
 extern uint32_t g_babies_local;
 extern uint32_t g_babies_made;
@@ -441,6 +499,9 @@ extern uint32_t g_buys_other;
 extern uint32_t g_buys_own;
 extern uint32_t g_buys_seen;
 extern std::string g_baby_last;
+void baby_on_host(uint8_t from, const net::Vec3& pos);
+void conquer_on_host(uint8_t from, const net::Vec3& p);
+extern uint32_t g_guest_missions;
 void host_command(uint8_t from, net::Reader& r);
 extern bool g_fix_gameover;
 void* spawn_member(void* t, uint8_t age);
