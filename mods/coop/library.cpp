@@ -64,6 +64,12 @@ static void load_onward(); // BUG-9105
 static bool g_retry_fix = true;
 COOP_FIX("library.retry", "BUG-9106", g_retry_fix, "Lineages Cache: a failed import is tried again at the next game start");
 static unsigned g_retried = 0;
+// BUG-9213: the Cell-to-Creature provisional creature keeps the cell's picture (BUG-9095 repaired only the
+// model), so partners saw a cell as its icon. It is not shared; the creature saved in the editor is.
+static bool g_skip_provisional = true;
+COOP_FIX("library.skip_provisional", "BUG-9213", g_skip_provisional,
+         "Lineages Cache: the provisional Cell-to-Creature creation (a cell picture) is not shared");
+static unsigned g_provisional = 0;
 static bool g_split_fix = true;
 COOP_FIX("library.split", "BUG-9104", g_split_fix,
          "Lineages Cache: received creations show in the Lineages Cache, not in My Creations");
@@ -323,6 +329,11 @@ static void scan_one() {
         return;
     }
     if (group != resource.key.group) {
+        if (g_skip_provisional) {
+            if (!g_provisional++)
+                H->log(M, SK_INFO, "library: a provisional creation (its PNG holds group %08X) is not shared (BUG-9213)", group);
+            return;
+        }
         // The Cell-to-Creature provisional catalog copies a thumbnail whose
         // steganographic payload is still a cell. Encode the CURRENT model into
         // a separate cache PNG, keeping the original records and saves intact.
@@ -869,7 +880,7 @@ std::string debug(const std::vector<std::string> &args) {
     return "library local=" + std::to_string(local) + " imported=" + std::to_string(imported) +
            " pending=" + std::to_string(pending) + " failed=" + std::to_string(failed) +
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
-           " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) +
+           " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) + " provisional=" + std::to_string(g_provisional) +
            " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " foreign=" + (g_foreign ? "on" : "off") + " foreign_offered=" + std::to_string(g_foreign_offered) +
            " foreign_refused=" + std::to_string(g_foreign_refused) + " peers_foreign=" +
            std::to_string(std::count_if(g_peer_foreign.begin(), g_peer_foreign.end(), [](auto &p) { return p.second; })) + " retried=" + std::to_string(g_retried) +
