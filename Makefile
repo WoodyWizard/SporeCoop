@@ -159,6 +159,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/space_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/path_mask_tests tests/path_mask_tests.cpp
+	$(B)/host/path_mask_tests
+	@! $(B)/host/path_mask_tests --old > $(B)/host/path_mask_tests_old.txt || { echo "path_mask_tests --old must fail (BUG-1124)"; exit 1; }
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg
 	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
