@@ -177,7 +177,7 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
 // world is another species in its own game: every NPC's relation to it came from that rule (4 instead of the
 // tuning's 3 for the fixture's herbivores, 1 "hostile" for others), and CreatureSocialMode (the click, the
 // face) differed from the host's. On the host the same happened to the guests' puppets the NPCs' AI looks at
-// (npc.cpp ai_target). With creature.relations every player's species counts as the player species: the own
+// (npc.cpp ai_target). Now every player's species counts as the player species: the own
 // avatar's and the partners' puppets' (refreshed every frame in tick()).
 
 typedef bool(SK_THISCALL* IsPlayerSpecies_t)(void*);

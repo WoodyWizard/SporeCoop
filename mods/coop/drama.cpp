@@ -5,7 +5,6 @@
 // The host owns the world: on a guest its own Drama Manager does not start the events of the kinds
 // in the mask (default: the UFO). The sea monster stays: it is the guest's own avatar's deep-water
 // death, which keeps a swimmer from leaving the island (docs/re/creature.md#creature-drama-events).
-// `coop.fix creature.guest_events off`: a guest starts every event as before (0.7.4).
 #include "drama.h"
 #include "call_guard.h"
 #include "lifecycle.h"

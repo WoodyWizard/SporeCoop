@@ -255,7 +255,7 @@ struct GuestCheck {
 static bool g_share_quiet_fix = true;
 COOP_FIX("diag.share_quiet", "BUG-0754", g_share_quiet_fix, "sync-check: a guest is not compared while the host shares its world with it (the save, the transfer, its load)");
 constexpr double kShareQuiet = 20.0;
-// BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
+// BUG-0430: the windows above (BUG-0379: totals, cells) take a guest a moment late for no difference, so one
 // late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
 // matched while the host had left it over 1 s before asking, or over 5 % of the guest's sent band of cells missing that
 // were in the band at the check before too: lab 20261108-080337 showed that a rising total or a changing set alone

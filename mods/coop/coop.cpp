@@ -260,7 +260,7 @@ extern uint32_t g_own_editor_due;
 // on locally meanwhile (npc in Creature, tribe / civ local_play); in Cell and Space the guest got
 // "you play on alone" / "is back" for every editor visit of the host. The main menu counts in every
 // stage (BUG-0151). Off: every stage (0.7.3.0).
-// BUG-0205: Cell too since cellsync plays the guest's own pool while the host is away (pool.away).
+// BUG-0205: Cell too since cellsync plays the guest's own pool while the host is away.
 constexpr uint32_t kAwayStages[] = {modes::kCreature, modes::kTribe, modes::kCiv, modes::kCell};
 bool g_away_stages_fix = true;
 COOP_FIX("core.away_stages", "BUG-0233", g_away_stages_fix, "core: a host editor or load counts as away only in Creature, Tribe, Civ");
@@ -294,8 +294,6 @@ char host_out_of_stage()
         return 0;
     if (g_away_stages_fix && !dna_route::away_stage(g_mode, kAwayStages, (int)std::size(kAwayStages)))
         return 0; // BUG-0233
-    if (g_mode == modes::kCell && !cellsync::away_enabled())
-        return 0; // BUG-0205 off: as in 0.7.3.1
     if (m == modes::kEdit || m == modes::kEditor)
         return 'e';
     return m == modes::kLoad ? 'l' : 0;
