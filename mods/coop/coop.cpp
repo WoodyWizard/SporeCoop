@@ -894,11 +894,12 @@ static void apply_startup_off()
 }
 
 static void join_apart_tick(double now);
-void on_frame(void*, int, void*)
+// One frame of the mod (B2 of 0.7.15): on_frame runs these phases in this order; the order is part of several fixes
+// (docs/01-architecture.md#arch-start-and-frame).
+
+// on_frame, phase: before any message: clocks, the stage counters and world changes (BUG-0217), the puppets, proxies and bodies as drawn (BUG-0091)
+static void frame_observe(double now)
 {
-    modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
-    game::LiveScope live_scope;  // BUG-0426: the object list of this frame (game::listed) holds in here
-    double now = H->time_seconds();
     g_last_frame = now;
     support::tick(now); // first: its frame timing (FPS, hitches) and the session clock
     {
@@ -923,6 +924,11 @@ void on_frame(void*, int, void*)
     npc::monitor_tick(now);   // the proxies as drawn
     bodyrec_tick(now);        // coop.bodyrec (tests, BUG-0425): every body as drawn
     modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
+}
+
+// on_frame, phase: the session's messages, which see the last frame's g_mode / g_world / g_local (BUG-0231)
+static void frame_receive(double now)
+{
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
@@ -932,6 +938,11 @@ void on_frame(void*, int, void*)
     g_sess.update();
     partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame
     lobby_tick(now);
+}
+
+// on_frame, phase: the guest's latency for the drive, the votes, the editors, the co-op window and the menus
+static void frame_votes_and_ui(double now)
+{
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
         int rtt = g_sess.rtt_of(0);
         if (rtt >= 0)
@@ -955,6 +966,11 @@ void on_frame(void*, int, void*)
     vote_action_tick(now);
     coop_ui::tick();
     menu_tick(now);
+}
+
+// on_frame, phase: the host's world (share, save strip) and the modules that tick before the mode is read again
+static void frame_world_ticks(double now)
+{
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     else
@@ -973,6 +989,11 @@ void on_frame(void*, int, void*)
     evo_key_tick(now);
     creature_hp::tick();
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere() || guest_space_other()); // BUG-0231, BUG-0709: held while elsewhere
+}
+
+// on_frame, phase: host: the DNA total (on a change, every 2 s) and the time of day (every 1 s)
+static void frame_send_totals(double now)
+{
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
@@ -1008,7 +1029,11 @@ void on_frame(void*, int, void*)
                     g_sess.send_unreliable_to(p.id, net::MSG_WORLD_TIME, w);
         }
     }
+}
 
+// on_frame, phase: this frame's g_mode (on_mode_change), g_adapter, g_world, g_local; settings, HUD helpers, the second avatar check
+static void frame_local_update(double now)
+{
     uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
     // the effect hooks are installed once (game::init); this only gates their work to the played
@@ -1032,6 +1057,12 @@ void on_frame(void*, int, void*)
     avatar_change_check();
     join_apart_tick(now); // BUG-0989
 
+    (void)av;
+}
+
+// on_frame, phase: strays, the host's phase (follow_phase), the share wait, the away state, DNA, the stage modules
+static void frame_stage_ticks(double now)
+{
     remove_strays(now);
     follow_phase(now);
     share_wait_tick();
@@ -1053,7 +1084,11 @@ void on_frame(void*, int, void*)
     spacecoop::tick(now);
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
+}
 
+// on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
+static void frame_send_state(double now)
+{
     // BUG-1093 (net.send_phase): every 0.05 s with the schedule's phase kept, a stop at once (net::state_due)
     float sp_now = 0;
     if (g_sent_speed > 1.f && g_mode == modes::kCreature)
@@ -1088,8 +1123,11 @@ void on_frame(void*, int, void*)
         r.buf.push(g_echo_q.front().second, now);
         g_echo_q.pop_front();
     }
+}
 
-    (void)av;
+// on_frame, phase: every partner's puppet driven (or forgotten without a local entity), then the recorders
+static void frame_drive(double now)
+{
     for (auto& [id, r] : g_remotes) {
         if (!g_local) {
             if (r.puppet)
@@ -1100,6 +1138,22 @@ void on_frame(void*, int, void*)
     }
     track_tick(now);
     trace_tick(now);
+}
+
+void on_frame(void*, int, void*)
+{
+    modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
+    game::LiveScope live_scope;  // BUG-0426: the object list of this frame (game::listed) holds in here
+    double now = H->time_seconds();
+    frame_observe(now);
+    frame_receive(now);
+    frame_votes_and_ui(now);
+    frame_world_ticks(now);
+    frame_send_totals(now);
+    frame_local_update(now);
+    frame_stage_ticks(now);
+    frame_send_state(now);
+    frame_drive(now);
 }
 
 // Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
