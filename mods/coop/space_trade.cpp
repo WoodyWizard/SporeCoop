@@ -35,6 +35,8 @@
 #include "space_ext.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
+#include "space_kept.h"
+#include "wire/space_trade.h"
 #include "fixes.h"
 #include "own_world.h"
 
@@ -78,23 +80,8 @@ static uintptr_t a_SpaceGame, a_AddItemByKey, a_AddAmmo, a_ConsumeAmmo, a_Tradin
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
-struct Key {
-    uint32_t v[3] = {};
-    bool operator==(const Key& o) const { return v[0] == o.v[0] && v[1] == o.v[1] && v[2] == o.v[2]; }
-};
-
-static void put_key(net::Writer& w, const Key& k)
-{
-    for (uint32_t x : k.v)
-        w.u32(x);
-}
-static Key get_key(net::Reader& r)
-{
-    Key k;
-    for (auto& x : k.v)
-        x = r.u32();
-    return k;
-}
+using Key = wire::Key3; // the payloads: wire/space_trade.h (C6)
+namespace tw = wire::space_trade;
 
 // ---------------- state ----------------
 struct Out {               // something of ours on its way to a partner
@@ -137,13 +124,8 @@ static bool g_away;        // tests: the feature acts as outside Space (no inven
 static bool g_wait_restore_fix = true;
 COOP_FIX("space.trade_wait_restore", "BUG-1034", g_wait_restore_fix,
          "space: a gift or a sale reaching a rejoined guest before its own cargo hold is back waits for it");
-struct Waiting {
-    uint8_t kind, origin;
-    uint32_t id;
-    std::vector<uint8_t> body; // the message after `to` and `id`
-};
-static std::vector<Waiting> g_waiting;
-static uint32_t g_waited, g_offer_waits;
+static spacekept::HeldQueue g_waiting; // the whole payloads (C5: space_kept.h)
+static uint32_t g_offer_waits;
 static bool inv_restore_pending();
 static bool g_restore_hold; // tests (BUG-1034): the guest's restore waits (no own record, K_INV_KEPT not taken)
 static int g_hold;         // tests: 1 do not answer gifts (the answer is still on its way); 2 add
@@ -648,12 +630,14 @@ static std::string give_tool(const Key& key, int n, uint8_t to)
     o.emp = empire();
     o.saves = spaceext::saves();
     o.tag = spaceext::world_tag();
+    tw::Tool m;
+    m.to = to;
+    m.id = o.id;
+    m.key = key;
+    m.n = n;
+    m.name = nm;
     net::Writer w;
-    w.u8(to);
-    w.u32(o.id);
-    put_key(w, key);
-    w.u32((uint32_t)n);
-    w.str8(nm);
+    m.write(w);
     send_out(o, w);
     g_gifts_sent++;
     g_charges_sent += n;
@@ -680,14 +664,16 @@ static std::string sell(int n_max = kSaleStep)
     o.tag = spaceext::world_tag();
     if (!rivals)
         note_demand(d.col.planet, n, o.t);
+    tw::Sell m; // K_SELL and K_OFFER: the same bytes
+    m.to = o.to;
+    m.id = o.id;
+    m.planet = o.planet;
+    m.key = o.key;
+    m.n = n;
+    m.price = o.price;
+    m.name = o.name;
     net::Writer w;
-    w.u8(o.to);
-    w.u32(o.id);
-    w.u32(o.planet);
-    put_key(w, o.key);
-    w.u32((uint32_t)n);
-    w.u32((uint32_t)o.price);
-    w.str8(o.name);
+    m.write(w);
     send_out(o, w);
     if (rivals) {
         g_offers_sent++;
@@ -764,11 +750,13 @@ static void answer_offer(uint32_t id, bool accept, int from = -1)
                                        spaceext::tr(" for $", " за $") + std::to_string(total)
                                  : spaceext::tr("Can't buy: ", "Не купить: ") + std::string(spaceext::tr(en[reason], ru[reason])));
         }
+        tw::OfferAck m;
+        m.to = of.from;
+        m.id = of.id;
+        m.got = got;
+        m.reason = reason;
         net::Writer w;
-        w.u8(of.from);
-        w.u32(of.id);
-        w.u32((uint32_t)got);
-        w.u8(reason);
+        m.write(w);
         spaceext::send(K_OFFER_ACK, w);
         return;
     }
@@ -838,23 +826,22 @@ static void pay_owed()
     }
 }
 
-static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r);
-static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r);
+static void inv_message(uint8_t kind, uint8_t origin, net::Reader& r);
+static void handle(uint8_t kind, uint8_t origin, net::Reader& r);
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
-    uint8_t to = r.u8();
-    uint32_t id = r.u32();
-    if (!r.ok() || to != spaceext::my_id())
+    net::Reader peek = r; // the header first: the rest is read by the kind's struct (wire/space_trade.h)
+    tw::Head h;
+    if (!h.read(peek) || h.to != spaceext::my_id())
         return;
     // BUG-1034: not into the hold the restore is about to replace
-    if ((kind == K_TOOL || kind == K_SELL) && g_wait_restore_fix && inv_restore_pending() && g_waiting.size() < 64) {
-        g_waiting.push_back({kind, origin, id, std::vector<uint8_t>(r.cur(), r.cur() + r.left())});
-        g_waited++;
+    if ((kind == K_TOOL || kind == K_SELL) && g_wait_restore_fix && inv_restore_pending() &&
+        g_waiting.hold(kind, origin, r.cur(), r.left())) {
         H->log(M, SK_INFO, "trade: %s from %s waits for the own hold's restore (BUG-1034)", kind == K_TOOL ? "a gift" : "a sale",
                spaceext::name_of(origin).c_str());
         return;
     }
-    handle(kind, origin, id, r);
+    handle(kind, origin, r);
 }
 
 // BUG-1034: the gifts and sales that waited for the restore, once it is done (or the session ended)
@@ -862,24 +849,25 @@ static void handle_waiting()
 {
     if (g_waiting.empty() || inv_restore_pending())
         return;
-    auto v = std::move(g_waiting);
-    g_waiting.clear();
-    for (auto& w : v) {
-        net::Reader r(w.body.data(), w.body.size());
-        handle(w.kind, w.origin, w.id, r);
+    for (auto& w : g_waiting.take()) {
+        net::Reader r(w.payload.data(), w.payload.size());
+        handle(w.kind, w.origin, r);
     }
 }
 
-static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
+// decode -> check -> apply: every kind's payload is its struct of wire/space_trade.h
+static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     std::string from = spaceext::name_of(origin);
     switch (kind) {
     case K_TOOL: {
-        Key k = get_key(r);
-        int n = (int)r.u32();
-        std::string nm = r.str8();
-        if (!r.ok() || n <= 0 || n > 999)
+        tw::Tool m;
+        if (!m.read(r))
             return;
+        const Key& k = m.key;
+        int n = m.n;
+        const std::string& nm = m.name;
+        uint32_t id = m.id;
         if (g_hold == 1)
             return; // tests: the answer is still on its way
         bool is_new = false;
@@ -888,11 +876,13 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         g_charges_got += got;
         if (g_hold == 2)
             return; // tests: kept, the answer is lost
+        tw::ToolAck a;
+        a.to = origin;
+        a.id = id;
+        a.got = got;
+        a.back = n - got;
         net::Writer w;
-        w.u8(origin);
-        w.u32(id);
-        w.u32((uint32_t)got);
-        w.u32((uint32_t)(n - got));
+        a.write(w);
         spaceext::send(K_TOOL_ACK, w);
         if (got)
             spaceext::notice(from + spaceext::tr(" gave you ", " дарит вам ") + std::to_string(got) + " x " + nm +
@@ -903,10 +893,14 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         break;
     }
     case K_TOOL_ACK: {
-        int got = (int)r.u32(), back = (int)r.u32();
-        Out* o = pending(id, K_TOOL, origin);
-        if (!r.ok() || !o)
+        tw::ToolAck m;
+        if (!m.read(r))
             return;
+        int got = m.got, back = m.back;
+        Out* o = pending(m.id, K_TOOL, origin);
+        if (!o)
+            return;
+        uint32_t id = m.id;
         Out copy = *o;
         drop(id);
         if (back > 0) {
@@ -918,21 +912,21 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         break;
     }
     case K_SELL: {
-        uint32_t planet = r.u32();
-        Key k = get_key(r);
-        int n = (int)r.u32(), price = (int)r.u32();
-        std::string nm = r.str8();
-        if (!r.ok() || n <= 0 || n > 999)
+        tw::Sell m;
+        if (!m.read(r))
             return;
-        (void)planet;
-        int got = spaceext::in_space() && add_spice(k, n) ? n : 0;
+        int n = m.n, price = m.price;
+        const std::string& nm = m.name;
+        int got = spaceext::in_space() && add_spice(m.key, n) ? n : 0;
         g_bought += got;
         if (g_hold == 2)
             return; // tests: kept, the answer is lost
+        tw::SellAck a;
+        a.to = origin;
+        a.id = m.id;
+        a.got = got;
         net::Writer w;
-        w.u8(origin);
-        w.u32(id);
-        w.u32((uint32_t)got);
+        a.write(w);
         spaceext::send(K_SELL_ACK, w);
         spaceext::notice(got ? from + spaceext::tr(" sold ", " продал(а) вашей колонии ") + std::to_string(n) + " " + nm +
                                    spaceext::tr(" to your colony: it is in your cargo hold (the galaxy paid $",
@@ -943,9 +937,13 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         break;
     }
     case K_SELL_ACK: {
-        int got = (int)r.u32();
+        tw::SellAck m;
+        if (!m.read(r))
+            return;
+        int got = m.got;
+        uint32_t id = m.id;
         Out* o = pending(id, K_SELL, origin);
-        if (!r.ok() || !o)
+        if (!o)
             return;
         Out copy = *o;
         drop(id);
@@ -969,13 +967,15 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         break;
     }
     case K_OFFER: {
-        uint32_t planet = r.u32();
-        Key k = get_key(r);
-        int n = (int)r.u32(), price = (int)r.u32();
-        std::string nm = r.str8();
-        int sum = 0;
-        if (!r.ok() || n <= 0 || n > 999 || !net::money_total(n, price, sum))
+        tw::Offer m;
+        if (!m.read(r))
             return;
+        uint32_t id = m.id, planet = m.planet;
+        const Key& k = m.key;
+        int n = m.n, price = m.price;
+        const std::string& nm = m.name;
+        int sum = 0;
+        net::money_total(n, price, sum); // (checked by read)
         for (auto& of : g_offers)
             if (of.id == id && of.from == origin)
                 return; // this offer again
@@ -988,10 +988,14 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
         break;
     }
     case K_OFFER_ACK: {
-        int got = (int)r.u32();
-        uint8_t reason = r.u8();
+        tw::OfferAck m;
+        if (!m.read(r))
+            return;
+        int got = m.got;
+        uint8_t reason = m.reason;
+        uint32_t id = m.id;
         Out* o = pending(id, K_OFFER, origin);
-        if (!r.ok() || !o)
+        if (!o)
             return;
         Out copy = *o;
         drop(id);
@@ -1011,13 +1015,16 @@ static void handle(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
             refund(copy, copy.n - got, from + ": " + spaceext::tr(en[std::min<int>(reason, 3)], ru[std::min<int>(reason, 3)]));
         break;
     }
-    case K_OFFER_CANCEL:
-        answer_offer(id, false, origin);
+    case K_OFFER_CANCEL: {
+        tw::OfferCancel m;
+        if (m.read(r))
+            answer_offer(m.id, false, origin);
         break;
+    }
     case K_INV:
     case K_INV_KEPT:
     case K_INV_DONE:
-        inv_message(kind, origin, id, r);
+        inv_message(kind, origin, r);
         break;
     default:
         break;
@@ -1050,16 +1057,8 @@ COOP_FIX("space.hold_own_save", "BUG-0816", g_inv_own_save_fix, "space: a guest'
 static uint32_t g_inv_own_held;
 static bool inv_own_save() { return g_inv_own_save_fix && own_world::space_other(); }
 
-struct InvItem {
-    uint8_t type = 0; // cSpaceInventoryItem +0x14 (2 tool, 4 trading object / spice, 0/1/5/6 other cargo)
-    Key key;
-    int count = 0;    // +0x10
-    int ammo = -1;    // tools that use charges: cSpaceToolData +0x7C, else -1
-};
-struct Inv {
-    int slots = 0; // cargo slot items (type 3), vt+0x88
-    std::vector<InvItem> items;
-};
+using InvItem = tw::InvItem; // a cargo hold and its bytes: wire/space_trade.h (C6)
+using Inv = tw::Inv;
 
 static bool read_inv(Inv& out)
 {
@@ -1084,39 +1083,8 @@ static bool read_inv(Inv& out)
     return true;
 }
 
-static void put_inv(net::Writer& w, const Inv& v)
-{
-    w.u16((uint16_t)std::clamp(v.slots, 0, 0xFFFF));
-    uint16_t n = (uint16_t)std::min<size_t>(v.items.size(), 250);
-    w.u16(n);
-    for (uint16_t i = 0; i < n; i++) {
-        const InvItem& x = v.items[i];
-        w.u8(x.type);
-        put_key(w, x.key);
-        w.u32((uint32_t)x.count);
-        w.u32((uint32_t)x.ammo);
-    }
-}
-
-static bool get_inv(net::Reader& r, Inv& v)
-{
-    v = Inv{};
-    v.slots = r.u16();
-    uint16_t n = r.u16();
-    if (!r.ok() || n > 250)
-        return false;
-    for (uint16_t i = 0; i < n && r.ok(); i++) {
-        InvItem x;
-        x.type = r.u8();
-        x.key = get_key(r);
-        x.count = (int)r.u32();
-        x.ammo = (int)r.u32();
-        if (x.count < 0 || x.count > 100000 || x.ammo < -1 || x.ammo > 100000)
-            return false;
-        v.items.push_back(x);
-    }
-    return r.ok();
-}
+using tw::put_inv;
+using tw::get_inv;
 
 static std::vector<uint8_t> inv_bytes(const Inv& v)
 {
@@ -1318,11 +1286,12 @@ struct KeptInv {
 };
 static std::map<std::string, KeptInv> g_kept_inv; // host: player key (spaceext::kept_key, BUG-1107) -> its own hold
 static uint32_t g_kept_inv_epoch, g_inv_serial, g_inv_holds, g_inv_sent_back, g_inv_done;
-// guest
-static bool g_inv_join_seen;
-static uint32_t g_inv_join_epoch, g_inv_fresh_epoch, g_inv_applied_epoch, g_inv_none_epoch, g_inv_sent;
+static spacekept::KeptStore<Inv> g_store; // C5, host: player key (spaceext::kept_key) -> its own hold
+// guest: the Space world of its join, the fresh / restored / "nothing kept" worlds (C5: space_kept.h)
+static spacekept::RestoreWindow g_win;
+static uint32_t g_inv_sent;
 static std::vector<uint8_t> g_inv_last;
-static double g_inv_next, g_inv_fresh_t;
+static double g_inv_next;
 
 // ---- BUG-0679: the guest's own record of its hold, per host world, on its disk ----
 static std::string g_rec_key;        // the host world (host name + planet file) of the record below
@@ -1478,11 +1447,11 @@ static bool inv_restore_pending()
     if (!g_keep_items_fix || !spaceext::connected() || spaceext::is_host() || !spaceext::in_space())
         return false;
     uint32_t e = spaceext::world_epoch();
-    if (!e || e == g_inv_join_epoch || e == g_inv_applied_epoch || e == g_inv_none_epoch)
+    if (!g_win.open(e))
         return false;
     if (g_restore_hold)
         return true; // tests (BUG-1034): a slow restore
-    return e != g_inv_fresh_epoch || H->time_seconds() - g_inv_fresh_t < 20.0;
+    return g_win.pending(e, H->time_seconds(), 20.0);
 }
 
 static void send_kept_inv(uint8_t id, KeptInv& k)
@@ -1500,10 +1469,32 @@ static void send_kept_inv(uint8_t id, KeptInv& k)
            (unsigned)k.inv.items.size());
 }
 
+// C5: the host's side through space_kept.h (`coop.fix space.kept_store`; the hand path above and below goes once the
+// lab passed)
+static void send_kept_inv_s(spacekept::Entry<Inv>& k)
+{
+    tw::InvKept m;
+    m.to = k.id;
+    m.id = g_store.begin(k, H->time_seconds());
+    m.have = true;
+    m.inv = k.value;
+    net::Writer w;
+    m.write(w);
+    spaceext::send(K_INV_KEPT, w);
+    g_inv_sent_back++;
+    H->log(M, SK_INFO, "trade: the own hold of %s (%u items) sent back to it (BUG-0678)", spaceext::name_of(k.id).c_str(),
+           (unsigned)k.value.items.size());
+}
+
 static void inv_tick(double now)
 {
     if (!spaceext::connected()) {
         rec_tick(now); // BUG-0679: the own hold while away
+        return;
+    }
+    if (spaceext::is_host() && spaceext::kept_store()) {
+        g_store.world(spaceext::world_epoch()); // another Space world: the holds kept were of the old one
+        g_store.tick(now, partner_here, [](spacekept::Entry<Inv>& k) { send_kept_inv_s(k); }); // left; no answer: again
         return;
     }
     if (spaceext::is_host()) {
@@ -1520,10 +1511,7 @@ static void inv_tick(double now)
         }
         return;
     }
-    if (!g_inv_join_seen) {
-        g_inv_join_seen = true;
-        g_inv_join_epoch = spaceext::in_space() ? spaceext::world_epoch() : 0;
-    }
+    g_win.joined(spaceext::in_space(), spaceext::world_epoch());
     if (inv_own_save()) { // BUG-0816: a Space save of the guest's own: its hold is nobody else's business
         g_inv_own_held++;
         return;
@@ -1532,16 +1520,16 @@ static void inv_tick(double now)
         return; // BUG-0816: which save this is is not known yet (its hold goes once it is)
     // only the hold of a world loaded from the host since the join (the first one may be the guest's own world)
     uint32_t e = spaceext::world_epoch();
-    if (!spaceext::in_space() || !e || e == g_inv_join_epoch || now < g_inv_next)
+    if (!spaceext::in_space() || !e || e == g_win.join || now < g_inv_next)
         return;
     g_inv_next = now + 1.0;
     Inv v;
     if (!read_inv(v))
         return;
-    bool fresh = e != g_inv_fresh_epoch;
+    bool fresh = g_win.is_fresh(e);
     if (e != g_inv_epoch_seen)
         g_inv_epoch_seen = e, g_inv_epoch_t = now;
-    if (fresh && g_keep_local_fix && g_keep_items_fix && e != g_inv_applied_epoch && !g_restore_hold) {
+    if (fresh && g_keep_local_fix && g_keep_items_fix && e != g_win.applied && !g_restore_hold) {
         // BUG-0679: this player's own record of the host world: its hold at once (after 2 s of the world, so the
         // game's load has settled), the host's kept one is not needed; the hold goes to the host as not fresh
         std::string key = rec_key_now();
@@ -1553,11 +1541,11 @@ static void inv_tick(double now)
             int failed = apply_inv(own, &missed);
             if (failed >= 0) {
                 note_missed(e, std::move(missed)); // BUG-0826
-                g_inv_applied_epoch = e;
+                g_win.applied = e;
                 g_inv_restored++;
                 g_rec_used++;
                 g_inv_failed += (uint32_t)failed;
-                g_inv_fresh_epoch = e;
+                g_win.fresh = e;
                 rec_own(e);
                 spaceext::notice(spaceext::tr("Your cargo hold is back.", "Ваш трюм восстановлен."));
                 H->log(M, SK_INFO, "trade: own hold from this game's record of %s (BUG-0679)", key.c_str());
@@ -1574,20 +1562,61 @@ static void inv_tick(double now)
     if (!fresh && b == g_inv_last)
         return;
     g_inv_last = std::move(b);
-    if (fresh)
-        g_inv_fresh_t = now;
-    g_inv_fresh_epoch = e;
+    g_win.sent(e, fresh, now);
+    tw::InvMsg m;
+    m.to = 0;
+    m.id = ++g_inv_sent;
+    m.fresh = fresh;
+    m.inv = std::move(v);
     net::Writer w;
-    w.u8(0);
-    w.u32(++g_inv_sent);
-    w.u8(fresh ? 1 : 0);
-    put_inv(w, v);
+    m.write(w);
     spaceext::send(K_INV, w);
 }
 
-static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& r)
+// the host's side of K_INV / K_INV_DONE (decoded), C5 path
+static void inv_host_s(uint8_t kind, uint8_t origin, net::Reader& r)
 {
+    std::string key = spaceext::kept_key(origin);
+    if (key.empty() || key == "?")
+        return;
+    if (kind == K_INV_DONE) {
+        tw::InvDone d;
+        if (d.read(r) && g_store.done(origin, d.id, true))
+            g_inv_done++;
+        return;
+    }
+    tw::InvMsg m;
+    if (!m.read(r))
+        return;
+    auto& k = g_store.bind(key, origin, spaceext::name_of(origin), false); // its first hold since it joined: bound
+    if (m.fresh && k.have && g_keep_items_fix) { // the host's copy: its own goes back
+        send_kept_inv_s(k);
+        return;
+    }
+    if (m.fresh) { // nothing kept (a first join): the guest keeps the save's hold, no restore to wait for
+        tw::InvKept none;
+        none.to = origin;
+        none.id = 0;
+        none.have = false;
+        net::Writer w;
+        none.write(w);
+        spaceext::send(K_INV_KEPT, w);
+    }
+    if (g_store.keep(k, std::move(m.inv))) // not while restoring: the old copy, sent before it got its own back
+        g_inv_holds++;
+}
+
+static void inv_message(uint8_t kind, uint8_t origin, net::Reader& r)
+{
+    if ((kind == K_INV || kind == K_INV_DONE) && spaceext::kept_store()) {
+        if (spaceext::is_host())
+            inv_host_s(kind, origin, r);
+        return;
+    }
     if (kind == K_INV || kind == K_INV_DONE) {
+        tw::Head h;
+        h.read(r);
+        uint32_t id = h.id;
         if (!spaceext::is_host())
             return;
         std::string key = spaceext::kept_key(origin);
@@ -1627,56 +1656,57 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
         return;
     }
     // K_INV_KEPT, for me
-    if (spaceext::is_host())
+    tw::InvKept m;
+    if (spaceext::is_host() || !m.read(r))
         return;
+    uint32_t id = m.id;
     uint32_t e = spaceext::world_epoch();
-    if (!r.u8()) { // nothing kept for me: the hold of this world is mine
-        if (r.ok() && e == g_inv_fresh_epoch) {
-            g_inv_none_epoch = e;
-            if (e != g_inv_applied_epoch)
+    if (!m.have) { // nothing kept for me: the hold of this world is mine
+        if (e == g_win.fresh) {
+            g_win.none = e;
+            if (e != g_win.applied)
                 rec_own(e); // BUG-0679
         }
         return;
     }
     if (g_restore_hold)
         return; // tests (BUG-1034): not taken now, the host sends it again after 10 s
-    Inv v;
-    if (!get_inv(r, v))
-        return;
+    const Inv& v = m.inv;
     int failed = 0;
     if (inv_own_save()) // BUG-0816: not applied to a Space save of our own (answered as done: the host stops resending)
         g_inv_own_held++;
-    else if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
+    else if (g_keep_items_fix && spaceext::in_space() && inventory() && g_win.may_apply(e)) {
         std::vector<InvItem> missed;
         failed = apply_inv(v, &missed);
         if (failed < 0)
             return; // no hold now: the host sends it again
         note_missed(e, std::move(missed)); // BUG-0826
-        g_inv_applied_epoch = e;
+        g_win.applied = e;
         g_inv_restored++;
         g_inv_failed += (uint32_t)failed;
         rec_own(e); // BUG-0679
         g_inv_last.clear(); // the hold now, at once
         g_inv_next = 0;
         spaceext::notice(spaceext::tr("Your cargo hold is back.", "Ваш трюм восстановлен."));
-    } else if (e != g_inv_applied_epoch && g_keep_items_fix)
+    } else if (e != g_win.applied && g_keep_items_fix)
         return; // not in this world yet: the host sends it again
+    tw::InvDone d;
+    d.to = 0;
+    d.id = id;
+    d.restored = 0;
+    d.failed = (uint16_t)failed;
     net::Writer w;
-    w.u8(0);
-    w.u32(id);
-    w.u16(0);
-    w.u16((uint16_t)failed);
+    d.write(w);
     spaceext::send(K_INV_DONE, w);
     (void)origin;
 }
 
 static void inv_session_end()
 {
-    g_inv_join_seen = false;
-    g_inv_fresh_epoch = 0;
-    g_inv_none_epoch = 0;
+    g_win.session_end();
     g_inv_last.clear();
     g_inv_next = 0;
+    g_store.session_end();
     for (auto& [n, k] : g_kept_inv)
         k.id = 0xFF, k.restoring = false;
 }
@@ -1702,10 +1732,18 @@ static std::string inv_status()
     snprintf(b, sizeof b,
              "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
              "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u own_save_held=%u\n",
-             (int)g_keep_items_fix, (unsigned)g_kept_inv.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
-             g_inv_failed, g_inv_removed, g_inv_join_epoch, g_inv_applied_epoch, spaceext::world_epoch(), g_inv_slots_removed,
+             (int)g_keep_items_fix, (unsigned)(spaceext::kept_store() ? g_store.size() : g_kept_inv.size()), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
+             g_inv_failed, g_inv_removed, g_win.join, g_win.applied, spaceext::world_epoch(), g_inv_slots_removed,
              g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held);
     s += b;
+    if (spaceext::kept_store()) {
+        for (auto& [n, k] : g_store.entries()) {
+            snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(),
+                     k.id == spacekept::kNoId ? -1 : k.id, (int)k.have, (int)k.restoring, (unsigned)k.value.items.size(), k.value.slots);
+            s += b;
+        }
+        return s;
+    }
     for (auto& [n, k] : g_kept_inv) {
         snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(), k.id == 0xFF ? -1 : k.id,
                  (int)k.have, (int)k.restoring, (unsigned)k.inv.items.size(), k.inv.slots);
@@ -1862,9 +1900,11 @@ static std::vector<spaceext::Row> rows()
                     for (auto& x : g_out)
                         if (x.id == id)
                             x.cancel_sent = true;
+                    tw::OfferCancel m;
+                    m.to = to;
+                    m.id = id;
                     net::Writer w;
-                    w.u8(to);
-                    w.u32(id);
+                    m.write(w);
                     spaceext::send(K_OFFER_CANCEL, w);
                 };
             }
@@ -1957,7 +1997,7 @@ static std::string status()
              (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch(),
              (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end,
              (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped, (unsigned)g_waiting.size(),
-             g_waited, g_offer_waits, (int)inv_restore_pending());
+             g_waiting.held(), g_offer_waits, (int)inv_restore_pending());
     return b;
 }
 
