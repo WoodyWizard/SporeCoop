@@ -128,6 +128,8 @@ PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
 # BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
 # or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
+# A6: CAMPAIGN_PLANT_STUCK=<stage>[,<stage>]: that stage change is not tried and counts as stuck (the reporting's twin)
+PLANT_STUCK = [x.strip() for x in os.environ.get('CAMPAIGN_PLANT_STUCK', '').split(',') if x.strip()]
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
@@ -945,7 +947,7 @@ class Campaign:
         nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
         self.stage, self.phase = stage, 'advance'
         self.note(f'advance {stage} -> {nxt}')
-        if stage in os.environ.get('CAMPAIGN_PLANT_STUCK', '').split(','):  # A6's twin: this change counts as stuck
+        if stage in PLANT_STUCK:  # A6's twin: this change counts as stuck
             self.note(f'planted (CAMPAIGN_PLANT_STUCK): the {stage} -> {nxt} change is not tried')
             return False
         for p in self.P:  # BUG-0263: a pause menu left open by the play phase blocks the stage change
@@ -2080,6 +2082,7 @@ def main():
                     sure = stage != 'tribe' or os.environ.get('CAMPAIGN_STRICT_TRIBE') != '0'
                     camp.finding('stuck' if sure else 'info', f'advance:{stage}',
                                  f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
+                                 + (' (planted: CAMPAIGN_PLANT_STUCK)' if stage in PLANT_STUCK else '')
                                  + ('' if stage != 'tribe' else f' (goal bar {camp.tribe_progress()})'),
                                  camp.P)
                     if a.jump:
