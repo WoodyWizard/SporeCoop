@@ -8346,3 +8346,24 @@ guest too (BUG-1135, `net.rejoin_disk`).
   pvp_deaths) count since the game started: a warm game keeps the previous test's. A test reads them as deltas from
   its own start, as coop_space_rival_away does with `restored` (BUG-1146, space_rivalry warm after space_rivalry).
   State a player sees belongs in the lifecycle registry instead (docs/01-architecture.md#arch-lifecycle-registry).
+
+## The Tribe outfit and the Civ designs: tribe_outfit, civ_designs (2026-11-15, fix/w51-editors)
+<a id="testing-stage-designs"></a>
+
+E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
+* `coop_tribe_outfit.py` (suite `tribe_outfit`, `tribe` fixture, ~1.5 min warm / 2 min cold) drives the Tribal
+  Outfitter by real input: the hut (`coop.targets objs` row `hut0p`, clicked 30 px above; the first click after a
+  while may only take the focus, the test clicks again until `coop.status` shows the planner's `busy: input_lock`),
+  the planner's second tab (204, 40), the card's edit badge (44, 630), the guest's real "I'm ready", the outfitter's
+  third tab (260, 40), a slow drag (84, 216) -> (975, 440), Done (1416, 1060); the planner's own check (1416, 1060)
+  closes it again. It reads `coop.designs members` (the tribe profile's keys and generation, each member's), the bem
+  hash of the profile's creation (`coop.creations modelhash <inst> 2B978C46 40626200`), and the guest's newest save
+  for our key.
+* `coop_civ_designs.py` (suite `civ_designs`, `civ_npc`, ~1 min after the cold start) gives both profiles another
+  creation under the test's ids (as civ_host_building) and sets the host's designs with the game's own setter:
+  `coop.designs set <hex id> <hex inst> [<type> <group>]` (0xBF4C50 on this game's player civilization, what a planner
+  pick calls; the test helpers `coop.civ bdesign` / `setdesign` only write the entry and re-model nothing).
+  `coop.designs culture` prints the culture set without generating entries; `coop.designs editor <hex id>` submits an
+  editor request of this game through the Submit hook (the refusal of BUG-1158; with `editors.guest_designs` off the
+  editor opens and the test leaves it with the red X at (1380, 1062)).
+* Twins: SPORE_FIX_OFF=tribe.outfit_sync / civ.design_sync / editors.guest_designs.

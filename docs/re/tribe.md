@@ -4096,3 +4096,12 @@ with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not 
   still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
   member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
   `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.
+
+## The Tribal Outfitter between the games (2026-11-15, fix/w51-editors)
+<a id="tribe-outfitter"></a>
+
+E4, BUG-1156, BUG-1158: the outfitter (the hut planner's second tab, editor 0x156276D1) saves a new creation in the
+player's My Creations and reloads the tribe's species profile with it in place. Before 0.7.15 the host's outfit never
+reached a guest kept in place (BUG-0508) and a guest's own outfit stayed in its own game. Now the wsync row
+`tribe_outfit` carries it, and a guest's own outfitter is refused. The route, the game's calls and the lab runs:
+docs/re/creations.md#creations-stage-designs.

@@ -1836,3 +1836,13 @@ BUG-1100. GOG 2024, lab lane 7, civ_npc. Follows #civ-wild-parked.
   fixture's start the game rebuilt 14 tracked objects of species 06689607 as 065276AC / 066742CD within 2 s, several
   at unplaced points with z = 0 ((0 524.8 0), (-368.7 -347.0 0)), the rest at their new herds: the reuse in a stand is
   common, and the guest's #129 at (-387.0 -327.7 0.0) of the final check was such an unplaced object.
+
+## New designs between the games: the culture set (2026-11-15, fix/w51-editors)
+<a id="civ-culture-sync"></a>
+
+E4, BUG-1157, BUG-1158: cCivilization +0x6C is an EASTL map design id -> key, set by `Civ_SetDesign` 0xBF4C50 (the
+planner's pick, the editors' return), which re-models the civilization's buildings and vehicles of that design.
+Before 0.7.15 the host's new designs never reached a guest kept in place (BUG-0508) and a guest's own pick or editor
+changed only its own game. Now the wsync row `civ_design` carries the host's entries (the guest calls the same setter),
+a guest's own design editor is refused and its own pick goes back. Details and lab runs:
+docs/re/creations.md#creations-stage-designs.
