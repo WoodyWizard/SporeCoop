@@ -3250,6 +3250,12 @@ bool archive_world_designs(std::vector<slotfs::File>& files, std::string& err)
                 }
             }
         }
+        // (merge 0.7.14: records_from_game also returns the pictures, BUG-0643 / BUG-0921; the archive keeps the
+        // model, metadata and design records only, as decode_designs accepts)
+        records.erase(std::remove_if(records.begin(), records.end(), [](const dbpf::Record& r) {
+            auto kind = design_kind(r.key.group);
+            return kind == kMkKinds || (r.key.type != kBem && r.key.type != kMeta && r.key.type != kModelInfo[kind].type);
+        }), records.end());
         if (records.empty()) continue;
         auto archive = dbpf::write(records);
         std::vector<dbpf::Record> checked;
