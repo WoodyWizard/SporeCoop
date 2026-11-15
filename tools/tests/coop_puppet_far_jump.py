@@ -13,7 +13,8 @@ rules at a few of the hops: the host drew the puppet 8-36 m over its ground for 
    and the guest's own position (its game's `coop.avatar`).
 PASS: at every place the puppet is within 1 m of the host's ground and within 3 m of the guest's own position.
 The guest's captions are closed first and after each jump, as its player does (--keep-caption: left up, as in the
-tours; the test then fails at hop 2 of the default seed by design).
+tours; at hop 2 of the default seed the host's copy then stands 5.2-5.4 m up, BUG-0658's artefact: the variant checks
+that it is seen there and nowhere else, BUG-1167).
 
   SPORE_LANE=4 python3 tools/tests/coop_puppet_far_jump.py [--hops 8] [--seed 388177865] [--approach: at each place
   the guest walks 1.5 s and, where the puppet is off, the host's avatar goes to the same place (diagnostics)]
@@ -35,6 +36,8 @@ from coop_puppet_walk import dump
 from twoinst import Checks, start
 
 PF_JUMPING = 0x8
+DEFAULT_SEED = 388177865
+ARTEFACT_HOP, ARTEFACT_LIFT = 2, (3.0, 7.5)  # BUG-0658 / BUG-1167: the caption variant's documented place and height (m)
 APPROACH = False
 
 
@@ -61,7 +64,7 @@ def own_pos(con):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--hops', type=int, default=8)
-    ap.add_argument('--seed', type=int, default=388177865)
+    ap.add_argument('--seed', type=int, default=DEFAULT_SEED)
     ap.add_argument('--approach', action='store_true')
     ap.add_argument('--keep-caption', action='store_true', help='leave a caption that holds the guest\'s game up '
                     '(the address space tours: its avatar is not simulated, BUG-0658)')
@@ -141,6 +144,16 @@ def main():
             print(f'      teleports in the last 6 s: {late[-1]["tp"] - late[0]["tp"]}; host: '
                   f'{host.call("coop.abilities ground %.2f %.2f %.2f" % late[-1]["d"])["out"].strip()} under the drawn puppet', flush=True)
     ck(seen >= a.hops - 1, f'the host recorded its puppet at the places ({seen} of {a.hops})')
+    if a.keep_caption and a.seed == DEFAULT_SEED and a.hops >= ARTEFACT_HOP:
+        # BUG-1167: the caption variant measures BUG-0658's artefact, it is not a failure of the mod: with a caption holding
+        # the guest's game its avatar is not simulated, and at hop 2 of the default seed it stays inside the game's
+        # collision, 5.2-5.4 m over GetHeightAt (the host's own avatar sent there stands as high); every other place is
+        # on the ground. It passes while exactly that is seen (it failed every run before by design)
+        art = [x for x in bad if x[0] == ARTEFACT_HOP]
+        ck(len(art) == 1 and ARTEFACT_LIFT[0] <= art[0][1] <= ARTEFACT_LIFT[1],
+           f'BUG-0658 with the caption up: the host draws the puppet {ARTEFACT_LIFT[0]}-{ARTEFACT_LIFT[1]} m over its '
+           f'ground at hop {ARTEFACT_HOP} (the game\'s collision there, the guest\'s avatar not simulated): {art}')
+        bad = [x for x in bad if x[0] != ARTEFACT_HOP]
     ck(not bad, f'the host draws the puppet on its ground where the guest is at every place (hop, over m, apart m: {bad})')
     ck.faults(host=host, guest=guest)
     return ck.result()
