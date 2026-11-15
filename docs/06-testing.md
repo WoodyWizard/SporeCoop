@@ -8420,3 +8420,23 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
   space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
   ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.
+## Tribe on the wave-C mechanisms: unit tests, the planted twin's budget (2026-11-15, feat/w51-tribe)
+<a id="testing-tribe-wave-c"></a>
+
+* `tests/tribe_tests.cpp` (`make test`, unit-cpp; D3, BUG-1161): the rules of mods/coop/tribe_logic.h (owner dealing
+  with E1's claims and BUG-0671's purchases, a newcomer's even share, BUG-0620's body hold, the snapshot apply
+  decisions grow up / make a mirror / the bind candidate / the knock-out) and C7's per-peer message type
+  (`wire::tribe_anim::type_for`: MSG_NPC_ANIM for a peer without tribe 1.1, the kinds of 0.7.14's whitelist). The
+  member kinds' golden bytes are in tests/wire_tests.cpp `test_tribe_anim`.
+* Status lines for the lab and by hand (coop.status): `tribe registry:` (the host's `tribe.hm` and the guest's
+  `tribe.gm` registries: entries, binds, refused, stale, reused, removed, kept bodies, sweeps), `tribe snapshot rx:`
+  (chunks, bad, older, cut, incomplete, abandoned, complete), `tribe anim msg:` (the two types sent, MSG_TRIBE_ANIM
+  taken).
+* `mixed_version_tribe` (and `--old host --fixture tribe`) has the `[tribe anims]` checks of C7 (BUG-1160): this build
+  hosting sends both types (sent_new and sent_old over 0), this build's guest takes MSG_TRIBE_ANIM, every guest
+  (the old one too) counts relayed member animations (`coop.tribe anims` rx); an old host: this build's guest takes no
+  MSG_TRIBE_ANIM and still plays them.
+* `campaign_tribe_noclick` (BUG-1165): the planted twin's Tribe advance has the planted minutes on top of 20 (38 min
+  with CAMPAIGN_PLANT_NOCLICK=18; `CAMPAIGN_OLD_NOCLICK_BUDGET=1`: the 30 min of every advance), the suite entry 50 min
+  and a 70 min timeout. With 30 min it was stuck in 4 of 7 runs, v0.7.14.1 included: village 2 falls only after the
+  plant, and the passes needed 25.5-26 of the 30 min.

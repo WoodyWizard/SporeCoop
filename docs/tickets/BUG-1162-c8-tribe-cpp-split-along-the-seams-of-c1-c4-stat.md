@@ -9,19 +9,20 @@ source: plan
 role: 
 versions: 
 fixed_in:
-branch:
+branch: feat/w51-tribe
 commits:
 tests:
 signature:
-docs:
-related:
+docs: docs/01-architecture.md#arch-tribe-files
+related: BUG-1128, BUG-1140, BUG-1143, BUG-1160
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan item C8 of docs/plan-0.7.15.md for Tribe (audit STG-7): tribe.cpp, 7.9k lines with 300+ file-scope globals, its
+debug() of 1.4k lines in the shipped file; every wave touched it.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Structure: one hub file.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->

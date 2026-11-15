@@ -637,3 +637,26 @@ C1, C4, C7 and D3 of docs/plan-0.7.15.md for the Tribe stage (BUG-1140, BUG-1143
   with `wire/tribe_anim.h`; `anim_send` picks the type per guest from its HELLO's family list.
 * **Rules** (D3): `mods/coop/tribe_logic.h`, tests/tribe_tests.cpp.
 * Status: `coop.status` lines `tribe registry:` (both tables' `status()`), `tribe snapshot rx:` and `tribe anim msg:`.
+
+## The Tribe files (2026-11-15, feat/w51-tribe)
+<a id="arch-tribe-files"></a>
+
+C8 of docs/plan-0.7.15.md for Tribe (audit STG-7, BUG-1162). tribe.cpp (8k lines) was split along the seams that C1,
+C4 and C7 left, in pure moves (refactor_dump identical, docs/10-dev-pipeline.md#pipeline-refactor-proof), after the
+state of those seams was grouped into structs (`HostTable g_host`, `GuestMirrors g_guest`, `AnimStats g_anim`):
+
+| File | What |
+|---|---|
+| tribe.cpp | init and the hooks, the body and tool helpers, the orders and the ring, held items, the game-over and pause waits, on_member_anims (the dispatcher of the member kinds), babies, the save filter, NPC tribes, conquest, the co-op mechanics (chiefs, pincer, duet, epic), captions, held commands, tick / on_message / session and world, status |
+| tribe_host.cpp | the host's member table: owner claims (E1), the even share, host_tick (adopt, the bodies, the snapshot chunks), the guests' commands (host_command, give_on_host) |
+| tribe_mirrors.cpp | the guest's mirrors: spawn and remove members, guest_state (the snapshot receiver, bind or spawn, the sweep and the orphans), the knock-out, the mirror driving, guest_tick |
+| tribe_anims.cpp | the member animation relay (kinds 2-16), the air height, the holds, the theme and party music |
+| tribe_debug.cpp | `coop.tribe` (debug) and the member list (list) |
+| tribe_internal.h | what the files share: the types, constants and the one macro more than one of them uses, and the declarations of the variables and functions one file defines and another uses (not an interface for other modules: that is tribe.h) |
+| tribe_logic.h | the rules (D3), portable, unit tested |
+| wire/tribe_anim.h | the member kinds' wire structs and the per-peer message type (C7) |
+
+The split was made with a clang-AST tool (each top-level entity of namespace tribe, its references, which file it
+lands in): a name one file uses and another defines lost `static` and got its declaration in tribe_internal.h at the
+place of its first declaration; a type, alias, constexpr constant or template moved into the header. A later move of
+code between these files follows the same rule.
