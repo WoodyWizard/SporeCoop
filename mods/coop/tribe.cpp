@@ -319,7 +319,6 @@ static void detach_body(void* c)
     g_detached[c] = t;
     g_bodies_detached++;
 }
-static uint32_t g_bodies_sent;
 // C1 of 0.7.15 (BUG-1140, docs/01-architecture.md#arch-mirror-registry): the host's member table (g_hm / g_hm_by_id,
 // keyed both ways by hand) and the guest's mirrors (g_gm / g_gid_of) are mirror::Registry tables: one entry per net
 // id with its object (pointer, serial, noun), the reverse index kept by the registry. The host adopts every member of
@@ -331,17 +330,26 @@ constexpr uint32_t kMemberNoun = 0x18EB4B7; // (kCitizenNoun, below)
 static bool hm_alive(const mirror::Ref& r) { return kept_alive(r.p, r.serial, r.noun); }
 using HReg = mirror::Registry<uint16_t, HMember>;
 using HEntry = HReg::Entry;
-static HReg g_hm("tribe.hm", hm_alive);
+// C8 (BUG-1162): the host's member table and how its members are dealt to the players
+struct HostTable {
+    HReg members{"tribe.hm", hm_alive};
+    uint16_t next_id = 1;
+    uint32_t dealt = 0;                        // the player tribe's members dealt in turns since the last split
+    std::vector<uint8_t> split_for;            // player ids the player tribe was split for
+    std::unordered_map<void*, uint8_t> born_for; // BUG-0671: a new member made for a guest -> its owner
+    uint32_t bodies_sent = 0;                  // BUG-0620 (diagnostics)
+};
+static HostTable g_host;
 // the entry of a member object (a pointer compare: no liveness check), null when the table has none
 static HEntry* hm_of(const void* c)
 {
     uint16_t id;
-    return c && g_hm.id_of(c, id) ? g_hm.find(id) : nullptr;
+    return c && g_host.members.id_of(c, id) ? g_host.members.find(id) : nullptr;
 }
 // the object the table has for an id (no liveness check), null when none
 static void* hm_obj(uint16_t id)
 {
-    HEntry* e = g_hm.find(id);
+    HEntry* e = g_host.members.find(id);
     return e ? e->ref.p : nullptr;
 }
 // the entry's object is that member, listed now (BUG-0951's serial; its own memory with tribe.kept_refs off), uncounted
@@ -353,15 +361,11 @@ static bool hm_ok(const HEntry& e)
 }
 // net::alloc_id's view of the ids in use
 struct HIds {
-    size_t count(uint16_t id) const { return g_hm.has(id) ? 1 : 0; }
+    size_t count(uint16_t id) const { return g_host.members.has(id) ? 1 : 0; }
 };
-static uint16_t g_next_id = 1;
-static uint32_t g_player_members_seen = 0;
-static std::vector<uint8_t> g_split_for; // player ids the player tribe was split for
 // BUG-0671 (below, h_BabyBorn)
 using BabyBorn_t = void(SK_THISCALL*)(void*, float, float, float);
 static BabyBorn_t o_BabyBorn;
-static std::unordered_map<void*, uint8_t> g_born_for; // host: a new member made for a guest -> its owner
 static double g_last_send;
 static uint16_t g_cycle;
 static uint32_t g_cmds_done, g_cmds_rejected;
@@ -415,7 +419,6 @@ struct GMember {
 // only forgotten. Old (`coop.fix tribe.mirror_member_lifetime off`): object_alive and the owner field.
 static bool g_member_lifetime_fix = true;
 COOP_FIX("tribe.mirror_member_lifetime", "BUG-0844", g_member_lifetime_fix, "tribe: a guest never moves or removes another tribe's member that the game built where a removed copy of a host's member was");
-static uint32_t g_mirror_stale, g_remove_refused;
 // C1 (BUG-1140): the guest's mirrors (see g_hm); the liveness rule of BUG-0844 is the registry's
 static bool gm_alive(const mirror::Ref& r)
 {
@@ -427,20 +430,31 @@ static bool gm_alive(const mirror::Ref& r)
 }
 using GReg = mirror::Registry<uint16_t, GMember>;
 using GEntry = GReg::Entry;
-static GReg g_gm("tribe.gm", gm_alive);
+// C8 (BUG-1162): the guest's mirrors of the host's members, the host's snapshot cycles they come in (C4) and the
+// host tribe index -> local tribe map of the last snapshot
+struct GuestMirrors {
+    GReg mirrors{"tribe.gm", gm_alive};
+    // policy: 255 chunks, keep_order = net.cycle_order (read with every chunk), 0x8000 behind is older, sweep once,
+    // the last chunk completes a cycle
+    net::SnapshotReceiver<uint16_t> snap;
+    std::vector<void*> local_tribe_of; // host tribe index -> local tribe
+    uint32_t spawned = 0, removed = 0;   // mirrors spawned / removed by the mod
+    uint32_t stale = 0, remove_refused = 0; // BUG-0844 (diagnostics)
+};
+static GuestMirrors g_guest;
 // the mirror's object is the one bound and alive (no detach: guest_state forgets a dead one, with its air hold)
 static bool mirror_ok(const GEntry& e) { return gm_alive(e.ref); }
 // the mirror entry a member object of this game is bound to (a pointer compare), null when none
 static GEntry* gm_of(const void* c)
 {
     uint16_t id;
-    return c && g_gm.id_of(c, id) ? g_gm.find(id) : nullptr;
+    return c && g_guest.mirrors.id_of(c, id) ? g_guest.mirrors.find(id) : nullptr;
 }
 // the mirror bound to c forgets it (its entry stays: the next snapshot binds or spawns one)
 static void gm_forget(const void* c)
 {
     if (GEntry* g = gm_of(c))
-        g_gm.detach(g->id);
+        g_guest.mirrors.detach(g->id);
 }
 // BUG-0685: a guest's log says when a member mirror goes and why one is not made again (at most kMirrorLogMax lines;
 // a mirror's "not made" line only when its reason changes)
@@ -493,8 +507,7 @@ constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is 
 // again (the newer cycle's chunks forgotten, older states over newer ones). Off: 0.7.8 (any other cycle restarts).
 bool g_cycle_order_fix = true;
 COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot or realign planet-list cycle is dropped, not taken as a new cycle (BUG-0886 too)");
-static uint32_t g_spawned, g_removed, g_cmds_sent;
-static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
+static uint32_t g_cmds_sent;
 // BUG-1051: the guest's cycle tracker of the host's Tribe snapshots belongs to that host's session and world: a guest
 // that joined another host (or the same one after it restarted its game, whose counter starts at 1 again) dropped
 // every snapshot as "older" until the new counter passed the old one (up to an hour). Reset on every session end and
@@ -505,17 +518,14 @@ COOP_FIX("tribe.cycle_reset", "BUG-1051", g_cycle_reset_fix, "tribe: a guest's T
 // cycles (the older-cycle drop of BUG-0612, a cut chunk that counts for nothing, the sweep only after a complete
 // cycle) is net::SnapshotReceiver's, shared with Civ and the squadron. One difference on purpose: a duplicate of a
 // completed cycle's last chunk does not sweep a second time (sweep_once).
-// policy: 255 chunks, keep_order = net.cycle_order (read with every chunk), 0x8000 behind is older, sweep once, the last
-// chunk completes a cycle
-static net::SnapshotReceiver<uint16_t> g_snap;
 LIFECYCLE_STATE("tribe.cycle", lifecycle::kSession | lifecycle::kWorld, &g_cycle_reset_fix, [] {
-    g_snap.reset(); // (its counters stay)
-}, []() -> size_t { return g_snap.held(); });
+    g_guest.snap.reset(); // (its counters stay)
+}, []() -> size_t { return g_guest.snap.held(); });
 // BUG-1055: the host tribe index -> local tribe map points into the old world after a load (its users check it
 // against all_tribes, the test path frametool did not)
-WORLD_STATE("tribe.world_map", nullptr, [] { g_local_tribe_of.clear(); }, []() -> size_t {
+WORLD_STATE("tribe.world_map", nullptr, [] { g_guest.local_tribe_of.clear(); }, []() -> size_t {
     size_t n = 0;
-    for (void* t : g_local_tribe_of)
+    for (void* t : g_guest.local_tribe_of)
         n += t != nullptr;
     return n;
 });
@@ -850,12 +860,13 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
 // order went to the host, its own game showed no ring. Now the guest's game draws the ring of its own attack
 // order, as the HUD draws it, while one of the ordered members is selected and the target lives (120 s at most).
 static constexpr int kActionAttack = 7; // DoActionForAllSelected(7, target) of a right click on an enemy
-static struct {
+struct Ring {
     void* target = nullptr;
     std::vector<uint16_t> ids;
     double since = 0;
     uint32_t serial = 0; // BUG-0951
-} g_ring;
+};
+static Ring g_ring;
 static uint32_t g_rings_drawn = 0;
 // BUG-1055: the guest's own attack order (its ring) ends with its session and its world
 LIFECYCLE_STATE("tribe.ring", lifecycle::kSession | lifecycle::kWorld, nullptr, [] {
@@ -895,7 +906,7 @@ static void SK_THISCALL h_RingsUpdate(void* owner)
     }
     void* by = nullptr;
     for (uint16_t id : g_ring.ids) {
-        GEntry* g = g_gm.find(id);
+        GEntry* g = g_guest.mirrors.find(id);
         if (g && mirror_ok(*g) && F<uint8_t>(g->ref.p, kSelectedOff)) { // (BUG-0955)
             by = g->ref.p;
             break;
@@ -946,7 +957,7 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
         return o_WalkSelected(self, pos);
     }
     std::vector<uint16_t> ids;
-    g_gm.for_each([&](GEntry& e) {
+    g_guest.mirrors.for_each([&](GEntry& e) {
         if (e.ref.p && F<uint8_t>(e.ref.p, kSelectedOff) && e.data.owner == C.sess->my_id())
             ids.push_back(e.id);
     });
@@ -991,9 +1002,22 @@ static void member_each(void (*cb)(uint16_t, void*, void*), void* u)
 
 static void* member_mirror(uint16_t id)
 {
-    GEntry* g = g_gm.find(id);
+    GEntry* g = g_guest.mirrors.find(id);
     return g && mirror_ok(*g) ? g->ref.p : nullptr; // (BUG-0955)
 }
+
+// C8 (BUG-1162): the counters of the member animation relay (kinds 2 / 3), the holds (11 / 12), the air (9), the idle
+// (10), the phase (14 / 15) and the tracks (16), the theme (4-6) and party music (7 / 8): diagnostics, `coop.tribe anims`
+struct AnimStats {
+    uint32_t hold_sent = 0, hold_rx = 0, hold_bound = 0, hold_item_sets = 0, hold_anim_plays = 0, hold_queued = 0;
+    uint32_t anim_relay_sent = 0, anim_relay_played = 0, anim_relay_failed = 0, anim_relay_rx = 0, anim_snap_played = 0;
+    uint32_t air_sent = 0, air_rx = 0, air_placed = 0, air_landed = 0;
+    uint32_t idle_sent = 0, idle_refreshed = 0, idle_played = 0, stale_cut = 0;
+    uint32_t phase_sent = 0, phase_rx = 0, phase_set = 0, phase_unlooped = 0, tracks_sent = 0, tracks_rx = 0, tracks_set = 0;
+    uint32_t theme_sent = 0, theme_rx = 0, theme_played = 0;
+    uint32_t party_sent = 0, party_rx = 0, party_played = 0, party_stopped = 0;
+};
+static AnimStats g_anim;
 
 // ---- tools (BUG-0514, docs/re/tribe.md#tribe-tools-guest) ----
 // A member's tool (+0x102C mSpecializedTool: 1..9 the racks' weapons and instruments, 9 heal, 0xB the chief's
@@ -1125,7 +1149,6 @@ static void set_hand(void* c, int item) { thiscall<void>(a_SetHandheldItem, c, i
 // a hold to its animation (8 s at most). `coop.fix tribe.mirror_hold off`: nothing sent or done.
 static bool g_mirror_hold_fix = true;
 COOP_FIX("tribe.mirror_hold", "BUG-0914", g_mirror_hold_fix, "tribe: a guest's mirror swings its staff or instrument when the host's member does (it stood with the item in the resting grip)");
-static uint32_t g_hold_sent, g_hold_rx, g_hold_bound;
 constexpr double kHoldBoundMax = 8.0;
 // BUG-0962: the host's hold is the truth for a mirror's hand too. A gesture's own event can take the item on the mirror
 // where the host's member does not take it (lab, the chief's 0x04C6CB02: the mirror held its staff for 1.66 s, the
@@ -1147,7 +1170,6 @@ constexpr double kHoldUnsent = 0.35;
 static bool g_hold_item_fix = true;
 COOP_FIX("tribe.hold_item", "BUG-0971", g_hold_item_fix,
          "tribe: a guest's mirror takes the item the host's member takes in its change animation (it played the change with the hand empty)");
-static uint32_t g_hold_item_sets;
 // BUG-0968: a host's hold whose animation the mirror does not play could never bind (hold_try waits for the mirror to
 // play it): lab, `coop.tribe holdtrace` of the guest's chief: the host went from its gesture 0x04C6CB02 straight into
 // the change 0x02C39200 and held, the relay brought no start of it (or the mirror's gesture went on), and every start
@@ -1158,7 +1180,6 @@ static uint32_t g_hold_item_sets;
 static bool g_hold_anim_fix = true;
 COOP_FIX("tribe.hold_anim", "BUG-0968", g_hold_anim_fix,
          "tribe: a guest's mirror plays the animation the host's member holds its item in when it played another one (the chief raised its torch on one game only)");
-static uint32_t g_hold_anim_plays;
 // BUG-0992: a start over a non-looping animation (a gesture 0x04C6CB02, 2-46 s) waits until that one ends, on the
 // host too (its change began 1.1 s after its own start call). (a) The mirror's gesture began later than the host's, so
 // it ended later: the host's change and its 0.35-0.43 s hold were over before the mirror's change began (0.7.13 final
@@ -1171,7 +1192,6 @@ static uint32_t g_hold_anim_plays;
 static bool g_hold_queued_fix = true;
 COOP_FIX("tribe.hold_queued", "BUG-0992", g_hold_queued_fix,
          "tribe: a guest's mirror holds its item while the host's member does even when the mirror's own gesture still runs (a short hold in the change animation was missed)");
-static uint32_t g_hold_queued;
 static uint32_t g_hold_only_ended;
 static void hold_try(GEntry& e, double now);
 // tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
@@ -1225,7 +1245,7 @@ static void held_items_tick(double now)
         g_hold_seen.clear();
         return;
     }
-    g_gm.for_each([&](GEntry& e_) {
+    g_guest.mirrors.for_each([&](GEntry& e_) {
         const uint16_t id = e_.id;
         GMember& m = e_.data;
         void* c = e_.ref.p;
@@ -1439,7 +1459,7 @@ static void* tribe_of_index(int i)
         auto ts = all_tribes();
         return i < (int)ts.size() && i < 32 ? ts[i] : nullptr;
     }
-    void* t = i < (int)g_local_tribe_of.size() ? g_local_tribe_of[i] : nullptr;
+    void* t = i < (int)g_guest.local_tribe_of.size() ? g_guest.local_tribe_of[i] : nullptr;
     if (t && g_world_map_fix) { // BUG-0672: a tribe of this world only (the entry may be of a world that is gone)
         auto ts = all_tribes();
         if (std::find(ts.begin(), ts.end(), t) == ts.end()) {
@@ -1467,8 +1487,8 @@ void for_each_tool(bool all, ToolFn fn, void* user)
         if (is_host())
             ix = all ? (ti < 32 ? (int)ti : -1) : -1;
         else
-            for (size_t i = 0; i < g_local_tribe_of.size(); i++)
-                if (g_local_tribe_of[i] == t) {
+            for (size_t i = 0; i < g_guest.local_tribe_of.size(); i++)
+                if (g_guest.local_tribe_of[i] == t) {
                     ix = (int)i;
                     break;
                 }
@@ -1812,7 +1832,6 @@ struct MemberAnim {
     int32_t b;
 };
 static std::vector<MemberAnim> g_member_anim_out;
-static uint32_t g_anim_relay_sent, g_anim_relay_played, g_anim_relay_failed, g_anim_relay_rx, g_anim_snap_played;
 static double g_member_snap_at;
 
 void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
@@ -1838,7 +1857,6 @@ void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
 // `coop.fix tribe.mirror_air off`: nothing sent or placed (the mirror on its ground).
 static bool g_mirror_air_fix = true;
 COOP_FIX("tribe.mirror_air", "BUG-0946", g_mirror_air_fix, "tribe: a member thrown up by a blow (or otherwise off its ground) on the host is in the air on the guests' screens too");
-static uint32_t g_air_sent, g_air_rx, g_air_placed;
 constexpr double kMirrorAirFresh = 0.35;
 constexpr float kMirrorAirMin = 0.5f; // m over the host's ground: off it whatever the grounded byte says
 // BUG-1082 (docs/re/tribe.md#tribe-member-hang): the campaign's raids failed the sync-check on members the host's game
@@ -1856,14 +1874,13 @@ COOP_FIX("tribe.mirror_hang", "BUG-1082", g_mirror_hang_fix,
 constexpr double kMirrorHangHold = 1.0;
 constexpr float kMirrorHangMax = 2000.f;
 static std::unordered_set<uint16_t> g_air_last; // the ids of the last list (their landing is sent)
-static uint32_t g_air_landed;
 static void send_member_air()
 {
     if (!g_mirror_air_fix)
         return;
     std::vector<std::pair<uint16_t, float>> v;
     std::unordered_set<uint16_t> up;
-    g_hm.for_each([&](HEntry& e_) {
+    g_host.members.for_each([&](HEntry& e_) {
         void* const c = e_.ref.p;
         if ((!g_mirror_hang_fix && v.size() >= 64) || !kept_alive(c, e_.ref.serial, 0x18EB4B7u) || game::is_dead(c))
             return;
@@ -1878,7 +1895,7 @@ static void send_member_air()
         for (uint16_t id : g_air_last)
             if (!up.count(id)) { // landed (or gone: a guest ignores an unknown id)
                 v.push_back({id, 0.f});
-                g_air_landed++;
+                g_anim.air_landed++;
             }
         g_air_last.swap(up);
     }
@@ -1892,7 +1909,7 @@ static void send_member_air()
             if (p.id != 0)
                 anim_send(p.id, w, false);
     }
-    g_air_sent += (uint32_t)v.size();
+    g_anim.air_sent += (uint32_t)v.size();
 }
 
 // BUG-0936: same-view pairs differed in the pose of members at rest (one stands, the other sits or crouches at the
@@ -1910,7 +1927,6 @@ static void send_member_air()
 // tribe.mirror_idle off`: nothing sent or done (a relayed animation plays to its end).
 static bool g_mirror_idle_fix = true;
 COOP_FIX("tribe.mirror_idle", "BUG-0936", g_mirror_idle_fix, "tribe: a guest's mirror stops a member's animation when the host's member has gone back to its idle or walk (members at rest had other poses)");
-static uint32_t g_idle_sent, g_idle_refreshed, g_idle_played;
 // BUG-0972: the idle fix left a mirror alone whose animation was not the last relayed start (taken for its own idle or
 // walk). A relayed restart of a gesture the mirror still played waited behind it as a pending track (BUG-0992); the
 // next relayed start (the change 0x02C39200) played, and after it the waiting gesture came back: the guest's copy of
@@ -1922,7 +1938,6 @@ static uint32_t g_idle_sent, g_idle_refreshed, g_idle_played;
 static bool g_stale_anim_fix = true;
 COOP_FIX("tribe.mirror_stale_anim", "BUG-0972", g_stale_anim_fix,
          "tribe: a guest's mirror stops a gesture that came back after another animation when the host's member stands or walks (the chief swung its staff on one game only)");
-static uint32_t g_stale_cut;
 // BUG-1071: a member whose behaviour tree itself started its locomotion's idle or walk (bhv_anim one of those ids, as
 // the host's chief after the save's load, before any guest joined: nothing relayed) went to the guests as "plays its
 // behaviour animation" (kind 3), not as its idle (kind 10). Kind 3 starts that idle on the mirror like a relayed start:
@@ -1961,7 +1976,6 @@ static bool loco_anim(uint32_t a)
 static bool g_mirror_phase_fix = true;
 COOP_FIX("tribe.mirror_phase", "BUG-0988", g_mirror_phase_fix,
          "tribe: a guest's copy of a member is at the same moment of a gesture as the host's member (the chief's staff pointed another way)");
-static uint32_t g_phase_sent, g_phase_rx, g_phase_set, g_phase_unlooped;
 // BUG-1072: the host's chief in the same main animation at the same moment on both games still stood another way (bent /
 // upright, the staff at another angle). Probes of every playing track (lab lane 7, docs/re/tribe.md#tribe-chief-tracks):
 // besides the main track the chief plays a second looping track (0x05EF4EE1, a ~2 s loop, also 0x0354559B) whose time
@@ -1972,7 +1986,6 @@ static uint32_t g_phase_sent, g_phase_rx, g_phase_set, g_phase_unlooped;
 static bool g_phase_tracks_fix = true;
 COOP_FIX("tribe.mirror_phase_tracks", "BUG-1072", g_phase_tracks_fix,
          "tribe: a guest's copy of a member plays its other animation layers (the chief's posture loop, its idle) at the host's moment");
-static uint32_t g_tracks_sent, g_tracks_rx, g_tracks_set;
 static double g_phase_last_off;
 static void on_idle_anim(void* c, uint32_t anim)
 {
@@ -1991,7 +2004,7 @@ static void send_member_holds()
     bool again = now - again_at >= 1.0 || now < again_at;
     if (again)
         again_at = now;
-    g_hm.for_each([&](HEntry& e_) {
+    g_host.members.for_each([&](HEntry& e_) {
         void* const c = e_.ref.p;
         HMember& m = e_.data;
         uint32_t h = kept_alive(c, e_.ref.serial, 0x18EB4B7u) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0;
@@ -2024,7 +2037,7 @@ static void send_member_holds()
                 else
                     anim_send(p.id, w, false);
             }
-        g_hold_sent += (uint32_t)list.size();
+        g_anim.hold_sent += (uint32_t)list.size();
     }
 }
 // BUG-0992: the attach (0xC240E0) binds the hold modifier to the track of the current animation's id, looking in the
@@ -2048,7 +2061,7 @@ static bool clear_pending_same(void* c, uint32_t cur)
     }
     if (same) {
         thiscall<void>(a_ClearPending, ac);
-        g_hold_queued++;
+        g_anim.hold_queued++;
     }
     return same;
 }
@@ -2108,7 +2121,7 @@ static void hold_try(GEntry& e, double now)
         if (game::play_behaviour_anim(c, g.hold_anim, 0, 1, -1)) {
             g.relayed_anim = g.hold_anim;
             g.anim_rx_at = now; // (as a relayed start: the idle fix leaves it alone for 1.5 s)
-            g_hold_anim_plays++;
+            g_anim.hold_anim_plays++;
             hold_ev(member_id(c), 'P', g.hold_anim, cur);
         }
     }
@@ -2117,7 +2130,7 @@ static void hold_try(GEntry& e, double now)
         g_hold_queued_fix && now - g.hold_at < 1.0 && now - g.hold_play_at >= 0.2 && now - g.hold_play_at < 1.0 &&
         !game::is_dead(c)) { // BUG-0992: the started animation waits behind the mirror's current one
         queued = true;
-        g_hold_queued++;
+        g_anim.hold_queued++;
         hold_ev(member_id(c), 'Q', g.hold_anim, cur);
     }
     if (item <= 0 || !game::drawn_state(c, nullptr, &cur) || (cur != g.hold_anim && !queued)) {
@@ -2127,7 +2140,7 @@ static void hold_try(GEntry& e, double now)
     hold_ev(member_id(c), 'T', cur, (hold_modifier(c, false) ? 1 : 0) | (other_item ? 2 : 0) | (uint32_t)item << 8);
     if (other_item || !hold_modifier(c, false)) {
         if (other_item)
-            g_hold_item_sets++;
+            g_anim.hold_item_sets++;
         // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
         // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
         float sc = read_item_scale(c);
@@ -2141,7 +2154,7 @@ static void hold_try(GEntry& e, double now)
     g.hold_at = now; // (bound: held_items_tick lets it end with the animation)
     g.hold_anim_bound = queued ? cur : g.hold_anim;
     g.hold_anim = 0;
-    g_hold_bound++;
+    g_anim.hold_bound++;
 }
 
 static void send_member_anims(double now)
@@ -2160,7 +2173,7 @@ static void send_member_anims(double now)
         for (auto& p : C.sess->players())
             if (p.id != 0)
                 anim_send(p.id, w, false);
-        g_anim_relay_sent += (uint32_t)n;
+        g_anim.anim_relay_sent += (uint32_t)n;
     }
     g_member_anim_out.clear();
     if (now - g_member_snap_at < 1.0)
@@ -2173,7 +2186,7 @@ static void send_member_anims(double now)
         uint8_t how;
     };
     std::vector<IdleNow> idle; // BUG-0936
-    g_hm.for_each([&](HEntry& e_) {
+    g_host.members.for_each([&](HEntry& e_) {
         void* const c = e_.ref.p;
         HMember& m = e_.data;
         uint32_t cur = 0;
@@ -2197,7 +2210,7 @@ static void send_member_anims(double now)
         for (auto& p : C.sess->players())
             if (p.id != 0)
                 anim_send(p.id, w, false);
-        g_idle_sent += (uint32_t)idle.size();
+        g_anim.idle_sent += (uint32_t)idle.size();
     }
     if (g_mirror_phase_fix) { // BUG-0988: where in its behaviour animation each member is now
         // ph: kind 14 (the behaviour's start, not a loop: as 0.7.13); ph2: kind 15, BUG-1069, every member's current
@@ -2211,7 +2224,7 @@ static void send_member_anims(double now)
             uint16_t b0;
         };
         std::vector<Ph2> ph2;
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& m = e_.data;
             uint8_t* tr;
@@ -2237,7 +2250,7 @@ static void send_member_anims(double now)
             for (auto& p : C.sess->players())
                 if (p.id != 0)
                     anim_send(p.id, w, false);
-            g_phase_sent += (uint32_t)ph.size();
+            g_anim.phase_sent += (uint32_t)ph.size();
         }
         if (!ph2.empty()) {
             net::Writer w;
@@ -2253,11 +2266,11 @@ static void send_member_anims(double now)
             for (auto& p : C.sess->players())
                 if (p.id != 0)
                     anim_send(p.id, w, false);
-            g_phase_sent += (uint32_t)ph2.size();
+            g_anim.phase_sent += (uint32_t)ph2.size();
         }
         if (g_phase_tracks_fix) { // BUG-1072: kind 16, the other playing tracks and the idle (the format of kind 15)
             std::vector<Ph2> ph3;
-            g_hm.for_each([&](HEntry& e_) {
+            g_host.members.for_each([&](HEntry& e_) {
                 void* const c = e_.ref.p;
                 if (!hm_ok(e_) || game::is_dead(c))
                     return;
@@ -2288,7 +2301,7 @@ static void send_member_anims(double now)
                     if (p.id != 0)
                         anim_send(p.id, w, false);
             }
-            g_tracks_sent += (uint32_t)ph3.size();
+            g_anim.tracks_sent += (uint32_t)ph3.size();
         }
     }
     const size_t per2 = (net::kMaxPacket - 64) / 6;
@@ -2327,7 +2340,6 @@ static bool g_theme_relaying; // guest: our own call of the game's functions
 CALL_GUARD("tribe.theme_relaying", g_theme_relaying); // BUG-1047
 static double g_theme_moved_at[24];
 static int g_theme_local[24]; // guest: host slot -> this game's slot (0 none)
-static uint32_t g_theme_sent, g_theme_rx, g_theme_played;
 
 static void theme_send(uint8_t kind, const net::Writer& w)
 {
@@ -2338,7 +2350,7 @@ static void theme_send(uint8_t kind, const net::Writer& w)
             else
                 anim_send(p.id, w, true);
         }
-    g_theme_sent++;
+    g_anim.theme_sent++;
 }
 static bool theme_host() { return g_ok && C.sess && is_host() && game::mode_id() == modes::kTribe; }
 static int SK_THISCALL h_ThemePlay(void* mgr, uint32_t sound, float x, float y, float z)
@@ -2401,7 +2413,7 @@ static void on_theme(uint8_t kind, net::Reader& r)
     }
     if (!r.ok() || slot == 0 || slot >= 24)
         return;
-    g_theme_rx++;
+    g_anim.theme_rx++;
     void* mgr = theme_mgr();
     if (!mgr || !o_ThemePlay)
         return;
@@ -2412,7 +2424,7 @@ static void on_theme(uint8_t kind, net::Reader& r)
             o_ThemeStop(mgr, local);
         local = o_ThemePlay(mgr, sound, x, y, z);
         if (local)
-            g_theme_played++;
+            g_anim.theme_played++;
     } else if (kind == 5 && local) {
         o_ThemeMove(mgr, local, x, y, z);
     } else if (kind == 6 && local) {
@@ -2444,7 +2456,6 @@ CALL_GUARD("tribe.party_relaying", g_party_relaying); // BUG-1047
 static uint32_t g_party_host_track;      // host: the party music's track now (0 none)
 static uint32_t g_party_rx_track, g_party_local; // guest: the host's track and this game's track for it
 static uint32_t g_party_own;             // guest: a party music track its own game plays
-static uint32_t g_party_sent, g_party_rx, g_party_played, g_party_stopped;
 
 static bool party_host() { return g_ok && g_party_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
 // BUG-0890: "the fire-dance music plays on on the guest". The host sent the stop only while its own game was in Tribe and
@@ -2464,7 +2475,7 @@ static void party_send(uint8_t kind, uint32_t track, uint32_t sound, float x, fl
     for (auto& p : C.sess->players())
         if (p.id != 0)
             anim_send(p.id, w, true);
-    g_party_sent++;
+    g_anim.party_sent++;
 }
 static void SK_CDECL h_PlayProc(uint32_t sound, uint32_t track, float x, float y, float z)
 {
@@ -2511,7 +2522,7 @@ static void party_stop_local()
             callguard::Hold party_relaying(g_party_relaying);
             o_StopAudio(g_party_local, 0);
         }
-        g_party_stopped++;
+        g_anim.party_stopped++;
     }
     g_party_local = g_party_rx_track = 0;
 }
@@ -2529,7 +2540,7 @@ static void on_party(uint8_t kind, net::Reader& r)
     }
     if (!r.ok() || !track)
         return;
-    g_party_rx++;
+    g_anim.party_rx++;
     if (!g_party_fix || !o_PlayProc)
         return;
     if (kind == 8) {
@@ -2552,7 +2563,7 @@ static void on_party(uint8_t kind, net::Reader& r)
     }
     g_party_local = mine;
     g_party_rx_track = track;
-    g_party_played++;
+    g_anim.party_played++;
 }
 
 // BUG-0960: when every member of the player tribe is knocked out the game-over caption ("Alas! Your population has
@@ -2873,8 +2884,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             int item = kind == 12 ? r.u8() : 0;
             if (!r.ok())
                 break;
-            g_hold_rx++;
-            GEntry* it = g_gm.find(id);
+            g_anim.hold_rx++;
+            GEntry* it = g_guest.mirrors.find(id);
             if (!g_mirror_hold_fix || !it)
                 continue;
             hold_ev(id, anim ? 'S' : 'E', anim, 0);
@@ -2909,8 +2920,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             int b0 = r.u16();
             if (!r.ok())
                 break;
-            g_tracks_rx++;
-            GEntry* it = g_gm.find(id);
+            g_anim.tracks_rx++;
+            GEntry* it = g_guest.mirrors.find(id);
             if (!it || !mirror_ok(*it) || !std::isfinite(t) || t < 0 || !std::isfinite(a0) ||
                 game::is_dead(it->ref.p))
                 continue;
@@ -2926,7 +2937,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             double& tm = *(double*)(tr + 0xA8), want = t + d;
             if (std::fabs(tm - want) > 0.1) {
                 tm = want;
-                g_tracks_set++;
+                g_anim.tracks_set++;
             }
         }
         return;
@@ -2946,8 +2957,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             int b0 = kind == 15 ? r.u16() : 0;
             if (!r.ok())
                 break;
-            g_phase_rx++;
-            GEntry* it = g_gm.find(id);
+            g_anim.phase_rx++;
+            GEntry* it = g_guest.mirrors.find(id);
             if (!g_mirror_phase_fix || !it || !mirror_ok(*it) || !std::isfinite(t) || t < 0 ||
                 !std::isfinite(a0))
                 continue;
@@ -2963,14 +2974,14 @@ void on_member_anims(uint8_t kind, net::Reader& r)
                 // 8 s after the host's single pass ended): the mirror's track gets the host's
                 *(float*)(tr + 0xA0) = a0;
                 *(int*)(tr + 0xB0) = b0;
-                g_phase_unlooped++;
+                g_anim.phase_unlooped++;
             }
             double& tm = *(double*)(tr + 0xA8), want = t + d;
             // (BUG-1069: any difference with kind 15: the chief's looping staff gesture ran 30 s+ on the host)
             if (std::fabs(tm - want) > 0.1 && (kind == 15 || std::fabs(tm - want) < 5.0)) {
                 g_phase_last_off = tm - want;
                 tm = want;
-                g_phase_set++;
+                g_anim.phase_set++;
             }
         }
         return;
@@ -2983,7 +2994,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             uint8_t how = r.u8();
             if (!r.ok())
                 break;
-            GEntry* it = g_gm.find(id);
+            GEntry* it = g_guest.mirrors.find(id);
             if (!g_mirror_idle_fix || !it || !mirror_ok(*it) || game::is_dead(it->ref.p))
                 continue;
             GMember& g = it->data;
@@ -3007,13 +3018,13 @@ void on_member_anims(uint8_t kind, net::Reader& r)
                     uint8_t* ac = has_body(it->ref.p) ? F<uint8_t*>(it->ref.p, 0xB54) : nullptr;
                     if (ac)
                         thiscall<void>(a_ClearPending, ac);
-                    g_stale_cut++;
+                    g_anim.stale_cut++;
                 }
                 game::idle_refresh(it->ref.p, true);
-                g_idle_refreshed++;
+                g_anim.idle_refreshed++;
             } else if (game::play_behaviour_anim(it->ref.p, anim, 0, 1, -1)) {
                 g.relayed_anim = anim;
-                g_idle_played++;
+                g_anim.idle_played++;
             }
         }
         return;
@@ -3025,8 +3036,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             float agl = r.f32();
             if (!r.ok())
                 break;
-            g_air_rx++;
-            GEntry* it = g_gm.find(id);
+            g_anim.air_rx++;
+            GEntry* it = g_guest.mirrors.find(id);
             if (it && std::isfinite(agl)) {
                 it->data.air_agl = agl;
                 it->data.air_at = now;
@@ -3047,8 +3058,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         }
         if (!r.ok())
             break;
-        g_anim_relay_rx++;
-        GEntry* it = g_gm.find(id);
+        g_anim.anim_relay_rx++;
+        GEntry* it = g_guest.mirrors.find(id);
         void* c = !it ? nullptr : it->ref.p;
         if (!c || !mirror_ok(*it) || game::is_dead(c)) // (BUG-0955)
             continue;
@@ -3059,7 +3070,7 @@ void on_member_anims(uint8_t kind, net::Reader& r)
                 continue;
             g.anim_fix_at = now;
             if (game::play_behaviour_anim(c, anim, 0, 1, -1)) {
-                g_anim_snap_played++;
+                g_anim.anim_snap_played++;
                 g.relayed_anim = anim; // (BUG-0936)
                 hold_try(*it, now);      // (BUG-0914)
             }
@@ -3094,11 +3105,11 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             hold_ev(id, played ? 'R' : 'r', anim, now_cur); // (tests: what the mirror plays right after)
         }
         if (played) {
-            g_anim_relay_played++;
+            g_anim.anim_relay_played++;
             g.relayed_anim = anim; // (BUG-0936)
             hold_try(*it, now);      // (BUG-0914: the hold came before the animation)
         } else
-            g_anim_relay_failed++;
+            g_anim.anim_relay_failed++;
     }
 }
 
@@ -3290,11 +3301,11 @@ static void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     member_claims_tick(pt, now); // E1 (BUG-1154)
-    if (players != g_split_for && pt) {
+    if (players != g_host.split_for && pt) {
         arrival_place_due(now); // BUG-0340: a player arrived or rejoined
         // the players changed: split the player tribe again, in member order (E1: a claimed member to its player)
-        g_split_for = players;
-        g_player_members_seen = 0;
+        g_host.split_for = players;
+        g_host.dealt = 0;
         for (void* c : members(pt)) {
             HEntry* it = hm_of(c);
             if (!it)
@@ -3302,7 +3313,7 @@ static void host_tick(double now)
             int cl = claim_holder(c);
             if (cl >= 0)
                 g_mclaims_held += cl == C.sess->my_id() && g_member_claim[c] != "host";
-            it->data.owner = tribe_logic::resplit_owner(cl, players, g_player_members_seen); // (D3)
+            it->data.owner = tribe_logic::resplit_owner(cl, players, g_host.dealt); // (D3)
         }
         member_balance(pt, players);
     }
@@ -3320,23 +3331,23 @@ static void host_tick(double now)
             const mirror::Ref ref{c, game::object_serial(c), kMemberNoun};
             uint16_t id = 0;
             bool fresh = false;
-            if (!g_kept_refs_fix && g_hm.id_of(c, id)) {
+            if (!g_kept_refs_fix && g_host.members.id_of(c, id)) {
                 // (tribe.kept_refs off: the entry at the address stays that member's whatever was built there)
-            } else if (!g_hm.adopt(ref, [] { return net::alloc_id(g_next_id, HIds{}); }, // BUG-0154, BUG-0951
+            } else if (!g_host.members.adopt(ref, [] { return net::alloc_id(g_host.next_id, HIds{}); }, // BUG-0154, BUG-0951
                                    [](uint16_t) { g_kept_stale++; }, id, &fresh))
                 continue; // (no id free)
-            HEntry* it = g_hm.find(id);
+            HEntry* it = g_host.members.find(id);
             if (!it)
                 continue;
             seen.insert(id);
             if (fresh) { // the owner (D3: tribe_logic::new_owner): E1's claim, else the players in turns; BUG-0671's purchase
-                auto bf = g_born_for.find(c);
-                bool bought = bf != g_born_for.end();
-                it->data.owner = tribe_logic::new_owner(player, player ? claim_holder(c) : -1, players, g_player_members_seen,
+                auto bf = g_host.born_for.find(c);
+                bool bought = bf != g_host.born_for.end();
+                it->data.owner = tribe_logic::new_owner(player, player ? claim_holder(c) : -1, players, g_host.dealt,
                                                         bought ? (int)bf->second : -1,
                                                         bought && net::is_player(*C.sess, bf->second));
                 if (bought)
-                    g_born_for.erase(bf);
+                    g_host.born_for.erase(bf);
             }
             if (it->data.tribe && it->data.tribe != tribes[ti]) { // BUG-0841: a known member in another tribe now
                 g_member_moves++;
@@ -3358,11 +3369,11 @@ static void host_tick(double now)
         e.data.body_since = h.since;
         if (!h.keep)
             return false;
-        g_bodies_sent++;
+        g_host.bodies_sent++;
         entries.push_back({e.id, (uint8_t)(ti - tribes.begin()), e.data.owner, F<uint8_t>(c, kAgeOff), c, true});
         return true;
     };
-    g_hm.sweep([&](uint16_t id) { return seen.count(id) != 0; },
+    g_host.members.sweep([&](uint16_t id) { return seen.count(id) != 0; },
                [&](HEntry& e, bool alive_obj) { return body(e, alive_obj) ? mirror::Unseen::Keep : mirror::Unseen::Remove; },
                [](HEntry&, bool) {}); // (no game call: the game removed the member)
     // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
@@ -3491,7 +3502,7 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
     void* pt = player_tribe();
     int n = 0;
     for (uint16_t id : ids) {
-        HEntry* hm = g_hm.find(id);
+        HEntry* hm = g_host.members.find(id);
         void* c = hm ? hm->ref.p : nullptr;
         if (!c || hm->data.owner != from || (g_cmd_listed_fix && !hm_live(c)) || // (BUG-1053)
             F<void*>(c, kOwnerTribeOff) != pt)
@@ -3549,7 +3560,7 @@ static void baby_give(void* c, uint8_t from)
     if (HEntry* it = hm_of(c))
         it->data.owner = from;
     else
-        g_born_for[c] = from;
+        g_host.born_for[c] = from;
     member_claim(c, from, 1); // E1 (BUG-1154): the buyer's
 }
 // host: the new members of the player tribe that one call of the game's function made
@@ -3633,7 +3644,7 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         g_baby_last = b;
     }
     bool on = g_ok && g_guest_baby_fix && game::mode_id() == modes::kTribe && stage;
-    if (on && is_guest() && !local_play() && !g_gm.empty()) {
+    if (on && is_guest() && !local_play() && !g_guest.mirrors.empty()) {
         if (bought && buyer != C.sess->my_id()) { // BUG-0824: another player's purchase: the host makes it
             g_buys_other++;
             return;
@@ -3727,7 +3738,7 @@ static void baby_tick(double now)
 static void baby_forget()
 {
     g_buys.clear(); // BUG-0824
-    g_born_for.clear();
+    g_host.born_for.clear();
     g_baby_asks.clear();
     g_baby_made.clear();
 }
@@ -3817,12 +3828,12 @@ static void host_command(uint8_t from, net::Reader& r)
     }
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
         g_cmds_rejected++;
-        g_last_cmd += tgt.kind == 1 && g_hm.has(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
+        g_last_cmd += tgt.kind == 1 && g_host.members.has(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
     int ran = 0;
     for (uint16_t id : ids) {
-        HEntry* hm = g_hm.find(id);
+        HEntry* hm = g_host.members.find(id);
         void* c = hm ? hm->ref.p : nullptr;
         if (!c) {
             g_cmds_rejected++;
@@ -3948,7 +3959,7 @@ static void remove_member(void* c)
     if (g_member_lifetime_fix && !g_detached.count(c)) {
         void* lt = tribe_holding(c);
         if (!lt) {
-            g_remove_refused++;
+            g_guest.remove_refused++;
             MIRROR_LOG("tribe: %p is no member of a live tribe (freed, or another object there): forgotten, not removed (BUG-0844)", c);
             return;
         }
@@ -4149,8 +4160,8 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
     if (!a_SpawnNpcTribe || tag != kTribeInfoTag || p[4] != htribes.size() || len < 5)
         return;
     double now = H->time_seconds();
-    for (size_t i = 0; i < htribes.size() && i < g_local_tribe_of.size(); i++) {
-        if (htribes[i].second || g_local_tribe_of[i])
+    for (size_t i = 0; i < htribes.size() && i < g_guest.local_tribe_of.size(); i++) {
+        if (htribes[i].second || g_guest.local_tribe_of[i])
             continue;
         const uint8_t* e = p + 5 + i * kTribeInfo;
         game::Key k;
@@ -4165,7 +4176,7 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         auto made = g_npc_tribe_made.find(cell);
         if (made != g_npc_tribe_made.end()) { // made before (the game may have put it more than 40 m off)
             if (std::find(locals.begin(), locals.end(), made->second) != locals.end()) {
-                g_local_tribe_of[i] = made->second;
+                g_guest.local_tribe_of[i] = made->second;
                 continue;
             }
             g_npc_tribe_made.erase(made); // gone (a raid, a load): may be made again
@@ -4191,7 +4202,7 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
             continue;
         }
         g_npc_tribes_made++;
-        g_local_tribe_of[i] = t;
+        g_guest.local_tribe_of[i] = t;
         note_ours(g_ours_t, t); // BUG-0495
         g_npc_tribe_made[cell] = t;
         use_marker_at(hp); // BUG-0741
@@ -4304,7 +4315,7 @@ static void unmapped_tick(const std::vector<void*>& locals, void* pt, double now
         return;
     std::unordered_map<void*, double> keep;
     for (void* t : locals) {
-        if (t == pt || std::find(g_local_tribe_of.begin(), g_local_tribe_of.end(), t) != g_local_tribe_of.end())
+        if (t == pt || std::find(g_guest.local_tribe_of.begin(), g_guest.local_tribe_of.end(), t) != g_guest.local_tribe_of.end())
             continue;
         auto it = g_unmapped_since.find(t);
         double since = it == g_unmapped_since.end() ? now : it->second;
@@ -4336,7 +4347,7 @@ int remove_village(void* t)
 {
     if (!t || !is_guest() || game::mode_id() != modes::kTribe || t == player_tribe())
         return 0;
-    if (std::find(g_local_tribe_of.begin(), g_local_tribe_of.end(), t) != g_local_tribe_of.end())
+    if (std::find(g_guest.local_tribe_of.begin(), g_guest.local_tribe_of.end(), t) != g_guest.local_tribe_of.end())
         return 0;
     if (game::cinematic_playing())
         return -1;
@@ -4480,10 +4491,10 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
     if (!r.ok())
         return;
-    g_snap.policy.keep_order = g_cycle_order_fix; // C4 (BUG-1143; BUG-0612's switch, read with every chunk)
-    if (!g_snap.begin(cycle, chunk, chunks))
+    g_guest.snap.policy.keep_order = g_cycle_order_fix; // C4 (BUG-1143; BUG-0612's switch, read with every chunk)
+    if (!g_guest.snap.begin(cycle, chunk, chunks))
         return; // a bad header or a late chunk of an older cycle
-    auto cut = [] { g_snap.end(false); }; // a chunk read only in part counts for nothing
+    auto cut = [] { g_guest.snap.end(false); }; // a chunk read only in part counts for nothing
     std::vector<std::pair<net::Vec3, bool>> htribes;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
@@ -4495,10 +4506,10 @@ static void guest_state(net::Reader& r)
     // host tribe index -> local tribe (the player tribe directly, others by position)
     auto locals = all_tribes();
     void* pt = player_tribe();
-    g_local_tribe_of.assign(htribes.size(), nullptr);
+    g_guest.local_tribe_of.assign(htribes.size(), nullptr);
     for (size_t i = 0; i < htribes.size(); i++) {
         if (htribes[i].second) {
-            g_local_tribe_of[i] = pt;
+            g_guest.local_tribe_of[i] = pt;
             continue;
         }
         float best = 40.f;
@@ -4506,7 +4517,7 @@ static void guest_state(net::Reader& r)
             float d = net::dist(tribe_pos(t), htribes[i].first);
             if (t != pt && d < best) {
                 best = d;
-                g_local_tribe_of[i] = t;
+                g_guest.local_tribe_of[i] = t;
             }
         }
     }
@@ -4540,8 +4551,8 @@ static void guest_state(net::Reader& r)
         m.hp = r.f32();
         if (!r.ok())
             return cut();
-        g_snap.saw(id);
-        GEntry& e = g_gm.at(id);
+        g_guest.snap.saw(id);
+        GEntry& e = g_guest.mirrors.at(id);
         GMember& g = e.data;
         void* c = e.ref.p;
         g.tribe = m.tribe; g.owner = m.owner; g.age = m.age; g.body = m.body;
@@ -4570,8 +4581,8 @@ static void guest_state(net::Reader& r)
         if (c && !mirror_ok(e)) { // (BUG-0844: also another object at its address)
             MIRROR_LOG("tribe: mirror #%u: its object is gone (not removed by the mod, BUG-0685)", id);
             if (g_member_lifetime_fix && game::object_alive(c))
-                g_mirror_stale++;
-            g_gm.detach(id);
+                g_guest.stale++;
+            g_guest.mirrors.detach(id);
             game::air_hold(c, false); // (BUG-0946)
             g.air = false;
             c = nullptr;
@@ -4588,7 +4599,7 @@ static void guest_state(net::Reader& r)
                 MIRROR_LOG("tribe: mirror #%u is not made: %s (BUG-0685)", id, why);
             g.not_made = why;
         };
-        void* t = m.tribe < g_local_tribe_of.size() ? g_local_tribe_of[m.tribe] : nullptr;
+        void* t = m.tribe < g_guest.local_tribe_of.size() ? g_guest.local_tribe_of[m.tribe] : nullptr;
         if (!t) {
             not_made("its tribe has no tribe of this game");
             continue;
@@ -4599,7 +4610,7 @@ static void guest_state(net::Reader& r)
             std::vector<tribe_logic::Candidate> cand;
             for (void* lc : ms) {
                 net::Vec3 q = game::position(lc);
-                cand.push_back({q.x, q.y, q.z, g_gm.bound(lc)});
+                cand.push_back({q.x, q.y, q.z, g_guest.mirrors.bound(lc)});
             }
             int k = tribe_logic::pick_bind(cand, m.pos.x, m.pos.y, m.pos.z); // (D3)
             if (k >= 0)
@@ -4617,7 +4628,7 @@ static void guest_state(net::Reader& r)
             // BUG-0444: the host's position (g.pos: with the tests' lift), onto this game's ground where that lies
             // higher (BUG-0329)
             game::teleport(c, drive::out_of_ground(g.pos, true), m.rot);
-            g_spawned++;
+            g_guest.spawned++;
             made = true;
         }
         if (m.body) { // BUG-0665: guest_tick lays it down as a body
@@ -4627,9 +4638,9 @@ static void guest_state(net::Reader& r)
         if (g.not_made)
             MIRROR_LOG("tribe: mirror #%u is made again (BUG-0685)", id);
         g.not_made = nullptr;
-        g_gm.bind(id, mirror::Ref{c, game::object_serial(c), kMemberNoun}, made); // (BUG-0844: its serial)
+        g_guest.mirrors.bind(id, mirror::Ref{c, game::object_serial(c), kMemberNoun}, made); // (BUG-0844: its serial)
     }
-    if (!g_snap.end(r.ok())) // C4: true once, on the chunk that completes the cycle (a cut one counts for nothing)
+    if (!g_guest.snap.end(r.ok())) // C4: true once, on the chunk that completes the cycle (a cut one counts for nothing)
         return;
     // end of a full snapshot: members the host no longer has go away, and so do local members
     // the host does not know (the guest's tribes are only mirrors)
@@ -4639,17 +4650,17 @@ static void guest_state(net::Reader& r)
         MIRROR_LOG("tribe: mirror #%u goes: the host's snapshot has it no more%s (BUG-0685)", e.id,
                    g_detached.count(e.ref.p) ? " (a body)" : "");
         remove_member(e.ref.p);
-        g_removed++;
+        g_guest.removed++;
     };
     // C1 + C4: every mirror the cycle did not name goes (the registry's sweep; a dead one is only forgotten)
-    g_snap.finish(g_gm, [](GEntry&, bool) { return mirror::Unseen::Remove; }, remove);
-    for (void* t : g_local_tribe_of) // the orphans: members of this game the host has not
+    g_guest.snap.finish(g_guest.mirrors, [](GEntry&, bool) { return mirror::Unseen::Remove; }, remove);
+    for (void* t : g_guest.local_tribe_of) // the orphans: members of this game the host has not
         if (t)
             for (void* lc : members(t))
-                if (!g_gm.bound(lc)) {
+                if (!g_guest.mirrors.bound(lc)) {
                     MIRROR_LOG("tribe: a member of this game the host has not goes (leader %d, BUG-0685)", (int)is_leader(lc));
                     remove_member(lc);
-                    g_removed++;
+                    g_guest.removed++;
                 }
     unmapped_tick(locals, pt, now); // BUG-0483
 }
@@ -4860,7 +4871,7 @@ static void away_tree_end_tick()
     if (!back || !g_away_tree_end_fix || !a_BTTerminate || game::mode_id() != modes::kTribe)
         return;
     uint32_t n = 0;
-    g_gm.for_each([&](GEntry& e_) {
+    g_guest.mirrors.for_each([&](GEntry& e_) {
         if (!mirror_ok(e_) || g_detached.count(e_.ref.p) || g_bt_local.count(e_.ref.p) || !F<void*>(e_.ref.p, 0x1014))
             return;
         uint8_t* ai = F<uint8_t*>(e_.ref.p, 0xB4C);
@@ -4877,7 +4888,7 @@ static void guest_tick(double now)
 {
     if (local_play())
         return; // the last states would hold the members for 3 s
-    g_gm.for_each([&](GEntry& e_) {
+    g_guest.mirrors.for_each([&](GEntry& e_) {
         const uint16_t id = e_.id;
         GMember& g = e_.data;
         if (!mirror_ok(e_) || now - g.seen > 3.0) // (BUG-0844)
@@ -4902,7 +4913,7 @@ static void guest_tick(double now)
         }
         if (ko == tribe_logic::Ko::Replace) { // back on its feet on the host
             MIRROR_LOG("tribe: mirror #%u goes: dead here, back on its feet on the host (made again, BUG-0685)", id);
-            g_gm.detach(id);
+            g_guest.mirrors.detach(id);
             remove_member(c);
             g_ko_replaced++;
             return;
@@ -4920,7 +4931,7 @@ static void guest_tick(double now)
                 g.aim = {pos.x * k, pos.y * k, pos.z * k};
                 drive::air_place(c, g.aim, rot, vel, g.ds, now);
                 g.air = true;
-                g_air_placed++;
+                g_anim.air_placed++;
             }
         } else {
             if (g.air) { // (its game lands it)
@@ -5966,7 +5977,7 @@ static void frame_tool_run()
 {
     FrameTool f = g_frame_tool;
     g_frame_tool.armed = false;
-    void* t = f.ix >= 0 && f.ix < (int)g_local_tribe_of.size() ? g_local_tribe_of[f.ix] : nullptr;
+    void* t = f.ix >= 0 && f.ix < (int)g_guest.local_tribe_of.size() ? g_guest.local_tribe_of[f.ix] : nullptr;
     net::Vec3 c = t ? tribe_pos(t) : net::Vec3{};
     float l = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
     H->log(M, SK_INFO, "tribe: tests: frametool tribe %d (mapped to %p) type %d", f.ix, t, f.type);
@@ -6031,14 +6042,14 @@ static std::string tribe_hunt_status()
     char b[400];
     bool l = g_th.hit && game::listed(g_th.hit, kCitizenNoun) && game::object_serial(g_th.hit) == g_th.hit_serial;
     net::Vec3 q = l ? game::position(g_th.hit) : net::Vec3{};
-    GEntry* it = g_gm.find(g_th.id);
+    GEntry* it = g_guest.mirrors.find(g_th.id);
     net::Vec3 want = it ? it->data.pos : net::Vec3{};
     GEntry* gi = l ? gm_of(g_th.hit) : nullptr;
     snprintf(b, sizeof b, "tribe reuse target=%p mirror=%u left=%d tries=%d hit=%p alive=%d own_tribe=%d pos=(%.2f %.2f %.2f) "
              "host_member=(%.2f %.2f %.2f) bound_as=%d stale=%u refused=%u ring=%d ring_order=%d kept_stale=%u\n",
              (void*)g_th.target, g_th.id, g_th.left, g_th.tries, g_th.hit, (int)l,
              (int)(l && tribe_holding(g_th.hit) == player_tribe()), q.x, q.y, q.z, want.x, want.y, want.z,
-             gi ? (int)gi->id : -1, g_mirror_stale, g_remove_refused,
+             gi ? (int)gi->id : -1, g_guest.stale, g_guest.remove_refused,
              l ? (int)ring_shown(g_th.hit) : -1, (int)(g_ring.target && g_ring.target == g_th.target), g_kept_stale);
     return b;
 }
@@ -6220,18 +6231,18 @@ void on_session_end()
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
     clear_coop_tables(true);
-    g_split_for.clear();
-    g_hm.clear();
-    g_gm.for_each([](GEntry& e) { // BUG-0946: no air hold left on a mirror (a pointer compare only)
+    g_host.split_for.clear();
+    g_host.members.clear();
+    g_guest.mirrors.for_each([](GEntry& e) { // BUG-0946: no air hold left on a mirror (a pointer compare only)
         if (e.data.air)
             game::air_hold(e.ref.p, false);
     });
-    g_gm.clear();
+    g_guest.mirrors.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
-    g_player_members_seen = 0;
+    g_host.dealt = 0;
     if (g_world_map_fix)
-        g_local_tribe_of.clear(); // BUG-0672: the old world's tribes are freed; the next tribe state maps the new ones
+        g_guest.local_tribe_of.clear(); // BUG-0672: the old world's tribes are freed; the next tribe state maps the new ones
 }
 
 // a world of the Tribe stage is gone (a load, a received world, the stage left, the game-over
@@ -6251,16 +6262,16 @@ void on_world_change()
     g_detached.clear(); // (BUG-0667: freed with the world)
     g_left_tribe.clear();
     g_bt_local.clear();
-    g_split_for.clear();
-    g_hm.clear();
-    g_gm.for_each([](GEntry& e) { // BUG-0946: no air hold left on a mirror (a pointer compare only)
+    g_host.split_for.clear();
+    g_host.members.clear();
+    g_guest.mirrors.for_each([](GEntry& e) { // BUG-0946: no air hold left on a mirror (a pointer compare only)
         if (e.data.air)
             game::air_hold(e.ref.p, false);
     });
-    g_gm.clear();
+    g_guest.mirrors.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
-    g_player_members_seen = 0;
+    g_host.dealt = 0;
 }
 
 // BUG-0217: which Tribe world is open. Before, any frame without the stage's local entity (every
@@ -6323,7 +6334,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
     if (!active())
         return;
     if (is_host()) {
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& hm = e_.data;
             if (hm.owner < 0xFE && hm_ok(e_))
@@ -6332,7 +6343,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
         return;
     }
     double now = H->time_seconds();
-    g_gm.for_each([&](GEntry& e_) {
+    g_guest.mirrors.for_each([&](GEntry& e_) {
         const uint16_t id = e_.id;
         GMember& g = e_.data;
         if (g.owner >= 0xFE || !mirror_ok(e_) || now - g.seen > 3.0) // (BUG-0955)
@@ -6357,7 +6368,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
         return;
     double now = H->time_seconds();
     char k[8];
-    g_gm.for_each([&](GEntry& e_) {
+    g_guest.mirrors.for_each([&](GEntry& e_) {
         const uint16_t id = e_.id;
         GMember& g = e_.data;
         if (!mirror_ok(e_) || now - g.seen > 3.0 || g.buf.empty()) // (BUG-0955)
@@ -6376,7 +6387,7 @@ std::string status()
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u guest_missions=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
+                 (unsigned)g_host.members.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_host.bodies_sent, g_village_captions_closed,
                  g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
     if (C.sess && C.sess->role() == net::Role::Host) { // E1 (BUG-1154)
         char c[200];
@@ -6389,17 +6400,17 @@ std::string status()
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
                  "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u join_bodies=%u mirrors_grown=%u away_trees_ended=%u\n",
-                 (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_snap.incomplete, g_snap.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
+                 (unsigned)g_guest.mirrors.size(), g_guest.spawned, g_guest.removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_guest.snap.incomplete, g_guest.snap.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
-    out += "tribe registry: " + g_hm.status() + "; " + g_gm.status() + "\n";
+    out += "tribe registry: " + g_host.members.status() + "; " + g_guest.mirrors.status() + "\n";
     snprintf(b, sizeof b, "tribe snapshot rx: chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
-             g_snap.chunks_in, g_snap.bad, g_snap.older, g_snap.cut, g_snap.incomplete, g_snap.abandoned,
-             g_snap.complete, g_snap.generation);
+             g_guest.snap.chunks_in, g_guest.snap.bad, g_guest.snap.older, g_guest.snap.cut, g_guest.snap.incomplete, g_guest.snap.abandoned,
+             g_guest.snap.complete, g_guest.snap.generation);
     out += b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -6747,7 +6758,7 @@ std::string debug(const std::vector<std::string>& a)
                 out += b;
             }
         // BUG-1104: the bodies the host still tracks (out of their tribe's list, dead, BUG-0620): every one, any height
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& hm = e_.data;
             if (!hm.body_since || !kept_alive(c, e_.ref.serial, 0x18EB4B7u))
@@ -6938,7 +6949,7 @@ std::string debug(const std::vector<std::string>& a)
             },
             &s);
         char b[96];
-        snprintf(b, sizeof b, "tribes=%u mapped=%u bought=%u\n", (unsigned)all_tribes().size(), (unsigned)g_local_tribe_of.size(), g_tools_bought);
+        snprintf(b, sizeof b, "tribes=%u mapped=%u bought=%u\n", (unsigned)all_tribes().size(), (unsigned)g_guest.local_tribe_of.size(), g_tools_bought);
         return s + b;
     }
     // place <tribe index | p> <type> <metres> [degrees]: test setup, a tool for a tribe of this game (the host's index;
@@ -7165,18 +7176,18 @@ std::string debug(const std::vector<std::string>& a)
         g_frame_tool.armed = true;
         char b[96];
         snprintf(b, sizeof b, "frametool armed: tribe %d type %d (mapped=%u)", g_frame_tool.ix, g_frame_tool.type,
-                 (unsigned)g_local_tribe_of.size());
+                 (unsigned)g_guest.local_tribe_of.size());
         return b;
     }
     if (a.size() >= 1 && a[0] == "reusehunt" && is_guest()) { // reusehunt [<mirror id> [frames]]: BUG-0844 (tests)
         if (a.size() < 2)
             return tribe_hunt_status();
-        GEntry* it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        GEntry* it = g_guest.mirrors.find((uint16_t)atoi(a[1].c_str()));
         // any: the first mirror with a living member of a live tribe, alive on the host, seen now; npc: of a tribe that
         // is not the guest's player tribe (the new member is made in the player tribe: another tribe's)
         if (a[1] == "any" || a[1] == "npc") {
             it = nullptr;
-            g_gm.for_each([&](GEntry& e) {
+            g_guest.mirrors.for_each([&](GEntry& e) {
                 void* ec = e.ref.p;
                 if (!it && ec && e.data.hp > 0 && !e.data.body && H->time_seconds() - e.data.seen < 1.0 &&
                     !g_detached.count(ec) && tribe_holding(ec) && !game::is_dead(ec) &&
@@ -7201,11 +7212,11 @@ std::string debug(const std::vector<std::string>& a)
         g_state_hold = atoi(a[1].c_str()) != 0;
         char b[96];
         snprintf(b, sizeof b, "tribe states %s; mapped=%u stale_skipped=%u map=", g_state_hold ? "held" : "taken",
-                 (unsigned)g_local_tribe_of.size(), g_map_stale_skipped);
+                 (unsigned)g_guest.local_tribe_of.size(), g_map_stale_skipped);
         std::string out = b;
         void* pt = player_tribe();
-        for (size_t i = 0; i < g_local_tribe_of.size() && i < 32; i++) {
-            snprintf(b, sizeof b, "%u:%p%s ", (unsigned)i, g_local_tribe_of[i], g_local_tribe_of[i] && g_local_tribe_of[i] == pt ? "(p)" : "");
+        for (size_t i = 0; i < g_guest.local_tribe_of.size() && i < 32; i++) {
+            snprintf(b, sizeof b, "%u:%p%s ", (unsigned)i, g_guest.local_tribe_of[i], g_guest.local_tribe_of[i] && g_guest.local_tribe_of[i] == pt ? "(p)" : "");
             out += b;
         }
         return out;
@@ -7271,7 +7282,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 2 && a[0] == "bhvzero" && is_host()) { // bhvzero <member id>: tests (BUG-1071), the member as after
         // the save's load: no behaviour start seen yet (bhv_anim 0)
-        if (HEntry* e = g_hm.find((uint16_t)atoi(a[1].c_str()))) {
+        if (HEntry* e = g_host.members.find((uint16_t)atoi(a[1].c_str()))) {
             e->data.bhv_anim = 0;
             return "bhvzero " + a[1];
         }
@@ -7279,7 +7290,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && a[0] == "mplay" && is_guest()) { // mplay <member id> <hex anim>: tests (BUG-0972), the mirror
         // plays that animation as an earlier relayed start that came back after another one (not the last relayed)
-        GEntry* it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        GEntry* it = g_guest.mirrors.find((uint16_t)atoi(a[1].c_str()));
         if (!it || !mirror_ok(*it) || !has_body(it->ref.p))
             return "no such mirror";
         bool ok = game::play_behaviour_anim(it->ref.p, (uint32_t)strtoul(a[2].c_str(), nullptr, 16), 0, 1, -1);
@@ -7347,7 +7358,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && a[0] == "settool" && is_host()) { // settool <member id> <type>: tests (BUG-0583), the game's
         // SetSpecializedTool on the host's member (any tribe's), as when it takes a rack's weapon
-        HEntry* he = g_hm.find((uint16_t)atoi(a[1].c_str()));
+        HEntry* he = g_host.members.find((uint16_t)atoi(a[1].c_str()));
         void* c = he && hm_ok(*he) ? he->ref.p : nullptr;
         if (!c || !is_citizen(c) || !a_SetSpecializedTool)
             return "no such member";
@@ -7384,11 +7395,11 @@ std::string debug(const std::vector<std::string>& a)
         if (!f)
             return "no fruit there";
         std::vector<void*> sel;
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             if (e_.ref.p && F<uint8_t>(e_.ref.p, kSelectedOff))
                 sel.push_back((uint8_t*)e_.ref.p + 0xC0);
         });
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
@@ -7446,11 +7457,11 @@ std::string debug(const std::vector<std::string>& a)
         if (act_needs_object(action) && is_citizen(t))
             return "action needs a tool or a hut";
         std::vector<void*> sel;
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             if (e_.ref.p && F<uint8_t>(e_.ref.p, kSelectedOff))
                 sel.push_back((uint8_t*)e_.ref.p + 0xC0);
         });
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
@@ -7470,7 +7481,7 @@ std::string debug(const std::vector<std::string>& a)
         if (!pit)
             return "no fire pit";
         std::vector<void*> sel;
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
@@ -7488,11 +7499,11 @@ std::string debug(const std::vector<std::string>& a)
         if (a[0] == "act" && t && act_needs_object(action))
             return "action " + std::to_string(action) + " needs a tool or a hut, not a member (attack a member: 7)";
         std::vector<void*> sel;
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             if (e_.ref.p && F<uint8_t>(e_.ref.p, kSelectedOff))
                 sel.push_back((uint8_t*)e_.ref.p + 0xC0);
         });
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
@@ -7569,7 +7580,7 @@ std::string debug(const std::vector<std::string>& a)
         return "mirrors follow the host's states " + std::to_string(g_test_delay) + " s back";
     }
     if (a.size() >= 3 && a[0] == "undo" && is_guest()) { // undo <id> <s>: tests (BUG-0386), placings of a mirror undone
-        GEntry* it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        GEntry* it = g_guest.mirrors.find((uint16_t)atoi(a[1].c_str()));
         if (!it || !it->ref.p)
             return "no mirror " + a[1];
         it->data.test_undo_until = H->time_seconds() + std::max(0.0, std::min(10.0, atof(a[2].c_str())));
@@ -7713,30 +7724,30 @@ std::string debug(const std::vector<std::string>& a)
             }
         };
         if (is_host()) // bhv: the last animation its behaviour tree started (the game's call, game.cpp's listener)
-            g_hm.for_each([&](HEntry& e_) {
+            g_host.members.for_each([&](HEntry& e_) {
                 void* const c = e_.ref.p;
                 HMember& m = e_.data;
                 line(e_.id, c, m.bhv_anim, m.idle_anim);
             });
         else
-            g_gm.for_each([&](GEntry& e_) {
+            g_guest.mirrors.for_each([&](GEntry& e_) {
                 const uint16_t id = e_.id;
                 GMember& g = e_.data;
                 line(id, mirror_ok(e_) ? e_.ref.p : nullptr, g.relayed_anim, 0);
             });
-        return o + "anims fix=1 sent=" + std::to_string(g_anim_relay_sent) +
-               " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
-               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_air_sent) +
-               " rx=" + std::to_string(g_air_rx) + " placed=" + std::to_string(g_air_placed) + " landed=" + std::to_string(g_air_landed) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
-               " sent=" + std::to_string(g_idle_sent) + " refreshed=" + std::to_string(g_idle_refreshed) + " played=" + std::to_string(g_idle_played) +
-               " stale_cut=" + std::to_string(g_stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
-               " sent=" + std::to_string(g_phase_sent) + " rx=" + std::to_string(g_phase_rx) + " set=" + std::to_string(g_phase_set) + " unlooped=" + std::to_string(g_phase_unlooped) +
+        return o + "anims fix=1 sent=" + std::to_string(g_anim.anim_relay_sent) +
+               " rx=" + std::to_string(g_anim.anim_relay_rx) + " played=" + std::to_string(g_anim.anim_relay_played) + " failed=" +
+               std::to_string(g_anim.anim_relay_failed) + " snap_played=" + std::to_string(g_anim.anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_anim.air_sent) +
+               " rx=" + std::to_string(g_anim.air_rx) + " placed=" + std::to_string(g_anim.air_placed) + " landed=" + std::to_string(g_anim.air_landed) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
+               " sent=" + std::to_string(g_anim.idle_sent) + " refreshed=" + std::to_string(g_anim.idle_refreshed) + " played=" + std::to_string(g_anim.idle_played) +
+               " stale_cut=" + std::to_string(g_anim.stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
+               " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
                " last_off=" + std::to_string(g_phase_last_off) + "\ntracks fix=" + std::to_string((int)g_phase_tracks_fix) +
-               " sent=" + std::to_string(g_tracks_sent) + " rx=" + std::to_string(g_tracks_rx) + " set=" + std::to_string(g_tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_hold_sent) + " rx=" + std::to_string(g_hold_rx) +
-               " bound=" + std::to_string(g_hold_bound) + " item_sets=" + std::to_string(g_hold_item_sets) + " anim_plays=" + std::to_string(g_hold_anim_plays) + " queued=" + std::to_string(g_hold_queued) +
-               "\ntheme sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
-               "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
-               std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
+               " sent=" + std::to_string(g_anim.tracks_sent) + " rx=" + std::to_string(g_anim.tracks_rx) + " set=" + std::to_string(g_anim.tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_anim.hold_sent) + " rx=" + std::to_string(g_anim.hold_rx) +
+               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) +
+               "\ntheme sent=" + std::to_string(g_anim.theme_sent) + " rx=" + std::to_string(g_anim.theme_rx) + " played=" + std::to_string(g_anim.theme_played) +
+               "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_anim.party_sent) + " rx=" +
+               std::to_string(g_anim.party_rx) + " played=" + std::to_string(g_anim.party_played) + " stopped=" + std::to_string(g_anim.party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
                "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made) + " paired=" + std::to_string(g_babies_paired) +
                " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }() +
                "\nbaby_pair fix=" + std::to_string((int)g_baby_pair_fix) + " seen=" + std::to_string(g_buys_seen) + " own=" +
@@ -7900,7 +7911,7 @@ std::string list()
             net::Vec3 v = game::velocity(c), sv{};
             const drive::State* ds = nullptr;
             if (C.sess && C.sess->role() != net::Role::Host) { // the host's velocity in the snapshot
-                if (GEntry* it = g_gm.find(id)) {
+                if (GEntry* it = g_guest.mirrors.find(id)) {
                     sv = it->data.vel;
                     ds = &it->data.ds;
                 }
@@ -7935,14 +7946,14 @@ std::vector<syncdbg::Entry> sync_entries()
     std::vector<syncdbg::Entry> v;
     game::LiveScope live; // BUG-0919 (one walk of the object list)
     if (C.sess && C.sess->role() == net::Role::Host) {
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& h = e_.data;
             if ((npc::entries_listed() ? game::listed(c) : game::object_alive(c)) && h.body_since == 0)
                 v.push_back({"t" + std::to_string(e_.id), game::position(c), game::orientation(c)});
         });
     } else {
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             const uint16_t id = e_.id;
             GMember& g = e_.data;
             if (mirror_ok(e_) && !g.body) // (BUG-0955)
@@ -7959,14 +7970,14 @@ int own_selected()
     int n = 0;
     uint8_t me = C.sess->my_id();
     if (C.sess->role() == net::Role::Host) {
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& hm = e_.data;
             if (hm.owner == me && F<uint8_t>(c, kSelectedOff))
                 n++;
         });
     } else
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             GMember& m = e_.data;
             if (e_.ref.p && m.owner == me && F<uint8_t>(e_.ref.p, kSelectedOff))
                 n++;
@@ -7981,7 +7992,7 @@ int give_selected(uint8_t to)
     uint8_t me = C.sess->my_id();
     std::vector<uint16_t> ids;
     if (C.sess->role() == net::Role::Host) {
-        g_hm.for_each([&](HEntry& e_) {
+        g_host.members.for_each([&](HEntry& e_) {
             void* const c = e_.ref.p;
             HMember& hm = e_.data;
             if (hm.owner == me && F<uint8_t>(c, kSelectedOff))
@@ -7989,7 +8000,7 @@ int give_selected(uint8_t to)
         });
         give_on_host(me, to, ids);
     } else {
-        g_gm.for_each([&](GEntry& e_) {
+        g_guest.mirrors.for_each([&](GEntry& e_) {
             const uint16_t id = e_.id;
             GMember& m = e_.data;
             if (e_.ref.p && m.owner == me && F<uint8_t>(e_.ref.p, kSelectedOff))
