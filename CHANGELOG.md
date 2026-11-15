@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Development
+- The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
+  phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update
