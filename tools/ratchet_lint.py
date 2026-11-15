@@ -528,13 +528,14 @@ def self_test():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--root', default=ROOT)
+    ap.add_argument('--baseline', default=BASELINE, help='the baseline file (relative to --root, or absolute)')
     ap.add_argument('--lower', action='store_true', help='write the current (lower) counts into the baseline')
     ap.add_argument('--self-test', action='store_true')
     ap.add_argument('-v', '--verbose', action='store_true', help='list every object_alive( call')
     a = ap.parse_args()
     if a.self_test:
         return self_test()
-    return run(a.root, BASELINE, a.lower, a.verbose)
+    return run(a.root, a.baseline, a.lower, a.verbose)
 
 
 if __name__ == '__main__':
