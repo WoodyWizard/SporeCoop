@@ -357,24 +357,12 @@ uint32_t g_vote_elsewhere;
 // five modules of 0.7.10 only.
 bool g_player_forget_fix = true;
 COOP_FIX("core.player_forget", "BUG-0422", g_player_forget_fix, "core: a player who joins under a departed player's id gets nothing of that player's state");
-static lifecycle::WorldWatch g_lifecycle_world;
-static void lifecycle_world_tick() // once a frame, after game::stage_epoch_tick
-{
-    uint32_t sum = 0;
-    for (uint32_t m : {modes::kCell, modes::kCreature, modes::kTribe, modes::kCiv, modes::kSpace})
-        sum += game::stage_epoch(m);
-    if (g_lifecycle_world.changed(sum))
-        lifecycle::reset(lifecycle::kWorld, g_lifecycle_fix);
-}
-
-// C2 of 0.7.15 (BUG-1141, owner decision 2; docs/01-architecture.md#arch-world-id): one world identity
-// (world_id.h) stepped right after the stage counters; a change fires the lifecycle observers (lifecycle.h
-// LIFECYCLE_HOOK, kWorldChange), the WORLD_STATE resets at order 0 of that fan-out. An editor visit is no world
-// change (the host away, C3). Off (`coop.fix core.world_id off`): the sum of the stage counters resets the
-// WORLD_STATE entries and every module keeps its own detector (0.7.14).
-static bool g_world_id_fix = true;
-COOP_FIX("core.world_id", "BUG-1141", g_world_id_fix,
-         "core: one world identity (another stage, save, or the stage entered again) fires every module's world change");
+// C2 of 0.7.15 (BUG-1141, owner decision 2; docs/01-architecture.md#arch-world-id, #arch-c2c3-wiring): one world
+// identity (world_id.h) stepped right after the stage counters; a change fires the lifecycle observers (lifecycle.h
+// LIFECYCLE_HOOK, kWorldChange) with the WORLD_STATE resets at order 0 of that fan-out. An editor visit is no world
+// change (the host away, C3). Before (0.7.14): the sum of the stage counters reset the WORLD_STATE entries, Tribe and
+// Civ had their own detector (stage_epoch.h Watch), Space its own counter, and avatar_change_check reset the Creature
+// modules on every change of the local entity, an editor visit included.
 static uint32_t g_world_fires;
 // the save the stage plays: a real planet file only ("snapshot.spo" with nothing remembered and the menu's name are
 // not known: 0), as space_ext's world file (BUG-0225) and world_name.h
@@ -395,9 +383,6 @@ static const void* world_anchor(uint32_t mode)
 }
 static void world_id_tick()
 {
-    lifecycle::fanout().world_events = g_world_id_fix;
-    if (!g_world_id_fix)
-        return;
     world_id::Frame f;
     f.mode = game::mode_id();
     if (stage_epoch::index_of(f.mode) >= 0) {
@@ -425,7 +410,7 @@ static void world_id_tick()
 }
 std::string world_id_status()
 {
-    return std::string("world_id: fix=") + (g_world_id_fix ? "1 " : "0 ") + world_id::tracker().status() +
+    return std::string("world_id: ") + world_id::tracker().status() +
            " fires=" + std::to_string(g_world_fires) + "\n";
 }
 
@@ -912,7 +897,7 @@ static_assert(modes::kTribe == stage_epoch::kTribe && modes::kCiv == stage_epoch
                   modes::kSpace == stage_epoch::kSpace && modes::kScenario == stage_epoch::kScenario &&
                   modes::kCell == stage_epoch::kCell && modes::kCreature == stage_epoch::kCreature,
               "stage_epoch.h mode ids");
-// C2 (BUG-1141, `core.world_id` on): a world change fires the modules' hooks (LIFECYCLE_HOOK kWorldChange: the
+// C2 (BUG-1141): a world change fires the modules' hooks (LIFECYCLE_HOOK kWorldChange: the
 // puppets, npc, nest, fields, wobj); this check is no world detector any more. It covers what world_id.h does not
 // see: the local creature replaced inside the same world (the co-op window's own creature, BUG-0833) and the stage
 // torn down before the mode changes (BUG-0091, BUG-0308). Decision 2: the local player's editor visit (the local
@@ -928,11 +913,10 @@ void avatar_change_check()
     g_world_fires_seen = g_world_fires;
     if (local == g_last_avatar)
         return;
-    bool hooks = lifecycle::world_events_on();
     if (g_last_avatar) {
         bool editor = mode == modes::kEdit || mode == modes::kEditor;
         forget_puppets();
-        if (!hooks || (!fired && !(editor && !local))) {
+        if (!fired && !(editor && !local)) {
             npc::on_world_change();
             nest::on_world_change();
             fields::on_world_change();
@@ -987,11 +971,7 @@ static void frame_observe(double now)
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
     modes::world_name_tick(); // BUG-0258: the planet stays known through snapshot.spo
     modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
-    world_id_tick();          // BUG-1141: one world identity fires the world-change hooks and WORLD_STATE resets
-    tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit; core.world_id off)
-    civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor; core.world_id off)
-    if (!g_world_id_fix)
-        lifecycle_world_tick(); // BUG-1055: a new world resets every WORLD_STATE (lifecycle.h)
+    world_id_tick();          // BUG-1141 (BUG-0217, BUG-0223, BUG-1055): the world changed: its hooks and WORLD_STATE resets
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();

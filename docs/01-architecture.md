@@ -181,13 +181,13 @@ phases run in this order, and the order is part of the fixes named:
 
 | # | Phase | Contract |
 |---|---|---|
-| 1 | frame_observe | before any message: frame timing and the session clock (support::tick first), the stage counters (`game::stage_epoch_tick`, BUG-0217: before any message or module tick), the Tribe / Civ world checks, the world resets (`lifecycle_world_tick`, BUG-1055), the puppets forgotten when the world was torn down (`avatar_change_check`, BUG-0091), the puppets / proxies / bodies read as drawn (monitor, bodyrec) |
+| 1 | frame_observe | before any message: frame timing and the session clock (support::tick first), the stage counters (`game::stage_epoch_tick`, BUG-0217: before any message or module tick), the world identity (`world_id_tick`, C2: the world-change hooks and the WORLD_STATE resets, BUG-0217 / BUG-0223 / BUG-1055, #arch-c2c3-wiring), the puppets forgotten when the local entity went (`avatar_change_check`, BUG-0091), the puppets / proxies / bodies read as drawn (monitor, bodyrec) |
 | 2 | frame_receive | `g_sess.update()`: every message of this update; the host's WELCOME world and every handler see the last frame's `g_mode` / `g_world` / `g_local` (BUG-0231); then the partner pass-through list and the lobby |
 | 3 | frame_votes_and_ui | the guest's latency for the drive (BUG-0425, BUG-0651), votes, the own editor, offers, the co-op window, the menu |
 | 4 | frame_world_ticks | the host's world share tick (a guest: a received world waiting), the save strip, npc, player_rules, nest, fields (after the modules that make mirrors), wsync, worldobj, realign, parts, effects, social, the evolution keys, creature_hp, shared resources |
 | 5 | frame_send_totals | host: the DNA total (on a change, every 2 s) and the time of day (every 1 s) |
 | 6 | frame_local_update | this frame's `g_mode` (on_mode_change), `g_adapter`, `g_world`, `g_local`; settings, the HUD helpers, the probes, the second avatar check, join apart (BUG-0989) |
-| 7 | frame_stage_ticks | strays, follow_phase, the share wait, host away, DNA spends and notices, Tribe, Cell, Civ, the squadron, the updater, Space, teamplay |
+| 7 | frame_stage_ticks | strays, follow_phase, the share wait, host away, the host's busy state and a guest's wait (host_busy_tick, C3), DNA spends and notices, Tribe, Cell, Civ, the squadron, the updater, Space, teamplay |
 | 8 | frame_send_state | our player state (`net::state_due`: every 0.05 s, a stop at once, BUG-1093) and the echo test remote |
 | 9 | frame_drive | every partner's puppet driven (forgotten without a local entity), then coop.track and the support trace |
 
@@ -612,6 +612,10 @@ is tried again 15 s later. The co-op window's session line (host) shows "saved N
 
 The wiring of #arch-world-id (BUG-1141) and #arch-busy-model (BUG-1142) into coop.dll. Proof runs in the tickets.
 
+Both C2 switches of the migration (`core.world_id`, `core.session_hooks`) and the old paths (tribe / civ `world_check`,
+`lifecycle_world_tick`, space_ext's own epoch counter, end_session's hand list, avatar_change_check's world resets)
+were deleted in this branch once the world-change tests passed with them on (plan rule: no new permanent switch).
+
 **World identity (C2).** coop.cpp `world_id_tick` (frame_observe, right after `game::stage_epoch_tick`,
 `modes::world_name_tick` and `modes::test_tick`) steps the one `world_id::tracker()` with the mode, the stage counter,
 the planet file (a real `<planet>.spo` only: `world_name::is_planet`, so "snapshot.spo" with nothing remembered is
@@ -620,8 +624,8 @@ the anchor (`tribe::world_anchor`, `civ::world_anchor`, `spaceext::world_anchor`
 (<why>)` and fires `lifecycle::fire(kWorldChange)` at once (on_frame, game calls allowed). The hooks, in order: -100
 puppets (forget_puppets), -90 npc, -88 nest, -86 fields, -84 wobj (each when a world was open: `from_stage >= 0`), -50
 tribe, -44 civ (each when the world that changed was its stage's: the 0.7.14 world_check rule), then the WORLD_STATE
-resets at order 0. `spaceext::world_epoch()` is the serial of the last Space world of the tracker (its own counter
-only with the switch off). What changed against 0.7.14:
+resets at order 0. `spaceext::world_epoch()` is the serial of the last Space world of the tracker, and its ledger of
+owed refunds (BUG-0225) reads the tracker's open Space world. What changed against 0.7.14:
 * the WORLD_STATE entries are also reset when a world closes (the menu, a load) and on an in-stage save / anchor
   change, not only when a stage counter moves (idempotent resets; `world.host_reload`, BUG-0332: set by on_mode_change
   in phase 6 after the frame's change, and the share save of a new game no longer looks like another save);

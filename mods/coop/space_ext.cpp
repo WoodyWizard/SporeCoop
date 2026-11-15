@@ -1,5 +1,4 @@
 #include "space_ext.h"
-#include "lifecycle.h"
 #include "stage_epoch.h"
 #include "world_id.h"
 #include "store.h"
@@ -63,26 +62,20 @@ bool away() { return g_away; }
 void set_away(bool on) { g_away = on; }
 bool in_space() { return !g_away && game::mode_id() == modes::kSpace; }
 
-static uint32_t g_epoch;
-static bool g_space_open; // the Space world is alive (kSpace, or an editor / adventure entered from it)
-static void* g_epoch_emp;
 static uintptr_t a_GetPlayerEmpire;
-// C2 (BUG-1141, `core.world_id` on): the Space world is world_id.h's (coop.cpp steps it before any message): the
-// serial of the last Space world open (another serial: another Space world; 0: Space not seen yet). Its rule is
-// this module's of 0.7.14 (BUG-0228, BUG-0225): Space entered, another cEmpire (world_anchor), another save file
-// (world_save); editors and adventures keep it. Off: epoch_tick below counts its own (0.7.14).
+// C2 (BUG-1141): the Space world is world_id.h's (coop.cpp steps it before any message; its rule is this module's of
+// 0.7.14, BUG-0228 / BUG-0225: Space entered, another cEmpire (world_anchor), another save file (world_save); editors
+// and adventures entered from Space keep it). world_epoch is the serial of the last Space world open (another serial:
+// another Space world; 0: Space not seen yet since the mod loaded).
 static uint32_t g_space_serial;
+static bool space_open() { return world_id::tracker().cur.stage == stage_epoch::index_of(modes::kSpace); }
 uint32_t world_epoch()
 {
-    if (!lifecycle::world_events_on())
-        return g_epoch;
-    const world_id::Id& w = world_id::tracker().cur;
-    if (w.stage == stage_epoch::index_of(modes::kSpace))
-        g_space_serial = w.serial;
+    if (space_open())
+        g_space_serial = world_id::tracker().cur.serial;
     return g_space_serial;
 }
-static uint32_t g_epoch_file; // crc of the planet file seen in this Space world (0: none yet)
-static bool g_file_fix = true; // BUG-0225: off = the epoch ignores the save file (0.7.3.1)
+static bool g_file_fix = true; // BUG-0225: off = the Space world ignores the save file (0.7.3.1)
 COOP_FIX("space.world_file", "BUG-0225", g_file_fix,
          "space: another save file in the Space stage is another Space world (not only another cEmpire)");
 // the planet file being played, as a crc; 0 for the menu name, snapshot.spo or nothing
@@ -97,39 +90,6 @@ uint32_t world_save() { return g_file_fix ? planet_file_crc() : 0; }
 const void* world_anchor()
 {
     return game::mode_id() == modes::kSpace && a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;
-}
-static void epoch_tick()
-{
-    if (lifecycle::world_events_on())
-        return;
-    uint32_t m = game::mode_id();
-    if (m == modes::kSpace) {
-        void* e = a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;
-        bool emp_changed = e && g_epoch_emp && e != g_epoch_emp;
-        // BUG-0225: the save file is the galaxy's identity too: a load of another game that shows no
-        // other mode to a frame and gives the new cEmpire the old address is still a new world
-        uint32_t f = g_file_fix ? planet_file_crc() : 0;
-        bool file_changed = f && g_epoch_file && f != g_epoch_file;
-        if (!g_space_open || emp_changed || file_changed) {
-            g_epoch++;
-            if (H)
-                H->log(M, SK_INFO, "space: world epoch %u (%s)", g_epoch,
-                       file_changed  ? "the save file changed"
-                       : emp_changed ? "the player's empire changed"
-                                     : "Space entered");
-        }
-        if (!g_space_open || file_changed)
-            g_epoch_file = 0;
-        g_space_open = true;
-        if (e)
-            g_epoch_emp = e;
-        if (f)
-            g_epoch_file = f;
-    } else if (!(g_space_open && (m == modes::kEdit || m == modes::kEditor || m == modes::kScenario))) {
-        g_space_open = false;
-        g_epoch_emp = nullptr;
-        g_epoch_file = 0;
-    }
 }
 bool russian() { return coop_ui::russian(); }
 static uint32_t g_saves;
@@ -160,29 +120,29 @@ static uint32_t g_key_epoch;
 bool owed_id() { return g_owed_id_fix; }
 std::string game_key()
 {
-    if (g_key.empty() || g_key_epoch != g_epoch) {
+    if (g_key.empty() || g_key_epoch != world_epoch()) {
         g_key = world::current_game_key();
-        g_key_epoch = g_epoch;
+        g_key_epoch = world_epoch();
     }
     return g_key;
 }
-spacelogic::WorldTag world_tag() { return g_ledger.tag(g_space_open ? g_epoch : 0, g_space_open ? game_key() : ""); }
+spacelogic::WorldTag world_tag() { return g_ledger.tag(space_open() ? world_epoch() : 0, space_open() ? game_key() : ""); }
 spacelogic::OwedAction owed_action(const spacelogic::WorldTag& t)
 {
-    return spacelogic::owed_action(g_ledger, t, g_space_open ? g_epoch : 0, g_space_open ? game_key() : "");
+    return spacelogic::owed_action(g_ledger, t, space_open() ? world_epoch() : 0, space_open() ? game_key() : "");
 }
 void note_saved()
 {
-    if (!g_space_open) // a save of another stage's game, or between a load and its first Space frame
+    if (!space_open()) // a save of another stage's game, or between a load and its first Space frame
         return;
     std::string k = world::current_game_key(); // fresh: the save may have named the game just now
     if (!k.empty())
-        g_key = k, g_key_epoch = g_epoch;
-    g_ledger.note_save(g_epoch, k);
+        g_key = k, g_key_epoch = world_epoch();
+    g_ledger.note_save(world_epoch(), k);
     if (!k.empty())
         g_saves_noted++;
     if (H)
-        H->log(M, SK_INFO, "space: saved world %u (%s)", g_epoch, k.empty() ? "unknown game" : k.c_str());
+        H->log(M, SK_INFO, "space: saved world %u (%s)", world_epoch(), k.empty() ? "unknown game" : k.c_str());
 }
 static void on_slot_replaced(const std::string& dir)
 {
@@ -265,7 +225,6 @@ static bool live(size_t i) { return g_on[i] && feature_allowed(all()[i].name); }
 
 void tick_all(double now)
 {
-    epoch_tick();
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
         if (live(i) && v[i].tick)
@@ -345,8 +304,8 @@ bool debug(const std::vector<std::string>& args, std::string& out)
     }
     if (args[0] == "world") { // BUG-0225: the Space world and its save file (tests)
         char b[96];
-        snprintf(b, sizeof b, "world=%u open=%d saves_noted=%u game=", g_epoch, (int)g_space_open, g_saves_noted);
-        out = b + (g_space_open ? game_key() : std::string()) + "\n";
+        snprintf(b, sizeof b, "world=%u open=%d saves_noted=%u game=", world_epoch(), (int)space_open(), g_saves_noted);
+        out = b + (space_open() ? game_key() : std::string()) + "\n";
         return true;
     }
     if (args[0] == "keptkey") { // BUG-1107: how the host keys each player's kept state (never the key itself)

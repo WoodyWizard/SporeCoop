@@ -153,7 +153,6 @@ struct Fanout {
     bool running = false;
     Runner runner = nullptr;
     bool state_resets = true; // the LIFECYCLE_STATE resets at order 0 (the `on` argument of reset())
-    bool world_events = false; // the game glue fires kWorldChange (world_id.h); a module's old detector stands down
     uint32_t fired[4] = {};
     uint32_t faults = 0, nested = 0, queued = 0;
     std::string last_fault;
@@ -173,8 +172,6 @@ struct HookReg {
 };
 
 inline void set_runner(Runner r) { fanout().runner = r; }
-// C2 migration: true while the game glue fires kWorldChange from world_id.h (coop.cpp, `core.world_id`)
-inline bool world_events_on() { return fanout().world_events; }
 
 inline int event_slot(uint8_t e) { return e == kSessionEnd ? 0 : e == kWorldChange ? 1 : e == kPlayerJoin ? 2 : 3; }
 
