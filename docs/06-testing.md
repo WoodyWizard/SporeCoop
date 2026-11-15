@@ -8338,6 +8338,10 @@ guest too (BUG-1135, `net.rejoin_disk`).
   are read and world `-` is no place for `together`; a real separation (both own lines in the system, `same_place=0`)
   still fails (gates_selftest `together_space_apart`). `monitor.py report` over every recorded passed result: only
   one earlier `together` of campaign_space went away, no new violation.
+* The same for a NaN position as Windows prints it (`pos=(-nan(ind) ...)`, a guest's ship right after a jump) and a
+  state age of `-0.0`: 87 own and 4374 partner lines of 3000 recorded logs were dropped; now every own / partner
+  line parses (BUG-1147, gates_selftest "parses ... line"). New trace fields: keep the number format of printf (the
+  monitor's token `N`) or extend `N`, never a pattern that silently drops a line.
 * Counters of the mod that are diagnostics only (no player sees them, e.g. `coop.space rivalry` hits_got / dmg_got /
   pvp_deaths) count since the game started: a warm game keeps the previous test's. A test reads them as deltas from
   its own start, as coop_space_rival_away does with `restored` (BUG-1146, space_rivalry warm after space_rivalry).
