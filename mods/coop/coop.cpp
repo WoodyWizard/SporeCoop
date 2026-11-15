@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.14.1-lineages58-dev"
+#define COOP_VERSION "0.7.14.1-lineages59-dev"
 #endif
 
 #include <set>
@@ -9551,7 +9551,7 @@ void support_init()
     p.sess = &g_sess;
     p.feed = feed;
     p.chat_log = [](const std::string& t) { chat_log(t); };
-    p.my_name = [] { return g_name; };
+    p.my_name = [] { return utf8::shown_name(g_name); }; // BUG-9222: shown without the -NoShare- tag
     p.entries = sync_all;
     p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
         std::vector<uint8_t> v;
@@ -10516,7 +10516,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::Ctx tc;
     tc.partners = partners;
     tc.notice = [](const std::string& t) { notice(t, -1); };
-    tc.my_name = [] { return g_name; };
+    tc.my_name = [] { return utf8::shown_name(g_name); }; // BUG-9222: shown without the -NoShare- tag
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
     evolve::init(H, M); // BUG-9160
@@ -11046,7 +11046,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         LOG("dna: food %d -> %d cause=meal:%d%+d", before, before + amount, from, amount);
         dna_note({dna_ledger::Cause::Meal, (uint8_t)from, (float)amount}, g_sess.connected() ? g_sess.my_id() : 0);
     };
-    cc.my_name = [] { return g_name; };
+    cc.my_name = [] { return utf8::shown_name(g_name); }; // BUG-9222: shown without the -NoShare- tag
     cc.pace_meal = dna_pace_meal; // BUG-0510
     cc.pace_announce = dna_pace_announce;
     cc.pace_heard = dna_pace_heard;

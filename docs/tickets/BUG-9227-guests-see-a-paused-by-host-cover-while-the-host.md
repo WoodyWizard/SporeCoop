@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner play test 2026-11-15
 role: guest
 versions: 0.7.14.1-lineages58-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages59-dev
 branch: feat/lineages-47
 commits: 95378ac3
 tests: none yet (built; the owner's session was running)

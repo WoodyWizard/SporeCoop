@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages59-dev] - 2026-11-15
+
+Fixes from the owner's play test of 2026-11-15.
+
+- Creature: a guest's spending in their own editor stays spent (the DNA from
+  before the editor came back after the mating call's editor and cocoon, so
+  parts were free) (BUG-9223).
+- Cell: the knocked-out ring now empties over the time left (it stayed full to
+  the last second) (BUG-9224), and the spectator camera jumps to the partner
+  instead of crawling there (BUG-9225).
+- Cell and Creature: when the whole party is down, everyone respawns at once
+  instead of waiting out their timers (BUG-9226).
+- Guests see a "Paused by host" cover while the host's game is paused
+  (BUG-9227).
+- Editors: the Party cards are hidden while an editor is open, so they no
+  longer cover the paint page's next-page button (BUG-9228).
+
 ## [0.7.14.1-lineages58-dev] - 2026-11-15
 
 - Party cards: the host's picture no longer stays blank when its creature came
