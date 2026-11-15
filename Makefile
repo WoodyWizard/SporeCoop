@@ -66,10 +66,6 @@ $(B)/obj/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(MINHOOK)/include -c $< -o $@
 
-# coop.cpp's own warnings are fixed in the commit "A4: coop.cpp warnings" (kept apart for the coop.cpp split): until
-# then they stay warnings there. That commit removes this line.
-$(B)/obj/mods/coop/coop.o: CXXFLAGS += -Wno-error
-
 $(B)/obj/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(MINHOOK)/include -Isdk/include -c $< -o $@ -MMD -MP
