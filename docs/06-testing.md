@@ -8006,3 +8006,9 @@ printed fps and the `SPORE_FIX_OFF` lines.
   their checks without a switch off came from branches fixing those bugs at the time (fix/w49-proxy2, -npcwalk,
   -throw, -puppet, -stops), at 25-66 fps; none on a rel branch. tribe_walk_mobile already leaves frames after a hitch
   out and stops judging on a loaded machine (`LOADED`).
+* **frames_loop, "frames go on without Present" (unchanged, no twin)**: more than 30 guest frames in 3 s of
+  `frames.source loop`; 303 recorded runs: median 193 frames, passes from 31; it failed with 17-29 only under a
+  load of 34-40 on 12 cores (20261106-221554 and both sides of this branch's A/B, 20261115-012709 / -012729: base and
+  new code alike). The bug it guards (frames stop) gives none, so a limit of a few frames would still catch it, but
+  no switch brings that bug back to show the twin FAIL: left as it is (the budget keeps such loads away from the
+  lab's own runs).
