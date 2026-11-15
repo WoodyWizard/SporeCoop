@@ -1,4 +1,7 @@
 #include "space_ext.h"
+#include "lifecycle.h"
+#include "stage_epoch.h"
+#include "world_id.h"
 #include "store.h"
 #include <algorithm>
 #include <cstdlib>
@@ -64,7 +67,20 @@ static uint32_t g_epoch;
 static bool g_space_open; // the Space world is alive (kSpace, or an editor / adventure entered from it)
 static void* g_epoch_emp;
 static uintptr_t a_GetPlayerEmpire;
-uint32_t world_epoch() { return g_epoch; }
+// C2 (BUG-1141, `core.world_id` on): the Space world is world_id.h's (coop.cpp steps it before any message): the
+// serial of the last Space world open (another serial: another Space world; 0: Space not seen yet). Its rule is
+// this module's of 0.7.14 (BUG-0228, BUG-0225): Space entered, another cEmpire (world_anchor), another save file
+// (world_save); editors and adventures keep it. Off: epoch_tick below counts its own (0.7.14).
+static uint32_t g_space_serial;
+uint32_t world_epoch()
+{
+    if (!lifecycle::world_events_on())
+        return g_epoch;
+    const world_id::Id& w = world_id::tracker().cur;
+    if (w.stage == stage_epoch::index_of(modes::kSpace))
+        g_space_serial = w.serial;
+    return g_space_serial;
+}
 static uint32_t g_epoch_file; // crc of the planet file seen in this Space world (0: none yet)
 static bool g_file_fix = true; // BUG-0225: off = the epoch ignores the save file (0.7.3.1)
 COOP_FIX("space.world_file", "BUG-0225", g_file_fix,
@@ -77,8 +93,15 @@ static uint32_t planet_file_crc()
         return 0;
     return modes::current_world();
 }
+uint32_t world_save() { return g_file_fix ? planet_file_crc() : 0; }
+const void* world_anchor()
+{
+    return game::mode_id() == modes::kSpace && a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;
+}
 static void epoch_tick()
 {
+    if (lifecycle::world_events_on())
+        return;
     uint32_t m = game::mode_id();
     if (m == modes::kSpace) {
         void* e = a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;

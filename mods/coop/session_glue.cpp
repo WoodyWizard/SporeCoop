@@ -7,6 +7,7 @@
 // takes the same text from build/version.h, which the Makefile makes from it.
 #include "version.h"
 #define COOP_VERSION SC_VER_STR
+#include "lifecycle.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -543,39 +544,40 @@ COOP_FIX("core.session_state_end", "BUG-0770", g_session_state_end_fix, "core: t
 //    inside g_sess.update() (Disconnect, BUG-0029): mod state only, no game calls, no sends, no waiting;
 //    idempotent.
 // A new coop.cpp reset goes into block 3; a module's reset into its own on_session_end().
-void end_session(EndPath path, bool cell)
+// C2 (BUG-1141): the end of a session is one fan-out of the lifecycle observers (lifecycle.h kSessionEnd, in their
+// order: pfind -100, support, npc, nest, fields, wobj, realign, parts, effects, social, tribe, cellsync (kCellToo),
+// creations, civ, squadron, spacecoop -40, the remotes -20, the vote and the puppets' test holds -16, the shares -15,
+// shared, wsync, world -12, the core's session state -10, then every SESSION_STATE at 0), run here at once as
+// before (game calls allowed: every caller is the main thread). Off (`coop.fix core.session_hooks off`): the hand
+// list of 0.7.14 below (the same calls in the same order).
+static bool g_session_hooks_fix = true;
+COOP_FIX("core.session_hooks", "BUG-1141", g_session_hooks_fix,
+         "core: a session end runs every module's end through one ordered list (lifecycle.h)");
+static const char* end_why(uint8_t path)
 {
-    pfind::on_session_end(); // F2: the colour table was the session's
-    support::on_session_end(path == EndPath::Leave ? "left" : path == EndPath::Unload ? "mod unload"
-                            : path == EndPath::Restart ? "a new session" : "disconnected");
-    npc::on_session_end();
-    nest::on_session_end(); // BUG-0384: our egg mirrors
-    fields::on_session_end();
-    wobj::on_session_end();
-    realign::on_session_end();
-    parts::on_session_end(); // BUG-0401
-    effects::on_session_end(); // BUG-0451
-    social::on_session_end();
-    tribe::on_session_end();
-    if (cell)
-        cellsync::on_session_end();
-    creations::on_session_end();
-    civ::on_session_end();
-    squadron::on_session_end();
-    spacecoop::on_session_end();
+    EndPath p = (EndPath)path;
+    return p == EndPath::Leave ? "left" : p == EndPath::Unload ? "mod unload" : p == EndPath::Restart ? "a new session" : "disconnected";
+}
+// the partners' puppets and views
+static void remotes_end()
+{
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
     views::clear();
+}
+// the vote and the puppet test holds
+static void vote_end()
+{
     if (g_vote_scope_fix)
         drop_vote("the session ended");
     g_vote_action_due = nullptr; // BUG-0404: a result still waiting at the busy gate ends with its session
     g_puppet_hold = false; // tests (coop.puppet hold, BUG-0251)
     g_puppet_hide_until = 0; // tests (coop.puppet respawn <s>, BUG-0453)
-    world::reset_shares();
-    shared::on_session_end();
-    wsync::on_session_end();
-    world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
+}
+// the core's own session state (DNA, editors, shares' waits, settings, the session report)
+static void core_state_end()
+{
     g_dna_pending = -1;
     if (g_host_away_fix) { // BUG-0085
         g_host_away = false;
@@ -608,6 +610,49 @@ void end_session(EndPath path, bool cell)
         settings::on_disconnect();
         sreport::on_session_end();
     }
+}
+LIFECYCLE_HOOK("support.session", lifecycle::kSessionEnd, -99,
+               [](const lifecycle::Ctx& c) { support::on_session_end(end_why(c.path)); }, false);
+LIFECYCLE_HOOK("core.remotes", lifecycle::kSessionEnd, -20, [](const lifecycle::Ctx&) { remotes_end(); }, true);
+LIFECYCLE_HOOK("core.vote", lifecycle::kSessionEnd, -16, [](const lifecycle::Ctx&) { vote_end(); }, true);
+LIFECYCLE_HOOK("world.shares", lifecycle::kSessionEnd, -15, [](const lifecycle::Ctx&) { world::reset_shares(); }, false);
+LIFECYCLE_HOOK("core.session", lifecycle::kSessionEnd, -10, [](const lifecycle::Ctx&) { core_state_end(); }, false);
+
+void end_session(EndPath path, bool cell)
+{
+    if (g_session_hooks_fix) {
+        lifecycle::Ctx c;
+        c.event = lifecycle::kSessionEnd;
+        c.path = (uint8_t)path;
+        c.flags = cell ? lifecycle::kCellToo : 0;
+        lifecycle::fanout().state_resets = g_lifecycle_fix;
+        lifecycle::fire(c, true);
+        return;
+    }
+    pfind::on_session_end(); // F2: the colour table was the session's
+    support::on_session_end(end_why((uint8_t)path));
+    npc::on_session_end();
+    nest::on_session_end(); // BUG-0384: our egg mirrors
+    fields::on_session_end();
+    wobj::on_session_end();
+    realign::on_session_end();
+    parts::on_session_end(); // BUG-0401
+    effects::on_session_end(); // BUG-0451
+    social::on_session_end();
+    tribe::on_session_end();
+    if (cell)
+        cellsync::on_session_end();
+    creations::on_session_end();
+    civ::on_session_end();
+    squadron::on_session_end();
+    spacecoop::on_session_end();
+    remotes_end();
+    vote_end();
+    world::reset_shares();
+    shared::on_session_end();
+    wsync::on_session_end();
+    world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
+    core_state_end();
     lifecycle::reset(lifecycle::kSession, g_lifecycle_fix); // BUG-1055: every SESSION_STATE (mod state only)
 }
 
@@ -688,6 +733,7 @@ void setup_callbacks()
         pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
         g_world_announced = 0; // BUG-0933: the newcomer's WELCOME may have named no world (the host in an editor)
+        host_busy_join(p.id); // C3 (BUG-1142): the host's busy state as last told
         wsync::on_player_join();
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
@@ -798,6 +844,10 @@ void setup_callbacks()
                 g_host_save = w;
                 g_host_save_heard++;
             }
+            return;
+        }
+        case net::Route::HostBusy: { // C3 (BUG-1142): the host's game is paused, in an editor or away (Session class)
+            host_busy_message(from, r);
             return;
         }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect

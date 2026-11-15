@@ -1732,6 +1732,7 @@ static void tick(double now)
     }
 }
 
+// lifecycle-exempt: a Space feature (space_ext.h), run by spaceext::session_end_all from the spacecoop.session hook
 static void on_session_end()
 {
     // nobody can answer any more: what was on its way comes back (it may have arrived: we can't know)

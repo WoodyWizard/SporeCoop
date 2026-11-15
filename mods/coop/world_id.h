@@ -152,4 +152,11 @@ private:
     }
 };
 
+// the game's one tracker (coop.cpp frame_observe steps it; the modules read cur)
+inline Tracker& tracker()
+{
+    static Tracker t;
+    return t;
+}
+
 } // namespace world_id

@@ -23,6 +23,10 @@
 - The host's game saves itself while it hosts: every 10 minutes (Settings, "Host autosave": off, 5, 10, 15, 30 or 60
   minutes) and a few seconds after a new stage, a colony founded, a city captured or an epic killed. A crash or a
   lost connection no longer takes the whole evening; the co-op window shows "saved N min ago" (BUG-0864).
+- When the host pauses the game (the pause menu, P, the Sporepedia, a tutorial box), everybody waits: every guest's
+  game stands too, in every stage, with the line "<host> paused the game", and goes on when the host does. A guest's
+  own pause stops nobody, and in the Rivals mode of Space nobody waits for the host. Before, only Tribe did this
+  (BUG-1142).
 - `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
   why. It may join again.
 

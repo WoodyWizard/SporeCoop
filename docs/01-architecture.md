@@ -144,6 +144,7 @@ behaviour changed (the proof: docs/10-dev-pipeline.md#pipeline-refactor-proof).
 | vote.cpp | the evolution vote and action votes, the switch vote, the offers, the guest's own editor, the editor hooks, `game_busy` / `save_blocker`, the editor-pending flag |
 | puppets.cpp | the partners' puppets (make, drive, despawn, forget, strays), the local state that is sent, partner pass-through, animations, the recorders (coop.track, coop.bodyrec, the monitor's fields, the support trace) |
 | session_glue.cpp | the session callbacks (`setup_callbacks`, the message dispatch), `end_session`, host / join / leave, roles and ready flags, the host's world for its guests (on_mode_change, follow_phase, share retries and waits, the evolution in place, the lobby) |
+| host_busy.cpp | C3 (BUG-1142): the host's busy state for its guests (busy_model.h: classify, Announcer, MSG_HOST_BUSY, HostView) and the guest's wait for the host's pause (docs/01-architecture.md#arch-c2c3-wiring) |
 | coop_state.h | what more than one of these files uses: the shared types, constants and one declaration per shared global or function, grouped by the file that defines it. Only these six files include it |
 
 Rules: the six files are one namespace, `coop_core` (it was coop.cpp's anonymous namespace; coop_state.h has the
@@ -605,3 +606,55 @@ Tribe and Space on a planet (tried again every 5 s); a posted save whose write i
 is tried again 15 s later. The co-op window's session line (host) shows "saved N min ago". Switch
 `coop.fix world.autosave off`: no autosave (0.7.14). Status: `coop.autosave`; test seams `coop.autosave interval <s>`,
 `coop.autosave milestone [<why>]`.
+
+## C2 and C3 in the mod: one world identity, the session-end fan-out, the host's pause (2026-11-15, feat/w51-core2)
+<a id="arch-c2c3-wiring"></a>
+
+The wiring of #arch-world-id (BUG-1141) and #arch-busy-model (BUG-1142) into coop.dll. Proof runs in the tickets.
+
+**World identity (C2).** coop.cpp `world_id_tick` (frame_observe, right after `game::stage_epoch_tick`,
+`modes::world_name_tick` and `modes::test_tick`) steps the one `world_id::tracker()` with the mode, the stage counter,
+the planet file (a real `<planet>.spo` only: `world_name::is_planet`, so "snapshot.spo" with nothing remembered is
+"not known" and its later save is no world change; Space: `spaceext::world_save`, which keeps `space.world_file`) and
+the anchor (`tribe::world_anchor`, `civ::world_anchor`, `spaceext::world_anchor`). A change logs `world: <from> -> <to>
+(<why>)` and fires `lifecycle::fire(kWorldChange)` at once (on_frame, game calls allowed). The hooks, in order: -100
+puppets (forget_puppets), -90 npc, -88 nest, -86 fields, -84 wobj (each when a world was open: `from_stage >= 0`), -50
+tribe, -44 civ (each when the world that changed was its stage's: the 0.7.14 world_check rule), then the WORLD_STATE
+resets at order 0. `spaceext::world_epoch()` is the serial of the last Space world of the tracker (its own counter
+only with the switch off). What changed against 0.7.14:
+* the WORLD_STATE entries are also reset when a world closes (the menu, a load) and on an in-stage save / anchor
+  change, not only when a stage counter moves (idempotent resets; `world.host_reload`, BUG-0332: set by on_mode_change
+  in phase 6 after the frame's change, and the share save of a new game no longer looks like another save);
+* decision 2: the local player's editor visit is no world change. `avatar_change_check` is no detector any more: it
+  forgets the puppets on every change of the local entity (BUG-0091, as frame_drive does without one) and resets npc,
+  nest, fields and wobj only when the local creature is replaced inside the same world (BUG-0833) or lost outside an
+  editor (a teardown before the mode changes, BUG-0308); never twice for one change (the tracker's fires).
+* Tribe and Civ: the hook fires on what their Watch saw, except an anchor that turns null (world_id keeps the last
+  non-null one) and "snapshot.spo" before the first save.
+`coop.lifecycle` lists the hooks after the entries (`hook session|world <order> <name> [game]`); `coop.lifecycle hooks`
+their calls and faults; `coop.lifecycle world` the tracker.
+
+**Session end (C2).** session_glue.cpp `end_session` is one `lifecycle::fire(kSessionEnd, path, kCellToo)`, run at
+once (every caller is the main thread; the 0.7.14 hand list ran inline too, so `game_ok` is true): pfind -100,
+support -99, npc -90, nest -88, fields -86, wobj -84, realign -82, parts -80, effects -78, social -55, tribe -50,
+cellsync -48 (only with kCellToo), creations -46, civ -44, squadron -42, spacecoop -40 (the Space features through
+`spaceext::session_end_all`), core.remotes -20 (despawn, views), core.vote -16, world.shares -15, shared -14, wsync -13,
+world -12, core.session -10 (the core's DNA / editor / share state, settings, the session report), then every
+SESSION_STATE at 0: the 0.7.14 order. Each module's hook is registered next to its function (the ratchet's
+"unregistered lifecycle functions" went from 51 to 21).
+
+**The host's busy state (C3).** host_busy.cpp, a seventh core file (coop_state.h). Host, every frame (phase 7, after
+host_away_tick): `busy_model::classify` over the mode, `game_busy()`, the pause reasons, `coop_ui::game_modal_up`,
+`editor_coming` (vote.cpp: a vote, a held / queued / own editor request, a request in the last 15 s) and in Cell the
+pause menu's window (coop.cpp menu_check_task, 5 times a second); the Announcer sends MSG_HOST_BUSY (type 70, session
+family 1.1) on every change, the state to a guest that joins (`host_busy_join` in player_join). Guest: HostView (the
+message from id 0 only; else the 0.7.14 fallback from `host_out_of_stage`), `busy_model::act(stage, edge,
+spaceext::rivals())`; Act::Wait in a stage whose switch is on, while this game plays the host's world (the host's
+mode = ours, not elsewhere / not another Space save) holds the game: `cGameTimeManager::Pause(0x4BF38A7)` once (Cell:
+`modes::set_cell_hold`, the cell step SimUpdate does not run, as under the game's own pause menu) with the line
+"<host> paused the game: yours waits until <host> goes on", released with "<host> (host) goes on: so does your game"
+when the host goes on, goes away, the stage or the session ends. The away / editor states stay coop.cpp's
+host_away_tick and the modules' local play (not moved to HostView: their edges, DNA and notes are unchanged).
+Tribe: a guest that heard MSG_HOST_BUSY ignores kind 21 (the host still sends it for 0.7.14 guests), the pause net
+(BUG-1101) counts the wait as held. Tribe and Civ hold a guest's commands in one `busy_model::HeldPump` each (the
+two HeldCommands copies, Civ's 5 s note throttle). `coop.status` "host busy:" line.

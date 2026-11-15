@@ -92,6 +92,10 @@ void set_away(bool on);
 // every feature's tick of that frame. Not seen: a reload that shows no non-Space frame and reuses
 // the old cEmpire's address.
 uint32_t world_epoch();
+// C2 (BUG-1141): what world_id.h (coop.cpp) reads in Space: the save file as the epoch counts it (0: not known, or
+// `space.world_file` off) and the player's cEmpire (null outside Space)
+uint32_t world_save();
+const void* world_anchor();
 // BUG-0694 (space_contracts.cpp): a reward tool (its key) this game cannot take now (outside Space) is owed and given in
 // the first Space frame of the same Space world; false: the switch space.reward_owed is off (the tool is lost)
 bool owe_tool_key(const uint32_t key[3], const std::string& what);

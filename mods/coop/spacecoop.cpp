@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "spacecoop.h"
 #include "call_guard.h"
 #include "player_life.h"
@@ -2002,6 +2003,7 @@ void on_session_end()
     g_gift_hold = g_gift_noroom = false;
     spaceext::session_end_all();
 }
+LIFECYCLE_HOOK("spacecoop.session", lifecycle::kSessionEnd, -40, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session (the Space features: spaceext::session_end_all)
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {

@@ -32,6 +32,8 @@
 #include "game.h"
 #include "modes.h"
 #include "stage_epoch.h"
+#include "world_id.h"
+#include "world_name.h"
 #include "mouse.h"
 #include "shared.h"
 #include "sui.h"
@@ -363,6 +365,68 @@ static void lifecycle_world_tick() // once a frame, after game::stage_epoch_tick
         sum += game::stage_epoch(m);
     if (g_lifecycle_world.changed(sum))
         lifecycle::reset(lifecycle::kWorld, g_lifecycle_fix);
+}
+
+// C2 of 0.7.15 (BUG-1141, owner decision 2; docs/01-architecture.md#arch-world-id): one world identity
+// (world_id.h) stepped right after the stage counters; a change fires the lifecycle observers (lifecycle.h
+// LIFECYCLE_HOOK, kWorldChange), the WORLD_STATE resets at order 0 of that fan-out. An editor visit is no world
+// change (the host away, C3). Off (`coop.fix core.world_id off`): the sum of the stage counters resets the
+// WORLD_STATE entries and every module keeps its own detector (0.7.14).
+static bool g_world_id_fix = true;
+COOP_FIX("core.world_id", "BUG-1141", g_world_id_fix,
+         "core: one world identity (another stage, save, or the stage entered again) fires every module's world change");
+static uint32_t g_world_fires;
+// the save the stage plays: a real planet file only ("snapshot.spo" with nothing remembered and the menu's name are
+// not known: 0), as space_ext's world file (BUG-0225) and world_name.h
+static uint32_t planet_file_now()
+{
+    return world_name::is_planet(modes::current_world_name()) ? modes::current_world() : 0;
+}
+// the stage's root object (Tribe: the player tribe, Civ: the player civilization, Space: the player cEmpire)
+static const void* world_anchor(uint32_t mode)
+{
+    if (mode == modes::kTribe)
+        return tribe::world_anchor();
+    if (mode == modes::kCiv)
+        return civ::world_anchor();
+    if (mode == modes::kSpace)
+        return spaceext::world_anchor();
+    return nullptr;
+}
+static void world_id_tick()
+{
+    lifecycle::fanout().world_events = g_world_id_fix;
+    if (!g_world_id_fix)
+        return;
+    world_id::Frame f;
+    f.mode = game::mode_id();
+    if (stage_epoch::index_of(f.mode) >= 0) {
+        f.count = game::stage_epoch(f.mode);
+        f.save = f.mode == modes::kSpace ? spaceext::world_save() : planet_file_now();
+        f.anchor = world_anchor(f.mode);
+    }
+    world_id::Tracker& t = world_id::tracker();
+    world_id::Id from;
+    world_id::Why why = world_id::Why::None;
+    if (!t.step(f, &from, &why))
+        return;
+    g_world_fires++;
+    LOG("world: %s -> %s (%s, BUG-1141)", from.open() ? modes::mode_name(from.mode) : "none",
+        t.cur.open() ? modes::mode_name(t.cur.mode) : "none", world_id::why_name(why));
+    lifecycle::Ctx c;
+    c.event = lifecycle::kWorldChange;
+    c.from_world = from.serial;
+    c.to_world = t.cur.serial;
+    c.from_stage = from.stage;
+    c.to_stage = t.cur.stage;
+    c.why = (uint8_t)why;
+    lifecycle::fanout().state_resets = g_lifecycle_fix;
+    lifecycle::fire(c, true); // (on_frame, outside g_sess.update(): game calls allowed)
+}
+std::string world_id_status()
+{
+    return std::string("world_id: fix=") + (g_world_id_fix ? "1 " : "0 ") + world_id::tracker().status() +
+           " fires=" + std::to_string(g_world_fires) + "\n";
 }
 
 // "Is the host's world the one I play?" (BUG-0231, GitHub #165; host_world.h has the rule and its
@@ -796,6 +860,7 @@ static void diag_tick(double now)
     std::string s = b;
     s += g_sess.status() + world::status();
     s += "busy: " + busy::names(game_busy()) + "\n"; // BUG-0404: the busy gate
+    s += host_busy_status(); // C3 (BUG-1142)
     for (auto& [id, r] : g_remotes)
         s += "remote " + std::to_string(id) + " '" + r.name + "' puppet " + (r.puppet ? "yes" : "no") + "\n";
     size_t first = g_chat.size() > 8 ? g_chat.size() - 8 : 0;
@@ -847,18 +912,32 @@ static_assert(modes::kTribe == stage_epoch::kTribe && modes::kCiv == stage_epoch
                   modes::kSpace == stage_epoch::kSpace && modes::kScenario == stage_epoch::kScenario &&
                   modes::kCell == stage_epoch::kCell && modes::kCreature == stage_epoch::kCreature,
               "stage_epoch.h mode ids");
+// C2 (BUG-1141, `core.world_id` on): a world change fires the modules' hooks (LIFECYCLE_HOOK kWorldChange: the
+// puppets, npc, nest, fields, wobj); this check is no world detector any more. It covers what world_id.h does not
+// see: the local creature replaced inside the same world (the co-op window's own creature, BUG-0833) and the stage
+// torn down before the mode changes (BUG-0091, BUG-0308). Decision 2: the local player's editor visit (the local
+// entity gone in an editor mode, and back from it) keeps the world: only the puppets are forgotten (frame_drive does
+// the same without a local entity), the NPC proxies, nest mirrors, fields and world objects stay.
+static uint32_t g_world_fires_seen; // the world fires this check saw (a change and its hooks this frame: no second reset)
 void avatar_change_check()
 {
-    const modes::Adapter* a = modes::for_mode(game::mode_id());
+    uint32_t mode = game::mode_id();
+    const modes::Adapter* a = modes::for_mode(mode);
     void* local = a ? a->local() : nullptr;
+    bool fired = g_world_fires != g_world_fires_seen; // the hooks ran for a world change this frame
+    g_world_fires_seen = g_world_fires;
     if (local == g_last_avatar)
         return;
+    bool hooks = lifecycle::world_events_on();
     if (g_last_avatar) {
+        bool editor = mode == modes::kEdit || mode == modes::kEditor;
         forget_puppets();
-        npc::on_world_change();
-        nest::on_world_change();
-        fields::on_world_change();
-        wobj::on_world_change();
+        if (!hooks || (!fired && !(editor && !local))) {
+            npc::on_world_change();
+            nest::on_world_change();
+            fields::on_world_change();
+            wobj::on_world_change();
+        }
     }
     g_last_avatar = local;
 }
@@ -908,9 +987,11 @@ static void frame_observe(double now)
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
     modes::world_name_tick(); // BUG-0258: the planet stays known through snapshot.spo
     modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
-    tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
-    civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
-    lifecycle_world_tick();   // BUG-1055: a new world resets every WORLD_STATE (lifecycle.h)
+    world_id_tick();          // BUG-1141: one world identity fires the world-change hooks and WORLD_STATE resets
+    tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit; core.world_id off)
+    civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor; core.world_id off)
+    if (!g_world_id_fix)
+        lifecycle_world_tick(); // BUG-1055: a new world resets every WORLD_STATE (lifecycle.h)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -1064,6 +1145,7 @@ static void frame_stage_ticks(double now)
     follow_phase(now);
     share_wait_tick();
     host_away_tick(now);
+    host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -1338,9 +1420,11 @@ void menu_check_task(void*)
 {
     g_menu_check_queued = false;
     bool up = coop_ui::is_open();
-    if (!up)
-        if (sui::Win root = sui::main_window())
-            up = shown_chain(sui::find(root, kPauseMenuId));
+    bool pm = false;
+    if (sui::Win root = sui::main_window())
+        pm = shown_chain(sui::find(root, kPauseMenuId));
+    host_busy_pause_menu(pm); // C3 (BUG-1142): the Cell host's only pause sign
+    up = up || pm;
     g_menu_up = up;
     sui::Win root = sui::main_window();
     g_text_up = root && shown_chain(sui::find(root, kCheatConsoleId));

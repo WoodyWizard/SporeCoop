@@ -4913,6 +4913,8 @@ void on_session_end()
     g_pend_food = 0;
     solo_reset();
 }
+// C2 (BUG-1141): end_session, when the Cell modules end too (`cell`: not a voluntary leave without its cleanup)
+LIFECYCLE_HOOK("cell.session", lifecycle::kSessionEnd, -48, [](const lifecycle::Ctx& c) { if (c.flags & lifecycle::kCellToo) on_session_end(); }, true);
 
 // BUG-0205: the guest's own pool while the host is away (`coop.pool`, a line of its own, no key the lines
 // above have: tests read the first `food=`)

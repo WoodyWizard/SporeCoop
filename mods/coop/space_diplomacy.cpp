@@ -824,6 +824,7 @@ static void tick(double now)
         send_snapshot(0xFF);
 }
 
+// lifecycle-exempt: a Space feature (space_ext.h), run by spaceext::session_end_all from the spacecoop.session hook
 static void on_session_end()
 {
     g_out.clear();
