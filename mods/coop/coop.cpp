@@ -2239,18 +2239,12 @@ void support_init()
 
 SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
 
-} // namespace coop_core
+// The start of the mod (B2 of 0.7.15): sporekit_mod_main runs these phases in this order, with the console commands
+// (coop_cmds.cpp register_commands_*) between them where they were; docs/01-architecture.md#arch-start-and-frame.
 
-extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMod* self)
+// sporekit_mod_main, phase: coop.ini: the player name, the world share switches, the support trace
+static void init_config()
 {
-    H = host;
-    M = self;
-    g_host_for_modes = host;
-    g_mod_for_modes = self;
-    if (!game::init(H, M)) {
-        H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
-        return nullptr;
-    }
     char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
     g_name = utf8::player_name(nm);
@@ -2260,6 +2254,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     trace::init(H, M);
     trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
+}
+
+// sporekit_mod_main, phase: the world transfer (world.cpp), the shared resources, the game's animation and DNA listeners
+static void init_world_share()
+{
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
@@ -2274,6 +2273,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
     game::set_dna_listener(on_dna);
+}
+
+// sporekit_mod_main, phase: the modules around the players' creatures and the host's world (npc ... social), each with its context
+static void init_player_modules()
+{
     npc::Ctx ctx;
     ctx.sess = &g_sess;
     ctx.puppet_of = [](uint8_t id) -> void* {
@@ -2517,6 +2521,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
+}
+
+// sporekit_mod_main, phase: the support log, the session callbacks, the frame / fault / overlay subscriptions, the keepalive thread
+static void init_session()
+{
     support_init();
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
@@ -2527,8 +2536,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     }
     keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
-    register_commands_core();
-    coop_register_debug_commands(H, M);
+}
+
+// sporekit_mod_main, phase: teamplay and the game hooks of the creature stage and its editors (vote.cpp, puppets.cpp)
+static void init_creature_hooks()
+{
     teamplay::Ctx tc;
     tc.partners = partners;
     tc.notice = [](const std::string& t) { notice(t, -1); };
@@ -2554,7 +2566,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
         H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
-    register_commands_editor();
+}
+
+// sporekit_mod_main, phase: Tribe, the world events, the notifications, the players' creations and the puppets' models
+static void init_tribe_and_creations()
+{
     tribe::Ctx trc;
     trc.sess = &g_sess;
     trc.feed = feed;
@@ -2583,7 +2599,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         key[0] = k.instance; key[1] = k.type; key[2] = k.group;
         return k.instance != 0;
     };
-    register_commands_civ();
+}
+
+// sporekit_mod_main, phase: the Cell stage (cellsync.cpp)
+static void init_cell()
+{
     cellsync::Ctx cc;
     cc.sess = &g_sess;
     cc.partners = partners;
@@ -2613,7 +2633,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     cc.host_away = [] { return g_host_away; }; // BUG-0205
     cellsync::init(H, M, std::move(cc));
-    register_commands_cell();
+}
+
+// sporekit_mod_main, phase: Civ, the census, the squadron, Space, the start-up switches, the game fixes, the updater
+static void init_civ_and_space()
+{
     civ::Ctx cvc;
     cvc.sess = &g_sess;
     cvc.feed = feed;
@@ -2688,6 +2712,32 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     gamefixes::init(H, M);
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);
+}
+} // namespace coop_core
+
+extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMod* self)
+{
+    H = host;
+    M = self;
+    g_host_for_modes = host;
+    g_mod_for_modes = self;
+    if (!game::init(H, M)) {
+        H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
+        return nullptr;
+    }
+    init_config();
+    init_world_share();
+    init_player_modules();
+    init_session();
+    register_commands_core();
+    coop_register_debug_commands(H, M);
+    init_creature_hooks();
+    register_commands_editor();
+    init_tribe_and_creations();
+    register_commands_civ();
+    init_cell();
+    register_commands_cell();
+    init_civ_and_space();
     register_commands_stages();
     init_ui();
     adapters::init(H, M);
