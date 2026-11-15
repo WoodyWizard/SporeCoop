@@ -250,3 +250,21 @@ that, off the main thread, counts the call per call site (its return address in 
 game's original on the game's own thread) and through typedef'd function pointers are not counted. Any count above
 0 is a bug: a hook the game calls from another thread that does game work, or an any-thread command that calls the
 game.
+
+## The message manifest and the dispatch (2026-11-15, feat/w51-manifest)
+<a id="arch-message-manifest"></a>
+
+Every top-level message type is one row of `mods/coop/net/messages.def` (B3 of 0.7.15, BUG-1136): its id, who sends
+it, its world-state class, its route in session_glue.cpp's dispatch, which game's dispatch takes it, and its message
+family. The order of one message on a game:
+
+1. `net::Session::handle_msg`: the host's direction gate (`net.dir_gate`: a host-only type from a guest is dropped),
+   then the session's own types (HELLO, PLAYER_STATE, CHAT, BYE, ANIM's relay, the guest's WELCOME / REJECT / ...);
+2. `g_sess.cb.custom` (session_glue.cpp): the world gate (`gate_drops`: a guest elsewhere drops the host's world
+   state, host_world.h), then one `switch` over `net::dispatch_route(type, is_host)`, one case per handler module.
+
+A new message type is a row in messages.def and a case in that switch (a new route: a value of `net::Route`, which the
+switch must handle: `-Wswitch` with `-Werror`). The Space sub-kinds have their own manifest
+(`mods/coop/net/space_kinds.def`, the direction gate of BUG-1041). Details, the docs tables generated from the
+manifest and the compatibility rules (message family revisions, B6): docs/04-netcode.md#netcode-manifest and
+docs/04-netcode.md#netcode-compat.

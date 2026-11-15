@@ -22,7 +22,7 @@ Checked on the players' games:
             keeps playing, draws the others right, has no caught fault
   health    no caught fault on any game (exc), no crash / hang report of any of the three, all answer
   warning   (B6, BUG-1137) another version is let in with a warning on both sides: this build's game shows "<player>
-            plays SporeCoop <v>; you have SporeCoop <v>: some things may not match" (coop.status), the old game logs
+            plays SporeCoop <v>; you have SporeCoop <v>: some things may not match" (its feed, in its log), the old game logs
             "versions differ" (0.7.4 and later)
 FAIL demo: --old-tag v0.7.2.4 or MIXED_OLD_TAG=v0.7.2.4 (no version lines before 0.7.3.x: "version unknown").
 
@@ -281,10 +281,9 @@ def main():
         if p.old:
             text = log_since(p.inst, 0)
             ck('versions differ' in text, f'[warning] {p.name} (old) logs that the versions differ')
-        else:
-            st = p.call('coop.status')
+        else:  # the feed line (a toast and the co-op feed) is logged as "coop: <text>"
             others = [q.name for q in ps if q.old]
-            w = [ln.strip() for ln in st.splitlines() if 'some things may not match' in ln]
+            w = [ln.strip() for ln in log_since(p.inst, 0).splitlines() if 'some things may not match' in ln]
             ck(all(any(o + ' plays SporeCoop' in ln for ln in w) for o in others),
                f'[warning] {p.name} (this build) shows "<old player> plays SporeCoop ...: some things may not match": '
                f'{w[-1][:160] if w else "no line"}')
