@@ -32,6 +32,7 @@
 #include "space_logic.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
+#include "wire/space_allies.h"
 #include "fixes.h"
 
 using skg::cdecl_call;
@@ -879,11 +880,9 @@ static void raids_tick(double now)
         g_my_raids_sent = ids;
         g_last_raids_sent = now;
         net::Writer w;
-        w.u8((uint8_t)std::min<size_t>(mine.size(), 50));
-        for (size_t i = 0; i < mine.size() && i < 50; i++) {
-            w.u32(mine[i].first);
-            w.u8(mine[i].second);
-        }
+        wire::space_allies::Raids msg;
+        msg.raids = mine;
+        msg.write(w);
         spaceext::send(K_RAIDS, w);
     }
 }
@@ -982,8 +981,7 @@ static void watch_raids()
         if (aborted || left || !w.had_ships || !m || !m->raids.count(w.planet))
             continue;
         net::Writer wr;
-        wr.u8(m->id);
-        wr.u32(w.planet);
+        wire::space_allies::Defended{m->id, w.planet}.write(wr);
         spaceext::send(K_DEFENDED, wr);
         g_raids_won++;
         m->raids.erase(w.planet);
@@ -1090,16 +1088,12 @@ static void tick(double now)
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     if (kind == K_RAIDS) {
-        std::map<uint32_t, uint8_t> raids;
-        uint8_t n = r.u8();
-        for (uint8_t i = 0; i < n && r.ok(); i++) {
-            uint32_t p = r.u32();
-            uint8_t b = r.u8();
-            if (r.ok())
-                raids[p] = b;
-        }
-        if (!r.ok())
+        wire::space_allies::Raids msg;
+        if (!msg.read(r))
             return; // a cut list: keep the raids we know
+        std::map<uint32_t, uint8_t> raids;
+        for (auto& [p, b] : msg.raids)
+            raids[p] = b;
         for (auto& [nm, m] : g_m)
             if (m.online && m.id == origin) {
                 for (auto& [p, b] : raids)
@@ -1109,10 +1103,10 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
                 m.raids = raids;
             }
     } else if (kind == K_DEFENDED) {
-        uint8_t owner = r.u8();
-        uint32_t planet = r.u32();
-        if (!r.ok() || owner != spaceext::my_id())
+        wire::space_allies::Defended msg;
+        if (!msg.read(r) || msg.owner != spaceext::my_id())
             return;
+        uint32_t planet = msg.planet;
         H->run_outside_frame(
             [](void* u) {
                 uint32_t planet = (uint32_t)(uintptr_t)u;

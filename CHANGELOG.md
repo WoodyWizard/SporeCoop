@@ -42,6 +42,9 @@
 - Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
   one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
   the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
+- Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
+  instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
+  golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 

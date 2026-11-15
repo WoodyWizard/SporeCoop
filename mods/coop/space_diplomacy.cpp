@@ -31,6 +31,7 @@
 #include "call_guard.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "wire/space_diplomacy.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -682,19 +683,19 @@ static void send_snapshot(uint8_t reply_to)
     size_t bytes = 0;
     auto flush = [&](bool last) {
         net::Writer b;
-        b.u8(last);
-        b.u8(reply_to); // 0xFF: the periodic table
-        b.u16((uint16_t)chunk.size());
+        wire::space_diplomacy::Snap m;
+        m.last = last;
+        m.reply_to = reply_to; // 0xFF: the periodic table
         for (auto* r : chunk) {
-            b.u32(r->npc);
-            b.u32(r->flags);
-            size_t k = std::min<size_t>(r->ev.size(), 100);
-            b.u8((uint8_t)k);
-            for (size_t i = 0; i < k; i++) {
-                b.u32(r->ev[i].first);
-                b.f32(r->ev[i].second);
-            }
+            wire::space_diplomacy::SnapRec h;
+            h.npc = r->npc;
+            h.flags = r->flags;
+            size_t k = std::min<size_t>(r->ev.size(), wire::space_diplomacy::kMaxEvents);
+            for (size_t i = 0; i < k; i++)
+                h.ev.push_back({r->ev[i].first, r->ev[i].second});
+            m.recs.push_back(std::move(h));
         }
+        m.write(b);
         spaceext::send(K_SNAP, b);
         chunk.clear();
         bytes = 0;
@@ -720,45 +721,43 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         return;
     }
     if (kind == K_CONTACT) {
-        Out m{kind, r.u32(), 0, 0, 0, {}};
-        m.ev = r.u8() == 2 ? kContacted : kMet;
-        m.name = r.str8();
-        if (r.ok())
-            queue_in(origin, m);
-    } else if (kind == K_EVENT || kind == K_STATE) {
-        Out m{kind, r.u32(), 0, 0, 0, {}};
-        m.first = r.u8();
-        if (kind == K_EVENT) {
-            m.ev = r.u32();
-            m.scale = r.f32();
-        } else
-            m.ev = r.u8();
-        m.name = r.str8();
-        if (!r.ok())
+        wire::space_diplomacy::Contact c;
+        if (!c.read(r))
             return;
+        Out m{kind, c.npc, 0, c.level == 2 ? kContacted : kMet, 0, std::move(c.name)};
+        queue_in(origin, m);
+    } else if (kind == K_EVENT || kind == K_STATE) {
+        Out m{kind, 0, 0, 0, 0, {}};
+        if (kind == K_EVENT) {
+            wire::space_diplomacy::Event e;
+            if (!e.read(r))
+                return;
+            m = Out{kind, e.npc, e.first, e.ev, e.scale, std::move(e.name)};
+        } else {
+            wire::space_diplomacy::State st;
+            if (!st.read(r))
+                return;
+            m = Out{kind, st.npc, st.first, st.what, 0, std::move(st.name)};
+        }
         queue_in(origin, m);
     } else if (kind == K_SNAP) {
         if (spaceext::is_host())
             return;
-        bool last = r.u8() != 0;
-        uint8_t reply_to = r.u8();
-        uint16_t n = r.u16();
-        std::vector<Rec> part;
-        for (uint16_t i = 0; i < n && r.ok(); i++) {
-            Rec h{r.u32(), r.u32() & (3 | kMet | kContacted), {}};
-            uint8_t k = r.u8();
-            for (uint8_t j = 0; j < k && r.ok(); j++) {
-                uint32_t id = r.u32();
-                float v = r.f32();
-                h.ev.push_back({id, v});
-            }
-            std::sort(h.ev.begin(), h.ev.end());
-            part.push_back(std::move(h));
-        }
-        if (!r.ok()) { // a cut chunk: the table is incomplete, wait for the next one
+        wire::space_diplomacy::Snap msg;
+        if (!msg.read(r)) { // a cut chunk: the table is incomplete, wait for the next one
             if (!g_snap_ready)
                 g_snap_in.clear();
             return;
+        }
+        bool last = msg.last != 0;
+        uint8_t reply_to = msg.reply_to;
+        std::vector<Rec> part;
+        for (auto& m : msg.recs) {
+            Rec h{m.npc, m.flags & (3 | kMet | kContacted), {}};
+            for (auto& e : m.ev)
+                h.ev.push_back({e.first, e.second});
+            std::sort(h.ev.begin(), h.ev.end());
+            part.push_back(std::move(h));
         }
         for (auto& h : part)
             g_snap_in.push_back(std::move(h));
@@ -801,22 +800,16 @@ static void tick(double now)
     }
     for (auto& m : g_out) {
         net::Writer w;
-        w.u32(m.npc);
-        if (m.kind != K_CONTACT)
-            w.u8(m.first);
         if (m.kind == K_CONTACT) {
-            w.u8(m.ev == kContacted ? 2 : 1);
+            wire::space_diplomacy::Contact{m.npc, (uint8_t)(m.ev == kContacted ? 2 : 1), name_of_pol(m.npc)}.write(w);
             g_sent_contact++;
-        }
-        else if (m.kind == K_EVENT) {
-            w.u32(m.ev);
-            w.f32(m.scale);
+        } else if (m.kind == K_EVENT) {
+            wire::space_diplomacy::Event{m.npc, m.first, m.ev, m.scale, name_of_pol(m.npc)}.write(w);
             g_sent_ev++;
         } else {
-            w.u8((uint8_t)m.ev);
+            wire::space_diplomacy::State{m.npc, m.first, (uint8_t)m.ev, name_of_pol(m.npc)}.write(w);
             g_sent_state++;
         }
-        w.str8(name_of_pol(m.npc));
         spaceext::send(m.kind, w);
         g_recent[m.npc] = now_s(); // a host table sent before this arrives there must not undo it
         char buf[120];

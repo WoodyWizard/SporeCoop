@@ -40,6 +40,8 @@
 #include "net/validate.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
+#include "space_kept.h"
+#include "wire/space_rivalry.h"
 
 using spaceext::Relation;
 
@@ -80,7 +82,9 @@ static float g_dmg_got;
 static uint32_t g_puppet_hits, g_restored;
 // a guest's budget after a (re)join or a world load: the host's copy of it is the true one (a
 // rejoining guest loads the host's save again, whose money is not its budget); no reports until then
-static bool g_budget_known, g_was_in_space;
+// (C5: the known budget and its Space world live in the restore window of space_kept.h: g_win.known, g_win.applied)
+static spacekept::RestoreWindow g_win;
+static bool g_was_in_space;
 static double g_last_ask;
 // BUG-0813: money_ptr() is null in an editor or an adventure entered from Space too, not only after a load: every
 // return asked the host again, whose copy is the last K_MONEY (up to 0.5 s old, and none while away), and K_SET put
@@ -90,9 +94,9 @@ static double g_last_ask;
 static bool g_budget_world_fix = true;
 COOP_FIX("space.rival_budget_world", "BUG-0813", g_budget_world_fix,
          "space rivals: a guest's own budget is not reset to the host's copy after an editor or an adventure");
-static uint32_t g_budget_epoch, g_budget_kept;
+static uint32_t g_budget_kept;
 // BUG-1029: the Allies merge counted only the guests the host had a K_MONEY of: a rejoiner (still loading the host's
-// save, or before the K_SET answer) was left out, the host wiped its kept budget (g_budget_name), and the guest then
+// save, or before the K_SET answer) was left out, the host wiped its kept budget (now g_store), and the guest then
 // sent its whole game money as the correction: the save's money (or the shared total that reached it first) instead
 // of its budget. Now the host credits every guest of the roster with the budget it knows (its last K_MONEY, its kept
 // one by name, 0 for a newcomer), a guest whose budget is not known in this world sends no correction (the host's copy
@@ -124,9 +128,17 @@ static std::vector<NameProp> g_props_names;
 static uint16_t g_split_seq, g_merge_seq;
 static int g_split_total, g_split_share;
 static std::map<uint8_t, int> g_merge_credit_of; // the budgets the last merge counted
-static std::map<std::string, int> g_budget_name;  // player key (spaceext::kept_key, BUG-1107) -> its last reported budget (rejoins)
+// player key (spaceext::kept_key, BUG-1107) -> its last reported budget (rejoins): space_kept.h (C5)
+static spacekept::KeptStore<int> g_store;
+static void budget_put(const std::string& key, int v) { g_store.put(key, v); }
+static const int* budget_find(const std::string& key)
+{
+    auto* e = g_store.find(key);
+    return e ? &e->value : nullptr;
+}
+static void budget_clear() { g_store.clear(); }
 // BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
-// g_budget_name keeps a rejoiner's own)
+// budget store keeps a rejoiner's own)
 PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
              [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id); });
 static std::vector<std::pair<uint8_t, std::string>> g_roster;
@@ -243,46 +255,36 @@ static void host_broadcast()
         return;
     host_rebuild();
     auto r = roster();
-    net::Writer w;
-    w.u8(spaceext::rivals());
-    w.u16(g_split_seq);
-    w.u32((uint32_t)g_split_total);
-    w.u32((uint32_t)g_split_share);
-    w.u16(g_merge_seq);
-    w.u8((uint8_t)g_merge_credit_of.size());
-    for (auto& [id, v] : g_merge_credit_of) {
-        w.u8(id);
-        w.u32((uint32_t)v);
-    }
-    std::vector<std::pair<std::pair<uint8_t, uint8_t>, Relation>> rels;
+    wire::space_rivalry::State st;
+    st.rivals = spaceext::rivals();
+    st.split = g_split_seq;
+    st.total = g_split_total;
+    st.share = g_split_share;
+    st.merge = g_merge_seq;
+    for (auto& [id, v] : g_merge_credit_of)
+        st.credits.push_back({id, v});
     for (size_t i = 0; i < r.size(); i++)
         for (size_t j = i + 1; j < r.size(); j++) {
             auto it = g_rel_names.find(key(r[i].second, r[j].second));
             if (it != g_rel_names.end())
-                rels.push_back({{r[i].first, r[j].first}, it->second});
+                st.rels.push_back({r[i].first, r[j].first, (uint8_t)it->second});
         }
-    w.u8((uint8_t)rels.size());
-    for (auto& [ab, rel] : rels) {
-        w.u8(ab.first);
-        w.u8(ab.second);
-        w.u8((uint8_t)rel);
-    }
-    w.u8((uint8_t)g_props.size());
-    for (auto& p : g_props) {
-        w.u8(p.from);
-        w.u8(p.to);
-        w.u8(p.kind);
-    }
+    for (auto& p : g_props)
+        st.props.push_back({p.from, p.to, p.kind});
+    net::Writer w;
+    st.write(w);
     spaceext::send(K_STATE, w); // (at most 4 players: a few dozen bytes)
     g_last_state = H->time_seconds();
 }
 
 static void host_event(uint8_t what, uint8_t a, uint8_t b)
 {
+    wire::space_rivalry::Event m;
+    m.what = what;
+    m.a = a;
+    m.b = b;
     net::Writer w;
-    w.u8(what);
-    w.u8(a);
-    w.u8(b);
+    m.write(w);
     spaceext::send(K_EVENT, w);
     tell(what, a, b);
 }
@@ -333,8 +335,8 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
                 if (g_budget.count(id))
                     g_merge_credit_of[id] = g_budget[id];
                 else if (g_merge_known_fix) { // BUG-1029: no report yet: the kept budget, or 0 for a newcomer
-                    auto it = g_budget_name.find(spaceext::kept_key(id));
-                    g_merge_credit_of[id] = it != g_budget_name.end() ? it->second : 0;
+                    const int* kept = budget_find(spaceext::kept_key(id));
+                    g_merge_credit_of[id] = kept ? *kept : 0;
                 } else
                     continue;
                 credits.push_back(g_merge_credit_of[id]);
@@ -351,7 +353,7 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
             g_props_names.clear();
         }
         g_budget.clear();
-        g_budget_name.clear();
+        budget_clear();
         g_last_reported = -1;
         host_broadcast();
         host_event(action == A_RIVALS ? E_RIVALS : E_ALLIES, origin, 0);
@@ -434,9 +436,11 @@ static std::string request(uint8_t action, uint8_t target)
         return "not connected";
     if (spaceext::is_host())
         return host_apply(action, 0, target);
+    wire::space_rivalry::Req m;
+    m.action = action;
+    m.target = target;
     net::Writer w;
-    w.u8(action);
-    w.u8(target);
+    m.write(w);
     spaceext::send(K_REQ, w);
     return "";
 }
@@ -451,8 +455,8 @@ static void apply_pending_money()
         g_split_pending = false;
         add_money(g_split_delta);
         g_splits++;
-        g_budget_known = true;
-        g_budget_epoch = spaceext::world_epoch();
+        g_win.known = true;
+        g_win.applied = spaceext::world_epoch();
         spaceext::notice(spaceext::tr("Your own budget: ", "Ваш бюджет: ") + std::to_string(*m));
     }
     if (g_merge_pending) {
@@ -461,7 +465,7 @@ static void apply_pending_money()
         // BUG-1029: our budget was not known in this world (a rejoin or a load of the host's save, before K_SET): the
         // game's money is the save's (or the shared total), not ours; the host's credit is our budget
         if (g_merge_known_fix && !spaceext::is_host() &&
-            !(g_budget_known && g_budget_epoch && g_budget_epoch == spaceext::world_epoch())) {
+            !(g_win.known && g_win.applied && g_win.applied == spaceext::world_epoch())) {
             if (d)
                 H->log(M, SK_INFO, "rivalry: merge with an unknown budget: no correction (money %d, credit %d)", *m,
                        g_merge_credit);
@@ -469,8 +473,10 @@ static void apply_pending_money()
             g_merge_fix_skipped++;
         }
         if (d) {
+            wire::space_rivalry::MergeFix m;
+            m.d = d;
             net::Writer w;
-            w.u32((uint32_t)d);
+            m.write(w);
             spaceext::send(K_MERGE_FIX, w);
         }
         g_merges++;
@@ -479,38 +485,25 @@ static void apply_pending_money()
 
 static void on_state(net::Reader& r)
 {
-    bool riv = r.u8() != 0;
-    uint16_t split = r.u16();
-    int total = (int)r.u32(), share = (int)r.u32();
-    uint16_t merge = r.u16();
+    wire::space_rivalry::State st;
+    if (!st.read(r))
+        return;
+    bool riv = st.rivals;
+    uint16_t split = st.split, merge = st.merge;
+    int total = st.total, share = st.share;
     int credit = 0;
     bool have_credit = false;
-    uint8_t n = r.u8();
-    for (int i = 0; i < n && r.ok(); i++) {
-        uint8_t id = r.u8();
-        int v = (int)r.u32();
-        if (id == me()) {
-            credit = v;
+    for (auto& c : st.credits)
+        if (c.id == me()) {
+            credit = c.v;
             have_credit = true;
         }
-    }
     std::vector<std::pair<std::pair<uint8_t, uint8_t>, Relation>> rels;
-    n = r.u8();
-    for (int i = 0; i < n && r.ok(); i++) {
-        uint8_t a = r.u8(), b = r.u8(), rel = r.u8();
-        rels.push_back({{a, b}, (Relation)std::min<uint8_t>(rel, 2)});
-    }
+    for (auto& x : st.rels)
+        rels.push_back({{x.a, x.b}, (Relation)std::min<uint8_t>(x.rel, 2)});
     std::vector<Prop> props;
-    n = r.u8();
-    for (int i = 0; i < n && r.ok(); i++) {
-        Prop p;
-        p.from = r.u8();
-        p.to = r.u8();
-        p.kind = r.u8();
-        props.push_back(p);
-    }
-    if (!r.ok())
-        return;
+    for (auto& p : st.props)
+        props.push_back({p.from, p.to, p.kind});
     if (!g_have_state) { // joined (or rejoined) now: the own money is the own budget already
         g_have_state = true;
         g_split_seen = split;
@@ -544,14 +537,14 @@ static void on_state(net::Reader& r)
 
 static void on_hit_msg(uint8_t origin, net::Reader& r)
 {
-    uint8_t victim = r.u8();
-    float dmg = r.f32();
-    int type = (int)r.u32();
-    float dir[3] = {r.f32(), r.f32(), r.f32()};
-    if (!r.ok() || victim != me() || !spaceext::rivals() || spaceext::relation(me(), origin) != Relation::War)
+    wire::space_rivalry::Hit m; // (read: the damage above 0 and at most 1e6)
+    if (!m.read(r) || m.victim != me() || !spaceext::rivals() || spaceext::relation(me(), origin) != Relation::War)
         return;
+    float dmg = m.dmg;
+    int type = m.type;
+    float dir[3] = {m.dir[0], m.dir[1], m.dir[2]};
     void* u = my_ufo();
-    if (!u || F<int>(u, kState) == 2 || !(dmg > 0) || dmg > 1e6f)
+    if (!u || F<int>(u, kState) == 2)
         return;
     // the shooter must be here (a late hit after a jump is dropped); its puppet is the attacker
     void* att = nullptr;
@@ -593,68 +586,76 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             on_state(r);
         break;
     case K_REQ: {
-        uint8_t action = r.u8(), target = r.u8();
-        if (r.ok() && spaceext::is_host()) {
-            std::string e = host_apply(action, origin, target);
+        wire::space_rivalry::Req m;
+        if (m.read(r) && spaceext::is_host()) {
+            std::string e = host_apply(m.action, origin, m.target);
             if (!e.empty())
-                H->log(M, SK_INFO, "rivalry: request %u of player %u refused: %s", action, origin, e.c_str());
+                H->log(M, SK_INFO, "rivalry: request %u of player %u refused: %s", m.action, origin, e.c_str());
         }
         break;
     }
     case K_EVENT: {
-        uint8_t what = r.u8(), a = r.u8(), b = r.u8();
-        if (r.ok() && origin == 0)
-            tell(what, a, b);
+        wire::space_rivalry::Event m;
+        if (m.read(r) && origin == 0)
+            tell(m.what, m.a, m.b);
         break;
     }
     case K_HIT:
         on_hit_msg(origin, r);
         break;
     case K_MONEY: {
-        int v = (int)r.u32();
-        if (r.ok() && g_money_range_fix && !net::money_in_range(v)) {
+        wire::space_rivalry::Money m;
+        if (!m.read(r))
+            break;
+        int v = m.v;
+        if (g_money_range_fix && !net::money_in_range(v)) {
             if (g_money_refused++ < 5)
                 H->log(M, SK_WARN, "rivalry: a budget of player %u outside the game's range ignored (%d)", origin, v);
             break;
         }
-        if (r.ok() && spaceext::rivals()) {
+        if (spaceext::rivals()) {
             g_budget[origin] = v;
             if (spaceext::is_host())
-                g_budget_name[spaceext::kept_key(origin)] = v;
+                budget_put(spaceext::kept_key(origin), v);
         }
         break;
     }
     case K_ASK: // a guest (re)joined or loaded the world: its budget, if the host knows it
         if (spaceext::is_host() && spaceext::rivals() && H->time_seconds() >= g_hold_set_until) {
             std::string nm = spaceext::kept_key(origin);
-            auto it = g_budget_name.find(nm);
-            uint8_t have = it != g_budget_name.end();
-            int v = have ? it->second : 0;
+            const int* kept = budget_find(nm);
+            uint8_t have = kept != nullptr;
+            int v = have ? *kept : 0;
             if (!have && g_merge_known_fix) {
                 // BUG-1029 (owner decision 2026-11-13): a newcomer to Rivals starts its own empire with 0, not with
                 // the host's save money it loaded; the host knows that budget from now on (a merge counts it)
                 have = 2;
                 v = 0;
-                g_budget_name[nm] = 0;
+                budget_put(nm, 0);
                 g_budget[origin] = 0;
                 g_newcomers++;
             }
+            wire::space_rivalry::Set m;
+            m.to = origin;
+            m.have = have;
+            m.v = v;
             net::Writer w;
-            w.u8(origin);
-            w.u8(have);
-            w.u32((uint32_t)v);
+            m.write(w);
             spaceext::send(K_SET, w);
         }
         break;
     case K_SET: {
-        uint8_t to = r.u8(), have = r.u8();
-        int v = (int)r.u32();
-        if (g_money_range_fix && r.ok() && !net::money_in_range(v)) { // BUG-1110
+        wire::space_rivalry::Set s;
+        if (!s.read(r))
+            break;
+        uint8_t to = s.to, have = s.have;
+        int v = s.v;
+        if (g_money_range_fix && !net::money_in_range(v)) { // BUG-1110
             g_money_refused++;
             v = net::money_clamp(v);
         }
         int* m = money_ptr();
-        if (!r.ok() || to != me() || origin != 0 || !spaceext::rivals() || !m || g_budget_known)
+        if (to != me() || origin != 0 || !spaceext::rivals() || !m || g_win.known)
             break;
         if (have == 2) { // BUG-1029: new to this Rivals session
             if (v != *m)
@@ -668,14 +669,14 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             g_restored++;
             spaceext::notice(spaceext::tr("Your own budget is back: ", "Ваш бюджет восстановлен: ") + std::to_string(*m));
         }
-        g_budget_known = true;
-        g_budget_epoch = spaceext::world_epoch();
+        g_win.known = true;
+        g_win.applied = spaceext::world_epoch();
         break;
     }
     case K_MERGE_FIX: {
-        int d = (int)r.u32();
-        if (r.ok() && spaceext::is_host() && !spaceext::rivals() && std::abs(d) < 100000000)
-            add_money(d); // shared.cpp sends the new total
+        wire::space_rivalry::MergeFix m; // (read: |d| < 1e8)
+        if (m.read(r) && spaceext::is_host() && !spaceext::rivals())
+            add_money(m.d); // shared.cpp sends the new total
         break;
     }
     default: break;
@@ -696,13 +697,15 @@ bool on_hit(void* ufo, void* attacker, float dmg, int type, const float* dir)
             return false;
         if (spaceext::relation(me(), p.id) != Relation::War)
             return false; // allies and neutrals: the game drops it (same political id, invincible puppet)
+        wire::space_rivalry::Hit h;
+        h.victim = p.id;
+        h.dmg = dmg;
+        h.type = type;
+        h.dir[0] = dir ? dir[0] : 0;
+        h.dir[1] = dir ? dir[1] : 0;
+        h.dir[2] = dir ? dir[2] : 1;
         net::Writer w;
-        w.u8(p.id);
-        w.f32(dmg);
-        w.u32((uint32_t)type);
-        w.f32(dir ? dir[0] : 0);
-        w.f32(dir ? dir[1] : 0);
-        w.f32(dir ? dir[2] : 1);
+        h.write(w);
         spaceext::send(K_HIT, w);
         g_hits_sent++;
         return true;
@@ -753,34 +756,38 @@ static void tick(double now)
     // a guest in a freshly loaded world (a rejoin loads the host's save): ask the host for its budget
     bool sp = money_ptr() != nullptr;
     if (sp && !g_was_in_space) {
-        if (g_budget_world_fix && g_budget_known && g_budget_epoch && g_budget_epoch == spaceext::world_epoch())
+        if (g_budget_world_fix && g_win.known && g_win.applied && g_win.applied == spaceext::world_epoch())
             g_budget_kept++; // BUG-0813: back from an editor / adventure in the same Space world: still known
         else
-            g_budget_known = false;
+            g_win.known = false;
     }
     g_was_in_space = sp;
-    if (sp && g_budget_known)
-        g_budget_epoch = spaceext::world_epoch();
+    if (sp && g_win.known)
+        g_win.applied = spaceext::world_epoch();
     if (spaceext::is_host())
-        g_budget_known = true;
-    else if (spaceext::rivals() && sp && !g_budget_known && !g_split_pending && now - g_last_ask > 2.0) {
+        g_win.known = true;
+    else if (spaceext::rivals() && sp && !g_win.known && !g_split_pending && now - g_last_ask > 2.0) {
         spaceext::send(K_ASK, net::Writer());
         g_last_ask = now;
     }
     // the own budget for everybody (the merge counts the host's last copy of it)
-    if (spaceext::rivals() && g_budget_known) {
+    if (spaceext::rivals() && g_win.known) {
         if (int* m = money_ptr()) {
             g_budget[me()] = *m;
             int report = now < g_fake_money_until ? g_fake_money : *m; // tests: a crafted budget (BUG-1110)
             if (!spaceext::is_host() && ((report != g_last_reported && now - g_last_report > 0.5) || now - g_last_report > 3.0)) {
+                wire::space_rivalry::Money mo;
+                mo.v = report;
                 net::Writer w;
-                w.u32((uint32_t)report);
+                mo.write(w);
                 spaceext::send(K_MONEY, w);
                 g_last_reported = report;
                 g_last_report = now;
             } else if (spaceext::is_host() && now - g_last_report > 1.0) {
+                wire::space_rivalry::Money mo;
+                mo.v = *m;
                 net::Writer w;
-                w.u32((uint32_t)*m);
+                mo.write(w);
                 spaceext::send(K_MONEY, w);
                 g_last_report = now;
             }
@@ -796,9 +803,9 @@ static void session_end()
     g_budget.clear();
     g_have_state = false;
     g_split_pending = g_merge_pending = false;
-    g_budget_known = g_was_in_space = false;
-    g_budget_epoch = 0;
-    g_budget_name.clear();
+    g_win.known = g_was_in_space = false;
+    g_win.applied = 0;
+    budget_clear();
     g_last_reported = -1;
     g_rel_names.clear();
     g_props_names.clear();

@@ -175,6 +175,8 @@ unit-cpp: sanitizer-probe
 	@# wave C of 0.7.15: mirror registry, snapshot receiver, world id and lifecycle observers, host-busy model
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/core_tests tests/core_tests.cpp
 	$(B)/host/core_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
+	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/path_mask_tests tests/path_mask_tests.cpp
@@ -248,6 +250,18 @@ clean:
 .PHONY: release-dry
 release-dry:
 	tools/release_dry.sh
+
+# C6 (NET-10, BUG-1133): tests/fuzz_decoders.cpp as a libFuzzer target (clang): coverage-guided, every decoder of the
+# protocol and of mods/coop/wire, under ASan + UBSan. Not part of `make test` (that runs the fixed-seed build); CI runs it
+# on every push for FUZZ_SECONDS and weekly for longer (.github/workflows/fuzz.yml). Corpus: $(B)/host/fuzz-corpus (kept
+# between local runs; CI starts empty). A finding is a crash-* file in $(B)/host: `$(B)/host/fuzz_lib <file>` replays it.
+FUZZ_CXX ?= clang++
+FUZZ_SECONDS ?= 60
+.PHONY: fuzz
+fuzz:
+	@mkdir -p $(B)/host/fuzz-corpus
+	$(FUZZ_CXX) -std=c++20 -O1 -g -Wall -Wno-unused-function -DFUZZ_LIBFUZZER -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_lib mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
+	cd $(B)/host && ASAN_OPTIONS=detect_leaks=0 ./fuzz_lib -max_total_time=$(FUZZ_SECONDS) -max_len=4096 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1 fuzz-corpus
 
 # the toolchain folder this Makefile uses (tools/package.sh, tools/tests/update_check.py ask here)
 .PHONY: toolchain-path

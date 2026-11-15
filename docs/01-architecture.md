@@ -491,3 +491,35 @@ Open RE questions (for the stage agents):
   not measured with a real tutorial box.
 * Whether a pause reason of our own (not 0x4BF38A7) can be used for the guest's wait (the reason map at
   cGameTimeManager +0x4C may need a known key).
+
+## Space kept state: one store for a rejoiner's colonies, hold, badges and budget (2026-11-15, feat/w51-space)
+<a id="arch-space-kept-store"></a>
+
+C5 of docs/plan-0.7.15.md (audit NET-1, BUG-1132). Every player flies in a copy of the host's save, so what a guest
+owns only in its own game is gone when it rejoins and loads the host's world again. Four features keep it on the host
+and give it back: space_map (own colonies, BUG-0195), space_trade (the cargo hold, BUG-0678), space_badges (badges and
+rank, BUG-0786), space_rivalry (the Rivals budget, BUG-1029). Up to 0.7.14 each had its own table, serial, timeout and
+restore rule; they now share `mods/coop/space_kept.h` (portable, tests/space_tests.cpp):
+
+* `spacekept::KeptStore<T>` (host): player key (`spaceext::kept_key`: the rejoin token, BUG-1107) -> Entry {value,
+  have, name, id, restoring, serial, sent}. `world(epoch)` empties it in another Space world; `bind(key, id, name,
+  exclusive)` ties an entry to the player's session id and says whether this is its first report since the join
+  (exclusive: space_map, an entry of another key on the same id lets go); `begin()` starts a restore (serial),
+  `keep()` takes a report as the player's state unless a restore runs, `done(id, serial)` ends it, `tick(now, here,
+  resend)` unbinds a player who left and sends again after 10 s without an answer, `leave(id)` (space_map's
+  PLAYER_STATE, BUG-0810) and `session_end()` unbind; `find` / `put` are the keyed values Rivals uses.
+* `spacekept::RestoreWindow` (guest): the Space world of the join (its own world before the host's arrived), the world
+  whose first report went as fresh, the world the kept copy was written into, the world the host said it keeps
+  nothing for, the Rivals budget known; `open()` / `pending()` are the window in which the kept copy may still
+  replace the state (BUG-1034's "restore pending", at most 20 s after the fresh report).
+* `spacekept::HeldQueue`: what arrives in that window and would go into the state about to be replaced (space_trade's
+  gifts and sales, BUG-1034), handled once it closes; 64 at most.
+
+The handshake on the wire stays each feature's own (no wire change; wire/space_map.h, space_trade.h, space_badges.h,
+space_rivalry.h and their golden bytes in tests/wire_tests.cpp): report -> kept copy (K_KEPT, K_INV_KEPT, K_BADGES_KEPT)
+-> answer (K_KEPT_DONE, K_INV_DONE, K_BADGES_DONE); Rivals asks instead (K_ASK -> K_SET, repeated by the guest every
+2 s), so it uses only the keyed values and the window's known budget. The features' own fix switches
+(space.keep_colonies, space.kept_leave, space.keep_items*, space.keep_badges, space.kept_token, space.merge_known_budget,
+space.trade_wait_restore, ...) keep working on top of the store. Not moved: Space still resets through
+`spaceext::Feature::on_session_end` and `world_epoch`, not lifecycle.h (that is C2).
+

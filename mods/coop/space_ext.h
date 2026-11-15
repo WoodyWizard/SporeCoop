@@ -72,6 +72,7 @@ std::string name_of(uint8_t id);
 // net::Session::player_key (its rejoin token, else its name). "" = no such player. `coop.fix space.kept_token off`:
 // the session name (0.7.14: two players of the same name who rejoin in the other order swap their kept state)
 std::string kept_key(uint8_t id);
+// (map, trade, badges and rivalry keep a rejoiner's state through space_kept.h under this key: C5, BUG-1132)
 bool in_space();          // the Space stage is running (false while the `away` test hook is on)
 // tests (BUG-0226, BUG-0228, BUG-0229): `coop.space away 1|0` makes the Space modules act as
 // outside Space while the Space world stays (as an editor or an adventure entered from Space does):

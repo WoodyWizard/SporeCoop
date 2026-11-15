@@ -262,3 +262,29 @@ anchor so other docs can link to it:
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
+
+## A restarted guest gets none of its kept Space state back (2026-11-15, feat/w51-space)
+<a id="issue-space-kept-restart"></a>
+
+* What happens: a guest that leaves, closes and starts its game again and joins again gets the host's badges and rank,
+  no kept colonies and no Rivals budget back: the host keeps them by the rejoin token (BUG-1107), and a restart after a
+  clean leave sends a new token. A crash rejoin or a rejoin without a restart works.
+* Reproduce: `space_badges_rejoin` (it restarts the guest) fails on rel/0.7.15; with `coop.fix space.kept_token off`
+  it passes (the 0.7.14 name key).
+* Ticket: BUG-1135.
+
+## space_trade fails warm after space_rivalry (2026-11-15, feat/w51-space)
+<a id="issue-space-trade-warm-page"></a>
+
+* What happens (test only): the co-op window stays on the Space page from space_rivalry over the warm reset, the lobby's
+  "Space >" button is hidden and space_trade's first step times out; cold it passes.
+* Reproduce: `lab.py run space_rivalry,space_trade --lane N` (warm, in that order).
+* Ticket: BUG-1139.
+
+## A caught game fault in cEmpire_MakeContact while a guest loads its own save (2026-11-15, feat/w51-space)
+<a id="issue-space-makecontact-fault"></a>
+
+* What happens: once in four space_allies runs the guest's game faulted (caught) in the planet populate of its own
+  save after a co-op session, at cEmpire_MakeContact+0x3C7.
+* Reproduce: not reproduced (space_allies passed on the same build and on rel/0.7.15 right after).
+* Ticket: BUG-1144.

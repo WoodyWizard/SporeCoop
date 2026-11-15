@@ -8235,6 +8235,20 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   cache, a pre-0.7.15 report that never calls gh. Against the old tool (`SELFTEST_TRIAGE=<copy>`) 12
   checks FAIL.
 
+## Wire golden bytes, kept-store unit tests and the libFuzzer run (2026-11-15, feat/w51-space)
+<a id="testing-wire-golden"></a>
+
+* `tests/wire_tests.cpp` (`make test`, unit-cpp, ASan, under a second): the golden bytes of every Space and shared-pool
+  payload (docs/04-netcode.md#netcode-wire-structs). A failing line names the kind and prints the bytes the struct
+  wrote, the pinned hex and, where present, the old writer's bytes: a difference is a wire change (0.7.14 and 0.7.15
+  must still play together), not a test to update.
+* `tests/space_tests.cpp` `test_kept_store`, `test_kept_map`, `test_kept_rivals`, `test_restore_window`: the kept-state
+  machine of docs/01-architecture.md#arch-space-kept-store (join, rejoin, crash rejoin with the same id and the code
+  before BUG-0810, same-name players BUG-1107, another world, session end mid-restore, the 10 s resend, a restore's
+  failed list, Rivals budgets, the BUG-1034 queue and its 64 cap).
+* `fuzz_decoders` grew by the wire structs (`game module payloads, mods/coop/wire`, about 1 s of its run).
+* `make fuzz [FUZZ_SECONDS=60]`: the libFuzzer build (clang, ASan + UBSan), outside `make test`; CI runs it on every
+  push (2 min) and weekly (20 min, `.github/workflows/fuzz.yml`).
 ## Ratchet lints: object_alive, call guards, lifecycle functions (2026-11-15, feat/w51-guards)
 <a id="testing-ratchet-lints"></a>
 
