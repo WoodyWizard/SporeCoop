@@ -60,5 +60,8 @@ The big files (merged by helpers, checked by the build):
 * npc.cpp / cellsync.cpp: one hook of the cell damage getter (ours scales, upstream's BUG-0714 forced damage first).
   Cell meals now go through upstream's in-step food queue (BUG-0633), our earned_food inside it.
 
-Open (owner decision): upstream's Creature stage end (BUG-1085) is a host vote and a guest's own request is refused;
+Was open (owner decision): upstream's Creature stage end (BUG-1085) is a host vote and a guest's own request is refused;
 ours made every Creature editor personal. Which rule for the stage end?
+Decided (owner 2026-11-15, ROADMAP 4F A): the stage end stays the host's vote for the whole party; every other
+Creature editor stays personal. This is the merged behaviour, no code change.
+Next (ROADMAP 4G): when to release the merge as 56-dev.
