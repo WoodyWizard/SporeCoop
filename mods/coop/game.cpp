@@ -65,12 +65,24 @@ uint64_t off_main_calls()
     std::lock_guard<std::mutex> lk(g_off_mu);
     return g_off.total;
 }
-// coop.threads [reset|on|off]: the main thread and the off-main game calls (any thread: it only reads under the lock)
+static void probe_task(void*)
+{
+    if (skg::call_probe) // tests: what a game call made on the main thread tells the probe (not counted)
+        skg::call_probe(0x401000);
+}
+// coop.threads [reset|on|off|probe]: the main thread and the off-main game calls (any thread: it only reads under
+// the lock). probe (tests, coop_threads.py): tells the probe of one call from this thread (the console's: off the
+// main thread, counted) and queues one on the main thread (not counted), as a skg helper would; no game call is made.
 static int c_threads(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string a = argc > 1 ? argv[1] : "";
     if (a == "on" || a == "off")
         skg::call_probe = a == "on" ? off_main_probe : nullptr;
+    if (a == "probe") {
+        if (skg::call_probe)
+            skg::call_probe(0x401000); // (the exe's first code page: a made-up game function)
+        H->run_on_main(probe_task, nullptr);
+    }
     std::string st;
     {
         std::lock_guard<std::mutex> lk(g_off_mu);
@@ -1390,7 +1402,7 @@ bool init(const SkHost* host, SkMod* mod)
                            (LPCWSTR)(void*)&off_main_probe, &self))
         g_self_base = (uintptr_t)self;
     skg::call_probe = off_main_probe;
-    H->command_add(M, "coop.threads", "coop.threads [reset|on|off] - the main thread and the game calls made off it (A14)",
+    H->command_add(M, "coop.threads", "coop.threads [reset|on|off|probe] - the main thread and the game calls made off it (A14)",
                    c_threads, nullptr, SK_CMD_ANY_THREAD);
     static const char* req[] = {
         "Simulator::cGameNounManager::Get",
