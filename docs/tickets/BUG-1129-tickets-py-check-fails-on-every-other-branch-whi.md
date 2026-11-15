@@ -1,16 +1,16 @@
 ---
 id: BUG-1129
 title: tickets.py check fails on every other branch while a private ticket lists commits of an unmerged branch
-status: open
+status: fixed
 kind: tooling
 stage: Tools
 reported: 2026-11-15
 source: feat/w51-labverdict, lab 20261115-014727 unit
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: rel/0.7.15
+commits: cdb65d1c
 tests: make test (unit-lint)
 signature:
 docs:
@@ -28,16 +28,19 @@ branch is merged.
 Reproduce: on any branch of rel/0.7.15 other than the one that fixed them, `python3 tools/tickets.py check`.
 
 ## Root cause
-Inferred: tickets.py check applies the per-branch rules (commits in this branch's history, tests that exist in this
-tree) also to the private tickets, which are not per branch: out/tickets/ is one folder for every worktree.
+out/tickets/ (private tickets) is one folder for every worktree, while `rule_commits` and `rule_tests` check against
+the current branch: a private ticket fixed on one branch names commits and tests the other branches do not have.
 
 ## Fix
-Not fixed here (not part of A6/A7/A8/A15/D5). Suggested: for a private ticket, a commit outside the branch's history
-and a test name the tree does not know are notes, not problems (or checked only on the branch named in `branch:`).
+`run_checks` turns the `commits` and `tests` findings of a private ticket into notes; public tickets are checked as
+before. Checked on a detached copy of feat/w51-split (without fix/w51-net): BUG-1108..1110 no longer fail it.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it -->
+FAIL: `tools/tickets.py check` on a detached worktree of feat/w51-split (d03e7301, without fix/w51-net): "BUG-1110:
+commits: commit a74f8819 is not in this branch's history". PASS: the same tree with the fixed tickets.py: no BUG-1108..1110
+line.
 
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: after feat/w51-labverdict merged rel/0.7.15 (which has those commits) the check is clean there; branches made before that merge still see it.
+- 2026-11-15: fixed on rel/0.7.15 (private findings are notes).
