@@ -23,6 +23,7 @@
 #include "sporekit_game.hpp"
 #include "space_kept.h"
 #include "kept_disk.h"
+#include "autosave_glue.h"
 #include "wire/space_map.h"
 #include "cell_logic.h"
 #include "find.h"
@@ -421,6 +422,17 @@ static void roster_tick(double now)
     r.version = g_version;
     r.updated = now;
     bool had = g_rosters.count(r.id) != 0;
+    { // E2 (BUG-0864): the host's own new colony is a milestone of its autosave
+        static int s_mine = -1;
+        static uint32_t s_epoch;
+        int n = 0;
+        for (auto& c : r.colonies)
+            n += !c.home;
+        if (s_epoch == spaceext::world_epoch() && s_mine >= 0 && n > s_mine && spaceext::is_host())
+            autosave::milestone("a colony founded");
+        s_mine = n;
+        s_epoch = spaceext::world_epoch();
+    }
     g_rosters[r.id] = r;
     if (diff || !had)
         changed(r.id);
@@ -560,6 +572,8 @@ static void kept_roster(uint8_t id)
     for (auto& c : g_rosters[id].colonies)
         if (!c.home && own_colony(id, c))
             own.push_back(c.planet);
+    if (k.have && own.size() > k.value.size())
+        autosave::milestone("a colony founded"); // E2 (BUG-0864): a guest's new colony
     g_store.keep(k, std::move(own));
 }
 

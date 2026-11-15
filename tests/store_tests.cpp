@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "autosave.h"
 #include "player_store.h"
 #include "rejoin_kept.h"
 #include "space_kept.h"
@@ -225,8 +226,54 @@ static void test_token_month()
     CHECK(!month.expire(week) && month.size() == 1 && day.expire(week) && day.size() == 0);
 }
 
+// E2 (BUG-0864): the host's autosave clock
+static void test_autosave()
+{
+    printf("autosave clock\n");
+    autosave::Clock c;
+    c.interval = 600;
+    CHECK(c.due(1000) == ""); // not running: no session
+    c.start(100);
+    CHECK(c.due(699) == "" && c.due(700) == "timer");
+    // any save of the game starts the timer again (a share save, the player's own)
+    c.saved(650);
+    CHECK(c.due(700) == "" && c.due(1249) == "" && c.due(1250) == "timer");
+    // a milestone: after the settle delay, before the timer
+    c.milestone("a new stage", 800);
+    CHECK(c.due(801) == "" && c.due(800 + autosave::kMilestoneDelay) == "a new stage" && c.milestones == 1);
+    // the game refuses (an editor): again after kRetry
+    c.tried(806, false, "an editor is open");
+    CHECK(c.refused == 1 && c.refusal == "an editor is open" && c.due(808) == "" && c.due(806 + autosave::kRetry) == "a new stage");
+    // posted: nothing more until its write is seen; the write confirms it and ends the milestone
+    c.tried(812, true);
+    CHECK(c.due(900) == "" && c.posted == 1);
+    c.saved(813);
+    CHECK(c.confirmed == 1 && !c.pending && c.due(900) == "" && c.due(813 + 600) == "timer");
+    // a posted save whose write never comes is lost after kConfirm, tried again after kRearm
+    c.tried(1500, true);
+    c.tick(1500 + autosave::kConfirm - 1);
+    CHECK(c.lost == 0 && c.due(1520) == "");
+    c.tick(1500 + autosave::kConfirm + 1);
+    CHECK(c.lost == 1 && c.due(1531 + autosave::kRearm - 1) == "" && c.due(1531 + autosave::kRearm) == "timer");
+    // a save older than the milestone does not end it
+    c.milestone("a colony founded", 2000);
+    c.saved(1999);
+    CHECK(c.pending);
+    // off: nothing, milestones neither
+    autosave::Clock off;
+    off.interval = 0;
+    off.start(0);
+    off.milestone("x", 1);
+    CHECK(!off.running() && off.due(10000) == "" && off.milestones == 0);
+    c.stop();
+    CHECK(c.due(1e9) == "");
+    CHECK(autosave::ago_text(-1, false) == "not saved yet" && autosave::ago_text(30, false) == "saved just now" &&
+          autosave::ago_text(185, false) == "saved 3 min ago" && autosave::ago_text(7300, false) == "saved 2 h ago");
+}
+
 int main()
 {
+    test_autosave();
     test_keys();
     test_round_trip();
     test_bad_files();

@@ -540,3 +540,68 @@ switch must handle: `-Wswitch` with `-Werror`). The Space sub-kinds have their o
 (`mods/coop/net/space_kinds.def`, the direction gate of BUG-1041). Details, the docs tables generated from the
 manifest and the compatibility rules (message family revisions, B6): docs/04-netcode.md#netcode-manifest and
 docs/04-netcode.md#netcode-compat.
+
+## The per-player store on the host's disk (2026-11-15, feat/w51-store)
+<a id="arch-player-store"></a>
+
+E1 of 0.7.15 (owner decision 13, BUG-1149). The shared world is the host's and is saved; what belongs to each player
+("whose is it") lived only in the host's memory and was lost when the host's game closed. The host now keeps it per
+world on its own disk, next to its save:
+
+* **File**: `<Spore>/Games-sporecoop-store/<slot>/<planet>.txt` (`<Spore>` = the profile's AppData `Spore` folder,
+  the parent of `Games`), one per world = the host's save slot and planet file (`world::current_game_key`'s last two
+  parts, lower case: `game3/madas.spo`). Beside the Games folder, never inside a slot: a world share sends every file
+  of the slot to the guests (slotfs::collect) and the game reads the slot folder; the guests never get the file.
+  `salt.txt` in the same folder is this host profile's salt for the player keys.
+* **Format** (player_store.h, version line `sporecoop-store 1`): `world`, `saved` (unix time), world records
+  `w <feature> <ver> <hex>`, players `p <stable key> <seen> <name>` each followed by its records
+  `r <feature> <ver> <hex>`, and `end <fnv32>` over everything before it. A damaged or foreign file (another world
+  line, a bad sum, another format) is an empty store and is moved to `.txt.bad`. A record of a feature or version a
+  build does not know is kept and written back as it was. At most 64 players (the longest unseen go), 256 KB a record.
+* **Keys** (the BUG-1107 / BUG-1109 rule): a player is its stable key `s:<16 hex>` = a salted 64-bit digest of
+  `net::Session::player_key` (itself a digest of the HELLO rejoin token; the token never reaches the disk); the host
+  itself is `host`. The rejoin token is the same game's across restarts (BUG-1135, kept 30 days since BUG-1150), so
+  the same player is found again. A player whose token changed (another PC, a reinstall, another host address, more
+  than 30 days) is a new player: **its things are not given by name automatically** (another game under the same name
+  must not get them). The host is told in its feed ("X joined from a game this world does not know") and may hand
+  them over by its word: `coop.store adopt <player> [<stored name>]` moves the records of the one stored player of
+  that name (session suffixes " 2".." 9" ignored) who is not in the session to that player, in the store and in
+  every consumer's memory (`store::Feature::adopt`).
+* **When**: read when the host's world opens (`store::tick`, every frame, the lookup at most once a second); written
+  after every save of the game (`store::after_save` from the one hook on `cGamePersistenceManager_SaveGame`,
+  space_allies.cpp h_Save; any stage, the player's own save, a share's, an autosave): each consumer puts its records
+  (`store::Feature::save`, only the keys and world records it holds in memory for this world: what it never read is
+  left as it was), and the file is written outside the frame (`run_outside_frame`): a `.tmp` file, flushed, then
+  `MoveFileEx(REPLACE_EXISTING | WRITE_THROUGH)`. A guest keeps no store. A world nobody kept anything for gets no
+  file.
+* **Consumers** (each behind its switch, each with a lab twin across sessions, docs/06-testing.md#testing-session-restart):
+
+| Feature | Records | Switch | Ticket |
+|---|---|---|---|
+| Space colonies (space_map.cpp KeptStore through `kept_disk::Backend`) | `space.colonies` v1: u32 PlanetIDs per player | store.space_colonies | BUG-1149 |
+| Space badges and rank (space_badges.cpp) | `space.badges` v1: the badge tables (wire/space_badges.h put_badges) | store.space_badges | BUG-1149 |
+| Space Rivals (space_rivalry.cpp) | world `space.rivals` v1 {u8 rivals, u16 n, n x (key, key, u8 relation)}; `space.budget` v1 i32 per player | store.space_rivals | BUG-1152 |
+| Civ owners of cities and vehicles (civ.cpp) | world `civ.owners` v1 (see civ.cpp) | store.civ_owners | BUG-1153 |
+| Tribe owners of members (tribe.cpp) | world `tribe.owners` v1 (see tribe.cpp) | store.tribe_owners | BUG-1154 |
+
+  The Space kept stores (space_kept.h) are keyed by the same stable key (`spaceext::kept_key` = `store::key_of`), so
+  `KeptStore::restore()` at world open puts the disk's values where the next join's first report finds them: the
+  restore then runs exactly as after a rejoin (K_KEPT / K_BADGES_KEPT / K_SET).
+* Status and test seams: `coop.store` (world, players, records, reads, writes, fails), `coop.store save` (as after a
+  save of the game), `coop.store reload`.
+
+## The host's autosave (2026-11-15, feat/w51-store)
+<a id="arch-autosave"></a>
+
+E2 of 0.7.15 (BUG-0864). While it hosts a session (connected, a world open), the host's game saves itself
+(`world::save_game`: the pause menu's Save message into its own slot) every N minutes (the session setting
+`all.autosave`, Live, choices off / 5 / 10 / 15 / 30 / 60 min, default 10; coop.ini `autosave` = the choice) and
+5 s after a milestone: a later stage of the same world, a colony founded (the host's own or a guest's), a city
+captured (Civ), an epic killed (Tribe). Any save of the game counts (the player's own, a world share's): the timer
+starts again from it (`store::saves()` / `store::since_save()`). The clock is portable (autosave.h, unit tested in
+tests/store_tests.cpp); the glue (autosave.cpp) tries outside the frame and waits while a cinematic plays, a share's
+save is being written or the last save's box is up; save_game itself refuses editors, loads, mode switches, the end of
+Tribe and Space on a planet (tried again every 5 s); a posted save whose write is not seen in 30 s counts as lost and
+is tried again 15 s later. The co-op window's session line (host) shows "saved N min ago". Switch
+`coop.fix world.autosave off`: no autosave (0.7.14). Status: `coop.autosave`; test seams `coop.autosave interval <s>`,
+`coop.autosave milestone [<why>]`.

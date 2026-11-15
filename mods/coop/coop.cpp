@@ -86,6 +86,7 @@
 #include "dna_pace.h"
 #include "settings.h"
 #include "store.h"
+#include "autosave_glue.h"
 #include "sreport.h"
 #include "space_ext.h"
 #include "host_world.h"
@@ -1049,6 +1050,7 @@ static void frame_local_update(double now)
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
     store::tick();    // E1 (BUG-1149): the host's world opened: its per-player store
+    autosave::tick(); // E2 (BUG-0864): the host's autosave (the save itself outside the frame)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
@@ -1746,8 +1748,8 @@ std::string ui_session_line()
 {
     char b[256];
     if (g_sess.role() == net::Role::Host)
-        snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players", g_sess.port(), (int)g_sess.players().size(),
-                 g_sess.max_players);
+        snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players  -  %s", g_sess.port(), (int)g_sess.players().size(),
+                 g_sess.max_players, autosave::saved_line().c_str()); // E2: when the host's game last saved
     else if (g_sess.connected())
         snprintf(b, sizeof b, "Connected to %s (%s)", g_sess.name_of(0).c_str(), g_sess.host_address().c_str());
     else
@@ -2550,6 +2552,7 @@ static void init_player_modules()
         stc.feed = feed;
         stc.notice = feed; // the host only (the hint names a console command of the host)
         store::init(H, M, stc);
+        autosave::init(H, M, &g_sess, feed); // E2 (BUG-0864)
         g_sess.join_closed = [] { return !settings::on(settings::kLateJoin) && settings::started(); };
     }
     { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap

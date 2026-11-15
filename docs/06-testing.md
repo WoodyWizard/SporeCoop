@@ -8346,3 +8346,30 @@ guest too (BUG-1135, `net.rejoin_disk`).
   pvp_deaths) count since the game started: a warm game keeps the previous test's. A test reads them as deltas from
   its own start, as coop_space_rival_away does with `restored` (BUG-1146, space_rivalry warm after space_rivalry).
   State a player sees belongs in the lifecycle registry instead (docs/01-architecture.md#arch-lifecycle-registry).
+
+## Tests across sessions: session_restart() (2026-11-15, feat/w51-store)
+<a id="testing-session-restart"></a>
+
+Nothing tested across sessions before 0.7.15 E1: every test started from its fixture and the host's game never ran
+twice on the same save. `twoinst.session_restart(host, guest, save=True, ...)` plays "a new evening" in the middle of
+a test and returns `(host, guest, info)` with the new consoles:
+
+1. `save=True` (default): the host saves its game (`coop.save`: the game's own save into its own slot, as the pause
+   menu's Save) and waits for the per-player store's write (`coop.store`: `writes=` grows; the save box is confirmed
+   meanwhile). `info['saved']` says whether the game took the save;
+2. the guest leaves (`coop.leave`: a clean leave keeps its rejoin token on its disk, BUG-1135), then the host;
+3. `spore.sh kill`: both games end, nothing else of the lane is touched: the host's profile keeps its save slot and
+   `Games-sporecoop-store`, the guest's profile its kept token file. With `save=False` this is a crash of the host
+   after whatever it saved itself (the E2 autosave test);
+4. both start cold, SPORE_FIX_OFF and SPORE_FPS are set again in both (`apply_fix_off`), the host loads the slot it
+   played (`played_slot()`: the fixture's planet of a cold start or the slot of the last warm reset) and hosts, the
+   guest joins (`before_join(guest)` right before) and loads the host's world. ~45 s on a quiet lane.
+
+The restarted games are no warm games for the next test (the lane state gets a knob `(session_restart)`). Every
+other test starts without a store: `forget_store()` (cold start and warm reset) removes
+`<profile>/Spore/Games-sporecoop-store` of both profiles, as `forget_settings()` does for the session settings.
+Tests on it: `space_session` (a guest's colony, badges, Rivals budget and war), `autosave_milestone` /
+`autosave_timer` (the host's game killed after its autosave), `civ_owners_session`, `tribe_owners_session`.
+A twin run sets the fix switch off in the restarted games too, so a switch that acts when the world opens (the
+store's reading) is off when it matters. The store's own status: `coop.store` (world, players, records, writes);
+`coop.store save` writes it now (as after a save of the game), `coop.store reload` reads the file again.
