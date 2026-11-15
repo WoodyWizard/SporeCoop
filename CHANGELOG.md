@@ -40,6 +40,9 @@
   settings and warnings as errors.
 - The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
   phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
+- Old fix switches retire by a rule (released 3+ releases ago, a failing run with the switch off on record, not on a
+  keep list): 221 switches of fixes from 0.7.9 and older lost their old code path, the old `coop.corefix` /
+  `coop.sessionfix` commands are gone; `lab.py fixcheck --retire` lists the next candidates (BUG-1138).
 
 ## [0.7.14.1] - 2026-11-14
 
