@@ -509,7 +509,7 @@ def self_test():
             bad += 1
         shutil.rmtree(d)
     # below the baseline: passes, says how to lower, --lower writes the lower number
-    d = tree(base={'object_alive': {'total': 3}, 'call_guard': {'x::g_in_gone': 1}, 'lifecycle': {}})
+    d = tree(base={'object_alive': {'total': 3}, 'call_guard': {'x::g_in_gone': 1}, 'lifecycle': {}})  # re_lint: not-a-sym
     rc, out = lint(d)
     if rc != 0 or 'lower it with' not in out:
         print(f'ratchet_lint self-test: FAIL a count below the baseline (rc {rc}):\n{out}')
