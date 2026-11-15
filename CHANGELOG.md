@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Interface Size: Spore's UI grows as one picture (laid out for a smaller screen, then scaled), so HUD pieces stay
+  together and on the screen edges (decision 3X A, BUG-9191).
 - Creature: a guest joining a world where it has no creature of its own makes its first one (the base creature)
   before the world loads, so no old body, family or cocoon shows at the host's nest (BUG-9208).
 - Creature: guests waiting while the host makes a new world get the creature editor with the base creature; its

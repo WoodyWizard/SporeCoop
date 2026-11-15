@@ -193,4 +193,26 @@ BUG-9191 (the Party panel).
   height, +0x10 refresh, +0x14 format, +0x24 fullscreen; in a window they hold the window (1280x960 @ 60), not the
   Settings list's mode.
 
+## The whole UI scaled as one picture (2026-11-14, feat/lineages-47)
+<a id="graphics-whole-ui-scale"></a>
+
+* ✔ (runtime, TITAN, Creature at 1024 x 768) Spore's UI tree: the main window (0xFFFFFFF0) holds ~20 full-screen
+  layers (0x05B598F6 ... 0x3F608B3E, flags 0x13); the HUD pieces sit in full-screen holders (id 0xFFFFFFFF) inside
+  them, placed by SimpleLayout anchors (ModAPI SimpleLayout: anchors top 1, bottom 2, left 4, right 8). Setting a
+  holder's area (vt 0x60) to a smaller screen and calling Revalidate (vt 0x94) on the windows in it lays the HUD out
+  for that screen (the minimap, ability bar, avatar card and bottom bar moved to its edges).
+* ✔ The main window's area clips the whole UI: shrunk to the small screen, everything drawn past it (in screen pixels,
+  not scaled) was cut off; it keeps the screen and only the holders shrink.
+* ✔ The main window gets no kMsgTransformed; each layer (the main window's child) does: its matrix scaled by f with
+  the pivot at the screen's top left draws everything in it scaled, children included.
+* ✔ The coop_ui mouse remap (each piece's drawn transform, the game's hit test asked) works unchanged with it: a
+  click on the scaled respawn check, the pause button, the Options menu's Settings, a drag of the Interface Size slider
+  and the Settings' check all hit (125 %).
+* ✔ Not anchored: the Creature HUD's Pack button (0x03D98298 under layer 0x08D0F4FB, at x = screen - 44) is placed in
+  code; the hints over creatures ("to learn to charm", 0x05246048 in a holder of layer 0xCBDF6E1D) are placed by the
+  world's projection each time (scaled, they left their creature): that layer is not scaled.
+* ~ The creature editor at 125 %: everything scales together, but the part category tabs (top left) came out smaller
+  than at 100 % (not looked into yet).
+* ModAPI headers read for this: Spore ModAPI UTFWin/IWindow.h (WindowFlags: kWinFlagClip 0x400; vt 0x94 Revalidate),
+  SimpleLayout.h, Message.h (kMsgLayout's area at +0x18).
 
