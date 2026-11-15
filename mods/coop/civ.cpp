@@ -4363,6 +4363,20 @@ static bool bound_design(void* v)
     return true;
 }
 
+// BUG-1157 (designs.cpp): after the host's new vehicle design reached this guest's culture set, the game's setter
+// (0xBF4C50) re-modelled the civilization's vehicles with the host's key, which this game may resolve to its own
+// creation of that id: each one gets the host's design under a key of ours as a bound vehicle does. Returns the
+// vehicles still waiting for the host's answer.
+unsigned redesign_vehicles()
+{
+    void* civ = is_guest() && nm() ? player_civ() : nullptr;
+    unsigned pending = 0;
+    for (void* v : civ ? vec_of((uint8_t*)civ + 0xB0) : std::vector<void*>{})
+        if (v && !bound_design(v))
+            pending++;
+    return pending;
+}
+
 // BUG-0670 (docs/re/civ.md#civ-host-buildings): a building's model is the design key cCity::SetBuildingModel
 // (0xBDB940) reads from its civilization itself (GetDesignKey), then the building's model object's SetModelKey
 // (vt 0x94 of +0x34, the key at +0x34 +0x90 as for vehicles). The host's player civilization names its building

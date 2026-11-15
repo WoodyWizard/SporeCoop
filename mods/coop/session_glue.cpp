@@ -8,6 +8,7 @@
 #include "version.h"
 #define COOP_VERSION SC_VER_STR
 #include "coop_state.h"
+#include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
 
@@ -185,6 +186,8 @@ void on_mode_change(uint32_t from, uint32_t to)
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : other_save         ? g_name + " loaded another game: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
+           // BUG-1156: the Tribal Outfitter: the tribe's new outfit, not a new body (designs.cpp sends it)
+           : designs::outfit_texts(to, g_last_editor_req) ? g_name + " made a new outfit for the tribe: everybody's tribe wears it"
            // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
            : to == modes::kTribe && (tribe::stage_end() || tribe_civ_editor(g_last_editor_req)) ? g_name + " made a design for the Civilization stage: it comes next"
                               : g_name + " evolved the species: everybody gets the new body",
