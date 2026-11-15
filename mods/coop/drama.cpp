@@ -24,10 +24,6 @@ static const SkHost* H;
 static SkMod* M;
 static const net::Session* S;
 
-static bool g_guest_events_fix = true;
-COOP_FIX("creature.guest_events", "BUG-0486", g_guest_events_fix,
-         "creature: a guest's own game starts no UFO visit (Drama Manager event of the host's world)");
-
 // event kinds of cDramaManager (0xD4E020): 0 ?, 1 night predator, 2 UFO abduction, 3 meteor strike,
 // 4 baby game, 5 rain storm, 6 sea monster, 7 creature attack, 8 summon creature
 static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby_game", "rain",
@@ -149,7 +145,7 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
         g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability)
         return;
     }
-    if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) {
+    if (((kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) { // BUG-0486
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "
                                "its own (creature.guest_events)", kKind[kind]);
@@ -313,10 +309,10 @@ std::string debug(const std::vector<std::string>& a)
                  av && skg::readable(av + 0xB58, 4) ? *(uint32_t*)(av + 0xB58) : 0);
         return b;
     }
-    snprintf(b, sizeof b, "drama: fix=%d mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
+    snprintf(b, sizeof b, "drama: mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
              "flock_event=%p forgotten=%u\n",
-             (int)g_guest_events_fix, g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed,
-             g_flock_refused, g_flock_updates, g_flock_event, g_flock_forgotten);
+             g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed, g_flock_refused, g_flock_updates,
+             g_flock_event, g_flock_forgotten);
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];

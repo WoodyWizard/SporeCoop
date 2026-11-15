@@ -38,11 +38,7 @@ static bool g_fix_villages = true;
 COOP_FIX("realign.villages", "BUG-0564", g_fix_villages,
          "tribe: after the host's game over and reload (or a rejoin) a guest's villages the host's world has not are gone");
 // BUG-0567 / BUG-0566: a hut's or tool's health on a guest is the host's (a damaged, smoking building of the old
-// world mended; the enemy hut's health bar going down as the host's). `coop.fix realign.buildings off`: each
-// game keeps its own (0.7.6).
-static bool g_fix_buildings = true;
-COOP_FIX("realign.buildings", "BUG-0567 BUG-0566", g_fix_buildings,
-         "tribe: a hut's and a tool's health on a guest is the host's (no broken building of the old world)");
+// world mended; the enemy hut's health bar going down as the host's).
 
 // BUG-0777: a village the host's game conquered was conquered there only: the guest's realign kept its hut at 1 hp
 // at least ("never 0"), so the guest's game never ran the defeat (the village's conquered flag, the goal mission's
@@ -174,7 +170,7 @@ static bool g_soon;
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
-    if (!sb || (!g_fix_villages && !g_fix_buildings)) // both off: nothing sent (0.7.6)
+    if (!sb)
         return;
     uint32_t ep = game::stage_epoch(game::mode_id());
     if (ep != g_host_epoch) { // a load, the game over's reload: the guests re-align at once
@@ -340,7 +336,7 @@ static void compare(double now)
                 continue;
             rw.state_off++;
             void* o = lp[li]->p;
-            if (!g_fix_buildings || !skg::readable(o, kHp + 4))
+            if (!skg::readable(o, kHp + 4))
                 continue;
             float mx = field<float>(o, kMaxHp);
             if (!(mx > 0))
@@ -429,9 +425,9 @@ std::string status()
     snprintf(b, sizeof b, "realign hut_fall=%d huts_felled=%u own_hut=%d own_hut_kept=%u\n", (int)g_fix_hut_fall, g_huts_felled,
              (int)g_fix_own_hut, g_own_hut_kept);
     s += b;
-    snprintf(b, sizeof b, "realign role=%s villages=%d buildings=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
-             is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, (int)g_fix_buildings, g_tx, g_tx_soon, g_rx, g_compares,
-             g_prx.incomplete, g_host_changes);
+    snprintf(b, sizeof b, "realign role=%s villages=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
+             is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, g_tx, g_tx_soon, g_rx, g_compares, g_prx.incomplete,
+             g_host_changes);
     s += b;
     snprintf(b, sizeof b, "realign older_chunks=%u dup_chunks=%u cycle_order=%d (BUG-0886)\n", g_prx.older, g_prx.dup,
              (int)tribe::g_cycle_order_fix);

@@ -80,9 +80,6 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 // yet the census counted the map only (host parts=55 of 324, guest 49 of 312), and parts.shared never
 // unlocked a twin on a guest (its locked list came from the map). Now the census goes over the map and
 // the item states together: every game counts what its palette offers.
-// `coop.fix parts.census_states off`: the map only (0.7.3.3, BUG-0401's first version).
-static bool g_states_fix = true;
-COOP_FIX("parts.census_states", "BUG-0441", g_states_fix, "creature: the parts census counts the item states too (a loaded game agrees with the one that came from Cell)");
 
 // the state map (+0x4D04 buckets, +0x4D08 count; node {u32 lo, u32 hi, u8 state (bit 0 unlocked, 4 seen),
 // ..., next at +0x10}): every item the game has a state for, also items that are not in the map +0x1490
@@ -128,17 +125,15 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
         for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
             if (!readable(nd, 0x2C))
                 break;
-            if (g_states_fix)
-                seen.insert({nd[0], nd[1]});
+            seen.insert({nd[0], nd[1]});
             count(nd[0], nd[1]);
         }
-    if (g_states_fix) { // the items a live Cell -> Creature start added: in the states, not in the map
-        std::vector<std::pair<Key, uint8_t>> st;
-        if (states(items, st))
-            for (auto& [k, v] : st)
-                if (!seen.count(k) && unlockable < 100000)
-                    count(k.first, k.second);
-    }
+    // the items a live Cell -> Creature start added: in the states, not in the map (BUG-0441)
+    std::vector<std::pair<Key, uint8_t>> st;
+    if (states(items, st))
+        for (auto& [k, v] : st)
+            if (!seen.count(k) && unlockable < 100000)
+                count(k.first, k.second);
     return true;
 }
 

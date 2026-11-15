@@ -50,9 +50,6 @@ COOP_FIX("npc.party_peace", "BUG-0374", g_party_peace, "creature: the host's pac
 // another species gets the herd's / tuning's value or level 0's. A guest playing its own creature in
 // the host's world is such a species in its own game: its max health stayed at level 0's (14 while
 // the host had 29 and 44). Its own avatar now gets what the player species gets.
-// `coop.fix creature.own_brain_hp off`: level 0's health (0.7.3.3).
-static bool g_own_brain_hp = true;
-COOP_FIX("creature.own_brain_hp", "BUG-0375", g_own_brain_hp, "creature: an own creature of another species gets the brain level's health");
 
 constexpr uint32_t kAvatarBit = 0x200, kPackBit = 0x100;
 
@@ -81,7 +78,7 @@ static int brain_level(void* c) { return skg::vcall<int>(c, 0xD8 / 4); } // 0xC0
 // the player species' rule for our own avatar: LevelHealth(level) + species health (+0x56C)
 static bool own_base(void* c, float& out)
 {
-    if (!g_own_brain_hp || !a_LevelHealth || !c || !game::in_creature_stage())
+    if (!a_LevelHealth || !c || !game::in_creature_stage())
         return false;
     uint32_t flags = skg::field<uint32_t>(c, game::kFlagsOff);
     if (!(flags & kAvatarBit))
@@ -182,9 +179,6 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
 // face) differed from the host's. On the host the same happened to the guests' puppets the NPCs' AI looks at
 // (npc.cpp ai_target). With creature.relations every player's species counts as the player species: the own
 // avatar's and the partners' puppets' (refreshed every frame in tick()).
-// `coop.fix creature.relations off`: the old rule (0.7.3.4).
-static bool g_relations_fix = true;
-COOP_FIX("creature.relations", "BUG-0462", g_relations_fix, "creature: animals have the same relation (neutral, hostile, allied) to every player as to the host");
 
 typedef bool(SK_THISCALL* IsPlayerSpecies_t)(void*);
 static IsPlayerSpecies_t o_IsPlayerSpecies;
@@ -205,7 +199,7 @@ static bool SK_THISCALL h_IsPlayerSpecies(void* c)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
     bool r = o_IsPlayerSpecies(c);
-    if (r || !g_relations_fix || !g_party_n || !c)
+    if (r || !g_party_n || !c)
         return r;
     if (!((ret >= g_rel_lo && ret < g_rel_hi) || (ret >= g_mode_lo && ret < g_mode_hi))) {
         g_party_other_callers++;
@@ -223,7 +217,7 @@ static bool SK_THISCALL h_IsPlayerSpecies(void* c)
 void tick()
 {
     int n = 0;
-    if (g_relations_fix && o_IsPlayerSpecies && game::in_creature_stage()) {
+    if (o_IsPlayerSpecies && game::in_creature_stage()) {
         void* ps = player_species();
         auto add = [&](void* c) {
             void* sp = c && skg::readable(c, 0xB24) ? skg::field<void*>(c, game::kSpeciesOff) : nullptr;
@@ -412,12 +406,12 @@ std::string status()
                      it != g_puppets.end() ? it->second.max : -1.f, game::scale(p));
             out += b;
         }
-    snprintf(b, sizeof b, "relations: fix=%d party_species=%d answers=%u other_callers=%u\n", (int)g_relations_fix, g_party_n,
-             g_party_answers, g_party_other_callers);
+    snprintf(b, sizeof b, "relations: party_species=%d answers=%u other_callers=%u\n", g_party_n, g_party_answers,
+             g_party_other_callers);
     out += b;
-    snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d own_brain_hp=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u own_scale=%d own_scales=%u\n",
-             (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
-             (int)g_own_scale, g_own_scales);
+    snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u own_scale=%d own_scales=%u\n",
+             (int)g_partner_hp, (int)g_party_peace, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped, (int)g_own_scale,
+             g_own_scales);
     out += b;
     snprintf(b, sizeof b, "party rules: pack_defends=%d defends=%u posts=%u\n", (int)g_pack_defends, g_defends,
              g_defend_posts);
