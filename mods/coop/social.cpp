@@ -46,9 +46,6 @@ enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENG
 // host counted any social ability as a round. Now the host runs that list for the guest's game: it picks the
 // prompts when the guest engages its NPC (K_ENGAGE), plays each prompt on its NPC (relayed by npc.anims) and sends
 // it (K_PROMPT: the guest plays it on its mirror), and counts only an answer to an open prompt, by its points.
-// Off: any social ability is a round, no prompts (0.7.5).
-static bool g_prompt_fix = true;
-COOP_FIX("social.prompts", "BUG-0525", g_prompt_fix, "creature: in a guest's social game the creature shows what to do (its prompts) and only an answer to a prompt counts");
 static constexpr double kPromptGreet = 2.0;   // s from the engagement to the first prompt (the NPC's greeting)
 static constexpr double kPromptWait = 13.0;   // s a prompt stays open: its performance (~3 s) + 10 s (0x1582F20)
 static constexpr double kPromptNext = 1.5;    // s from an answer to the next prompt
@@ -163,14 +160,11 @@ static void refresh_cards(void*) // outside the frame: card texts are UI
 // relation changes (0xBA4840 -> cHerd_SetBestFriends 0xC6A210(new == 6)). A guest gets the host's table written
 // into its own (enforce_table), no ApplyEvent runs in its game: its herds of an allied species kept +0x191 = 0 and
 // the minimap the grey "discovered" mark. Now the guest's herds follow the table: +0x191 = (relation == 6).
-// `coop.fix social.nest_ally off`: the flag stays as the guest's own game set it (0.7.6).
-static bool g_nest_ally_fix = true;
-COOP_FIX("social.nest_ally", "BUG-0561", g_nest_ally_fix, "creature: an allied species' nests show the ally face on the guest's map too");
 
 static void herds_follow_table()
 {
     uintptr_t set = H->sym("SporeCoop::cHerd_SetBestFriends");
-    if (!g_nest_ally_fix || !set || !g_have_table || !is_guest() || !game::in_creature_stage())
+    if (!set || !g_have_table || !is_guest() || !game::in_creature_stage())
         return;
     struct Q {
         std::vector<std::pair<void*, bool>> sp; // species profile, allied
@@ -257,8 +251,6 @@ static uint32_t g_posts_logged = 0;
 
 static void send_engage(uint16_t id) // BUG-0525: the host starts the NPC's prompts
 {
-    if (!g_prompt_fix)
-        return;
     net::Writer w;
     w.u8(K_ENGAGE);
     w.u16(id);
@@ -458,15 +450,13 @@ static bool act(int slot) // a social ability key (1-4)
 // 1-4 were polled: a click on the social ability's button next to an engaged mirror did nothing
 // (no animation, nothing sent), a player who uses the mouse could never befriend anything. The hook
 // takes a social ability used next to the engaged mirror in the social stance like the key (the
-// avatar plays it, the host counts the round); anything else goes on to the game. Off: keys only.
-static bool g_bar_fix = true;
-COOP_FIX("social.bar_click", "BUG-0179", g_bar_fix, "creature: a guest's click on a social ability of the ability bar plays the social game with the engaged creature (not only the keys 1-4)");
+// avatar plays it, the host counts the round); anything else goes on to the game.
 static uint32_t g_bar_acts = 0, g_bar_passed = 0;
 typedef void(SK_CDECL* BarUse_t)(int);
 static BarUse_t o_BarUse;
 static void SK_CDECL h_BarUse(int idx)
 {
-    void* av = is_guest() && g_bar_fix && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
+    void* av = is_guest() && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
                    ? game::avatar()
                    : nullptr;
     if (av && a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0 && idx >= 0 && idx < ability_count(av)) {
@@ -490,9 +480,6 @@ static void SK_CDECL h_BarUse(int idx)
 // the win closes it (Finish, relation face), the session end hides it (SetVisible 0). The guest does
 // the same around its game with a mirror: open at the engagement, the bar at each round the host
 // counts (K_PROGRESS), closed at the result, and the win's message posted on its own game.
-// Off: no meter, no message (0.7.4).
-static bool g_meter_fix = true;
-COOP_FIX("social.guest_meter", "BUG-0179", g_meter_fix, "creature: a guest's social game shows the game's social meter and posts the game's success message (part rewards) like the host's");
 static uintptr_t a_StrategyGet, a_ExecuteAction, a_MeterReset, a_MeterVisible, a_MeterRounds, a_MeterFace, a_MeterBar,
     a_MeterFinish;
 static int g_meter_npc = -1;   // proxy id the meter is open for
@@ -618,8 +605,6 @@ static void meter_run(void*) // outside the frame: the meter is UI
 
 static void meter_task(int op, int npc_id, float frac = 0, int rounds = 1)
 {
-    if (!g_meter_fix)
-        return;
     if (g_meter_tasks.empty())
         H->run_outside_frame(meter_run, nullptr);
     g_meter_tasks.push_back({op, npc_id, frac, rounds});
@@ -634,8 +619,6 @@ COOP_FIX("social.meter_end", "BUG-0808", g_meter_end_fix, "creature: the social 
 // guest, every frame: the meter follows the engagement
 static void meter_tick()
 {
-    if (!g_meter_fix)
-        return;
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
@@ -674,9 +657,7 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
 // BUG-0021: in the social stance (GetAbilityMode 0) a guest's key 1 next to the Kook it was impressing (and the click
 // that engages one) sent a hit now and then (coop_creature_social_ally.py: `hits_sent` +1 with the stance 0 before and after the key; the host
 // applied it, the Kook died and the species lost its impressions: (4, 2) -> (1, 0, killed 1), no ally). A player in
-// the social stance cannot attack: such a hit is not sent. `coop.fix social.no_bite off`: sent (0.7.3.3).
-static bool g_no_bite_fix = true;
-COOP_FIX("social.no_bite", "BUG-0021", g_no_bite_fix, "creature: a guest's hit in the social stance is not sent to the host (it killed the creature being impressed)");
+// the social stance cannot attack: such a hit is not sent.
 static uint32_t g_social_hits_dropped = 0;
 
 
@@ -684,7 +665,7 @@ bool drop_social_hit(uint16_t proxy_id)
 {
     // any proxy: the click that engages a Kook sent a hit too (before any social act, lab 20261101-151116 #3).
     // Test hits (`coop.npc hit`, npc::debug_hit) pass: they are no input of the player
-    if (!g_no_bite_fix || npc::test_hit_now() || !a_AbilityMode || cdecl_call<int>(a_AbilityMode) != 0)
+    if (npc::test_hit_now() || !a_AbilityMode || cdecl_call<int>(a_AbilityMode) != 0)
         return false;
     if (g_social_hits_dropped++ < 5)
         H->log(M, SK_INFO, "social: a hit of the avatar on npc %u in the social stance is not sent (engaged %d)", proxy_id,
@@ -941,7 +922,7 @@ static void fail_game(uint8_t player, uint16_t id)
 static void host_engage(uint8_t from, uint16_t id)
 {
     void* c = npc::host_npc(id);
-    if (!g_prompt_fix || !c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0)
+    if (!c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0)
         return;
     double now = H->time_seconds();
     Game& g = g_games[{from, id}];
@@ -1013,7 +994,7 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
         play_ability(pup, pi);
     double now = H->time_seconds();
     auto gi = g_games.find({from, id});
-    if (g_prompt_fix && gi != g_games.end() && !gi->second.prompts.empty()) { // BUG-0525: an answer to a prompt
+    if (gi != g_games.end() && !gi->second.prompts.empty()) { // BUG-0525: an answer to a prompt
         Game& g = gi->second;
         g.last = now;
         if (g.idx < 0 || g.answered) {
