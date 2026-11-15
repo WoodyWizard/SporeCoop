@@ -6,8 +6,9 @@
 // insertions, deletions, truncations, random tails) never read out of bounds; what a decoder
 // accepts encodes and decodes again to the same thing. Then random datagrams into
 // Connection::on_packet and into host and guest Sessions over a fake transport (Session::set_transport).
-// Not covered: the on_message handlers of the game modules (tribe, civ, cell, space, ...) read their
-// payloads next to game calls and do not build without the game; their shared checks are validate.h.
+// The game modules' payloads: the Space features and the shared pools decode into the portable structs of
+// mods/coop/wire/*.h (C6, docs/04-netcode.md#netcode-wire-structs), fuzzed here as the protocol structs are (fuzz_wire).
+// Not covered: Tribe, Civ, Cell and NPC handlers still read their payloads next to game calls.
 //
 // Deterministic (fixed seeds, about 3 s). `fuzz_decoders --iters N` changes the mutation count per codec,
 // `--seed S` the seed. Built with -DFUZZ_LIBFUZZER -fsanitize=fuzzer it is a libFuzzer target instead.
@@ -34,6 +35,7 @@
 #include "net/sreport.h"
 #include "net/utf8.h"
 #include "net/validate.h"
+#include "wire/common.h"
 
 using namespace net;
 
@@ -1006,6 +1008,23 @@ static void fuzz_session(uint64_t seed, int iters)
     printf("  %d datagrams each, joins=%d leaves=%d, peak peers=%d\n", iters, joins, leaves, peak);
 }
 
+// ---------------------------------------------------------------- game module payloads (mods/coop/wire, C6)
+// every struct of a wire header: round trips, every strict prefix below its base rejected, mutations; one block per
+// header, in kind order. kWireDecoders is the same list for the libFuzzer build (its first byte 12: the second byte
+// picks the struct).
+template <class T> static bool wire_dec(Reader& r) { T x; return x.read(r); }
+using WireDec = bool (*)(Reader&);
+static const WireDec kWireDecoders[] = {
+    nullptr, // (no struct yet)
+};
+
+static void fuzz_wire(uint64_t seed, int iters)
+{
+    printf("game module payloads, mods/coop/wire (%d mutations each)\n", iters);
+    Rng R(seed);
+    (void)R;
+}
+
 #ifdef FUZZ_LIBFUZZER
 // make fuzz: one target for all decoders, the first byte picks the decoder
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
@@ -1014,7 +1033,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         return 0;
     std::vector<uint8_t> v(data + 1, data + size);
     Reader r(v.data(), v.size());
-    switch (data[0] % 12) {
+    switch (data[0] % 13) {
     case 0: { Hello x; x.read(r); break; }
     case 1: { Welcome x; x.read(r); break; }
     case 2: { PlayerState x; x.read(r); break; }
@@ -1030,6 +1049,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         static Connection rx;
         rx.conn_id = v.size() >= 10 ? Connection::peek_conn(v.data(), v.size()) : 0;
         rx.on_packet(v.data(), v.size(), 1000, [](uint8_t, Reader& pr) { std::vector<uint8_t> s(pr.left()); pr.raw(s.data(), s.size()); });
+        break;
+    }
+    case 12: { // a game module payload (mods/coop/wire): the next byte picks the struct
+        constexpr size_t n = sizeof kWireDecoders / sizeof kWireDecoders[0];
+        if (v.empty())
+            break;
+        Reader rw(v.data() + 1, v.size() - 1);
+        if (WireDec d = kWireDecoders[v[0] % n])
+            d(rw);
         break;
     }
     }
@@ -1057,6 +1085,7 @@ int main(int argc, char** argv)
     fuzz_dbpf(seed + 2, iters);
     fuzz_partprops(seed + 23, iters);
     fuzz_sreport(seed + 29, iters);
+    fuzz_wire(seed + 31, iters);
     fuzz_pack(seed + 3, iters / 2);
     fuzz_connection(seed + 4, iters * 5);
     fuzz_session(seed + 5, iters * 2);

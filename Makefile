@@ -162,6 +162,8 @@ unit-cpp: sanitizer-probe
 	$(B)/host/npc_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
 	$(B)/host/space_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
+	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/path_mask_tests tests/path_mask_tests.cpp
