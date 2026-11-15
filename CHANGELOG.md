@@ -25,6 +25,11 @@
 ### Added
 - `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
   why. It may join again.
+### Development
+- Release path: `make release-dry` builds and checks a release the way GitHub does before every tag, and a tag is
+  pushed only on a green main; CI actions and the compiler download are pinned by hash; every release gets a
+  debug-symbols download so crash reports name the function that crashed; the DLLs build with stricter compiler
+  settings and warnings as errors.
 
 ## [0.7.14.1] - 2026-11-14
 

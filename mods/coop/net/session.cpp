@@ -15,7 +15,7 @@ namespace net {
 
 static constexpr size_t kVersionMax = 120; // BUG-0774: a peer's version text ("coop X, SporeKit Y, <build> <hash>")
 
-static void logf(const Session::Callbacks& cb, const char* fmt, ...)
+__attribute__((format(printf, 2, 3))) static void logf(const Session::Callbacks& cb, const char* fmt, ...)
 {
     if (!cb.log)
         return;

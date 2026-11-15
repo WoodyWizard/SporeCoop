@@ -29,8 +29,8 @@ namespace sk {
 
 // log.cpp
 void log_init(const std::wstring& path);
-void logf(SkMod* mod, int level, const char* fmt, ...);
-void logv(SkMod* mod, int level, const char* fmt, va_list ap);
+void logf(SkMod* mod, int level, const char* fmt, ...) SK_PRINTF(3, 4);
+void logv(SkMod* mod, int level, const char* fmt, va_list ap) SK_PRINTF(3, 0);
 std::vector<std::string> log_tail(size_t n);
 extern int g_log_level;
 void log_session_clock(double offset, int on); // "[s <now + offset>]" in every line (on = 0: none)
@@ -114,7 +114,7 @@ struct Out {
     std::string text;
 };
 // append printf output to a command's output (BUG-0388: up to 1 MB per call, kit.fix longout)
-void out_vappend(Out* o, const char* fmt, va_list ap);
+void out_vappend(Out* o, const char* fmt, va_list ap) SK_PRINTF(2, 0);
 bool console_start(int port);
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags);

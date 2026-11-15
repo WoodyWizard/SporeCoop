@@ -37,14 +37,14 @@ std::string ini_str(const std::wstring& file, const char* section, const char* k
 }
 
 // ---------------- SkHost implementation ----------------
-static void h_log(SkMod* m, int lvl, const char* fmt, ...)
+SK_PRINTF(3, 4) static void h_log(SkMod* m, int lvl, const char* fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
     logv(m ? m : &g_kit_mod, lvl, fmt, ap);
     va_end(ap);
 }
-static void h_logv(SkMod* m, int lvl, const char* fmt, va_list ap) { logv(m ? m : &g_kit_mod, lvl, fmt, ap); }
+SK_PRINTF(3, 0) static void h_logv(SkMod* m, int lvl, const char* fmt, va_list ap) { logv(m ? m : &g_kit_mod, lvl, fmt, ap); }
 static uintptr_t h_sym(const char* n) { return sym(n); }
 static int h_sym_require(SkMod* m, const char* const* names, int count)
 {
@@ -67,7 +67,7 @@ static int h_command_add(SkMod* m, const char* n, const char* h, SkCommandFn fn,
 {
     return command_add(m, n, h, fn, u, f);
 }
-static void h_out_printf(SkOut* out, const char* fmt, ...)
+SK_PRINTF(2, 3) static void h_out_printf(SkOut* out, const char* fmt, ...)
 {
     if (!out)
         return;

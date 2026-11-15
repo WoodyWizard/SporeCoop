@@ -39,8 +39,8 @@ In game F9 opens the lobby: players, stage, ping, ready, chat, "Send my world", 
 Evolution (editor, next stage) is decided by a vote: everybody presses "I'm ready".
 Cheat console (Ctrl+Shift+C) works too: coop host | coop join <ip> | coop leave.
 EOF
-# the toolchain the Makefile uses (LLVM_MINGW ?= ... there), unless set in the environment
-LLVM_MINGW="${LLVM_MINGW:-$(sed -n 's/^LLVM_MINGW ?= //p' "$ROOT/Makefile" | sed 's/\$(HOME)/$HOME/; s|\$HOME|'"$HOME"'|')}"
+# the toolchain the Makefile uses (tools/toolchain.env), unless set in the environment
+LLVM_MINGW="${LLVM_MINGW:-$(make -s --no-print-directory -C "$ROOT" toolchain-path)}"
 STRIP="$LLVM_MINGW/bin/llvm-strip"
 cp "$ROOT/LICENSE" "$STAGE/LICENSE.txt"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.txt"
@@ -55,6 +55,8 @@ cp "$ROOT/build/SporeCoopSetup.exe" "$STAGE/SporeCoopSetup.exe"
 python3 "$ROOT/tools/pe_version.py" --expect "$VER" "$STAGE/SporeCoopSetup.exe" "$STAGE/SporeCoop/steam_api.sporekit.dll" \
     "$STAGE/SporeCoop/sporekit.dll" "$STAGE/SporeCoop/mods/coop.dll" >&2
 cp "$STAGE/SporeCoop-$VER.pack" "$STAGE/SporeCoopSetup.exe" "$ROOT/out/dist/"
+# B5 (BUG-1123): the unstripped DLLs as the release's debug-symbols asset (for tools/crash_triage.py)
+"$ROOT/tools/symbols_pack.sh" "$ROOT/build" "$VER" "$ROOT/out/dist" "$STAGE" >&2
 sed -i 's/\r*$/\r/' "$STAGE"/*.bat "$STAGE"/*.txt "$STAGE/SporeCoop/ini.exclude"  # Windows line endings for cmd.exe and Notepad
 (cd "$STAGE" && rm -f "../SporeCoop-$VER.zip" && zip -qr "../SporeCoop-$VER.zip" .)
 echo "$ROOT/out/dist/SporeCoop-$VER.zip"
