@@ -8367,3 +8367,23 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   editor request of this game through the Submit hook (the refusal of BUG-1158; with `editors.guest_designs` off the
   editor opens and the test leaves it with the red X at (1380, 1062)).
 * Twins: SPORE_FIX_OFF=tribe.outfit_sync / civ.design_sync / editors.guest_designs.
+## Space ecosystems and late terraforming records (2026-11-15, fix/w51-eco)
+<a id="testing-space-ecosystem"></a>
+
+* `space_eco` (BUG-1148, `space_free`, ~4 min cold): the guest lands on 02460035 (T1, 2 plants, stabilized level 0)
+  and places the missing plant size class, two herbivores and a carnivore of its home planet's species through the
+  game's own placement function with the player flag (`coop.space eco place <plant|animal> <i> <source PlanetID>`);
+  the host's record by PlanetID (`coop.space eco <PlanetID>`: T score, `eco=` the game's PlanetRecord_EcoLevel, the
+  species with their size class `/<class>` or diet `/h` `/c`, on the active planet `#n` the live creatures of each
+  animal species) must have the guest's lists and level 1 while away and after landing, and creatures of each animal
+  species after landing. SPORE_FIX_OFF=space.eco_sync fails (2 plants, level 0 on the host).
+* The cargo drop itself is not driven: 02460035 starts its story scene (a crashed spacecraft, "use the Scan Tool")
+  when a ship lands, which hides the tool palette; `coop.space trade cargo <type> <inst>:<type>:<group>` puts a plant
+  (type 0) or animal (type 1) cargo of a full species key into the hold for a manual try.
+* `space_terra_late` (BUG-1155, `space_free`, ~5 min): K_TERRA_REC (`coop.space terrarec`) to a guest in the
+  `coop.space away 1` state, then back; for a star the host never generated (`coop.space nogen` on the host), then
+  the host jumps there (`coop.space jumpto 0x<star> force`); then the guest jumps there and gets the host's kept
+  record. SPORE_FIX_OFF=space.terra_rec_late fails all three. Status lines: `terra_pending= terra_pended=
+  terra_pend_applied= terra_kept= terra_resent=` in `coop.space`.
+* Do not run `make` while a lane's games of this tree run: once the games of lane 6 stopped answering (no log line
+  after it) when the tree was rebuilt under them (2026-11-15; the cause was not looked into).

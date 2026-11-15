@@ -19,7 +19,8 @@
 //   70..79  space_trade    tool gifts and trade between players
 //   80..84  space_planets  a shared colony's stored spice (BUG-0537)
 //   85..89  space_badges   badges kept across a rejoin
-//   90..    free
+//   90..94  space_eco      a planet's ecosystem (plant and animal species, BUG-1148)
+//   95..    free
 // The table of every kind (owner feature, who may send it) is net/space_kinds.def (B3 of 0.7.15): a new kind is a row
 // there, with its direction; tests/validate_tests.cpp checks the rows against each feature's enum Kind and kind range.
 #pragma once

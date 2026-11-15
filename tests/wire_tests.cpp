@@ -25,6 +25,7 @@
 #include "wire/space_finale.h"
 #include "wire/space_map.h"
 #include "wire/space_planets.h"
+#include "wire/space_eco.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
 
@@ -738,6 +739,36 @@ static void test_space_planets()
     }
 }
 
+// space_eco.cpp: K_ECO 90 (new in 0.7.15, BUG-1148: no older writer)
+static void test_space_eco()
+{
+    namespace e = wire::space_eco;
+    e::Eco x;
+    x.planet = 0x02460035;
+    x.plants = {{{{0x8C9D0727, 0x438F6347, 0x40666200}}, {1.f, 2.f, -3.f}}};
+    x.animals = {{{{0x0654E276, 0x2B978C46, 0x40626200}}, {0.f, 0.f, 0.f}},
+                 {{{0x067C9377, 0x2B978C46, 0x40626200}}, {0.5f, 0.f, 0.f}}};
+    golden("eco K_ECO", x,
+           "35004602 01 27079d8c 47638f43 00626640 0000803f 00000040 000040c0 "
+           "02 76e25406 468c972b 00626240 00000000 00000000 00000000 77937c06 468c972b 00626240 0000003f 00000000 00000000",
+           nullptr);
+    net::Writer w;
+    x.write(w);
+    rejects<e::Eco>("eco K_ECO cut", cut(w.data, 1));
+    // a list over the game's limit, a non-finite position: no peer's
+    net::Writer big;
+    big.u32(1); big.u8((uint8_t)e::kMaxSpecies + 1);
+    for (size_t i = 0; i < (e::kMaxSpecies + 1) * 6; i++) big.u32(0);
+    big.u8(0);
+    rejects<e::Eco>("eco K_ECO too many", big.data);
+    e::Eco nan = x;
+    nan.plants[0].pos[1] = NAN;
+    rejects<e::Eco>("eco K_ECO NaN position", enc(nan));
+    e::Eco empty;
+    empty.planet = 0x00460035;
+    golden("eco K_ECO empty", empty, "35004600 00 00", nullptr);
+}
+
 // shared.cpp: MSG_RES 25, MSG_RES_ADD 26 (the body after the type)
 static void test_shared_res()
 {
@@ -836,6 +867,7 @@ int main()
     test_space_finale();
     test_space_allies();
     test_space_planets();
+    test_space_eco();
     test_shared_res();
     test_fields_wire();
     test_space_map();

@@ -46,6 +46,7 @@
 #include "wire/space_finale.h"
 #include "wire/space_map.h"
 #include "wire/space_planets.h"
+#include "wire/space_eco.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
 
@@ -1089,6 +1090,8 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::space_allies::Raids>, wire_dec<wire::space_allies::Defended>,
     // wire/space_planets.h
     wire_dec<wire::space_planets::Spice>, wire_dec<wire::space_planets::SpiceTaken>,
+    // wire/space_eco.h
+    wire_dec<wire::space_eco::Eco>,
     // wire/shared_res.h, fields_wire.h
     wire_dec<wire::shared_res::Res>, wire_dec<wire::shared_res::ResAdd>, wire_dec<FieldsPacket>,
 };
@@ -1227,6 +1230,20 @@ static void fuzz_wire_modules(Rng& R, int iters)
         p::SpiceTaken t{R.u32(), R.u32(), {}};
         for (int m = (int)R.below(17), j = 0; j < m; j++) t.left.push_back(R.f32());
         return t;
+    });
+
+    namespace e = wire::space_eco;
+    fuzz_struct<e::Eco>("eco Eco", R, iters, [](Rng& R) {
+        e::Eco x;
+        x.planet = R.u32();
+        for (auto* v : {&x.plants, &x.animals})
+            for (int n = (int)R.below((uint32_t)e::kMaxSpecies + 1), i = 0; i < n; i++) {
+                e::Species sp;
+                sp.key.v[0] = R.u32(); sp.key.v[1] = R.u32(); sp.key.v[2] = R.u32();
+                for (float& f : sp.pos) f = (float)R.below(2000) - 1000.f;
+                v->push_back(sp);
+            }
+        return x;
     });
 
     namespace s = wire::shared_res;

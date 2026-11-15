@@ -1,0 +1,47 @@
+---
+id: BUG-1155
+title: E3: Space: terraforming records are lost for a player whose planets of that star were not generated or who was not in Space, and after the 30 s send window
+status: fixed
+kind: desync
+stage: Space
+reported: 2026-11-15
+source: plan
+role: 
+versions: 
+fixed_in: unreleased
+branch: fix/w51-eco
+commits: 193ff437
+tests: space_terra_late
+signature:
+docs: docs/re/space.md#space-terraform-late, docs/06-testing.md#testing-space-ecosystem
+related: BUG-1148, BUG-0883, BUG-1042
+switch: space.terra_rec_late
+---
+
+## Report
+Playability audit of 0.7.15 wave E (Space, item 4; out/audit-0.7.15/playability/space.md, not in git): K_TERRA_REC is
+skipped when the receiver has not generated that star's planets or is not in Space (spacecoop.cpp, BUG-1042's
+checks), and it is sent only for 30 s after the change, so terraforming can be lost for a player who arrives later,
+and a guest's terraforming may not reach the host's record (nor its save) when the host had not generated that star.
+
+## Root cause
+Observed in the code (spacecoop.cpp apply_terra_rec, terra_rec_tick) and by the test with the switch off: the record
+is dropped when `planet_record_checked` refuses it (outside Space, star +0xAC count 0 here), nothing keeps it, and the
+sender stops sending 30 s after its last change. docs/re/space.md#space-terraform-late.
+
+## Fix
+spacecoop.cpp: a skipped K_TERRA_REC waits per PlanetID (at most 128) and is applied in the first Space second its
+planet exists here; the host keeps the latest values of each planet it sent or received (at most 64) and sends a star
+system's to a partner whose place enters that star, all of them to a partner it sees for the first time. Reset with
+the Space world and the session. No wire change (K_TERRA_REC as before; a 0.7.14 peer applies or skips the resend as
+it did). Switch `space.terra_rec_late` (off: 0.7.14). The ecosystem lists of BUG-1148 use the same pattern.
+
+## Verification
+Lab, lanes 6 / 7, fixture space_free (out/lab/ of the fix/w51-eco worktree):
+* space_terra_late FAIL with SPORE_FIX_OFF=space.terra_rec_late: 20261115-130846-2 (all three cases: the guest's
+  record stays (0.0, 0.45), the host's and the guest's record of the far planet keep their generated values).
+* space_terra_late PASS: 20261115-131033, 20261115-131540 (final build), 20261115-130735 (first build).
+
+## History
+- 2026-11-15: opened.
+- 2026-11-15: pending and kept records, test space_terra_late (fix/w51-eco).
