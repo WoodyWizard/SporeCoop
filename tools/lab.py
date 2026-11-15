@@ -13,6 +13,10 @@
   lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
   lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
   lab.py gates [out/lab dirs]          the log gates over recorded results, report only (tools/loggates.py)
+  lab.py flaky [--branch 'rel/*']      the flake ledger over every worktree's results (twins left out; tools/labverdict.py)
+  lab.py impact --why [--base rev]     the tests a change can break (tools/labimpact.py); `run impact` runs them
+  lab.py run X --repeat 20 [--until clear|fail|all]   stops once the verdict is clear, prints the rate
+  lab.py run campaign_segment --segment <run>         a failed campaign's segment again, from its save
   lab.py kill [--lane N ... | --upto N | --lanes 2,3] [--include-lane-1]
                                        stop the games of lanes 2..10, of lane N, of lanes 2..N or of a list
                                        (lane 1: only with --include-lane-1, its test games only)
@@ -26,8 +30,9 @@ seconds after it, a game died right after it, or its log shows a non-zero fault 
 (BUG-0036, BUG-0042; suite.py reports=True for tests that make them on purpose), or when the games'
 own logs written during it break a log gate (tools/loggates.py: sync-check MISMATCH, a hitch over
 2 s in play, address space running low or lost by the minute; suite.py gates= / allow=;
-SPORE_GATES=report: report only, off: none). RESULT: SKIP is
-a skip, not a pass (BUG-0100). A timeout kills the test's whole process group (BUG-0052).
+SPORE_GATES=report: report only, off: none). RESULT: INCONCLUSIVE
+(or RESULT: SKIP) is INCONCLUSIVE, never a pass (BUG-0100); three in a row fail (A15,
+docs/06-testing.md#testing-lab-verdicts). A timeout kills the test's whole process group (BUG-0052).
 Exclusive tests run at the end, alone. Results: out/lab/<run>/ (one log per test, results.json,
 summary.md).
 """
