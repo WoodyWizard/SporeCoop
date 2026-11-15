@@ -3,6 +3,7 @@
 #include "creature_hp.h"
 #include "squadron.h"
 #include "civ.h"
+#include "player_life.h"
 
 #include <windows.h>
 
@@ -25,9 +26,12 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "own_world.h"
 #include "content_packs.h"
+#include "model_paint.h"
 #include "net/partprops.h"
 #include "trace.h"
+#include "settings.h"
 
 namespace creations {
 
@@ -48,7 +52,7 @@ static const KindInfo kInfo[kKinds] = {
     {"cell", 0x3D97A8E4, 0x40616200},     // cll
     {"ufo", 0x476A98C7, 0x40656200},      // ufo
 };
-constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
+constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A, kPng = 0x2F7D0004;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
 // BUG-0469 review: our copy of a model the game cannot build is registered under the model's OWN key,
@@ -63,10 +67,18 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 // BUG-9191: a player's creature picture (its Sporepedia png) for the Party panel: its own transfer (the creation's
 // shared key is a hash of the creature bundle: a picture inside it would change every key), registered under the
 // creature's shared key in a group of the mod's own (not a creation group: it is no asset in anybody's Sporepedia)
-constexpr uint8_t kPortrait = 6;
+constexpr uint8_t kPortrait = 9; // (6 before the 0.7.14 merge: upstream's design kinds are 6..8)
 constexpr uint32_t kPngType = 0x2F7D0004;
+// BUG-0647: a design of the host's own My Creations (a civ vehicle): the guest asks (id = the instance,
+// total = the model kind), the host sends the records (kOwnDesign) or says it is not one of its own
+// (kDesignNotOwn: a premade, the same everywhere)
+constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
 static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
 COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
+// BUG-0010 (twin added for BUG-0430): off = a guest never asks the host for a species it does not have (0.7.2.2: the
+// NPC stays "unknown species", never built)
+static bool g_ask_species_fix = true;
+COOP_FIX("creations.ask_species", "BUG-0010", g_ask_species_fix, "creations: a guest asks the host for a species of its world it does not have (an NPC of a species only the host's profile has)");
 
 // BUG-0278: a guest's own editor (the vote's, docs/re/creations.md#creations-own-editor-save) saves
 // its creature into My Creations but leaves the avatar on the world's species: the host's creature
@@ -150,6 +162,15 @@ static bool restore_pending_outfit()
 static bool g_guest_world_fix = true;
 COOP_FIX("creations.guest_world_species", "BUG-0345", g_guest_world_fix,
          "creations: a guest plays its own creation by default only in a world it played it in (or chose it); else the world's species");
+// BUG-0638: a guest's explicit choice (choices.ini) held in every world: a guest that missed the host's
+// Cell -> Creature editor (it was in its own Cell editor) played a creature it had chosen in another
+// world two days before. Now a guest's chosen creation holds only in a world it is recorded for
+// (worlds.ini: the choice records the world it is made in, as playing it does); in another world the
+// guest plays its default (this world's record, the host's evolved species, the world's species). An
+// explicit "the world's own" still holds everywhere. Off: a choice holds in every world (0.7.9).
+static bool g_choice_world_fix = true;
+COOP_FIX("creations.choice_world", "BUG-0638", g_choice_world_fix,
+         "creations: a guest's chosen own creation holds only in a world it chose or played it in");
 static std::map<std::pair<int, uint32_t>, uint32_t> g_world_rec; // (kind, world) -> creation instance (cache)
 static std::set<std::pair<int, uint32_t>> g_world_read;           // read from the file already
 static std::set<std::tuple<int, uint32_t, uint32_t>> g_own_told;  // notices given (kind, world, creation)
@@ -233,17 +254,46 @@ static uint32_t* player_species_slot()
     auto* k = mgr ? (uint32_t*)((uint8_t*)mgr + 0xA4) : nullptr;
     return k && skg::readable(k, 12) ? k : nullptr;
 }
+// BUG-1057: the request was cleared before the species was looked up: a species this game did not know yet in that
+// frame (species_by_key null) lost the write for good and the world kept the host's previous species. Now the
+// request stays while the species is unknown, for kPsRetry s. `coop.fix creations.species_retry off`: one try (0.7.13)
+static bool g_ps_retry_fix = true;
+COOP_FIX("creations.species_retry", "BUG-1057", g_ps_retry_fix, "creations: the world's player species follows the host's evolved one also when that species is known a few frames later");
+constexpr double kPsRetry = 10.0;
+static double g_ps_since;
+static unsigned g_ps_retries, g_ps_lost, g_ps_test_null; // (tests: frames species_by_key is taken as null)
 static void player_species_tick()
 {
     if (!g_ps_to.instance || game::mode_id() != modes::kCreature || !game::avatar())
         return;
     uint32_t* k = player_species_slot();
     Key to = g_ps_to;
-    g_ps_to = {};
-    if (!k || k[0] != g_ps_from.instance || k[1] != to.type || k[2] != to.group)
+    if (!k || k[0] != g_ps_from.instance || k[1] != to.type || k[2] != to.group) {
+        g_ps_to = {};
         return; // a load or another species since
-    if (!game::species_by_key({to.instance, to.type, to.group}))
+    }
+    bool known = game::species_by_key({to.instance, to.type, to.group}) != nullptr;
+    if (g_ps_test_null) { // tests (BUG-1057): the species is not known to this game yet
+        g_ps_test_null--;
+        known = false;
+    }
+    if (!known) {
+        double now = H->time_seconds();
+        if (!g_ps_since)
+            g_ps_since = now;
+        if (g_ps_retry_fix && now - g_ps_since < kPsRetry) {
+            g_ps_retries++;
+            return; // (kept: tried again next frame)
+        }
+        g_ps_to = {};
+        g_ps_since = 0;
+        g_ps_lost++;
+        H->log(M, SK_WARN, "creations: the host's species %08X is not known here: the world's player species stays %08X (BUG-1057)",
+               to.instance, g_ps_from.instance);
         return;
+    }
+    g_ps_to = {};
+    g_ps_since = 0;
     k[0] = to.instance;
     g_ps_set++;
     H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
@@ -683,8 +733,15 @@ static bool is_cc_part(uint32_t id)
 }
 
 // whether this game has the part (cached: key_exists is an RM lookup)
+// tests (K2b, BUG-0725 / BUG-0726 / BUG-0728): `coop.creations lack <hex id>` makes the mod treat a part this game has
+// as one it lacks (the checks, the substitutes and the lookalike search), so one lab lane can play a guest without a
+// pack: both games of a lane share one install. Never set outside the tests.
+static std::set<uint32_t> g_lacked;
+static bool g_objmodels_scan; // tests: objmodels scan
 static bool part_known(uint32_t id, uint32_t group)
 {
+    if (!g_lacked.empty() && g_lacked.count(id))
+        return false;
     auto k = std::make_pair(id, group);
     auto it = g_key_cache.find(k);
     if (it != g_key_cache.end())
@@ -717,6 +774,23 @@ static bool g_lookalike_fix = true;
 COOP_FIX("content.lookalike", "BUG-0559", g_lookalike_fix, "creations: a part or paint this game lacks is shown as the most similar one it has (the same role, abilities and size), chosen from the parts this game has installed; a paint this game has is never replaced");
 constexpr uint32_t kPartDescGroup = 0x7C0DE5C1; // a part's description in a bundle (never registered)
 constexpr size_t kMaxDescBytes = 256u << 10;      // per bundle
+// BUG-0725 (class BUG-0424): the lookalike above ran only for the bundles of a player's creature, cell and UFO: the
+// host's vehicle, building and ship designs (BUG-0647 / BUG-0670 / BUG-0724) went out without the descriptions of
+// their parts (add_part_descs knew the three creation types only), the guest dropped what came (apply_own_design),
+// and ensure_model substituted without any: a part the guest lacked became one fixed base game part of that kind
+// (kBasePartFallbacks), whatever it was. Now every bundle carries its parts' descriptions, every received
+// description is kept for the session (g_rx_descs, by part id) and ensure_model, the one check of every model the
+// mod makes this game build, picks the most similar part from them. `coop.fix content.design_lookalike off`: the
+// fixed fallback for the designs (0.7.10).
+static bool g_design_descs_fix = true;
+COOP_FIX("content.design_lookalike", "BUG-0725", g_design_descs_fix, "creations: a part a host's vehicle, building or ship design names and this game lacks is shown as the most similar part this game has (the design's part descriptions go with it), not as one fixed part");
+static std::map<uint32_t, std::vector<uint8_t>> g_rx_descs; // part id -> its sender's description (this session)
+// BUG-0726: a model with a part this game lacks was refused for a caller that cannot pass another key to the game
+// (a building: cCity::SetBuildingModel reads the civ's design key itself) and the host's building was left out of
+// the guest's city. Since content.model_key the copy with the substitutes answers the model's OWN key (above every
+// package of the game), so such a caller builds the copy too. `coop.fix content.building_copy off`: refused (0.7.10).
+static bool g_building_copy_fix = true;
+COOP_FIX("content.building_copy", "BUG-0726", g_building_copy_fix, "creations: a building whose design names a part this game lacks is built from the copy with substitutes (under the design's own key), not left out");
 
 // the part prop entries (type kPartProp, the 4 part groups) of one package file of this game, read once
 struct PartFile {
@@ -863,6 +937,10 @@ static void add_part_descs(const Key& key, std::vector<dbpf::Record>& recs)
     uint32_t group = key.type == kInfo[kCell].type ? kCellPartGroup : key.type == kInfo[kUfo].type ? kUfoPartGroup
                      : key.type == kInfo[kCreature].type                                          ? kPartGroup
                                                                                                   : 0;
+    if (!group && g_design_descs_fix) // BUG-0725: the designs (vehicle, building) too
+        for (auto& mi : kModelInfo)
+            if (mi.type == key.type)
+                group = mi.parts;
     if (!group)
         return;
     std::set<uint32_t> ids;
@@ -899,6 +977,8 @@ static std::map<uint32_t, std::vector<uint8_t>> take_part_descs(std::vector<dbpf
     std::map<uint32_t, std::vector<uint8_t>> out;
     for (auto it = recs.begin(); it != recs.end();) {
         if (it->key.group == kPartDescGroup) {
+            if (it->key.type == kPartProp && g_rx_descs.size() < 4096)
+                g_rx_descs[it->key.instance] = it->data; // BUG-0725: for every model of the session
             if (it->key.type == kPartProp && out.size() < 512)
                 out[it->key.instance] = std::move(it->data);
             g_desc_in++;
@@ -917,7 +997,15 @@ static uint32_t lookalike_of(uint32_t id, uint32_t group, const std::vector<uint
     if (it != g_lookalike.end())
         return it->second;
     partprops::Part want;
-    uint32_t sub = partprops::parse(desc.data(), desc.size(), id, want) ? partprops::nearest(want, catalogue(group)) : 0;
+    const std::vector<partprops::Part>* cat = &catalogue(group);
+    std::vector<partprops::Part> kept; // tests: without the parts `lack` names
+    if (!g_lacked.empty()) {
+        for (auto& c : *cat)
+            if (!g_lacked.count(c.id))
+                kept.push_back(c);
+        cat = &kept;
+    }
+    uint32_t sub = partprops::parse(desc.data(), desc.size(), id, want) ? partprops::nearest(want, *cat) : 0;
     g_lookalike[k] = sub;
     H->log(M, SK_INFO, "creations: content: part %08X (%s, %u abilities) is shown as %08X, the most similar part this game has",
            id, want.detail() ? "detail" : "role part", (unsigned)want.abil.size(), sub);
@@ -1056,7 +1144,6 @@ static unsigned substitute_parts(std::vector<dbpf::Record>& recs, ModelKind k, c
 static bool g_paint_fix = true;
 COOP_FIX("creations.paint_substitute", "BUG-0369", g_paint_fix, "creations: on a game without Creepy & Cute a creature's pack paints are shown as similar base game paints");
 static unsigned g_paints_substituted;
-constexpr size_t kBemEffects = 26; // the unpacked header: base, coat, detail effect ids from here
 
 static uint32_t paint_substitute_of(uint32_t id)
 {
@@ -1066,44 +1153,16 @@ static uint32_t paint_substitute_of(uint32_t id)
 }
 
 // the three skin effect ids of a model record and where each is written (packed offset and length);
-// false when the header is too short or an id is not written byte by byte (a run)
-static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3])
+// false when the header is too short. BUG-0852: an id inside a byte run (a model whose coat and detail are 0, `00 FE
+// 07`) is read too: patch[k] tells whether layer k can be rewritten in place. Before, such a model was skipped whole
+// (its base paint never checked or substituted). `coop.fix creations.paint_runs off`: the strict reader (0.7.12).
+static bool g_paint_runs_fix = true;
+COOP_FIX("creations.paint_runs", "BUG-0852", g_paint_runs_fix, "creations: the paints of a model whose paint bytes are run-packed are checked and substituted too");
+static unsigned g_paints_in_run; // unknown paints inside a run: not patched in place (the creation is refused instead)
+static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3] = nullptr)
 {
-    size_t dec = 0, p = 0;
-    size_t first[12] = {}, last[12] = {};
-    uint8_t val[12] = {};
-    while (p < m.size() && dec < kBemEffects + 12) {
-        size_t start = p;
-        uint8_t b = m[p];
-        if (b == 0xFE) {
-            if (p + 1 >= m.size())
-                return false;
-            if (m[p + 1] != 0) { // a run: n more of the byte before
-                size_t n = m[p + 1];
-                if (dec + n > kBemEffects && dec < kBemEffects + 12)
-                    return false;
-                dec += n;
-                p += 2;
-                continue;
-            }
-            p += 2;
-        } else
-            p++;
-        if (dec >= kBemEffects) {
-            first[dec - kBemEffects] = start;
-            last[dec - kBemEffects] = p;
-            val[dec - kBemEffects] = b;
-        }
-        dec++;
-    }
-    if (dec < kBemEffects + 12)
-        return false;
-    for (int k = 0; k < 3; k++) {
-        eff[k] = val[4 * k] | val[4 * k + 1] << 8 | val[4 * k + 2] << 16 | (uint32_t)val[4 * k + 3] << 24;
-        at[k] = first[4 * k];
-        len[k] = last[4 * k + 3] - first[4 * k];
-    }
-    return true;
+    bool p3[3];
+    return model_paint::effects(m, eff, at, len, patch ? patch : p3, g_paint_runs_fix);
 }
 
 static bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }
@@ -1116,21 +1175,11 @@ COOP_FIX("creations.archive_runs", "BUG-9041", g_archive_runs,
          "creations: validate saved founder paint IDs even when their header uses byte runs");
 static bool archive_model_effects(const std::vector<uint8_t>& model, uint32_t effects[3])
 {
-    if (!g_archive_runs) {
-        size_t at[3], lengths[3];
-        return model_effects(model, effects, at, lengths);
-    }
-    // Archive validation only reads paint IDs. The substitution parser must
-    // still refuse compressed IDs because its offsets are used for rewriting.
-    uint8_t header[kBemEffects + 12], last = 0;
-    size_t cursor = 0;
-    if (!decode_run(model, cursor, last, header, sizeof header) ||
-        header[0] != 0xD3 || header[1] != 0x7E || header[2] != 0x65 || header[3] != 0x48) return false;
-    for (int i = 0; i < 3; ++i) {
-        const auto* p = header + kBemEffects + 4*i;
-        effects[i] = uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24;
-    }
-    return true;
+    // archive validation only reads paint IDs; upstream's reader (BUG-0852) reads run-packed ids too (BUG-9041)
+    size_t at[3], lengths[3];
+    bool patch[3];
+    (void)g_archive_runs;
+    return model_effects(model, effects, at, lengths, patch);
 }
 
 // the 0xFE bytes of an id as a model writes it (FE 00 each): the encoded length is 4 + this
@@ -1207,7 +1256,8 @@ static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::st
     for (auto& r : recs) {
         uint32_t eff[3];
         size_t at[3], len[3];
-        if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
+        bool patch[3];
+        if (r.key.type != kBem || !model_effects(r.data, eff, at, len, patch))
             continue;
         for (int k = 0; k < 3; k++) {
             if (!eff[k])
@@ -1215,6 +1265,12 @@ static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::st
             bool unknown = g_unknown_fix ? !paint_known(eff[k]) : (is_cc_paint(eff[k]) && !cc);
             if (!unknown)
                 continue;
+            if (!patch[k]) { // BUG-0852: inside a run: no byte to rewrite (unknown_paint_ids refuses the creation)
+                g_paints_in_run++;
+                H->log(M, SK_INFO, "creations: %s: paint layer %d (%08X) is run-packed: not substituted in place", whose.c_str(), k,
+                       eff[k]);
+                continue;
+            }
             uint32_t sub = paint_substitute_of(eff[k]);
             if (sub && !paint_known(sub))
                 sub = 0;
@@ -1420,6 +1476,13 @@ static Key avatar_species_key()
     return {k[0], k[1], k[2]};
 }
 
+// BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
+static bool choice_here(int k)
+{
+    uint32_t w = modes::current_world();
+    return !w || world_record(k, w) == g_choice[k].instance;
+}
+
 static bool host_world_key(Kind k, uint32_t inst); // a creation of the host's world (BUG-0278)
 static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out); // its records, any registered package
 static bool own_option(Kind k, const Key& key)
@@ -1463,6 +1526,9 @@ static void choose_campaign_creature(const Key& key)
     }
     g_last_check = 0;
 }
+// F5 (BUG-0769): creature.mode host (the host's session setting): every guest plays the host's cell and creature
+bool one_creature() { return settings::get(settings::kCreatureMode) == 1; }
+static unsigned g_one_mine; // mine() answered with the host's creation for that reason (coop.creations)
 
 Option mine(Kind k)
 {
@@ -1475,6 +1541,17 @@ Option mine(Kind k)
         return {captain,""};
     }
     bool guest = C.sess && C.sess->role() == net::Role::Client;
+    if (guest && k != kUfo && one_creature()) { // no own choice, no world record: the host's creation, also evolved
+        g_one_mine++;
+        auto h = g_applied.find({0, (uint8_t)k});
+        Key a = h != g_applied.end() && h->second.orig.instance ? h->second.orig
+                : k == kCreature                                ? avatar_species_key()
+                                                                : cell_key();
+        for (auto& o : g_opts[k])
+            if (o.key.instance == a.instance)
+                return o;
+        return {a, ""};
+    }
     // BUG-0278: a choice of a creation of the host's world that is not one of ours (taken over from
     // an editor by 0.7.3.0) is not a choice; "the world's own" follows the host's creature
     bool chosen = g_chosen[k];
@@ -1483,6 +1560,8 @@ Option mine(Kind k)
     if (g_pre_editor_fix && chosen && guest && k != kUfo && g_choice[k].instance &&
         host_world_key(k, g_choice[k].instance) && !own_option(k, g_choice[k]))
         chosen = false;
+    if (g_choice_world_fix && chosen && guest && k != kUfo && g_choice[k].instance && !choice_here(k))
+        chosen = false; // BUG-0638: chosen in another world: this world's default
     if (g_pre_editor_fix && chosen && guest && k != kUfo && !g_choice[k].instance) {
         auto h = g_applied.find({0, (uint8_t)k});
         Key a = h != g_applied.end() && h->second.orig.instance ? h->second.orig
@@ -1713,6 +1792,23 @@ static void portrait_tick(double now)
     g_portraits_out++;
 }
 
+// BUG-0921: a player's creation bundle carries its pictures (png in the model group and the thumbnail group +1).
+// The guest registers the host's bundle under the host's own key above every package (world_*.package): that copy
+// answers for the species of the host's world, and without a picture in it the guest's Tribe roster drew a white
+// square for every member (the host's own species picture of BUG-0643 is only registered under the host's key when
+// nothing answers for that key yet, and the bundle always came first). Off: the model and the metadata only (0.7.11)
+static bool g_bundle_png_fix = true;
+COOP_FIX("creations.bundle_png", "BUG-0921", g_bundle_png_fix, "creations: a player's creation bundle carries its pictures (the Tribe roster's portraits of the host's species made in the session)");
+// BUG-0802: a rename of a creation whose model is not in our EditorSaves (a partner's or an imported cell played as our
+// own: its model is in the package it came from) saves only a new metadata record there; that bundle went out as it
+// was and the host built a cell of a key without a model (fault at 0xE83EC8). Now a bundle without its model takes the
+// model from the game's own resources (the package that has it), else from the records kept of an applied creation
+// (BUG-0370), else it has no records (the next round tries again; never sent), and a received bundle with records but
+// no model is refused (the player keeps the look it had). Off: 0.7.12.
+static bool g_meta_only_fix = true;
+COOP_FIX("creations.meta_only", "BUG-0802", g_meta_only_fix, "creations: a renamed creation whose model came from elsewhere is sent with its model, and a creation without its model is not built (the host crashed at 0xE83EC8)");
+static unsigned g_meta_filled, g_meta_waits, g_meta_refused; // tests: models added from the game / kept, bundles held, refused
+static const std::vector<dbpf::Record>* old_records(uint32_t inst);
 static bool make_bundle(Kind k, const Key& key, Bundle& b)
 {
     b.key = key;
@@ -1720,19 +1816,109 @@ static bool make_bundle(Kind k, const Key& key, Bundle& b)
         return key.instance != 0; // a premade: no records (everybody has it)
     const dbpf::Package& pk = g_es;
     for (auto& e : pk.entries()) {
-        if (e.key.instance != key.instance || (e.key.type != kBem && e.key.type != kMeta))
+        bool png = g_bundle_png_fix && e.key.type == kPng && e.size <= (1u << 20) &&
+                   (e.key.group == kInfo[k].group || e.key.group == kInfo[k].group + 1);
+        if (e.key.instance != key.instance || (e.key.type != kBem && e.key.type != kMeta && !png))
             continue;
-        if (e.key.group != kInfo[k].group)
+        if (e.key.group != kInfo[k].group && !png)
             continue;
         dbpf::Record r;
         r.key = e.key;
         if (pk.read(e, r.data))
             b.recs.push_back(std::move(r));
     }
+    bool model = false; // pictures alone are no creation (callers take "no records" as "not on disk yet")
+    for (auto& r : b.recs)
+        model |= r.key.type == kBem;
+    if (!model && g_meta_only_fix && !b.recs.empty()) { // BUG-0802: metadata without its model
+        std::vector<dbpf::Record> found;
+        if (records_from_game({key.instance, kBem, kInfo[k].group}, found))
+            for (auto& r : found)
+                if (r.key.type == kBem && r.key.instance == key.instance && !r.data.empty()) {
+                    b.recs.push_back(std::move(r));
+                    model = true;
+                }
+        if (!model)
+            if (auto* old = old_records(key.instance))
+                for (auto& r : *old)
+                    if (r.key.type == kBem && !r.data.empty()) {
+                        b.recs.push_back(r);
+                        model = true;
+                    }
+        if (model)
+            g_meta_filled++;
+        else
+            g_meta_waits++;
+    }
+    if (!model)
+        std::erase_if(b.recs, [](const dbpf::Record& r) { return r.key.type == kPng; });
+    if (!model && g_meta_only_fix)
+        b.recs.clear(); // never a creation without its model
     return true;
 }
 
 // ---- registering a package with the game's resource manager (docs/re/creations.md §3) ----
+// BUG-0996 (docs/re/creations.md#creations-package-close): a package that failed to open or register, or that was
+// dropped (a newer version, the session end's world packages), stayed allocated with its file open for the process:
+// the next write of the same name failed and package_for fell back to "<name>_2.package" ... ("_49", then "cannot
+// write the package"). Now our reference is given back once nobody else holds one: GetRefCount (vt 0x10) == 1 (ours,
+// after RegisterDatabase(false) released the manager's), Close (vt 0x1C) and Release ((db+4) vt[1]: at 0 the
+// scalar deleting dtor, whose Shutdown closes the file too). Dropped packages wait kCloseAfter s and are released
+// outside the frame. `coop.fix creations.package_close off`: kept open (0.7.13).
+static bool g_pkg_close_fix = true;
+COOP_FIX("creations.package_close", "BUG-0996", g_pkg_close_fix, "creations: a dropped or failed creation package is closed and released (its file can be written again)");
+constexpr double kCloseAfter = 2.0;
+struct Closing {
+    void* db;
+    double at;
+    int tries = 0;
+};
+static std::vector<Closing> g_closing;
+static bool g_close_queued;
+static unsigned g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames;
+static bool package_held(void* db); // (below: g_pkgs, g_applied, g_world_pkgs)
+// our last reference to a package nobody uses: closed and released (true), or left as it is (false)
+static bool release_package(void* db)
+{
+    if (!db || package_held(db) || vcall<int>(db, 0x10 / 4) != 1) // GetRefCount: someone else still holds it
+        return false;
+    vcall<bool>(db, 0x1C / 4);            // Close
+    vcall<int>((uint8_t*)db + 4, 1);      // Release -> 0: the deleting dtor
+    g_pkgs_closed++;
+    return true;
+}
+static void close_run(void*)
+{
+    g_close_queued = false;
+    double now = H->time_seconds();
+    for (auto it = g_closing.begin(); it != g_closing.end();) {
+        if (now < it->at) {
+            ++it;
+            continue;
+        }
+        if (release_package(it->db) || ++it->tries >= 10) {
+            if (it->tries >= 10) {
+                g_pkgs_close_kept++;
+                H->log(M, SK_WARN, "creations: a dropped package %p is still held by the game: kept open (BUG-0996)", it->db);
+            }
+            it = g_closing.erase(it);
+        } else {
+            it->at = now + kCloseAfter;
+            ++it;
+        }
+    }
+}
+static void close_tick(double now)
+{
+    if (g_close_queued || g_closing.empty())
+        return;
+    for (auto& c : g_closing)
+        if (now >= c.at) {
+            g_close_queued = true;
+            H->run_outside_frame(close_run, nullptr);
+            return;
+        }
+}
 static void* register_package(const std::wstring& path, int priority)
 {
     if (!a_OpNew || !a_DbCtor || !a_RmPtr)
@@ -1748,10 +1934,14 @@ static void* register_package(const std::wstring& path, int priority)
     vcall<bool>(db, 0x04 / 4);          // Initialize
     if (!vcall<bool>(db, 0x18 / 4, 1, 6, false)) { // Open(read, default, not lazy)
         g_last_error = "Open failed";
+        if (g_pkg_close_fix)
+            release_package(db); // BUG-0996 (only ours: nobody else saw it)
         return nullptr;
     }
     if (!vcall<bool>(rm, 0x50 / 4, true, db, priority)) { // RegisterDatabase
         g_last_error = "RegisterDatabase failed";
+        if (g_pkg_close_fix)
+            release_package(db); // BUG-0996
         return nullptr;
     }
     g_registered++;
@@ -1985,6 +2175,11 @@ static bool cached_cell_model(const Key& key)
 }
 static std::deque<uint32_t> g_old_order;
 static unsigned g_old_served;
+static const std::vector<dbpf::Record>* old_records(uint32_t inst)
+{
+    auto it = g_old_recs.find(inst);
+    return it != g_old_recs.end() ? &it->second : nullptr;
+}
 static void keep_records(uint32_t inst, const std::vector<dbpf::Record>& recs)
 {
     if (!inst || recs.empty() || g_old_recs.count(inst))
@@ -2016,6 +2211,7 @@ static void* package_for(std::wstring path, const std::vector<dbpf::Record>& rec
         }
         if (!ok)
             return nullptr;
+        g_pkg_renames++; // (BUG-0996: the old file of that name is still open)
     }
     void* db = register_package(path, priority);
     if (db)
@@ -2032,6 +2228,21 @@ static void drop_package(void* db)
     unregister_package(db);
     for (auto it = g_pkgs.begin(); it != g_pkgs.end();)
         it = it->second == db ? g_pkgs.erase(it) : std::next(it);
+    if (g_pkg_close_fix && H) // BUG-0996: released a little later, outside the frame, once nobody holds it
+        g_closing.push_back({db, H->time_seconds() + kCloseAfter});
+}
+static bool package_held(void* db)
+{
+    for (auto& [p, d] : g_pkgs)
+        if (d == db)
+            return true;
+    for (auto& [k, a] : g_applied)
+        if (a.db == db)
+            return true;
+    for (auto& [k, w] : g_world_pkgs)
+        if (w.db == db)
+            return true;
+    return false;
 }
 
 static void protect_launch_model(const Bundle& local)
@@ -2157,13 +2368,13 @@ Model ensure_model(const Key& model, ModelKind kind, bool allow_copy)
         g_models_same++;
         return remember(m);
     }
-    if (!allow_copy) { // the caller cannot pass another key to the game (a building)
+    if (!allow_copy && !(g_building_copy_fix && g_model_key_fix)) { // the caller cannot pass another key to the game (a building)
         H->log(M, SK_INFO, "creations: content: %s model %08X has %u id(s) this game does not have: not built here",
                name, model.instance, (unsigned)(bad.size() + bad_paints.size()));
         return refuse();
     }
     std::string whose = std::string("model ") + hex(model.instance);
-    unsigned n = substitute_parts(recs, kind, whose);
+    unsigned n = substitute_parts(recs, kind, whose, g_design_descs_fix ? &g_rx_descs : nullptr);
     if (kind_paints(kind))
         n += substitute_paints(recs, whose);
     std::vector<uint32_t> left = unknown_part_ids(recs, kind);
@@ -2248,6 +2459,16 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         return;
     // An alias for the current Cell key must not unmount the package supplying it.
     if (k == kCell && b.recs.empty() && ap.db && b.key == ap.key) return;
+    if (g_meta_only_fix && !b.recs.empty() &&
+        std::none_of(b.recs.begin(), b.recs.end(), [&](const dbpf::Record& r) {
+            return r.key.type == kBem && r.key.instance == b.key.instance && !r.data.empty();
+        })) { // BUG-0802: records without the model: nothing the game can build (0xE83EC8); the old look stays
+        g_meta_refused++;
+        g_last_error = "received a creation without its model";
+        H->log(M, SK_WARN, "creations: player %u's %s %08X came without its model (%u record(s)): not built here (BUG-0802)",
+               owner, kInfo[k].name, b.key.instance, (unsigned)b.recs.size());
+        return;
+    }
     std::string name;
     for (auto& r : b.recs)
         if (r.key.type == kMeta) {
@@ -2363,6 +2584,9 @@ static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::v
 // The records of a creation from the package file the game reads it from (any registered package:
 // My Creations (DBPF), the Sporepedia cache Pollination.package (DBBF), one of ours). Read piece by
 // piece: Pollination grows to hundreds of MB and the game has little address space left.
+// BUG-0643: a creation's records go with its pictures (png); off: the model and the metadata only (0.7.8)
+static bool g_png_fix = true;
+COOP_FIX("creations.png", "BUG-0643", g_png_fix, "creations: the pictures of a creation go with it (the Tribe roster's member portraits on the guest)");
 static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
 {
     void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
@@ -2389,8 +2613,11 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     bool ok = read_at(0, 96, hdr) && dbpf::index_info(hdr.data(), hdr.size(), info) && info.size < (64u << 20) &&
               read_at(info.offset, info.size, idx) && dbpf::parse_index(idx.data(), idx.size(), info, all);
     for (auto& e : all) {
-        if (!ok || e.key.instance != k.instance || e.key.group != k.group ||
-            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type) || e.size > (4u << 20))
+        // BUG-0643: and its pictures (png in the model group and the thumbnail group +1): the Tribe roster's member
+        // portraits are the species' picture, a guest without them showed white squares
+        bool png = g_png_fix && e.key.type == kPng && (e.key.group == k.group || e.key.group == k.group + 1);
+        if (!ok || e.key.instance != k.instance || (e.key.group != k.group && !png) ||
+            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type && !png) || e.size > (4u << 20))
             continue;
         dbpf::Record r;
         r.key = e.key;
@@ -2400,7 +2627,7 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     CloseHandle(f);
     bool model = false;
     for (auto& r : out)
-        model |= r.key.type != kMeta;
+        model |= r.key.type != kMeta && r.key.type != kPng;
     return model;
 }
 
@@ -2456,7 +2683,7 @@ static void apply_species(const std::vector<uint8_t>& data)
 
 void want_species(const Key& k)
 {
-    if (!C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
+    if (!g_ask_species_fix || !C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
         k.type != kInfo[kCreature].type || k.group != kInfo[kCreature].group || g_species_db.count(k.instance))
         return;
     double now = H->time_seconds();
@@ -2488,7 +2715,9 @@ void host_species_out(uint8_t peer, const Key& k)
     auto& sent = g_own_sent[peer];
     if (!sent.insert(k.instance).second)
         return; // checked (and sent if ours) already
-    if (!in_my_creations(k)) // a premade or a Sporepedia download: the same creation everywhere
+    // a premade or a Sporepedia download: the same creation wherever a game has that key (BUG-0724: not in every game,
+    // a Sporepedia cache is per profile; a guest without it asks for it, want_species / serve_species)
+    if (!in_my_creations(k))
         return;
     Bundle b;
     b.key = k;
@@ -2577,6 +2806,115 @@ uint32_t model_signature(const Key& k, std::string* name, std::string* author)
 // answer: the game's creaturedata and baked models are cached by key, ✔ 2026-10-25). The world's
 // save keeps the host's key: a save rewritten to ours lost those herds and creatures at the load
 // and the pack panel faulted on a pack member of them (docs/re/creature.md 15)
+// BUG-0200: the save names the host's own creations by the host's keys, and a guest whose own My Creations
+// hold another creation under such a key (ids are per profile and sequential) got ITS creation from its
+// game's species manager for that key: the save's herds and nests of the host's creature, and the cards the
+// game makes from them (the nest's "The <name> are your allies!"), were the guest's creation (its name, its
+// look). The species manager keeps one profile per key for the whole process (docs/re/creature.md 15), so
+// the guest's manager answers for the host's key with the profile of the key of ours the host's records are
+// registered under: everything of the game that looks the species up by the host's key gets the host's
+// creation. The profile it had before goes back at the session end (the guest's own creation, in its own
+// games). The guest's own creation never plays under such a key in the host's world (own_key_here remaps a
+// colliding own creation); a guest playing the world's species of a host creation gets the host's creation too.
+// `coop.fix creations.host_key_alias off`: the guest's own creation of that key (0.7.10).
+static bool g_host_alias_fix = true;
+COOP_FIX("creations.host_key_alias", "BUG-0200", g_host_alias_fix,
+         "creature: a guest's game gives the host's creation (not the guest's own of the same id) for the species keys of the host's world: its nests and their cards");
+struct Alias {
+    uint32_t ours = 0;
+    void* orig = nullptr;  // the slot's profile before (restored at the session end)
+    void* prof = nullptr;  // ours
+};
+static std::map<uint32_t, Alias> g_alias; // host's instance -> alias
+static unsigned g_alias_set, g_alias_restored;
+
+static Key own_key_here(Kind kind);
+static Key avatar_species_key();
+static void alias_undo(uint32_t hi, Alias& a)
+{
+    void** slot = a.prof ? game::species_slot({hi, kInfo[kCreature].type, kInfo[kCreature].group}) : nullptr;
+    if (slot && *slot == a.prof) {
+        *slot = a.orig; // (null: the game builds the guest's own profile again on the next lookup)
+        g_alias_restored++;
+    }
+    a = Alias{};
+}
+
+// the keys a player plays (the guest's avatar, the world's player species, the host's creature): not aliased.
+// SetSpecies with an aliased profile writes the profile's own key (+0x504, ours) into the avatar (+0xB28), and a
+// key of ours must never reach a save (BUG-0469 review); the players' bodies follow the bundles as before
+static bool alias_skip(uint32_t hi)
+{
+    if (avatar_species_key().instance == hi || (game::mode_id() == modes::kCreature && own_key_here(kCreature).instance == hi))
+        return true;
+    auto h = g_applied.find({0, (uint8_t)kCreature});
+    if (h != g_applied.end() && (h->second.orig.instance == hi || h->second.key.instance == hi))
+        return true;
+    if (a_SpeciesMgr) {
+        auto* mgr = cdecl_call<uint8_t*>(a_SpeciesMgr);
+        if (mgr && skg::readable(mgr + 0xA4, 12) && skg::field<uint32_t>(mgr, 0xA4) == hi)
+            return true; // the world's player species
+    }
+    return false;
+}
+
+// BUG-0819: the alias is the host's world's: while this guest plays a world of its own (own_world::elsewhere, or a
+// Space save of its own) its game gives its own creation for its own keys again, as at the session end (its own
+// nests showed the host's creature, and a herd member spawned meanwhile could carry our key into that save); it comes
+// back when the guest plays the host's world again. Off: aliased wherever the guest plays (0.7.12).
+static bool g_alias_own_world_fix = true;
+COOP_FIX("creations.alias_own_world", "BUG-0819", g_alias_own_world_fix,
+         "creature: a guest's own world gives the guest's own creations for its keys, not the host's");
+static unsigned g_alias_own_undone;
+static void alias_tick()
+{
+    if (!g_host_alias_fix || !C.sess || C.sess->my_id() == 0)
+        return;
+    if (g_alias_own_world_fix && (own_world::elsewhere() || own_world::space_other())) {
+        for (auto& [hi, a] : g_alias)
+            if (a.prof) {
+                alias_undo(hi, a);
+                g_alias_own_undone++;
+            }
+        return;
+    }
+    for (auto& [hi, ours] : g_remap) {
+        Alias& a = g_alias[hi];
+        if (alias_skip(hi)) {
+            if (a.prof)
+                alias_undo(hi, a);
+            continue;
+        }
+        if (a.ours == ours && a.prof)
+            continue;
+        Key hk{hi, kInfo[kCreature].type, kInfo[kCreature].group};
+        void* prof = game::species_by_key({ours, hk.type, hk.group});
+        if (!prof)
+            continue; // (not built yet: next time)
+        game::Key gk{hk.instance, hk.type, hk.group};
+        if (!game::species_slot(gk))
+            (void)game::species_by_key(gk); // the node of the host's key (the game makes it on the first lookup)
+        void** slot = game::species_slot(gk);
+        if (!slot)
+            continue;
+        if (!a.prof)
+            a.orig = *slot;
+        *slot = prof;
+        a.ours = ours;
+        a.prof = prof;
+        g_alias_set++;
+        H->log(M, SK_INFO, "creations: species %08X here is the host's creation (the profile of %08X; was %p)", hi, ours,
+               a.orig);
+    }
+}
+
+static void alias_restore()
+{
+    for (auto& [hi, a] : g_alias)
+        alias_undo(hi, a);
+    g_alias.clear();
+}
+
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
@@ -2646,6 +2984,153 @@ static void apply_own_species(const std::vector<uint8_t>& data)
             dbpf::metadata_names(r.data, author, name);
     H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here%s", b.key.instance,
            name.c_str(), ours, prof ? "" : " (no species profile yet)");
+}
+
+// ---- BUG-0647: the host's own designs (civ vehicles) on a guest ----
+// The host's civilization names its vehicle designs by the keys of the host's own editor saves (My
+// Creations, ids sequential per profile). A guest's copy of that civilization names the same keys, which
+// its game resolves to ITS OWN creation of that id (or to nothing: the game's generated design): the guest
+// saw "nightmarish monsters" where the host had its vehicles (player report 2026-11-06). The guest asks
+// the host for each design key a mirror needs; the host answers with the records when the key is one of
+// its own My Creations, else "not mine"; the guest registers the records under a key of its own (0x7D......
+// from the content, as the host's own species: the game caches baked models by key) and builds the
+// mirror from that key. Mirrors never go into a save (BUG-0470), so the key of ours never reaches one.
+static bool g_host_designs_fix = true;
+COOP_FIX("creations.host_designs", "BUG-0647", g_host_designs_fix, "civ: a guest's mirror vehicles are built from the host's own vehicle designs (sent by the host), not from the guest's creation of the same id");
+struct DesignState {
+    double asked = -100;    // the last request
+    double first = -1;      // the first request (an old host never answers: the key as it is)
+    bool not_own = false;   // the host said: not its own (a premade)
+    uint32_t ours = 0;      // the key of ours its records are registered under
+};
+static std::map<std::pair<uint8_t, uint32_t>, DesignState> g_designs; // guest: (model kind, instance)
+static std::map<uint8_t, std::set<std::pair<uint8_t, uint32_t>>> g_design_sent; // host: guest -> answered
+// BUG-0422: designs answered to a departed guest were not sent again to a newcomer under its id
+PLAYER_STATE("creations.designs", [](uint8_t id) { g_design_sent.erase(id); },
+             [](uint8_t id) -> size_t { auto it = g_design_sent.find(id); return it == g_design_sent.end() ? 0 : it->second.size(); });
+static unsigned g_design_asks, g_design_in, g_design_not_own, g_design_out, g_design_timeouts;
+
+Key host_design(const Key& k, ModelKind kind, bool* pending)
+{
+    if (pending)
+        *pending = false;
+    if (!g_host_designs_fix || !k.instance || kind >= kMkKinds || !C.sess || C.sess->role() != net::Role::Client ||
+        !C.sess->connected())
+        return k;
+    auto& d = g_designs[{(uint8_t)kind, k.instance}];
+    if (d.ours)
+        return {d.ours, k.type, k.group};
+    if (d.not_own)
+        return k;
+    double now = H->time_seconds();
+    if (d.first < 0)
+        d.first = now;
+    if (now - d.first > 20.0) { // no answer (a host of an older version): as before
+        g_design_timeouts++;
+        H->log(M, SK_WARN, "creations: the host did not answer for the %s design %08X: built as it is",
+               kModelInfo[kind].name, k.instance);
+        d.not_own = true;
+        return k;
+    }
+    if (now - d.asked >= 5.0) {
+        d.asked = now;
+        net::Writer w;
+        w.u8(C.sess->my_id());
+        w.u8(kAskDesign);
+        w.u32(k.instance);
+        w.u32((uint32_t)kind);
+        w.u32(0);
+        w.u16(0);
+        C.sess->send_reliable_to(0, net::MSG_CREATION, w);
+        g_design_asks++;
+        H->log(M, SK_INFO, "creations: asked the host for the %s design %08X", kModelInfo[kind].name, k.instance);
+    }
+    if (pending)
+        *pending = true;
+    return k;
+}
+
+// host: a guest asks for a design key its mirrors need
+static void serve_design(uint8_t guest, uint32_t inst, uint32_t kind)
+{
+    if (kind >= kMkKinds || !inst)
+        return;
+    Key k{inst, kModelInfo[kind].type, kModelInfo[kind].group};
+    g_design_sent[guest].insert({(uint8_t)kind, inst});
+    Bundle b;
+    b.key = k;
+    if (!in_my_creations(k) || !records_from_game(k, b.recs) || b.recs.empty()) {
+        net::Writer w;
+        w.u8(0);
+        w.u8(kDesignNotOwn);
+        w.u32(inst);
+        w.u32(kind);
+        w.u32(0);
+        w.u16(0);
+        C.sess->send_reliable_to(guest, net::MSG_CREATION, w);
+        return;
+    }
+    std::vector<uint8_t> data = pack(b);
+    send_bundle(guest, (uint8_t)kind, (Kind)kOwnDesign, inst, data);
+    g_design_out++;
+    H->log(M, SK_INFO, "creations: own %s design %08X (%u records, %u bytes) to player %u", kModelInfo[kind].name, inst,
+           (unsigned)b.recs.size(), (unsigned)data.size(), guest);
+}
+
+// guest: the records of a host's own design, registered under a key of ours
+static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (kind >= kMkKinds || !unpack(data, b) || b.recs.empty() || !find_paths())
+        return;
+    auto& d = g_designs[{kind, b.key.instance}];
+    if (g_design_descs_fix)
+        take_part_descs(b.recs); // BUG-0725: the descriptions of the design's parts, kept for ensure_model
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs)
+        if (r.key.instance == b.key.instance)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
+    uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
+    std::vector<dbpf::Record> recs;
+    for (auto& r : b.recs) {
+        if (r.key.instance != b.key.instance || r.key.group == kPartDescGroup)
+            continue; // (the part descriptions of a bundle are never registered)
+        recs.push_back(r);
+        recs.back().key.instance = ours;
+    }
+    std::wstring path = g_dir + L"\\own_design_" + std::to_wstring(ours) + L".package";
+    if (!package_for(path, recs, kPrioWorld)) {
+        g_last_error = "cannot write a design package";
+        d.not_own = true; // built as it is
+        return;
+    }
+    d.ours = ours;
+    g_design_in++;
+    H->log(M, SK_INFO, "creations: the host's own %s design %08X is %08X here (%u records)", kModelInfo[kind].name,
+           b.key.instance, ours, (unsigned)recs.size());
+}
+
+std::string design_status()
+{
+    char b[200];
+    unsigned have = 0;
+    for (auto& [k, d] : g_designs)
+        have += d.ours != 0;
+    snprintf(b, sizeof b, "designs fix=%d asks=%u in=%u not_own=%u out=%u timeouts=%u registered=%u\n",
+             (int)g_host_designs_fix, g_design_asks, g_design_in, g_design_not_own, g_design_out, g_design_timeouts, have);
+    return b;
+}
+
+// the hash of the model record (bem) the game answers for a key (tests, BUG-0647: which model a mirror shows)
+std::string model_hash(const Key& k)
+{
+    std::vector<dbpf::Record> recs;
+    if (!records_from_game(k, recs))
+        return "none";
+    for (auto& r : recs)
+        if (r.key.type == kBem)
+            return hex(fnv(r.data.data(), r.data.size()));
+    return "nobem";
 }
 
 Key local_species(const Key& k)
@@ -2856,6 +3341,13 @@ static void share_own(double now)
         if (g_sent_id[k] == id)
             continue;
         g_sent_id[k] = id;
+        {
+            unsigned models = 0;
+            for (auto& r : b.recs)
+                models += r.key.type == kBem;
+            H->log(M, SK_INFO, "creations: sending our %s %08X: %u record(s), %u model(s)", kInfo[k].name, b.key.instance,
+                   (unsigned)b.recs.size(), models); // tests (BUG-0802)
+        }
         apply(me, (Kind)k, id, data); // our own, under the same key everybody uses
         if (is_host()) {
             g_store[{me, (uint8_t)k}] = data;
@@ -2991,6 +3483,25 @@ bool avatar_swap_settling(double now)
     return swap || fresh;
 }
 
+// BUG-0928: SetSpecies gives the avatar the new species' health maximum and leaves its health as it was: a guest
+// that went from its own creature (16 of 16) to the host's (10 at most) had 16 of 10 (a bar of "16" over a body
+// with 10, regenerating on top), and the way back left a full creature at 10 of 16. On: the avatar keeps the share
+// of its health over the swap (full stays full, half stays half). Off: the old number stays.
+static bool g_swap_health_fix = true;
+COOP_FIX("creations.swap_health", "BUG-0928", g_swap_health_fix, "creations: the avatar keeps its share of health when its creature is swapped");
+static unsigned g_swap_health_set;
+static void swap_health(void* av, float hp0, float max0)
+{
+    float max1 = game::max_health(av);
+    if (!g_swap_health_fix || game::is_dead(av) || !(hp0 > 0) || !(max0 > 0) || !(max1 > 0) || max1 == max0)
+        return;
+    float share = hp0 / max0 > 1.f ? 1.f : hp0 / max0;
+    float hp1 = share * max1 < 1.f ? 1.f : share * max1;
+    game::set_health(av, hp1);
+    g_swap_health_set++;
+    H->log(M, SK_INFO, "creations: own avatar's health %.1f/%.1f -> %.1f/%.1f over the swap (BUG-0928)", hp0, max0, hp1, max1);
+}
+
 static void apply_own_avatar()
 {
     if (game::mode_id() == modes::kCell && C.sess && C.sess->connected()) {
@@ -3033,7 +3544,9 @@ static void apply_own_avatar()
             return; // not resolvable (yet)
         }
         int age = *(int*)((uint8_t*)av + 0xB34);
+        float hp0 = game::health(av), max0 = game::max_health(av);
         thiscall<bool>(a_SetSpecies, av, prof, age, true);
+        swap_health(av, hp0, max0);
         g_swap_at = now;
         g_swap_frame = H->frame_index();
         g_swaps++;
@@ -3762,6 +4275,7 @@ static void own_world_tick()
 
 void tick(double now)
 {
+    close_tick(now); // BUG-0996 (also after the session: its end drops the world packages)
     if (!C.sess || !C.sess->connected())
         return;
     if (g_editing_captain && (g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) &&
@@ -3783,6 +4297,7 @@ void tick(double now)
         restore_space_identity(now);
         share_own(now);
     }
+    alias_tick(); // BUG-0200 (first: a key the avatar is about to play loses its alias before SetSpecies)
     apply_own_avatar();
     player_species_tick(); // BUG-0508
     own_player_species_tick(); // BUG-9177
@@ -3801,9 +4316,23 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             serve_species(from, id);
         return;
     }
-    if ((kind == kWorldSpecies || kind == kOwnSpecies) && (is_host() || from != 0))
+    if (r.ok() && kind == kAskDesign) { // BUG-0647
+        if (is_host() && owner == from)
+            serve_design(from, id, total);
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kPortrait) || total > (8u << 20) ||
+    }
+    if (r.ok() && kind == kDesignNotOwn) {
+        if (!is_host() && from == 0 && total < kMkKinds) {
+            g_designs[{(uint8_t)total, id}].not_own = true;
+            g_design_not_own++;
+        }
+        return;
+    }
+    if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
+        return;
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign &&
+                    kind != kPortrait) ||
+        total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
@@ -3831,6 +4360,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             apply_own_species(data);
         return;
     }
+    if (kind == kOwnDesign) { // BUG-0647 (owner = the model kind)
+        apply_own_design(owner, data);
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -3850,6 +4383,7 @@ void on_player_join(uint8_t id)
     if (!is_host())
         return;
     g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
+    g_design_sent.erase(id);
     for (auto& [ok, data] : g_store)
         if (ok.first != id && ok.second != kPortrait)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
@@ -3930,7 +4464,10 @@ void on_session_end()
     g_archived_designs.clear();
     g_world_missing.clear();
     g_own_sent.clear();
+    alias_restore(); // BUG-0200 (before the remap goes)
     g_remap.clear(); // (their packages stay registered: the same world may come back)
+    g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
+    g_design_sent.clear();
     g_unmap.clear();
     g_store.clear();
     g_rx.clear();
@@ -4166,6 +4703,8 @@ void choose(Kind k, const Key& key)
     g_chosen[k] = true;
     g_choice[k] = key;
     g_choice_epoch[k] = choice_epoch_now(k);
+    if (g_choice_world_fix && k != kUfo && key.instance && C.sess && C.sess->role() == net::Role::Client)
+        world_record_set(k, modes::current_world(), key.instance); // BUG-0638: the world it is chosen in
     if (find_paths()) {
         std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
         wchar_t hx[16];
@@ -4178,6 +4717,11 @@ void choose(Kind k, const Key& key)
 
 void cycle(Kind k, int dir)
 {
+    if (k != kUfo && one_creature() && C.sess && C.sess->role() == net::Role::Client) {
+        if (C.feed) // F5 (BUG-0769): the guest's creation arrows are hidden; a click that comes anyway changes nothing
+            C.feed("everybody plays the host's creature (session setting)");
+        return;
+    }
     auto opts = options(k);
     // BUG-0278: "the world's own" (the host's creature) is one of the choices: a guest can go back
     // to it from a creature of its own
@@ -4216,6 +4760,14 @@ std::string status()
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
+    snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
+             g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996
+    s += b;
+    snprintf(b, sizeof b, "  meta_only: fix=%d filled=%u waits=%u refused=%u\n", (int)g_meta_only_fix, g_meta_filled, g_meta_waits,
+             g_meta_refused); // BUG-0802
+    s += b;
+    snprintf(b, sizeof b, "  creature mode: %s (host's creation answers=%u)\n", one_creature() ? "host" : "own", g_one_mine);
+    s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
         Key ck = cell_key();
@@ -4230,7 +4782,8 @@ std::string status()
         s += b;
     }
     if (uint32_t* ps = player_species_slot()) { // BUG-0508
-        snprintf(b, sizeof b, "  world player species %08X (set in place %u)\n", ps[0], g_ps_set);
+        snprintf(b, sizeof b, "  world player species %08X (set in place %u, retries %u, lost %u)\n", ps[0], g_ps_set, g_ps_retries,
+                 g_ps_lost);
         s += b;
     }
     for (int k = 0; k < kKinds; k++)
@@ -4405,6 +4958,11 @@ std::string debug(const std::vector<std::string>& a)
         }
         return parts.empty() ? "No readable parts." : (ship ? "ship " : "body ") + hex(key.instance) + " parts:" + parts;
     }
+    if (a.size() >= 2 && a[0] == "ps_null") { // ps_null <frames>: tests (BUG-1057), the host's evolved species is taken as
+        // not known to this game for that many player-species frames (as a species registered a little later)
+        g_ps_test_null = (unsigned)atoi(a[1].c_str());
+        return "player species unknown for " + std::to_string(g_ps_test_null) + " frames";
+    }
     if (a.size() >= 2 && a[0] == "profile") { // tests (BUG-0457): the species profile the game has for a creature key
         uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         void* p = game::species_by_key({inst, kInfo[kCreature].type, kInfo[kCreature].group});
@@ -4413,6 +4971,29 @@ std::string debug(const std::vector<std::string>& a)
                  p && skg::readable((char*)p + 0x504, 0x40) ? skg::field<uint32_t>(p, 0x504) : 0,
                  p && skg::readable((char*)p + 0x53C, 4) ? skg::field<uint32_t>(p, 0x53C) : 0);
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "sendmeta") { // tests (BUG-0802): our <kind>'s bundle with its metadata only, as a
+        // 0.7.12 guest sent a renamed creation whose model is in another package (to the host, or from the host to all)
+        int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
+        Option o = mine((Kind)k);
+        if (!o.key.instance || !C.sess || !C.sess->connected())
+            return "no creation of ours / no session";
+        Bundle b;
+        b.key = o.key;
+        if (!make_bundle((Kind)k, o.key, b) || b.recs.empty())
+            records_from_game({o.key.instance, kBem, kInfo[k].group}, b.recs);
+        std::erase_if(b.recs, [](const dbpf::Record& r) { return r.key.type != kMeta; });
+        if (b.recs.empty())
+            return "no metadata record";
+        if (a.size() >= 3) { // a new name in it: another bundle id
+            b.recs[0].data.push_back((uint8_t)atoi(a[2].c_str()));
+        }
+        std::vector<uint8_t> data = pack(b);
+        uint32_t id = fnv(data.data(), data.size());
+        send_bundle(is_host() ? -1 : 0, C.sess->my_id(), (Kind)k, id, data);
+        char r[96];
+        snprintf(r, sizeof r, "sent %s %08X with %u record(s), no model\n", kInfo[k].name, o.key.instance, (unsigned)b.recs.size());
+        return r;
     }
     if (a.size() >= 2 && (a[0] == "next" || a[0] == "prev")) {
         int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
@@ -4470,6 +5051,152 @@ std::string debug(const std::vector<std::string>& a)
         g_world_drop = a[1] != "off";
         return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
                " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "fakepng") { // fakepng <hex inst> [<hex group>]: tests (BUG-0643), a broken png answers
+        // the creature's png key above every package (what a game without the creation's picture has)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        uint32_t grp = a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group;
+        if (!find_paths())
+            return "no folder";
+        dbpf::Record r;
+        r.key = {inst, kPng, grp};
+        r.data.assign(16, 0xAB);
+        std::wstring path = g_dir + L"\\fakepng_" + std::to_wstring(inst) + L"_" + std::to_wstring(grp) + L".package";
+        return package_for(path, {r}, kPrioModel) ? "fake png registered" : "cannot register";
+    }
+    if (a.size() >= 2 && a[0] == "sendown" && is_host()) { // sendown <hex crt inst>: tests (BUG-0643), the host's own
+        // creation to every guest as before an NPC of it (host_species_out)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        unsigned n = 0;
+        for (auto& p : C.sess->players())
+            if (p.id != 0) {
+                g_own_sent[p.id].erase(inst);
+                host_species_out(p.id, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+                n++;
+            }
+        return "sent to " + std::to_string(n) + " guest(s)\n";
+    }
+    if (a.size() >= 2 && a[0] == "local") { // local <hex crt inst>: the key the host's creation has here
+        Key k = local_species({(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group});
+        return "local " + hex(k.instance) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "png") { // png <hex inst> [<hex group>]: the picture this game answers for a creature key
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kPng,
+              a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+        bool known = rm && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) != nullptr;
+        return "png " + hex(k.instance) + " known=" + std::to_string((int)known) + "\n";
+    }
+    if (!a.empty() && a[0] == "designs") // BUG-0647: the host's own designs on this guest
+        return design_status();
+    if (a.size() >= 2 && a[0] == "lack") { // lack <hex part id> | clear: tests (BUG-0725): treat a part as one this game lacks
+        if (a[1] == "clear")
+            g_lacked.clear();
+        else
+            g_lacked.insert((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        g_key_cache.clear();
+        g_model_use.clear(); // the verdicts are made again
+        return "lacked parts " + std::to_string(g_lacked.size()) + ", descriptions received " +
+               std::to_string(g_rx_descs.size()) + "\n";
+    }
+    if (!a.empty() && a[0] == "objmodels") { // tests (BUG-0730 / BUG-0731): the model keys of every placed object
+        g_objmodels_scan = a.size() > 1 && a[1] == "scan";
+        // (cSpatialObject model key at object +0xC4, as vehicles and buildings), per noun: which package answers each
+        // key here and how many part ids of its model this game lacks
+        struct Row { unsigned n = 0; };
+        std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, unsigned> rows; // (noun, inst, type, group) -> count
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* m = (std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, unsigned>*)u;
+                net::Vec3 p;
+                if (!game::object_alive(o) || IsBadReadPtr(o, 0xD0) || !game::object_position(o, p) || m->size() > 400)
+                    return true;
+                if (noun == 0x018C43E8 && !IsBadReadPtr(o, 0x528 + 0x24)) // a city: its 3 decoration keys (+0x528)
+                    for (int i = 0; i < 3; i++) {
+                        const uint32_t* d = (const uint32_t*)((uint8_t*)o + 0x528 + 0xC * i);
+                        if (d[0] && d[0] != 0xFFFFFFFFu)
+                            (*m)[{0xDEC00000u | (uint32_t)i, d[0], d[1], d[2]}]++;
+                    }
+                const uint32_t* k = (const uint32_t*)((uint8_t*)o + 0xC4);
+                if (k[0] && k[0] != 0xFFFFFFFFu && k[1])
+                    (*m)[{noun, k[0], k[1], k[2]}]++;
+                // every key-like triple in the object's first 0x600 bytes whose type is a model kind's (a model key
+                // kept elsewhere than +0xC4: a hut, an ornament), noun | 0x80000000 + its offset in the 'n' column
+                if (g_objmodels_scan && noun != 0x018EB45E && noun != 0x018EB4B7 && !IsBadReadPtr(o, 0x600))
+                    for (int off = 0; off + 12 <= 0x600; off += 4) {
+                        const uint32_t* t = (const uint32_t*)((uint8_t*)o + off);
+                        bool model = false;
+                        for (auto& mi : kModelInfo)
+                            model |= t[1] == mi.type && t[2] == mi.group;
+                        model |= t[1] == kPartProp && t[2] && t[2] != 0xFFFFFFFFu; // a noun's property file (tools)
+                        if (model && t[0] && t[0] != 0xFFFFFFFFu)
+                            (*m)[{noun | 0x80000000u, t[0], t[1], t[2]}] = (unsigned)off;
+                    }
+                return true;
+            },
+            &rows);
+        std::string out = "objmodels " + std::to_string(rows.size()) + "\n";
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        for (auto& [k, n] : rows) {
+            auto [noun, inst, type, group] = k;
+            uint32_t key[3] = {inst, type, group}, real[3] = {};
+            void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr;
+            std::wstring loc;
+            std::string where = !db ? "none" : !file_location(db, loc) ? "folder" : "";
+            if (where.empty()) {
+                size_t sl = loc.find_last_of(L"\\/");
+                std::wstring base = sl == std::wstring::npos ? loc : loc.substr(sl + 1);
+                where = std::string(base.begin(), base.end());
+            }
+            int kind = -1;
+            for (auto& mi : kModelInfo)
+                if (mi.type == type)
+                    kind = mi.kind;
+            std::string parts = "-";
+            if (kind >= 0) {
+                std::vector<dbpf::Record> recs;
+                if (records_from_game({inst, type, group}, recs))
+                    parts = std::to_string(unknown_part_ids(recs, (ModelKind)kind).size());
+                else
+                    parts = "unreadable";
+            }
+            char b[200];
+            snprintf(b, sizeof b, "  obj noun=%08X n=%u key=%08X/%08X/%08X from=%s unknown_parts=%s\n", noun, n, inst, type,
+                     group, where.c_str(), parts.c_str());
+            out += b;
+        }
+        return out;
+    }
+    if (!a.empty() && a[0] == "looks") { // tests (BUG-0725): the lookalike choices of this session (group/id=chosen)
+        std::string out = "looks";
+        for (auto& [k, v] : g_lookalike)
+            out += " " + hex(k.first) + "/" + hex(k.second) + "=" + hex(v);
+        return out + "\n";
+    }
+    if (a.size() >= 3 && a[0] == "mparts") { // mparts <kind> <hex instance>: the part ids of the model the game reads (tests)
+        int kind = a[1] == "cell" ? kMkCell : a[1] == "ufo" ? kMkUfo : a[1] == "vehicle" ? kMkVehicle
+                   : a[1] == "building" ? kMkBuilding : kMkCreature;
+        Key k{(uint32_t)strtoul(a[2].c_str(), nullptr, 16), kModelInfo[kind].type, kModelInfo[kind].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "mparts " + hex(k.instance) + " none\n";
+        std::string out = "mparts " + hex(k.instance);
+        std::set<uint32_t> seen;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                for (auto& ref : model_part_refs(r.data, part_group((ModelKind)kind)))
+                    if (seen.insert(ref.id).second)
+                        out += " " + hex(ref.id) + (part_known(ref.id, part_group((ModelKind)kind)) ? "" : "!") +
+                               (g_rx_descs.count(ref.id) ? "+d" : "");
+        return out + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "modelhash") { // modelhash <hex inst> [<hex type> <hex group>]: which model answers
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16),
+              a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kModelInfo[kMkVehicle].type,
+              a.size() > 3 ? (uint32_t)strtoul(a[3].c_str(), nullptr, 16) : kModelInfo[kMkVehicle].group};
+        return "model " + hex(k.instance) + " " + model_hash(k) + "\n";
     }
     if (!a.empty() && a[0] == "content") { // BUG-0469: content [<kind> <hex instance>]: counters, or one model
         if (a.size() < 3)
@@ -4577,8 +5304,8 @@ std::string debug(const std::vector<std::string>& a)
             }
         }
         char b[120];
-        snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u\n", cc, unknown, (int)have_creepy_cute(),
-                 g_paints_substituted);
+        snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u in_run=%u\n", cc, unknown, (int)have_creepy_cute(),
+                 g_paints_substituted, g_paints_in_run);
         return out + b;
     }
     if (a.size() >= 2 && a[0] == "mount") { // mount <package path>: tests (a resource package of a QA build)
@@ -4587,6 +5314,24 @@ std::string debug(const std::vector<std::string>& a)
             path += " " + a[i];
         return register_package(slotfs::widen(path), 2000) ? std::string("mounted\n")
                                                            : "mount failed: " + g_last_error + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "speciesof") { // speciesof <hex crt instance>: the species profile the game gives for that key (tests, BUG-0200)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        void* p = game::species_by_key({k.instance, k.type, k.group});
+        if (!p || !skg::readable(p, 0x510))
+            return "profile " + hex(k.instance) + " none\n";
+        Key pk{skg::field<uint32_t>(p, 0x504), skg::field<uint32_t>(p, 0x508), skg::field<uint32_t>(p, 0x50C)};
+        std::vector<dbpf::Record> recs;
+        uint32_t h = 0;
+        if (records_from_game(pk, recs))
+            for (auto& r : recs)
+                if (r.key.type == kBem)
+                    h = fnv(r.data.data(), r.data.size());
+        auto alias = g_alias.find(k.instance);
+        char b[200];
+        snprintf(b, sizeof b, "profile %08X key %08X bem %08X aliased %d (set %u restored %u own_world %u)\n", k.instance, pk.instance, h,
+                 alias != g_alias.end() && alias->second.prof == p ? 1 : 0, g_alias_set, g_alias_restored, g_alias_own_undone);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
@@ -4634,7 +5379,9 @@ std::string trace_line(Kind k)
 {
     bool guest = C.sess && C.sess->role() == net::Role::Client;
     Option o = mine(k);
-    const char* origin = g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
+    bool other_world = guest && g_choice_world_fix && g_chosen[k] && k != kUfo && g_choice[k].instance && !choice_here(k);
+    const char* origin = other_world ? "the world's default (the choices.ini creation is of another world, BUG-0638)"
+                         : g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
                          : k == kUfo                ? "own empire"
                          : guest && !g_opts[k].empty() && g_guest_world_fix ? (world_record(k, modes::current_world()) ? "this world's record (worlds.ini)" : "the world's species (no own one played in this world)")
                          : guest && !g_opts[k].empty() ? "newest own creation"

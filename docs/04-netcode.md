@@ -328,3 +328,96 @@ is the PC's IPv4 addresses with their prefix lengths: `GetAdaptersAddresses(AF_I
   and no lookup runs again in that game). Other nsi users in the game are not covered: Wine's
   own ws2_32 (`gethostbyname` of the own host name, `SIO_ROUTING_INTERFACE_QUERY`), winhttp's
   proxy detection.
+
+## Per-player state registry (2026-11-07, fix/w46-k2a-state)
+<a id="netcode-player-life"></a>
+
+Player ids are reused within a session (net/session.cpp `alloc_id`: the lowest free id), so the next player to join
+gets a departed player's id (BUG-0422 class). Every module that keeps a map keyed by a player id registers it in
+`mods/coop/player_life.h` with `PLAYER_STATE("module", forget, held)` next to the map; coop.cpp calls
+`player_life::forget_all(id)` on every leave and every join (`core.player_forget`). `coop.players held <id>` lists what
+the modules still hold (tests: coop_player_forget). Registered in 0.7.11 (BUG-0706): spacecoop (last star, down
+timer: Jump-to went to the departed player's star), space_rivalry (budget, merge credit), space_map (rosters,
+"seen" players), space_finale, tribe (chief, pincer hits), civ (siege hits), fields (values last sent to a guest),
+creations (designs answered to a guest), realign, effects. Not registered on purpose: diag_sync's guest checks (its
+rejoin grace keeps them), player_rules' carried objects (released by their own rest rule).
+
+## World effects carry their height over the sender's ground (2026-11-07, fix/w46-k2a-state)
+<a id="netcode-effect-agl"></a>
+
+MSG_EFFECT pool 5 (a world effect: hit impacts, splashes, the sea monster) appends an f32 after the 0x44-byte
+transform: the effect's height over the sender's ground (cPlanetModel::GetHeightAt; kNoAgl when unknown or more than
+30 m off). The receiver (and the host's relay to guest 3+) puts the effect at that height over its own ground, the
+rule every remote body follows (BUG-0425); older SporeCoop stops reading before the trailer. `effects.ground`
+(BUG-0608). Test: coop_effect_ground (an effect sent as from a host whose ground lies 5 m higher).
+
+## Input from the network: names, discovery, half-open peers, restarts (2026-11-12, fix/w48-net)
+<a id="netcode-network-input"></a>
+
+Package N1 of 0.7.13. Everything below is portable code in `mods/coop/net/` with a net_tests case that fails with its
+switch off (`net_tests --off <name>`, and with `--nofix`).
+
+* **Names** (BUG-0774, `net.name_clean`): every name that comes from another machine is cut to one clean line by
+  `utf8::clean_text` / `utf8::net_name` (net/utf8.h): no C0 / C1 control characters, DEL, U+2028 / U+2029, no bytes
+  that are not UTF-8 (stray continuation bytes, cut or overlong sequences, surrogates), at most 24 code points for a
+  name. Where: the host on a HELLO (before the rejoin, late-join and unique-name rules compare it), the guest on
+  WELCOME (the roster, the host's name) and PLAYER_JOIN, the LAN list on a DiscoverReply (name, info line cut to 64),
+  world.cpp on a WorldOffer's planet name (it goes into the co-op slot's marker file, `sporecoop.txt`) and on the log
+  line of a refused file name. Peer version texts are cut to 120. An empty result is "guest<id>" / "host".
+  Compatible with 0.7.12: its local names are already clean (`utf8::player_name`), so both sides agree.
+* **LAN discovery** (BUG-0776, `net.lan_only_disc`): the host answers a discovery query only from loopback, the
+  private ranges, link-local, 100.64/10 or a subnet of one of its own adapters (`Session::lan_broadcasts`, set by
+  coop.cpp from `adapters::list()`: Radmin VPN 26/8, Hamachi 25/8), and at most `kDiscoverPerSecond` (20) times a
+  second over all senders. `net::local_source` (net/ipmask.h) takes the subnet of a broadcast address as its
+  trailing one bits (at most one bit wider than the real mask). `coop.status` on the host: a line
+  `refused: discovery=N (answered M) ...` once something was refused. A 0.7.12 guest on the LAN still finds the
+  host; a scan over the internet to a forwarded port gets no answer (direct join by address is unchanged).
+* **Half-open peers** (BUG-0778, `net.halfopen_cap`): a datagram from an endpoint without a peer (or with another
+  connection id than its peer's) opens a peer only when it carries a reliable HELLO that reads
+  (`Session::carries_hello`); else it is dropped (`no_hello=` in the line above) and replaces nobody. A peer that is
+  still not accepted after its HELLO was handled is a refused one waiting for its REJECT: when its address holds
+  `kHalfOpenPerIp` (4) of them or the table holds `kMaxPeers` (16), the oldest goes (`half_open_evicted=`), not
+  retired, so that game gets its REJECT again on its next HELLO. A 0.7.12 guest's first datagram is its HELLO, so it
+  joins as before.
+* **A new session inside a delivery callback** (BUG-0861, `net.restart_gen`): `host()` / `join()` from a callback
+  (cb.connected, cb.player_leave, cb.custom ...) used to defer the old session's leave to the end of the delivery,
+  which then closed the new session. Now `restart_leave()` ends the old session at once (BYE, transport closed) but
+  keeps its peers in `zombies_` until `Connection::on_packet` has returned (BUG-0029: that Connection is still
+  running), a pending leave and its cb.disconnected of the old session are dropped (logged), and a generation counter
+  (`gen_`, bumped by host, join and every end of a session) stops the rest of that packet and that frame's update
+  for the old session. A plain `leave()` in a callback is deferred as before.
+
+## Join rules and input checks of 0.7.14 N2 (2026-11-13, fix/w49-net)
+<a id="netcode-n2-join-input"></a>
+
+* **Coming back after the start** (BUG-1001, `net.join_seen`; the owner's rule, plan 0.7.14 decision 7): with
+  all.late_join off (`Session::join_closed`) the host admits after the start only a player it had admitted before.
+  With the rejoin token rule on (the default) and a token in the HELLO: only by that token (`seen_tokens_`, every token
+  admitted since `host()`, and no live entry holds it now); a crash rejoin replaces its silent entry by token as before
+  (BUG-0235). Without a token (an older SporeCoop, or `net.rejoin_token` off): by the HELLO name, only when nobody of
+  that name is in the session and the name dropped within `kRejoinNameMs` (10 min). A name alone never passes, and
+  the player limit counts every live entry (a silent one of the same name only when the name rule of
+  `net.rejoin_token off` retires it in the same HELLO). Names are compared in one form: `Peer::hello_name`, the cleaned
+  HELLO name before " 2" / "guest<id>".
+* **The token on a leave** (BUG-1001): `rejoin::clear(true)` on a leave and on a lost session keeps the token in
+  memory for the same host address string and the same name (up to 8 such pairs; never in the file, never sent to
+  another host or under another name), so a player who left comes back as itself while late join is off. Another name
+  from the same game is a new player. Before, every leave emptied the token (BUG-0235) and the name rule let anybody
+  of that name back.
+* **A rejoin through the same address and port without a token** waits until the old connection has been silent for
+  2 s (about 2 s longer than before; the joining game sends its HELLO again).
+* **A WELCOME over one packet** (BUG-1005, `net.welcome_split`): a joining guest whose HELLO announced CAP_SPLIT joins
+  the pieces of the host's reply (`peer_split` set in `start_hello`, the WELCOME then sets the host's real caps).
+  Reachable with long names (24 emoji are 96 bytes) and long version texts (255 bytes each) in a 4-player roster
+  (about 1430 bytes against the 1163-byte piece). An older host never splits.
+* **A datagram too big for the buffer** (BUG-1007, `net.recv_skip_big`): `UdpSocket::recv_from` returns -2
+  (`Session::kRecvSkipped`) for WSAEMSGSIZE (Windows / Wine) and, natively, for a datagram cut by MSG_TRUNC; the read
+  loops of `Session::update` and `Discovery::update` go on to the next datagram (`datagrams skipped` in coop.status).
+  The discovery buffer is 2048 bytes (was 512, the reply format's maximum is 526). Under Wine the WSAEMSGSIZE mapping
+  is inferred, not checked.
+* **DBPF index flag 4** (BUG-1012, `net.dbbf_bounds`, unit only): the skipped field must lie inside the index.
+* **MSG_SPACE directions** (`space.dir_table`): `net::space_dir` (net/validate.h) is the one table of every MSG_SPACE
+  kind's direction (Host, Guest, Any), used by `space_origin_ok`. A new kind goes into the table: validate_tests reads
+  every `enum Kind` of the space sources and fails for a kind without a direction.
+* **World effect scale** (BUG-1048, `effects.scale_check`): a received pool-5 effect needs 0 < scale <= 1000 (the
+  sender's range, `copy_transform`), `net::effect_xf_ok`.

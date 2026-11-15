@@ -1,6 +1,7 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
 #include "space_map.h"
+#include "player_life.h"
 
 #include "net/utf8.h"
 
@@ -21,6 +22,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "cell_logic.h"
+#include "find.h"
 #include "fixes.h"
 #include "founders.h"
 #include "identity.h"
@@ -186,6 +188,8 @@ static bool read_local(Roster& r)
     }
     r.colonies.clear();
     for (void* s : ptr_vec((uint8_t*)emp + 0x88, 1024)) {
+        if (r.colonies.size() >= 250)
+            break; // BUG-1040: the cap ends the whole scan, not only this star's planets
         if (!readable(s, 0x98))
             continue;
         for (void* p : ptr_vec((uint8_t*)s + 0x84, 64)) {
@@ -588,6 +592,31 @@ static void kept_save(void*)
     }
 }
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
+// BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
+// and the newcomer gets the lowest free id: the same one. kept_tick never saw the player missing, k.id stayed, and
+// the rejoined guest's first (empty) roster became its kept list. The session's leave (PLAYER_LEAVE, player_life)
+// now marks the entry as left. `coop.fix space.kept_leave off`: only the per-frame check (0.7.12).
+static bool g_kept_leave_fix = true;
+COOP_FIX("space.kept_leave", "BUG-0810", g_kept_leave_fix,
+         "space: a guest's kept colonies come back after a crash rejoin that keeps its player id");
+static uint32_t g_kept_left;
+PLAYER_STATE("space_map_kept",
+             [](uint8_t id) {
+                 if (!g_kept_leave_fix)
+                     return;
+                 for (auto& [n, k] : g_kept)
+                     if (k.id == id) {
+                         k.id = 0xFF;
+                         k.restoring = false;
+                         g_kept_left++;
+                     }
+             },
+             [](uint8_t id) -> size_t {
+                 size_t n = 0;
+                 for (auto& [nm, k] : g_kept)
+                     n += k.id == id;
+                 return n;
+             });
 
 static void send_kept(uint8_t id, Kept& k)
 {
@@ -728,9 +757,9 @@ static std::string kept_status()
 {
     std::string s;
     char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u file=%d loads=%u saves=%u\n",
+    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u file=%d loads=%u saves=%u left=%u\n",
              (int)g_keep_fix, (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed,
-             (unsigned)g_restore.size(), (int)g_kept_file, g_kept_loads, g_kept_saves);
+             (unsigned)g_restore.size(), (int)g_kept_file, g_kept_loads, g_kept_saves, g_kept_left);
     s += b;
     for (auto& [n, k] : g_kept) {
         snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", n.c_str(), k.id == 0xFF ? -1 : k.id,
@@ -769,6 +798,8 @@ static int color_dist(uint32_t a, uint32_t b)
 
 uint32_t player_color(uint8_t id)
 {
+    if (pfind::g_colors_fix && pfind::color_index(id) >= 0)
+        return pfind::color_of(id); // F2: the session's player colour, the same in every stage and on every game
     static const uint32_t pal[] = {0xFFFFD040, 0xFF60C8FF, 0xFFFF70D0, 0xFF80FF80, 0xFFFF9040};
     const Roster* r = roster_of(id);
     const Roster* me = roster_of(spaceext::my_id());
@@ -802,6 +833,10 @@ static bool g_covered, g_lmb, g_drawn; // g_drawn: the overlay drew the map sinc
 static double g_cover_checked;
 static uint32_t g_tag_clicks, g_trips, g_trip_cost, g_frames_drawn, g_frames_covered;
 static std::map<uint8_t, size_t> g_col_pick; // the Space page: which colony of a partner is shown
+// BUG-0422: the departed player's roster and colonies were shown for a newcomer under its id, and the newcomer
+// (already "seen") was not sent everybody's rosters
+PLAYER_STATE("space_map", [](uint8_t id) { g_rosters.erase(id); g_pending.erase(id); g_players.erase(id); g_col_pick.erase(id); },
+             [](uint8_t id) -> size_t { return g_rosters.count(id) + g_pending.count(id) + g_players.count(id) + g_col_pick.count(id); });
 
 static int context() { return a_Context ? cdecl_call<int>(a_Context) : -1; }
 
@@ -993,6 +1028,8 @@ static void draw_map()
                 }
             }
         }
+        if (!pfind::arrows_on()) // F2: the edge arrows follow all.partner_arrows (never in Rivals mode)
+            continue;
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
         float fx, fy;

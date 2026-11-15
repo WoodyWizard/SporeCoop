@@ -1,0 +1,6 @@
+// coop.dll's version resource (BUG-0784)
+#define SC_FILE_DESC "SporeCoop: co-op multiplayer mod for SPORE"
+#define SC_ORIG_NAME "coop.dll"
+#define SC_INTERNAL_NAME "coop"
+#define SC_FILE_TYPE VFT_DLL
+#include "../../installer/version.rc"

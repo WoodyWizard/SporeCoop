@@ -72,6 +72,13 @@ COOP_FIX("savestrip.pending", "BUG-0256", g_pending_fix, "saves: creatures waiti
 // when it is surely empty (savestrip_rule.h). `coop.fix savestrip.empty_herds off`: kept (0.7.3.0).
 static bool g_empty_fix = true;
 COOP_FIX("savestrip.empty_herds", "BUG-0255", g_empty_fix, "saves: empty herds made for partners' puppets are kept out of saves too");
+// BUG-1067: the empty-herd rule asks whether the herd is one the mod made (game::our_herd), not only whether it
+// looks like one: in Civ the game's own herds have no archetype and no nest either, and every empty one of them was
+// left out of every Civ save (77 in a guest's save, the host's too). `coop.fix savestrip.our_herds off`: by the
+// look alone (0.7.13).
+static bool g_our_herds_fix = true;
+COOP_FIX("savestrip.our_herds", "BUG-1067", g_our_herds_fix, "saves: only empty herds the mod made are kept out of saves, never the game's own (Civ's look like ours)");
+static uint32_t g_empty_kept_game; // empty own-kind herds kept because they are the game's (BUG-1067)
 static std::unordered_set<void*> g_herd_seen; // herds some creature of this save points at
 static bool g_unreadable;                     // a creature of this save could not be read
 static uint32_t g_empty_stripped;
@@ -102,6 +109,10 @@ static bool creature_filter(void* o, uint32_t noun)
         bool empty = false, readable = herd_members(o, empty);
         if (!strip_empty_herd(readable, empty, g_herd_seen.count(o) != 0, g_unreadable))
             return false;
+        if (g_our_herds_fix && !game::our_herd(o)) { // BUG-1067: an empty herd of the game's
+            g_empty_kept_game++;
+            return false;
+        }
         g_empty_stripped++;
         return true;
     }
@@ -251,8 +262,9 @@ std::string status()
     char b[320];
     snprintf(b, sizeof b,
              "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u empty_herds_stripped=%u "
-             "max_save_frames=%u\n",
-             (int)g_on, g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls, g_empty_stripped, g_max_span);
+             "empty_game_herds_kept=%u max_save_frames=%u\n",
+             (int)g_on, g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls, g_empty_stripped, g_empty_kept_game,
+             g_max_span);
     return b;
 }
 

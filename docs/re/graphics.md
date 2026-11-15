@@ -216,3 +216,92 @@ BUG-9191 (the Party panel).
 * ModAPI headers read for this: Spore ModAPI UTFWin/IWindow.h (WindowFlags: kWinFlagClip 0x400; vt 0x94 Revalidate),
   SimpleLayout.h, Message.h (kMsgLayout's area at +0x18).
 
+## The game's address space over a session: what grows (2026-11-06, fix/w46-addr-space)
+<a id="graphics-address-space"></a>
+
+BUG-0631 (a host crashed in Civ after ~2 h with the 2 GB space full), BUG-0621 (a Cell guest 3502 -> 1427 MB in 6 min).
+Measured with the census (docs/06-testing.md#testing-mem-census) on lanes 4 / 5 (Wine: 4 GB, so nothing ran out; the
+numbers are the growth).
+* ✔ The game's heap is EA's GeneralAllocator (MallocInternal 0x927E70, MallocAlignedInternal 0x928570): it grows by
+  VirtualAlloc'ed 16 MB segments and MMapMalloc 0x9271A0 (VirtualAlloc MEM_RESERVE|MEM_COMMIT, MEM_TOP_DOWN when
+  `this+0x498`) for big blocks; `this+0x48C` / `+0x488` count the mapped bytes / blocks. Freed memory goes back to the
+  segments, segments are not given back: the heap is a high-water mark. A 16 MB step in a census is one segment.
+* ✔ Almost all growth during play is `priv:by:sporeapp.exe` (the game's heap); the graphics (d3d9.dll = DXVK here) took
+  one 16 MB block in 10 min of Tribe; our DLLs nothing measurable (the "coop.dll" caller of one 16 MB segment was a
+  stale return address of the tracker itself, fixed in the tracker).
+* ✔ Skin textures: allocations of 5.3 MB each from the Skinner code (callers 0x513D4B / 0x5600C0 through operator
+  new 0x42E148, which names its EASTL allocator "Editor"): one per creature skin painted (a 1024x1024 RGBA texture
+  with its mip chain is 5.3 MB). Others seen: material / shader code around 0x7200C8..0x738862, ModelBake
+  0x47667E, resource reads (cPropManager::ReadResource 0x6AEED7), effects (Swarm::EffectWorld::CreateEffect
+  0xA71408).
+* ✔ Creature, two players, the play_creature bots, 20 min (lab 20261106-200638): host -16 MB free, guest -7; the same
+  with the guest's session left (not a clean solo: the guest joined again) -24 / -10. Normal lab play does not drain.
+* ✔ Creature, the guest goes to a new place of the planet every 20 s (61 places, lab 20261106-202803): the host's heap
+  +62 MB, the guest's +28; the same with `npc.view_centres` off (the host keeps nothing alive around the guest,
+  BUG-0280; lab 20261106-204954, 10 min) host +3, guest +4 against +28 / +51 with it on (20261106-204949). The host
+  pays for what lives around its partner (herds, nests, spawns and their models and skins) and the guest for the
+  proxies of the host's NPCs it then shows.
+* ✔ It is a cache, not a leak: the guest cycling over the same 12 places for 24 min (6 rounds, lab 20261106-210804):
+  host +28 MB in the first round, +3 MB in the 5 rounds after, guest +33 MB then 0. Removing and showing the partner's
+  puppet 60 times (`coop.puppet respawn`, 20261106-211958) cost 0 MB on the host, +6 MB on the guest once.
+* ✔ Civ and Tribe idle for 10 min (two players, 20261106-213314; solo 20261106-213316): flat after the load. play_civ
+  10 min (lab 20261106-214428): host 3442 -> 3378, guest 3401 -> 3316 MB, most of it in the first 4 minutes
+  (new vehicle and building models); play_tribe 10 min (20261106-214428-2): host 3450 -> 3403, guest 3427 -> 3389.
+* Recorded lab results (every `*.game.log` of the main checkout and the worktrees, per-minute perf lines, a stage stay
+  of over 4 min): median loss Creature host 4.5 / guest 3.3 MB/min, Tribe 4.8 / 3.8, Civ 5.4 / 4.7, Space 2.2 / 3.9,
+  Cell 0.9 / 0.1; the host loses more than the guest in every planet stage.
+* ✔ Cell (BUG-0621): a crowd of 1000 of the host's cells around its own (`coop.pool crowd 1000 8` every 20 s, lab
+  20261106-210201) with BUG-0355's fixes off (cell.gfx_full, cell.spare): the host loses 8 MB/min, linear, from
+  effects and animations (Swarm::EffectWorld::CreateEffect 0xA71408, Anim::AnimatedCreature::PlayAnimation 0xA0F707:
+  the per-frame CreateSoftBody calls on a full graphics pool set up the cell again and play an animation each time,
+  BUG-0355); with them on (20261106-211056) 0. The 4-player guest of BUG-0621 (0.7.3.1, before BUG-0355's fix in
+  0.7.3.2) had 900 mirrors on screen: the same case.
+* Inferred (the player's host, Discord 2026-11-06): its 740 MB in 50 min of Creature are this cache filled by two
+  players exploring a planet with many species (each new species: a skin of 5.3 MB, its models and materials, on
+  both games), twice on the host because it also keeps the world around its partner alive. Stage changes give little
+  back (the heap's segments stay).
+* Negative: no allocation of ours grows; no growth per puppet, per mirror or per revisit.
+
+## A fixed camera on the main viewer (2026-11-10, feat/w47-visual)
+<a id="graphics-fixed-camera"></a>
+
+✔ seen at runtime in Creature and Tribe (lane 6, GOG 2024), ✔ Ghidra.
+* The main viewer is `IGameModeManager::Get()` vt 0x58. viewer+0 is the camera-to-world matrix (rows right, forward,
+  up, position; row determinant +1 in both stages), [viewer+0x170] the camera (+0x5C / +0x60 the half view window at
+  distance 1, +0x6C 1 = perspective, +0x78 the D3D viewport).
+* Every frame the active camera's Update (from `cCameraManager::Update` 0x7C6440, through its vtable at 0x1410744)
+  writes the viewer with `cViewer::SetViewTransform` 0x7C4DD0 (a Math::Transform: flags 2|4, count, offset, scale,
+  rotation rows right / forward / up; `GetViewTransform` 0x7C41C0 gives one). A transform set right after
+  `cCameraManager::Update` returns is the one the frame is drawn with: the hook of `coop.view` (mods/coop/test_view.cpp)
+  put the camera at a given eye in the first frame, `coop.cam` read it back exactly (0.000 m), the screenshot showed
+  that view, and the game's camera came back on its own the frame after the hook stopped.
+* `cViewer::SetPerspectiveProjection` 0x7C5480 takes the VERTICAL field of view in degrees (tan(fov/2) into +0x60, +0x5C
+  scaled to keep the aspect); Creature's follow camera draws with +0x60 = 0.4097 (about 44.6 degrees), Tribe's likewise.
+  This confirms the fork's viewer notes of [the mating fork notes](creature.md#creature-fork-mating-fov) for
+  SetPerspectiveProjection, SetViewWindow and the camera fields.
+* The relevance pass (`Relevance_Tick` 0xAD2300) centres on the viewer: a fixed camera 25 m from the players keeps the
+  same NPCs alive (no change seen in a 4-view run); far placements would change which NPCs the host's game runs.
+* Pitfall: right after a guest's join in Tribe its world is black for some seconds (the name tags are drawn); wait for
+  the picture (coop_same_view.py waits for a mean brightness over 25).
+
+## The camera a frame is drawn with: one step behind the viewer at Present (2026-11-12, fix/w48-labels)
+<a id="graphics-drawn-camera"></a>
+
+BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeKit's right-drags of 400 px).
+* ✔ (runtime, `kit.cam` probes) Every D3D view matrix the game sets while it draws a frame
+  (`IDirect3DDevice9::SetTransform(D3DTS_VIEW)`, 20 to 90 calls a frame, the last ones the UI's) has the forward axis
+  (column 3) of the viewer as it was at the previous Present, and of the viewer at the moment of the call: 104 of 104
+  and 110 of 110 frames inside turns. The viewer at the frame's first BeginScene and at its Present is already the
+  next camera step (equal to each other in every frame; 23 to 837 px apart from the drawn camera at a point 10 m
+  ahead while the camera turns, 0 at rest). So the picture of frame N is drawn with the camera of Present N-1, and an
+  overlay pass that reads the viewer at Present N projects one camera step ahead of the picture.
+* ? Where exactly the camera is written between the frame's draw calls and its first BeginScene was not looked for
+  (the draw's SetTransform calls come before the first BeginScene SporeKit sees after a Present).
+* Fix (SporeKit, `kit.fix drawncam`): the viewer (its 0x40 bytes, the camera's view window and viewport) is copied at
+  the game's first SetTransform(VIEW) after a Present, and `world_to_screen` inside the overlay pass projects with the
+  copy (outside the overlay pass it reads the viewer as before). `kit.cam [reset]`: copies, overlay passes, how many
+  passes the live viewer differed from the copy and by how many px (a point 10 m ahead, 3 m right, 2 m up of the
+  copy; the orbit camera looks at the avatar, so a point straight ahead stays in the middle).
+* CORRECTION (2026-11-12, fix/w48-labels) to BUG-0948's "keep the viewer of the moment the game draws (a copy taken in
+  the game's draw ...)": a copy at the first BeginScene after Present is the same as the viewer at Present (no help);
+  the copy has to be taken at the draw's first SetTransform(VIEW).

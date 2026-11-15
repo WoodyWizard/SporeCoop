@@ -3,6 +3,7 @@
 #include "core.h"
 
 #include <atomic>
+#include <mutex>
 
 namespace sk {
 
@@ -29,17 +30,18 @@ static SHORT WINAPI h_GetKeyState(int vk)
     return r;
 }
 
+// BUG-1016: reached from the console thread (key / click / button / drag) and from the main thread (a mod's click
+// through command_exec): a plain static flag let two first calls create the same hooks at once
+static std::once_flag g_hooks_once;
 static void ensure_hooks()
 {
-    static bool done = false;
-    if (done)
-        return;
-    done = true;
-    HMODULE u = GetModuleHandleW(L"user32.dll");
-    hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetAsyncKeyState"), (void*)h_GetAsyncKeyState,
-                (void**)&o_GetAsyncKeyState);
-    hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetKeyState"), (void*)h_GetKeyState,
-                (void**)&o_GetKeyState);
+    std::call_once(g_hooks_once, [] {
+        HMODULE u = GetModuleHandleW(L"user32.dll");
+        hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetAsyncKeyState"), (void*)h_GetAsyncKeyState,
+                    (void**)&o_GetAsyncKeyState);
+        hook_create(&g_kit_mod, (void*)GetProcAddress(u, "GetKeyState"), (void*)h_GetKeyState,
+                    (void**)&o_GetKeyState);
+    });
 }
 
 static LPARAM key_lparam(int vk, bool up)
@@ -63,6 +65,14 @@ bool input_key(int vk, const char* mode)
     if (!w || vk <= 0 || vk > 255)
         return false;
     ensure_hooks();
+    if (mode && !strcmp(mode, "elsewhere")) {
+        // BUG-0713 (class BUG-0429): the key pressed while another program has the focus: the physical key state
+        // (GetAsyncKeyState / GetKeyState) is down for a few frames, the game window gets no message
+        g_vkdown[vk] = 1;
+        int v = vk;
+        run_after_frames(3, [v] { g_vkdown[v] = 0; });
+        return true;
+    }
     bool down = !mode || !strcmp(mode, "tap") || !strcmp(mode, "down");
     bool up = !mode || !strcmp(mode, "tap") || !strcmp(mode, "up");
     UINT kd = (vk == VK_MENU || vk == VK_F10) ? WM_SYSKEYDOWN : WM_KEYDOWN;
@@ -111,6 +121,8 @@ bool input_move(int x, int y)
     return true;
 }
 
+WORD wheel_keys();
+
 bool input_wheel(int x, int y, int notches)
 {
     HWND w = (HWND)game_window();
@@ -123,9 +135,25 @@ bool input_wheel(int x, int y, int notches)
     short delta = notches < 0 ? -WHEEL_DELTA : WHEEL_DELTA;
     for (int i = 0; i < n && i < 100; i++)
         run_after_frames(2 + i * 2, [w, delta, pt] {
-            PostMessageW(w, WM_MOUSEWHEEL, MAKEWPARAM(0, delta), MAKELPARAM(pt.x, pt.y));
+            PostMessageW(w, WM_MOUSEWHEEL, MAKEWPARAM(wheel_keys(), delta), MAKELPARAM(pt.x, pt.y));
         });
     return true;
+}
+
+// BUG-0859: the keys and buttons a test holds (input_key down, press) at the moment of the wheel notch, as
+// Windows puts them into WM_MOUSEWHEEL's low word: Shift / Ctrl + wheel in an editor scales a part instead of
+// zooming. `kit.fix wheelmk 0`: always 0 (before).
+WORD wheel_keys()
+{
+    if (!fixed(g_fix_wheelmk))
+        return 0;
+    WORD k = 0;
+    k |= g_vkdown[VK_SHIFT] || g_vkdown[VK_LSHIFT] || g_vkdown[VK_RSHIFT] ? MK_SHIFT : 0;
+    k |= g_vkdown[VK_CONTROL] || g_vkdown[VK_LCONTROL] || g_vkdown[VK_RCONTROL] ? MK_CONTROL : 0;
+    k |= g_vkdown[VK_LBUTTON] ? MK_LBUTTON : 0;
+    k |= g_vkdown[VK_RBUTTON] ? MK_RBUTTON : 0;
+    k |= g_vkdown[VK_MBUTTON] ? MK_MBUTTON : 0;
+    return k;
 }
 
 bool input_click(int x, int y, int button, bool release_cursor)
@@ -148,9 +176,8 @@ bool input_click(int x, int y, int button, bool release_cursor)
     run_after_frames(6, [w, u, x, y, vk, release_cursor] {
         g_vkdown[vk] = 0;
         PostMessageW(w, u, 0, MAKELPARAM(x, y));
-        // BUG-9101: otherwise the game reads the click position as the mouse for 5 s.
-        if (release_cursor)
-            vcursor_release();
+        if (release_cursor) // BUG-0804: the game reads the real mouse again (it kept the click's point for 5 s)
+            run_after_frames(2, [] { vcursor_release(); });
     });
     return true;
 }

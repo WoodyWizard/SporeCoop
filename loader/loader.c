@@ -15,6 +15,10 @@
 typedef int(__cdecl *SporekitBootFn)(HMODULE loader);
 typedef DWORD(WINAPI *EntryFn)(void *);
 
+/* BUG-0851: the loader's tag as a line of its own: uninstall.bat (without the setup) finds it with
+ * findstr, which reads a file line by line (in one long binary "line" Wine's findstr misses it) */
+__attribute__((used)) static const char g_marker_line[] = "\r\nsporekit-loader (SporeCoop)\r\n";
+
 static HMODULE g_self;
 static BYTE *g_entry;
 static BYTE g_saved[5];
@@ -41,6 +45,11 @@ static void apply_pending(void)
 {
     wchar_t root[MAX_PATH];
     DWORD n = GetModuleFileNameW(g_self, root, MAX_PATH);
+    /* BUG-1033: 0 (no path) or MAX_PATH (cut): no root to look the pending list up in (it would be the drive's) */
+    if (n == 0 || n >= MAX_PATH) {
+        dbg("[sporekit-loader] the game folder's path is too long or unknown: pending updates not applied\n");
+        return;
+    }
     int seps = 0;
     while (n > 0 && seps < 2) /* ...\SPORE\SporebinEP1\steam_api.dll -> ...\SPORE */
         if (root[--n] == L'\\' || root[n] == L'/')
@@ -58,8 +67,18 @@ static void boot_sporekit(void)
     }
     wchar_t path[MAX_PATH];
     DWORD n = GetModuleFileNameW(g_self, path, MAX_PATH);
+    /* BUG-1033: a 0 return loaded "sporekit.dll" by the DLL search order; a path cut at MAX_PATH let the append below
+     * write past path[] (the folder part can be 259 characters then) */
+    if (n == 0 || n >= MAX_PATH) {
+        dbg("[sporekit-loader] the game folder's path is too long or unknown, starting game without mods\n");
+        return;
+    }
     while (n > 0 && path[n - 1] != L'\\' && path[n - 1] != L'/')
         n--;
+    if (n + 12 >= MAX_PATH) { /* "sporekit.dll" and the terminator must fit */
+        dbg("[sporekit-loader] the game folder's path is too long, starting game without mods\n");
+        return;
+    }
     path[n] = 0;
     lstrcatW(path, L"sporekit.dll");
     HMODULE kit = LoadLibraryW(path);

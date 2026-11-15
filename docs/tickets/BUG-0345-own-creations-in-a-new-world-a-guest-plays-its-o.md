@@ -57,3 +57,4 @@ both games, recorded; unchosen in the same world -> still own; record forgotten 
 - 2026-11-04: fix/w41-cell-left: where the choice is made and the DNA question answered (no DNA from parts); the design decision (a/b/c) left to the owner.
 - 2026-11-04: fix/w41-cell-left: the per-world default and the notice (creations.guest_world_species); fixed (unreleased).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-04): a guest in its own Cell editor while the host entered Creature got its choices.ini creature from another world after the load (the log shows this ticket's rule acting, "own creature ... recorded for world"): not a regression of the fix, a gap of its rule: BUG-0638.

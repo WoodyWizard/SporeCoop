@@ -31,13 +31,13 @@ static constexpr uint32_t kPlay = 0x3475365, kStop = 0x347536B, kSound = 0x34753
 
 struct Cmd {
     uint32_t cmd = 0, sound = 0, track = 0, n = 0;
-    uint32_t key[6] = {}, val[6] = {};
+    uint32_t key[20] = {}, val[20] = {};
     uint32_t from[4] = {};
 };
 struct Event {
     double t;
     uint32_t mode, cmd, sound, track, n;
-    uint32_t key[6], val[6];
+    uint32_t key[20], val[20];
     uint32_t from[4];
 };
 
@@ -61,7 +61,9 @@ static double now_s()
 
 using Begin_t = void(SK_THISCALL*)(void*, uint32_t);
 using SetInt_t = void(SK_THISCALL*)(void*, uint32_t, uint32_t);
+using SetFloat_t = void(SK_THISCALL*)(void*, uint32_t, float);
 using Submit_t = void(SK_THISCALL*)(void*);
+static SetFloat_t o_SetFloat;
 static Begin_t o_Begin;
 static SetInt_t o_SetInt;
 static Submit_t o_Submit;
@@ -89,10 +91,24 @@ static void SK_THISCALL h_SetInt(void* self, uint32_t key, uint32_t v)
         t_cur.sound = v;
     else if (key == kTrack)
         t_cur.track = v;
-    if (t_cur.n < 6)
+    if (t_cur.n < 20)
         t_cur.key[t_cur.n] = key, t_cur.val[t_cur.n] = v;
     t_cur.n++;
     o_SetInt(self, key, v);
+}
+// BUG-0669: the float parameters too (the position 0x3475391/95/98, the footstep's speed ratio 0x39FA0CA, ...):
+// listed as their bits (as the ints)
+static void SK_THISCALL h_SetFloat(void* self, uint32_t key, float v)
+{
+    if (!g_rec)
+        return o_SetFloat(self, key, v);
+    if (t_cur.n < 20) {
+        uint32_t bits;
+        memcpy(&bits, &v, 4);
+        t_cur.key[t_cur.n] = key, t_cur.val[t_cur.n] = bits;
+    }
+    t_cur.n++;
+    o_SetFloat(self, key, v);
 }
 static void SK_THISCALL h_Submit(void* self)
 {
@@ -139,6 +155,8 @@ static bool install()
     H->hook_create(M, (void*)b, (void*)h_Begin, (void**)&o_Begin);
     H->hook_create(M, (void*)i, (void*)h_SetInt, (void**)&o_SetInt);
     H->hook_create(M, (void*)s, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t f = H->sym("SporeCoop::AudioSystem_SetFloat"))
+        H->hook_create(M, (void*)f, (void*)h_SetFloat, (void**)&o_SetFloat);
     g_on = true;
     return true;
 }
@@ -166,7 +184,7 @@ static int c_audio(void*, int argc, const char* const* argv, SkOut* out)
             const Event& e = g_events[k];
             std::string kv;
             char b[32];
-            for (uint32_t j = 0; j < e.n && j < 6; j++) {
+            for (uint32_t j = 0; j < e.n && j < 20; j++) {
                 snprintf(b, sizeof b, " %08X=%X", e.key[j], e.val[j]);
                 kv += b;
             }

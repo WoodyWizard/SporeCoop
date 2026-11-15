@@ -147,6 +147,9 @@ struct Digest {
     // players this game knows are out of the world (dead, respawning, no state for 5 s, not in a
     // world): their creatures are hidden on purpose and not compared
     std::vector<uint8_t> out;
+    // BUG-0606: the sender's Cell world scale (G+0x514C) when it built the digest, 0 elsewhere; appended
+    // (an older reader stops before it, an older sender's digest reads 0 = not converted)
+    float scale = 0;
     void write(Writer& w) const
     {
         w.u8(kDigest);
@@ -170,6 +173,7 @@ struct Digest {
         w.u8((uint8_t)std::min<size_t>(out.size(), 255));
         for (size_t i = 0; i < out.size() && i < 255; i++)
             w.u8(out[i]);
+        w.f32(scale);
     }
     bool read(Reader& r)
     {
@@ -197,6 +201,12 @@ struct Digest {
         out.resize(r.u8());
         for (auto& id : out)
             id = r.u8();
+        scale = 0;
+        if (r.ok() && r.left() >= 4) {
+            scale = r.f32();
+            if (!std::isfinite(scale) || scale < 0)
+                scale = 0;
+        }
         return r.ok() && std::all_of(entries.begin(), entries.end(), [](const Entry& e) {
                    return std::isfinite(e.x) && std::isfinite(e.y) && std::isfinite(e.z);
                });
@@ -261,7 +271,21 @@ struct Compared {
     bool other_place = false; // host and guest play different stages / worlds: nothing compared
     int objects = 0;          // objects compared by position
     std::vector<Issue> issues;
+    // BUG-0430: what the BUG-0379 windows let through: totals that matched only a value the host had left more than a
+    // moment before it asked (Late::fresh), cells missing between the sure part and the sent part of the guest's
+    // nearest ones that were in that band at the check before too (Late::steady: not a cell of a set that is changing)
+    int late_totals = 0, late_cells = 0, late_band = 0;
+    std::set<uint32_t> band; // this check's band (the next check's Late::steady)
+    bool late() const { return late_totals > 0 || (late_band > 0 && late_cells * 20 > late_band); } // > 5 % of the band
 };
+
+// BUG-0430: a guest that is late for good passes every single check through the windows of BUG-0379; `run` counts the
+// checks in a row that needed them, true from the `limit`th on (one late check is a moment, three in a row ~9 s are not)
+inline bool late_streak(int& run, const Compared& c, int limit = 3)
+{
+    run = c.late() ? run + 1 : 0;
+    return run >= limit;
+}
 
 inline float dist(const Entry& a, const Entry& b)
 {
@@ -269,13 +293,27 @@ inline float dist(const Entry& a, const Entry& b)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// BUG-0430: what tells a late guest from the normal lag of a changing value. fresh: the host's totals of the last
+// moment before it asked (kLateAge, ~1 s: a guest one update behind a rising total matches one of them); a guest
+// value matched only by an older recent one is late. steady: the band cells of the check before; a cell missing that
+// was not in it came with the host's changing set. Null: nothing counts as late.
+struct Late {
+    const std::vector<std::pair<uint8_t, float>>* fresh = nullptr;
+    const std::set<uint32_t>* steady = nullptr;
+};
+
 // host: its own digest against a guest's. `recent` (optional): totals the host had in the seconds
 // before it asked (BUG-0379): a guest shows a shared total a moment after the host counted it (the
 // host sends it, MSG_CELL_FOOD), and the host's digest is built a round trip after the guest's, so a
 // guest value the host had a moment ago is no difference.
 inline Compared compare(const Digest& host, const Digest& guest, const Limits& lim = {},
-                        const std::vector<std::pair<uint8_t, float>>* recent = nullptr)
+                        const std::vector<std::pair<uint8_t, float>>* recent = nullptr, const Late& late = {})
 {
+    auto had = [&](const std::vector<std::pair<uint8_t, float>>* v, uint8_t id, float gv) {
+        return v && std::any_of(v->begin(), v->end(), [&](const std::pair<uint8_t, float>& r) {
+                   return r.first == id && std::fabs(r.second - gv) <= lim.total;
+               });
+    };
     Compared c;
     char b[160];
     if (host.mode != guest.mode || host.world != guest.world) {
@@ -292,10 +330,12 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     }
     for (auto& [id, hv] : host.totals)
         for (auto& [gid, gv] : guest.totals)
-            if (gid == id && std::fabs(hv - gv) > lim.total &&
-                !(recent && std::any_of(recent->begin(), recent->end(), [&, id = id, gv = gv](const std::pair<uint8_t, float>& r) {
-                      return r.first == id && std::fabs(r.second - gv) <= lim.total;
-                  }))) {
+            if (gid == id && std::fabs(hv - gv) > lim.total) {
+                if (had(recent, id, gv)) {
+                    if (late.fresh && !had(late.fresh, id, gv))
+                        c.late_totals++; // the host left that value more than a moment ago: late (BUG-0430)
+                    continue;
+                }
                 snprintf(b, sizeof b, "%s: host %.1f, guest %.1f", total_name(id), hv, gv);
                 c.issues.push_back({"total:" + std::to_string(id), "total", total_name(id), std::fabs(hv - gv), b});
             }
@@ -317,7 +357,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
         me = it->second;
     // the host cells a guest is sent at most: the nearest lim.cell_sent to it (BUG-0295)
-    std::set<uint32_t> far_cells;
+    std::set<uint32_t> far_cells, band_cells; // band: past the sure part, within the sent part (BUG-0430)
     if (me) {
         std::vector<std::pair<float, uint32_t>> cd;
         for (auto& [k, he] : h)
@@ -326,9 +366,15 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         std::size_t sure = cd.size() > lim.cell_sent ? (std::size_t)((float)lim.cell_sent * std::min(1.f, std::max(0.f, lim.cell_sure)))
                                                      : cd.size();
         if (cd.size() > sure) {
-            std::nth_element(cd.begin(), cd.begin() + sure, cd.end());
-            for (std::size_t i = sure; i < cd.size(); i++)
+            std::sort(cd.begin(), cd.end());
+            std::size_t sent = std::min(cd.size(), (std::size_t)lim.cell_sent);
+            for (std::size_t i = sure; i < cd.size(); i++) {
                 far_cells.insert(cd[i].second);
+                if (i < sent)
+                    band_cells.insert(cd[i].second);
+            }
+            c.late_band = (int)band_cells.size();
+            c.band = band_cells;
         }
     }
     for (auto& [k, he] : h) {
@@ -337,8 +383,11 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         if (it == g.end()) {
             if (kind == 'n' && (!lim.npc_missing || !me || dist(*he, *me) > lim.npc_near))
                 continue; // out of the guest's range: never sent to it
-            if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k)))
+            if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k))) {
+                if (dist(*he, *me) <= lim.cell_near && band_cells.count(k) && late.steady && late.steady->count(k))
+                    c.late_cells++; // sent, missing, in the band since the check before (BUG-0430)
                 continue; // around another player or past the nearest 900: not sent to this guest (BUG-0298)
+            }
             c.issues.push_back({"missing:" + key_text(k), "missing", key_text(k), 0, ""});
             continue;
         }
@@ -364,6 +413,53 @@ inline std::vector<Issue> persistent(const std::vector<Issue>& first, const std:
         if (ids.count(i.id))
             out.push_back(i);
     return out;
+}
+
+// BUG-0547: a point of a body's own path (the host's ship, sampled every frame on the host)
+struct PathPoint {
+    double t;
+    float x, y, z;
+};
+struct PathHit {
+    float d = 1e30f; // the distance of the point from the path
+    float lag = 0;   // how long ago (s) the path passed nearest to it
+};
+// how far `p` is from the polyline of `path` (oldest first) over its points newer than `since`, and
+// when the path was nearest. A copy drawn on another game a moment late lies on this path (behind
+// the newest point), whatever the body's speed did in that moment: a ship that slowed down or
+// turned is far from where its speed at the read says, but near its path.
+inline PathHit path_distance(const std::deque<PathPoint>& path, float px, float py, float pz, double since)
+{
+    PathHit h;
+    if (path.empty())
+        return h;
+    double now = path.back().t;
+    auto at = [&](const PathPoint& a, const PathPoint& b) {
+        float vx = b.x - a.x, vy = b.y - a.y, vz = b.z - a.z;
+        float wx = px - a.x, wy = py - a.y, wz = pz - a.z;
+        float ll = vx * vx + vy * vy + vz * vz;
+        float u = ll > 1e-9f ? std::max(0.f, std::min(1.f, (wx * vx + wy * vy + wz * vz) / ll)) : 0.f;
+        float dx = wx - u * vx, dy = wy - u * vy, dz = wz - u * vz;
+        float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < h.d) {
+            h.d = d;
+            h.lag = (float)(now - (a.t + u * (b.t - a.t)));
+        }
+    };
+    size_t i = path.size();
+    while (i > 0 && path[i - 1].t >= since)
+        i--;
+    if (i == path.size()) { // no point in the window: the newest one
+        at(path.back(), path.back());
+        return h;
+    }
+    if (i > 0)
+        i--; // the segment into the window
+    for (size_t k = i; k + 1 < path.size(); k++)
+        at(path[k], path[k + 1]);
+    if (path.size() - i == 1)
+        at(path.back(), path.back());
+    return h;
 }
 
 // one line: "c: 3 missing on the guest (c12 c40 c41), n: 1 extra on the guest (n7), p1 23.5 apart, dna: host 120.0, guest 95.0"

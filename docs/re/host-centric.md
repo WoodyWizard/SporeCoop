@@ -220,3 +220,65 @@ Runtime checks needed (none done in this audit, all lanes were busy):
 * R-H6 (Cell): does SimUpdate's event step 0xE7E7A0 place spawns relative to the view (G9)?
 * R-H7 (all): the host's frame time and the bandwidth per guest with 4 players at Far bases
   (Rivals), once A is in for Creature and Tribe.
+
+## Credits and commands while a game is away from its stage (2026-11-07, fix/w46-k2a-state-b)
+<a id="host-centric-away-credits"></a>
+
+Class BUG-0423 (credits and effects dropped or undone): the K2a audit of 0.7.11 found every place where a change a
+player made reached a game that could not take it at that moment, and the value was dropped. One rule for all of
+them now: **a change is never dropped because the receiver is away; it waits for the same world and is applied
+there** (the DNA owed queue of BUG-0151 / BUG-0233, the Space gifts of BUG-0225 were the first of this kind).
+
+* ✔ Shared food / money (shared.cpp, `res.owed`, BUG-0691): the host's game cannot read the resource while it loads,
+  in the galaxy menu or without its player tribe / civilization; MSG_RES_ADD returned there before the ack, the guest
+  kept the change in flight for good and the totals stayed apart. The host now always acks and keeps the change as
+  owed, paid into its game in the first tick the resource is readable in its mode (lab: host 1000 -> 1300 6 s after
+  an 8 s block, both games equal).
+* ✔ Shared food (shared.cpp, `res.mode_keep`, BUG-0692): the guest's tick dropped its sync state in every frame out
+  of the resource's mode (an editor). The host's total arrives on a change and every 2 s: a purchase in that window
+  after an editor was undone by the next total (Tribe food: 500 -> 300 -> 500 on both games). The guest keeps the sync
+  state while `game::stage_epoch(mode)` is the same (an editor visit keeps it, a load raises it). ~ Civ money is not
+  hit in practice: the cities' income changes the host's money in every frame, so its total (and the sync state) comes
+  in every frame.
+* ✔ Civ / Tribe commands (net/held_cmds.h, `civ.cmd_hold` / `tribe.cmd_hold`, BUG-0693): civ::on_message and
+  tribe::on_message dropped MSG_CIV_CMD / MSG_TRIBE_CMD when the host's game was not in the stage. They are held (32 at
+  most, 120 s) and run once the host has been back in the same save (modes::current_world: an editor visit and a
+  reload of the same save keep it) for 3 s: in the first frame after a load the host's city list is not built yet and
+  a purchase was rejected (`rejected command kind 2`, lab run 20261107-223030). The guest is told that its command
+  waits (`civ: your purchase waits: ... (host) is away`).
+* ✔ Space rewards (space_contracts.cpp, `space.reward_owed`, BUG-0694): a contract result or a mission's tools while
+  the player is outside Space (no inventory) were spent (g_rewarded) and lost; now owed and given in the first Space
+  frame of the same Space world (spaceext::world_epoch).
+* ✔ Space contract clock (`space.contract_clock`, BUG-0695): the deadlines ran on H->time_seconds; the host's
+  contract clock now stands still while its game is paused (world::time_paused), outside Space or without frames.
+* ✔ The cause of a shared total (`res.cause`, BUG-0696): MSG_RES carries after its ack list `u8 n, {u8 player, f64
+  change}` of the changes since the host's last total (the host's own: its game's change minus the guests'); every
+  game shows a notice for another player's change of 25 or more. Older guests stop reading before it.
+* Test hooks: `coop.res block <s>` (the resources read as unavailable: what a load or the menu gives), `coop.res away
+  <s> [<name> <change>]` (the shared tick sees an editor's mode, then the change in the first frame back),
+  `coop.space contracts result <money> <tool>` and `coop.space contracts clock`.
+
+## A guest in its own world: one check for every module (2026-11-12, fix/w48-own-world)
+<a id="host-centric-own-world"></a>
+
+O1 of 0.7.13 (children of BUG-0427): several modules applied the host's world, or held a guest to the host's rules,
+while the guest played a world of its own (joined from its own game, or loaded a save of its own while connected).
+`mods/coop/own_world.h` is now the one answer, defined in coop.cpp on top of host_world.h (unit-tested in
+tests/validate_tests.cpp):
+
+* guest side: `elsewhere()` (a gated stage, host_world::classify Other), `space_other()` (another Space save than the
+  host's, both known; not switched by res.space_save), `host_left()` (a gated stage whose host plays another stage,
+  Creature / Space while we are still in Cell, for 2 s);
+* host side: `peer_here(id)` (the guest's latest state is the host's stage and world) and `peer_elsewhere(id)` (what
+  that guest's own classify() says: it ignores the host's votes and gated messages).
+
+Users, each with its own switch: cellsync (cell.solo_elsewhere BUG-0797, cell.send_here BUG-0809), wsync
+(wsync.herd_evo_own BUG-0803, wsync.space_own BUG-0818), space_trade (space.hold_own_save BUG-0816), creations
+(creations.alias_own_world BUG-0819), the vote (core.vote_present BUG-0801). `coop.status` prints
+`own world: mode .. world .. elsewhere= space_other= host_left=`.
+
+* ✔ In Space g_world is the place (the star system), not the save: a guest that loads its own Space save keeps the
+  same world id (80460035 before and after in the lab); only `space_other` tells the saves apart.
+* ✔ Measured (lab 20261112-025009): the host sent a guest in its Cell world 238 KB/s; with the guest in a Cell world
+  of its own and cell.send_here on, 2.6 KB/s (states, pings, the 2 s food total). With the switch off the host sends
+  the full live Cell state to a guest that drops it at dispatch.

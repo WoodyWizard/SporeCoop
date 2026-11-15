@@ -25,8 +25,12 @@ static SkMod* M;
 // the \\.\Nsi reply) on the main thread, inside the co-op window's refresh: the game crashed.
 // On: the lookup runs on a worker thread, rarely (kMaxAgeMs), from sockets under Wine, else with the
 // ERROR_BUFFER_OVERFLOW retry; a fault guard. Off: the old synchronous lookup every 10 s on the caller's thread.
+// BUG-0977: the off side is unsafe (R4): under Wine the main-thread lookup is the memcpy with a garbage count that
+// faults in nsi (and, when it does not fault, overwrites the heap: DXVK crashed on the damaged heap a frame later).
+// The switch going off also drops generation() to 0, so the host's lobby refresh runs that lookup at once.
+// `coop.fix all off` leaves it on; `coop.fix core.adapters off` still switches it.
 bool g_fix = true;
-COOP_FIX("core.adapters", "BUG-0286", g_fix, "core: local addresses are looked up on a guarded worker thread, rarely, never on the main thread");
+COOP_FIX_UNSAFE("core.adapters", "BUG-0286 BUG-0977", g_fix, "core: local addresses are looked up on a guarded worker thread, rarely, never on the main thread");
 
 constexpr DWORD kMaxAgeMs = 300000; // a fresh lookup when the list is older than 5 min and asked for
 constexpr DWORD kOldAgeMs = 10000;  // the old cache (fix off)

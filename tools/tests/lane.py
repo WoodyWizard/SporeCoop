@@ -49,15 +49,25 @@ def sh(*args, check=True):
     subprocess.run([SPORE, *args], check=check, stdout=subprocess.DEVNULL)
 
 
+def _run(*args):
+    """spore.sh run; exit 3 = refused: the instance runs or was started under 20 s ago (BUG-1075: two copies of
+    one instance share its profile files and console port). The first copy goes on starting: a note, no error."""
+    r = subprocess.run([SPORE, 'run', *args], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode == 3:
+        print('  (' + r.stderr.strip() + ')', flush=True)
+    elif r.returncode:
+        raise subprocess.CalledProcessError(r.returncode, [SPORE, 'run', *args], stderr=r.stderr)
+
+
 def run_host():
-    sh('run', '-i', str(HOST), '-p', HOST_PROFILE)
+    _run('-i', str(HOST), '-p', HOST_PROFILE)
 
 
 def run_guest():
     if LANE == 1:
-        sh('run', '-i', '2')
+        _run('-i', '2')
     else:
-        sh('run', '-i', str(GUEST), '-p', GUEST_PROFILE)
+        _run('-i', str(GUEST), '-p', GUEST_PROFILE)
 
 
 _MAIN = None

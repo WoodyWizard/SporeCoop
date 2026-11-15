@@ -7,6 +7,8 @@
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
   lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
   lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
+  lab.py run nightly --quick           intermediate runs: the long play scenarios shortened (suite.py quick=,
+                                       docs/06-testing.md#testing-lab-speed); never for the release rule
   lab.py coverage [--days 7]           every suite test with its last run (main + worktrees), never-run ones
   lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
   lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
@@ -31,6 +33,7 @@ summary.md).
 """
 import argparse
 import datetime
+import glob
 import json
 import os
 import re
@@ -182,6 +185,50 @@ def free_lane_lock(lane):
     return os.path.join(os.path.dirname(lane_game(lane)), f'.update_check-lane{lane}.lock')
 
 
+_lane_locks = []  # BUG-1070: the open lock files of this process's run (held until the process ends)
+
+
+def lane_run_lock(lane):
+    """BUG-1070: the lock a lab run holds on each of its lanes for its whole life (next to the lane's game)"""
+    return os.path.join(os.path.dirname(lane_game(lane)), f'.lab-run-lane{lane}.lock')
+
+
+def take_lanes(lanes, run_id):
+    """BUG-1070: a run's lanes are its own. A second run started on a lane that another run still uses ended
+    that run's games with its start-of-run `spore.sh kill` (lab 20261113-052132: the host's game gone 7 s into
+    Tribe, no crash report, both games' processes ended the second 20261113-054031-2 started on lane 7).
+    Takes an exclusive flock per lane (released by the kernel when the process ends); a lane held by another
+    run: None and the holder's line. The old behaviour (no lock): SPORE_LAB_NO_LANE_LOCK=1 (self-test)."""
+    import fcntl
+    for f in _lane_locks:  # an earlier cmd_run of this process (the self-test) is over
+        try:
+            f.close()
+        except OSError:
+            pass
+    _lane_locks.clear()
+    if os.environ.get('SPORE_LAB_NO_LANE_LOCK') == '1':
+        return []
+    for lane in lanes:
+        path = lane_run_lock(lane)
+        f = open(path, 'a+')
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            f.seek(0)
+            holder = f.read().strip() or 'unknown'
+            f.close()
+            for g in _lane_locks:
+                g.close()
+            _lane_locks.clear()
+            return None, lane, holder
+        f.seek(0)
+        f.truncate()
+        f.write(f'run {run_id} pid {os.getpid()} since {datetime.datetime.now():%H:%M:%S}\n')
+        f.flush()
+        _lane_locks.append(f)
+    return list(lanes)
+
+
 def free_lane_watch(text):
     """(lane, since) of a uses_free_lane test's `LAB-WATCH lane=N since=T` line, or None"""
     m = re.search(r'^LAB-WATCH lane=(\d+) since=([\d.]+)', text, re.M)
@@ -212,7 +259,7 @@ def kill_group(p):
         pass
 
 
-def run_cmd(cmd, tree, env, f, timeout):
+def run_cmd(cmd, tree, env, f, timeout, lane=0, mem=None):
     """the test in its own session: a timeout kills its whole process group, not only /bin/sh
     (dash does not exec the command, the test would go on driving the lane: BUG-0052)"""
     p = subprocess.Popen(cmd, shell=True, cwd=tree, env=env, stdout=f, stderr=subprocess.STDOUT,
@@ -221,8 +268,13 @@ def run_cmd(cmd, tree, env, f, timeout):
         _procs.add(p)
         if _stopping.is_set():  # an interrupt came while it started (BUG-0250)
             kill_group(p)
+    ms = MemSampler(p, lane)  # BUG-0916
+    ms.start()
     try:
-        return p.wait(timeout=timeout)
+        rc = p.wait(timeout=timeout)
+        if ms.over:
+            f.write(f'\nLAB: MEMORY {ms.over}\n')
+        return rc
     except subprocess.TimeoutExpired:
         kill_group(p)
         p.wait()
@@ -233,6 +285,10 @@ def run_cmd(cmd, tree, env, f, timeout):
         p.wait()
         raise
     finally:
+        if mem is not None:
+            mem.update(ms.result())
+        else:
+            ms.stop_ev.set()
         with _procs_lock:
             _procs.discard(p)
 
@@ -242,19 +298,265 @@ def fault_count(line):
     return int(m.group(1)) if m else 0
 
 
+# BUG-0663 (docs/06-testing.md#testing-xwayland-saturation): every lane's games draw through the one Xwayland of the
+# headless shell; over ~90 % of a core it is saturated and the games of the heaviest stage starve (2-9 fps, "the
+# console stopped answering"), whatever the mod does. Each test samples that Xwayland's CPU every 10 s; a failed test
+# whose busiest window reached XW_LOAD is marked "(load)" in the summary with the numbers (still a failure: rerun it on
+# a quiet machine before reading it as the mod's). SPORE_LAB_XWAYLAND=0: no sampling.
+XW_LOAD = 0.9
+XW_STEP = 10.0
+
+
+def headless_xwayland():
+    """pid of the Xwayland that serves the headless shell (its auth file is under sporecoop-headless), or None"""
+    try:
+        out = subprocess.run(['pgrep', '-x', 'Xwayland'], capture_output=True, text=True).stdout.split()
+    except OSError:
+        return None
+    for pid in out:
+        try:
+            if b'sporecoop-headless' in open(f'/proc/{pid}/cmdline', 'rb').read():
+                return int(pid)
+        except OSError:
+            pass
+    return None
+
+
+def proc_ticks(pid):
+    try:
+        f = open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()
+        return int(f[11]) + int(f[12])  # utime + stime
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+class XwSampler(threading.Thread):
+    """the headless Xwayland's share of one core: the whole test and its busiest XW_STEP window"""
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.pid = headless_xwayland() if os.environ.get('SPORE_LAB_XWAYLAND', '1') != '0' else None
+        self.hz = os.sysconf('SC_CLK_TCK')
+        self.stop_ev = threading.Event()
+        self.first = self.last = None
+        self.peak = 0.0
+
+    def run(self):
+        if not self.pid:
+            return
+        t, k = time.time(), proc_ticks(self.pid)
+        self.first = (t, k)
+        while k is not None and not self.stop_ev.wait(XW_STEP):
+            t2, k2 = time.time(), proc_ticks(self.pid)
+            if k2 is None:
+                break
+            self.peak = max(self.peak, (k2 - k) / self.hz / max(t2 - t, 1e-3))
+            t, k = t2, k2
+            self.last = (t, k)
+
+    def result(self):
+        self.stop_ev.set()
+        self.join(2)
+        if not self.first or not self.last or self.first[1] is None:
+            return None
+        avg = (self.last[1] - self.first[1]) / self.hz / max(self.last[0] - self.first[0], 1e-3)
+        return {'avg': round(avg, 2), 'peak': round(self.peak, 2)}
+
+
+# BUG-0916 (docs/06-testing.md#testing-lab-memory): a test script (the python3 that drives the games) needs 25-150 MB.
+# One that grows without bound (a paging loop that never ended: 17 GB in minutes, four of them took the machine's 62 GB)
+# is killed at SCRIPT_RSS_MB and fails with a clear line; every result carries the script's and the lane's games' peak
+# RSS and the lowest MemAvailable seen. SPORE_LAB_SCRIPT_RSS_MB=0: no limit (the peaks are still recorded).
+SCRIPT_RSS_MB = float(os.environ.get('SPORE_LAB_SCRIPT_RSS_MB', '2048') or 0)
+MEM_STEP = 2.0
+# The memory gate: a test starts only when, with its games at their full size (MEM_GAME_GB each, suite.games(t) of
+# them) and the games of the run's tests started in the last MEM_RAMP seconds grown to theirs, MemAvailable stays over
+# MEM_FLOOR_GB. Otherwise it waits (other tests of the run end, other work frees memory); after MEM_WAIT seconds with
+# no test of this run running it fails as not started. SPORE_LAB_MEM_FLOOR_GB=0: no gate.
+# MEM_GAME_GB: measured 2026-11-11, a game of a 4-player campaign: 0.5 GB RSS in Cell, 0.8 GB in Space after 80 min;
+# MemAvailable rose by 3.9 GB when the campaign's four games ended (the games, their Wine helpers, GPU buffers in RAM).
+MEM_GAME_GB = float(os.environ.get('SPORE_LAB_GAME_GB', '1.0') or 0)
+MEM_FLOOR_GB = float(os.environ.get('SPORE_LAB_MEM_FLOOR_GB', '8') or 0)
+MEM_RAMP = 900.0
+MEM_WAIT = float(os.environ.get('SPORE_LAB_MEM_WAIT', '1800') or 0)
+MEM_POLL = 10.0
+
+
+def mem_available_gb():
+    try:
+        with open('/proc/meminfo') as f:
+            for ln in f:
+                if ln.startswith('MemAvailable:'):
+                    return int(ln.split()[1]) / 1048576
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _rss_kb(pid):
+    try:
+        with open(f'/proc/{pid}/statm') as f:
+            return int(f.read().split()[1]) * (os.sysconf('SC_PAGE_SIZE') // 1024)
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def session_scripts(sid):
+    """{pid: (rss kB, command)} of the python processes in the test's session (the test script and its helpers;
+    the games are Wine processes, not counted here)"""
+    out = {}
+    for d in os.listdir('/proc'):
+        if not d.isdigit():
+            continue
+        try:
+            stat = open(f'/proc/{d}/stat').read()
+            comm = stat[stat.index('(') + 1:stat.rindex(')')]
+            if not comm.startswith('python') or int(stat.rsplit(')', 1)[1].split()[3]) != sid:
+                continue
+            cmd = open(f'/proc/{d}/cmdline', 'rb').read().replace(b'\0', b' ').decode('utf-8', 'replace').strip()
+        except (OSError, ValueError, IndexError):
+            continue
+        out[int(d)] = (_rss_kb(d), cmd[:160])
+    return out
+
+
+def lane_games_rss(lane):
+    """(count, RSS kB in all) of the SporeApp.exe processes whose working directory is the lane's game folder"""
+    try:
+        pids = subprocess.run(['pgrep', '-x', 'SporeApp.exe'], capture_output=True, text=True).stdout.split()
+        game = os.path.realpath(lane_game(lane))
+    except Exception:  # noqa: BLE001 (a number for the record, never the test's failure)
+        return 0, 0
+    n = kb = 0
+    for pid in pids:
+        try:
+            cwd = os.readlink(f'/proc/{pid}/cwd')
+        except OSError:
+            continue
+        if cwd == game or cwd.startswith(game + os.sep):
+            n += 1
+            kb += _rss_kb(pid)
+    return n, kb
+
+
+class MemSampler(threading.Thread):
+    """the test script's memory while it runs: the peak RSS of a python process of its session, the peak of the
+    lane's games, the lowest MemAvailable; over SCRIPT_RSS_MB the test's process group is killed (self.over)"""
+    def __init__(self, proc, lane, limit_mb=None):
+        super().__init__(daemon=True)
+        self.proc, self.lane = proc, lane
+        self.limit = SCRIPT_RSS_MB if limit_mb is None else limit_mb
+        self.stop_ev = threading.Event()
+        self.peak_kb, self.peak_cmd, self.over = 0, '', None
+        self.games_kb, self.games_n, self.avail_min = 0, 0, None
+
+    def sample(self):
+        for pid, (kb, cmd) in session_scripts(self.proc.pid).items():
+            if kb > self.peak_kb:
+                self.peak_kb, self.peak_cmd = kb, cmd
+        if self.limit and self.peak_kb > self.limit * 1024 and self.over is None:
+            self.over = (f'the test script used {self.peak_kb // 1024} MB of memory (limit {self.limit:.0f} MB, '
+                         f'SPORE_LAB_SCRIPT_RSS_MB): killed. Its python3: {self.peak_cmd}')
+            kill_group(self.proc)
+            return
+        if self.lane:
+            n, kb = lane_games_rss(self.lane)
+            if kb > self.games_kb:
+                self.games_kb, self.games_n = kb, n
+        av = mem_available_gb()
+        if av is not None:
+            self.avail_min = av if self.avail_min is None else min(self.avail_min, av)
+
+    def run(self):
+        while not self.stop_ev.wait(MEM_STEP) and self.over is None:
+            try:
+                self.sample()
+            except Exception:  # noqa: BLE001 (the sampler must not end a test)
+                pass
+
+    def result(self):
+        self.stop_ev.set()
+        self.join(5)
+        return dict(script_rss_mb=self.peak_kb // 1024, games_rss_mb=self.games_kb // 1024, games=self.games_n,
+                    avail_min_gb=None if self.avail_min is None else round(self.avail_min, 1), over=self.over)
+
+
+class MemGate:
+    """the run's memory gate (see MEM_GAME_GB above)"""
+    def __init__(self, out=print):
+        self.lock = threading.Lock()
+        self.held = []  # [start time, GB] of the run's running tests
+        self.out = out
+
+    def pending(self, now):
+        """GB the games of the tests started lately will still take (their share falls to 0 over MEM_RAMP)"""
+        return sum(gb * max(0.0, 1.0 - (now - t0) / MEM_RAMP) for t0, gb in self.held)
+
+    def admit(self, t, stopping=None):
+        """a token to give back with release() once the test may start; None after an interrupt; a string (why)
+        when it could not start"""
+        need = suite.games(t) * MEM_GAME_GB
+        if not MEM_FLOOR_GB or not need:
+            return []
+        t0, said = time.time(), False
+        idle_since = None
+        while True:
+            with self.lock:
+                av = mem_available_gb()
+                now = time.time()
+                pend = self.pending(now)
+                if av is None or av - pend - need >= MEM_FLOOR_GB:
+                    tok = [now, need]
+                    self.held.append(tok)
+                    if said:
+                        self.out(f'  (memory: {t["name"]} starts after {now - t0:.0f} s: {av:.1f} GB available)')
+                    return tok
+                running = len(self.held)
+            why = (f'{av:.1f} GB available, {pend:.1f} GB for the games of tests just started, {need:.1f} GB for its own '
+                   f'{suite.games(t)} games, {MEM_FLOOR_GB:.0f} GB to stay free (docs/06-testing.md#testing-lab-memory)')
+            if not said:
+                said = True
+                self.out(f'  (memory: {t["name"]} waits: {why})')
+            idle_since = None if running else (idle_since or now)
+            if idle_since is not None and now - idle_since >= MEM_WAIT:
+                return f'FAIL lab: not started, too little memory after {now - t0:.0f} s: {why}'
+            if stopping is not None and stopping.wait(MEM_POLL):
+                return None
+            if stopping is None:
+                time.sleep(MEM_POLL)
+
+    def release(self, tok):
+        with self.lock:
+            if tok in self.held:
+                self.held.remove(tok)
+
+
 def run_one(t, lane, tree, logdir, warm, suffix=''):
     preflight()
-    env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1')
+    env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1',
+               # the test's key frames go into the run folder (twoinst.keyframe, docs/06-testing.md#testing-key-frames)
+               SPORE_LAB_RUN=os.path.abspath(logdir), SPORE_LAB_TEST=t['name'] + suffix)
+    # a quick run's shortened test knows it (docs/06-testing.md#testing-lab-speed); every other test runs full length
+    env['SPORE_LAB_QUICK'] = '1' if t.get('quick_run') else '0'
+    # w49-warm twin checks: SPORE_LAB_FIXOFF="<test>=<switch>[,<switch>];..." switches fixes off for the named tests of
+    # the run only (SPORE_FIX_OFF would switch them off for every test, so no test of the run could start warm)
+    for part in filter(None, (x.strip() for x in os.environ.get('SPORE_LAB_FIXOFF', '').split(';'))):
+        name, _, sw = part.partition('=')
+        if name.strip() == t['name'].split('#')[0] and sw.strip():
+            env['SPORE_FIX_OFF'] = sw.strip()
     if t.get('monitor') is not None:  # the invariant monitor's settings (tools/tests/monitor.py)
         env['SPORE_MONITOR'] = t['monitor'] if isinstance(t['monitor'], str) else json.dumps(t['monitor'])
     log = os.path.join(logdir, t['name'] + suffix + '.log')
     t0 = time.time()
     reports0 = report_files(lane)
     marks0 = {who: loggates.log_marks(p) for who, p in game_logs(lane).items()}  # where the test's lines begin
+    xw = XwSampler()
+    xw.start()
     with open(log, 'w') as f:
         f.write(f'# {t["cmd"]}  (lane {lane}, {"warm" if warm else "cold"})\n')
         f.flush()
-        rc = run_cmd(t['cmd'], tree, env, f, t.get('timeout') or TIMEOUT)
+        mem = {}
+        rc = run_cmd(t['cmd'], tree, env, f, t.get('timeout') or TIMEOUT, lane, mem)
+    xwl = xw.result()
     # a crash after the checks is still a crash (CLAUDE.md 3, BUG-0036): a game that answered at the
     # end must still answer a few seconds later, and no new crash / hang report may appear
     alive0 = lane_alive(lane)
@@ -291,24 +593,86 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     has_result = 'RESULT:' in text or t['cmd'].startswith('make')
     skipped = 'RESULT: SKIP' in text and 'RESULT: FAIL' not in text
     faults = [l.strip() for l in text.splitlines() if ' faults: ' in l and 'total faults: 0' not in l]
-    lab_fails = []
+    lab_fails, lab_notes = [], []
     if not t.get('reports'):
         lab_fails += [f'FAIL lab: instance {i} stopped answering after the test (crash after the checks?)'
                       for i in died]
         lab_fails += [f'FAIL lab: new report {os.path.basename(p)}' for p in new_reports]
         lab_fails += [f'FAIL lab: faults in the log: {l}' for l in faults if fault_count(l) > 0]
+        # BUG-0623: a hook the mod could not make (two hooks of one function: the second fails and its fix is off)
+        for gl in sorted(glob.glob(os.path.join(logdir, f'{t["name"]}{suffix}.*game.log'))):
+            try:
+                with open(gl, errors='replace') as f:
+                    bad = sorted({m.group(1) for m in re.finditer(r'hook_create ([0-9A-Fa-f]+) failed: (MH_ERROR_\w+)', f.read())})
+            except OSError:
+                bad = []
+            lab_fails += [f'FAIL lab: hook not made in {os.path.basename(gl)}: {a}' for a in bad]
+    # BUG-0975 (feat/lab-speed): a game that dies in the warm reset of the next test (the state the test before left
+    # killed it) made twoinst start cold and the test passed: no one saw the crash. It fails the test now, with the
+    # lane's logs the restart moved to logs/previous
+    # (a console that timed out is only said: a slow game, not proven gone; 19 such lines in the recorded runs, against
+    # 27 lost games before, 25 of them in Cell tests)
+    m = re.search(r'\(warm reset failed: (?!cold start)(.*?) ?\)$', text, re.M)
+    lost = m and ('Errno' in m.group(1) or 'closed' in m.group(1))
+    if m and not lost:
+        lab_notes.append(f'warm reset: {m.group(1)[:80]} (a game too slow to answer: cold start)')
+    if lost and not t.get('reports'):
+        lab_fails.append(f'FAIL lab: the warm reset lost a game ({m.group(1)[:80]}): a crash in the state the test '
+                         f'before left? (logs/previous copied as {t["name"]}{suffix}.previous.*)')
+        prev = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs', 'previous')
+        for p in glob.glob(os.path.join(prev, 'sporekit*.log')):
+            try:
+                if os.path.getmtime(p) >= t0 - 2:
+                    shutil.copy(p, os.path.join(logdir, f'{t["name"]}{suffix}.previous.{os.path.basename(p)}'))
+            except OSError:
+                pass
     gate_fails, gate_notes, _ = log_gates(t, lane, text, marks0, t0)
+    gate_notes = lab_notes + gate_notes
     lab_fails += gate_fails
+    if mem.get('over'):  # BUG-0916: also for a test that makes reports on purpose
+        lab_fails.insert(0, 'FAIL lab: ' + mem['over'])
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result and not lab_fails
     # the machine, not the mod: the game did not even start
     env = not ok and ('did not start' in text or "bwrap: Can't find" in text)
     m = re.search(r'\((both games ready|warm reset) in (\d+) s', text)
-    return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok,
+    load = bool(not ok and xwl and xwl['peak'] >= XW_LOAD)  # BUG-0663
+    if load:
+        lab_fails.append(f'LOAD lab: the headless Xwayland used {xwl["peak"]:.0%} of a core in the busiest {XW_STEP:.0f} s '
+                         f'({xwl["avg"]:.0%} on average): saturated, the fps of this run are the machine\'s (BUG-0663)')
+    return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok, xwayland=xwl, load=load,
+                quick=bool(t.get('quick_run')),
+                mem={k: v for k, v in mem.items() if k != 'over'},
                 harness=(not has_result or 'Traceback' in text) and not lab_fails,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
                 fails=(lab_fails + [l.strip() for l in text.splitlines() if l.strip().startswith('FAIL')])[:8],
                 faults=faults, reports=[os.path.basename(p) for p in new_reports], died=died, log=log,
                 gates=gate_fails + gate_notes, log_marks={w: m for w, m in marks0.items() if m})
+
+
+def measured_seconds(dirs=None, keep=5):
+    """{(test, quick): median seconds of its last `keep` passed runs} over the recorded runs (out/lab of the main
+    checkout and of the worktrees): the scheduler's estimate (docs/06-testing.md#testing-lab-speed). The suite's
+    `minutes` were rough (play_space 14 said, 13 taken; long_creature 60 said, 46 taken; unit 1 said, 6 taken)"""
+    try:
+        dirs = dirs if dirs is not None else loggates.lab_dirs(
+            os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir')))
+        seen = {}
+        for rundir, _, r in loggates.recorded(dirs):
+            if r.get('ok') and not r.get('skipped') and r.get('seconds'):
+                seen.setdefault((r['name'].split('#')[0], bool(r.get('quick'))), []).append(
+                    (os.path.basename(rundir), r['seconds']))
+    except Exception:  # noqa: BLE001 (an estimate: without it the suite's minutes)
+        return {}
+    out = {}
+    for k, v in seen.items():
+        last = sorted(x[1] for x in sorted(v)[-keep:])
+        out[k] = last[len(last) // 2]
+    return out
+
+
+def expected_seconds(t, took):
+    """how long a test of this run will take: its recorded median, else the suite's minutes"""
+    return took.get((t['name'].split('#')[0], bool(t.get('quick_run')))) or t['minutes'] * 60
 
 
 def new_run_dir(branch=None, now=None):
@@ -337,6 +701,10 @@ def new_run_dir(branch=None, now=None):
 def cmd_run(a):
     tree = worktree(a.branch) if a.branch else ROOT
     tests = suite.select(a.tests)
+    quick = getattr(a, 'quick', False) or os.environ.get('SPORE_LAB_QUICK') == '1'
+    if quick:  # docs/06-testing.md#testing-lab-speed: shorter play scenarios, marked in the results (labcov skips them)
+        tests = [dict(t, cmd=suite.quick_cmd(t), quick_run=True, minutes=max(2, t['minutes'] // 2)) if t.get('quick') else t
+                 for t in tests]
     if a.repeat > 1:  # hunting a flaky bug: the same tests many times
         tests = [dict(t, name=f'{t["name"]}#{k + 1}') for k in range(a.repeat) for t in tests]
     run_id, logdir = new_run_dir(a.branch)
@@ -370,13 +738,25 @@ def cmd_run(a):
         except Exception:  # noqa: BLE001
             return False
     os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 11) if _free(n)), ''))
-    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})')
+    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})'
+          + (f'; QUICK: {sum(bool(t.get("quick_run")) for t in tests)} shortened' if quick else ''))
+    got = take_lanes(a.lane_ids, run_id)
+    if isinstance(got, tuple):  # BUG-1070: never kill the games of a lane another run is using
+        _, lane, holder = got
+        sys.exit(f'lab: lane {lane} is in use by another lab run ({holder}): wait for it or pick another lane '
+                 '(two runs on one lane kill each other\'s games, BUG-1070)')
     if not a.no_build:
         build(tree)
     ensure_lanes(a.lane_ids)
     for lane in a.lane_ids:  # a run starts from clean games
         spore(tree, lane, 'kill')
-    parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -t['minutes'])
+    took = measured_seconds()  # feat/lab-speed: longest first by what the tests took lately, not the rough minutes
+    parallel = [t for t in tests if not t['exclusive']]
+    if getattr(a, 'in_order', False):  # --in-order: as named (a warm predecessor before a twin check)
+        order = [x.strip().lstrip('=') for x in a.tests.split(',')]
+        parallel.sort(key=lambda t: order.index(t['name'].split('#')[0]) if t['name'].split('#')[0] in order else len(order))
+    else:
+        parallel.sort(key=lambda t: -expected_seconds(t, took))
     alone = [t for t in tests if t['exclusive']]
     pending = list(parallel)
     results, lock = [], threading.Lock()
@@ -405,6 +785,19 @@ def cmd_run(a):
                   + ''.join(f'\n         {x}' for x in shown), flush=True)
 
     free_lock = threading.Lock()  # BUG-0468: two tests on the one free lane at once broke both
+    gate = MemGate(lambda x: print(x, flush=True))  # BUG-0916
+
+    def gated(t, lane, warm_ok):
+        """attempt() behind the memory gate: (result, warm_ok), or None after an interrupt"""
+        tok = gate.admit(t, stopping)
+        if tok is None:
+            return None
+        if isinstance(tok, str):
+            return dict(name=t['name'], lane=lane, ok=False, rc=-1, seconds=0, start='', faults=[], fails=[tok]), warm_ok
+        try:
+            return attempt(t, lane, warm_ok)
+        finally:
+            gate.release(tok)
 
     def attempt(t, lane, warm_ok):
         if t.get('uses_free_lane'):
@@ -448,7 +841,10 @@ def cmd_run(a):
             t = take(last if warm_ok else None)
             if t is None:
                 return
-            r, warm_ok = attempt(t, lane, warm_ok)
+            got = gated(t, lane, warm_ok)
+            if got is None:
+                return
+            r, warm_ok = got
             last = t['fixture']
             report(r)
 
@@ -513,7 +909,10 @@ def cmd_run(a):
                 report(dict(name=t['name'], lane=0, ok=True, skipped=True, rc=0, seconds=0, start='', faults=[],
                             fails=[f'exclusive: needs one of lanes 1-5 in this run (lanes {a.lane_ids})']))
                 continue
-            report(attempt(t, ex_lane, False)[0])
+            got = gated(t, ex_lane, False)
+            if got is None:
+                break
+            report(got[0])
     except KeyboardInterrupt:  # the tests run in their own sessions: Ctrl+C does not reach them
         interrupted = True
         shutdown()
@@ -555,14 +954,28 @@ def cmd_run(a):
     os.replace(tmp_hist, hist_path)
     fcntl.flock(hist_lock, fcntl.LOCK_UN)
     hist_lock.close()
-    json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok, results=results),
+    json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok,
+                   quick=quick, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
     lines = [f'# lab run {run_id}', '', f'{tree_branch} {head} - {len(results)} tests, {a.lanes} lanes, '
-             f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '', '| test | result | lane | s | start |', '|---|---|---|---|---|']
+             f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '']
+    if quick:
+        lines += ['**QUICK run** (`--quick`): tests marked (quick) ran shortened; they do not count for the release rule '
+                  '(docs/06-testing.md#testing-lab-speed).', '']
+    lines += ['| test | result | lane | s | start |', '|---|---|---|---|---|']
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
         res = 'skip' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
-        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""} | {r["lane"]} '
+        lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""}{" (load)" if r.get("load") else ""}'
+                     f'{" (quick)" if r.get("quick") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
+    mems = [r for r in results if (r.get('mem') or {}).get('script_rss_mb') or (r.get('mem') or {}).get('games_rss_mb')]
+    if mems:  # docs/06-testing.md#testing-lab-memory
+        lows = [r['mem']['avail_min_gb'] for r in mems if r['mem'].get('avail_min_gb') is not None]
+        lines += ['', '## Memory', '', 'Peak RSS of each test\'s script and of its lane\'s games'
+                  + (f'; lowest MemAvailable during the run {min(lows):.1f} GB' if lows else '') + '.', '',
+                  '| test | script MB | games | games MB |', '|---|---|---|---|']
+        lines += [f'| {r["name"]} | {r["mem"].get("script_rss_mb", 0)} | {r["mem"].get("games", 0)} | {r["mem"].get("games_rss_mb", 0)} |'
+                  for r in sorted(mems, key=lambda r: -(r['mem'].get('script_rss_mb') or 0))]
     gated = [r for r in results if r.get('gates')]
     if gated:  # docs/06-testing.md#testing-log-gates: what the games' logs said, failed or allowed
         lines += ['', '## Log gates', ''] + [f'- {r["name"]}: {g}' for r in sorted(gated, key=lambda r: r['name'])
@@ -611,7 +1024,11 @@ def main():
     r.add_argument('--cold', action='store_true', help='no warm reuse of running games')
     r.add_argument('--no-build', action='store_true')
     r.add_argument('--retry', type=int, default=1)
+    r.add_argument('--in-order', action='store_true', help='run the named tests in the given order (not longest '
+                   'first): a passing warm test before a twin check (SPORE_LAB_FIXOFF="<test>=<switch>")')
     r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt)')
+    r.add_argument('--quick', action='store_true', help='the long play scenarios shortened (suite.py quick=; also '
+                   'SPORE_LAB_QUICK=1): intermediate runs only, the release rule does not count them')
     ln = sub.add_parser('lanes')
     ln.add_argument('n', type=int)
     rl = sub.add_parser('reload')

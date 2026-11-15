@@ -1,5 +1,6 @@
 // Whole-planet re-alignment after transitions (realign.h, realign_rule.h, docs/re/tribe.md#tribe-realign).
 #include "realign.h"
+#include "player_life.h"
 
 #include <windows.h>
 
@@ -18,6 +19,10 @@
 #include "realign_rule.h"
 #include "sporekit_game.hpp"
 #include "tribe.h"
+
+namespace tribe {
+extern bool g_cycle_order_fix; // net.cycle_order (BUG-0612, BUG-0886)
+}
 
 namespace realign {
 
@@ -38,6 +43,29 @@ COOP_FIX("realign.villages", "BUG-0564", g_fix_villages,
 static bool g_fix_buildings = true;
 COOP_FIX("realign.buildings", "BUG-0567 BUG-0566", g_fix_buildings,
          "tribe: a hut's and a tool's health on a guest is the host's (no broken building of the old world)");
+
+// BUG-0777: a village the host's game conquered was conquered there only: the guest's realign kept its hut at 1 hp
+// at least ("never 0"), so the guest's game never ran the defeat (the village's conquered flag, the goal mission's
+// end, the dead hut). The rows now carry the hut's dead state and the village's conquered flag (Obj.fl bit 1), and a
+// hut dead on the host takes the game's own killing blow here (tribe::fell_hut). `coop.fix realign.hut_fall off`:
+// the hut kept at 1 hp (0.7.12).
+static bool g_fix_hut_fall = true;
+COOP_FIX("realign.hut_fall", "BUG-0777", g_fix_hut_fall,
+         "tribe: a village the host's game conquered is conquered in the guest's game too (its hut falls there)");
+static uint32_t g_huts_felled;
+// BUG-1076: the players' own hut dead in the host's game (an NPC village raided it back) took the killing blow in the
+// guest's game too: the guest's game ran its own defeat (the hut-destroyed cinematic, then a reload of its own save
+// 20 s later, every conquest gone), the realign conquered the villages and felled the hut again after each reload (a
+// loop of 11 reloads in 6 min, lab 20261113-082316), and a village caption played after such a reload read the
+// conquered tribe the reload had freed (the caption's tribe name, Tribe token provider +0x1C: faults at 0xCE69F9).
+// The host's game decides the players' defeat (its game over, then the realign of its reloaded world, BUG-0960 /
+// BUG-0685): a guest's own hut never takes the blow, its health follows the host's down to 1 hp.
+// `coop.fix realign.own_hut off`: the own hut falls too (0.7.13).
+static bool g_fix_own_hut = true;
+COOP_FIX("realign.own_hut", "BUG-1076", g_fix_own_hut,
+         "tribe: the players' own hut dead in the host's game does not fall in a guest's game (no defeat and reload of its own)");
+static uint32_t g_own_hut_kept;
+constexpr uint8_t kFlDown = 2; // a hut: dead (cCombatant +0x34 == 2); a village: conquered (cTribe +0x556)
 
 constexpr uint8_t kStCreature = 1, kStTribe = 2, kStCiv = 4;
 constexpr uintptr_t kHp = 0x120 + 0x38, kMaxHp = 0x120 + 0x2C; // huts / tools: cCombatant at +0x120 (docs/re/tribe.md)
@@ -113,9 +141,10 @@ static std::vector<Local> collect(uint8_t sb)
                     break;
                 l.o.x = p.x, l.o.y = p.y, l.o.z = p.z;
                 if (k == kVillage)
-                    l.o.fl = o == u->pt ? kFlPlayer : 0;
+                    l.o.fl = (o == u->pt ? kFlPlayer : 0) | (skg::readable(o, 0x557) && field<uint8_t>(o, 0x556) ? kFlDown : 0);
                 else if (k == kHut && skg::readable(o, 0x234))
-                    l.o.fl = field<void*>(o, 0x230) == u->pt && u->pt ? kFlPlayer : 0; // the hut's tribe (docs/re/tribe.md)
+                    l.o.fl = (field<void*>(o, 0x230) == u->pt && u->pt ? kFlPlayer : 0) | // the hut's tribe (docs/re/tribe.md)
+                             (field<int>(o, 0x120 + 0x34) == 2 ? kFlDown : 0);
                 else if (k == kTool && skg::readable(o, 0x1FC))
                     l.o.fl = field<void*>(o, 0x1F8) == u->pt && u->pt ? kFlPlayer : 0;
                 if (kDefs[k].health)
@@ -138,6 +167,7 @@ static uint16_t g_cycle;
 static double g_sent_at = -100;
 static uint32_t g_host_epoch;
 static std::set<uint8_t> g_in_place;
+PLAYER_STATE("realign", [](uint8_t id) { g_in_place.erase(id); }, [](uint8_t id) -> size_t { return g_in_place.count(id); }); // BUG-0422
 static uint32_t g_tx, g_tx_soon;
 static bool g_soon;
 
@@ -197,12 +227,9 @@ struct Rows {
     uint32_t host = 0, local = 0, lack = 0, extra = 0, state_off = 0;
 };
 static Rows g_rows[kKinds];
-static uint32_t g_removed[kKinds], g_state_fixed[kKinds], g_rx, g_compares, g_incomplete, g_host_changes;
-static uint16_t g_rx_cycle;
-static std::set<uint8_t> g_rx_chunks;
-static std::vector<std::pair<uint8_t, Obj>> g_rx_objs;
-static uint8_t g_rx_sb;
-static uint32_t g_rx_epoch, g_seen_epoch;
+static uint32_t g_removed[kKinds], g_state_fixed[kKinds], g_rx, g_compares, g_host_changes;
+static PlanetRx g_prx; // BUG-0886: the cycle being received (realign_rule.h)
+static uint32_t g_seen_epoch;
 static bool g_have_epoch, g_pending;
 static std::vector<std::pair<uint8_t, Obj>> g_list; // the last complete host list, compared in tick
 static uint8_t g_list_sb;
@@ -216,8 +243,9 @@ static void guest_reset()
     for (auto& s : g_streak)
         s.clear();
     g_pending = false;
-    g_rx_chunks.clear();
-    g_rx_objs.clear();
+    uint32_t inc = g_prx.incomplete, old = g_prx.older, dup = g_prx.dup;
+    g_prx.reset(); // the counters stay for coop.realign
+    g_prx.incomplete = inc, g_prx.older = old, g_prx.dup = dup;
 }
 
 void on_planet(uint8_t from, net::Reader& r)
@@ -244,23 +272,11 @@ void on_planet(uint8_t from, net::Reader& r)
         objs.push_back({k, o});
     }
     g_rx++;
-    if (cycle != g_rx_cycle || g_rx_chunks.empty()) {
-        if (!g_rx_chunks.empty())
-            g_incomplete++;
-        g_rx_cycle = cycle;
-        g_rx_chunks.clear();
-        g_rx_objs.clear();
-    }
-    g_rx_sb = sb;
-    g_rx_epoch = ep;
-    g_rx_chunks.insert(chunk);
-    g_rx_objs.insert(g_rx_objs.end(), objs.begin(), objs.end());
-    if ((int)g_rx_chunks.size() == chunks) {
-        g_list.swap(g_rx_objs);
+    if (g_prx.add(cycle, chunk, chunks, objs, tribe::g_cycle_order_fix)) {
+        g_list.swap(g_prx.objs);
         g_list_sb = sb;
         g_pending = true;
-        g_rx_chunks.clear();
-        g_rx_objs.clear();
+        g_prx.objs.clear();
         if (!g_have_epoch || ep != g_seen_epoch) { // the host's world changed (or the first list)
             if (g_have_epoch) {
                 g_host_changes++;
@@ -301,6 +317,25 @@ static void compare(double now)
         rw = Rows{(uint32_t)h.size(), (uint32_t)l.size(), (uint32_t)m.lack.size(), (uint32_t)m.extra.size(), 0};
         // the state of bound pairs
         for (auto& [hi, li] : m.bound) {
+            if (k == kVillage && g_fix_hut_fall && (h[hi].fl & kFlDown) && !(l[li].fl & kFlDown)) { // BUG-0777
+                if (tribe::conquer_village(lp[li]->p) > 0 && g_huts_felled++ < 8)
+                    H->log(M, SK_INFO, "realign: the village at (%.0f %.0f %.0f) was conquered in the host's game: here too (BUG-0777)",
+                           l[li].x, l[li].y, l[li].z);
+                continue;
+            }
+            if (k == kHut && g_fix_hut_fall && (h[hi].fl & kFlDown) && !(l[li].fl & kFlDown) && g_fix_own_hut &&
+                (l[li].fl & kFlPlayer)) { // BUG-1076: the health below keeps it at 1 hp at least
+                if (g_own_hut_kept++ < 8)
+                    H->log(M, SK_INFO, "realign: the players' hut at (%.0f %.0f %.0f) is dead in the host's game: it stands here, the "
+                           "host's game decides the defeat (BUG-1076)", l[li].x, l[li].y, l[li].z);
+            } else if (k == kHut && g_fix_hut_fall && (h[hi].fl & kFlDown) && !(l[li].fl & kFlDown)) { // BUG-0777
+                if (tribe::fell_hut(lp[li]->p) > 0 && g_huts_felled++ < 8)
+                    H->log(M, SK_INFO, "realign: the hut at (%.0f %.0f %.0f) fell in the host's game: it falls here (BUG-0777)", l[li].x,
+                           l[li].y, l[li].z);
+                continue;
+            }
+            if (k == kHut && g_fix_hut_fall && (l[li].fl & kFlDown))
+                continue; // a dead hut takes no health (its fall is the game's; BUG-0879 when the host's still stands)
             if (!kDefs[k].health || !state_off(h[hi].st, l[li].st))
                 continue;
             rw.state_off++;
@@ -391,9 +426,15 @@ std::string status()
 {
     std::string s;
     char b[256];
+    snprintf(b, sizeof b, "realign hut_fall=%d huts_felled=%u own_hut=%d own_hut_kept=%u\n", (int)g_fix_hut_fall, g_huts_felled,
+             (int)g_fix_own_hut, g_own_hut_kept);
+    s += b;
     snprintf(b, sizeof b, "realign role=%s villages=%d buildings=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
              is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, (int)g_fix_buildings, g_tx, g_tx_soon, g_rx, g_compares,
-             g_incomplete, g_host_changes);
+             g_prx.incomplete, g_host_changes);
+    s += b;
+    snprintf(b, sizeof b, "realign older_chunks=%u dup_chunks=%u cycle_order=%d (BUG-0886)\n", g_prx.older, g_prx.dup,
+             (int)tribe::g_cycle_order_fix);
     s += b;
     for (uint8_t k = 0; k < kKinds; k++) {
         const Rows& r = g_rows[k];

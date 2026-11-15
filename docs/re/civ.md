@@ -1952,7 +1952,7 @@ Nothing here is new reverse engineering; the open game question is marked ?.
   the roster once; the roster becomes CIV2). The guests' copies change only with the next world share; until then a
   guest finds its seat by species or the two-founder rule.
 * Per seat now: the guest's purchase dialogue buyer (`purchase_ui_buyer`) and terrain cursor list are its own
-  nation's; CMD_CITY_PURCHASE buys for the sender's seat; the host's offline selection merges every absent seat's
+  nation's; CMD_CITY_PURCHASE (11 since the 0.7.14 merge) buys for the sender's seat; the host's offline selection merges every absent seat's
   nation list (before: the one partner's, only while the host was alone); `campaign_tick` merges tech (+0x298),
   highest count (+0x4D0) and the twelve unlock bytes (+0x484) over every founder nation; the HUD progress (CF8F80
   caller) adds every partner nation's city count. Captures by any founder already counted for the team
@@ -2099,3 +2099,638 @@ party seat yet") for a new identity; the four-seat test saves (Abber on TITAN an
 founded for a joiner. ✔ Right after joining, a guest still in its own copy of a world of the same name had
 civ::late_prompt 1 at once (its 15 s since the world had run).
 
+## Cultural targets at the host's places (2026-11-06, fix/w45-world-objects)
+<a id="civ-host-cultural-targets"></a>
+
+GOG 2024 addresses (dc04aee5). Kind `cultural_target` of mods/coop/worldobj.cpp (BUG-0540), switch
+`wobj.cultural_target`.
+
+* ✔ The 4 cultural targets (noun 0x3D5C325) of a city stood at the same places on both games after a fresh load of
+  `civ_npc` (and `civ`), but 3.3-8.5 m apart after the guest left and joined again 60 s later (lab 20261106-043659):
+  the guest's game sets its cities up again from the host's world of then and puts them by its own city layout. This
+  is the campaign_space row: it came after Carol's rejoin (out/lab/20261103-012624, `extra1`).
+* ✔ Fix: a guest's target binds to the host's within 3 m, else its nearest unbound one within 120 m is moved there
+  (SetPosition of the spatial object); no make or removal (4 per city in both games). PASS lab 20261106-044559-2
+  (relocated=8 placed=8), FAIL with the switch off lab 20261106-043659.
+* ? Whether the city record's own copy of a target's place (+0x618, +0x78 + 0x80 * i) is used by the AI is not checked:
+  only the object is moved.
+## Mirror vehicle scale 10: the vehicle's model-ready handler (2026-11-06, fix/w45-placement)
+<a id="civ-vehicle-scale"></a>
+
+BUG-0549. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ The SetScale diagnostic logged `scale 10 set on an object with vtable 01474BE8 from 00CA41DA` in play_civ on the
+  guest only (lab fix/w42-civ-left 20261104-131223, the run of the detector's `Civilization:scale:vehicle` row, 0.81
+  host / 10.00 guest); never in a host log of the November labs.
+* ~ 0xCA41DA is in `SporeCoop::Vehicle_GroundSetup` 0xCA40B0, called only from the vehicle's model message handler
+  0xCA76B0 (this = vehicle +0x34) on message 0x2B978C46, which first sets vehicle +0xD04 from the message. With
+  +0xD04 set, it asks the manager 0xB34050 (vt 0x30) for an object at the vehicle (+0xD00) and, when there is one,
+  sets the loco's scale to 10.0, copies colours to that object and sets the bounding box (vt 0x64). ? Which object
+  that is and why only the guest's mirrors find it was not traced; the scale it leaves is what the player saw.
+* Fix `civ.vehicle_scale`: Civ vehicles are a replicated-fields kind (`fields::K_CIV_VEHICLE`, civ.cpp: the host's
+  vehicles by net id, a guest's mirrors from g_gv): every mirror whose scale differs by more than the field's
+  tolerance takes the host vehicle's, also when the game sets it again. `coop.civ` vehicle lines print `scale=`;
+  `coop.civ vscale <id> <s>` (tests). Test civ_vehicle_scale.
+
+## City terrain stamps: the same ground on both games (2026-11-06, fix/w45-placement)
+<a id="civ-city-ground"></a>
+
+The BUG-0332 class (docs/re/tribe.md#tribe-terrain-stamps on fix/w45-village-ground: stamps applied live render
+another ground than the same list after a load) checked in Civ, where cities stamp the terrain too. ✔ = observed.
+* ✔ civ_npc (the save's cities, loaded on both games): `coop.ground` on a 10 m grid up to 80 m round every city,
+  892 points, the largest difference 0.00 m (civ_city_ground, lab 20261106-062301).
+* ✔ After a live founding on both games (the host's SpawnNextCity, the guest's replay) and a capture: 1115 points,
+  0.00 m (same run).
+* ✔ After the live Tribe -> Civ change (the host makes its first city live, the guest loads the host's Civ save):
+  223 points round the cities, 0.00 m (tribe_civ_ground = coop_tribe_civ.py --ground, lab 20261106-062912).
+* So no Civ ticket: the two grounds do not differ round cities in these paths. Not measured: a city the guest's game
+  founded while the host's was away (local play), and a Space colony's city.
+
+## A captured city's new layout and the guest's rebuild loop (2026-11-06, fix/w45-placement)
+<a id="civ-capture-layout"></a>
+
+BUG-0602. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ campaign_space (lab 20261106-064018, `SPORE_DETECTOR=20`): the campaign founds 6 cities (SpawnNextCity
+  instant=1, the guests found theirs) and captures one per 30 s for the player's civ (cCity::Capture). Right after the
+  capture of city 4 (06:45:25) every guest logged every 2 s `the host's building 018EA2CC of city 4 at (-319.0 -310.6
+  -239.6) went to (-317.0 -316.8 -234.0) here, 8.6 m off` (buildings_fixed=+224/-224 at the end); the detector's
+  `Civilization:planet:building_industry` in 27 samples.
+* ✔ Live `coop.civ slots 4` / `blist 4` on both games in that run: the host's city 4 had a new layout (all 12 slots
+  elsewhere, the industry in slot 5 at (-319 -311 -240), the City Hall 3.9 m and the house 3.2 m from the guest's),
+  the guests kept the layout of the founding (the same 12 slots the host had before the capture, lab 20261106-062912).
+  The host's building stood in its slot (no `host building ... nearest slot` line): the layouts differ, not a building.
+* ✔ Not by the capture alone: `coop.civ capture` of a new city in a two-game test left the host's layout as it was
+  (civ_city_layout before its --move step was added, lab 20261106-062912). ? The relayout came with the captured city's new models
+  (City_SetPartsOwner 0xBE4C80 -> 0xBE4B60, the owner's City Hall, then an update request 0xBD1C00(1)), which a guest's
+  ChangeOwner without Capture's +0x2E2 flag does not run, and may wait for the city to be updated in view (the
+  campaign's capture caption shows it); not traced.
+* ✔ Why it looped: reconcile_buildings matches a host building with a local one of the same noun within 4 m; the
+  guest's was 8.6 m off, so it was destroyed (extra) and the host's built again (missing) with SnapBuildingToSlot,
+  which took the free slot nearest the host's spot: the guest's own slot of that building, 8.6 m off again.
+* Fix `civ.city_layout`: a building a guest makes for the host's (reconcile, MSG_CIV_BUILD), and one it matched 1-4 m
+  off, is put at the host's spot with its layout slot (cLayoutSlot +0xC) moved there too, so the slot nearest the
+  building stays its own (the planner's pick, BUG-0491) and the next snapshot matches it. `coop.civ` counts
+  `off_slot=` (rebuilt more than 4 m from the host's spot) and `moved=`. `coop.civ blist <i>` lists a city's buildings
+  with their slot, `coop.civ bmove <i> <k> <x y z>` (tests) moves one.
+
+## Instant city foundings reach the guests at once (2026-11-06, fix/w45-int3)
+<a id="civ-instant-found"></a>
+
+* ✔ (lab 20261106-122407, 20261106-123450) civ_city_layout founds three NPC cities with
+  `SpawnNextCity(ex, 1, 0)` and `wait.frames 30` between them. At ~25 fps (a loaded PC) the three host cities
+  appeared 2 s apart (host log: their terrain stamps 0x00F99E0E at 37.2, 39.3, 41.3 s), and the guest's catch-up
+  (city_catch_up: 2 s short, then SpawnNextCity with the appearance timer) had each of them 4-5 s after the host
+  (guest stamps at 42.3 and 44.5 s): the vehicle of the first new nation was missing on the guest in two sync-checks
+  3 s apart (`v: 1 missing on the guest (v5)`), 3 of 3 runs on this tree, 1 of 3 on 46b4e1d5 under the same load;
+  at 60-69 fps (fix/w45-placement runs) the three foundings fell in one snapshot and it passed.
+* Fix `civ.instant_found` (BUG-0624): the host's hook broadcasts an instant founding too (MSG_CIV_BUILD
+  kNextCitySite, noun 1 = instant; 0 = with the timer as before), a guest founds it with instant=1 at once (the city
+  object comes with the city simulator's next Update tick, at most 1 s of game time, docs/re/civ.md 8); the catch-up
+  founds instantly as well (the city is late already, the guest skips the new-city cinematic of a city it missed).
+  Off: no broadcast for instant foundings, the catch-up with the timer (0.7.8).
+* ~ A founding with the timer (the game's own AI, `instant` 0) still runs each game's own appearance timer: a guest
+  whose game time runs slower (hitches) has the city seconds after the host (play_civ 20261106-105201: founded on
+  both at 11:18:04-05, the host's city at 11:18:10, the guest's at 11:18:17). Not changed: the guest's new-city
+  cinematic belongs to that path.
+
+## The host's own vehicle designs on a guest (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-host-designs"></a>
+
+BUG-0647. Lab lane 4.
+* ✔ (runtime, `coop.memfind`) a vehicle's model key is at **+0xC4** (instance, type 0x24682294, group 0x40646200: the model
+  object at +0x34, its +0x90; cVehicle::Load 0xCA67C0 sets it with vt 0x94 of +0x34, SetModelKey).
+* ✔ (runtime) The host's civilization names its vehicle designs by keys of the host's own My Creations; the guest's copy of
+  that civilization names the same keys (`coop.civ vdesign`). With another creation under the same id in the guest's My
+  Creations, the guest's mirror was built from the guest's own model (lab 20261107-074609: the mirror's bem 76023C9D, the
+  host's DD673F46): the player's "monsters" (two big creature-like models) at the host's vehicles.
+* Fix `creations.host_designs`: a guest asks the host for each vehicle design key a mirror needs (MSG_CREATION kind 6); the
+  host answers with the records when the key is one of its own My Creations (kind 7, a bundle) or "not mine" (kind 8); the
+  guest registers them under a key of its own (0x7D...... from the content) and creates the mirror from it, or re-keys a bound
+  vehicle of its loaded world (SetModelKey). No mirror is made while the answer is out (at most 20 s, then the key as it is).
+  Mirrors are kept out of saves (BUG-0470), so the key of ours never reaches one. Test civ_host_design (lab
+  20261107-074609 FAIL, 20261107-074448 and 20261107-074935 PASS). The buildings have the same collision: BUG-0670.
+
+## A guest's attack of an NPC city (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-guest-attack"></a>
+
+BUG-0648. Lab lane 4.
+* ✔ (runtime) A guest's real attack: a right-click on an NPC city opens its menu, the crosshair (926, 392 with the city at the
+  centre) makes the guest's game call SetOrder(vehicle, city, 2): civ.cpp sends kind 2 (the host's city index); the host's
+  vehicles took order 2, the city's hit points fell (5200 -> 3971) and its capture meter rose for the player civilization
+  (5/800021CA) on both games. `coop.civ tables` prints the guest's last order (`last_order=type/kind/index/noun`).
+* ~ The report (0.7.8) had the guest's vehicles up to 147 m from the host's (sync-check `v: 5 apart`) and NPC cities laid out
+  anew after a capture (BUG-0602, fixed in 0.7.9): the guest saw its vehicles at a city hall the host's vehicles had not
+  reached. Not reproduced on 0.7.10.
+
+## The partner's pointer tag in Civ (2026-11-07, fix/w46-tribe-civ)
+<a id="civ-partner-tag"></a>
+
+BUG-0649.
+* ✔ (code, coop.cpp on_overlay) every remote player in Tribe and Civ is a Marker at the planet point under that player's mouse
+  (modes.cpp rts_fill); its name tag is drawn in green on every game the same way, while the local entity exists (rts_anchor:
+  the player tribe or the player civilization's first city).
+* ✔ (the report's own screenshot, guest s 5930) the host's green name tag is drawn on the guest's screen, at the host's
+  vehicles (where the host's mouse was), next to the blue owner tags of the vehicles with the same name. The tag is at the
+  partner's mouse, not at its camera; it jumps with the mouse (up to 154 m/s in the guest's log).
+## A vehicle mirror drawn behind its own target, and the state ages of a loaded host (2026-11-07, fix/w46-k3-bodies)
+<a id="civ-place-now"></a>
+
+BUG-0438 (K3). Measured with `coop.bodyrec start diag` (SPORE_BODYREC_DIAG=1 for coop_body_trail.py): the guest records
+per vehicle mirror `w<id>` (the target guest_tick aims at: the velocity estimate moved on by the state's age and the
+one-way latency, at most kVehLead 0.3 s) and `e<id>` (x: the state's age, y: the estimate's speed, z: the error before
+the glide) next to the drawn vehicle; tools: the decomposition in docs/06-testing.md#testing-bodyrec-diag.
+
+* ✔ observed (body_trail_civ_loss, lab 20261107-074040 and the twin runs below): the drawn vehicle was 0.4-1.8 m (p50)
+  from its own target. guest_tick moved it half way from where it stood to the target every frame (StopMovement +
+  Teleport, the game does not move it), so at 15-20 m/s it was a frame's glide plus the frame the placing shows up in
+  behind the target.
+* ✔ fix `coop.fix civ.place_now`: the mirror goes on with the estimate's velocity for the last frame's time and only the
+  rest (a new state's correction, a push) is glided half per frame; the target is taken one frame ahead (the placing is
+  drawn in the next frame). Drawn vs target p50 0.98-0.99 / p90 2.24-2.99 m off (SPORE_FIX_OFF=civ.place_now, lab
+  20261107-082632, lane 7) against 0.25-0.46 / 0.94-1.49 m on (lab 20261107-082432, lane 6), at the same time and load.
+* ✔ observed: the target's own error is the state's age. At a lab load of 11-16 on 6 cores both Civ games ran at 16 fps
+  (frame p50 60 ms, p90 140 ms): the host's 0.1 s send gate gave states every 0.14 s (p50) to 0.39 s (p90, max 1.2 s),
+  ages p50 0.12-0.15 s, and the target's error grew with them (aim p50 0.5-1.2 m under 0.15 s, 1.5-1.9 m at 0.15-0.25 s,
+  2.1-2.6 m at 0.25-0.35 s, 2.8-3.5 m over). The vehicles of the test turn all the time (coop.civ move to a new point of
+  the city every second): replayed on the host's own path, a straight extrapolation from the last two states is p90
+  0.9 / 1.9 / 3.1 m off at 0.1 / 0.2 / 0.3 s, an arc (the yaw rate of the last three states) 0.8 / 1.7 / 2.9 m: no model
+  of the path makes a 0.3 s old state good at 15-20 m/s. What is left of BUG-0438 at that load is the host's frame rate.
+
+## The host's own building designs on a guest (2026-11-07, fix/w46-misc)
+<a id="civ-host-buildings"></a>
+
+BUG-0670, the buildings of docs/re/civ.md#civ-host-designs. Lab lane 9 (`tools/tests/coop_civ_host_building.py`).
+* ✔ (Ghidra) `cCity::SetBuildingModel` 0xBDB940: the design id per building type (house 0xFF10521 -> 0x4E3F7777,
+  entertainment 0x1A55E4D -> 0x72C49181, factory 0xECADE42 -> 0x47C10953, **0x1007AE63 -> 0x99E92F05**, every other
+  type 0x4E3F7777), `GetDesignKey(civ +0x590, id)` (instance 0: FUN_00bf98c0 generates the design first), then the
+  building's model object (+0x34) vt 0x94 SetModelKey(key). The 0x1007AE63 case is missing in civ.cpp
+  `building_design_id` (BUG-0469's content check skips that type).
+* ✔ (runtime) A building's model key is at **+0x34 +0x90 = +0xC4** (type 0x2399BE55, group 0x40636200), as for
+  vehicles: the host's house of the test's design shows it (`coop.civ bmodels`).
+* ✔ (runtime, lab 20261107-120600) With another creation under the same id in the guest's My Creations, the guest's
+  copy of the host's house was the guest's model (bem 9A907DC4, the host's 0B25F69B), for a house built while both
+  played and for the house of the loaded world after a rejoin.
+* Fix `civ.host_buildings`: once a second a guest checks every building of every city; a key the host answers as its own
+  design (creations::host_design, MSG_CREATION kind 6/7/8) gets the host's records under a key of ours (0x7D......) and
+  the building SetModelKey with it. The building's own key is written back into +0xC4 while the game saves (savestrip
+  save hooks) and with SetModelKey when the session ends. Test civ_host_building (FAIL 20261107-120600, PASS
+  20261107-120446: the new house and the loaded one show the host's model; after `coop.leave` the guest's own again).
+
+## A turret's combatant and the guest's copies of turret shots (2026-11-07, fix/w46-issue198)
+<a id="civ-turret-combatant"></a>
+
+BUG-0688 (GitHub #198), GOG 2024 addresses. Lab lane 2 (`tools/tests/coop_civ_turret_shot.py`).
+* ✔ (runtime, lab 20261107-204140, 2 host and 2 guest turrets made by City_AddTurret) a city turret object (noun
+  0x436F342) has the vtable **0x1466E30**; its combatant is at **turret + 0x588**, vtable **0x1466C28** (the GOG 2016
+  0x1467758 of the turret TakeDamage row above). +0x120 (a building's combatant) holds no object in a turret: seen
+  0x00000000, 0x3DA4944E, 0xAA670100, 0x2134B200 (floats / flags); the player's minidump had 0x6DB2C23E.
+* ✔ The attacker of a turret's hits (the TakeDamage hooks' `att`) is that combatant: att_vt 0x1466C28 in every hit
+  of the test; `cosmetic_hit` finds the turret at att - 0x588 (640 of 640 guest hits dropped, lab 20261107-204140).
+* ✔ Cause of the crash: guest_fire took every turret shooter's combatant at +0x120 and weapon_of called vt 0x14 of
+  that word: with `SPORE_FIX_OFF=civ.turret_weapon` 284 execute faults on the guest's main thread in 60 s (one per
+  copied turret shot, eip = the garbage "slot", here 0x8080FF00; the lab's frame guard, BUG-0667, caught them, a
+  player's game died: #198, eip 0xCCCCCCCC), no copy fired (lab 20261107-204522). Turret shot relay (BUG-0477) had
+  never run in a test before: the fixtures' NPC cities had no turret near a fight.
+* ✔ Fix `civ.turret_weapon`: a turret's combatant at +0x588; weapon_of calls vt 0x14 only when the combatant's
+  vtable lies in SporeApp.exe's image and its slot 0x14 in an executable section of it (every shooter kind; a wrong
+  one is skipped, counted as `bad_combatant` in the `turret_shots:` line of `coop.civ` and logged once per vtable).
+  With it the guest fired 264 copies of 264 host turret shots, no fault.
+## SpendMoney goes below 0; the mod's paid build checks the money (2026-11-07, fix/w46-v2-civ-space)
+<a id="civ-spend-below-zero"></a>
+
+BUG-0613. Lab lanes 9/10 (`tools/tests/coop_civ_money_short.py`).
+* ✔ (runtime, lab 20261107-205315 with `civ.build_money` off) `cCivilization::SpendMoney` 0xBEF860 subtracts from
+  mWealth (+0x98) without a floor: a factory (1200) built by `coop.civ build` with ~500 (+ the city income) left the host's game at -660.
+  The game's own planner only offers what the money covers, `host_buy` checks GetMoney first; the mod's paid build
+  (`build_in_city(.., pay)`, the console's `coop.civ build` on either game) did not.
+* ✔ A negative host total is broadcast as it is (MSG_RES) and every guest floors it at 0 (shared.cpp `money_clamp`,
+  BUG-0106): host -800, guest 0 was the detector's `Civilization:state:money` row in every civ_coop run (the fixture's
+  3000 went to a vehicle 1000 and the guest's house 1600, then the host's factory 1200).
+* A building's cost is its vt 0x5C (float) once SetBuildingModel gave it its type; the fix reads it before the slot and
+  destroys the instance (cGameNounManager::DestroyInstance) when GetMoney is below it: "not enough money".
+* Not this cause: the campaign's `Civilization:state:money` rows (host 3530, guest 3000) in civ/advance, where every
+  guest's game reloads the Civ world every ~22 s (mode 01654C08) and shows the save's money for a moment (BUG-0311 run
+  20261107-141346 of rel/0.7.10).
+## A raided old village on the guests within a second (2026-11-08, fix/w46-k8-open)
+<a id="civ-tribe-ruins-fast"></a>
+
+BUG-0659 (follow-up of [#civ-tribe-raids](#civ-tribe-raids)). GOG 2024, lanes 4 / 5.
+
+* ✔ (runtime) With civ.tribe_ruins a guest removes a village 5.1-5.3 s after the host's game raided it (the second look
+  came with the next 5 s list); the detector's one-sample `Civilization:planet:village` / `tribe_hut` / `tribe_tool` /
+  `tribe_food_mat` rows of play_civ were that window (the next sample always had equal counts; the host's count falls
+  17 -> 4 over a 10 min play_civ from its vehicles' raids).
+* ✔ `civ.tribe_ruins_fast`: 3 lists 0.5 s apart after a raid: the guest removes it after 0.6-0.9 s.
+
+
+## The city planner's editor after the stage teardown (2026-11-08, fix/w46-k7-findings)
+<a id="civ-planner-stale-editor"></a>
+
+BUG-0682, GOG 2024, lab lane 10. Follow-up of [the planner's lifetime](#civ-planner-lifetime).
+* ✔ The editor update 0xD124E0 runs every frame in Space too (on a planet and in flight: `coop.civ planner_probe` saw
+  the editor on every Space frame of the space fixture, +0x40 = 0 while no planner is open).
+* ✔ The quit to the galaxy menu (`coop.menu`) frees the editor with the city input strategy while the stage leaves:
+  the memory stays readable and +0x40 holds garbage (0x4394C5EB, 0xC3BCCD6F). With the editor trusted for 3 frames
+  after its last update, planner_city() cast that garbage 2-3 times per quit (8 caught faults in 4 quits, game::cast
+  reading the "vtable", stack word 0xEE9B2232 = the cCity cast type: lab 20261108-003304); the campaign_space fault
+  (coop.dll+0x1071C8 from wsync's city row) was one of them.
+* Rule (`civ.planner_stale`): the editor is trusted only in the mode of its last update and not while the stage is
+  leaving (game::leaving_stage), and its +0x40 must be readable with a vtable in the game's image before the cast.
+
+## End of the Civilization stage (2026-11-08, fix/w46-g4-tests)
+<a id="civ-stage-end"></a>
+
+BUG-0311. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024), static; lab logs 2026-10-30..11-08.
+
+* ✔ `cCivilization::AddCity` 0xBF44B0 (thiscall(civ, cCity*) ret 4) pushes the city to +0x9C and sets the civ's
+  level +0x298 through 0xBEF8C0 (only raises it; ctor 0xBF7A10 sets 1): 4 when the city count >= `cCivExpansion`
+  +0xAC (0xBEFE80, the planet's city total), else 3 when > 3 cities, else 2. The player civ at 4 = owns the planet.
+* ✔ `GameCiv_IsPlanetOwned` 0xCF7730 = player civ +0x298 > 3. The end is not checked periodically, only at:
+  (a) `cCity::Capture` instant branch (arg3 != 0 or city +0x762): ChangeOwner, then CF7730 -> 0xCF8F60 + 0xCF7680;
+  (b) `cGameModeCiv::HandleMessage` 0xCFD500, msg 0x44F1189 (cinematic ended, posted by EndCinematic 0xADFF50, so
+  the mod's 8 s caption close delivers it) for CVG_Capture / CVG_Capture_Nuked: ChangeOwner of player civ +0x44C (the
+  last city the player civ Capture()d) if +0x2E0 is pending, then 0xCFA220 (level >= 3 and hint 0x50A2E65 unseen:
+  plays CVG_UnlockAir, no check), 0xCF7A30 (capture type +0x29C != specialty +0x540: 0xBD9330 specialty box +
+  Pause 0x4BF38A7, no check), else the check;
+  (c) the specialty box answer: listener 0xBDC950 posts 0x40FAFDF, the city listener 0xBE75C0 acts only when player
+  civ +0x44C is that city: SetSpecialty 0xBE7520 (data 0x5107B1A), Resume 0x4BF38A7, 0xCFA280, then the check.
+  ChangeOwner also calls CF7730, for achievements only (0xCF7790).
+* ✔ Capture arguments (stack offsets): (newPol, type, instant, nuked caption, a5 -> ChangeOwner). Military 0xBE9AD0,
+  religious 0xBEAB80 and buy 0xBE99A0 pass instant 0 (cinematic path).
+* ✔ A nation's surrender (comm action 0x3EF09234 in 0xCFF010, answer "We happily accept your surrender.") takes all
+  its cities through 0xBE9E00 -> Capture(pol, type, 1, 0, 1): the instant path, the end comes at once.
+* ~ CF8F60 -> 0xE042A0(1) shows windows 0x6453746 / 0x652A628 and hides 0x44827B8; 0xCF7680 pauses (0x4BF38A7).
+  Likely the planet-won UI that leads to the spaceship editor (not watched at runtime).
+* ~ Consequence (BUG-0311, inferred from 2 failing lab runs): after the last capture by the cinematic path the end
+  waits for the specialty box of exactly that city; a box hidden under a talk, closed by Esc, or a press on an older
+  city's box leaves the planet owned (level 4) with no end. The campaign shortcut now captures with instant = 1, as the
+  surrender talk does (coop_campaign.py kick_civ).
+  CORRECTION (2026-11-08, fix/w46-g4-tests): in lab 20261030-104149 campaign_space#1 the 10th city was the
+  shortcut's own Capture (host log 12:00:15 "Alice captured a city", owned_cities=10 after the caption), not a talk
+  (BUG-0311's first root cause).
+
+## The planner's palette: drag places, click opens the Sporepedia (2026-11-08, fix/w46-g4-tests)
+<a id="civ-planner-palette"></a>
+
+BUG-0189. GOG 2024, Ghidra (static only):
+* ~ A tile always has a design: the planner setup 0xD0E170 asks GetDesignKey (0xBF98B0, culture set lookup
+  cCultureSet::PickCreation 0xBF9840) for each design id (City Hall 0x99E92F05, house 0x4E3F7777, factory
+  0x47C10953, entertainment 0x72C49181, ...) and hands the key to the tile (0xD0C860: msg 0x4A344E9 {id, key,
+  png key}). A missing entry is generated by 0xBF9440: a Sporepedia template DB query (prop 0x2DC9D1E = design
+  id), the first match stored (this is how civ_npc has `0679F5DE/2399BE55/40636200`).
+* ~ Placement is a mouse-down + drag: msg 0xB2E18705 on a palette item of kind 0x81C74DBC (building) goes
+  straight to CreateInstance(prop 0x456B66A) -> SetOwnerCity vt 0x54 -> GetDesignKey -> model vt 0x94 ->
+  AddBuilding (0xD14197) -> drag 0xD09FA0; no design check. A **click** (msg 0x133B269E) calls 0xD08B90:
+  Sporepedia::ShopperRequest::Show for that design id (shopper ids: house 0x8049B6DC, factory 0x47F2EBB2,
+  entertainment 0xED90D2E6, City Hall 0x695CBB72 for 0x99E92F05); the editor comes from the shopper (msg 0x4A314E6
+  -> SubmitEditorRequest). A pick in the shopper is msg 0x5132389 -> cCivilization 0xBF4C50(designId, key)
+  (culture set entry, then every city's buildings of that design re-modelled through 0xBE3870).
+* ? This revises 9.1 ("a click on the tile opens the building editor"): the click opens the shopper / editor; the
+  drag places. Runtime: see BUG-0189.
+
+## The planner palette at runtime: no design, no drag (2026-11-08, fix/w46-g4b-coverage)
+<a id="civ-planner-palette-runtime"></a>
+
+BUG-0189, lane 3 (GOG 2024), `civ_npc`, runtime of docs/re/civ.md#civ-planner-palette:
+* CORRECTION (2026-11-08, fix/w46-g4b-coverage): "a tile always has a design" does not hold for the player civ
+  of a new Civ game. ✔ `coop.civ design 0 house|factory|fun` prints key 00000000 for the player civilization
+  (800021CA) on both games while the NPC cities' buildings carry template models (`coop.civ bmodels`: house
+  067CEDDC, factory 067C7029, fun 067CEDE3, City Hall 067CEDE1). The planner then shows the house / factory /
+  fun tiles with a blue badge and the tooltip "Design a new house!"; a mouse-down + slow drag of such a tile onto
+  a plot does nothing (no building, no money taken): no generation by 0xBF9440 at planner setup was seen.
+  The static reading of the drag path may still be right for a tile with a design; the badge tile is another
+  state (? which window kind it is).
+* ✔ With a design key set (`coop.civ bdesign 800021CA house 067CEDDC`, the culture set entry the game's
+  GetDesignKey returns) the next planner shows the house model on the tile with its price ($1,600 in civ_npc),
+  and a hover, mouse-down on the tile (123, 385 of 1440x1080), 30 small moves and a mouse-up on a free plot's
+  screen point (`coop.civ slots <city>`, world_to_screen in the planner camera) place a house: the price is
+  taken at the drop (shared money 3000 -> 1400 on the guest at once), the building is snapped into a plot of
+  the planner's choice (here slot 3, not the plot under the cursor), and it shows in the city's building list
+  (`coop.civ buildings`, cCity +0x340) only after the planner is closed with the green check.
+* ✔ A guest's placement goes to the host through the AddBuilding return address 0xD1419C (civ.cpp h_AddBuilding,
+  CMD_BUILD): the host's game had the house at the same position 1 s after the planner closed, money equal on
+  both games (`civ_planner_build`). With the send off (`coop.fix civ.planner_send off`) the guest's house is
+  removed by the guest's reconcile within 2 s (the host does not have it) while the price stays paid.
+* Palette tiles of the Civ planner (1440x1080): City Hall (123, 215), house (123, 385), factory (123, 558),
+  entertainment (123, 730), turret (123, 905); the green check (1412, 1054).
+
+## Fork notes: the shared message box and the Civ -> Space editor request (2026-11-10, plan/w47-pr196)
+<a id="civ-shared-message-box"></a>
+
+From the fork PandizeLive/SporeCoop-Lineages PR #196 (BUG-9057, BUG-9070), not verified by us:
+
+* ~ The captured-city specialty question is a window 0x06318E78, the same control id as the "game saved" box
+  (docs/re/creature.md, CORRECTION 2026-11-10); its choices are 0x05107B19 (Religious) and 0x05107B1A (Military), it has
+  no OK 0xFFFFFFF1. An unanswered specialty question also holds the fork's capture checkpoint. Our watcher: BUG-0846.
+* ~ The native Civ -> Space spacecraft EditorRequest: editor +0xC = 0x96B24187, model +0x10 = 0, return mode +0x1C =
+  Civ (0x01654C04 in the fork's notation), context +0x90 = 0x0116D51D; after the vote the host showed input_lock and
+  paused with the request held (BUG-0855). Which pause reason it uses is not known (our BUG-0576 rule masks the pause
+  only for reason 0x4BF38A6).
+## The city-alarm boost and its base speed (2026-11-10, plan/w47-reports)
+<a id="civ-boost-stacking"></a>
+
+* ~ (code audit, GitHub #199) The alarm boost (h_OnAttacked, civ.cpp) re-reads a vehicle's `+0x218` (top speed) as
+  its base whenever the last boost has run out, and the alarm of a city repeats every 20 s, the boost's own length.
+  A hit in the game update after the boost's end and before that frame's boost_tick reads the boosted value: the
+  base grows x1.5 per cycle of a continuous siege (BUG-0771). An entry erased while its vehicle lives (out of the
+  vehicle table, on_world_change) is not restored (BUG-0773). Not yet seen in the lab.
+* ? Whether and when the game's RecalcStats rewrites `+0x218` from the vehicle's design (it would heal a stuck
+  value): not known.
+
+## The alarm boost measured, and the guest's jump limit (2026-11-12, fix/w48-civ-speed)
+<a id="civ-boost-measured"></a>
+
+Closes the "not yet seen in the lab" of docs/re/civ.md#civ-boost-stacking (GitHub #199, BUG-0771 / 0773 / 0876 / 0787;
+test `civ_boost_stack`, `civ_fast_mirror`).
+* ✔ The stacking is real once the order of the hit is the one the audit described: an alarm in the moment the last
+  boost has run out and before boost_tick restored it (`coop.civ alarm <city> expire` puts every boost's `until` just
+  behind now, then runs h_OnAttacked) re-read the boosted `+0x218` as the vehicle's own speed: 19.12 -> 28.68 -> ...
+  -> 217.8 (11.39x after six alarms), and after the boosts ran out the vehicle kept 145.17 for good (lab
+  20261112-003101, `civ.boost_base off`). ~ That this order happens in a real siege is inferred (alarm cooldown and
+  boost both 20 s, OnAttacked on every hit inside the game's update, boost_tick once per frame in host_tick): not
+  measured with an NPC army.
+* ✔ A vehicle drives at the `+0x218` it has when it gets its order (cVehicle::SetMoveOrder -> MoveTo reads it): the
+  host's free vehicle with 145 written was seen on the guest at 225 m/s (1 s windows); 28.7 written: 29-30 m/s; 55
+  written: 58-72 m/s. So the stacked value is what the players see, on both games.
+* ✔ civ_npc has a single player city (the shared capital, owner 0xFD): its alarm boosts every player's vehicle (owner
+  0..3), here the host's own free vehicle. With `civ.boost_players off` it also boosted the three NPC vehicles
+  within 600 m (12.27 -> 18.41, lab 20261112-003106).
+* ✔ In the host's tick a living vehicle never misses from `g_hv` at boost_tick time in normal play: the table is
+  pruned and re-listed in the same 0.1 s step that runs after boost_tick (a pol change gives a new id at once). The
+  BUG-0773 leak needs the tables cleared while the vehicles live (on_world_change on a false world change: the
+  BUG-0223 class) or a test drop (`coop.civ hvdrop <id>`). Both left 28.68 for good before the fix (lab
+  20261112-003336). The fix writes the own speed back only while the vehicle is in the game's list, of the same nation
+  and still at exactly `orig x 1.5` (the value the mod wrote), so a real load writes nothing into a new vehicle at a
+  reused address.
+* ✔ The guest's jump limit (BUG-0186 `2 x top + 10`) used the copy's own `+0x218`. A host vehicle at 55 m/s against a
+  copy whose own top is 19.1 (limit 48): every snapshot step was a "jump", the estimated velocity 0, the copy only
+  glided half way per frame: it trailed 4.8-4.9 m (p50) and 6.8 m (p90) behind the host's vehicle at the same moment,
+  `jumps=130` in 20 s (lab 20261112-003654, -003833). It did not stand still and teleport as the ticket guessed (the
+  glide catches up below 30 m). With the host's top speed in the snapshot: 0.7-0.9 / 1.8-2.3 m (lab 20261112-003659,
+  -003838).
+* ✔ Wire format (from 0.7.13): MSG_CIV_STATE vehicle chunk = n x 41 bytes, u32 host time, then n x f32 top speed
+  (+0x218) in the same order. A 0.7.12 guest sees more than the time after the vehicles and drops only the sender time
+  (velocity from arrival times, as with a host before BUG-0122); a 0.7.13 guest of an older host uses its own top.
+* ? Whether the game's RecalcStats rewrites `+0x218` by itself during play (it would heal a stuck value): still not
+  seen; with the boost off the value stayed for minutes (BUG-0040 and here: 145.17 22 s after).
+## Captures and purchases on one game only (2026-11-12, fix/w48-captures)
+<a id="civ-capture-keeps"></a>
+
+BUG-0875, BUG-0775, BUG-0877, BUG-0878 (Discord 2026-11-09: "their settlement is captured, the host's is not"). GOG 2024,
+lanes 4 / 5, fixture civ_npc.
+* ✔ (runtime) A capture through the capture meter (`coop.civ siege <city> <player> <hits> pc`: AddCaptureDamage with
+  the player civilization's political id, the game's own CheckMilitaryCapture at 100) does **not** change the city's
+  owner at once: `Capture` plays the capture cinematic and the city is the player civilization's 8 s later (the
+  caption closed by civ.caption), from the cinematic-end message (GameCiv_HandleMessage, CVG_Capture: the pending
+  ChangeOwner). So when h_Capture names the captor the city is not in the player civilization's list yet, and the
+  drop loop of host_assign_cities ("cities the player lost") erased the owner it had just written: every such capture
+  was dealt out like a new city. (`coop.civ capture` through Capture directly showed the same; lab 20261112-003012.)
+* ✔ (code + runtime) host_assign_cities' resplit: with 2 players and 1 city the capital is shared (`cities < players`);
+  the second city crosses the threshold, every city but the gifts is dealt again: the capital to the host, the
+  captured city to `players[1]` = the guest. The host's own capture became the guest's (lab 20261112-004217, fix off:
+  owner 1 on both games, the guest's game lets the guest buy there).
+* Fix `civ.capture_keeps`: the captor waits in `g_capture_by` until the city is the player civilization's (120 s at
+  most); a city a player captured or was given keeps its owner at a resplit while that player is in the session; the
+  free cities go first to the players without a city, and the capital stays shared while a player would have none.
+* ✔ (code) The captor was the player whose vehicle was nearest the city (BUG-0775). The capture runs inside the hit
+  that took it (building / hall TakeDamage -> AddCaptureDamage -> CheckMilitaryCapture -> Capture), so `g_hit_by`
+  (b_damage) is the player whose vehicle hit last. Fix `civ.capture_credit`: that player, else the last player hit in
+  the joint-siege window (`g_siege`), else the nearest vehicle; `coop.civ tables` prints `captures: credit_cmd=
+  credit_hit= credit_siege= credit_nearest=`.
+* ✔ (Ghidra, GOG 2024) The purchase of a city: pie command 0xCF3350 -> `cCivilization_BuyCity` 0xBF0520 (the talk
+  with the city's nation, price offers) -> the talk's answer 0xCFF010 -> `cCivilization_FinishBuyCity` 0xBF0600 ->
+  `cCity_Buy` 0xBE99A0 (GetMoney, SpendMoney, Capture type 2). On a guest Capture is refused (h_Capture), the
+  spending reaches the shared money: money gone, no city (BUG-0877, lab 20261112-003450 with civ.buy_city off: the city
+  the NPC's in both games). Fix `civ.buy_city`: the guest's cCity_Buy sends CMD_BUYCITY (6: city index, price) and
+  returns; the host's game runs cCity_Buy itself, credited to that guest (`g_capture_for`); the host's own purchase
+  is credited to the host. A refused one tells the guest ("not enough money or no trade route").
+* ✔ (runtime) While the host is away (local play, civ.away) a guest's game besieges and captures by itself: its
+  CheckMilitaryCapture fires the "won" event and calls Capture, which a guest refuses; nothing went to the host (lab
+  20261112-003556, civ.away_capture off: the city the NPC's on both games after the host's return). Fix
+  `civ.away_capture`: that Capture sends CMD_CAPTURE (7: city index, type) once per city and absence; the host holds
+  it (civ.cmd_hold) and runs h_Capture for that guest when it is back. The host's city indices survived its reload of
+  the same save in the test (the city by its place).
+* ? Not checked: a religious conversion's capture (Convert, no hit: credited by g_siege or the nearest vehicle); the
+  owners after a host's load (on_world_change clears g_city_owner, every city is dealt anew: captures are not kept
+  across loads, BUG-0950).
+## Mirror vehicles: a freed vehicle's block (2026-11-12, fix/w48-freed2)
+<a id="civ-mirror-vehicle-reuse"></a>
+
+BUG-0951 (class BUG-0426). GOG 2024, runtime on lane 6 (`coop.civ reusehunt`, docs/06-testing.md#testing-freed2-w48).
+
+* ✔ A vehicle removed by the disband path (0xCAA7B0, `kill_local`) is freed later and its block goes to the next
+  vehicle the game makes: `cCivilization::CreateVehicle` of the same purpose and locomotion for another civilization
+  (the guest's own, the game's generated design, key 0) got it on the 2nd try in 3 of 4 hunts (lab 20261112-050123,
+  20261112-050242).
+* ✔ A guest's mirror does not follow it even with object_alive: `prune_gone` (every Civ frame, the game's vehicle
+  list, pointers only) drops a mirror whose vehicle left the list, which happens at the removal, before the free; the
+  new vehicle at the block is then a vehicle the host has not and the guest's cycle removes it (both with
+  `civ.mirror_lifetime` on and off). prune_gone runs only while the Civ mode is active.
+
+## City owners across a host's load (2026-11-12, fix/w48-new)
+<a id="civ-owners-kept"></a>
+
+BUG-0950. ✔ (runtime, lane 5, civ_npc) A host that saves (`coop.menu`) and loads the same slot again gets the same
+cities back at the same positions (within a metre); the mod's owner tables were cleared by on_world_change and
+host_assign_cities dealt every city anew: the host's bought city became the guest's (lab 20261112-072252, fix off).
+Fix `civ.owners_kept`: the host writes the owners of the player civilization's cities every 2 s per world
+(world::current_game_key: `<slot dir>\<planet>.spo`) by position and owner name (with the gift / capture marks) and
+gives them back at the first split after a world change (a city within 5 m, the owner must be in the session); when
+every city got its owner back nothing is dealt anew. Kept in memory only: a restart of the host's game loses them, and a
+new session deals the cities anew. `coop.civ tables` prints `kept: fix= worlds= this_world= saved= restored= key=`.
+## A guest's build the host cannot make (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-build-refund"></a>
+
+BUG-0807. GOG 2024, lab lane 2 (civ fixture).
+* ✔ (runtime) The players' city of the civ fixture has 11 building plots (`coop.civ slots 0`); a house costs 1600 at
+  every count (10 houses in a row, each 1600).
+* ✔ (runtime, a 300 ms link) A guest's build of the last plot that reaches the host after the host's own build of it:
+  the guest's game built it and paid (its copy of the city still had the plot), the host's build_in_city failed with
+  "no free slot" (SnapToSlot), and the guest's copy was demolished by the reconcile: 3200 spent for one house before
+  `civ.build_refund` (lab 20261112-085815), 1600 with it (20261112-085612).
+* CMD_BUILD carries the paid price as a float after the place since 0.7.13 (the host reads it only when present).
+## The Civ -> Space launch's pause and the spacecraft editor (2026-11-12, fix/w48-tribe-civ)
+<a id="civ-launch-pause"></a>
+
+BUG-0855. GOG 2024, the host's game logs of campaign_space runs (four players).
+* ✔ The spacecraft editor request of the Civ -> Space change is editor 0x96B24187, submitted through the co-op vote
+  ("wants to edit a design (Civilization)"); the game submits it under its own pause and input lock, and the pause
+  reason is **0x4BF38A6** (cGameTimeManager GetPauseCount 1 at the gate), the same reason as the City Hall editor at
+  the end of Tribe (#tribe-graduation-save, BUG-0576). With `core.editor_own_pause` the editor opens 1.3-2 s after the
+  vote (rel/0.7.13 lab 20261112-050529 and five more runs). Answers "Unknown: which pause reason the Civ launch uses".
+* ✔ With `core.editor_own_pause` off the spacecraft editor waited at the busy gate ("input_lock,paused") and came up
+  61 s after its vote (lab 20261112-100520, 20261112-102046): the hold the fork saw (BUG-0855).
+
+## Wild creatures and a guest's orders on them (2026-11-12, fix/w48-civcmd)
+<a id="civ-wild-creature-orders"></a>
+
+BUG-0970. Lab lane 4, GOG 2024.
+* ✔ (runtime) Wild creatures in Civ (noun 0x18EB45E, cCreatureAnimal) are not synced: each game runs its own. Right
+  after the load both games have the same ones within 0.0-3.8 m (civ_npc: a herd of 10 near (-285 246 353), still
+  within 3.8 m after 5 min without play; civ: 4). Moved, fled or killed on one game, they differ for good.
+* ✔ (runtime) Every game also has a wild creature object without a species at (0 0 0) (not placed in the world;
+  `coop.census creatures` skips it). A nearest-creature search without a small radius finds it from the surface
+  (~500 m off).
+* ✔ (runtime) A guest's right-click on a creature sends CMD_ORDER type 1 with target kind 3 (noun + position); the
+  host now takes its own creature within 40 m of that place, else a move order there (`civ.creature_target`).
+
+## A guest's order on a vehicle the host's game just removed (2026-11-13, fix/w49-live)
+<a id="civ-cmd-listed"></a>
+
+* ✔ (lab 20261113-022453, BUG-1053) Vehicle_Remove (0xCAA7B0, `coop.civ remove`) leaves the game's object list in the
+  same call (`listed=0`), the host's table g_hv keeps the entry until the next host tick (0.1 s). SetOrder(v, <removed
+  vehicle>, 1, 1) is accepted: v's mOrders (+0xB68) element 0 names the removed block as its target.
+* ✔ The freed block of a removed vehicle is given to the next vehicle the game makes: three spawnveh calls ~5 s apart
+  after three removals got the same address 1A7719A0 each time (lab 20261113-022453). A stale table entry is therefore
+  quickly another vehicle of the same nation (BUG-0951's serial check covers host_tick; the commands use
+  game::alive with the serial, civ.cmd_listed).
+
+## The ground check of mirror vehicles while the host is away (2026-11-13, fix/w49-small)
+<a id="civ-away-ground"></a>
+
+BUG-1056 (owner decision 8 of plan-0.7.14). ✔ runtime (civ_npc fixture, lane 7):
+- While the host is in the menu (local_play), a land mirror put on the spice node near (-336, 132, 354) stays there
+  (0.2-0.4 m after 0.3 s) when Vehicle_KeepOnValidGround is skipped (civ.mirror_place, BUG-0186); with the game's check
+  it is moved about 13 m off within 0.3 s (the same 13 m as BUG-0186's outliers). So the bypass is only right while the
+  host's states place the mirror; in local play the game's own check runs (`civ.away_ground`).
+- A guest's SetPosition (spatial vt 0x38) of a mirror its own game drives is undone by the locomotion within 0.3 s (it
+  ended 630 m away, where it was driving): StopMovement (spatial vt 0xEC) first, as guest_tick does before Teleport.
+
+## Wild creatures owned by the host (2026-11-13, fix/w49-civ)
+<a id="civ-wild-sync"></a>
+
+BUG-0973. GOG 2024, lane 4, fixtures civ_npc / civ.
+* ✔ (runtime) civ_npc has 10 wild creatures (noun 0x18EB45E): a herd of 7 (species 06538C80, hp 10/5) near
+  (-285 246 353) and three epics (hp 3000, about 506 m from the centre, one each). They run the same
+  `cCreatureAnimal::Update` as the Creature stage's (game.cpp h_Update), so npc.cpp's update filter and host_tick see
+  them. Census rows of noun 0x18EB4B7 next to them are not wild creatures (not updated through that hook).
+* ✔ (runtime) The herd members have no archetype tuning (+0xE84) and their herd looks like the herds the mod makes
+  (no archetype +0x88, no nest): npc.stray_ids (BUG-0385, `saved_stray`) gave them no NPC id, only the epics were
+  tracked. Civ skips that rule (no partner's puppet exists in Civ to be saved).
+* ✔ (runtime) The Creature stage's relevance pass (Relevance_Update, view_centres.cpp) runs in Civ too: one game
+  sphere at the camera's point, enter 150 m, leave 200 m. A herd set 60 m aside (about 245 m from the host's camera
+  point) stopped updating and lost its herd within a second (npc `pooled=7` on the host); the epics 500 m away kept
+  updating (not checked why: no herd relevance for epics?).
+* Fix `npc.civ_wild`: npc.cpp runs in Civ like the Tribe stage (rts_stage: proxies walked at their own ground height)
+  without a centre: every wild creature the host's game updates goes to every guest in the world (kCivRelevance).
+  The guest's own wild creatures are removed by the update filter; proxies take the nest herd of their species.
+  `npc.view_centres_civ`: the partners' pointers (rts_fill) are spheres of the host's relevance pass in Civ too.
+* Bandwidth: 10 creatures x 47 B (NpcState) + 2 B (agl trailer) every 0.1 s per guest = about 4.9 KB/s per guest,
+  one or two unreliable packets per batch; spawns are reliable, once per creature. Measured (lab, civ_npc, 24-25
+  creatures once the cameras moved, host -> guest in all): 7.6 KB/s with the sync off, 20.1 KB/s with it, 12.3 KB/s
+  with `npc.civ_quiet` (a standing creature's state once a second).
+* ? Not checked: the guest's pointer as a relevance centre in play (in the tests the guest's mouse stays off the
+  planet, its centre is (0 0 0)); a guest whose host is away (local play) shows no wild creatures until the host is
+  back (the Tribe stage's rule: proxies dropped, the own ones were removed).
+
+## The specialty question goes to the buyer (2026-11-13, fix/w49-civ)
+<a id="civ-specialty-buyer"></a>
+
+BUG-0982. GOG 2024, Ghidra + runtime (lane 4, civ_npc).
+* ✔ (Ghidra) `GameCiv_CaptureNeedsSpecialty` 0xCF7A30: cdecl, no arguments, returns bool in AL; reads player civ
+  +0x44C (the last city it captured), compares its capture type +0x29C (0 military, 1 religious, 2 economic; a
+  purchase is 2) with the specialty (0xBD8320 = `mov eax,[ecx+0x540]`) and calls `cCity_ShowSpecialtyBox` 0xBD9330
+  (thiscall, ECX = city: the text by +0x540 / +0x29C, `cSPUIMessageBox::ShowDialog`, Pause 0x4BF38A7) when they
+  differ. Its only caller is GameCiv_HandleMessage (the capture cinematic's end); returning 0 lets the handler go on
+  to the planet-won check at once.
+* ✔ (Ghidra) The box's answer: 0xBDC950 posts message 0x40FAFDF with the pressed button at data +8; every city's
+  listener `cCity_MessageListener` 0xBE75C0 (this = city +0x20C) acts only for the player civ's +0x44C city: button
+  0x5107B1A = take the capture type (`cCity_SetSpecialty(city, +0x29C, 1)` + effects), else keep; then Resume
+  0x4BF38A7, 0xCFA280 (an effect and hint flags when the civ has more cities than before) and the planet-won check.
+* ✔ (runtime) Fix `civ.specialty_buyer`: the host's hook of 0xCF7A30 sends the question of a city whose owner is a
+  guest (owner table, else the pending captor) to that guest (MSG_CIV_CMD kind 8: city index, capture type) and
+  returns 0 (no box, no pause on the host). The guest writes the type into its copy's +0x29C and calls
+  ShowSpecialtyBox outside the frame (the game's own box and pause there); its listener hook takes the answer
+  message once (the same data pointer reaches every city's listener), sets its copy, resumes the pause and sends
+  kind 8 (city, take, type) back; the host's game calls SetSpecialty when the guest took the new one. civ_buy_city:
+  question on the guest only, Economic taken, specialty 2 in both games (`coop.civ` city lines print `spec=`).
+
+## The game's empty herds in a Civ save (2026-11-13, fix/w49-tests)
+<a id="civ-save-herds"></a>
+
+BUG-1067. GOG 2024, lane 5, civ fixture (Arigine), host + guest.
+* ✔ (runtime) The host's Civ world: 82 herds (noun 0x1BE418E), 78 without an archetype (+0x88 = 0) and a nest, 71 of
+  those empty, 25 members in all (`coop.npc archless all`); many have their home at (0 0 0). The guest's game: 90 / 86 /
+  79. Wild creatures out of the camera's relevance are pooled and leave their herd empty (#civ-wild-sync), so most of
+  the game's Civ herds are empty at any time.
+* ✔ (runtime) Such a herd looks exactly like a herd the mod makes for a puppet or a proxy (CreateHerd(.., 0, 0, 0, 0)):
+  savestrip's empty-herd rule of BUG-0255 left 72 of them out of the host's own save. After loading that save the game
+  has 82 herds again (it makes the missing ones at load), but 52 of the 72 were not back at their home (the same
+  species within 2 m): the herds' homes moved. No fault in 20 s after the load.
+* Fix `savestrip.our_herds`: the mod's herds are known by their serial (`game::our_herd`, cGameData::mID +0x24), only
+  those are stripped when empty.
+* ? Not checked: what a moved herd home changes in play (where the wild creatures roam, their nests); a guest's save
+  behaves the same (its 77 stripped in civ_save_strip, BUG-0973).
+
+## The cinematic manager's enabled flag and loads (2026-11-13, fix/w49-camp)
+<a id="civ-cinematics-enabled"></a>
+
+BUG-1073, BUG-1079. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and runtime (lab lanes 4 and 5, a watcher
+reading `[0x167EB50]` +0x15F / +0x2C / +0x148 every 5 s; `coop.cine` shows the same).
+
+* ✔ `cCinematicManager::PlayCinematic` 0xAE08B0 plays nothing and returns 0 while the manager's byte **+0x15F** is 0
+  (its first check). The only writer besides a table init is `SporeCoop::cCinematicManager_SetEnabled` 0xADF310
+  (thiscall(mgr, bool) ret 4; 0 also empties the queue at +0x118..+0x128). Call sites: **0** right after
+  `PlayCinematic("CRG2TRG")` (0xD3FFD2, the live Creature -> Tribe change) and after `TRG2CVG_PreEditor` (0xCDC6E8,
+  TribeGame_AdvanceProc, the Tribe advance button); **1** in the Tribe start (0xCD4410, 0xCD8341, 0xCDD5ED), in
+  Creature (0xD4538E), in the Civ start (0xCFD0CF) and in the galaxy menu's enter (0xEF24D4, vtable 0x148AFC0 +0x30).
+* ✔ (runtime) Creature -> Tribe: 0 from CRG2TRG (13:36:28) until the Tribe start; the advance button: 0 from the
+  click (13:22:34) through the City Hall and vehicle editors until the Civ start (13:25:22: 1).
+* ✔ (runtime, campaign_tribe_end lab 20261113-133534 lane 5, from 13:40:52) The mod's reload of the host's Tribe right after the live
+  change (tribe.host_reload, BUG-0332: Tribe -> galaxy menu -> Loading -> Tribe 6.6 s after the change) came before the
+  Tribe start's SetEnabled(1): the flag stayed 0 in the galaxy menu (its enter did not run SetEnabled(1) on this
+  path: another run of the same path showed 1 there, 13:38:02) and through the whole Tribe. A load does not set it.
+  Seen in the full campaigns too: the host had no cinematic after the Creature -> Tribe change in all four jump
+  campaigns of fix/w49-tests (`busy=cinematic` in its trace lines stops at 10:39 in lab 20261113-101808; 0.7.13's
+  final check had them in Tribe and Civ).
+* ✔ Consequence in Civ: `cCity::Capture` with instant 0 (sieges, conversions, purchases, the campaign's shortcut)
+  sets the city's pending flags +0x2E0.. and leaves the ChangeOwner to the end of CVG_Capture (msg 0x44F1189); with no
+  cinematic the city never changes hands. With instant 1 (a surrender) it does (the ChangeOwner is direct). In Space
+  a destroyed ship's death cinematic does not play (spacecoop's respawn_tick: "no death cinematic runs: respawn").
+* ~ (runtime, same run) In Tribe with the flag 0 the host's bot never box-selected its own members (32 tries, "no
+  member selected") and the full campaigns' minimap calibration read the same view for three clicks: inferred, the
+  view moves of a minimap or card click go through the cinematic manager and do nothing while it is off.
+* Fix (coop.dll, gamefixes `game.cinematics_on_load`): when a load ends in Cell / Creature / Tribe / Civ / Space with
+  +0x15F 0, SetEnabled(1). A boot + load starts with 1, so a loaded stage never needs 0.
+
+## Wild creatures parked while the host's game stands still (2026-11-13, fix/w49-proxy)
+<a id="civ-wild-parked"></a>
+
+BUG-1089. GOG 2024, lab lanes 4 and 5, civ_npc.
+* ✔ (runtime) The host NPCs at (0 0 0) of the full campaign's sync-check MISMATCH (lab 20261113-160426, 14 of
+  species 067A147A, hp 8-16) are wild creatures the game took back into its pool (the planet's centre, no herd) while
+  the host's simulation stood (the host's trace says `busy=paused` at 17:00:21; the BUG-0339 diagnostic "is updated at
+  the planet's centre" never fired for them, so host_tick never saw them updated there: they were parked in frames
+  without creature updates). The sync-check's entries are the last running frame's table (npc.entries_listed), the
+  positions are read now: (0 0 0) on the host, the proxies on Bob's ground.
+* ✔ (runtime, civ_wild_pooled with npc.frozen_pooled_rts off, lab 20261113-174015) With the host in its pause menu
+  and its camera panned to the other side of the planet, the game parked a herd of 14 (species 066742CD) by itself:
+  the same MISMATCH "n: 14 apart" (519-537 m). So the Civ relevance pass (#civ-wild-sync) runs during the pause menu
+  and parks creatures although no creature is updated.
+* Mod side: host_tick returned at once in Tribe / Civ frames without creature updates (the Creature stage's frozen
+  pass, BUG-0413 / BUG-0339, is relevance per guest and was skipped for the RTS stages), so nothing was despawned until
+  the game went on. Fix `npc.frozen_pooled_rts`: every 0.5 s of such a freeze the tracked NPCs that are no creature of
+  the world any more or are within 50 m of the centre are retired (despawned at every guest).
+* ~ Seen, not changed: dead creatures the game keeps updating at the centre (BUG-0339's corpse case, 4 lines at
+  17:01:03 in the same campaign) are not despawned in Civ by distance (every guest gets every wild creature); not
+  compared by the sync-check (dead), not looked at here.
+
+
+## A pooled wild creature given out again during the host's stand (2026-11-14, fix/w49-fcgates)
+<a id="civ-wild-reused-frozen"></a>
+
+BUG-1100. GOG 2024, lab lane 7, civ_npc. Follows #civ-wild-parked.
+* ✔ (logs, civ_wild_pooled of the 0.7.14 final check, lab 20261114-005006) While the host stood in its pause menu
+  (`busy=paused` at s 40 and 50), its object 10E5C360 of NPC #129 read species 065CBF12 at 517 m from the centre with
+  `moved64=507.1` (it went through the planet's centre within its last 64 updates); the guest's proxy #129 was species
+  06538C80, last news 15.4 s old, at (-387 -328 0): 690.9 m apart (sync-check MISMATCH n129). So the game's pool took
+  a creature back and gave the same object out again as another species within one stand of the host's game, between
+  two 0.5 s frozen passes (npc.frozen_pooled_rts saw neither "gone" nor "at the centre").
+* Inferred: the Civ relevance pass during the pause (the camera moved) both parks and brings out herds; it reuses the
+  pooled objects for the new ones. A natural reuse could not be forced in the lab (as for BUG-0044): the test makes the
+  same state with `coop.npc kill <id>` (the death flag) and `coop.npc reuse <id>` (alive again) during the pause.
+* Fix `npc.frozen_reused`: the frozen pass retires a tracked object that npc_object_reused calls another creature
+  (another species, or alive after dead), as host_tick does while the game runs.
+* ✔ (runtime, civ_wild_pooled 20261114-033051 with the BUG-1100 log line) In the host's stand right after the civ_npc
+  fixture's start the game rebuilt 14 tracked objects of species 06689607 as 065276AC / 066742CD within 2 s, several
+  at unplaced points with z = 0 ((0 524.8 0), (-368.7 -347.0 0)), the rest at their new herds: the reuse in a stand is
+  common, and the guest's #129 at (-387.0 -327.7 0.0) of the final check was such an unplaced object.

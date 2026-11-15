@@ -9,6 +9,8 @@
 #include "game.h"
 #include "hunt_hits.h"
 #include "net/interp.h"
+#include "settings.h"
+#include "trace.h"
 
 namespace teamplay {
 
@@ -18,6 +20,7 @@ static Ctx C;
 static bool g_on = true;
 static double g_last_rescue = -1000, g_last_regen = 0;
 static uint32_t g_joint_hits = 0, g_rescues = 0;
+static uint32_t g_hits_host = 0, g_hits_partners = 0; // diagnostics: hits counted by on_player_hit (play_creature)
 
 static HitTable g_hits(kHuntWindow); // target -> recent hits by players (BUG-0099)
 COOP_FIX("team.hunt_hits", "BUG-0099", g_hits.fix, "creature: the joint-hunt hit table forgets old hits of every target");
@@ -27,7 +30,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
-    g_on = H->config_int(M, "coop", "teamplay", 1) != 0;
+    // the session settings creature.pack_rescue / pack_heal / joint_hunt decide each bonus (coop.ini teamplay is
+    // their default); g_on is the console's switch for all of them (`coop.team off`)
 }
 
 bool enabled() { return g_on; }
@@ -54,9 +58,13 @@ void set_enabled(bool on) { g_on = on; }
 
 float on_player_hit(void* target, uint8_t player, float damage)
 {
-    if (!g_on || !target)
+    if (!g_on || !target || !settings::on(settings::kJointHunt))
         return damage;
     bool joint = g_hits.hit(target, player, H->time_seconds());
+    (player ? g_hits_partners : g_hits_host)++;
+    // BUG-0618: every hit the joint table counted (support logs: "why no pack bonus"; the play bots' hunt timeline)
+    trace::line("team", "hit %p by player %u dmg %.1f hp %.1f%s", target, (unsigned)player, damage, game::health(target),
+                joint ? " joint" : "");
     if (!joint)
         return damage;
     g_joint_hits++;
@@ -84,7 +92,7 @@ static std::string nearest_partner(void* avatar, float max_dist, float* out_dist
 
 float on_own_damage(void* avatar, float damage)
 {
-    if (!g_on || !avatar || damage <= 0)
+    if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
         return damage;
     if (creature_rescue::protect(avatar, damage))
         return damage;
@@ -146,7 +154,7 @@ static void nest_heal_watch(void* avatar, double now)
 void tick(void* avatar, double now)
 {
     nest_heal_watch(avatar, now);
-    if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0)
+    if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal))
         return;
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);
@@ -172,9 +180,9 @@ std::string status()
     double now = H->time_seconds();
     char b[200];
     int cd = (int)(kRescueCooldown - (now - g_last_rescue));
-    snprintf(b, sizeof b, "Pack: %s  |  rescue %s  |  joint hits %u, rescues %u",
+    snprintf(b, sizeof b, "Pack: %s  |  rescue %s  |  joint hits %u, rescues %u  |  hits host %u, partners %u",
              p.empty() ? "alone" : (p + (d <= kRegenDist ? " close (regen)" : " near")).c_str(),
-             cd > 0 ? (std::to_string(cd) + "s").c_str() : "ready", g_joint_hits, g_rescues);
+             cd > 0 ? (std::to_string(cd) + "s").c_str() : "ready", g_joint_hits, g_rescues, g_hits_host, g_hits_partners);
     return b;
 }
 

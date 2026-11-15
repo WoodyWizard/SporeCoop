@@ -1,5 +1,6 @@
 #include "nest.h"
 #include "home_nests.h"
+#include "lifecycle.h"
 
 #include <windows.h>
 
@@ -58,11 +59,33 @@ static bool over_ground(const net::Vec3& q, float& og)
 static bool g_eggs_fix = true;
 COOP_FIX("nest.eggs", "BUG-0384", g_eggs_fix, "creature: the host's eggs at the NPC nests are shown and eaten on the guests");
 
+// BUG-0896: the host sent its eggs once a second (unreliable). An egg that hatched on the host stood whole on a guest for
+// up to a second while its hatchling (a small creature, half health) already stood there as an NPC: a guest's click
+// or bite at the egg took the hatchling, killed it at once, and the host credited the guest's hunt (+4 DNA, a body at
+// the egg's place). With nest.hatch_now the host looks at the eggs of its last snapshot every frame and sends a
+// snapshot at once when one of them hatched or was eaten; a guest's eat of an egg that is no longer whole is answered
+// with a snapshot at once too. Off: once a second only (0.7.12).
+static bool g_hatch_now_fix = true;
+COOP_FIX("nest.hatch_now", "BUG-0896", g_hatch_now_fix, "creature: an NPC egg that hatches or is eaten on the host is shown so on the guests at once, not up to a second later");
+
 // BUG-0474: the animal nests of the Tribe stage are the same cHerd / cEgg objects, and the guest's game removes its
 // own animals there too (tribe proxies): the host's eggs were missing on every guest. The mirrors run in Tribe too.
 // `coop.fix nest.eggs_tribe off`: Creature only (0.7.3.6).
 static bool g_tribe_fix = true;
 COOP_FIX("nest.eggs_tribe", "BUG-0474", g_tribe_fix, "tribe: the host's eggs at the animal nests are shown and eaten on the guests");
+
+// BUG-0660 (docs/re/creature.md#creature-family-eggs): the players' own nest is the avatar family's herd (+0x84 set),
+// left out of nest.eggs: its members are NPCs too (the guest's are the host's, mirrored, with no AI), so only the host's
+// family lays eggs (a family member missing: cHerd::Update's layer) and they were the host's alone (the detector's
+// `Creature:noun_only_host:egg` / `host_only:egg` at the players' nest for minutes). With nest.eggs_family the host sends
+// the family's eggs too (the state byte | kFamilyBit: older guests skip them); a guest binds its own family egg within
+// kOwnBind of a host egg (both games load the save's) and follows its hatch / eat, and shows the others as mirrors of
+// its own family herd. Off: the family's eggs are each game's own (0.7.10).
+static bool g_family_fix = true;
+COOP_FIX("nest.eggs_family", "BUG-0660", g_family_fix, "creature: the eggs in the players' own nest are the host's in every game");
+constexpr uint8_t kFamilyBit = 0x80;
+constexpr float kOwnBind = 4.f, kOwnDrift = 0.5f;
+static uint32_t g_family_tx, g_own_bound, g_family_made, g_own_placed;
 
 static bool egg_stage() { return game::in_creature_stage() || (g_tribe_fix && game::mode_id() == modes::kTribe); }
 
@@ -120,6 +143,7 @@ struct HostEgg {
     uint8_t state;
     float scale;
     net::Vec3 home; // its herd's home (+0x34 mInitialPosition, the same on every game: the save's)
+    bool family = false; // BUG-0660: an egg of the avatar family's herd
 };
 
 // host: the eggs of the NPC herds (not the avatar's family eggs, not ours)
@@ -132,7 +156,10 @@ static std::vector<std::pair<void*, HostEgg>> host_eggs()
             if (noun != kEggNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x228))
                 return true;
             void* herd = field<void*>(o, kEggHerd);
-            if (!herd || IsBadReadPtr(herd, 0x220) || field<uint8_t>(herd, 0x84)) // avatar-owned: the family's eggs
+            if (!herd || IsBadReadPtr(herd, 0x220))
+                return true;
+            bool family = field<uint8_t>(herd, 0x84) != 0; // avatar-owned: the family's eggs (BUG-0660)
+            if (family && !g_family_fix)
                 return true;
             HostEgg e{};
             if (!game::object_position(o, e.pos))
@@ -142,6 +169,7 @@ static std::vector<std::pair<void*, HostEgg>> host_eggs()
             e.scale = field<float>(o, 0x220);
             const float* hp = &field<float>(herd, 0x34);
             e.home = {hp[0], hp[1], hp[2]};
+            e.family = family;
             v->push_back({o, e});
             return true;
         },
@@ -158,6 +186,17 @@ struct Mirror {
     double seen = 0;
 };
 static std::map<uint32_t, Mirror> g_mirrors; // host egg id -> our egg
+// BUG-0660: guest, host family egg id -> this game's own family egg bound to it
+struct OwnEgg {
+    void* egg;
+    uint32_t serial;
+    bool placed = false;
+    net::Vec3 host{}, after{}; // the host's place it was put at, where it lay after the snap
+};
+static std::map<uint32_t, OwnEgg> g_own; // host egg id -> this game's own family egg
+// BUG-1055: the bindings to the host's egg ids end with the session (a reconnect into the same world epoch kept the
+// old host's ids; object_alive + serial guarded the use)
+SESSION_STATE("nest.own", nullptr, [] { g_own.clear(); }, []() -> size_t { return g_own.size(); });
 static uint32_t g_epoch = 0;
 static double g_last_snap_tx = 0, g_last_snap_rx = -100;
 static uint32_t g_made = 0, g_removed = 0, g_eats_sent = 0, g_eats_applied = 0, g_snaps_rx = 0, g_snaps_tx = 0;
@@ -182,16 +221,17 @@ static void place_mirror(Mirror& m, const net::Vec3& p)
 }
 
 // guest: its own herd of the host's nest (the same home: both games have the save's herds)
-static void* local_herd(const net::Vec3& home)
+static void* local_herd(const net::Vec3& home, bool family = false)
 {
     struct F {
         net::Vec3 home;
         void* found;
-    } f{home, nullptr};
+        bool family;
+    } f{home, nullptr, family};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* f = (F*)p;
-            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || field<uint8_t>(o, 0x84))
+            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || (field<uint8_t>(o, 0x84) != 0) != f->family)
                 return true;
             const float* hp = &field<float>(o, 0x34);
             if (net::dist(net::Vec3{hp[0], hp[1], hp[2]}, f->home) > 1.f)
@@ -205,7 +245,7 @@ static void* local_herd(const net::Vec3& home)
 
 static void* make_mirror(const HostEgg& e, Mirror& m)
 {
-    void* herd = local_herd(e.home);
+    void* herd = local_herd(e.home, e.family);
     if (!herd)
         return nullptr; // no such nest here: an egg would not be drawn
     void* nm = noun_mgr();
@@ -230,6 +270,7 @@ static void* make_mirror(const HostEgg& e, Mirror& m)
         thiscall<void>(a_SetState, o, (int)e.state);
     m.state = e.state;
     g_made++;
+    g_family_made += e.family;
     return o;
 }
 
@@ -249,6 +290,45 @@ static void remove_mirror(Mirror& m)
     g_removed++;
 }
 
+// BUG-0833: the world counter (game::world_epoch) also goes up when the avatar is replaced inside the stage (the own
+// creature chosen, an editor's new body): the egg mirrors were only forgotten then, while they were still eggs of the
+// guest's world, and the next snapshot made them again (two eggs per host egg, more after every change; the old ones
+// never hatch, are never removed, hold our references and their herds'). A world load frees the world's objects but
+// not the blocks we hold a reference to. Now a mirror of an older epoch is removed the normal way while the game's list
+// still has it (same serial), and only released (our two references) when the game destroyed it with its world.
+// `coop.fix nest.mirror_epoch off`: forgotten (0.7.11).
+static bool g_mirror_epoch_fix = true;
+COOP_FIX("nest.mirror_epoch", "BUG-0833", g_mirror_epoch_fix, "creature: a guest's egg mirrors are removed (not left behind) when its avatar or world changes");
+static uint32_t g_epoch_removed = 0, g_epoch_released = 0;
+static void drop_old_mirror(Mirror& m)
+{
+    if (!g_mirror_epoch_fix || !m.egg) {
+        m.egg = nullptr;
+        return;
+    }
+    bool listed = game::listed(m.egg, kEggNoun) && game::object_serial(m.egg) == m.serial;
+    if (listed) { // still an egg of this world: as remove_mirror
+        if (m.herd && field<void*>(m.egg, kEggHerd) == m.herd) {
+            field<void*>(m.egg, kEggHerd) = nullptr;
+            vcall<void>(m.herd, 1);
+        }
+        if (void* nm = noun_mgr())
+            thiscall<void>(a_DestroyInstance, nm, m.egg);
+        vcall<void>(m.egg, 1);
+        g_epoch_removed++;
+    } else if (!IsBadReadPtr(m.egg, 0x228) && field<uint32_t>(m.egg, 0x24) == m.serial &&
+               field<uint8_t>(m.egg, 0x21)) {
+        // destroyed with its world; the block is still ours (our reference): give back the herd's and ours
+        if (m.herd && field<void*>(m.egg, kEggHerd) == m.herd) {
+            field<void*>(m.egg, kEggHerd) = nullptr;
+            vcall<void>(m.herd, 1);
+        }
+        vcall<void>(m.egg, 1);
+        g_epoch_released++;
+    }
+    m.egg = nullptr;
+}
+
 static void clear_mirrors()
 {
     for (auto& [id, m] : g_mirrors)
@@ -266,12 +346,44 @@ static bool savestrip_filter(void* obj, uint32_t noun)
     return false;
 }
 
+// BUG-0896: the eggs of the last snapshot (object, serial, state) and the snapshots sent early for them
+struct SentEgg {
+    game::LiveRef egg; // (the game frees an eaten egg: never read through a raw pointer, BUG-0426 class)
+    int state;
+};
+static std::vector<SentEgg> g_sent_eggs;
+static uint32_t g_early_snaps = 0;
+
+static bool sent_egg_changed()
+{
+    for (auto& e : g_sent_eggs) {
+        void* o = game::live(e.egg);
+        if (!o)
+            return true; // gone (eaten up, the herd removed it)
+        int st = field<int>(o, kEggState);
+        if (st != e.state && (st == 3 || st == 4))
+            return true; // hatched / eaten here
+    }
+    return false;
+}
+
 static void host_tick(double now)
 {
-    if (now - g_last_snap_tx < kSnapInterval)
-        return;
+    bool early = false;
+    if (now - g_last_snap_tx < kSnapInterval) {
+        if (!g_hatch_now_fix || g_sent_eggs.empty() || now - g_last_snap_tx < 0.05 || !sent_egg_changed())
+            return;
+        early = true;
+        g_early_snaps++;
+    }
     g_last_snap_tx = now;
     auto eggs = host_eggs();
+    g_sent_eggs.clear();
+    for (auto& [o, e] : eggs)
+        if (g_sent_eggs.size() < 64)
+            g_sent_eggs.push_back({game::live_ref(o, kEggNoun), (int)e.state});
+    if (early)
+        H->log(M, SK_INFO, "nest: an egg hatched or was eaten: snapshot now (BUG-0896, %u so far)", g_early_snaps);
     for (auto& p : C.sess->players()) {
         if (p.id == 0)
             continue;
@@ -298,7 +410,8 @@ static void host_tick(double now)
             w.f32(e->pos.x);
             w.f32(e->pos.y);
             w.f32(e->pos.z);
-            w.u8(e->state);
+            w.u8(e->state | (e->family ? kFamilyBit : 0)); // BUG-0660 (older guests skip a state over 16)
+            g_family_tx += e->family;
             w.f32(e->scale);
             w.f32(e->home.x);
             w.f32(e->home.y);
@@ -419,10 +532,11 @@ static void follow_home(double now)
 
 static void guest_tick(double now)
 {
-    if (g_epoch != game::world_epoch()) { // another world: the old mirrors went with it
+    if (g_epoch != game::world_epoch()) { // another world (or another avatar in this one, BUG-0833)
         for (auto& [id, m] : g_mirrors)
-            m.egg = nullptr;
+            drop_old_mirror(m);
         g_mirrors.clear();
+        g_own.clear();
         g_epoch = game::world_epoch();
     }
     if (!g_mirrors.empty() && (now - g_last_snap_rx > kStale || !egg_stage())) {
@@ -431,8 +545,8 @@ static void guest_tick(double now)
     }
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();) {
         Mirror& m = it->second;
-        if (!mirror_ok(m)) { // the game took it (a cleanup of its own): forget it
-            m.egg = nullptr;
+        if (!mirror_ok(m)) { // the game took it (a cleanup of its own): forget it (BUG-0833: and give back our references)
+            drop_old_mirror(m);
             it = g_mirrors.erase(it);
             continue;
         }
@@ -449,6 +563,68 @@ static void guest_tick(double now)
     }
 }
 
+// BUG-0660: guest, a host family egg: this game's own egg of its family herd bound to it (the save's egg both games
+// have), its hatch / eat followed. true: handled (bound now or before), false: none here (a mirror is made)
+static bool own_family_egg(const HostEgg& e)
+{
+    auto it = g_own.find(e.id);
+    if (it != g_own.end()) {
+        void* o = it->second.egg;
+        if (game::object_alive(o) && game::object_serial(o) == it->second.serial && !IsBadReadPtr(o, 0x228)) {
+            int st = field<int>(o, kEggState);
+            if ((e.state == 3 || e.state == 4) && st != 3 && st != 4)
+                thiscall<void>(a_SetState, o, (int)e.state); // hatched or eaten on the host
+            net::Vec3 q;
+            OwnEgg& b = it->second;
+            if (st != 3 && st != 4 && game::object_position(o, q) &&
+                (!b.placed || net::dist(e.pos, b.host) > 0.3f || net::dist(q, b.after) > kOwnDrift)) {
+                // where the host's lies (its game's own place differed: lab 6.4 m off, 6.5 m over the ground), and again
+                // when the host's moves or this game pushes it away
+                float v[3] = {e.pos.x, e.pos.y, e.pos.z};
+                vcall<void>((uint8_t*)o + 0x34, 0x38 / 4, (const float*)v); // cSpatialObject::SetPosition
+                cdecl_call<void>(a_Snap, o);                                // onto this game's ground, upright
+                b.placed = true;
+                b.host = e.pos;
+                game::object_position(o, b.after);
+                g_own_placed++;
+            }
+            return true;
+        }
+        g_own.erase(it); // the game cleared it
+        return false;
+    }
+    struct F {
+        net::Vec3 at;
+        float best;
+        void* egg;
+    } f{e.pos, kOwnBind, nullptr};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* f = (F*)p;
+            net::Vec3 q;
+            if (noun != kEggNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x228) || !game::object_position(o, q))
+                return true;
+            void* herd = field<void*>(o, kEggHerd);
+            if (!herd || IsBadReadPtr(herd, 0x220) || !field<uint8_t>(herd, 0x84) || net::dist(q, f->at) >= f->best)
+                return true;
+            for (auto& [id, m] : g_mirrors)
+                if (m.egg == o)
+                    return true;
+            for (auto& [id, b] : g_own)
+                if (b.egg == o)
+                    return true;
+            f->best = net::dist(q, f->at);
+            f->egg = o;
+            return true;
+        },
+        &f);
+    if (!f.egg)
+        return false;
+    g_own[e.id] = {f.egg, game::object_serial(f.egg)};
+    g_own_bound++;
+    return own_family_egg(e); // placed at once
+}
+
 static void on_snapshot(net::Reader& r, double now)
 {
     uint8_t n = r.u8();
@@ -462,6 +638,8 @@ static void on_snapshot(net::Reader& r, double now)
         e.pos.y = r.f32();
         e.pos.z = r.f32();
         e.state = r.u8();
+        e.family = (e.state & kFamilyBit) != 0; // BUG-0660
+        e.state &= (uint8_t)~kFamilyBit;
         e.scale = r.f32();
         e.home.x = r.f32();
         e.home.y = r.f32();
@@ -483,6 +661,10 @@ static void on_snapshot(net::Reader& r, double now)
     std::set<uint32_t> ids;
     for (const HostEgg& e : v) {
         ids.insert(e.id);
+        if (e.family && !g_family_fix)
+            continue;
+        if (e.family && g_mirrors.find(e.id) == g_mirrors.end() && own_family_egg(e)) // BUG-0660: this game's own copy
+            continue;
         auto it = g_mirrors.find(e.id);
         if (it == g_mirrors.end()) {
             Mirror m;
@@ -504,6 +686,8 @@ static void on_snapshot(net::Reader& r, double now)
             m.state = e.state;
         }
     }
+    for (auto it = g_own.begin(); it != g_own.end();)
+        it = ids.count(it->first) ? std::next(it) : g_own.erase(it);
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();)
         if (!ids.count(it->first)) { // gone on the host (its herd cleared it) or out of the guest's range
             remove_mirror(it->second);
@@ -524,6 +708,11 @@ static void on_eat(uint8_t from, net::Reader& r)
             H->log(M, SK_INFO, "nest: player %u ate egg %u", from, id);
             return;
         }
+    // not whole here (hatched, eaten, gone): the guest gets the egg's real state now, not in up to a second (BUG-0896)
+    H->log(M, SK_INFO, "nest: player %u ate egg %u, which is not whole here: refused%s", from, id,
+           g_hatch_now_fix ? ", a snapshot now" : "");
+    if (g_hatch_now_fix)
+        g_last_snap_tx = 0;
 }
 
 
@@ -632,7 +821,7 @@ void on_world_change()
 {
     g_still.clear();
     for (auto& [id, m] : g_mirrors)
-        m.egg = nullptr; // freed with the world
+        drop_old_mirror(m); // BUG-0833 (off: forgotten, "freed with the world")
     g_mirrors.clear();
 }
 
@@ -761,6 +950,39 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, ok ? "eaten\n" : "no such egg\n");
         return ok ? 0 : 1;
     }
+    if (!strcmp(a, "evolve")) { // tests (BUG-0639): every herd's evolution fields: +0x85 mbShouldEvolve, +0xF0 generation,
+        // +0xA8 evolved species keys (count), +0x94 DNA threshold, +0x190 extinct, members, home, distance
+        void* av = game::avatar();
+        struct U {
+            net::Vec3 c;
+            SkOut* out;
+        } u{av ? game::position(av) : net::Vec3{}, out};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                auto* u = (U*)p;
+                if (noun != game::kHerdNoun || IsBadReadPtr(o, 0x220))
+                    return true;
+                void** b = field<void**>(o, 0x40);
+                void** e = field<void**>(o, 0x44);
+                void** kb = field<void**>(o, 0xA8);
+                void** ke = field<void**>(o, 0xAC);
+                auto& h = field<net::Vec3>(o, 0x34);
+                void* sp = game::herd_species(o);
+                // BUG-0668: the species' key instance (profile +0x504) and the key of the next generation (+0xA8[gen + 1])
+                int gen = field<int>(o, 0xF0), nk = kb && ke >= kb ? (int)((uint8_t*)ke - (uint8_t*)kb) / 12 : -1;
+                uint32_t skey = sp && !IsBadReadPtr(sp, 0x510) ? field<uint32_t>(sp, 0x504) : 0;
+                uint32_t next = gen >= 0 && gen + 1 < nk && !IsBadReadPtr(kb, (gen + 2) * 12) ? *(uint32_t*)((uint8_t*)kb + (gen + 1) * 12) : 0;
+                H->out_printf(u->out,
+                              "herd %p should_evolve=%d gen=%d evolved_keys=%d threshold=%.0f extinct=%d members=%d species=%p "
+                              "skey=%08X next=%08X home=(%.0f %.0f %.0f) dist=%.0f\n",
+                              o, (int)field<uint8_t>(o, 0x85), gen, nk, field<float>(o, 0x94),
+                              (int)field<uint8_t>(o, 0x190), b && e >= b ? (int)(e - b) : -1, sp, skey, next, h.x, h.y, h.z,
+                              net::dist(h, u->c));
+                return true;
+            },
+            &u);
+        return 0;
+    }
     if (!strcmp(a, "respawn") && argc > 3) { // tests: herd <hex>'s respawn time (+0x11C mRespawnRate, ms)
         void* h = (void*)strtoul(argv[2], nullptr, 16);
         if (IsBadReadPtr(h, 0x220) || game::noun_id(h) != game::kHerdNoun) {
@@ -786,6 +1008,8 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         net::Vec3 side = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
         float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
         net::Vec3 p{t.x + side.x / sl * d + up.x * 1.5f, t.y + side.y / sl * d + up.y * 1.5f, t.z + side.z / sl * d + up.z * 1.5f};
+        if (argc > 8) // look <target x y z> <d> <from x y z>: from that point instead (tests, BUG-0465)
+            p = {(float)atof(argv[6]), (float)atof(argv[7]), (float)atof(argv[8])};
         float pv[3] = {p.x, p.y, p.z}, dv[3] = {t.x - p.x, t.y - p.y, t.z - p.z}, q[4] = {0, 0, 0, 1};
         thiscall<void*>(orient, pm, q, pv, dv);
         game::teleport(av, p, net::Quat{q[0], q[1], q[2], q[3]});
@@ -888,13 +1112,13 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
 
 std::string status()
 {
-    char b[400];
+    char b[600];
     int live = 0;
     for (auto& [id, m] : g_mirrors)
         live += mirror_ok(m);
-    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u snaps_rx=%u eats_sent=%u eats_applied=%u\n",
+    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u epoch_removed=%u epoch_released=%u\n",
              (int)g_eggs_fix, (int)g_ground_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
-             g_snaps_tx, g_snaps_rx, g_eats_sent, g_eats_applied);
+             g_snaps_tx, g_early_snaps, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed, g_epoch_removed, g_epoch_released);
     return b;
 }
 

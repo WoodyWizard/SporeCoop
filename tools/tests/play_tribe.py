@@ -26,6 +26,7 @@ play. Measured all the time (docs/stability/tribe.md):
 """
 import argparse
 import math
+import os
 import random
 import re
 import sys
@@ -33,7 +34,7 @@ import time
 
 import lane
 from coop_sync import LIMITS, angle, game_paused, pct, sample, wait_running
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 SOCIAL_BTN, ATTACK_BTN = (725, 1030), (795, 1030)  # tribe UI interaction mode (1440x1080)
 MINIMAP = (110, 980)                               # a point inside the minimap
@@ -61,6 +62,57 @@ def tribe_state(con):
                                         hp=float(m.group(5)), pos=tuple(float(m.group(i)) for i in (6, 7, 8)),
                                         tribe=tribe)
     return out
+
+
+# BUG-0922: the game-over rule. The play pressed OK only when no member of the player tribe had health on the host for
+# 15 s; the guest's members belong to the host's player tribe too, so with a living guest that never came while the host
+# sat in the caption (the last 40 s of a play of the 0.7.12 final check, the guest playing on against a paused host).
+# Now the caption itself is the rule: the game-over window ("Alas! Your population has fallen below the minimum ...",
+# `coop.ui find "Alas"`) up on the host for 3 s. PLAY_TRIBE_OLD_GAMEOVER=1: the members rule (the test's twin).
+OLD_GAMEOVER = os.environ.get('PLAY_TRIBE_OLD_GAMEOVER') == '1'
+
+
+def caption_up(con):
+    """the game-over caption is shown in this game: its window and every parent visible (`coop.ui find` lists the chain
+    with the flags; the window stays in the tree, hidden, after the bounce back)"""
+    out = con.call('coop.ui find "Alas"').get('out') or 'no window'
+    if 'no window' in out:
+        return False
+    fl = [int(m, 16) for m in re.findall(r' fl=0x([0-9A-Fa-f]+) ', out)]
+    return bool(fl) and all(f & 1 for f in fl)
+
+
+class GameOver:
+    """the play's game-over rule: due() says when to press OK on the host (BUG-0922)"""
+
+    def __init__(self, old=None):
+        self.old = OLD_GAMEOVER if old is None else old
+        self.since = None
+        self.caption_since = None
+        self.longest = 0.0  # s: the longest time the caption was up on the host (seen by due())
+
+    def due(self, host, hs=None):
+        if self.old:
+            hs = tribe_state(host) if hs is None else hs
+            up = not [i for i, v in hs.items() if v['tribe'] == 'p' and v['hp'] > 0]
+            wait = 15
+            cap = caption_up(host)
+        else:
+            up, wait = caption_up(host), 3
+            cap = up
+        if cap:
+            self.caption_since = self.caption_since or time.time()
+            self.longest = max(self.longest, time.time() - self.caption_since)
+        else:
+            self.caption_since = None
+        if not up:
+            self.since = None
+            return False
+        self.since = self.since or time.time()
+        if time.time() - self.since > wait:
+            self.since = None
+            return True
+        return False
 
 
 def tribe_centres(con):
@@ -230,6 +282,18 @@ class Player:
             self.note('mode_social' if want == 0 else 'mode_attack')
 
 
+def frame_point(players, w, tol=30):
+    """BUG-0981: before a key frame of a place (a conquered village), every game's view on it through the minimap
+    (as a player clicks it). players: {role: Console}; {role: the view's centre reached, or None}"""
+    out = {}
+    for pid, (role, con) in enumerate(players.items()):
+        p = Player(role, con, pid, random.Random(1), [], 1440, 1080)
+        ok = p.calibrate() and p.look(w, tol)
+        out[role] = tuple(round(v) for v in p.cur) if ok and getattr(p, 'cur', None) else None
+    print(f'  (key frame view at {tuple(round(v) for v in w)}: {out})', flush=True)
+    return out
+
+
 class Game:
     def __init__(self, host, guest, seed, rate):
         self.host, self.guest = host, guest
@@ -258,7 +322,7 @@ class Game:
         self.both_attacked = 0
         self.plan_i, self.plan_until = -1, 0
         self.maxhp = {}
-        self.dead_since = None
+        self.gameover = GameOver()  # BUG-0922
         self.game_overs = 0
         self.phases = []
         self.pending_gift = None
@@ -300,7 +364,9 @@ class Game:
             kind = plan if plan in ORDER_KINDS else 'gather'
         if behind and kind == pl.last_nothing:
             kind = 'hunt' if kind != 'hunt' else 'gather'
-        if kind in ('raid', 'epic') and (len(alive) < 4 or len(idle) < 2):
+        # BUG-0397 (G4): the bot's OWN living members count (alive counted both tribes: with 5-6 own members left after
+        # the raids and the epic its fights took the rest, k8-open out/lab/20261108-015213 gave 8 orders in 10 min)
+        if kind in ('raid', 'epic') and (len(alive) < 4 or len(mine) < 4 or len(idle) < 2):
             kind = 'gather'  # too few to fight: friends gather first
         if hurt and rng.random() < 0.7 and not (behind and pl.last_nothing == 'heal'):
             kind, idle = 'heal', hurt
@@ -476,6 +542,9 @@ class Game:
         """right-click the target; a click that misses the target's model hits the ground (a walk):
         a player then clicks a bit higher (on the trunk, the body)"""
         last, n, act = '', None, None
+        # the host's reject count before the click (G4: taken after the click and 0.8 s, a reject that came in that
+        # time was counted as an idle order, not a lost one: w46-k4-bodies out/lab/20261108-020506-2)
+        rej0 = counter(status(self.host), 'rejected')
         for dy in ((0,) if kind == 'walk' else (0, -10, -20, -35)):
             before = pl.last_order()
             # hover first: the game picks the object under the cursor per frame, a click right
@@ -507,7 +576,7 @@ class Game:
         hs = tribe_state(self.host)
         hp = self.target_hp(tgt[0]) if tgt[0][0] in 'tn' and tgt[0][1:].isdigit() else None
         pl.pending.append(dict(due=time.time() + 8, kind=kind, sel=sel, tgt=tgt[0], last=last, hp=hp,
-                               rej=counter(status(self.host), 'rejected'),
+                               rej=rej0,
                                pos={i: hs[i]['pos'] for i in sel if i in hs}))
         return True
 
@@ -542,7 +611,7 @@ class Game:
                     if m and int(m.group(1)) in o['sel']:
                         self.log.append(f'      host: {line.strip()[:150]}')
                 for i in o['sel']:  # its order record, node, node state and walk (docs/re/tribe.md#tribe-orders)
-                    self.log.append(f'      host ai #{i}: {self.host.call(f"coop.tribe ai {i}")["out"].strip()[:260]}')
+                    self.log.append(f'      host ai #{i}: {self.host.call(f"coop.tribe ai {i}")["out"].strip()[:520]}')
 
     # ---------------- measuring ----------------
     def measure(self):
@@ -567,22 +636,17 @@ class Game:
         hs, gs = tribe_state(self.host), tribe_state(self.guest)
         # the tribe died out: the game shows "Alas! Your population has fallen below the minimum..."
         # and waits for OK, which bounces back to the last save (the host's world; the guest follows)
-        if not [i for i, v in hs.items() if v['tribe'] == 'p' and v['hp'] > 0]:
-            self.dead_since = self.dead_since or time.time()
-            if time.time() - self.dead_since > 15:
-                self.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over: bounce back)')
-                self.host.call('key enter')
-                self.game_overs += 1
-                self.dead_since = None
-                time.sleep(12)
-                for p in self.p:  # the reload resets the view: look where the minimap points again
-                    p.cur = None
-                    p.busy.clear()
-                    p.zoom = 0
-                    p.calibrate()
-                hs, gs = tribe_state(self.host), tribe_state(self.guest)
-        else:
-            self.dead_since = None
+        if self.gameover.due(self.host, hs):  # (BUG-0922: the caption, not the members)
+            self.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over: bounce back)')
+            self.host.call('key enter')
+            self.game_overs += 1
+            time.sleep(12)
+            for p in self.p:  # the reload resets the view: look where the minimap points again
+                p.cur = None
+                p.busy.clear()
+                p.zoom = 0
+                p.calibrate()
+            hs, gs = tribe_state(self.host), tribe_state(self.guest)
 
         def roster(s):
             return {i: v['owner'] for i, v in s.items() if v['tribe'] == 'p'}
@@ -742,7 +806,16 @@ def main():
     t0, last_measure, n, ok = time.time(), 0, 0, True
     g.t0 = t0
     try:
+        for p in g.p:  # BUG-0924: each view on its own members first (the start view was a bare slope 21 m away)
+            own = [v['pos'] for v in tribe_state(p.con).values() if v['owner'] == p.pid and v['tribe'] == 'p']
+            if own:
+                p.look(tuple(sum(q[k] for q in own) / len(own) for k in range(3)))
+        keyframe('start', 'both tribes at the village, the members on the ground with the same models and paints, the tribe panel in place')
+        kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and ok:
+            if not kf_mid[0] and time.time() > t0 + a.minutes * 30:
+                kf_mid[0] = True
+                keyframe('mid', 'play in progress: members gather and fight on the ground (none in the air or under it), no leftover bodies standing')
             g.step(g.p[n % 2])
             n += 1
             if time.time() - last_measure > 10:
@@ -796,7 +869,10 @@ def main():
     for p in g.p:
         tot = p.orders['ok'] + p.orders['lost'] + p.orders['idle']
         ck(p.orders['lost'] == 0, f'{p.name}: no order lost ({p.orders["lost"]} of {tot})')
-        ck(tot >= 10, f'{p.name}: gave orders through real clicks ({tot})')
+        # 10 orders in a played session of 10 min; a quick run (lab.py --quick, docs/06-testing.md#testing-lab-speed)
+        # wants one per 40 s of play, at least 4: the order pace alone gives one per ORDER_EVERY (30 s)
+        need = min(10, max(4, int(played / 40)))
+        ck(tot >= need, f'{p.name}: gave orders through real clicks ({tot} >= {need})')
         ck(p.orders['ok'] >= 0.7 * tot, f'{p.name}: the members act on the orders ({p.orders})')
     ck(counter(st1, 'rejected') == g.rejected0,
        f'the host rejected no guest order ({counter(st1, "rejected") - g.rejected0}: {g.rejections[:3]})')
@@ -806,12 +882,29 @@ def main():
         if g.sync_pos[kind]:
             ck(pct(g.sync_pos[kind], .9) <= LIMITS[kind][0],
                f'sync {kind}*: 90% within {LIMITS[kind][0]} m' + (f' of the host\'s path over {TRIBE_LAG} s' if kind == 't' else ''))
+    idle_lines = [x for x in g.log if 'no movement' in x or x.lstrip().startswith('host')]
+    if idle_lines:  # BUG-0531: every order nobody moved on, with the host's view of its members
+        print(f'  orders without movement ({sum("no movement" in x for x in idle_lines)}):')
+        for line in idle_lines[-60:]:
+            print('   ', line)
     if not ok or not ck.ok:
         print('  last actions:')
         for line in g.log[-40:]:
             print('   ', line)
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_tribe.py --minutes {a.minutes} --seed {seed}')
+    # BUG-0922: a game over at the very end: OK first (the end frame shows play), and the host never sat in the caption
+    t_end = time.time()
+    while time.time() - t_end < 25 and caption_up(host):
+        if g.gameover.due(host):
+            g.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over at the end)')
+            host.call('key enter')
+            g.game_overs += 1
+            time.sleep(8)
+        time.sleep(0.5)
+    ck(g.gameover.longest < 25, f'the host never sat in the game-over caption for long (longest {g.gameover.longest:.0f} s, '
+                                f'game overs {g.game_overs})')
     try:
+        keyframe('end', 'after the play: both games in Tribe play, the same huts and members on both, the tribe panel and minimap in place')
         shot(host, 'play_tribe_host.png')
         shot(guest, 'play_tribe_guest.png')
         ck.faults(host=host, guest=guest)

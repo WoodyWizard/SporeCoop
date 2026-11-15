@@ -267,6 +267,7 @@ For bug reports of players, who send a file, not a debugger session:
   frames, never the detour.
 * Still open (BUG-0403): the first write of the jmp itself can catch a thread inside the first 5
   bytes of a function hooked after boot (BUG-0202's crash, nanoseconds per call).
+  Fixed since (2026-11-05, fix/w45-crashes): see [the first jmp of a hook made at run time](#modkit-hook-first-write) (`kit.fix hookfirst`).
 
 ## Report screenshots (SporeKit 0.3.6, 2026-11-01, feat/w35-report-shot)
 <a id="modkit-report-shots"></a>
@@ -305,3 +306,187 @@ docs/REPORTING.md#reporting-shots):
 * Tests: `tests/jpeg_tests.cpp` + `tools/tests/jpeg_check.py` (`make test`: the encoder decoded by
   Pillow against its source, the shrink), `tools/tests/coop_report_shot.py` (lab `report_shot`).
 
+
+## The first jmp of a hook made at run time (2026-11-05, fix/w45-crashes)
+<a id="modkit-hook-first-write"></a>
+
+BUG-0403 (the rest of BUG-0202 / BUG-0398). MinHook writes a target's 5-byte jmp with plain stores; a
+hook made after boot (the devkit's input hooks at the first injected input, coop's Cell hooks at its
+first cell) can catch another thread between two of the function's first instructions, and that
+thread then runs the jmp's operand bytes as code.
+* ✔ Reproduced: `kit.test.hooknew 200 3 split` (functions whose first 5 bytes are five 1-byte
+  instructions, hooked for the first time while 3 threads call them) with `kit.fix hookfirst 0`
+  crashed the game within 1 s: an access violation at an address inside the test page (the jmp's
+  operand executed), thread of the test (out/lab/20261105-225321, crash report attached there).
+* Fix (`kit.fix hookfirst`, on): the vendored MinHook calls a SporeKit writer for the patch bytes
+  (`MH_SetPatchWriter`, a SporeKit patch of hook.c `EnableHookLL`). After boot (frame index > 0) the
+  writer
+  1. writes one byte, int3, at the entry; a vectored handler (registered before SporeKit's fault
+     logger, so no log line per trap) sends any thread that traps there to the trampoline (the
+     original first instructions, then a jmp back): the call goes on as before the hook, and no
+     thread can reach the other patched bytes any more;
+  2. waits 50 ms (`kGateWindowMs`): a thread that was between those bytes when the int3 landed runs on
+     out of them within a few instructions once it is scheduled;
+  3. writes the other bytes, then the entry byte last.
+  No thread is suspended. Left: a thread preempted inside the first 5 bytes and not scheduled again
+  for the whole 50 ms (strictly less likely than before, when the write itself had to hit it).
+  Cost: 50 ms per first write after boot (the two input hooks, coop's Cell hooks: once per process).
+* ✔ Rejected first version (2026-11-05): suspend every other thread alone and read its EIP with
+  GetThreadContext before writing. GetThreadContext of a suspended thread **waits forever under
+  Wine 10** in some states: when the main thread made the input hooks in Cell (coop clicks the "game
+  saved" box) the host froze every time (lab 20261105-225531; a direct run: the main thread and one
+  other thread blocked in a read of their wineserver wait pipe, no log line from any thread after it,
+  the suspended thread never resumed). GetThreadContext on a helper thread with a 250 ms timeout did
+  not help: in a Cell session 63 reads never came back (8 per write, then the writes were refused).
+  From the console thread in the galaxy menu it had worked. ~ This may be what really froze
+  MinHook's own thread freeze under Wine (it calls GetThreadContext on suspended threads too), rather
+  than VirtualProtect as its patch comment says.
+* Measured (lane 4): 1000 split hooks under 3 calling threads: 0 wrong results, 6.3-7.8 million
+  gate traps, 52 s (the 50 ms windows), 3 of 3 runs; with `kit.fix hookfirst 0` the game crashed in 3
+  of 3 (out/lab/20261105-232406 / 20261105-232220). `kit.test.hooknew` prints `live first writes /
+  gate traps / refused`.
+* Not covered: a thread whose return address lies inside the first 5 bytes (a 2-byte `call reg` in
+  the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
+  had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
+* Test: `kit_hooksplit` (kit_freeze.py --case hooksplit; SPORE_FIX_OFF=hookfirst fails).
+
+## One long frame is not "Present lost" (2026-11-07, fix/w46-s1-sweep)
+<a id="modkit-present-hitch"></a>
+
+* The frame source fallback (d3d9hook.cpp frame_from_game_loop, docs/06-testing.md#testing-log-gates "hitch") took
+  over when the time since the last Present was over kPresentLostSec (2 s). One long frame (a 2.5 s hitch at the game
+  saved box, a save, `kit.test.hang 2600`) was enough: the first game loop pass after it came 2.5 s after that frame's
+  Present, the fallback ran one frame from the loop (a WARN "Present has not reached SporeKit for 2 s (another overlay
+  took it over?)", on-screen labels off) and the next Present 1 ms later switched back (BUG-0653: 32 lab runs of
+  team, chat_pause, select, frames_loop, ...).
+* Now the fallback also needs kPresentLostPasses (10) game loop passes since the last Present. An overlay that took
+  Present over leaves 30-60 passes a second (the fallback comes at the same 2 s); one long frame leaves one.
+  `frames.source loop` (tests) is not gated. Switch `kit.fix presentlost 0`: the time alone (SporeKit 0.3.11).
+* Test `kit_present_hitch` (FAIL with SPORE_FIX_OFF=kit.presentlost: 3 WARN lines after three 2.6 s frames, lab
+  20261107-114245; PASS: none, the frames stay on Present, lab 20261107-114514).
+
+## The frame limit, the device's present parameters and other programs' hooks (2026-11-12, fix/w48-reports)
+<a id="modkit-frame-limit"></a>
+
+BUG-0779 (screen tearing with Spore ModAPI and a d3d9 wrapper), BUG-0782 (crashes at start with RivaTuner).
+
+* ✔ The game's frame cap is the property **kFrameLimitMS** (id 44 = 0x2C of the AppProperties list; ModAPI SDK
+  `App::SPPropertyIDs`, "the main loop will always take at least this long"): `[[App::FrameLimit_ptr]+0x3C]+0xB0`
+  (App::FrameLimit_ptr 0x015FD918 is ModAPI's `AppProperties_ptr`). **16 ms (60 fps) in the GOG 2024 lab games**, read
+  at frame 1 on every lane (`frame limit: the game's own 16 ms (kFrameLimitMS) at frame 1`).
+  CORRECTION (2026-11-12, fix/w48-reports): "the game caps itself at 30 fps (33 ms)" (focus.cpp, docs/06-testing.md
+  6.x) is not what the GOG 2024 game does: its value is 16 ms; the lab games ran at 57-67 fps by the Present interval.
+* ✔ SporeKit read that value once (first frame) and wrote it back every 10 frames: a value set later by anybody (a
+  mod, a frame limiter, the game) was undone within 10 frames (kit_frame_limit with `kit.fix framelimit 0`: a 50 ms
+  limit written by `mem.write` went back to 16 ms, 14.3 ms intervals). Since the SporeKit after 0.3.15 a value SporeKit did not write is
+  taken as the game's own and kept (`frame limit: set to 50 ms by another program or the game (was 16 ms): kept`);
+  `frame.limit` / `[sporekit] frame_ms` still win. `kit.fix framelimit 0`: the old write-back.
+* ✔ **The game asks for no vsync**: `CreateDevice asks for: 640x480 windowed=1 interval=0x80000000 (immediate: no
+  vsync) refresh=0 Hz swap effect=3 back buffers=1`, the same at every Reset (1440x1080 windowed). Tearing is the
+  game's own behaviour at any frame rate; a lifted cap makes it worse. `[sporekit] vsync = 1` sets
+  PresentationInterval ONE at CreateDevice and every Reset (`vsync: [sporekit] vsync=1: presentation interval 0x1
+  instead of the game's 0x80000000`; the lab game then ran at 59 fps on the 60 Hz headless display), 0 IMMEDIATE,
+  -1 (default) the game's.
+* ✔ Logged now (sporekit.log): the present parameters at CreateDevice and Reset (`... asks for: WxH windowed interval
+  refresh swap effect back buffers`), the module of each hooked d3d9 function before the hook (`d3d9: Present at
+  79C19DD0 in d3d9.dll (system)`, or `(game folder)` for a wrapper next to SporeApp.exe; `, starts with a jump into
+  <module>` when another program hooked it first: a `jmp rel32`, `jmp [abs]` or `push; ret` as its first
+  instruction), once a minute `frames: present interval mean / p50 / p95 / max over N frames (fps) this minute; frame
+  limit X ms (the game's own Y ms)`. Console: `frame` adds `limit= own= changes=`, `frame.interval [reset]` gives the
+  statistic since the last reset (tests).
+* ✔ A d3d9 wrapper's limiter is not lost under SporeKit's hooks: the lab's DXVK 3.1.1 32-bit d3d9.dll (7 856 142
+  bytes = the 7672 KB d3d9.dll of the BUG-0779 player's report) in the game folder with `d3d9.maxFrameRate = 30` and the
+  game's own cap lifted: 33.3 ms Present intervals with SporeKit alone, with coop, and on both games of a session
+  (kit_wrapper_cap); 4.1 ms without dxvk.conf. SporeKit hooks the game-folder DLL's functions (inline, MinHook); the
+  wrapper's own Present runs inside the original.
+* ✔ Spore ModAPI (Spore-Community/Spore-ModAPI, read 2026-11-12, data only): no d3d9 hook, no frame limit or
+  main-loop timing of its own; its injector (ModAPI Launcher) starts the game suspended and loads the mod DLLs from
+  a detour of the game's allocator init (before the game's main init). A ModAPI mod (an "mLib") can set
+  kFrameLimitMS or detour the game's RenderUtils (SetPresentationParameters 0x11F7D30, CreateDevice 0x11F86B0, March
+  2017 addresses) itself: that is where a "30 fps lock" with ModAPI comes from, and what SporeKit's write-back undid.
+* The mod tells the player (diag_stats.cpp, once per start, `coop.diag` line `env:`): RTSSHooks.dll loaded
+  (core.rtss_note, BUG-0782; SporeKit adds an `advice:` line to `env` and every crash report and a WARN after the
+  device), the game without its cap (kFrameLimitMS under 10 ms) at 50 fps or more over a minute (core.uncapped_note,
+  BUG-0779). Advice for players: docs/INSTALL.md#install-rtss, docs/INSTALL.md#install-tearing.
+* Tests: `kit.test.loadlib <file>` loads a DLL from the game folder (build/test/rtsshooks.dll is a do-nothing DLL,
+  tests/dll/stand_in.c).
+
+## A fault with the stack pointer outside the thread's stack (2026-11-12, fix/w48-new)
+<a id="modkit-offstack-report"></a>
+
+BUG-0956: a game that ran heap bytes after a call through a destroyed object (docs/re/space.md#space-modal-list-crash)
+had esp in the heap when it faulted. Wine refuses to dispatch such a fault (`err:seh:NtRaiseException Exception frame is
+not in stack limits => unable to dispatch exception.` in the lane's out/run.N.log) and ends the process: the game's
+handlers, the unhandled-exception filter and the ExitProcess hook never run, so no crash report was written (Windows
+checks the stack the same way). Two cases were seen: the dispatch reaches the vectored handlers (SporeKit's fault
+logger runs, then the process ends) and, in about 1 of 4 runs, Wine refuses even that (nothing can be caught).
+* The fault logger (exceptions.cpp) compares the fault's esp with the allocation of the thread's StackBase; outside it
+  logs "the stack pointer ... is outside this thread's stack (BUG-0956)", the return addresses on the thread's real
+  stack above and below its innermost SEH record and the raw dwords under it (the live frames of the call that went
+  astray), and has the report thread made at boot (the BUG-0056 one) write the crash report, the archive and the
+  minidump while it waits. `kit.fix offstack 0`: nothing of this (0.3.15).
+
+## Dropping a reloaded mod's tasks outside the task lock (2026-11-12, fix/w48-net)
+<a id="modkit-task-drop"></a>
+
+A hot reload (`mod.reload`) drops the queued main-thread and outside-frame tasks whose code is in the old image
+(`drop_tasks_in`, BUG-0060). Since BUG-0860 (`kit.fix taskdrop`) the matching tasks are moved out under `g_task_mu`
+and destroyed after it is unlocked (sporekit/task_drop.h, tested by validate_tests `test_task_drop`): a task's
+captures may queue another task in their destructors, and `run_on_main` / `run_outside_frame` lock the same
+non-recursive mutex, which deadlocked the thread before. No capture of ours is known to do this; the fix closes the
+class. `run_after_frames` tasks are SporeKit's own (input.cpp), never a mod's, so they are not dropped.
+
+## Faults the game catches inside Present, the overlay pass or a command's task (2026-11-13, fix/w49-kit)
+<a id="modkit-present-unwind"></a>
+
+The game's own handler catches a fault in a SporeKit frame (Present -> h_Present -> the frame's work) and the game
+goes on; SporeKit's frames go on since BUG-0667 (`kit.fix frameunwind`). Three more states were left behind by such
+an unwind (llvm-mingw i686 has no SEH unwinding of our frames: no destructor and no `--` after the call runs):
+* BUG-1024, Present: a fault inside the original Present (the driver, or a task pumped by a message dispatched there)
+  left `g_present_depth` at 1. h_Present starts a frame only at depth 0 and the game loop fallback returns early on
+  it: no frame ran again, in_frame() stayed true, the outside-frame tasks waited for ever. The game drew on, the co-op
+  was dead (lab 20261113-010320: the host's frame counter stopped, the guest's age of the host 35 s and growing).
+  Now the outermost Present's stack address and thread are kept; an entry of Present on that thread at or above it
+  (a nested Present, the device's calling the swapchain's, is deeper) or the game loop pass after App::Canvas::Tick
+  sets the depth back to 0 ("frames: Present was left by a fault the game's handler caught").
+* BUG-1024, the overlay pass: a fault in an SK_EV_OVERLAY handler skipped EndScene, the render target's restore and
+  the Release of the back buffer and the old target. Seen in the lab: the scene stayed open for good (the game's own
+  BeginScene fails inside it and the game then skips its EndScene), so the overlay pass never began a scene again (no
+  labels, no arrows) while the frames went on. The pass's surfaces are kept in statics; the cut-off of the frame
+  (frame_cut_off, at the next frame's start, before the original Present) ends the scene, puts the game's render
+  target back and releases them. Switch for both: `kit.fix presentunwind 0`.
+* BUG-0966, console commands: a main-thread command whose own task faulted inside a frame (coop.puppet respawn with a
+  first version of BUG-0930's fix) never set its request done: the client waited for ever and the later lines of
+  that connection queued behind it. A running task is noted with its stack address (main thread); the next pump or
+  game loop pass at or above it answers the request with "error: '<name>' was cut off by a fault the game's handler
+  caught". `kit.fix taskcut 0`: no answer.
+* Seen in the lab (20261113-010320-2): a fault in a task that the window procedure runs (WM_SK_PUMP /
+  WM_SK_PUMP_OUT, dispatched by App::Canvas::Tick's message loop) is **not** caught by the game: the unhandled
+  exception filter runs and the game ends. Only faults under the frame (Present) reach a handler of the game.
+* Test commands: `kit.test.presentfault present|overlay` (one fault inside Present / in the overlay pass; no argument:
+  depth, cut-off counts, the back buffer's references), `kit.test.cmdfault` (a command flagged SK_CMD_FRAME_ONLY,
+  SporeKit's own: only a frame's pump runs it). Tests kit_present_fault, kit_overlay_fault, kit_cmd_fault.
+
+## Fault logger, reports and the overlay's state block (2026-11-13, fix/w49-kit)
+<a id="modkit-report-safety"></a>
+
+* BUG-1028 (`kit.fix vehbounds`): the fault logger records the fault (g_last_*) before it reads the faulting stack and
+  copies at most the dwords left in esp's region (PAGE_NOACCESS / PAGE_GUARD count as unreadable; probe and ftrace
+  check the same). Before, an esp 8 bytes below the end of its region made the 12-dword copy fault inside the logger:
+  that second fault was ignored (SK_TF_IN_EXC) and the first never recorded. `kit.test.vehedge` runs a thread whose
+  TIB stack limits point at a block of ours (192 KB committed, then reserved pages), moves esp to 8 bytes below the
+  committed end and reads 0x10; a last vectored handler sends it back to its own stack.
+* BUG-1020 (`kit.fix crashcopy`): the crash report thread (and the stack-overflow / off-stack report thread) works on
+  copies of the EXCEPTION_RECORD and CONTEXT in its static job, not on the crashed thread's exception frame, which a
+  handler after us or the teardown reuses once the filter gave up waiting (15 s).
+* BUG-1022 (`kit.fix reportsafe`): a report written off the main thread (watchdog, report thread, a fault storm on a
+  worker) no longer calls IGameModeManager::Get / GetActiveModeID: the main thread caches the mode every 10 frames
+  (game_mode_cached); the mods line is a copy mods.cpp keeps under a lock (mods_line). coop's report text is swapped
+  and copied under one mutex (coop.cpp diag_context_fn returns a per-thread copy).
+* BUG-1026 (`kit.fix trireset`): the overlay shapes' state block is released on a new device and a failed
+  CreateStateBlock is tried again after the next successful Reset (before, the shapes stayed off for the run).
+  `kit.test.tri [frames|fail]`: a magenta test triangle at the top left / the next CreateStateBlock fails.
+  Test kit_overlay_reset (two Alt+Enter Resets).
+* BUG-1033: `module_path(HMODULE)` (core.h) returns "" when GetModuleFileNameW fails or cuts the path; the fault
+  logger and the reports use it. The loader starts the game without mods (and skips the pending updates) when its own
+  path is unknown or cut at MAX_PATH, and checks the room for "sporekit.dll" before lstrcatW.

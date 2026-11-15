@@ -1,3 +1,9 @@
-// the setup's icon (made from data/ui/coop_icon.png by tools/make_ico.py) and its manifest
+// the setup's icon (made from data/ui/coop_icon.png by tools/make_ico.py), its manifest (version from
+// COOP_VERSION, made by the Makefile) and its version resource (BUG-0784)
 1 ICON "../build/setup.ico"
-1 24 "setup.manifest"
+1 24 "../build/setup.manifest"
+#define SC_FILE_DESC "SporeCoop Setup: installs, updates and removes SporeCoop"
+#define SC_ORIG_NAME "SporeCoopSetup.exe"
+#define SC_INTERNAL_NAME "SporeCoopSetup"
+#define SC_FILE_TYPE VFT_APP
+#include "version.rc"

@@ -86,10 +86,23 @@ def main():
     guest.call('coop.uistate 1')
     print(' ', guest.call('coop.lanfake 8 120')['out'].strip())
     seen = set()
-    visible = lambda s: [s[f'lan{i}'] for i in range(6) if s.get(f'lan{i}', {}).get('vis')]
-    st = ui.wait(lambda s: len(visible(s)) == (3 if without else 6), 20, 'LAN rows')
-    for _ in range(40):
-        if not st:
+    # (three rows and "More >": with six made-up games there are more than three; other lanes' hosts alone fill three
+    # rows before the made-up ones are listed, and the loop below stopped at once, lab 20261108-155445)
+    st = ui.wait(lambda s: sum(1 for i in range(3) if s.get(f'lan{i}', {}).get('vis')) == 3 and
+                 s.get('lanmore', {}).get('vis'), 20, 'three LAN rows and More')
+    # Other lab lanes' hosts answer too (each twice on a machine with two network addresses), so the
+    # list can hold 18 games and the made-up ones are on pages 4-6. The game drops clicks for a few
+    # seconds after it reaches the menu (the guest just left a world): a click that did not turn the
+    # page is clicked again, and the pages are turned until every game was on screen once.
+    turned = missed = 0
+    while st and turned < 16:
+        print('  rows:', [st.get(f'lan{i}', {}).get('text') for i in range(3)], st.get('lan'))
+        for i in range(3):
+            w = st.get(f'lan{i}', {})
+            if w.get('vis'):
+                seen.update(re.findall(r'\bfake(\d)\b', w.get('text', '')))
+        page = lan_page(st)
+        if seen >= {str(i) for i in range(1, 7)} or not page or not st.get('lanmore', {}).get('vis'):
             break
         rows = visible(st)
         for row in rows:

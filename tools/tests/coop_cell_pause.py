@@ -23,14 +23,23 @@ full): the guest really lacks the host's cells until it resumes, a sync-check MI
 itself (BUG-0379: `c: 700 missing` in 6 of 6 runs). The rounds are marked `LAB-MARK sync-force`
 for the lab's gate, and after the resume a sync-check of its own must find the two games equal.
 
-  SPORE_LANE=8 python3 tools/tests/coop_cell_pause.py [--rounds 12]
+--rejoin (BUG-0308, the campaign guest Dave of lab 20261030-104149 campaign_short#3: the pause menu
+open for a minute while its mirrors churned, then a leave and join and the host's world): after the
+churn, still paused, the guest leaves the session and joins again (all mirrors made at once), the
+host's world arrives and the guest leaves the stage for the galaxy menu to load it (the teardown
+0xE7F9B0 under SimUpdate, where Dave's game found the corrupted heap). Its game must come back with
+the world in Cell and no game may fault. SPORE_FIX_OFF=cell.sap_pending must FAIL.
+
+  SPORE_LANE=8 python3 tools/tests/coop_cell_pause.py [--rounds 12] [--rejoin]
 """
 import argparse
 import re
 import time
 
+import lane
 import uifind
-from twoinst import Checks, lab_mark, start
+from coop_rejoin_net import log_times
+from twoinst import Checks, alive, lab_mark, start, wait_guest_in
 
 CAP = 8192  # entries per pending array: 2 x the object capacity (4096)
 
@@ -55,9 +64,39 @@ def faults(con):
     return int(m.group(1)) if m else None
 
 
+def rejoin_paused(ck, host, guest):
+    """BUG-0308: the paused guest leaves and joins; the host's world arrives, the guest leaves Cell to load it"""
+    print('  guest:', guest.call('coop.leave')['out'].strip()[:100], flush=True)
+    time.sleep(5)
+    t = time.time()
+    guest.call(lane.JOIN)
+    time.sleep(1.5)
+    if alive(lane.GUEST):
+        s = sap(guest)
+        print(f'  guest after the join (paused: {bool(uifind.shown(guest, "Resume Game"))}): {s}', flush=True)
+    reloaded = None
+    while time.time() - t < 150:
+        if not (alive(lane.GUEST) and alive(lane.HOST)):
+            break
+        if 'loading' in log_times(lane.GUEST, t, {'loading': r'world: loading'}) and wait_guest_in(host, guest, timeout=2):
+            reloaded = time.time() - t
+            break
+        time.sleep(2)
+    lab_mark('sync-force', 'off')
+    up = alive(lane.GUEST)
+    ck(up, '5. the guest\'s game answers after it left the Cell stage for the host\'s world')
+    ck(reloaded is not None, f'5. the guest came back in Cell with the host\'s world ({reloaded and round(reloaded, 1)} s)')
+    for name, con, inst in (('host', host, lane.HOST), ('guest', guest, lane.GUEST)):
+        n = faults(con) if alive(inst) else None
+        ck(n == 0, f'5. {name}: no caught fault ({n})')
+    return ck.result()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=12)
+    ap.add_argument('--rejoin', action='store_true',
+                    help='BUG-0308: still paused, the guest rejoins and leaves the stage for the host\'s world')
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -80,6 +119,8 @@ def main():
         peak = max(peak, s.get('pending', 0))
         print(f'  round {i + 1}: {s}', flush=True)
     ck(peak <= CAP, f'2. the broadphase\'s pending entries stay within its arrays while paused (peak {peak} of {CAP})')
+    if a.rejoin:
+        return rejoin_paused(ck, host, guest)
     for _ in range(3):
         if not uifind.shown(guest, 'Resume Game'):
             break

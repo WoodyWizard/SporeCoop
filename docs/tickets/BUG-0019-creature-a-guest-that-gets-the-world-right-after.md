@@ -51,3 +51,4 @@ checked on the guest's game after its load: the avatar's age (+0xB34) and the pr
 - 2026-10-28: root cause found and fixed on fix/w3-creature (the share waits for the cinematic); test evolve_world (FAIL with sharecine off, PASS with it).
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: npc.sharecine (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-06: Discord report 2026-11-06 (0.7.8): the migration did not reach the guest again, through the evolve-in-place path ("migration 0 -> 0", no world sent): BUG-0640.

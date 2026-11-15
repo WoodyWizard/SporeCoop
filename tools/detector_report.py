@@ -32,8 +32,9 @@ def named(sig):
 # signature (or its prefix up to a kind) -> the ticket that already covers it
 KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ticket that covers it
     'Creature:scale:creature': 'BUG-0461',
-    '*:*:fruit': 'BUG-0472',
-    'Tribe:*:game_bundle': 'BUG-0472',
+    '*:*:fruit': 'BUG-0497',  # (BUG-0472 fixed in 0.7.4: the rest were the host's places, BUG-0497)
+    '*:*:game_bundle_carried': 'BUG-0617', '*:*:game_bundle_held': 'BUG-0617',
+    'Tribe:*:game_bundle': 'BUG-0548',  # (BUG-0472's Tribe bundles: the host's ground and carried food, BUG-0548)
     'Creature:*:game_plant': 'BUG-0473',
     'Creature:*:rock': 'BUG-0473',
     'Creature:*:interactive_ornament': 'BUG-0473 / BUG-0459',
@@ -65,10 +66,15 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Creature:host_local:creature': 'BUG-0487', 'Creature:guest_only:creature': 'BUG-0487',
     'Tribe:unmatched:tribe_tool': 'BUG-0488', 'Tribe:unmatched:citizen': 'BUG-0488', 'Tribe:*:nest': 'BUG-0488',
     'Tribe:*:interactive_ornament': 'BUG-0488',
-    'Tribe:*:ornament': 'BUG-0528',
+    'Tribe:*:ornament': 'BUG-0740',  # the host's creature attack marker (BUG-0528 triage)
     '*:*:gameplay_marker': 'BUG-0489',
     'Space:*:citizen': 'BUG-0490', 'Space:*:vehicle': 'BUG-0490',
     'Space:*:ornament': 'BUG-0541',
+    # BUG-0657 (lab log sweep 2026-11-06): Space beams are not relayed (BUG-0677); the Civ state classes are transient
+    # around a capture or a new city (never in the next sample: civ_only 0 of 11, player_cities 0 of 4)
+    'Space:*:default_beam_projectile': 'BUG-0677', 'Tribe:*:default_beam_projectile': 'BUG-0677',
+    'Civilization:state:civ_only': 'BUG-0657 (transient)', 'Civilization:state:player_cities': 'BUG-0657 (transient)',
+    'Creature:state:species_killed': 'BUG-0657 (bracketed)',
     # world state and whole-planet lists (coop.wstate, docs/06-testing.md#testing-detector-state)
     'All:state:time_of_day': 'BUG-0579', 'All:state:day_length': 'BUG-0579',
     'All:state:stage_done': 'BUG-0577',

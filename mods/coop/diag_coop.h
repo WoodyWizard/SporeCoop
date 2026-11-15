@@ -33,14 +33,26 @@ struct Probe {
     // BUG-0378: the speed (m/s) of each player's ship / creature as this game knows it (its own, the
     // partners' last states): the sync-check's lag allowance
     std::function<std::vector<std::pair<uint8_t, float>>()> player_speeds;
+    // BUG-0547: this game's own ship / creature position (false: none): the host keeps its path of the last second
+    std::function<bool(net::Vec3&)> own_position;
+    // BUG-0758: the newest state this game received of each partner's ship / creature (id, the sender's time, position):
+    // the host keeps each guest's path of the last seconds from them
+    struct StatePos {
+        uint8_t id;
+        uint32_t time_ms;
+        net::Vec3 pos;
+    };
+    std::function<std::vector<StatePos>()> partner_states;
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)
     // BUG-0588: the host's game is in the end of its stage (Tribe: from the City Hall editor on its animals are at
     // (0 0 0), its village is taken down): its world is no longer the one a guest plays, the sync-check waits
     std::function<bool()> stage_end;
+    std::function<double(uint8_t)> since_share; // BUG-0754: s since a world share to that guest was asked for
     std::function<bool(float&)> dna; // the DNA total when there is one
     std::function<bool(int&)> cell_food;
+    std::function<float()> cell_scale; // BUG-0606: the own Cell world scale, 0 outside Cell
     std::function<bool(uint32_t&)> vote; // an evolution vote is on (its editor id)
     // what the mod is doing right now for a hitch line: "world share", "editor", "load", ...
     std::function<std::string()> activity;
@@ -115,3 +127,9 @@ void write_summary(const char* why); // the summary line into the log, the repor
 std::string sync_command(const std::vector<std::string>& args);
 
 } // namespace support
+
+// mem_census.cpp (BUG-0631): `coop.memcensus`, the address space by allocation kind and by who reserved it
+namespace memcensus {
+void init(const SkHost* host, SkMod* mod);
+void on_unload();
+} // namespace memcensus

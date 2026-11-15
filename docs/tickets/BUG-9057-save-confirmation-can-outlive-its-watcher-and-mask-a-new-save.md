@@ -12,7 +12,7 @@ fixed_in:
 branch: duo-species
 commits:
 tests:
-switch: world.saved_box
+switch: world.saved_box_only
 signature: old saved box accepted as proof of a new campaign checkpoint
 docs: docs/re/civ.md
 related: BUG-9056 BUG-0276
@@ -57,3 +57,4 @@ past the right edge of the 800×600 QA window. Pressing Enter with that dialog
 visibly present closed it. This is a separate obstruction from slow UDP
 delivery. The observed offscreen dialog does not establish why the game
 positioned it there or how often it affects normal player setups.
+- 2026-11-15: the 0.7.14 merge folded this switch into upstream's world.saved_box_only (BUG-0846).

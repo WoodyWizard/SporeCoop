@@ -12,8 +12,9 @@ mirror's own +0x102C).
    (`coop.tribe tools` on the guest: the game's own tool list).
 3. The guest orders one of its own members to the rack (`coop.tribe grab <id> <tool>`: the GrabTool order a
    click on the rack gives, through DoActionForObjects, sent to the host).
-4. Within 60 s the member holds the weapon in the host's game (+0x102C = 1) AND on the guest's screen (its
-   mirror's +0x102C, which the game draws as the handheld tool).
+4. Within 60 s the member holds the weapon in the host's game (+0x102C = 1) AND in the guest's game (its mirror's
+   +0x102C), and it is in its hand on both screens (BUG-0906: the game draws the hand's item +0xFFC with a model
+   attached, `item=` / `model=` of coop.tribe, not the tool type; a key frame).
 
 --nofix (or SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold): must FAIL (no rack on the guest).
 SPORE_FIX_OFF=tribe.grab_spot: fails in some runs (BUG-0505: the member walks to a grab spot ~7 m round the rack,
@@ -143,6 +144,20 @@ def main():
     print('  shots:', shot(host, 'tribe_tools_host.png'), shot(guest, 'tribe_tools_guest.png'))
     ck(held_g == a.type, f'the guest sees member #{pick} hold the weapon (its game\'s tool {held_g}, '
        f'{time.time() - t0:.0f} s)')
+    if held_h == a.type and held_g == a.type and not a.nofix:
+        # BUG-0906: the tool type is not what the game draws: the hand's item and its attached model are
+        import coop_tribe_looks as looks
+        hh_, gh_, t1 = None, None, time.time()
+        while time.time() - t1 < 20:
+            hh_, gh_ = looks.members(host).get(pick), looks.members(guest).get(pick)
+            if hh_ and gh_ and hh_['item'] and hh_['model'] == 1 and (hh_['item'], hh_['model']) == (gh_['item'], gh_['model']):
+                break
+            time.sleep(1.5)
+        ck(bool(hh_ and gh_ and hh_['item'] and (hh_['item'], hh_['model']) == (gh_['item'], gh_['model'])),
+           f'the weapon is in member #{pick}\'s hand on both screens (host item {hh_ and hh_["item"]} model '
+           f'{hh_ and hh_["model"]}, guest item {gh_ and gh_["item"]} model {gh_ and gh_["model"]}; BUG-0906)')
+        looks.keyframe('weapon', f'the guest\'s member #{pick} with the weapon it took from the host\'s rack: in its hand on '
+                       f'both screens')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

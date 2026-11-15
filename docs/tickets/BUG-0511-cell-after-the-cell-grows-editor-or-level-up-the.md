@@ -41,3 +41,4 @@ mods/coop/cellsync.cpp: the host appends its world scale G+0x514C to every MSG_C
 - 2026-11-03: opened (w40 triage), report text only.
 - 2026-11-03: cause found, fixed and tested on fix/w40-misc (cell.world_scale).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-02, -03): "after growing, bigger cells near the guest disappear and new ones spawn"; the logs show no NaN and cells on the guest's screen after its level-up (not this ticket's symptom): new ticket BUG-0635.

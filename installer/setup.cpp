@@ -305,9 +305,7 @@ void refresh()
                                                : "Reinstall";
     SetWindowTextW(g_install, upd::widen(btn).c_str());
     EnableWindow(g_install, is_game(root) && !g_busy);
-    EnableWindow(g_remove, !g_busy && is_game(root) &&
-        (!v.empty() || upd::is_loader(root + L"\\SporebinEP1\\steam_api.dll") ||
-         GetFileAttributesW((root + L"\\SporebinEP1\\mods\\coop.dll").c_str()) != INVALID_FILE_ATTRIBUTES));
+    EnableWindow(g_remove, is_game(root) && inst::has_sporecoop(root) && !g_busy); // BUG-0851: also half removed
     if (g_close && inst::g_fix) // BUG-0139: no closing while files are swapped
         EnableWindow(g_close, !g_busy);
     if (g_fps) EnableWindow(g_fps, !g_busy);
@@ -336,6 +334,8 @@ struct Job {
     std::string older, installed; // res == Older
 };
 
+int g_done_delay_ms; // SPORECOOP_SETUP_TEST_DONE_DELAY (tests, BUG-0853)
+
 DWORD WINAPI job_thread(void* p)
 {
     auto* j = (Job*)p;
@@ -351,6 +351,8 @@ DWORD WINAPI job_thread(void* p)
         }, &j->older, &j->installed);
         j->ok = j->res == inst::Result::Ok;
     }
+    if (g_done_delay_ms > 0) // tests (BUG-0853): the files are in place, the window hears of it later
+        Sleep((DWORD)g_done_delay_ms);
     PostMessageW(g_wnd, WM_DONE, 0, (LPARAM)j);
     return 0;
 }
@@ -564,8 +566,12 @@ void parse_args()
             inst::g_ga_fix = false;
         else if (s == L"/oldgadir") // tests: before the Steam GA folder "Spore 24720" (BUG-0391)
             inst::g_ga_dir_fix = false;
+        else if (s == L"/olduninstall") // tests: the uninstall before BUG-0851
+            inst::g_uninstall_fix = false;
         else if (s == L"/oldweb") // tests: the API only, before BUG-0392
             upd::g_web_fallback_fix = false;
+        else if (s == L"/oldretry") // tests: one download attempt, before BUG-0755
+            upd::g_retry_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
             upd::g_release_merge_fix = false;
         else if (!val(L"/pack:").empty())
@@ -589,6 +595,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
             g_opt.inst.bundled_size = SizeofResource(inst, resource);
         }
     }
+    upd::g_log = log; // the download retries (BUG-0755) go to the /log: file
     g_opt.inst.pack_dir = self_dir();
     wchar_t delay[16] = {};
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
@@ -598,6 +605,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     // A fixture with base Spore only must never resolve to the computer's real Steam install.
     if (!g_test_mode)
         g_libs = steam_libraries();
+    if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", delay, 16)) // tests (BUG-0853)
+        g_done_delay_ms = _wtoi(delay);
     if (g_opt.silent) {
         std::wstring root = g_opt.dir.empty() ? find_game() : g_opt.dir;
         std::string note;

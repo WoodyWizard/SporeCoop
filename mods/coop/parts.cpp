@@ -12,6 +12,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "lifecycle.h"
 #include "modes.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
@@ -295,6 +296,20 @@ static bool g_cell_have = false;
 static int g_cell_tries[kCellParts];
 static uint32_t g_cell_queued = 0; // parts whose collect waits for the next time outside the frame
 static uint8_t g_cell_queued_from[kCellParts];
+// BUG-0998: a Cell part collect queued in the last frame of a session is not collected after it (the queue is reset
+// with the session, the outside-frame collect checks the session). Off: kept (0.7.13).
+static bool g_cell_queue_fix = true;
+COOP_FIX("parts.cell_queue_reset", "BUG-0998", g_cell_queue_fix, "cell: a Cell part collect queued at the session end is dropped with the session");
+SESSION_STATE("parts.cell_queue", &g_cell_queue_fix, [] { g_cell_queued = 0; }, []() -> size_t {
+    size_t n = 0;
+    for (uint32_t q = g_cell_queued; q; q &= q - 1)
+        n++;
+    return n;
+});
+// BUG-0998: parts.shared (the Creature parts, BUG-0401) off also cut the Cell parts (parts.shared_cell, BUG-0467):
+// on_message returned before the Cell kinds. On: the Cell kinds answer to their own switch only. Off: 0.7.13.
+static bool g_cell_apart_fix = true;
+COOP_FIX("parts.cell_apart", "BUG-0998", g_cell_apart_fix, "cell: the Cell parts sharing does not depend on the Creature parts switch (parts.shared)");
 static uint32_t g_cell_collected = 0, g_cell_tx_sets = 0, g_cell_tx_found = 0, g_cell_rx_sets = 0, g_cell_rx_found = 0;
 
 static uint32_t cell_mask(const int* st)
@@ -320,6 +335,8 @@ static void cell_collect_now(void*)
     int* st = cell_states();
     if (!st || !a_CellCollect || game::mode_id() != modes::kCell)
         return;
+    if (g_cell_queue_fix && !(C.sess && C.sess->connected()))
+        return; // BUG-0998: the session that queued it is over
     int got = 0;
     uint8_t from = 0;
     for (int i = 0; i < kCellParts; i++)
@@ -457,7 +474,7 @@ void tick(double now)
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
-    if (type != net::MSG_PARTS || !g_fix)
+    if (type != net::MSG_PARTS || (!g_fix && !g_cell_apart_fix))
         return;
     uint8_t kind = r.u8(), origin = r.u8();
     uint32_t world = r.u32();
@@ -500,6 +517,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         return;
     }
+    if (!g_fix)
+        return; // the Creature parts (BUG-0998: below the Cell kinds)
     if (is_host() && kind == kKindFound && from != 0) {
         g_rx_found++;
         if (world == 0 || world != (C.world ? C.world() : 0)) { // found in another world than ours

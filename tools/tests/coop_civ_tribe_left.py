@@ -13,8 +13,14 @@ PASS: the guest's game has no more tribe objects than the host's after each step
 are gone.
 SPORE_FIX_OFF=civ.tribe_ruins: the guest keeps the two villages (FAIL).
 
-  SPORE_LANE=6 python3 tools/tests/coop_civ_tribe_left.py
+  SPORE_LANE=6 python3 tools/tests/coop_civ_tribe_left.py [--fast]
+
+--fast (BUG-0659): no capture; the host's game destroys one tribe at a time (3 raids, 8 s apart) and the guest's tribe
+count is read every 0.25 s. PASS: each time the guest has no more tribes than the host within 2.5 s of the raid
+(0.7.10: 5-5.5 s, the guest's second look came with the next 5 s list; the detector's one-sample
+`Civilization:planet:village` rows). SPORE_FIX_OFF=civ.tribe_ruins_fast must FAIL.
 """
+import sys
 import time
 
 from play_civ import civ_state
@@ -31,10 +37,38 @@ def tribe_objs(con):
     return out
 
 
+def tribes(con):
+    return sum(1 for ln in con.call('coop.civ nouns 18C6D19')['out'].splitlines() if ln.startswith('obj '))
+
+
+def fast(host, guest, ck):
+    """BUG-0659: how long a raided village stays in the guest's world"""
+    lags = []
+    for k in range(3):
+        h0 = tribes(host)
+        print('  host razetribe:', host.call('coop.civ razetribe 0')['out'].strip(), flush=True)
+        t0, lag = time.time(), None
+        while time.time() - t0 < 9:
+            h, g = tribes(host), tribes(guest)
+            if lag is None and h < h0 and g <= h:
+                lag = time.time() - t0
+            time.sleep(0.25)
+        print(f'    raid {k + 1}: host {h0} -> {tribes(host)} tribes, the guest caught up after '
+              f'{lag and round(lag, 2)} s', flush=True)
+        lags.append(lag)
+    print('  guest', next((ln for ln in guest.call('coop.civ')['out'].splitlines() if 'tribe_ruins:' in ln), ''), flush=True)
+    ck(all(x is not None for x in lags), f'the guest removed every raided village ({lags})')
+    ck(all(x is not None and x <= 2.5 for x in lags), f'each within 2.5 s of the raid ({[x and round(x, 2) for x in lags]})')
+
+
 def main():
     host, guest = start('civ_npc')
     ck = Checks()
     time.sleep(3)
+    if '--fast' in sys.argv:
+        fast(host, guest, ck)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     h0, g0 = tribe_objs(host), tribe_objs(guest)
     print(f'  before: host {h0}', flush=True)
     print(f'  before: guest {g0}', flush=True)

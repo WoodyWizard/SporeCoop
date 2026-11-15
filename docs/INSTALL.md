@@ -18,14 +18,15 @@ others; your saves and creations are not touched.
 
 | | |
 |---|---|
-| Game | **Spore + Galactic Adventures**; tested with the **SPORE Collection from GOG** (2016 and 2024 builds, see section 2). The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
+| Game | **Spore + Galactic Adventures**; the current **GOG** download (2024 update) or **Steam**, see section 2. The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
 | System | Windows 10/11, or Linux with Wine 9+ (Bottles, Lutris, plain Wine; Proton works if the game runs from a GOG install). |
 | Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
 | Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
 
-The mod is tested with the GOG builds (2016 on Linux, 2024 on Windows 11): the full list is in
-[section 2](#where-sporecoop-has-been-tested). Other builds (Steam, EA app, disc) have not been
-tested yet; if you try one, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
+Supported: the current GOG build (the 2024 update) and Steam, on Windows and Linux; the GOG 2016
+build is no longer supported since 0.7.8, the EA app and disc versions are not supported. Details:
+[compatibility details](#compatibility-details), every test: [section 2](#where-sporecoop-has-been-tested).
+If you try another build, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
 result and `mods\logs\sporekit.log` helps.
 
 ## 2. Check your game build
@@ -60,6 +61,39 @@ Since 0.6.2 an exe that differs from one of these only in the PE header, the res
 signature (the same code and data at the same addresses: the same `code_sha256`, see
 `tools/exe_info.py`) uses that build's addresses, and counts as that build for joining. The log
 then says "its code is the same as build ...".
+
+### Compatibility details
+
+SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where it has been tested:
+
+| Game version | `SporeApp.exe` | Windows 11 | Linux (Wine / Proton) |
+|---|---|---|---|
+| **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
+| **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
+| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❌ no longer supported since 0.7.8 ² | ❌ no longer supported since 0.7.8 ² |
+| EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
+
+¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
+[issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
+frames from the game loop; tested by simulating that case, not yet with the real overlay.
+² **GOG 2016 is no longer supported since 0.7.8** (2026-11-05): update the game through GOG (the current
+download is the 2024 build; Steam is the same game). The mod still starts on GOG 2016, but it is not
+tested there any more and its bugs are not fixed. Since 0.7.2.2 new fixes get game addresses for
+the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
+up after a death, the pack, Cell bites, meat and spin, NPC nations' vehicles on a guest's game, our
+creatures kept out of saves); the other fixes work there too. The full list, checked by the build:
+[data/symbols/frozen_off_922af7c7.txt](../data/symbols/frozen_off_922af7c7.txt).
+
+**Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
+2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
+needs the same SporeCoop protocol: every 0.7 version plays with every other, 0.6.x cannot join 0.7.
+With an older 0.7 version (0.7.2.x, 0.7.3.0) on one side, chat lines above about 1160 bytes arrive
+cut and the Creature species table of a planet with 42 or more species does not reach that player;
+the game names that player in a notification. Update everybody to the latest version.
+
+**Not tested yet:** two PCs over the internet with Windows on 0.7 (the network code is the same
+as on Linux, where it was tested), the EA app and disc versions. Tried another version? Please
+tell us in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with `mods\logs\sporekit.log`.
 
 ### Where SporeCoop has been tested
 
@@ -142,8 +176,51 @@ the release's `SHA256SUMS.txt` either way.
 5. Start SPORE as usual (from GOG Galaxy or the desktop shortcut).
 
 Some antivirus programs warn about a replaced `steam_api.dll`: that file is the SporeCoop
-loader. Its source is in this repository (`loader/loader.c`); the release is built by
-GitHub Actions from that source.
+loader. See [Antivirus warnings and verifying a release](#install-antivirus).
+
+### Antivirus warnings and verifying a release
+<a id="install-antivirus"></a>
+
+Some antivirus programs (on VirusTotal about 10 of 70, among them Microsoft Defender's
+machine-learning detection `Wacatac.B!ml`, Bitdefender, 360 Total Security) flag `SporeCoopSetup.exe`,
+`steam_api.sporekit.dll` or the release zip (GitHub #200, #201). These are **false positives** of
+heuristics: SporeCoop does what such heuristics look for, openly and for a reason:
+
+| What SporeCoop does | Why |
+|---|---|
+| Its loader takes the name `steam_api.dll` and keeps the game's file as `steam_api_orig.dll` ("DLL side-loading") | Spore loads `steam_api.dll` at start: the loader forwards every Steam call to the original and loads SporeKit. This is how the mod gets into the game. |
+| `sporekit.dll` and `coop.dll` hook game and Direct3D functions (MinHook) | That is what a game mod is: co-op needs the game's own functions. |
+| `coop.dll` opens network sockets | The co-op connection to the other players (UDP 47810) and LAN discovery. |
+| The setup and the in-game update download a file from GitHub and replace DLLs | Updates come only from this repository's GitHub releases and are checked against the release's `SHA256SUMS.txt` before anything is written. |
+| The setup can restart itself as administrator | Only when Windows refuses to write into the game folder (`C:\Program Files (x86)`), and only after you say yes. |
+| The files are not code-signed | A code-signing certificate is not free; signing is planned. |
+
+The source of every file is in this repository and every release is built by GitHub Actions from the
+tag (the [workflow](../.github/workflows/build.yml)): nobody uploads binaries by hand. What each file is
+and does: [SECURITY.md](../SECURITY.md).
+
+**Check that your files are the released ones:**
+
+1. **Hashes:** each release has `SHA256SUMS.txt`. On Windows (PowerShell):
+   `Get-FileHash .\SporeCoopSetup.exe -Algorithm SHA256`; on Linux: `sha256sum SporeCoopSetup.exe`.
+   The value must be the one in `SHA256SUMS.txt`.
+2. **Build provenance** (releases after 0.7.12): GitHub signs a record of which workflow run built each
+   file from which commit. With the [GitHub CLI](https://cli.github.com/):
+   `gh attestation verify SporeCoopSetup.exe --repo WoodyWizard/SporeCoop`. This works for the zip, the
+   pack, the setup and the three DLLs inside the zip (`steam_api.sporekit.dll`, `sporekit.dll`,
+   `mods\coop.dll`). The release page on GitHub links the attestations too.
+3. **File details:** releases after 0.7.12 carry version information (Explorer: right-click > Properties >
+   Details): product SporeCoop, the version, a description and the original file name.
+4. **Build it yourself** (Linux, llvm-mingw `20261006` as in the workflow, see [Building from source](../README.md#building-from-source)): `make` and
+   `tools/package.sh` on the release tag. The binaries differ only in the link time stamp and the debug
+   record's id; `tools/pe_version.py --repro-sha256 <file>` hashes a file without those fields, so your
+   build and the released file (stripped like `tools/package.sh` does) give the same value.
+
+**Install without the setup:** if your antivirus blocks `SporeCoopSetup.exe`, use the zip and
+`install.bat` (*With install.bat* above): a plain batch file you can read in Notepad before you run it.
+Your antivirus may still flag the DLLs; then add an exception for the `SporebinEP1` folder only after
+checking the hashes, or report the file to your antivirus vendor as a false positive (most have a form
+for it). Please do not turn your antivirus off.
 
 ## 4. Install on Linux (Wine, Bottles, Lutris, Proton)
 
@@ -205,7 +282,8 @@ SPORE\
 
 * The main menu (galaxy screen) has a new **Co-op** item on the left.
 * `SporebinEP1\mods\logs\sporekit.log` exists and has a line `loaded coop v<version> (gen 1)` with the version you installed (for example `loaded coop v0.7.3.0 (gen 1)`).
-* Start a game, press **F9**: the co-op window opens.
+* Click **Co-op**: the co-op window opens and asks for your name the first time, then offers *Host a game* and
+  *Join a game*. In a game, **F9** opens it.
 
 If there is no Co-op item, see [Troubleshooting](#9-troubleshooting).
 
@@ -215,8 +293,8 @@ The host listens on **UDP port 47810**. Guests need to reach it:
 
 * **Easiest:** all players join the same virtual LAN:
   [Tailscale](https://tailscale.com), [ZeroTier](https://www.zerotier.com) or
-  [Radmin VPN](https://www.radmin-vpn.com). Then join with the host's VPN address
-  (the co-op window shows the host's addresses), or pick the host under *Games on your network*.
+  [Radmin VPN](https://www.radmin-vpn.com). Then *Join a game* with the host's VPN address or host name
+  (the host's window shows its addresses under *Friends connect to*), or pick the host under *Games on your network*.
 * **Port forwarding:** forward UDP 47810 on the host's router to the host's PC, allow
   SporeApp.exe in the Windows firewall, and give friends your public IP.
 
@@ -244,8 +322,14 @@ your `mods\coop.ini` and `mods\sporekit.ini` (name, last address, `[update] chec
 never installs its older version over a newer one without asking (the button then says **Install
 older x.y.z**; silent mode `SporeCoopSetup.exe /S` needs `/downgrade` for that).
 
-**Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
-removes `sporekit.dll` and `Data\SporeCoop.package`; delete the `mods` folder too if you like.
+**Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back
+(also when an antivirus removed the loader) and removes `sporekit.dll`, `mods\coop.dll`, SporeCoop's
+symbol files and `Data\SporeCoop.package`; your settings and logs in `mods` stay, delete the `mods`
+folder too if you like. Since 0.7.13 it stops without changing anything while an update runs, when
+`steam_api_orig.dll` is missing (verify the game files in Steam / GOG Galaxy first) or when the game
+still holds a file, and it names a file it could not remove (close Spore and press Uninstall again).
+`uninstall.bat` runs `SporeCoopSetup.exe` when it lies next to it, and otherwise never puts
+`steam_api_orig.dll` over a `steam_api.dll` that is not SporeCoop's loader (for example one Steam put back).
 By hand: delete `steam_api.dll`, rename `steam_api_orig.dll` back to `steam_api.dll`, delete
 `sporekit.dll`, `mods\` and `..\Data\SporeCoop.package`.
 
@@ -261,12 +345,66 @@ Stuck? Ask in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
 |---|---|
 | The setup says **Galactic Adventures is not installed** (setups newer than 0.7.3.3) | No Spore folder the setup found has `SporebinEP1` (the Galactic Adventures game). On Steam, Galactic Adventures is its own DLC app and installs into its own folder, `steamapps\common\Spore 24720`, next to base Spore's `steamapps\common\Spore` (which never has `SporebinEP1`): install the *Spore Galactic Adventures* DLC in Steam, then run the setup again or choose `Spore 24720`. On GOG the SPORE Collection has it. |
 | The setup says **SporeApp.exe is not in this folder's SporebinEP1** | Choose the SPORE folder itself (the one that holds `SporebinEP1`, `Data`, ...). On Steam it is `steamapps\common\Spore 24720` (Galactic Adventures) in the library where Spore is installed, not `steamapps\common\Spore`. |
+| The update or the setup says **the server answered 502 / 503 / 504** or **the download broke off** | A passing problem of GitHub's download server. Since 0.7.11 SporeCoop tries again by itself (3 attempts, the message ends with "after 3 attempts" when all failed); wait a minute and press **Try again** in the co-op window, or run the setup again. |
 | The setup says **GitHub not reachable** or **the server answered 403** | GitHub limits requests per IP address (VPNs and shared networks hit it). Versions after 0.7.3.3 fall back to the release page; if that fails too, wait an hour or turn the VPN off, or install by hand: download `SporeCoop-<version>.zip` from the [releases](https://github.com/WoodyWizard/SporeCoop/releases/latest), extract it into `SporebinEP1` and run `install.bat` (section 3, *With install.bat*). The release zip also has a `SporeCoopSetup.exe` that installs the pack next to it without the internet. |
 | No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. If it says `WATCHDOG (no frames` while the game draws, another overlay (Steam, Discord, RivaTuner) keeps the frames from SporeKit: update to 0.7.2 or newer, which then takes the frames from the game loop. |
+| The game crashes at start while **RivaTuner / MSI Afterburner** runs | See [Crash at start with RivaTuner](#install-rtss): an RTSS profile for SporeApp.exe with *Application detection level* None, or close RTSS. |
+| The picture **tears** (screen tearing) | See [The picture tears](#install-tearing): `vsync=1` in `mods\sporekit.ini`, or vsync in the driver. |
 | The game does not start after installing | Run `uninstall.bat`, start the game once without the mod, then install again. An antivirus may have removed `steam_api.dll` or `sporekit.dll`: restore them or add an exception. |
-| *Games on your network* stays empty | Both PCs must be on the same network or VPN; allow SporeApp.exe in the firewall (private networks). Type the host's address instead. |
+| *Games on your network* stays empty | Both PCs must be on the same network or VPN; allow SporeApp.exe in the firewall (private networks). Type the host's address or host name into the address field of *Join a game* instead (port 47810 when you type none). |
 | Join fails or times out | The host's UDP 47810 must be reachable (VPN or port forwarding). Every player needs the same SporeCoop version. |
 | The guest loads the world and then nothing | In Space the host must be in a star system, not on a planet (the game only saves off-planet). |
 | The game crashed or froze | Since 0.7.2.1 SporeCoop packs a report by itself when the game crashes, freezes for 30 s or closes right after an error: `mods\logs\SporeCoop-report-<date-time>.zip`, and the next start of the game tells you its name. Send that one file in an [issue](https://github.com/WoodyWizard/SporeCoop/issues). (Inside: the crash report `crash-<date-time>.txt` and its `.dmp`, the logs; the logs of the last 10 runs stay in `mods\logs\previous\`.) |
-| Something else | In the co-op window (F9) press **Report a problem**: it packs everything into one file, `mods\logs\SporeCoop-report-<date-time>.zip` (a report with your game build, Windows / Wine, memory, graphics card, other overlays and the co-op session; the logs of this and the last runs; the newest crash reports; the mod settings), and opens the folder with it selected. Send that one file (from host and guest) in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) and say what you did. Your player name is in it; the address you last joined is not. The window's bottom line and the main menu show your SporeCoop version. |
+| Something else | In the co-op window (F9) or the game's pause menu (Esc) press **Report a problem**: it packs everything into one file, `mods\logs\SporeCoop-report-<date-time>.zip` (a report with your game build, Windows / Wine, memory, graphics card, other overlays and the co-op session; the logs of this and the last runs; the newest crash reports; the mod settings), and opens the folder with it selected. Send that one file (from host and guest) in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) and say what you did. Your player name is in it; the address you last joined is not. The window's bottom line and the main menu show your SporeCoop version. |
 | Something goes wrong while you play (only one of you can eat, a partner looks wrong, things out of sync) | Type `/bug <what you see>` into the co-op window's chat (F9) right when it happens, e.g. `/bug only I can eat`. The game says "marked for the report" and every player's log gets a line with your text and the moment, so we find that moment in all the logs. Then press **Report a problem** (each player) and send the files. |
+
+### Crash at start with RivaTuner / MSI Afterburner
+<a id="install-rtss"></a>
+
+RivaTuner Statistics Server (RTSS, it comes with MSI Afterburner) puts its overlay into games by hooking Direct3D, the
+same functions SporeKit hooks; players reported Spore crashing at start while it ran (BUG-0782). Since 0.7.13 the game
+tells you when RTSS is hooked in, and a crash report names it with this advice:
+
+1. In RivaTuner, press **Add** and choose `SporebinEP1\SporeApp.exe`, then set **Application detection level** to
+   **None** for that profile (RTSS then leaves Spore alone; Afterburner's own monitoring keeps working elsewhere).
+2. Or close RivaTuner and MSI Afterburner (also from the tray) before you start Spore.
+3. If you want its overlay in Spore, try **Use Microsoft Detours API hooking** in the profile's settings instead, and
+   send a report (**Report a problem**) when it still crashes.
+
+### The picture tears (screen tearing)
+<a id="install-tearing"></a>
+
+Spore asks Direct3D for no vsync (seen in every log: `CreateDevice asks for: ... interval=0x80000000 (immediate: no
+vsync)`), and its own frame cap (the game property kFrameLimitMS, 16 ms per frame in the GOG 2024 / Steam game) only
+limits how often the tear shows (BUG-0779). It shows much more when something lifts that cap (the game then runs at
+80-140 fps): a mod (for example a Spore ModAPI mod), a d3d9 wrapper next to `SporeApp.exe` (DXVK's `d3d9.dll`,
+ReShade) or a driver profile. Since 0.7.13 the game tells you when it runs without its cap, and SporeKit no longer
+undoes a frame cap another mod or program sets.
+
+* Turn vsync on: add `vsync=1` under `[sporekit]` in `SporebinEP1\mods\sporekit.ini` and start the game again (the log
+  then says `vsync: [sporekit] vsync=1: presentation interval 0x1`). Or force vsync for SporeApp.exe in the graphics
+  driver's settings (NVIDIA Control Panel, AMD Software).
+* With DXVK as `d3d9.dll` in the game folder: `dxvk.conf` next to it can set `d3d9.presentInterval = 1` (vsync) or
+  `d3d9.maxFrameRate = 30` (a cap); the lab checked that DXVK's cap holds with SporeKit and the mod.
+* Without vsync, the tearing goes away only with the program that lifted the cap removed (Spore ModAPI or the mod
+  that unlocks the frame rate) or its frame cap set.
+
+### Out of memory in big worlds: Large Address Aware (optional)
+<a id="install-laa"></a>
+
+Spore is a 32-bit program and gets 2 GB of address space. Very big worlds and adventures can run out of it (a
+crash on a failed allocation, BUG-0631, BUG-0621). The *Large Address Aware* flag in `SporeApp.exe`'s header lets
+it use 4 GB on 64-bit Windows and under Wine. SporeCoop never sets it by itself. If you want it, `tools/laa.py` in
+the [repository](https://github.com/WoodyWizard/SporeCoop) (Python 3, close Spore first) does it with a verified
+backup (BUG-0862):
+
+```
+python3 tools/laa.py status  "SPORE/SporebinEP1/SporeApp.exe"
+python3 tools/laa.py set     "SPORE/SporebinEP1/SporeApp.exe"   # backup: SporeApp.exe.pre-laa (+ .sha256)
+python3 tools/laa.py restore "SPORE/SporebinEP1/SporeApp.exe"   # the original back, checked by its hash
+```
+
+It changes only the flag and the header checksum; SporeCoop finds its addresses for such an exe as before (by its
+`code_sha256`, section 2), and the setup then says "same code as the GOG 2024 build". The Steam exe (with Steam's
+DRM wrapper) is refused unless you add `--force`. Not tested in long co-op sessions yet: if the game misbehaves,
+`restore` and send a report.

@@ -1,7 +1,7 @@
 ---
 id: BUG-0438
 title: civ: a vehicle on the guest 4-7 m (p90) from the host's under loss bursts (sync_burst, sync_fps15burst)
-status: open
+status: not-reproduced
 kind: desync
 stage: Civ
 reported: 2026-11-01
@@ -9,12 +9,12 @@ source: players suite, lab 20261101-160125 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w46-k3-bodies
+commits: 0f0f32f1, fbeb2cfa, 836b0b5e, 47be862f
+tests: body_trail_civ, body_trail_civ_loss, sync_civ_loss
 signature:
-docs:
-related:
+docs: docs/re/civ.md#civ-place-now, docs/06-testing.md#testing-bodyrec-diag
+related: BUG-0425, BUG-0186
 ---
 
 ## Report
@@ -30,13 +30,18 @@ How to reproduce: `SPORE_LANE=N SPORE_NET=burst python3 tools/tests/coop_sync.py
 ## Root cause
 Not analysed. Inferred: during a burst the mirror extrapolates the vehicle (civ.extrap, civ.vel_cap) from
 its last state; a driving vehicle that turns or stops meanwhile is several metres off until the next state.
+Observed (2026-11-06, fix/w45-remote-bodies, coop_body_trail.py --stage civ: both games' own positions at the same
+moment): the mirror is moved on with its estimated velocity at most kVehAhead 0.15 s past its last state (civ.extrap,
+BUG-0186). A state's age is the send interval (0.1-0.13 s at 30 fps) plus the latency and a frame, so whenever states
+come late (a loss burst, a loaded host) the mirror stops at 0.15 s and falls behind by the rest: lag p50 0.09-0.22 s,
+p90 0.22-0.49 s, the vehicle p90 2.8-5.5 m behind at 15-25 m/s (labs 20261106-021152, 20261106-031151). The velocity
+estimate after a turn (this ticket's inference) is a smaller part: with the longer limit the p90 is 1.8 m.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+No fix for the reported trail is needed at a normal load; one defect found on the way is fixed: `coop.fix civ.place_now` (civ.cpp guest_tick): the mirror goes on with the estimate's velocity and only the rest is glided, aimed one frame ahead; before, it was drawn a frame's glide plus a frame behind its own target (drawn vs target p50 0.98-0.99 m off, 0.25-0.46 m on, same load; docs/re/civ.md#civ-place-now).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: the reported trail is not reproduced at a lab load under ~15 on 6 cores, with or without the fix. body_trail_civ_loss: on out/lab/20261107-105916 3 of 3 (p90 1.11 / 1.89 / 1.37 m), SPORE_FIX_OFF=civ.place_now at the same time out/lab/20261107-105916-2 3 of 3 (1.50 / 1.36 / 1.35 m; p50 0.69-0.84 against 0.53-0.57 m on). body_trail_civ: on out/lab/20261107-101400 3 of 3 (p90 0.94 / 1.48 / 0.82 m, p50 0.36-0.48), off out/lab/20261107-101450 3 of 3 (1.50 / 1.54 / 1.18 m, p50 0.62-0.67). At a load of 11-16 both fail alike: on out/lab/20261107-082432 0 of 3 (p90 4.31 / 4.00 / 2.97 m), off out/lab/20261107-082632 0 of 2 (4.45 / 3.34 m), also 20261107-074040 (0.7.9 code, 0 of 3): both Civ games at 16 fps, the host's states every 0.14 s (p50) to 0.39 s (p90), the target's error grows with the state's age (coop.bodyrec diag rows, docs/re/civ.md#civ-place-now). That is the host's frame rate, not the mirror's driving; the 0.7.9 final-check failures (20261107-012856, -004042, 20261106-231404) ran at such loads.
 
 ## History
 - 2026-11-01: opened.
@@ -53,4 +58,6 @@ its last state; a driving vehicle that turns or stops meanwhile is several metre
   inside a burst, and with n=1 and 16 samples one such moment decides the p90. Next: send the vehicle's own
   velocity (or its order target) in the state instead of estimating it; and sample more vehicles / rounds
   in coop_sync for Civ so one burst does not decide a run. Status stays open.
-
+- 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.15 s extrapolation limit), fixed by drive.lead.
+- 2026-11-07 (orchestrator, 0.7.9 final check on a quiet lab): reopened, the claim does not hold: body_trail_civ_loss 1 of 2 with the lead (p90 3.35 m in #2, out/lab/20261107-012856) and 1 of 2 with SPORE_FIX_OFF=drive.lead (p90 4.03 m, out/lab/20261107-012856-2); FAIL in the final check 20261106-231404 (5.30 m) and the rerun 20261107-004042 (2.54 m). The lead is better than or equal to 0.7.8 behaviour, so it ships as an improvement (CHANGELOG Changed), the rest goes to 0.7.10 K3.
+- 2026-11-07 (fix/w46-k3-bodies, K3): decomposed with coop.bodyrec diag rows: the drawn mirror behind its own target (fixed, civ.place_now) and the target's error from the host's state ages under lab load; at a moderate load body_trail_civ_loss and body_trail_civ pass 12 of 12 with and without the fix. Closed not-reproduced with these runs.

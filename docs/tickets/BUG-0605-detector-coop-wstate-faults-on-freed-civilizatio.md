@@ -39,3 +39,4 @@ same check local_now uses. Regression: campaign_space with SPORE_DETECTOR=20 in 
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the guard covers coop.wstate only; coop.census (civ::census_rows, all_rows, census.cpp:130-155) reads the same lists without it; new ticket BUG-0885.

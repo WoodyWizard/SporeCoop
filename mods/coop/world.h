@@ -45,6 +45,11 @@ void request_autosave();
 // peers, then reload the host through the existing menu/load path.
 bool checkpoint_reload(std::string& err);
 bool post_quit_to_menu(std::string& err);
+// host (BUG-0754): seconds since a world share to this guest was asked for (the save, the transfer and the guest's load
+// follow), a large number when none
+double since_share(uint8_t peer);
+// the game's quit message 0x4715068 (save and leave the stage for the galaxy menu); refused in an adventure (BUG-0854)
+bool post_quit_to_menu(std::string& err);
 extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
 bool saved_box_up();     // the "game saved" box of our last save is up (seen, watched)
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
@@ -100,15 +105,20 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
                const std::string& share_host = "");
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
+// BUG-0332: after a live Creature -> Tribe change the host loads its own share save once it has gone out
+void host_reload_after_share();
+uint32_t host_reloads();
+bool host_reloading(); // BUG-0332: the host's reload of the new Tribe world runs (PF_RESYNC)
 
 // the galaxy menu's intro cinematic GGE_Intro plays (docs/re/space.md 7.9; ~10 s starting ~16 s after
 // the menu came up, its input lock drops all clicks on the menu); callable in the frame
 bool menu_intro_playing();
+// tests (BUG-0167): the galaxy menu intro starts in the first tick of the next stage (coop.introstage)
+void arm_intro_in_stage();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
-// the id of the cinematic that plays (FNV-1 of its name, cCinematicManager +0x148), 0: none
-uint32_t cinematic_id();
+uint32_t cinematic_id(); // the playing cinematic's registry id (0: none), BUG-0656
 // ends the cinematic that plays (EndCinematic: stop, release the input lock, post its end message);
 // outside the frame. True if one played (BUG-0404: a cinematic left playing in an editor keeps it
 // without its buttons)
@@ -116,6 +126,16 @@ bool end_cinematic(const char* where);
 // the game time stands (cGameTimeManager +0x48 bit 0): the pause menu, the Sporepedia, My Collections,
 // a planner (busy.h kPaused); callable in the frame
 bool time_paused();
+// BUG-1101: the game's pause reasons counted now (cGameTimeManager +0x4C map, +0x68 counts; non-zero ones), the count
+// of one, and the game's own Pause / Resume of one (docs/re/tribe.md#tribe-game-time-pauses); callable in the frame
+std::vector<std::pair<uint32_t, int>> pause_reasons();
+void time_pause(uint32_t reason, bool on);
+// BUG-1101: the cinematic manager's own pause (+0x160: 0 none, 1 reason 0x4BF38A5, 2 reason 0x600C4AE), set by the
+// cinematic scripts' "pause" step (message 0x46AC0AC) and lifted by "resume" (0x46AC986) or the cinematic's end
+uint32_t cinematic_pause_slot();
+// the game's own "resume" of that pause (MessageSend 0x46AC986: Resume of the slot's reason, the slot 0); outside
+// the frame. True if the slot was set
+bool cinematic_pause_resume();
 
 // BUG-0225 (#159): the save file of the game being played, "<slot dir>\<planet>.spo" in lower case
 // (UTF-8): the planet file alone is not unique (co-op worlds alternate between two slots of the same

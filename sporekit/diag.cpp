@@ -127,8 +127,9 @@ static std::vector<Module> modules()
     if (!en(GetCurrentProcess(), mods, sizeof mods, &need))
         return v;
     for (DWORD i = 0; i < need / sizeof(HMODULE) && i < 512; i++) {
-        wchar_t p[MAX_PATH];
-        GetModuleFileNameW(mods[i], p, MAX_PATH);
+        std::wstring p = module_path(mods[i]); // BUG-1033: "" for a module unloaded meanwhile
+        if (p.empty())
+            continue;
         struct {
             void* base;
             DWORD size;
@@ -189,12 +190,25 @@ std::string diag_env()
          std::to_string(GetCurrentProcessId()) + "\n";
     s += memory_text() + "\n";
     s += (g_gpu.empty() ? std::string("GPU: not read yet") : g_gpu) + "\n";
-    s += "other hooks: " + foreign_hooks() + "\n";
-    s += "game mode: " + std::string(game_mode_name(game_mode_id())) + ", frame " + std::to_string(frame_index()) +
-         ", up " + std::to_string((int)now_seconds()) + " s\n";
+    std::string fh = foreign_hooks();
+    s += "other hooks: " + fh + "\n";
+    // BUG-0782: crashes at start reported with RivaTuner / MSI Afterburner running: the report says what to try
+    if (fh.find("RivaTuner") != std::string::npos)
+        s += "advice: RivaTuner Statistics Server (MSI Afterburner) hooks the game's Direct3D like SporeKit. If Spore "
+             "crashes at start, give SporeApp.exe a profile in RivaTuner with \"Application detection level\" None "
+             "(or close RivaTuner and Afterburner) and try again (docs/INSTALL.md#install-rtss)\n";
+    // BUG-1022: off the main thread (the watchdog, the crash report thread, a fault storm on a worker) no call into
+    // the game's mode manager and no walk of the mod list: the mode the main thread cached, the mods line kept by
+    // mods.cpp. `kit.fix reportsafe 0`: as before.
+    bool off_main = fixed(g_fix_reportsafe) && GetCurrentThreadId() != main_thread_id();
+    s += "game mode: " + std::string(game_mode_name(off_main ? game_mode_cached() : game_mode_id())) + ", frame " +
+         std::to_string(frame_index()) + ", up " + std::to_string((int)now_seconds()) + " s\n";
     std::string mods;
-    for (SkMod* m : mods_list())
-        mods += m->name + (m->info && m->info->version ? std::string(" ") + m->info->version : "") + "  ";
+    if (off_main)
+        mods = mods_line();
+    else
+        for (SkMod* m : mods_list())
+            mods += m->name + (m->info && m->info->version ? std::string(" ") + m->info->version : "") + "  ";
     s += "mods: " + (mods.empty() ? std::string("none") : mods) + "\n";
     return s;
 }
@@ -250,9 +264,9 @@ static std::string where(uintptr_t a)
     if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (LPCWSTR)a, &m) &&
         m) {
-        wchar_t n[MAX_PATH];
-        GetModuleFileNameW(m, n, MAX_PATH);
-        std::string p = narrow(n);
+        std::string p = narrow(module_path(m)); // BUG-1033
+        if (p.empty())
+            p = "?";
         char off[24];
         snprintf(off, sizeof off, "+0x%X", (unsigned)(a - (uintptr_t)m));
         return p.substr(p.find_last_of("\\/") + 1) + off;
@@ -374,7 +388,9 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     std::wstring txt = logs_dir() + L"\\" + widen(base) + L".txt";
     std::string s;
     s += "SporeCoop " + kind + " " + stamp() + (reason && *reason ? std::string(" (") + reason + ")" : "") + "\n";
-    s += "Please attach this file (and the .dmp next to it, if there is one) to an issue:\n";
+    // one file for the player to send: the archive holds this report and its .dmp (docs/REPORTING.md)
+    s += "Please send the file SporeCoop-report-<date-time>.zip from this folder (it holds this report and the .dmp)\n";
+    s += "with an issue; send this file and the .dmp next to it only if there is no such .zip:\n";
     s += "https://github.com/WoodyWizard/SporeCoop/issues\n\n";
     if (std::string h = diag_headline_text(); !h.empty())
         s += "== Summary\n" + h + "\n";
@@ -767,7 +783,27 @@ struct CrashJob {
     std::string base;
     EXCEPTION_POINTERS* ep;
     DWORD tid; // the crashed thread
+    // BUG-1020: copies of the crash's record and registers. The filter waits kReportWaitMs for the report thread and
+    // then returns; the thread read on through the EXCEPTION_POINTERS the system gave (the crashed thread's exception
+    // frame), which a later handler that continues the thread, or the teardown, reuses. `kit.fix crashcopy 0`: the
+    // raw pointer, as before. (The stack the walk reads stays the crashed thread's: best effort.)
+    EXCEPTION_RECORD er;
+    CONTEXT ctx;
+    EXCEPTION_POINTERS eps;
 };
+
+static void job_take(CrashJob& j, EXCEPTION_POINTERS* ep)
+{
+    j.ep = ep;
+    if (!fixed(g_fix_crashcopy) || !ep || !ep->ExceptionRecord || !ep->ContextRecord)
+        return;
+    memcpy(&j.er, ep->ExceptionRecord, sizeof j.er);
+    j.er.ExceptionRecord = nullptr; // a chained record stays the crashed thread's: not followed
+    memcpy(&j.ctx, ep->ContextRecord, sizeof j.ctx);
+    j.eps.ExceptionRecord = &j.er;
+    j.eps.ContextRecord = &j.ctx;
+    j.ep = &j.eps;
+}
 // the report, the archive and the mark first; the minidump last (the riskiest step: it suspends the
 // other threads and walks the crashed one), then the archive again with it
 static DWORD WINAPI crash_report_thread_old(void* p)
@@ -827,6 +863,7 @@ static DWORD WINAPI crash_report_thread(void* p)
 // thread is made at boot and waits: the filter only signals it and waits for it.
 static CrashJob g_so_job;
 static HANDLE g_so_go, g_so_done;
+static const char* g_so_what = "stack overflow"; // BUG-0956: the same thread writes the report of an off-stack fault
 
 static DWORD WINAPI so_report_thread(void*)
 {
@@ -843,7 +880,7 @@ static DWORD WINAPI so_report_thread(void*)
                  g_so_job.tid);
         CreateDirectoryW(logs_dir().c_str(), nullptr);
         write_text(logs_dir() + L"\\" + widen(g_so_job.base) + L".txt", b);
-        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX (stack overflow) at 0x%08X %s, thread %lu", code,
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX (%s) at 0x%08X %s, thread %lu", code, g_so_what,
              (unsigned)eip, where(eip).c_str(), g_so_job.tid);
     });
     if (!g_so_job.base.empty())
@@ -852,13 +889,28 @@ static DWORD WINAPI so_report_thread(void*)
     return 0;
 }
 
+// BUG-0956: a fault whose esp is outside its thread's stack (the game called through a freed object into heap
+// bytes that moved esp) is never dispatched to the game's handlers or this filter: Wine ends the process with
+// "Exception frame is not in stack limits" (Windows checks the stack the same way), so no report was written. The
+// fault logger calls this at the first chance; the report thread made at boot writes the report while it waits.
+void diag_offstack_report(EXCEPTION_POINTERS* ep)
+{
+    if (!g_so_go || !fixed(g_fix_offstack) || g_crashed++ != 0)
+        return;
+    g_so_what = "the stack pointer is outside the thread's stack";
+    job_take(g_so_job, ep); // BUG-1020
+    g_so_job.tid = GetCurrentThreadId();
+    SetEvent(g_so_go);
+    WaitForSingleObject(g_so_done, kReportWaitMs);
+}
+
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
 {
     if (ep && ep->ExceptionRecord && ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW && g_so_go &&
         fixed(g_fix_stackov)) {
         // nothing but a signal and a wait on this stack (BUG-0056)
         if (g_crashed++ == 0) {
-            g_so_job.ep = ep;
+            job_take(g_so_job, ep); // BUG-1020 (two memcpy, no stack of note)
             g_so_job.tid = GetCurrentThreadId();
             SetEvent(g_so_go);
             WaitForSingleObject(g_so_done, kReportWaitMs);
@@ -873,7 +925,7 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
         // thread may hold the log's lock (BUG-0115; the log drops lines re-entered on one thread)
         static CrashJob job;
         job.base = report_base(true);
-        job.ep = ep;
+        job_take(job, ep); // BUG-1020
         job.tid = GetCurrentThreadId();
         char b[512];
         snprintf(b, sizeof b,
@@ -962,6 +1014,36 @@ void diag_hang_report(const char* why)
     report_step("the mark", [&] { mark_problem(p, "stopped responding"); });
     report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "hang report: %s", p.c_str()); });
     report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped responding"); });
+}
+
+// BUG-0925: the main thread shows an error dialog of the C runtime (a pure virtual call, abort(), an assertion): no
+// exception, no frames, the game ends when the box is closed. The report names the box's text; once per run.
+void diag_dialog_report(const char* why)
+{
+    static std::atomic<int> once{0};
+    if (once++)
+        return;
+    std::string p;
+    if (!report_step("the dialog report", [&] { p = diag_write_report(why, nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, "stopped with an error message"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "error dialog report: %s", p.c_str()); });
+    report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped with an error message"); });
+}
+
+// BUG-0676: one fault the game's handler catches in every frame (a fault storm): the game runs on but cannot get past
+// it (a mode whose exit stopped half-way keeps faulting in its frame). A report and a mark once per run, so the player
+// and the lab get a report of a game that looks stuck but never crashes.
+void diag_storm_report(const char* why)
+{
+    static std::atomic<int> once{0};
+    if (once++)
+        return;
+    std::string p;
+    if (!report_step("the fault storm report", [&] { p = diag_write_report(why, nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, "kept faulting"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "fault storm report: %s", p.c_str()); });
 }
 
 // BUG-0521: the game's own start (App::cSporeApp::Init) failed and the game is about to end with
@@ -1093,7 +1175,12 @@ void diag_after_device()
     if (once)
         return;
     once = true;
-    logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), foreign_hooks().c_str());
+    std::string fh = foreign_hooks();
+    logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), fh.c_str());
+    if (fh.find("RivaTuner") != std::string::npos) // BUG-0782
+        logf(&g_kit_mod, SK_WARN, "RivaTuner / MSI Afterburner hooks the game's Direct3D like SporeKit; if Spore "
+                                  "crashes at start, give SporeApp.exe an RTSS profile with Application detection "
+                                  "level None, or close RTSS (docs/INSTALL.md#install-rtss)");
     // other mods, extra packages, changed game files (docs/REPORTING.md#reporting-support-environment)
     const std::string& f = diag_files_text();
     for (size_t i = 0; i < f.size();) {

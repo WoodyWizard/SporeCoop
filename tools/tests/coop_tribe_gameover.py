@@ -13,6 +13,8 @@ the OK then faulted at 0xC0DAE3 and the host froze for good (2 of 2 tries, 2026-
 3. OK (`key enter`): the host bounces back and keeps drawing, no fault in either game.
 
 --nofix: the old way (`coop.tribe fix gameover 0`): must FAIL.
+--after-ok S (BUG-0172, 0.7.11 N1): the spawn comes S seconds after the OK instead, while the bounce back reloads
+the save (the member's creation then meets a tribe being torn down); --count N members.
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_gameover.py [--nofix]
 """
@@ -50,6 +52,8 @@ def frames_go_on(con, secs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--nofix', action='store_true')
+    ap.add_argument('--after-ok', type=float, default=None)
+    ap.add_argument('--count', type=int, default=2)
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -77,9 +81,15 @@ def main():
     twoinst.shot(host, 'tribe_gameover_caption.png')
     for word in ('Alas', 'Bounce', 'population'):
         print(f'  ui "{word}":', host.call(f'coop.ui find "{word}"')['out'].strip()[:300])
-    print(' ', host.call('coop.tribe spawn 2')['out'].strip())
-    time.sleep(1)
+    if a.after_ok is None:
+        print(' ', host.call(f'coop.tribe spawn {a.count}')['out'].strip())
+        time.sleep(1)
     host.call('key enter')  # OK: bounce back in time
+    if a.after_ok is not None:
+        time.sleep(a.after_ok)
+        for _ in range(3):
+            print(f'  {a.after_ok:.1f} s after OK:', host.call(f'coop.tribe spawn {a.count}')['out'].strip()[:160])
+            time.sleep(0.3)
     ok = frames_go_on(host, 15)
     ck(ok, 'the host bounces back and keeps drawing')
     t1 = time.time()

@@ -22,6 +22,7 @@ that differs on matched objects (alive, scale, hp, model). Matching: by net id w
 (creature npc/proxy, Cell cell index), else by noun and the nearest position.
 """
 import collections
+import copy
 import math
 import os
 import re
@@ -109,9 +110,9 @@ NOUNS = {  # GameNounIDs of the Spore ModAPI (Simulator/SimulatorEnums.h); unkno
 }
 
 OBJ = re.compile(r'obj ([a-z])(-?\d+) key=([0-9A-F]{8}) alive=(-?\d+) hp=(\S+) ai=(-?\d+) own=(\S*) owner=(-?\d+) '
-                 r'pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\)(?: noun=([0-9A-F]{8}) ser=(\d+) scale=(\S+))?')
+                 r'pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\)(?: noun=([0-9A-F]{8}) ser=(\d+) scale=(\S+)(?: max=(\S+))?)?')
 HEAD = re.compile(r'census v1 role=(\S+) me=(\d+) mode=(.*?) modeid=([0-9A-F]+) world=([0-9A-F]+) t=([\d.]+)')
-ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)')
+ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)(?: wscale=(\S+))?')
 
 # compare area around the guest's own player (m) and the position tolerance of a match, per stage
 AREA = {'Cell': 40.0, 'Creature': 70.0, 'Tribe': 90.0, 'Civilization': 160.0, 'Space': 120.0}
@@ -119,6 +120,10 @@ TOL_STATIC, TOL_MOVING = 3.0, 15.0
 # BUG-0480: Cell: the host dumped before and after the guest, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: one host dump)
 CELL_BRACKET = os.environ.get('SPORE_DETECTOR_BRACKET', '1') != '0'
 CELL_GAP = 1.5
+# BUG-0662: Cell: a level change rescales every position about the origin (WorldScaleStep, BUG-0511), on each game at
+# its own moment; the guest's positions are compared in the host's world scale (census `me ... wscale=`, the
+# sync-check's diag.cell_scale, BUG-0606). SPORE_DETECTOR_CELL_SCALE=0: raw positions (0.7.9)
+CELL_SCALE = os.environ.get('SPORE_DETECTOR_CELL_SCALE', '1') != '0'
 # BUG-0596: a guest's Creature state is read twice, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: once)
 STATE_BRACKET = CELL_BRACKET
 # objects that belong to one game by design (per-player logic, invisible helpers): never compared
@@ -131,8 +136,33 @@ IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal
           # BUG-0473 / BUG-0498 (coop_world_lod.py, lab 20261103-161705): each game makes these around its own
           # player's camera (28 rocks on the walking guest only, 30-75 m ahead of it, never on the host that
           # stood 1 m from it at the start; 1-2 plants 8-14 m from the own player only): not a desync
-          'rock', 'game_plant'}
+          'rock', 'game_plant',
+          # BUG-0489 (docs/re/creature.md#creature-gameplay-markers): cGameplayMarker spawn points are invisible
+          # bookkeeping; the herds, nests, tribes and ornaments they spawn are compared themselves. Each game consumes
+          # markers by its own logic (the host's NPC tribe controller destroys a tribe spawn marker, 0xCC6440; the
+          # part-level cleanup of the local avatar's collection, 0xD408E0): a one-off count difference is not a desync
+          'gameplay_marker'}
+# BUG-0657: in Space the objects of a planet's surface are loaded only by a game whose camera is on that planet
+SPACE_PLANET_LOD = {'city', 'city_walls', 'city_territory', 'civilization', 'vehicle', 'herd', 'ornament', 'turret',
+                    'building_city_hall', 'building_industry', 'building_house', 'building_entertainment',
+                    'inter_city_road', 'game_plant', 'rock', 'interactive_ornament', 'nest'}
 MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
+# BUG-0617: a food bundle is compared by where it is (census own=ground|carried|held, mods/coop/census.cpp): carried
+# food moves with its member (~7 m/s; the guest's copy of the member is drawn 1-3.5 m behind the host's, coop_world_host.py
+# --case bundle), so carried bundles pair within TOL_CARRIED; the ground's stay static (3 m); food in another container
+# (a food mat's: the tribe's food, compared as a state value) is `game_bundle_held`
+TOL_CARRIED = 6.0
+
+
+def _nearest(x, others):
+    return min((math.dist(x['pos'], y['pos']) for y in others), default=-1.0)
+
+
+def _group(x):
+    """the compare group of a census object row: (noun, '') or, for a food bundle, (noun, '_carried' | '_held')"""
+    if x['noun'] == 0x018C431C and x.get('own') in ('carried', 'held'):
+        return (x['noun'], '_' + x['own'])
+    return (x['noun'], '')
 
 
 def noun_name(n):
@@ -150,6 +180,7 @@ class World:
     def __init__(self, text, who=''):
         self.who, self.role, self.mode, self.modeid, self.world, self.t = who, None, None, None, None, 0.0
         self.me, self.rows, self.nouns, self.complete = None, [], {}, False
+        self.wscale = None  # Cell: the game's world scale its positions are in (BUG-0662), None when not given
         self.vts = {}  # noun -> Ghidra address of a vtable of its class
         for line in text.splitlines():
             line = line.strip()
@@ -165,12 +196,16 @@ class World:
                                       pos=tuple(_f(m.group(i)) for i in (9, 10, 11)),
                                       noun=int(m.group(12), 16) if m.group(12) else 0,
                                       ser=int(m.group(13)) if m.group(13) else 0,
-                                      scale=_f(m.group(14)) if m.group(14) else float('nan')))
+                                      scale=_f(m.group(14)) if m.group(14) else float('nan'),
+                                      max_hp=_f(m.group(15)) if m.group(15) else float('nan')))
                 continue
             m = ME.match(line)
             if m:
                 if m.group(4) == '1':
                     self.me = tuple(_f(m.group(i)) for i in (1, 2, 3))
+                if m.group(5):
+                    s = _f(m.group(5))
+                    self.wscale = s if math.isfinite(s) and s > 0 else None
                 continue
             if line.startswith('nouns'):
                 for kv in line.split()[1:]:
@@ -393,8 +428,11 @@ def diff_state(hs, gs, stage):
         if hs.dna is not None and gs.dna is not None and _differs(hs.dna, gs.dna, 5.0, 0.1):
             add('Creature:state', 'dna', 1, f'DNA {hs.dna:.0f} on the host, {gs.dna:.0f} on the guest')
         common = set(hs.species) & set(gs.species)
+        ga = getattr(gs, 'after', None)
         for kind in ('relation', 'impressed', 'killed'):
             bad = [k for k in sorted(common) if hs.species[k][kind] != gs.species[k][kind]]
+            if ga is not None:  # BUG-0657: also in the guest's second dump (a kill the guest's game counts a moment later)
+                bad = [k for k in bad if k not in ga.species or ga.species[k][kind] != hs.species[k][kind]]
             if bad:
                 k = bad[0]
                 add('Creature:state', f'species_{kind}', len(bad), f'{len(bad)} species with another {kind} (e.g. {k}: '
@@ -573,9 +611,34 @@ def _own_ship_scale(w, ufos):
     return s if math.dist(x['pos'], w.me) < 5.0 and math.isfinite(s) and s > 1e-3 else None
 
 
+def _in_scale(w, k):
+    """a copy of World w with every position and every cell's size times k (BUG-0662: the guest's Cell world in the
+    host's scale; the rescale 0xE6DB70 divides cell pos +0x4C and size +0x58 alike, docs/re/cell.md#cell-world-scale)"""
+    c = copy.copy(w)
+    c.rows = [dict(x, pos=tuple(v * k for v in x['pos']), scale=x['scale'] * k if x['kind'] == 'l' else x['scale'])
+              for x in w.rows]
+    c.me = tuple(v * k for v in w.me) if w.me else w.me
+    c.wscale = w.wscale / k if w.wscale else w.wscale
+    return c
+
+
+def cell_scale_factor(host, guest):
+    """guest scale / host scale when both Cell dumps give their scale and they differ, else None"""
+    if not CELL_SCALE or host.mode != 'Cell' or guest.mode != 'Cell' or not host.wscale or not guest.wscale:
+        return None
+    k = guest.wscale / host.wscale
+    return k if abs(k - 1.0) > 1e-4 else None
+
+
 def diff(host, guest, area=None):
     out = []
     stage = host.mode or '?'
+    # BUG-0662: during a level change the two games' Cell positions are in two world scales (each game rescales at
+    # its own moment, over ~3 s): the guest's are converted into the host's (pos x scale is the same for a cell at
+    # rest through a change), so a cell 7-14 m "apart" only by the scale is no row and a real offset still is
+    k = cell_scale_factor(host, guest)
+    if k is not None:
+        guest = _in_scale(guest, k)
 
     def add(what, kind, n, text):
         out.append(Finding(sig=f'{stage}:{what}:{kind}', stage=stage, n=n, text=text))
@@ -637,6 +700,11 @@ def diff(host, guest, area=None):
             # a guest registers a received creation under a key of its own (0x7C / 0x7D......): not a difference
             if x['key'] != y['key'] and not (y['key'][:2] in ('7C', '7D') or x['key'][:2] in ('7C', '7D')):
                 add('model', label, 1, f'{label} {i}: model {x["key"]} on the host, {y["key"]} on the guest')
+            # BUG-0698 (class BUG-0419): the game's max health of a matched creature (NpcSpawn.max_health is not applied:
+            # a proxy of the same species and age has the host's max by the game's own rules)
+            mx, my = x.get('max_hp', float('nan')), y.get('max_hp', float('nan'))
+            if x['alive'] and y['alive'] and math.isfinite(mx) and math.isfinite(my) and mx > 0 and my > 0 and _rel(mx, my) > 0.05:
+                add('max_hp', label, 1, f'{label} {i} key={x["key"]}: max health {mx:.0f} on the host, {my:.0f} on the guest')
             if x['alive'] and y['alive'] and math.isfinite(x['hp']) and math.isfinite(y['hp']) and abs(x['hp'] - y['hp']) > max(2.0, 0.2 * max(x['hp'], y['hp'])):
                 add('hp', label, 1, f'{label} {i}: hp {x["hp"]:.0f} on the host, {y["hp"]:.0f} on the guest')
             d = math.dist(x['pos'], y['pos'])
@@ -659,17 +727,16 @@ def diff(host, guest, area=None):
     # every other placed object, per noun
     hg = collections.defaultdict(list)
     gg = collections.defaultdict(list)
-    for x in rows(host, 'g', lim=r):
-        hg[x['noun']].append(x)
-    for x in rows(guest, 'g', lim=r):
-        gg[x['noun']].append(x)
-    for noun in sorted(set(hg) | set(gg)):
-        name = noun_name(noun)
-        if name in IGNORE:
+    for w, grp in ((host, hg), (guest, gg)):
+        for x in rows(w, 'g', lim=r):
+            grp[_group(x)].append(x)
+    for noun, sub in sorted(set(hg) | set(gg)):
+        name = noun_name(noun) + sub
+        if name in IGNORE or noun_name(noun) in IGNORE:
             continue
+        a, b = hg.get((noun, sub), []), gg.get((noun, sub), [])
         vt = host.vts.get(noun) or guest.vts.get(noun)
         vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
-        a, b = hg.get(noun, []), gg.get(noun, [])
         # Space: a colony planet's citizens are a pool each game puts at the cities near its own camera
         # (docs/re/space.md#space-planet-life, BUG-0490): none of them in the host's game near the guest means
         # the host's camera never came to that city (level of detail), not a desync; the host's citizens that
@@ -683,9 +750,13 @@ def diff(host, guest, area=None):
                                                              not [x for x in b if _near(x['pos'], c, inner)]):
             continue
         tol = TOL_MOVING if name in MOVING or stage == 'Space' else TOL_STATIC  # Space: ships and planets' objects move
+        tol = TOL_CARRIED if name == 'game_bundle_carried' else tol
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]
         ub = [x for x in ub if _near(x['pos'], c, inner)]
+        if name == 'game_bundle_carried' and (ua or ub):  # BUG-0617: whose members carry the unpaired ones
+            vts += (f' [carriers\' players: host {sorted(x["owner"] for x in ua)}, guest {sorted(x["owner"] for x in ub)}; '
+                    f'nearest partner {", ".join(f"{_nearest(x, b):.1f}" for x in ua)} / {", ".join(f"{_nearest(y, a):.1f}" for y in ub)} m]')
         if ua and not b:
             add('host_only', name, len(ua), f'{len(ua)} {name} near the guest on the host, none on the guest '
                                             f'(e.g. at {_fmt(ua[0]["pos"])}){vts}')
@@ -712,6 +783,11 @@ def diff(host, guest, area=None):
         # Space: a planet's life (creatures, citizens) is loaded only by a game whose camera is on that
         # planet (level of detail): the whole-list counts differ by design; the area compare still runs
         if stage == 'Space' and noun_name(noun) in ('creature', 'citizen'):
+            continue
+        # BUG-0657: the same for a planet's civilization (a host on a planet's surface, its guest in orbit or in the
+        # star system: 9 cities with their walls, territories and buildings, 40 vehicles, 178 herds in the host's
+        # game only, rel/0.7.8 space_play 20261105-111032): the area compare still runs
+        if stage == 'Space' and noun_name(noun) in SPACE_PLANET_LOD:
             continue
         h, g = host.nouns.get(noun, 0), guest.nouns.get(noun, 0)
         if (h == 0) != (g == 0) and max(h, g) >= 1:

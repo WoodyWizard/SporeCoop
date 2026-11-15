@@ -16,7 +16,8 @@ split of new members, a rejoin) appear at one spot.
    later chief 0.45 x the sum of the two bounding radii from the first (`coop.tribe near 0.45`, > 1.5 m, so
    tribe.spread_chiefs does not part them). 14 s later on each game the distance is at least 0.6 x that sum (the
    game's own avoidance parts them: 0.46 -> 0.92 in lab 20261104-102641; a regression check, no switch).
-PASS: 3, 4 and 5. --nofix (`coop.fix tribe.spread_chiefs off` on the host): must FAIL at 3.
+PASS: 3, 4 and 5. --nofix (`coop.fix tribe.spread_chiefs off` on the host): passes too (BUG-0340 wontfix: the game parts stacked chiefs
+itself); a scenario regression, the FAIL run is the campaign chiefs check (out/w21/c4_off.txt).
 
   SPORE_LANE=8 python3 tools/tests/coop_tribe_chiefs_apart.py [--nofix]
 """

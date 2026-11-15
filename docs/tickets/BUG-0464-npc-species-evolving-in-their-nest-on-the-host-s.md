@@ -54,3 +54,4 @@ out/lab/20261103-165317 (81 %, fight 83 %).
 - 2026-11-03: analysed on fix/w40-creature-acts, not fixed (findings in the docs).
 - 2026-11-03: fixed on fix/w40-npc-anims (npc.anims).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-05, Sterben-04): "for the host the nest is evolving, the guest can attack them" / "desynced nest": not this ticket's symptom in the logs: BUG-0639 (attack) and BUG-0640 (the migrated nest).

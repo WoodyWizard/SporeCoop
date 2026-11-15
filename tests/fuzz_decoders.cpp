@@ -31,6 +31,7 @@
 #include "net/partprops.h"
 #include "net/protocol.h"
 #include "net/session.h"
+#include "net/sreport.h"
 #include "net/utf8.h"
 #include "net/validate.h"
 
@@ -319,8 +320,8 @@ static void fuzz_protocol(uint64_t seed, int iters)
     fuzz_struct<PlayerState>("PlayerState", R, iters, [](Rng& R) {
         PlayerState s; s.id = R.u8(); s.time_ms = R.u32(); s.pos = v3(R); s.rot = q4(R); s.vel = v3(R);
         s.flags = R.u8(); s.anim = R.u8(); s.health = R.f32(); s.max_health = R.f32(); s.species = R.u32();
-        s.mode = R.u32(); s.world = R.u32(); s.scale = R.f32(); s.agl = R.f32(); return s;
-    }, [](const PlayerState&) { return (size_t)67; }); // BUG-0519: the scale is appended, BUG-0425: the agl after it
+        s.mode = R.u32(); s.world = R.u32(); s.scale = R.f32(); s.agl = R.f32(); s.body = R.f32(); return s;
+    }, [](const PlayerState&) { return (size_t)67; }); // BUG-0519: the scale is appended, BUG-0425: the agl after it, BUG-0733: the body after that (all optional)
     fuzz_struct<Chat>("Chat", R, iters, [](Rng& R) { Chat c; c.id = R.u8(); c.text = R.str(4000); return c; });
     fuzz_struct<NpcSpawn>("NpcSpawn", R, iters, [](Rng& R) {
         NpcSpawn s; s.net_id = R.u16(); s.key[0] = R.u32(); s.key[1] = R.u32(); s.key[2] = R.u32(); s.scale = R.f32();
@@ -393,8 +394,9 @@ static void fuzz_diag(uint64_t seed, int iters)
         for (int n = (int)R.below(R.below(4) ? 20 : 400), i = 0; i < n; i++)
             d.x.entries.push_back({R.u32(), (float)R.below(5000) - 2500, (float)R.below(500), (float)R.below(5000) - 2500});
         for (int n = (int)R.below(4), i = 0; i < n; i++) d.x.out.push_back(R.u8());
+        d.x.scale = R.below(2) ? (float)R.below(20000) / 4 : 0.f;
         return d;
-    });
+    }, [](const NoKind<dg::Digest>& d) { return enc(d).size() - 4; }); // BUG-0606: the appended world scale
 }
 
 static void fuzz_misc(uint64_t seed, int iters)
@@ -672,6 +674,58 @@ static void fuzz_dbpf(uint64_t seed, int iters)
         dbpf::metadata_names(copy, a, n);
     }
     printf("  %d packages (%d loaded, %d records read)\n", iters, loaded, records);
+}
+
+
+// ---------------------------------------------------------------- the session report (BUG-0767)
+// a guest's report zip and its messages come from another player's PC: the content check and the host's round
+static void fuzz_sreport(uint64_t seed, int iters)
+{
+    printf("session report (check_zip, the host's round)\n");
+    namespace sr = net::sreport;
+    Rng R(seed);
+    int passed = 0;
+    for (int i = 0; i < iters; i++) {
+        std::vector<uint8_t> z;
+        sr::ZipOut o;
+        o.out = [&z](const uint8_t* p, size_t n) {
+            z.insert(z.end(), p, p + n);
+            return true;
+        };
+        const char* names[] = {"README.txt", "logs/sporekit.log", "report-1.txt", "settings/coop.ini", "shots/a.jpg"};
+        int k = 1 + (int)R.below(5);
+        for (int j = 0; j < k; j++) {
+            std::string d = R.str(300);
+            o.add(names[j], (const uint8_t*)d.data(), d.size());
+        }
+        o.finish();
+        if (i % 4 != 0)
+            z = mutate(R, z);
+        Exact e(z);
+        std::string why;
+        passed += sr::check_zip(e.data(), e.n, &why);
+        // the same bytes through a round, in random pieces and kinds
+        sr::Round r;
+        r.id = 1;
+        sr::Guest g;
+        g.id = 1;
+        g.name = "x";
+        r.guests.push_back(g);
+        r.on_answer(1, sr::Answer{1, 1, (uint32_t)(R.below(3) ? e.n : R.below(1u << 26))}, 1);
+        for (size_t off = 0; off < e.n;) {
+            sr::Piece p;
+            p.round = 1;
+            p.offset = (uint32_t)(R.below(10) ? off : R.below(e.n + 10));
+            p.n = (uint16_t)std::min<size_t>(1 + R.below(sr::kChunkBytes), e.n - off);
+            p.data = e.data() + off;
+            r.on_piece(1, p, 2);
+            off += p.n;
+        }
+        r.on_done(1, sr::Done{1, R.below(2) ? sr::crc32(e.data(), e.n) : (uint32_t)R.next()}, 3);
+        if (r.guests[0].st == sr::State::Sent && !sr::check_zip(r.guests[0].data.data(), r.guests[0].data.size(), &why))
+            CHECK(false, "sreport: a sent report that does not pass the check%s", "");
+    }
+    printf("  %d archives (%d passed the check)\n", iters, passed);
 }
 
 // ---------------------------------------------------------------- part descriptions (BUG-0559)
@@ -1002,6 +1056,7 @@ int main(int argc, char** argv)
     fuzz_refpack(seed + 1, iters);
     fuzz_dbpf(seed + 2, iters);
     fuzz_partprops(seed + 23, iters);
+    fuzz_sreport(seed + 29, iters);
     fuzz_pack(seed + 3, iters / 2);
     fuzz_connection(seed + 4, iters * 5);
     fuzz_session(seed + 5, iters * 2);

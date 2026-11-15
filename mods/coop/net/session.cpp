@@ -3,13 +3,18 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 
 #include "fixes.h"
 #include "../../../updater/sha256.h"
+#include "ipmask.h"
 
 namespace net {
+
+static constexpr size_t kVersionMax = 120; // BUG-0774: a peer's version text ("coop X, SporeKit Y, <build> <hash>")
 
 static void logf(const Session::Callbacks& cb, const char* fmt, ...)
 {
@@ -46,7 +51,8 @@ static std::string join_proof(const std::string& password, uint32_t connection)
 
 bool Session::host(uint16_t port, const std::string& name, std::string& err, std::string password)
 {
-    leave("restart");
+    restart_leave();
+    gen_++;
     if (!tr_->open(port, &err))
         return false;
     role_ = Role::Host;
@@ -54,6 +60,9 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err, std
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
+    seen_names_.clear();
+    seen_tokens_.clear();
+    dropped_names_.clear();
     lan_id_ = new_conn_id(now(), tr_->local_port() ^ 0x4C414E00u); // BUG-0210: new per hosted game
     logf(cb, "hosting on UDP port %u", tr_->local_port());
     return true;
@@ -90,7 +99,8 @@ static void lookup_main(void* arg)
 
 bool Session::join(const std::string& addr, const std::string& name, std::string& err, std::string password)
 {
-    leave("restart");
+    restart_leave();
+    gen_++;
     Endpoint ep;
     std::string host_name;
     if (g_fix.async_resolve) {
@@ -150,6 +160,9 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
+    // BUG-1005: the host splits a WELCOME longer than one packet for a guest that announced CAP_SPLIT (in this HELLO):
+    // join its pieces (an older host never splits). WELCOME then sets what the host announced
+    p->conn.peer_split = g_fix.welcome_split && h.ext && (h.caps & CAP_SPLIT);
     peers_.push_back(std::move(p));
     logf(cb, "joining %s ...", ep.masked().c_str());
 }
@@ -179,6 +192,27 @@ bool Session::poll_lookup(uint32_t now)
     return true;
 }
 
+// BUG-0861: host() or join() called from a callback while a packet is delivered (cb.connected, cb.player_leave,
+// cb.custom ...). The old session used to be left only later, by the deferred leave at the end of the delivery,
+// which then closed the NEW session (its socket, its peers, role None). Now the old session ends here: BYE to its
+// peers, the transport closed; the peers are kept alive (zombies_) until the Connection being run returns from
+// on_packet (BUG-0029), the rest of that packet is not delivered (gen_ changed), a pending leave and its
+// cb.disconnected of the old session are dropped (the caller started a new session on purpose).
+// `coop.fix net.restart_gen off`: as before (the deferred leave tears the new session down).
+void Session::restart_leave()
+{
+    if (!delivering_ || !g_fix.restart_gen) {
+        leave("restart");
+        return;
+    }
+    if (!pending_disc_.empty())
+        logf(cb, "a new session starts inside a callback: the old one's end ('%s') is not reported", pending_disc_.c_str());
+    leave_pending_ = false;
+    pending_why_.clear();
+    pending_disc_.clear();
+    end_session("restart");
+}
+
 void Session::leave(const char* why)
 {
     if (role_ == Role::None)
@@ -191,7 +225,15 @@ void Session::leave(const char* why)
         leave_pending_ = true;
         return;
     }
+    end_session(why);
+}
+
+void Session::end_session(const char* why)
+{
+    if (role_ == Role::None)
+        return;
     leave_pending_ = false;
+    gen_++;
     lookup_.reset(); // a lookup still running ends on its own (the worker holds its own reference)
     uint32_t now = this->now();
     for (auto& p : peers_) {
@@ -206,6 +248,9 @@ void Session::leave(const char* why)
                 tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         }
     }
+    if (delivering_) // BUG-0861: the Connection whose packet is being delivered must outlive on_packet
+        for (auto& p : peers_)
+            zombies_.push_back(std::move(p));
     peers_.clear();
     roster_.clear();
     retired_.clear();
@@ -301,6 +346,14 @@ int Session::rtt_of(uint8_t id) const
     return -1;
 }
 
+float Session::rtt_quantile_of(uint8_t id, float q) const
+{
+    for (auto& p : peers_)
+        if (p->id == id && (p->accepted || role_ == Role::Client))
+            return p->conn.rtt_quantile(q);
+    return -1.f;
+}
+
 bool Session::link_of(uint8_t id, Link& out) const
 {
     for (auto& p : peers_)
@@ -328,7 +381,7 @@ std::string Session::status() const
         return "offline\n";
     if (role_ == Role::Host)
         snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
-                 (int)players().size(), seat_limit);
+                 (int)players().size(), std::min<int>(seat_limit, max_players));
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
@@ -340,6 +393,21 @@ std::string Session::status() const
                  p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
     }
+    if (role_ == Role::Host && (disc_refused_ || halfopen_refused_ || halfopen_evicted_ || replace_refused_)) { // BUG-0776, BUG-0778
+        snprintf(b, sizeof b, "refused: discovery=%u (answered %u) no_hello=%u half_open_evicted=%u replace=%u\n", disc_refused_,
+                 disc_answered_, halfopen_refused_, halfopen_evicted_, replace_refused_);
+        s += b;
+    }
+    if (recv_skipped_) { // BUG-1007
+        snprintf(b, sizeof b, "datagrams skipped (too big): %u\n", recv_skipped_);
+        s += b;
+    }
+    for (auto& p : peers_)
+        if (p->conn.stats.unrel_too_big) { // BUG-0612
+            snprintf(b, sizeof b, "peer %u: unreliable_too_big=%u (last type %u, %u bytes)\n", p->id, p->conn.stats.unrel_too_big,
+                     p->conn.stats.unrel_too_big_type, p->conn.stats.unrel_too_big_size);
+            s += b;
+        }
     // BUG-0219: a line of its own after the session block, never inside a peer line
     for (auto& p : peers_)
         if ((p->accepted || role_ == Role::Client) && !p->conn.peer_split) {
@@ -449,6 +517,14 @@ void Session::drop_peer(size_t idx, uint8_t reason)
     auto& p = peers_[idx];
     bool was = p->accepted;
     uint8_t id = p->id;
+    if (was && role_ == Role::Host) { // BUG-1001: when this name dropped (a player without a token may come back by it)
+        uint32_t t = now();
+        auto it = std::find_if(dropped_names_.begin(), dropped_names_.end(), [&](auto& e) { return e.first == p->hello_name; });
+        if (it != dropped_names_.end())
+            it->second = t;
+        else if (dropped_names_.size() < 64)
+            dropped_names_.push_back({p->hello_name, t});
+    }
     logf(cb, "player %u (%s) disconnected (reason %u)", id, p->name.c_str(), reason);
     retired_.push_back(p->conn.conn_id);
     if (retired_.size() > 64)
@@ -464,8 +540,41 @@ void Session::drop_peer(size_t idx, uint8_t reason)
     }
 }
 
+// BUG-0774: a roster entry from the host: one clean line, never empty (the name goes into logs, the co-op
+// window, the feed and the marker file of the co-op save slot)
+static void clean_info(PlayerInfo& pl)
+{
+    pl.name = utf8::net_name(pl.name);
+    if (pl.name.empty())
+        pl.name = pl.id == 0 ? std::string("host") : "guest" + std::to_string(pl.id);
+    pl.version = utf8::clean_text(pl.version, kVersionMax);
+}
+
+// BUG-1001 (the owner's rule, plan 0.7.14 decision 7): may this HELLO come back while the host takes no new players?
+// With the token rule on and a token in the HELLO: only by that token (admitted before in this session, no live entry
+// has it now). Without a token (an older SporeCoop, or the token rule off): by its name, only when nobody of that name
+// is in the session now and the name dropped within kRejoinNameMs. Two friends both called "Player" are two players
+bool Session::rejoin_known(const Peer& p, const Hello& h, bool by_token) const
+{
+    auto live = [&](auto&& same) {
+        for (auto& o : peers_)
+            if (o.get() != &p && o->accepted && !o->bye && same(*o))
+                return true;
+        return false;
+    };
+    if (by_token && h.has_token)
+        return std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) != seen_tokens_.end() &&
+               !live([&](const Peer& o) { return o.has_token && o.token == h.token; });
+    auto it = std::find_if(dropped_names_.begin(), dropped_names_.end(), [&](auto& e) { return e.first == h.name; });
+    return it != dropped_names_.end() && this->now() - it->second <= kRejoinNameMs &&
+           !live([&](const Peer& o) { return o.hello_name == h.name; });
+}
+
 void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
 {
+    const uint32_t g0 = gen_;
+    // BUG-0861: a callback started a new session: nothing more of this message for the old one
+    auto restarted = [&] { return g_fix.restart_gen && gen_ != g0; };
     if (role_ == Role::Host) {
         if (type == MSG_HELLO) {
             if (p.accepted)
@@ -473,6 +582,10 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             Hello h;
             if (!h.read(r))
                 return;
+            if (g_fix.name_clean) { // BUG-0774: before the name rules below (seen, rejoin, unique) compare it
+                h.name = utf8::net_name(h.name);
+                h.version = utf8::clean_text(h.version, kVersionMax);
+            }
             Reject rej;
             if (!password_.empty() && h.join_proof != join_proof(password_, p.conn.conn_id)) {
                 rej.reason = REJ_VERSION; // older clients still display the rejection text
@@ -496,6 +609,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
             // A busy player of the same name (loading, saving) keeps its entry: the token differs
             const bool by_token = unique_names && rejoin_by_name && g_fix.rejoin_token;
+            bool dropped_by_token = false;
             if (by_token && h.has_token && h.proto == kProtoVersion && !(build && h.build && h.build != build))
                 for (size_t k = 0; k < peers_.size(); k++) {
                     Peer* o = peers_[k].get();
@@ -503,9 +617,12 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                         this->now() - o->conn.last_recv_ms > 2000) {
                         logf(cb, "player %u (%s) rejoins: its old entry is dropped", o->id, o->name.c_str());
                         drop_peer(k, 0); // PLAYER_LEAVE(old) goes out before PLAYER_JOIN(new)
+                        dropped_by_token = true;
                         break;
                     }
                 }
+            if (restarted())
+                return;
             if (h.proto != kProtoVersion) {
                 rej.reason = REJ_VERSION;
                 rej.text = "protocol version mismatch";
@@ -515,6 +632,42 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             } else if (alloc_id() == 0xFF) {
                 rej.reason = REJ_FULL;
                 rej.text = "session is full";
+            } else if (g_fix.join_seen) {
+                // F3 (BUG-0768): the host's player limit and the late-join rule. BUG-1001: a rejoin is the old entry
+                // dropped by its token above, or rejoin_known (its token, or without one a name dropped recently that
+                // nobody has now); a name alone never passes. Every live entry counts, except a silent one of this name
+                // that the name rule below (net.rejoin_token off) retires now
+                bool seen = dropped_by_token || rejoin_known(p, h, by_token);
+                const bool name_rule = unique_names && rejoin_by_name && !by_token;
+                const std::string pname = h.name.empty() ? "guest" + std::to_string(alloc_id()) : h.name;
+                int here = 1; // the host
+                for (auto& o : peers_)
+                    if (o.get() != &p && o->accepted && !o->bye &&
+                        !(name_rule && o->name == pname && this->now() - o->conn.last_recv_ms > 2000))
+                        here++;
+                if (here >= max_players) {
+                    rej.reason = REJ_FULL;
+                    rej.text = "session is full (the host takes " + std::to_string(max_players) + " players)";
+                } else if (!seen && join_closed && join_closed()) {
+                    rej.reason = REJ_STARTED;
+                    rej.text = "the host does not take new players after the start";
+                }
+            } else {
+                // the rule before BUG-1001: a name seen in this session passes, and its silent entry is not counted
+                bool seen = dropped_by_token ||
+                            std::find(seen_names_.begin(), seen_names_.end(), h.name) != seen_names_.end();
+                int here = 1; // the host
+                for (auto& o : peers_)
+                    if (o.get() != &p && o->accepted && !o->bye &&
+                        !(seen && o->name == h.name && this->now() - o->conn.last_recv_ms > 2000))
+                        here++;
+                if (here >= max_players) {
+                    rej.reason = REJ_FULL;
+                    rej.text = "session is full (the host takes " + std::to_string(max_players) + " players)";
+                } else if (!seen && join_closed && join_closed()) {
+                    rej.reason = REJ_STARTED;
+                    rej.text = "the host does not take new players after the start";
+                }
             }
             if (rej.reason) {
                 Writer w;
@@ -549,10 +702,18 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                     p.name = base + " " + std::to_string(k);
             }
             p.accepted = true;
+            if (std::find(seen_names_.begin(), seen_names_.end(), p.name) == seen_names_.end())
+                seen_names_.push_back(p.name);
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
             p.resume_world = h.resume_world;
+            p.hello_name = h.name;
+            if (h.has_token && std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) == seen_tokens_.end()) {
+                if (seen_tokens_.size() >= 64)
+                    seen_tokens_.erase(seen_tokens_.begin());
+                seen_tokens_.push_back(h.token);
+            }
             p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
             p.version = h.version;
             Welcome wl;
@@ -574,6 +735,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                  p.version.empty() ? "version unknown (pre-0.7.4)" : p.version.c_str());
             if (cb.player_join)
                 cb.player_join(pj.p);
+            if (restarted())
+                return;
             if (!h.caps) {
                 logf(cb, "player %u '%s' uses an older SporeCoop (no HELLO caps)", p.id, p.name.c_str());
                 if (cb.old_peer)
@@ -658,6 +821,11 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         p.accepted = true;
         p.caps = wl.caps;
         p.conn.peer_split = (wl.caps & CAP_SPLIT) != 0;
+        if (g_fix.name_clean) { // BUG-0774
+            wl.host_version = utf8::clean_text(wl.host_version, kVersionMax);
+            for (auto& pl : wl.players)
+                clean_info(pl);
+        }
         p.version = wl.host_version;
         roster_ = wl.players;
         for (auto& pl : roster_) {
@@ -673,9 +841,15 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                      pl.version.empty() ? "version unknown (pre-0.7.4)" : pl.version.c_str());
         if (cb.connected)
             cb.connected();
-        for (auto& pl : roster_)
+        if (restarted())
+            return;
+        for (size_t k = 0; k < roster_.size(); k++) { // by index: a callback may change the roster
+            PlayerInfo pl = roster_[k];
             if (pl.id != my_id_ && cb.player_join)
                 cb.player_join(pl);
+            if (restarted())
+                return;
+        }
         if (!wl.caps) {
             logf(cb, "the host '%s' uses an older SporeCoop (no WELCOME caps)", p.name.c_str());
             if (cb.old_peer)
@@ -697,6 +871,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         PlayerJoin pj;
         if (!pj.read(r))
             return;
+        if (g_fix.name_clean)
+            clean_info(pj.p); // BUG-0774
         roster_.push_back(pj.p);
         logf(cb, "player %u '%s' joined: %s", pj.p.id, pj.p.name.c_str(),
              pj.p.version.empty() ? "version unknown (pre-0.7.4 or an older host)" : pj.p.version.c_str());
@@ -748,12 +924,15 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
 
 void Session::handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now)
 {
+    const uint32_t g0 = gen_;
     delivering_ = true;
     p.conn.on_packet(data, n, now, [&](uint8_t type, Reader& r) {
-        if (role_ != Role::None && !leave_pending_)
+        // BUG-0861: once a callback started a new session, the rest of the old session's packet is not delivered
+        if (role_ != Role::None && !leave_pending_ && (gen_ == g0 || !g_fix.restart_gen))
             handle_msg(p, type, r);
     });
     delivering_ = false;
+    zombies_.clear(); // BUG-0861: the old session's peers (and `p` with them) go only now
     if (leave_pending_) {
         // the connection is done with the packet: now it may go
         std::string why = pending_why_, disc = pending_disc_;
@@ -777,7 +956,83 @@ void Session::flush(uint32_t now)
         for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt, paced_world_transfer); i++)
             tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
+        auto& st = p->conn.stats; // BUG-0612: an unreliable message too big for any packet, said (the first, then 1 in 100)
+        if (st.unrel_too_big != st.unrel_too_big_logged && (st.unrel_too_big_logged == 0 || st.unrel_too_big % 100 == 0)) {
+            logf(cb, "net: an unreliable message of type %u (%u bytes) is too big for a packet: dropped (%u so far, peer %u)",
+                 st.unrel_too_big_type, st.unrel_too_big_size, st.unrel_too_big, p->id);
+            st.unrel_too_big_logged = st.unrel_too_big;
+        }
     }
+}
+
+// BUG-0778: does a datagram (looks_valid already) carry a HELLO that reads? Only such a datagram opens a peer
+bool Session::carries_hello(const uint8_t* data, size_t n, Hello* out)
+{
+    Reader r(data, n);
+    r.skip(4 + 2 + 4 + 2 + 2 + 16); // magic, protocol, connection, seq, ack, ack bits
+    uint8_t count = r.u8();
+    for (int i = 0; i < count && r.ok(); i++) {
+        uint8_t type = r.u8(), flags = r.u8();
+        uint16_t len = r.u16();
+        if (flags & 1)
+            r.u16();
+        if (!r.ok() || r.left() < len)
+            return false;
+        if (type == MSG_HELLO && (flags & 1) && !(flags & 2)) {
+            Reader hr(r.cur(), len);
+            Hello h;
+            if (h.read(hr)) {
+                if (out)
+                    *out = h;
+                return true;
+            }
+        }
+        r.skip(len);
+    }
+    return false;
+}
+
+// BUG-0778: room for a new peer from `from`: a half-open peer (its HELLO was refused, it is waiting for its
+// REJECT to arrive) goes when its address holds kHalfOpenPerIp of them already, or when the table is full; the
+// oldest first. Not retired: the same game may try again and gets its REJECT again
+void Session::make_room(const Endpoint& from)
+{
+    int same = 0;
+    size_t old_ip = SIZE_MAX, old_any = SIZE_MAX;
+    for (size_t k = 0; k < peers_.size(); k++) {
+        const Peer& o = *peers_[k];
+        if (o.accepted)
+            continue;
+        if (old_any == SIZE_MAX || (int32_t)(o.conn.created_ms - peers_[old_any]->conn.created_ms) < 0)
+            old_any = k;
+        if (o.conn.remote.ip == from.ip) {
+            same++;
+            if (old_ip == SIZE_MAX || (int32_t)(o.conn.created_ms - peers_[old_ip]->conn.created_ms) < 0)
+                old_ip = k;
+        }
+    }
+    size_t k = same >= kHalfOpenPerIp ? old_ip : peers_.size() >= kMaxPeers ? old_any : SIZE_MAX;
+    if (k == SIZE_MAX)
+        return;
+    if (halfopen_evicted_++ < 5 || halfopen_evicted_ % 100 == 0)
+        logf(cb, "a half-open connection from %s makes room for a new one (%u so far)", peers_[k]->conn.remote.masked().c_str(),
+             halfopen_evicted_);
+    peers_.erase(peers_.begin() + k);
+}
+
+// BUG-0776: a LAN discovery query is answered from a local network only (loopback, the private and link-local
+// ranges, the VPN / carrier range 100.64/10, or a subnet of this machine's own adapters: a virtual LAN such as
+// Radmin VPN uses 26.x), and at most kDiscoverPerSecond times a second: an open port forwarded to the internet
+// used to answer anybody (a reflector, and it told the host's name and world)
+bool Session::discovery_answer(const Endpoint& from, uint32_t now)
+{
+    if (!local_source(from.ip, lan_broadcasts))
+        return false;
+    if (now - disc_window_ms_ >= 1000) {
+        disc_window_ms_ = now;
+        disc_in_window_ = 0;
+    }
+    return disc_in_window_++ < kDiscoverPerSecond;
 }
 
 void Session::update()
@@ -787,18 +1042,34 @@ void Session::update()
     uint32_t now = this->now();
     if (lookup_ && !poll_lookup(now))
         return;
+    const uint32_t frame_gen = gen_;
     uint8_t buf[2048];
+    for (auto& p : peers_) // BUG-0651: when this game read the socket before
+        p->conn.poll_prev_ms = last_poll_ms_;
+    last_poll_ms_ = now;
     for (int i = 0; i < 256; i++) {
         Endpoint from;
         int n = tr_->recv_from(from, buf, sizeof buf);
+        if (n == kRecvSkipped && g_fix.recv_skip_big) { // BUG-1007: one datagram too big, the next ones are still read
+            recv_skipped_++;
+            continue;
+        }
         if (n <= 0)
             break;
-        if (n >= 6 && role_ == Role::Host && *(const uint32_t*)buf == kDiscoverQuery) {
+        uint32_t magic = 0;
+        if (n >= 4)
+            memcpy(&magic, buf, 4);
+        if (n >= 6 && role_ == Role::Host && magic == kDiscoverQuery) {
+            if (g_fix.lan_only_disc && !discovery_answer(from, now)) {
+                disc_refused_++;
+                continue;
+            }
+            disc_answered_++;
             DiscoverReply rep;
             rep.port = tr_->local_port();
             rep.name = my_name_;
             rep.players = (uint8_t)players().size();
-            rep.max_players = seat_limit;
+            rep.max_players = (uint8_t)std::min<int>(seat_limit, max_players); // Lineages seats and upstream's limit
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;
@@ -813,9 +1084,28 @@ void Session::update()
             continue;
         Peer* p = find_peer(from);
         uint32_t conn = Connection::peek_conn(buf, n);
+        // BUG-0778: a datagram that does not start a connection (no HELLO in it) from an endpoint without a peer, or
+        // with another connection id, makes no peer and replaces none: it used to take one of 16 slots for 10 s
         if (role_ == Role::Host && (!p || p->conn.conn_id != conn)) {
             if (retired(conn))
                 continue; // a late packet of a connection that is gone
+            if (g_fix.halfopen_cap && !carries_hello(buf, (size_t)n)) {
+                halfopen_refused_++;
+                continue;
+            }
+            if (p && p->accepted && g_fix.replace_checked) {
+                // BUG-1003: a joined guest goes only for the same game (its rejoin token) or once its own connection
+                // has been silent for 2 s (the old game is gone); until then the new HELLO waits (it is sent again)
+                Hello nh;
+                bool hello = carries_hello(buf, (size_t)n, &nh);
+                bool same = hello && nh.has_token && p->has_token && nh.token == p->token;
+                if (!same && now - p->conn.last_recv_ms <= 2000) {
+                    if (replace_refused_++ < 5 || replace_refused_ % 100 == 0)
+                        logf(cb, "a new connection from %s waits: player %u is live (%u so far)", from.masked().c_str(), p->id,
+                             replace_refused_);
+                    continue;
+                }
+            }
             if (p) {
                 // the same address and port with a new connection id: the guest left and joined
                 // again (its goodbye got lost) through a NAT / proxy that kept the mapping; the old
@@ -830,7 +1120,11 @@ void Session::update()
             }
         }
         if (!p) {
-            if (role_ != Role::Host || peers_.size() >= 16)
+            if (role_ != Role::Host)
+                continue;
+            if (g_fix.halfopen_cap)
+                make_room(from);
+            if (peers_.size() >= kMaxPeers)
                 continue;
             auto np = std::make_unique<Peer>();
             np->conn.remote = from;
@@ -842,6 +1136,8 @@ void Session::update()
         handle_packet(*p, buf, n, now);
         if (role_ == Role::None)
             return; // left during handling
+        if (g_fix.restart_gen && gen_ != frame_gen)
+            return; // BUG-0861: a callback started a new session: its first update is the next frame's
         // BUG-0405: a world transfer brings hundreds of packets per frame to a guest that loads; one
         // ack at the end of the frame covers the last 128 only, the rest was sent again (the
         // callback can remove p, so the peer is looked up again)

@@ -1,4 +1,5 @@
 #include "effects.h"
+#include "player_life.h"
 
 #include <atomic>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include "mirror_fx.h"
 #include "modes.h"
 #include "net/protocol.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 namespace effects {
@@ -20,6 +22,20 @@ namespace effects {
 static const SkHost* H;
 static SkMod* M;
 static Ctx C;
+// BUG-0795 (class BUG-0426): a partner's effect message was played on the raw puppet pointer: one the game freed
+// between two frames (a teardown, the UFO abduction BUG-0520, the game's own destroy) or a Cell cell / Tribe marker
+// after a stage switch went into the game's effect code (cCreatureBase effect pool) on freed or foreign memory. Now
+// only on a Creature puppet that is the live object made for that player (game::listed and its serial, this frame's
+// world); the message is dropped otherwise (coop.effects: gone=). Old (`coop.fix effects.puppet_live off`): raw.
+static bool g_puppet_live_fix = true;
+COOP_FIX("effects.puppet_live", "BUG-0795", g_puppet_live_fix, "creature: a partner's effect is only played on its creature while that creature is still alive in this game (the game's effect code ran on a freed one)");
+static uint32_t g_puppet_gone;
+static void* partner_puppet(uint8_t player)
+{
+    if (g_puppet_live_fix)
+        return C.puppet_live ? C.puppet_live(player) : nullptr;
+    return C.puppet_of ? C.puppet_of(player) : nullptr;
+}
 
 // BUG-0451: the whole class of creature effects, relayed from the game's one effect path.
 static bool g_fix = true;
@@ -45,10 +61,15 @@ static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here
 // sent. Created in the receiver's game effect world it has no painter and faults every frame while it lives
 // (docs/re/creature.md#creature-effects-painter). `effects.main_world` (on) sends only effects of the game's
 // own effect world and never plays an id this game saw only in another world; with it, Tribe and Civilization
-// relay again (the switch effects.other_stages was retired 2026-11-12, roadmap 0e: stable since 0.7.4).
-// Space: not verified (no effect of the own UFO could be made in a test, docs/re/creature.md); off as in 0.7.4
-static bool g_space = false;
-COOP_FIX("effects.space", "BUG-0451", g_space, "effects: also relayed in Space (unverified, off by default)");
+// relay again (`effects.other_stages`, on). Off: the 0.7.4 behaviour (no effect starts there; stops pass).
+static bool g_other_stages = true;
+COOP_FIX("effects.other_stages", "BUG-0451", g_other_stages,
+         "effects: also relayed in Tribe and Civilization (off: Cell and Creature only, as 0.7.4)");
+// Space: off since 0.7.4 as "not verified" (no effect of the own UFO could be made in a test, docs/re/creature.md).
+// BUG-0895: effects_party_space (three players, the game's own effect at each player's ship, relayed host -> guest and
+// guest -> guest) passes with it and fails without it, no fault: on by default now. `coop.fix effects.space off`: off.
+static bool g_space = true;
+COOP_FIX("effects.space", "BUG-0895", g_space, "effects: also relayed in Space (the effects a player's ship makes show on the partners' screens)");
 static bool g_main_world_fix = true;
 COOP_FIX("effects.main_world", "BUG-0451", g_main_world_fix,
          "effects: the skin painter's own effects are never relayed (they faulted the partner's game in Tribe and Civ)");
@@ -132,6 +153,9 @@ static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
 static uint32_t g_dropped_spoof;
 static uint32_t g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short;
 static constexpr float kPosMax = 1e5f; // a world position further out is not a planet's stage
+// BUG-1048: a received world effect's scale must be in the sender's range (0, 1000]; off: any finite scale
+static bool g_scale_fix = true;
+COOP_FIX("effects.scale_check", "BUG-1048", g_scale_fix, "effects: a partner's world effect with a scale of 0, below 0 or over 1000 is dropped");
 // Every field of a received start / stop is checked here before the game is called (BUG-0451
 // review item 3); false = dropped and counted.
 static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key, const uint8_t* xf)
@@ -156,23 +180,16 @@ static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
         return false;
     }
     if (pool == 5) {
-        const float* f = (const float*)(xf + 4); // position, uniform scale, 3x3 matrix
-        for (int i = 0; i < 16; i++) {
-            float v;
-            memcpy(&v, f + i, 4);
-            if (!std::isfinite(v)) {
-                g_bad_xf++;
-                return false;
-            }
-        }
-        if (!(fabsf(f[0]) < kPosMax && fabsf(f[1]) < kPosMax && fabsf(f[2]) < kPosMax)) {
+        float f[16]; // position, uniform scale, 3x3 matrix
+        memcpy(f, xf + 4, sizeof f);
+        if (!net::effect_xf_ok(f, kPosMax, g_scale_fix)) { // BUG-1048: the scale too
             g_bad_xf++;
             return false;
         }
     } else if (pool == 3) {
         // the game indexes the model's bone array (stride 0x2bc = 700) with this index and does not
         // check it (cCreatureBase::CreateEffect 0xC150D0); the array's end gives the count
-        void* puppet = C.puppet_of ? C.puppet_of(player) : nullptr;
+        void* puppet = partner_puppet(player);
         if (!puppet || !game::creature_bone_ok(puppet, (int32_t)key)) {
             g_bad_bone++;
             return false;
@@ -195,6 +212,8 @@ struct Last {
 static Last g_last_tx;
 static std::map<uint8_t, Last> g_last_rx;
 static std::map<uint8_t, Last> g_last_rx_start; // the last start per player (a stop may follow)
+PLAYER_STATE("effects", [](uint8_t id) { g_last_rx.erase(id); g_last_rx_start.erase(id); }, // BUG-0422
+             [](uint8_t id) -> size_t { return g_last_rx.count(id) + g_last_rx_start.count(id); });
 // the pool keys we sent a start for: a stop is sent once, not on every frame the game stops a key.
 // A fixed array: this is filled from inside the game's effect creation (no allocation there).
 static uint32_t g_sent_keys[64];
@@ -264,6 +283,10 @@ COOP_FIX("effects.release", "BUG-0451", g_release_fix,
 
 static double now() { return H ? H->time_seconds() : 0; }
 
+// BUG-0824: who wants to know of every world effect that starts here (this game's own and the relayed ones)
+static WorldStartFn g_world_start;
+void set_world_start_observer(WorldStartFn fn) { g_world_start = fn; }
+
 // The game's 0x44-byte Transform (VisualEffect_SetTransform 0xA827B0 as cCreatureBase's creators
 // build it): u16 flags, u16 change counter, Vec3 position at +4, uniform scale at +0x10, 3x3
 // rotation at +0x14. A world effect we relay gets the position the game put on it, scale 1 and the
@@ -286,6 +309,80 @@ static void make_transform(uint8_t* xf, const net::Vec3& p)
     f[11] = 0.0f;
     f[12] = 1.0f;
 }
+
+// BUG-0608 (a relayed effect at the sender's ground height): a world effect (a hit impact, a splash) carries the
+// sender's absolute position; where the two games' grounds differ (Tribe villages made live, BUG-0332; any terrain
+// the games do not share) it was played metres under or over the receiver's ground. The sender now appends the
+// effect's height over its own ground (an f32 after the transform: older SporeCoop stops reading before it, as the
+// NPC states' agl trailer, BUG-0425) and the receiver puts the effect at that height over ITS ground, as every
+// remote body. `coop.fix effects.ground off`: the sender's absolute position (0.7.10).
+static bool g_ground_fix = true;
+COOP_FIX("effects.ground", "BUG-0608", g_ground_fix, "effects: an effect in the world is played on the receiver's own ground (impacts, splashes)");
+constexpr float kGroundAglMax = 30.f; // m: farther off the ground (a sky effect) the absolute position is kept
+static uint32_t g_ground_moved;
+static float sender_agl(const net::Vec3& p)
+{
+    float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    float g = r > 1.f ? game::ground_radius(p) : 0.f;
+    if (g <= 0 || std::fabs(r - g) > kGroundAglMax)
+        return net::kNoAgl;
+    return r - g;
+}
+// the transform's position (xf + 4) at `agl` over this game's ground; false: left as sent
+static bool onto_own_ground(uint8_t* xf, float agl)
+{
+    if (!g_ground_fix || !net::agl_known(agl))
+        return false;
+    float* f = (float*)(xf + 4);
+    float r = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (!(r > 1.f))
+        return false;
+    net::Vec3 p{f[0], f[1], f[2]};
+    float g = game::ground_radius(p);
+    if (g <= 0 || std::fabs(g + agl - r) > kGroundAglMax)
+        return false;
+    float k = (g + agl) / r;
+    f[0] *= k;
+    f[1] *= k;
+    f[2] *= k;
+    return true;
+}
+
+// BUG-0465: a world effect was sent with its position only (identity rotation, scale 1, transform flags 0, which also
+// tell the game to ignore the rotation): the sea monster of a player who drowns (the death cinematic's startEffect
+// crg_seamonster_attack 0x8A71529C at the avatar, CRG_AvatarDied_SeaMonster of Spore_Game.package 0x024A0E52 /
+// 0x40890200 / 0x9EA3031A) was played in the partner's game at the right place but not upright on the planet: tilted
+// into the water / the ground, nobody saw it. Now the effect's own transform is sent, as the game's
+// VisualEffect_SetTransform 0xA827B0 keeps it at effect +0x9C ({u16 flags, u16 changes, pos, scale, 3x3 rotation}, the
+// same layout as the message's 0x44 bytes). `coop.fix effects.world_xform off`: position only (0.7.8).
+static bool g_xform_fix = true;
+COOP_FIX("effects.world_xform", "BUG-0465", g_xform_fix,
+         "effects: an effect in the world (the sea monster, splashes) shows upright and at its size in the partner's game");
+static uint32_t g_xform_sent, g_xform_bad;
+static bool copy_transform(uint8_t* xf, void* fx, const net::Vec3& p)
+{
+    const uint8_t* t = (const uint8_t*)fx + 0x9C;
+    if (!skg::readable(t, 0x38))
+        return false;
+    const float* f = (const float*)(t + 4);
+    float sc = f[3];
+    if (!std::isfinite(sc) || sc <= 0.f || sc > 1000.f)
+        return false;
+    for (int i = 0; i < 13; i++)
+        if (!std::isfinite(f[i]))
+            return false;
+    if (std::fabs(f[0] - p.x) > 0.01f || std::fabs(f[1] - p.y) > 0.01f || std::fabs(f[2] - p.z) > 0.01f)
+        return false;
+    memset(xf, 0, 0x44);
+    memcpy(xf, t, 0x38);
+    return true;
+}
+
+// tests (BUG-0465): the last effect of a watched id this game made (its own) or played (a partner's), with its transform
+static uint32_t g_watch_id;
+static void* g_watch_own;
+static void* g_watch_rx;
+static double g_watch_own_at, g_watch_rx_at;
 
 static bool take_token(double t)
 {
@@ -319,6 +416,8 @@ struct Pending {
     bool world = false;
     uint32_t id = 0;
     void* fx = nullptr;
+    bool hit = false; // BUG-0603: an attack's per-target hit impact at `pos`
+    net::Vec3 pos;
 };
 static Pending g_q[256];
 static uint32_t g_qh, g_qt;
@@ -376,6 +475,57 @@ static void on_world_effect(void* fx, uint32_t id)
     p.fx = fx;
     p.id = id;
     q_push(p);
+}
+
+// BUG-0603: the hit impact of an attack animation on one of its targets (game.cpp's hook of the animation event
+// handler's target branch). The game that runs the attacker makes it; a remote copy of the attacker plays the
+// relayed animation without targets and never does, so it is sent as a world effect at the hit spot.
+static bool g_hit_fix = true;
+COOP_FIX("effects.hit_targets", "BUG-0603", g_hit_fix,
+         "effects: the hit impacts of attacks (an attack animation's effect on each victim) show in the partner's game");
+static uint32_t g_hit_sent, g_hit_rate, g_hit_off;
+static void on_hit_effect(uint32_t id, const net::Vec3& pos)
+{
+    if (!id || !H)
+        return;
+    Pending p;
+    p.hit = true;
+    p.id = id;
+    p.pos = pos;
+    q_push(p);
+}
+static void process_hit(uint32_t id, const net::Vec3& p)
+{
+    if (!g_fix || !g_hit_fix || !C.sess || !C.sess->connected()) {
+        g_hit_off++;
+        return;
+    }
+    if (stage_off() || nobody_here()) {
+        g_hit_off++;
+        return;
+    }
+    if (g_main_world_fix && foreign_id(id)) // never a skin painter's id (BUG-0451)
+        return;
+    if (!take_token(now())) {
+        g_dropped++;
+        g_hit_rate++;
+        return;
+    }
+    g_hit_sent++;
+    g_sent++;
+    if (g_log)
+        H->log(M, SK_INFO, "effect: sent hit id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
+    uint8_t xf[0x44];
+    make_transform(xf, p);
+    net::Writer w;
+    w.u8(C.sess->my_id());
+    w.u8(0);
+    w.u8(5);
+    w.u32(id);
+    w.u32(0);
+    w.raw(xf, 0x44);
+    w.f32(sender_agl(p)); // BUG-0608: its height over this game's ground
+    C.sess->send_event(net::MSG_EFFECT, w);
 }
 
 static void process_local(void* creature, const game::EffectEvent& ev)
@@ -471,6 +621,12 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
     }
+    if (g_watch_id && id == g_watch_id) {
+        g_watch_own = fx;
+        g_watch_own_at = now();
+    }
+    if (g_world_start)
+        g_world_start(C.sess->my_id(), id, fx, p);
     if (!C.near_local || !C.near_local(p)) {
         g_w_far++;
         if (g_log)
@@ -504,7 +660,13 @@ static void process_world(void* fx, uint32_t id)
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
     uint8_t xf[0x44];
-    make_transform(xf, p);
+    if (g_xform_fix && copy_transform(xf, fx, p))
+        g_xform_sent++;
+    else {
+        if (g_xform_fix)
+            g_xform_bad++;
+        make_transform(xf, p);
+    }
     net::Writer w;
     w.u8(C.sess->my_id());
     w.u8(0);
@@ -512,6 +674,7 @@ static void process_world(void* fx, uint32_t id)
     w.u32(id);
     w.u32(0);
     w.raw(xf, 0x44);
+    w.f32(sender_agl(p)); // BUG-0608: its height over this game's ground
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
@@ -680,7 +843,9 @@ void tick(double)
     uint64_t rx = 0;
     while (q_pop(p)) {
         rx++;
-        if (p.world)
+        if (p.hit)
+            process_hit(p.id, p.pos);
+        else if (p.world)
             process_world(p.fx, p.id);
         else
             process_local(p.creature, p.ev);
@@ -746,12 +911,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint8_t player = r.u8(), stop = r.u8(), pool = r.u8();
     uint32_t id = r.u32(), key = r.u32();
     uint8_t xf[0x44];
+    float agl = net::kNoAgl;
     if (r.ok() && pool == 5) {
         if (r.left() < sizeof xf) {
             g_bad_short++;
             return;
         }
         r.raw(xf, sizeof xf);
+        if (r.ok() && r.left() >= 4) { // BUG-0608 (an older sender has none)
+            agl = r.f32();
+            if (!std::isfinite(agl) || std::fabs(agl) > kGroundAglMax)
+                agl = net::kNoAgl;
+        }
     }
     if (!r.ok()) {
         g_bad_short++;
@@ -780,8 +951,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         w.u8(pool);
         w.u32(id);
         w.u32(key);
-        if (pool == 5)
+        if (pool == 5) {
             w.raw(xf, sizeof xf); // the world effect's transform, or guest 3+ never gets the position
+            w.f32(agl);           // BUG-0608
+        }
         C.sess->broadcast_reliable(net::MSG_EFFECT, w, from);
     }
     g_rx++;
@@ -806,7 +979,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             H->log(M, SK_INFO, "effect: from %u world id %08X not played: a skin painter effect here", player, id);
         return;
     }
-    void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : (C.puppet_of ? C.puppet_of(player) : nullptr);
+    void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : partner_puppet(player);
+    if (!puppet && pool != 5 && g_puppet_live_fix && C.puppet_of && C.puppet_of(player)) {
+        g_puppet_gone++; // BUG-0795: a puppet that is no live creature of this game now (freed, a cell, a marker)
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u skipped, its puppet is no live creature here (id %08X key %08X)", player, id, key);
+        return;
+    }
     if (!puppet) {
         g_skipped++;
         if (g_log)
@@ -827,6 +1006,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_failed++; // the partner's game had no such effect (yet): nothing to stop
         }
     } else {
+        if (pool == 5 && onto_own_ground(xf, agl))
+            g_ground_moved++;
         void* fx = pool == 5 ? game::create_world_effect(id, xf)
                   : pool == 3 ? game::create_creature_effect(puppet, (int)key, id)
                               : game::start_effect(puppet, ev);
@@ -836,11 +1017,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             last.active = game::effect_active(fx);
             if (pool == 5) {
                 live_add(fx, now());
-                const float* p = (const float*)(xf + 4);
+                if (g_watch_id && id == g_watch_id) {
+                    g_watch_rx = fx;
+                    g_watch_rx_at = now();
+                }
+                // where the game put it (its transform at effect +0x9C, BUG-0608), else what was sent
+                const float* p = skg::readable((uint8_t*)fx + 0xA0, 12) ? (const float*)((uint8_t*)fx + 0xA0)
+                                                                         : (const float*)(xf + 4);
                 last.has_pos = true;
                 last.x = p[0];
                 last.y = p[1];
                 last.z = p[2];
+                if (g_world_start)
+                    g_world_start(player, id, fx, net::Vec3{p[0], p[1], p[2]});
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 oneshot_add(fx, now()); // BUG-9181: ended after kOneShotMax s if it loops
                 net::Vec3 p = game::position(puppet);
@@ -869,7 +1058,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 }
 
 void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
-            const net::Vec3& pos)
+            const net::Vec3& pos, float agl)
 {
     net::Writer w;
     w.u8(player);
@@ -881,6 +1070,8 @@ void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
         uint8_t xf[0x44];
         make_transform(xf, pos);
         w.raw(xf, sizeof xf);
+        if (net::agl_known(agl))
+            w.f32(agl);
     }
     net::Reader r(w.data.data(), w.size());
     on_message(net::MSG_EFFECT, from, r);
@@ -893,7 +1084,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     g_tokens = 20.0;
     g_tokens_at = 0;
-    g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
+    g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = g_puppet_gone = 0;
     g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
     g_elsewhere_tx = g_elsewhere_rx = 0;
     g_w_foreign = g_w_foreign_near = g_rx_foreign = 0;
@@ -921,6 +1112,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     game::set_effect_relay_enabled(g_fix);
     game::set_effect_listener(on_local_effect);
     game::set_world_effect_listener(on_world_effect);
+    game::set_hit_effect_listener(on_hit_effect);
 }
 
 void on_session_end()
@@ -1003,7 +1195,7 @@ std::string map_dump()
     }
     if (C.all_puppets)
         for (const auto& [id, puppet] : C.all_puppets()) {
-            if (!puppet)
+            if (!puppet || (g_puppet_live_fix && partner_puppet(id) != puppet)) // (BUG-0795, BUG-0919)
                 continue;
             snprintf(b, sizeof b, "puppet %u %p\n", id, puppet);
             s += b;
@@ -1025,7 +1217,7 @@ std::string probe(uint32_t key)
     }
     if (C.all_puppets)
         for (const auto& [id, puppet] : C.all_puppets()) {
-            if (!puppet)
+            if (!puppet || (g_puppet_live_fix && partner_puppet(id) != puppet)) // (BUG-0795, BUG-0919)
                 continue;
             void* fx = game::effect_from_pools(puppet, key);
             snprintf(b, sizeof b, "probe %u key=%08X game=%p active=%d\n", id, key, fx, game::effect_active(fx) ? 1 : 0);
@@ -1034,13 +1226,39 @@ std::string probe(uint32_t key)
     return s;
 }
 
+std::string watch(uint32_t id)
+{
+    if (id)
+        g_watch_id = id, g_watch_own = g_watch_rx = nullptr;
+    std::string out;
+    char b[300];
+    auto one = [&](const char* who, void* fx, double at) {
+        if (!fx || now() - at > 30.0 || !skg::readable((uint8_t*)fx + 0x9C, 0x38)) {
+            snprintf(b, sizeof b, "%s none\n", who);
+            out += b;
+            return;
+        }
+        const uint8_t* t = (const uint8_t*)fx + 0x9C;
+        const float* f = (const float*)(t + 4);
+        snprintf(b, sizeof b, "%s fx=%p age=%.1f active=%d flags=%04X pos=(%.2f %.2f %.2f) scale=%.3f rot=(%.3f %.3f %.3f | %.3f %.3f "
+                 "%.3f | %.3f %.3f %.3f)\n", who, fx, now() - at, (int)game::effect_active(fx), *(const uint16_t*)t, f[0], f[1],
+                 f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12]);
+        out += b;
+    };
+    snprintf(b, sizeof b, "watch %08X xform fix=%d sent=%u bad=%u\n", g_watch_id, (int)g_xform_fix, g_xform_sent, g_xform_bad);
+    out += b;
+    one("own", g_watch_own, g_watch_own_at);
+    one("rx", g_watch_rx, g_watch_rx_at);
+    return out;
+}
+
 std::string status()
 {
     std::string s;
     char b[480];
     snprintf(b, sizeof b,
-             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
-             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
+             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u gone=%u\n",
+             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world, g_puppet_gone);
     s += b;
     uint32_t creates = 0, probes = 0, evicted = 0, mgr = 0, world = 0, anim = 0;
     game::effect_table_stats(creates, probes, evicted, mgr, world, anim);
@@ -1060,14 +1278,21 @@ std::string status()
              g_p_rest.sum * 1000, g_p_relay.sum * 1000, g_p_relay.max * 1000, (unsigned long long)g_p_relay.n,
              g_p_fast.sum * 1000, (unsigned long long)g_p_slow.n, g_p_slow.sum * 1000);
     s += b;
+    uint32_t hc = 0, hret = 0, hfx = 0;
+    game::hit_effect_calls(hc, hret, hfx);
+    snprintf(b, sizeof b, "effects hits: fix=%d seen=%u sent=%u off=%u rate=%u (event effects %u, on the animating object %u, last sent id %08X)\n",
+             (int)g_hit_fix, game::hit_effects_seen(), g_hit_sent, g_hit_off, g_hit_rate, hc, hfx, hret);
+    s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
              g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
-    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d space=%d stage_skipped=%u own_screen_kept=%u\n",
-             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_space, g_stage_skipped, g_own_screen_kept);
+    snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
+    s += b;
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u own_screen_kept=%u\n",
+             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped, g_own_screen_kept);
     s += b;
     snprintf(b, sizeof b,
              "effects foreign world: created=%u last=%08X queued=%u near=%u not played=%u known ids=%u main_world_fix=%d\n",

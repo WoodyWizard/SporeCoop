@@ -2,6 +2,9 @@
 // message handlers of the mod use for what other players send.
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -13,8 +16,19 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "host_world.h"
+#include "settings_core.h"
+#include "find_core.h"
 #include "net/shared_ledger.h"
+#include "net/held_cmds.h"
+#include "net/sreport.h"
 #include <string>
+#include <deque>
+#include <functional>
+
+#include "world_path.h"
+#include "realign_rule.h"
+#include "model_paint.h"
+#include "../../sporekit/task_drop.h"
 
 using namespace net;
 
@@ -35,6 +49,29 @@ static Chunk add(ChunkRx& rx, uint32_t id, uint32_t total, uint32_t off, size_t 
     for (size_t i = 0; i < n; i++)
         p[i] = (uint8_t)(fill + i);
     return chunk_add(rx, id, total, off, p.get(), n, chunk, 8u << 20);
+}
+
+// BUG-0693: a guest's command held while the host's stage is away runs once, in order, in the same world only
+static void test_held_cmds()
+{
+    HeldCommands h;
+    const uint8_t a[] = {2, 7}, b[] = {3, 9, 9};
+    h.push(1, a, sizeof a, 5, 10.0);
+    h.push(2, b, sizeof b, 5, 11.0);
+    std::vector<uint8_t> ran;
+    h.drain(5, 20.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.bytes[0]); });
+    CHECK(ran.size() == 2 && ran[0] == 2 && ran[1] == 3 && h.q.empty() && h.run == 2);
+    h.push(1, a, sizeof a, 5, 0.0);   // another world when back: dropped
+    h.push(1, a, sizeof a, 6, 0.0);   // too old: dropped
+    h.push(3, b, sizeof b, 6, 100.0); // the same world, in time: runs
+    ran.clear();
+    h.drain(6, 150.0, [&](const HeldCommands::Cmd& c) { ran.push_back(c.from); });
+    CHECK(ran.size() == 1 && ran[0] == 3 && h.dropped == 2);
+    for (int i = 0; i < 40; i++)
+        h.push(1, a, sizeof a, 1, 0.0);
+    CHECK(h.q.size() == HeldCommands::kMax && h.dropped == 2 + 8);
+    h.forget(1);
+    CHECK(h.q.empty());
 }
 
 static void test_chunks()
@@ -90,6 +127,8 @@ static void test_chunks()
         CHECK(rx.id == 2 && rx.data.size() == 100);
     }
 }
+
+static bool g_nofix = false;
 
 static void test_cycle()
 {
@@ -149,6 +188,98 @@ static void test_space_origin()
     CHECK(!space_origin_ok(false, 1, 1, 1));
     for (uint8_t k : {1, 2, 3, 4, 5, 6, 10, 11, 21, 30, 31, 33, 34, 40, 41, 42, 51, 53, 54, 55, 56, 60, 61, 70, 76})
         CHECK(!space_host_only(k));
+}
+
+// BUG-1041: one direction table (space_dir) for every MSG_SPACE kind; every kind declared in a space source file must
+// be in it. --nofix: the old list of six host-only kinds
+static void test_space_dir()
+{
+    printf("MSG_SPACE direction table (BUG-1041)\n");
+    const bool fix = !g_nofix;
+    int bad = 0;
+    for (uint8_t k : {12, 78, 80, 86, 20, 22, 32, 50, 52, 57}) {
+        bool host_only = space_host_only(k, fix), guest_blocked = !space_origin_ok(true, 2, 2, k, fix),
+             relayed_blocked = !space_origin_ok(false, 0, 2, k, fix);
+        if (!host_only || !guest_blocked || !relayed_blocked) {
+            printf("  kind %u from a guest: host-only %d, refused by the host %d, refused relayed %d\n", k, host_only,
+                   guest_blocked, relayed_blocked);
+            bad++;
+        }
+        CHECK(space_origin_ok(false, 0, 0, k, fix)); // the host's own
+    }
+    // guest-only kinds never come with the host's origin; a guest's own (relayed) is fine
+    for (uint8_t k : {13, 21, 33, 51, 55, 56, 77, 79, 81, 85, 87}) {
+        if (space_origin_ok(false, 0, 0, k, fix)) {
+            printf("  guest-only kind %u with the host's origin: taken\n", k);
+            bad++;
+        }
+        CHECK(space_origin_ok(true, 2, 2, k, fix) && space_origin_ok(false, 0, 2, k, fix));
+    }
+    CHECK(bad == 0);
+    // any-direction kinds pass both ways
+    for (uint8_t k : {1, 5, 10, 11, 30, 40, 53, 54, 60, 70, 76})
+        CHECK(space_dir(k) == SpaceDir::Any && space_origin_ok(true, 2, 2, k) && space_origin_ok(false, 0, 0, k) &&
+              space_origin_ok(false, 0, 2, k));
+    // every kind declared in the files that send MSG_SPACE (enum Kind values 1..99) has a direction
+    int listed = 0, missing = 0;
+    for (const char* f : {"spacecoop", "space_map", "space_contracts", "space_diplomacy", "space_finale", "space_rivalry",
+                          "space_allies", "space_trade", "space_planets", "space_badges"}) {
+        std::ifstream in(std::string("mods/coop/") + f + ".cpp");
+        if (!in) {
+            printf("  (no %s.cpp: run from the repository root)\n", f);
+            missing++;
+            continue;
+        }
+        std::stringstream ss;
+        ss << in.rdbuf();
+        std::string src = ss.str();
+        // the enum of the kinds: the first `enum ... Kind : uint8_t {` .. `}` of the file
+        size_t a = src.find("enum Kind : uint8_t");
+        size_t e = a == std::string::npos ? a : src.find("};", a); // (the comments hold braces)
+        if (a == std::string::npos || e == std::string::npos) {
+            printf("  %s.cpp: no enum Kind\n", f);
+            missing++;
+            continue;
+        }
+        std::string body = src.substr(a, e - a);
+        std::regex kre("K_[A-Z0-9_]+\\s*=\\s*([0-9]+)");
+        for (std::sregex_iterator it(body.begin(), body.end(), kre), end; it != end; ++it) {
+            int k = std::stoi((*it)[1]);
+            listed++;
+            if (k < 1 || k > 255 || space_dir((uint8_t)k) == SpaceDir::Unknown) {
+                printf("  %s.cpp: kind %d has no direction in space_dir (net/validate.h)\n", f, k);
+                missing++;
+            }
+        }
+    }
+    printf("  %d kinds in the space sources, %d without a direction\n", listed, missing);
+    CHECK(listed >= 49 && missing == 0);
+}
+
+// BUG-1048: a received world effect (pool 5) with a scale of 0, below 0 or huge was created by the game. --nofix: the
+// check before (finite numbers and the position only)
+static void test_effect_xf()
+{
+    printf("received world effect transform (BUG-1048)\n");
+    const bool fix = !g_nofix;
+    auto xf = [](float scale) {
+        std::vector<float> f(16, 0.f);
+        f[0] = 10, f[1] = 20, f[2] = 30, f[3] = scale;
+        f[4] = f[8] = f[12] = 1; // the matrix
+        return f;
+    };
+    CHECK(effect_xf_ok(xf(1).data(), 1e5f, fix) && effect_xf_ok(xf(1000).data(), 1e5f, fix));
+    int taken = 0;
+    for (float sc : {0.f, -1.f, 1e30f, 1001.f})
+        taken += effect_xf_ok(xf(sc).data(), 1e5f, fix);
+    printf("  scales 0, -1, 1e30, 1001: %d of 4 taken\n", taken);
+    CHECK(taken == 0);
+    auto far = xf(1);
+    far[1] = 2e5f;
+    CHECK(!effect_xf_ok(far.data(), 1e5f, fix));
+    auto nan = xf(1);
+    nan[9] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(!effect_xf_ok(nan.data(), 1e5f, fix));
 }
 
 static void test_numbers()
@@ -338,6 +469,50 @@ static void test_host_world()
     CHECK(classify(true, cr, 0, false, 0, 0, 0) == HostWorld::Other);
     // the host names its world in WELCOME only in a gated stage
     CHECK(host_world::welcome_world(cr, 7) == 7 && host_world::welcome_world(space, 7) == 0);
+    // BUG-0420: every message type has a class (an unlisted MsgType fails the build: -Werror=switch in host_world.h);
+    // the host's world state is dropped while elsewhere, a type this build does not know too (default deny)
+    // BUG-0709: another Space save than the host's (both known); unknown or another mode: not held
+    CHECK(host_world::space_other(true, space, 5, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 5) && !host_world::space_other(true, space, 0, true, space, 6));
+    CHECK(!host_world::space_other(true, space, 5, true, space, 0) && !host_world::space_other(true, space, 5, true, cr, 6));
+    CHECK(!host_world::space_other(false, space, 5, true, space, 6) && !host_world::space_other(true, cr, 5, true, space, 6));
+    CHECK(host_world::welcome_world(space, 7, 9) == 9 && host_world::welcome_world(cr, 7, 9) == 7);
+    // BUG-0933: the host's save follows the host (its state in a gated stage, never 0); announced when it changed
+    CHECK(host_world::host_save_now(5, true, cr, 6) == 6 && host_world::host_save_now(5, true, space, 6) == 5);
+    CHECK(host_world::host_save_now(5, true, cr, 0) == 5 && host_world::host_save_now(5, false, cr, 6) == 5);
+    CHECK(host_world::announce_world(6, 5) && !host_world::announce_world(6, 6) && !host_world::announce_world(0, 5));
+    // O1 (BUG-0801, BUG-0809): the host's view of one guest is that guest's own classify()
+    CHECK(host_world::peer_elsewhere(true, cr, 8, cr, 7) && host_world::peer_elsewhere(true, cr, 0, cr, 7));
+    CHECK(!host_world::peer_elsewhere(true, cr, 7, cr, 7) && !host_world::peer_elsewhere(false, cr, 8, cr, 7));
+    CHECK(!host_world::peer_elsewhere(true, 0x2CCD1D2, 8, cr, 7) && !host_world::peer_elsewhere(true, civ, 8, cr, 7));
+    CHECK(host_world::peer_here(true, cr, 7, cr, 7) && !host_world::peer_here(true, cr, 8, cr, 7));
+    CHECK(!host_world::peer_here(true, 0x2CCD1D2, 7, cr, 7) && !host_world::peer_here(true, cr, 0, cr, 0) &&
+          !host_world::peer_here(false, cr, 7, cr, 7));
+    // BUG-0797: the host in another stage (not a menu / editor / load)
+    const uint32_t cell = host_world::kCell;
+    CHECK(host_world::host_in_other_stage(true, cell, true, cr) && host_world::host_in_other_stage(true, cell, true, space));
+    CHECK(!host_world::host_in_other_stage(true, cell, true, cell) && !host_world::host_in_other_stage(true, cell, true, 0x2CCD1D2));
+    CHECK(!host_world::host_in_other_stage(false, cell, true, cr) && !host_world::host_in_other_stage(true, cell, false, cr) &&
+          !host_world::host_in_other_stage(true, space, true, cr));
+    CHECK(host_world::msg_class(net::MSG_HOST_WORLD) == host_world::MsgClass::Session);
+    using host_world::MsgClass;
+    using host_world::msg_class;
+    using host_world::world_state_msg;
+    CHECK(msg_class(net::MSG_CHAT) == MsgClass::Session && msg_class(net::MSG_VOTE) == MsgClass::Session);
+    CHECK(msg_class(net::MSG_SPECIES) == MsgClass::HostWorld && msg_class(net::MSG_WSTATE) == MsgClass::HostWorld);
+    CHECK(msg_class(net::MSG_NPC_STATE) == MsgClass::Module && msg_class(net::MSG_UFO_HIT) == MsgClass::Module);
+    CHECK(msg_class(0) == MsgClass::Unknown && msg_class(200) == MsgClass::Unknown && msg_class(44 + 100) == MsgClass::Unknown);
+    CHECK(world_state_msg(net::MSG_DNA, true, true) && world_state_msg(net::MSG_DNA, false, false));
+    CHECK(world_state_msg(net::MSG_CIV_STATE, true, true) && !world_state_msg(net::MSG_CIV_STATE, true, false));
+    CHECK(world_state_msg(250, true, true) && !world_state_msg(250, false, true)); // unknown: default deny when on
+    CHECK(!world_state_msg(net::MSG_VOTE, true, true) && !world_state_msg(net::MSG_NPC_STATE, true, true));
+    for (int t = 0; t < 256; t++) { // the old hand list of 0.7.10 is a subset of HostWorld
+        bool old = t == net::MSG_DNA || t == net::MSG_WORLD_TIME || (t >= net::MSG_CELL_STATE && t <= net::MSG_CELL_FOOD) ||
+                   t == net::MSG_CELL_KO || t == net::MSG_CELL_BITTEN || t == net::MSG_TRIBE_STATE || t == net::MSG_TRIBE_CMD ||
+                   t == net::MSG_SPECIES || t == net::MSG_SOCIAL || t == net::MSG_NEST || t == net::MSG_PARTS ||
+                   t == net::MSG_FIELDS || t == net::MSG_WSTATE || t == net::MSG_PLAYER_RULE || t == net::MSG_MIRROR_FX;
+        CHECK(!old || msg_class((uint8_t)t) == MsgClass::HostWorld);
+    }
 
     using namespace dna_route;
     CHECK(guest_gain(false, true, true, true) == Gain::Local);  // 1
@@ -363,6 +538,538 @@ static void test_host_world()
     CHECK(std::fabs(shown - 680) < 1e-9 && std::fabs(g.pending + 20) < 1e-9 && g.in_flight.size() == 1);
 }
 
+// F3 of 0.7.12: the session settings (settings_core.h): who may set one, the wire and the file formats, a world's open
+static void test_settings()
+{
+    using namespace settings;
+    CHECK(host_world::msg_class(net::MSG_SETTINGS) == host_world::MsgClass::Session);
+    for (int i = 0; i < kCount; i++) { // declared once, unique names, defaults in range
+        CHECK(kDefs[i].key && find(kDefs[i].key) == i && kDefs[i].label && kDefs[i].help && kDefs[i].group);
+        CHECK(kDefs[i].def >= kDefs[i].min && kDefs[i].def <= kDefs[i].max);
+    }
+    CHECK(kDefs[kCellRegen].scope == Scope::Live && kDefs[kCellRegen].def == 1);
+    CHECK(kDefs[kPartnerArrows].scope == Scope::Live && kDefs[kPartnerArrows].off_in_rivals);
+    CHECK(std::string(kDefs[kDnaPace].ini) == "dna_pace" && std::string(kDefs[kNpcTargets].ini) == "npcs_target_partners");
+    // who sets: a guest never; a session setting only before the start; a live one any time
+    CHECK(can_set(kCellRegen, false, false) == Refusal::Guest && can_set(kDnaPace, false, true) == Refusal::Guest);
+    CHECK(can_set(kDnaPace, true, true) == Refusal::SessionStarted && can_set(kDnaPace, true, false) == Refusal::None);
+    CHECK(can_set(kCellRegen, true, true) == Refusal::None);
+    int v = -1;
+    CHECK(parse_value(kCellRegen, "off", v) && v == 0 && parse_value(kCellRegen, "default", v) && v == 1);
+    CHECK(!parse_value(kCellRegen, "2", v) && !parse_value(kCellRegen, "x", v) && !parse_value(kCellRegen, "", v));
+    // F3 step 3 (BUG-0768): defaults are 0.7.11's behaviour; friendly fire off; 2..4 players; F5's named values
+    CHECK(kDefs[kFriendlyFire].def == 0 && kDefs[kFriendlyFire].scope == Scope::Session);
+    CHECK(kDefs[kPlayerLimit].def == 4 && kDefs[kPlayerLimit].min == 2 && kDefs[kPlayerLimit].max == 4);
+    CHECK(parse_value(kPlayerLimit, "3", v) && v == 3 && !parse_value(kPlayerLimit, "1", v) && !parse_value(kPlayerLimit, "5", v));
+    CHECK(!parse_value(kPlayerLimit, "on", v) && value_text(kPlayerLimit, 3) == "3");
+    CHECK(kDefs[kCreatureMode].def == 0 && value_text(kCreatureMode, 0) == "own" && value_text(kCreatureMode, 1) == "host");
+    CHECK(parse_value(kCreatureMode, "host", v) && v == 1 && parse_value(kCreatureMode, "own", v) && v == 0);
+    CHECK(parse_value(kCreatureMode, "on", v) && v == 1 && !parse_value(kCreatureMode, "hosts", v));
+    CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
+    for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
+        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : 1));
+    CHECK(kCount < 255); // MSG_SETTINGS: u8 n
+    // the wire: the whole table round trips; a key this build does not know is skipped; a cut message applies nothing
+    Values a;
+    a.v[kCellRegen] = 0;
+    a.v[kDnaPace] = 0;
+    net::Writer w;
+    write_msg(w, a, true);
+    {
+        net::Reader r(w.data.data(), w.size());
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(read_msg(r, got, sent, st) && got == a && st);
+        for (bool x : sent)
+            CHECK(x);
+    }
+    {
+        net::Writer n; // a newer host: one setting more, one of ours missing
+        n.u8(0); n.u8(0); n.u8(2);
+        n.str8("all.future_thing"); n.u32(7);
+        n.str8("cell.regen"); n.u32(0);
+        net::Reader r(n.data.data(), n.size());
+        Values got;
+        bool sent[kCount], st = true;
+        CHECK(read_msg(r, got, sent, st) && got.v[kCellRegen] == 0 && sent[kCellRegen] && !sent[kDnaPace] && !st);
+        CHECK(got.v[kDnaPace] == 1); // untouched
+    }
+    for (size_t cut = 0; cut < w.size(); cut++) {
+        net::Reader r(w.data.data(), cut);
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(!read_msg(r, got, sent, st) && got == Values());
+    }
+    {
+        net::Writer k; // another kind: not applied
+        k.u8(1); k.u8(0); k.u8(0);
+        net::Reader r(k.data.data(), k.size());
+        Values got;
+        bool sent[kCount], st = false;
+        CHECK(!read_msg(r, got, sent, st));
+    }
+    // the file: round trip; another world's file (a crc collision) is not this world's; bad lines skipped
+    Values d, out;
+    std::string f = format_file("planet.spo", a);
+    CHECK(parse_file(f, "planet.spo", d, out) && out == a);
+    CHECK(!parse_file(f, "other.spo", d, out) && out == d);
+    CHECK(parse_file("world planet.spo\r\ncell.regen 0\r\nnope 1\r\nall.dna_pace 9\r\n", "planet.spo", d, out) &&
+          out.v[kCellRegen] == 0 && out.v[kDnaPace] == 1);
+    // a world opens: the lobby's choice wins, else the stored values, else the defaults (coop.ini)
+    Values cur = a, stored, defs;
+    stored.v[kPackRescue] = 0;
+    CHECK(on_world_open(true, true, stored, defs, cur) == Opened::Pending && cur == a);
+    CHECK(on_world_open(false, true, stored, defs, cur) == Opened::Stored && cur == stored);
+    CHECK(on_world_open(false, false, stored, defs, cur) == Opened::Defaults && cur == defs);
+    CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
+}
+
+// F2 of 0.7.12 (BUG-0764): the player colours, the arrow at the screen edge
+static void test_label_layout() // BUG-0949
+{
+    using namespace findx;
+    Box hud[2] = {{0, 900, 400, 1080}, {0, 1040, 1440, 1080}}; // a minimap and a bottom bar
+    // two arrow labels at the same place on the left edge: the second slides along the edge, they do not touch
+    LabelIn in[4];
+    in[0].box = {50, 500, 250, 522}, in[0].ax = 46, in[0].ay = 511, in[0].slide = Slide::Vertical;
+    in[1] = in[0];
+    // a tag whose point is under the minimap: hidden; a tag right over the bar's top: moved up off it
+    in[2].box = {100, 950, 160, 970}, in[2].ax = 130, in[2].ay = 960, in[2].anchor_rule = true;
+    in[3].box = {700, 1030, 760, 1050}, in[3].ax = 730, in[3].ay = 1035, in[3].anchor_rule = true;
+    LabelOut out[4];
+    layout(in, 4, hud, 2, 1440, 1080, out);
+    CHECK(!out[0].hidden && out[0].dx == 0 && out[0].dy == 0);
+    CHECK(!out[1].hidden && out[1].dx == 0 && out[1].dy != 0);
+    Box b0 = in[0].box, b1 = in[1].box;
+    b1.y0 += out[1].dy, b1.y1 += out[1].dy;
+    CHECK(!touch(b0, b1));
+    CHECK(out[2].hidden && out[2].why == 1);
+    CHECK(!out[3].hidden && out[3].dy < 0);
+    Box b3 = in[3].box;
+    b3.y0 += out[3].dy, b3.y1 += out[3].dy;
+    CHECK(!touch(b3, hud[0]) && !touch(b3, hud[1]));
+    // a label with no free place at all (the screen full of HUD): hidden, not drawn over it
+    Box full{0, 0, 1440, 1080};
+    LabelIn one;
+    one.box = {600, 500, 700, 520}, one.ax = -10, one.ay = -10;
+    LabelOut o;
+    layout(&one, 1, &full, 1, 1440, 1080, &o);
+    CHECK(o.hidden && o.why == 2);
+    // the shifts: up first for tags
+    CHECK(shift_of(0, 10, true) == 0 && shift_of(1, 10, true) == -10 && shift_of(2, 10, true) == 10 && shift_of(3, 10, true) == -20);
+    // a top edge arrow slides sideways
+    LabelIn t[2];
+    t[0].box = {600, 40, 800, 62}, t[0].slide = Slide::Horizontal, t[0].ax = 700, t[0].ay = 46;
+    t[1] = t[0];
+    LabelOut to[2];
+    layout(t, 2, nullptr, 0, 1440, 1080, to);
+    CHECK(!to[1].hidden && to[1].dy == 0 && to[1].dx != 0);
+}
+
+static void test_find()
+{
+    using namespace findx;
+    CHECK(host_world::msg_class(net::MSG_COLORS) == host_world::MsgClass::Session);
+    CHECK(settings::kDefs[settings::kPartnerMap].scope == settings::Scope::Live && settings::kDefs[settings::kPartnerMap].def == 1);
+    // the palette: distinct colours, names found
+    for (int i = 0; i < kColors; i++) {
+        CHECK(color_find(kPalette[i].key) == i);
+        for (int j = 0; j < i; j++)
+            CHECK(kPalette[i].argb != kPalette[j].argb);
+    }
+    CHECK(color_find("3") == 3 && color_find("8") == -1 && color_find("x") == -1);
+    // four players get the first four colours, distinct; a leaver's colour goes to the next newcomer
+    Colors t;
+    CHECK(auto_pick(t, 0) == 0 && auto_pick(t, 1) == 1 && auto_pick(t, 2) == 2 && auto_pick(t, 3) == 3);
+    CHECK(auto_pick(t, 1) == 1); // keeps its own
+    t.c[2] = -1;
+    CHECK(auto_pick(t, 5) == 2);
+    // a pick: not another player's
+    CHECK(can_take(t, 0, 1) == Refused::Taken && can_take(t, 0, 0) == Refused::None && can_take(t, 0, 6) == Refused::None);
+    CHECK(can_take(t, 0, 8) == Refused::Range && can_take(t, 0, -1) == Refused::Range);
+    // the wire: the table round trips; a cut one changes nothing
+    net::Writer w;
+    write_table(w, t);
+    {
+        net::Reader r(w.data.data(), w.size());
+        Colors got;
+        CHECK(r.u8() == 0 && read_table(r, got) && got == t);
+    }
+    {
+        net::Reader r(w.data.data(), w.size() - 1);
+        Colors got;
+        got.c[9] = 4;
+        r.u8();
+        CHECK(!read_table(r, got) && got.c[9] == 4);
+    }
+    // the arrow: a partner to the right, outside the view: on the right edge, pointing right
+    Arrow a;
+    CHECK(arrow_place(true, false, 3000, 540, 1920, 1080, 46, 46, a) && !a.on_screen);
+    CHECK(std::fabs(a.x - (1920 - 46)) < 0.5f && std::fabs(a.y - 540) < 0.5f && std::fabs(a.ang) < 1e-4f);
+    // up-left: on the ray from the centre
+    CHECK(arrow_place(true, false, -1000, -2000, 1920, 1080, 46, 46, a) && !a.on_screen);
+    CHECK(angle_diff_deg(a.ang, std::atan2(-2000.f - 540, -1000.f - 960)) < 0.1f && std::fabs(a.y - 46) < 0.5f);
+    // in the view: no arrow; behind with no direction: at the bottom
+    CHECK(arrow_place(true, true, 500, 500, 1920, 1080, 46, 46, a) && a.on_screen);
+    CHECK(arrow_place(false, false, 0, 0, 1920, 1080, 46, 46, a) && !a.on_screen && std::fabs(a.y - (1080 - 46)) < 0.5f);
+    CHECK(!arrow_place(true, false, NAN, 1, 1920, 1080, 46, 46, a));
+    float v[12];
+    CHECK(arrow_tris(a, 22, 0, v) == 2 && std::fabs(v[0] - a.x) < 1e-3f && std::fabs(v[1] - a.y) < 1e-3f);
+    CHECK(dist_text(80.4f) == "80 m" && dist_text(1520) == "1.5 km");
+    CHECK(angle_diff_deg(3.1f, -3.1f) < 5.f);
+    // BUG-0939: a place an arrow can point at: not the zero vector, not NaN, on the planet in a planet stage
+    {
+        float zero[3] = {0, 0, 0}, nan[3] = {1, NAN, 0}, chief[3] = {129.3f, -471.8f, -119.8f}, pool[3] = {3, -20, 8};
+        float cell[3] = {100.06f, 100.24f, 0}, ship[3] = {-138.35f, 32.5f, 20.4f}, high[3] = {300, -900, -200};
+        CHECK(!placed(zero, 0) && !placed(zero, 504) && !placed(nan, 0));
+        CHECK(placed(chief, 504) && placed(high, 504)); // on the planet, over it
+        CHECK(!placed(pool, 504) && placed(pool, 0));   // near the centre: no place on a planet, one without a planet
+        CHECK(placed(cell, 0) && placed(ship, 0));
+    }
+}
+
+// BUG-0767 (F4 of 0.7.12): the session report: the content check of a received report, the host's round, the zip
+static std::vector<uint8_t> zip_of(const std::vector<std::pair<std::string, std::string>>& files)
+{
+    std::vector<uint8_t> z;
+    sreport::ZipOut o;
+    o.out = [&z](const uint8_t* p, size_t n) {
+        z.insert(z.end(), p, p + n);
+        return true;
+    };
+    for (auto& [n, d] : files)
+        o.add(n, (const uint8_t*)d.data(), d.size());
+    o.finish();
+    return z;
+}
+
+static void test_sreport()
+{
+    using namespace sreport;
+    // names of a SporeKit report archive pass; folders, "..", drive letters, backslashes, programs do not
+    for (const char* ok : {"README.txt", "LEFT_OUT.txt", "report-20261108-101010-i21.txt", "crash-20261108-1.txt",
+                           "logs/sporekit.log", "logs/sporekit.21.log", "previous/sporekit-20261107.log",
+                           "crashes/crash-1.dmp", "crashes/crash-1.txt", "reports/report-1.txt", "shots/report-1.jpg",
+                           "settings/coop.ini"})
+        CHECK(allowed_name(ok));
+    for (const char* bad : {"../evil.bat", "logs/../evil.log", "C:/x.txt", "C:\\x.txt", "logs\\sporekit.log",
+                            "logs/a/b.log", "evil.exe", "logs/evil.exe", "shots/x.png", "/README.txt", "",
+                            ".hidden.txt", "settings/.ini", "report-1.txt ", "other/x.txt", "README.txt/x.log",
+                            "logs/sp\xC3\xA4.log", "settings/a:b.ini"})
+        CHECK(!allowed_name(bad));
+    // a real-shaped report passes the check; its names come back
+    auto good = zip_of({{"README.txt", "SporeCoop problem report"}, {"report-1.txt", "== summary"},
+                        {"logs/sporekit.log", std::string(5000, 'x')}, {"settings/coop.ini", "[coop]\nname=Bob\n"}});
+    std::vector<std::string> names;
+    std::string why;
+    CHECK(check_zip(good.data(), good.size(), &why, &names) && names.size() == 4);
+    // a name that climbs out, a second folder level, a program: refused
+    auto bad = zip_of({{"README.txt", "x"}, {"../../evil.bat", "@echo off"}});
+    CHECK(!check_zip(bad.data(), bad.size(), &why));
+    auto bad2 = zip_of({{"logs/a/b.log", "x"}});
+    CHECK(!check_zip(bad2.data(), bad2.size(), &why));
+    // junk, a cut zip, a flipped byte in a stored entry, an entry twice, an empty archive
+    std::vector<uint8_t> junk(4096);
+    for (size_t i = 0; i < junk.size(); i++)
+        junk[i] = (uint8_t)(i * 37 + 11);
+    CHECK(!check_zip(junk.data(), junk.size(), &why));
+    CHECK(!check_zip(good.data(), good.size() - 1, &why));
+    for (size_t cut = 0; cut < good.size(); cut += 97) // every prefix: refused, no read outside it (ASan)
+        CHECK(!check_zip(good.data(), cut, &why));
+    auto flip = good;
+    flip[60] ^= 0x20; // inside README.txt's data
+    CHECK(!check_zip(flip.data(), flip.size(), &why));
+    auto twice = zip_of({{"README.txt", "a"}, {"README.txt", "b"}});
+    CHECK(!check_zip(twice.data(), twice.size(), &why));
+    auto empty = zip_of({});
+    CHECK(!check_zip(empty.data(), empty.size(), &why));
+    // the entry names of the session zip: plain, unique
+    std::set<std::string> taken;
+    CHECK(entry_name("Host-", "Alice", 0, taken) == "Host-Alice.zip");
+    CHECK(entry_name("Guest-", "Bob", 1, taken) == "Guest-Bob.zip");
+    CHECK(entry_name("Guest-", "Bob", 2, taken) == "Guest-Bob-2.zip");
+    CHECK(entry_name("Guest-", "../C:\\x y", 3, taken) == "Guest-C_x_y.zip");
+    CHECK(entry_name("Guest-", "\xD0\x91\xD0\xBE\xD0\xB1", 4, taken) == "Guest-player4.zip");
+
+    // a round: Bob sends, Carol says no, Dave announces too much, Eve overruns, Finn sends junk, Gus never answers
+    Round r;
+    r.id = 77;
+    r.t0 = 0;
+    const char* nm[] = {"Bob", "Carol", "Dave", "Eve", "Finn", "Gus", "Hal"};
+    for (uint8_t i = 0; i < 7; i++) {
+        Guest g;
+        g.id = (uint8_t)(i + 1);
+        g.name = nm[i];
+        r.guests.push_back(g);
+    }
+    auto send_all = [&](uint8_t id, const std::vector<uint8_t>& d, uint32_t announce) {
+        Answer a{77, 1, announce};
+        Why w = r.on_answer(id, a, 1);
+        for (size_t off = 0; off < d.size() && w == Why::None; off += kChunkBytes) {
+            Piece p;
+            p.round = 77;
+            p.offset = (uint32_t)off;
+            p.n = (uint16_t)std::min(kChunkBytes, d.size() - off);
+            p.data = d.data() + off;
+            w = r.on_piece(id, p, 2);
+        }
+        if (w == Why::None)
+            w = r.on_done(id, Done{77, crc32(d.data(), d.size())}, 3);
+        return w;
+    };
+    CHECK(send_all(1, good, (uint32_t)good.size()) == Why::None && r.guests[0].st == State::Sent &&
+          r.guests[0].data == good);
+    CHECK(r.on_answer(2, Answer{77, 0, 0}, 1) == Why::None && r.guests[1].st == State::NotSent);
+    CHECK(r.on_answer(3, Answer{77, 1, kMaxReport + 1}, 1) == Why::TooBig && r.guests[2].st == State::Refused);
+    auto over = good;
+    over.resize(good.size() + 5000, 0x77);
+    CHECK(send_all(4, over, (uint32_t)good.size()) == Why::TooBig && r.guests[3].st == State::Refused &&
+          r.guests[3].data.empty()); // stopped at the announced size, nothing kept
+    CHECK(send_all(5, junk, (uint32_t)junk.size()) == Why::Malformed && r.guests[4].st == State::Refused);
+    // a piece out of order (Hal)
+    CHECK(r.on_answer(7, Answer{77, 1, 3000}, 1) == Why::None);
+    Piece p;
+    p.round = 77;
+    p.offset = 1000;
+    p.n = 10;
+    p.data = good.data();
+    CHECK(r.on_piece(7, p, 2) == Why::Order && r.guests[6].st == State::Refused);
+    // messages of another round or after the end: ignored
+    CHECK(r.on_answer(2, Answer{78, 1, 100}, 1) == Why::None && r.guests[1].st == State::NotSent);
+    CHECK(!r.finished());
+    r.tick(kAnswerWait - 1);
+    CHECK(r.guests[5].st == State::Asked);
+    r.tick(kAnswerWait + 1);
+    CHECK(r.guests[5].st == State::TimedOut && r.finished());
+    CHECK(r.count(State::Sent) == 1 && r.count(State::Refused) == 4 && r.count(State::NotSent) == 1);
+    CHECK(r.line_of(r.guests[2]) == "Dave: refused (too big)" && r.line_of(r.guests[1]) == "Carol: not sent");
+    // a guest that leaves mid-transfer
+    Round r2;
+    r2.id = 5;
+    Guest g;
+    g.id = 1;
+    g.name = "Bob";
+    r2.guests.push_back(g);
+    r2.on_answer(1, Answer{5, 1, 3000}, 1);
+    r2.on_leave(1);
+    CHECK(r2.guests[0].st == State::Left && r2.finished());
+    // a stalled transfer times out
+    Round r3;
+    r3.id = 6;
+    r3.guests.push_back(g);
+    r3.on_answer(1, Answer{6, 1, 3000}, 10);
+    r3.tick(10 + kStallWait - 1);
+    CHECK(r3.guests[0].st == State::Receiving);
+    r3.tick(10 + kStallWait + 1);
+    CHECK(r3.guests[0].st == State::TimedOut);
+    // the session zip is itself a valid zip with the reports stored as received
+    auto sess = zip_of({{"Host-Alice.zip", std::string(good.begin(), good.end())},
+                        {"Guest-Bob.zip", std::string(good.begin(), good.end())}, {"SESSION.txt", "x"}});
+    size_t at = 0;
+    for (size_t i = 0; i + good.size() <= sess.size(); i++)
+        if (!memcmp(sess.data() + i, good.data(), good.size())) {
+            at++;
+            i += good.size() - 1;
+        }
+    CHECK(at == 2);
+    // the messages read back; a piece longer than one packet or past its message does not
+    net::Writer w;
+    Piece q;
+    q.round = 9;
+    q.offset = 1000;
+    q.n = 3;
+    const uint8_t b3[3] = {1, 2, 3};
+    q.data = b3;
+    q.write(w);
+    net::Reader rd(w.data.data(), w.data.size());
+    Piece q2;
+    CHECK(rd.u8() == kChunk && q2.read(rd) && q2.n == 3 && q2.own[2] == 3 && q2.offset == 1000);
+    net::Reader rd2(w.data.data(), w.data.size() - 1);
+    rd2.u8();
+    Piece q3;
+    CHECK(!q3.read(rd2));
+}
+
+// BUG-0785: a received world's file name that Windows opens as a device (con, nul, com1, lpt1.spo)
+static void test_world_path()
+{
+    printf("received file names: no device names (BUG-0785)\n");
+    const bool fix = !g_nofix;
+    using world_path::safe_rel;
+    for (const char* bad : {"con", "Planets/nul.spo", "COM1.txt", "lpt9", "aux.dat", "Prn", "conin$", "CONOUT$.x", "con .txt",
+                            "com\xC2\xB9", "Planets/LPT\xC2\xB3.spo", "nul.tar.gz"})
+        CHECK(!safe_rel(bad, fix));
+    for (const char* good : {"console.spo", "Planets/Bob's World!.spo", "com10.txt", "lpt.txt", "comma", "nullified.spo", "aux2",
+                             "Game0/x.package", "connie"})
+        CHECK(safe_rel(good, fix));
+    // what safe_rel refused before stays refused
+    for (const char* bad : {"", "../x", "a/./b", "a//b", "C:x", "a.", "a ", "x?", "a/b/c/d/e", "f:stream"})
+        CHECK(!safe_rel(bad, fix) && !safe_rel(bad, false));
+}
+
+// BUG-0886: realign's planet list in chunks: a late chunk of an older cycle, duplicates
+static void test_planet_rx()
+{
+    printf("realign planet list: a late chunk of an older cycle (BUG-0886)\n");
+    const bool fix = !g_nofix;
+    using realign::PlanetRx;
+    auto part = [](uint8_t kind, float x) {
+        realign::Obj o;
+        o.x = x;
+        return std::vector<PlanetRx::Item>{{kind, o}};
+    };
+    PlanetRx rx;
+    CHECK(!rx.add(5, 0, 3, part(0, 50), fix));
+    CHECK(!rx.add(5, 1, 3, part(0, 51), fix));
+    bool late = rx.add(4, 2, 3, part(0, 42), fix); // the last chunk of cycle 4, late
+    CHECK(!late);
+    bool done = rx.add(5, 2, 3, part(0, 52), fix);
+    printf("  cycle 5 after a late chunk of cycle 4: %s, %zu objects, older=%u incomplete=%u\n", done ? "complete" : "NOT complete",
+           rx.objs.size(), rx.older, rx.incomplete);
+    CHECK(done && rx.objs.size() == 3);
+    if (done)
+        CHECK(rx.objs[0].second.x == 50 && rx.objs[2].second.x == 52);
+    CHECK(rx.older == 1 && rx.incomplete == 0);
+    // a one-chunk older cycle never becomes the list
+    PlanetRx r2;
+    CHECK(!r2.add(9, 0, 2, part(1, 90), fix));
+    bool old_one = r2.add(8, 0, 1, part(1, 80), fix);
+    CHECK(!old_one);
+    CHECK(r2.add(9, 1, 2, part(1, 91), fix) && r2.objs.size() == 2);
+    // a chunk seen twice and a late duplicate of a complete cycle add nothing; the next cycle starts clean
+    PlanetRx r3;
+    CHECK(!r3.add(1, 0, 2, part(2, 10), fix));
+    CHECK(!r3.add(1, 0, 2, part(2, 10), fix));
+    CHECK(r3.add(1, 1, 2, part(2, 11), fix) && r3.objs.size() == 2);
+    r3.objs.clear();
+    CHECK(!r3.add(1, 1, 2, part(2, 11), fix));
+    CHECK(!r3.add(2, 0, 1, {}, fix) || r3.objs.empty());
+    CHECK(r3.incomplete == 0);
+    // the counter wraps
+    PlanetRx r4;
+    CHECK(!r4.add(0xFFFF, 0, 2, part(0, 1), fix));
+    CHECK(!r4.add(0, 0, 2, part(0, 2), fix));
+    CHECK(!r4.add(0xFFFF, 1, 2, part(0, 3), fix));
+    CHECK(r4.add(0, 1, 2, part(0, 4), fix) && r4.objs.size() == 2 && r4.objs[1].second.x == 4);
+}
+
+// BUG-0860: drop_tasks_in destroyed the queued tasks of an unloading mod under g_task_mu; a capture whose destructor
+// queues a task (run_on_main locks the same non-recursive mutex) deadlocked. A mutex that records a lock taken while
+// it is held by the same caller stands in for the deadlock.
+struct ProbeMutex {
+    bool held = false;
+    int self_locks = 0;
+    void lock()
+    {
+        if (held)
+            self_locks++; // a real std::mutex: the thread waits for itself for ever
+        held = true;
+    }
+    void unlock() { held = false; }
+};
+struct ProbeTask {
+    std::function<void()> fn;
+    const void* code = nullptr;
+};
+static void test_task_drop()
+{
+    printf("tasks of an unloaded mod are destroyed outside the task lock (BUG-0860)\n");
+    const bool fix = !g_nofix;
+    ProbeMutex mu;
+    std::deque<ProbeTask> main_q, out_q;
+    int queued_by_dtor = 0;
+    struct Requeue { // a capture that queues a task when it is destroyed
+        ProbeMutex* mu;
+        std::deque<ProbeTask>* q;
+        int* n;
+        bool live = true;
+        Requeue(ProbeMutex* m, std::deque<ProbeTask>* qq, int* nn) : mu(m), q(qq), n(nn) {}
+        Requeue(Requeue&& o) noexcept : mu(o.mu), q(o.q), n(o.n), live(o.live) { o.live = false; }
+        Requeue(const Requeue& o) : mu(o.mu), q(o.q), n(o.n), live(false) {}
+        ~Requeue()
+        {
+            if (!live)
+                return;
+            std::lock_guard<ProbeMutex> lk(*mu);
+            q->push_back({[] {}, nullptr});
+            (*n)++;
+        }
+    };
+    static const char mod_code[16] = {}, other_code[4] = {};
+    {
+        Requeue rq(&mu, &main_q, &queued_by_dtor);
+        auto holder = std::make_shared<Requeue>(std::move(rq));
+        main_q.push_back({[holder] {}, mod_code + 4});
+    }
+    out_q.push_back({[] {}, mod_code + 8});
+    main_q.push_back({[] {}, other_code});
+    auto lo = (uintptr_t)mod_code, hi = lo + sizeof mod_code;
+    size_t n = sk::drop_tasks(mu, {&main_q, &out_q}, [&](const ProbeTask& t) { return (uintptr_t)t.code >= lo && (uintptr_t)t.code < hi; },
+                              fix);
+    printf("  dropped %zu, a destructor queued %d task(s), locks taken while held %d\n", n, queued_by_dtor, mu.self_locks);
+    CHECK(n == 2);
+    CHECK(mu.self_locks == 0);
+    CHECK(queued_by_dtor == 1 && main_q.size() == 2 && out_q.empty());
+}
+
+// BUG-0852 (BUG-0727's untried case): a creature model whose coat and detail layers are 0 is written with a byte run
+// across them (`00 FE 07`, as a landfall creature that kept its Cell paint): the paint reader must still give the base
+// paint (the content check and the substitution see it) and say that only the base layer can be patched in place.
+// --nofix: the strict reader of 0.7.12, which skipped the whole model.
+static void test_model_paint_runs()
+{
+    const bool fix = !g_nofix;
+    auto rd = [&](const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3]) {
+        return model_paint::effects(m, eff, at, len, patch, fix);
+    };
+    const uint32_t base = 0x1EC77519; // Creepy & Cute: Frankenstein Monster Theme (a base layer paint)
+    std::vector<uint8_t> m;
+    for (int i = 0; i < 26; i++)
+        m.push_back((uint8_t)(0x10 + i)); // the header before the paints, written byte by byte
+    for (int i = 0; i < 4; i++)
+        m.push_back((uint8_t)(base >> (8 * i)));
+    m.push_back(0x00); // coat byte 0, then 7 more zeros: the rest of coat and all of detail
+    m.push_back(0xFE);
+    m.push_back(0x07);
+    for (int i = 0; i < 20; i++)
+        m.push_back((uint8_t)(0x40 + i)); // the rest of the model
+    uint32_t eff[3] = {};
+    size_t at[3] = {}, len[3] = {};
+    bool patch[3] = {};
+    bool ok = rd(m, eff, at, len, patch);
+    CHECK(ok); // the 0.7.12 reader gave up here
+    CHECK(eff[0] == base && eff[1] == 0 && eff[2] == 0);
+    CHECK(patch[0] && !patch[1] && !patch[2]);
+    CHECK(at[0] == 26 && len[0] == 4);
+    // an unknown base paint inside a run (its last byte repeated into the coat) is read but not patchable
+    std::vector<uint8_t> r;
+    for (int i = 0; i < 26; i++)
+        r.push_back((uint8_t)(0x10 + i));
+    r.insert(r.end(), {0x19, 0x75, 0x75, 0xFE, 0x05}); // 19 75 75 75 | 75 75 75 75 (the coat 0x75757575)
+    r.insert(r.end(), {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08});
+    ok = rd(r, eff, at, len, patch);
+    CHECK(ok);
+    CHECK(eff[0] == 0x75757519u && eff[1] == 0x75757575u && eff[2] == 0x04030201u);
+    CHECK(!patch[0] && !patch[1] && patch[2]);
+    // a model written byte by byte reads the same with both readers, every layer patchable
+    std::vector<uint8_t> p;
+    for (int i = 0; i < 26; i++)
+        p.push_back((uint8_t)(0x10 + i));
+    for (int i = 0; i < 12; i++)
+        p.push_back((uint8_t)(0xA0 + i));
+    p.push_back(0xFE); // a literal 0xFE (FE 00) after the paints
+    p.push_back(0x00);
+    uint32_t e2[3];
+    size_t a2[3], l2[3];
+    bool p2[3];
+    CHECK(model_paint::effects_strict(p, e2, a2, l2) && rd(p, eff, at, len, patch));
+    CHECK(eff[0] == e2[0] && eff[1] == e2[1] && eff[2] == e2[2] && patch[0] && patch[1] && patch[2]);
+    // a header shorter than the paints and a run with no byte before it are no model
+    std::vector<uint8_t> shortm(m.begin(), m.begin() + 30), lead{0xFE, 0x10};
+    CHECK(!rd(shortm, eff, at, len, patch));
+    CHECK(!model_paint::effects_read(lead, eff, at, len, p2));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -371,12 +1078,23 @@ int main(int argc, char** argv)
     test_dna_pace();
     test_dna_ledger();
     test_host_world();
+    test_settings();
+    test_find();
+    test_label_layout();
+    test_held_cmds();
     test_chunks();
     test_cycle();
     test_space_origin();
+    test_space_dir();
+    test_effect_xf();
     test_numbers();
     test_players();
     test_give_target();
+    test_sreport();
+    test_world_path();
+    test_planet_rx();
+    test_task_drop();
+    test_model_paint_runs();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

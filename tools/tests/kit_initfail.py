@@ -10,8 +10,10 @@ SporeKit's Init hook; "off" in it: the switch kit.fix initfail off from the star
   2. its log says the game's own start failed and what to check
   3. a report archive was written and the problem is marked (last-problem.txt: "could not start")
   4. the next start names it
+  5. SK_EV_POST_INIT ("main menu ready") is not fired after the failed Init (BUG-1021)
 
-  kit_initfail.py [--old]   (--old or SPORE_FIX_OFF=initfail: the switch off, as 0.7.3.6: no report, no mark, FAILS)"""
+  kit_initfail.py [--old]   (--old or SPORE_FIX_OFF=initfail: the switch off, as 0.7.3.6: no report, no mark, FAILS)
+  SPORE_FIX_OFF=kit.postinit: SK_EV_POST_INIT fired anyway, as before 0.7.14: check 5 FAILS"""
 import glob
 import os
 import sys
@@ -40,7 +42,11 @@ def alive():
 
 def main():
     ck = Checks()
-    old = '--old' in sys.argv or 'initfail' in os.environ.get('SPORE_FIX_OFF', '').split(',')
+    fix_off = os.environ.get('SPORE_FIX_OFF', '').split(',')
+    old = '--old' in sys.argv or 'initfail' in fix_off
+    postinit_old = 'kit.postinit' in fix_off  # BUG-1021 twin
+    if postinit_old:
+        print('  SPORE_FIX_OFF: kit.postinit off (in the marker file: from the start)', flush=True)
     lane.sh('kill')
     time.sleep(2)
     lane.sh('deploy')
@@ -49,7 +55,7 @@ def main():
         os.remove(mark)
     zips0 = set(glob.glob(os.path.join(LOGDIR, 'SporeCoop-report-*.zip')))
     with open(os.path.join(MODS, f'test-initfail-{lane.HOST}'), 'w') as f:
-        f.write('off' if old else 'on')
+        f.write(('off' if old else 'on') + (' postinit' if postinit_old else ''))
     t0 = time.time()
     lane.run_host()
     started = gone = False
@@ -65,6 +71,9 @@ def main():
     ck('tests: this start is made to fail' in log, 'the start was made to fail')
     ck("the game's own start failed (App::cSporeApp::Init returned 0)" in log and 'verify the game files' in log,
        'the log says the game\'s own start failed and what to check')
+    # BUG-1021: no "main menu ready" for subscribers of a game that did not start
+    ck('SK_EV_POST_INIT not fired' in log and 'SK_EV_POST_INIT fired' not in log,
+       'SK_EV_POST_INIT is not fired after the failed Init')
     zips = set(glob.glob(os.path.join(LOGDIR, 'SporeCoop-report-*.zip'))) - zips0
     ck(zips, f'a report archive was written ({[os.path.basename(z) for z in zips]})')
     told = open(mark, errors='replace').read() if os.path.exists(mark) else ''

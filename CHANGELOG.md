@@ -567,6 +567,909 @@
   the native rewind.
 - Wildlife sync diagnostics and proxy creation resolve cached native herds
   through the current object list before using them (BUG-9008).
+## [0.7.14.1] - 2026-11-14
+
+A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update
+so the versions match.
+
+### Fixed
+- Space: opening the captain screen (or a Galactic Adventures mission screen) no longer crashes the game when your
+  empire has no captain, as after a "Name Your Captain" that could not copy your species: the screen shows your
+  species instead (BUG-1111, GitHub #202).
+
+## [0.7.14] - 2026-11-14
+
+A bug-fix update: problems found by a review of the code and by the tests, in every stage. Among them: wild
+creatures in Civilization that differed between the players' games (the host's game now runs them for everyone), the
+"choose the city's specialty" question that went to the host when a guest bought a city, a guest's game that stayed
+paused for the rest of the Tribe stage, tribe members held up in the air that guests saw on the ground, smoother
+jumps and falls of the other player's creature on slower PCs, and more checks on data from the network.
+Both players should update: the versions can still play together, but several fixes need both sides.
+
+### Fixed
+- Tribe: a guest's game no longer stays paused for the rest of the stage when the game leaves a caption's pause behind
+  (seen after a village conquest's caption closed by itself): a pause that nothing holds any more is lifted after
+  20 seconds; your own pause (P, the pause menu) is never touched (BUG-1101).
+- Tests: the two tests that need the game to build a new animal where a removed copy was (`npc_ai_lookup`,
+  `proxy_identity`) no longer pass or fail by luck; their search waits until the game has let go of the old one and
+  then makes new animals at once (BUG-1099).
+- Tests: a test that the lab starts on running games right after one of the fault tests (`kit_cmd_fault`,
+  `kit_present_fault`, `kit_overlay_fault`) no longer fails on the faults those tests make on purpose; the games'
+  fault count starts again at each such start (BUG-1097).
+- Civ: while the host's game is paused, a wild creature its game turns into another creature no longer stays on the
+  guests' screens where the old one stood (690 m from the host's) until the host goes on (BUG-1100).
+- Tests: tribe_away_bundle no longer fails the lab's sync-check gate in its own forced host-away rounds (BUG-1102);
+  puppet_walk no longer dies on a partner line without a state (BUG-1103).
+- Creature, Tribe: an animal the host's creature throws into the air with a hit now flies up and comes down on the
+  guest's screen with it, instead of hanging still and jumping about a metre every tenth of a second (BUG-1094).
+- Tests: the campaign bot no longer stays in an empty City Hall, vehicle or spaceship editor for 30 minutes when its
+  drag of the parts or its click on the name's dice was lost on a slow, loaded PC; it now waits for the game's frames
+  between its clicks and drag steps, and drags the parts again, slower, while the editor stays up (BUG-1096).
+- Creature: on a slower PC (about 20-25 frames per second) your game now sends your creature's position 20 times a
+  second as planned (it was 10), and at once when you stop; the other player no longer sees your creature walk on
+  half a metre past where you stopped and step back (BUG-1093).
+- Creature: the other player's creature in the air (a jump, a fall from a slope) keeps flying on your screen when
+  its news comes late, instead of stopping in mid-air and jumping a metre on (BUG-1095).
+- Tests: the Tribe editor-visit test (`tribe_editor_world`) waited for a world share after the host's editor that the
+  game no longer makes since 0.7.10 (the guest keeps its world); it now checks the epic is still the co-op one and
+  makes the share save itself (BUG-1090).
+- Creature: when the other player's creature leaves the ground (a hop, a jump), your screen shows it rising with
+  them instead of stepping up to its full height in one frame (BUG-1092).
+- Tribe: a wild animal walking near its nest no longer shows on a guest's screen creeping several metres
+  behind where the host has it for seconds (on every guest at once); the guest's game moved the copy back in each of
+  its updates while the mod put it on the host's path, and now the copy is kept there through the update (BUG-0440).
+- Tribe: a guest's members that were busy when the host came back from an editor or the main menu (taking up food
+  from the ground, carrying it home) start afresh at the host's next editor visit, instead of going on with food that
+  was taken away in between; that could make the guest's game fault (caught faults at 0xC23469, seen at the end of
+  Tribe with the host in the City Hall editor) (BUG-1084).
+- Civilization, Tribe: wild animals the host's game puts away while its game is paused (it keeps them only near the
+  camera) now go from the guests' screens too; before, a guest kept them standing where they were for the whole pause
+  (the co-op self-check reported them 525 m apart) (BUG-1089).
+- Creature: the end of the stage (the evolve button to Tribe) waits for every player's "I'm ready" again ("Alice wants
+  to move on to the Tribe stage"); before, the host went on alone and the guests got a pointless "Evolve now". The
+  host's evolution after a mating now opens at once with an "Evolve now" offer to the others, as planned for 0.7.11
+  (it waited for the vote). A guest's own press of the stage-end button no longer takes it into a Tribe stage of its
+  own: it counts as its "I'm ready" during the vote (BUG-1085).
+- Tribe: while the host's game is paused (its pause menu, the Sporepedia, a tutorial box), the guests' games wait too
+  with the note "Alice paused the game", and go on with the host; before, a guest's orders waited silently and its
+  members stood (BUG-1086).
+- Tribe: a click on another player's tribe member (or its card) now says whose member it is ("That member is Alice's:
+  you lead only your own members") instead of doing nothing (BUG-1087).
+- Tribe: the host's chief now stands the same way on the guest's screen when it plays the same animation: its
+  posture layers and its idle run at the host's moment too, not only its main animation (before, it could stand bent
+  on one screen and upright on the other, the staff at another angle) (BUG-1072).
+- Tribe: while the host's game shows "Your tribal hut has been destroyed" (the players' own hut fell), the guests'
+  games wait with a note, as they already did for the tribe knocked out, and go on after the host's answer and reload
+  (BUG-1081).
+- Tribe: when the players' own hut falls in the host's game, a guest's game no longer destroys its own copy of the
+  hut and runs its own defeat (the "Your tribal hut has been destroyed" caption and a reload of its own save, again
+  and again); the host's game decides the defeat. The guest's faults while a village caption played after such a
+  reload are gone with it (BUG-1076).
+- Cinematics stay on after the host's Tribe reload that follows the Creature -> Tribe change: before, that reload
+  could leave the game's cinematics off for the rest of the game: no Tribe cinematics, and after a later load of a Civ
+  save a city taken by a siege, a conversion or a purchase never changed hands; a destroyed spaceship got no death
+  scene (BUG-1073).
+- Developer tools: unloading or hot-reloading the co-op mod while one of its console commands still runs on another
+  thread (`coop.sample`) no longer crashes the game; the unload waits for the command (BUG-1018).
+- Developer tools: `mod.reload`, `mod.load`, `mod.unload` and `coop.loadworld` run outside the frame; `coop.loadworld`
+  checks the game's managers and reads non-ASCII paths correctly (BUG-1035).
+- SporeKit: console input and frame commands (`frame.limit`, `move`, `button`, `bg`, ...) no longer race the game's
+  main thread on unguarded state (BUG-1016); settings reads take the settings file's lock, so a read during another
+  instance's conversion of the file no longer returns the default (BUG-1017).
+- SporeKit: the "main menu ready" event is no longer sent after the game's own start failed (BUG-1021); `ftrace` no
+  longer changes its filter under the file threads that read it (BUG-1031).
+- The toast notifications' queue is closed when the mod unloads, so no panel is built after it (BUG-1023);
+  `coop.memcensus` starts its tracker under a lock and its free hook is idle after `track off` (BUG-1060).
+- Space: a fault the game survives inside a planet generation no longer leaves the planet seeding's per-thread
+  state set, which could make a star's planets differ between the games afterwards (BUG-1074).
+- One fault inside a game call that the game survives no longer switches a co-op feature off for the rest of the
+  session: Space diplomacy, ship hits, terraforming, a guest's mirror sounds, Civ changes, Cell and Tribe relays and
+  others now work again on the next frame (BUG-1047).
+- Tribe: a village that only guests raided (or befriended with gifts) now counts for the stage's goal; before, it
+  fell without moving the goal bar, so the Tribe stage could not end by the guests' conquests (BUG-1068).
+- Tribe: the guest's copy of a chief holds its staff like the host's chief also in a gesture that began before the
+  session or that the chief restarts with the staff in its hand (it stood at another moment of the gesture, or with
+  the staff in the resting grip) (BUG-1069).
+- Tribe: right after a session starts, the guest's copy of a chief no longer stays in a staff gesture for several
+  seconds while the host's chief stands (BUG-1071).
+- Tribe: a guest that leaves a session (or whose host leaves) after the host's game over and reload no longer faults
+  when its own game starts a creature attack on a village the session had removed (BUG-1078).
+- Test lab: the invariant monitor no longer reads a UFO's (or vehicle's, turret's, building's) hit on a player as a
+  hit by the player's own pack, which failed attacker_owner now and then (BUG-1077).
+- Test lab: a second test run started on a lane that another run uses is refused instead of ending that run's games
+  (a test's game seemed to vanish without a crash report) (BUG-1070).
+- Tribe: the guest's copy of a chief no longer goes back into a staff gesture after changing its item while the
+  host's chief stands (it kept swinging for up to half a minute) (BUG-0972).
+- Tribe: the guests' copies of the tribe members play a gesture at the same moment as on the host, so a staff or a
+  lean points the same way on every screen (BUG-0988).
+- Tribe: a staff that a guest's copy of a member takes into its hand by itself is put back within half a second also
+  on a slow PC (BUG-0993).
+- Creature: a guest who joins no longer starts inside the host's creature; it stands a few metres beside it (BUG-0989).
+- Civilization: a save keeps the game's own herds of wild creatures; the empty ones were left out of every Civ save
+  (they look like the herds the mod makes for a partner's creature), so after each load the game made new herds in
+  other places and the wild animals' homes moved (BUG-1067).
+- Co-op window: a chat line or name typed while a caption or a game message box holds the input now takes its full
+  length in Cyrillic, Greek or CJK letters (it stopped at half or a third), keeps an emoji whole and ignores DEL
+  (BUG-1027).
+- Space: the player list no longer says "other world" for a partner at another star, or for everyone while your
+  ship is in the galaxy view or respawning; it means a partner in another Space save (BUG-1063).
+- Problem reports: a guest asked for its report by a host with a long CJK or mixed name sees the whole name, not one
+  ending in a broken character (BUG-1013).
+- The last session's summary line is written and shown at the top of the next problem report also when the game
+  folder has Cyrillic or CJK letters in its path (Windows) (BUG-1011).
+- Update: a click on Update right after the check found the new version is no longer ignored, and Try again starts
+  its progress at 0 instead of showing the last attempt's (BUG-1015). A second update that has to wait for the next
+  start no longer cuts a long list of waiting files (BUG-1019).
+- Notification panels and the main menu's co-op item no longer keep their windows in memory after they are gone
+  (BUG-1025).
+- Civilization: wild creatures are now the same in every game: the host's game runs them and the guests show them
+  (where they walk, their herds, their deaths), so a guest's click on a creature means the same creature for
+  everyone; before, each game ran its own herds and they drifted apart (BUG-0973).
+- Civilization: when a guest buys a city, the "choose the city's specialty" question now comes up on that guest's
+  screen and its answer counts in every game; before, the host was asked (and its game paused) instead (BUG-0982).
+- Cell: during a level change the host keeps the world round a guest at the guest's real place (it was off by up to
+  30 m, and cells round the guest vanished). The extra loss still measured after that on level downs came from the
+  test (the guest stood next to the host); with the two apart a guest loses no more than the host (BUG-1064).
+- Cell: a level change that came from a partner's food no longer leaves tiles of the host's world behind that nothing
+  cleans up (BUG-1066).
+- Joining: with "joining after the start" off, a new player whose name was already used in the session (two
+  friends both called "Player") is refused now, and a player who left comes back as itself; a player with the name
+  of a loading player no longer joins over the player limit (BUG-1001).
+- Joining: a joining guest gets in when the host's reply is longer than one packet (long names and versions in a
+  4-player session) (BUG-1005).
+- Network: one oversized datagram no longer stops the other packets of that frame from being read, in the session
+  and in the LAN game list (BUG-1007).
+- Network hardening: more checks on data received from other machines (BUG-1012, BUG-1048).
+- Tribe: a chief saved by a partner's member ("<A> saved <B>'s chief") now keeps 30 % of its health; before, it kept
+  0.3 hit points and fell at the next blow (BUG-1052).
+- Tribe: a host's tribe member that puts its tool down, or starves, now shows that on the guests' screens too; before,
+  the guest's copy kept the old tool and its last hunger (BUG-1043).
+- Creature, Tribe: an animal of the host's that is thrown aside while it walks now jumps there on the guests' screens
+  at once instead of sliding back over up to 2 s (BUG-0997).
+- Creature: after the host evolves its creature in place, the guest's world takes the host's new species as the
+  player species also when the new species arrives a few frames late (BUG-1057).
+- Creature: a guest's social game shows the game's social meter also when the first try to open it came too early
+  (BUG-1058).
+- Civilization: while the host is in the menu or the editor, the guest's own game keeps the host's vehicles it now
+  drives on ground they can use (BUG-1056).
+- Creature and all stages: a creation of another player that changes often no longer runs out of package names
+  ("cannot write the package") after a few dozen versions or rejoins in one game session (BUG-0996).
+- Tribe, Civilization: a guest's order on a tribe member or vehicle that had just been removed in the host's game (it
+  fell, was disbanded) no longer goes to the removed object in the host's game (BUG-1053).
+- Creature: a guest's social click right after a creature change no longer starts the social game with the wrong
+  animal, and an animal of the guest's world is no longer lifted into the air where a removed copy of a host animal
+  floated (BUG-0994, BUG-0995).
+- Space: a tool gift or a spice sale that reaches a guest who just rejoined, before its own cargo hold is back, is
+  now added once the hold is restored; before, it went into the host's copy of the hold and was lost in both games.
+  Accepting a trade offer in those seconds asks to accept a moment later (BUG-1034).
+- Space: when a session ended while the player was on an ally's mirror planet and the player then went to the menu
+  and joined another session, the old partner's colonies no longer come back as a frozen ally (BUG-1036).
+- Space: a mission reward tool earned while outside Space is now given back in Space also when the host has Space
+  contracts switched off in the session settings (BUG-1037).
+- Co-op window: "Give 10 to <player>" (Space) and "Give to <player>" are as wide as their caption; before, the
+  caption wrapped onto two lines cut by the button's frame (BUG-1062).
+- Cell: in 3-4 player sessions a copy of a host cell on a guest's screen that broke into invalid numbers now comes
+  back in its place at once; before, it drifted away or vanished for good and could break the guest's own cell
+  (BUG-1006).
+- Cell: when a guest's mouth tears the last chunk off a host creature, that creature's kind now turns on the guest
+  who killed it, not on the host's cell (BUG-1008).
+- Space, Rivals mode: switching back to Allies while a guest is rejoining (its game still loading the host's world)
+  now merges that guest's own budget; before, its budget was lost and the host's save money was added instead. A
+  player new to a Rivals session now starts its own empire with 0 money, not with a copy of the host's money
+  (BUG-1029).
+- Space: after a Rivals period, the first sync of the shared colonies no longer takes the guest's older spice
+  amounts as collected and lowers the host's colonies to them (BUG-1039).
+- Shared money and food: when the host and a guest spend at the same moment and the pool runs dry, the notices no
+  longer say the host earned money or food it did not earn (BUG-1009).
+- After an error inside the game's drawing that the game itself recovered from, the co-op no longer stops for good
+  while the game draws on (the partner stood still, chat and console went silent); the on-screen tags and partner
+  arrows no longer vanish for the rest of the game after an error in them (BUG-1024).
+- A console command that hit an error the game recovered from now answers with an error instead of never answering
+  (BUG-0966).
+- The partner arrows come back after a display reset (Alt+Enter) when the game failed to set them up once (BUG-1026).
+- Crash and hang reports are written more safely: the crashed thread's registers are copied first, reports written
+  in the background no longer call into the game, a crash near the end of a stack is recorded, and a very long game
+  folder path no longer overruns a buffer at start (BUG-1020, BUG-1022, BUG-1028, BUG-1033).
+- Tribe: a guest that joins another host, or the same host after it restarted its game, now sees the host's tribe
+  move again at once; before, its game dropped every update of the new host as "old" for up to an hour (BUG-1051).
+- Tribe: the host's game no longer loads its save again a few seconds after a guest joins, when an earlier session
+  ended right after the host entered the Tribe stage and the host had loaded another game since (BUG-1054).
+- Creature, Tribe: a fight sound or effect of a host creature no longer keeps playing on the guest's copy after a long
+  session with many fights (BUG-1049).
+- Cell: the mod's per-session Cell state (a meal received in the last moment of a session, the move next to the host
+  after joining, the own cell's last good position and its small size after a respawn) no longer carries over into
+  the next session or Cell game (BUG-1002).
+- Space, Rivals mode at war with the host: the host's escort ships and system Defenders and the guest's ship now
+  really damage each other (before, their shots hit nothing on either side) (BUG-1032).
+- Space: a host's NPC ship that fires again after a short pause no longer shows a burst of extra shots, or no shot,
+  on the guests' screens (BUG-1046).
+- Space finale: "Fly to" a partner at the galactic core from the galaxy view no longer costs health with no energy
+  left, and a ship disabled after the order no longer flies (BUG-1045).
+- Space: a partner's terraforming no longer makes another player's game fault when that player's game never
+  loaded the planets of that star (BUG-1042).
+- Space, 3-4 players: "Give 10 to <player>" now gives the spice to the player the button names, and ">" picks the
+  recipient in Space too (BUG-1050).
+- Tribe: a tribe member the host's game holds up in the air (during raids, at any height) is up in the air on the
+  guests' screens too; before, a guest showed it standing on the ground below, also whenever the guest looked
+  elsewhere or the host's game ran slowly (BUG-1082).
+- Tests: a tribe member swimming counts as on the ground (its height over the water's surface, not over the sea bed);
+  the lab's ground check no longer fails a campaign on members crossing a lake (BUG-1088).
+- Tests: tribe_hold_cut measures a cut from the start of the hold it ended (the game can begin the hold a few tenths
+  after the test's hand set) and waits for the host's chief and its copy to stand in their idle before each round, so
+  it no longer fails on a late hold or skips when the host's chief swings its staff itself (BUG-1105).
+
+## [0.7.13] - 2026-11-12
+
+A bug-fix update: the players' reports from GitHub and Discord, problems found by a review of the code, and many
+more found by the tests and by looking at their screenshots, in every stage. Among them: Civilization vehicles that
+got faster and faster, a crash when a guest further on in the Cell stage joined a host, a guest stuck in the
+conquest caption in the Tribe stage, partner tags drawn over cutscenes, and screen tearing with Spore ModAPI.
+Both players should update: the versions can still play together, but several fixes need both sides.
+
+### Fixed
+- Tribe: when the host's tribe conquers a village, the guest's game no longer stands still in the "You have destroyed
+  the village" caption until the guest clicks it: it closes itself after 8 s, as the host's does (BUG-0983).
+- Partner name tags and edge arrows are no longer drawn over a cutscene that holds the game, such as the
+  Creature stage's intro (BUG-0985).
+- Tribe: a guest now sees the host's members hold their staff or torch in the hand also when the copy is still in an
+  earlier gesture (a short hold in the change of items was missed) or got the same gesture again while it played it
+  (a held staff of several seconds was missed) (BUG-0992).
+- Cell: a guest whose own game was at a higher level (for example food 300, level 4) no longer crashes the
+  moment it joins a host at a lower level; the game drew the tiles of the new level at the old level's scale and
+  overran its own buffer (BUG-0975).
+- Civilization: a guest's vehicles sent to attack a wild creature no longer ignore the order when the host's
+  game has that creature elsewhere (wild creatures are not shared): they attack the host's creature near there or
+  drive there (BUG-0970).
+- Tribe: a guest now sees a tribe member hold its torch, staff or tool in the hand whenever the host sees it: the
+  copy missed holds when it was in another animation at that moment (a chief raising its torch on one game only), and
+  when the member took a new item, the copy played the change with an empty hand (BUG-0968, BUG-0971).
+- Tests: the unit tests' LAN discovery checks no longer fail when another test lane runs at the same time (BUG-0969).
+- Galaxy menu: the Spore logo, the "Online Interactions Not Rated by the ESRB" line and the copyright line no longer
+  stay over the game after joining from the menu right after it came up (BUG-0938).
+- Tribe: while the host's tribe is out and the host's game shows "Alas! Your population has fallen below the
+  minimum", a guest's game waits with a note until the host answers, instead of playing on against a stopped
+  host (BUG-0960).
+- Tribe: a member that dies leaves the roster on the right of a guest's screen too; the guest kept its card for the
+  rest of the play (BUG-0961).
+- Tribe: a guest's copy of a member holds its staff or instrument in the hand only when the member does on the host;
+  in some gestures the copy held it for a second and a half on its own (BUG-0962).
+- Network: player names, LAN game names and planet names received from other players are cleaned to one line of
+  printable text (control characters and broken text removed, names cut to 24 characters) before they are shown,
+  logged or written to the co-op save slot (BUG-0774).
+- Network: a host answers "Games on your network" queries only from local networks and virtual LANs, and only a few
+  times a second (BUG-0776).
+- Network: stray packets from unknown senders no longer take the host's connection slots, so a player can always
+  join or rejoin (BUG-0778).
+- World transfer: a received file named like a Windows device (such as con, nul or com1) is refused instead of
+  being written to that device (BUG-0785).
+- SporeKit: a hot reload of a mod destroys its queued tasks outside the task lock, so a task that queues another
+  one on its way out cannot freeze the game (BUG-0860).
+- Network: starting a new session (host or join) from inside the handling of a message no longer has the new
+  session closed right after (BUG-0861).
+- Creature, Tribe and Civilization: the guest's whole-planet comparison no longer loses a list when a late piece of
+  an older list arrives (BUG-0886).
+- A partner's name tag and arrow stay on the partner while you turn the camera; during a fast turn they used to
+  jump beside it or over empty ground (BUG-0948).
+- Creature: a partner's name tag stands just over its creature's head; over a crouching creature it floated a metre
+  and more above it (BUG-0929).
+- Partner arrows and name tags no longer cover each other, the minimap, the bottom bar or message cards: they move
+  aside, and a tag whose creature is behind the HUD is hidden (BUG-0949).
+- Creature: the portrait at the bottom right of a guest's screen shows the creature the guest plays now, also after it
+  changed its creature or became the host's new one; it kept the first creature (BUG-0937).
+- Tribe: the music of the dance at the fire pit stops for a guest when the dance ends, also when the guest was in
+  an editor at that moment; it used to play on until the guest loaded another world (BUG-0890).
+- Tribe: a baby tribe member grows up on a guest's screen when it grows up in the host's game, also when the guest
+  joined or came back while the baby was growing; it stayed a baby there for a while longer (BUG-0857).
+- Tribe: a tribe member the host buys at the hut is the host's. Before, every member the host bought went to a guest,
+  and when a guest bought one in the same moment both could end up with the guest (BUG-0824).
+- Civilization: a building a guest pays for in its city planner that the host's game cannot build (for example the last
+  plot was just taken by the host's own building) gives its price back to the shared money, and the guest is told why;
+  before, the money was lost and the building disappeared (BUG-0807).
+- Tribe: a guest's tribe members no longer look starved in the roster after a few minutes of play (red cards with an
+  empty bar); they are as hungry as in the host's game (BUG-0935).
+- Tribe: a tribe member thrown into the air by a hard blow is in the air on the guests' screens too; it stayed on the
+  ground there (BUG-0946).
+- Tribe: tribe members at rest stand, sit or crouch the same way on every player's screen; a guest's copy no longer
+  goes on with a gesture the host's member has already stopped (BUG-0936).
+- Tribe: when a host's tribe member swings its staff or instrument, the guest's copy swings it too instead of holding
+  it upright (BUG-0914).
+- Tribe: a guest that joins again during Tribe has the same ground as everybody else round the villages that appeared
+  during play; it was up to 8 m higher or lower there (BUG-0947).
+- Cell: a player knocked out while a level change rescales the pool stays where it lay, next to the partner who can
+  revive it; it was held far out in the pool (BUG-0798).
+- Cell: a knocked-out cell no longer makes poison clouds that hurt and kill creatures for its owner while it is down
+  (BUG-0799).
+- Cell: a partner's poison clouds no longer hurt or knock out another player's cell while friendly fire is off
+  (BUG-0958).
+- Cell: the host's support log no longer says a knocked-out guest's refused kill was applied (BUG-0959).
+- Cell: a guest's bite that the host refused or that did not kill no longer keeps that creature from being killed by
+  any guest for the next 10 seconds (BUG-0821).
+- Cell: a creature a guest swallows whole is gone in the host's game too; it lived on there and could be eaten again
+  (BUG-0827).
+- Cell: with three or four players the guests come back after a load or a knockout on spots of their own around the
+  host, not on top of each other (BUG-0792).
+- Cell: renaming a cell whose model came from elsewhere (a partner's or an imported cell) no longer crashes the host;
+  the new name goes out with the model, and a cell without its model is not built (BUG-0802).
+- Space: a guest that had earned a badge no longer crashes while it loads the host's world when it joins again from
+  the same running game. A window the game had already destroyed was left in its list of open dialogs and was used
+  when the next dialog closed (BUG-0956).
+- SporeKit: a crash in which the game's stack pointer had left its stack (Windows and Wine end such a game at once)
+  now writes a crash report as well; before, the game vanished without one (BUG-0956).
+- Civilization: when the host saves and loads its world again, every player keeps the cities it had, captured and
+  bought ones too; before, all cities were dealt out anew and a city the host had bought could become the guest's
+  (BUG-0950).
+- Cell: a guest that plays a Cell world of its own while connected (or is still in Cell while the host is already in
+  the Creature stage) gets a living pool again: new cells and food appear, kills drop loot, predators hunt. Before, its
+  pool only emptied (BUG-0797).
+- Cell: the host no longer sends its live cells to a guest that is not in the host's Cell world yet (the menu, the
+  loading screen, the world download, a world of its own); on a slow link they slowed the world transfer (BUG-0809).
+- Creature: the computer creatures' nests evolve again in a world of a guest's own while it is connected (BUG-0803).
+- Creature: in a world of its own a connected guest's game shows its own creations again, not the host's creature of
+  the same id at its nests (BUG-0819).
+- Creature: a guest that leaves the game in the middle of a social game no longer keeps the social meter on its
+  screen (BUG-0808).
+- Creature: when a guest leaves in the middle of a social game, the host's creature stops that game; it went on with
+  its prompts and then played the failure reaction (BUG-0831).
+- Creature: DNA a guest earns while the host is away (in the menu or loading) moves the guest's evolution bar once, as
+  on the host; on a slow connection it could move it twice (BUG-0829).
+- Creature: a hit by a UFO, a vehicle, a city turret or a tribe hut on a player's creature is credited to the right
+  attacker; the mod read a wrong object as the attacker, for the pack's defence among others (BUG-0790).
+- Creature: a guest's game no longer keeps the copies of the host's nest eggs in memory after a world load or a
+  change of its creature (BUG-0833).
+- Space: a guest that loads one of its own Space saves while connected keeps that save's cargo hold (tools, spice,
+  cargo); it was replaced by the guest's co-op hold and saved that way (BUG-0816).
+- Space: a guest's own Space save keeps its own stage history (the History bar and the archetype's cards); the host's
+  was written into it (BUG-0818).
+- Votes no longer wait their full 60 seconds for a guest that plays another world and cannot vote (BUG-0801).
+- Civilization: vehicles no longer get faster and faster during sieges ("like flash", GitHub #199). Each new "city
+  under attack" alarm took the already boosted speed as the vehicle's normal speed, so the +50 % boost piled up and
+  stayed for good (BUG-0771).
+- Civilization: a boosted vehicle gets its normal speed back when the mod stops tracking it while it still exists,
+  instead of keeping the +50 % for good (BUG-0773).
+- Civilization: the "city under attack" speed boost goes only to the players' vehicles, no longer to computer
+  nations' vehicles, the attacking army included (BUG-0876).
+- Civilization: a guest sees a fast host vehicle right where it is, not several metres behind it (a vehicle over twice
+  as fast as the guest's copy of it, for example a boosted one) (BUG-0787).
+- Civilization: a city a player captures stays that player's. With fewer cities than players the second city dealt
+  every city out again, and the host's capture became the guest's a moment later; a capture that waits for its
+  cinematic also lost its captor (BUG-0875).
+- Civilization: a captured city goes to the player whose vehicles took it, not to the player whose vehicle stood
+  nearest the city (BUG-0775).
+- Civilization: a guest that buys another nation's city gets it in both games; before, the money was spent and the
+  city changed hands nowhere (BUG-0877).
+- Civilization: a city a guest captures while the host is away (a menu, an editor, a load) is captured in the host's
+  game too when the host is back, instead of showing "won" on the guest's screen only (BUG-0878).
+- Tribe: a village the host's tribe conquers is conquered in the guest's game too (the hut falls, the goal is done);
+  it stood whole there (BUG-0777).
+- Tribe: a village a guest conquers while the host is away stays conquered when the host is back; the host's game
+  stood it up again (BUG-0879).
+- Creature and Tribe: a guest's game could crash, or move one of its own animals as if it were the host's, when its
+  game had just removed a copy of a host animal and built a new animal in the same place in memory (the mod now
+  checks every kept animal against the game's object list and its serial number; it also covers Tribe now)
+  (BUG-0842).
+- Tribe: a guest could move a member of another tribe as the host's member, or remove it, when the game reused the
+  memory of a removed copy (for example after the host was in an editor); the crash the PandizeLive fork reported
+  here (BUG-0844).
+- Tribe: a guest's game no longer faults when the game frees a copy of a host's member while the host's states pause
+  (for example during the host's editor): the sizes, animations, held items and effects sent for that member no longer
+  reach the freed copy (BUG-0955).
+- Tribe and Civilization: the attack ring, the epic animal, the babies, the host's member and vehicle tables and a
+  guest's vehicle copies now check that a kept object is still the same one, not another object the game built in its
+  place (BUG-0951).
+- Creature: a host's hit, an animal's social prompt or animation could reach a copy of an animal the guest's game
+  had just removed; the removed animal was left in other animals' memory and could crash the game seconds later
+  (BUG-0805).
+- Creature: a partner's effect could be played on its creature in the frame the game removed it (BUG-0795), and a
+  partner's animation on its cell or its Tribe marker around a stage change (BUG-0796).
+- Creature: an animal of the world could disappear when a cinematic ended, if the game had put it where a partner's
+  old creature waited to be removed (BUG-0825).
+- Space: after the host loaded its world again, a partner's colony shown as an allied empire could bring the old
+  world's cities into the planet of the new one (BUG-0838).
+- Creature: an error caught inside the game's world-relevance pass or the own creature's size update could leave
+  the game's list of view points on the mod's memory or the player's species changed for the rest of the session,
+  and switch some effect and animation relays off (BUG-0882).
+- Saves: when the mod saved while one of the game's questions was open (the pause menu's "Do you want to save your
+  game?", the captured city's specialty question in Civilization), it answered that question with Enter and then left
+  the real "game saved" box open with the game paused. The mod now confirms only the "game saved" box and leaves
+  questions to the player (BUG-0846).
+- Saves: after the mod confirms the "game saved" box the game follows your real mouse again at once; it kept reading
+  the box's OK button as the mouse position for about 5 seconds (BUG-0804).
+- Saves: the "game saved" box is also confirmed when its OK button lies outside the game window (after the
+  resolution was lowered); it stayed open and the host's game stood still (BUG-0806).
+- Sharing the world: a save file the host's PC cannot read at that moment (a virus scanner holds it) no longer
+  makes the guest load an incomplete world; the share fails and is tried again (BUG-0847).
+- Sharing the world on Windows: storing the received world no longer fails with "error 5" when a scanner looks at
+  the new files for a moment; the move is tried again for a second and a half (BUG-0848).
+- Tribe to Civilization: the host's game no longer saves for a joining player between the City Hall and the vehicle
+  editors, while the game takes the village down; the world is sent in the Civilization stage (BUG-0849).
+- Galactic Adventures: the mod no longer saves the campaign or posts its quit to the main menu while an adventure is
+  played (BUG-0854).
+- Space: a guest whose game crashed and who joins again at once gets its own colonies back, as after a normal rejoin
+  (BUG-0810).
+- Space, rivals mode: a guest's own money no longer jumps back after a visit to an editor or an adventure (a contract
+  reward paid on the return was lost) (BUG-0813).
+- Space: the galactic core no longer waits for a partner who already went in and flew away (BUG-0820).
+- Space: spice a guest collects from a shared colony while the host is in an editor or an adventure can no longer be
+  collected a second time (BUG-0822).
+- Space: cargo that could not be put back into a guest's hold after a rejoin is no longer lost for good; it is tried
+  again at the next rejoin (BUG-0826).
+- Space: spice from a gift that comes back after the host loaded another game returns to the hold right away instead
+  of being kept for the other game (BUG-0828).
+- Space: with three or four players, a survey contract is completed when enough ships reach the stars, even if a
+  player who joined the crew later stays at home (BUG-0830).
+- Space: a spice sale that arrived is paid even when the seller was in an editor or an adventure as the session ended
+  (BUG-0832).
+- Space: the stored spice of every shared colony is kept in step, not only of the first 48 (BUG-0834).
+- Space: a guest's own colony in a shared star system no longer loses its stored spice (BUG-0840).
+- Space: the effects of a player's ship (world effects) now show on the partners' screens (BUG-0895).
+- Space: when the host loads another Space save, the connected guests follow it into that game instead of playing on
+  in the old one (BUG-0941).
+- Space: a guest that leaves and joins again keeps its own badges and captain rank (and the counters the badges
+  need); before, it got the host's badges back with the host's world (BUG-0786).
+- Screen tearing: SporeKit no longer undoes a frame cap that another mod or program sets for Spore (it wrote the
+  game's own cap back every few frames). The game now tells you once when it runs without its frame cap, and
+  `vsync=1` under `[sporekit]` in `mods\sporekit.ini` turns on vsync: Spore itself asks for none. See
+  docs/INSTALL.md, "The picture tears" (BUG-0779).
+- RivaTuner / MSI Afterburner: the game tells you when RivaTuner is hooked into Spore and how to keep it out if Spore
+  crashes at start; crash reports name it with the same advice, and docs/INSTALL.md has a section on it (BUG-0782).
+- Creature: an NPC egg that hatches or is eaten in the host's game is shown so on the guests at once, not up to a
+  second later. A guest's click at an egg that had already hatched on the host hit the hatchling inside it: a small
+  body lay where the egg was and the host counted it as the guest's hunt (BUG-0896).
+- Uninstall: the setup's Uninstall and uninstall.bat put the game's own steam_api.dll back also when an antivirus
+  removed SporeCoop's loader, stop without changing anything while an update runs or when the game's original file
+  is missing, say which file they could not remove instead of "removed", delete only SporeCoop's own symbol files,
+  and uninstall.bat no longer puts an old backup over a steam_api.dll that Steam or GOG restored (BUG-0851).
+- Tests: the setup test that closes the window after an install no longer fails now and then (BUG-0853).
+- Creature: a creature with only a base paint (no coat and no detail layer) is checked for paints the other game does
+  not have, like any other creature: a Creepy & Cute base paint now shows as a similar base game paint on a game
+  without that pack instead of another colour (BUG-0852).
+- The mod's hang diagnostics (the stack dump made when the game stops drawing) no longer risk turning a short stall
+  into a freeze for good under Wine on Linux (BUG-0880).
+
+### Changed
+- Creature: while friendly fire is off (and outside Rivals) a player walks through a partner's creature and a click
+  in the combat stance goes to the animal behind it; the partner's creature no longer stops the second hunter short of
+  the prey. With friendly fire on nothing changes; players' creatures can now stand inside each other (BUG-0913).
+- Antivirus warnings: every SporeCoop file now carries version information (product, version, description), each
+  release file and the DLLs inside the zip get a signed build provenance from GitHub Actions (`gh attestation
+  verify <file> --repo WoodyWizard/SporeCoop`), docs/INSTALL.md explains the false positives and how to check a
+  release, and SECURITY.md lists what each file does (BUG-0784).
+- tools/laa.py (optional, for big worlds): shows, sets and restores the Large Address Aware flag of SporeApp.exe with
+  a verified backup; see docs/INSTALL.md (BUG-0862).
+
+## [0.7.12] - 2026-11-11
+
+A feature update built from the players' suggestions: a new co-op window, session settings chosen by the host,
+arrows and minimap marks to find each other, player colours, and one report for the whole session.
+
+### Added
+- A new co-op window in steps. The first time it asks for your name (the one the other players see; *Change name*
+  later), then *Host a game* or *Join a game*. Host: the port and the Host button, with the addresses to give your
+  friends. Join: the games found on your network, and an address field that also takes a host name
+  (`sporecoop.local`; port 47810 when you type none). The lobby shows each player's colour, stage, ping and ready
+  state and the host's address, and has a **Settings** page (see below) (BUG-0765).
+- "Report a problem" in the game's pause menu (Esc), below "Quit Spore": it makes the same report as the co-op
+  window's button (BUG-0765).
+- One report for the session: the host's "Report a problem" also asks every guest for its report, and the host's
+  button "Ask the players for their reports" (lobby and F9) does it any time without the host's own report. Each
+  guest's co-op window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is
+  sent without that click. The reports come to the host over the session and the host gets one file to send,
+  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
+  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
+  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
+- Session settings: the host decides which co-op mechanics are on, on the Settings page of the co-op window (or
+  `coop.settings` in the console). The settings reach every player when they join and whenever the host changes one,
+  and they are kept with the host's world, so the next session in that world plays with the same choices. Most can
+  only be changed before the game starts; the "live" ones also during play (F9). Guests see them but cannot change
+  them. The defaults keep today's behaviour (BUG-0762, BUG-0768). The settings:
+  - all stages: partner arrows, partners on the minimap and name tags over players (live), progress at the
+    single-player pace, NPC animals treating partners like the host's creature, how many players a session takes
+    (2 to 4) and whether new players may join after the start (live; a player who lost the connection may always
+    come back);
+  - Cell: regeneration near a partner ("shared healing", live), the knock-out instead of death next to a partner,
+    the respawn next to the partner as a small cell, the vote before the Creature stage;
+  - Creature: pack rescue, partners healing each other (live), the joint hunt bonus, the host's evolution editor
+    opening at once;
+  - Tribe: the pincer bonus, the chief aura, the duet, the epic creature event;
+  - Civilization: roles, the joint siege bonus, the superweapon vote;
+  - Space: "disabled, not destroyed", trade, co-op contracts, shared diplomacy, partners as allies, the finale
+    together, the rivals mode.
+- Friendly fire (a setting, off by default): players' creatures can hurt each other in the Creature stage. Cell,
+  Tribe and Civilization follow later; Space keeps its rivals mode (BUG-0768).
+- One creature for everyone (a setting for Cell and Creature, off by default): every guest plays the host's species
+  and only the host evolves it (its editor opens at once, no vote); the guests get no editor and no creation arrows,
+  and every evolution of the host changes every player's creature at once (BUG-0769).
+- Find each other: every partner who is off screen gets an arrow at the edge of the screen, in the partner's colour,
+  with the name and the distance (Cell and Creature: the partner's creature, Tribe: its chief, Civilization: where
+  the partner plays, else its capital, Space: its ship). On screen the name tag stays. Never in the Rivals mode
+  (BUG-0764).
+- Partners on the minimap: in Creature and Tribe every partner shows on the game's minimap as a mark in the
+  partner's colour (BUG-0764).
+- Player colours: every player gets one of four distinct colours (yellow, blue, pink, green), the same in every
+  game; a player can pick another free one (eight in all) with the ">" next to the own colour in the lobby (or
+  `coop.find color <name>`). Name tags, arrows, minimap marks, the galaxy map's tags and the chat lines show it
+  (BUG-0764).
+
+### Changed
+- The co-op window's "Stop hosting" is now "Close session" (BUG-0765).
+- The `coop.ini` lines `dna_pace`, `npcs_target_partners` and `teamplay` are now only the defaults for a new world;
+  a world played before keeps the host's settings for it (BUG-0762).
+
+### Fixed
+- **Tribe: seconds of stutter and a "SporeCoop caught a problem" report on a guest after the host's game over.**
+  When the host's game loaded its Tribe world again (a game over, or a load) and a guest's goal card was on a
+  village that the host's world no longer had, the guest's game ran into the same error every frame once the
+  village was removed there: a hitch of a few seconds and a problem report, until the goal moved to another
+  village. The goal card now goes with the village (BUG-0942; since 0.7.7).
+- **Space: shared money stopped for a guest after the host changed its save.** A guest that had joined before the
+  host loaded another save (or went on into a save with another name) got none of the host's money in Space for
+  the rest of the session, and its own earnings and purchases never reached the host; only leaving and joining
+  again helped. The guest now follows the host's save (BUG-0933; since 0.7.11).
+- **Creature: health after a change of the creature.** Switching to another creature (your own from F9, or
+  the host's in a session) kept the old health number against the new maximum (16 of 10, or 10 of 16). The
+  share of health is kept now (BUG-0928).
+- Tribe: the guests' tribe roster (the member portraits at the right edge) showed white squares instead of the
+  portraits when the tribe was of the host's own creature, which is the usual case after Cell or Creature. The
+  host's creature now reaches the other players with its picture (BUG-0921; the fix of 0.7.10 covered only a creature
+  the host was not playing).
+- The host saw "<player> appeared in the world" twice when a player joined, and once more each time that player
+  changed its creature. It is shown once (BUG-0923).
+- Creature: a guest's game no longer stutters with "SporeCoop caught an error in its own code" when its baby is born
+  after the evolution with animals nearby (the mod moved animals its own game had just removed) (BUG-0931).
+- Creature: the host's game could end with a runtime error (a crash on Windows) a moment after a partner's creature
+  died in a fight with a pack, mostly when the prey had just been killed: the pack's animals still wanted to help
+  against the partner's creature that was no longer there (BUG-0926).
+- Cell: while the host's game stands still (it reads a caption, a cinematic plays, the pause menu is open) a guest
+  that swims on now gets the cells of the host's world around where it is. It kept getting the cells around the
+  place it was at when the host stopped, and saw open water (BUG-0927).
+- A game that stops with a runtime error message box (for example "pure virtual function call") now writes the
+  message's text and where it came from into its log and makes a report, as it does for a crash (BUG-0925).
+- Creature: a crash risk when you attack after your target is gone. If your creature's target was a partner's
+  creature (you had clicked it) or an animal that then left your game (the partner died or left, the host's game
+  removed the animal), the game kept aiming at it, and the next attack key read memory that was already freed. Your
+  target is now cleared when its creature goes (BUG-0918).
+- Space: terraforming now reaches your partners. The atmosphere, temperature and water tools (Atmosphere Generator,
+  Ice Comet and the like) change the planet in the partners' games too (their game received the change but never
+  applied it), also when no partner is on that planet at the time (before, the change was lost for them and the
+  planet kept different T-scores); and the terrain sculpting tools (raise, lower, flatten...) and the planet
+  colouring tools change it in the partners' games, at once when they are on the same planet, else when their ship
+  lands there (before, only the user saw the new terrain and colours) (BUG-0749, BUG-0883, BUG-0763, BUG-0900).
+- Space: buildings bought in a colony's city planner now appear in every player's game. A guest's building is built
+  in the host's game (before, it stayed in the guest's game only while the money was spent for everybody), also when
+  the host's ship is on another planet or in orbit (it is built once the ship gets there), and a building the host
+  or a guest buys appears in every other player's colony city too; such a building stays when a ship leaves the
+  planet and lands again, and in the saves (BUG-0751, BUG-0766, BUG-0884, BUG-0901).
+- Tribe: on a guest's screen the members now hold what they hold in the host's game: the chief its staff with the
+  skull, the others their weapons, instruments and healer's rods. Before, the copies of the host's members often
+  stood empty-handed on the guest's screen (the host's chief without its staff) (BUG-0906).
+- Tribe: the chief's staff has the same size on the guest's screen as in the host's game; it was about a third bigger
+  there (BUG-0912).
+- Tribe: a partner's name no longer hangs over empty ground. It was drawn at the spot under the partner's mouse
+  pointer, with nobody under it; the partner's name is now only over its chief and its members (and on the arrow at
+  the screen edge when the chief is off screen) (BUG-0907).
+- Space: sculpting the ground and colouring a planet while no partner is on it now reaches the partners too: their
+  game makes the same changes when their ship lands there; before, they kept the old terrain and colours (BUG-0900).
+- Space: a colony building a partner bought (built in your game by the mod) is now kept when your ship leaves the
+  planet and lands again, and in your saves; before, the game rebuilt the city without it (BUG-0901).
+- Space: a guest's drag in a colony's city planner that does not end on a free plot no longer builds an unpaid
+  building in the host's game (BUG-0902).
+- Space: terraforming a planet (atmosphere, temperature, water) while no partner is on it now changes that planet in
+  the partners' games too; before, the change was lost for them and the planet kept different T-scores (BUG-0883).
+- Space: the terrain sculpting tools (raise, lower, flatten...) and the planet colouring tools now change the planet in
+  the games of the partners on the same planet too; before, only the user saw the new terrain and colours (BUG-0763).
+- Space: a building a guest buys in a colony's city planner is now built in the host's game too (when the host's ship
+  is on the same planet); before, it stayed in the guest's game only while the money was spent for everybody
+  (BUG-0751).
+- Space: a colony building a guest buys while the host's ship is on another planet (or in orbit) is no longer lost
+  for the host's world: the host's game builds it once its ship is on that planet (BUG-0766).
+- Space: a building the host buys in a colony's city planner, and one a guest buys, now appear in every other
+  player's colony city too (on their planet, or when their ship gets there); before, only the buyer and the host had
+  it (BUG-0884).
+- Space: terraforming with a tool (Atmosphere Generator, Ice Comet and the like) now changes the planet in your
+  partners' games too. Their game received the change but never applied it to the planet (BUG-0749).
+- Space: an NPC empire's store now wants the same spices and pays the same prices in every player's game (each game
+  made its own random store: one player sold a Red Spice for 281, the other for 4,779 to the same empire) (BUG-0747).
+- Cell: a knocked-out cell no longer swallows meat (or a plant) whole that drifts into its mouth, so it does not
+  respawn bigger than "small again" (BUG-0746).
+- Tribe: a guest's order to gather a fruit that the host's game no longer has at that spot is no longer ignored: the
+  members gather from the nearest fruit tree there (BUG-0744).
+
+### Tests
+- The two play tests that failed now and then for no fault of the mod are settled: the Creature bots now really hunt
+  the same animal together (they check which creature the game targeted, walk around the partner when it stands in
+  the way, and bite together), and the Cell test checks that the host's creatures hunt a guest with a controlled
+  trial instead of comparing how often each player happened to be hunted (BUG-0618, BUG-0910).
+- Tribe: a test of the duet (both players' members performing for one village fill its social meter faster) (BUG-0748).
+- The test lab watches memory: a test script that grows past 2 GB is stopped and fails with a clear line, every
+  result records the script's and the games' memory, and a test waits when its games would not fit into the free
+  memory. The cause of a run that filled the PC's memory (a read of the divergence detector that never ended in a
+  four-player Cell stage) is fixed (BUG-0916).
+- The play bots' reach command (`coop.abilities reach`) no longer calls the game on a target that is not a live
+  creature (two long tests failed on a fault it caused), `coop.npc list` checks its creatures against the game's
+  list, and a new test removes the creature the avatar targets (BUG-0917).
+- One report for the session: the host's "Report a problem" also asks every guest for its report, and "Ask the
+  players for their reports" in the host's lobby does it any time without the host's own report. Each guest's co-op
+  window opens with "The host asks for your report: Send / Don't send" and says what is sent; nothing is sent without
+  that click. The reports come to the host over the session and the host gets one file to send,
+  `SporeCoop-session-report-<date-time>.zip`, with `Host-<name>.zip`, `Guest-<name>.zip` and a list of who sent, who
+  did not, who did not answer and whose report was refused. A report over 25 MB or one that is not a SporeCoop report
+  is refused (never unpacked or opened on the host's PC); no player's address goes into the file (BUG-0767).
+
+## [0.7.11.2] - 2026-11-10
+
+### Fixed
+- Creature, Tribe: a guest's game could crash now and then when an animal's body was removed by the guest's own game
+  (its tribe killed it, a cleanup) and the host's animal then left: the mod removed that body a second time. This came
+  with 0.7.11 (BUG-0850).
+
+## [0.7.11.1] - 2026-11-08
+
+0.7.11 was tagged but never published (its release build failed on a test script); 0.7.11.1 is 0.7.11 with that
+build fixed. Everything below is new since 0.7.10.1.
+
+### Changed
+- Cell: the move to the Creature stage is a vote now. When the host clicks the check in History at the end of the
+  Cell stage, everybody gets "wants to move on to the Creature stage: press I'm ready (F9)"; the stage changes when
+  everybody is ready, after 60 s or with the host's "Start now". The first creature editor that follows no longer
+  asks again: a player who has arrived counts as ready. A guest's own click on the check is its "I'm ready" (BUG-0315).
+- Creature: the host's evolution (the mating call) no longer waits for the others: the host's editor opens at once,
+  and every guest gets "Evolve now" in the co-op window for 90 s, which opens its own editor whenever it wants (also
+  after the host is done). A guest that does not evolve plays on and can evolve at its nest later (BUG-0516).
+
+### Fixed
+- Creature and Tribe: a running animal of the host is no longer shown a frame behind where the host has it on a
+  slower PC (BUG-0757).
+- Update: a short hiccup of GitHub's download server (an answer like 504, a dropped connection, a download that
+  breaks off) no longer ends the update at once. The in-game update and SporeCoopSetup.exe try again up to 3 times,
+  1 and 3 seconds apart; if it still fails, the message says how many tries were made (BUG-0755).
+- The co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) while the host
+  sends its world to a partner (BUG-0754).
+- Tribe: after the host's tribe conquered or allied a village, the host's game showed the village's caption and every
+  tribe member stood still (a guest's orders did nothing) until the host clicked it away. With guests in the session
+  the caption now closes by itself after 8 s, and everybody is told why the tribe waits (BUG-0531).
+- Creature: an animal standing near you is no longer left half in the ground after the host's evolution editor
+  (BUG-0752).
+- Tribe: the marker the host's game puts at a place a creature attack comes to (and its minimap blip) is now shown to
+  every player, also to one who joins later (BUG-0740).
+- Space: when both players are on the same planet, the guest now sees the same time of day (sky) as the host (BUG-0712).
+- Creature: the eggs your family lays in your own nest are now there for every player, not only for the host (BUG-0660).
+- Tribe: food a tribe member was carrying when it died now lies on the ground for every player, instead of
+  staying in the hand of that member's copy on the other players' screens (BUG-0661).
+- Civilization: an old tribe village the host's vehicles raid now disappears for the other players within about a
+  second instead of five (BUG-0659).
+- Tribe: a player who joins (or loads the world again) while a dead member of the host's tribe still lies on the
+  ground now sees that body too (BUG-0665).
+- All stages: F9 pressed in another program (a browser, a chat client) no longer shows or hides the co-op window;
+  the social digits and the marker that shows partners where you point read only the game window too (BUG-0713).
+- Space: a host ship without a model of its own is no longer drawn on a guest's screen as a copy of the guest's own
+  ship; it gets the model of a ship of its empire, or the game's raider model (BUG-0723).
+- Space: the ships of the host's empire (its escorts, its colonies' defenders) show the host's own ship designs on a
+  guest's screen, not the guest's creation that happens to have the same id (BUG-0724).
+- Civilization: a part of a host's vehicle or building design that a guest's game lacks is shown as the most similar
+  part that game has, not as one fixed part (BUG-0725); a host's building with such a part is no longer missing from
+  the guest's city (BUG-0726).
+- Creature: a guest playing its own creature now grows with its brain upgrades like the host's creature (BUG-0732), and
+  every player sees the other players' creatures at their real size after a brain upgrade (BUG-0733).
+- Creature: the host's pack (with the creatures a guest recruited) defends a guest that an animal attacks (BUG-0735).
+- Creature: a guest's Summon Flock is made in the shared world next to the guest's creature (both players see it, it
+  joins the party's pack); before, it was made in the guest's own game only (BUG-0736).
+- Cell: a guest's bite on a creature now plays the creature's hurt animation and reaction in the host's game, as the
+  host's own bite does, and a lethal bite sent by a guest who was just knocked out no longer kills (BUG-0714).
+- Cell: a guest's electric part now hurts the host's creatures; before, its zaps showed only on the guest's screen and
+  the creature's health came back (BUG-0715).
+- Cell: a guest's poison part now makes its poison clouds in the host's game, where the host's creatures meet them;
+  before, the guest's own game removed each cloud at once and the host's made none (BUG-0716).
+- Cell: a game with very many cells around (over about 2000, e.g. four players at a high level) no longer crashes in
+  the game's collision step: the hard limit of the game's merge buffer is guarded now, not only the co-op budgets
+  (BUG-0718).
+- Tribe, Creature, Civilization and Space: a partner's tribe members, the host's animals, vehicles and ships no longer
+  run on the old way through a latency spike when they turn or stop meanwhile (members were shown up to 8-9 m off,
+  animals jumped, a ship's copy flew 11 m past where it had stopped) (BUG-0674).
+- Creature: the copy of an animal thrown by a hit flies with it over a bad network instead of standing and stepping
+  after it (BUG-0675).
+- Tribe: over a home connection with latency spikes, or on a busy PC, the host's tribe members are shown where the
+  host has them now again, not 0.2-0.4 s behind (BUG-0651).
+- Creature: the partner's creature no longer walks on past where the partner stopped during a latency spike
+  (BUG-0680).
+- Space: a guest now sees the ships the host's game runs (pirates, raiders, NPC empires) fire their beams and
+  projectiles; before, they fought without a shot on the guest's screen and only the damage came (BUG-0677).
+- Space: a guest's own cargo hold also comes back when the host restarted its game between the guest's leave and its
+  join, keeps what changed in it while the guest was away, keeps the guest's own number of cargo slots, and brings back
+  plant, animal and artifact cargo the host's copy did not have (BUG-0679).
+- Civilization: a guest's game could stall for a moment and log over a hundred caught errors next to an old tribe
+  village whose members carried food; the co-op no longer takes food from, or hands food to, the guest's own
+  creatures outside the Tribe stage (BUG-0684).
+- Creature: after the evolution, while the brain upgrade caption played at the nest, a partner's creature could stand
+  half in the ground on another player's screen until it walked; it is put back onto the ground now (BUG-0683).
+- Space: a guest's game could hit an error (caught, logged as "SporeCoop caught an error in its own code") right
+  after leaving a planet for the galaxy menu; the mod no longer reads the city planner the game has just freed
+  (BUG-0682).
+- Space: the co-op sync self-check no longer reports a MISMATCH (in the log and the "Report a problem" text) when
+  the host's ship brakes or turns while its partner watches it, as in a rescue flight: the partner's copy is compared
+  with the path the host's ship flew in the last second (BUG-0547).
+- Creature: when the host's planet has creatures the host made, and the guest has made other creatures with the same
+  numbers, the guest's game showed its own creature for the host's nests and their cards ("The ... are your
+  allies!"); it shows the host's creature now (BUG-0200).
+- A guest that plays another world of the host's stage while it stays in the session no longer gets the host's
+  evolution vote screen and editor, and keeps its own species relations (BUG-0702, BUG-0703).
+- Civilization: an NPC nation's army attacking the same city no longer counts as a second player of a joint siege
+  (BUG-0704).
+- A player who joins after another left no longer inherits the departed player's Space star (Jump-to), roster and
+  budget, or the values and designs the host last sent to it (BUG-0706).
+- Creature: a baby animal's health bar on the guest showed the adult maximum of its species (BUG-0710).
+- Space: the host's shared money no longer goes into a guest that plays a Space save of its own (BUG-0709).
+- Hit impacts and other world effects of a partner are played on your own ground where the two games' grounds differ
+  (BUG-0608).
+- Tribe and Civilization: food or money a guest earned while the host was loading or in the menu now reaches the
+  host's game when it is back; before, the two games' totals stayed apart from then on (BUG-0691).
+- Tribe and Civilization: a guest's purchase right after leaving an editor is no longer undone by the host's next
+  total (the purchase made and the food or money back) (BUG-0692).
+- Civilization and Tribe: a guest's purchase, planner building, gift or superweapon request made while the host is
+  in an editor or the menu is made when the host is back, and the guest is told that it waits; before, it was dropped
+  without a word (BUG-0693).
+- Space: a contract or mission reward tool that arrives while the player is in an editor or an adventure is given
+  when the player is back in space; before, it was lost (BUG-0694).
+- Space: a contract's time no longer runs out while the host's game is paused or outside Space (BUG-0695).
+- Shared food and money: a notice now says which player's purchase or earning changed the shared total (BUG-0696).
+- Space: the partner's ship shows its real health on the other screen, not always full (BUG-0697).
+- Creature: a change of the species relations (a kill, an impression, an alliance) reaches the guests within about a
+  third of a second instead of up to one second (BUG-0699).
+
+## [0.7.10.1] - 2026-11-07
+
+### Fixed
+- Civilization: a guest's game could crash about ten seconds into a fight with vehicles near a city whose defence
+  turrets fired back; the guest now shows the host's turret shots without a crash (BUG-0688, #198).
+
+## [0.7.10] - 2026-11-07
+
+### Changed
+- Civilization: the host's vehicles are drawn where the game is moving them on the guest's screen, no longer a step
+  behind (found with BUG-0438).
+
+### Fixed
+- Creature: the host's game could crash when the UFO visit (the abduction event) came with a ship whose model its
+  game did not have, as with a Sporepedia cache of ship summaries only; seen at the end of the Creature stage. Such a
+  ship is now just not drawn (BUG-0686).
+- Tribe: when the host's tribe was down to its chief, a hit in a guest's own game on that chief could end the guest's
+  game on its own ("Alas! Your population has fallen below the minimum ...", its OK reloads the guest's own save), and
+  the guest then no longer saw the host's chief; only the host's game decides now when a member falls (BUG-0685).
+- Tribe and Creature: the guest hears the footsteps of the host's epic creatures (BUG-0669).
+- Civilization: the guest sees the host's own city buildings (city hall, houses, factories, entertainment) as the
+  host designed them, not some creation of its own with the same number (BUG-0670).
+- Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
+  same number (BUG-0647).
+- Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members
+  as the host's tribe (BUG-0645).
+- Tribe: the member portraits on the right of the guest's screen show the host's evolved creature, no white squares
+  (BUG-0643).
+- Tribe: the other villages have the same colours for the guest as for the host (BUG-0644).
+- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
+  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
+  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
+- Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
+- Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
+  (BUG-0671).
+- Tribe: the other tribes have the same chief for the guest as for the host; the guest no longer sees a second chief
+  with a staff in place of a musician (BUG-0652).
+- Space: a player who leaves and joins again gets its own cargo hold back (its tools and their charges, spice and
+  cargo), no longer the host's (BUG-0678).
+- Joining: a guest whose mouse rested on a planet of the galaxy menu while the host's world arrived no longer stays
+  stuck in the menu (it faulted in every frame); a game that faults over and over now writes a report (BUG-0676).
+- Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
+  creature it once chose in another world; a creature chosen in the co-op window now holds only in the world it was
+  chosen (or played) in (BUG-0638).
+- Creature: when the species migrates to a new nest, the guest's game migrates too, even without loading the host's
+  world: the goal, the "You have claimed this nest" scene and its DNA when the guest gets there, and its respawn at
+  the new nest (BUG-0640).
+- Creature: a spit now stops a charge between players: your spit stops a charging creature of the host's world, and
+  a creature's spit stops your charge (BUG-0641).
+- Cell: a guest's kill now happens once in the host's world: biting a dying creature again no longer kills it a
+  second time with a second drop of meat (BUG-0632).
+- Cell: a guest can no longer eat the same plant or piece of meat twice (it came back for a moment right after it
+  was eaten) (BUG-0636).
+- Cell: after a level change the cells on the guest's screen no longer all vanish and get replaced; the guest keeps
+  what is on its screen as the host does (BUG-0635).
+- Long sessions: the game keeps a block of memory for the end of a long session. When Spore (a 32-bit game) runs
+  low on memory, it gets that block back and you are told to save and restart, instead of crashing a few minutes
+  later (a host crashed in Civilization after two hours of play). Spore keeps every creature, model and texture it
+  loads until it is closed, and in co-op the host also loads what lives around the other players (BUG-0631).
+- Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
+  host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
+  guest's map (BUG-0668).
+- Tribe: on a connection with latency spikes or a busy PC the player tribe's citizens no longer trail 2-3 m behind on
+  the guest's screen; they are shown where the host has them now (BUG-0410).
+- Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
+  path (BUG-0386).
+
+## [0.7.9] - 2026-11-07
+
+### Changed
+- Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
+  (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
+  on that continues (BUG-0410, BUG-0438).
+- A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
+  report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+- SporeKit keeps running the mod after an error that the game itself catches; before, such an error could stop the mod
+  for the rest of the session while the game went on (found with BUG-0667).
+
+### Fixed
+- Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
+  nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
+  of one, and the bar keeps everything the party earned (BUG-0630).
+- Creature: when the partner stops, its creature on your screen stops where the partner stopped instead of sliding
+  on half a metre or more (BUG-0408).
+- Creature: the partner standing on a nest mound no longer drops to the ground for a frame each time it comes into
+  your view when you turn the camera (BUG-0434).
+- Tribe: in the first minute after a player joins, a chief walking past (or stopping next to) another player's chief
+  is no longer teleported to the other side of the village, on both screens (BUG-0610).
+- Tribe and Civilization: a late network packet no longer makes the guest's tribe members or vehicles jump back to an
+  older place for a moment or skips the removal of ones that are gone (BUG-0616).
+- A broken position from another player's game (not a number) can no longer be written into a creature, vehicle or
+  ship; such a state is dropped (BUG-0614). Messages too big to send are now written to the log instead of being
+  dropped without a word (BUG-0615).
+- A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
+  by mistake since 0.7.5; it works again (BUG-0623).
+- Tribe and other stages: when a game was loaded within a few seconds of the galaxy menu coming up, the menu's
+  intro flight could take over the host's view for good (the minimap and clicks no longer moved it); the intro is
+  now stopped the moment it starts outside the menu (BUG-0626). The same intro could leave a Creature guest's view on
+  the planet seen from space after its join (BUG-0607).
+- Civilization: a city the host's game founds instantly (and its vehicles) now appears on the guests' screens at
+  once, not several seconds later (BUG-0624).
+- Cell: two cells that end up exactly on top of each other no longer shoot off at hundreds of metres per second or
+  break a player's own cell for a moment (the game's collision left their push direction unset) (BUG-0307).
+- Creature: when the host's game stood still (its death or upgrade caption) and then went on, a guest could lose
+  almost every creature around it at once, and they stayed gone while the next caption was up (BUG-0611).
+- Creature: creatures the host's game puts away while it stands still (the host's respawn at its nest) no longer
+  stay on a guest's screen where they were, as creatures nobody else has (BUG-0339).
+- Tribe: a guest no longer sees tribe members carrying food that the host's members already put down (BUG-0617).
+- Tribe: when a member of a player's tribe dies, its body now lies on every player's screen as long as it does on the
+  host's; before, it vanished at once on the guests' screens (BUG-0620).
+- Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
+  host is somewhere else on the planet (BUG-0562).
+- Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
+  a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
+- Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
+  times bigger there than on the guests' screens) (BUG-0485).
+- Civilization: the host's vehicles no longer show up ten times too big on a guest's screen (BUG-0549).
+- The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
+  test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
+  (BUG-0403).
+- Cell: a guest whose pause menu was open while the others played, and who then left and joined again, no longer
+  crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
+- Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
+  and their sounds), not only the swings (BUG-0603).
+- Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
+  guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
+  the host has them at that moment (BUG-0425).
+- Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
+  players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
+- Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
+- Creature: the sea monster that takes a player in deep water rises upright out of the water on the other player's
+  screen, as the taken player sees it, instead of tilted into the water; other effects in the world now show at their
+  game's orientation and size too (BUG-0465).
+- Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
+  where it landed in both games after it is thrown or dropped (BUG-0458).
+- Cell: a player's screen no longer turns to plain water for the rest of the game after a level-up (the camera
+  lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
+- Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
+  off on every guest when nothing was wrong (BUG-0606).
+- Creature: while the host lies dead in its death caption (or its game stands still for another reason), a guest that
+  walks or respawns somewhere else now sees the host's animals there, instead of an empty spot until the host goes on
+  (BUG-0413).
+- Creature: a guest that leaves the session keeps the animals around it and plays on with them, and a guest that joins
+  again while the host is in its editor no longer finds a planet without creatures (BUG-0412).
+- Creature / Tribe: a fruit lying on the ground in the host's game lies at the same place on the guest's screen too,
+  also when the guest's own game had rolled it elsewhere or had already lost it (BUG-0497).
+- Tribe / Civ: food dropped on the ground and food carried by the host's tribe members is in the guest's game too,
+  at the same place, and food a guest's member picks up is gone for the host as well (BUG-0548).
+- Civ: a city's cultural targets stand where the host's stand after a guest leaves and joins again (BUG-0540).
+- Space: the decorations around a planet's cities are the same in every player's game (the same cities have them, at
+  the same places), instead of a different set on each screen (BUG-0541).
+- Tribe: the ground round the villages is now the same for every player after the Creature -> Tribe change: the
+  host's game had its plateaus up to 14 m higher or lower than the guests' (tribe members and hit flashes there stood
+  off the ground on the other screens). For this the host's game loads the new Tribe world once right after the
+  change (about 10 s); the guests see "the host is loading the new world once" meanwhile (BUG-0332, BUG-0608).
 
 ## [0.7.8] - 2026-11-05
 

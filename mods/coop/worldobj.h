@@ -39,5 +39,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
 std::string status();
+// BUG-0617 (census): where a food bundle (noun 0x18C431C) is: "ground" (the bundle manager's ground container),
+// "carried" (a creature's or citizen's own container: *carrier set), "held" (another container: a food mat's ...)
+const char* bundle_holder(void* bundle, void** carrier);
 
 } // namespace wobj

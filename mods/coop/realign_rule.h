@@ -17,7 +17,10 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <utility>
 #include <vector>
+
+#include "net/validate.h"
 
 namespace realign {
 
@@ -103,5 +106,65 @@ struct Streaks {
 
 // a state worth fixing: huts / tools health (1/1000) more than 2 % apart
 inline bool state_off(uint16_t host, uint16_t local) { return (host > local ? host - local : local - host) > 20; }
+
+// BUG-0886: the guest's receiver of the host's planet list, sent every 2 s in chunks of one cycle (a u16 counter).
+// A late chunk of an OLDER cycle (a loss burst, reordering) used to start that cycle again: the newer cycle being
+// received was lost, and a one-chunk older cycle could even become the list compared (the BUG-0612 pattern; Tribe
+// and Civ use net::CycleTracker since 0.7.11). With keep_order (net.cycle_order) such a chunk is dropped (older),
+// a chunk of a cycle already complete or one seen twice adds nothing. Off: the receiver of 0.7.12.
+struct PlanetRx {
+    using Item = std::pair<uint8_t, Obj>; // kind, object
+    net::CycleTracker cyc;
+    bool done = false;              // the current cycle is complete (its late duplicates add nothing)
+    std::vector<Item> objs;         // the cycle being received; the whole list once add() returned true
+    uint32_t incomplete = 0, older = 0, dup = 0;
+    // 0.7.12
+    uint16_t old_cycle = 0;
+    std::set<uint8_t> old_chunks;
+
+    // a chunk (`chunk` < `chunks`, checked by the caller): true = its cycle is complete, `objs` holds the list
+    bool add(uint16_t cycle, uint8_t chunk, uint8_t chunks, const std::vector<Item>& part, bool keep_order)
+    {
+        if (!keep_order) {
+            if (cycle != old_cycle || old_chunks.empty()) {
+                if (!old_chunks.empty())
+                    incomplete++;
+                old_cycle = cycle;
+                old_chunks.clear();
+                objs.clear();
+            }
+            old_chunks.insert(chunk);
+            objs.insert(objs.end(), part.begin(), part.end());
+            if ((int)old_chunks.size() != chunks)
+                return false;
+            old_chunks.clear();
+            return true;
+        }
+        bool started = false;
+        uint32_t was_older = cyc.older;
+        bool had = cyc.have && !done && cyc.count() > 0;
+        if (!cyc.begin(cycle, true, &started)) {
+            older += cyc.older - was_older;
+            return false;
+        }
+        if (started) {
+            if (had)
+                incomplete++;
+            done = false;
+            objs.clear();
+        }
+        if (done || (cyc.got[chunk >> 6] >> (chunk & 63) & 1)) {
+            dup++;
+            return false;
+        }
+        cyc.add(chunk);
+        objs.insert(objs.end(), part.begin(), part.end());
+        if (!cyc.complete(chunks))
+            return false;
+        done = true;
+        return true;
+    }
+    void reset() { *this = PlanetRx{}; }
+};
 
 } // namespace realign

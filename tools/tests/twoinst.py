@@ -1,6 +1,7 @@
 """Shared setup for two-instance tests: host = instance 1 (profile test) with a fixture save,
 guest = instance 2 (empty profile) that joins from the menu and receives the host world."""
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -13,6 +14,9 @@ from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
 import fixtures  # noqa: E402
 from lane import APPDATA, sh  # noqa: E402,F401
+import memprobe  # noqa: E402
+
+memprobe.start()  # SPORE_MEMPROBE=1|trace: the test script's own memory (BUG-0916)
 
 
 def wait_up(inst, t=120):
@@ -80,6 +84,163 @@ def shot(con, name):
     if con.call('shot ' + path)['ok']:
         recompress_png(path, 0.5)
     return path
+
+
+def game_runs(con, timeout=45.0):
+    """wait until the game's time runs (`coop.pauses`: paused=0). start() returns when the guest is in the stage; its
+    game can still stand on the stage entry's pause (reason 04BF38A7, a black screen while the entry waits for its bakes:
+    0 s on most lanes, 5 s and more on others, 10-40 s in Tribe) and real input sent then is lost (BUG-0944: the combat
+    stance click of creature_kills). Returns the seconds waited, None when it still stands after timeout."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if re.search(r'paused=0\b', con.call('coop.pauses').get('out') or ''):
+            return time.time() - t0
+        time.sleep(0.25)
+    return None
+
+
+def ability_mode(con):
+    """Creature: the game's stance (cCreatureGameData::GetAbilityMode): 0 social, 1 combat, None unknown"""
+    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call Simulator::cCreatureGameData::GetAbilityMode cdecl').get('out') or '')
+    return int(m.group(1), 16) if m else None
+
+
+def set_stance(con, kind, w=1440, h=1080, tries=4):
+    """Creature: the social / combat stance by the player's click on its button above the ability bar, read back from
+    the game (a click while the game stands or before the HUD is up does nothing, and a second click on a stance that
+    is already on is not needed): waits for the game time first (game_runs). True when the game is in the stance."""
+    want = 1 if kind == 'combat' else 0
+    game_runs(con)
+    for _ in range(tries):
+        if ability_mode(con) == want:
+            return True
+        con.call(f'click {w // 2 + (43 if want else -30)} {h - 82}')
+        time.sleep(0.6)
+    return ability_mode(con) == want
+
+
+PLAYERS = {}  # {'host': Console, 'guest': Console} of the last start(): keyframe()'s default games
+
+
+KEYFRAME_BUSY = ('cinematic', 'paused', 'editor', 'loading')  # BUG-0924: a frame at such a moment says nothing
+KEYFRAME_SETTLE = float(os.environ.get('SPORE_KEYFRAME_SETTLE', '20'))
+# BUG-0984: the game's pause menu (and a cinematic's end) fades out for about a second after the game says it plays
+# again: a frame shot right after the busy state ended had the half-transparent menu over the guest's game (0.7.13
+# final check, keyframe_settle). After a wait the frame waits this much longer (0: the old behaviour, the twin).
+KEYFRAME_FADE = float(os.environ.get('SPORE_KEYFRAME_FADE', '1.5'))
+
+
+def _game_busy(con):
+    """the busy reasons of a game a key frame waits out (coop.status `busy:`, the editor modes), [] when none"""
+    try:
+        st = con.call('coop.status').get('out', '')
+        m = re.search(r'^busy: (\S+)', st, re.M)
+        why = [w for w in (m.group(1).split(',') if m else []) if w in KEYFRAME_BUSY]
+        if 'Editor' in con.call('game.mode').get('out', '') and 'editor' not in why:
+            why.append('editor')
+        return why
+    except (OSError, ValueError):
+        return []
+
+
+def keyframe_settle(players, settle=None, calm=0):
+    """BUG-0924: wait (at most `settle` s) until no game of the frame plays a cinematic or a caption, stands in a
+    pause (the pause menu, a planner), sits in an editor or loads; {role: [reasons]} still busy at the end.
+    calm (BUG-0980): the games must also stay so for that many seconds (a stage intro's picture, the Cell meteor and
+    its letterbox, stays a few seconds after the game's cinematic and input lock end)."""
+    settle = KEYFRAME_SETTLE if settle is None else settle
+    t0 = time.time()
+    calm_since = None
+    cons = {}
+    for r, c in players.items():  # own connections: a bot thread may be using the test's console now
+        try:
+            cons[r] = Console(c.port - 47799, timeout=15)
+        except (OSError, ValueError):
+            pass
+    try:
+        seen = False
+        while True:
+            busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
+            now = time.time()
+            calm_since = None if busy else (calm_since or now)
+            if not busy and seen and KEYFRAME_FADE > 0 and now - calm_since >= calm:  # BUG-0984: the menu's or the cinematic's fade-out
+                time.sleep(KEYFRAME_FADE)
+                busy = {r: b for r, b in ((r, _game_busy(c)) for r, c in cons.items()) if b}
+                if not busy:
+                    return busy, time.time() - t0
+                calm_since = None
+            elif (not busy and now - calm_since >= calm) or now - t0 >= settle + calm:
+                return busy, now - t0
+            if busy and time.time() - t0 >= settle + calm:
+                return busy, time.time() - t0
+            seen = True
+            time.sleep(0.5)
+    finally:
+        for c in cons.values():
+            c.sock and c.sock.close()
+
+
+def keyframe(tag, note, players=None, kind='key', extra=None, settle=None, calm=0):
+    """a key frame (docs/06-testing.md#testing-key-frames): every game of the test is shot at the same moment
+    (one thread each), stored as a ~960 px JPEG in <run>/frames/<test>/<nn>_<tag>_<role>.jpg with a manifest line
+    (the note says what should be visible; each game's mode and position). players: {role: Console}, default the
+    host and guest of start(); kind 'key', 'phase' (a campaign's phase end) or 'sameview'. Never fails the test:
+    a game that does not answer gets ok=false in the manifest. Returns the manifest entry (None on an error).
+    BUG-0924: first waits (settle s, SPORE_KEYFRAME_SETTLE, default 20; 0: at once) until no game is in a cinematic,
+    a pause, an editor or a load; a game still busy then is named in the manifest's extra (`busy role: why`).
+    calm: then also that many seconds with no game busy (BUG-0980: a frame right after a stage intro)."""
+    import frames
+    try:
+        players = dict(players or PLAYERS)
+        if not players:
+            return None
+        busy, waited = keyframe_settle(players, settle, calm) if (settle is None or settle > 0 or calm) else ({}, 0.0)
+        if busy or waited >= 1:
+            extra = list(extra or []) + [f'busy {r}: {",".join(b)}' for r, b in sorted(busy.items())] + \
+                ([f'waited {waited:.1f} s for the games to settle'] if waited >= 1 else [])
+        d = frames.frames_dir(lane.out_dir())
+        nn = frames.next_number(d)
+        tmp = lane.out_dir('shots', 'keyframes')
+        games = {}
+        t_shot = time.time()
+
+        def one(role, con):
+            g = {'file': frames.frame_file(nn, tag, role), 'ok': False, 'mode': '', 'pos': None}
+            games[role] = g
+            try:
+                c = Console(con.port - 47799, timeout=30)
+                png = os.path.join(tmp, f'{os.getpid()}_{nn}_{frames.safe(role, 12)}.png')
+                if c.call('shot ' + png).get('ok') and frames.to_jpeg(png, os.path.join(d, g['file'])):
+                    g['ok'] = True
+                try:
+                    os.remove(png)
+                except OSError:
+                    pass
+                g['mode'] = frames.parse_mode(c.call('game.mode').get('out'))
+                g['pos'] = frames.parse_pos(c.call('coop.avatar').get('out'))
+                c.sock and c.sock.close()
+            except (OSError, ValueError) as e:
+                g['error'] = repr(e)[:120]
+
+        ths = [threading.Thread(target=one, args=(r, c), daemon=True) for r, c in players.items()]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join(60)
+        for g in games.values():  # a frame Pillow could not write (no Pillow): no file in the manifest
+            if not g['ok']:
+                g['file'] = ''
+        stage = next((g['mode'] for r, g in sorted(games.items(), key=lambda kv: frames.role_order(kv[0]))
+                      if g.get('mode')), '')
+        e = frames.now_entry(frames.test_name(), nn, tag, note, kind, stage, games, extra)
+        e['shot_t'] = round(t_shot, 2)  # when the shots were asked for (BUG-0984)
+        frames.record(d, e)
+        shot_n = sum(1 for g in games.values() if g['ok'])
+        print(f'  (key frame {nn:02d} {tag}: {shot_n} of {len(games)} games shot -> {d})', flush=True)
+        return e
+    except Exception as ex:  # noqa: BLE001: a key frame never fails a test
+        print(f'  (key frame {tag}: {ex!r})', flush=True)
+        return None
 
 
 class Monitor(threading.Thread):
@@ -298,14 +459,126 @@ def check_fixture(host, fixture):
     return not bad
 
 
+# BUG-0679: a guest keeps its own cargo hold per host world on its disk (<profile>/Spore/SporeCoop/holds); every test
+# starts without one unless it asks for the record of its own earlier session (start(..., keep_holds=True))
+KEEP_HOLDS = [False]
+
+
+def forget_holds():
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-rf', d + '/SporeCoop/holds', d + '/SporeCoop/badges'])  # (badges: BUG-0786)
+
+
+def forget_settings():
+    """BUG-0762: every test starts with the default session settings: no world keeps the values an earlier test
+    stored (<profile>/Spore/SporeCoop/settings, one file per world; a warm reset loads the same planet name)"""
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-rf', d + '/SporeCoop/settings'])
+
+
+# BUG-0430: switches and knobs live in the game process: coop.leave and a load keep them. A test that sets one
+# (`coop.fix x off`, `coop.worldfix retry 0`, `frame.limit 50`, `coop.diag sync force shift`, ...) and fails or
+# ends before it sets it back (or never does) left them changed for the next test of the lane, which then ran
+# warm on games that were not at their start. Every console call that sets one is noted in the lane state
+# ('knobs'); a warm start refuses such games (a cold start sets everything back). Each pattern needs a value
+# argument: a bare query (`coop.fix list`, `coop.worldfix`) changes nothing. One-shot actions that change no
+# setting (`coop.diag sync now`, `frame.limit auto`) are not knobs. start_state() is the second line of defence:
+# the game's own report of its switches, compared with the cold start's.
+KNOBS = re.compile(r'\s*(?:'
+                   r'(?:coop|kit)\.fix\s+\S+\s+\S+'  # coop.fix <name> on|off, coop.fix all off, kit.fix <name> 0
+                   r'|coop\.\w+fix\s+\S+'  # coop.worldfix retry 0, coop.corefix <name> 0, coop.sessionfix 0, coop.framefix 0
+                   r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
+                   r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
+                   r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
+                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+(?:novel|lift)\s+\S+|coop\.npctrack\s+novel\s+\S+'
+                   r'|coop\.space\s+repairdist\s+\S+'  # w49-warm: a warm successor would inherit these three
+                   r'|coop\.uistate\s+(?:lang|color|nudge|hide)\s+\S+|coop\.lanfake\b'
+                   r'|coop\.view\s+set\b'  # a fixed camera (coop_same_view.py): off at the test's end, a crash leaves it
+                   r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
+                   r'|frame\.limit\s+(?!auto\b)\S+|frames\.source\s+(?!auto\b)\S+'
+                   r')')
+_knob_lock = threading.Lock()
+
+
+def note_knob(_con, line):
+    """sporectl.Console.on_call: a call that sets a switch or knob goes into the lane state (BUG-0430)"""
+    if not KNOBS.match(line):
+        return
+    with _knob_lock:
+        st = lane_state()
+        knobs = st.get('knobs', [])
+        if line.strip() not in knobs:
+            lane_state(**{**st, 'knobs': knobs + [line.strip()]})
+
+
+Console.on_call = note_knob
+
+
+def start_state(con):
+    """the game's own report of its switches and settings (BUG-0430): coop.diag's `settings:` line (coop.ini values
+    that differ from the defaults and every coop.fix switch that is off) and SporeKit's kit.fix list"""
+    try:
+        diag = con.call('coop.diag').get('out') or ''
+        kit = con.call('kit.fix').get('out') or ''
+    except (OSError, ValueError):
+        return None
+    lines = [ln for ln in diag.splitlines() if ln.startswith('settings:')]
+    return '\n'.join(lines + kit.strip().splitlines())
+
+
+def warm_refusal(st, host=None, guest=None):
+    """why these games may not run the next test warm (BUG-0312, BUG-0430), '' when they may"""
+    if st.get('fix_off'):
+        return f'SPORE_FIX_OFF {st["fix_off"]} left switches off'
+    if st.get('fps'):
+        return f'SPORE_FPS {st["fps"]} left a frame cap'
+    if st.get('knobs'):
+        return 'an earlier test set ' + ', '.join(f'`{k}`' for k in st['knobs'][:4]) + \
+            (f' and {len(st["knobs"]) - 4} more' if len(st['knobs']) > 4 else '')
+    want = st.get('start_state') or {}
+    for who, con in (('host', host), ('guest', guest)):
+        if con is not None and want.get(who) is not None:
+            now = start_state(con)
+            if now != want[who]:
+                diff = sorted(set((now or '').splitlines()) ^ set(want[who].splitlines()))
+                return f'the {who}\'s switches differ from its cold start ({"; ".join(diff)[:200]})'
+    return ''
+
+
+def clear_faults(**cons):
+    """BUG-1097: the exception logger's count (`exc`) lives in the game process: a warm reset kept it, and the next
+    test's Checks.faults() counted the faults an earlier test made on purpose (kit_cmd_fault, kit_present_fault,
+    kit_overlay_fault: reports=True, they check their own) as its own. The test before has read and judged them; a warm
+    reset starts the count at 0 like a cold start (faults of the reset itself count for the new test). Returns
+    {name: the count cleared}. SPORE_WARM_KEEP_FAULTS=1: the old way (the count goes on; the twin of BUG-1097)"""
+    if os.environ.get('SPORE_WARM_KEEP_FAULTS') == '1':
+        return {}
+    cleared = {}
+    for name, con in cons.items():
+        out = (con.call('exc clear').get('out') or '').splitlines() or ['']
+        m = re.search(r'total faults: (\d+)', out[0])
+        cleared[name] = int(m.group(1)) if m else 0
+    if any(cleared.values()):
+        print('  (warm reset: the faults of the tests before cleared: '
+              + ', '.join(f'{n} {c}' for n, c in cleared.items()) + ')', flush=True)
+    return cleared
+
+
 def warm_reset(host, guest, fixture, planet):
     """the running games of the lane start the test again: the fixture goes into a fresh save
     slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
     t0 = time.time()
     st = lane_state()
     slot = 10 + (st.get('slot', 9) - 9) % 10
+    clear_faults(host=host, guest=guest)
     for c in (guest, host):
         c.call('coop.leave')
+        c.call('coop.uistate 0')  # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it)
+    if not KEEP_HOLDS[0]:  # BUG-0679: no hold record of an earlier test (its file and its memory)
+        for c in (guest, host):
+            c.call('coop.space trade forget')
+        forget_holds()
+    forget_settings()
     sh('fixture', 'slot', fixture, lane.HOST_PROFILE, str(slot))
     host.call(f'coop.load Game{slot} {planet.split("/")[1]}')
     phases = []
@@ -350,6 +623,7 @@ def start(*a, **kw):
     catches the bug. Fixes that act while the guest joins are on until then.
     Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
     cannot pass silently with the fix still on; an unsafe switch only gets a warning line."""
+    KEEP_HOLDS[0] = kw.pop('keep_holds', False)
     host, guest = _start(*a, **kw)
     names = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     if names:  # BUG-0312: these games keep the switches off; the next warm test must not reuse them
@@ -367,6 +641,8 @@ def start(*a, **kw):
                 print(f'  SPORE_FIX_OFF: warning: {name} is unsafe (its off side can corrupt memory or data)', flush=True)
     apply_fps(host, 'host')
     apply_fps(guest, 'guest')
+    PLAYERS.clear()
+    PLAYERS.update(host=host, guest=guest)
     return host, guest
 
 
@@ -411,25 +687,54 @@ def fix_off_ok(name, answer):
     return answer.startswith(f'{name} off ')
 
 
-def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):
+def _menu_up_time(inst):
+    """time.time() of the last `stage: ... -> Galaxy menu` line in the game's log (the moment the mod saw the menu
+    come up; game.mode answers GalaxyGameEntry up to ~12 s later on a cold start), or None"""
+    import datetime
+    try:
+        with open(lane.game_log(inst), errors='replace') as f:
+            lines = [ln for ln in f if '-> Galaxy menu' in ln]
+    except OSError:
+        return None
+    m = re.match(r'(\d\d):(\d\d):(\d\d)\.(\d+)', lines[-1]) if lines else None
+    if not m:
+        return None
+    now = datetime.datetime.now()
+    t = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=int(m.group(3)),
+                    microsecond=int(m.group(4).ljust(6, '0')[:6]))
+    if t > now + datetime.timedelta(minutes=1):
+        t -= datetime.timedelta(days=1)
+    return t.timestamp()
+
+
+def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True, join_at=None,
+           before_join=None):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
     same build: warm_reset() instead of a restart (~10 s instead of ~40 s).
     join_in_intro: the guest joins while its galaxy menu plays the intro cinematic GGE_Intro (cold
-    start only; the race behind the stuck guest movie, docs/re/space.md 7.9)."""
+    start only; the race behind the stuck guest movie, docs/re/space.md 7.9).
+    join_at: the guest joins this many seconds after its galaxy menu came up (polled every 0.25 s; cold
+    start only), so that its load comes at a chosen moment of the menu's intro timer (BUG-0607).
+    before_join: called with the guest's console right before it joins (cold start only; BUG-0676: the guest's
+    first galaxy menu set up for the test)."""
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
     # warm only within the same save: a test starts from its fixture (stage switches in game work,
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
-    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
+    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and join_at is None and before_join is None \
+            and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
-            and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
-            and alive(lane.HOST) and alive(lane.GUEST):
+            and not PRESET_CHOICES and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
+        why = ''
         try:
-            if warm_reset(host, guest, fixture, planet):
+            why = warm_refusal(st, host, guest)
+            if why:
+                print(f'  (no warm reuse: {why}; cold start)', flush=True)
+            elif warm_reset(host, guest, fixture, planet):
                 watch(lane.HOST, lane.GUEST)
                 if check_fixture(host, fixture):
                     return host, guest
@@ -438,7 +743,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
                 print('  (warm reset: the fixture lacks its facts)', flush=True)
         except (OSError, ValueError) as e:
             print('  (warm reset failed:', e, ')', flush=True)
-        print('  (warm reset failed: cold start)', flush=True)
+        if not why:
+            print('  (warm reset failed: cold start)', flush=True)
     lane_state()  # (the state is rewritten below once the games run)
     sh('kill')
     time.sleep(2)
@@ -446,6 +752,9 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
     restore_creations(guest_creations)
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
+    if not KEEP_HOLDS[0]:
+        forget_holds()
+    forget_settings()
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
     for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)
@@ -501,12 +810,25 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             lane.run_guest()
             assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
         guest = Console(lane.GUEST)
-    for _ in range(120):
-        if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+    for _ in range(120 * (4 if join_at is not None else 1)):
+        if join_at is not None:  # the log's line comes when the menu does; game.mode answers up to ~12 s later
+            if (_menu_up_time(lane.GUEST) or 0) > t_start:  # this start's line, not an older session's
+                break
+        elif 'GalaxyGameEntry' in guest.call('game.mode')['out']:
             break
-        time.sleep(1)
+        time.sleep(1 if join_at is None else 0.25)
+    t_menu = time.time()
     phases.append(('guest menu', time.time() - t_start))
-    guest.call('wait.frames 200 60000')
+    if join_at is not None:
+        # SPORE_FIX_OFF before the join too: a fix of the join itself is off when it is needed
+        for name in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')):
+            if name and not name.startswith('kit.'):
+                print('  SPORE_FIX_OFF (guest, before the join): ' + guest.call(f'coop.fix {name} off')['out'].strip(),
+                      flush=True)
+        t_menu = _menu_up_time(lane.GUEST) or t_menu
+        time.sleep(max(0.0, t_menu + join_at - time.time()))
+    else:
+        guest.call('wait.frames 200 60000')
     if join_in_intro:  # the intro starts ~16 s after the menu came up and runs ~10 s
         for _ in range(120):
             if '(menu intro)' in guest.call('coop.status')['out']:
@@ -514,6 +836,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             time.sleep(0.25)
         else:
             print('  (the guest menu intro did not start)', flush=True)
+    if before_join is not None:
+        before_join(guest)
     phases.append(('guest join', time.time() - t_start))
     guest.call(lane.JOIN)
     # the host saves before sharing and the game shows a modal "game saved" box (frames stop):
@@ -525,10 +849,18 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     time.sleep(4)
     print(f'  (both games ready in {time.time() - t_start:.0f} s: '
           + ', '.join(f'{n} {t:.0f}' for n, t in phases) + ')', flush=True)
-    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations)
+    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations,
+               start_state={'host': start_state(host), 'guest': start_state(guest)})
     watch(lane.HOST, lane.GUEST)
     check_fixture(host, fixture)
     return host, guest
+
+
+# BUG-0967: a fault of the game's audio init (0x011ECE30, a constructor reading its third argument's +0x120, null:
+# 0x011EA810 <- the rw::audio core, Snd9Service) right after App::cSporeApp::Init, before the galaxy menu and any test
+# step; handled by the game. Seen twice in all lab runs (20261101-143943, 20261112-135150: host and guest at once).
+# SPORE_BOOT_FAULT_STRICT=1 counts it again.
+BOOT_AUDIO_FAULT = re.compile(r'0xC0000005 x(\d+) at 0x011ECE4F \S+ data=0x00000120 ')
 
 
 class Checks:
@@ -542,7 +874,16 @@ class Checks:
 
     def faults(self, **cons):
         for name, con in cons.items():
-            out = con.call('exc')['out'].splitlines()
+            out = con.call('exc')['out'].splitlines() or ['']
+            m = re.search(r'total faults: (\d+)', out[0])
+            known = sum(int(k.group(1)) for line in out[1:] for k in [BOOT_AUDIO_FAULT.match(line.strip())] if k)
+            if m and known and int(m.group(1)) == known and os.environ.get('SPORE_BOOT_FAULT_STRICT') != '1':
+                # BUG-0967: only the game's own audio init (rw::audio, Snd9Service) at boot, before any test step,
+                # handled by the game: printed without the "total faults: N" the lab counts
+                print(f'{name} faults: none but {known} known one(s) of the game\'s audio init at boot (BUG-0967)')
+                for line in out[1:3]:
+                    print(f'    {line.strip()}')
+                continue
             print(f'{name} faults: {out[0]}')
             for line in out[1:4]:
                 print(f'    {line.strip()}')

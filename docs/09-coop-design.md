@@ -47,7 +47,10 @@ only from working together.
 * One tribe, shared food and huts. **Tribe members are split between players**: the host has their own,
   each guest has their own (equal shares by default; new members go to whoever "bought" them).
 * Everyone selects and leads **their own** members: hunting, gathering, attacking, music.
-  Guest commands go to the host, and members move identically for everyone.
+  Guest commands go to the host, and members move identically for everyone. A click on another player's member
+  (or its card) selects nothing and says whose member it is (BUG-1087, `tribe.foreign_note`).
+* The host's game decides the members' moves: while it stands (its pause menu, the Sporepedia, a modal, a game-over
+  caption) every guest's game stands too, with a note why (BUG-1086 `tribe.host_pause_wait`, BUG-0960).
 * Roles emerge naturally: one hunts and feeds, another fights, a third makes friends.
 * Buildings and new members are bought from shared food; whoever bought it owns it.
 * **Working together pays:** a *pincer* (members of two players hit the same tribe within 10 s)
@@ -142,6 +145,16 @@ Shared contracts between the features:
 * The host goes through the editor and the cutscene, then the world is sent to guests automatically.
 * A guest cannot advance alone: their transition button leads to the vote.
 * An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
+* Cell -> Creature (BUG-0315, `core.switch_vote`): the host's click on History's check starts the vote "wants to move on
+  to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
+* An evolution inside the Creature stage (BUG-0516, `core.editor_now`) has no vote: the host's editor opens at once and
+  every guest gets "Evolve now" (90 s) for its own editor; a guest who does not take it plays on and evolves at its
+  nest later. The Cell stage's evolution, stage starts and design editors keep the vote.
+* Creature -> Tribe (BUG-1085, `core.editor_now_tag`): "an evolution inside the Creature stage" is the mating
+  editor's request (tag 0x12191CA; not the first Creature editor after Cell); the Timeline's evolve button at the end
+  of the stage (tag 0x64AA168) is a stage start: the host's press starts the vote "wants to move on to the Tribe
+  stage", a guest's press in the host's Creature world is its "I'm ready" during that vote and is refused otherwise
+  (a note says that the host moves everybody on). A guest never reaches Tribe alone through its own button.
 
 ## 9.4 What already works (verified by automated tests on two game instances)
 

@@ -17,6 +17,8 @@
 #include "world_name.h"
 #include "fields_wire.h"
 #include "realign_rule.h"
+#include "lifecycle.h"
+#include "call_guard.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -546,6 +548,80 @@ static void test_realign_rule()
     CHECK(due.empty() && s.n.empty()); // a host list without the kind while this game has several: no list of the planet
 }
 
+// BUG-1055: the lifecycle registry resets the entries of a scope (with their own switch on), and keeps what a reset left
+static int g_lc_session = 0, g_lc_world = 0, g_lc_both = 0;
+static bool g_lc_fix = true;
+SESSION_STATE("t.session", nullptr, [] { g_lc_session = 0; }, []() -> size_t { return (size_t)g_lc_session; });
+WORLD_STATE("t.world", &g_lc_fix, [] { g_lc_world = 0; }, []() -> size_t { return (size_t)g_lc_world; });
+LIFECYCLE_STATE("t.both", lifecycle::kSession | lifecycle::kWorld, nullptr, [] { g_lc_both = 0; }, []() -> size_t { return (size_t)g_lc_both; });
+static void test_lifecycle()
+{
+    g_lc_session = 2, g_lc_world = 3, g_lc_both = 1;
+    CHECK(lifecycle::held() == "t.session 2\nt.world 3\nt.both 1\n");
+    lifecycle::reset(lifecycle::kSession, !g_nofix);
+    CHECK(g_lc_session == 0 && g_lc_both == 0 && g_lc_world == 3); // a session end keeps the world's state
+    CHECK(lifecycle::left(lifecycle::kSession).empty());
+    g_lc_fix = false; // the entry's own switch off: kept, and listed as left
+    lifecycle::reset(lifecycle::kWorld, true);
+    CHECK(g_lc_world == 3 && lifecycle::left(lifecycle::kWorld) == "t.world 3\n");
+    g_lc_fix = true;
+    g_lc_both = 4;
+    lifecycle::reset(lifecycle::kWorld, true);
+    CHECK(g_lc_world == 0 && g_lc_both == 0 && lifecycle::left(lifecycle::kWorld).empty());
+    g_lc_session = 1;
+    lifecycle::reset(lifecycle::kSession, false); // the registry's switch off: nothing reset
+    CHECK(g_lc_session == 1 && lifecycle::left(lifecycle::kSession) == "t.session 1\n");
+    CHECK(lifecycle::resets(lifecycle::kSession) == 2 && lifecycle::resets(lifecycle::kWorld) == 2);
+    lifecycle::WorldWatch w;
+    CHECK(!w.changed(5)); // the first call only records
+    CHECK(!w.changed(5) && w.changed(6) && !w.changed(6));
+}
+
+// BUG-1047: the call guard registry: a hold sets and clears its guard; a hold a caught fault cut short (unwind) leaves
+// it set, and the frame's reset clears every registered guard (a flag or a depth counter) that is still set
+static bool g_cg_a, g_cg_b, g_cg_free;
+static int g_cg_depth;
+CALL_GUARD("t.a", g_cg_a);
+CALL_GUARD("t.b", g_cg_b);
+CALL_GUARD_DEPTH("t.depth", g_cg_depth);
+static void test_call_guard()
+{
+    {
+        callguard::Hold h(g_cg_a);
+        CHECK(g_cg_a);
+        {
+            callguard::Depth d(g_cg_depth);
+            CHECK(g_cg_depth == 1);
+        }
+        CHECK(g_cg_depth == 0);
+    }
+    CHECK(!g_cg_a);
+    {
+        callguard::Hold h(g_cg_b, false); // `flag = local`: may hold false
+        CHECK(!g_cg_b);
+    }
+    CHECK(callguard::reset(true) == 0); // nothing set outside the holds
+    CHECK(callguard::unwind("t.a") && callguard::unwind("t.depth") && !callguard::unwind("t.none"));
+    {
+        callguard::Hold h(g_cg_a);
+        callguard::Depth d(g_cg_depth);
+    }
+    CHECK(g_cg_a && g_cg_depth == 1); // as a fault the game caught leaves them
+    {
+        callguard::Hold h(g_cg_a); // the next hold is a normal one again
+    }
+    CHECK(!g_cg_a);
+    g_cg_a = true;
+    g_cg_free = true; // not registered: never touched
+    size_t n = callguard::reset(!g_nofix);
+    CHECK(n == 2 && !g_cg_a && g_cg_depth == 0 && g_cg_free);
+    CHECK(callguard::state().last == "t.a,t.depth");
+    CHECK(callguard::status() == "t.a set=0 cleared=1\nt.b set=0 cleared=0\nt.depth set=0 cleared=1\n");
+    g_cg_b = true;
+    CHECK(callguard::reset(false) == 0 && g_cg_b); // the registry's switch off: left set (0.7.13)
+    g_cg_b = false;
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -562,6 +638,8 @@ int main(int argc, char** argv)
     test_ledger();
     test_fields_wire();
     test_realign_rule();
+    test_lifecycle();
+    test_call_guard();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

@@ -15,6 +15,7 @@
   suite     every allow(...) of suite.py names an existing ticket and a reason; the players variants
 """
 import os
+import re
 import sys
 import tempfile
 import time
@@ -261,6 +262,12 @@ def field_cases(tmp):
     check(got == {'drawn'}, f'monitor: drawn: the host draws the guest 8 m off its own position ({got})')
     got = scenario(tmp, 'f_drawn_fast', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=30.0'))
     check(not got, f'monitor: drawn: 8 m behind a partner running 30 m/s is the lag ({got})')
+    # BUG-0711: a copy without news for 3.6 s (a dead link) is not judged; drawn_age -1 (the rule before it) judges it
+    got = scenario(tmp, 'f_drawn_stale', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)))
+    check(not got, f'monitor: drawn: a copy whose state is 3.6 s old is the link\'s, not the drawing\'s ({got})')
+    got = scenario(tmp, 'f_drawn_stale_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', hs=dict(age=3.6)),
+                   dict(drawn_age=-1))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_age -1 judges a stale copy as before ({got})')
     got = scenario(tmp, 'f_drawn_space', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0',
                                                        h=dict(stage='Space'), g=dict(stage='Space')))
     check(not got, f'monitor: drawn: 8 m in Space is within its limit ({got})')
@@ -273,6 +280,20 @@ def field_cases(tmp):
     check(not got, f'monitor: drawn: a Tribe pointer that jumped 0.1 s before the mark, its copy not yet ({got})')
     got = scenario(tmp, 'f_drawn_old', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', **tr))
     check(got == {'drawn'}, f'monitor: drawn: a Tribe log without ptr_still= is judged as before ({got})')
+    # BUG-0681: Cell level change: the guest's own line in world scale 8, the host's in 1: the host draws the guest at its
+    # own pos x 8 (the same point in the host's scale); a log without wscale= and drawn_scale 0 compare raw
+    ce = dict(h=dict(stage='Cell'), g=dict(stage='Cell'), hs=dict(stage='Cell'))
+    got = scenario(tmp, 'f_drawn_scale', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                       guest_own=' wscale=8', **ce))
+    check(not got, f'monitor: drawn: Cell positions in two world scales are compared in one ({got})')
+    got = scenario(tmp, 'f_drawn_scale_off', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                           guest_own=' wscale=8', **ce), dict(drawn_scale=0))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_scale=0 (the rule before BUG-0681) compares raw ({got})')
+    got = scenario(tmp, 'f_drawn_scale_real', *aligned_pair(host_sees=' drawn=(16.0 16.0 24.0) drawn_v=0.0', host_own=' wscale=1',
+                                                            guest_own=' wscale=8', **ce))
+    check(got == {'drawn'}, f'monitor: drawn: a Cell puppet 8 m off in one scale is still a violation ({got})')
+    got = scenario(tmp, 'f_drawn_scale_old', *aligned_pair(host_sees=' drawn=(8.0 16.0 24.0) drawn_v=0.0', **ce))
+    check(got == {'drawn'}, f'monitor: drawn: a Cell log without wscale= is compared raw ({got})')
     got = scenario(tmp, 'f_drawn_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', guest_own=' ptr_still=0.1', **tr),
                    dict(drawn_still=-1))
     check(got == {'drawn'}, f'monitor: drawn: drawn_still=-1 (the rule before BUG-0416) judges the jumped pointer ({got})')
@@ -287,8 +308,39 @@ def field_cases(tmp):
     got = scenario(tmp, 'f_tribe_hi', *aligned_pair(host_own=' agl=0.00 agl_hi=7.00', h=dict(stage='Tribe'),
                                                     g=dict(stage='Tribe')))
     check(got == {'ground'}, f'monitor: ground: a tribe member 7 m over the ground ({got})')
+    # BUG-0945: a member that stays up (agl_held grows) is caught; members thrown by blows at two marks in a row
+    # (each up for a second or two) are not; agl_hold=0 is the rule before
+    tribe = dict(h=dict(stage='Tribe'), g=dict(stage='Tribe'))
+    got = scenario(tmp, 'f_tribe_hang', *aligned_pair(
+        host_own=lambda k: f' agl=0.00 agl_hi=5.60 agl_held={10.0 * k + 2.5:.1f}', **tribe))
+    check(got == {'ground'}, f'monitor: ground: a tribe member up for 12 s and more without a break ({got})')
+    toss = lambda k: f' agl=0.00 agl_hi={4.4 + k % 3:.2f} agl_held={0.5 + 0.5 * (k % 3):.1f}'  # noqa: E731
+    got = scenario(tmp, 'f_tribe_toss', *aligned_pair(host_own=toss, **tribe))
+    check(not got, f'monitor: ground: tribe members thrown up by blows at every mark, each for under 2 s ({got})')
+    got = scenario(tmp, 'f_tribe_toss_old', *aligned_pair(host_own=toss, **tribe), dict(agl_hold=0))
+    check(got == {'ground'}, f'monitor: ground: agl_hold=0 (the rule before BUG-0945) fails the thrown members ({got})')
     got = scenario(tmp, 'f_php', *aligned_pair(host_sees=' puppet_hp=10/10', g=dict(hp=4), hs=dict(hp=4)))
     check(got == {'puppet_hp'}, f'monitor: puppet_hp: the guest at 4/10, its creature on the host full ({got})')
+    # BUG-0953: the puppet off its player's health in opposite directions on the lines in a row (the state lag at a
+    # revive, then at the killing blow) is no puppet keeping a wrong health; php_same_way 0 (the rule before) fails it
+    flip = lambda k: f' puppet_hp={0 if k % 2 else 10}/10'  # noqa: E731
+    got = scenario(tmp, 'f_php_flip', *aligned_pair(host_sees=flip, g=dict(hp=5), hs=dict(hp=5)))
+    check(not got, f'monitor: puppet_hp: lines off in opposite directions are the lag at health jumps ({got})')
+    got = scenario(tmp, 'f_php_flip_old', *aligned_pair(host_sees=flip, g=dict(hp=5), hs=dict(hp=5)), dict(php_same_way=0))
+    check(got == {'puppet_hp'}, f'monitor: puppet_hp: php_same_way 0 judges them as before ({got})')
+    # BUG-1061: two sessions of one test share the session clock (each starts at s 0): the guest's lines of a Creature
+    # session were judged against the guest's own Cell lines of the session before (6/6 at the same s) when those
+    # came closer in time; same_session 0 (the rule before) fails it
+    cell_h, cell_g = aligned_pair(h=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6),
+                                  g=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6),
+                                  hs=dict(stage='Cell', world='9652F8AD', hp=6, maxhp=6))
+    cre_h, cre_g = aligned_pair(host_sees=' puppet_hp=18/18', g=dict(hp=18, maxhp=18), hs=dict(hp=18, maxhp=18))
+    shift = lambda lines, d: [re.sub(r'\[s ([\d.]+)\]', lambda m: f'[s {float(m.group(1)) + d:.3f}]', ln) for ln in lines]  # noqa: E731
+    two = (cell_h + shift(cre_h, 0.02), cell_g + shift(cre_g, -0.015))
+    got = scenario(tmp, 'f_php_sessions', *two)
+    check(not got, f'monitor: puppet_hp: a line is judged against the subject\'s own line of the same stage and world ({got})')
+    got = scenario(tmp, 'f_php_sessions_old', *two, dict(same_session=0))
+    check('puppet_hp' in got, f'monitor: puppet_hp: same_session 0 matches the session before at the same clock ({got})')
     h, g = aligned_pair()
     h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded")
     g.append("12:00:00.000 [s 33.1] [INF] coop: damage: 1 hit by proxy owner=npc posse=? amount=2.5 from the host")

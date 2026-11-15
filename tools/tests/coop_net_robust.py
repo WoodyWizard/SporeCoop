@@ -36,7 +36,7 @@ class Peer:
         self.got = []  # (type, payload)
         self.lock = threading.Lock()
         self.stop = False
-        nm = name.encode()
+        nm = name if isinstance(name, bytes) else name.encode()  # bytes: sent as they are (coop_net_names.py)
         self.c.send_reliable(fp.HELLO, struct.pack('<HIB', self.c.protocol, 0xdc04aee5, len(nm)) + nm)
         threading.Thread(target=self.run, daemon=True).start()
 

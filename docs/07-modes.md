@@ -22,7 +22,7 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 |---|---|---|---|---|---|
 | Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | - | `coop_mode.py --fixture cell` ✅ |
 | Creature | avatar creature | creature in the avatar's pack | save | DNA, collected parts (the union, [creations-part-pickup](re/creations.md#creations-part-pickup)), host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
-| Tribe | mouse pointer on the planet | name-tagged pointer + `coop ping` marks | save | tribe food | `--fixture tribe` ✅ |
+| Tribe | mouse pointer on the planet | the owner's name over its members (its chief marked), `coop ping` marks; the pointer itself has no name since 0.7.12 (BUG-0907) | save | tribe food | `--fixture tribe` ✅ |
 | Civilization | mouse pointer on the planet | name-tagged pointer + marks | save | civilization money | `--fixture civ` ✅ |
 | Space | player's ship (`cSimulatorPlayerUFO`) | "defender" ship, invulnerable | star (StarID) or planet (PlanetID) | empire money | `--fixture space` ✅ |
 | Adventures | captain (avatar creature) | captain creature | adventure key | - | echo puppet ✅ |
@@ -98,6 +98,8 @@ The RTS stages have no single avatar, and everyone shares one world (the host's)
 cities and citizens therefore already exist on every machine. The mod shows **where each player is
 currently working**:
 
+* In Tribe the pointer is not drawn (0.7.12, BUG-0907: its bare name hung over empty ground): a partner is found by
+  the names over its members and the arrow to its chief. Civ shows the partner's name at its pointer.
 * The pointer is the point on the planet under the mouse. The ray comes from `cViewer::GetCameraToPoint`
   and is intersected with a sphere of radius |position of the tribe/first city|.
 * `coop ping` places a blinking `[ ! ] Name` mark for everyone for 6 s (`MSG_PING_MARK`;
@@ -200,3 +202,154 @@ file missing" is not retried (world.cpp saved 3 times already).
 Limits: two different planets saved under the same name count as one world (a protocol change would
 fix it). Rivals mode (docs/11-rivals.md 11.8, "Perspective" and "Per-player progress") builds on
 this rule: it answers "whose world is this machine in", the modules decide what to share.
+
+## Message classes and the world filter of events (2026-11-07, fix/w46-k2a-state)
+<a id="modes-message-classes"></a>
+
+BUG-0420 (class: hits, events and world state applied without a relation / world filter), 0.7.11:
+
+* Every `net::MsgType` has one class in `host_world.h` `msg_class()`: Session (applied wherever the guest plays: the
+  session, chat, a partner's own creature, a guest's report to the host, the vote, MSG_RES held in shared.cpp),
+  HostWorld (dropped at dispatch while the guest is elsewhere: the old hand list), Module (the module gates by place:
+  npc, wobj, tribe / civ host_away, Space with_host, effects C.here) and Unknown (a type this build does not know:
+  dropped while elsewhere, default deny, `core.msg_classes`). The switch has no default and
+  `#pragma GCC diagnostic error "-Wswitch"`: a new MsgType that is not classified fails the build of coop.dll and of
+  tests/validate_tests.cpp (BUG-0701).
+* MSG_VOTE stays session-wide; its handler takes no vote that starts while the guest is elsewhere and opens no
+  evolution editor at the end of one (`core.vote_world`, BUG-0702).
+* The species table: a guest elsewhere forgets the host's last table instead of writing it into its own world every
+  0.5 s (`social.world_gate`, BUG-0703).
+* Relation filters: an NPC nation's vehicle (owner 0xFE) is no player of a joint siege (`civ.siege_players`,
+  BUG-0704); Space hits between the players' empire and its own escorts are not relayed (`space.friendly_hits`,
+  BUG-0705: the game itself applies no damage between ships of one empire, lab 20261107-222158, so this one is
+  hygiene, not a visible fix).
+* Tests: coop_world_gate_vote, coop_civ_siege_npc, coop_space_friendly; validate_tests (the classes).
+
+## Session settings (2026-11-08, feat/w46-settings)
+<a id="modes-session-settings"></a>
+
+F3 of docs/plan-0.7.12.md, BUG-0762. One framework for the co-op mechanics the host can switch. Code:
+`mods/coop/settings_core.h` (portable: the table, the rules, the wire and file formats; unit tests in
+`tests/validate_tests.cpp` test_settings) and `mods/coop/settings.cpp` / `settings.h` (the game side).
+
+**Declared once.** Every setting is one row of `settings::kDefs`: `key` (console, wire and file name, never renamed),
+`group`, `label` (the lobby's text), `help`, the built-in default, the range, the scope, the `coop.ini [coop]` key that
+gives a new world's default (or none) and `off_in_rivals`. The UI (F1) lists the rows by group; nothing else needs
+to know them. A module reads a value with `settings::on(settings::kX)` / `settings::get(...)`: never `config_int`.
+
+| Key | Group | Default | Scope | coop.ini key | Read in |
+|---|---|---|---|---|---|
+| `cell.regen` | Cell | on | live | - | cellsync.cpp symbiosis_tick (twin switch `settings.cell_regen`) |
+| `all.partner_arrows` | All stages | on (off in Rivals) | live | - | find.cpp arrows_on (F2) |
+| `all.dna_pace` | All stages | on | session | `dna_pace` | coop.cpp dna_pace_announce (BUG-0510) |
+| `creature.npcs_target_partners` | Creature | on | session | `npcs_target_partners` | npc.cpp ai_target |
+| `creature.pack_rescue` | Creature | on | session | `teamplay` | teamplay.cpp on_own_damage |
+| `creature.pack_heal` | Creature | on | live | `teamplay` | teamplay.cpp tick |
+| `creature.joint_hunt` | Creature | on | session | `teamplay` | teamplay.cpp on_player_hit |
+| `all.name_tags` | All stages | on | live | - | coop.cpp on_overlay (puppets, tribe members, civ cities and vehicles) |
+| `all.friendly_fire` | All stages | off | session | - | npc.cpp damage_filter / MSG_DAMAGE (Creature only) |
+| `all.max_players` | All stages | 4 (2..4) | live | - | net/session.cpp HELLO (`Session::max_players`) |
+| `all.late_join` | All stages | on | live | - | net/session.cpp HELLO (`Session::join_closed`) |
+| `cell.knockout` | Cell | on | session | - | cellsync.cpp go_down |
+| `cell.respawn_small` | Cell | on | session | - | cellsync.cpp downed_tick |
+| `core.switch_vote` | Cell | on | session | - | coop.cpp h_CellToCreature, start_vote (arrival) |
+| `creature.mode` | Creature | own (own / host) | session | - | creations.cpp mine, cycle; coop.cpp h_Submit, the offer; coop_ui.cpp |
+| `core.editor_now` | Creature | on | session | - | coop.cpp h_Submit |
+| `tribe.pincer` | Tribe | on | session | - | tribe.cpp h_CitizenTD |
+| `tribe.chief_aura` | Tribe | on | session | - | tribe.cpp h_CitizenTD (+20 %, the chief keeps 30 %) |
+| `tribe.duet` | Tribe | on | session | - | tribe.cpp duet_tick |
+| `tribe.epic` | Tribe | on | session | - | tribe.cpp epic_tick, `coop.tribe epic` (`epic force` spawns anyway) |
+| `civ.roles` | Civilization | on | session | - | civ.cpp role() (every role bonus) |
+| `civ.joint_siege` | Civilization | on | session | - | civ.cpp h_AddCapture |
+| `civ.superweapon_vote` | Civilization | on | session | - | civ.cpp h_FireSW, host_superweapon_request |
+| `space.disable` | Space | on | session | - | spacecoop.cpp filter_own_damage |
+| `space.trade`, `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals` | Space | on | session | - | space_ext.cpp (tick, messages, overlay, page rows of the feature), space_finale h_Enter, space_diplomacy sharing() |
+
+**Step 3 (BUG-0768, feat/w46-settings-all).** Every other mechanic of the plan's table is a row now; the default is
+0.7.11's behaviour. One twin switch for all of them: `coop.fix settings.all off` (SPORE_FIX_OFF=settings.all) makes
+every row from `all.name_tags` on read its built-in default whatever the host set (the tests' FAIL runs).
+* `all.max_players` / `all.late_join`: the host's net session refuses a HELLO over the limit ("session is full (the
+  host takes N players)", REJ_FULL) or of a new player while the host plays its world with late join off ("the host
+  does not take new players after the start", REJ_STARTED = 4, an older guest shows the text). A player who was in
+  this session (its name, kept since `host()`, or its rejoin token) always comes back.
+* `cell.respawn_small` off: the knock-out ends after its 10 s in the game's own death (KillCell on the avatar,
+  `ko_deaths=` in the cell status); `cell.knockout` off: no knock-out at all.
+* `all.friendly_fire` on (Creature only): a player's hit on a partner's puppet (the game's TakeDamage, the damage
+  filter) is sent to the host as MSG_DAMAGE with the victim's id; the host applies a hit on its own avatar or relays
+  it to the victim guest (`npc friendly fire: pvp_out / pvp_in / pvp_relayed` in coop.status). The host's own hit on a
+  guest's puppet goes the NPC hit's way. Cell, Tribe and Civ need more than a filter (the cell pair hook skips
+  puppets, the tribe members and civ vehicles of all players share the player's tribe / political id): BUG-0899.
+  Test command: `coop.team pvp <player id> <dmg>`.
+* Space features: `space_ext.cpp` gives a feature that its setting switched off no tick, no messages (dropped), no
+  overlay and no rows on the F9 Space page; `coop.space features` says "off (the session setting)".
+
+**One creature for everyone (F5, BUG-0769).** `creature.mode` = host: on a guest `creations::mine()` returns the
+host's creation of the kind (cell, creature: the host's newest bundle, else the world's species) whatever the guest
+chose or recorded for the world, so the avatar swap and the BUG-0508 follow give every guest the host's creature and,
+after each host editor, its new one in place. The guest's own editor requests (nest, mating call) are refused in
+h_Submit (a feed line), the host's evolution opens at once with no vote and no offer, a vote end or an offer opens
+no own editor on a guest, the co-op window shows no creation arrows and no "Evolve now" (`coop.creations next` is
+refused). `coop.creations` prints `creature mode: host|own`.
+
+**Scopes.** *Session*: the host sets it before the start, that is while its game plays no world (the galaxy menu,
+the lobby of F1); once the host plays its world it is refused ("a session setting: ..."). *Live*: the host can change
+it in play too. A guest never sets one (refused: "the host decides"). `coop.settings force` (tests) skips the scope.
+
+**Where the values come from.** The host (or a player alone) has one table in force:
+* a world opens (the game plays a stage with its own creature and the save name is known): if the host changed
+  settings while no world was open (the lobby), those are the world's from now on; else the world's stored values;
+  a world without a file takes the defaults of a new world (the built-in default, the `coop.ini` key over it);
+* the table is written to `<profile>/Spore/SporeCoop/settings/<crc32 of the lower-case save name>.txt` (`world
+  <name>` then `<key> <value>` lines) on every open and every change; a key this build does not know is skipped, a
+  missing one takes the default, a file of another name (a crc collision) is not used. The save itself is never
+  touched. Two saves of the same name share a file (the same known limit as the world id, host_world.h).
+* a guest keeps no file of the host's world.
+
+**On the wire.** `MSG_SETTINGS` (66, host -> guests, reliable, class Session in host_world.h msg_class): u8 kind 0,
+u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}. The whole table goes to a guest on its join
+(`settings::on_player_join`, before the world share) and to every guest on every change, on a world open and when
+the started flag changes. By name: an older guest ignores the type, a newer one skips keys it does not know; a
+setting the host did not send keeps the guest's own value, and a guest of an older host plays with its own values
+(as before 0.7.12). A guest drops the host's table when the session ends. A live change shows a feed line on the
+guest ("The host set Regeneration near a partner: off").
+
+**Console.** `coop.settings` lists every setting (`key=value on|off [scope, default, changed] group: label - help`,
+first line: host / guest / alone, the open world, started, pending); `get <key>`, `set <key> on|off|default|<n>`,
+`force <key> <v>` (tests), `stored` (the stored file of the open world). `coop.dna pace 0|1` forces `all.dna_pace`.
+The support report's `settings:` line lists what differs from the built-in defaults.
+
+**Tests.** `coop_settings.py` (suite `settings`): the joining guest gets the table, a session setting is refused in
+play, a guest cannot set one, Cell regeneration on heals both cells next to each other (the game's health), off (a
+live change) the running guest gets it and neither cell heals, a session setting set in the galaxy menu is accepted,
+and after both games end and start again the host's world plays with its stored values and the new guest gets them.
+`SPORE_FIX_OFF=settings.cell_regen` fails the "off" checks. `twoinst.forget_settings()` removes the stored files at
+every test start (cold and warm), and `coop.settings set|force` and `coop.dna pace` are lane knobs.
+
+## The host's save as a guest knows it: followed, not the WELCOME value (2026-11-11, fix/w47-final12b)
+<a id="modes-host-save-follow"></a>
+
+BUG-0933 (class BUG-0420, a limit BUG-0709 left: "the host's save is the one of the guest's join").
+
+* ✔ `host_world::space_other` (the shared Space money held on a guest in another Space save) compared the guest's save
+  with `Session::welcome_world()`, a value of the guest's join. The host's save changes in a session: a load of
+  another save, and the campaign's Tribe -> Civ step (`Cadian.spo` 9652F8AD -> `Tavael.spo` BF000B7B, rel/0.7.12 lab
+  20261111-090547). Every guest that joined before was "elsewhere" in Space for good: `money=...(unsynced)` in its
+  trace lines for the whole stage, `held=1/N` in `coop.res`.
+* ✔ In the gated stages the host's PlayerState names its save (`world` = the CRC of the save name, the value
+  `welcome_world` returns there); in Space the state's world is the place (star, planet), so the save cannot be read
+  from it.
+* The rule now (host_world.h `host_save_now`, `announce_world`; coop.cpp `host_save_tick`, `host_save_known`):
+  * a guest replaces the known save by the host's state world whenever that state is in a gated stage (0 never
+    replaces a known one); this alone repairs the campaign's case, also with a 0.7.11 host;
+  * the host sends `MSG_HOST_WORLD` (69: u32, the value a WELCOME would carry now; reliable, Session class, ignored
+    by older builds) when its world id changed to another known one and after every join (a WELCOME sent while the
+    host is in an editor or a menu names 0); this covers Space save -> Space save;
+  * the followed value ends with the session: the next one starts from its WELCOME.
+* `coop.fix res.space_save_follow off`: 0.7.11 (the WELCOME value, no announcement). `coop.status`: the line
+  `host save: known X (welcome W, followed F, heard N), mine M, space_other=B, announced A`.
+* ✔ In Space the mod's save name is the save file's name until the game saves (a copy of the fixture under
+  `Otherspace.spo` was world 32DFFED8, and `Madas.spo` 33DE75F6 again after the host's save for a share, lab
+  20261111-105829): "another Space save" can change with the first save of a renamed copy.
+* ? A connected guest in Space is not taken along when the host loads another Space save (BUG-0941, open): with the
+  rule above it hears the new save and holds the shared money while it plays the old one.
+* Tests: space_save_change (FAIL with the switch off: lab 20261111-110127), space_own_save (BUG-0709) unchanged.

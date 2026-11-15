@@ -60,7 +60,8 @@ enum MsgType : uint8_t {
     MSG_UFO_STATE = 40,   // host -> guests in its place: NPC ships snapshot (chunked)
     MSG_UFO_HIT = 41,     // guest -> host: u16 ship id, f32 damage, i32 type, vec3 dir
     MSG_UFO_DAMAGE = 42,  // host -> guest: f32 damage, i32 type, vec3 dir, u16 attacker ship id
-    MSG_VOTE = 43,        // host -> guests: u8 active, u8 seconds left, str8 text (evolution vote)
+    MSG_VOTE = 43,        // host -> guests: u8 active, u8 seconds left, str8 text (evolution vote), u32 editor, u8 flags (1: an
+                          // evolve offer with active 0, BUG-0516; older senders stop before the flags)
     MSG_CREATION = 45,    // reliable chunks of a player's creation (owner, kind, id, total, offset, data)
     MSG_ROLE = 46,        // guest -> host: u8 role (civilization: 0 none, 1 military, 2 economic, 3 religious)
     MSG_CIV_ALARM = 47,   // host -> guests: u8 city index, u8 kind (0 military, 1 religious), u8 owner
@@ -101,9 +102,9 @@ enum MsgType : uint8_t {
     MSG_TRIBE_FOOD = 76, // host -> guest: NPC stores, bounded by world/faction/species/position
     MSG_TRIBE_PERFORMANCE = 77, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
     MSG_TRIBE_OUTFIT = 78, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
-    MSG_CIV_TURRETS = 67,  // host -> guest: one city wall layout, occupied slots and turret HP
-    MSG_CELL_COMBAT = 66, // guest contact hit; host replies with any whole bonus for the same body
-    MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
+    MSG_CIV_TURRETS = 90,  // host -> guest: one city wall layout, occupied slots and turret HP
+    MSG_CELL_COMBAT = 89, // guest contact hit; host replies with any whole bonus for the same body
+    MSG_CAMPAIGN_RULES = 88, // reliable host snapshot scoped to campaign name hash and stage
     MSG_IDENTITY = 83, // reliable guest -> host (BUG-9135): u64 the player's persistent identity (identity.h)
     MSG_TRIBE_LATE = 84, // reliable host -> guest (BUG-9159): u8 kind (1: make your creature in the editor now), u32 world
     MSG_DNA_OWN = 85, // reliable host -> guest (BUG-9162): f32 DNA of that guest's own (its kill paid on the host's game)
@@ -114,8 +115,8 @@ enum MsgType : uint8_t {
     MSG_PROGRESS_DEBT = 81, // reliable host -> guests (BUG-9119): u32 stage mode, u32 world, f32 the party's progress debt
     MSG_TRIBE_COMBAT = 80, // reliable host snapshot: world, count, {member id, scaled native max HP}
     MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch
-    MSG_CIV_ECONOMY = 68, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
-    MSG_CIV_INFLUENCE = 69, // host native religious followers and meter; civ_influence.h
+    MSG_CIV_ECONOMY = 91, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
+    MSG_CIV_INFLUENCE = 92, // host native religious followers and meter; civ_influence.h
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
     MSG_LIBRARY = 71, // optional CAP_LIBRARY persistent creation PNG exchange
     MSG_ADVENTURE_ACTORS = 72, // unreliable host -> guest: scenario creatures' states (adventure_sync.h ActorBatch, BUG-9114)
@@ -135,9 +136,25 @@ enum MsgType : uint8_t {
                           // u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect,
                           // u32 key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}.
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_NPC_MEAT = 65,    // the meat left on bodies of killed NPCs (BUG-0557 / BUG-0383, npc.cpp): u8 kind; 0 host -> guest
+                          // {u8 n, n x {u16 NPC id, f32 meat}} (unreliable, on a change and every 2 s), 1 guest -> host
+                          // {u8 n, n x {u16 NPC id, f32 eaten}} (reliable: what the guest's creature ate of its proxy).
+                          // Older SporeCoop ignores it (an unknown type).
     MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
                           // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
                           // nv x u32}}. Older SporeCoop ignores it (an unknown type).
+    MSG_SETTINGS = 66,    // host -> guests (reliable): the session settings (settings_core.h, F3 of 0.7.12): u8 kind 0,
+                          // u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}; on a join and on
+                          // every change. Older SporeCoop ignores it (an unknown type).
+    MSG_COLORS = 67,      // the player colours (find_core.h, F2 of 0.7.12): u8 kind; 0 host -> guests (reliable) the table
+                          // u8 n, n x {u8 id, u8 colour}; 1 guest -> host u8 colour (the guest asks for it). Older
+                          // SporeCoop ignores it (an unknown type).
+    MSG_REPORT = 68,      // the session report (net/sreport.h, F4 of 0.7.12, BUG-0767): u8 kind; host -> guest the
+                          // question / a stop, guest -> host the answer and its report zip in pieces (reliable).
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_HOST_WORLD = 69,  // host -> guests (reliable): u32 world, the world id of WELCOME again (host_world.h welcome_world:
+                          // the CRC of the host's save name), sent when the host's save changes during the session and
+                          // after a join (BUG-0933). Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
@@ -181,9 +198,10 @@ enum RejectReason : uint8_t {
     REJ_VERSION = 1,
     REJ_FULL = 2,
     REJ_BUILD = 3,
+    REJ_STARTED = 4, // F3 all.late_join off: the host plays its world already (an older guest shows the text)
 };
 
-enum PlayerFlags : uint8_t {
+enum PlayerFlags : uint16_t { // Lineages + upstream 0.7.14: 9 flags (u16 on the wire)
     PF_IN_WORLD = 1,  // player has an avatar in the creature stage
     PF_MOVING = 2,
     PF_RUNNING = 4,
@@ -192,6 +210,7 @@ enum PlayerFlags : uint8_t {
     PF_SWIMMING = 32,
     PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
     PF_DOWNED = 128,  // Lineages: knocked down (creature_rescue), 64 before the 0.7.8 merge
+    PF_RESYNC = 256,  // BUG-0332 (upstream 128): the host loads the shared world once for everybody (tribe.host_reload)
 };
 
 // BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)
@@ -432,7 +451,7 @@ struct PlayerState {
     Vec3 pos;
     Quat rot;
     Vec3 vel;
-    uint8_t flags = 0;
+    uint16_t flags = 0;
     uint8_t anim = 0;
     float health = 0, max_health = 0;
     uint32_t species = 0; // instance id of species key (appearance hint)
@@ -451,6 +470,9 @@ struct PlayerState {
     // ground (PF_JUMPING); kNoAgl otherwise or from an older sender (appended after scale: older readers stop
     // before it). NPC states carry it in the MSG_NPC_STATE batch's trailer (npc.cpp), not here
     float agl = kNoAgl;
+    // BUG-0733: the sender's own creature's size (cSpatialObject GetScale) in the Creature stage; 0 = not sent (another
+    // stage, or an older sender: appended after agl, older readers stop before it)
+    float body = 0;
 
     void write(Writer& w) const
     {
@@ -458,15 +480,16 @@ struct PlayerState {
         w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
         w.f32(rot.x); w.f32(rot.y); w.f32(rot.z); w.f32(rot.w);
         w.f32(vel.x); w.f32(vel.y); w.f32(vel.z);
-        w.u8(flags); w.u8(anim);
+        w.u16(flags); w.u8(anim);
         w.f32(health); w.f32(max_health);
         w.u32(species);
         w.u32(mode); w.u32(world);
         w.f32(scale);
         w.f32(agl);
+        w.f32(body);          // upstream 0.7.14
         w.f32(captain_scale); // Lineages: after the 0.7.8 fields (every Lineages peer has the same build)
         w.f32(energy);        // Lineages (3G)
-        if (editor) w.u32(editor); // Lineages (BUG-9191): only while in an editor (no gate then): 4 bytes after captain_scale
+        if (editor) w.u32(editor); // Lineages (BUG-9191): only while in an editor (no gate then): 4 bytes after energy
         if (gate.visit || gate.credit) {
             w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
         }
@@ -477,12 +500,13 @@ struct PlayerState {
         pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
         rot.x = r.f32(); rot.y = r.f32(); rot.z = r.f32(); rot.w = r.f32();
         vel.x = r.f32(); vel.y = r.f32(); vel.z = r.f32();
-        flags = r.u8(); anim = r.u8();
+        flags = r.u16(); anim = r.u8();
         health = r.f32(); max_health = r.f32();
         species = r.u32();
         mode = r.u32(); world = r.u32();
         scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         agl = r.ok() && r.left() >= 4 ? r.f32() : kNoAgl;
+        body = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         captain_scale = 0;
         if (r.ok() && r.left() >= 4) {
             float s = r.f32();

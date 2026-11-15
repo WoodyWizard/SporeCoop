@@ -6,6 +6,7 @@
 
 #include "MinHook.h"
 
+
 namespace sk {
 
 struct HookRec {
@@ -104,6 +105,94 @@ static int stub_hook(SkMod* mod, void* target, void* detour, void** original)
     return 0;
 }
 
+// ---- the first write of a hook made at run time (BUG-0403) ----
+// MinHook writes the 5-byte jmp with plain stores. After boot other threads may run the function's
+// first instructions at that moment (the main thread polls GetAsyncKeyState every frame while the
+// console thread hooks it at the first injected input): a thread between two of those instructions
+// continues inside the new jmp (BUG-0202's crash). MinHook's own fix (suspend every thread, move its
+// IP) is off: it froze under Wine. No thread is suspended here:
+//   1. one byte, int3, at the entry (where calls land): a thread that arrives traps, and the vectored
+//      handler below sends it to the trampoline (the original first instructions, then back); nothing
+//      can reach the other patched bytes any more;
+//   2. a window (kGateWindowMs) for a thread that was between those bytes to run on out of them;
+//   3. the other bytes, then the entry byte last. Boot (frame 0) keeps the plain stores.
+// Left: a thread preempted inside the first bytes and not run again for the whole window.
+// `kit.fix hookfirst 0` = MinHook's plain stores at any time.
+struct Gate {
+    uintptr_t entry;
+    uintptr_t trampoline;
+};
+static const int kGates = 4096;
+static const DWORD kGateWindowMs = 50;
+static Gate g_gates[kGates];
+static volatile LONG g_ngates;
+static std::atomic<uint32_t> g_live_writes{0}, g_live_traps{0}, g_live_fails{0};
+
+static LONG CALLBACK gate_veh(EXCEPTION_POINTERS* ep)
+{
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_BREAKPOINT)
+        return EXCEPTION_CONTINUE_SEARCH;
+    uintptr_t a = (uintptr_t)ep->ExceptionRecord->ExceptionAddress, ip = ep->ContextRecord->Eip;
+    LONG n = g_ngates;
+    for (LONG i = 0; i < n && i < kGates; i++) {
+        uintptr_t e = g_gates[i].entry;
+        if (a == e || ip == e || ip == e + 1) {
+            ep->ContextRecord->Eip = (DWORD)g_gates[i].trampoline;
+            g_live_traps++;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static BOOL WINAPI live_writer(LPVOID dst, const UINT8* bytes, SIZE_T n, LPVOID entry, LPVOID trampoline)
+{
+    volatile uint8_t* d = (volatile uint8_t*)dst;
+    size_t ei = (size_t)((uint8_t*)entry - (uint8_t*)dst);
+    if (!fixed(g_fix_hookfirst) || frame_index() == 0 || ei >= n || !trampoline) {
+        for (size_t i = 0; i < n; i++)
+            d[i] = bytes[i]; // MinHook's plain stores
+        return TRUE;
+    }
+    static bool veh = false;
+    if (!veh) {
+        AddVectoredExceptionHandler(1, gate_veh); // before SporeKit's fault logger: no log per trap
+        veh = true;
+    }
+    LONG g = g_ngates;
+    if (g >= kGates) {
+        g_live_fails++;
+        return FALSE;
+    }
+    g_gates[g].entry = (uintptr_t)entry;
+    g_gates[g].trampoline = (uintptr_t)trampoline;
+    InterlockedIncrement(&g_ngates); // the gate is complete before the handler can read it
+    d[ei] = 0xCC;
+    FlushInstructionCache(GetCurrentProcess(), dst, n);
+    // a thread between the first instructions when the int3 landed leaves them within a few
+    // instructions once it runs; the window lets a thread that was preempted there run again. No
+    // thread is suspended to read its IP: GetThreadContext of a suspended thread waited forever under
+    // Wine (the host froze when the main thread made the input hooks in Cell, 2026-11-05)
+    Sleep(kGateWindowMs);
+    for (size_t i = 0; i < n; i++)
+        if (i != ei)
+            d[i] = bytes[i];
+    FlushInstructionCache(GetCurrentProcess(), dst, n);
+    d[ei] = bytes[ei];
+    FlushInstructionCache(GetCurrentProcess(), dst, n);
+    g_live_writes++;
+    return TRUE;
+}
+
+std::string hooks_live_stats()
+{
+    char b[256];
+    snprintf(b, sizeof b, "live first writes %u, gate traps %u, refused %u (hookfirst %s)",
+             g_live_writes.load(), g_live_traps.load(), g_live_fails.load(),
+             fixed(g_fix_hookfirst) ? "on" : "off");
+    return b;
+}
+
 static void stub_park(Stub* s)
 {
     s->cur = s->trampoline;
@@ -117,6 +206,7 @@ bool hooks_init()
         SKLOG(SK_ERROR, "MH_Initialize failed: %s", MH_StatusToString(s));
         return false;
     }
+    MH_SetPatchWriter(live_writer);
     return true;
 }
 
@@ -309,7 +399,7 @@ static const int kNewMax = 2000;
 static new_fn volatile g_new_orig[kNewMax]; // filled by hook_create, as o_GetAsyncKeyState is
 static new_fn volatile g_new_ptr;           // the function the threads call now
 static std::atomic<bool> g_new_run{false};
-static std::atomic<uint32_t> g_new_calls{0}, g_new_null{0};
+static std::atomic<uint32_t> g_new_calls{0}, g_new_null{0}, g_new_bad{0};
 
 __attribute__((noinline, regparm(1))) static int new_detour(new_fn volatile* orig, int x)
 {
@@ -324,13 +414,17 @@ static DWORD WINAPI new_thread(void*)
 {
     while (g_new_run.load()) {
         if (new_fn f = g_new_ptr)
-            f(1);
+            if (f(1) != 2)
+                g_new_bad++; // the function ran wrong code
         g_new_calls++;
     }
     return 0;
 }
 
-void hooks_new_test(int rounds, int threads, std::string& out)
+// split (BUG-0403): the function starts with five 1-byte instructions (inc eax / dec eax / nop) before
+// its body, so the jmp is written over several instructions: a thread between two of them when the
+// jmp lands runs the jmp's operand bytes as code (a wrong result, a fault, or a crash of the game)
+void hooks_new_test(int rounds, int threads, std::string& out, bool split)
 {
     g_new_mod.name = "kit.test";
     if (rounds < 1)
@@ -361,9 +455,15 @@ void hooks_new_test(int rounds, int threads, std::string& out)
         memcpy(t + 6, &rel, 4);
         memset(t + 10, 0xCC, 6);
     }
+    static const uint8_t split_body[16] = {0xCC, 0xCC, 0xCC, 0x40, 0x48, 0x40, 0x48, 0x90,
+                                           0x8B, 0x44, 0x24, 0x04, 0x40, 0xC3, 0xCC, 0xCC};
+    if (split)
+        for (int r = 0; r < rounds; r++)
+            memcpy(page + r * 16, split_body, 16);
     FlushInstructionCache(GetCurrentProcess(), page, size);
     g_new_calls = 0;
     g_new_null = 0;
+    g_new_bad = 0;
     g_new_ptr = nullptr;
     g_new_run = true;
     std::vector<HANDLE> ts;
@@ -390,12 +490,13 @@ void hooks_new_test(int rounds, int threads, std::string& out)
     for (HANDLE t : ts)
         CloseHandle(t);
     // the page stays: parked stubs jump to trampolines that run its code
-    char b[256];
+    char b[512];
     snprintf(b, sizeof b,
-             "hooknew: %d rounds (%d hooked), %u calls on %d threads, detour ran with a null original %u times "
-             "in %d rounds, originals %s",
-             rounds, made, g_new_calls.load(), (int)ts.size(), g_new_null.load(), null_rounds,
-             fixed(g_fix_hookorig) ? "set before the jump" : "set after the jump");
+             "hooknew%s: %d rounds (%d hooked), %u calls on %d threads, detour ran with a null original %u times "
+             "in %d rounds, originals %s, wrong results %u; %s",
+             split ? " split" : "", rounds, made, g_new_calls.load(), (int)ts.size(), g_new_null.load(), null_rounds,
+             fixed(g_fix_hookorig) ? "set before the jump" : "set after the jump", g_new_bad.load(),
+             hooks_live_stats().c_str());
     out = b;
 }
 

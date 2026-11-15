@@ -149,6 +149,15 @@ static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
 static bool g_aborted_fix = true;  // coop.space allies abortedfix 0: the set is never pruned (BUG-0136, tests)
 COOP_FIX("allies.aborted", "BUG-0136", g_aborted_fix, "space: a won raid on a partner's colony does not count as aborted");
 static bool g_end_pending;        // the session ended while I was on a mirror planet
+// BUG-1036 (BUG-0038 trigger 5): the session ended on a mirror planet (g_end_pending), then the player left Space (the
+// menu, a load): the tick returned outside Space before the pending end, so the old partners stayed in g_m; back in
+// Space in a new session the pending end was dropped ("the mirrors are wanted again") and the old partners' colonies
+// came back as frozen allies in the new galaxy. Now the pending end finishes outside Space once no mirror is applied
+// (the galaxy went: nothing to undo), and a new session in Space ends the old mirrors first. Off: as 0.7.13.
+static bool g_end_pending_fix = true;
+COOP_FIX("space.allies_end_pending", "BUG-1036", g_end_pending_fix,
+         "space: the old partners' mirrors go when a session ended on a mirror planet and the player left Space");
+static uint32_t g_end_pending_done;
 // BUG-0543: a partner's colony in a star system that is mine here (we start as one empire: the home
 // system and every colony both had at the join are shared) was not shown at all ("your own star
 // system"): in my game the planet stayed free, and I could found a colony of my own on it. Now it is
@@ -157,6 +166,7 @@ static bool g_end_pending;        // the session ended while I was on a mirror p
 static bool g_own_star_fix = true;
 COOP_FIX("allies.own_star", "BUG-0543", g_own_star_fix, "space: a partner's colony in a star system of mine is a colony here too");
 static void end_all();
+static void forget_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
 
 // ---------------- game helpers ----------------
@@ -367,6 +377,17 @@ static bool g_reload_id_fix = true;
 COOP_FIX("allies.reload_id", "BUG-0225", g_reload_id_fix, "space: a galaxy reload is seen by the Space world epoch, not the cEmpire address");
 static uint32_t g_reload_resets;
 static bool g_same_galaxy; // tests (allies samegalaxy 1): the new player cEmpire has the old one's address
+// BUG-0838 (class BUG-0426): a mirror unmirrored before a reload of the world (a save on the way to the galaxy menu,
+// `allies remove`) kept its snapshots: the old world's cPlanetRecord (our reference) and the cCivData the mirror had
+// added to it. The first apply in the new world swapped the record (the old one released: our reference was its
+// last, so it went with the cities it held) and put the kept cCivData pointers of the old world into the new world's
+// record (AddCivData): freed objects in a planet the game draws and saves. Now the snapshots go with the galaxy (a
+// reset of the empire forgets them) and the kept cities belong to the record they came from (another record of that
+// planet: made again). Old (`coop.fix allies.snap_world off`): kept and re-added.
+static bool g_snap_world_fix = true;
+COOP_FIX("allies.snap_world", "BUG-0838", g_snap_world_fix, "space: after a reload of the world the allies mirror never puts the old world's cities into a planet of the new one (possible crash when landing there)");
+static uint32_t g_snaps_dropped;
+static void forget(Mirror& m);
 static void reset_empire(Mirror& m)
 {
     // a save also takes the unmirrored cEmpire out of the map (it is put back on the next apply):
@@ -384,6 +405,10 @@ static void reset_empire(Mirror& m)
     m.contact_before = 0;
     m.rel_on = spaceext::Relation::Ally;
     g_reload_resets++;
+    if (g_snap_world_fix && !m.applied && !m.planets.empty()) { // BUG-0838: the old galaxy's snapshots go with it
+        g_snaps_dropped += (uint32_t)m.planets.size();
+        forget(m);
+    }
 }
 
 // the mirror's cEmpire in the star manager: made once (then kept alive by our reference and put
@@ -561,6 +586,10 @@ static void add_planet(Mirror& m, void* rec)
         return;
     s.on = true;
     if (s.rec != rec) {
+        if (g_snap_world_fix && s.rec && !s.civ.empty()) { // BUG-0838: the kept cities are the other record's
+            s.civ.clear();
+            g_snaps_dropped++;
+        }
         vcall<void>(rec, 0); // AddRef
         if (s.rec)
             vcall<void>(s.rec, 1);
@@ -596,6 +625,10 @@ static void add_planet_own(Mirror& m, void* rec)
     s.on = true;
     s.own = true;
     if (s.rec != rec) {
+        if (g_snap_world_fix && s.rec && !s.civ.empty()) { // BUG-0838: the kept cities are the other record's
+            s.civ.clear();
+            g_snaps_dropped++;
+        }
         vcall<void>(rec, 0); // AddRef
         if (s.rec)
             vcall<void>(s.rec, 1);
@@ -1090,6 +1123,12 @@ static void tick(double now)
                 forget(m);
                 reset_empire(m);
             }
+        if (g_end_pending && g_end_pending_fix && !any_applied()) { // BUG-1036: nothing in a galaxy to undo
+            g_end_pending = false;
+            g_end_pending_done++;
+            forget_all();
+            H->log(M, SK_INFO, "allies: the ended session's mirrors forgotten outside Space (BUG-1036)");
+        }
         return;
     }
     if (g_end_pending) {
@@ -1097,7 +1136,7 @@ static void tick(double now)
         if (now < next)
             return;
         next = now + 1.0;
-        if (!spaceext::connected())
+        if (!spaceext::connected() || g_end_pending_fix) // BUG-1036: a new session ends the old one's mirrors first
             H->run_outside_frame([](void*) { end_all(); }, nullptr);
         else
             g_end_pending = false; // a new session: the mirrors are wanted again
@@ -1179,6 +1218,10 @@ static void end_all()
     }
     g_end_pending = false;
     unapply_all();
+    forget_all();
+}
+static void forget_all()
+{
     for (auto& [n, m] : g_m)
         forget(m);
     g_m.clear();
@@ -1257,9 +1300,9 @@ static std::string status()
         ap += m.applied, pl += (int)m.planets.size(), st += (int)m.stars.size();
     snprintf(b, sizeof b,
              "allies: mirrors=%d applied=%d stars=%d planets=%d hold=%d saves=%u unmirrors=%u applies=%u growth_blocked=%u "
-             "raids_started=%u raids_won=%u raids_completed=%u rekeyed=%u",
+             "raids_started=%u raids_won=%u raids_completed=%u rekeyed=%u end_pending=%d end_pending_done=%u",
              (int)g_m.size(), ap, st, pl, (int)g_hold, g_saves, g_unmirrors, g_applies, g_growth_blocked,
-             g_raids_started, g_raids_won, g_raids_completed, g_rekeyed);
+             g_raids_started, g_raids_won, g_raids_completed, g_rekeyed, (int)g_end_pending, g_end_pending_done);
     return std::string(b) + (g_last.empty() ? "" : " last='" + g_last + "'");
 }
 
@@ -1382,6 +1425,18 @@ static std::string debug(const std::vector<std::string>& a)
         apply_all();
         return status();
     }
+    if (a[0] == "civ" && a.size() > 1) { // tests (BUG-0838): civ <PlanetID hex>: the record and its cCivData now
+        uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        void* rec = planet_record(id);
+        std::string out = "planet " + a[1] + " rec=" + hex((uint32_t)(uintptr_t)rec) + " civ=";
+        for (void* c : rec ? ptr_vec((uint8_t*)rec + 0x15C, 64) : std::vector<void*>{})
+            out += hex((uint32_t)(uintptr_t)c) + ",";
+        for (auto& [n, m] : g_m)
+            if (auto it = m.planets.find(id); it != m.planets.end())
+                out += " kept_rec=" + hex((uint32_t)(uintptr_t)it->second.rec) + " kept_civ=" +
+                       std::to_string(it->second.civ.size()) + " on=" + std::to_string((int)it->second.on);
+        return out + " dropped=" + std::to_string(g_snaps_dropped) + "\n";
+    }
     if (a[0] == "remove") { // unmirror (as before a save), no re-apply until "apply"
         unapply_all();
         g_hold = true;
@@ -1500,6 +1555,27 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "raid_scaling")
         return "scaled raids " + std::to_string(g_scaled_raids) + ", base ships " +
                std::to_string(g_base_ships) + ", extra ships " + std::to_string(g_extra_ships);
+    if (a[0] == "missions") { // tests (BUG-0199): every mission noun of this game; "missions done <ptr>": SetState(5)
+        if (a.size() > 2 && a[1] == "done" && a_SetState) {
+            void* want = (void*)(uintptr_t)strtoul(a[2].c_str(), nullptr, 16);
+            for (void* m : missions())
+                if (m == want) {
+                    thiscall<void>(a_SetState, m, 5); // completed: the mission's own OnCompleted pays (docs/re/space.md 7.5)
+                    return "mission " + hex((uint32_t)(uintptr_t)m) + " state " + std::to_string(F<int>(m, 0x84)) + "\n";
+                }
+            return "no such mission\n";
+        }
+        std::string o;
+        char b[200];
+        for (void* m : missions())
+            if (readable(m, 0x134)) {
+                snprintf(b, sizeof b, "mission %08X id %08X state %d giver %08X reward %.0f flags %X\n",
+                         (uint32_t)(uintptr_t)m, F<uint32_t>(m, 0x78), F<int>(m, 0x84), F<uint32_t>(m, 0x8C),
+                         F<float>(m, 0xA0), F<uint32_t>(m, 0x130));
+                o += b;
+            }
+        return o.empty() ? "no missions\n" : o;
+    }
     if (a[0] == "raids") {
         std::string o;
         auto ships = raid_ships();

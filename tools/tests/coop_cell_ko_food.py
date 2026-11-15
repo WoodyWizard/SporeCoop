@@ -14,7 +14,12 @@ touched it was eaten (event 0x12, EatFood 0xE7DF40 -> AvatarEat -> AddFoodPoints
    the other player ate itself in that time, its own_points).
 4. The same with the host knocked out (`coop.pool selfhit 50` with the guest far away): the host's
    meals while out add nothing on either game.
+5. (BUG-0746) The knocked-out cell's mouth also swallows meat whole (interaction kind 10, a carnivore
+   mouth on meat one level smaller: StartEatSwallow 0xE7E020 -> SwallowWhole -> OnEat, not EatFood):
+   `coop.pool swallow <key>` runs the game's interaction executor 0xE7E7F0 with that kind for the
+   nearest meat (no meat on screen: kind 9 on a plant, the same swallow); no food either.
 SPORE_FIX_OFF=cell.ko_no_eat must FAIL (the knocked-out cell eats: +12 per plant).
+SPORE_FIX_OFF=cell.ko_no_swallow must FAIL (the knocked-out cell swallows meat: food grows).
 
   SPORE_LANE=7 python3 tools/tests/coop_cell_ko_food.py
 """
@@ -27,7 +32,7 @@ from twoinst import Checks, start
 def pool(con):
     out = con.call('coop.pool')['out']
     d = {}
-    for k in ('hp', 'food', 'downed', 'own_points', 'ko_eats_blocked', 'respawns'):
+    for k in ('hp', 'food', 'downed', 'own_points', 'ko_eats_blocked', 'respawns', 'ko_swallows_blocked'):
         m = re.search(r'\b' + k + r'=(-?\d+)', out)
         d[k] = int(m.group(1)) if m else None
     return d
@@ -72,12 +77,22 @@ def knocked_out_meals(ck, name, eater, other, knock):
         r = eater.call(f'coop.pool eat {k}')['out'].strip()
         ate.append(f'{k}: {r}')
         time.sleep(0.6)
+    # BUG-0746: the swallow (interaction kind 10 on meat, else kind 9 on a plant)
+    mt = sorted(((float(m.group(2)), m.group(1)) for m in
+                 re.finditer(r'meat (c\d+) pos=\S+ \S+ level=\S+ size=\S+ dist=(\S+) dead=0', eater.call('coop.pool meat')['out'])))
+    sw = [(k, 10) for _, k in mt[:2]] or [(k, 9) for k in plants(eater)[:2]]
+    for k, kind in sw:
+        r = eater.call(f'coop.pool swallow {k} {kind}')['out'].strip()
+        ate.append(f'{k}: {r}')
+        time.sleep(1.5)  # the swallow's animation, then the meal (event type 1 -> OnEat)
     time.sleep(2.0)  # the host's count reaches the guest (MSG_CELL_FOOD)
     e1, o1 = pool(eater), pool(other)
     print(f'  {name} knocked out, touched {len(keys)} plants: ' + '; '.join(ate), flush=True)
     print(f'  {name}: food {e0["food"]} -> {e1["food"]}, other game {o0["food"]} -> {o1["food"]}, '
           f'other ate itself +{(o1["own_points"] or 0) - (o0["own_points"] or 0)}, '
-          f'blocked {e0["ko_eats_blocked"]} -> {e1["ko_eats_blocked"]}', flush=True)
+          f'blocked {e0["ko_eats_blocked"]} -> {e1["ko_eats_blocked"]}, swallows blocked '
+          f'{e0["ko_swallows_blocked"]} -> {e1["ko_swallows_blocked"]}', flush=True)
+    ck(len(sw) >= 1, f'{name}: meat or plants to swallow ({len(sw)}: {[k for k, _ in sw]})')
     still = e1['downed'] == 1
     ck(len(keys) >= 2, f'{name}: plants to touch ({len(keys)})')
     ck(still, f'{name}: still knocked out after its meals (downed {e1["downed"]})')

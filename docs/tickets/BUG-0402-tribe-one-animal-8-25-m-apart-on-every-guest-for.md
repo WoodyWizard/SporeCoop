@@ -79,6 +79,18 @@ radial difference shows in them.
 no-fail-run: not reproduced on the current code (campaign_tribe, play_tribe with the co-op epic, tribe_epic in
 out/lab/20261101-153010; the epic experiment above).
 
+* Re-check 2026-11-08 (fix/w46-n2-desyncs, N2 of 0.7.11, rel/0.7.11 ccfb0ae4, lanes 9/10, detector on):
+  play_tribe 10 min OK out/lab/20261108-030127 and 20261108-032648 (SPORE_NET=players, guest 20 fps); tribe_epic OK in
+  both; eight 4-player campaigns into Tribe with a guest's leave and rejoin in each Tribe play: campaign_tribe_share x2
+  out/lab/20261108-035333, x2 20261108-040233, campaign_ct x2 and campaign_tribe_share x2 20261108-041234 (all four over
+  SPORE_NET=players, the guests' own lossy links with latency spikes). No sync-check MISMATCH and no `n apart` in any
+  game log; the detector's NPC trail rows (the host's bodies against the guests' copies at the same moment) had p90
+  0.84-2.39 m and their longest stretch over 2 m 0.08-2.33 s, far from one NPC 8-25 m off for minutes.
+  Why the current code does not show the first kind: every recorded case predates npc.walk_tribe (BUG-0361, proxies
+  walk on the host's path) and npc.resync (BUG-0487); the third kind is BUG-0339's state, the fourth the terrain
+  difference of a check of absolute positions (docs/re/tribe.md#tribe-animal-height).
+* no-fail-run: not reproducible on the current code.
+
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-proxy-ground: not reproduced on current code; the epic inference tested (no 8 m with either driving).
@@ -89,3 +101,4 @@ under the terrain (dist 522.2 from the centre, the guest's `want_agl=-8.39`), th
 ground (`agl=0.00`, dist 530.6). So the gap is radial: the guest grounds a proxy whose host NPC is below the
 ground (in water or sunk). Not a walking proxy trailing. Not a release blocker; left open.
 - 2026-11-05 (fix/w44-height): fourth kind analysed (a terrain difference; the proxy is where the rule puts it); left open.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): not reproduced in 2 play_tribe (one over the players' network at 20 fps) and 8 four-player campaigns into Tribe (4 over SPORE_NET=players), detector on; closed with that evidence.

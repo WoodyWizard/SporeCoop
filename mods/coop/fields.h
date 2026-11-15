@@ -26,6 +26,11 @@ namespace fields {
 enum FieldId : uint8_t {
     F_SCALE = 1, // cSpatialObject GetScale (vt 0x34) / SetScale (vt 0x40)
     F_TOOL = 2,  // cCreatureCitizen +0x102C mSpecializedTool / SetSpecializedTool (tribe.cpp, BUG-0514)
+    F_LEADER = 3, // 2 = the member leads its tribe (cCommunity +0x11C), 1 = not; cTribe::SetChieftain (tribe.cpp, BUG-0652)
+    F_MAX_HP = 4, // cCombatant vt 0x58 the maximum health; on a proxy through creature_hp's GetMaxHp hook (npc.cpp, BUG-0710)
+    F_ITEM_SCALE = 6, // the scale of the model in a tribe member's hand (the model's transform; tribe.cpp, BUG-0912)
+    F_HELD_ITEM = 5, // cCreatureCitizen +0xFFC mCurrentHandheldItem + 1 / the game's attach 0xC250A0 (tribe.cpp, BUG-0906)
+    F_HUNGER = 7,    // cCreatureBase +0xBBC mHunger (0..100) / its clamped setter 0xC0BB30 (tribe.cpp, BUG-0935)
 };
 
 struct Field {
@@ -34,6 +39,9 @@ struct Field {
     float (*read)(void* obj);
     void (*apply)(void* obj, float v);
     float tol; // relative: |mirror - wanted| > tol * |wanted| is a difference
+    // BUG-1043: the values a receiver accepts (a hostile or broken packet must not make a creature 1e30 m tall).
+    // The default suits a scale; a field whose 0 means something (no tool, hunger 0) gives its own range
+    float lo = 0.001f, hi = 1000.f;
 };
 
 using EachFn = void (*)(void (*cb)(uint16_t id, void* obj, void* u), void* u);
@@ -57,6 +65,10 @@ enum KindId : uint8_t {
     K_TRIBE_TOOL = 5,   // tribe members' held tools (tribe.cpp, BUG-0514: its own switch tribe.tool_hold)
     K_SPACE_CITIZEN = 6, // Space: colony citizens bound by the world-object kind `space_citizen` (worldobj.cpp, BUG-0490)
     K_SPACE_VEHICLE = 7, // Space: colony vehicles bound by the world-object kind `space_vehicle` (worldobj.cpp, BUG-0490)
+    K_CIV_VEHICLE = 8,   // Civ vehicles: the host's by net id, a guest's mirrors (civ.cpp, BUG-0549)
+    K_TRIBE_ITEM_SCALE = 10, // the size of what a tribe member holds (tribe.cpp, BUG-0912: its own switch tribe.item_scale)
+    K_TRIBE_ITEM = 9,    // what a tribe member holds in its hand (tribe.cpp, BUG-0906: its own switch tribe.held_item)
+    K_TRIBE_HUNGER = 11, // a tribe member's hunger (tribe.cpp, BUG-0935: its own switch tribe.mirror_hunger)
 };
 
 struct Ctx {

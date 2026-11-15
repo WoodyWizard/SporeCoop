@@ -236,6 +236,68 @@ static void partner_tiles()
     CHECK(m.x0 == 80 && m.x1 == 120 && m.y0 == 35 && m.y1 == 65);
 }
 
+// BUG-0632 / BUG-0636 (class BUG-0420): an event on one cell is acted on once within the ttl
+static void once()
+{
+    for (bool fix : {true, false}) {
+        Once o(5.0);
+        CHECK(o.first(7, 0.0, fix));
+        CHECK(o.first(7, 0.6, fix) == !fix); // the second break 0.6 s later: refused with the fix
+        CHECK(o.first(8, 0.6, fix));         // another cell is its own
+        CHECK(o.first(7, 5.1, fix));         // after the ttl the index may come again (a reused slot)
+    }
+    Once o(5.0);
+    o.first(1, 0.0, true);
+    CHECK(o.has(1, 1.0) && !o.has(1, 6.0));
+    o.drop(1);
+    CHECK(!o.has(1, 1.0));
+    for (uint32_t k = 0; k < 600; k++)
+        o.first(k, (double)k, true);
+    CHECK(o.at.size() <= 512); // bounded: old entries pruned
+}
+
+// BUG-0959: the host's trace word for a guest's kill: a knocked-out guest's kill is refused, never "applied"
+static void kill_word_ko()
+{
+    CHECK(!strcmp(kill_word(false, true, false), "applied"));
+    CHECK(!strcmp(kill_word(false, true, true), "refused (knocked out)"));
+    CHECK(!strcmp(kill_word(true, true, true), "refused (killed here already)"));
+    CHECK(!strcmp(kill_word(false, false, true), "refused (gone or dying here)"));
+}
+
+// BUG-0792: 3-4 players placed around the host: one spot each, at the radius, the host at the anchor
+static void player_spawn_slots()
+{
+    float x[4], y[4];
+    for (int id = 0; id < 4; id++)
+        player_spawn_offset(id, 4.f, &x[id], &y[id]);
+    CHECK(x[0] == 0.f && y[0] == 0.f);
+    for (int a = 1; a < 4; a++) {
+        CHECK(std::fabs(std::hypot(x[a], y[a]) - 4.f) < 1e-3f);
+        for (int b = a + 1; b < 4; b++)
+            CHECK(std::hypot(x[a] - x[b], y[a] - y[b]) > 6.f); // 4 x sqrt(3) apart
+    }
+    float u, v;
+    player_spawn_offset(1, NAN, &u, &v);
+    CHECK(std::isfinite(u) && std::fabs(u - 4.f) < 1e-3f);
+    player_spawn_offset(2, 100.f, &u, &v);
+    CHECK(std::hypot(u, v) <= 20.001f);
+    player_spawn_offset(4, 4.f, &u, &v); // a fifth player: the next ring, not on guest 1's spot
+    CHECK(std::hypot(u - x[1], v - y[1]) > 1.f);
+}
+
+// BUG-0975: the active set of a pass right after a fall of three levels does not fit the game's buffer; settled it does
+static void active_set()
+{
+    const float sizes[17] = {10, 30, 100, 300, 1000, 3000, 1e4f, 3e4f, 1e5f, 3e5f, 1e6f, 3e6f, 1e7f, 3e7f, 1e8f, 3e8f, 1e9f};
+    const float vb[12] = {-10, -7.5f, 0, 10, 7.5f, 0, -20, -15, 0, 20, 15, 0}; // ViewBoxes about the origin
+    CHECK(level_of_food(0) == 1 && level_of_food(99) == 1 && level_of_food(327) == 4 && level_of_food(1000) == 10);
+    double settled1 = active_tiles(1, 0, 1.f, vb, sizes, 17), settled4 = active_tiles(4, 327, 30.f, vb, sizes, 17);
+    CHECK(settled1 < kActiveTileCap && settled4 < kActiveTileCap);
+    CHECK(active_tiles(1, 0, 30.f, vb, sizes, 17) > 511); // 327 -> 0 with the level 4 scale: the crash
+    CHECK(active_tiles(1, 0, NAN, vb, sizes, 17) > 511);  // garbage: no pass
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -243,6 +305,7 @@ int main(int argc, char** argv)
             g_meals_trim = false; // the 0.7.3.0 code: meals_old_host must fail
     slots();
     spawn_slot();
+    player_spawn_slots();
     rounds();
     meals();
     meals_old_host();
@@ -251,6 +314,9 @@ int main(int argc, char** argv)
     meals_away();
     numerics();
     partner_tiles();
+    once();
+    kill_word_ko();
+    active_set();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

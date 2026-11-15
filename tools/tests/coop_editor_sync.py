@@ -29,6 +29,7 @@ from twoinst import Checks, shot, start
 DONE = (1416, 1062)    # the creature editors' green check (1440x1080 test window)
 CANCEL = (1383, 1062)  # the red cross
 SAVE_NEW = (926, 604)  # the own editor's exit dialog after an edit: "Save New"
+MOUTH = 25             # the mouth's price in the creature editors (docs/re/creations.md#creations-own-editor-dna)
 
 
 def mode(con):
@@ -141,7 +142,10 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     rounds = 2 if case == 'host2' else 1  # host2: a second evolution of the species the first one made
-    if case == 'host2':
+    # host_late (BUG-0457, 0.7.11): the host leaves its editor first and plays its evolution's cinematic; the guest
+    # stays in its own editor meanwhile (the host's new bundle reaches it there) and presses done 25 s later
+    late = case == 'host_late'
+    if case in ('host2', 'host_late'):
         case = 'host'
     for rnd in range(rounds):
         if rnd:  # the species of the first evolution is now the host's own creation (My Creations)
@@ -151,6 +155,7 @@ def main():
             host.call('coop.dna add 40')
             time.sleep(3)
             confirm_captions((host, guest), 12)
+        d_stage = dna(host)  # BUG-0581: the stage's DNA when the host's request is made (and held by the vote)
         print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)  # the game's own evolution request
         time.sleep(2)
         gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
@@ -174,11 +179,12 @@ def main():
         d_edit = dna(editor)
         shot(editor, f'editor_sync_{case}_edited.png')
         print(f'  the {case} added a part: DNA in its editor {d_in} -> {d_edit}', flush=True)
-        # the other player leaves its editor first without a change
-        other.call('click %d %d' % DONE)
-        if other is host:
-            confirm_captions((host,), 20)
-        ck(back(other, m0), f'the {"guest" if case == "host" else "host"} is back in the stage (done, no change)')
+        # the other player leaves its editor first without a change (host_late: after the host)
+        if not late:
+            other.call('click %d %d' % DONE)
+            if other is host:
+                confirm_captions((host,), 20)
+            ck(back(other, m0), f'the {"guest" if case == "host" else "host"} is back in the stage (done, no change)')
         editor.call('click %d %d' % DONE)
         if case == 'guest':  # the own editor asks: save as a new creation
             time.sleep(3)
@@ -200,6 +206,24 @@ def main():
             time.sleep(0.2)
         ck(left, f'the {case} left its editor with done')
         d_exit = low
+        if case == 'host' and d_stage is not None:
+            # BUG-0581: the held request's editor got the stage's DNA as its budget. The game's DNA does not move
+            # while the host's evolution editor is open (coop.dna 40 -> 40 with the mouth bought); on the way back
+            # the stage sets the DNA to the result's remaining budget (0xD445AA): the stage's DNA minus the mouth's
+            # price (25) only when the editor's budget was the stage's DNA (a lost budget message: the config's
+            # start budget minus 25)
+            print(f'  BUG-0581: stage DNA {d_stage} at the request, back in the stage {d_exit} (a mouth costs 25)', flush=True)
+            ck(d_exit is not None and abs(d_exit - (d_stage - MOUTH)) < 1,
+               f"the host's held evolution editor had the stage's DNA budget ({d_stage} - {MOUTH} = {d_exit})")
+        if late:  # the guest still in its editor: the host's cinematic, its share, its bundle
+            t1 = time.time()
+            while time.time() - t1 < 25:
+                confirm_captions((host,), 3)
+            ck(in_editor(guest), "the guest is still in its own editor 25 s after the host's evolution")
+            print(f'  the guest in its editor; the host plays {avatar_key(host)}, guest creations: '
+                  f'{field(guest.call("coop.creations")["out"], r"(player 0 creature: [^ ]+)")}', flush=True)
+            guest.call('click %d %d' % DONE)
+            ck(back(guest, m0), 'the guest is back in the stage (done, no change) after the host')
         print(f'  the {case} back in the stage: DNA {d_exit}', flush=True)
 
         # the host's evolution: its new body, the cinematic (its captions), a world share to the guest
@@ -236,6 +260,14 @@ def main():
         shot(host, 'editor_sync_host_self.png')
         ck(got and got in (bundle_key(), world_key), "the guest's game draws the host with its new species")
         ck(name_h and name_g == name_h, f"the creature the guest has for the host is the host's new one ('{name_g}' / '{name_h}')")
+        # the body the guest's game builds for the puppet's species: the model record it finds for that key is the
+        # host's new creature's (not a cached older version or another creation of the key)
+        bem_h = field(host.call(f'coop.creations bem {hk1}')['out'], r'bem \S+ (\S+)') if hk1 else None
+        bem_g = field(guest.call(f'coop.creations bem {got}')['out'], r'bem \S+ (\S+)') if got else None
+        prof_g = guest.call(f'coop.creations speciesof {got}')['out'].strip() if got else ''
+        print(f"  the body: the host's new creature bem {bem_h}, the guest's game for {got}: bem {bem_g} ({prof_g})", flush=True)
+        ck(bem_h and bem_h != 'none' and bem_g == bem_h and f'bem {bem_h}' in prof_g,
+           f"the guest's game builds the host's puppet from the host's new creature (bem {bem_g} / {bem_h}; {prof_g})")
     else:
         spent = (d_g0 or 0) - (d_exit or 0)
         print(f'  the guest spent {spent:.0f} DNA in its editor', flush=True)

@@ -22,7 +22,7 @@ import time
 import lane
 from coop_ui import Ui
 from sporectl import Console
-from twoinst import Checks, Monitor, shot, start
+from twoinst import Checks, Monitor, keyframe, shot, start
 
 W, H = 1440, 1080
 HUD_BOTTOM = 940  # the palette / minimap / buttons start below this line
@@ -83,6 +83,45 @@ def money(con):
 def stat(line, key):
     m = re.search(key + r'=(\d+)', line)
     return int(m.group(1)) if m else 0
+
+
+SPECIALTY = ('Military', 'Religious', 'Economic')  # the captured / bought city's specialty question (a modal box)
+
+
+def answer_specialty(con, wait=0.0, prefer=None):
+    """the specialty question of a bought or captured city, answered like a player (its first choice, or the caption
+    `prefer` when the box has it): the caption pressed, or None when no such box is up (within `wait` s)"""
+    import uifind
+    t0 = time.time()
+    order = ((prefer,) if prefer else ()) + tuple(c for c in SPECIALTY if c != prefer)
+    while True:
+        for cap in order:
+            b = uifind.shown(con, cap)
+            if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the box's button, not the HUD's tab label
+                uifind.press(con, cap)
+                time.sleep(1)
+                return cap
+        if time.time() - t0 >= wait:
+            return None
+        time.sleep(0.5)
+
+
+def frame_city(players, pos, answer=True):
+    """BUG-0981: before a key frame of a city, every game's camera on it (W/A/S/D, as a player pans); a specialty
+    question still up is answered first (it pauses the game and covers the city). players: {role: Console};
+    {role: (the answered caption or None, the city's screen point or None)}"""
+    out = {}
+    for role, con in players.items():
+        ans = []
+        while answer and len(ans) < 3:  # (a box per bought / captured city, one over the other)
+            a = answer_specialty(con)
+            if not a:
+                break
+            ans.append(a)
+        sp = Player(role, con, 0, random.Random(1), []).look_at(pos)
+        out[role] = (ans, sp)
+    print(f'  (key frame camera at {tuple(round(v) for v in pos)}: {out})', flush=True)
+    return out
 
 
 class Player:
@@ -380,6 +419,7 @@ class Bot(Player):
             return 'no button'
         b = self.rng.choice(usable)
         r = btns[b]
+        sent0 = stat(civ_state(self.c)[2], 'cmds_sent') if self.id else 0  # (a guest's purchases go to the host)
         self.do(f'click {int((r[0] + r[2]) / 2)} {int((r[1] + r[3]) / 2)}')
         t0 = time.time()
         while time.time() - t0 < 6:
@@ -399,6 +439,13 @@ class Bot(Player):
                 # the host has no slot left although this player's button was enabled: it says so
                 self.g.bump('buy_refused')
                 return 'refused by the host (told)'
+            m1 = money(self.hc)
+            sent1 = stat(civ_state(self.c)[2], 'cmds_sent') if self.id else 0
+            if m0 is not None and m1 is not None and m1 < m0 and sent1 == sent0:
+                # BUG-0940: another player's purchase took the shared money between this player's look at the
+                # button and its click; this player's own game refused the click (a guest sent no purchase)
+                self.g.bump('buy_broke')
+                return f'the shared money ran out before the click (money {m0} -> {m1}, nothing sent)'
             self.g.problem(f'{self.name} bought a vehicle in city {ci} (button {b}) and the host made none '
                            f'(money {m0} -> {money(self.hc)})')
             self.g.bump('buy_lost')
@@ -479,6 +526,8 @@ class Bot(Player):
         self.g.bump('spice_sent')
         g = self
 
+        seen = {}
+
         def claimed(c):
             hn = {p: pol for p, pol in nodes(c['host'])}
             gn = {p: pol for p, pol in nodes(c['guest'])}
@@ -486,6 +535,13 @@ class Bot(Player):
             near = [pol for p, pol in gn.items() if dist(p, node) < 3]
             if hp and hp != 'FFFFFFFF':
                 if near and near[0] != hp:
+                    # BUG-0325: the host sends the node owners once a second (and the guest takes them only while
+                    # it plays Civ, not in a city planner): a claim the check sees on the host in that second is
+                    # not on the guest yet. A problem when the guest still differs at the next look 4 s or more later
+                    seen.setdefault('first', time.time())
+                    if time.time() - seen['first'] < 4:
+                        g.g.bump('claim_seen_early')
+                        return False
                     g.g.problem(f'spice node {node}: host owner {hp}, guest sees {near[0]}')
                 return True
             return False
@@ -580,10 +636,26 @@ class Bot(Player):
         if offered and not given:
             self.g.problem(f'{self.name} gave {offered} in the co-op window, the host still has owners '
                            f'{[hv.get(i, {}).get("owner") for i in offered]}')
-        me = self.name
-        self.g.expect(4, f'{self.name} sees {given} owned by the partner and no longer selected',
-                      lambda c: all(civ_state(c[me])[1].get(i, {}).get('owner', self.partner) == self.partner and
-                                    not civ_state(c[me])[1].get(i, {}).get('sel', 0) for i in given))
+        # BUG-0325: the giver's game shows the gift within a snapshot (0.1 s). Polled here for 4 s, not at the next
+        # audit (8 s and more later): by then the partner's bot had often given the vehicle back (the host logged
+        # "Alice gave 1 vehicle to Bob" 1.4-7 s after the gift: lab 20261107-124806, -083217, 20261104-075207) and
+        # the giver rightly owned it again. What the giver sees is compared with the host's owner of that moment
+        t0, ok, last, hv2 = time.time(), not given, None, {}
+        while not ok and time.time() - t0 < 4:
+            _, mine, _ = civ_state(self.c)
+            _, hv2, _ = civ_state(self.hc)
+            last = {i: (mine.get(i, {}).get('owner'), hv2.get(i, {}).get('owner'), mine.get(i, {}).get('sel', 0)) for i in given}
+            ok = all(i not in hv2 or i not in mine or (mo == ho and not (ho == self.partner and sl))
+                     for i, (mo, ho, sl) in last.items())
+            if not ok:
+                time.sleep(0.2)
+        if ok:
+            self.g.bump('checks_ok')
+            if any(hv2.get(i, {}).get('owner') == self.id for i in given):
+                self.g.bump('give_returned')
+        else:
+            self.g.problem(f'{self.name} does not see its gift {given} like the host (own owner, host owner, '
+                           f'selected: {last})')
         return f'gave {given} of {offered}'
 
     def a_planner(self):
@@ -710,6 +782,14 @@ def audit(game, hc, gc, final=False):
             if g2.get('pol') != c['pol'] or g2.get('owner') != c['owner']:
                 game.problem(f'city {i}: host pol {c["pol"]} owner {c["owner"]}, guest pol {g2.get("pol")} '
                              f'owner {g2.get("owner")}')
+        if final and (g.get('ruins') != c.get('ruins') or g['buildings'] != c['buildings']):
+            # BUG-0625: the guest takes a city's buildings from the host's snapshots (one city per cycle), and a
+            # capture's cinematic holds both worlds up to 8 s: the last audit (seconds after the last action) looks
+            # again once both games ran on for a few seconds, like every other check here; a lasting difference stays
+            game.bump('final_buildings_rechecked')
+            time.sleep(4)
+            c = civ_state(hc)[0].get(i, c)
+            g = civ_state(gc)[0].get(i, g)
         if g.get('ruins') != c.get('ruins'):
             game.bump('ruins_differ')
             if final:
@@ -718,12 +798,19 @@ def audit(game, hc, gc, final=False):
             game.bump('buildings_differ')
             if final:
                 game.problem(f'city {i}: {c["buildings"]} buildings on the host, {g["buildings"]} on the guest')
+    # BUG-0625: a new city appears on each machine a few seconds after the site was chosen (the game's appearance
+    # timer runs on each game's own time: a guest at a low frame rate is seconds later), and its nation's vehicles
+    # can exist only with it: they share the city's grace above (three audits, then "city N missing")
+    young = {c['pol'] for i, c in hcit.items() if i in game.missing and not final}
     if set(hv) != set(gv):
         time.sleep(1)
         _, hv, _ = civ_state(hc)
         _, gv, _ = civ_state(gc)
-        if set(hv) != set(gv):
-            game.problem(f'vehicles differ: host only {sorted(set(hv) - set(gv))}, guest only {sorted(set(gv) - set(hv))}')
+        host_only = {i for i in set(hv) - set(gv) if hv[i]['pol'] not in young}
+        if young and host_only != set(hv) - set(gv):
+            game.bump('vehicles_of_new_city')
+        if host_only or set(gv) - set(hv):
+            game.problem(f'vehicles differ: host only {sorted(host_only)}, guest only {sorted(set(gv) - set(hv))}')
     # BUG-0206: a gift changes the owner on the host at once and reaches the guest with the next
     # snapshot (0.1 s; while the guest's bot is in a city planner, only when it is back): an owner
     # that differs is looked at again 1.5 s later, like the cities, and is a problem only then
@@ -829,7 +916,15 @@ def main():
     capture_max = {}
     owners0 = {i: c['pol'] for i, c in hcit.items()}
     try:
+        tm = time.time()  # BUG-0924: the session's money reaches the guest ~5 s after the gift: the frame after it
+        while time.time() - tm < 10 and abs((money(hc) or 0) - (money(gc) or -1)) > 1:
+            time.sleep(0.5)
+        keyframe('start', 'both games in Civilization: the cities and vehicles with their real models (no default cubes), the Civ HUD in place')
+        kf_mid = [False]
         while time.time() - t0 < a.minutes * 60 and not game.stop:
+            if not kf_mid[0] and time.time() > t0 + a.minutes * 30:
+                kf_mid[0] = True
+                keyframe('mid', 'play in progress: vehicles on the ground or in the air as their kind is, the same buildings on both, no black screen')
             time.sleep(8)
             if Monitor.events:
                 game.problem('invariant: ' + '; '.join(Monitor.events))
@@ -932,6 +1027,7 @@ def main():
             print('   ', line)
         print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_civ.py --minutes {a.minutes} --seed {seed}')
     try:
+        keyframe('end', 'after the play: both games in Civ play, the same cities and vehicles on both, no loading screen')
         shot(host, 'play_civ_host.png')
         shot(guest, 'play_civ_guest.png')
         ck.faults(host=host, guest=guest)

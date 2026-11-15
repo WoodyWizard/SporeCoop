@@ -30,12 +30,16 @@ namespace player_rules {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void*(uint8_t id)> puppet_of; // the creature of player id in this game (host: a guest's puppet)
+    // BUG-0426 class (L1): player id's Creature puppet only while it is the live object made for it (listed, its serial,
+    // this frame's world); a Cell cell, a Tribe marker, a freed or reused one: null
+    std::function<void*(uint8_t id)> puppet_live;
     std::function<bool(uint8_t id)> airborne;   // player id's latest state says its creature is in the air (PF_JUMPING)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 void on_message(uint8_t type, uint8_t from, net::Reader& r); // MSG_PLAYER_RULE
 std::string status();
+void tick(double now); // once a frame: the host's drama UFOs to the guests, their mirrors on a guest (BUG-0558)
 bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet: carry no damage to the partner (BUG-0555)
 uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hit running now, 0 none (BUG-0555)
 // BUG-9132: inside the own avatar's attack (CreatureAttackTarget): its area hits on others come with no attacker

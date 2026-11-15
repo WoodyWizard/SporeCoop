@@ -70,6 +70,10 @@ bool camera_ray_at_pixel(int x, int y, net::Vec3& origin, net::Vec3& direction);
 // `ptr_still=` (BUG-0416: the monitor judges a partner's copy only of a pointer that stood still)
 double rts_marker_still(const Adapter* a, void* e);
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
+// tests (BUG-0845): the adventure's resource key (instance, group) the place id is made of; a place id forced for every
+// adventure (0: off) so that two games in their own copies of one adventure count as the same place (puppets)
+bool adventure_key(uint32_t& instance, uint32_t& group);
+void adventure_force_place(uint32_t id);
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)
 void world_name_tick(); // once per frame: current_world_name() follows the game (BUG-0258)
@@ -111,6 +115,9 @@ const CellGoneStats& cell_gone_stats();
 // game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
 extern bool ufo_ident_fix;
 bool space_puppet_ok(void* u); // listed, alive and still our puppet
+// BUG-0697: the health a partner's ship puppet shows: the partner's share of its max on the puppet's max (fix off: max)
+float space_puppet_health(float puppet_max, float health, float max_health, bool fix);
+std::string space_puppet_hp(void* u); // tests: "hp <h> max <m>" of a ship puppet
 // BUG-0378: pin a puppet / mirror UFO so the game's controller update draws it at p (its own offset
 // taken out, mNextPosition / mDestination / mZoomAltitude, marked for squadron's controller hook);
 // fix false: p itself (the old pin)
@@ -151,5 +158,7 @@ void quat_to_mat(const net::Quat& q, float* m);
 float puppet_jump_speed();
 // BUG-0376 (creature.puppet_air), tests: coop.track air <v>
 extern int g_puppet_air_variant;
+// BUG-0929 (creature.tag_height), tests: the last partner name tag's height and what it came from (coop.find tagh)
+std::string tag_info();
 
 } // namespace modes

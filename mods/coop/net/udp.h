@@ -40,6 +40,7 @@ public:
     bool is_open() const { return fd_ != -1; }
     bool send_to(const Endpoint& to, const void* data, size_t n);
     // returns bytes received, 0 if nothing pending, -1 on error
+    // bytes, 0 = nothing pending, -1 = an error, -2 = one datagram too big for `cap` was dropped (BUG-1007)
     int recv_from(Endpoint& from, void* buf, size_t cap);
     uint16_t local_port() const;
     bool enable_broadcast(); // allow sending to 255.255.255.255 / subnet broadcast

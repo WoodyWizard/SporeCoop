@@ -46,6 +46,16 @@ FIXTURES = {
                                 ('spice stored in a colony', 'coop.space empire', r'colony (?!00460035)[0-9A-F]{8} spice=[1-9]'),
                                 ('contact with another empire', 'coop.space empire', r'contacts=[1-9]'),
                                 ('spice in the cargo', 'coop.space spice', r'count [1-9]')]),
+    # BUG-0181: `space_empire` + the release cheat `spaceCreate` (2026-11-08, lane 3): the tutorial lock of galaxy
+    # travel is off (cMissionManager +0x18 mbMission201Finished = 1, docs/re/space.md#space-tutorial-lock), the
+    # creation tools recharged; the Story201 mission object still says state 3 (the game never completed it)
+    'space_free': dict(planet='Game0/Madas', stage='Space', home='00460035',
+                       colonies=['01460035', '00460014'], contacts=['0046102D', '00460038'],
+                       facts=[('in a star system', 'coop.space star', r'place 8'),
+                              ('the interstellar drive', 'coop.space empire', r'drive=1'),
+                              ('the tutorial lock is off', 'coop.space tutorial', r'm201=1'),
+                              ('contact with another empire', 'coop.space empire', r'contacts=[1-9]'),
+                              ('spice in the cargo', 'coop.space spice', r'count [1-9]')]),
 }
 
 

@@ -1,0 +1,352 @@
+// F2 of 0.7.12 "Find each other" (docs/plan-0.7.12.md, docs/08-ui.md#ui-find-each-other): the portable part.
+//   * the player colours: a palette of 8, the host gives every player one (the first free of the first 4 in join
+//     order), a player can ask for another free one (the lobby); MSG_COLORS carries the table and the requests;
+//   * the arrow geometry: where on the screen edge the arrow of a partner off screen goes and where it points;
+//   * the minimap's triangle placement (a world offset to minimap pixels).
+// No game calls here: `make test` checks it (tests/validate_tests.cpp test_find).
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include "net/buffer.h"
+
+namespace findx {
+
+// ---- the player colours ----
+constexpr int kColors = 8;
+constexpr int kAuto = 4; // auto-assigned: the first free of these, in join order
+struct ColorDef {
+    const char* key;   // the console / UI name
+    const char* en;
+    const char* ru;
+    uint32_t argb;
+};
+inline const ColorDef kPalette[kColors] = {
+    {"yellow", "Yellow", "Жёлтый", 0xFFFFD040}, {"blue", "Blue", "Синий", 0xFF4FA8FF},
+    {"pink", "Pink", "Розовый", 0xFFFF5FC8},    {"green", "Green", "Зелёный", 0xFF5CE05C},
+    {"orange", "Orange", "Оранжевый", 0xFFFF9030}, {"purple", "Purple", "Фиолетовый", 0xFFB07CFF},
+    {"cyan", "Cyan", "Бирюзовый", 0xFF40E0E0},  {"red", "Red", "Красный", 0xFFFF5050},
+};
+
+inline int color_find(const std::string& key)
+{
+    for (int i = 0; i < kColors; i++)
+        if (key == kPalette[i].key)
+            return i;
+    char* e = nullptr;
+    long v = strtol(key.c_str(), &e, 10);
+    if (!key.empty() && e && !*e && v >= 0 && v < kColors)
+        return (int)v;
+    return -1;
+}
+
+// id -> palette index (-1: none); ids are the session's player ids (0 = the host)
+struct Colors {
+    std::array<int8_t, 256> c;
+    Colors() { c.fill(-1); }
+    int of(uint8_t id) const { return c[id]; }
+    bool taken(int idx, int except = -1) const
+    {
+        for (int i = 0; i < 256; i++)
+            if (i != except && c[i] == idx)
+                return true;
+        return false;
+    }
+    bool operator==(const Colors& o) const { return c == o.c; }
+};
+
+// the host gives a newcomer (or itself) a colour: its own if it has one, else the first free of the first kAuto,
+// else the first free one, else by its id
+inline int auto_pick(Colors& t, uint8_t id)
+{
+    if (t.c[id] >= 0)
+        return t.c[id];
+    int pick = -1;
+    for (int i = 0; i < kColors && pick < 0; i++)
+        if (!t.taken(i))
+            pick = i;
+    if (pick < 0)
+        pick = id % kColors;
+    t.c[id] = (int8_t)pick;
+    return pick;
+}
+
+// a player asks for colour idx: false when it is not a colour or another player has it (*why says which)
+enum class Refused { None, Range, Taken };
+inline Refused can_take(const Colors& t, uint8_t id, int idx)
+{
+    if (idx < 0 || idx >= kColors)
+        return Refused::Range;
+    if (t.taken(idx, id))
+        return Refused::Taken;
+    return Refused::None;
+}
+
+// ---- MSG_COLORS: u8 kind; 0 host -> guests the table {u8 n, n x {u8 id, u8 idx}} (reliable, on a join, a leave
+// and every change); 1 guest -> host the request {u8 idx}
+inline void write_table(net::Writer& w, const Colors& t)
+{
+    w.u8(0);
+    int n = 0;
+    for (int i = 0; i < 256; i++)
+        n += t.c[i] >= 0;
+    w.u8((uint8_t)n);
+    for (int i = 0; i < 256; i++)
+        if (t.c[i] >= 0) {
+            w.u8((uint8_t)i);
+            w.u8((uint8_t)t.c[i]);
+        }
+}
+
+inline void write_request(net::Writer& w, int idx)
+{
+    w.u8(1);
+    w.u8((uint8_t)idx);
+}
+
+// kind 0: `out` replaced by the host's table (false: cut short or a bad index; nothing changes)
+inline bool read_table(net::Reader& r, Colors& out)
+{
+    Colors t;
+    unsigned n = r.u8();
+    if (!r.ok())
+        return false;
+    for (unsigned i = 0; i < n; i++) {
+        uint8_t id = r.u8(), idx = r.u8();
+        if (!r.ok() || idx >= kColors)
+            return false;
+        t.c[id] = (int8_t)idx;
+    }
+    out = t;
+    return true;
+}
+
+// ---- a place an arrow can point at (BUG-0939) ----
+// A partner's position is a place only when it is finite, is not the zero vector (the protocol's "no position": a
+// PlayerState nobody filled, a Tribe / Civ pointer that was never put on the planet) and, in a planet stage, is on
+// the planet: farther from the planet's centre than half of ref_r, the own avatar's distance from it (ref_r 0: no
+// planet (Cell's plane, Space) or no own avatar, the first two rules only). The centre itself is where the game
+// keeps what is in no place (BUG-0274, BUG-0339).
+inline bool placed(const float p[3], float ref_r)
+{
+    if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
+        return false;
+    if (p[0] == 0 && p[1] == 0 && p[2] == 0)
+        return false;
+    if (ref_r > 0 && std::isfinite(ref_r)) {
+        float r = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        if (r < ref_r * 0.5f)
+            return false;
+    }
+    return true;
+}
+
+// ---- the arrow: a partner off screen ----
+// sx, sy: its projected position (filled: the projection gave a point, i.e. in front of the camera); on: the
+// projection says it is in the view. The arrow sits on an ellipse-ish rectangle inside the screen edge (margins mx,
+// my) on the ray from the centre towards it and points along that ray. Behind the camera (not filled) the caller
+// passes the direction it found (a point on the way that is in front); none at all: straight down.
+struct Arrow {
+    bool on_screen = false; // the partner is in the view: no arrow, its name tag shows
+    float x = 0, y = 0;     // the arrow's tip
+    float ang = 0;          // radians, screen space (x right, y down): atan2(dy, dx) of the direction
+};
+
+inline bool in_view(float sx, float sy, int sw, int sh, float pad = 0)
+{
+    return sx >= pad && sy >= pad && sx < sw - pad && sy < sh - pad;
+}
+
+inline bool arrow_place(bool filled, bool on, float sx, float sy, int sw, int sh, float mx, float my, Arrow& a)
+{
+    a = Arrow{};
+    if (sw <= 0 || sh <= 0)
+        return false;
+    if (filled && (!std::isfinite(sx) || !std::isfinite(sy)))
+        return false;
+    if (filled && on && in_view(sx, sy, sw, sh)) {
+        a.on_screen = true;
+        a.x = sx, a.y = sy;
+        return true;
+    }
+    float cx = sw / 2.f, cy = sh / 2.f;
+    float dx = filled ? sx - cx : 0.f, dy = filled ? sy - cy : 1.f;
+    if (std::fabs(dx) < 1e-3f && std::fabs(dy) < 1e-3f)
+        dy = 1.f;
+    float kx = std::fabs(dx) > 1e-6f ? (cx - mx) / std::fabs(dx) : 1e30f;
+    float ky = std::fabs(dy) > 1e-6f ? (cy - my) / std::fabs(dy) : 1e30f;
+    float k = std::min(kx, ky);
+    a.x = std::clamp(cx + dx * k, mx, sw - mx);
+    a.y = std::clamp(cy + dy * k, my, sh - my);
+    a.ang = std::atan2(dy, dx);
+    return true;
+}
+
+// the arrow's shape: a chevron-like head (tip at the arrow point) of `size` px, as triangles (6 floats each);
+// grow: the outline (the same shape `grow` px larger, drawn first in a dark colour). Returns the triangle count.
+inline int arrow_tris(const Arrow& a, float size, float grow, float* out /* >= 12 floats */)
+{
+    float c = std::cos(a.ang), s = std::sin(a.ang);
+    auto P = [&](float fx, float fy, float* o) { // forward / side in arrow space -> screen
+        o[0] = a.x + fx * c - fy * s;
+        o[1] = a.y + fx * s + fy * c;
+    };
+    float L = size + grow * 2.f, W = size * 0.62f + grow, notch = size * 0.32f;
+    float back = -L;
+    // two triangles: tip - left wing - notch, tip - notch - right wing
+    P(grow, 0, out + 0);
+    P(back, -W, out + 2);
+    P(back + notch, 0, out + 4);
+    P(grow, 0, out + 6);
+    P(back + notch, 0, out + 8);
+    P(back, W, out + 10);
+    return 2;
+}
+
+// where the label (the name and the distance) goes: inside the screen from the arrow, never under it
+inline void label_at(const Arrow& a, float size, int text_w, int sw, int sh, int& x, int& y)
+{
+    float c = std::cos(a.ang), s = std::sin(a.ang);
+    // the label's centre behind the arrow's tail: half its width further along x, its height along y
+    float bx = a.x - c * (size + 12.f + text_w / 2.f), by = a.y - s * (size + 18.f);
+    x = (int)std::clamp(bx - text_w / 2.f, 4.f, (float)std::max(4, sw - text_w - 4));
+    y = (int)std::clamp(by - 10.f, 4.f, (float)std::max(4, sh - 24));
+}
+
+// "80 m", "1.2 km" (Space: light years are the galaxy map's, not here)
+inline std::string dist_text(float m)
+{
+    char b[32];
+    if (!std::isfinite(m) || m < 0)
+        return "";
+    if (m < 1000.f)
+        snprintf(b, sizeof b, "%d m", (int)(m + 0.5f));
+    else
+        snprintf(b, sizeof b, "%.1f km", m / 1000.f);
+    return b;
+}
+
+// the angle between two screen directions, degrees (0..180)
+inline float angle_diff_deg(float a, float b)
+{
+    float d = std::fabs(a - b);
+    while (d > 6.2831853f)
+        d -= 6.2831853f;
+    if (d > 3.14159265f)
+        d = 6.2831853f - d;
+    return d * 57.29578f;
+}
+
+// ---- the minimap triangle: a world offset (east / north metres from the map's centre, in the map's own axes) to
+// pixels from the map's centre; false when outside the map's disc (radius r_px). scale: px per metre
+inline bool map_place(float ex, float ny, float scale, float r_px, float& px, float& py)
+{
+    px = ex * scale;
+    py = -ny * scale;
+    float d = std::sqrt(px * px + py * py);
+    if (!std::isfinite(d))
+        return false;
+    if (d > r_px) { // at the rim, pointing out: the partner is beyond the map's reach
+        px *= r_px / d;
+        py *= r_px / d;
+        return false;
+    }
+    return true;
+}
+
+// ---- the labels kept apart and off the HUD (BUG-0949) ----
+// Every world label of an overlay pass (a partner's name tag, an arrow with its label, the Tribe / Civ owner tags) is a
+// box in screen pixels. The pass places them in order (the first keeps its place best): each takes the first of its
+// shifts (none, then one step, two steps, ... each way along its slide) whose box stays on the screen and touches
+// neither a label placed before it nor a HUD box (the game's UI windows: the minimap, the bottom bar, the portrait,
+// notification cards, the co-op status block). A label that finds no free place is hidden, and so is a tag whose
+// anchor (the point it stands for) is under a HUD box: its object is behind the HUD.
+struct Box {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+};
+inline bool touch(const Box& a, const Box& b, float pad = 0)
+{
+    return a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
+}
+inline bool inside(float x, float y, const Box& b) { return x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1; }
+
+enum class Slide : uint8_t { Up, Vertical, Horizontal };
+struct LabelIn {
+    Box box;             // where it would be drawn without the layout
+    float ax = 0, ay = 0; // its anchor (tags: the projected point; arrows: the tip)
+    Slide slide = Slide::Up;
+    bool anchor_rule = false; // hide when the anchor is under a HUD box (tags)
+};
+struct LabelOut {
+    float dx = 0, dy = 0;
+    bool hidden = false;
+    int why = 0;         // hidden: 1 anchor under the HUD, 2 no free place
+};
+
+// the shift of try k (0: none; then +1, -1, +2, -2, ... steps; Up: -1, +1, -2, +2 ... (up first))
+inline float shift_of(int k, float step, bool up_first)
+{
+    if (k == 0)
+        return 0;
+    int n = (k + 1) / 2;
+    bool first = k % 2 == 1;
+    float s = n * step;
+    return up_first ? (first ? -s : s) : (first ? s : -s);
+}
+
+inline void layout(const LabelIn* in, int n, const Box* hud, int nhud, int sw, int sh, LabelOut* out, int max_steps = 6,
+                   float pad = 2.f)
+{
+    Box placed[256];
+    int np = 0;
+    for (int i = 0; i < n; i++) {
+        const LabelIn& L = in[i];
+        LabelOut& o = out[i];
+        o = LabelOut{};
+        if (L.anchor_rule)
+            for (int h = 0; h < nhud; h++)
+                if (inside(L.ax, L.ay, hud[h])) {
+                    o.hidden = true;
+                    o.why = 1;
+                }
+        if (o.hidden)
+            continue;
+        float w = L.box.x1 - L.box.x0, hgt = L.box.y1 - L.box.y0;
+        bool horiz = L.slide == Slide::Horizontal;
+        float step = horiz ? w * 0.5f + pad * 2 : hgt + pad * 2;
+        bool found = false;
+        for (int k = 0; k <= max_steps * 2 && !found; k++) {
+            float d = shift_of(k, step, L.slide == Slide::Up);
+            Box b = L.box;
+            if (horiz)
+                b.x0 += d, b.x1 += d;
+            else
+                b.y0 += d, b.y1 += d;
+            if (b.x0 < 0 || b.y0 < 0 || b.x1 > sw || b.y1 > sh)
+                continue;
+            bool free = true;
+            for (int h = 0; h < nhud && free; h++)
+                free = !touch(b, hud[h]);
+            for (int j = 0; j < np && free; j++)
+                free = !touch(b, placed[j], pad);
+            if (free) {
+                found = true;
+                (horiz ? o.dx : o.dy) = d;
+                if (np < 256)
+                    placed[np++] = b;
+            }
+        }
+        if (!found) {
+            o.hidden = true;
+            o.why = 2;
+        }
+    }
+}
+
+} // namespace findx

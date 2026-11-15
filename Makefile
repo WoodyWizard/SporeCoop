@@ -5,7 +5,8 @@ CXX := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang++
 HOSTCXX ?= clang++
 
 B := build
-COMMON  := -O2 -g -Wall -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
+comma := ,
+COMMON  := -O2 -g -Wall -Werror=misleading-indentation -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
 CFLAGS  := $(COMMON)
 CXXFLAGS:= $(COMMON) -std=c++20
 LDDLL   := -shared -static -Wl,--kill-at -Wl,--enable-stdcall-fixup
@@ -21,7 +22,7 @@ COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildca
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
 .PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test sanitizer-probe
-all: loader sporekit coop res setup
+all: loader sporekit coop res setup $(B)/test/rtsshooks.dll
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
@@ -30,13 +31,31 @@ $(B)/SporeCoop.package: tools/mkpackage.py tools/build_lineages_resources.py too
 	@mkdir -p $(B)
 	python3 tools/build_lineages_resources.py $@
 
+# tests: a do-nothing DLL under another program's name (BUG-0782, coop_rtss_note.py)
+$(B)/test/rtsshooks.dll: tests/dll/stand_in.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -shared -o $@ $<
+
 loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll
 coop: $(B)/coop.dll
 
-$(B)/steam_api.dll: loader/loader.c loader/steam_api.def updater/pending.h
+$(B)/steam_api.dll: loader/loader.c loader/steam_api.def updater/pending.h $(B)/obj/loader/loader_rc.o
 	@mkdir -p $(B)
-	$(CC) $(CFLAGS) -shared -o $@ loader/loader.c loader/steam_api.def -Wl,--kill-at
+	$(CC) $(CFLAGS) -shared -o $@ loader/loader.c loader/steam_api.def $(B)/obj/loader/loader_rc.o -Wl,--kill-at
+
+# BUG-0784: a VERSIONINFO resource in every binary (installer/version.rc), its version from
+# COOP_VERSION: build/version.h is rewritten only when the version changes
+WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
+COOP_VERSION = $(shell sed -n 's/^\#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
+VER_NUM = $(shell echo "$(COOP_VERSION)" | awk -F. '{printf "%d,%d,%d,%d", $$1, $$2, $$3, $$4}')
+$(B)/version.h: mods/coop/coop.cpp
+	@mkdir -p $(B)
+	@printf '#define SC_VER_NUM %s\n#define SC_VER_STR "%s"\n' "$(VER_NUM)" "$(COOP_VERSION)" > $@.tmp
+	@if cmp -s $@.tmp $@; then rm $@.tmp; touch $@; else mv $@.tmp $@; echo "version.h: $(COOP_VERSION) ($(VER_NUM))"; fi
+$(B)/obj/%_rc.o: %.rc installer/version.rc $(B)/version.h
+	@mkdir -p $(dir $@)
+	$(WINDRES) -i $< -o $@ -I$(B) -Iinstaller
 
 $(B)/obj/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -46,24 +65,26 @@ $(B)/obj/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(MINHOOK)/include -Isdk/include -c $< -o $@ -MMD -MP
 
-$(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ)
+$(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ) $(B)/obj/sporekit/sporekit_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
-$(B)/coop.dll: $(COOP_OBJ)
+$(B)/coop.dll: $(COOP_OBJ) $(B)/obj/mods/coop/coop_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 
 # SporeCoopSetup.exe: install / update / uninstall (installer/, updater/)
-WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
-COOP_VERSION = $(shell sed -n 's/^#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
 setup: $(B)/SporeCoopSetup.exe
 $(B)/setup.ico: data/ui/coop_icon.png tools/make_ico.py
 	@mkdir -p $(B)
 	python3 tools/make_ico.py $< $@
-$(B)/obj/installer/setup_rc.o: installer/setup.rc installer/setup.manifest $(B)/setup.ico
+# the manifest's assemblyIdentity version is COOP_VERSION too (BUG-0784; it was 1.0.0.0)
+$(B)/setup.manifest: installer/setup.manifest $(B)/version.h
+	sed 's/name="SporeCoop.Setup" version="[0-9.]*"/name="SporeCoop.Setup" version="$(subst $(comma),.,$(VER_NUM))"/' $< > $@
+	grep -q 'version="$(subst $(comma),.,$(VER_NUM))"' $@
+$(B)/obj/installer/setup_rc.o: installer/setup.rc installer/version.rc $(B)/setup.manifest $(B)/setup.ico $(B)/version.h
 	@mkdir -p $(dir $@)
-	$(WINDRES) -i installer/setup.rc -o $@ --include-dir installer
-$(B)/SporeCoopSetup.exe: mods/coop/coop.cpp installer/setup.cpp installer/install.cpp installer/install.h updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
-	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $(filter-out %.h mods/coop/coop.cpp,$^) \
+	$(WINDRES) -i installer/setup.rc -o $@ -I$(B) -Iinstaller
+$(B)/SporeCoopSetup.exe: installer/setup.cpp installer/install.cpp installer/install.h updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
+	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $(filter-out %.h,$^) \
 		-lwinhttp -lcomctl32 -lshell32 -lole32 -ladvapi32 -luser32 -lgdi32
 
 # The sanitizer builds need the compiler's runtimes: one probe (a stamp per HOSTCXX) says what is
@@ -86,29 +107,53 @@ ifneq ($(SKIP_SANITIZERS),1)
 	@test -f $(SAN_STAMP) || tools/sanitizer_probe.sh "$(HOSTCXX)" $(B)/host $(SAN_STAMP)
 endif
 
-# native Linux unit tests for portable netcode
+# native Linux unit tests for portable netcode. The parts below are independent and mostly wait (sessions over
+# localhost UDP, the lab self-test's fake runs): `make test` runs them at once (TEST_JOBS, output per part as it ends;
+# docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
+TEST_JOBS ?= 8
+NET_SHARDS ?= 8
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools
+ifneq ($(SKIP_SANITIZERS),1)
+UNIT_PARTS += test-asan test-tsan unit-fuzz
+endif
+.PHONY: $(UNIT_PARTS) unit-parts
 test: sanitizer-probe
 	@mkdir -p $(B)/host
 ifeq ($(SKIP_SANITIZERS),1)
 	@echo "WARNING: SKIP_SANITIZERS=1: the ASan/UBSan/TSan tests are NOT RUN"
 endif
+	@$(MAKE) --no-print-directory -j$(TEST_JOBS) -Otarget unit-parts
+ifeq ($(SKIP_SANITIZERS),1)
+	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
+endif
+	@echo "make test: all parts passed ($(UNIT_PARTS))"
+
+unit-parts: $(UNIT_PARTS)
+
+unit-net:
+	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
-	$(B)/host/net_tests
+	python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -DLINEAGES_BULK_ACKS -Imods/coop -o $(B)/host/world_transfer_tests tests/world_transfer_tests.cpp mods/coop/net/connection.cpp
 	$(B)/host/world_transfer_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_sync_tests tests/library_sync_tests.cpp mods/coop/net/library_sync.cpp updater/sha256.cpp
 	$(B)/host/library_sync_tests
 	python3 tools/tests/test_cache_category.py
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
+
+unit-lab:
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
-ifneq ($(SKIP_SANITIZERS),1)
-	$(MAKE) --no-print-directory test-asan
-	$(MAKE) --no-print-directory test-tsan
+	python3 tools/tests/dash_selftest.py
+
+unit-fuzz: sanitizer-probe
+	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_decoders mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/fuzz_decoders
-endif
+
+unit-cpp: sanitizer-probe
+	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/dna_sync_tests tests/dna_sync_tests.cpp
@@ -145,24 +190,29 @@ endif
 	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
 	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.cpp mods/coop/net/*.h updater/*.cpp updater/*.h)
+
+unit-lint:
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
+
+unit-tools:
 	python3 tools/tests/tools_selftest.py
-ifeq ($(SKIP_SANITIZERS),1)
-	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
-endif
+	python3 tools/tests/visual_selftest.py
+	python3 tools/tests/state_fields_check.py
+	python3 tools/tests/test_lint.py
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
 test-asan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
-	@# --nofix: every fix test runs to the end and fails (BUG-0214: it used to abort at test_dbbf_wrap)
-	@ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan --nofix > $(B)/host/net_tests_nofix.txt 2>&1; \
-	  rc=$$?; tail -n 1 $(B)/host/net_tests_nofix.txt | grep -q '^FAILED (' && [ $$rc = 1 ] \
-	  || { tail -n 20 $(B)/host/net_tests_nofix.txt; echo "net_tests_asan --nofix: expected FAILs to the end (exit $$rc)"; exit 1; }
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests_asan
+	@# --nofix: every fix test runs to the end and fails (BUG-0214: it used to abort at test_dbbf_wrap); every shard
+	@# must reach its end, the FAILs counted over all of them
+	@ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tools/tests/shards.py $(NET_SHARDS) \
+	  $(B)/host/net_tests_asan --nofix --expect-fail --out $(B)/host/net_tests_nofix.txt \
+	  || { echo "net_tests_asan --nofix: expected FAILs to the end"; exit 1; }
 	@# the decoder bounds fixes' off side reads out of bounds: ASan must stop it (BUG-0208, BUG-0047)
 	@! ASAN_OPTIONS=detect_leaks=0 $(B)/host/net_tests_asan --old-dbbf > $(B)/host/net_tests_old_dbbf.txt 2>&1 \
 	  && grep -q 'AddressSanitizer' $(B)/host/net_tests_old_dbbf.txt || { echo "net_tests_asan --old-dbbf: ASan did not report"; exit 1; }

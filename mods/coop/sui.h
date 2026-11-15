@@ -68,6 +68,8 @@ std::string dump(Win root, int max_depth, bool only_visible);
 // ---- changing ----
 void add_ref(Win w);
 void release(Win w);
+int refs(void* object);   // the game's reference count of a live window / image / drawable (BUG-1025)
+extern bool g_release_fix; // core.ui_release (BUG-1025): what the mod drops is given back
 void set_caption(Win w, const std::string& utf8);
 void set_area(Win w, const Rect& r);
 // the area the window has after its layout procs (anchors): they are reverted first (IWindow vt 0x6C, SetLayoutArea)

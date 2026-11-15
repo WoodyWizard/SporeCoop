@@ -97,3 +97,4 @@ PASS (fixes on): lab runs out/lab/20261027-184811 and out/lab/20261027-184904 (l
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the fix still calls VirtualQuery while the thread is suspended (sporekit/watchdog.cpp:88-96), the Wine VM-lock form of this freeze (docs/05-re-notes.md MinHook note); new ticket BUG-0880.

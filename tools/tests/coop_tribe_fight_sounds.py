@@ -9,7 +9,7 @@ the game's own audio commands (`coop.audio`: every play the game's AudioSystem s
 
   * effect sounds: plays from an effect's sound component (return address 0xA3749B, the effect update), without
     the order marker's (the ordering player's own feedback) and the attack animations' per-target hit impacts
-    (BUG-0603, not fixed);
+    (BUG-0603: coop_tribe_hit_impacts.py tests those);
   * voices: plays of Creature_CombatVoice (return address 0xC1B0CC enter, 0xC1B170 leave).
 
 1. Two games on the tribe fixture, 6 more members; both audio lists marked; the host's player members attack an
@@ -34,7 +34,7 @@ VOICE = ('C1B0CC', 'C1B170')     # Creature_CombatVoice's PlayProceduralAudio ca
 # the feedback of the player who gave the order, in that player's game only (not a member's sound)
 ORDER_MARKER = {'CE5F2ED0'}
 # the hit impacts of an attack animation's per-target events (0xD05B58ED = effect 0x682E8D4B; 0xA7E3E1FB inferred the
-# same): a mirror's relayed animation has no target, not fixed (BUG-0603); left out so the test checks BUG-0600's part
+# same): a mirror's relayed animation has no target (BUG-0603, effects.hit_targets: tribe_hit_impacts); left out here
 PER_TARGET = {'D05B58ED', 'A7E3E1FB'}
 
 

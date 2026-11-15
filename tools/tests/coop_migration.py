@@ -211,6 +211,16 @@ def main():
     if not without_fix:
         st = wait(lambda: re.search(r'pending=0\b', guest.call('coop.npc')['out']), 10)
         ck(st, 'after the cinematic they are gone (' + guest.call('coop.npc')['out'].splitlines()[-1].strip() + ')')
+    if '--heal' in sys.argv:  # BUG-0496: the new home nest heals both players (the game's own health of each avatar)
+        from coop_nest_heal import heal
+        for con in (host, guest):
+            con.call('coop.team off')
+        for con, who, p in ((host, 'host', hpos), (guest, 'guest', gpos)):
+            con.call('coop.npc gopos %.2f %.2f %.2f' % (p[0] + 2, p[1], p[2] + 2))
+            time.sleep(2)
+            a, b = heal(con)
+            print(f'   {who} at the new nest: hp {a} -> {b}; ' + con.call('coop.rules heal')['out'].strip(), flush=True)
+            ck(b >= a + 2, f'{who}: the new home nest heals its creature (hp {a} -> {b} in 12 s)')
     time.sleep(3)
     ck.faults(host=host, guest=guest)
     return ck.result()

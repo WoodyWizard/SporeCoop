@@ -16,6 +16,8 @@ def civ(con):
         if m:
             cities[int(m.group(1))] = dict(pol=m.group(2), player=bool(m.group(3)), owner=int(m.group(4)),
                                            buildings=int(m.group(5)), pos=tuple(float(m.group(i)) for i in (6, 7, 8)))
+            sp = re.search(r' spec=(-?\d+)', line)  # the city's specialty (+0x540: 0 military, 1 religious, 2 economic)
+            cities[int(m.group(1))]['spec'] = int(sp.group(1)) if sp else None
         m = re.match(r'\s+veh #(\d+) \S+ pol=(\w+) owner=(-?\d+) purpose=(\d+) loco=(\d+) sel=(\d+) hp=\S+ pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', line)
         if m and m.group(1) != '0':
             veh[int(m.group(1))] = dict(pol=m.group(2), owner=int(m.group(3)), sel=int(m.group(6)),
@@ -89,6 +91,10 @@ def main():
     ck(hc[city]['buildings'] == b0h + 1, f'host city got the guest building ({b0h} -> {hc[city]["buildings"]})')
     ck(gc[city]['buildings'] == b0g + 1, f'no duplicate on the guest ({b0g} -> {gc[city]["buildings"]})')
     b1g = gc[city]['buildings']
+    # the fixture's 3000 went to the vehicle and the house: a paid build needs the money (BUG-0613: the mod's build
+    # took the money below 0, and the detector found the host at -800 and the guest at 0)
+    host.call('coop.res add money 5000')
+    time.sleep(1)
     print(' ', host.call(f'coop.civ build {city} factory')['out'])
     time.sleep(2)
     gc, _ = civ(guest)

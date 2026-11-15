@@ -30,6 +30,7 @@
 #include "space_logic.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "world.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -106,6 +107,11 @@ bool g_wave_tough_fix = true, g_wave_resume_fix = true, g_wave_away_fix = true;
 COOP_FIX("contracts.wave_tough", "BUG-0227", g_wave_tough_fix, "space: armada ships get their HP raised once per object, not per address");
 COOP_FIX("contracts.wave_resume", "BUG-0227", g_wave_resume_fix, "space: a resumed armada wave waits for its ships again");
 COOP_FIX("contracts.wave_away", "BUG-0227", g_wave_away_fix, "space: an armada raid that ends while the host is away counts");
+// BUG-1038: a fresh (not resumed) wave whose raid brought no ships in 30 s kept its mission, so the next ready tick
+// resumed that same empty raid (30 s more) instead of starting a new one. Now the empty raid is aborted and a new one
+// starts. Off: resumed once more (0.7.13).
+bool g_wave_empty_fix = true;
+COOP_FIX("space.armada_empty_wave", "BUG-1038", g_wave_empty_fix, "space: an armada wave whose raid brought no ships starts a new raid");
 bool g_wave_resumed;              // the running wave was resumed (BUG-0227)
 int g_wave_away_result;           // the wave's raid ended while the host was away: 5 or 6 (BUG-0227)
 bool g_tough_reuse, g_hide_ships; // tests: the address-reuse simulation / the resumed raid brings no ships
@@ -242,6 +248,8 @@ void add_money(int n)
 
 void* inventory()
 {
+    if (spaceext::away())
+        return nullptr; // the `away` test hook (space_ext.h): outside Space there is no inventory, as in spacecoop.cpp
     void* sg = a_SpaceGame ? *(void**)a_SpaceGame : nullptr;
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
@@ -283,6 +291,66 @@ bool give_tool(uint32_t hash)
         return false;
     thiscall<void>(a_AddItemByKey, inv, (const uint32_t*)k);
     return vcall<bool>(inv, 0x74 / 4, (const uint32_t*)k);
+}
+
+// BUG-0694: a reward paid while this game is outside Space (an editor, an adventure, the galaxy menu: no inventory,
+// maybe no empire) was lost: add_money / give_tool did nothing and the contract's id was spent; a mission's reward tools
+// (spacecoop K_MISSION) the same. Now what cannot be paid now is owed (money, a tool by hash or by key) and paid in the
+// first Space frame of the same Space world (spaceext::world_epoch; another world: dropped, logged). Off: lost (0.7.10).
+// BUG-0695: contract deadlines ran on the wall clock (H->time_seconds): a paused game, an editor, a menu or a load used
+// them up. On: the host's contract clock stops while it is not playing Space. Off: the wall clock (0.7.10).
+bool g_clock_fix = true;
+COOP_FIX("space.contract_clock", "BUG-0695", g_clock_fix, "space: a contract's time does not run out while the host's game is paused or outside Space");
+double g_clock_held; // tests: seconds the clock stood still
+bool g_owed_fix = true;
+COOP_FIX("space.reward_owed", "BUG-0694", g_owed_fix, "space: a contract or mission reward earned while outside Space is paid when back in Space");
+struct OwedReward {
+    int money = 0;
+    uint32_t hash = 0;       // a contract's tool (file name hash), 0 none
+    uint32_t key[3] = {};    // a mission's tool key, key[0] 0 none
+    uint32_t epoch = 0;
+    std::string what;
+};
+std::vector<OwedReward> g_owed;
+uint32_t g_owed_paid, g_owed_dropped;
+// BUG-1037: the owed rewards (also a partner's mission tool, spacecoop K_MISSION) were paid only by this feature's tick,
+// which does not run while the host's session settings have Space contracts off (F3, BUG-0768): the tool was never
+// given. Now they are paid also while the feature is off (spaceext tick_off). Off: not paid then (0.7.13).
+bool g_owed_always_fix = true;
+COOP_FIX("space.owed_always", "BUG-1037", g_owed_always_fix,
+         "space: an owed mission reward tool is given also while the session has Space contracts off");
+uint32_t g_owed_paid_off; // paid while the feature was off
+void say(const std::string& t);
+void owed_tick()
+{
+    if (g_owed.empty() || !spaceext::in_space())
+        return;
+    auto owed = std::move(g_owed);
+    g_owed.clear();
+    for (auto& o : owed) {
+        if (o.epoch != spaceext::world_epoch()) {
+            g_owed_dropped++;
+            H->log(M, SK_INFO, "contracts: an owed reward (%s) dropped: another Space world", o.what.c_str());
+            continue;
+        }
+        bool need_inv = o.hash || o.key[0];
+        if ((o.money && !empire()) || (need_inv && !inventory())) {
+            g_owed.push_back(o); // not yet (the inventory comes a moment after the Space frames start)
+            continue;
+        }
+        if (o.money)
+            add_money(o.money);
+        bool tool = o.hash ? give_tool(o.hash) : false;
+        if (o.key[0] && a_AddItemByKey && !vcall<bool>(inventory(), 0x74 / 4, (const uint32_t*)o.key)) {
+            thiscall<void>(a_AddItemByKey, inventory(), (const uint32_t*)o.key);
+            tool = true;
+        }
+        g_owed_paid++;
+        if (!spaceext::feature_allowed("contracts"))
+            g_owed_paid_off++;
+        H->log(M, SK_INFO, "contracts: an owed reward paid (%s): money %d, tool %d", o.what.c_str(), o.money, (int)tool);
+        say(o.what + tr(": the reward you earned while away is yours now", ": награда, заработанная вне космоса, получена"));
+    }
 }
 
 struct ToolInfo {
@@ -535,11 +603,24 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
     // money: one shared budget (the host adds it once, shared.cpp gives it to everybody), in rivals
     // mode every member of the crew gets it
     bool pay = spaceext::rivals() ? mine : host();
-    if (pay) {
+    // BUG-0694: outside Space (no empire / no inventory) the reward is owed, paid back in the same Space world
+    bool owe_money = g_owed_fix && pay && money_ && (!spaceext::in_space() || !empire());
+    bool owe_tool = g_owed_fix && mine && tool && (!spaceext::in_space() || !inventory());
+    if (owe_money || owe_tool) {
+        OwedReward o;
+        o.money = owe_money ? (int)money_ : 0;
+        o.hash = owe_tool ? tool : 0;
+        o.epoch = spaceext::world_epoch();
+        o.what = tr("Contract", "Контракт");
+        g_owed.push_back(o);
+        H->log(M, SK_INFO, "contracts: reward of contract %u owed (outside Space): money %d tool %08X", id, o.money, o.hash);
+    }
+    if (pay && !owe_money) {
         add_money((int)money_);
         g_money_got += (int)money_;
-    }
-    bool got_tool = mine && tool && give_tool(tool);
+    } else if (owe_money)
+        g_money_got += (int)money_;
+    bool got_tool = mine && tool && !owe_tool && give_tool(tool);
     if (got_tool)
         n_tools++;
     n_rewards++;
@@ -548,6 +629,8 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
         s += tr(" to the shared budget", " в общий бюджет");
     if (got_tool)
         s += " + " + tool_name(tool);
+    else if (owe_tool)
+        s += " + " + tool_name(tool) + tr(" (when you are back in space)", " (когда вернётесь в космос)");
     else if (mine && tool)
         s += tr(" (the tool is already in your cargo)", " (инструмент у вас уже есть)");
     if (!mine)
@@ -900,7 +983,7 @@ void armada_tick(double t)
             if (!g_wave_ships && t - g_wave_t > 30) {
                 H->log(M, SK_WARN, "contracts: the raid of wave %d brought no ships in 30 s: again", g.wave);
                 g_wave_on = false; // started again below
-                if (g_wave_resume_fix && g_wave_resumed) {
+                if ((g_wave_resume_fix && g_wave_resumed) || g_wave_empty_fix) {
                     // BUG-0227: end the old raid first (found in the live list this tick), or the
                     // next ready tick would resume it again, or start a second raid next to it
                     if (g_wave_mission && raids_on_target().count(g_wave_mission) && a_SetState) {
@@ -995,6 +1078,12 @@ void armada_tick(double t)
 }
 
 // ---- host: the survey ----
+// BUG-0830: a player may join the crew while the contract runs (3-4 players), and a target counted only with EVERY
+// crew member at the star: a late member who stayed home made the contract time out for everybody. Now a target counts
+// with as many crew members there as the contract needs. `coop.fix space.survey_needed off`: every member (0.7.12).
+static bool g_survey_needed_fix = true;
+COOP_FIX("space.survey_needed", "BUG-0830", g_survey_needed_fix,
+         "space contracts: a survey target counts when as many crew members as needed are there, not every member");
 void survey_tick(double dt)
 {
     bool changed = false;
@@ -1005,9 +1094,14 @@ void survey_tick(double dt)
         if (tg.done)
             continue;
         bool all = !g.crew.empty();
+        size_t there = 0;
         for (uint8_t id : g.crew)
             if (star_of_player(id) != tg.star)
                 all = false;
+            else
+                there++;
+        if (g_survey_needed_fix)
+            all = there > 0 && there >= std::min<size_t>(g.needed, g.crew.size());
         g_hold[i] = all ? g_hold[i] + dt : 0;
         if (g_hold[i] >= kHold) {
             tg.done = 1;
@@ -1027,8 +1121,16 @@ void survey_tick(double dt)
 
 void host_tick(double t)
 {
-    double dt = std::min(1.0, t - g_last_tick);
+    double gap = g_last_tick > 0 ? t - g_last_tick : 0;
+    double dt = std::min(1.0, gap);
     g_last_tick = t;
+    // BUG-0695: the contract's clock runs only while the host plays Space with the game's time running: a pause, an
+    // editor, a menu or a load (no frames: a long gap) moves the deadline on by the time it took
+    if (g_clock_fix && (g.state == S_OFFERED || g.state == S_ACTIVE) && gap > 0 &&
+        (gap > 1.0 || !spaceext::in_space() || world::time_paused())) {
+        g.deadline += gap;
+        g_clock_held += gap;
+    }
     // the crew: players still in the session
     if (g.state == S_OFFERED || g.state == S_ACTIVE) {
         auto pl = C().sess->players();
@@ -1115,6 +1217,8 @@ bool init(const SkHost* h, SkMod* m)
 
 void tick(double t)
 {
+    if (g_owed_fix)
+        owed_tick(); // BUG-0694 (also after the session ended: the reward was earned in it)
     if (!connected()) {
         if (g.state != S_NONE)
             g = Contract{};
@@ -1391,6 +1495,22 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "money %d\n", money());
         return b;
     }
+    if (a[0] == "clock") { // tests (BUG-0695): the contract's time left and how long its clock stood still
+        snprintf(b, sizeof b, "clock left=%.1f held=%.1f state=%d\n", g.state ? g.deadline - now() : 0.0, g_clock_held, (int)g.state);
+        return b;
+    }
+    if (a[0] == "result" && a.size() > 2) { // tests (BUG-0694): a won contract's result for this game: result <money> <tool hex>
+        std::vector<uint8_t> crew{spaceext::my_id()};
+        on_result(0xFFFF0000u + (g_owed_paid + g_owed_dropped + (uint32_t)g_owed.size()), true, 0, (uint32_t)atoi(a[1].c_str()),
+                  (uint32_t)strtoul(a[2].c_str(), nullptr, 16), crew, T_SURVEY);
+        snprintf(b, sizeof b, "result given; owed %u paid %u dropped %u\n", (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped);
+        return b;
+    }
+    if (a[0] == "owed") { // tests (BUG-1037): the owed rewards
+        snprintf(b, sizeof b, "owed %u paid %u dropped %u paid_while_off %u\n", (unsigned)g_owed.size(), g_owed_paid,
+                 g_owed_dropped, g_owed_paid_off);
+        return b;
+    }
     if (a[0] == "tool" && a.size() > 1) {
         uint32_t h = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         snprintf(b, sizeof b, "tool %08X %s: %s\n", h, tool_name(h).c_str(), has_tool(h) ? "have" : "no");
@@ -1410,6 +1530,11 @@ bool reg = spaceext::add({.name = "contracts",
                           .kind_hi = 29,
                           .init = init,
                           .tick = tick,
+                          .tick_off =
+                              [](double) {
+                                  if (g_owed_fix && g_owed_always_fix)
+                                      owed_tick(); // BUG-1037
+                              },
                           .on_message = on_message,
                           .on_session_end = on_session_end,
                           .draw_overlay = draw_overlay,
@@ -1418,3 +1543,18 @@ bool reg = spaceext::add({.name = "contracts",
                           .debug = debug});
 
 } // namespace
+
+namespace spaceext {
+// BUG-0694: a mission's reward tool this game cannot take now (outside Space): owed, given back in the same Space world
+bool owe_tool_key(const uint32_t key[3], const std::string& what)
+{
+    if (!g_owed_fix || !key[0])
+        return false;
+    OwedReward o;
+    memcpy(o.key, key, sizeof o.key);
+    o.epoch = world_epoch();
+    o.what = what;
+    g_owed.push_back(o);
+    return true;
+}
+} // namespace spaceext

@@ -14,7 +14,7 @@ commits: a04e284f
 tests: tools/tests/lab_selftest.py same_second (make test)
 signature:
 docs: docs/06-testing.md
-related:
+related: BUG-0362
 ---
 
 ## Report
@@ -35,3 +35,4 @@ tools/tests/lab_selftest.py `same_second` (make test): two stubbed lab processes
 - 2026-10-31: opened (fix/w22-reports).
 - 2026-11-04: fixed on fix/w42-infra (a04e284f): exclusive run directory with a suffix, flaky.json under a lock.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-08 (fix/w46-g4-0430, BUG-0430): BUG-0362 is a duplicate of this ticket.

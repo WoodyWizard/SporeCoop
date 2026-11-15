@@ -98,6 +98,8 @@ void on_member_anims(uint8_t kind, net::Reader& r);
 uint16_t id_of(void* citizen);
 // guest: the mirror of the host's member #id (null: none)
 void* mirror_of(uint16_t id);
+// host (tests): the member #id itself (null: none or not alive)
+void* member_of(uint16_t id);
 // tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
 std::string object_key(void* obj);
 // tests: the position of every planet tree (cTreeData, fruit trees to gather from)
@@ -109,6 +111,10 @@ bool is_chief(void* citizen);
 // W2 (BUG-0564): a guest removes a village of its own the host has not (realign.cpp): 1 removed, 0 not this
 // one (the player tribe, mapped to a host tribe, not a guest in Tribe), -1 not now (a cinematic plays)
 int remove_village(void* tribe);
+// BUG-0777: guest, the host's hut fell: this game's hut takes the game's own killing blow (1 dealt, 0 none, -1 not now)
+int fell_hut(void* hut);
+// BUG-0777: guest, the host's village was conquered: its hut falls here, or the game's conquered flag is set
+int conquer_village(void* tribe);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 // the local player's own tribe members (positions), for the effect relay
 std::vector<net::Vec3> local_member_positions();
@@ -128,6 +134,13 @@ struct TrackMember {
     const net::Vec3* drawn; // null: its position now
 };
 void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user);
+// diagnostics (BUG-0945): what a member does, for the "over the ground" line: its behaviour-tree node, health, the
+// game's dead flag, the held tool and item
+std::string member_brief(void* c);
+// diagnostics (coop.bodyrec start diag, K3): per member mirror of a guest rows `a<id>` (the driving's aim), `r<id>`
+// (M1's raw lead target), `l<id>` (x: how far the shown lead is behind M1's in s, y: 1 = no lead (jittery link), z: the
+// walk error m)
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user);
 
 // BUG-0514: the player tribe's tools (cTribeTool, tribe +0x36C: weapon racks, the fire pit, ...) with their
 // type (tool vt 0x58) and position, for the host-owned world objects (worldobj.cpp kind "tribe_tool")

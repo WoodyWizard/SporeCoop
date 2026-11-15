@@ -34,9 +34,14 @@ No product change (step 2 of the issue was conditional on step 1 finding a probl
 * no-fail-run: a guard for behaviour that was found correct, nothing to fail.
 * Re-run 2026-10-30 (fix/w9-cell-away, lane 3): PASS out/lab/20261030-002235-fix-w9-cell-away (cell_respawn, cell_respawn_swap), with the death count S+0x70 check.
 
+* Re-check 2026-11-08 (fix/w46-n2-desyncs, N2 of 0.7.11): cell_respawn, cell_respawn_swap OK out/lab/20261108-030127 and out/lab/20261108-032648
+  (SPORE_NET=players, guest 20 fps: the knocked-out partner's game at a low frame rate over a lossy link, the case the
+  first check left out). Both pools rebuilt, partner respawned, no faults.
+
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: measured (both roles), no problem; guard tests cell_respawn / cell_respawn_swap and `coop.cell pool` added.
 - 2026-10-30 (fix/w9-cell-away, GitHub #155 re-check): cell_respawn and cell_respawn_swap PASS again on lane 3 (out/lab/20261030-002235-fix-w9-cell-away) with a new check: the game's death count S+0x70 (`coop.pool deaths`) of the knocked-out partner does not change. Measured: S+0x70 stayed 0 on both machines also for the player whose game ran its death (the selfhit death goes through KillCell / PlayerDeath; only BreakOrSwallow 0xE7AEE0 counts deaths, docs/re/cell.md). Still not reproduced, no product change.
 - 2026-10-30 (fix/w13-cell, re-check): cell_respawn and cell_respawn_swap PASS on lane 3 (out/lab/20261030-133815,
   main 5d7f20e code). Still not reproduced, no product change.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): cell_respawn and cell_respawn_swap PASS plain and over the players' network at 20 fps; still no problem.

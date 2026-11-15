@@ -92,5 +92,6 @@ void spectate_step(int dir);
 float own_left();
 float own_revive();
 void set_box_shown(bool shown);
+float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync

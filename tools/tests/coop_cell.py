@@ -88,7 +88,11 @@ def main():
         g3, _ = pool(guest)
     ck(g3['food'] == h3['food'], f'guest has the same total ({g3["food"]})')
 
-    # knockout far from the partner: nobody saves it at once
+    # knockout far from the partner: nobody saves it at once. The host's cell is still on its last swim (+18 +18,
+    # ~2.4 m/s): it is stopped first, or it swims past the guest put 9 m away and revives it within 2 s (lab
+    # 20261112-094823: 4.1 m after the tp, revived 2.0 s after the knockout, before the check)
+    host.call('coop.pool goto 0 0')
+    time.sleep(1.5)
     print(' ', guest.call('coop.pool tp 9 0')['out'])
     time.sleep(1)
     print(' ', pool(guest)[1].splitlines()[0])
@@ -152,7 +156,12 @@ def main():
     print(' ', go7.splitlines()[0])
     ck(g7['downed'] == 0 and (g7['respawns'] or 0) - rs0 == 1 and g7['hp'] == 6, f'respawn after 10 s (respawns +{(g7["respawns"] or 0) - rs0}, hp {g7["hp"]})')
     ck(g7['partner_dist'] is not None and 0 <= g7['partner_dist'] < 6, f'next to the partner (distance {g7["partner_dist"]})')
-    ck(g7['body'] == 0.5 and g7['target'] < size0 * 0.6, f'small again (target size {size0} -> {g7["target"]})')
+    # BUG-0628: a meal of the respawned cell before that first sample (a slow console under load: lab 20261106-130235
+    # #2 sampled 1.7 s after the respawn, the cell had eaten +20 meat at 1.7 s) grows the target by 0.01 per point;
+    # the points since the knocked-out sample g6 are counted (a knocked-out cell's meals are cell_ko_food's, BUG-0364)
+    grown = 0.01 * max(0, (g7['own_points'] or 0) - (g6['own_points'] or 0))
+    ck(g7['body'] == 0.5 and g7['target'] < size0 * 0.6 + grown,
+       f'small again (target size {size0} -> {g7["target"]}' + (f', +{grown:.2f} eaten since the respawn' if grown else '') + ')')
     for _ in range(16):  # the game smooths the size towards the target
         if g7['size'] is not None and g7['size'] < size0 * 0.75:
             break

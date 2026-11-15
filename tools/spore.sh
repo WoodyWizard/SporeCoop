@@ -141,6 +141,22 @@ cmd_run() {
     fi
     mkdir -p "$ROOT/out"
     [[ -f "$BIN/SporeApp.exe" ]] || { echo "no game at $BIN (lane $LANE: spore.sh lane create $LANE)" >&2; exit 1; }
+    # BUG-1075: two copies of one instance (one profile, one console port) read and write the same
+    # profile files at boot; one such boot crashed in the galaxy save's star read. A second start of
+    # an instance that runs, or that was started under 20 s ago (its Wine process comes seconds later),
+    # is refused until `spore.sh kill`; the marker lives in the lane's game folder (shared by every
+    # worktree). SPORE_ALLOW_DOUBLE=1: start anyway (tests of the double start itself).
+    local mark="$MODS/logs/.started.$inst"
+    mkdir -p "$MODS/logs"
+    if [[ "${SPORE_ALLOW_DOUBLE:-0}" != 1 ]]; then
+        if [[ -n "$(cmd_pids "$inst")" ]]; then
+            echo "instance $inst already runs on lane $LANE: not started twice (spore.sh kill first; BUG-1075)" >&2; exit 3
+        fi
+        if [[ -f "$mark" ]] && (( $(date +%s) - $(stat -c %Y "$mark") < 20 )); then
+            echo "instance $inst was started on lane $LANE under 20 s ago: not started twice (spore.sh kill first; BUG-1075)" >&2; exit 3
+        fi
+    fi
+    touch "$mark"
     # test games draw on a headless GNOME Shell (tools/headless.sh): nothing on the user's desktop,
     # and they keep drawing; SPORE_HEADLESS=0 shows them on the desktop instead
     local display=()
@@ -275,6 +291,7 @@ cmd_kill() {
         for p in $(awk '$1 == "tree" {print $2}' <<< "$procs"); do kill_tree "$p"; done
     fi
     for p in $(awk '$1 == "wrapper" {print $2}' <<< "$procs"); do kill "$p" 2>/dev/null || true; done
+    rm -f "$MODS/logs/.started."* # BUG-1075: the lane's instances may start again
     echo "killed"
 }
 

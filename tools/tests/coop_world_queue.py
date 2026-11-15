@@ -11,12 +11,15 @@
      queued (`coop.load` of the guest's received slot, the way via_menu_tick sees an editor that
      opened after the request): the game must not load from the editor (no "loading from Editor",
      the guest stays in the editor).
-  4. the host leaves its editor: its world is shared and waits on the guest until the guest leaves
-     its editor. BUG-0074 the guest presses Leave, then "done": its game stays in the Creature
-     stage (no quit to the galaxy menu, no load of the host's world) for 20 s.
+  4. the host leaves its editor: its evolution goes in place (BUG-0508: a guest in its own editor plays the
+     same world), no world is sent to the guest. Then the host shares its world (`coop.share`, as at a load or
+     a stage change of the host) while the guest is still in its editor: the received world waits for the
+     editor (and replaces the coop.load of part 3). BUG-0074 the guest presses Leave, then "done": its game
+     stays in the Creature stage (no quit to the galaxy menu, no load of the host's world) for 20 s.
+     (Before BUG-0954 the share came from the host's evolution itself; since BUG-0508 it no longer does.)
 
   coop_world_queue.py [--without share_one_save,share_drop_peer,load_in_editor,world_reset | all]
-  (the named fixes off: each part with its fix off must FAIL)
+  (the named fixes off: each part with its fix off must FAIL; SPORE_FIX_OFF=world.world_reset works as well)
 """
 import glob
 import os
@@ -63,6 +66,8 @@ def main():
     without = set()
     if '--without' in sys.argv:
         without = set(sys.argv[sys.argv.index('--without') + 1].split(','))
+    # SPORE_FIX_OFF=world.<name> (the lab's twin switch) is the same as --without <name>: the switches are set below
+    without |= {f[len('world.'):] for f in os.environ.get('SPORE_FIX_OFF', '').split(',') if f.startswith('world.')}
     host, guest = start()
     ck = Checks()
     names = ['share_one_save', 'share_drop_peer', 'load_in_editor', 'world_reset']
@@ -127,6 +132,11 @@ def main():
     while time.time() - t0 < 60 and mode(host) != m0:
         time.sleep(1)
     ck(mode(host) == m0, 'the host is back in its stage')
+    time.sleep(10)
+    sent = 'world: received' in log_text(lane.GUEST)[log0:]
+    ck(not sent and mode(guest) == ed,
+       f'the host\'s evolution goes in place: no world for the guest in its editor (BUG-0508; guest {mode(guest).strip()})')
+    print(' ', host.call('coop.share')['out'].strip())
     waits = False
     t0 = time.time()
     while time.time() - t0 < 90:

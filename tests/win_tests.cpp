@@ -32,8 +32,10 @@ static int g_fail;
 static std::wstring g_tmp;
 static bool g_old;          // --old
 static std::wstring g_bat;  // --bat <install.bat to test> (tools/tests/win_unit.py)
+static std::wstring g_ubat; // --ubat <uninstall.bat to test> (win_unit.py)
 static std::wstring g_excl; // --exclude <installer/ini.exclude>
 static std::wstring g_steam; // --steam <a real Steam folder, read only> (win_unit.py: the user's, if any)
+static bool g_close_wait_fix = true; // --old-closewait: the old final close of test_setup_close (BUG-0853)
 static std::wstring g_setup; // --setup <SporeCoopSetup.exe to test> (default: the one next to win_tests.exe)
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
@@ -717,6 +719,50 @@ static void test_pending()
     CHECK(!exists(list));
 }
 
+// BUG-1019: apply_pack kept only the first 4096 bytes of an older sporecoop.pending when it deferred another file
+static std::string get_all(const std::wstring& p); // below
+
+static void test_pending_long()
+{
+    printf("updater: apply_pack adds a deferred file to the whole pending list (BUG-1019)\n");
+    std::wstring g = fresh_dir(L"pendlong");
+    std::wstring list = g + L"\\SporebinEP1\\mods\\sporecoop.pending", dll = g + L"\\SporebinEP1\\mods\\coop.dll";
+    put(g + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+    put(dll, "OLDDLL");
+    std::string old; // an older list of about 5000 bytes: 100 lines of 50 bytes, the last one coop.dll itself
+    for (int i = 0; i < 99; i++) {
+        char ln[64];
+        snprintf(ln, sizeof ln, "SporebinEP1/mods/sporekit/symbols/entry-%03d.sym\n", i);
+        old += ln;
+    }
+    old += "SporebinEP1/mods/coop.dll\n";
+    put(list, old);
+    upd::Pack p;
+    p.version = "9";
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, {'N', 'E', 'W'}});
+    // the running game holds coop.dll: the swap waits for the next start
+    HANDLE hold = CreateFileW(dll.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    std::string err;
+    int pending = 0;
+    bool ok = upd::apply_pack(g, p, err, &pending);
+    CloseHandle(hold);
+    std::string now = get_all(list);
+    int lines = 0, dll_lines = 0;
+    for (size_t i = 0; i < now.size();) {
+        size_t e = now.find('\n', i);
+        std::string ln = now.substr(i, (e == std::string::npos ? now.size() : e) - i);
+        lines += !ln.empty();
+        dll_lines += ln == "SporebinEP1/mods/coop.dll";
+        i = e == std::string::npos ? now.size() : e + 1;
+    }
+    printf("  apply=%d (%s) deferred=%d, the list: %u bytes, %d lines (%d of coop.dll), was %u bytes\n", ok, err.c_str(),
+           pending, (unsigned)now.size(), lines, dll_lines, (unsigned)old.size());
+    CHECK(ok && pending == 1);
+    CHECK(now.compare(0, old.size(), old) == 0); // every older line kept whole
+    CHECK(lines == 100 && dll_lines == 1);       // coop.dll listed once
+}
+
 // BUG-0035, BUG-0087, BUG-0105: where a received world goes and how it is written
 static std::vector<slotfs::File> world(const char* planet, const char* data)
 {
@@ -883,6 +929,106 @@ static void test_slot_write_fails()
     err.clear();
     CHECK(!wr(b, bad, "Bob", "Vulcan", 3, err));
     CHECK(!exists(b + L"\\sporecoop.txt"));
+}
+
+// BUG-0848: the staged folder's final move into the slot meets a file held for a moment (Windows: a
+// scanner opens a fresh file without FILE_SHARE_DELETE and MoveFileW fails with error 5). Wine
+// moves a folder with an open file in it (test_slot_write_fails), so besides holding a real handle
+// the test makes the move fail with ERROR_ACCESS_DENIED for the same 150 ms
+// (slotfs::g_test_move_denied_until), as Windows does.
+static HANDLE g_move_hold;
+static DWORD WINAPI release_after(void* ms)
+{
+    Sleep((DWORD)(uintptr_t)ms);
+    if (g_move_hold != INVALID_HANDLE_VALUE)
+        CloseHandle(g_move_hold);
+    g_move_hold = INVALID_HANDLE_VALUE;
+    return 0;
+}
+
+static void test_staged_move()
+{
+    printf("world: the staged world's move into the slot survives a file held for a moment (BUG-0848)\n");
+    std::wstring games = fresh_dir(L"stagedmove") + L"\\Games";
+    CreateDirectoryW(games.c_str(), nullptr);
+    std::string err, note;
+    std::wstring a = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", true, note);
+    CHECK(wr(a, world("Terra", "A1"), "Alice", "Terra", 1, err));
+    // 1. held for 150 ms, then free: the world is stored
+    HANDLE th = nullptr;
+    slotfs::g_test_before_move = [&](const std::wstring& tmp) {
+        g_move_hold = CreateFileW((tmp + L"\\Terra.spo").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        slotfs::g_test_move_denied_until = GetTickCount64() + 150;
+        th = CreateThread(nullptr, 0, release_after, (void*)(uintptr_t)150, 0, nullptr);
+    };
+    err.clear();
+    unsigned retries = slotfs::g_move_retries;
+    bool ok = wr(a, world("Terra", "A2"), "Alice", "Terra", 2, err);
+    if (th) {
+        WaitForSingleObject(th, 5000);
+        CloseHandle(th);
+    }
+    printf("  held 150 ms: %s (%s), moves tried again %u\n", ok ? "stored" : "refused", err.c_str(),
+           slotfs::g_move_retries - retries);
+    CHECK(ok);
+    CHECK(get(a + L"\\Terra.spo") == "A2" && get(a + L"\\stars.db") == "A2");
+    CHECK(get(a + L"\\sporecoop.txt").find("host Alice\n") != std::string::npos);
+    // 2. held for good: refused with the error, the old world stays whole, nothing staged left behind
+    slotfs::g_test_before_move = [&](const std::wstring&) { slotfs::g_test_move_denied_until = GetTickCount64() + 60000; };
+    err.clear();
+    ok = wr(a, world("Terra", "A3"), "Alice", "Terra", 3, err);
+    slotfs::g_test_move_denied_until = 0;
+    slotfs::g_test_before_move = nullptr;
+    printf("  held for good: %s (%s)\n", ok ? "stored" : "refused", err.c_str());
+    CHECK(!ok && err.find("error 5") != std::string::npos);
+    std::string keep = slotfs::g_staged_move_fix ? "A2" : "A1"; // (--old: step 1 failed, A1 stayed)
+    CHECK(get(a + L"\\Terra.spo") == keep && get(a + L"\\stars.db") == keep && get(a + L"\\sub\\x.pkp") == keep);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((games + L"-sporecoop-tmp\\*").c_str(), &fd);
+    int left = 0;
+    if (h != INVALID_HANDLE_VALUE) {
+        do
+            left += wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..");
+        while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    CHECK(left == 0);
+}
+
+// BUG-0847: the host's share reads every file of the slot; one it cannot open (Windows: a scanner
+// holds it without share access, or the game is still writing it) fails the share, it is not left out
+static void test_share_collect()
+{
+    printf("world: a share fails when a file of the save cannot be read, never sends the rest (BUG-0847)\n");
+    std::wstring slot = fresh_dir(L"collect") + L"\\Game0";
+    put(slot + L"\\Terra.spo", "planet");
+    put(slot + L"\\stars.db", "stars");
+    put(slot + L"\\sub\\x.pkp", "sub file");
+    put(slot + L"\\sporecoop.txt", "host_slot 1\n");
+    std::vector<slotfs::File> files;
+    std::string err;
+    CHECK(slotfs::collect(slot, files, err));
+    CHECK(files.size() == 3); // the marker is not sent
+    size_t bytes = 0;
+    bool sub = false;
+    for (auto& f : files) {
+        bytes += f.data.size();
+        sub |= f.rel == "sub/x.pkp" && std::string(f.data.begin(), f.data.end()) == "sub file";
+    }
+    CHECK(bytes == 6 + 5 + 8 && sub);
+    // a file held without share access
+    HANDLE hold = CreateFileW((slot + L"\\sub\\x.pkp").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    files.clear();
+    err.clear();
+    bool ok = slotfs::collect(slot, files, err);
+    printf("  held file: %s, %u files (%s)\n", ok ? "collected" : "refused", (unsigned)files.size(), err.c_str());
+    CHECK(!ok && files.empty() && err.find("sub/x.pkp") != std::string::npos);
+    CloseHandle(hold);
+    // free again: the share goes out whole
+    files.clear();
+    err.clear();
+    CHECK(slotfs::collect(slot, files, err) && files.size() == 3);
 }
 
 static int count_same_host(const std::wstring& games, const char* host)
@@ -1313,12 +1459,16 @@ static void test_setup_close()
     std::wstring cmd = L"\"" + setup + L"\" \"/dir:" + g + L"\" \"/pack:" + dir + L"\\new.pack\" /api:http://127.0.0.1:9/" +
                        (g_old ? L" /oldfix" : L"");
     SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", L"1500");
+    // BUG-0853: the job's WM_DONE 2 s after the last file: the old wait (all files new, then one
+    // WM_CLOSE) always closed into the busy window, which refused it, and the setup never ended
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", L"2000");
     STARTUPINFOW si{sizeof si};
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi{};
     BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
     SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", nullptr);
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", nullptr);
     CHECK(started);
     if (!started)
         return;
@@ -1340,14 +1490,16 @@ static void test_setup_close()
     bool closed_early = WaitForSingleObject(pi.hProcess, 2000) == WAIT_OBJECT_0;
     printf("  closed during the job: %s\n", closed_early ? "yes" : "no (refused)");
     CHECK(!closed_early);
-    // BUG-9029: the last file can be visible before the worker's WM_DONE
-    // reaches the UI. Closing at that point is correctly refused. Wait for
-    // the actual UI completion signal (Close re-enabled), not file contents.
-    HWND close_button = w ? GetDlgItem(w, 13) : nullptr;
-    for (int i = 0; i < 300 && !closed_early && close_button && !IsWindowEnabled(close_button); i++)
-        Sleep(100);
-    if (!closed_early)
-        CHECK(close_button && IsWindowEnabled(close_button));
+    if (g_close_wait_fix) {
+        // BUG-0853: the job is over when the window enables Close again (refresh() after WM_DONE)
+        HWND close = w ? GetDlgItem(w, 13) : nullptr; // ID_CLOSE
+        int waited = 0;
+        for (; waited < 300 && !closed_early && close && !IsWindowEnabled(close); waited++)
+            Sleep(100);
+        printf("  Close enabled again after %.1f s\n", waited / 10.0);
+    } else // the old wait: the files only (the window may still be busy)
+        for (int i = 0; i < 200 && !closed_early && !all_of_version(g, "0.11.0", true); i++)
+            Sleep(100);
     if (!closed_early && w)
         PostMessageW(w, WM_CLOSE, 0, 0);
     bool ended = WaitForSingleObject(pi.hProcess, 20000) == WAIT_OBJECT_0;
@@ -1360,9 +1512,9 @@ static void test_setup_close()
     CHECK(all_of_version(g, "0.11.0"));
 }
 
-static bool run_bat(const std::wstring& bin)
+static bool run_bat(const std::wstring& bin, const wchar_t* name = L"install.bat")
 {
-    std::wstring cmd = L"cmd.exe /c install.bat < NUL > NUL";
+    std::wstring cmd = std::wstring(L"cmd.exe /c ") + name + L" < NUL > NUL";
     STARTUPINFOW si{sizeof si};
     PROCESS_INFORMATION pi{};
     if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, bin.c_str(), &si, &pi))
@@ -1727,6 +1879,11 @@ struct FakeGithub {
     std::string sums;              // SHA256SUMS.txt
     int pack_failures = 0;
     int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
+    // BUG-0755: the next fail_left requests of a path ending in fail_path fail: fail_status 0 = the
+    // connection is closed without an answer, -1 = the body breaks off halfway, else that status
+    // (with Retry-After: retry_after when >= 0)
+    std::string fail_path;
+    int fail_left = 0, fail_status = 504, retry_after = -1, fail_hits = 0;
 };
 static FakeGithub g_gh;
 static std::mutex g_gh_mu;
@@ -1750,6 +1907,23 @@ static void gh_answer(SOCKET c)
     std::string ver = g_gh.tag.substr(1);
     std::string status = "404 Not Found", extra, body;
     std::vector<uint8_t> bin;
+    bool truncate = false;
+    if (g_gh.fail_left > 0 && !g_gh.fail_path.empty() && path.size() >= g_gh.fail_path.size() &&
+        path.compare(path.size() - g_gh.fail_path.size(), g_gh.fail_path.size(), g_gh.fail_path) == 0) {
+        g_gh.fail_left--;
+        g_gh.fail_hits++;
+        if (g_gh.fail_status == 0)
+            return; // the connection is closed without an answer
+        if (g_gh.fail_status == -1)
+            truncate = true;
+        else {
+            std::string head = "HTTP/1.1 " + std::to_string(g_gh.fail_status) + " Gateway Timeout\r\n" +
+                               (g_gh.retry_after >= 0 ? "Retry-After: " + std::to_string(g_gh.retry_after) + "\r\n" : "") +
+                               "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            send(c, head.data(), (int)head.size(), 0);
+            return;
+        }
+    }
     if (path == "/repos" + repo + "/latest") {
         g_gh.api_hits++;
         if (g_gh.api_status == 200) {
@@ -1792,6 +1966,8 @@ static void gh_answer(SOCKET c)
     std::string head = "HTTP/1.1 " + status + "\r\n" + extra + "Content-Length: " + std::to_string(bin.size()) +
                        "\r\nConnection: close\r\n\r\n";
     send(c, head.data(), (int)head.size(), 0);
+    if (truncate)
+        bin.resize(bin.size() / 2); // Content-Length says the whole, half of it comes
     for (size_t at = 0; at < bin.size();) {
         int n = send(c, (const char*)bin.data() + at, (int)std::min<size_t>(bin.size() - at, 65536), 0);
         if (n <= 0)
@@ -1843,6 +2019,20 @@ static void gh_release(const std::string& version, const std::string& pack_versi
     g_gh.web_status = 302;
     g_gh.relative = false;
     g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = 0;
+    g_gh.fail_path.clear();
+    g_gh.fail_left = g_gh.fail_hits = 0;
+    g_gh.fail_status = 504;
+    g_gh.retry_after = -1;
+}
+
+static void gh_fail(const std::string& path_end, int times, int status, int retry_after = -1)
+{
+    std::lock_guard<std::mutex> l(g_gh_mu);
+    g_gh.fail_path = path_end;
+    g_gh.fail_left = times;
+    g_gh.fail_status = status;
+    g_gh.retry_after = retry_after;
+    g_gh.fail_hits = 0;
 }
 
 static std::string gh_api() { return "http://127.0.0.1:" + std::to_string(g_gh_port) + "/repos/WoodyWizard/SporeCoop/releases/latest"; }
@@ -1956,6 +2146,244 @@ static void test_setup_api403()
     printf("  requests: api %d, release page %d, assets %d\n", g_gh.api_hits, g_gh.web_hits, g_gh.asset_hits);
 }
 
+// ---------------- BUG-0755: a 504 / a dropped connection from GitHub's file host ----------------
+
+static void test_retry()
+{
+    printf("updater: transient download failures are retried (BUG-0755)%s\n", upd::g_retry_fix ? "" : " [update.retry off]");
+    if (g_gh_port == 0 && !gh_start()) {
+        printf("  FAIL no local server\n");
+        g_fail++;
+        return;
+    }
+    upd::Release r;
+    upd::Pack p;
+    std::string err;
+    auto pack_case = [&](const char* what, const std::string& path_end, int times, int status) {
+        gh_release("0.14.0", "0.14.0");
+        g_gh.api_status = 200;
+        gh_fail(path_end, times, status);
+        bool ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+        printf("  %s: %s (failed answers %d)\n", what, ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+        return ok && p.version == "0.14.0";
+    };
+    // 1. the report: SHA256SUMS.txt answers 504 (twice), the third try works
+    CHECK(pack_case("SHA256SUMS.txt 504 x2", "/SHA256SUMS.txt", 2, 504));
+    // 2. the pack's connection is closed without an answer, twice
+    CHECK(pack_case("pack: connection closed x2", ".pack", 2, 0));
+    // 3. the pack's body breaks off halfway once (Content-Length not reached)
+    CHECK(pack_case("pack: body broken off x1", ".pack", 1, -1));
+    // 4. a 500 / 502 / 503 too
+    CHECK(pack_case("pack: 503 x1", ".pack", 1, 503));
+    // 5. the API answers 502 once: the API's answer, not the release page
+    gh_release("0.14.1", "0.14.1");
+    g_gh.api_status = 200;
+    gh_fail("/releases/latest", 1, 502);
+    bool ok = upd::latest_release(gh_api(), r, err);
+    printf("  API 502 x1: %s%s\n", ok ? r.version.c_str() : err.c_str(), ok && r.from_web ? " (from the release page)" : "");
+    CHECK(ok && r.version == "0.14.1" && !r.from_web);
+    // 6. 429 with a short Retry-After: waited for; a long one (an hour): not waited for, the
+    // release page answers at once (BUG-0392 stays)
+    gh_release("0.14.2", "0.14.2");
+    g_gh.api_status = 200;
+    gh_fail("/repos/WoodyWizard/SporeCoop/releases/latest", 1, 429, 1);
+    ok = upd::latest_release(gh_api(), r, err);
+    CHECK(ok && !r.from_web && g_gh.api_hits == 1 && g_gh.fail_hits == 1);
+    gh_release("0.14.3", "0.14.3");
+    g_gh.api_status = 200;
+    gh_fail("/repos/WoodyWizard/SporeCoop/releases/latest", 5, 429, 3600);
+    DWORD t0 = GetTickCount();
+    ok = upd::latest_release(gh_api(), r, err);
+    printf("  API 429 Retry-After 3600: %s, %d API answers, %lu ms\n", ok ? (r.from_web ? "release page" : "API") : err.c_str(),
+           g_gh.fail_hits, GetTickCount() - t0);
+    CHECK(g_gh.fail_hits == 1 && (ok || !upd::g_web_fallback_fix));
+    // 7. final answers are not retried: a 404 asked once, its error as before
+    gh_release("0.14.4", "0.14.4");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 3, 404);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  SHA256SUMS.txt 404: %s (asked %d times)\n", ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+    CHECK(!ok && g_gh.fail_hits == 1 && err.find("404") != std::string::npos && err.find("attempts") == std::string::npos);
+    // 8. it stays broken: 3 attempts, then the last error and the count
+    gh_release("0.14.5", "0.14.5");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 9, 504);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  SHA256SUMS.txt 504 x9: %s (asked %d times)\n", ok ? "downloaded" : err.c_str(), g_gh.fail_hits);
+    CHECK(!ok && g_gh.fail_hits == 3 && err.find("504") != std::string::npos && err.find("after 3 attempts") != std::string::npos);
+    // 9. the checksum check stays: a retried pack that does not match SHA256SUMS.txt is refused
+    gh_release("0.14.6", "0.14.6", false);
+    g_gh.api_status = 200;
+    gh_fail(".pack", 1, 504);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    CHECK(!ok && err.find("checksum") != std::string::npos);
+}
+
+// the real setup (silent mode) while SHA256SUMS.txt answers 504 twice (its own retry, its log)
+static void test_setup_retry()
+{
+    printf("setup /S: SHA256SUMS.txt answers 504 twice (BUG-0755)\n");
+    if (!exists(setup_exe()) || (g_gh_port == 0 && !gh_start())) {
+        printf("  FAIL no setup or no local server\n");
+        g_fail++;
+        return;
+    }
+    gh_release("0.15.0", "0.15.0");
+    g_gh.api_status = 200;
+    gh_fail("/SHA256SUMS.txt", 2, 504);
+    std::wstring g = fake_game(L"retry_setup");
+    std::wstring log = g + L"\\setup.log";
+    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
+                       L"\"" + (upd::g_retry_fix ? L"" : L" /oldretry");
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    DWORD code = 99;
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        if (WaitForSingleObject(pi.hProcess, 60000) != WAIT_OBJECT_0)
+            TerminateProcess(pi.hProcess, 1);
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    std::string l = get(log);
+    printf("  exit %lu, log: %s", code, l.c_str());
+    CHECK(code == 0);
+    CHECK(all_of_version(g, "0.15.0"));
+    CHECK(l.find("attempt 2 of 3") != std::string::npos);
+}
+
+// ---------------- BUG-0851: the uninstaller ----------------
+
+// a fake game with SporeCoop 0.9.0 installed by do_install, the release's symbol file names and a
+// symbol file of the player's own
+static std::wstring installed_game(const wchar_t* name)
+{
+    std::wstring g = fake_game(name);
+    std::wstring dir = fresh_dir((std::wstring(name) + L"_dl").c_str());
+    put_bytes(dir + L"\\p.pack", upd::write_pack(make_pack("0.9.0")));
+    inst::Options o;
+    o.pack = dir + L"\\p.pack";
+    o.pack_dir = dir;
+    upd::ReleaseBox box;
+    std::string msg;
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    std::wstring sym = g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\";
+    put(sym + L"overrides_dc04aee5.sym", "ours");
+    put(sym + L"mine.sym", "the player's own");
+    return g;
+}
+
+struct LockHold {
+    std::wstring root;
+    HANDLE go, done;
+};
+static DWORD WINAPI lock_holder(void* a)
+{
+    auto* l = (LockHold*)a;
+    void* h = nullptr;
+    upd::try_update_lock(l->root, &h);
+    SetEvent(l->go);
+    WaitForSingleObject(l->done, 20000);
+    upd::release_update_lock(h);
+    return 0;
+}
+
+static void test_uninstall()
+{
+    printf("setup: uninstall (BUG-0851)\n");
+    std::string msg;
+    // (a) steam_api.dll missing (an antivirus took the loader), steam_api_orig.dll there
+    std::wstring g = installed_game(L"un_a"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\steam_api.dll").c_str());
+    bool ok = inst::do_uninstall(g, msg);
+    printf("  (a) loader missing: %d, %s\n", ok, msg.c_str());
+    CHECK(ok && get(bin + L"\\steam_api.dll") == "the game's steam api");
+    CHECK(!exists(bin + L"\\steam_api_orig.dll"));
+    // (b) coop.dll held open (a running game): not "removed"; the next try after it is closed is
+    g = installed_game(L"un_b"), bin = g + L"\\SporebinEP1";
+    HANDLE f = CreateFileW((bin + L"\\mods\\coop.dll").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(f != INVALID_HANDLE_VALUE);
+    ok = inst::do_uninstall(g, msg);
+    printf("  (b) coop.dll in use: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && msg.find("coop.dll") != std::string::npos);
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api"); // the game starts without the mod
+    CHECK(inst::has_sporecoop(g)); // the setup still offers Uninstall
+    CloseHandle(f);
+    ok = inst::do_uninstall(g, msg);
+    CHECK(ok && !exists(bin + L"\\mods\\coop.dll") && !inst::has_sporecoop(g));
+    // (c) only SporeCoop's symbol files go
+    printf("  (c) symbols: ours %s, the player's %s\n", exists(bin + L"\\mods\\sporekit\\symbols\\overrides_dc04aee5.sym") ? "kept" : "removed",
+           exists(bin + L"\\mods\\sporekit\\symbols\\mine.sym") ? "kept" : "removed");
+    CHECK(!exists(bin + L"\\mods\\sporekit\\symbols\\overrides_dc04aee5.sym"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+    // (d) another update holds the folder's lock: nothing changes
+    g = installed_game(L"un_d"), bin = g + L"\\SporebinEP1";
+    LockHold l{g, CreateEventW(nullptr, TRUE, FALSE, nullptr), CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    HANDLE t = CreateThread(nullptr, 0, lock_holder, &l, 0, nullptr);
+    WaitForSingleObject(l.go, 5000);
+    ok = inst::do_uninstall(g, msg);
+    printf("  (d) update lock held: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && upd::is_loader(bin + L"\\steam_api.dll") && exists(bin + L"\\mods\\coop.dll"));
+    SetEvent(l.done);
+    WaitForSingleObject(t, 20000);
+    CloseHandle(t);
+    CloseHandle(l.go);
+    CloseHandle(l.done);
+    CHECK(inst::do_uninstall(g, msg) && get(bin + L"\\steam_api.dll") == "the game's steam api");
+    // (e) the loader in place and no backup of the game's file: refused, nothing removed
+    g = installed_game(L"un_e"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\steam_api_orig.dll").c_str());
+    ok = inst::do_uninstall(g, msg);
+    printf("  (e) no steam_api_orig.dll: %d, %s\n", ok, msg.c_str());
+    CHECK(!ok && exists(bin + L"\\mods\\coop.dll") && exists(bin + L"\\sporekit.dll"));
+    // (f) a half removed install (the version file gone): the setup still offers Uninstall
+    g = installed_game(L"un_f"), bin = g + L"\\SporebinEP1";
+    DeleteFileW((bin + L"\\mods\\sporecoop.version").c_str());
+    CHECK(inst::has_sporecoop(g));
+    // (g) not a game folder
+    std::wstring nog = fresh_dir(L"un_g");
+    CHECK(!inst::do_uninstall(nog, msg));
+}
+
+// BUG-0851: uninstall.bat copied steam_api_orig.dll over any steam_api.dll (also one Steam had put
+// back) and left mods\coop.dll; now it runs the setup next to it, else checks the loader itself
+static void test_uninstall_bat()
+{
+    printf("uninstall.bat (BUG-0851)\n");
+    if (g_ubat.empty()) {
+        printf("  (skipped: no --ubat)\n");
+        return;
+    }
+    // 1. no setup next to it, Steam put its steam_api.dll back over the loader
+    std::wstring g = installed_game(L"ubat1"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    put(bin + L"\\steam_api.dll", "the game's steam api, updated by Steam");
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    printf("  1. no setup, Steam's file: steam_api.dll='%s' coop.dll %s\n", get(bin + L"\\steam_api.dll").c_str(),
+           exists(bin + L"\\mods\\coop.dll") ? "left" : "removed");
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api, updated by Steam");
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\sporekit.dll"));
+    CHECK(!exists(g + L"\\Data\\SporeCoop.package"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+    // 2. no setup, the loader in place: the game's file comes back
+    g = installed_game(L"ubat2"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api" && !exists(bin + L"\\steam_api_orig.dll"));
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\mods\\sporecoop.version"));
+    // 3. the setup next to it (from the zip) does the work
+    g = installed_game(L"ubat3"), bin = g + L"\\SporebinEP1";
+    CHECK(CopyFileW(g_ubat.c_str(), (bin + L"\\uninstall.bat").c_str(), FALSE));
+    CHECK(CopyFileW(setup_exe().c_str(), (bin + L"\\SporeCoopSetup.exe").c_str(), FALSE));
+    DeleteFileW((bin + L"\\steam_api.dll").c_str());
+    CHECK(run_bat(bin, L"uninstall.bat"));
+    printf("  3. with the setup: steam_api.dll='%s' coop.dll %s, log: %s\n", get(bin + L"\\steam_api.dll").c_str(),
+           exists(bin + L"\\mods\\coop.dll") ? "left" : "removed", get(bin + L"\\mods\\sporecoop-uninstall.log").c_str());
+    CHECK(get(bin + L"\\steam_api.dll") == "the game's steam api");
+    CHECK(!exists(bin + L"\\mods\\coop.dll") && !exists(bin + L"\\sporekit.dll"));
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\mine.sym") == "the player's own");
+}
+
 int main(int argc, char** argv)
 {
     bool staged_move_only = false;
@@ -1986,6 +2414,20 @@ int main(int argc, char** argv)
             g_steam = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--old-web")) // BUG-0392 (update.web_fallback)
             upd::g_web_fallback_fix = false;
+        else if (!strcmp(argv[i], "--old-retry")) // BUG-0755 (update.retry)
+            upd::g_retry_fix = false;
+        else if (!strcmp(argv[i], "--old-pending")) // BUG-1019 (update.pending_whole)
+            upd::g_pending_whole_fix = false;
+        else if (!strcmp(argv[i], "--old-move")) // BUG-0848 (world.staged_move)
+            slotfs::g_staged_move_fix = false;
+        else if (!strcmp(argv[i], "--old-collect")) // BUG-0847 (world.share_complete)
+            slotfs::g_collect_fix = false;
+        else if (!strcmp(argv[i], "--old-closewait")) // BUG-0853 (the test's own race)
+            g_close_wait_fix = false;
+        else if (!strcmp(argv[i], "--old-uninstall")) // BUG-0851 (setup only)
+            inst::g_uninstall_fix = false;
+        else if (!strcmp(argv[i], "--ubat") && i + 1 < argc)
+            g_ubat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
             g_setup = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
@@ -2000,13 +2442,20 @@ int main(int argc, char** argv)
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
         slotfs::g_move_retry_fix = false;
+        slotfs::g_staged_move_fix = slotfs::g_collect_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
         upd::g_lock_fix = false;
         inst::g_ga_fix = inst::g_ga_dir_fix = false;
+        inst::g_uninstall_fix = false;
+        g_close_wait_fix = false;
         upd::g_web_fallback_fix = false;
+        upd::g_retry_fix = false;
+        upd::g_pending_whole_fix = false;
     }
+    upd::g_retry_unit_ms = 50; // the in-process retries wait 50 / 150 ms (the setup's real 1 s / 3 s)
+    upd::g_log = [](const std::string& s) { printf("    log: %s\n", s.c_str()); };
     wchar_t t[MAX_PATH];
     GetTempPathW(MAX_PATH, t);
     g_tmp = std::wstring(t) + L"sporecoop-win-tests";
@@ -2063,6 +2512,7 @@ int main(int argc, char** argv)
     test_update_lock();
     test_pending();
     test_slot_move_retry();
+    test_pending_long();
     test_slot_busy();
     if (argc == 2 && !strcmp(argv[1], "--slot-busy-only")) {
         rmtree(g_tmp);
@@ -2073,11 +2523,15 @@ int main(int argc, char** argv)
     test_slot_write_fails();
     test_slot_fallback();
     test_slot_leftovers();
+    test_staged_move();
+    test_share_collect();
     test_ini_unicode();
     test_ini_encoding();
     test_setup_packs();
     test_setup_close();
     test_install_bat();
+    test_uninstall();
+    test_uninstall_bat();
     test_ga_folder();
     test_setup_ga_window();
     test_steam_ga_folder();
@@ -2085,6 +2539,8 @@ int main(int argc, char** argv)
     test_real_steam();
     test_web_fallback();
     test_setup_api403();
+    test_retry();
+    test_setup_retry();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

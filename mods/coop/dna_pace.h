@@ -6,8 +6,8 @@
 // world, min 1); spends are never scaled. Each gain is scaled once, on the machine whose game made it
 // (the host for its own game, a guest for its own forwarded gain or meal, with the divisor the host
 // announced), so nothing is scaled twice. Rewards the party gets once (a species goal card) are not
-// scaled: they do not come N times faster. coop.ini [coop] dna_pace=1 (0: the full sum, as before
-// 0.7.4) on the host decides for the party; `coop.fix core.dna_pace off` is the test switch.
+// scaled: they do not come N times faster. The host's session setting all.dna_pace (coop.ini [coop]
+// dna_pace=1 its default; 0: the full sum, as before 0.7.4) decides for the party; `coop.fix core.dna_pace off` is the test switch.
 // Portable (no game calls): tests/validate_tests.cpp.
 #pragma once
 
@@ -19,8 +19,7 @@ namespace dna_pace {
 // tests: the debug "give N" commands (coop.dna add, coop.pool food) give exactly N (setups of other
 // tests); `coop.dna gain` / `coop.pool meal` are the paced game reward
 inline bool g_bypass = false;
-// coop.ini [coop] dna_pace (the host's: 1 the party's pace, 0 the full sum); `coop.dna pace 0|1`
-inline int g_ini = 1;
+// the host's choice is the session setting all.dna_pace (settings.h; coop.ini [coop] dna_pace its default)
 
 // the divisor the host announces: N when the pace is on, 1 for the full sum
 inline int divisor(bool on, int playing) { return on ? std::clamp(playing, 1, 255) : 1; }

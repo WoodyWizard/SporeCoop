@@ -44,6 +44,8 @@ collision again). Player puppets and tribe mirrors drive as before. `coop.npc st
 the old driving.
 
 ## Verification
+no-fail-run: not reproduced in the game; npc_tests test_drive asserts both sides of npc.stall (0 teleports
+without the fix, 1 with it) in one run.
 Not reproduced in the game (no NPC pushing against a rock could be set up on the fixture in the
 time; the 4-player probe was not run). Unit test `tests/npc_tests.cpp` `test_drive` (make test), the
 driving decision with a host NPC that reports 2 m/s and stands 4 m from where the proxy can get:
@@ -59,3 +61,4 @@ driving decision with a host NPC that reports 2 m/s and stands 4 m from where th
 - 2026-10-28: fix/w3-creature: the candidate cause fixed in driver.h (stall teleport for NPC proxies, drive_plan.h) with a unit test; not reproduced in the game.
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: npc.stall (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-08 (fix/w46-g4-0430, BUG-0430): Verification says no-fail-run explicitly (unit FAIL and PASS only).

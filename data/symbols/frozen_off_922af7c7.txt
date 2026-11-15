@@ -30,6 +30,7 @@ Simulator::Cell::PopulateTiles ; Cell: the host populates only around itself, a 
 Simulator::Cell::PopulateTile ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::IsTileActive ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::ViewBoxes ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+Simulator::Cell::TileSizes ; Cell: no hold of the tile pass after a level fall (a guest joining a host at a lower level may crash) (BUG-0975)
 Simulator::Cell::WorldScaleStep ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 UTFWin::cWindowManager::UpdateHover ; game fixes: no guard against a destroyed modal window in the window manager (BUG-0270)
 SporeCoop::Herd_Update ; creature: null herd members are not taken out before the herd update (BUG-0256)
@@ -277,7 +278,6 @@ SporeCoop::TribeTheme_Play ; Tribe: a guest hears the hunt and fight music of it
 SporeCoop::TribeTheme_Move ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
 SporeCoop::TribeTheme_Stop ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
 SporeCoop::City_SetPartsOwner ; BUG-0593: the owner of a captured city's buildings (wsync.city_owner) is not re-aligned on GOG 2016
-SporeCoop::Creature_CombatVoice ; Tribe / Creature: a guest hears the combat voices of the host's members and animals (BUG-0600)
 SporeCoop::Creature_SetSprint ; Tribe / Creature: a guest sees and hears the sprint of the host's members and animals (BUG-0600)
 SporeCoop::Tribe_HutStateIs2 ; BUG-9153: the null-hut guard of the Tribe UI's ring code is off on GOG 2016 (unsupported build)
 SporeCoop::TribeHutUI_HandleMessage ; BUG-9153: a guest's Add Baby sent to the host is off on GOG 2016 (unsupported build)
@@ -292,3 +292,113 @@ SporeCoop::CreatureGame_JoinNestHerd ; BUG-9175: its use is off on GOG 2016 (uns
 SporeCoop::CreatureMatePositionReached ; BUG-9174: its use is off on GOG 2016 (unsupported build)
 SporeCoop::CreatureMateResponse ; BUG-9174: its use is off on GOG 2016 (unsupported build)
 SporeCoop::CreatureMateStep ; BUG-9174: its use is off on GOG 2016 (unsupported build)
+SporeCoop::AnimEvent_Handle ; the hit impacts of attacks (an animation event's effect on its target) are not relayed to the partner (BUG-0603)
+SporeCoop::CreatureClickObject ; tests only (coop.rules click, BUG-0557): no click on a body by command on GOG 2016
+SporeCoop::CreatureCursorKind ; tests only (coop.rules cursor, BUG-0557): no cursor kind by command on GOG 2016
+SporeCoop::UFOAbductionEvent_SpawnUFO ; Creature: a GOG 2016 guest does not see the host's UFO (creature.ufo_mirror, BUG-0558)
+SporeCoop::Creature_HoldObject ; Creature: on GOG 2016 a carried rock or stick is not shown on the partner's creature (creature.carry_relay, BUG-0458)
+SporeCoop::Creature_ReleaseObject ; Creature: on GOG 2016 a thrown rock or stick is not put where it landed in the partner's game (creature.carry_relay, BUG-0458)
+SporeCoop::cPlanetModel_SurfaceOrientation ; Space: on GOG 2016 the cities' decorations stay at each game's own places (wobj.city_ornament, BUG-0541)
+SporeCoop::City_MakeDecorations ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)
+SporeCoop::Layout_ClearObject ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)
+SporeCoop::VectorPtr_EraseValue ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)
+SporeCoop::TerrainManager_ptr ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
+Terrain::cTerrainSphere::ApplyStamp ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
+Terrain::cTerrainSphere::ClearAllStamps ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
+Terrain::cTerrainSphere::RemoveStamp ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
+Simulator::Cell::ContactSolvePass ; BUG-0307: the contact solver probes and cell.contact_finite (cellsync.cpp), GOG 2024 only
+Simulator::Cell::ContactSolve ; BUG-0307: cell.contact_finite, the unit contact normal (cellsync.cpp), GOG 2024 only
+SporeCoop::AbilityBar_Status ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_RangeScale ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_TargetGap ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::CreatureGame_NestHerdFor ; BUG-0640: wsync.creature_nest, the guest's migration to the host's new nest (wsync.cpp), GOG 2024 only
+SporeCoop::Player_SetProperty ; BUG-0640: wsync.creature_nest, the guest's migration state (wsync.cpp), GOG 2024 only
+SporeCoop::cTribe_ReleaseSlot ; BUG-0667: the null-tribe guard of a layout spot release is off (GOG 2024 only)
+Simulator::cCreatureCitizen::SetTribe ; BUG-0667: the teardown tribe record is off (GOG 2024 only)
+SporeCoop::cCreatureCitizen_Teardown ; BUG-0667: a citizen torn down with no tribe is not repaired (GOG 2024 only)
+SporeCoop::Citizen_BTTerminate ; BUG-0667: a detached body's tree is not ended (GOG 2024 only)
+SporeCoop::TribeHud_ptr ; BUG-0645: the guest's Tribe HUD cap is not set to the host's level (GOG 2024 only)
+SporeCoop::cTribe_MaxPopulation ; BUG-0645: the guest's player tribe level row and its cap are off (GOG 2024 only)
+SporeCoop::CreatureGame_HerdEvolveOn ; BUG-0668: the guest's own NPC herd evolution is not turned off (GOG 2024 only)
+SporeCoop::cHerd_EvolvedSpecies ; BUG-0668: the guest's nests do not take the host's species (GOG 2024 only)
+SporeCoop::TribeStage_BabyBorn ; BUG-0671: a guest's hut baby is not relayed to the host (GOG 2024 only)
+SporeCoop::AnimatedCreature_SetEpicFlag ; BUG-0669: a guest's proxy of an epic gets no epic footsteps (GOG 2024 only)
+SporeCoop::AudioSystem_SetFloat ; BUG-0669: coop.audio lists no float parameters (GOG 2024 only)
+SporeCoop::GGE_RebuildPlanets ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GalaxyGameEntry_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GGE_PlanetSet_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::UfoGfx_Create ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016
+SporeCoop::UfoGfx_HandleMessage ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016
+SporeCoop::UfoGfx_ctor ; BUG-0686: the ship gfx null model guard (game.ufo_gfx) is off on GOG 2016
+SporeCoop::AnimalCargo_Create ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::AnimalCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::ArtifactCargo_Create ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::PlantCargo_Manager ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::PlantCargo_Template ; BUG-0679: plant / animal / artifact cargo of a kept hold is not made again on GOG 2016 (space.keep_items_cargo)
+SporeCoop::CellStage_ToCreature ; BUG-0315: the Cell -> Creature switch has no vote on GOG 2016 (core.switch_vote)
+SporeCoop::SpotRecord_Release ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::SpotRecord_Table ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::TribeMarker_Place ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::SpotRecord_CellId ; BUG-0740: the host's creature attack markers are not shown on guests on GOG 2016 (wsync.tribe_marker)
+SporeCoop::cCreatureAnimal_ComputeScale ; BUG-0732: the own creature of another species does not grow with its brain upgrades
+SporeCoop::g_AvatarNormalizingScale ; BUG-0732: (with cCreatureAnimal_ComputeScale)
+SporeCoop::CreatureCommandStimulus ; BUG-0735: the host's pack does not defend a guest
+SporeCoop::PosseMemberCanDefend ; BUG-0735: (with CreatureCommandStimulus)
+SporeCoop::SummonEvent_Update ; BUG-0736: a guest's Summon Flock is made next to the guest but follows the host's creature at once
+SporeCoop::Cell_ElectricAttack ; BUG-0715: a guest's electric part does not reach the host's creatures on GOG 2016 (cell.electric)
+SporeCoop::Cell_PoisonCloud ; BUG-0716: test counter of a guest's poison clouds, GOG 2016 not hooked
+SporeCoop::Cell_PoisonCull_ret ; BUG-0716: a guest's poison clouds are destroyed at once on GOG 2016 (cell.own_products)
+SporeCoop::Cell_CanPoison ; BUG-0716: test status only
+SporeCoop::Cell_PoisonStep ; BUG-0716: a guest's poison part makes no clouds in the host's game on GOG 2016 (cell.puppet_poison)
+SporeCoop::Minimap_AddBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_MoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_FindBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::Minimap_RemoveBlip ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::CreatureMinimap_Ptr ; BUG-0764: no partners on the minimap on GOG 2016 (find.map)
+SporeCoop::PlanetTerrain_SetTerraforming ; BUG-0749: a partner's terraforming does not switch the planet's terraforming on (the deltas wait, the planet does not change)
+SporeCoop::cSpaceTrading_FillNPCStore ; BUG-0747: NPC stores are not seeded from their planet (each game its own store)
+Simulator::Cell::ExecuteInteraction ; BUG-0746: a knocked-out cell may still swallow meat whole on GOG 2016 (cell.ko_no_swallow not hooked there)
+SporeCoop::SpaceToolListener_HandleMessage ; BUG-0763: the terrain sculpting relay is off on GOG 2016
+SporeCoop::Terrain_GetActive ; BUG-0763: the terrain sculpting / colouring relay is off on GOG 2016
+Terrain::cTerrainSphere::SetColors ; BUG-0763: the planet colouring relay is off on GOG 2016
+SporeCoop::City_WriteCityData ; BUG-0901: a Space colony building the mod builds is not written into the city's data (lost when the planet is left)
+SporeCoop::Creature_AttachmentOf ; BUG-0906: `coop.tribe` prints model=-1 (tests only) on GOG 2016
+SporeCoop::CreatureModifiers_Remove ; BUG-0906: see SporeCoop::Citizen_SetHandheldItem
+SporeCoop::TribeMission_RefreshCard ; BUG-0942: the goal card text of a mission whose village a guest's realign removed is not guarded on GOG 2016
+SporeCoop::cTribe_PopulationCount ; BUG-0942: see SporeCoop::TribeMission_RefreshCard
+SporeCoop::TribeMissionManager_RemoveMission ; BUG-0942: the goal card of a removed village stays on GOG 2016
+SporeCoop::TribeMissionManager_Refresh ; BUG-0942: `coop.wsync goal dirty` (tests only) is off on GOG 2016
+SporeCoop::cCity_Buy ; BUG-0877: a guest's purchase of a city is not sent to the host (old behaviour)
+SporeCoop::cTribe_SetConquered ; BUG-0777: a guest's village without a standing hut is not set conquered
+SporeCoop::NounSerialCounter ; BUG-0842: on GOG 2016 game::listed does not see an object made inside the frame before the next frame (no serial counter to notice the creation)
+SporeCoop::BadgeManager_GetRank ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::BadgeManager_GiveBadge ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_BadgeMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_EventCounts_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::MapU32Int_StageMap_At ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::RbTree_FreeNodes ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+SporeCoop::RbTree_Next ; BUG-0786: the space feature badges is off on GOG 2016 (a rejoined guest keeps the host's badges, as before)
+Simulator::Cell::SwallowWhole ; BUG-0827: a host cell a guest swallows whole is not marked as eaten (old behaviour)
+SporeCoop::Havok_GroupFilter_IsCollisionEnabled ; BUG-0913: a partner's creature still blocks the way (old behaviour)
+SporeCoop::CreatureHoverFilter ; BUG-0913: a click in the combat stance still picks a partner's creature (old behaviour)
+UTFWin::cWindowManager::PopModal ; BUG-0956: game fixes: no guard against a destroyed window in the list of modal windows on GOG 2016
+App::MessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+App::IMessageManager_ptr ; BUG-0956: coop.msglisteners (RE command) lists nothing on GOG 2016
+SporeCoop::TribeStage_BabyBornMsg_Ret ; BUG-0824: a purchased member is paired the 0.7.12 way (old behaviour)
+SporeCoop::Creature_SetHunger ; BUG-0935: tribe.mirror_hunger: a guest's mirrors keep their own hunger
+SporeCoop::cTribe_ApplyGroundStamp ; BUG-0947: tribe.village_load_stamp: a village made during play keeps one ground stamp
+SporeCoop::ScenarioPlay_JumpToAct ; tests: coop.adventure act (BUG-0845)
+SporeCoop::TribeStage_RemoveMemberCard ; BUG-0961: tribe.body_card: a dead member's card stays on a guest's roster (old behaviour)
+SporeCoop::Locomotion_Steer ; tests: coop.abilities walk raw prints the steering (BUG-0964)
+SporeCoop::AnimatedCreature_ClearPending ; BUG-0992: tribe.hold_queued: a mirror's hold in a gesture restarted behind itself is missed (old behaviour)
+SporeCoop::GameCiv_CaptureNeedsSpecialty ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::cCity_MessageListener ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::cCity_SetSpecialty ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::cCity_ShowSpecialtyBox ; BUG-0982: civ.specialty_buyer: the specialty question of a guest's city stays on the host (old behaviour)
+SporeCoop::DramaEvent_GetObject ; BUG-1078: tribe.attack_target: a creature attack on a removed village is not held back (old behaviour)
+SporeCoop::DramaEvent_SetObject ; BUG-1078: tribe.attack_target: a creature attack on a removed village is not held back (old behaviour)
+SporeCoop::Cell_CullDestroy_ret ; BUG-1064: tests only: `coop.pool areas` prints no per-cull diagnostics (cull lines)
+SporeCoop::cCinematicManager_SetEnabled ; BUG-1073: game.cinematics_on_load: a load does not turn the cinematics on again (old behaviour)
+SporeCoop::CreatureDisplay_Show ; BUG-1111: the captain portrait guard (game.captain_portrait) is off on GOG 2016
+SporeCoop::SpaceGameUI_Get ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)
+SporeCoop::SpaceGameUI_ShowCaptainScreen ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)

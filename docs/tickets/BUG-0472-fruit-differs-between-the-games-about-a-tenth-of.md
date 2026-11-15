@@ -53,3 +53,4 @@ was already empty is not made on the guest; Tribe food bundles (`game_bundle`) h
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-06 (fix/w45-world-objects): the detector's Tribe game_bundle rows (mapped here) are now BUG-0548's (the host's ground and carried food), its fruit rows BUG-0497's.

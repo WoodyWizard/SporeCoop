@@ -8,9 +8,15 @@ Thanks for helping! One file from each player is usually all we need.
   `Spore\SporebinEP1\mods\logs\SporeCoop-report-<date-time>.zip`. The next time you start the game
   it tells you the file's name.
 * **Anything else** (players out of sync, something does not work): press **F9** in the game, then
-  **Report a problem**. It makes the same file and opens the folder with it selected.
+  **Report a problem** (or press Esc: the game's pause menu has **Report a problem** too). It makes the same file
+  and opens the folder with it selected.
 * If both of you were playing, send the files of **both** players: the host's and the guest's.
   Each game's log says what that game saw; the two together show what went wrong between them.
+* **In a session, the host can collect everybody's report** (since 0.7.12): the host's **Report a problem** also
+  asks every guest for its report, and the host's lobby has **Ask the players for their reports** (any time, without
+  the host's own report). Each guest's co-op window opens with "The host asks for your report: Send / Don't send";
+  nothing is sent without that click. The host then gets one file, `SporeCoop-session-report-<date-time>.zip`, with
+  every report in it: send that one. See [one report for the session](#reporting-session).
 
 The file holds the game build, Windows or Wine, memory and graphics card, the co-op session, the
 logs of the last runs, the mod settings and **screenshots of the game** taken when a problem was
@@ -312,7 +318,18 @@ At the start (the log's `files:` lines, after the GPU line) and in the report's 
 
 Names, sizes and dates only (no file is read), at most 12 per list. The size check knows the GOG
 2024 build's 12 base packages and its exe; for other builds it says so. `other hooks:` (overlays,
-wrappers, ModAPI DLLs loaded in the game) is on the GPU line and in `== Environment`.
+wrappers, ModAPI DLLs loaded in the game) is on the GPU line and in `== Environment`. With RivaTuner / MSI
+Afterburner (RTSSHooks.dll) the environment has an `advice:` line (an RTSS profile for SporeApp.exe with Application
+detection level None, docs/INSTALL.md#install-rtss) and the log a WARN; the player gets a notice once per start
+(BUG-0782).
+
+Frames and the device (BUG-0779, docs/02-modkit.md#modkit-frame-limit): `CreateDevice asks for:` / `device Reset asks
+for:` (size, windowed, the presentation interval: the game asks for `0x80000000 (immediate: no vsync)`, refresh, swap
+effect, back buffers), `d3d9: Present at ... in d3d9.dll (system | game folder)` (a wrapper next to the exe: `game
+folder`; `starts with a jump into <module>`: another program hooked it before SporeKit), `frame limit: the game's own
+16 ms (kFrameLimitMS) at frame 1` (0 = no cap: something lifted it), `frame limit: set to N ms by another program or
+the game`, and once a minute `frames: present interval mean / p50 / p95 / max ... this minute`. A run of 80+ fps
+with frame limit 0 and vsync off tears: the answer is docs/INSTALL.md#install-tearing (`vsync=1`).
 
 ### The session summary
 <a id="reporting-support-summary"></a>
@@ -400,3 +417,87 @@ its own moment ("No screenshot of this moment": the graphics device is not used 
 or a hung game); its archive still has the marks' screenshots. How they are taken:
 docs/02-modkit.md#modkit-report-shots.
 
+
+## One report for the session (2026-11-08, feat/w46-session-report)
+<a id="reporting-session"></a>
+
+0.7.12 F4 (docs/plan-0.7.12.md, BUG-0767). Code: `mods/coop/sreport.cpp` (the game side), `mods/coop/net/sreport.h`
+(portable: messages, the content check, the zip writer, the host's round; unit tests in tests/validate_tests.cpp
+`test_sreport`, fuzzed in tests/fuzz_decoders.cpp `fuzz_sreport`). Twin switch `coop.fix core.session_report off`: the
+host asks nobody (0.7.11: each player sends its own file).
+
+**What the players see.** The host starts a round with **Report a problem** (with the host's own report) or **Ask the
+players for their reports** (lobby and F9, any time, without it; greyed out while a round runs). Every guest's game
+opens its co-op window on the lobby with "<host> (host) asks for your report:" and the buttons **Send** / **Don't
+send**; the status line says what is sent ("Sent: logs, a game summary, screenshots, crash files (paths masked)") and a
+panel says the same. A guest that clicks Send makes the same zip its own "Report a problem" makes (with a screenshot
+first), and it goes to the host over the session connection; the guest's line then reads "Your report went to the host
+(N KB)", "You did not send your report" or "The host refused your report (too big | not a SporeCoop report | broken
+transfer)". A guest can still make its own report any time. While the round runs, a label right of the host's button counts the answers ("Reports: 2
+of 3 answered"; the status line keeps "Report saved: ..." of the host's own report), and at the end the status says "Session report saved: SporeCoop-session-report-<time>.zip"; the list of
+who sent, did not, timed out or was refused goes into a panel and the lobby's chat ("* Session report saved: ... - Bob:
+sent (882 KB), Carol: not sent, Dave: refused (too big)"; one status line holds only the file name: the long line
+wrapped over the chat, seen in the first shot).
+
+**The file.** `mods\logs\SporeCoop-session-report-<time>.zip` (stored entries): `Host-<name>.zip` (the host's own
+report, when the round came from its Report a problem), `Guest-<name>.zip` per guest that sent (names reduced to
+letters, digits, `-` and `_`; a name with none of them is `player<id>`; a second Bob is `Guest-Bob-2.zip`) and
+`SESSION.txt`: one line per guest (`sent (N KB)`, `not sent`, `timed out`, `refused (<why>)`, `left`). No network
+address is written into it. It is written to `<name>.zip.part` outside the frame and renamed when complete; a round in
+which nothing came writes no file. The reports are kept in memory until the round ends (a report is 1-5 MB, at most
+25 MB each).
+
+**Safety rules (plan F4).**
+* Consent: a guest sends only after its click; an unanswered question ends after 120 s ("timed out"; the guest's
+  question disappears). An older SporeCoop drops the question (an unknown message type): listed "timed out".
+* Size: at most 25 MB per player (`kMaxReport`). A guest announces its size first: over the cap it is refused at once
+  and the guest sends nothing; a guest that sends more than it announced is stopped at that size (a `kStop`, the rest
+  is ignored). A transfer with no piece for 60 s is "timed out"; a guest that leaves is "left".
+* Content (`check_zip`): the bytes must be one zip whose end record ends the file, 1-4096 entries, no encryption, no
+  ZIP64, stored or deflate, local headers that match the central directory, data inside the file, no overlaps, no
+  name twice, the CRC of every stored entry, and only the names a SporeKit report has (`allowed_name`): `README.txt`,
+  `LEFT_OUT.txt`, `report-*.txt` / `crash-*.txt` at the top, else one of the folders `logs/` and `previous/` (`.log`),
+  `crashes/` (`.txt`, `.dmp`), `reports/` (`.txt`), `shots/` (`.jpg`), `settings/` (`.ini`) and a plain file name:
+  printable ASCII, no backslash, no colon or drive letter, no `..`, no leading dot, no second folder level. The plan's
+  "no folders" is read as "no folder but these six": the report archive has always had them (sporekit/diag.cpp
+  `diag_write_bundle_with`). Also the CRC-32 of the whole transfer (`kDone`). The host never unpacks a report and never
+  runs anything from it: it is stored in the session zip byte for byte as received.
+* Privacy: the reports already mask the Windows user name and paths (log.cpp mask_paths) and other players' addresses
+  (net/ipmask.h); the session zip adds only SESSION.txt (names and states).
+* A malformed or too big report is listed "refused" and nothing of it is kept (no crash, no partial file). The host's
+  log has the reason (`session report: Dave's report refused (not a SporeCoop report): entry name not of a report`),
+  the guest hears only the class of it.
+
+**Wire** (`MSG_REPORT` = 68, class Session in host_world.h, reliable): `kAsk` host -> guest {u32 round, str8 host},
+`kAnswer` guest -> host {u32 round, u8 send, u32 size}, `kChunk` {u32 round, u32 offset, u16 n <= 1000, bytes} in order,
+`kDone` {u32 round, u32 crc32}, `kStop` host -> guest {u32 round, u8 why}. The guest sends with the world transfer's
+flow control (600 reliable messages in flight on a LAN, 160 otherwise, at most 300 per frame).
+
+**Console**: `coop.sreport [status]` (the round, the host's and the guest's line, the last zip and its entries), `ask`
+(the host's button), `answer yes|no` (the guest's buttons, for hand runs), `test none|big|overrun|badname|junk` (tests:
+the guest sends a report over 25 MB, more than it announced, a zip with `../../evil.bat` in it, or random bytes).
+Test: `tools/tests/coop_session_report.py` (suite `session_report`, four players, real clicks): see
+docs/06-testing.md#testing-session-report.
+
+**Session ends and busy guests (2026-11-10, fix/w47-b2: BUG-0770, BUG-0783, BUG-0780).**
+* Every session end (a Leave, hosting or joining while a session is open, the mod unload, a disconnect) ends the
+  guest's question and upload ("The session ended before your report was sent") and drops the host's round unless its
+  zip is being written (`sreport::on_session_end`, called from coop.cpp end_session; the host's session settings table
+  is dropped there too, `settings::on_disconnect`). Before, only a disconnect did: a guest that left while sending went
+  on uploading to its next host (pieces of a dead round, in front of its own messages) and was asked by the old host
+  in the next session; a host that left kept its round ("Already asking" when hosting again); a guest kept the old
+  host's settings until (or, with a host older than 0.7.12, instead of) the new host's table. Switch
+  `coop.fix core.session_state_end off`.
+* A guest still making or sending its report when the host asks again (the host asks only after its last round ended:
+  written, or the guest timed out) takes the new round at once: the report being made goes to it, an upload starts
+  again from its start under the new round. Before, the new round waited the full 120 s for an answer. Switch
+  `core.sreport_reask`.
+* The session zip is read and written on a worker thread (net::g_spawn_thread, the pinned thread of coop.cpp); the
+  result line comes back to the main thread. Measured on Wine (lane 4, a 1.2 MB guest report on an NVMe disk): the
+  write took 0-3 ms (`last_ms=`), so the stall was small with real reports; it grows with the reports (up to 64 + 3 x
+  25 MB) and the disk. Switch `core.sreport_write_worker` (off: outside the frame on the main thread). `coop.sreport
+  status` has a `write worker=... jobs_worker= jobs_main= last_ms=` line.
+* Test knobs: `coop.sreport test stall` (the guest's upload of the round it is asked stops halfway, once),
+  `stallwait <s>` (the host's wait for the next piece, 2-60 s), `writedelay <ms>` (a slow disk: that long per MB of
+  the session zip), `coop.corefix settings_in 0` (a guest drops the host's settings tables: a host older than 0.7.12).
+  Test: `tools/tests/coop_sreport_leave.py` (suite `sreport_leave`).

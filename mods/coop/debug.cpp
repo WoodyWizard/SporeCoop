@@ -6,22 +6,42 @@
 #include <algorithm>
 #include <atomic>
 #include <unordered_map>
+#include <initializer_list>
 #include <vector>
 #include <windows.h>
 
 #include "cell_logic.h"
 #include "cellsync.h"
 #include "dna_pace.h"
+#include "settings.h"
+#include "fixes.h"
 #include "game.h"
 #include "npc.h"
 #include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
+#include "terrain_diag.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
 static const SkHost* H;
+static std::string msglisteners_text(uint32_t id); // BUG-0956 (RE)
+namespace {
+SkMod* g_self;
+}
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
+
+// BUG-1030: debug commands called H->sym() results without a check (a missing name: a call to address 0 on an unknown
+// build). True when every name is known; else says which one is missing.
+static bool need_syms(SkOut* out, std::initializer_list<const char*> names)
+{
+    for (const char* n : names)
+        if (!H->sym(n)) {
+            SAY("no symbol %s in this build\n", n);
+            return false;
+        }
+    return true;
+}
 
 namespace {
 int c_save(void*, int argc, const char* const* argv, SkOut* out)
@@ -63,8 +83,40 @@ static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* a
         out += b;
     pause_walk(*(const uint8_t* const*)n, anchor, arr, out, depth + 1);
 }
-int c_pauses(void*, int, const char* const*, SkOut* out)
+// `coop.pauses trace` (tests, BUG-1101): every Pause / Resume of the game's time is logged with its reason, the
+// count after it and the caller (the return address), to name who leaves a reason counted
+typedef int(SK_THISCALL* TimeReason_t)(void*, uint32_t);
+static TimeReason_t o_TimePause, o_TimeResume;
+static int SK_THISCALL h_TimePause(void* tm, uint32_t reason)
 {
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    int n = o_TimePause(tm, reason);
+    H->log(g_self, SK_INFO, "pauses: Pause(%08X) -> %d from %08X (BUG-1101 trace)", reason, n, (unsigned)ret);
+    return n;
+}
+static int SK_THISCALL h_TimeResume(void* tm, uint32_t reason)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    int n = o_TimeResume(tm, reason);
+    H->log(g_self, SK_INFO, "pauses: Resume(%08X) -> %d from %08X (BUG-1101 trace)", reason, n, (unsigned)ret);
+    return n;
+}
+int c_pauses(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "trace")) {
+        if (!o_TimePause) {
+            H->hook_create(g_self, (void*)H->sym("Simulator::cGameTimeManager::Pause"), (void*)h_TimePause, (void**)&o_TimePause);
+            H->hook_create(g_self, (void*)H->sym("Simulator::cGameTimeManager::Resume"), (void*)h_TimeResume, (void**)&o_TimeResume);
+        }
+        SAY("pause trace %s", o_TimePause && o_TimeResume ? "on" : "failed");
+        return o_TimePause && o_TimeResume ? 0 : 1;
+    }
+    if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "sub"))) { // tests (BUG-1101): one raw Pause / Resume
+        uint32_t r = (uint32_t)strtoul(argv[2], nullptr, 16);
+        world::time_pause(r, !strcmp(argv[1], "add"));
+        SAY("%s %08X: paused=%d", argv[1], r, (int)world::time_paused());
+        return 0;
+    }
     uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
     const uint8_t* tm = get ? skg::cdecl_call<const uint8_t*>(get) : nullptr;
     if (!tm || !skg::readable(tm, 0x6C)) {
@@ -80,10 +132,77 @@ int c_pauses(void*, int, const char* const*, SkOut* out)
 }
 
 // the game's quit message (world.cpp load_slot): saves and leaves the stage for the galaxy menu
+// BUG-0956 (RE): the listeners of one message id in the game's message managers (the one of the mode switch,
+// [App::MessageManager_ptr], and IMessageManager::Get's): the entry's object, its vtable and slot +4 (the
+// listener's HandleMessage), the function / user of a function entry; "BAD" = a vtable outside the exe image
+static bool readable(const void* p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION m;
+    if (!p || !VirtualQuery(p, &m, sizeof m) || m.State != MEM_COMMIT || (m.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return false;
+    return (uintptr_t)p + n <= (uintptr_t)m.BaseAddress + m.RegionSize;
+}
+static bool in_exe(uint32_t v)
+{
+    auto base = (uintptr_t)GetModuleHandleW(nullptr);
+    auto nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+    return v >= base && v < base + nt->OptionalHeader.SizeOfImage;
+}
+int c_msglisteners(void*, int argc, const char* const* argv, SkOut* out)
+{
+    SAY("%s", msglisteners_text(argc > 1 ? (uint32_t)strtoul(argv[1], nullptr, 16) : 0x212D3E7u).c_str());
+    return 0;
+}
+} // namespace
+std::string msglisteners_text(uint32_t id)
+{
+    std::string o;
+    char b[200];
+#undef SAY
+#define SAY(...) (snprintf(b, sizeof b, __VA_ARGS__), o += b)
+    const char* names[2] = {"App::MessageManager_ptr", "App::IMessageManager_ptr"};
+    for (const char* nm : names) {
+        uintptr_t g = H->sym(nm);
+        const uint32_t* mgr = g && readable((void*)g, 4) ? *(const uint32_t* const*)g : nullptr;
+        if (!mgr || !readable(mgr, 0x80)) {
+            SAY("%s: none\n", nm);
+            continue;
+        }
+        const uint32_t* buckets = (const uint32_t*)mgr[0x74 / 4];
+        uint32_t n = mgr[0x78 / 4];
+        SAY("%s = %08X, %u buckets\n", nm, (unsigned)(uintptr_t)mgr, n);
+        if (!n || !readable(buckets, 4 * (n + 1)))
+            continue;
+        int k = 0;
+        for (const uint32_t* node = (const uint32_t*)buckets[id % n]; node && readable(node, 12) && k < 64; node = (const uint32_t*)node[2], k++) {
+            if (node[0] != id)
+                continue;
+            const uint32_t* list = (const uint32_t*)node[1];
+            int i = 0;
+            for (const uint32_t* e = list && readable(list, 8) ? (const uint32_t*)list[0] : nullptr; e && e != list && readable(e, 0x1C) && i < 200;
+                 e = (const uint32_t*)e[0], i++) {
+                uint32_t obj = e[2], vt = 0, h = 0;
+                if (obj && readable((void*)(uintptr_t)obj, 4)) {
+                    vt = *(const uint32_t*)(uintptr_t)obj;
+                    if (readable((void*)(uintptr_t)vt, 8))
+                        h = ((const uint32_t*)(uintptr_t)vt)[1];
+                }
+                SAY("  %08X: %u obj=%08X vt=%08X +4=%08X fn=%08X user=%08X flag=%u%s\n", id, i, obj, vt, h, e[5], e[6], e[4] & 0xFF,
+                    obj && !(in_exe(vt) && in_exe(h)) ? " BAD" : "");
+            }
+        }
+        break; // both globals hold the same manager (seen 2026-11-12)
+    }
+    return o;
+}
+#undef SAY
+#define SAY(...) H->out_printf(out, __VA_ARGS__)
+namespace {
+
 int c_menu(void*, int, const char* const*, SkOut* out)
 {
     std::string err;
-    if (!world::post_quit_to_menu(err)) {
+    if (!world::post_quit_to_menu(err)) { // (world.cpp: the message, BUG-0264's stage_leaving; BUG-0854)
         SAY("%s", err.c_str());
         return 1;
     }
@@ -91,11 +210,38 @@ int c_menu(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0578): the player's way out of the game: WM_CLOSE to the game window (the window's close button / Alt+F4),
+// so that the game runs its own exit (cSporeApp::Shutdown, the game mode manager and editors disposed); the lab's
+// kill and `quit` end the process without it
+// tests (BUG-0167): the galaxy menu intro starts in the first tick of the next stage (world::arm_intro_in_stage)
+int c_introstage(void*, int, const char* const*, SkOut* out)
+{
+    world::arm_intro_in_stage();
+    SAY("the menu intro starts in the first tick of the next stage");
+    return 0;
+}
+
+int c_close(void*, int, const char* const*, SkOut* out)
+{
+    HWND w = (HWND)H->game_window();
+    if (!w) {
+        SAY("no game window");
+        return 1;
+    }
+    PostMessageW(w, WM_CLOSE, 0, 0);
+    SAY("WM_CLOSE posted to the game window (mode 0x%08X)", game::mode_id());
+    return 0;
+}
+
 // tests (BUG-0270): the window manager's modal window becomes a destroyed object
-int c_deadmodal(void*, int, const char* const*, SkOut* out)
+int c_deadmodal(void*, int argc, const char* const* argv, SkOut* out)
 {
     uintptr_t get = H->sym("UTFWin::IWindowManager::Get");
     void* wm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (argc > 1 && !strcmp(argv[1], "list")) { // BUG-0956
+        SAY("%s", gamefixes::fake_dead_listed(wm).c_str());
+        return 0;
+    }
     SAY("%s", gamefixes::fake_dead_modal(wm).c_str());
     return 0;
 }
@@ -114,6 +260,13 @@ int c_physorphan(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0719): the game's fixed pools' fill
+int c_pools(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::pools_report().c_str());
+    return 0;
+}
+
 // tests (BUG-0453): the next NPC in its attack animation loses its target (as when the target is destroyed)
 int c_attackcut(void*, int, const char* const*, SkOut* out)
 {
@@ -125,6 +278,13 @@ int c_attackcut(void*, int, const char* const*, SkOut* out)
 int c_spotcut(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s", gamefixes::arm_spot_cut().c_str());
+    return 0;
+}
+
+// tests (BUG-0686): game.ufo_model forgets the last known ship model
+int c_ufoforget(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::ufo_forget().c_str());
     return 0;
 }
 
@@ -140,7 +300,60 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
     float g = game::ground_radius(p);
     float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     SAY("ground %.2f point %.2f above %.2f", g, r, r - g);
+    // BUG-0562: the surface on the point's radial line as the game's snap finds it (cPlanetModel_SurfacePoint: the terrain
+    // or a collision object over it, a nest mound or a rock, where the collision is loaded): the point's height over it
+    uintptr_t sf = H->sym("SporeCoop::cPlanetModel_SurfacePoint"), pg = H->sym("Simulator::cPlanetModel::Get");
+    void* pm = pg ? ((void*(__cdecl*)())pg)() : nullptr;
+    if (pm && sf && r > 1.f) {
+        float in[3] = {p.x, p.y, p.z}, o[3] = {0, 0, 0};
+        skg::thiscall<float*>(sf, pm, o, (const float*)in, 0);
+        float sr = std::sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if (sr > 1.f)
+            SAY(" surface %.2f over_surface %.2f", sr, r - sr);
+    }
+    float w = game::water_radius(); // BUG-1088: the planet's water surface (radius), over water where it is above the ground
+    if (w > 1.f)
+        SAY(" water %.2f over_water %.2f", w, r - std::max(w, g));
     return 0;
+}
+
+// tests (BUG-0917): `coop.abilities reach` takes only a live creature of the world's list for the avatar's target
+static bool g_fix_reach_target = true;
+COOP_FIX_UNSAFE("test.reach_target", "BUG-0917", g_fix_reach_target,
+                "tests: coop.abilities reach calls the game's gap function only on a target that is a live creature of the object list");
+
+// What the avatar's combat target (+0xE7C, a cCombatant*) is, by pointer compares with the game's object list
+// only (safe on a freed target): `creature` when it is the combatant (+0x5A8) of a live creature; else `owner`,
+// the listed object the pointer lies in (the nearest below it, within 0x1000), with its noun.
+struct TargetKind {
+    void* creature = nullptr;
+    void* owner = nullptr;
+    uint32_t noun = 0;
+    bool alive = false;
+};
+TargetKind target_kind(uint8_t* tc)
+{
+    struct F {
+        uint8_t* tc;
+        TargetKind k;
+    } f{tc, {}};
+    if (!tc)
+        return f.k;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* f = (F*)u;
+            auto* b = (uint8_t*)o;
+            if (b > f->tc || f->tc - b >= 0x1000 || (f->k.owner && b < (uint8_t*)f->k.owner))
+                return true;
+            f->k.owner = o;
+            f->k.noun = noun;
+            f->k.alive = game::object_alive(o);
+            return true;
+        },
+        &f);
+    if (f.k.owner && f.k.noun == 0x18EB45Eu && f.k.alive && (uint8_t*)f.k.owner + 0x5A8 == tc)
+        f.k.creature = f.k.owner;
+    return f.k;
 }
 
 // tests (BUG-0366): coop.abilities [play <i>] - the own avatar's abilities (vt 0xB0 count, vt 0xB4
@@ -169,6 +382,27 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
         int r = pa ? skg::thiscall<int>(pa, av, atoi(argv[2]), (void*)nullptr) : -2;
         SAY("play %d -> %d\n", atoi(argv[2]), r);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "target")) { // tests (BUG-0934): the avatar's combat target through the game's own
+        // SetTarget (creature vt 0x84, thiscall(target combatant = creature + 0x5A8, 1, 0), as the click's
+        // CreatureClickObject does): `none` clears it, <address> aims at that puppet of ours
+        void* p = nullptr;
+        if (strcmp(argv[2], "none")) {
+            void* want = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+            for (void* q : game::puppets())
+                if (q == want)
+                    p = q;
+            // `any` (BUG-0964): any live creature of the world's list (an animal, an NPC proxy)
+            if (!p && argc > 3 && !strcmp(argv[3], "any") && game::listed(want, 0x18EB45Eu))
+                p = want;
+            if (!p || !skg::readable(p, 0x5B0) || game::is_dead(p)) {
+                SAY("%s is no live puppet of ours\n", argv[2]);
+                return 1;
+            }
+        }
+        skg::vcall<void>(av, 0x84 / 4, p ? (void*)((uint8_t*)p + 0x5A8) : (void*)nullptr, 1, 0);
+        SAY("target %p (puppet %p)\n", *(void**)((uint8_t*)av + 0xE7C), p);
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "ground")) { // BUG-0377: the ground radius in the direction of x y z, no move
@@ -204,6 +438,207 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("at (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "reach")) { // tests (BUG-0618): the game's own reach of each ability
+        // The ability use 0xD1E930 for melee / ranged attacks: gap = Ability_TargetGap(avatar spatial, target
+        // spatial, 1) (centre distance minus both radii), in reach when gap <= (ability +0xF4 + +0xA8) *
+        // Ability_RangeScale(0); else the game posts a walk-and-attack goal (0x20). Status 0 = usable (0xD49220).
+        uintptr_t gap_f = H->sym("SporeCoop::Ability_TargetGap"), scale_f = H->sym("SporeCoop::Ability_RangeScale"),
+                  st_f = H->sym("SporeCoop::AbilityBar_Status");
+        uint8_t* tc = *(uint8_t**)((uint8_t*)av + 0xE7C); // the target's combatant (a creature's is at +0x5A8)
+        float gap = -1.f;
+        if (!g_fix_reach_target) { // before BUG-0917: every target taken for a creature after a `readable` check
+            if (tc && gap_f && skg::readable(tc - 0x5A8, 0x5B0)) {
+                uint8_t* t = tc - 0x5A8;
+                gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
+                SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
+            } else
+                SAY("target none\n");
+        } else {
+            // BUG-0917: +0xE7C is a cCombatant of any class (the game casts it to its spatial with the combatant's
+            // vt 0x5C before Ability_TargetGap), and a creature can be gone from the world while the field still
+            // names it. Only a live creature of the game's object list is a target here; nothing is called or read
+            // on anything else (pointer compares only).
+            TargetKind k = target_kind(tc);
+            if (k.creature && gap_f) {
+                uint8_t* t = (uint8_t*)k.creature;
+                gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
+                SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
+            } else if (!tc)
+                SAY("target none\n");
+            else if (k.owner)
+                SAY("target none (the game's target %p is no live creature: object %p noun 0x%X alive=%d, its "
+                    "combatant at +0x%X)\n",
+                    (void*)tc, k.owner, k.noun, k.alive ? 1 : 0, (unsigned)(tc - (uint8_t*)k.owner));
+            else
+                SAY("target none (the game's target %p is no object of the world's list)\n", (void*)tc);
+            static uint8_t* s_noted; // one log line per such target: what the avatar's target field named
+            if (tc && !k.creature && tc != s_noted) {
+                s_noted = tc;
+                H->log(g_self, SK_INFO,
+                       "abilities: the avatar's target %p is no live creature of the list (object %p noun 0x%X "
+                       "alive=%d, +0x%X): reach reports no target (BUG-0917)",
+                       (void*)tc, k.owner, k.noun, k.alive ? 1 : 0,
+                       k.owner ? (unsigned)(tc - (uint8_t*)k.owner) : 0u);
+            }
+        }
+        // BUG-0957: cdecl float(int kind, creature*): the creature is the second argument (its +0xE84 object's +0x358
+        // scale); called with the kind alone, the function read the caller's stack as the creature and faulted
+        float sc = scale_f ? ((float(__cdecl*)(int, void*))scale_f)(0, av) : 1.f;
+        int n = skg::vcall<int>(av, 0xB0 / 4);
+        for (int i = 0; i < n && i < 64; i++) {
+            uint8_t* a = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
+            if (!a || !skg::readable(a, 0x13C))
+                continue;
+            float reach = (*(float*)(a + 0xF4) + *(float*)(a + 0xA8)) * sc;
+            int st = st_f ? ((int(__cdecl*)(int))st_f)(i) : -1;
+            SAY("ab %d type=0x%X row=%d key=0x%X reach=%.2f min=%.2f/%.2f status=%d\n", i, *(uint32_t*)(a + 8),
+                *(int*)(a + 0xC), *(uint32_t*)(a + 0x38), reach, *(float*)(a + 0x134), *(float*)(a + 0x138), st);
+        }
+        // the HUD bar (AbilityBar_ptr): the keys 1..5 use the slots of the stance's row (row*0x28 + col*8)
+        if (uintptr_t bp = H->sym("SporeCoop::AbilityBar_ptr"))
+            if (uint8_t* bar = *(uint8_t**)bp; bar && skg::readable(bar, 0xD8))
+                for (int row = 0; row < 5; row++) {
+                    SAY("bar %d:", row);
+                    for (int col = 0; col < 5; col++)
+                        SAY(" %d", *(int*)(bar + row * 0x28 + col * 8));
+                    SAY("\n");
+                }
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "walkto")) { // tests (BUG-0964): the game's own walk to x y z (as the BT's
+        // walk-and-use asks it: cCreatureBase::WalkTo(2 = walk, &pos, &facing, stop 0.1, acceptable 0.2))
+        uintptr_t wt = H->sym("Simulator::cCreatureBase::WalkTo");
+        net::Vec3 p = game::position(av), q{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        net::Vec3 f{q.x - p.x, q.y - p.y, q.z - p.z};
+        if (!wt) {
+            SAY("no WalkTo\n");
+            return 1;
+        }
+        skg::thiscall<void>(wt, av, 2, &q, &f, 0.1f, 0.2f);
+        SAY("walking to (%.2f %.2f %.2f)\n", q.x, q.y, q.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "walk")) { // tests (BUG-0964): what the avatar's walk-and-use is doing
+        // the behaviour tree's node (AI +0x1D8), its stimuli (AI +8: 8 slots of 0x38, masks +0/+4, sender +0x2C),
+        // the timed goal slots (+0xB48 -> 8 x 0x44, template +0x24), the locomotion: desired / standard speed
+        // (spatial +0x1E0 / +0x1E4), the movement request (spatial +0x1F4: destination +0x14, goal-stop +0x20, mode
+        // +0x5C, acceptable-stop +0x60) and the velocity (creature +0x288)
+        uint8_t* c = (uint8_t*)av;
+        uint8_t* ai = *(uint8_t**)(c + 0xB4C);
+        if (ai && skg::readable(ai, 0x200)) {
+            SAY("node=%08X ai+1D0:", *(uint32_t*)(ai + 0x1D8));
+            for (int o = 0x1C0; o < 0x200; o += 4)
+                SAY(" %X", *(uint32_t*)(ai + o));
+            SAY("\nstim:");
+            for (int i = 0; i < 8; i++) {
+                uint8_t* s = ai + 8 + i * 0x38;
+                if (*(uint32_t*)s || *(uint32_t*)(s + 4))
+                    SAY(" [%X:%X v=%g c=%X t=%X snd=%p]", *(uint32_t*)s, *(uint32_t*)(s + 4), *(float*)(s + 8),
+                        *(uint32_t*)(s + 0xC), *(uint32_t*)(s + 0x10), *(void**)(s + 0x2C));
+            }
+            SAY("\n");
+        }
+        if (uint8_t* g = *(uint8_t**)(c + 0xB48); g && skg::readable(g, 0x230)) {
+            SAY("goals mask=%X:", *(uint32_t*)(g + 0x22C));
+            for (int i = 0; i < 8; i++)
+                if (*(int*)(g + i * 0x44 + 0x24) != -1)
+                    SAY(" [%d t=%d grp=%d s=%.1f tg=%p]", i, *(int*)(g + i * 0x44 + 0x24), *(int*)(g + i * 0x44 + 0x28),
+                        *(float*)(g + i * 0x44 + 0x2C), *(void**)(g + i * 0x44 + 0x40));
+            SAY("\n");
+        }
+        uint8_t* sp = c + 0xC0;
+        uint8_t* rq = sp + 0x1F4;
+        net::Vec3 p = game::position(av), v = *(net::Vec3*)(c + game::kVelOff);
+        SAY("speed desired=%.2f standard=%.2f vel=%.2f pos=(%.2f %.2f %.2f) req dest=(%.2f %.2f %.2f) stop=%.2f mode=%d acc=%.2f\n",
+            *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z), p.x, p.y, p.z,
+            *(float*)(rq + 0x14), *(float*)(rq + 0x18), *(float*)(rq + 0x1C), *(float*)(rq + 0x20), *(int*)(rq + 0x5C),
+            *(float*)(rq + 0x60));
+        { // the facing (spatial vt 0x5C, as the walk step 0xB46EF0 reads it) against the way to the request's goal:
+            // the step's speed is max(0, cos) of that angle; it turns by slerp, set only when the result is finite
+            float fw[3] = {};
+            skg::thiscall<void*>((uintptr_t)skg::vtable(sp)[0x5C / 4], sp, fw);
+            net::Quat q = game::orientation(av);
+            float dx = *(float*)(rq + 0x14) - p.x, dy = *(float*)(rq + 0x18) - p.y, dz = *(float*)(rq + 0x1C) - p.z;
+            float dl = std::sqrt(dx * dx + dy * dy + dz * dz) + 1e-6f;
+            SAY("facing=(%.3f %.3f %.3f) quat=(%.4f %.4f %.4f %.4f) |q|=%.5f cos_to_goal=%.3f\n", fw[0], fw[1], fw[2], q.x,
+                q.y, q.z, q.w, std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w),
+                (fw[0] * dx + fw[1] * dy + fw[2] * dz) / dl);
+            // the steering's sum this frame (Locomotion_Steer: the goal pull, the obstacle and flocking forces of
+            // the list at spatial +0x490): the walk step goes along it at max(0, cos to the facing) of the speed
+            if (uintptr_t st = H->sym("SporeCoop::Locomotion_Steer"); st && argc > 2) {
+                float s[3] = {};
+                skg::thiscall<void>(st, sp, s);
+                float sl = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]) + 1e-9f;
+                SAY("steer=(%.3f %.3f %.3f) |s|=%.3f cos_facing=%.3f cos_goal=%.3f forces=%d:", s[0], s[1], s[2], sl,
+                    (s[0] * fw[0] + s[1] * fw[1] + s[2] * fw[2]) / sl, (s[0] * dx + s[1] * dy + s[2] * dz) / sl / dl,
+                    (int)((*(uintptr_t*)(sp + 0x494) - *(uintptr_t*)(sp + 0x490)) / 4));
+                for (uintptr_t* f = *(uintptr_t**)(sp + 0x490); f && f != *(uintptr_t**)(sp + 0x494); f++)
+                    SAY(" %X", (unsigned)*f);
+                SAY("\n");
+                // the world's objects within 5 m: noun@distance/cos of their bearing to the way to the goal
+                struct U {
+                    net::Vec3 p, g;
+                    void* self;
+                    std::string s;
+                    int n;
+                } u{p, {dx / dl, dy / dl, dz / dl}, av, "", 0};
+                game::for_each_object(
+                    [](void* o, uint32_t noun, void* up) {
+                        auto* u = (U*)up;
+                        net::Vec3 q;
+                        if (o == u->self || u->n >= 24 || !game::object_position(o, q))
+                            return true;
+                        float ex = q.x - u->p.x, ey = q.y - u->p.y, ez = q.z - u->p.z, d = std::sqrt(ex * ex + ey * ey + ez * ez);
+                        if (d > 5.f)
+                            return true;
+                        char b[64];
+                        snprintf(b, sizeof b, " %08X@%.1f/%.2f", noun, d, d > 0.01f ? (ex * u->g.x + ey * u->g.y + ez * u->g.z) / d : 0.f);
+                        u->s += b;
+                        u->n++;
+                        return true;
+                    },
+                    &u);
+                SAY("near:%s\n", u.s.c_str());
+                struct N {
+                    net::Vec3 p;
+                    float d;
+                    net::Vec3 q;
+                } nn{p, 1e9f, {}};
+                game::for_each_object(
+                    [](void* o, uint32_t noun, void* up) {
+                        auto* n = (N*)up;
+                        net::Vec3 q;
+                        if (noun != 0x52AA6122u || !game::object_position(o, q))
+                            return true;
+                        float d = std::sqrt((q.x - n->p.x) * (q.x - n->p.x) + (q.y - n->p.y) * (q.y - n->p.y) +
+                                            (q.z - n->p.z) * (q.z - n->p.z));
+                        if (d < n->d)
+                            n->d = d, n->q = q;
+                        return true;
+                    },
+                    &nn);
+                float pr = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+                SAY("nest=%.1f m (its radius %.2f, ground %.2f) me: radius %.2f ground %.2f surface %.2f\n", nn.d,
+                    std::sqrt(nn.q.x * nn.q.x + nn.q.y * nn.q.y + nn.q.z * nn.q.z), game::ground_radius(nn.q), pr,
+                    game::ground_radius(p), game::surface_radius(p));
+            }
+        }
+        SAY("req:");
+        for (int o = 0; o < 0x70; o += 4)
+            SAY(" %X", *(uint32_t*)(rq + o));
+        if (argc > 2 && skg::readable(c, 0x1700)) { // `walk raw`: the creature's dwords +0..+0x1700 (spatial at +0xC0)
+            for (int o = 0; o < 0x1700; o += 4) {
+                if (o % 0x40 == 0)
+                    SAY("\nc+%X:", o);
+                SAY(" %X", *(uint32_t*)(c + o));
+            }
+        }
+        uint32_t an = 0;
+        game::drawn_state(av, nullptr, &an);
+        SAY("\nanim=%08X flags b58=%X mark b5d=%d f98=%d\n", an, *(uint32_t*)(c + 0xB58), *(uint8_t*)(c + 0xB5D),
+            *(int*)(c + 0xF98));
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)
         game::stop(av);
         game::teleport(av, game::position(av), game::orientation(av));
@@ -213,7 +648,12 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "lift")) { // put it <m> higher (its fall is the second half of a jump)
         net::Vec3 p = game::position(av);
-        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), k = (r + (float)atof(argv[2])) / r;
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (!(r > 1e-3f)) { // BUG-1030: no direction "up" at the planet's centre (k was a division by 0)
+            SAY("no lift: the position is at the planet's centre\n");
+            return 1;
+        }
+        float k = (r + (float)atof(argv[2])) / r;
         game::teleport(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
         SAY("lifted %.2f\n", (float)atof(argv[2]));
         return 0;
@@ -299,6 +739,8 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
         uint8_t* me = data + me_slot * 0x398;
         float* mp = (float*)(me + 0x4C);
         Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
+        if (!need_syms(out, {"Simulator::Cell::CreateCellObject"}))
+            return 1;
         uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,
                                             *(void**)(src + 0x108), argc > 5 ? atoi(argv[5]) : *(int*)(src + 0x358), 1.f, 1.f, 1, (void*)nullptr, 0);
         if (argc > 6) // tests (BUG-0455): the guests get this cell with a model instance they do not have
@@ -313,6 +755,8 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
 int c_cam(void*, int argc, const char* const* argv, SkOut* out)
 {
     using namespace skg;
+    if (!need_syms(out, {"App::IGameModeManager::Get", "App::cViewer::GetCameraToPoint"}))
+        return 1;
     uintptr_t mmget = H->sym("App::IGameModeManager::Get");
     void* mm = cdecl_call<void*>(mmget);
     void* viewer = mm ? vcall<void*>(mm, 0x58 / 4) : nullptr;
@@ -457,6 +901,10 @@ void coop_module_of(uintptr_t a, char* out, size_t cap)
     } else
         snprintf(out, cap, "%08X", (unsigned)a);
 }
+namespace testview {
+void init(const SkHost*, SkMod*); // test_view.cpp: coop.view
+}
+
 void coop_register_debug_commands(const SkHost* host, SkMod* self)
 {
     H = host;
@@ -467,6 +915,7 @@ void coop_register_debug_commands(const SkHost* host, SkMod* self)
     coop_register_debug_commands2(host, self);
     host->command_add(self, "coop.cam", "coop.cam [x y] - dump camera, optional screen ray", c_cam, nullptr,
                       SK_CMD_MAIN_THREAD);
+    testview::init(host, self);
 }
 
 
@@ -484,8 +933,14 @@ int c_w2s(void*, int, const char* const*, SkOut* out)
     SAY("avatar (%.2f %.2f %.2f) -> ok=%d screen=(%.1f %.1f)\n", p.x, p.y, p.z, ok, sc[0], sc[1]);
     // check with the game's own inverse: ray through that pixel should pass near the avatar
     using namespace skg;
+    if (!need_syms(out, {"App::IGameModeManager::Get", "App::cViewer::GetCameraToPoint"}))
+        return 1;
     void* mm = cdecl_call<void*>(H->sym("App::IGameModeManager::Get"));
-    void* viewer = vcall<void*>(mm, 0x58 / 4);
+    void* viewer = mm ? vcall<void*>(mm, 0x58 / 4) : nullptr;
+    if (!viewer) {
+        SAY("no viewer\n");
+        return 1;
+    }
     Vector3 o{}, d{};
     thiscall<bool>(H->sym("App::cViewer::GetCameraToPoint"), viewer, sc[0], sc[1], &o, &d);
     float vx = p.x - o.x, vy = p.y - o.y, vz = p.z - o.z;
@@ -499,6 +954,9 @@ int c_w2s(void*, int, const char* const*, SkOut* out)
 namespace {
 int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "gain")) &&
+        !need_syms(out, {"Simulator::cCreatureGameData::AddEvolutionPoints"}))
+        return 1;
     if (argc > 2 && !strcmp(argv[1], "add")) {
         // simulate a gain as the game would report it (goes through the coop hook), exactly N: test
         // setups (not scaled by the party's pace, BUG-0510)
@@ -508,11 +966,17 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "gain")) // a reward of the game (a kill, a friend): the party's pace applies (BUG-0510)
         skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
-    if (argc > 2 && !strcmp(argv[1], "pace")) // as coop.ini [coop] dna_pace (tests)
-        dna_pace::g_ini = atoi(argv[2]);
+    if (argc > 2 && !strcmp(argv[1], "pace")) // tests: the session setting all.dna_pace (scope not checked)
+        settings::set(settings::kDnaPace, atoi(argv[2]), true);
     if (argc > 2 && !strcmp(argv[1], "local")) // tests: our total only, as a host total we missed (BUG-0128)
         game::dna_add_raw((float)atof(argv[2]));
-    SAY("dna=%.1f", game::dna());
+    if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:
+        game::dna_set_raw(game::dna() - (float)atof(argv[2])); // SetEvolutionPoints, the DNA only)
+    if (argc > 1 && !strcmp(argv[1], "bar")) { // tests (BUG-0630): also the evolution bar, cPlayer +0x10F0
+        SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar());
+        return 0;
+    }
+    SAY("dna=%.1f", game::dna()); // (the plain form: tests parse "dna=<n>" alone)
     return 0;
 }
 } // namespace
@@ -520,7 +984,6 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 namespace {
 typedef bool(SK_THISCALL* LoadGame_t)(void*, const void*);
 LoadGame_t o_LoadGame;
-SkMod* g_self;
 
 std::string str16(const void* s)
 {
@@ -545,14 +1008,35 @@ bool SK_THISCALL h_LoadGame(void* self, const void* params)
     return o_LoadGame(self, params);
 }
 
+// BUG-1035: outside the frame (it closes and reopens the save database and loads a game); every symbol and manager
+// checked; the arguments converted from UTF-8 (they were widened byte by byte: a non-ASCII slot path was wrong)
 int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
         SAY("usage: coop.loadworld <windows slot dir ending with \\> <Planet.spo>");
         return 1;
     }
-    auto w = [](const char* s) { std::u16string r; for (; *s; s++) r += (char16_t)(unsigned char)*s; return r; };
+    if (!need_syms(out, {"Resource::GetDatabaseByID", "Simulator::cStarManager::Get",
+                         "Simulator::cStarManager::ReadStarsFromSaveDB", "Simulator::cGamePersistenceManager::Get",
+                         "Simulator::cGamePersistenceManager::LoadGameByName"}))
+        return 1;
+    auto w = [](const char* s) {
+        std::u16string r;
+        int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+        if (n > 1) {
+            std::wstring t(n, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, s, -1, &t[0], n);
+            r.assign(t.begin(), t.begin() + (n - 1));
+        }
+        return r;
+    };
     std::u16string dir = w(argv[1]), name = w(argv[2]);
+    if (dir.empty() || name.empty()) {
+        SAY("the slot dir or the planet name is not valid UTF-8");
+        return 1;
+    }
+    void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
+    if (!mgr) { SAY("no game persistence manager"); return 1; }
     void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
     if (!db) { SAY("no save DB"); return 1; }
     const char16_t* old = skg::vcall<const char16_t*>(db, 0x28 / 4);
@@ -564,7 +1048,6 @@ int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
     if (void* sm = skg::cdecl_call<void*>(H->sym("Simulator::cStarManager::Get")))
         skg::thiscall<void>(H->sym("Simulator::cStarManager::ReadStarsFromSaveDB"), sm);
     SAY("access=%d close=%d open=%d\n", acc, closed, opened);
-    void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
     skg::thiscall<void>(H->sym("Simulator::cGamePersistenceManager::LoadGameByName"), mgr, name.c_str());
     SAY("save DB %s -> %s (SetLocation %d), loading %s", olds.c_str(), argv[1], ok, argv[2]);
     return 0;
@@ -572,6 +1055,8 @@ int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_savedb(void*, int, const char* const*, SkOut* out)
 {
+    if (!need_syms(out, {"Resource::GetDatabaseByID"}))
+        return 1;
     void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
     if (!db) { SAY("no save DB"); return 1; }
     const char16_t* loc = skg::vcall<const char16_t*>(db, 0x28 / 4);
@@ -583,6 +1068,8 @@ int c_savedb(void*, int, const char* const*, SkOut* out)
 
 int c_loadhook(void*, int, const char* const*, SkOut* out)
 {
+    if (!need_syms(out, {"Simulator::cGamePersistenceManager::LoadGame"}))
+        return 1;
     if (!o_LoadGame)
         H->hook_create(g_self, (void*)H->sym("Simulator::cGamePersistenceManager::LoadGame"), (void*)h_LoadGame, (void**)&o_LoadGame);
     SAY("LoadGame logging hook installed");
@@ -638,8 +1125,9 @@ int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
     g_self = self;
+    terrain_diag::init(host, self); // BUG-0332
     host->command_add(self, "coop.loadworld", "debug: point the save DB to a slot dir and load a planet", c_loadworld,
-                      nullptr, SK_CMD_MAIN_THREAD);
+                      nullptr, SK_CMD_OUTSIDE_FRAME); // BUG-1035: not in the frame
     host->command_add(self, "coop.savedb", "debug: current save folder database", c_savedb, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.loadhook", "debug: log cGamePersistenceManager::LoadGame parameters", c_loadhook,
@@ -648,27 +1136,37 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z> | target none|<puppet address> [any] | walk [raw] | walkto <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
+    host->command_add(self, "coop.pauses", "coop.pauses [trace | add <hex> | sub <hex>] - the game's pause reasons counted now (tests, BUG-0313); trace: log every Pause / Resume; add / sub: one Pause / Resume of a reason (BUG-1101)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.msglisteners", "coop.msglisteners [hex id] - the game's listeners of a message (RE, BUG-0956; default 0x212D3E7, the mode change)",
+                      c_msglisteners, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.deadmodal", "tests (BUG-0270): the window manager's modal window becomes a destroyed object",
+    host->command_add(self, "coop.introstage", "coop.introstage - the menu intro starts in the first tick of the next stage (tests, BUG-0167)",
+                      c_introstage, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.close", "coop.close - WM_CLOSE to the game window: the game's own exit (tests, BUG-0578)", c_close,
+                      nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.deadmodal", "coop.deadmodal [list] - tests (BUG-0270): the window manager's modal window becomes a destroyed object; list (BUG-0956): a destroyed window listed under a modal one that is popped",
                       c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.leavewalk", "tests (BUG-0310): the next citizen walked off-stage is a cleaned-up one",
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.pools", "tests (BUG-0719): the fill of the game's fixed object pools (physics bodies, contacts) and the world's objects",
+                      c_pools, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.attackcut", "tests (BUG-0453): the next NPC in its attack animation loses its target (cleared as on the target's destroy)",
                       c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.spotcut", "tests (BUG-0582): the next attacker of a creature attack finds no spot record (a cell without one)",
                       c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.ufoforget", "tests (BUG-0686): the ship model guard forgets the last known ship model (as a Creature game that has none)",
+                      c_ufoforget, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.dna", "coop.dna [add|gain|local <n> | pace 0|1] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar] - shared DNA debug (bar: also the evolution bar, cPlayer +0x10F0)", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
                       c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,

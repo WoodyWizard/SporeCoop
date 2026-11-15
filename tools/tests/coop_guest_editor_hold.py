@@ -19,6 +19,7 @@ the host's new body arrived: the editor kept the legless creature and 115 DNA, o
 Kept as the report's scenario (suite extended); it has no fix to switch off.
 
   coop_guest_editor_hold.py"""
+import re
 import time
 
 import lane
@@ -77,13 +78,24 @@ def main():
     ck(wait(lambda: editor_ui(guest), 40), "the guest's own editor shows its interface")
     time.sleep(3)
     shot(guest, 'editor_hold_open.png')
+    # the DNA the guest's editor shows (its game's DNA while it is open: a part bought lowers it) when it opened,
+    # and then every 10 s while the host's new body arrives (0.7.11: the report's "DNA drops" in numbers)
+    def gdna():
+        m = re.search(r'dna=(-?[\d.]+)', guest.call('coop.dna')['out'])
+        return float(m.group(1)) if m else None
+    d_open = gdna()
     # the report's editor stayed open (its first click on the red cross did nothing) for about 40 s
     # while the host's new body, its world and the shared DNA arrived: the guest leaves it alone
     got = wait(lambda: guest_log_has('creations: player 0 creature =', pos), 90)
     ck(got, "the host's new body reached the guest while its editor is open")
+    seen = []
     for k in range(4):
         time.sleep(10)
         shot(guest, f'editor_hold_{k}.png')
+        seen.append(gdna())
+    print(f"  the guest's editor DNA: {d_open} when it opened, {seen} after the host's body arrived", flush=True)
+    ck(d_open is not None and all(v is not None and abs(v - d_open) < 1 for v in seen),
+       f"the guest's open editor keeps its DNA while the host's new body arrives ({d_open} -> {seen})")
     guest.call('click %d %d' % CANCEL)
     left = wait(lambda: 'Creature' in mode(guest) or 'LoadGame' in mode(guest), 20)
     got = guest_log_has('creations: player 0 creature =', pos)

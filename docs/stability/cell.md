@@ -123,6 +123,9 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
    hunts whoever swims among the hunters, and the host's NPCs live around the host (a guest far
    away meets none, docs/known-issues.md). The chase samples come in bursts of 30-80 per 10 s
    while a pack follows one player.
+   UPDATE (2026-11-10, fix/w47-play-bots, BUG-0910): the ratio of chase samples failed 5 of 45 lab runs for that
+   reason; play_cell now ends with a controlled trial (each player alone in a hunter's prey range must become its
+   chase target; docs/06-testing.md#testing-w47-play-bots, docs/re/cell.md#cell-hunt-trial).
 
 ## Open issues (docs/known-issues.md)
 

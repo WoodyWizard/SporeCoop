@@ -48,7 +48,7 @@ def host_by_window(c, t0):
             time.sleep(0.3)
             continue
         mode = c.call('game.mode')['out'].strip()
-        if ui.click('host'):
+        if ui.goto('host', 5) and ui.click('host'):  # (0.7.12 F1: Host a game first)
             time.sleep(0.5)
             hosting = c.call('coop.status')['out'].startswith('host ')
             print(f'  the co-op window was up {time.time() - t0:.1f} s after the start in game mode "{mode}"; Host '

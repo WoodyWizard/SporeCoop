@@ -17,14 +17,20 @@ Measured (2026-10-30, lane 3): the Cell stage is left ~10 s after the cell touch
 mating cinematic), so the 2 s / 3 s window of the issue is over before the editor opens, whatever
 the player does; the test prints that time and stays as a guard of the editor return.
 
-  SPORE_LANE=3 python3 tools/tests/coop_cell_editor_timed.py [--revive]
+--vote (N2 of 0.7.11): the other way into a cell editor, the host's evolution vote (a guest's own editor never
+opens with it: the vote moves only the host). The host calls and reaches its mate (the vote starts), the host is
+knocked out while the vote is open, and the moment its knockout ends the guest clicks "I'm ready": the host's
+editor opens without a mating cinematic in between, so the 2-3 s window is reachable this way. Then cancel, the
+host's +0x111 clear, a bite of 1 (`coop.pool selfhit 1`, the bitten player's path) lowers the host's hp.
+
+  SPORE_LANE=3 python3 tools/tests/coop_cell_editor_timed.py [--revive] [--vote]
 """
 import re
 import sys
 import time
 
 from twoinst import Checks, start
-from coop_editor_desync import CANCEL, HEART, mate, mode, wait
+from coop_editor_desync import CANCEL, HEART, READY, mate, mode, wait
 
 
 def num(out, key):
@@ -37,13 +43,39 @@ def hp(con):
     return int(m.group(1)) if m else None
 
 
+def host_vote(host, guest, ck):
+    """--vote: the host's mating call and its mate (coop_evolve_in_place.host_cell_editor's first part)"""
+    from coop_evolve_in_place import hud_ready
+    vote = lambda: 'vote active' in host.call('coop.vote')['out']  # noqa: E731
+    for _ in range(3):
+        wait(lambda: hud_ready(host), 40)
+        host.call('coop.pool mate button')
+        time.sleep(1)
+        host.call('click %d %d' % HEART)
+        time.sleep(3)
+        if 'alive=1' in host.call('coop.pool mate')['out']:
+            break
+    for _ in range(25):
+        if vote():
+            break
+        m = re.search(r'alive=1 .* at (-?\d+) (-?\d+)', host.call('coop.pool mate')['out'])
+        if m:
+            x, y = (min(max(int(v), 20), lim) for v, lim in ((m.group(1), 1420), (m.group(2), 1000)))
+            host.call(f'click {x} {y}')
+        time.sleep(2)
+    return ck(vote(), 'the host reaches its mate: the evolution vote starts')
+
+
 def main():
     revive = '--revive' in sys.argv
+    by_vote = '--vote' in sys.argv
     window = 2.0 if revive else 3.0
     host, guest = start('cell', guest_creations=False)
     ck = Checks()
     wait(lambda: 'cine=0' in guest.call('coop.pool')['out'], 30)
     ck(wait(lambda: (num(guest.call('coop.pool')['out'], 'mirrors') or 0) > 5, 30), 'the guest mirrors the host pool')
+    if by_vote:
+        return main_vote(host, guest, ck, revive, window)
     # 1. the mate, then the knockout
     for _ in range(3):
         guest.call('coop.pool mate button')
@@ -110,6 +142,69 @@ def main():
     if not in_window:  # lane 3, 2026-10-30: always ~10 s (the mating cinematic): the issue's window cannot be hit
         print(f'  note: the Cell stage was left {left:.2f} s after the knockout, after the {window} s window: the timer '
               f'had cleared +0x111 already; the checks above still guard the editor return')
+    return ck.result()
+
+
+def main_vote(host, guest, ck, revive, window):
+    """--vote: the host is the player knocked out while its own vote is open; the guest's "I'm ready" the
+    moment the host's knockout ends opens the host's editor (a guest's own editor never opens with the vote:
+    lab 20261108-034621, the vote moves only the host, docs/re/cell.md 12)"""
+    if not host_vote(host, guest, ck):
+        return ck.result()
+    wait(lambda: "'I'm ready'" in guest.call('coop.uistate')['out'], 10)
+    wait(lambda: 'Cell' in mode(host) and 'cine=0' in host.call('coop.pool')['out'], 20, 0.2)
+    print('  host: ' + host.call('coop.pool tp %s' % ('0.5 0' if revive else '25 0'))['out'])
+    time.sleep(0.5)
+    r = host.call('coop.pool selfhit 250')['out']
+    print('  host: ' + r)
+    if not ck(num(r, 'downed') == 1, 'the host is knocked out (its vote open)'):
+        return ck.result()
+    if revive:
+        guest.call('coop.pool tp 0.5 0')
+    t0 = time.time()
+    while time.time() - t0 < 20 and num(host.call('coop.pool')['out'], 'downed') != 0:
+        time.sleep(0.1)
+    t_up = time.time()
+    guest.call('click %d %d' % READY)
+    st = host.call('coop.pool')['out']
+    print(f'  host knockout over after {t_up - t0:.1f} s ({"revive" if revive else "respawn"}): revives={num(st, "revives")} '
+          f'respawns={num(st, "respawns")}; the guest clicked "I\'m ready"; {host.call("coop.cell pool")["out"].strip()}')
+    left, last, inv_last = None, '', None
+    while time.time() - t_up < 20:
+        if 'Cell' not in mode(host):
+            left = time.time() - t_up
+            break
+        last = host.call('coop.cell pool')['out'].strip()
+        inv_last = num(last, 'av_invuln')
+        time.sleep(0.05)
+    print(f'  the host left Cell {left if left is None else round(left, 2)} s after its knockout ended (window {window} s); '
+          f'last read in the pool: {last}')
+    if not ck(left is not None and wait(lambda: 'Editor' in mode(host), 30, 0.2),
+              f'the host\'s cell editor opens after the vote ({mode(host).strip()})'):
+        return ck.result()
+    in_window = left < window
+    print(f'  {"inside" if in_window else "outside"} the window; av_invuln on the last read in Cell: {inv_last}')
+    ck(in_window, f'the editor opened inside the {window} s window ({left:.2f} s): the issue\'s timing reached')
+    time.sleep(3)
+    host.call('click %d %d' % CANCEL)
+    back = wait(lambda: 'Cell' in mode(host) and 'av_ptr=00000000' not in host.call('coop.cell pool')['out'], 30, 0.2)
+    ck(back, 'the host leaves its editor (cancel)')
+    print('  back: ' + host.call('coop.cell pool')['out'].strip())
+    wait(lambda: 'cine=0' in host.call('coop.pool')['out'], 30)
+    time.sleep(window + 1)  # past any timer of before the editor
+    p = host.call('coop.cell pool')['out'].strip()
+    print('  then: ' + p)
+    ck('av_invuln=0' in p, f'the host\'s avatar is not invulnerable after the editor ({p})')
+    # a bite of 1 on the host's own cell (`coop.pool selfhit 1`: the path a partner's bite takes on the bitten
+    # player's game, hurt_avatar, which the game's +0x111 stops; the host refuses a guest's MSG_CELL_HIT on a
+    # player's cell, so `coop.pool hurt 0 1` from the guest is no test: lab 20261108-034839)
+    h0 = hp(host)
+    r = host.call('coop.pool selfhit 1')['out'].strip()
+    time.sleep(0.5)
+    h1 = hp(host)
+    print(f'  bite of 1 on the host ({r}): host hp {h0} -> {h1}')
+    ck(h0 is not None and h1 is not None and h1 < h0, f'a bite hurts the host after its editor ({h0} -> {h1})')
+    ck.faults(host=host, guest=guest)
     return ck.result()
 
 

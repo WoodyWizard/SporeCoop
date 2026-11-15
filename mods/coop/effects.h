@@ -25,6 +25,9 @@ namespace effects {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void*(uint8_t id)> puppet_of; // the creature of player `id` on this game
+    // BUG-0426 class (L1): player id's Creature puppet only while it is the live object made for it (listed, its serial,
+    // this frame's world); a Cell cell, a Tribe marker, a freed or reused one: null
+    std::function<void*(uint8_t id)> puppet_live;
     std::function<std::vector<std::pair<uint8_t, void*>>()> all_puppets; // every partner's puppet
     // true when a world position is on the local player's own controlled object (the avatar in
     // Creature / Cell, the tribe members in Tribe, the vehicles in Civ, the UFO in Space)
@@ -43,6 +46,12 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now); // main thread: send the effects the hooks queued
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
+// BUG-0824: called on the main thread for every world effect that starts here: this game's own (`from` = this player's
+// id, while connected) and the relayed ones (`from` = the player who made it), with the effect id, the effect and its
+// place. The game's creators can report one effect twice (seen: the same effect object in two hooks in one frame).
+using WorldStartFn = void (*)(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos);
+void set_world_start_observer(WorldStartFn fn);
+std::string watch(uint32_t id); // tests (BUG-0465): watch an effect id; its last own / received object and transform
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)
 bool set_log(bool on);
 // the frame-time workload (`coop.effects load`): `n` effects every `period_ms` at the local player,
@@ -55,6 +64,6 @@ std::string map_dump(); // tests: the effect pool maps of the avatar and the pup
 // tests: feed a crafted MSG_EFFECT through on_message as if it came from peer `from` (spoofing and
 // validation checks: the transport cannot make a guest claim another player)
 void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
-            const net::Vec3& pos);
+            const net::Vec3& pos, float agl = net::kNoAgl);
 
 } // namespace effects

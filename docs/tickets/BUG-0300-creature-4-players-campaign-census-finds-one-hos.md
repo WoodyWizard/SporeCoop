@@ -1,17 +1,17 @@
 ---
 id: BUG-0300
 title: Creature, 4 players: campaign census finds one host NPC missing on a guest at 90 m, the edge of the NPC range
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-10-30
 source: lab 20261030-060122 campaign_short#3 (fix/w10-cell-4p)
 role: guest
 versions: fix/w10-cell-4p a964c90
-fixed_in:
+fixed_in: 0.7.3.2
 branch: fix/w13-creature
 commits: 2d444ef, 65cf54c
-tests:
+tests: campaign_short, campaign (census)
 signature:
 docs: docs/re/creature.md#creature-proxy-guest-side
 related:
@@ -41,10 +41,17 @@ made again. A listed proxy without a species is logged ("has no species"). `coop
 npc.proxy_listed off`: logged only.
 
 ## Verification
-no-fail-run: not reproduced (no way found to make a proxy leave the world unnoticed); the next
-campaign census finding of this kind comes with the log line that names what happened.
+FAIL: fix/w10-cell-4p lab 20261030-060122 campaign_short#3 (the census finding of the report, before the guard).
+PASS: the guard acts and the run passes: SporeCoop out/lab/20261101-024548 campaign#3 (4 players, Creature on
+creature_cadian): Bob's log 03:06:43 "npc 65: the proxy's creature 1DC19F58 is no creature of this world any more
+(key 7DCD0D85, alive): made again", the run's census checks passed (RESULT: OK). Across the 2409 lab run directories
+of 2026-11-01..08 (main checkout and every worktree) that is the only guard line, and no campaign log has a census
+FINDING "the host has it, the guest not" (144 logs mention the phrase only in passing checks of other tests). What
+frees the proxy's object behind the mod's back is still not known (the guard's log line names the case when it
+happens).
 
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w13-creature: analysed (not a range edge; a proxy in the list without a creature in the world), not reproduced; diagnostics + guard npc.proxy_listed; stays open.
 - 2026-10-30: fix/w14-creature: guard kept; no "no creature of this world" / "has no species" line in any lab game log of fix/w13-creature and fix/w14-creature (about 40 Creature runs, lanes 4-5); stays open.
+- 2026-11-08 (fix/w46-g4-tests): G4: closed: the npc.proxy_listed guard (0.7.3.2) repaired the one case seen since (campaign#3 of 20261101-024548 passed); no census finding in 2409 lab runs of 2026-11-01..08. The freeing path stays unknown; the guard logs it.

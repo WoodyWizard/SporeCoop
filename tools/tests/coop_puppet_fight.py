@@ -55,7 +55,8 @@ def dump_anims(con):
                          'rv': float(f[14]), 'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]),
                          'moving': int(f[18]), 'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]),
                          'sy': float(f[22]), 'ranims': int(f[26]) if len(f) > 27 else 0,
-                         'ranim': f[27] if len(f) > 27 else ''})
+                         'ranim': f[27] if len(f) > 27 else '',
+                         'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None})
     return rows
 
 

@@ -42,7 +42,11 @@ before; the fields are described in FIELDS and docs/06-testing.md#testing-monito
   ground        `agl=` (height over this game's terrain) of the own avatar, a puppet, the Tribe members
                 (lowest; `agl_hi=` the highest): under -0.5 m on 2 lines in a row; a Creature puppet over
                 3 m while its player's own creature is on its ground (own agl under 1 m: not jumping,
-                on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row
+                on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row. Tribe (BUG-0945):
+                a member that STAYS up: the line's `agl_held=` (how long one member has been over 3 m
+                without a break) is at least agl_hold (5 s) on both lines; a blow throws a member 3-7 m
+                up for about 2 s, and two samples 10 s apart can both fall into such throws. A log
+                without the field (before 0.7.12) is judged as before; agl_hold=0 is that old rule
   puppet_hp     the puppet's own health (partner line `puppet_hp=`) equals its player's own hp / max hp on
                 its line of the same moment (within 1 hp or 10 %), on 2 lines in a row
   posse_damage  `damage: <victim> hit by <kind> ... posse=1 amount=<hp>` with hp > 0: the hit player's own
@@ -79,11 +83,12 @@ POOL = re.compile(r'cell pool (\d+)/(\d+)')
 SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
                    r'session: player (\d+) \'.*\' (left)')
 DRAWN = re.compile(r' drawn=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) drawn_v=([-\d.naif]+)')
-AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?')
+AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?(?: agl_held=(-?[\d.naif]+))?')
 PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
 PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
 PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
 PTR_STILL = re.compile(r' ptr_still=([\d.]+)')
+WSCALE = re.compile(r' wscale=([-\d.e+naif]+)')
 DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
@@ -92,8 +97,9 @@ PF_IN_WORLD, PF_DEAD = 1, 16
 DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50, link_pending=400, link_age=5.0,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
-                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
-                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0)
+                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2, agl_hold=5.0, agl_cine=1,
+                php_n=2, php_same_way=1, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0,
+                drawn_scale=1, drawn_age=1.0, same_session=1)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -103,10 +109,12 @@ FIELDS = {
     'drawn': "partner line: `drawn=(x y z) drawn_v=<m/s>` = the puppet (Tribe / Civ: the pointer marker) read back "
              "from the game at the start of the frame that writes the line (before any driving), and the "
              "partner's speed as seen here; trace lines are written at the session clock's 10 s marks; Tribe / Civ "
-             "own line: `ptr_still=<s>` = how long the own pointer has stood still (BUG-0416)",
+             "own line: `ptr_still=<s>` = how long the own pointer has stood still (BUG-0416); Cell own line: `wscale=<k>` = "
+             "the game's world scale its positions are in (BUG-0681)",
     'ground': "own and partner lines in Creature / Tribe: `agl=<m>` = height over this game's terrain "
               "(cPlanetModel::GetHeightAt) of the avatar / puppet as drawn; Tribe: `agl=<lowest> agl_hi=<highest>` "
-              "of the player's tribe members",
+              "of the player's tribe members, and with a member over 3 m `agl_held=<s>` = how long one member has "
+              "been up without a break (BUG-0945)",
     'puppet_hp': "partner line in Creature: `puppet_hp=<hp>/<max>` read from the puppet creature itself (BUG-0373)",
     'posse_damage': "log line `damage: <victim id> hit by <kind> owner=<host|guest id|npc|-> posse=<0|1|?> "
                     "amount=<hp>[ forwarded| dropped (npc.party_peace)| from the host]` where a hit on a player is "
@@ -180,6 +188,8 @@ def monitor_fields(r):
         r['agl'] = num(m.group(1))
         if m.group(2) is not None:
             r['agl_hi'] = num(m.group(2))
+        if m.group(3) is not None:
+            r['agl_held'] = num(m.group(3))
     m = PUPPET_HP.search(rest)
     if m:
         r['puppet_hp'] = (num(m.group(1)), num(m.group(2)))
@@ -192,6 +202,11 @@ def monitor_fields(r):
     m = PTR_STILL.search(rest)
     if m:
         r['ptr_still'] = float(m.group(1))
+    m = WSCALE.search(rest)
+    if m:
+        k = num(m.group(1))
+        if k == k and k > 0:
+            r['wscale'] = k
     return r
 
 
@@ -246,12 +261,18 @@ class Timeline:
         got = [w for w in self.own if w != viewer and (lambda o: o is not None and o['id'] == pid)(self.own_at(w, t, dt))]
         return got[0] if len(got) == 1 else None
 
-    def window(self, who, t, dt):
-        """the own records of `who` within session time t +- dt"""
+    def window(self, who, t, dt, like=None):
+        """the own records of `who` within session time t +- dt. BUG-1061: the session clock starts at 0 in every
+        session, so one machine's records of two sessions share the same times (a Cell session's line at s 30 and the
+        next Creature session's): with `like` (a partner record) only the records of the stage and world that record
+        names count"""
         ts = self.own_t.get(who)
         if not ts or t is None:
             return []
-        return self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+        w = self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+        if like is not None:
+            w = [r for r in w if r['stage'] == like['stage'] and r['world'] == like['world']]
+        return w
 
     def around(self, who, t):
         """the own records of `who` right before and right after session time t (BUG-0380)"""
@@ -261,15 +282,15 @@ class Timeline:
         i = bisect.bisect_left(ts, t)
         return [self.own[who][j] for j in (i - 1, i) if 0 <= j < len(ts) and ts[j] != float('-inf')]
 
-    def own_at(self, who, t, dt):
-        """the own record of `who` closest to session time t (within dt), None"""
-        w = self.window(who, t, dt)
+    def own_at(self, who, t, dt, like=None):
+        """the own record of `who` closest to session time t (within dt), None (like: see window)"""
+        w = self.window(who, t, dt, like)
         return min(w, key=lambda r: abs(r['t'] - t)) if w else None
 
 
-def own_window(tl, who, t, dt):
+def own_window(tl, who, t, dt, like=None):
     """the own records of `who` within session time t +- dt"""
-    return tl.window(who, t, dt)
+    return tl.window(who, t, dt, like)
 
 
 def playing(r):
@@ -443,12 +464,13 @@ class Hp(Invariant):
                     run, last = [], subj
                     if subj is None:
                         continue
-                o = tl.own_at(subj, p['t'], 5.0) if p['t'] is not None else None
+                like = p if self.c['same_session'] else None  # BUG-1061
+                o = tl.own_at(subj, p['t'], 5.0, like) if p['t'] is not None else None
                 if not o or not p['same'] or not playing(o) or o['maxhp'] <= 0 or p['age'] > 1.0:
                     run = []
                     continue
                 # the subject's own hp unchanged around the moment (a fight changes it between the lines)
-                around = own_window(tl, subj, p['t'], 12.0)
+                around = own_window(tl, subj, p['t'], 12.0, like)
                 if len(around) < 2 or len({(x['hp'], x['maxhp']) for x in around}) != 1:
                     run = []
                     continue
@@ -538,11 +560,25 @@ class Hook(Invariant):
         subj = tl.who_at(p['pid'], p['t'], viewer=p['who'])  # ids are reused after leaves
         if subj is None or p['t'] is None:
             return None, None
-        return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'])
+        return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'], self.like(p))
+
+    def like(self, p):
+        """BUG-1061 (same_session): the subject's records of the stage and world partner record p names; 0: any"""
+        return p if self.c['same_session'] and p.get('stage') and p.get('world') else None
 
 
 class Drawn(Hook):
     name, field, needs = 'drawn', 'drawn=', FIELDS['drawn']
+
+    def in_scale(self, o, v):
+        """BUG-0681: the subject's own position in the viewer's world scale. In Cell each game rescales its world at its
+        own moment of a level change (~3 s apart, docs/re/cell.md#cell-world-scale): the viewer draws the puppet in its
+        scale, the subject's line has its own (pos x scale is the same through a change, as in worlddiff BUG-0662).
+        Lines without `wscale=` are compared raw (drawn_scale 0: always raw, the rule before it)"""
+        ko, kv = o.get('wscale'), v.get('wscale')
+        if not self.c['drawn_scale'] or o['stage'] != 'Cell' or not ko or not kv or abs(ko / kv - 1.0) < 1e-4:
+            return o['pos']
+        return tuple(x * ko / kv for x in o['pos'])
 
     def check(self, tl):
         out = []
@@ -567,9 +603,16 @@ class Drawn(Hook):
                 if p['stage'] in ('Tribe', 'Civilization') and 'ptr_still' in o and self.c['drawn_still'] >= 0 and \
                         o['ptr_still'] < self.c['drawn_still'] + max(p['rtt'], 0) / 1000.0:
                     return False
+                # BUG-0711: a copy without news for over drawn_age s (the partner line's state_age) can not be where the
+                # partner is now: a guest's link dead for 5.5 s both ways (the host: "Bob is not responding" too) drew
+                # Carol 16.5 m off at state_age 3.6 s (multi4_creature_slow, lab 20261108-012301 of fix/w46-k7-findings);
+                # that is the link's (the `link` / `puppet` invariants), not the drawing's. (drawn_age < 0: the rule
+                # before it, SPORE_MONITOR='{"drawn_age": -1}')
+                if self.c['drawn_age'] >= 0 and p['age'] > self.c['drawn_age'] + max(p['rtt'], 0) / 1000.0:
+                    return False
                 lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
                                                                        + abs(o['t'] - p['t']))
-                d = dist(p['drawn'], o['pos'])
+                d = dist(p['drawn'], self.in_scale(o, v))
                 p['_drawn'] = (d, lim, subj)
                 return d > lim
             for a, b in self.runs(lst, bad, self.c['drawn_n'], None):
@@ -586,6 +629,19 @@ class Ground(Hook):
     def check(self, tl):
         c, out = self.c, []
         n = c['agl_n']
+
+        def cine_held(tl, r, pid):
+            # the end of Tribe (TRG2CVG cinematics between the City Hall and vehicle editors): the game holds the
+            # members where they stand while it lays the city's ground (a village stamp removed under a member left it
+            # 16-18 m up for the 76-100 s of the change, campaign_tribe_end lab 20261113-125218 and -153633, every game).
+            # The host's game drives the change: its own line at that moment says busy=cinematic or editor (a guest's
+            # does not). agl_cine=0: judged as before
+            hosts = [w for w, lst in tl.own.items() if lst and lst[-1].get('role') == 'host']
+            for o in [tl.own_at(h, r['t'], c['drawn_dt']) for h in hosts] + ([r] if pid is None else []):
+                m = re.search(r'busy=(\S+)', (o or {}).get('rest', ''))
+                if m and {'cinematic', 'editor'} & set(m.group(1).split(',')):
+                    return True
+            return False
         series = [(who, None, lst) for who, lst in tl.own.items()] + \
             [(viewer, pid, lst) for (viewer, pid), lst in tl.partner.items()]
         for who, pid, lst in series:
@@ -596,14 +652,25 @@ class Ground(Hook):
                     playing(r) if pid is None else (r['same'] and r['puppet'] == 'shown' and not r['flags'] & PF_DEAD))
             for a, b in self.runs(lst, lambda r: ok(r) and r['agl'] < c['agl_under'], n, None):
                 out.append((who, f'{who}: {what if b["stage"] == "Creature" else ("the tribe members of " + (who if pid is None else f"partner {pid}"))} '
-                                 f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}',
+                                 f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}'
+                                 + (' (the game log names the member: "tribe: member #.. is .. m under the ground", BUG-1104)'
+                                    if b['stage'] == 'Tribe' else ''),
                             (who, pid, 'under', a['t'])))
+
+            def held(b):  # Tribe: whose members, how long one has been up, where the game log names it
+                if b['stage'] != 'Tribe':
+                    return ''
+                whose = who if pid is None else f'partner {pid}'
+                up = f', one of them up for {b["agl_held"]:.0f} s without a break' if 'agl_held' in b else ''
+                return f' (the members of {whose}{up}; the game log names the member: "tribe: member #.. is .. m over the ground")'
 
             def over(r):
                 if not ok(r):
                     return False
-                if r['stage'] == 'Tribe':
-                    return r.get('agl_hi', r['agl']) > c['agl_over']
+                if r['stage'] == 'Tribe':  # a member that stays up, not one thrown by a blow (BUG-0945)
+                    if c['agl_cine'] and cine_held(tl, r, pid):
+                        return False
+                    return r.get('agl_hi', r['agl']) > c['agl_over'] and r.get('agl_held', 1e9) >= c['agl_hold']
                 if pid is None:  # a creature on a rock reads 1-16 m (GetHeightAt is the terrain only)
                     return False
                 _, o = self.same_moment(tl, r)
@@ -611,7 +678,7 @@ class Ground(Hook):
             for a, b in self.runs(lst, over, n, None):
                 out.append((who, f'{who}: {"the tribe members" if b["stage"] == "Tribe" else what} '
                                  f'{b.get("agl_hi", b["agl"]):.2f} m over the ground ({b["stage"]}) on {n} lines from s '
-                                 f'{a["t"]:.0f}', (who, pid, 'over', a['t'])))
+                                 f'{a["t"]:.0f}' + held(b), (who, pid, 'over', a['t'])))
         return out
 
 
@@ -633,8 +700,22 @@ class PuppetHp(Hook):
                 # a player's own hp above its max is a test's invulnerability (`coop.team hp 1000`): the puppet
                 # carries the partner's health capped at the max, which is what the game can show
                 own = min(o['hp'], o['maxhp'])
+                p['_php_sign'] = 0 if abs(o['maxhp'] - mx) > 0.5 else (1 if own > hp else -1)
                 return abs(o['maxhp'] - mx) > 0.5 or abs(own - hp) > max(self.c['hp_abs'], o['maxhp'] * 0.1)
-            for a, b in self.runs(lst, bad, self.c['php_n'], None):
+            # BUG-0953: the lines in a row must be off the same way (the puppet steadily over, or under, its player's
+            # own health, or another max). Two lines of the ~0.15 s state lag right at a jump of the player's health
+            # (a revive 20 ms before one line, the killing blow 9 ms before the next: long_creature 20261112-013858)
+            # are off in opposite directions and are not a puppet that keeps a wrong health.
+            prev = [None]
+
+            def bad_same(p):
+                if not bad(p):
+                    prev[0] = None
+                    return False
+                same = prev[0] is None or prev[0] == p['_php_sign']
+                prev[0] = p['_php_sign']
+                return same
+            for a, b in self.runs(lst, bad_same if self.c['php_same_way'] else bad, self.c['php_n'], None):
                 subj, o = b['_php']
                 out.append((viewer, f'{viewer} shows {subj}\'s creature at {b["puppet_hp"][0]:.0f}/{b["puppet_hp"][1]:.0f}, '
                                     f'{subj}\'s own game {o["hp"]:.0f}/{o["maxhp"]:.0f} (s {b["t"]:.0f})',
@@ -788,6 +869,35 @@ class Watch(threading.Thread):
                 self.tl.add(dict(kind='census', who=who, t=last[-1]['t'] if last else None, stage=m.group(1),
                                  counts=dict(counts)))
 
+    def detect_trail(self, host_inst, who, inst, stage):
+        """BUG-0609: `<stage>:trail:<kind>` rows from both games' coop.bodyrec (one clock): the guest's copies
+        against the host's bodies at the same moment over the last period (body_trail.detect_findings)"""
+        import body_trail
+        if os.environ.get('SPORE_DETECTOR_TRAIL', '1') == '0' or not stage:
+            return []
+        st = self.__dict__.setdefault('trail_state', {})
+        hc, gc = self.console(host_inst), self.console(inst)
+        if who not in st:  # the first period only starts the recording
+            if body_trail.ensure_on(hc) and body_trail.ensure_on(gc):
+                now = float(re.search(r'now=([\d.]+)', hc.call('coop.bodyrec count').get('out', '')).group(1))
+                st[who] = now
+            return []
+        t0 = st[who]
+        # BUG-0916: only the kinds that are judged are kept (a Cell host lists 1100 cells a frame, none judged), each
+        # read is bounded (body_trail.since), and a read that was cut starts the next period from now, not from where
+        # it stopped: no backlog builds up behind the game's ring
+        kinds = body_trail.detect_kinds(stage)
+        t_now = body_trail.now(gc)
+        hr = body_trail.since(hc, t0 - body_trail.GAP, kinds=kinds)
+        cut = body_trail.since.cut
+        gr = body_trail.since(gc, t0, kinds=kinds)
+        cut = cut or body_trail.since.cut
+        st[who] = t_now if cut or not gr else max(t_now - 1.0, max(r[0] for r in gr))
+        if cut and not st.get('cut_said'):
+            st['cut_said'] = True
+            self.out(f'  (detector trail: a read of {who} ended early ({cut}): the next period starts from now)')
+        return body_trail.detect_findings(stage, hr, gr)
+
     def detect(self):
         """one detector sample: the host's world against every guest's (worlddiff.diff)"""
         import json
@@ -805,6 +915,7 @@ class Watch(threading.Thread):
                 self.out(f'  (detector: {who} dump failed: {e!r})')
                 continue
             found = worlddiff.diff(hw, gw)
+            found += self.detect_trail(host[0], who, inst, hw.mode)
             skip = [f for f in found if f['sig'] in ('apart', 'nocentre')]
             real = [f for f in found if f['sig'] not in ('apart', 'nocentre')]
             self.out('DETECTOR-SAMPLE ' + json.dumps(dict(guest=who, stage=hw.mode, gstage=gw.mode, host_rows=len(hw.rows),
@@ -814,8 +925,12 @@ class Watch(threading.Thread):
                 self.out('DETECTOR ' + json.dumps(dict(guest=who, stage=f['stage'], sig=f['sig'], n=f['n'], text=f['text'])))
             # SPORE_DETECTOR_DIAG=<cmd>[;<cmd>]: with any state finding, both games' answers to these console
             # commands (e.g. `coop.wsync;coop.wsync dump tribe_rel;coop.wsync want tribe_rel`), for triage
+            # SPORE_DETECTOR_DIAG_ON=<sub>[,<sub>]: also with a finding whose sig contains one of them (e.g. `:ornament`
+            # with `coop.wobj raw 18C88E4 3000 576`, BUG-0528)
             diag = os.environ.get('SPORE_DETECTOR_DIAG', '')
-            if diag and any(':state:' in f['sig'] or ':planet_owner:' in f['sig'] for f in real):
+            on = [x for x in os.environ.get('SPORE_DETECTOR_DIAG_ON', '').split(',') if x]
+            if diag and any(':state:' in f['sig'] or ':planet_owner:' in f['sig'] or any(x in f['sig'] for x in on)
+                            for f in real):
                 for cmd in [c.strip() for c in diag.split(';') if c.strip()]:
                     for side, i in (('host', host[0]), (who, inst)):
                         try:

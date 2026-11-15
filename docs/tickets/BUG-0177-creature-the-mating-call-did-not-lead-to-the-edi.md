@@ -1,19 +1,19 @@
 ---
 id: BUG-0177
 title: Creature: the mating call did not lead to the editor in the bot
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-10-24
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.11
+branch: fix/w46-g4-tests
+commits: 0929b2d8
+tests: creature_mating (tools/tests/coop_creature_mating.py)
 signature:
-docs:
+docs: docs/re/creature.md#creature-mating-call
 related:
 ---
 
@@ -28,80 +28,27 @@ Copied from docs/known-issues.md, where the entry stays up to date:
   editor through the stage switch, not the creature mating call.
 
 ## Root cause
-A hosted 37-dev reproduction in a disposable copy of the reported campaign
-showed the Mating Call animation and nest marker, with no heart marker over a
-nestmate. Clicking a nearby nestmate reached the avatar's native mating
-behavior (Steam/GOG 2024 code, preferred address 0x00D6D560). Runtime sampling
-showed phase 1 with a resolved animal target. The target stayed in action
-0x71BE644C instead of entering the reply action 0x91BFFC22 that advances the
-native behavior to phase 2. The egg-laying cinematic did not start and the
-game stayed in Creature. A separate run with Co-op unloaded reached phase 2, but the test ended before confirming editor entry. The two runs did not establish that they selected an equivalent nestmate.
-
-In a later same-save comparison the native click classifier found an eligible
-mate in upstream 0.7.8 and both Lineages builds. Dispatching that action opened
-the Creature editor on upstream 0.7.8 and in a separate 37-dev run. In the
-30-dev comparison the native action stayed in Creature without starting the
-egg cinematic. This establishes intermittent failure before editor submission
-and does not identify a regression commit or explain the missing local cue.
+Observed (Ghidra static, docs/re/creature.md#creature-mating-call, and this branch's runs): the mate is not chosen by
+the call. The game's drama manager picks one family member within 15 m of the nest every 5 s (mgr +0x38, marked +0xB58 &
+0x10); the mating call (Backspace) only plays animations and hearts, on the mate and on up to 3 other members, so the
+old bot clicked hearted members that were not the mate and nothing happened. A left click on the marked mate (cursor
+kind 9) makes the avatar walk to it and mate (BT node 02D852F0), the CRG_LaidEgg cinematic plays, and the game's mating
+editor request (0xD3C650, tag 0x12191CA) reaches the co-op vote about 60 s after the click. Not a bug: the bot's input.
 
 ## Fix
-38-dev shipped a temporary clickable Mate marker. The next patch removes it
-and starts Spore's own pooled heart effect when a living, eligible nestmate
-from the local player's herd lacks it. A runtime check confirmed that the
-eligible mate in the report had no instance of effect 0x9005E011.
-
-A separate response trace caught a stalled click with the player 1.61 m from
-the nest and the selected mate 11.30 m away. The native response radius was
-9.67 m, so the mate kept scoring zero. The patch allows up to five additional
-metres of wandering for the selected, native-eligible nestmate while the
-player is within 0.25 m of the original radius and performing the native mating action.
-A separate run reached phase 2, substep 1, but the mate resumed roaming and
-Spore kept waiting for the paired movement to finish. The patch can repeat
-Spore's staging step twice, four seconds apart, if either participant is
-still waiting to reach its position.
-
-The native approach, egg cinematic, editor request and multiplayer vote still
-handle the sequence.
+The missing test, tools/tests/coop_creature_mating.py (suite creature_mating): `coop.drama mate` (new read-only line of
+coop.drama: the drama manager's mate, its flags and behaviour tree node, the avatar's node) names the mate, the host
+presses Backspace and left-clicks the mate where its game draws it; checks: the avatar goes to mate (node 02D852F0), the
+guest's screen shows the vote "wants to evolve (Creature)", the guest is ready, the host's editor and the guest's own
+open, both leave with "done" and are back in the Creature stage. MATING_CLICK=other (another member) must FAIL.
 
 ## Verification
-
-An isolated Steam host loaded a copy of the affected save. It displayed
-Spore's mate hearts, played exactly one egg cinematic after the native
-click handler, and entered Editor mode with zero logged faults. A second
-run moved the mate to 10.88 m from the nest before dispatch, beyond the
-9.67 m baseline, and also entered the editor with zero logged faults.
-The final build passed a normal mouse click in the same save. The log
-recorded both paired-approach retries, one egg cinematic, and zero faults,
-and the Creature editor rendered. Guest mating was outside this reproduction.
-
+FAIL (the twin, a click on another family member: no mating, no vote, no editor): out/lab/20261108-065608.
+PASS 4 of 4 on lanes 3 and 2: out/lab/20261108-054311 (lane 3), 20261108-065028 #1-#3 (lane 2).
 
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: how a player answers the Creature mating call (which object to click after Backspace) is unexplored reverse engineering. Left open.
-- 2026-11-09: reproduced the native mating behavior waiting for its partner in a 37-dev hosted QA copy.
-- Follow-up after 39-dev: the player reported overlapping heart clouds and a
-  mate that only responded after it moved. A read-only check found one
-  eligible nestmate in an active adult player's herd. The same player had
-  +18 degrees of FOV. Spore's native cursor ray used the stock lens between
-  draws, while the visible position used the wide lens. The next build
-  aligns the ray with the visible lens and limits heart restoration to once
-  per continuous eligibility window.
-- A two-evolution QA run reached the adult state after the first editor.
-  Backspace marked the second mate, but the native click classifier returned
-  action 0 for it through the observation window. The live player, by contrast,
-  had one nestmate classified as action 9. Do not bypass the native rejection
-  until its specific gate has been identified.
-- In a copy of the post-edit checkpoint, the hatchling fallback grew the
-  avatar to age 1, but the native simulator input-block counter stayed at 1
-  even after walking away from the nest. Spore classified the nestmate's
-  click as action 0. The live adult had a zero counter and action 9.
-- Follow-up traced the simulator counter to native UI hover. In the QA
-  checkpoint it was 1 over the HUD and returned to 0 on a mouse move into
-  the world. The earlier keyboard movement left the virtual cursor at the
-  editor's Done-button coordinates. The native HUD lock is preserved.
-- The 40-dev Steam host candidate opened the Creature editor twice in one
-  session, with a native mating call and click dispatch each time. After
-  accepting the first editor, the test waited for adulthood and moved the
-  cursor into the world. The second mate classified as action 9, played one
-  egg cinematic and reached the editor with zero logged faults.
+- 2026-11-08 (fix/w46-g4-tests): how a player answers the call (Ghidra), the test written; 4 of 4 PASS, the twin FAILS; fixed.
+- 2026-11-08: released in 0.7.11.

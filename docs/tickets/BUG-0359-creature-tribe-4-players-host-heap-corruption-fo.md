@@ -1,7 +1,7 @@
 ---
 id: BUG-0359
 title: Creature -> Tribe, 4 players: host heap corruption found freeing a plant's spatial-grid node (GeneralAllocator_FreeInternal+0x64 from 0x702C44)
-status: open
+status: not-reproduced
 kind: crash
 stage: Creature
 reported: 2026-10-31
@@ -11,10 +11,10 @@ versions: 0.7.3.1
 fixed_in:
 branch: fix/w27-heap
 commits:
-tests: campaign, campaign_ct, campaign_tribe
+tests: campaign, campaign_ct, campaign_tribe, campaign_tribe_share
 signature: dc04aee5:GeneralAllocator_FreeInternal+0x64 < delete_ < 0x00702C44 (HierGrid unlink) < 0x00702E88 < 0x00B0818E (flora HandleMessage)
-docs: docs/re/tribe.md#tribe-flora-grid-free
-related: BUG-0308, BUG-0348, BUG-0170, BUG-0276
+docs: docs/re/tribe.md#tribe-flora-grid-free, docs/re/tribe.md#tribe-flora-grid-slots
+related: BUG-0308, BUG-0348, BUG-0170, BUG-0276, BUG-0507
 ---
 
 ## Report
@@ -87,8 +87,47 @@ exception in any of the 32 game logs. Runs with `SPORE_FIX_OFF=` the Cell switch
 with 0 faults in 8 runs and 1 in ~25 before, they could not tell the two apart.
 no-fail-run: not reproducible (1 fault in 72 logged Creature -> Tribe changes; 0 in 8 stress runs).
 
+Attempt 2 (2026-11-05, fix/w45-crashes, rel/0.7.9 = 0.7.8 + this branch, lanes 4 and 5, all fixes on,
+SPORE_DETECTOR=20, lane 4 and lane 5 running 4 games each at the same time): 5 Creature -> Tribe changes with
+4 players, 0 faults in 20 game logs: campaign_tribe 2 of 2 out/lab/20261105-232742 (lane 4), campaign_ct
+out/lab/20261105-231922 (lane 5) and 2 more out/lab/20261105-233139 (#2 passed; #1 failed only the
+sync-check gate in Cell, BUG-0606, no fault). **None of the 5 hosts took the original path** (the game
+entering Tribe while a share save was being written: "went from Creature to Tribe during the save" 0 times,
+against nearly every campaign before 2026-10-31), so the reported circumstances were not reproduced
+either; not forced (no tool posts a share save into the evolution's last frames).
+Also searched every `*.game.log` of out/lab in the main checkout and all worktrees (since 2026-10-29) for
+`GeneralAllocator_FreeInternal`: 24 logs; this signature (0x702C44 < 0x702E88 < 0xB0818E) is in none
+but lab 20261031-185843 (the others: BUG-0308 / 0348's Cell pools, effect creation in Tribe / Civ,
+the editor's play-mode pictures, BUG-0605). New static facts: docs/re/tribe.md#tribe-flora-grid-slots
+(the grid's handle slots lead to every list node, so a tripwire walking them is possible; 0.51f is a
+literal of the exe once, 0x13FE148, read only by FUN_00629E10). Not made: the tripwire itself (PPMalloc
+has no validator known to us, the grid's block count is not known yet); with 1 fault in 80+ logged
+Creature -> Tribe changes a tripwire would only pay off in many nightly campaigns.
+no-fail-run: not reproducible (still 1 fault in all logged Creature -> Tribe changes).
+
+Attempt 3 (2026-11-08, fix/w46-n2-desyncs, N2 of 0.7.11, rel/0.7.11 ccfb0ae4, lanes 9/10, all fixes on, SPORE_DETECTOR=20,
+lanes 4-8 busy with other agents' games: a loaded machine as in the report). **The reported path forced**: the new
+`CAMPAIGN_SHARE_SPAM=1` (coop_campaign.py, suite `campaign_tribe_share`) posts the host's world share to one guest every
+~1.5 s from the Creature advance until 4 s into Tribe, so a share save is being written as the game enters Tribe.
+* 12 four-player Creature -> Tribe changes on this build: campaign_tribe_share x2 out/lab/20261108-035333 (the spam
+  thread broken, a plain campaign each), x2 20261108-040233, campaign_ct x2 (Cell first in the same process, as in the
+  report) + campaign_tribe_share x2 20261108-041234 (SPORE_NET=players), x4 20261108-044415. The original path ("the
+  game went from Creature to Tribe during the save ... saving again") happened in 4 of them (040233 #1 #2, 044415 #1 #2);
+  in the others the spam's shares went out with a save already written. 0 faults in the 48 game logs, every run OK.
+* The lab history (main checkout and every worktree, out/lab, 2026-11-08): the signature (0x00702C44) is still only in
+  20261031-185843 campaign#3; 151 game logs have a "went from Creature to Tribe during the save".
+* Why it stays unexplained: the fault is a header overwritten earlier by an unknown writer (0.51f), not a fault of the
+  path itself; the path is now reached on demand and does not damage the heap. Changed since the report: the host
+  leaves the live-entered Tribe a few seconds after the arrival to load its own share save (BUG-0332), so the flora of
+  the live change is torn down soon after, but the reported fault came 0.25 s in, before that.
+no-fail-run: not reproducible (1 fault in 150+ logged Creature -> Tribe changes with a save during the change, 0 in the 4
+forced ones and 12 changes of this attempt).
+
 ## History
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w27-heap): analysed (Ghidra: the flora's tree grid node, header overwritten by
   0.51f); not today's Cell switches (Cell-only callers, host left Cell 11 min before, no warnings);
   stress out/lab/20261031-204524-fix-w27-heap 8/8 ok. Stays open, no fix.
+- 2026-11-05 (fix/w45-crashes): not reproduced again (5 more Creature -> Tribe changes, 0 faults; the share-save-during-the-change path no longer happens in these campaigns); lab history searched (signature only in 20261031-185843); grid slot layout and the 0.51f literal recorded; stays open, no fix.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): the reported path (a share save during the Creature -> Tribe change) forced with CAMPAIGN_SHARE_SPAM and hit 4 times, 12 four-player changes in all, 0 faults; signature still only in 20261031-185843. Closed as not-reproduced with that evidence.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review, inferred, low confidence: 0.7.3.1 had no liveness check on the Creature puppets (BUG-0507, creature.puppet_alive, came in 0.7.4): the host drove a freed puppet raw (set_speed, walk_place write floats into the object), and this host had Bob's leave and rejoin in Creature. A float written through a freed puppet into a block reused by a flora grid node fits the 0.51f header better than the paths tried. The audit's freed-puppet writers BUG-0795 (effects relay) and BUG-0814 (carried rock) cannot explain it: their code came first in v0.7.10. Untried test: campaign_tribe_share (4 players, a rejoin in Creature) with SPORE_FIX_OFF=creature.puppet_alive; a fault or a 'gone already' drive of a freed puppet with the switch off would date the writer. Verdict unchanged.

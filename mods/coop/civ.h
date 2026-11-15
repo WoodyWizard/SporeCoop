@@ -30,6 +30,7 @@ struct Ctx {
     std::function<bool(const std::string& text, const std::string& done, std::function<void()> action)> vote;
     // a world beacon (label + edge arrow) on this machine
     std::function<void(const net::Vec3& pos, const std::string& text, double seconds, uint32_t argb)> beacon;
+    std::function<uint32_t()> space_place; // BUG-0751: in Space the place (PlanetID | 0x40000000 on a planet), else 0
 };
 // own vehicles selected now, else 1 if an own city's menu was opened last (the "give" button)
 int own_selected(bool* city = nullptr);
@@ -52,6 +53,10 @@ void world_check();
 bool world_epoch_fix();
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
+// diagnostics (coop.bodyrec start diag, K3): per vehicle mirror of a guest rows `w<id>` (where it is put: the estimate
+// moved on) and `e<id>` (x: the age of its last state on the sender's clock mapped, s; y: the estimate's speed, m/s;
+// z: the error before the glide, m)
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user);
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();
@@ -80,5 +85,6 @@ bool hit_is_cosmetic(void* attacker);
 void fire_local(void* owner, uintptr_t ret, bool fired); // BUG-0530 diagnostics (guest)
 // BUG-0493: the open city planner of this game holds this city (the mod changes none of its buildings then)
 bool planner_holds_city(void* city);
+void planner_probe_tick(); // BUG-0682 tests: `coop.civ planner_probe on`
 
 } // namespace civ

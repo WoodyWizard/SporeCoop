@@ -113,4 +113,27 @@ inline std::string player_name(const std::string& in)
     return head(s, kNameMax);
 }
 
+// BUG-0774: text from another machine (a player name, a LAN game's info line, a planet name) that goes into logs,
+// the co-op window and files: one line of valid UTF-8, at most `max_cp` code points. Dropped: bytes that are not
+// UTF-8 (stray continuation bytes, cut or overlong sequences, surrogates), C0 / C1 control characters, DEL and the
+// Unicode line and paragraph separators. Everything else (letters of any script, emoji) stays as it came.
+inline std::string clean_text(const std::string& in, size_t max_cp)
+{
+    std::string s;
+    size_t i = 0, n = 0;
+    while (i < in.size() && n < max_cp) {
+        size_t at = i;
+        uint32_t cp = next(in, i);
+        size_t len = i - at;
+        bool bad = (cp == 0xFFFD && !(len == 3 && (unsigned char)in[at] == 0xEF)) || (len == 2 && cp < 0x80) ||
+                   (len == 3 && cp < 0x800) || (len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) || (cp >= 0xD800 && cp <= 0xDFFF);
+        if (bad || cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) || cp == 0x2028 || cp == 0x2029)
+            continue;
+        s.append(in, at, len);
+        n++;
+    }
+    return s;
+}
+inline std::string net_name(const std::string& in) { return clean_text(in, kNameMax); }
+
 } // namespace utf8

@@ -137,6 +137,10 @@ On a creature: `cCreatureBase+0xB20 mpSpeciesProfile`, `+0xB24` profile version 
 `ResourceKey* __cdecl GetModelKeyForCellResource(ResourceKey* out, cellRef)` (hidden out first,
 plain `ret`): walks the .cell resource's model entries (`res+0x14`, count `+0x18`, 0x28 bytes
 each, kind at +4):
+- ~ CORRECTION (2026-11-10, plan/w47-lineages, from a fork, not verified by us): PandizeLive/SporeCoop-Lineages
+  feat/lineages-43 (docs/re/cell.md there) read `+0x18` as 0 or garbage on GetData's result for creature species and
+  tells the player's own species by its model key (native key = S+0x10) instead. Check before relying on the entry
+  list; see docs/re/cell.md#cell-fork-lineages-43.
 - kind 3 → `{entry+0x10, cll 0x3D97A8E4, *(u32*)0x15A8D0C = 0x40616200}` (fixed cell model);
 - kind 4 → random creature model (0xE655D0);
 - **kind 5 → the player's cell: `S+0x10..+0x18`** where `S = *(u8**)(*(u8**)0x16B4BE4 + 0x5190)`
@@ -1337,6 +1341,12 @@ BUG-0457. GOG 2024, lane 4 (`tools/tests/coop_editor_sync.py --case host|host2`)
 * ✔ (disassembly) 0xD42E50 message 0x4471C60 (posted by 0xE45E0F at the end of the mating scene) builds the
   request only when `this+0xDA` (creature game base +0xDE) is set; it is set at 0xD2C709 on message
   0x287259F6 with data+0xC == 0x6455B55 (the mating-call command), cleared in the constructor 0xD3BA3F.
+  ~ superseded (2026-11-08): see the CORRECTION below and docs/re/creature.md#creature-mating-call.
+  CORRECTION (2026-11-08, fix/w46-g4-tests, Ghidra static): 0xE45760 (where 0xE45E0F lies) is the Timeline UI's handler
+  (shown by 0x6256B62; its button 0x446E560 or Esc posts 0x4471C60 after 500 ms), not the end of the mating scene;
+  0x6455B55 (handler 0xD2C570) is enabled only when avatar vt 0xD8 == 4 or after CRG_BrainUpgrade4 and posts 0x5120262
+  (the timeline): ~ the stage-end evolve button. So the +0xDE / 0x64AA168 request is the end-of-stage editor; the
+  mating editor is 0xD3C650 with tag 0x12191CA (also the Cell -> Creature editor's tag).
   The stage's return 0xD43DE0 applies a stored result (this+0x60) only when it comes back from the editor
   modes 0x1654C06 / 0xDBDBA1 (0xD44442).
 * ? Not reproduced: the report's "previous version". The same-key path (a key-only bundle of a stage species
@@ -1559,3 +1569,251 @@ BUG-9116. Steam QA copy (GOG 2024 code), Creature editor.
 * Pitfall: the creature editor opened with `coop.depth open` from inside a running stage, or in the
   background QA window, did not render its 3D view and `world_to_screen` returned one point (ppu 0.1):
   no screen checks of handles there.
+## A guest's choice holds only in its world (2026-11-06, fix/w46-creature-p0)
+<a id="creations-choice-world"></a>
+
+BUG-0638. ✔ (the report) A guest with an explicit creature in choices.ini (chosen in another world two days before)
+was in its own Cell editor when the host entered Creature; it never got the host's Cell -> Creature editor (the one
+that would have replaced the choice), and after the load `mine()` returned the old choice: "a species from another
+world". The world crc (`modes::current_world`, the save's name) is the same for the Cell and the Creature stage of a
+world. Fix `creations.choice_world`: a guest's choice of a creation holds only in a world whose worlds.ini record is
+that creation; a choice is recorded for the world it is made in (as playing it records it, BUG-0345). In another
+world the guest's default applies (this world's record, the host's evolved species, the world's species). "The
+world's own" still holds everywhere. Lab: the guest's swap to the old choice came 25 s after the load
+(20261106-230447), 3 s in the report.
+
+## The species manager's profile map, and the host's keys on a guest (2026-11-07, fix/w46-p4-creature)
+<a id="creations-species-map"></a>
+
+BUG-0200. GOG 2024, Ghidra (out/ghidra-2024).
+
+* ✔ (decompiled) `cSpeciesManager` +4 is a hash map ResourceKey -> `cSpeciesProfile*`: buckets at mgr +8,
+  bucket count at mgr +0xC, bucket index `(instance ^ group) % count`, node `{instance, type, group, value,
+  next}` (0x14 bytes; value at +0xC, next at +0x10). Find: 0x4E0FF0 thiscall(map, iterator* out, key*) ret 8;
+  operator[] (insert an empty node): 0x4E05D0 thiscall(map, key*) ret 4 -> &node->value; lookup with reload:
+  0x4DF740 (returns null for a node whose value is null; reloads a profile whose +0x53C version is 0 from its
+  +0x504 key through 0x4D4F70 / `cEditor::LoadCreatureData`).
+* ✔ `GetSpeciesProfile` 0x4DF5C0: key instance 0 and mgr +0xA4 zero -> null; else the map's value; none ->
+  (instance 0: the key at mgr +0xA4, the player species) a profile is made when 0x4DA400(key) says the key
+  exists: `new cSpeciesProfile` (0xA18 bytes, ctor 0x4D3E30(key, 0): +0x504 / +0x510 the key, +0x51C and
+  +0x52C two empty string16 {begin, end, capacity}) stored by operator[].
+* So the profile a key gets is whatever its node holds: nothing in the game checks that the profile's own key
+  (+0x504) is the key it is stored under. The co-op guest (`creations.host_key_alias`, creations.cpp
+  alias_tick) stores, for each host creation it registered under a content key of its own (0x7D......), that
+  key's profile in the node of the host's key: the save's herds and nests of the host's creature, and the cards
+  the game makes from them, are the host's creation. The node's earlier value (the guest's own creation of
+  the same id, or null) goes back at the session end. `coop.creations speciesof <hex>`: the profile the game
+  gives for a key, its own key and the model (bem) the game finds for that.
+
+## The held Creature evolution request keeps the stage's budget (2026-11-07, fix/w46-p4-creature)
+<a id="creations-creature-held-budget"></a>
+
+BUG-0581, BUG-0457. GOG 2024, lanes 4 / 5 (`coop_editor_sync.py --case host|host_late`).
+
+* ✔ (runtime) While the host's evolution editor is open the game's DNA (GetEvolutionPoints) stays at the stage's
+  value (40 -> 40 with a mouth bought); back in the stage it is the result's remaining budget (0xD445AA): 40 - 25 =
+  15 with the request held by the vote, 6 of 6 runs. So the creature editor's budget does not depend on the
+  0x90A03FDF post the vote delays (unlike the Cell editor, docs/re/cell.md#cell-editor-budget).
+* ✔ (runtime) A guest that stays in its own editor while the host evolves gets the host's new bundle there; back in
+  the stage its game builds the host's puppet from the host's new creature (the model record the game finds for the
+  puppet's species = the host's, `coop.creations bem` / `speciesof`). BUG-0457 not reproduced that way either.
+
+## Content of the host's designs: descriptions, buildings, the model audit (2026-11-08, fix/w46-k2b-content-b)
+<a id="creations-k2b-design-content"></a>
+
+BUG-0725 / BUG-0726 / BUG-0727 / BUG-0728 / BUG-0730 / BUG-0731, children of the content class BUG-0424. The class's one
+method stays `creations::ensure_model` (every model the mod makes the game build).
+
+* ✔ (code) Before: `add_part_descs` added descriptions for creature, cell and UFO bundles only (the key's type), the
+  host's design answers (BUG-0647 vehicles, BUG-0670 buildings, BUG-0724 ships) went without them, `apply_own_design`
+  dropped what came and `ensure_model` substituted without descriptions: a lacking part became the fixed fallback of its
+  kind (kBasePartFallbacks; vehicle 00046BAE in lab 20261108-032319). Now every bundle carries the descriptions of the
+  part group of its model kind (vehicle and UFO parts share 0x40646000, buildings 0x40636000), every received description
+  is kept for the session by part id (`g_rx_descs`, at most 4096) and ensure_model's substitution uses them
+  (`content.design_lookalike`). Order in Civ: a building is first built from the guest's copy of the design (no
+  description yet: the fixed fallback for a second), then the BUG-0670 sweep re-keys it to the host's design with the
+  lookalike.
+* ✔ (code, runtime lab 20261108-032432) `allow_copy = false` (buildings: SetBuildingModel reads the design key itself)
+  refused any model with a lacking part, a rule of the first BUG-0469 version (a copy under a key of ours). With
+  `content.model_key` the copy answers the model's own key, so such a caller builds it too (`content.building_copy`).
+* Test hooks: `coop.creations lack <id> | clear` (the mod's checks, substitutes and lookalike search treat a part this
+  game has as lacking: one lab lane has one install for both games; the game itself still has it, so no bake fault can
+  show), `mparts <kind> <inst>` (the part ids of the model the game reads; `!` lacking, `+d` described), `looks` (the
+  lookalike choices), `objmodels` (every placed object's model key at object +0xC4 and a city's three decoration keys
+  at +0x528, the package that answers each and its lacking part ids: the audit test content_audit_<stage>).
+## One builder for the mod's editor requests, checked against the game's (2026-11-08, fix/w46-k2b-content-a)
+<a id="creations-editor-request-builder"></a>
+
+BUG-0720, BUG-0721 (class BUG-0431). GOG 2024, Ghidra; test `tools/tests/coop_editor_request.py` (suite
+`editor_request`).
+
+* ✔ (decompile) `EditorRequest_ctor` 0x5A9140 leaves +0xC = -1, +0x10..+0x18 = 0, +0x1C = the game mode
+  (IGameModeManager vt 0x38), bytes +0x34..+0x38 = 0, **+0x39 = 1**, +0x3A = 0, **+0x3B = 1**, **+0x3C = 0**, +0x3D = 1,
+  the four string slots +0x40..+0x5C on the static empty strings, +0x64..+0x6F flags (+0x6D / +0x6E = 1), the vector
+  +0x70..+0x78 empty, +0x84..+0x98 = 0. The creature stage's evolution request (CreatureGame_HandleMessage 0xD42E50,
+  message 0x4471C60, Creature mode, `this+0xDA` set) then sets +0xC 0x465C50BA, the species (0xC0BD60), +0x90
+  0x64AA168, +0x94 the collected parts (0xB5FAB0), bytes +0x34/+0x36/+0x37/+0x38/+0x39/+0x3B = 0 and +0x3C/+0x3D =
+  1, and pushes cPlayer +0x10FC, +0x1100, +0x1104, +0x1108 (the consequence traits, #creations-cplayer-fields) into
+  +0x70 (0x454D30). So against the constructor it changes **+0x39 1 -> 0, +0x3B 1 -> 0, +0x3C 0 -> 1** and fills the
+  vector. Before it builds the request it lifts the time pause 0x4BF38A8 when its count is above 0
+  (`cGameTimeManager::GetPauseCount` 0xB321E0 via 0xAD70D0, then Toggle 0xB32390).
+* ✔ After Submit it posts **0x5D02A72** (a 0x40-byte message, +8 = 0x596E60(the collected parts)): handled by
+  `cEditor::HandleMessage` (0x592BB2: data +8 against the list of `editor+0x3AC`) and also posted by 0xD3C650
+  (+0x27C) outside the evolution; ? what the editor shows with it is not seen. Then byte **0x1686AF0 = 1**: read by
+  0xB5EB94 (FUN_00b5eae0: with it, or with the mode manager's switch pending `+0x28`, the per-frame stage update
+  skips its mode-specific part) and by `cTribeInputStrategy::SetHoverObjectCursorAndRollover` 0xCD00C0; written also
+  by 0xCD2266 / 0xCF5ABA (Tribe) and cleared at 0xB5F19D. A transition flag: between Submit and the editor the mode
+  manager's pending switch has the same effect on 0xB5EB94.
+* The mod's requests (`open_own_editor`, `coop.vote editor`, `coop.vote evolve`) come from one builder now,
+  `build_editor_request(kind, editor, species)` in coop.cpp: the constructor, +0xC, the species, +0x94 (Creature),
+  the flags and the traits as the game's (`creations.editor_request`; off: the old requests with only +0xC, the
+  species and +0x94), +0x90 only for the evolution kind. Left out on purpose (the test's allow-list): +0x90 for the
+  own editor (its price is charged by BUG-0466), the message 0x5D02A72 and the byte 0x1686AF0.
+* `coop.editreq diff` (tests, Creature): runs the game's own builder once (the creature game's handler with message
+  0x4471C60 and +0xDA set, its Submit captured, nothing opened, the byte 0x1686AF0 put back) and compares it byte by
+  byte with the mod's own and evolution requests (vtables, refcount, the strings' and the vector's pointers left out;
+  the vector by its contents).
+* ✔ (code, BUG-0721) Outside the Creature stage the mod builds no editor request: `open_own_editor` is reached only
+  from the vote's own-editor step, which opens it only in Creature (coop.cpp, the caller at the vote end); the Cell,
+  Tribe, Civ and Space editors of a vote are the game's own requests (h_Submit holds and releases them, it never
+  builds one), and `coop.vote editor` builds one only for tests (in Tribe for a member's species, BUG-0217).
+
+## The own editor's red cross and save dialog: request +0x39 / +0x3B / +0x3C (2026-11-08, fix/w46-editor-cancel)
+<a id="creations-own-editor-cancel"></a>
+
+BUG-0756 (after BUG-0720). GOG 2024, Ghidra and lane 4 (`tools/tests/coop_own_editor_cancel.py`).
+
+* ✔ (disassembly) `cEditor::OnEnter` hands three request bytes to its UI object (`cEditor+0x78`): 0x58FB8D `+0x39` ->
+  0x5DCDC0 (UI +0x103; windows 0x682102A / 0x682102B shown only when it is 0; then 0x5DC9B0 enables 0x55FDCA8 and
+  0x47BC958 with it), 0x58FBD0 `+0x3A` AND a property -> 0x5DCE60, 0x58FBE7 `+0x3B` -> 0x5DCC80 (UI +0x106; window
+  **0x90439D7C visible = +0x3B**). `+0x3C` is read at 0x58F9BD and passed with the species key (+0x10) to 0x5BF1E0.
+* ✔ (runtime, lane 4, an exploration knob `coop.editreq keep <mask>`) the guest's own Creature editor with the game's
+  evolution values (+0x39 0, +0x3B 0, +0x3C 1) has no red cross (the pixel at 1383,1062 the panel's colour); with the
+  constructor's +0x39 1 / +0x3B 1 (mask 3) or all three (mask 7) the cross is drawn; +0x3C alone (mask 4) gives none.
+  The evolution editor's Esc menu has no exit item (Resume Editing, Spore Guide, Settings; Exit to Main Menu / Quit
+  Spore greyed), and done after an edit leaves without the save dialog.
+* `creations.own_editor_cancel` (coop.cpp build_editor_request): the own editor keeps the constructor's 1 / 1 / 0 in
+  these three bytes (the 0.7.10 own editor: the cross and the Save New / Replace / Don't Save dialog); every other
+  field of BUG-0720 stays the game's. `coop.editreq diff` allows the three bytes for the own kind.
+* ? Not separated: which of +0x39 / +0x3C brings the save dialog back (both are restored); the cross is +0x3B's.
+
+## Fork findings: editor depth handle, offline author, PNG importer (2026-11-10, plan/w47-lineages)
+<a id="creations-fork-editor-depth"></a>
+
+From a fork, not verified by us: PandizeLive/SporeCoop-Lineages feat/lineages-42/43 (GOG 2024 / Steam code,
+their docs/re/creations.md). Tickets: BUG-0871, BUG-0873.
+* Editor depth ("nudge") handle: kind fnv("nudge") 0x503283AA, switched in the deform-style handle's GetTuningFile
+  0x480780 on handle+0x8C (0xE20E2032 = power). Only the Adventure outfitter setup A56567F7 names a nudge tuning
+  file 0x10CB4B28!0x3C3BA77F, and it is in no package: the native handle is unused. Deform-style handles are built
+  per rigblock in 0x441910 from up to 32 definitions (0x5C bytes) of IModelWorld vt 0xE8 0x745000; appending a
+  definition crashed the build (per-handle arrays at rigblock +0x704 / +0x73C sized from the model).
+* Editors::cTuningSpine::Get 0x401070 (runtime global 0x1C10C1C): +0x60 spine, +0x6C deform, +0x78 nudge, +0x84 power,
+  +0x90 ball connector, +0x9C rotation ball, +0xA8 rotation ring; loaded by 0x5DBD60 from cEditor::OnEnter.
+* Moving a part works: EditorRigblock +0x48 and model +0x0C, EditorModel +0x51 = 1, then
+  cEditor::CommitEditHistory 0x586410 thiscall(bool, EditStateEditHistory* = 0) ret 8; Save keeps it in the bem,
+  Undo restores it. Writing +0x48 alone does not move the part. cEditor* at 0x15E4EF0 (ModAPI cEditor::ptr; runtime
+  0x1C24EF0), editor+0xD4 selected rigblock, rigblock +0x1C/+0x20 part instance / group.
+* Handle colours (prop 10CB4FA8!DB33584A): default (0.67, 0.75, 1.2), rollover (0.54, 0.81, 0.54), active
+  (1.0, 1.2, 0.42); power 10CB4FA8!900A4DB5 orange (0.93, 0.48, 0.16).
+* Editor setups: group 0x40600100, key list editorEnabledManipulators 0x10119203; enabling the outfitter tools on the
+  creature setup in memory added no handle (negative result).
+* My Creations: a creation counts as the player's own when cAssetMetadata::GetAuthorID 0x5508A0 (+0x68/+0x6C) is the
+  user's id or -2 (offline author; Sporepedia 0x66DE73..0x66DE90). Offline partners' creations therefore look like
+  ours. Answering another author id did not move an asset out of My Creations (negative result). My Creations is
+  feed item 4E5892EB!146C1D8C, query C84E51B6 on root filter userCreated (fnv 37216F9C).
+* PNG import: App::Thumbnail_cImportExport::Get 0x5F79C0 (cdecl), ImportPNG 0x5FC3C0 thiscall(importer, const
+  wchar_t*, ResourceKey*) ret 8 (false with the existing key for a known creation), DecodePNG 0x5FBB90 (stream,
+  metadata 0x90 bytes, IStream**) ret 0xC; IO::FileStream PathCtor 0x931DE0, Open 0x9318C0 (1,3,1,0 = read,
+  existing, share read), AddRef 0x931780: native ImportPNG pins its stack stream before DecodePNG, a caller that does
+  not crashes when the decoder releases it. FeedItem_GetAssetKeys 0x668D60 thiscall(feed, vector<AssetKey16>*) ret 4.
+* A Sporepedia PNG import keeps a cll record (~13 KB) where the editor keeps a bem record (~1.9 KB): the bytes of one
+  cell do not match across the two paths.
+
+
+## A player's creation bundle carries its pictures (2026-11-11, fix/w47-roster-portraits)
+<a id="creations-bundle-png"></a>
+
+BUG-0921, BUG-0923.
+* ✔ A creation reaches the other games by two ways that both end under the host's key on a guest: the player's
+  bundle (share_own / make_bundle from the mod's copy of EditorSaves: registered under a content key 0x7C......
+  and, for the host's, under the host's own key at priority 2000) and the host's own species of its world
+  (host_species_out / records_from_game: content key 0x7D......, the host's key only when nothing answers for it).
+  The bundle is first, so what it lacks is missing under the host's key: before `creations.bundle_png` the pngs
+  (the Tribe roster's white squares, docs/re/tribe.md#tribe-portraits-session-species). Whatever else the game
+  reads by a species key must be in the bundle, not only in the own-species records.
+* ✔ (runtime) A bundle with the png: 3 records for the species of a Cell -> Creature change (bem, metadata, one
+  png).
+* ✔ (runtime, BUG-0923) A partner's bundle arrives after its first state at a first join (0.3-0.4 s on the host:
+  the puppet is made from the state, then `appearance_changed` takes it away and the next frame makes it again
+  with the creation's look) and again whenever the partner's creature changes. Each making wrote "<name> appeared
+  in the world"; `notify.appeared_once` keeps the puppet's rebuild quiet (coop.cpp Remote::relook, cleared when the
+  partner leaves our place). A guest that joins again in the same host session sends the same bundle id: no
+  rebuild, one notice. A guest that only leaves and joins (its game still in its copy of the world) is shown at
+  once and again after its load: two notices 8 s apart, a real hide and show, kept.
+
+## The species alias is the host's world's only (2026-11-12, fix/w48-own-world)
+<a id="creations-alias-own-world"></a>
+
+* BUG-0819: alias_tick (BUG-0200) made the guest's species manager answer the host's keys with the host's creation
+  whenever the guest was connected, also in a world of its own. With creations.alias_own_world every alias is undone
+  (the slot gets the profile it had before; null: the game builds the guest's own on the next lookup) while
+  own_world::elsewhere() or space_other(), and set again when the guest plays the host's world. `coop.creations
+  speciesof <key>` shows `own_world <n>` (aliases undone so far). ✔ Lab: in its own world the guest's game gives its
+  own creation (key 290229B9, bem 9B6134E2) for the host's TigerHorse id; with the switch off the host's (key
+  7D851520, bem 6E1A058F, aliased 1) (20261112-030351 / 20261112-031303).
+
+## A creation bundle without its model (2026-11-12, fix/w48-cell)
+<a id="creations-meta-only"></a>
+
+BUG-0802 (from the fork PandizeLive/SporeCoop-Lineages: the host faulted at 0xE83EC8 after a guest renamed an imported
+cell). Lab lanes 2 / 3, `coop_cell_meta_only.py`.
+* From the fork, not seen by us: a free rename in the editor of a creation whose model (bem 0x1A99B06B) is not in the
+  player's EditorSaves (a partner's or an imported cell played as its own) saves only a new metadata record
+  (0x030BDEE3) there; the model stays in the package it came from.
+* ✔ (runtime, lab 20261112-065557, `creations.meta_only` off) A bundle with records but no model (`coop.creations
+  sendmeta cell`: our cell's metadata record only) is registered by the receiver as the player's creation under a key
+  of its own (here 7C8C6430): a key without a model, which CreateCellObject resolves when it builds that player's cell
+  (the fork's fault). In the 10 s of the test the host's game did not rebuild the guest's puppet from it (no fault).
+* ✔ The fixture's cell (4DA56CA5) is the same key in the host's and the guest's profile: its bundle has 0 records
+  ("everybody has it"), so a lab rename test needs a cell that is in one profile only.
+* Fix `creations.meta_only`: make_bundle takes the model of a metadata-only bundle from the game's resources
+  (records_from_game {instance, bem, group}), else from the kept records (BUG-0370), else the bundle has no records
+  and is not sent; apply() refuses a bundle with records but without its own model (`coop.creations`: `meta_only:
+  fix= filled= waits= refused=`; log "came without its model ... (BUG-0802)").
+
+## Paint ids inside byte runs (2026-11-12, fix/w48-small)
+<a id="creations-paint-runs"></a>
+
+BUG-0852 (BUG-0727's untried case). Code fact, no runtime model of ours has it.
+* ✔ (code) A creature model record (bem) is byte-run packed: `FE n` = the byte before, n more times; `FE 00` = the
+  byte 0xFE. The three skin effect ids (base, coat, detail) are the dwords at byte 26 of the unpacked header. A model
+  whose coat and detail are 0 is written `<base id> 00 FE 07` (one zero, then seven more): the paint reader of 0.7.12
+  gave up on any run inside the 12 bytes and the model's base paint was never checked or substituted.
+* ✔ `mods/coop/model_paint.h`: `effects_read` decodes the runs and tells per layer whether its four bytes are written
+  byte by byte (only such a layer can be rewritten in place: the substitute has the same encoded length); a layer
+  inside a run is read, not patched (`creations.paint_runs`). A run with no byte before it, or a header shorter than
+  38 unpacked bytes, is no model.
+* ~ A layer whose id has a byte equal to its neighbour across the boundary (`19 75 75 FE 05`) is also run-packed by
+  the game's writer (inferred from the format, not seen in a real model).
+
+## Closing and releasing a creation package (2026-11-13, fix/w49-small)
+<a id="creations-package-close"></a>
+
+BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 2024) ✔:
+
+- DatabasePackedFile primary vtable **0x01436938** (the ctor 0x8DA2A0 stores it at +0; the slots match
+  ModAPI's Database.h): +0x00 scalar deleting dtor 0x8D9CB0 (dtor body 0x8D9700, then `delete_` when bit 0 of the
+  argument), +0x04 Initialize 0x6BBDC0, +0x08 Shutdown 0x8D8970 (if initialized: Close when open, frees the index,
+  releases the stream), +0x0C GetDatabaseType, **+0x10 GetRefCount 0x69D3F0** (reads +0x08), +0x14 Lock,
+  +0x18 Open 0x8D8CA0, **+0x1C Close 0x8D9CD0** (= 0x8D97C0(1): flushes a writable file, closes the stream at
+  +0x260, clears the access flags +0x14; true when it was not open), +0x24 Flush, +0x28 GetLocation,
+  +0x2C SetLocation 0x8D9CE0, +0x30 GetKeyList, +0x34 OpenRecord, +0x38 GetOpenCount, +0x3C CloseRecord, +0x44 Attach.
+- Secondary (refcount) vtable **0x01436924** at +4: +0x00 AddRef 0x8DD4C0, **+0x04 Release 0x69D3C0** (this = db+4:
+  decrements +0x08; at 0 it calls the primary vt[0](1), the deleting dtor, whose Shutdown closes the file).
+- The ctor sets the count to 0: after our AddRef and RegisterDatabase(true) it is 2; RegisterDatabase(false) releases
+  the manager's reference (docs above), leaving ours (1). Our Release then frees the object and closes its file.
+- The mod: dropped packages wait 2 s, then outside the frame Close + Release only when GetRefCount is 1 and no table
+  of creations.cpp still names the package (`coop.fix creations.package_close`). Before, the open file made the next
+  write of the same name fail (`_2.package` ... `_49`, then "cannot write the package").
+- The GOG 2016 addresses in the section above (Close 0x8D9CC0, SetLocation 0x8D9CD0) are 0x10 lower than GOG 2024's
+  (the march2017 port names Close=0x8D9CD0, SetLocation=0x8D9CE0 for dc04aee5): not a contradiction, two builds.

@@ -19,6 +19,7 @@ at the screen, go for food) and the test asserts the game's own state on both ma
 import argparse
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -61,6 +62,12 @@ def make_meat(me):
     return f'bit {prey[0]}: {out[:70]}'
 
 
+def edible(kind, sd):
+    """the game's eat rule by the scale difference (GetScaleDifference(avatar, food), 2 = the same level): meat is
+    swallowed at 0 / 1, plants eaten at 1 (docs/re/cell.md#cell-eat-gate)"""
+    return sd in (0, 1) if kind == 'meat' else sd == 1
+
+
 def probe(name, me, other, kind, tries):
     """`me` swims to the nearest cell of `kind` on its screen (`coop.pool swimto`, like a click on it)
     until it touches it: did its own game eat it (AvatarEat: own points up), the same cell left on both?"""
@@ -74,7 +81,10 @@ def probe(name, me, other, kind, tries):
         food, t_wait, made = [], time.time(), ''
         while time.time() - t_wait < FOOD_WAIT + (10 if made else 0):
             seen = [l.split() for l in me.call('coop.pool see 80')['out'].splitlines() if l.startswith('see ')]
-            food = [f for f in seen if f[2] == kind]
+            # BUG-0293 (docs/re/cell.md#cell-eat-gate): the game's mouth swallows meat only at a scale difference of
+            # 0 / 1 (a smaller level; at 2, the same level, a bite breaks it: no points) and eats plants at 1; the
+            # probe swims only to food its cell can eat (`see`'s last column; an old build without it: any)
+            food = [f for f in seen if f[2] == kind and (len(f) < 9 or edible(kind, int(f[8])))]
             if food:
                 break
             if kind == 'meat' and not made and time.time() - t_wait > FOOD_WAIT / 2:
@@ -102,9 +112,13 @@ def probe(name, me, other, kind, tries):
         time.sleep(1.5)
         p1 = pool(me)['own_points'] or 0
         here, there = alive(me, key), alive(other, key)
-        log.append(f'{key}: points {p0}->{p1} here {"alive" if here else "gone"} there {"alive" if there else "gone"}')
+        sd = food[0][8] if len(food[0]) > 8 else '?'
+        log.append(f'{key} (scale diff {sd}): points {p0}->{p1} here {"alive" if here else "gone"} there {"alive" if there else "gone"}')
         if not p1 > p0:  # BUG-0589: what the cell is in this game (layer, level, size) and how far the avatar is from it
             pl = pool(me)
+            # BUG-0293: the eater's own locks (+0x112 +0x113 +0x178 +0x17F): +0x178 set refuses every eat of the game
+            lk = re.search(r'own_locks=(\d+)', me.call('coop.pool tokens')['out'])
+            log.append(f'   (own_locks {lk.group(1) if lk else "?"})')
             cell = ' | '.join(me.call(f'coop.pool cell {key}')['out'].strip().splitlines())[:300]
             log.append(f'   (seen as {" ".join(food[0][2:])}; it now: {cell}; avatar size {pl.get("size")} hp {pl.get("hp")} pos {pl.get("pos")})')
         ok += p1 > p0 and here == there  # eaten: gone, or shrunk one level (EatFood), the same on both

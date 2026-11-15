@@ -49,7 +49,7 @@ bool disabled();
 float filter_own_damage(void* ufo, float dmg, int type);
 // co-op window: spice in the cargo and the partner a gift / jump would go to
 int spice(std::string& to);
-int give_spice(int n);
+int give_spice(int n, uint8_t to = 0xFF); // to: the recipient (BUG-1050), 0xFF: the first other player
 bool can_jump(std::string& to);
 std::string jump(uint8_t to); // "" = ok, else why not
 // the same travel to any star system by StarID (space_map: a partner's colony), free

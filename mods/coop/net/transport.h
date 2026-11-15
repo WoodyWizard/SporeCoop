@@ -15,7 +15,8 @@ public:
     virtual bool open(uint16_t port, std::string* err) = 0; // 0 = ephemeral
     virtual void close() = 0;
     virtual bool send_to(const Endpoint& to, const void* data, size_t n) = 0;
-    // bytes received, 0 if nothing pending, -1 on error
+    // bytes received, 0 if nothing pending, -1 on error, -2 (Session::kRecvSkipped) when one datagram was dropped
+    // (too big for `cap`, BUG-1007): more may be pending
     virtual int recv_from(Endpoint& from, void* buf, size_t cap) = 0;
     virtual uint16_t local_port() const = 0;
 };

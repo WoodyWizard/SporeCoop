@@ -14,7 +14,7 @@ commits:
 tests:
 signature: dc04aee5 EIP 0x7349626D (execute, the string bytes 'mbIs' past a short cModelObject vtable 0x14736D8), coop.dll 0.7.3.6 +0xCA0AC game::set_speed <- +0xD464E drive::walk_place <- +0xD2324 modes::creature_drive <- +0x53890 drive_puppet
 docs: docs/re/creature.md#creature-ufo-abduction-event, docs/re/creature.md#creature-puppet-alive
-related: BUG-0507, BUG-0486, BUG-0426
+related: BUG-0507, BUG-0486, BUG-0426, BUG-0795
 ---
 
 ## Report
@@ -38,3 +38,4 @@ no-fail-run: duplicate of BUG-0507 (its FAIL out/lab/20261103-171411 and PASS ou
 
 ## History
 - 2026-11-03: opened from GitHub issue #194; same signature as BUG-0507 (duplicate), the UFO event as the inferred trigger; the event's code documented, the abduction not reproduced.
+- 2026-11-10 (plan/w47-closed-open, closed-ticket review 2026-11-10): closed-ticket review: the original (BUG-0507, creature.puppet_alive) still covers the drive path of this case, but not the whole case on 0.7.10+: the effects relay (effects.cpp on_message, first in v0.7.10) plays a partner's effects on the raw Remote::puppet with no creature_listed / alive check, and the UFO abduction (or any other native free of the puppet) leaves that path open between the free and the next drive_puppet check (BUG-0795, open, L1 of 0.7.13). The 0.7.3.6 report itself predates the relay, so BUG-0795 is a newer sibling, not its cause. Test that nobody ran: free the partner's puppet natively (DestroyInstance through the game, as the abduction does) and send a partner effect in the same frame: on the current code (no switch guards it yet) the effect call reaches the freed puppet: the FAIL test of BUG-0795.

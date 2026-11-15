@@ -22,6 +22,9 @@ public:
     // where queries go (network byte order IPs): 255.255.255.255 and 127.0.0.1 by default
     std::vector<uint32_t> targets;
     uint32_t interval_ms = 1500;
+    // the ports asked on every target; empty = kDefaultPort .. +kDiscoverPorts-1 (BUG-0969: the unit test asks only
+    // its own ephemeral port, so the games of other test lanes on 127.0.0.1 do not answer it)
+    std::vector<uint16_t> ports;
 
     bool start();
     void stop();
@@ -31,6 +34,8 @@ public:
     // one answer from `from` (what update() does per datagram; tests and `coop.lan fake` call it)
     void on_reply(const Endpoint& from, const DiscoverReply& rep, uint32_t now_ms);
     size_t stored() const { return games_.size(); } // entries kept, shown or not (tests)
+    uint32_t skipped() const { return skipped_; }    // BUG-1007: datagrams too big for the read buffer
+    uint16_t port() const { return sock_.local_port(); } // where the answers come to (tests)
 
     static constexpr uint32_t kShowMs = 5000; // a host that has not answered for this long is gone
     static constexpr uint32_t kSwitchMs = 3000; // BUG-0210: show another address of the game after this
@@ -39,6 +44,7 @@ public:
 private:
     UdpSocket sock_;
     uint32_t last_query_ = 0;
+    uint32_t skipped_ = 0;
     std::vector<Game> games_;
 };
 

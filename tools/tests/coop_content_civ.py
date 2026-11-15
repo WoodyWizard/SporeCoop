@@ -293,7 +293,7 @@ def main():
         veh = [ln for ln in reloaded.call('coop.civ')['out'].splitlines() if ' veh #' in ln]
         print('  after the reload:', (out2.strip().splitlines() or ['-'])[0][:120], '| vehicles', len(veh), flush=True)
         ck('total faults: 0' in out2 and '0x0046C82A' not in out2 and '0x0041F3B' not in out2,
-           f'the saved vehicles load without a model bake fault ({(out2.strip().splitlines() or ['-'])[0][:90]})')
+           f'the saved vehicles load without a model bake fault ({(out2.strip().splitlines() or ["-"])[0][:90]})')
         # BUG-0470: the session's mirror vehicles are no longer saved (civ.save_strip): the loaded world
         # has at most the game's own free first vehicle; their model bake on load is not reached here
         print(f'  vehicles in the loaded world: {len(veh)} (mirrors are kept out of the save, BUG-0470)', flush=True)

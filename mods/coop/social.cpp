@@ -1,4 +1,6 @@
 #include "social.h"
+#include "lifecycle.h"
+#include "mouse.h"
 #include "fixes.h"
 #include "creations.h"
 
@@ -9,6 +11,7 @@
 #include <vector>
 
 #include "game.h"
+#include "player_life.h"
 #include "net/validate.h"
 #include "npc.h"
 #include "progress_debt.h"
@@ -100,7 +103,19 @@ static double g_table_sent = 0;
 static std::vector<SpeciesRec> g_host_table; // guest: the host's table
 static bool g_have_table = false;
 static uint32_t g_table_rx = 0, g_table_fixed = 0, g_table_tx = 0;
+// BUG-0420: the host's species table was written into a guest's own world every 0.5 s once the guest played another
+// world of the host's stage (only new tables were gated): its own relations were reset to the host's. Off: as 0.7.10.
+static bool g_world_fix = true;
+COOP_FIX("social.world_gate", "BUG-0420", g_world_fix, "creature: a guest in another world keeps its own species relations");
+static uint32_t g_table_forgot = 0;
+static double g_table_rx_at = 0; // BUG-0699 diagnostics: when the host's last table came
 
+// BUG-0699: the host looked at its species table once a second: a kill, an impression or an alliance reached the
+// guests 1-1.5 s later (the detector's species_relation / species_killed rows, found again 1.5 s after its first look).
+// On: every 0.25 s (the table is sent only when it changed). Off: once a second (0.7.10).
+static bool g_table_fast_fix = true;
+COOP_FIX("social.table_fast", "BUG-0699", g_table_fast_fix,
+         "creature: a change of the species relations (a kill, an alliance) reaches the guests within a third of a second");
 static void send_table(const std::vector<SpeciesRec>& t, int to)
 {
     net::Writer w;
@@ -200,6 +215,10 @@ static void enforce_table()
         if (!rec)
             continue;
         if ((int32_t)rec[0] != r.relation || rec[1] != r.x || rec[2] != r.impressed || rec[3] != r.killed) {
+            if (g_table_fixed < 400) // BUG-0699 diagnostics: when a guest's record took the host's values
+                H->log(M, SK_INFO, "social: species %08X: relation %d -> %d, impressed %u -> %u, killed %u -> %u from the "
+                       "host's table (%.1f s old)", r.key[0], (int32_t)rec[0], r.relation, rec[2], r.impressed, rec[3],
+                       r.killed, H->time_seconds() - g_table_rx_at);
             rec[0] = (uint32_t)r.relation;
             rec[1] = r.x;
             rec[2] = r.impressed;
@@ -532,12 +551,39 @@ struct MeterTask {
     int rounds;
 };
 static std::vector<MeterTask> g_meter_tasks;
+// BUG-1055: meter steps of an ended session are not shown after it; the close (op 3, BUG-0808) stays queued
+SESSION_STATE("social.meter_tasks", nullptr, [] {
+    g_meter_tasks.erase(std::remove_if(g_meter_tasks.begin(), g_meter_tasks.end(), [](const MeterTask& t) { return t.op != 3; }),
+                        g_meter_tasks.end());
+}, []() -> size_t {
+    size_t n = 0;
+    for (auto& t : g_meter_tasks)
+        n += t.op != 3;
+    return n;
+});
 
+// BUG-1058: meter_tick marked the meter open for the engaged animal when it queued the open; a task that found no meter
+// window (meter_ui null) dropped the open and the meter never came for that social game. Now only the task's real open
+// marks it (the queue's own check keeps a second open away meanwhile); a missed open is queued again after
+// kMeterRetry s. `coop.fix social.meter_retry off`: marked at the queue (0.7.13)
+static bool g_meter_retry_fix = true;
+COOP_FIX("social.meter_retry", "BUG-1058", g_meter_retry_fix, "creature: a guest's social meter opens also when the first try found no meter window");
+constexpr double kMeterRetry = 0.25;
+static double g_meter_missed_at;
+static unsigned g_meter_missed, g_meter_test_null; // (tests: meter tasks that find no meter window)
 static void meter_run(void*) // outside the frame: the meter is UI
 {
     auto v = std::move(g_meter_tasks);
     g_meter_tasks.clear();
     void* m = meter_ui();
+    if (g_meter_test_null && m) { // tests (BUG-1058): as if the meter window were not there yet
+        g_meter_test_null--;
+        m = nullptr;
+    }
+    if (!m && !v.empty()) {
+        g_meter_missed++;
+        g_meter_missed_at = H->time_seconds();
+    }
     for (auto& t : v) {
         void* px = t.npc >= 0 ? npc::proxy((uint16_t)t.npc) : nullptr;
         if (!m || !a_MeterVisible)
@@ -592,6 +638,12 @@ static void meter_task(int op, int npc_id, float frac = 0, int rounds = 1)
     g_meter_tasks.push_back({op, npc_id, frac, rounds});
 }
 
+// BUG-0808: a guest that left (or lost the host) in the middle of a social game kept the game's meter (face and bar) on
+// its screen in its single-player game: meter_tick closes it, and it runs only in a session. Now on_session_end queues
+// the close (outside the frame). `coop.fix social.meter_end off`: left open (0.7.11).
+static bool g_meter_end_fix = true;
+COOP_FIX("social.meter_end", "BUG-0808", g_meter_end_fix, "creature: the social meter of a guest's open social game is hidden when the session ends");
+
 // guest, every frame: the meter follows the engagement
 static void meter_tick()
 {
@@ -599,20 +651,25 @@ static void meter_tick()
         return;
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
+        if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
+            return; // (BUG-1058: a missed open, tried again shortly)
         if (px && !game::impressed(px) && social_mode(px) != 0)
             meter_task(0, g_engaged, 0, rounds_needed(px));
         else
             return;
-        g_meter_npc = g_engaged; // (set again by the task; no second open meanwhile)
+        if (!g_meter_retry_fix)
+            g_meter_npc = g_engaged; // (0.7.13: marked before the task opened it)
     } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
         meter_task(3, g_meter_npc);
     }
 }
 
+void debug_meter_null(unsigned n) { g_meter_test_null = n; } // tests (BUG-1058)
+
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[300];
+    char b[400];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
@@ -621,9 +678,9 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
              "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
-             "frac_set=%.2f\n",
+             "frac_set=%.2f missed=%u\n",
              m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
-             g_stage_msg_win, g_meter_frac);
+             g_stage_msg_win, g_meter_frac, g_meter_missed);
     return b;
 }
 
@@ -665,7 +722,17 @@ static void guest_tick(double now)
     if (!front)
         on = false;
     s_was_front = front;
+    // BUG-0713 (class BUG-0429): a digit the game window took from its queue (mouse.h); a tap between two polls is
+    // not missed and a digit typed in another program never counts (input.window off: the polling above)
+    static uint32_t s_seen[4] = {mouse::key_presses('1'), mouse::key_presses('2'), mouse::key_presses('3'),
+                                 mouse::key_presses('4')};
     for (int k = 0; k < 4; k++) {
+        bool press = mouse::key_pressed('1' + k, s_seen[k]);
+        if (mouse::g_window_input) {
+            if (press && on && now - g_last_act >= 0.5)
+                act(k);
+            continue;
+        }
         SHORT st = GetAsyncKeyState('1' + k); // bit 0: pressed since the last call (a short tap)
         bool down = (st & mask) != 0;
         if (down && !g_keys[k] && on && now - g_last_act >= 0.5) // (the bar's hook may have sent it)
@@ -692,12 +759,55 @@ struct Game {
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
+// BUG-0831 (class BUG-0422): a guest that left in the middle of a social game left the host's NPC performing its prompts
+// and, after the prompt list, the fail reaction (up to 60 s); a newcomer under the same id got that game's lines and
+// result. The games of a player who leaves or joins are dropped (player_life). `coop.fix social.forget_leaver off`: kept.
+static bool g_forget_leaver = true;
+COOP_FIX("social.forget_leaver", "BUG-0831", g_forget_leaver, "creature: the host's NPC stops a social game whose guest left (a newcomer of that id inherits nothing)");
+static uint32_t g_games_forgotten = 0;
+static size_t games_of(uint8_t id)
+{
+    size_t n = 0;
+    for (auto& [k, g] : g_games)
+        n += k.first == id;
+    return n;
+}
+PLAYER_STATE("social.games", [](uint8_t id) {
+    if (!g_forget_leaver)
+        return;
+    for (auto it = g_games.begin(); it != g_games.end();)
+        if (it->first.first == id) {
+            it = g_games.erase(it);
+            g_games_forgotten++;
+        } else
+            ++it;
+}, [](uint8_t id) -> size_t { return games_of(id); });
+
+std::string games_dump()
+{
+    std::string out;
+    char b[96];
+    for (auto& [k, g] : g_games) {
+        snprintf(b, sizeof b, "game player=%u npc=%u idx=%d prompts=", k.first, k.second, g.idx);
+        out += b;
+        for (auto& p : g.prompts) {
+            snprintf(b, sizeof b, "%08X,", p.anim);
+            out += b;
+        }
+        out += "\n";
+    }
+    snprintf(b, sizeof b, "fail_anim=%08X games=%u forgotten=%u\n", kFailAnim, (unsigned)g_games.size(), g_games_forgotten);
+    return out + b;
+}
+
 
 struct Pending { // applied outside the frame (the result refreshes the creature UI)
     uint8_t player;
     uint16_t npc;
 };
 static std::vector<Pending> g_pending;
+// BUG-1055: a success of the ended session is not paid out after it (apply_success outside the frame)
+SESSION_STATE("social.pending", nullptr, [] { g_pending.clear(); }, []() -> size_t { return g_pending.size(); });
 
 static void send_progress(uint8_t to, uint16_t id, int done, int needed)
 {
@@ -999,6 +1109,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 
 void tick(double now)
 {
+    if (game::lend_ledger_on()) // BUG-0882: outside every goal update (a fault inside one left it set)
+        g_goal = nullptr;
     if (!C.sess || !game::in_creature_stage() || !game::avatar())
         return;
     if (is_host() && !g_goal_owed.empty()) { // BUG-0205: rewards that came while we had no creature
@@ -1018,7 +1130,7 @@ void tick(double now)
         host_prompt_tick(now);
     if (is_host()) {
         static double last = 0;
-        if (now - last < 1.0)
+        if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
         auto t = read_table();
@@ -1038,8 +1150,17 @@ void tick(double now)
         static double last = 0;
         if (now - last >= 0.5) {
             last = now;
-            enforce_table();
-            herds_follow_table();
+            // BUG-0420: a guest that plays another world keeps its own species table: the host's last table
+            // is forgotten (a new one comes with the host's world, MSG_SPECIES is gated while elsewhere)
+            if (g_world_fix && C.elsewhere && C.elsewhere()) {
+                if (g_have_table)
+                    g_table_forgot++;
+                g_have_table = false;
+                g_host_table.clear();
+            } else {
+                enforce_table();
+                herds_follow_table();
+            }
         }
     }
 }
@@ -1070,6 +1191,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_host_table = std::move(t);
         g_have_table = true;
         g_table_rx++;
+        g_table_rx_at = H->time_seconds();
         if (game::in_creature_stage() && game::avatar()) {
             enforce_table();
             herds_follow_table();
@@ -1170,6 +1292,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    // BUG-0808: the meter of a social game still open is hidden (meter_tick, which closes it, stops with the session)
+    if (g_meter_end_fix && g_meter_npc >= 0)
+        meter_task(3, g_meter_npc);
     g_engaged = -1;
     g_meter_npc = -1;
     g_goal_paid.clear();
@@ -1187,18 +1312,18 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
                  "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u "
-                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f\n",
+                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f table_forgot=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
                  g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed, g_prompts_in,
-                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at);
+                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot);
     return b;
 }
 
@@ -1294,6 +1419,19 @@ bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
     return true;
 }
 
+bool debug_event(uint32_t inst, int event)
+{
+    // BUG-0168: the game's own relationship event, as the avatar's egg node calls it (0xD716F0: event 6 when it walks
+    // to an egg, 7 when it eats it; creature null, docs/re/creature.md#creature-npc-aggression). Event 7 makes the
+    // species hostile (relation 5) through the game's own transition, as eating its egg does.
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelEvent || event < 0 || event > 7)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    thiscall<void>(a_RelEvent, mgr, event, &k, (void*)nullptr);
+    return true;
+}
+
 std::string debug_objects(uint32_t lo, uint32_t hi)
 {
     struct U {
@@ -1329,8 +1467,9 @@ std::string abilities_dump(int id)
         uint8_t* a = (uint8_t*)ability(c, i);
         if (!a || IsBadReadPtr(a, 0x108))
             continue;
-        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f\n", i, *(uint32_t*)(a + 8),
-                 *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C), *(float*)(a + 0xA8));
+        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f anim=%08X\n", i,
+                 *(uint32_t*)(a + 8), *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C),
+                 *(float*)(a + 0xA8), ability_anim(a)); // (anim: BUG-0891, what the ability plays)
         out += b;
         // the hit's extra effects (0xC20390: kinds at +0xB8..+0xBC, chances at +0xCC; kind 1 = stun for +0x80 s through
         // the victim's vt 0x94, docs/re/creature.md#creature-stun)
@@ -1392,6 +1531,26 @@ bool debug_answer(uint16_t id, uint32_t type)
     send_act(id, type);
     g_engaged_at = g_last_act = H->time_seconds();
     return true;
+}
+
+// tests (BUG-0994): the avatar posts the social stimulus to creature c's AI block through the game's BT_PostStimulus
+// (its hooked entry: h_Post runs as for a click on it); then which proxy the guest engaged
+std::string debug_post(void* c)
+{
+    static uintptr_t a = H->sym("SporeCoop::BT_PostStimulus");
+    void* av = game::avatar();
+    if (!a || !av || !c || !game::creature_listed(c))
+        return "no avatar, no creature or no BT_PostStimulus\n";
+    void* ai = *(void**)((uint8_t*)c + 0xB4C);
+    if (!ai)
+        return "the creature has no AI block\n";
+    int e0 = g_engaged;
+    uint32_t n0 = g_engages, g0 = npc::ai_lookup_gone();
+    thiscall<void*>(a, (uint8_t*)ai + 8, kSocialStimulus, 0u, 1.0f, av);
+    char b[200];
+    snprintf(b, sizeof b, "posted to %p (ai %p): engaged %d -> %d, engages +%u, lookups skipped as gone +%u\n", c, ai, e0,
+             g_engaged, g_engages - n0, npc::ai_lookup_gone() - g0);
+    return b;
 }
 
 bool debug_social(uint16_t id, int slot)

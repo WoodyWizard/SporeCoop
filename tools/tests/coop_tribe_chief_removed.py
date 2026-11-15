@@ -12,8 +12,9 @@ called through freed memory.
    game's RemoveMember(c, destroy) as guest_state does for a mirror); the guest's next full
    snapshot removes its mirror the same way.
 3. Both games keep running without a fault, neither called into a citizen that is no longer a
-   member (`chief_bad_calls=0`), and that player has a new chief with 1.3x its size in the game
-   (spatial GetScale / its own scale) on both machines.
+   member (`chief_bad_calls=0`), and that player has a new chief with 1.3x its size in the host's game
+   (spatial GetScale / its own scale) and, on the guest's screen, the size it has in the host's game (BUG-0911:
+   the guest's own ratio is no measure, its base is its own game's pick while the size comes from the host).
 4. Forced address reuse: another tribe's member is put where a former chief was (`coop.tribe
    stale_chief <id>`); it keeps its own size in the game (before the fix: the old chief's size).
 
@@ -89,10 +90,29 @@ def main():
     hc2, gc2 = chiefs(host), chiefs(guest)
     print('  chiefs now host', hc2, 'guest', gc2)
     ck(who in hc2 and hc2.get(who) != hc.get(who) and hc2 == gc2, f'player {who} has a new chief, the same on both machines')
-    for name, c in (('host', host), ('guest', guest)):
-        _, scales, _ = lifetime(c)
-        s = scales.get(who, 0)
-        ck(abs(s - 1.3) < 0.05, f'{name}: the new chief is 1.3x its size in the game ({s:.2f})')
+    _, scales, _ = lifetime(host)
+    s = scales.get(who, 0)
+    ck(abs(s - 1.3) < 0.05, f'host: the new chief is 1.3x its size in the game ({s:.2f})')
+    # BUG-0911: on the guest the chief's size is the HOST's member's (the members' scale field, BUG-0475), not 1.3x
+    # of the size the guest's own game would give its mirror: the guest's ratio against its own base read 1.58 / 1.20
+    # while the size on its screen was right. What the guest shows is compared with the host's game.
+
+    def size(c, i):
+        m = re.search(r'scale ([\d.]+)', c.call(f'coop.tribe scale {i}')['out'])
+        return float(m.group(1)) if m else -1.0
+
+    for what, i in (('the new chief', hc2.get(who)), ('the other player\'s chief', hc2.get('0' if who == '1' else '1'))):
+        if i is None:
+            continue
+        hs = gs = -1.0
+        t1 = time.time()
+        while time.time() - t1 < 10:
+            hs, gs = size(host, i), size(guest, i)
+            if hs > 0 and abs(gs - hs) <= 0.03 * hs:
+                break
+            time.sleep(1)
+        ck(hs > 0 and abs(gs - hs) <= 0.03 * hs,
+           f'guest: {what} #{i} has the size it has in the host\'s game (guest {gs:.3f}, host {hs:.3f})')
     # the freed block of a former chief reused by another citizen (forced: `coop.tribe stale_chief`
     # puts another tribe's member where the old chief was): it must keep its own size
     other = next(iter(adults.get('254', [])), None)

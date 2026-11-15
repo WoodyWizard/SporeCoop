@@ -235,6 +235,8 @@ struct GuestCheck {
     int ok_window = 0;          // OKs since the last OK summary
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
+    int late_run = 0;           // checks in a row that passed only through the BUG-0379 windows (BUG-0430)
+    std::set<uint32_t> band;    // the band cells of the last check (dg::Late::steady)
 };
 // BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
 // the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
@@ -249,7 +251,25 @@ COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's t
 // does not compare while the host's stage ends. Off: compared (0.7.7).
 static bool g_stage_end_fix = true;
 COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
+// BUG-0754: a guest the host shares its world with is not compared for kShareQuiet s after the share was asked for: the
+// host saves (a 0.8 s hitch), the transfer runs and the guest loads the received world. In campaign_ct (lab
+// 20261108-085348-2 #2 of fix/w46-k4-ground) a check of that moment took the host's family members (moved with the
+// host through its save) for 4 NPCs 21-28 m apart, a MISMATCH on both games, and the guest replaced its world 1.3 s
+// later. Off: compared (0.7.10).
+static bool g_share_quiet_fix = true;
+COOP_FIX("diag.share_quiet", "BUG-0754", g_share_quiet_fix, "sync-check: a guest is not compared while the host shares its world with it (the save, the transfer, its load)");
+constexpr double kShareQuiet = 20.0;
+// BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
+// late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
+// matched while the host had left it over 1 s before asking, or over 5 % of the guest's sent band of cells missing that
+// were in the band at the check before too: lab 20261108-080337 showed that a rising total or a changing set alone
+// is the normal one-update lag) are a `late` issue (it goes through the recheck as
+// any other). Off: never (0.7.10). The count: sync_late= in coop.diag.
+static bool g_fix_late_streak = true;
+COOP_FIX("diag.late_streak", "BUG-0379 BUG-0430", g_fix_late_streak, "sync-check: a guest that passes 3 checks in a row only through the late windows is reported late");
+static unsigned g_sync_late = 0;
 constexpr double kTotalLag = 3.0;
+constexpr double kLateAge = 1.0; // a guest value the host left more than this before asking is late (BUG-0430)
 struct TotalAt {
     double t;
     uint8_t id;
@@ -298,10 +318,185 @@ static void add_speed_slack(dg::Limits& l, uint32_t mode, uint8_t guest)
     }
 }
 
+// BUG-0547: a guest's copy of the host's ship is drawn where the host's ship was a moment before (the interpolation
+// delay, the trip of the state, the frames of both games): the speed slack above takes the ship's speed at the read
+// times that moment, but a ship that flies key pulses (a rescue, play_space) slows down, stops and turns within it.
+// Then its copy is still on the path it flew at full speed, 46-50 m behind (MISMATCH p0 46.2 in space_rescue, p0 50.0
+// in play_space of the 0.7.10 final check) while the speed at the read allows 10-30 m. The host keeps its own ship's
+// path of the last seconds (every frame) and a copy within the player limit of that path's last kPathWindow s (plus the
+// guest's round trip) is no difference. Seen in coop_space_fast_sync.py: copies 35-270 m from the ship lay 0.0-9.9 m
+// from its path, 0.17-0.81 s back (the longer ones with latency spikes of 300 ms), with a slack of 15-190 m. Off: the
+// speed slack only (0.7.10).
+static bool g_own_path_fix = true;
+COOP_FIX("sync.own_path", "BUG-0547", g_own_path_fix,
+         "sync-check: in Space a guest's copy of the host's ship is compared with the host's path of the last second");
+constexpr double kPathWindow = 1.0;
+static std::deque<dg::PathPoint> g_own_path;
+static uint32_t g_own_path_saved; // differences the path took back (coop.diag sync)
+
+static void record_own_path(double now)
+{
+    net::Vec3 p;
+    if (!g_P.own_position || !g_P.mode || g_P.mode() != modes::kSpace || !g_P.own_position(p)) {
+        g_own_path.clear();
+        return;
+    }
+    if (!g_own_path.empty() && now <= g_own_path.back().t)
+        return;
+    g_own_path.push_back({now, p.x, p.y, p.z});
+    while (g_own_path.size() > 2 && g_own_path.front().t < now - 2.5)
+        g_own_path.pop_front();
+}
+
+// the host's own player key in `c`: a pos issue of a copy that lies on the host's path is taken back
+static void own_path_check(const dg::Digest& hd, const dg::Digest& gd, const dg::Limits& lim, dg::Compared& c, double now,
+                           double rtt)
+{
+    if (hd.mode != modes::kSpace || g_own_path.empty())
+        return;
+    uint32_t k = dg::make_key('p', hd.self);
+    std::string id = "pos:" + dg::key_text(k);
+    auto is = std::find_if(c.issues.begin(), c.issues.end(), [&](const dg::Issue& i) { return i.id == id; });
+    if (is == c.issues.end())
+        return;
+    const dg::Entry *he = nullptr, *ge = nullptr;
+    for (auto& e : hd.entries)
+        if (e.key == k)
+            he = &e;
+    for (auto& e : gd.entries)
+        if (e.key == k)
+            ge = &e;
+    if (!he || !ge)
+        return;
+    // the path moved to the digest's own position (the same point unless a test shifts it: coop.diag sync force shift)
+    const dg::PathPoint& last = g_own_path.back();
+    float ox = he->x - last.x, oy = he->y - last.y, oz = he->z - last.z;
+    double window = kPathWindow + std::min(rtt, 1.0);
+    dg::PathHit h = dg::path_distance(g_own_path, ge->x - ox, ge->y - oy, ge->z - oz, now - window);
+    bool back = g_own_path_fix && h.d <= lim.pos('p');
+    if (g_detail >= 1)
+        SLOG("sync-check: %s %.1f m from the host's ship, %.1f m from its path of the last %.1f s (nearest %.2f s ago), "
+             "slack %.1f m%s",
+             dg::key_text(k).c_str(), is->value, h.d, window, h.lag, lim.slack_of(k),
+             back ? ": on its path, no difference (BUG-0547)" : g_own_path_fix ? ": off its path" : " (sync.own_path off)");
+    if (back) {
+        g_own_path_saved++;
+        c.issues.erase(is);
+    }
+}
+
+// BUG-0758: the same mechanism mirrored: a guest's own ship (p<guest>) is compared between the host's copy of it (drawn
+// a state late, interpolated) and the guest's real ship. A guest flying key pulses (the campaign's rescue rounds,
+// play_space) is further back on its path than its speed at the read allows (MISMATCH p1 79.8, p3 30.2 in the 0.7.11
+// final check's campaign). The host keeps each guest ship's path from the states it received (every new state, the
+// last 2.5 s) and takes the difference back when both lie on that path: the host's copy within the player limit of
+// the path's last kPathWindow s (plus the guest's round trip), the guest's own position within the player limit plus
+// its speed slack (the newest state is that much behind the ship; a forced shift or a ship the states do not follow
+// stays off). Off: the speed slack only (0.7.11).
+static bool g_guest_path_fix = true;
+COOP_FIX("sync.own_path_guests", "BUG-0758", g_guest_path_fix,
+         "sync-check: in Space the host's copy of a guest's own ship is compared with that guest's path of the last second");
+static std::map<uint8_t, std::deque<dg::PathPoint>> g_guest_paths;
+static std::map<uint8_t, uint32_t> g_guest_path_time; // the sender time of the newest state recorded
+static uint32_t g_guest_path_saved;
+
+static void record_guest_paths(double now)
+{
+    if (!g_P.partner_states || !g_P.mode || g_P.mode() != modes::kSpace) {
+        g_guest_paths.clear();
+        g_guest_path_time.clear();
+        return;
+    }
+    std::set<uint8_t> seen;
+    for (auto& s : g_P.partner_states()) {
+        seen.insert(s.id);
+        auto& path = g_guest_paths[s.id];
+        auto t = g_guest_path_time.find(s.id);
+        if (t != g_guest_path_time.end() && t->second == s.time_ms && !path.empty())
+            continue; // no new state
+        g_guest_path_time[s.id] = s.time_ms;
+        if (!path.empty() && now <= path.back().t)
+            continue;
+        path.push_back({now, s.pos.x, s.pos.y, s.pos.z});
+        while (path.size() > 2 && path.front().t < now - 2.5)
+            path.pop_front();
+    }
+    for (auto it = g_guest_paths.begin(); it != g_guest_paths.end();)
+        if (seen.count(it->first)) {
+            ++it;
+        } else {
+            g_guest_path_time.erase(it->first);
+            it = g_guest_paths.erase(it);
+        }
+}
+
+// the guest's own player key in `c`: a pos issue where the host's copy and the guest's ship lie on the guest's path is
+// taken back
+static void guest_path_check(uint8_t guest, const dg::Digest& hd, const dg::Digest& gd, const dg::Limits& lim,
+                             dg::Compared& c, double now, double rtt)
+{
+    if (hd.mode != modes::kSpace)
+        return;
+    auto pit = g_guest_paths.find(guest);
+    if (pit == g_guest_paths.end() || pit->second.empty())
+        return;
+    uint32_t k = dg::make_key('p', guest);
+    std::string id = "pos:" + dg::key_text(k);
+    auto is = std::find_if(c.issues.begin(), c.issues.end(), [&](const dg::Issue& i) { return i.id == id; });
+    if (is == c.issues.end())
+        return;
+    const dg::Entry *he = nullptr, *ge = nullptr;
+    for (auto& e : hd.entries)
+        if (e.key == k)
+            he = &e;
+    for (auto& e : gd.entries)
+        if (e.key == k)
+            ge = &e;
+    if (!he || !ge)
+        return;
+    double window = kPathWindow + std::min(rtt, 1.0);
+    dg::PathHit hc = dg::path_distance(pit->second, he->x, he->y, he->z, now - window);
+    dg::PathHit hs = dg::path_distance(pit->second, ge->x, ge->y, ge->z, now - window);
+    bool on = hc.d <= lim.pos('p') && hs.d <= lim.pos('p') + lim.slack_of(k);
+    bool back = g_guest_path_fix && on;
+    if (g_detail >= 1)
+        SLOG("sync-check: %s %.1f m from the guest's ship, the host's copy %.1f m from its path of the last %.1f s "
+             "(nearest %.2f s ago), the ship %.1f m from it, slack %.1f m%s",
+             dg::key_text(k).c_str(), is->value, hc.d, window, hc.lag, hs.d, lim.slack_of(k),
+             back ? ": on its path, no difference (BUG-0758)"
+                  : g_guest_path_fix ? ": off its path" : on ? ": on its path (sync.own_path_guests off)" : ": off its path (sync.own_path_guests off)");
+    if (back) {
+        g_guest_path_saved++;
+        c.issues.erase(is);
+    }
+}
+
 // BUG-0379: in a crowded pool the host's choice of a guest's 900 nearest cells (around its view
 // centre, a state late) and the compare's (around the guest's own position) differ near rank 900
 static bool g_fix_cell_margin = true;
 COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest must have only the nearest 80% of the 900 cells it is sent (the host picks them around a late position)");
+
+// BUG-0606: a Cell level change multiplies every position by old / new world scale about the origin, on each
+// game at its own moment, and the end of Cell shrinks the scale for ~40 s (a cell 74 m from the origin went to
+// 42 000 at ~2800 m/s in the game's numbers while it stood still on the screen). The guest's digest is in its
+// own scale at the moment it was built, the host's in its own at another: the host's own cell came out 359-740
+// "apart" on every guest (campaign_ct, lab 20261105-233139) with nothing to see. The host compares the guest's
+// Cell positions converted into its own scale (times guest scale / host scale; pos x scale stays the same for a
+// cell at rest through a change). Off: raw positions (0.7.8).
+static bool g_fix_cell_scale = true;
+COOP_FIX("diag.cell_scale", "BUG-0606", g_fix_cell_scale, "sync-check: in Cell a guest's positions are compared in the host's world scale (level changes, the end of Cell)");
+static void to_host_scale(const dg::Digest& hd, dg::Digest& gd)
+{
+    if (!g_fix_cell_scale || hd.mode != modes::kCell || gd.mode != modes::kCell || !(hd.scale > 0) || !(gd.scale > 0) ||
+        hd.scale == gd.scale)
+        return;
+    float k = gd.scale / hd.scale;
+    for (auto& e : gd.entries) {
+        e.x *= k;
+        e.y *= k;
+        e.z *= k;
+    }
+}
 
 static dg::Limits limits_for(uint32_t mode, uint32_t world)
 {
@@ -332,6 +527,8 @@ static dg::Digest build_digest(uint32_t seq)
         d.totals.push_back({dg::kTotalCellFood, (float)food});
     if (g_P.players_out)
         d.out = g_P.players_out();
+    if (g_P.cell_scale)
+        d.scale = g_P.cell_scale();
     if (g_P.entries)
         for (auto& e : g_P.entries())
             if (uint32_t k = dg::parse_key(e.key))
@@ -408,14 +605,41 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Digest hd = build_digest(gd.seq);
     dg::Limits lim = limits_for(hd.mode, hd.world);
     add_speed_slack(lim, hd.mode, from);
-    std::vector<std::pair<uint8_t, float>> recent;
+    std::vector<std::pair<uint8_t, float>> recent, fresh;
     if (g_fix_total_lag)
         for (auto& r : g_host_totals)
-            if (r.t >= g.asked - kTotalLag)
+            if (r.t >= g.asked - kTotalLag) {
                 recent.push_back({r.id, r.v});
-    dg::Compared c = dg::compare(hd, gd, lim, g_fix_total_lag ? &recent : nullptr);
+                if (r.t >= g.asked - kLateAge)
+                    fresh.push_back({r.id, r.v});
+            }
+    std::set<uint32_t> steady = std::move(g.band);
+    dg::Late late;
+    if (g_fix_late_streak) {
+        late.fresh = &fresh;
+        late.steady = &steady;
+    }
+    dg::Digest gconv = gd;
+    to_host_scale(hd, gconv); // BUG-0606
+    dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr, late);
+    g.band = c.band;
+    {
+        net::Session::Link lk; // BUG-0547: the guest's round trip widens the window
+        double rtt = g_P.sess->link_of(from, lk) && lk.rtt_ms >= 0 ? lk.rtt_ms / 1000.0 : 0.1;
+        own_path_check(hd, gconv, lim, c, now, rtt);
+        guest_path_check(from, hd, gconv, lim, c, now, rtt); // BUG-0758
+    }
     if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
+    if (g_share_quiet_fix && g_P.since_share && g_P.since_share(from) < kShareQuiet)
+        c.other_place = true; // BUG-0754
+    if (!c.other_place && dg::late_streak(g.late_run, c) && g_fix_late_streak) {
+        char lb[160];
+        snprintf(lb, sizeof lb, "late: %d checks in a row matched only through the late windows (totals %d, cells %d of %d)",
+                 g.late_run, c.late_totals, c.late_cells, c.late_band);
+        c.issues.push_back({"late", "late", "", (float)g.late_run, lb});
+        g_sync_late++;
+    }
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;
@@ -536,8 +760,13 @@ void sync_tick(double now)
     if (!in_session() || g_P.sess->role() != net::Role::Host || g_sync_interval <= 0) {
         if (!in_session())
             g_guests.clear();
+        g_own_path.clear();
+        g_guest_paths.clear();
+        g_guest_path_time.clear();
         return;
     }
+    record_own_path(now); // BUG-0547
+    record_guest_paths(now); // BUG-0758
     // BUG-0380: a player who left kept its entry, so the same id joining again was checked on the old
     // schedule (6 s after its world load in civ_city_join: the catch-up's city was still on its way)
     // instead of 10 s after the join like a newcomer. Off: the entry stays (0.7.3.3).
@@ -688,18 +917,18 @@ void sync_session_start()
 
 std::string sync_status()
 {
-    char b[400];
+    char b[600];
     bool ok = false;
     double t = session_time(&ok);
     snprintf(b, sizeof b,
              "clock: %s session time %.3f (%s, %d samples, best round trip %.1f ms)\n"
              "sync-check: every %.0f s%s, checks %d ok %d differs %d mismatch %d; host build+compare avg %.3f ms max %.3f ms (%d); "
-             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests\n",
+             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u guest_path_saved=%u sync_late=%u\n",
              ok ? "on," : "off,", t, g_P.sess && g_P.sess->role() == net::Role::Host ? "host" : "guest", (int)g_clock.samples(),
              g_clock.rtt() * 1000, g_sync_interval, g_force.empty() ? "" : (" (forced: " + g_force + ")").c_str(), g_c.sync_checks,
              g_c.sync_ok, g_c.sync_differs, g_c.sync_mismatch, g_c.sync_ms_n ? g_c.sync_ms_sum / g_c.sync_ms_n : 0.0, g_c.sync_ms_max,
              g_c.sync_ms_n, g_c.sync_guest_ms_n ? g_c.sync_guest_ms_sum / g_c.sync_guest_ms_n : 0.0, g_c.sync_guest_ms_max,
-             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes);
+             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved, g_guest_path_saved, g_sync_late);
     return b;
 }
 

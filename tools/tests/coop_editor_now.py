@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""The host's evolution editor opens at once; the guest evolves when it wants (BUG-0516).
+
+Creature fixture. Until 0.7.10 the host's evolution (the mating call's request) waited for the vote: every guest's
+"I'm ready" or 60 s, and every guest's own editor opened at the vote's end. No world reload follows the host's editor
+since BUG-0508, so the host goes on at once and each guest gets an offer ("Evolve now") instead of the ready vote:
+
+  1. The host mates the players' way (coop_creature_mating.py: the mate the game picked, Backspace, a left click on
+     it): the game's own mating editor request (0xD3C650, tag 0x12191CA; BUG-1085: not a request the mod builds, and
+     not the stage-end editor's 0x64AA168) opens the host's editor, with no vote, although the guest pressed nothing.
+  2. The guest's game meanwhile stays in the Creature stage (no editor forced on it) and its co-op window shows
+     "Evolve now" (coop.uistate).
+  3. The host leaves its editor (done): back in its Creature stage, while the guest has not evolved.
+  4. The guest evolves later: a real click on "Evolve now" opens its own editor (game.mode Editor) while the host
+     plays; the guest leaves it with the red cross and plays its creature again.
+
+  coop_editor_now.py                                 (PASS)
+  SPORE_FIX_OFF=core.editor_now coop_editor_now.py       (step 1 FAILS: the host's editor waits for the vote)
+  SPORE_FIX_OFF=core.editor_now_tag coop_editor_now.py   (step 1 FAILS: keyed on the stage-end tag, BUG-1085)
+
+--off (BUG-0768, the session setting core.editor_now off, `coop.settings force`): the host's request starts the vote
+as before 0.7.11 (the guest sees "I'm ready", no Evolve now offer), the host's editor waits for it (not open after
+10 s), opens after the guest's ready (a real click) (SPORE_FIX_OFF=settings.all: it opens at once: FAIL).
+"""
+import sys
+import time
+
+import settings_lib as sl
+import twoinst
+
+from coop_creature_mating import mate_click
+from coop_ui import Ui
+from twoinst import Checks, start
+
+DONE = (1416, 1062)    # the creature editors' green check (1440x1080 test window)
+CANCEL = (1383, 1062)  # the red cross
+EVOLVE = ('Evolve now', 'Эволюция')
+
+
+def mode(con):
+    return con.call('game.mode')['out']
+
+
+def in_editor(con):
+    return 'Editor' in mode(con)
+
+
+def wait(cond, secs, step=1.0):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        r = cond()
+        if r:
+            return r
+        time.sleep(step)
+    return None
+
+
+def back(con, m0, secs=90):
+    return wait(lambda: mode(con) == m0 and con.call('coop.avatar')['ok'], secs)
+
+
+def setting_off(host, guest, gu, ck):
+    ck(sl.force(host, [guest], 'core.editor_now', 'off'), 'the guest got core.editor_now off')
+    print(' ', host.call('coop.vote evolve')['out'].strip().splitlines()[0], flush=True)
+    st = gu.wait(lambda s: s.get('open') == '1' and s['ready']['vis'], 10, 'the vote')
+    ck(st and st['ready']['text'] in ("I'm ready", 'Я готов'), f"editor now off: the guest sees the vote ({st and st['ready']['text']!r})")
+    time.sleep(10)
+    ck(not in_editor(host) and 'vote active' in host.call('coop.vote')['out'],
+       f"editor now off: the host's editor waits for the vote ({mode(host).strip()})")
+    if st and st['ready']['vis']:
+        gu.click('ready')
+    ck(wait(lambda: in_editor(host), 60), f"the host's editor opens after the guest's ready ({mode(host).strip()})")
+
+
+def main():
+    host, guest = start('creature')
+    ck = Checks()
+    gu = Ui(guest, 'guest')
+    time.sleep(3)
+    m0 = mode(host)
+    if '--off' in sys.argv:
+        twoinst.forget_settings()
+        try:
+            setting_off(host, guest, gu, ck)
+        finally:
+            sl.reset([host], ('core.editor_now',))
+            twoinst.forget_settings()
+        ck.faults(host=host, guest=guest)
+        return ck.result()
+
+    # 1. the host's editor at once, from the game's own mating request (BUG-1085: not one the mod builds)
+    if not mate_click(host, ck):
+        ck.faults(host=host, guest=guest)
+        return ck.result()
+    t0 = time.time()
+    wait(lambda: in_editor(host) or 'vote active' in host.call('coop.vote')['out'], 120)
+    v = host.call('coop.vote')['out']
+    print(f'  host {mode(host).strip()}, vote: {v.splitlines()[0][:100]} ({time.time() - t0:.0f} s after the click)', flush=True)
+    ck(in_editor(host) and 'vote active' not in v,
+       f"the host's game is in its mating evolution editor without a vote ({mode(host).strip()}, {v.splitlines()[0][:60]})")
+
+    # 2. the guest is offered the evolution, not pulled into it
+    st = gu.wait(lambda s: s.get('open') == '1' and s['ready']['vis'], 10, 'the offer')
+    ck(st and st['ready']['text'] in EVOLVE, f"the guest's co-op window offers Evolve now ({st and st['ready']['text']!r})")
+    time.sleep(10)
+    ck(not in_editor(guest) and guest.call('coop.avatar')['ok'],
+       f"the guest's game plays on in the Creature stage while the host edits ({mode(guest).strip()})")
+
+    # 3. the host is done first
+    if in_editor(host):
+        time.sleep(5)  # (the editor's interface comes up)
+        host.call('click %d %d' % DONE)
+    ck(back(host, m0), f"the host is back in its stage after done ({mode(host).strip()})")
+    ck(not in_editor(guest), f"the guest has still not evolved ({mode(guest).strip()})")
+
+    # 4. the guest evolves later
+    st = gu.state()
+    if st.get('open') != '1':
+        guest.call('key 120 down')  # F9
+        time.sleep(0.3)
+        guest.call('key 120 up')
+        st = gu.wait(lambda s: s.get('open') == '1', 6, 'the co-op window')
+    ck(st and st['ready']['text'] in EVOLVE, f"the offer still holds after the host's editor ({st and st['ready']['text']!r})")
+    if st and st['ready']['text'] in EVOLVE:
+        gu.click('ready')
+    ck(wait(lambda: in_editor(guest), 90), f"the guest's own editor opens on Evolve now ({mode(guest).strip()})")
+    ck(not in_editor(host), f"the host plays on meanwhile ({mode(host).strip()})")
+    if in_editor(guest):
+        time.sleep(8)
+        guest.call('click %d %d' % CANCEL)
+    ck(back(guest, m0), f"the guest leaves its editor and plays its creature again ({mode(guest).strip()})")
+    print('  guest vote:', guest.call('coop.vote')['out'].splitlines()[-1], flush=True)
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

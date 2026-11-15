@@ -33,7 +33,7 @@ import time
 import worlddiff
 from twoinst import Checks, start
 
-ROW = re.compile(r'(\S+) (\S+) id=(\d+) pos=\((\S+) (\S+) (\S+)\) st=(\S+) dist=(\S+) bound_to=(\d+)')
+ROW = re.compile(r'(\S+) (\S+) id=(\d+) pos=\((\S+) (\S+) (\S+)\) st=(\S+) dist=(\S+) bound_to=(\d+)(?: cls=([0-9A-F]+))?')
 
 
 def objs(con, kind, r=80, at=None):
@@ -41,7 +41,7 @@ def objs(con, kind, r=80, at=None):
     out = []
     for m in ROW.finditer(con.call(cmd)['out']):
         out.append({'p': m.group(2), 'id': int(m.group(3)), 'pos': tuple(map(float, m.group(4, 5, 6))),
-                    'st': int(m.group(7), 16), 'bound': int(m.group(9))})
+                    'st': int(m.group(7), 16), 'bound': int(m.group(9)), 'cls': int(m.group(10) or '0', 16)})
     return out
 
 

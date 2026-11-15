@@ -52,7 +52,11 @@ bool parse_index(const uint8_t* p, size_t n, const IndexInfo& info, std::vector<
     uint32_t ft = 0, fg = 0;
     if (flags & 1) { if (p + 4 > end) return false; ft = le32(p); p += 4; }
     if (flags & 2) { if (p + 4 > end) return false; fg = le32(p); p += 4; }
-    if (flags & 4) p += 4;
+    if (flags & 4) { // BUG-1012: the field is skipped inside the index only (was: a pointer past its end)
+        if (g_bounds_fix && p + 4 > end)
+            return false;
+        p += 4;
+    }
     size_t off_size = info.big ? 8 : 4;
     for (uint32_t i = 0; i < info.count; i++) {
         size_t need = (flags & 1 ? 0 : 4) + (flags & 2 ? 0 : 4) + 4 + off_size + 12;

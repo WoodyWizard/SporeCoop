@@ -53,6 +53,15 @@ written and reverted: with no failing run it could not be shown to matter. Guard
 ## Verification
 no-fail-run: not reproducible on 5d7f20e (lab 20261030-133013 cell_lowfps passed with the old steering).
 
+* Re-check 2026-11-08 (fix/w46-n2-desyncs, N2 of 0.7.11, rel/0.7.11 ccfb0ae4): cell_lowfps OK out/lab/20261108-030127 (guest at 15 fps: 17 429
+  host cells compared, 0 over 1.2 m, worst 0.05 m). The report's own measurement, 4 players with play_cell bots on
+  every machine, Carol at 15 fps (`frame.limit 66`), Dave at 30 fps, after `coop.pool food 200`, 30 checks each
+  (`FPSLIM=Carol:66,Dave:33 coop_sync_multi.py --fixture cell --rounds 30 --food 200`): lane 9 plain and lane 10 over
+  SPORE_NET=players (each guest its own lossy link with spikes): Bob 65 fps / Carol 15 / Dave 31, p90 median 0.00-0.01 m,
+  largest 0.01-0.02 m, 0 checks over the limit on both lanes (out/n2/sync4p_plain.txt, sync4p_net.txt of the
+  worktree, not in git). The 2026-10-29 trail (283 cells ~2 m behind at 15 fps) did not come back.
+* no-fail-run: not reproducible on the current code.
+
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-cell-food: not fixed (not part of the partner-tiles change). Related finding
@@ -62,3 +71,4 @@ no-fail-run: not reproducible on 5d7f20e (lab 20261030-133013 cell_lowfps passed
   off by more than ~0.5 m (through the particles for a soft body), instead of relying on the game's
   integration at the guest's frame rate; it needs the 15 fps measurement of BUG-0275 to confirm.
 - 2026-10-30 (fix/w13-cell): not reproduced at 15 fps with 2 and 4 players; guard test cell_lowfps.
+- 2026-11-08 (fix/w46-n2-desyncs, N2): the original 4-player 15 / 30 fps measurement repeated, plain and over the players' network: largest p90 0.02 m, nothing over the limit; closed with that evidence.

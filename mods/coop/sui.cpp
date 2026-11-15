@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "fixes.h"
 #include "sporekit_game.hpp"
 
 using skg::thiscall;
@@ -211,6 +212,25 @@ std::string dump(Win root, int max_depth, bool only_visible)
 // ---------------- changing ----------------
 void add_ref(Win w) { if (w) vcall<int>(w, 0); }
 void release(Win w) { if (w) vcall<int>(w, 1); }
+// the object's reference count now (AddRef's answer minus the one it added, given back at once): the game's own
+// count of a live window, image or drawable (Object: AddRef slot 0, Release slot 1)
+int refs(void* o)
+{
+    if (!o)
+        return 0;
+    int n = vcall<int>(o, 0) - 1;
+    vcall<int>(o, 1);
+    return n;
+}
+
+// BUG-1025: every window the mod made kept the mod's own reference for good (new_button / text_edit take one more
+// on top of the creation's, the keep-alive of the mod's tables), a handler's creation reference was never given
+// back and a layout object of a failed load leaked. With the switch the mod gives back what it holds when it drops
+// a window (the notification panels' labels, the main menu's item and its version line, an older pause menu
+// button), the handler's own reference once the window took one, the menu icon's image reference after the
+// drawable took its own, and a failed layout object is used again. Off (`coop.fix core.ui_release off`): 0.7.13.
+bool g_release_fix = true;
+COOP_FIX("core.ui_release", "BUG-1025", g_release_fix, "ui: windows, handlers and images the mod drops are given back to the game (no leak per notification)");
 void set_caption(Win w, const std::string& t)
 {
     std::u16string u = utf16(t);
@@ -246,13 +266,21 @@ Win load_layout(uint32_t instance, uint32_t group)
         if (control_id(c) == 0x05B598FA)
             layer = c;
     std::vector<Win> before = children(layer);
-    // the UILayout object stays alive for the whole session (the windows belong to it)
-    void* l = calloc(1, 0x40);
-    thiscall<void*>(a_layout_ctor, l);
-    vcall<int>(l, 1); // AddRef (DefaultRefCounted: [0] is the destructor)
+    // the UILayout object stays alive for the whole session (the windows belong to it). BUG-1025: one whose load
+    // failed is used for the next load (it was calloc'd: never given to the game's allocator to free)
+    static void* s_spare;
+    void* l = g_release_fix && s_spare ? s_spare : nullptr;
+    s_spare = nullptr;
+    if (!l) {
+        l = calloc(1, 0x40);
+        thiscall<void*>(a_layout_ctor, l);
+        vcall<int>(l, 1); // AddRef (DefaultRefCounted: [0] is the destructor)
+    }
     uint32_t key[3] = {instance, 0x0510A95B, group};
-    if (!o_LayoutLoad(l, key, true, 0x5B598FA))
+    if (!o_LayoutLoad(l, key, true, 0x5B598FA)) {
+        s_spare = l;
         return nullptr;
+    }
     if (!layer)
         layer = thiscall<Win>(a_layout_container, l);
     for (Win c : children(layer)) {
@@ -749,6 +777,10 @@ void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn, int event_flag
     auto* box = new HandlerBox{std::move(fn)};
     void* p = H->ui_winproc(M, tramp, box, event_flags);
     vcall<void>(w, 0x104 / 4, p);
+    if (g_release_fix && refs(p) >= 2) { // the window holds its own (AddWinProc): ours is not needed (BUG-1025)
+        vcall<int>(p, 1);
+        return nullptr; // (no caller keeps it; remove_handler would give back a reference not ours)
+    }
     return p;
 }
 
@@ -764,15 +796,20 @@ void remove_handler(Win w, void* h)
 
 // ---------------- devkit ----------------
 namespace {
-// BUG-9108: a hex argument is a live window (its address, as `tree` prints it) or a control id; anything
-// else is refused. Before, the value was used as an address as is: `coop.ui show C00F0100` (the co-op
-// dialog's id) crashed the game at sui::set_flag.
-Win arg_win(const char* s, SkOut* out)
+// BUG-0812: `coop.ui show|btn|font|caption|area|align|tree <hex>` took the number as a window and called its
+// vtable: a control id (06318E78) or any other number was a wild pointer and the game faulted. The number is
+// a window only when the live UI tree has a window at that address; else the first window with that control
+// id; else nothing ("no window"). `coop.fix core.ui_window_arg off`: the number as it is (before).
+static bool g_ui_arg_fix = true;
+COOP_FIX("core.ui_window_arg", "BUG-0812", g_ui_arg_fix, "ui: coop.ui takes a window by its address or control id only when the UI tree has it (a wrong number faulted the game)");
+Win arg_win(const char* text, SkOut* out)
 {
-    const uintptr_t v = (uintptr_t)strtoul(s, nullptr, 16);
+    uintptr_t v = strtoul(text, nullptr, 16);
+    if (!g_ui_arg_fix)
+        return (Win)v;
     Win by_id = nullptr;
     std::vector<Win> stack{main_window()};
-    while (!stack.empty()) {
+    for (int n = 0; !stack.empty() && n < 50000; n++) {
         Win w = stack.back();
         stack.pop_back();
         if (!w)
@@ -785,7 +822,7 @@ Win arg_win(const char* s, SkOut* out)
             stack.push_back(c);
     }
     if (!by_id)
-        H->out_printf(out, "no window %s (give its address from `coop.ui tree` or its control id)\n", s);
+        H->out_printf(out, "no window %08X (no window of the UI tree has that address or control id)\n", (unsigned)v);
     return by_id;
 }
 
@@ -853,6 +890,33 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "%08X.%08X group %08X\n", l.instance, l.type, l.group);
         return 0;
     }
+    if (sub == "refs" && argc > 2) { // the game's reference count of a window (BUG-1025)
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        H->out_printf(out, "refs %p %d\n", w, refs(w));
+        return 0;
+    }
+    if (sub == "reftest") { // RE (BUG-1025): the reference counts of a window the mod makes, step by step
+        Win parent = main_window();
+        Win l = label(nullptr, {0, 0, 10, 10}, "reftest", 0, 0xFFFFFFFF, kAlignLeft);
+        if (!l || !parent)
+            return 1;
+        int made = refs(l);
+        add_child(parent, l);
+        int added = refs(l);
+        void* p = H->ui_winproc(M, tramp, new HandlerBox{}, 0);
+        int proc0 = refs(p);
+        vcall<void>(l, 0x104 / 4, p);
+        int proc1 = refs(p);
+        remove_child(parent, l);
+        int removed = refs(l);
+        H->out_printf(out, "label: made %d (with ours), in a parent %d, taken out %d; handler: made %d, on the window %d\n",
+                      made, added, removed, proc0, proc1);
+        vcall<int>(p, 1); // ours
+        release(l);       // ours: the label and its handler go
+        return 0;
+    }
     if (sub == "load" && argc > 2) {
         Win w = load_layout((uint32_t)strtoul(argv[2], nullptr, 16),
                             argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 16) : 0x40464100u);
@@ -861,7 +925,9 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (sub == "btn" && argc > 2) { // button properties
         Win w = arg_win(argv[2], out);
-        void* b = w ? as_button(w) : nullptr;
+        if (!w)
+            return 1;
+        void* b = as_button(w);
         if (!b) {
             H->out_printf(out, "not a button");
             return 1;
@@ -934,6 +1000,31 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         }, flags);
         invalidate_transform(w);
         H->out_printf(out, "scale %.2f on %p (flags %X)", s_factor, w, flags);
+        return 0;
+    }
+    if (sub == "align" && argc > 3) { // experiments: a button's caption alignment (+0x3C) and type (+0x1C)
+        Win w = arg_win(argv[2], out);
+        void* b = w ? as_button(w) : nullptr;
+        if (!b)
+            return 1;
+        if (argc > 4)
+            vcall<void>(b, 0x1C / 4, atoi(argv[4]));
+        vcall<void>(b, 0x3C / 4, atoi(argv[3]));
+        return 0;
+    }
+    if (sub == "area" && argc > 6) { // experiments: a window's area (parent coordinates)
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_area(w, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
+                                                       (float)atof(argv[6])});
+        return 0;
+    }
+    if (sub == "caption" && argc > 3) { // experiments: a window's caption (glyph widths: docs/08-ui.md#ui-text-width)
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_caption(w, argv[3]);
         return 0;
     }
     if (sub == "font" && argc > 3) {

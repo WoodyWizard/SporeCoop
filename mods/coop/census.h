@@ -13,10 +13,12 @@
 //   end objects=<n>
 // kind: c creature, v vehicle; id: the net id (-1 none: the avatar, a local object).
 // own (creatures): avatar, npc (host), proxy (guest), puppet (a player's), local (no net id).
+// owner (creatures): the player id of a puppet (BUG-0450: tests match a player's puppet by it, not by distance).
 //
 // `coop.census all [r]` (the divergence detector, docs/sync-architecture-plan.md, tools/tests/worlddiff.py)
 // adds, after the v1 rows:
-//   me pos=(x y z) ok=<0|1>                       the own player's position (the compare area's centre)
+//   me pos=(x y z) ok=<0|1> [wscale=<f>]          the own player's position (the compare area's centre); Cell: the
+//       game's world scale G+0x514C the positions are in (BUG-0662)
 //   obj g-1 key=... pos=(x y z) noun=<hex> ser=<n> scale=<f>   every other placed game object (cGameData
 //       with a cSpatialObject) within r m of the own player (default 250), at most 6000
 //   obj l<id> key=<model> alive= hp= ai= own=<npc|proxy|local> owner=-1 pos=(...) scale=<size>  Cell: the
@@ -51,12 +53,14 @@ struct Row {
     uint32_t noun = 0;
     uint32_t serial = 0;
     float scale = -1;
+    float max_hp = -1; // BUG-0698: creatures' max health (the detector's max_hp row); -1 none
 };
 
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(uint32_t& mode, uint32_t& world)> place; // g_mode, g_world
     std::function<bool(net::Vec3& pos)> self_pos;               // the own player (false: none)
+    std::function<int(void* c)> puppet_owner;                   // BUG-0450: the player whose puppet c is (-1 none)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census and coop.wstate
@@ -72,4 +76,5 @@ std::string wstate(); // Space: `emp <pol> rel= flags=` per NPC empire with a re
 }
 namespace cellsync {
 void census_rows(std::vector<census::Row>& out); // the foreground cells (cellsync.cpp)
+float scale_now(); // the own world scale in Cell, 0 outside (cellsync.h; BUG-0662: `me ... wscale=`)
 }

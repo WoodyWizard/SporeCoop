@@ -9,9 +9,12 @@
 #include <cstring>
 #include <map>
 
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
+#include "tribe.h"
+#include "worldobj.h"
 
 namespace census {
 
@@ -23,16 +26,20 @@ static Ctx C;
 
 constexpr uint32_t kCreatureNoun = 0x18EB45Eu; // cCreatureAnimal (docs: SporeCoop::NounCast)
 
-static void creature_rows(std::vector<Row>& rows)
+constexpr uint32_t kCitizenNoun = 0x18EB4B7u; // cCreatureCitizen (tribe members, city citizens)
+
+static void creature_rows(std::vector<Row>& rows, bool citizens = false)
 {
     struct U {
         std::vector<Row>* rows;
         void* av;
-    } u{&rows, game::avatar()};
+        bool citizens;
+    } u{&rows, game::avatar(), citizens};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* u = (U*)p;
-            if (noun != kCreatureNoun || !game::object_alive(o) || u->rows->size() >= 2000)
+            bool kind = noun == kCreatureNoun || (u->citizens && noun == kCitizenNoun);
+            if (!kind || !game::object_alive(o) || u->rows->size() >= 2000)
                 return true;
             Row r;
             r.kind = 'c';
@@ -46,6 +53,7 @@ static void creature_rows(std::vector<Row>& rows)
             r.noun = noun;
             r.serial = game::object_serial(o);
             r.scale = game::scale(o);
+            r.max_hp = game::max_health(o);
             int pid = npc::proxy_id(o), hid = npc::host_id(o);
             if (o == u->av)
                 r.own = "avatar";
@@ -55,8 +63,11 @@ static void creature_rows(std::vector<Row>& rows)
             } else if (hid >= 0) {
                 r.own = "npc";
                 r.id = hid;
-            } else
+            } else {
                 r.own = r.ai ? "local" : "puppet";
+                if (!r.ai && C.puppet_owner)
+                    r.owner = C.puppet_owner(o);
+            }
             u->rows->push_back(r);
             return true;
         },
@@ -107,11 +118,27 @@ static void all_rows(AllQ& q)
             r.serial = game::object_serial(o);
             r.scale = game::object_scale(o);
             r.own = "world";
+            if (noun == 0x018C431C) { // BUG-0617: a food bundle's holder (own=ground|carried|held, owner = the carrier's player)
+                void* carrier = nullptr;
+                r.own = wobj::bundle_holder(o, &carrier);
+                if (carrier) {
+                    uint8_t ow = tribe::owner_of(carrier);
+                    r.owner = ow == 0xFF ? -1 : ow;
+                }
+            }
             q->rows->push_back(r);
             return true;
         },
         &q);
 }
+
+// BUG-0885: the same guard as coop.wstate's (BUG-0605, census.wstate_live): while the game's mode is not the frame's
+// (a stage change: Civ -> Space frees civilizations and vehicles before the mode changes) or the stage is being left
+// (the galaxy menu: the avatar and the lists are freed before the mode changes) the census reads no list and prints
+// `st phase changing=1` with 0 objects (worlddiff takes an empty census for "loading"). The header names the game's
+// own mode and the leaving flag (`gamemode= leaving=`). `coop.fix census.census_live off`: read anyway (0.7.12).
+static bool g_census_live_fix = true;
+COOP_FIX("census.census_live", "BUG-0885", g_census_live_fix, "detector: coop.census reads nothing while the game changes or leaves its stage (freed objects)");
 
 static int c_census(void*, int argc, const char* const* argv, SkOut* out)
 {
@@ -126,11 +153,22 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         C.place(mode, world);
     bool conn = C.sess && C.sess->connected();
     const char* role = !conn ? "none" : C.sess->role() == net::Role::Host ? "host" : "guest";
-    SAY("census v1 role=%s me=%u mode=%s modeid=%08X world=%08X t=%.1f\n", role, conn ? C.sess->my_id() : 0,
-        modes::mode_name(mode), mode, world, H->time_seconds());
+    uint32_t game_mode = game::mode_id();
+    bool leaving = game::leaving_stage();
+    SAY("census v1 role=%s me=%u mode=%s modeid=%08X world=%08X t=%.1f gamemode=%08X leaving=%d\n", role,
+        conn ? C.sess->my_id() : 0, modes::mode_name(mode), mode, world, H->time_seconds(), game_mode, (int)leaving);
+    bool planet = mode == modes::kCell || mode == modes::kCreature || mode == modes::kTribe || mode == modes::kCiv ||
+                  mode == modes::kSpace;
+    if (g_census_live_fix && planet && (game_mode != mode || leaving)) {
+        SAY("st phase changing=1\nend objects=0\n");
+        return 0;
+    }
     std::vector<Row> rows;
-    if (mode == modes::kCreature)
-        creature_rows(rows);
+    // `creatures`: the creature rows in any mode, the citizens (tribe members) too (tests: the creatures in a camera's
+    // picture in Tribe, docs/06-testing.md#testing-same-view)
+    bool creatures = argc >= 2 && !strcmp(argv[1], "creatures");
+    if (mode == modes::kCreature || creatures)
+        creature_rows(rows, creatures);
     else if (mode == modes::kCiv)
         civ::census_rows(rows);
     std::map<uint32_t, int> nouns;
@@ -151,8 +189,9 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         char b[256];
         int n = snprintf(b, sizeof b, "obj %c%d key=%08X alive=%d hp=%.1f ai=%d own=%s owner=%d pos=(%.1f %.1f %.1f)", r.kind,
                          r.id, r.key, r.alive, r.hp, r.ai, r.own, r.owner, r.pos.x, r.pos.y, r.pos.z);
-        if (all && n > 0 && n < (int)sizeof b - 64)
-            snprintf(b + n, sizeof b - n, " noun=%08X ser=%u scale=%.3f\n", r.noun, r.serial, r.scale);
+        if ((all || creatures) && n > 0 && n < (int)sizeof b - 64) // (creatures: the noun tells a citizen, BUG-0970)
+            snprintf(b + n, sizeof b - n, r.max_hp >= 0 ? " noun=%08X ser=%u scale=%.3f max=%.1f\n" : " noun=%08X ser=%u scale=%.3f\n",
+                     r.noun, r.serial, r.scale, r.max_hp);
         else if (n > 0 && n < (int)sizeof b - 2)
             strcat(b, "\n");
         if (buf.size() + strlen(b) > 7000) {
@@ -164,7 +203,12 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     if (!buf.empty())
         SAY("%s", buf.c_str());
     if (all) {
-        SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
+        // BUG-0662: Cell: the world scale these positions are in (a level change rescales each game at its own
+        // moment; worlddiff compares in one scale)
+        if (mode == modes::kCell)
+            SAY("me pos=(%.1f %.1f %.1f) ok=%d wscale=%.6g\n", me.x, me.y, me.z, have_me ? 1 : 0, cellsync::scale_now());
+        else
+            SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
         std::string ln = "nouns";
         for (auto& [k, v] : nouns) {
             char b[48];
@@ -187,7 +231,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     H->command_add(M, "coop.census",
-                   "coop.census [all [r [x y z]]] - the shared objects of this mode as the game has them, with net ids (tests: "
+                   "coop.census [all [r [x y z]] | creatures] - the shared objects of this mode as the game has them, with net ids (tests: "
                    "tools/tests/census.py); all: every placed game object within r m and the noun counts (worlddiff.py)",
                    c_census, nullptr, SK_CMD_MAIN_THREAD);
     wstate_init(H, M, &C);

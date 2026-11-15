@@ -39,3 +39,4 @@ coop_npc_lost_target.py: "no NPC stimulus named the removed puppet": FAIL with t
 - 2026-11-02: opened.
 - 2026-11-03: root cause (a destroyed creature named by NPC stimuli, pure virtual call), fixed on fix/w40-crashes (npc.stale_sender).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-11: the same abort came back in the 0.7.12 final check (BUG-0926): the herd-help node calls the stimulus's second creature (+0x10, the attacker), not its sender; this fix cleared by sender only. CORRECTION of "Root cause" above: the destroyed object named in the dump was the attacker at +0x10 (docs/re/creature.md#creature-stimulus-attacker).

@@ -14,14 +14,45 @@ guest's own colonies (space_map.cpp) and gives them back when it rejoins.
    tech 5, a cCivData of the guest's political id), and the host's roster of the guest has it as its own.
 PASS: 1 to 4. SPORE_FIX_OFF=space.keep_colonies: the planet is no colony in the rejoined guest's game (FAIL).
 
-  SPORE_LANE=4 python3 tools/tests/coop_space_colony_rejoin.py
+--crash (BUG-0810): step 3 is a crash instead of a leave: the guest's game is killed and started again at once and
+joins within the session's 30 s timeout, so the host takes the new HELLO by its rejoin token (BUG-0235), drops the
+old entry and gives the newcomer the same player id in one message. SPORE_FIX_OFF=space.kept_leave: the host never
+saw the player leave, kept the rejoined guest's empty roster as its colonies and sent nothing back (FAIL).
+
+  SPORE_LANE=4 python3 tools/tests/coop_space_colony_rejoin.py [--crash]
 """
 import re
+import os
+import sys
 import time
 
 import lane
+import twoinst
+from coop_creature_desync import kill_game
 from coop_space_map import no_movie, rosters, sp, wait
-from twoinst import Checks, start, wait_guest_in
+from sporectl import Console
+from twoinst import Checks, start, wait_guest_in, wait_up, watch
+
+
+def crash_rejoin(host):
+    """the guest's game dies (SIGKILL: no BYE, its rejoin token stays) and is started again at once"""
+    for m in twoinst._monitors:
+        m.stop = True
+    t0 = time.time()
+    kill_game(lane.GUEST)
+    time.sleep(1)
+    lane.run_guest()
+    if not wait_up(lane.GUEST, 60):
+        lane.run_guest()
+        assert wait_up(lane.GUEST), 'the guest did not start'
+    guest = Console(lane.GUEST)
+    wait(lambda: 'GalaxyGameEntry' in guest.call('game.mode')['out'], 60, 0.5)
+    for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
+        print('  SPORE_FIX_OFF (restarted guest): ' + guest.call(f'coop.fix {name} off')['out'].strip(), flush=True)
+    print(f'  the guest is up again {time.time() - t0:.0f} s after the crash: joins', flush=True)
+    guest.call(lane.JOIN)
+    watch(lane.HOST, lane.GUEST)
+    return guest, time.time() - t0
 
 
 def planet_line(con, planet):
@@ -39,6 +70,7 @@ def epoch(con):
 
 
 def main():
+    crash = '--crash' in sys.argv
     host, guest = start('space')
     ck = Checks()
     time.sleep(3)
@@ -59,12 +91,18 @@ def main():
     ck(wait(host_has, 30) is not None, f'the host\'s roster of the guest has colony {planet} as the guest\'s own')
     print('  host:', sp(host, 'map kept').replace('\n', ' | '), flush=True)
 
-    guest.call('coop.leave')
-    ck(wait(lambda: 1 not in rosters(host), 15) is not None, 'the guest left: the host dropped its roster')
-    time.sleep(2)
-    tech0, _ = planet_line(guest, planet)
-    e0 = epoch(guest)
-    guest.call(lane.JOIN)
+    if crash:
+        tech0, e0 = None, -1
+        k0 = re.search(r'sent=(\d+)', sp(host, 'map kept'))
+        guest, secs = crash_rejoin(host)
+        ck(secs < 28, f'the restarted guest joined within the session timeout ({secs:.0f} s)')
+    else:
+        guest.call('coop.leave')
+        ck(wait(lambda: 1 not in rosters(host), 15) is not None, 'the guest left: the host dropped its roster')
+        time.sleep(2)
+        tech0, _ = planet_line(guest, planet)
+        e0 = epoch(guest)
+        guest.call(lane.JOIN)
     # the rejoin loads the host's world: the guest's Space world epoch moves on (the old world answers
     # coop.avatar until the load starts, so wait_guest_in alone returned before it)
     loaded = wait(lambda: epoch(guest) > e0 and 'Space' in guest.call('game.mode')['out'], 180, 2)

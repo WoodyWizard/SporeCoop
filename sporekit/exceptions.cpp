@@ -2,6 +2,7 @@
 // before the game's / Wine's handlers swallow them. Invaluable when a hook breaks a frame.
 #include "core.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
@@ -18,9 +19,27 @@ struct ExcRec {
     uint32_t regs[8];
     uint32_t stack[12];
     uint32_t rets[10]; // likely return addresses into the exe found deeper on the stack (0 = none)
+    uint32_t mrets[8]; // BUG-0977: the same into another module's code (our DLLs, the CRT, Wine's): who called in
+    uint32_t mark;     // count at the start of the fault storm window (BUG-0676)
+    bool storm;        // named as a fault storm already
 };
 
 // a dword on the stack that points just after a call instruction in the exe's code
+// BUG-0977: a dword on the stack that points just after a call instruction in a loaded module other than the exe (a
+// fault in ucrtbase's memcpy listed only exe addresses: the mod function that called it was not named)
+static bool module_return_address(uint32_t v)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (v < 0x10000 || !VirtualQuery((const void*)(uintptr_t)(v - 7), &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        mbi.Type != MEM_IMAGE || !(mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_EXECUTE_READWRITE)) ||
+        (uintptr_t)mbi.BaseAddress + mbi.RegionSize < (uintptr_t)v ||
+        mbi.AllocationBase == (void*)GetModuleHandleW(nullptr))
+        return false;
+    const uint8_t* c = (const uint8_t*)(uintptr_t)v;
+    return c[-5] == 0xE8 || (c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0) ||
+           (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10);
+}
+
 static bool exe_return_address(uint32_t v)
 {
     static uintptr_t lo, hi;
@@ -75,9 +94,7 @@ static bool in_our_code(uintptr_t eip, std::string& name)
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             (LPCWSTR)eip, &m) || !m)
         return false;
-    wchar_t p[MAX_PATH];
-    GetModuleFileNameW(m, p, MAX_PATH);
-    std::wstring w = p;
+    std::wstring w = module_path(m); // BUG-1033
     for (auto& c : w)
         c = (wchar_t)towlower(c);
     name = narrow(w.substr(w.find_last_of(L"\\/") + 1));
@@ -104,6 +121,69 @@ bool exceptions_stack_overflow(EXCEPTION_RECORD* er, CONTEXT* ctx, DWORD* tid, d
     *tid = g_so_tid;
     *t = g_so_t;
     return true;
+}
+
+// BUG-0956: esp outside the faulting thread's own stack (another allocation than the one of the TIB's StackBase):
+// the game jumped into heap bytes that moved esp. Wine refuses to dispatch such a fault ("Exception frame is not in
+// stack limits") and ends the process; the SEH frames on the real stack are never run.
+static bool off_stack(uintptr_t esp, uintptr_t* lo, uintptr_t* hi)
+{
+    auto* tib = (const NT_TIB*)NtCurrentTeb();
+    *hi = (uintptr_t)tib->StackBase;
+    *lo = (uintptr_t)tib->StackLimit;
+    MEMORY_BASIC_INFORMATION a, b;
+    if (!*hi || !VirtualQuery((const void*)(*hi - 1), &b, sizeof b))
+        return false;
+    if (!VirtualQuery((const void*)esp, &a, sizeof a))
+        return true;
+    return a.AllocationBase != b.AllocationBase;
+}
+
+// the return addresses on the thread's real stack around its innermost SEH record: the live frames above it (the
+// caller chain of the code that went astray), then the nearest ones below it (the call itself, or older frames);
+// logged once per run for an off-stack fault
+static void log_real_stack(uintptr_t lo, uintptr_t hi)
+{
+    auto* tib = (const NT_TIB*)NtCurrentTeb();
+    uintptr_t seh = (uintptr_t)tib->ExceptionList;
+    if (seh < lo || seh >= hi)
+        seh = lo;
+    logf(&g_kit_mod, SK_ERROR, "  the thread's stack %08X..%08X, innermost SEH record %08X; return addresses above it, then "
+         "below it:", (unsigned)lo, (unsigned)hi, (unsigned)seh);
+    for (int dir = 0; dir < 2; dir++) {
+        char line[400];
+        int len = 0, n = 0;
+        for (int i = 0; i < 0x1000 && n < (dir ? 160 : 48); i++) {
+            uintptr_t q = dir == 0 ? (seh & ~3u) + 4 * i : (seh & ~3u) - 4 * (i + 1);
+            if (q < lo || q + 4 > hi)
+                break;
+            uint32_t v = *(const uint32_t*)q;
+            if (!exe_return_address(v))
+                continue;
+            n++;
+            std::string name = symbols_reverse(v);
+            len += snprintf(line + len, sizeof line - len, " [%c%X]%08X %s", dir ? '-' : '+', (unsigned)(4 * i + 4 * dir), v,
+                            name.empty() ? "?" : name.c_str());
+            if (len > 280) {
+                logf(&g_kit_mod, SK_ERROR, "   %s", line);
+                len = 0;
+            }
+        }
+        if (len)
+            logf(&g_kit_mod, SK_ERROR, "   %s", line);
+    }
+    // the raw dwords just below the record (the innermost frames: locals, arguments, return addresses)
+    for (int row = 0; row < 8; row++) {
+        char line[160];
+        int len = 0;
+        uintptr_t q0 = (seh & ~3u) - 0x20 * (row + 1);
+        if (q0 < lo)
+            break;
+        len += snprintf(line, sizeof line, "-%03X:", (unsigned)(seh - q0));
+        for (int k = 0; k < 8; k++)
+            len += snprintf(line + len, sizeof line - len, " %08X", *(const uint32_t*)(q0 + 4 * k));
+        logf(&g_kit_mod, SK_ERROR, "   %s", line);
+    }
 }
 
 // The handler runs at the first chance of every fault, on the faulting thread, maybe inside a lock
@@ -150,23 +230,43 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     uint32_t regs[8] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp};
     memcpy(r.regs, regs, sizeof regs);
     const uint32_t* sp = (const uint32_t*)c->Esp;
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
-        for (int i = 0; i < 12; i++)
-            r.stack[i] = sp[i];
-        // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
-        const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
-        int n = 0;
-        for (const uint32_t* q = sp; q < end && q < sp + 512 && n < 10; q++)
-            if (exe_return_address(*q))
-                r.rets[n++] = *q;
-    }
-    {
+    // BUG-1028: the 12 dwords were copied after a check of esp's page only: with esp near the end of its region (an
+    // off-stack fault into a heap block, BUG-0956) the copy read past it and faulted inside this handler; that second
+    // fault was ignored (SK_TF_IN_EXC) and the first one never recorded. Now the fault is recorded first and the reads
+    // stay inside the readable region. `kit.fix vehbounds 0`: as before.
+    bool vb = fixed(g_fix_vehbounds);
+    if (vb) {
         std::lock_guard<std::mutex> lk(g_mu);
         g_last_er = *ep->ExceptionRecord;
         g_last_ctx = *c;
         g_last_tid = r.tid;
         g_last_t = now_seconds();
+    }
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT &&
+        (!vb || !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))) {
+        uintptr_t left = (uintptr_t)mbi.BaseAddress + mbi.RegionSize - (uintptr_t)sp;
+        int words = vb ? (int)std::min<uintptr_t>(12, left / 4) : 12;
+        for (int i = 0; i < words; i++)
+            r.stack[i] = sp[i];
+        // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
+        const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
+        int n = 0, m = 0;
+        for (const uint32_t* q = sp; q < end && q < sp + 512 && (n < 10 || m < 8); q++)
+            if (exe_return_address(*q)) {
+                if (n < 10)
+                    r.rets[n++] = *q;
+            } else if (m < 8 && module_return_address(*q))
+                r.mrets[m++] = *q;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        if (!vb) {
+            g_last_er = *ep->ExceptionRecord;
+            g_last_ctx = *c;
+            g_last_tid = r.tid;
+            g_last_t = now_seconds();
+        }
         for (auto& x : g_recs)
             if (x.code == code && x.eip == eip) {
                 x.count++;
@@ -181,9 +281,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         HMODULE m = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                (LPCWSTR)eip, &m) && m) {
-            wchar_t n[MAX_PATH];
-            GetModuleFileNameW(m, n, MAX_PATH);
-            std::wstring s = n;
+            std::wstring s = module_path(m); // BUG-1033
+            if (s.empty())
+                s = L"?";
             char off[32];
             snprintf(off, sizeof off, "+0x%X", (unsigned)(eip - (uintptr_t)m));
             r.where = narrow(s.substr(s.find_last_of(L"\\/") + 1)) + off;
@@ -217,6 +317,33 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         }
         logf(&g_kit_mod, SK_ERROR, "  called from: %s", named.c_str());
     }
+    if (r.mrets[0]) { // BUG-0977: return addresses into other modules (module+offset), innermost first
+        std::string ms;
+        for (int i = 0; i < 8 && r.mrets[i]; i++) {
+            HMODULE hm = nullptr;
+            char one[80];
+            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCWSTR)(uintptr_t)r.mrets[i], &hm) && hm) {
+                std::wstring w = module_path(hm); // BUG-1033
+                if (w.empty())
+                    w = L"?";
+                snprintf(one, sizeof one, " %s+0x%X", narrow(w.substr(w.find_last_of(L"\\/") + 1)).c_str(),
+                         (unsigned)(r.mrets[i] - (uintptr_t)hm));
+            } else
+                snprintf(one, sizeof one, " %08X", (unsigned)r.mrets[i]);
+            ms += one;
+        }
+        logf(&g_kit_mod, SK_ERROR, "  module calls:%s", ms.c_str());
+    }
+    uintptr_t lo, hi;
+    static volatile LONG offstack_told;
+    if (code != EXCEPTION_STACK_OVERFLOW && fixed(g_fix_offstack) && off_stack(c->Esp, &lo, &hi) &&
+        InterlockedCompareExchange(&offstack_told, 1, 0) == 0) {
+        logf(&g_kit_mod, SK_ERROR, "the stack pointer %08X is outside this thread's stack: this fault cannot be dispatched, "
+             "the game ends now (BUG-0956)", (unsigned)c->Esp);
+        log_real_stack(lo, hi);
+        diag_offstack_report(ep);
+    }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -229,8 +356,140 @@ void exceptions_fault_test()
     page[0] = 1;
 }
 
+// ---- kit.test.vehedge (BUG-1028): a fault whose esp is 8 bytes below the end of its stack's committed region ----
+// A thread of its own gets a stack in a block of ours (the TIB's limits point at it, so the fault is dispatched as
+// usual): 192 KB committed, then reserved pages. It moves esp to 8 bytes below the committed end and reads address
+// 0x10. A last vectored handler sends the thread back to its own stack (also from a second fault inside the fault
+// logger). Recorded: the fault logger's last fault is this one.
+} // namespace sk
+extern "C" uintptr_t sk_edge_saved_sp;
+uintptr_t sk_edge_saved_sp;
+extern "C" void sk_edge_fault(uintptr_t new_sp);
+extern "C" char sk_edge_fault_at[], sk_edge_resume[];
+asm(".text\n"
+    ".globl _sk_edge_fault\n"
+    "_sk_edge_fault:\n"
+    "  pushl %ebp\n"
+    "  pushl %ebx\n"
+    "  pushl %esi\n"
+    "  pushl %edi\n"
+    "  movl 20(%esp), %eax\n"
+    "  movl %esp, _sk_edge_saved_sp\n"
+    "  movl %eax, %esp\n"
+    ".globl _sk_edge_fault_at\n"
+    "_sk_edge_fault_at:\n"
+    "  movl 0x10, %eax\n"
+    ".globl _sk_edge_resume\n"
+    "_sk_edge_resume:\n"
+    "  movl _sk_edge_saved_sp, %esp\n"
+    "  popl %edi\n"
+    "  popl %esi\n"
+    "  popl %ebx\n"
+    "  popl %ebp\n"
+    "  ret\n");
+namespace sk {
+
+static volatile DWORD g_edge_tid;
+static uint8_t* g_edge_block;
+static constexpr size_t kEdgeCommit = 192 * 1024, kEdgeReserve = 256 * 1024;
+static volatile LONG g_edge_faults, g_edge_nested; // nested: a fault elsewhere (inside the fault logger)
+
+static LONG CALLBACK edge_handler(EXCEPTION_POINTERS* ep)
+{
+    if (!g_edge_tid || GetCurrentThreadId() != g_edge_tid)
+        return EXCEPTION_CONTINUE_SEARCH;
+    InterlockedIncrement(&g_edge_faults);
+    if ((uintptr_t)ep->ExceptionRecord->ExceptionAddress != (uintptr_t)sk_edge_fault_at)
+        InterlockedIncrement(&g_edge_nested);
+    ep->ContextRecord->Eip = (DWORD)(uintptr_t)sk_edge_resume;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+static DWORD WINAPI edge_thread(void*)
+{
+    g_edge_tid = GetCurrentThreadId();
+    auto* tib = (NT_TIB*)NtCurrentTeb();
+    void *base = tib->StackBase, *limit = tib->StackLimit;
+    tib->StackBase = g_edge_block + kEdgeCommit;
+    tib->StackLimit = g_edge_block;
+    sk_edge_fault((uintptr_t)(g_edge_block + kEdgeCommit - 8));
+    tib->StackBase = base;
+    tib->StackLimit = limit;
+    return 0;
+}
+
+std::string exceptions_edge_test()
+{
+    static bool installed;
+    if (!g_edge_block) {
+        g_edge_block = (uint8_t*)VirtualAlloc(nullptr, kEdgeReserve, MEM_RESERVE, PAGE_NOACCESS);
+        if (!g_edge_block || !VirtualAlloc(g_edge_block, kEdgeCommit, MEM_COMMIT, PAGE_READWRITE))
+            return "no memory for the test stack";
+    }
+    if (!installed) {
+        AddVectoredExceptionHandler(0, edge_handler);
+        installed = true;
+    }
+    g_edge_faults = g_edge_nested = 0;
+    DWORD tid = 0;
+    HANDLE t = CreateThread(nullptr, 0, edge_thread, nullptr, 0, &tid);
+    if (!t)
+        return "no thread";
+    bool ended = WaitForSingleObject(t, 10000) == WAIT_OBJECT_0;
+    CloseHandle(t);
+    g_edge_tid = 0;
+    bool recorded;
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        recorded = g_last_tid == tid && (uintptr_t)g_last_er.ExceptionAddress == (uintptr_t)sk_edge_fault_at;
+    }
+    char b[200];
+    snprintf(b, sizeof b, "vehedge: recorded=%d faults=%ld nested=%ld ended=%d at=%08X vehbounds=%d",
+             recorded ? 1 : 0, (long)g_edge_faults, (long)g_edge_nested, ended ? 1 : 0, (unsigned)(uintptr_t)sk_edge_fault_at, fixed(g_fix_vehbounds) ? 1 : 0);
+    return b;
+}
+
+// BUG-0676: a fault the game's handler catches lets the game go on; when the same place faults in every frame (the
+// galaxy menu's exit cut off half-way: 22939 faults at 0xE01323 in 5 min, no crash, no report, a guest stuck in the
+// menu) the log had one line at the first fault and nothing after it. Every 10 s the counts are compared: 300 more of
+// one fault is a storm: one ERR line per place and one report per run. `kit.fix faultstorm 0`: nothing (0.3.12).
+static const uint32_t kStormFaults = 300;
+static const double kStormWindow = 10.0;
+static void storm_check()
+{
+    static double since = -1;
+    double now = now_seconds();
+    if (since < 0)
+        since = now;
+    if (now - since < kStormWindow)
+        return;
+    double span = now - since;
+    since = now;
+    char text[320] = "";
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        ThreadFlag tf(SK_TF_IN_EXC);
+        for (auto& r : g_recs) {
+            uint32_t n = r.count - r.mark;
+            r.mark = r.count;
+            if (r.storm || n < kStormFaults || text[0]) // one per check; another one at the next
+                continue;
+            r.storm = true;
+            snprintf(text, sizeof text, "fault storm: 0x%08lX at 0x%08X %s (data 0x%08X) %u times in %.0f s (%u in all, "
+                     "%u faults of every kind): the game's handler catches it and the game cannot get past it",
+                     r.code, (unsigned)r.eip, r.where.c_str(), (unsigned)r.addr, n, span, r.count, g_total.load());
+        }
+    }
+    if (!text[0])
+        return;
+    logf(&g_kit_mod, SK_ERROR, "%s (BUG-0676)", text);
+    diag_storm_report(text);
+}
+
 void exceptions_pump()
 {
+    if (fixed(g_fix_faultstorm))
+        storm_check();
     if (!g_mod_fault.exchange(false))
         return;
     char t[256];

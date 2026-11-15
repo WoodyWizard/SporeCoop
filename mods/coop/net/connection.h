@@ -53,6 +53,11 @@ struct ConnStats {
     uint32_t joined = 0;    // reliable messages received in pieces and joined
     uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable, or a peer that never split)
     uint32_t too_big_old = 0; // reliable messages not sent: above one packet for a peer that cannot join pieces
+    // BUG-0612 (oversize part): unreliable messages that can never fit a packet (they were dropped without a word);
+    // the size and type of the last one, for the session's log line
+    uint32_t unrel_too_big = 0, unrel_too_big_logged = 0;
+    uint8_t unrel_too_big_type = 0;
+    uint32_t unrel_too_big_size = 0;
     // support diagnostics (diag_stats.cpp): datagram bytes both ways, packets lost (an ack kLostAfter
     // to kAckWindow packets later does not have them) and the round trip
     // samples since the last take_window()
@@ -77,6 +82,15 @@ public:
     // connection and late packets of the old one are told apart instead of corrupting the new one
     uint32_t conn_id = 0;
     float rtt_ms = 100.f;
+    // BUG-0651: the last kRttRing round-trip samples (ms) and their q-quantile (-1 under 16 samples). The mean
+    // above follows every latency spike and both games' frame times; a low quantile is the link's own latency
+    static constexpr size_t kRttRing = 128;
+    float rtt_ring[kRttRing] = {};
+    uint32_t rtt_ring_n = 0;
+    float rtt_quantile(float q) const;
+    // the time (ms) of this game's previous read of the socket (Session::update): a sample's ack came in between that
+    // read and this one, so half of that wait is taken off the ring's sample (a loaded game's own frame time)
+    uint32_t poll_prev_ms = 0;
     uint32_t last_recv_ms = 0;
     uint32_t created_ms = 0;
     ConnStats stats;
