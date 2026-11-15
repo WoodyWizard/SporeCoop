@@ -165,6 +165,7 @@ struct Stray {
     uint32_t world;
     double since;
 };
+static constexpr double kSoloAwait = 5.0;
 // ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
 // until every player is ready (or 60 s / "Start now"), then the game goes on ----
 struct Vote {
@@ -383,6 +384,30 @@ bool creature_puppet(const modes::Adapter* a);
 void despawn(Remote& r);
 void* puppet_now(const Remote& r);
 bool same_place(const net::PlayerState& s);
+extern uint32_t g_stage_world;
+bool host_here();
+
+// ---- defined in dna.cpp ----
+void dna_host_gain(const dna_ledger::Part& p, float before);
+void dna_note(const dna_ledger::Part& p, uint8_t me);
+void dna_notices_tick(double now);
+int dna_pace_announce();
+float dna_pace_gain(float amount);
+void dna_pace_heard(int div);
+int dna_pace_meal(int amount);
+void dna_spend_resync();
+void dna_spend_sample();
+void dna_spend_tick(double now);
+extern double g_dna_at;
+extern std::vector<dna_ledger::Part> g_dna_out;
+extern float g_dna_sent;
+extern bool g_dna_spend_fix;
+extern dna_pace::Carry g_pace_carry;
+extern float g_solo_await;
+extern bool g_solo_await_fix;
+extern double g_solo_await_until;
+bool on_dna(float& delta);
+void dna_spend_note(float d);
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
