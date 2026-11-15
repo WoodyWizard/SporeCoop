@@ -1150,8 +1150,7 @@ static void align_species_data(std::vector<dbpf::Record>& recs, ModelKind k, con
 {
     if (k != kMkCreature)
         return;
-    std::map<uint32_t, uint32_t> parts;
-       // the bem's part ids: before -> after
+    std::map<uint32_t, uint32_t> parts;       // the bem's part ids: before -> after
     std::vector<std::pair<std::array<uint8_t, 12>, std::array<uint8_t, 12>>> paints; // the three effects
     for (size_t i = 0; i < recs.size() && i < before.size(); i++) {
         if (recs[i].key.type != kBem || before[i].key.type != kBem || recs[i].data.size() != before[i].data.size())
@@ -1358,8 +1357,7 @@ Option mine(Kind k)
     // default: a guest plays its newest creation; the host keeps the one of its world
     if (guest && !g_opts[k].empty())
         return g_opts[k].front();
-    if (guest && g_follow_fix
- && g_follow[k].instance && g_follow_epoch[k] == choice_epoch_now(k))
+    if (guest && g_follow_fix && g_follow[k].instance && g_follow_epoch[k] == choice_epoch_now(k))
         return named(g_follow[k]); // BUG-0508: the host's evolved species, in place
     Key a = k == kCreature ? avatar_species_key() : cell_key();
     if (a.instance)
@@ -2652,8 +2650,7 @@ static double g_new_avatar_at = -100;
 static uint64_t g_new_avatar_frame = 0;
 bool avatar_swap_settling(double now)
 {
-    uint64_t f
- = H->frame_index();
+    uint64_t f = H->frame_index();
     bool swap = g_swap_at >= 0 && (now - g_swap_at < 5.0 || f - g_swap_frame < 300);
     bool fresh = g_new_avatar_at >= 0 && (now - g_new_avatar_at < 5.0 || f - g_new_avatar_frame < 300);
     return swap || fresh;
