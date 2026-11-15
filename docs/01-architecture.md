@@ -641,10 +641,15 @@ C1 and C4 of 0.7.15 for Civ (BUG-1140, BUG-1143), D3 (BUG-1163). The hand-made m
   holds; `local_play` BUG-0151), unit tests tests/civ_tests.cpp.
 * Behaviour differences, on purpose: a duplicate of a completed cycle's last chunk does not sweep again (sweep_once);
   the guest's `older_chunks` counter survives a world change (the receiver keeps its counters).
-* Files (C8, BUG-1164, pure moves after the counters were grouped): `civ.cpp` (the stage: hooks, host and guest ticks,
-  messages, cities, buildings, shots, Space builds), `civ_tables.cpp` (the two registries with their accessors, the
-  guest's liveness rule `gv_alive`, the snapshot receiver `g_rx`), `civ_debug.cpp` (`debug()`, the `coop.civ` command),
-  `civ_internal.h` (what they share: includes, layout constants, the types, the `hv_each` / `gv_each` templates,
-  the declarations), `civ_logic.h` (the rules). The 129 diagnostic counters are one struct, `g_n` (`g_n.created`, ...).
-  Registrations (COOP_FIX, LIFECYCLE / SESSION_STATE, CALL_GUARD, store::add, the hooks) all stay in civ.cpp, so the
-  lifecycle table, the hook list and the switch list keep their order (refactor_dump identical, BUG-1164).
+* Files (C8, BUG-1164, pure moves after the counters were grouped): `civ.cpp` (init and the hooks, tick, on_message,
+  the city planner, the co-op features: siege, roles, alarm, superweapon, the Space builds, every lifecycle
+  registration), `civ_host.cpp` (E1's claims, dealing the cities, host_tick with the vehicle table pass and the snapshot
+  it sends, host_command), `civ_guest.cpp` (the host's cities, buildings and ruins on the guest, the vehicle mirrors and
+  guest_state / guest_tick / prune_gone, the save strip), `civ_shots.cpp` (the host's shots on the guests, BUG-0477;
+  the old Tribe villages, BUG-0539), `civ_tables.cpp` (the two registries with their accessors, the guest's liveness
+  rule `gv_alive`, the snapshot receiver `g_rx`), `civ_debug.cpp` (`debug()`, the `coop.civ` command), `civ_internal.h`
+  (what they share: includes, layout constants, the types, the `hv_each` / `gv_each` templates, the declarations),
+  `civ_logic.h` (the rules). The 129 diagnostic counters are one struct, `g_n` (`g_n.created`, ...).
+  The lifecycle registrations (LIFECYCLE_STATE / SESSION_STATE / PLAYER_STATE) and the hooks stay in civ.cpp, so the
+  lifecycle table and the hook list keep their order; the switch and guard lists are dumped sorted (refactor_dump
+  identical, BUG-1164).
