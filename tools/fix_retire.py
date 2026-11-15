@@ -57,6 +57,7 @@ KEEP = {
     'tribe.form_pace': SEAM + ': coop_tribe_copy_marker, coop_wsync_tribe',
     'core.editor_own_pause': SEAM + ': coop_exit_editor_held --held (its default)',
     'world.intro_at_once': SEAM + ': coop_tribe_camera_null',
+    'creations.guest_world_species': 'seam (suite guest_spot_swap runs its scenario with it off)',
 }
 
 
@@ -377,15 +378,17 @@ def check():
                        '(a new fix takes a new name)')
     tok = {n: re.compile(r'(?<![\w.])' + re.escape(n) + r'(?![\w])') for n in names}
     cmd = [(c, re.compile(r'(?<![\w.])' + re.escape(c) + r'(?![\w])')) for c in cmds]
+    uses = {n: re.compile(DOC_USE.format(n=re.escape(n))) for n in names}
     for p, text in test_files().items():
         for i, line in enumerate(text.split('\n'), 1):
             for n, rx in tok.items():
-                if rx.search(line):
+                # a line that says the switch is retired may name it (a test's history: its FAIL run); no other
+                if rx.search(line) and ('retired' not in line or uses[n].search(line) or re.search(
+                        r"['\"]" + re.escape(n) + r"['\",]", line)):
                     out.append(f'{p}:{i}: names the retired switch {n}')
             for c, rx in cmd:
                 if rx.search(line):
                     out.append(f'{p}:{i}: uses the removed command `{c}`')
-    uses = {n: re.compile(DOC_USE.format(n=re.escape(n))) for n in names}
     for p in doc_files():
         for i, line in enumerate(open(os.path.join(ROOT, p), encoding='utf-8', errors='replace'), 1):
             for n, rx in uses.items():
@@ -416,14 +419,16 @@ def self_test():
                                  'command coop.zzfix\n')
         doc = os.path.join(d, 'doc.md')
         open(doc, 'w').write('run it with `coop.fix zz.probe off`; the label zz.probe stays\n')
-        test_files = lambda: {'tools/tests/probe.py': "env SPORE_FIX_OFF=a.b,zz.probe\nc.call('coop.zzfix 0')\n"}
+        test_files = lambda: {'tools/tests/probe.py': "env SPORE_FIX_OFF=a.b,zz.probe\nc.call('coop.zzfix 0')\n"
+                                                         "# zz.probe off failed (retired in 0.7.15)\n"
+                                                         "c.call('coop.fix zz.probe off')  # retired\n"}
         doc_files = lambda: [doc]
         try:
             got = check()
         finally:
             RETIRED, test_files, doc_files = saved
     want = [f'retired switch {real} is registered again', 'probe.py:1: names the retired switch zz.probe',
-            'probe.py:2: uses the removed command `coop.zzfix`', 'doc.md:1: switches off the retired switch zz.probe']
+            'probe.py:2: uses the removed command `coop.zzfix`', 'probe.py:4: names the retired switch zz.probe', 'doc.md:1: switches off the retired switch zz.probe']
     miss = [w for w in want if not any(w in g for g in got)]
     extra = [g for g in got if not any(w in g for w in want)]
     for m in miss:
