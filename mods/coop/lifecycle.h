@@ -20,7 +20,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lifecycle {
@@ -99,6 +101,195 @@ struct WorldWatch {
     }
 };
 
+// ---- observers (C2 of docs/plan-0.7.15.md, audit CORE-3): one ordered fan-out for the events the modules call by
+// hand today (end_session's three module lists, avatar_change_check's six calls, the player callbacks) ----
+//
+//   LIFECYCLE_HOOK("tribe.mirrors", lifecycle::kSessionEnd | lifecycle::kWorldChange, -20, on_world_change, true);
+//
+// fire(event, ctx, game_ok) runs every hook of the event in `order` (lower first; equal orders in registration
+// order, which is the link order across files: give hooks that must follow each other different orders). The
+// registry's own state resets of the event's scope (LIFECYCLE_STATE: kSessionEnd -> kSession, kWorldChange ->
+// kWorld) run at order 0: hooks with order < 0 run before them (a despawn that reads the table), order >= 0 after.
+// `needs_game`: the hook calls the game (destroys objects, plays animations). It runs only when fire() is called
+// with game_ok (from on_frame, outside g_sess.update(): BUG-0029); otherwise it is queued with its ctx and run by
+// pump_game() from on_frame, in its order. Its module keeps what it needs for that (its own table: the plain resets
+// of the event may run first).
+// Re-entrancy: a fire() from inside a hook is queued and runs after the current fan-out ends (no nested fan-out,
+// FIFO). A hook that throws is counted (faults, last_fault) and the fan-out goes on with the next hook; a game fault
+// (SEH) is not a C++ exception: the game glue may install a runner (set_runner) that calls the hook under its guard.
+// Portable (no Windows, no SporeKit): tests/core_tests.cpp checks the order, the queue, re-entrancy and a throwing
+// hook. docs/01-architecture.md#arch-world-id.
+enum Event : uint8_t { kSessionEnd = 1, kWorldChange = 2, kPlayerJoin = 4, kPlayerLeave = 8 };
+constexpr uint8_t kCellToo = 1;
+
+struct Ctx {
+    uint8_t event = 0;
+    uint8_t player = 0xFF;        // kPlayerJoin / kPlayerLeave: the id
+    uint8_t path = 0;             // kSessionEnd: the caller's EndPath (coop_state.h), 0 if none
+    uint8_t flags = 0;            // kSessionEnd: kCellToo (end_session's `cell`: the Cell modules end too)
+    uint32_t from_world = 0;      // kWorldChange: world_id serial before / now (world_id.h)
+    uint32_t to_world = 0;
+    int8_t from_stage = -1, to_stage = -1;
+};
+
+using HookFn = void (*)(const Ctx&);
+// calls fn(ctx); false when a fault was caught (counted as a fault of the hook)
+using Runner = bool (*)(HookFn fn, const Ctx& ctx);
+
+struct Hook {
+    const char* name;
+    uint8_t events;
+    int order;
+    HookFn fn;
+    bool needs_game;
+    uint32_t calls = 0, faults = 0;
+};
+
+struct Fanout {
+    std::vector<Hook> hooks;
+    std::vector<std::pair<size_t, Ctx>> game_queue; // needs_game hooks waiting for pump_game (hook index, ctx)
+    std::vector<std::pair<Ctx, bool>> pending;      // fire() calls made inside a fan-out (ctx, game_ok)
+    bool running = false;
+    Runner runner = nullptr;
+    bool state_resets = true; // the LIFECYCLE_STATE resets at order 0 (the `on` argument of reset())
+    uint32_t fired[4] = {};
+    uint32_t faults = 0, nested = 0, queued = 0;
+    std::string last_fault;
+};
+
+inline Fanout& fanout()
+{
+    static Fanout f;
+    return f;
+}
+
+struct HookReg {
+    HookReg(const char* name, uint8_t events, int order, HookFn fn, bool needs_game)
+    {
+        fanout().hooks.push_back({name, events, order, fn, needs_game});
+    }
+};
+
+inline void set_runner(Runner r) { fanout().runner = r; }
+
+inline int event_slot(uint8_t e) { return e == kSessionEnd ? 0 : e == kWorldChange ? 1 : e == kPlayerJoin ? 2 : 3; }
+
+inline void call_hook(size_t i, const Ctx& c)
+{
+    Fanout& f = fanout();
+    Hook& h = f.hooks[i];
+    h.calls++;
+    bool ok = true;
+    try {
+        ok = f.runner ? f.runner(h.fn, c) : (h.fn(c), true);
+    } catch (...) {
+        ok = false;
+    }
+    if (!ok) {
+        h.faults++;
+        f.faults++;
+        f.last_fault = h.name;
+    }
+}
+
+// the hooks of `event`, sorted by order (stable: registration order for equal orders)
+inline std::vector<size_t> hooks_of(uint8_t event)
+{
+    Fanout& f = fanout();
+    std::vector<size_t> idx;
+    for (size_t i = 0; i < f.hooks.size(); i++)
+        if (f.hooks[i].events & event)
+            idx.push_back(i);
+    for (size_t a = 1; a < idx.size(); a++) // insertion sort: stable, the lists are short
+        for (size_t b = a; b > 0 && f.hooks[idx[b]].order < f.hooks[idx[b - 1]].order; b--)
+            std::swap(idx[b], idx[b - 1]);
+    return idx;
+}
+
+inline void run_event(const Ctx& c, bool game_ok)
+{
+    Fanout& f = fanout();
+    f.fired[event_slot(c.event)]++;
+    uint8_t scope = c.event == kSessionEnd ? kSession : c.event == kWorldChange ? kWorld : 0;
+    bool states_done = !scope;
+    for (size_t i : hooks_of(c.event)) {
+        if (!states_done && f.hooks[i].order >= 0) {
+            reset((Scope)scope, f.state_resets);
+            states_done = true;
+        }
+        if (f.hooks[i].needs_game && !game_ok) {
+            f.game_queue.push_back({i, c});
+            f.queued++;
+            continue;
+        }
+        call_hook(i, c);
+    }
+    if (!states_done)
+        reset((Scope)scope, f.state_resets);
+}
+
+// one event for every hook of it (see above). Inside a fan-out it is queued and runs after it.
+inline void fire(const Ctx& c, bool game_ok)
+{
+    Fanout& f = fanout();
+    if (f.running) {
+        f.pending.push_back({c, game_ok});
+        f.nested++;
+        return;
+    }
+    f.running = true;
+    run_event(c, game_ok);
+    for (size_t k = 0; k < f.pending.size(); k++) { // (a hook may fire again: the list grows while it is read)
+        auto p = f.pending[k];
+        run_event(p.first, p.second);
+    }
+    f.pending.clear();
+    f.running = false;
+}
+
+// on_frame (game calls allowed): the needs_game hooks queued by fire() calls made without game_ok, in the order
+// they were queued (each event's hooks are in their order already)
+inline void pump_game()
+{
+    Fanout& f = fanout();
+    if (f.running || f.game_queue.empty())
+        return;
+    f.running = true;
+    auto q = std::move(f.game_queue);
+    f.game_queue.clear();
+    for (auto& [i, c] : q)
+        call_hook(i, c);
+    f.running = false;
+    if (!f.pending.empty()) { // fire() calls of those hooks
+        auto p = std::move(f.pending);
+        f.pending.clear();
+        for (auto& [c, ok] : p)
+            fire(c, ok);
+    }
+}
+
+// "<order> <name> <events> [game] calls=N faults=M\n" per hook, in the order of `event` (0: every hook)
+inline std::string hooks_status(uint8_t event = 0)
+{
+    Fanout& f = fanout();
+    std::string out;
+    std::vector<size_t> idx;
+    if (event)
+        idx = hooks_of(event);
+    else
+        for (size_t i = 0; i < f.hooks.size(); i++)
+            idx.push_back(i);
+    char b[160];
+    for (size_t i : idx) {
+        const Hook& h = f.hooks[i];
+        snprintf(b, sizeof b, "%d %s %s%s%s%s%s calls=%u faults=%u\n", h.order, h.name, h.events & kSessionEnd ? "S" : "",
+                 h.events & kWorldChange ? "W" : "", h.events & kPlayerJoin ? "J" : "", h.events & kPlayerLeave ? "L" : "",
+                 h.needs_game ? " game" : "", h.calls, h.faults);
+        out += b;
+    }
+    return out;
+}
+
 } // namespace lifecycle
 
 #define LIFECYCLE_CAT2(a, b) a##b
@@ -107,3 +298,6 @@ struct WorldWatch {
     static lifecycle::Reg LIFECYCLE_CAT(g_lifecycle_state_, __LINE__)(name, scope, fix, reset, held)
 #define SESSION_STATE(name, fix, reset, held) LIFECYCLE_STATE(name, lifecycle::kSession, fix, reset, held)
 #define WORLD_STATE(name, fix, reset, held) LIFECYCLE_STATE(name, lifecycle::kWorld, fix, reset, held)
+// LIFECYCLE_HOOK(name, events, order, fn, needs_game): an observer of the events (see Fanout above)
+#define LIFECYCLE_HOOK(name, events, order, fn, needs_game) \
+    static lifecycle::HookReg LIFECYCLE_CAT(g_lifecycle_hook_, __LINE__)(name, events, order, fn, needs_game)

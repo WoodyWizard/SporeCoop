@@ -172,6 +172,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/npc_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
 	$(B)/host/space_tests
+	@# wave C of 0.7.15: mirror registry, snapshot receiver, world id and lifecycle observers, host-busy model
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/core_tests tests/core_tests.cpp
+	$(B)/host/core_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/path_mask_tests tests/path_mask_tests.cpp
@@ -225,6 +228,8 @@ test-tsan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=thread -o $(B)/host/release_tsan tests/release_tsan.cpp updater/pack.cpp updater/sha256.cpp
 	TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/release_tsan
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=thread -Imods/coop -o $(B)/host/core_tests_tsan tests/core_tests.cpp
+	TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/core_tests_tsan
 	@! TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/release_tsan --old-merge > $(B)/host/release_tsan_old_merge.txt 2>&1 \
 	  || { cat $(B)/host/release_tsan_old_merge.txt; echo "release_tsan --old-merge must fail (BUG-0244)"; exit 1; }
 
