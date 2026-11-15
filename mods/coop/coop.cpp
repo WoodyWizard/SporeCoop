@@ -1676,27 +1676,34 @@ static bool late_create_offered()
     return g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kTribe &&
            (tribe::late_prompt() != 0 || tribe::late_needs_creature()); // BUG-9159: before the window's prompt too
 }
-// outside the frame (editors create D3D resources)
-static std::string open_new_creature_editor()
+// the creature editor with the base creature (CreatureEditorExtraLarge 0x465C50BA, no creation key); outside the frame
+static bool submit_new_creature_request()
 {
-    if (!late_create_offered()) return "A new creature can be made here only while you have no village of your own.";
     uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
-    if (!ctor || !submit) return "The creature editor is not available on this game build.";
-    if (game_busy() || mode_switch_pending() || world::load_queued()) return "The game is busy. Try again in a moment.";
+    if (!ctor || !submit) return false;
     void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
-    if (!req) return "The creature editor could not be opened.";
+    if (!req) return false;
     skg::thiscall<void*>(ctor, req);
     skg::field<uint32_t>(req, 0xC) = 0x465C50BAu; // CreatureEditorExtraLarge
     skg::field<uint32_t>(req, 0x10) = 0;          // no creation: a new creature
     skg::field<uint32_t>(req, 0x14) = 0;
     skg::field<uint32_t>(req, 0x18) = 0;
-    creations::begin_new_creature();
     g_vote_bypass = true; // the player's own editor, no vote
     g_own_editor = true;  // the part-list error is waived as in the own editor (h_BlockingErrors)
     const bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
-    if (!r) {
-        g_own_editor = false;
+    if (!r) g_own_editor = false;
+    return r;
+}
+// outside the frame (editors create D3D resources)
+static std::string open_new_creature_editor()
+{
+    if (!late_create_offered()) return "A new creature can be made here only while you have no village of your own.";
+    if (!H->sym("EditorRequest_ctor") || !H->sym("Editors::EditorRequest::Submit"))
+        return "The creature editor is not available on this game build.";
+    if (game_busy() || mode_switch_pending() || world::load_queued()) return "The game is busy. Try again in a moment.";
+    creations::begin_new_creature();
+    if (!submit_new_creature_request()) {
         creations::cancel_new_creature();
         return "The creature editor could not be opened.";
     }
@@ -2501,6 +2508,76 @@ static void join_editor_tick(double now)
         feed("Make a creature of your own: what you save is your creature for this game (Done without a change keeps the "
              "current one).");
         notice(g_name + " is making a creature of their own", -1);
+    }, nullptr);
+}
+
+// ---- BUG-9207 (decision 3U, owner 2026-11-14: "skip 3UA and send guests into the editor while the host is making the
+// world while in their editor") ----
+// A guest waiting in the galaxy menu while the host is in the creature editor it opened from its galaxy menu (a new
+// world) gets the creature editor too, with the base creature (no creation key). The editor's check (its finish
+// button, control 0x058A3350, found live 2026-11-14) is greyed until the host's world is here (it waits for the editor,
+// world::load_queued) or the host is back in the menu. What the guest saves becomes its creature
+// (creations::begin_first_creature), played in that world without another editor. Off: guests wait in the menu.
+static bool g_pregame_editor = true;
+COOP_FIX("creature.pregame_editor", "BUG-9207", g_pregame_editor,
+         "creature: guests make their first creature while the host makes a new world; their check waits for the world");
+constexpr uint32_t kEditorCheck = 0x058A3350u;
+static bool g_pregame_open;        // this guest's editor is the pre-game one
+static bool g_pregame_check_off;   // we greyed its check
+static uint32_t g_pregame_editors; // tests
+static void pregame_editor_tick(double now)
+{
+    static uint32_t s_host_before = 0; // the host's last mode outside an editor
+    static bool s_done = false;        // opened (or tried) for this editor of the host's
+    static double s_check_at = 0;
+    const bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    const uint32_t host_mode = guest && g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().mode : 0;
+    const bool host_editing = host_mode == modes::kEditor || host_mode == modes::kEdit;
+    if (!host_editing) {
+        s_host_before = host_mode;
+        s_done = false;
+    }
+    const uint32_t mode = game::mode_id();
+    if (g_pregame_open && mode != modes::kEditor && mode != modes::kEdit && mode != modes::kLoad &&
+        !mode_switch_pending()) {
+        g_pregame_open = g_pregame_check_off = false; // left the editor
+        return;
+    }
+    if (g_pregame_open) { // the check waits for the host's world (or the host's return to the menu, or no host)
+        if (now - s_check_at < 0.25) return;
+        s_check_at = now;
+        const bool wait = guest && host_editing && !world::load_queued();
+        if (wait == g_pregame_check_off) return;
+        if (sui::Win check = sui::find(sui::main_window(), kEditorCheck)) {
+            sui::set_enabled(check, !wait);
+            g_pregame_check_off = wait;
+            LOG("pregame editor: the check %s (BUG-9207)", wait ? "waits for the host's world" : "works");
+            if (!wait && world::load_queued())
+                feed(g_sess.name_of(0) + "'s world is ready: press the check to join them.");
+        }
+        return;
+    }
+    if (!g_pregame_editor || !guest || s_done || !host_editing || s_host_before != modes::kMenu || mode != modes::kMenu ||
+        g_local || world::load_queued() || game_busy() || mode_switch_pending())
+        return;
+    uint32_t got = 0, total = 0;
+    if (world::progress(got, total)) return;
+    if (!g_remotes[0].buf.latest().editor || g_remotes[0].buf.latest().editor != 0x465C50BAu) return; // creatures only
+    s_done = true;
+    H->run_outside_frame([](void*) {
+        creations::begin_first_creature();
+        const bool r = submit_new_creature_request();
+        LOG("pregame editor: the creature editor with the base creature while the host makes a new world -> %d (BUG-9207)",
+            (int)r);
+        if (!r && game::mode_id() != modes::kEditor) {
+            creations::cancel_first_creature();
+            return;
+        }
+        g_pregame_open = true;
+        ++g_pregame_editors;
+        feed(g_sess.name_of(0) + " is making a new world: make your creature now. The check unlocks when the world is "
+                                 "ready, and what you save is your creature there.");
+        notice(g_name + " is making their creature", -1);
     }, nullptr);
 }
 
@@ -3847,6 +3924,7 @@ void on_frame(void*, int, void*)
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
     migration_tick(now); // BUG-9163: the party migrates together
     join_editor_tick(now); // BUG-9164: a creature of one's own
+    pregame_editor_tick(now); // BUG-9207: the first creature while the host makes a new world
     civ_editor_first_tick(now); // BUG-9170
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
@@ -7978,6 +8056,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.newcreature", "coop.newcreature - tests (BUG-9207): the creature editor with the base creature, "
+                   "here (from the galaxy menu: as a new world's first editor)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       const bool r = submit_new_creature_request();
+                       SAY("new creature editor -> %d\n", (int)r);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     if (H->instance_id() > 1)
         H->command_add(M, "coop.autosave-test", "Queue the normal milestone autosave in a QA session",
                        [](void*, int, const char* const*, SkOut*) {

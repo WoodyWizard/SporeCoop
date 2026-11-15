@@ -85,6 +85,8 @@ void world_note_set(const char* section, uint32_t world, const std::string& valu
 // back in this Tribe world, the newest own creation it saved becomes this player's creature (as after a Creature
 // editor). cancel: the request did not reach the game.
 void begin_new_creature();
+void begin_first_creature();  // BUG-9207: the editor opened in the galaxy menu while the host makes a new world
+void cancel_first_creature();
 void cancel_new_creature();
 bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
 // Register only validated creature resources belonging to this planet before the native load.

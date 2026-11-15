@@ -3236,6 +3236,17 @@ void begin_new_creature()
     g_adopt_until = 0;
 }
 void cancel_new_creature() { g_new_creature_world = 0; }
+// BUG-9207 (decision 3U): the guest's first creature, made in the editor it opened from the galaxy menu while the host
+// makes a new world. Back in the menu, its newest new creation becomes its creature (choose: the co-op window's pick);
+// g_first_key: that creation, which is not "new here" (BUG-9203) in the first world it plays in
+static bool g_first_pending;
+static uint32_t g_first_key;
+void begin_first_creature()
+{
+    g_first_pending = true;
+    g_adopt_until = 0;
+}
+void cancel_first_creature() { g_first_pending = false; }
 // BUG-9203: worlds where this guest's own creature (a co-op window pick, which holds everywhere, BUG-0345) was first
 // played in this run: a world new to it, where it still gets its own editor (BUG-9164) like a guest with no creature
 static std::set<uint32_t> g_own_new_worlds;
@@ -3326,7 +3337,8 @@ static bool adopt_after_editor(double now)
     // BUG-9170: and back in Civ from a Civ late joiner's new-creature editor
     const bool late = !tribal && g_new_creature_world && g_new_creature_world == modes::current_world() &&
                       (m == modes::kTribe || m == modes::kCiv);
-    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal || late)) {
+    const bool first = g_first_pending && m == modes::kMenu; // BUG-9207: back in the galaxy menu
+    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal || late || first)) {
         g_adopt_until = now + 30;
         g_adopt_kind = m == modes::kCell ? kCell : kCreature;
         g_adopt_read = 0;
@@ -3339,10 +3351,14 @@ static bool adopt_after_editor(double now)
             if (m == modes::kTribe) tribe::late_editor_done(false); // BUG-9159: the stand-in now
             if (C.feed) C.feed("No new creature was saved. Choose your own creature in the Co-op window (F9).");
         }
+        if (g_first_pending && g_adopt_until) {
+            g_first_pending = false;
+            H->log(M, SK_INFO, "creations: back from the first creature's editor, nothing new saved (BUG-9207)");
+        }
         return false;
     }
     Key a = tribal || late ? mine(kCreature).key : g_adopt_kind == kCell ? cell_key() : avatar_species_key();
-    if (!a.instance && !late) // a late joiner may play no creature yet: nothing old to keep
+    if (!a.instance && !late && !g_first_pending) // a late joiner (or a first creature) may play none yet
         return true; // not yet: do not apply the old one meanwhile
     if (g_pre_editor_fix && C.sess->role() == net::Role::Client) {
         // BUG-0278: a guest takes over only what the editor saved: the newest own creation that was
@@ -3370,6 +3386,15 @@ static bool adopt_after_editor(double now)
             return false;
         }
         g_adopt_until = 0;
+        if (g_first_pending) { // BUG-9207: the first creature is the pick for the coming world
+            g_first_pending = false;
+            g_first_key = pick.instance;
+            choose(kCreature, pick);
+            H->log(M, SK_INFO, "creations: the first creature %08X made while the host made the world (BUG-9207)",
+                   pick.instance);
+            if (C.feed) C.feed("Your new creature is your creature in the new world.");
+            return false;
+        }
         if (late) {
             g_new_creature_world = 0;
             if (m == modes::kTribe) tribe::late_editor_done(true); // BUG-9159: the village waits for this creature
@@ -3709,8 +3734,9 @@ static void own_world_tick()
     Key here = own_key_here(k), now = k == kCreature ? avatar_species_key() : cell_key();
     if (!here.instance || !(here == now))
         return; // not (yet) applied
-    if (k == kCreature && !world_record(k, world))
+    if (k == kCreature && !world_record(k, world) && o.key.instance != g_first_key)
         g_own_new_worlds.insert(world); // BUG-9203: the first time this guest's own creature plays here
+    if (k == kCreature && o.key.instance == g_first_key) g_first_key = 0; // BUG-9207: made for this world
     world_record_set(k, world, o.key.instance);
     if (g_own_told.insert({(int)k, world, o.key.instance}).second && C.notice) {
         std::string who = C.name_of ? C.name_of(C.sess->my_id()) : std::string("A guest");
