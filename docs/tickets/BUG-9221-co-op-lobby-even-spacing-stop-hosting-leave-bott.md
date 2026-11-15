@@ -25,7 +25,7 @@ Observed: the panel image's boxes are Players 34..388, World & Session 406..725 
 
 ## Fix
 - One grid (switch ui.lobby_grid): the panel's buttons 422..709 (16 px in on both sides), 28 px tall, 5 px apart, the last 7 px above the box; the bottom rows 32 px tall, 8 px apart, right edge on the boxes' 725; Stop Hosting / Leave bottom right (533..565, 16 px above the edge), Copy Server IP and a guest's Send / Don't Send in the row above; Report Issue on the right edge; the World & Session heading 6 px in like Players.
-- Long names are cut with "..." so they do not run into the stage column.
+- Names fit their column by the font's glyph widths (1 unit = 1 px at 768 lines, 116 wide): " (host)" only while the whole name fits with it, else a too-wide name is cut with "..."; the guest's "Connected to <host>" line shows the host's name without the tag, at most 16 letters (one line).
 
 ## Verification
 FAIL (switch off, MSI host window): the 56-dev layout (out/shots/r58/host_window_off.png, not in git).
@@ -35,3 +35,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); a layout change, checked on
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done.
+- 2026-11-15: names fitted by width (MSI shots with a 24-letter host name and an 11-letter guest name).

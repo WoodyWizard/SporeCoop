@@ -8931,7 +8931,8 @@ std::string ui_session_line()
         snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players", g_sess.port(), (int)g_sess.players().size(),
                  std::min<int>(g_sess.seat_limit, g_sess.max_players)); // Lineages slots, all.max_players
     else if (g_sess.connected())
-        snprintf(b, sizeof b, "Connected to %s (%s)", g_sess.name_of(0).c_str(), g_sess.host_address().c_str());
+        snprintf(b, sizeof b, "Connected to %s (%s)", utf8::head(utf8::shown_name(g_sess.name_of(0)), 16).c_str(),
+                 g_sess.host_address().c_str()); // BUG-9222 / 9221: no tag, short enough for one line
     else
         snprintf(b, sizeof b, "Connecting to %s ...", g_sess.host_address().c_str());
     return b;

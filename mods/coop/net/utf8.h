@@ -143,6 +143,9 @@ inline std::string player_name(const std::string& in)
     for (unsigned char c : in)
         if (c >= 0x20 && c != 0x7F)
             s += (char)c;
+    // BUG-9222: a long name keeps its -NoShare- tag (the name is cut, not the tag)
+    if (count(s) > kNameMax && no_share_name(s))
+        return head(shown_name(s), kNameMax - 9) + "-NoShare-";
     return head(s, kNameMax);
 }
 

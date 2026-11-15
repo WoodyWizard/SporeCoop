@@ -56,6 +56,7 @@ static void test_names()
     CHECK(!utf8::no_share_name("NoShare") && !utf8::no_share_name("-NoShar-"));
     CHECK(utf8::shown_name("MSI-NoShare-") == "MSI" && utf8::shown_name("Late-NOSHARE-") == "Late");
     CHECK(utf8::shown_name("-NoShare-") == "Player" && utf8::shown_name("Bob") == "Bob");
+    CHECK(utf8::player_name("WilhelminaLongname-NoShare-") == "WilhelminaLongn-NoShare-"); // the tag survives the cut
 }
 
 // BUG-0159: the overlay centres by letter cells, not bytes

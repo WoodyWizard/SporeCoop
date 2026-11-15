@@ -1870,11 +1870,21 @@ static void refresh_lobby()
             continue;
         }
         const auto& p = rows[i];
-        // BUG-9222: the -NoShare- tag is not shown; BUG-9221: a name longer than the column is cut ("...")
+        // BUG-9222: the -NoShare- tag is not shown; BUG-9221: the name fits its column by the font's glyph widths
+        // (1 unit = 1 px at 768 lines): " (host)" only while the whole name fits with it (the host is the first row
+        // anyway), else a name too wide is cut with "..."
         std::string n = g_lobby_grid ? utf8::shown_name(p.name) : p.name;
-        if (g_lobby_grid && utf8::count(n) > 14)
-            n = utf8::head(n, 12) + "...";
-        if (p.host && n.size() <= 12)
+        if (g_lobby_grid) {
+            constexpr float kNameWidth = 116; // the column 75..196, a clear gap before the stage at 199
+            const std::string suffix = p.host ? T(" (host)", " (хост)") : "";
+            if (caption_width(n + suffix) <= kNameWidth)
+                n += suffix;
+            else if (caption_width(n) > kNameWidth) {
+                while (utf8::count(n) > 1 && caption_width(n + "...") > kNameWidth)
+                    n = utf8::head(n, utf8::count(n) - 1);
+                n += "...";
+            }
+        } else if (p.host && n.size() <= 12)
             n += T(" (host)", " (хост)");
         text(D.row_name[i], n);
         color(D.row_name[i], p.me ? kGold : kWhite);

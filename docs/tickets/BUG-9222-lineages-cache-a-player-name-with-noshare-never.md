@@ -26,6 +26,7 @@ Not a bug: every player's saved creations were offered to every partner (BUG-911
 ## Fix
 - utf8::no_share_name: "-NoShare-" in any case anywhere in the name. The sender offers none of its own creations; a receiver keeps no creation whose direct sender or recorded sharer has the tag (both sides, so an older QA build cannot slip one into a newer owner build). Switch library.no_share; counter no_share_dropped in coop.library status.
 - The tag is not shown in the player list or the joined / left lines (utf8::shown_name: "MSI-NoShare-" shows as "MSI").
+- A name over 24 letters keeps its tag: the name before it is cut (utf8::player_name). A name typed with a space in a console command ends at the space (coop.join takes one word).
 - QA scripts and tools/qa_win/README.md use the tagged names.
 
 ## Verification
