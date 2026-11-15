@@ -7,7 +7,8 @@ symbols of the report's version (make test, part unit-symbols, on the local buil
 * tools/symbols_pack.sh (what the release job publishes) packs the local build; a made-up crash report of
   that version with a fault in coop.dll (sporekit_mod_main+0x40) and a sporekit.dll frame in the chain;
 * --symbols <the .tar.xz> and --symbols <build dir>: the fault is named sporekit_mod_main+0x40 at
-  mods/coop/coop.cpp:<line>, the sporekit frame by its function;
+  mods/coop/coop.cpp:<line> (or the phase function inlined there, "inlined into sporekit_mod_main+0x40"), the
+  sporekit frame by its function;
 * a report of another version with --symbols <build dir>: refused (the offsets would name wrong code);
 * the download path with a fake `gh` first on PATH (no network): the asset is fetched, checked against the
   release's SHA256SUMS.txt and cached; a second run with a failing gh symbolises from the cache; a wrong
@@ -114,7 +115,10 @@ def main():
         rep = os.path.join(tmp, 'crash-20261115-000000.txt')
         report(rep, ver, coop_rva, kit_rva)
         env = dict(os.environ, SPORECOOP_SYMBOLS_CACHE=os.path.join(tmp, 'cache'), LLVM_MINGW=llvm)
-        want = re.compile(rf'^symbol\s+coop\.dll\+0x{coop_rva:X}\s+sporekit_mod_main\+0x40\s+mods/coop/coop\.cpp:\d+', re.M)
+        # sporekit_mod_main+0x40 may lie in a phase function inlined into it (B2, BUG-1128): then the frame names that
+        # function at its coop.cpp line, `(inlined into sporekit_mod_main+0x40)`
+        want = re.compile(rf'^symbol\s+coop\.dll\+0x{coop_rva:X}\s+(?:sporekit_mod_main\+0x40\s+mods/coop/coop\.cpp:\d+'
+                          rf'|\S+\s+mods/coop/coop\.cpp:\d+\s+\(inlined into sporekit_mod_main\+0x40\))', re.M)
         want_kit = re.compile(rf'^symbol\s+sporekit\.dll\+0x{kit_rva:X}\s+.*{re.escape(kit_name)}', re.M)
         for what, sym in (('the release asset (.tar.xz)', tar_path), ('a local build folder', build)):
             rc, out = run(['--symbols', sym, rep], env)
