@@ -196,6 +196,8 @@ using SimMsg_t = int(SK_THISCALL*)(void*, uint32_t, void*);
 // blank object whose +0x32C is -1 ("none"); a creature with tuning is never touched.
 typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
 using Submit_t = bool(SK_CDECL*)(void*);
+using CollEnabled_t = uint8_t*(SK_THISCALL*)(void*, uint8_t*, uint8_t*, uint8_t*);
+using HoverFilter_t = bool(SK_CDECL*)(void**);
 // ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
 // until every player is ready (or 60 s / "Start now"), then the game goes on ----
 struct Vote {
@@ -421,6 +423,9 @@ extern std::map<uint8_t, bool> g_ready;
 host_world::HostWorld host_world_now();
 void notice(const std::string& text, int from = -1);
 bool stage_mode(uint32_t m);
+extern double g_last_send;
+extern std::map<uint8_t, int> g_lobby_rtt;
+const char* share_wait_reason();
 
 // ---- defined in dna.cpp ----
 void dna_host_gain(const dna_ledger::Part& p, float before);
@@ -485,6 +490,24 @@ bool tribe_graduating();
 void vote_action_tick(double now);
 void vote_tick(double now);
 bool tribe_civ_editor(uint32_t id);
+
+// ---- defined in puppets.cpp ----
+extern uintptr_t a_AbilityModeCore;
+void bodyrec_tick(double now);
+void* creature_puppet_live(uint8_t id);
+void drive_puppet(Remote& r, double now);
+void forget_puppets();
+extern bool g_save_on_share;
+uint8_t* SK_THISCALL h_CollEnabled(void* self, uint8_t* out, uint8_t* a, uint8_t* b);
+bool SK_CDECL h_HoverFilter(void** hit);
+void monitor_frame_start(double now);
+extern CollEnabled_t o_CollEnabled;
+extern HoverFilter_t o_HoverFilter;
+void partner_pass_tick();
+void remove_strays(double now);
+const char* role_str();
+void trace_tick(double now);
+void track_tick(double now);
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
