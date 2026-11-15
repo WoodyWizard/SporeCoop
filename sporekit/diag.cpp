@@ -28,8 +28,8 @@ const char* build_name()
 {
     static std::string name;
     std::string b = symbols_build(), e = exe_sha256();
-    if (b.rfind("922af7c7", 0) == 0)
-        name = "GOG 2016";
+    if (*unsupported_build_text())
+        name = "GOG 2016 (not supported: co-op off)";
     else if (b.rfind("dc04aee5", 0) == 0)
         name = e.rfind("dc04aee5", 0) == 0   ? "GOG 2024"
                : e.rfind("3010a413", 0) == 0 ? "Steam (the GOG 2024 code)"

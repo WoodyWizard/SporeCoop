@@ -65,6 +65,8 @@ bool symbols_load(); // picks file by exe hash
 // code (symbols_try_unpacked from the first call of the game's own code)
 bool symbols_pending();
 bool symbols_try_unpacked(); // true: the code in memory is the build's, its symbols are loaded
+// BUG-1125: "" or the message for a game build that is known and not supported (GOG 2016): no symbols, no mods
+const char* unsupported_build_text();
 uintptr_t sym(const char* name);
 uintptr_t image_base();
 uintptr_t rebase(uintptr_t va);

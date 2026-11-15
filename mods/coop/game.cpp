@@ -1659,8 +1659,8 @@ bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim)
         *drawn = {p.x, p.y, p.z};
     }
     if (anim) {
-        // GetCurrentAnimation(u32* id, float* time, int*, int* index), thiscall ret 0x10 (GOG 2016
-        // 0xA05030, vtable 0x1449640): writes the id only when the creature has a main animation
+        // GetCurrentAnimation(u32* id, float* time, int*, int* index), thiscall ret 0x10 (vtable slot 0x58, found on
+        // the former GOG 2016 build): writes the id only when the creature has a main animation
         uint32_t id = 0;
         vcall<void>(ac, 0x58 / 4, &id, (float*)nullptr, (int*)nullptr, (int*)nullptr);
         *anim = id;

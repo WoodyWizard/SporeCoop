@@ -151,7 +151,7 @@ static bool install()
     uintptr_t b = H->sym("SporeCoop::AudioSystem_BeginCommand"), i = H->sym("SporeCoop::AudioSystem_SetInt"),
               s = H->sym("SporeCoop::AudioSystem_Submit");
     if (!b || !i || !s)
-        return false; // (GOG 2016: not known)
+        return false; // (a build without these symbols)
     H->hook_create(M, (void*)b, (void*)h_Begin, (void**)&o_Begin);
     H->hook_create(M, (void*)i, (void*)h_SetInt, (void**)&o_SetInt);
     H->hook_create(M, (void*)s, (void*)h_Submit, (void**)&o_Submit);

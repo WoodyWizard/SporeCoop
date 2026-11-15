@@ -18,6 +18,19 @@ static uintptr_t g_pref_base = 0x400000, g_base = 0x400000;
 // a packed exe (Steam DRM): the build its data belongs to, and that build's unpacked .text hash
 static std::string g_pending_build, g_pending_text, g_data_hash;
 
+// BUG-1125 (A5 of plan 0.7.15): the GOG 2016 build (SporeApp.exe 24 888 320 bytes) is not supported since 0.7.8 and
+// its symbol files are gone since 0.7.15. Its exe hash is still known: such a game loads no symbols (also when the
+// files of an older SporeCoop are still in the folder) and no mod, and the player is told why (the log, the overlay).
+static constexpr const char* kGog2016Sha = "922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e";
+static bool g_unsupported;
+
+const char* unsupported_build_text()
+{
+    return g_unsupported ? "SporeCoop: this game version (GOG 2016) is not supported. Please update to the current "
+                           "GOG or Steam version of Spore."
+                         : "";
+}
+
 uintptr_t image_base() { return g_base; }
 uintptr_t rebase(uintptr_t va) { return va - g_pref_base + g_base; }
 std::string exe_sha256() { return g_hash; }
@@ -165,6 +178,11 @@ bool symbols_load()
     SKLOG(SK_INFO, "exe %s sha256=%s base=0x%08X (preferred 0x%08X) hashed in %.2fs",
           narrow(exe_path).c_str(), g_hash.c_str(), (unsigned)g_base, (unsigned)g_pref_base,
           now_seconds() - t0);
+    g_unsupported = g_hash == kGog2016Sha;
+    if (g_unsupported) {
+        SKLOG(SK_ERROR, "%s The co-op mod is not loaded (exe %s).", unsupported_build_text(), g_hash.substr(0, 8).c_str());
+        return false;
+    }
 
     g_dir = mods_dirw() + L"\\sporekit\\symbols\\";
     g_cands.clear();
