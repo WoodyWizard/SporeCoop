@@ -2,7 +2,7 @@
 // in wire/common.h.
 #pragma once
 
-#include "wire/common.h"
+#include "common.h"
 
 namespace wire::space_rivalry {
 

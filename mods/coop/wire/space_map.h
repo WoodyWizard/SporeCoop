@@ -3,7 +3,7 @@
 #pragma once
 
 #include "../space_map.h" // (not this file: the feature header next to the wire directory)
-#include "wire/common.h"
+#include "common.h"
 
 namespace wire::space_map {
 

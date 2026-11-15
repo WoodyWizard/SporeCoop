@@ -5,8 +5,8 @@
 
 #include <algorithm>
 
-#include "net/validate.h"
-#include "wire/common.h"
+#include "../net/validate.h"
+#include "common.h"
 
 namespace wire::space_trade {
 

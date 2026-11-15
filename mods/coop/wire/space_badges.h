@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <utility>
 
-#include "wire/common.h"
+#include "common.h"
 
 namespace wire::space_badges {
 
