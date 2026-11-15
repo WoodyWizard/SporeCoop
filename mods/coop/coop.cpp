@@ -68,6 +68,7 @@
 #include "net/fixes.h"
 #include "net/give_target.h"
 #include "net/interp.h"
+#include "net/kick.h"
 #include "net/lobby.h"
 #include "net/session.h"
 #include "net/utf8.h"
@@ -7690,6 +7691,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.kick", "coop.kick <id | name> - host: remove a player from the session (it is told why; BUG-1108)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", net::kick_command(g_sess, std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.sreport", "coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk - the session report (F4, BUG-0767): the host asks every guest for its report",
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
