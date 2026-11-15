@@ -57,3 +57,4 @@ set no flee / chase target of its kind)", was one of the two FAIL runs confirmin
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labverdict (unreleased).
+- 2026-11-15: on rel/0.7.15 the lab test `unit` failed (run 20261115-022440, rc 0): labverdict_selftest printed check texts holding the result marker, which the lab reads as a failed test; the self-test now writes it as `RESULT=`.
