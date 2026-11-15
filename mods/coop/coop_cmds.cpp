@@ -1038,6 +1038,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "reset")) { // tests (BUG-1139): closed, on the lobby page, as at a cold start
+        coop_ui::test_reset();
+        SAY("%s", coop_ui::debug_state().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "first")) { // tests: the window as at the first start (the name step)
         coop_ui::first_start();
         SAY("ui: back to the first start (the name step)");
@@ -1998,7 +2003,7 @@ void register_commands_ui()
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|reset|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
 }
 

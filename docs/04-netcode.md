@@ -530,6 +530,9 @@ switch off (`net_tests --off <name>`, and with `--nofix`).
   another host or under another name), so a player who left comes back as itself while late join is off. Another name
   from the same game is a new player. Before, every leave emptied the token (BUG-0235) and the name rule let anybody
   of that name back.
+  CORRECTION (2026-11-15, fix/w51-space2): "never in the file" holds for the slot file only. Since BUG-1135
+  (`net.rejoin_disk`) the kept token also goes into `rejoin-<instance>-<slot>-kept.txt` beside the slot, so a restart
+  keeps it: see [netcode-rejoin-restart](#netcode-rejoin-restart).
 * **A rejoin through the same address and port without a token** waits until the old connection has been silent for
   2 s (about 2 s longer than before; the joining game sends its HELLO again).
 * **A WELCOME over one packet** (BUG-1005, `net.welcome_split`): a joining guest whose HELLO announced CAP_SPLIT joins
@@ -711,3 +714,25 @@ Since 0.7.15:
   stays the new one). Tests: `net_tests test_family_check` (FAILS with `--off family_check`), `validate_tests
   test_compat`, the lab test `compat` (a planted revision with `coop.manifest plant <family> <rev>`), and the
   mixed-version test against v0.7.14 (`mixed_version_guest` / `_host` with `--old-tag v0.7.14`).
+
+## The token of a clean leave across a restart of the game (2026-11-15, fix/w51-space2)
+<a id="netcode-rejoin-restart"></a>
+
+BUG-1135. The host keeps a Space guest's colonies, cargo hold, badges and Rivals budget by the guest's rejoin token
+(BUG-1107, [space-kept-key](re/space.md#space-kept-key)). The token survived a crash (the slot file) and a clean
+leave inside the same process (memory, BUG-1001), but a clean leave followed by closing the game emptied both: the
+restarted game sent a fresh token and got nothing back (0.7.14 keyed by the name and did).
+
+* `rejoin::clear(true)` (a leave, a lost session) and `rejoin::shutdown(true)` (the game closed in a session) also keep
+  the token in `<AppData>\SporeCoop\rejoin-<instance>-<slot>-kept.txt`, the file of the slot this game holds
+  exclusively (another instance or another game of the same PC never reads it). Format (rejoin_kept.h, unit test
+  `test_rejoin_kept`): a header with a random 64-bit salt, then `<key> <token> <unix time>` lines; the key is a
+  salted FNV-1a + finaliser of (host address string, 0, name), so the file holds no readable address or name.
+* `rejoin::token_for_join(instance, host, name)`: the crash's slot token first, then the memory one (BUG-1001), then
+  the file's for exactly this address and name, else a fresh token. Entries expire after 24 h (or when the clock went
+  back) and the file keeps at most 16 (the oldest go).
+* What stays true: no stable id follows a player from host to host (a token is only sent to the address and under the
+  name it was kept for); another game under the same name gets a token of its own and nothing of the player
+  (BUG-1107, `space_kept_key`).
+* Switch `coop.fix net.rejoin_disk off`: memory only (a restart sends a fresh token). Lab: `space_badges_rejoin`
+  (it restarts the guest; FAIL with the switch off).

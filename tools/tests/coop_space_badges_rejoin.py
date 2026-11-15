@@ -14,6 +14,8 @@ the host's badges (docs/re/space.md#space-badges). The host keeps each guest's o
    rank are the ones it had before it left.
 4. The host's game still has its own (rank 0, the other badge not earned).
 PASS: 1 to 4. SPORE_FIX_OFF=space.keep_badges: the rejoined guest has the host's badges and rank 0 (FAIL).
+With the restart (the default) the restarted game must send the token its clean leave kept on disk (BUG-1135):
+SPORE_FIX_OFF=net.rejoin_disk: a fresh token, the host keeps nothing for it, rank 0 (FAIL).
 
   SPORE_LANE=5 python3 tools/tests/coop_space_badges_rejoin.py
 """
@@ -62,6 +64,10 @@ def restart_guest():
             c = Console(lane.GUEST)
             if 'GalaxyGameEntry' in c.call('game.mode')['out']:
                 c.call('wait.frames 300 30000')
+                # the switches of a twin run are off in the restarted game too (BUG-1135: net.rejoin_disk reads the
+                # kept token there)
+                for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
+                    print('  SPORE_FIX_OFF (restarted guest): ' + c.call(f'coop.fix {name} off')['out'].strip(), flush=True)
                 return c
         except OSError:
             pass

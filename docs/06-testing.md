@@ -8314,3 +8314,15 @@ B3 / B6 of 0.7.15 (BUG-1136, BUG-1137; docs/04-netcode.md#netcode-manifest, #net
   `mixed_version_guest`, `mixed_version_host`, `mixed_plant_guest`, `mixed_plant_host` PASS 20261115-032035 and
   -034921, `mixed_plant_unused` PASS -034921 and -040030; SPORE_FIX_OFF=net.family_check `mixed_plant_guest` FAIL
   20261115-035619 (the v0.7.14 guest got in). A v0.7.14 guest shows this build's refusal text as is ("rejected: ...").
+## The warm reset closes the co-op window on its lobby page (2026-11-15, fix/w51-space2)
+<a id="testing-warm-ui-page"></a>
+
+BUG-1139: a closed co-op window keeps its page (Space, settings) for the next F9, so `coop.uistate 0` in the warm
+reset (BUG-0898) left the Space page of `space_rivalry` behind and `space_trade` (warm after it) waited for the
+lobby's "Space >" button that the Space page hides. `warm_reset` now sends `coop.uistate reset` (closed and on the
+lobby page, as at a cold start; an older DLL reads it as `0`). Proof: `lab.py run space_rivalry,space_trade --in-order`
+warm on one lane.
+
+Also on this branch: `space_allies_near` (BUG-1144, `coop.space allies near` prints the game's list of owned stars
+nearby, docs/re/space.md#space-near-stars) and `space_badges_rejoin` switches the twin's fixes off in the restarted
+guest too (BUG-1135, `net.rejoin_disk`).

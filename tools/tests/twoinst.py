@@ -588,7 +588,10 @@ def warm_reset(host, guest, fixture, planet):
     clear_faults(host=host, guest=guest)
     for c in (guest, host):
         c.call('coop.leave')
-        c.call('coop.uistate 0')  # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it)
+        # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it); BUG-1139: and on
+        # the lobby page (a closed window keeps its Space / settings page for the next F9: space_trade after
+        # space_rivalry waited for the lobby's Space button). An older DLL reads `reset` as 0: closed only
+        c.call('coop.uistate reset')
     if not KEEP_HOLDS[0]:  # BUG-0679: no hold record of an earlier test (its file and its memory)
         for c in (guest, host):
             c.call('coop.space trade forget')

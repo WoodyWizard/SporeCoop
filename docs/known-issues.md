@@ -263,28 +263,19 @@ anchor so other docs can link to it:
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
 
-## A restarted guest gets none of its kept Space state back (2026-11-15, feat/w51-space)
-<a id="issue-space-kept-restart"></a>
 
-* What happens: a guest that leaves, closes and starts its game again and joins again gets the host's badges and rank,
-  no kept colonies and no Rivals budget back: the host keeps them by the rejoin token (BUG-1107), and a restart after a
-  clean leave sends a new token. A crash rejoin or a rejoin without a restart works.
-* Reproduce: `space_badges_rejoin` (it restarts the guest) fails on rel/0.7.15; with `coop.fix space.kept_token off`
-  it passes (the 0.7.14 name key).
-* Ticket: BUG-1135.
+## The lab's together monitor fails space_allies after the galaxy view (2026-11-15, fix/w51-space2)
+<a id="issue-monitor-together-galaxy"></a>
 
-## space_trade fails warm after space_rivalry (2026-11-15, feat/w51-space)
-<a id="issue-space-trade-warm-page"></a>
+* What happens (lab only): space_allies passes every check, but the gate monitor reports "guest sees host elsewhere
+  (same_place=0) for 10 s" over the stretch the test spends in the galaxy view (12 s that run).
+* Reproduce: `lab.py run space_allies --repeat 12 --lane N` (1 of 4 runs in out/lab/20261115-042849 of fix/w51-space2).
+* Ticket: BUG-1145.
 
-* What happens (test only): the co-op window stays on the Space page from space_rivalry over the warm reset, the lobby's
-  "Space >" button is hidden and space_trade's first step times out; cold it passes.
-* Reproduce: `lab.py run space_rivalry,space_trade --lane N` (warm, in that order).
-* Ticket: BUG-1139.
+## space_rivalry fails warm after space_rivalry (2026-11-15, fix/w51-space2)
+<a id="issue-rivalry-warm-counters"></a>
 
-## A caught game fault in cEmpire_MakeContact while a guest loads its own save (2026-11-15, feat/w51-space)
-<a id="issue-space-makecontact-fault"></a>
-
-* What happens: once in four space_allies runs the guest's game faulted (caught) in the planet populate of its own
-  save after a co-op session, at cEmpire_MakeContact+0x3C7.
-* Reproduce: not reproduced (space_allies passed on the same build and on rel/0.7.15 right after).
-* Ticket: BUG-1144.
+* What happens (test only): the second space_rivalry on warm games sees the first one's hit counters (hits_got 43)
+  and fails its neutral and lethal-hit checks; cold it passes.
+* Reproduce: `lab.py run space_rivalry --repeat 2 --lane N` (warm, the second run), out/lab/20261115-042847.
+* Ticket: BUG-1146.

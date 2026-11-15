@@ -1891,6 +1891,13 @@ void open(bool on)
 
 bool is_open() { return g_want_open; }
 
+void test_reset()
+{
+    g_settings_page = false;
+    g_space_page = false;
+    open(false);
+}
+
 void open_lobby()
 {
     g_settings_page = false;
