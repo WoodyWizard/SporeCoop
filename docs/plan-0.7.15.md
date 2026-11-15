@@ -4,7 +4,7 @@
 and the project-health work any project needs. It adds no gameplay feature. It starts after 0.7.14 (main a762f240,
 tag v0.7.14).
 
-**Status: plan; owner decisions taken 2026-11-14 (end of this file); starts on the owner's word.** Nothing is implemented. The plan comes from five
+**Status: in progress since 2026-11-15 (the owner's go), branch rel/0.7.15; owner decisions 2026-11-14 at the end of this file.** The plan comes from five
 read-only audits of main a762f240 (2026-11-14), each with evidence (file:line, counts, ticket history, lab history):
 
 | Area | Report | Findings |
