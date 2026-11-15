@@ -16,11 +16,16 @@
   in the paths of the log and of report archives, like any other user name (BUG-1124).
 - Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
   they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
-  not to whoever joins under that name (BUG-1107).
+  not to whoever joins under that name (BUG-1107). After a restart of the game you get your things back from the
+  same host too: your game remembers for a day that it was you, for that host and your name only (BUG-1135).
+- Space: a rare crash when an NPC ship would visit your star system right after you saved, or after the host left,
+  while a partner's colony was shown as an allied empire nearby (BUG-1144).
 - Network: more robustness checks on the data between the players' games: the host's game stays stable when another
   game sends far more than normal play.
 
 ### Development
+- Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
+  (BUG-1139).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
   main thread (none in the smoke tests); `make test` has ratchet lints for `object_alive` calls, call guards around
   the game's original functions and lifecycle registration (BUG-1130, BUG-1131).

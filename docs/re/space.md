@@ -3076,8 +3076,34 @@ same name who left and came back in the other order got each other's state.
   token kept in memory for the same host address and name, BUG-1001). Not: another game under the same name, the same
   game under another name, and a game that was closed and started again (a new token): for the kept state these
   are new players, the same rule as the join rule of BUG-1001 while late join is off.
+  CORRECTION (2026-11-15, fix/w51-space2): a game that was closed and started again gets its state back since
+  BUG-1135: the token of its clean leave is kept on disk for that host address and name
+  ([netcode-rejoin-restart](../04-netcode.md#netcode-rejoin-restart)); another game under the same name still does not.
 * Not changed: the allies mirror (space_allies.cpp `g_m`) is still by name; it is each machine's picture of the other
   players' empires, rebuilt from their rosters, not state handed back to a player.
 * Switch `space.kept_token` (space_ext.cpp): off = the name, the 0.7.14 behaviour. Test seam `coop.space keptkey other
   on|off` (rejoin::test_other): the next joins of this game send a fresh token that is neither written to the slot nor
   kept, as a second game of the same name would. Test `space_kept_key` (Rivals budget), unit `test_player_key`.
+
+## The game's list of owned stars nearby and the allies mirror (2026-11-15, fix/w51-space2)
+<a id="space-near-stars"></a>
+
+BUG-1144 (space_allies, lab 20261115-030136 of feat/w51-space: a caught fault at 0x00C32817, reported as
+"cEmpire_MakeContact+0x3C7"; the real function is 0xC32810, MakeContact ends at 0xC32745).
+
+* ✔ `[cSimulatorSpaceGame+0x30]` points at an object embedded at sim+0xF8 (vtable 0x1494398, ctor 0xFE6730). Its
+  +0x68 vector holds the stars in range of the active star and **+0x7C the ones with star flag 0x10 or 0x20** (owned
+  by an empire; AddRef'd star records). Both are rebuilt only by **0xFE6A50** (`SpaceNearStars_Rebuild`), which its
+  message handler 0xFE6E40 calls (with 0xFE6CD0) on messages 0x43F2583 and 0x55BD8F7 (seen after a jump into a system).
+  Runtime (lane 6): at home only the home star; after a visit to the mirror's star system and back, both.
+* ✔ **The NPC visitor spawn 0x1009070** (thiscall(sim, float dt) ret 4, from the system update 0x1009C90): when no NPC
+  UFO is in state 6, with a chance of 1 - 2^(-0.0869 dt) per call (about 6 % a second), picks a random star of +0x7C
+  (needs 2 or more), skips the player's own (+0x54 == GetPlayerEmpireID), then calls 0xC32810 on
+  `cStarManager::GetEmpire(star +0x54)` **without a null check**: the game never lists a star nobody owns.
+* ✔ Cause: `space_allies.cpp unapply()` (before every save for 3 s, `allies remove`, the session's end) gives the
+  mirror's star back to nobody (+0x54 = -1, flags without 0x10 / 0x20) while the list still holds it: GetEmpire(-1)
+  is null and 0xC32810 faults at its first instruction (`cmp [edi+0xB8],0`, data 0xB8). Reproduced on purpose: visit
+  the mirror's star, go home, `coop.space allies remove`: a fault after 10 s (the stack holds the star record).
+* Fix (`allies.near_rebuild`): after unapply() restored stars, call 0xFE6A50 on the near object (vtable checked) the
+  way the game's handler does; the list then holds no star of nobody. `coop.space allies near` prints the list
+  (owner, flags, `NO EMPIRE` for a stale entry, `stale=<n>`). Test `space_allies_near`.

@@ -8280,3 +8280,16 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   comments), and each planted violation fails: a second `object_alive(` call, a bare `g_applying = true; o_Apply();`,
   a `++g_hook_depth` around `o_Ev`, an unregistered `on_player_leave`; `--lower` refuses each and lowers a count that
   went down.
+
+## The warm reset closes the co-op window on its lobby page (2026-11-15, fix/w51-space2)
+<a id="testing-warm-ui-page"></a>
+
+BUG-1139: a closed co-op window keeps its page (Space, settings) for the next F9, so `coop.uistate 0` in the warm
+reset (BUG-0898) left the Space page of `space_rivalry` behind and `space_trade` (warm after it) waited for the
+lobby's "Space >" button that the Space page hides. `warm_reset` now sends `coop.uistate reset` (closed and on the
+lobby page, as at a cold start; an older DLL reads it as `0`). Proof: `lab.py run space_rivalry,space_trade --in-order`
+warm on one lane.
+
+Also on this branch: `space_allies_near` (BUG-1144, `coop.space allies near` prints the game's list of owned stars
+nearby, docs/re/space.md#space-near-stars) and `space_badges_rejoin` switches the twin's fixes off in the restarted
+guest too (BUG-1135, `net.rejoin_disk`).
