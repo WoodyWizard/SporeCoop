@@ -45,6 +45,8 @@ enum Kind : uint8_t {
     K_ROSTER_REQ = 11, // (nothing): everybody sends its roster now (a player joined / rejoined)
     K_KEPT = 12,       // host -> guest (BUG-0195): u8 target id, u8 n, n x u32 PlanetID: your own colonies, kept
     K_KEPT_DONE = 13,  // guest -> host: u8 n, n x u32 PlanetID it could not make its own (dropped by the host)
+    K_COLONY = 14,      // guest -> host (BUG-1151): one part of an own colony's cities (wire::space_map::ColonyPart)
+    K_KEPT_COLONY = 15, // host -> guest (BUG-1151): one part of a kept colony's cities, sent before its K_KEPT
 };
 
 // packets are at most 1200 bytes (kind, origin and the session header come on top)
@@ -446,6 +448,65 @@ static void roster_tick(double now)
 static spacekept::KeptStore<std::vector<uint32_t>> g_store; // C5, host: player key (spaceext::kept_key) -> its own colonies
 static spacekept::RestoreWindow g_win;                      // C5, guest: the Space world of its join
 // BUG-0195 (kept colonies, below): the guest's side
+// BUG-1151: a guest colony's cities (wire/space_map.h put_cities; space_allies.cpp cities_read / cities_apply)
+static std::map<std::string, std::map<uint32_t, std::vector<uint8_t>>> g_cities; // host: player key -> planet -> cities
+struct CityAsm {
+    uint32_t hash = 0;
+    uint16_t total = 0;
+    size_t got = 0;
+    std::vector<uint8_t> d;
+};
+static std::map<std::pair<uint8_t, uint32_t>, CityAsm> g_city_asm; // (sender, planet) -> the parts so far
+static std::map<uint32_t, std::vector<uint8_t>> g_restore_cities; // guest: planet -> its cities from the host
+static std::map<uint32_t, uint32_t> g_cities_sent_hash;             // guest: planet -> the cities sent last
+static double g_cities_next;
+static uint32_t g_cities_serial, g_cities_parts_in, g_cities_kept, g_cities_sent, g_cities_back, g_cities_applied,
+    g_cities_failed;
+static uint32_t blob_hash(const std::vector<uint8_t>& d)
+{
+    uint32_t h = 0x811C9DC5u;
+    for (uint8_t c : d)
+        h = (h ^ c) * 0x01000193u;
+    return h;
+}
+static void send_cities(uint8_t kind, uint8_t to, uint32_t planet, const std::vector<uint8_t>& blob)
+{
+    if (blob.size() > wire::space_map::kBlobMax)
+        return;
+    uint32_t h = blob_hash(blob);
+    for (size_t off = 0; off < blob.size(); off += wire::space_map::kPartBytes) {
+        wire::space_map::ColonyPart m;
+        m.to = to;
+        m.planet = planet;
+        m.hash = h;
+        m.total = (uint16_t)blob.size();
+        m.offset = (uint16_t)off;
+        m.bytes.assign(blob.begin() + off, blob.begin() + std::min(blob.size(), off + wire::space_map::kPartBytes));
+        net::Writer w;
+        m.write(w);
+        spaceext::send(kind, w);
+    }
+}
+// one part; true and `out` when the blob is whole (its hash checked)
+static bool take_part(uint8_t from, const wire::space_map::ColonyPart& m, std::vector<uint8_t>& out)
+{
+    auto& a = g_city_asm[{from, m.planet}];
+    if (m.offset == 0 || a.hash != m.hash || a.total != m.total) {
+        a = CityAsm{};
+        a.hash = m.hash;
+        a.total = m.total;
+        a.d.assign(m.total, 0);
+    }
+    memcpy(a.d.data() + m.offset, m.bytes.data(), m.bytes.size());
+    a.got += m.bytes.size();
+    g_cities_parts_in++;
+    if (a.got < a.total)
+        return false;
+    bool ok = blob_hash(a.d) == a.hash;
+    out = std::move(a.d);
+    g_city_asm.erase({from, m.planet});
+    return ok;
+}
 static std::vector<uint32_t> g_restore;    // guest: the host's list, still to apply
 static bool g_restore_on;
 // guest (g_win.join): the Space world when it joined. The host's list arrives with the guest's first roster, which
@@ -466,6 +527,9 @@ static void roster_end()
     g_win.session_end(); // BUG-0195: the next session's join
     g_restore.clear();
     g_restore_on = false;
+    g_restore_cities.clear(); // BUG-1151
+    g_cities_sent_hash.clear();
+    g_city_asm.clear();
     for (uint8_t id : ids)
         changed(id);
 }
@@ -521,12 +585,37 @@ static kept_disk::Backend<std::vector<uint32_t>> g_disk{
 static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k);
 static bool g_store_reg = store::add({"space.colonies",
                                       [](pstore::Store& s, int64_t now) {
-                                          if (g_disk_fix && g_keep_fix)
-                                              g_disk.save(g_store, s, now, true);
+                                          if (!g_disk_fix || !g_keep_fix)
+                                              return;
+                                          g_disk.save(g_store, s, now, true);
+                                          if (!g_disk.serial || g_disk.serial != store::serial() || &s != store::world())
+                                              return;
+                                          for (auto& [key, e] : g_store.entries()) { // BUG-1151: their cities
+                                              if (!e.have || !pstore::key_ok(key))
+                                                  continue;
+                                              pstore::Out o;
+                                              uint16_t n = 0;
+                                              pstore::Out body;
+                                              if (auto it = g_cities.find(key); it != g_cities.end())
+                                                  for (uint32_t p : e.value)
+                                                      if (auto c = it->second.find(p); c != it->second.end() && n < 200) {
+                                                          body.u32(p);
+                                                          body.u32((uint32_t)c->second.size());
+                                                          body.d.insert(body.d.end(), c->second.begin(), c->second.end());
+                                                          n++;
+                                                      }
+                                              o.u16(n);
+                                              o.d.insert(o.d.end(), body.d.begin(), body.d.end());
+                                              s.put(key, e.name, "space.cities", 1, n ? o.d : std::vector<uint8_t>{}, now, true);
+                                          }
                                       },
                                       [](const std::string& from, const std::string& to) {
                                           if (!g_store.rekey(from, to))
                                               return;
+                                          if (auto it = g_cities.find(from); it != g_cities.end()) { // BUG-1151
+                                              g_cities[to] = std::move(it->second);
+                                              g_cities.erase(from);
+                                          }
                                           for (auto& [k, e] : g_store.entries())
                                               if (k == to && e.id != spacekept::kNoId && !e.value.empty())
                                                   send_kept(e); // the player is here: its colonies at once
@@ -541,6 +630,15 @@ PLAYER_STATE("space_map_kept",
 // ---- the host keeps them in g_store, the guest restores in the window of g_win (space_kept.h, C5) ----
 static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k)
 {
+    if (spaceext::colony_cities_on()) // BUG-1151: each colony's cities first, so the restore has them
+        for (auto& [key, e] : g_store.entries())
+            if (&e == &k)
+                if (auto it = g_cities.find(key); it != g_cities.end())
+                    for (uint32_t p : k.value)
+                        if (auto c = it->second.find(p); c != it->second.end()) {
+                            send_cities(K_KEPT_COLONY, k.id, p, c->second);
+                            g_cities_back++;
+                        }
     wire::space_map::Kept m;
     m.to = k.id;
     m.planets = k.value;
@@ -583,6 +681,25 @@ static void kept_tick(double now)
         bool emptied = g_store.world(spaceext::world_epoch()); // another Space world: its players' colonies are not this one's
         if (g_disk_fix && g_keep_fix)
             g_disk.sync(g_store, emptied, spaceext::in_space()); // E1: what the host's disk keeps for this world
+        if (emptied)
+            g_cities.clear(); // BUG-1151: the cities of another world's colonies
+        if (g_disk_fix && g_keep_fix && g_disk.serial && g_cities_serial != g_disk.serial) { // ... and from the disk
+            g_cities_serial = g_disk.serial;
+            if (pstore::Store* w = store::world())
+                for (auto& key : w->keys_with("space.cities"))
+                    if (const pstore::Record* r = w->get(key, "space.cities"); r && r->ver == 1) {
+                        pstore::In in(r->data);
+                        uint16_t n = in.u16();
+                        for (uint16_t i = 0; i < n && in.ok && i < 200; i++) {
+                            uint32_t p = in.u32(), len = in.u32();
+                            if (!in.ok || len > wire::space_map::kBlobMax || in.p + len > r->data.size())
+                                break;
+                            if (!g_cities[key].count(p))
+                                g_cities[key][p].assign(r->data.begin() + in.p, r->data.begin() + in.p + len);
+                            in.p += len;
+                        }
+                    }
+        }
         std::set<uint8_t> here;
         for (auto& p : spaceext::ctx().sess->players())
             here.insert(p.id);
@@ -591,11 +708,44 @@ static void kept_tick(double now)
         return;
     }
     g_win.joined(spaceext::in_space(), spaceext::world_epoch());
+    // BUG-1151: my own colonies' cities to the host (those not in the host's roster), when they changed, every 10 s
+    if (spaceext::colony_cities_on() && g_keep_fix && !g_restore_on && spaceext::in_space() &&
+        g_win.from_host(spaceext::world_epoch()) && now >= g_cities_next) {
+        g_cities_next = now + 10.0;
+        const Roster* me = roster_of(spaceext::my_id());
+        const Roster* host = roster_of(0);
+        if (me && host)
+            for (auto& c : me->colonies) {
+                if (c.home || std::any_of(host->colonies.begin(), host->colonies.end(),
+                                          [&](const Colony& h) { return h.planet == c.planet; }))
+                    continue;
+                std::vector<uint8_t> blob = spaceext::colony_cities(c.planet);
+                uint32_t h = blob_hash(blob);
+                if (blob.empty() || g_cities_sent_hash[c.planet] == h)
+                    continue;
+                g_cities_sent_hash[c.planet] = h;
+                send_cities(K_COLONY, 0, c.planet, blob);
+                g_cities_sent++;
+            }
+    }
     if (!g_restore_on || !spaceext::in_space() || spaceext::world_epoch() == g_win.join)
         return;
     std::vector<uint32_t> failed, wait;
     for (uint32_t p : g_restore) {
         std::string why = spaceext::colonize_own(p);
+        if (why.empty() && g_restore_cities.count(p)) { // BUG-1151: its own cities, not the generated one
+            why = spaceext::colony_cities_apply(p, g_restore_cities[p]);
+            if (why != "wait") {
+                if (why.empty())
+                    g_cities_applied++;
+                else {
+                    g_cities_failed++;
+                    H->log(M, SK_WARN, "space map: the cities of kept colony %08X not written: %s", p, why.c_str());
+                }
+                g_restore_cities.erase(p);
+                why.clear(); // the colony itself is back
+            }
+        }
         if (why == "wait")
             wait.push_back(p);
         else if (!why.empty()) {
@@ -649,6 +799,14 @@ static std::string kept_status()
     s += b;
     s += "  disk: fix=" + std::to_string((int)g_disk_fix) + " " + g_disk.status() + " (restored " +
          std::to_string(g_store.restored()) + ")\n";
+    size_t nc = 0;
+    for (auto& [k, m] : g_cities)
+        nc += m.size();
+    s += "  cities: fix=" + std::to_string((int)spaceext::colony_cities_on()) + " kept=" + std::to_string(nc) +
+         " parts_in=" + std::to_string(g_cities_parts_in) + " got=" + std::to_string(g_cities_kept) + " sent=" +
+         std::to_string(g_cities_sent) + " back=" + std::to_string(g_cities_back) + " applied=" +
+         std::to_string(g_cities_applied) + " failed=" + std::to_string(g_cities_failed) + " pending=" +
+         std::to_string(g_restore_cities.size()) + "\n";
     for (auto& [n, k] : g_store.entries()) {
         snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", k.name.c_str(), k.id == spacekept::kNoId ? -1 : k.id,
                  (int)k.restoring, (unsigned)k.value.size());
@@ -1418,6 +1576,26 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         g_force_send = true;
     else if (kind == K_KEPT || kind == K_KEPT_DONE)
         on_kept(origin, r, kind == K_KEPT_DONE);
+    else if ((kind == K_COLONY || kind == K_KEPT_COLONY) && spaceext::colony_cities_on() && g_keep_fix) { // BUG-1151
+        wire::space_map::ColonyPart m;
+        std::vector<uint8_t> blob;
+        if (!m.read(r))
+            return;
+        if (kind == K_COLONY && spaceext::is_host() && m.to == 0 && origin != spaceext::my_id()) {
+            if (!take_part(origin, m, blob))
+                return;
+            std::string key = spaceext::kept_key(origin);
+            auto it = g_store.entries().find(key); // (no bind: the roster's first report decides the restore)
+            bool restoring = it != g_store.entries().end() && it->second.restoring;
+            if (!key.empty() && !restoring) {
+                g_cities[key][m.planet] = std::move(blob);
+                g_cities_kept++;
+            }
+        } else if (kind == K_KEPT_COLONY && !spaceext::is_host() && m.to == spaceext::my_id() && origin == 0) {
+            if (take_part(0, m, blob))
+                g_restore_cities[m.planet] = std::move(blob);
+        }
+    }
 }
 
 static bool reg = spaceext::add({.name = "map",

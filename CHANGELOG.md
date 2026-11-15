@@ -21,7 +21,8 @@
 - Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
   they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
   not to whoever joins under that name (BUG-1107). After a restart of the game you get your things back from the
-  same host too: your game remembers for a day that it was you, for that host and your name only (BUG-1135).
+  same host too: your game remembers for 30 days that it was you, for that host and your name only (BUG-1135,
+  BUG-1150).
 - Space: a rare crash when an NPC ship would visit your star system right after you saved, or after the host left,
   while a partner's colony was shown as an allied empire nearby (BUG-1144).
 - Network: more robustness checks on the data between the players' games: the host's game stays stable when another

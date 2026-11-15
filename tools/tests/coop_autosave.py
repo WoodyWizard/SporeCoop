@@ -24,7 +24,7 @@ import time
 
 from coop_space_map import no_movie, sp, wait
 from coop_space_rival_merge import money
-from twoinst import Checks, session_restart, start
+from twoinst import Checks, keyframe, session_restart, start
 
 
 def autosave(con):
@@ -63,6 +63,15 @@ def main():
        f'the host\'s game saved itself ({"the timer" if timer else "after the colony"}): {a1 and a1.get(kind)}')
     time.sleep(3)
     m1 = money(host)
+    # the host's co-op window (F9) says when its game last saved
+    host.call('coop.uistate 1')
+    time.sleep(1.5)
+    line = next((ln for ln in host.call('coop.uistate')['out'].splitlines() if ln.startswith('session ')), '')
+    print('  host F9: ' + line, flush=True)
+    ck('saved just now' in line or ' min ago' in line, f'the host\'s co-op window shows when the game saved ({line})')
+    keyframe('autosave_f9', 'the host\'s co-op window: the session line ends with "saved just now (autosave on)"',
+             players={'host': host})
+    host.call('coop.uistate 0')
 
     host, guest, _ = session_restart(host, guest, save=False, host_kill=True)
     time.sleep(2)

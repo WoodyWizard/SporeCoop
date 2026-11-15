@@ -27,7 +27,7 @@ struct Kept {
 static std::vector<Kept> g_kept;
 
 // BUG-1135: the token of a clean leave is also kept on disk (rejoin-<instance>-<slot>-kept.txt, rejoin_kept.h: a salted
-// hash of host address and name, 24 h, at most 16), so the same game after a restart is the same player to that host
+// hash of host address and name, 30 days with net.rejoin_month (BUG-1150), at most 16), so the same game after a restart is the same player to that host
 // and gets its kept Space state back (BUG-1107 keys it by the token). The file belongs to the slot this game holds
 // exclusively: another game of this PC (another slot, another instance) never reads it. `coop.fix net.rejoin_disk off`:
 // memory only (a restart sends a fresh token).

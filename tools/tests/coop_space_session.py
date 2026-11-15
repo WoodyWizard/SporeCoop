@@ -14,16 +14,24 @@ with every save of its game and read when the world opens; the next session give
 2. A new evening (twoinst.session_restart): the host saves its game, both leave and quit, both games start again, the
    host loads its save and hosts, the guest joins and loads the host's world.
 3. In the guest's game: the planet is a colony of the guest's empire again (the game's planet record: tech 5 and a
-   cCivData of the guest's political id); the badges it had earned are earned again; Rivals mode is on in both games,
+   cCivData of the guest's political id) with its own two cities (BUG-1151: spice, size, turrets, buildings and names
+   as `coop.space allies citytest` made them before the save); the badges it had earned are earned again; Rivals mode is on in both games,
    the guest's money is mg again (not the host's save money) and the two are at war.
 PASS: 1 to 3. FAIL twins (each fails its own check of step 3):
   SPORE_FIX_OFF=store.space_colonies  the colony is not the guest's
+  SPORE_FIX_OFF=space.colony_cities   the colony comes back with one generated city (BUG-1151)
   SPORE_FIX_OFF=store.space_badges    the guest has the host's badges
   SPORE_FIX_OFF=store.space_rivals    Allies mode, the guest's budget gone, no war
 
-  SPORE_LANE=9 python3 tools/tests/coop_space_session.py
+--npc (BUG-1151): instead, the guest's game takes a star of an NPC empire near it (`coop.space allies npcstar`: the
+game's own TransferStarOwnership, as when a system is bought or conquered), so the guest's colonies there are on a star
+the NPC owns in the host's world. Next session: the star and its colony are the guest's again in the guest's game.
+  SPORE_FIX_OFF=space.npc_star_colonies  the restore refuses the NPC's star: the colony is not the guest's (FAIL)
+
+  SPORE_LANE=9 python3 tools/tests/coop_space_session.py [--npc]
 """
 import re
+import sys
 import time
 
 from coop_space_badges_rejoin import badges, earned
@@ -31,6 +39,12 @@ from coop_space_colony_rejoin import planet_line
 from coop_space_map import no_movie, rosters, sp, wait
 from coop_space_rival_merge import money, rivals
 from twoinst import Checks, session_restart, start
+
+
+def city_lines(con, planet):
+    """the guest's own cities on a planet as its game's record has them (`allies cities`): one line per city"""
+    out = sp(con, 'allies cities', planet)
+    return [re.sub(r'^\s+city \d+ ', '', ln).strip() for ln in out.splitlines() if ln.strip().startswith('city ')]
 
 
 def relation(con, pid):
@@ -43,7 +57,56 @@ def my_id(con):
     return int(m.group(1)) if m else None
 
 
+def star_owner(con, star):
+    m = re.search(r"star %s '[^']*' emp=([0-9A-F]+)" % star, sp(con, 'allies star', star))
+    return m.group(1) if m else None
+
+
+def npc_main():
+    host, guest = start('space_empire')  # (contact with another empire: its stars are known)
+    ck = Checks()
+    time.sleep(3)
+    no_movie(guest)
+    no_movie(host)
+    out = sp(guest, 'allies npcstar')
+    if out.startswith('no NPC star'):  # the fixture's NPCs have one star each: their home star, as a conquest takes it
+        out = sp(guest, 'allies npcstar force')
+    print('  guest: ' + out.replace('\n', ' | ')[:400], flush=True)
+    m = re.match(r'npcstar (\d+) owner ([0-9A-F]+) -> ([0-9A-F]+) colonies((?: [0-9A-F]+(?:\(new\))?)+)', out)
+    ck(m is not None, 'the guest\'s game took a star of an NPC empire with a colony there')
+    if not m:
+        return ck.result()
+    star, npc, mine = m.group(1), m.group(2), m.group(3)
+    planet = m.group(4).split()[0].replace('(new)', '')
+    gid = my_id(guest)
+    ck(mine != npc and star_owner(guest, star) == mine, f'in the guest\'s game star {star} is its own now ({star_owner(guest, star)})')
+    ck(star_owner(host, star) == npc, f'in the host\'s game star {star} is still the NPC\'s ({star_owner(host, star)})')
+
+    def host_has():
+        return [c for c in rosters(host).get(gid, {}).get('colonies', []) if c[0] == planet and c[2]]
+    ck(wait(host_has, 30) is not None, f'the host\'s roster of the guest has colony {planet} as its own')
+    time.sleep(3)
+    host, guest, info = session_restart(host, guest)
+    ck(info['saved'], 'the host saved its game before quitting')
+    time.sleep(3)
+    no_movie(guest)
+
+    def back():
+        t, c = planet_line(guest, planet)
+        return (t, c) if t == 5 and mine in c and star_owner(guest, star) == mine else None
+    r = wait(back, 60, 2)
+    tech, civs = planet_line(guest, planet)
+    print(f'  next session: guest planet {planet} tech={tech} civs {civs} star owner {star_owner(guest, star)} | '
+          + sp(guest, 'allies').splitlines()[0][-80:], flush=True)
+    ck(r is not None, f'next session: the NPC\'s star {star} and colony {planet} are the guest\'s again in its game')
+    ck(star_owner(host, star) == npc, f'the host\'s game keeps the NPC\'s star ({star_owner(host, star)})')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
 def main():
+    if '--npc' in sys.argv:
+        return npc_main()
     host, guest = start('space')
     ck = Checks()
     time.sleep(3)
@@ -78,6 +141,13 @@ def main():
     def host_has():
         return [c for c in rosters(host).get(gid, {}).get('colonies', []) if c[0] == planet and c[2]]
     ck(planet and wait(host_has, 30) is not None, f'the host\'s roster of the guest has colony {planet} as its own')
+    # BUG-1151: the colony's own cities as a player's are after a while (two cities, spice, buildings, turrets)
+    out = sp(guest, 'allies citytest', planet) if planet else ''
+    print('  guest: ' + out.replace('\n', ' | ')[:500], flush=True)
+    ck(out.startswith('citytest ok'), 'the guest\'s colony has two cities with spice and buildings')
+    cities0 = city_lines(guest, planet) if planet else []
+    ck(wait(lambda: re.search(r'cities: fix=1 kept=[1-9]', sp(host, 'map kept')), 30) is not None,
+       'the host keeps the cities of the guest\'s colony (K_COLONY)')
 
     # 1c. badges the guest's game gives by itself
     gr0, gb0, _ = badges(guest)
@@ -115,6 +185,10 @@ def main():
     print(f'  next session: guest planet {planet} tech={tech} civ pols {civs} | ' + sp(guest, 'map kept').splitlines()[0],
           flush=True)
     ck(r is not None, f'next session: {planet} is a colony of the guest\'s empire again (tech {tech}, civs {civs}, its pol {gpol})')
+    c2 = wait(lambda: city_lines(guest, planet) == cities0 and cities0, 30, 2) if planet else None
+    print('  next session: guest cities ' + ' | '.join(city_lines(guest, planet)) + ' (before: ' + ' | '.join(cities0) + ')',
+          flush=True)
+    ck(c2 is not None, f'next session: the colony has its own cities again (spice, size, turrets, buildings, names)')
 
     def badges_back():
         no_movie(guest, 4)

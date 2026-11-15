@@ -137,7 +137,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | cell (Cell) | 5 | 1.0 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN` |
 | tribe (Tribe) | 6 | 1.0 | Tribe | `TRIBE_STATE`, `TRIBE_CMD` |
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
-| space (Space) | 8 | 1.0 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
+| space (Space) | 8 | 1.1 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.0 | every stage and the menus | `CREATION` |
 
@@ -156,6 +156,8 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 11 | map | `K_ROSTER_REQ` | any |
 | 12 | map | `K_KEPT` | host |
 | 13 | map | `K_KEPT_DONE` | guest |
+| 14 | map | `K_COLONY` | guest |
+| 15 | map | `K_KEPT_COLONY` | host |
 | 20 | contracts | `K_STATE` | host |
 | 21 | contracts | `K_ACCEPT` | guest |
 | 22 | contracts | `K_RESULT` | host |

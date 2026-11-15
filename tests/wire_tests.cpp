@@ -188,6 +188,33 @@ static void test_space_map()
         golden("map K_KEPT_DONE", d, "01 05000001", &w);
         rejects<m::KeptDone>("map K_KEPT_DONE cut (C6)", cut(w.data, 1));
     }
+    // BUG-1151: K_COLONY 14 / K_KEPT_COLONY 15, one part of a colony's cities
+    m::ColonyPart cp;
+    cp.to = 1; cp.planet = 0x01460035; cp.hash = 0xAABBCCDD; cp.total = 5; cp.offset = 2; cp.bytes = {7, 8, 9};
+    golden("map K_COLONY part", cp, "01 35004601 ddccbbaa 0500 0200 0300 070809", nullptr);
+    rejects<m::ColonyPart>("map K_COLONY part past its total", {1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 0, 2, 0, 7, 8});
+    rejects<m::ColonyPart>("map K_COLONY part cut", {1, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 3, 0, 7, 8});
+    // the cities blob: round trip, its ranges
+    m::City c1;
+    c1.pos[0] = 1; c1.pos[1] = 2; c1.pos[2] = 3; c1.spice = 77; c1.size = 4; c1.max_size = 8; c1.turrets = 3;
+    c1.income = 150; c1.happy = 0.5f; c1.specialty = 2; c1.wall = 0x280852F1; c1.name = "Bobton";
+    c1.buildings.push_back(std::vector<uint8_t>(0x38, 0x11));
+    m::City c2 = c1;
+    c2.name = "\xD0\x91";
+    c2.buildings.clear();
+    std::vector<m::City> cs{c1, c2}, back;
+    auto blob = m::put_cities(cs);
+    CHECK(m::get_cities(blob, back) && back.size() == 2 && back[0] == c1 && back[1] == c2, "the cities blob round trip");
+    CHECK(blob.size() == 2 + (57 + 1 + 6 + 1 + 0x38) + (57 + 1 + 2 + 1), "the cities blob's size (%zu)", blob.size());
+    auto bad = blob;
+    bad[0] = 2;
+    CHECK(!m::get_cities(bad, back), "another blob version is refused");
+    CHECK(!m::get_cities(cut(blob, 1), back), "a cut blob is refused");
+    m::City nan = c1;
+    nan.spice = -1;
+    CHECK(!m::get_cities(m::put_cities({nan}), back), "a negative spice is refused");
+    std::vector<m::City> many(20, c2);
+    CHECK(m::get_cities(m::put_cities(many), back) && back.size() == m::kCityMax, "at most 16 cities");
 }
 
 // space_trade.cpp: K_TOOL 70 .. K_INV_DONE 79

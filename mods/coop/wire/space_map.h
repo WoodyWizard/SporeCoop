@@ -1,9 +1,12 @@
-// MSG_SPACE kinds 10..13 of space_map.cpp (the galaxy map roster, a guest's kept colonies): payload structs, the rules
+// MSG_SPACE kinds 10..15 of space_map.cpp (the galaxy map roster, a guest's kept colonies and their cities): payload structs, the rules
 // in wire/common.h.
 #pragma once
 
 #include "../space_map.h" // (not this file: the feature header next to the wire directory)
 #include "common.h"
+
+#include <cmath>
+#include <cstring>
 
 namespace wire::space_map {
 
@@ -139,6 +142,138 @@ struct KeptDone {
     std::vector<uint32_t> failed;
     void write(net::Writer& w) const { put_u32s8(w, failed); }
     bool read(net::Reader& r) { return get_u32s8(r, failed); }
+};
+
+// BUG-1151: a guest colony's cities as the guest's game keeps them in the planet record (cCivData +0x3C: cCityData,
+// docs/re/space.md#space-colony-cities): what a restored colony gets back instead of FillPlanetDataForTechLevel's one
+// generated city. The blob (u8 version 1, u8 n cities at most 16, per city: 3 f32 position, 4 f32 orientation, f32
+// spice (+0x1C), i32 max size (+0x20), i32 size (+0x24), u8 turret bits (+0x28), i32 income (+0x2C), f32 happiness
+// (+0x30), i32 specialty (+0x34), u32 wall style (+0xB8), str8 name (UTF-8, 64 bytes), u8 n buildings at most 64,
+// n x 0x38 raw bytes of the building entry (+0x7C, plain data)).
+constexpr size_t kCityMax = 16, kBuildingMax = 64, kBuildingBytes = 0x38;
+struct City {
+    float pos[3] = {}, rot[4] = {0, 0, 0, 1}, spice = 0, happy = 0;
+    int32_t max_size = 0, size = 0, income = 0, specialty = -1;
+    uint8_t turrets = 0;
+    uint32_t wall = 0;
+    std::string name;
+    std::vector<std::vector<uint8_t>> buildings;
+    bool operator==(const City& o) const
+    {
+        return !memcmp(pos, o.pos, sizeof pos) && !memcmp(rot, o.rot, sizeof rot) && spice == o.spice && happy == o.happy &&
+               max_size == o.max_size && size == o.size && income == o.income && specialty == o.specialty &&
+               turrets == o.turrets && wall == o.wall && name == o.name && buildings == o.buildings;
+    }
+};
+inline std::vector<uint8_t> put_cities(const std::vector<City>& v)
+{
+    net::Writer w;
+    w.u8(1);
+    uint8_t n = (uint8_t)std::min<size_t>(v.size(), kCityMax);
+    w.u8(n);
+    for (uint8_t i = 0; i < n; i++) {
+        const City& c = v[i];
+        for (float f : c.pos)
+            w.f32(f);
+        for (float f : c.rot)
+            w.f32(f);
+        w.f32(c.spice);
+        w.u32((uint32_t)c.max_size);
+        w.u32((uint32_t)c.size);
+        w.u8(c.turrets);
+        w.u32((uint32_t)c.income);
+        w.f32(c.happy);
+        w.u32((uint32_t)c.specialty);
+        w.u32(c.wall);
+        w.str8(c.name.substr(0, std::min<size_t>(c.name.size(), 64)));
+        uint8_t nb = (uint8_t)std::min<size_t>(c.buildings.size(), kBuildingMax);
+        w.u8(nb);
+        for (uint8_t b = 0; b < nb; b++) {
+            std::vector<uint8_t> e = c.buildings[b];
+            e.resize(kBuildingBytes);
+            w.raw(e.data(), e.size());
+        }
+    }
+    return w.data;
+}
+inline bool get_cities(const std::vector<uint8_t>& d, std::vector<City>& v)
+{
+    v.clear();
+    net::Reader r(d.data(), d.size());
+    if (r.u8() != 1)
+        return false;
+    uint8_t n = r.u8();
+    if (!r.ok() || n > kCityMax)
+        return false;
+    for (uint8_t i = 0; i < n && r.ok(); i++) {
+        City c;
+        for (float& f : c.pos)
+            f = r.f32();
+        for (float& f : c.rot)
+            f = r.f32();
+        c.spice = r.f32();
+        c.max_size = (int32_t)r.u32();
+        c.size = (int32_t)r.u32();
+        c.turrets = r.u8();
+        c.income = (int32_t)r.u32();
+        c.happy = r.f32();
+        c.specialty = (int32_t)r.u32();
+        c.wall = r.u32();
+        c.name = r.str8();
+        uint8_t nb = r.u8();
+        if (!r.ok() || nb > kBuildingMax || c.name.size() > 64)
+            return false;
+        for (uint8_t b = 0; b < nb && r.ok(); b++) {
+            std::vector<uint8_t> e(kBuildingBytes);
+            r.raw(e.data(), e.size());
+            c.buildings.push_back(std::move(e));
+        }
+        // the game's own ranges (a cut or crafted blob is no colony): finite numbers, sizes 0..64
+        bool fin = true;
+        for (float f : c.pos)
+            fin &= std::isfinite(f) && std::fabs(f) < 1e6f;
+        for (float f : c.rot)
+            fin &= std::isfinite(f) && std::fabs(f) <= 1.01f;
+        if (!fin || !std::isfinite(c.spice) || c.spice < 0 || c.spice > 1e6f || !std::isfinite(c.happy) || c.size < 0 ||
+            c.size > 64 || c.max_size < 0 || c.max_size > 64)
+            return false;
+        v.push_back(std::move(c));
+    }
+    return r.ok() && r.left() == 0;
+}
+
+// K_COLONY (guest -> host, 14) and K_KEPT_COLONY (host -> guest, 15): one part of a colony's city blob, sent in parts of
+// at most kPartBytes: u8 to (0: the host), u32 PlanetID, u32 hash of the whole blob, u16 total, u16 offset, u16 n, n bytes
+constexpr size_t kPartBytes = 900, kBlobMax = 60000;
+struct ColonyPart {
+    uint8_t to = 0;
+    uint32_t planet = 0, hash = 0;
+    uint16_t total = 0, offset = 0;
+    std::vector<uint8_t> bytes;
+    void write(net::Writer& w) const
+    {
+        w.u8(to);
+        w.u32(planet);
+        w.u32(hash);
+        w.u16(total);
+        w.u16(offset);
+        w.u16((uint16_t)bytes.size());
+        w.raw(bytes.data(), bytes.size());
+    }
+    bool read(net::Reader& r)
+    {
+        to = r.u8();
+        planet = r.u32();
+        hash = r.u32();
+        total = r.u16();
+        offset = r.u16();
+        uint16_t n = r.u16();
+        if (!r.ok() || n > kPartBytes || total > kBlobMax || (size_t)offset + n > total || n > r.left())
+            return false;
+        bytes.resize(n);
+        r.raw(bytes.data(), n);
+        return r.ok();
+    }
 };
 
 } // namespace wire::space_map

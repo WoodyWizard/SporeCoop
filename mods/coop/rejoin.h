@@ -9,7 +9,7 @@
 // empties the file, so no stable id follows a player from host to host: a clean leave keeps the token only for the
 // same host address and the same name (BUG-1001), in memory and (BUG-1135, net.rejoin_disk) in
 // rejoin-<instance>-<slot>-kept.txt next to the slot (rejoin_kept.h: under a salted hash of address and name, so the
-// file holds neither; 24 h, at most 16 pairs), so the same game after a restart is the same player to that host and
+// file holds neither; 30 days (net.rejoin_month, BUG-1150; a day without), at most 16 pairs), so the same game after a restart is the same player to that host and
 // gets its kept Space state back (BUG-1107); another host or another name never gets it. When the file cannot be used
 // the token is random for this process: a crash rejoin then gets "name 2", nothing worse.
 #pragma once
