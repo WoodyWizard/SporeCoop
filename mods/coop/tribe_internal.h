@@ -57,11 +57,14 @@ extern bool g_ok;
 
 // ---- layout (docs/re/tribe.md) ----
 constexpr uint32_t kTribeNoun = 0x18C6D19;
+constexpr uintptr_t kMembersOff = 0x340;   // cTribe: vector<cCreatureCitizen*>
 
 constexpr uintptr_t kOwnerTribeOff = 0x1014; // cCreatureCitizen::mpOwnerTribe
 constexpr uintptr_t kAgeOff = 0xB34;       // 0 baby, 1 adult
 constexpr uintptr_t kSelectedOff = 0x12C;  // spatial+0x6C IsSelected
 
+extern uintptr_t a_AddMember;
+extern uintptr_t a_CreateCitizen;
 extern uintptr_t a_DoAction;
 extern uintptr_t a_DoActionForObjects;
 extern uintptr_t a_MaxPop;
@@ -127,11 +130,16 @@ struct HMember {
 extern bool g_kept_refs_fix;
 extern uint32_t g_kept_stale;
 bool kept_alive(void* o, uint32_t serial, uint32_t noun);
+extern bool g_join_body_fix;
+extern uint32_t g_join_bodies;
 
 constexpr double kBodyMax = 60.0;
 constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
 
 extern std::unordered_map<void*, void*> g_detached;
+extern uintptr_t a_BTTerminate;
+extern uint32_t g_teardown_restored;
+void detach_body(void* c);
 
 // C1 of 0.7.15 (BUG-1140, docs/01-architecture.md#arch-mirror-registry): the host's member table (g_hm / g_hm_by_id,
 // keyed both ways by hand) and the guest's mirrors (g_gm / g_gid_of) are mirror::Registry tables: one entry per net
@@ -208,6 +216,7 @@ struct GMember {
     uint32_t relayed_anim = 0;      // BUG-0936: the last animation the relay (kinds 2 / 3 / 10) played on it
 };
 
+extern bool g_member_lifetime_fix;
 bool gm_alive(const mirror::Ref& r);
 
 using GReg = mirror::Registry<uint16_t, GMember>;
@@ -226,7 +235,42 @@ struct GuestMirrors {
 
 extern GuestMirrors g_guest;
 bool mirror_ok(const GEntry& e);
+
+// BUG-0685: a guest's log says when a member mirror goes and why one is not made again (at most kMirrorLogMax lines;
+// a mirror's "not made" line only when its reason changes)
+constexpr uint32_t kMirrorLogMax = 60;
+
+extern uint32_t g_mirror_logs;
+
+#define MIRROR_LOG(...) \
+    do { \
+        if (g_mirror_logs < kMirrorLogMax) { \
+            g_mirror_logs++; \
+            H->log(M, SK_INFO, __VA_ARGS__); \
+        } \
+    } while (0)
+
+extern uint32_t g_mirror_timed;
+extern uint32_t g_mirror_walks;
+extern uint32_t g_mirror_grounded;
+
+constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
+
 extern double g_test_delay;
+extern bool g_test_lag_fix;
+
+constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
+
+extern bool g_mirror_keep_fix;
+
+// BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
+// the lead's cap kMaxLead x 9 m/s = 5.4 m)
+constexpr float kMirrorSmoothMax = 6.f; // m
+constexpr float kMirrorWalkAcc = 40.f; // m/s2 (BUG-0619)
+constexpr float kMirrorWalkOver = 3.f; // m/s: walked at most this faster than the lead itself (BUG-0619)
+constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
+
+extern bool g_cycle_order_fix;
 extern uint32_t g_map_stale_skipped;
 extern bool g_state_hold;
 uint8_t owner_of(void* c);
@@ -448,6 +492,7 @@ extern bool g_party_fix;
 extern bool g_party_stop_fix;
 extern uint32_t g_party_stops_outside;
 void on_party(uint8_t kind, net::Reader& r);
+bool player_tribe_out(void* t);
 void gameover_host_tick(double now);
 
 // tests (BUG-0759): `coop.tribe setvel <id> <vx> <vy> <vz> <s>` holds a host member's velocity field (cLocomotiveObject
@@ -504,18 +549,34 @@ void conquer_on_host(uint8_t from, const net::Vec3& p);
 extern uint32_t g_guest_missions;
 void host_command(uint8_t from, net::Reader& r);
 extern bool g_fix_gameover;
+extern uint32_t g_spawns_blocked;
+extern uint32_t g_mirror_out_passed;
+extern uint32_t g_mirrors_grown;
 void* spawn_member(void* t, uint8_t age);
+void restore_body_tribe(void* c, void* t);
 void* tribe_holding(void* c);
 void remove_member(void* c);
 extern std::unordered_map<void*, uint32_t> g_ours_c;
 extern std::unordered_map<void*, uint32_t> g_ours_t;
+void note_ours(std::unordered_map<void*, uint32_t>& m, void* o);
 bool ours_in(const std::unordered_map<void*, uint32_t>& m, void* o);
 extern uint32_t g_markers_used;
+
+void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<net::Vec3, bool>>& htribes,
+                            const std::vector<void*>& locals);
+
 extern uint32_t g_forms_blocked;
 extern bool g_form_pace_fix;
 extern uint32_t g_forms_paced;
 extern std::string g_pace_last;
+void unmapped_tick(const std::vector<void*>& locals, void* pt, double now);
+void guest_state(net::Reader& r);
 extern bool g_fix_ko;
+extern uint32_t g_ko_replaced;
+extern uint32_t g_ko_shown;
+extern uint32_t g_away_trees_ended;
+void away_tree_end_tick();
+void guest_tick(double now);
 extern std::unordered_map<uint8_t, void*> g_chief;
 extern std::unordered_map<void*, float> g_chief_scale;
 extern uint32_t g_duet_ticks;
