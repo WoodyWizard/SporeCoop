@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-labstart
-commits: ee9d9990 d1fe9727 ff5df396 7fdc676c 6c35515c
+commits: ee9d9990 d1fe9727 ff5df396 7fdc676c 6c35515c 06a43616
 tests: labstart_selftest.py (startwait); team, select, frames_loop (lab A/B)
 signature:
 docs: docs/06-testing.md#testing-start-waits

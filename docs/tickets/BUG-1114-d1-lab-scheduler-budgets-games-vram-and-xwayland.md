@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-labstart
-commits: ee9d9990 ff5df396 53592042 7fdc676c fb1059a8 6c35515c
+commits: ee9d9990 ff5df396 53592042 7fdc676c fb1059a8 6c35515c 06a43616
 tests: labstart_selftest.py (budget, fpslimit); npc_walk_tribe
 signature:
 docs: docs/06-testing.md#testing-lab-budget
