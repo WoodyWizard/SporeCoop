@@ -125,6 +125,11 @@ TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows i
 # clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
+# BUG-1165: the planted twin's Tribe advance gets the planted minutes on top of a 20 min advance (village 2 can fall only
+# after the plant, and the passing runs needed 22-26 min of the old 30: a game over's reload, a 300 s raid or the editor
+# at the end took the rest). CAMPAIGN_OLD_NOCLICK_BUDGET=1: the 30 min of every Tribe advance (stuck in 3 of 5 runs,
+# v0.7.14.1 lab 20261115-154852 too)
+OLD_NOCLICK_BUDGET = os.environ.get('CAMPAIGN_OLD_NOCLICK_BUDGET') == '1'
 # BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
 # or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
@@ -1174,7 +1179,10 @@ class Campaign:
     def advance_minutes(self, stage):
         """--advance-minutes, else per stage: Cell and Creature end in a few minutes, the Tribe stage
         needs every other tribe conquered (new ones form after each), the Civ stage every city"""
-        return self.a.advance_minutes or ADVANCE_MIN[stage]
+        m = self.a.advance_minutes or ADVANCE_MIN[stage]
+        if stage == 'tribe' and PLANT_NOCLICK and not OLD_NOCLICK_BUDGET and not self.a.advance_minutes:
+            m = max(m, PLANT_NOCLICK + 20)  # BUG-1165
+        return m
 
     def kick_cell(self, state):
         h = self.host
