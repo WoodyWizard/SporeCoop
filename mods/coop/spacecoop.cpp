@@ -717,7 +717,6 @@ static GenState g_gen_shared; // the old state (seedfix 0)
 static DWORD g_gen_thread_shared;
 static bool g_seed_fix = true;
 COOP_FIX("space.seed", "BUG-0123", g_seed_fix, "space: planet seeding state is per thread");
-static DWORD g_main_tid;                     // set by tick (the main thread)
 static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
 static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
 
@@ -809,7 +808,7 @@ static float SK_THISCALL h_RandomFloat(void* rng)
 
 static void off_main(uint32_t& n, const char* what)
 {
-    if (!g_main_tid || GetCurrentThreadId() == g_main_tid)
+    if (!game::main_thread() || game::on_main()) // A14: the one main-thread id
         return;
     if (!n++)
         H->log(M, SK_WARN, "space: %s runs on thread %lu, not on the main thread (BUG-0123)", what,
@@ -1863,7 +1862,6 @@ static void gift_owed_tick()
 // ---------------- frame ----------------
 void tick(double now)
 {
-    g_main_tid = GetCurrentThreadId();
     spaceext::tick_all(now); // features check the stage and the session themselves (and the world epoch)
     down_world_tick(now);    // BUG-0229: first end or pause the disabled state,
     down_owed_tick();        // BUG-0228: then an owed clear of its invincibility

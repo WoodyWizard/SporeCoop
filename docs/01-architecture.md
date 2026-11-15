@@ -194,3 +194,59 @@ The keepalive path (a modal dialog stops the frames, the window still pumps mess
 frame) runs only `g_sess.update()` and, on the host, `world::tick`: none of phases 1 and 3-9 (no stage counters, no
 world resets, no puppet checks) before those messages. Open question of the audit (CORE-8): no handler is known to
 need them.
+
+## Threads: who runs what, and how work reaches the main thread (2026-11-15, feat/w51-guards)
+<a id="arch-threads"></a>
+
+The rule (1.4): **game objects, the network session and the mod's own game state are touched only on the game's
+main thread.** Plan item A14 of 0.7.15 (BUG-1130) made the main thread one id for every module and counts the game calls made
+off it.
+
+**The main thread** (the game's own, the one that calls `IDirect3DDevice9::Present`) runs:
+* SporeKit's boot and the mod's `sporekit_mod_main` (game::init notes the thread id there);
+* `SK_EV_FRAME` callbacks (coop.cpp `on_frame`, inside Present): every module tick, `g_sess.update()` (sends and
+  receives), the lifecycle resets, the call-guard reset;
+* the task queues of SporeKit (sporekit/console.cpp): `run_on_main` (between frames; a `WM_SK_PUMP` message wakes the
+  window procedure, so tasks also run during loading screens) and `run_outside_frame` (`WM_SK_PUMP_OUT`, outside
+  Present: UI, fonts, editors, saves, anything that creates D3D resources); console commands with
+  `SK_CMD_MAIN_THREAD` (the default) and `SK_CMD_OUTSIDE_FRAME`;
+* every game hook the game calls from its own update, and the game's saves (savestrip.cpp's filter acts only there).
+
+`game::on_main()` (game.h) answers "is this the main thread": false before game::init, then compared with the id that
+init and every frame note (`stage_epoch_tick` at the top of on_frame, `set_effect_relay_enabled` from effects::tick).
+`game::main_thread()` is the id (debug.cpp's `coop.sample` suspends that thread from the console's thread).
+The effect hooks, savestrip.cpp and spacecoop.cpp ask it; before A14 each kept its own copy (four ids, the effect
+one was 0 until the effects module ran).
+
+**Other threads and what each may touch:**
+
+| Thread | Started by | May touch | Hands work to the main thread by |
+|---|---|---|---|
+| Keepalive timer (`g_keepalive`, coop.cpp) | `keepalive_start` | only `g_last_frame` and its own flags | `run_outside_frame(keepalive_task)` when no frame came for 0.5 s: the task runs `g_sess.update()` (and the host's world tick) on the main thread, so a loading screen does not drop the session |
+| DNS lookup (`spawn_pinned`, coop.cpp; net/session.cpp `g_spawn_thread`) | a join by host name | its own `Lookup` (refcounted, `done` atomic) | the session polls `done` in `update()` |
+| Adapters worker (adapters.cpp, BUG-0286) | the co-op window's address list | the OS (GetAdaptersAddresses / sockets) under a fault guard, its result under `g_mu` | the main thread reads the cached list under `g_mu` |
+| Auto-update (autoupdate.cpp) | the update check / download | WinHTTP, files in the mod folder, its state under `g_mu` | the main thread polls the state under `g_mu` |
+| Memory walk (diag_stats.cpp `mem_walk`) | the support report's memory census | VirtualQuery of the process, its own counters | the main thread reads the result after the thread ended |
+| Support report writer (sreport.cpp) | a problem report | files of the report, its job under `g_job_mx` | `g_job_done`, taken by the main thread's tick |
+| SporeKit console server (sporekit/console.cpp) | SporeKit boot | runs `SK_CMD_ANY_THREAD` commands inline: they read only atomics or state under a lock (`coop.threads`, `coop.sample`); `SK_CMD_NOT_ON_MAIN` ones wait for frames | queues every other command with `run_on_main` / `run_outside_frame` |
+| SporeKit watchdog, crash report, stack-overflow and report-screenshot threads (watchdog.cpp, diag.cpp, reportshot.cpp) | SporeKit | the frame counter, the fault record, files; the crash report reads coop's diag text under `g_diag_mu` (BUG-1022) | nothing (they report) |
+| The game's UI skinner render thread (Skinner::cSkinPainterPipeline, Tribe / Civ) | the game | calls our effect hooks: a hook body only calls the original and returns (`if (!game::on_main())`), effects.cpp's ring (`g_qlock`) is filled only from the main thread | nothing |
+| The game's planet generation / name threads (Space, BUG-0123) | the game | the seeding hooks keep per-thread state (`t_gen`), nothing else | nothing |
+| The game's threads that build audio commands (audio.cpp, tests only: `coop.audio` recording on) | the game | the hooks keep the command being built per thread (`t_cur`) and record it under `g_mu`, then call the original | nothing (`coop.audio` reads under `g_mu`) |
+| Wine / DXVK / D3D9 threads | Wine, the driver | never call mod code | nothing |
+
+**Locks of coop:** `g_diag_mu` (coop.cpp, the diag text the crash thread reads), notify.cpp `g_mu` (the notes
+queue), modes.cpp `g_world_name_mx` (the planet name), effects.cpp `g_qlock` (the effect ring), adapters.cpp,
+autoupdate.cpp and audio.cpp `g_mu`, sreport.cpp `g_job_mx`, mem_census.cpp `g_cs` / `g_track_mu`, game.cpp
+`g_off_mu` (the off-main table). Nothing of the session, the stage modules or the lifecycle registry is locked: they
+are main-thread only.
+
+**The off-main counter.** `skg::call_probe` (sdk/include/sporekit_game.hpp) is called by every skg helper
+(`thiscall`, `cdecl_call`, `stdcall_call`, `vcall`) with the game function's address; coop's game.cpp installs one
+that, off the main thread, counts the call per call site (its return address in coop.dll) and game function
+(mods/coop/off_main.h, unit test `test_off_main` in tests/npc_tests.cpp) and writes one log line per new site:
+`threads: game call 0x... from coop.dll+0x... on thread N, not the main thread M (A14, coop.threads)`. `coop.threads
+[reset|on|off]` prints the main thread id and the table. Calls through the `o_*` trampolines (a hook calling the
+game's original on the game's own thread) and through typedef'd function pointers are not counted. Any count above
+0 is a bug: a hook the game calls from another thread that does game work, or an any-thread command that calls the
+game.

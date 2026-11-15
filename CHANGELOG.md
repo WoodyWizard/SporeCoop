@@ -21,6 +21,12 @@
   game sends far more than normal play.
 
 ### Development
+- Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
+  main thread (none in the smoke tests); `make test` has ratchet lints for `object_alive` calls, call guards around
+  the game's original functions and lifecycle registration (BUG-1130, BUG-1131).
+- Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
+  open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
+  and branches that can go (BUG-1127).
 - Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
   open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
   and branches that can go (BUG-1127).
