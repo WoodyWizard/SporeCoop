@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-guards
-commits: 42c13712
+commits: 42c13712, ae215268
 tests: tools/ratchet_lint.py --self-test (make test part unit-lint)
 signature:
 docs: docs/06-testing.md#testing-ratchet-lints
@@ -51,8 +51,10 @@ counts, refused while anything is above). No coop.fix switch (tooling, no mod co
   `--lower` refuses each, a count below the baseline passes with the hint and `--lower` writes it. In the real tree a
   planted mods/coop/zz_plant.cpp (object_alive call, unregistered `g_in_plant` around `o_Plant`, unregistered
   `zz::on_session_end`) gave 3 FAIL lines and exit 1.
+- The coop.cpp split (feat/w51-split f34aaf22: coop_cmds, dna, vote, puppets, session_glue) checked with this
+  baseline (`--root <that tree> --baseline tools/ratchet_baseline.json`): 0 problems, the same 149 / 4 / 51.
 - no-fail-run: tooling (no game code); the FAIL side is the planted violations above.
 
 ## History
 - 2026-11-15: opened.
-- 2026-11-15: fixed on feat/w51-guards (42c13712).
+- 2026-11-15: fixed on feat/w51-guards (42c13712, ae215268).
