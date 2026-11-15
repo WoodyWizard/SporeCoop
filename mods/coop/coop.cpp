@@ -2649,6 +2649,9 @@ COOP_FIX("creature.first_before_world", "BUG-9208", g_first_before_world,
 constexpr uint32_t kEditorCheck = 0x058A3350u;
 static bool g_pregame_open;        // this guest's editor is the pre-game one
 static double g_first_result_wait = -1; // BUG-9209: left the pre-game editor, its result not read yet (since)
+// BUG-9209 (MSI tour 2026-11-15): on one long-used profile the pre-game editor's name field never opened, every time;
+// the in-world editor named fine there. The editor comes again once, then the world loads (the in-world editor follows)
+static int g_first_retries = 0;
 static uint32_t g_late_world = 0;       // BUG-9208: the host's world the late editor was opened for (once)
 static bool g_first_retry = true;
 COOP_FIX("creature.first_retry", "BUG-9209", g_first_retry,
@@ -2725,8 +2728,14 @@ static void pregame_editor_tick(double now)
         g_first_result_wait = -1;
         world::hold_for_editor(false); // a creature was saved (or 40 s): the late path decides with it
         const bool made = creations::first_creature_made();
-        if (!made) g_late_world = 0; // none: the base creature's editor again (the late path), not the old creature
-        LOG("pregame editor: its result read: %s (BUG-9209)", made ? "a creature" : "none saved, the editor again");
+        const bool again = !made && g_first_retries < 1;
+        if (made) g_first_retries = 0;
+        if (again) { // none: the base creature's editor again (the late path), not the old creature
+            g_late_world = 0;
+            ++g_first_retries;
+        }
+        LOG("pregame editor: its result read: %s (BUG-9209)",
+            made ? "a creature" : again ? "none saved, the editor again" : "none saved again, the world loads (its editor follows there)");
     }
     if (g_pregame_open) { // the check waits for the host's world (or the host's return to the menu, or no host)
         if (now - s_check_at < 0.25) return;
