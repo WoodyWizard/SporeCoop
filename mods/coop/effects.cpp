@@ -44,13 +44,9 @@ COOP_FIX("creature.effects_relay", "BUG-0451", g_fix,
 
 // BUG-0471: an effect is sent only while a partner plays in the same place, and a received start
 // is played only while its owner does (a guest in the main menu, an editor, a loading screen or at
-// another star does not create the host's effects in whatever world its game has then). Off: the
-// old behaviour (sent and played in any place).
-static bool g_here_fix = true;
-COOP_FIX("effects.here", "BUG-0471", g_here_fix,
-         "effects: relayed only between players in the same place (not into a menu, editor or loading screen)");
+// another star does not create the host's effects in whatever world its game has then).
 static uint32_t g_elsewhere_tx, g_elsewhere_rx;
-static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here(); }
+static bool nobody_here() { return C.anyone_here && !C.anyone_here(); }
 
 // BUG-0451 (Tribe / Civilization): 0.7.4 relayed effect starts only in Cell and Creature, because a relayed world
 // effect made the receivers fault hundreds of times in Skinner::cSkinnerTexturePainter::StartRender+0x28
@@ -59,9 +55,9 @@ static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here
 // built, e.g. a partner's puppet or a tribe member) creates its paint effects in an effect world of its own
 // on the main thread; the world-effect hook saw them like any effect, and one made near the local player was
 // sent. Created in the receiver's game effect world it has no painter and faults every frame while it lives
-// (docs/re/creature.md#creature-effects-painter). `effects.main_world` (on) sends only effects of the game's
-// own effect world and never plays an id this game saw only in another world; with it, Tribe and Civilization
-// relay again (`effects.other_stages`, on). Off: the 0.7.4 behaviour (no effect starts there; stops pass).
+// (docs/re/creature.md#creature-effects-painter). Only effects of the game's own effect world are sent and an id
+// this game saw only in another world is never played (BUG-0451); with that, Tribe and Civilization relay again
+// (`effects.other_stages`, on). Off: the 0.7.4 behaviour (no effect starts there; stops pass).
 static bool g_other_stages = true;
 COOP_FIX("effects.other_stages", "BUG-0451", g_other_stages,
          "effects: also relayed in Tribe and Civilization (off: Cell and Creature only, as 0.7.4)");
@@ -70,9 +66,6 @@ COOP_FIX("effects.other_stages", "BUG-0451", g_other_stages,
 // guest -> guest) passes with it and fails without it, no fault: on by default now. `coop.fix effects.space off`: off.
 static bool g_space = true;
 COOP_FIX("effects.space", "BUG-0895", g_space, "effects: also relayed in Space (the effects a player's ship makes show on the partners' screens)");
-static bool g_main_world_fix = true;
-COOP_FIX("effects.main_world", "BUG-0451", g_main_world_fix,
-         "effects: the skin painter's own effects are never relayed (they faulted the partner's game in Tribe and Civ)");
 static uint32_t g_stage_skipped;
 static bool stage_off()
 {
@@ -319,10 +312,7 @@ static bool onto_own_ground(uint8_t* xf, float agl)
 // 0x40890200 / 0x9EA3031A) was played in the partner's game at the right place but not upright on the planet: tilted
 // into the water / the ground, nobody saw it. Now the effect's own transform is sent, as the game's
 // VisualEffect_SetTransform 0xA827B0 keeps it at effect +0x9C ({u16 flags, u16 changes, pos, scale, 3x3 rotation}, the
-// same layout as the message's 0x44 bytes). `coop.fix effects.world_xform off`: position only (0.7.8).
-static bool g_xform_fix = true;
-COOP_FIX("effects.world_xform", "BUG-0465", g_xform_fix,
-         "effects: an effect in the world (the sea monster, splashes) shows upright and at its size in the partner's game");
+// same layout as the message's 0x44 bytes).
 static uint32_t g_xform_sent, g_xform_bad;
 static bool copy_transform(uint8_t* xf, void* fx, const net::Vec3& p)
 {
@@ -445,9 +435,6 @@ static void on_world_effect(void* fx, uint32_t id)
 // BUG-0603: the hit impact of an attack animation on one of its targets (game.cpp's hook of the animation event
 // handler's target branch). The game that runs the attacker makes it; a remote copy of the attacker plays the
 // relayed animation without targets and never does, so it is sent as a world effect at the hit spot.
-static bool g_hit_fix = true;
-COOP_FIX("effects.hit_targets", "BUG-0603", g_hit_fix,
-         "effects: the hit impacts of attacks (an attack animation's effect on each victim) show in the partner's game");
 static uint32_t g_hit_sent, g_hit_rate, g_hit_off;
 static void on_hit_effect(uint32_t id, const net::Vec3& pos)
 {
@@ -461,7 +448,7 @@ static void on_hit_effect(uint32_t id, const net::Vec3& pos)
 }
 static void process_hit(uint32_t id, const net::Vec3& p)
 {
-    if (!g_fix || !g_hit_fix || !C.sess || !C.sess->connected()) {
+    if (!g_fix || !C.sess || !C.sess->connected()) {
         g_hit_off++;
         return;
     }
@@ -469,7 +456,7 @@ static void process_hit(uint32_t id, const net::Vec3& p)
         g_hit_off++;
         return;
     }
-    if (g_main_world_fix && foreign_id(id)) // never a skin painter's id (BUG-0451)
+    if (foreign_id(id)) // never a skin painter's id (BUG-0451)
         return;
     if (!take_token(now())) {
         g_dropped++;
@@ -568,12 +555,10 @@ static void process_world(void* fx, uint32_t id)
         g_w_foreign++;
         net::Vec3 fp;
         if (game::effect_position(fx, fp) && C.near_local && C.near_local(fp))
-            g_w_foreign_near++; // one a player's play would have sent without the fix
-        if (g_main_world_fix) {
-            if (g_log)
-                H->log(M, SK_INFO, "effect: world id %08X dropped, made in another effect world (skin painter)", id);
-            return;
-        }
+            g_w_foreign_near++; // one made near the local player (the kind that faulted the partner, BUG-0451)
+        if (g_log)
+            H->log(M, SK_INFO, "effect: world id %08X dropped, made in another effect world (skin painter)", id);
+        return;
     }
     // the position the game's transform setter put into effect+0x9C. Animation-event effects are
     // skipped in the hook (0x9FBF00 sets a thread-local flag): the animation relay shows those.
@@ -623,11 +608,10 @@ static void process_world(void* fx, uint32_t id)
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
     uint8_t xf[0x44];
-    if (g_xform_fix && copy_transform(xf, fx, p))
+    if (copy_transform(xf, fx, p))
         g_xform_sent++;
     else {
-        if (g_xform_fix)
-            g_xform_bad++;
+        g_xform_bad++;
         make_transform(xf, p);
     }
     net::Writer w;
@@ -714,7 +698,7 @@ static void load_tick(double t)
     g_load_at = t + g_load_ms / 1000.0;
     if (g_load_at < t)
         g_load_at = t + 1.0;
-    uint32_t id = g_load_id ? g_load_id : game::last_effect_id(g_main_world_fix);
+    uint32_t id = g_load_id ? g_load_id : game::last_effect_id(true);
     if (!id) {
         if (g_log)
             H->log(M, SK_INFO, "effect: perf load waits for the game to create an effect (no id yet)");
@@ -897,13 +881,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     if (!stop && stage_off())
         return;
-    if (!stop && g_here_fix && C.here && !C.here(player)) {
+    if (!stop && C.here && !C.here(player)) {
         g_elsewhere_rx++;
         if (g_log)
             H->log(M, SK_INFO, "effect: from %u skipped, not in this place (id %08X pool %u)", player, id, pool);
         return;
     }
-    if (!stop && pool == 5 && g_main_world_fix && foreign_id(id)) {
+    if (!stop && pool == 5 && foreign_id(id)) {
         g_rx_foreign++;
         if (g_log)
             H->log(M, SK_INFO, "effect: from %u world id %08X not played: a skin painter effect here", player, id);
@@ -1174,7 +1158,7 @@ std::string watch(uint32_t id)
                  f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12]);
         out += b;
     };
-    snprintf(b, sizeof b, "watch %08X xform fix=%d sent=%u bad=%u\n", g_watch_id, (int)g_xform_fix, g_xform_sent, g_xform_bad);
+    snprintf(b, sizeof b, "watch %08X xform sent=%u bad=%u\n", g_watch_id, g_xform_sent, g_xform_bad);
     out += b;
     one("own", g_watch_own, g_watch_own_at);
     one("rx", g_watch_rx, g_watch_rx_at);
@@ -1196,7 +1180,7 @@ std::string status()
              "animation %u skipped), %u table probes, %u evicted; last game effect id %08X; load %u per %u ms: "
              "%u created, %u failed\n",
              g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
-             (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, game::last_effect_id(g_main_world_fix),
+             (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, game::last_effect_id(true),
              g_load_n, g_load_ms, g_load_ok, g_load_failed);
     s += b;
     snprintf(b, sizeof b,
@@ -1209,8 +1193,8 @@ std::string status()
     s += b;
     uint32_t hc = 0, hret = 0, hfx = 0;
     game::hit_effect_calls(hc, hret, hfx);
-    snprintf(b, sizeof b, "effects hits: fix=%d seen=%u sent=%u off=%u rate=%u (event effects %u, on the animating object %u, last sent id %08X)\n",
-             (int)g_hit_fix, game::hit_effects_seen(), g_hit_sent, g_hit_off, g_hit_rate, hc, hfx, hret);
+    snprintf(b, sizeof b, "effects hits: seen=%u sent=%u off=%u rate=%u (event effects %u, on the animating object %u, last sent id %08X)\n",
+             game::hit_effects_seen(), g_hit_sent, g_hit_off, g_hit_rate, hc, hfx, hret);
     s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
              g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);
@@ -1220,14 +1204,13 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
     s += b;
-    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u\n",
-             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped);
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u other_stages=%d space=%d stage_skipped=%u\n",
+             g_elsewhere_tx, g_elsewhere_rx, (int)g_other_stages, (int)g_space, g_stage_skipped);
     s += b;
     snprintf(b, sizeof b,
-             "effects foreign world: created=%u last=%08X queued=%u near=%u not played=%u known ids=%u main_world_fix=%d\n",
+             "effects foreign world: created=%u last=%08X queued=%u near=%u not played=%u known ids=%u\n",
              game::foreign_effects(), game::last_foreign_effect_id(), g_w_foreign, g_w_foreign_near, g_rx_foreign,
-             (unsigned)g_foreign_n,
-             (int)g_main_world_fix);
+             (unsigned)g_foreign_n);
     s += b;
     snprintf(b, sizeof b,
              "effects world live: live=%u stopped=%u expired=%u released=%u dropped=%u release_fix=%d\n",
