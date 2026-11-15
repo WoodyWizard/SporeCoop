@@ -63,6 +63,8 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
+// guest (BUG-9208): hold a received world while the first-creature editor is requested or open
+void hold_for_editor(bool on);
 // guest: it plays its own planet-side Space intro (the personal launch, BUG-9071): the host's world waits for its
 // launch, so a queued load is not coming now (BUG-9202: the loading screen stayed over the playable Civ stage)
 bool local_intro_running();

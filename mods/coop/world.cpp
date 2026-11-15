@@ -873,6 +873,10 @@ struct Deferred {
     double back_since = 0;
 };
 static Deferred g_deferred;
+// BUG-9208: a guest's first-creature editor is requested (or open): a received world waits for it like for an open
+// editor, also in the frames before the editor mode starts
+static bool g_editor_hold;
+void hold_for_editor(bool on) { g_editor_hold = on; }
 static const double kMenuSettle = 3.0, kStageSettle = 3.0;
 static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
 static double g_stage_since;    // when the current stage mode began (0: not in a stage)
@@ -1065,7 +1069,7 @@ static void via_menu_tick()
     // BUG-0157: an editor that opened after the load was queued (the player's own, or the own
     // editor after a vote): loading under an open editor crashed the game (see finish). The
     // received world waits like one that arrives in the editor: 2 s after the editor is left.
-    if (g_editor_load_fix && (mode == modes::kEditor || mode == modes::kEdit)) {
+    if (g_editor_load_fix && (mode == modes::kEditor || mode == modes::kEdit || g_editor_hold)) {
         g_deferred = Deferred{true, g_via_menu.slot, g_via_menu.planet, g_via_menu.share ? g_via_menu.host : "", 0};
         g_via_menu = ViaMenu{};
         g_loads_held++;
@@ -1138,7 +1142,7 @@ static void deferred_tick()
         return;
     uint32_t mode = game::mode_id();
     double now = H->time_seconds();
-    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad) {
+    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad || g_editor_hold) {
         g_deferred.back_since = 0;
         return;
     }
@@ -2376,7 +2380,7 @@ static bool finish(const std::string& host_name, uint64_t receipt)
     // a player in its own editor (everybody evolves its own creature) loads it when it is back:
     // loading a world under an open editor crashed the game
     uint32_t mode = game::mode_id();
-    if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit)) {
+    if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit || g_editor_hold)) {
         g_deferred = Deferred{true, slot, planet, host_name, 0};
         g_feed("the world of " + host_name + " is loaded when you leave the editor");
         return true;

@@ -2521,6 +2521,9 @@ static void join_editor_tick(double now)
 static bool g_pregame_editor = true;
 COOP_FIX("creature.pregame_editor", "BUG-9207", g_pregame_editor,
          "creature: guests make their first creature while the host makes a new world; their check waits for the world");
+static bool g_first_before_world = true;
+COOP_FIX("creature.first_before_world", "BUG-9208", g_first_before_world,
+         "creature: a guest joining a world where it has no creature makes its first one before the world loads");
 constexpr uint32_t kEditorCheck = 0x058A3350u;
 static bool g_pregame_open;        // this guest's editor is the pre-game one
 static bool g_pregame_check_off;   // we greyed its check
@@ -2541,6 +2544,7 @@ static void pregame_editor_tick(double now)
     if (g_pregame_open && mode != modes::kEditor && mode != modes::kEdit && mode != modes::kLoad &&
         !mode_switch_pending()) {
         g_pregame_open = g_pregame_check_off = false; // left the editor
+        world::hold_for_editor(false);                 // BUG-9208: the held world loads now
         return;
     }
     if (g_pregame_open) { // the check waits for the host's world (or the host's return to the menu, or no host)
@@ -2557,28 +2561,67 @@ static void pregame_editor_tick(double now)
         }
         return;
     }
-    if (!g_pregame_editor || !guest || s_done || !host_editing || s_host_before != modes::kMenu || mode != modes::kMenu ||
-        g_local || world::load_queued() || game_busy() || mode_switch_pending())
+    // BUG-9208 (owner 2026-11-14: "It should bring up the starting base creature ... They shouldn't be sharing their
+    // creatures or have family at their nest until they finish creating their first creature"): a guest joining from
+    // the galaxy menu while the host plays Creature in a world where this guest has no creature of its own makes it
+    // here first; the host's world (arriving or arrived) is held for the editor and loads when it is left, so no old
+    // body, family, nest or cocoon appears in the world before. Once per world. Switch: creature.first_before_world.
+    static uint32_t s_late_world = 0;
+    static double s_late_at = -1; // the world is held for the editor since (-1: not waiting)
+    const uint32_t host_world = guest && g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().world : 0;
+    if (!g_pregame_editor || !guest || mode != modes::kMenu || g_local) {
+        if (s_late_at >= 0) { s_late_at = -1; world::hold_for_editor(false); }
         return;
+    }
+    if (g_first_before_world && s_late_at < 0 && host_mode == modes::kCreature && host_world && host_world != s_late_world &&
+        creations::needs_first_creature(host_world)) {
+        s_late_world = host_world;
+        s_late_at = now;
+        world::hold_for_editor(true); // at once: the world arriving now waits for the editor
+        LOG("pregame editor: no creature of our own in the host's world %08X: it waits for our first creature (BUG-9208)",
+            host_world);
+    }
+    if ((game_busy() & busy::kEditorGate) || mode_switch_pending()) return; // (a held world counts as loading)
     uint32_t got = 0, total = 0;
-    if (world::progress(got, total)) return;
-    if (!g_remotes[0].buf.latest().editor || g_remotes[0].buf.latest().editor != 0x465C50BAu) return; // creatures only
-    s_done = true;
-    H->run_outside_frame([](void*) {
+    const bool receiving = world::progress(got, total);
+    bool late = false;
+    if (s_late_at >= 0) {
+        // the editor opens once the world is here and held (opened while the world was written into the slot, its 3D
+        // view stayed black, 2026-11-14)
+        if (now - s_late_at > 120) { // no world came
+            s_late_at = -1;
+            world::hold_for_editor(false);
+            LOG("pregame editor: no world in 120 s: not held any more (BUG-9208)");
+            return;
+        }
+        if (receiving || !world::load_queued()) return;
+        s_late_at = -1;
+        late = true;
+    } else {
+        if (s_done || !host_editing || s_host_before != modes::kMenu || world::load_queued() || receiving) return;
+        if (!g_remotes[0].buf.latest().editor || g_remotes[0].buf.latest().editor != 0x465C50BAu) return; // creatures only
+        s_done = true;
+    }
+    H->run_outside_frame([](void* late) {
         creations::begin_first_creature();
         const bool r = submit_new_creature_request();
-        LOG("pregame editor: the creature editor with the base creature while the host makes a new world -> %d (BUG-9207)",
-            (int)r);
+        LOG("pregame editor: the creature editor with the base creature %s -> %d (BUG-%s)",
+            late ? "before the host's world (no own creature there)" : "while the host makes a new world", (int)r,
+            late ? "9208" : "9207");
         if (!r && game::mode_id() != modes::kEditor) {
             creations::cancel_first_creature();
+            world::hold_for_editor(false);
             return;
         }
         g_pregame_open = true;
         ++g_pregame_editors;
-        feed(g_sess.name_of(0) + " is making a new world: make your creature now. The check unlocks when the world is "
-                                 "ready, and what you save is your creature there.");
+        if (late)
+            feed("Make your creature for " + g_sess.name_of(0) + "'s world: you join it with what you save.");
+        else
+            feed(g_sess.name_of(0) + " is making a new world: make your creature now. The check unlocks when the world is "
+                                     "ready, and what you save is your creature there.");
         notice(g_name + " is making their creature", -1);
-    }, nullptr);
+    }, late ? (void*)1 : nullptr);
 }
 
 // BUG-9170: the Civ late joiner's editor (tried every 3 s, 10 times a world, while the game is busy)

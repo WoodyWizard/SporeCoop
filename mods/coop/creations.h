@@ -87,6 +87,7 @@ void world_note_set(const char* section, uint32_t world, const std::string& valu
 void begin_new_creature();
 void begin_first_creature();  // BUG-9207: the editor opened in the galaxy menu while the host makes a new world
 void cancel_first_creature();
+bool needs_first_creature(uint32_t world); // BUG-9208: no creature of its own in the host's world yet
 void cancel_new_creature();
 bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
 // Register only validated creature resources belonging to this planet before the native load.

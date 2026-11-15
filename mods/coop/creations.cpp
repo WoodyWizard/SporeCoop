@@ -3247,6 +3247,20 @@ void begin_first_creature()
     g_adopt_until = 0;
 }
 void cancel_first_creature() { g_first_pending = false; }
+// BUG-9208: a guest about to enter the host's world `world` (PlayerState.world) has no creature of its own there yet:
+// none recorded (worlds.ini, BUG-0345), no campaign creature for it (choices.ini [landfall]), no first creature made
+// or being made, and it did not choose to play the world's own species
+bool needs_first_creature(uint32_t world)
+{
+    if (!world || !C.sess || C.sess->role() != net::Role::Client || !find_paths()) return false;
+    if (world_record(kCreature, world) || g_first_pending || g_first_key) return false;
+    if (g_chosen[kCreature] && !g_choice[kCreature].instance) return false;
+    auto host = C.sess->name_of(0);
+    wchar_t entry[24], value[16] = {};
+    swprintf(entry, 24, L"%08X-%08X", fnv(host.data(), host.size()), world);
+    GetPrivateProfileStringW(L"landfall", entry, L"", value, 16, (g_dir + L"\\choices.ini").c_str());
+    return !value[0];
+}
 // BUG-9203: worlds where this guest's own creature (a co-op window pick, which holds everywhere, BUG-0345) was first
 // played in this run: a world new to it, where it still gets its own editor (BUG-9164) like a guest with no creature
 static std::set<uint32_t> g_own_new_worlds;
