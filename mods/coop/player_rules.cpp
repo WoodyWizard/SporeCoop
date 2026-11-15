@@ -50,9 +50,6 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 // stagger). In the host's game an NPC's charge stuns the guest's puppet, which has no AI: the guest's own
 // creature never got it. Now the host sends it to that guest and the guest's game stuns its own avatar; the
 // other way round a guest's charge on a proxy (no AI either) is sent to the host, whose game stuns its NPC.
-// `coop.fix creature.stun_relay off`: the stun stays on the puppet / proxy (0.7.6).
-static bool g_stun_fix = true;
-COOP_FIX("creature.stun_relay", "BUG-0554", g_stun_fix, "creature: a charge's stun reaches the stunned player's own creature and the host's NPC");
 
 static bool g_air_hit_fwd(); // BUG-0555 (below)
 static void* g_hit_attacker_fwd(); // the attacker of the ability hit running now (CreatureAttackTarget), or null
@@ -79,7 +76,7 @@ static uint8_t puppet_player(void* c)
 
 static void SK_THISCALL h_Stun(void* c, float secs)
 {
-    if (g_stun_fix && game::in_creature_stage() && std::isfinite(secs) && secs > 0) {
+    if (game::in_creature_stage() && std::isfinite(secs) && secs > 0) {
         if (is_host()) {
             uint8_t p = puppet_player(c);
             if (p != 0xFF && g_air_hit_fwd())
@@ -135,9 +132,6 @@ static void SK_THISCALL h_Stun(void* c, float secs)
 // answers the rule at the hit for a puppet: while its player is airborne, a hit of a melee ability (bite, charge,
 // strike) from an NPC more than 1 m away carries no damage and no stun to the partner, as the attack node would not
 // have chosen it.
-// `coop.fix creature.air_immune off`: every hit on the puppet lands (0.7.6).
-static bool g_air_fix = true;
-COOP_FIX("creature.air_immune", "BUG-0555", g_air_fix, "creature: NPCs cannot bite or charge a player whose creature is in the air");
 typedef bool(SK_THISCALL* AttackTarget_t)(void*, void*, uint32_t, uint32_t);
 static AttackTarget_t o_AttackTarget;
 static uint32_t g_air_dropped, g_air_passed;
@@ -169,7 +163,7 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
 
 static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
-    if (g_air_fix && target && attacker && is_host() && C.airborne && game::in_creature_stage()) {
+    if (target && attacker && is_host() && C.airborne && game::in_creature_stage()) {
         void* victim = (uint8_t*)target - game::kCombatOff;
         uint8_t p = puppet_player(victim);
         if (p != 0xFF && C.airborne(p)) {
@@ -321,7 +315,7 @@ uint32_t hit_ability_type()
 static uint32_t g_air_dropped_guest;
 bool guest_drops_air_hit(void* av, void* attacker, uint32_t ability)
 {
-    if (!g_air_fix || !av || !attacker || !ability || ranged_type(ability) || !game::in_creature_stage() ||
+    if (!av || !attacker || !ability || ranged_type(ability) || !game::in_creature_stage() ||
         game::grounded(av) || net::dist(game::position(av), game::position(attacker)) < 1.f)
         return false;
     g_air_dropped_guest++;
@@ -338,9 +332,6 @@ static bool g_air_hit_fwd() { return g_air_hit; }
 // its relation to its leader's species; the guest's proxy is a stranger of another herd: the flock was not
 // allied with the guest. Now the host sends the pack bit (NF_PACK) and the guest's vt 0xD4 answers true for the
 // proxies of the host's pack, only for them (the party's allies are the guest's allies).
-// `coop.fix creature.party_allies off`: the guest's game decides by the species (0.7.6).
-static bool g_allies_fix = true;
-COOP_FIX("creature.party_allies", "BUG-0556", g_allies_fix, "creature: the host's pack and summoned flock are allies of the guest too");
 typedef bool(SK_THISCALL* Friendly_t)(void*);
 static Friendly_t o_Friendly;
 static uint32_t g_allies_answers;
@@ -348,7 +339,7 @@ static uint32_t g_allies_answers;
 static bool SK_THISCALL h_Friendly(void* c)
 {
     bool r = o_Friendly(c);
-    if (!r && g_allies_fix && c && is_guest() && npc::proxy_in_host_pack(c)) {
+    if (!r && c && is_guest() && npc::proxy_in_host_pack(c)) {
         g_allies_answers++;
         return true;
     }
@@ -367,9 +358,6 @@ static bool SK_THISCALL h_Friendly(void* c)
 // does not: lab 20261105-105734), so the host cannot run the node on the puppet: the guest sends its roar (range and
 // seconds of its ability) and the host's game gets the same four calls on its creatures around the guest's puppet,
 // with the puppet as the roarer. Their flight reaches the guest as their states.
-// `coop.fix creature.roar_relay off`: the roar stays in the guest's game (0.7.7).
-static bool g_roar_fix = true;
-COOP_FIX("creature.roar_relay", "BUG-0501", g_roar_fix, "creature: the guest's roar scares the host's animals");
 typedef int(__cdecl* AbilityTick_t)(void*, int, int, int, int, uint32_t*);
 static AbilityTick_t o_AbilityTick;
 static uintptr_t a_PostStim, a_GoalStart, a_StimClear, a_GoalFind, a_GoalEnd, a_IsEpic;
@@ -402,7 +390,7 @@ static int ability_index(void* c, uint32_t type)
 
 static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32_t* st)
 {
-    if (g_roar_fix && c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
+    if (c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
         uint8_t* ab = ability_ptr(c, (int)st[0]);
         if (ab && *(uint32_t*)(ab + 8) == 0x33 && drama::g_flock_relay) { // BUG-0736: the own Summon Flock
             net::Writer w;
@@ -555,9 +543,6 @@ static bool SK_THISCALL h_UfoTick(void* u, float dt, double now) // diagnostics:
 // puts its copy of the object (the object of that noun nearest to where it lay, within 6 m: rocks and ornaments of the
 // save are at the same places in both games) into the hold slot of the player's puppet, lets go of it on the release,
 // and puts it where it came to rest in the thrower's game (sent when it stopped moving, or after 6 s).
-// `coop.fix creature.carry_relay off`: carried objects stay in the carrier's game (0.7.8).
-static bool g_carry_fix = true;
-COOP_FIX("creature.carry_relay", "BUG-0458", g_carry_fix, "creature: the partner sees the stick or rock a player carries and where it lands");
 static constexpr uint32_t kRockNoun = 0x02A8FB3Fu, kOrnamentNoun = 0x03A2511Eu;
 // obj is the object's cSpatialObject (0x1186577; vt 0xB8 casts it to its cGameData, 0x17F243B); both return a bool
 typedef bool(SK_THISCALL* Hold_t)(void*, void*, uint32_t, bool);
@@ -657,7 +642,7 @@ static bool SK_THISCALL h_Hold(void* c, void* obj, uint32_t slot, bool replace)
     uint32_t noun = 0;
     net::Vec3 at{};
     void* gd = nullptr;
-    bool mine = !g_in_relay && g_carry_fix && game::in_creature_stage() && c && c == game::avatar() &&
+    bool mine = !g_in_relay && game::in_creature_stage() && c && c == game::avatar() &&
                 (is_host() || is_guest()) && carry_noun(obj, &gd, &noun) && game::object_position(gd, at);
     if (!mine && c == game::avatar())
         g_hold_other++;
@@ -682,7 +667,7 @@ static bool SK_THISCALL h_Release(void* c, void* obj, int a, int b)
 {
     uint32_t noun = 0;
     void* gd = nullptr;
-    bool mine = !g_in_relay && g_carry_fix && game::in_creature_stage() && c && c == game::avatar() &&
+    bool mine = !g_in_relay && game::in_creature_stage() && c && c == game::avatar() &&
                 (is_host() || is_guest()) && carry_noun(obj, &gd, &noun);
     bool r = o_Release(c, obj, a, b);
     if (mine && r) {
@@ -777,7 +762,7 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
     net::Vec3 p{};
     if (kind != K_DROP)
         p = {r.f32(), r.f32(), r.f32()};
-    if (!r.ok() || !g_carry_fix || !game::in_creature_stage() || (noun != kRockNoun && noun != kOrnamentNoun))
+    if (!r.ok() || !game::in_creature_stage() || (noun != kRockNoun && noun != kOrnamentNoun))
         return;
     if (is_host()) {
         if (player != from) // a guest speaks for its own creature only
@@ -871,8 +856,8 @@ static std::string carry_dump()
                  ph && skg::readable((uint8_t*)ph + 0x1F0, 4) ? *(int*)((uint8_t*)ph + 0x1F0) : -1, q.x, q.y, q.z);
         out += b;
     }
-    snprintf(b, sizeof b, "carry fix=%d hold_tx=%u hold_rx=%u done=%u nocopy=%u drop_tx=%u drop_rx=%u put_tx=%u put_rx=%u "
-             "other=%u last_noun=%08X fast=%u near=%u\n", (int)g_carry_fix, g_hold_tx, g_hold_rx, g_hold_done, g_hold_nocopy,
+    snprintf(b, sizeof b, "carry hold_tx=%u hold_rx=%u done=%u nocopy=%u drop_tx=%u drop_rx=%u put_tx=%u put_rx=%u "
+             "other=%u last_noun=%08X fast=%u near=%u\n", g_hold_tx, g_hold_rx, g_hold_done, g_hold_nocopy,
              g_drop_tx, g_drop_rx, g_put_tx, g_put_rx, g_hold_other, g_hold_last_noun, g_put_fast, g_put_near);
     return out + b;
 }
@@ -884,9 +869,6 @@ static std::string carry_dump()
 // game shows a ship of its own at each: a type 7 ship made the way the event makes it (UFOAbductionEvent_SpawnUFO), not
 // ticked (no behaviour tree runs on it: it takes nothing in the guest's world) and placed at the host's ship every frame;
 // it goes (deferred destroy) when the host's ship is gone, when no pose came for 1.5 s and when the guest leaves Creature.
-// `coop.fix creature.ufo_mirror off`: the guest sees no ship (0.7.8).
-static bool g_ufo_mirror_fix = true;
-COOP_FIX("creature.ufo_mirror", "BUG-0558", g_ufo_mirror_fix, "creature: the guest sees the UFO that visits the host's world");
 struct UfoMirror {
     void* u = nullptr;
     net::Vec3 pos{};
@@ -926,7 +908,7 @@ static std::string ufo_dump()
     snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
              g_ufo_ticks, (int)(p2_o_IsEpic != nullptr && p2_ufo_pick_ret != 0));
     char b2[200];
-    snprintf(b2, sizeof b2, "mirror fix=%d mirrors=%u tx=%u rx=%u made=%u gone=%u freed=%u stripped=%u\n", (int)g_ufo_mirror_fix,
+    snprintf(b2, sizeof b2, "mirror mirrors=%u tx=%u rx=%u made=%u gone=%u freed=%u stripped=%u\n",
              (unsigned)g_ufo_mirrors.size(), g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed, g_ufo_stripped);
     return u.out + b + b2;
 }
@@ -945,7 +927,7 @@ static void ufo_mirror_rx(const std::vector<std::pair<net::Vec3, net::Quat>>& v)
 {
     g_ufo_rx++;
     g_ufo_rx_at = H->time_seconds();
-    if (!g_ufo_mirror_fix || !game::in_creature_stage())
+    if (!game::in_creature_stage())
         return;
     while (g_ufo_mirrors.size() > v.size())
         ufo_mirror_drop(g_ufo_mirrors.size() - 1);
@@ -995,7 +977,7 @@ static bool ufo_save_filter(void* o, uint32_t noun)
 
 void tick(double now)
 {
-    if (g_carry_fix && (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty()))
+    if (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty())
         carry_tick(now);
     if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
         g_ufo_tx_at = now;
@@ -1016,7 +998,7 @@ void tick(double now)
             &q);
         if (!q.v.empty())
             g_ufo_had_at = now;
-        if (g_ufo_mirror_fix && (!q.v.empty() || now - g_ufo_had_at < 1.0)) { // (a few empty ones after the last ship)
+        if (!q.v.empty() || now - g_ufo_had_at < 1.0) { // (a few empty ones after the last ship)
             net::Writer w;
             w.u8(K_UFO);
             w.u8((uint8_t)q.v.size());
@@ -1032,7 +1014,7 @@ void tick(double now)
     }
     if (g_ufo_mirrors.empty())
         return;
-    if (!is_guest() || !g_ufo_mirror_fix || !game::in_creature_stage() || now - g_ufo_rx_at > 1.5) {
+    if (!is_guest() || !game::in_creature_stage() || now - g_ufo_rx_at > 1.5) {
         while (!g_ufo_mirrors.empty())
             ufo_mirror_drop(g_ufo_mirrors.size() - 1);
         return;
@@ -1157,8 +1139,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_roar_bad++;
             return;
         }
-        if (g_roar_fix)
-            roar_on_host(from, range, secs);
+        roar_on_host(from, range, secs);
     }
 }
 
@@ -1166,21 +1147,21 @@ std::string status()
 {
     char b[256];
     snprintf(b, sizeof b,
-             "player_rules: stun fix=%d sent_player=%u sent_npc=%u got_player=%u got_npc=%u bad=%u last=%.2f hook=%d "
+             "player_rules: stun sent_player=%u sent_npc=%u got_player=%u got_npc=%u bad=%u last=%.2f hook=%d "
              "sent_proxy=%u got_proxy=%u\n",
-             (int)g_stun_fix, g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad,
+             g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad,
              g_stun_last, (int)(o_Stun != nullptr), g_stun_sent_proxy, g_stun_got_proxy);
     std::string out = b;
-    snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u guest_dropped=%u hook=%d\n", (int)g_air_fix,
+    snprintf(b, sizeof b, "player_rules: air dropped=%u passed=%u guest_dropped=%u hook=%d\n",
              g_air_dropped, g_air_passed, g_air_dropped_guest, (int)(o_AttackTarget != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: spit fix=%d seen=%u sent=%u got=%u stopped=%u late=%u\n", (int)g_spit_fix, g_spit_seen, g_spit_sent,
              g_spit_got, g_spit_stopped, g_spit_late);
     out += b;
-    snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
+    snprintf(b, sizeof b, "player_rules: allies answers=%u hook=%d\n", g_allies_answers,
              (int)(o_Friendly != nullptr));
     out += b;
-    snprintf(b, sizeof b, "player_rules: roar fix=%d sent=%u got=%u played=%u heard=%u bad=%u last=0x%X hook=%d\n", (int)g_roar_fix,
+    snprintf(b, sizeof b, "player_rules: roar sent=%u got=%u played=%u heard=%u bad=%u last=0x%X hook=%d\n",
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: ufo fix=%d seen=%u skipped=%u\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped);
