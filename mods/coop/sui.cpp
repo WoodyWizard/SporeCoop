@@ -446,6 +446,11 @@ void invalidate_transform(Win w)
     if (w) vcall<int>(w, 0x98 / 4);
 }
 
+void revalidate(Win w)
+{
+    if (w) vcall<void>(w, 0x94 / 4);
+}
+
 void* as_combo(Win w) { return w ? vcall<void*>(w, 0x0C / 4, 0x2F5528D9u) : nullptr; }
 
 std::vector<std::string> combo_values(Win w)

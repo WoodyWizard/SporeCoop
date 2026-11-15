@@ -118,6 +118,8 @@ Win box(Win parent, const Rect& r, void* drawable);
 void set_slider_value(Win w, int value);
 // the window manager builds the window's transform again (IWindow vt 0x98, InvalidateTransform)
 void invalidate_transform(Win w);
+// the window's real area again from its area and layout procs (anchors; IWindow vt 0x94, Revalidate)
+void revalidate(Win w);
 // the window's transform as drawn (screen = local * scale + offset; Window +0x148, its type at +0x188: 0 identity,
 // 1 translation and scale, read live 2026-11-13); false for other types
 bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty);

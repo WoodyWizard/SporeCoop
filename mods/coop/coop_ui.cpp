@@ -3109,8 +3109,12 @@ static bool ph_build()
 static bool g_ph_editor_spot = true;
 COOP_FIX("ui.party_editor_spot", "BUG-9191", g_ph_editor_spot,
          "ui: in an editor the Party cards sit low at the right edge, not over the editor's stats");
-static float measure_right_floor(int sw, int sh)
+static bool ws_on();
+static float measure_right_floor(int sw_real, int sh_real)
 {
+    // decision 3X A: with the whole UI scaled, Spore lays it out for a screen 1/f the size: measure there, then scale
+    const float wf = ws_on() ? ns_factor_now() : 1.f;
+    const int sw = (int)std::lround(sw_real / wf), sh = (int)std::lround(sh_real / wf);
     Win main = sui::main_window();
     float floor = (float)sh - 64;
     const bool editor = g_ph_editor_spot && (g_ph_own_stage == modes::kEditor || g_ph_own_stage == modes::kEdit);
@@ -3132,6 +3136,7 @@ static float measure_right_floor(int sw, int sh)
             if (it.depth < 9) stack.push_back({c, it.depth + 1});
         }
     }
+    if (wf != 1.f) return floor * wf; // (laid out smaller, drawn scaled about the top left)
     if (ns_factor_now() != 1.f) floor = sh - (sh - floor) * ns_factor_now(); // (anchored at the bottom right)
     return floor;
 }
@@ -3550,6 +3555,121 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
     return false;
 }
 
+// ---- decision 3X A (owner 2026-11-14: "3XA"): the whole UI as one picture ----
+// Scaling each piece about its own corner (above) pulled pieces that belong together apart (the owner's screenshot: the
+// goals list, minimap and creature card overlapping). Now Spore lays its UI out for a screen 1/f the size and every
+// layer (the main window's children) is drawn scaled by f about the screen's top left, so all pieces grow together and
+// keep their edges: the full-screen holders (the layers and the HUD roots in them) get the smaller size and the windows
+// in them lay themselves out again (SimpleLayout anchors, Revalidate). The main window keeps the screen (the UI is
+// clipped to it: shrunk, everything past it was cut off). Pieces the game places in code (the Creature HUD's Pack
+// button at the right edge) keep their distance to their side of the screen. Not scaled: the mod's own windows (they
+// scale themselves) and the layer of hints placed over the world (they belong to a spot of the 3D view). The mouse:
+// ns_remap (each piece's drawn transform). Off (`coop.fix ui.whole_scale off`): each piece about its corner.
+static bool g_whole_scale = true;
+COOP_FIX("ui.whole_scale", "BUG-9191", g_whole_scale,
+         "ui: the Interface Size scales Spore's UI as one picture laid out for a smaller screen, not piece by piece");
+static bool ws_on() { return g_whole_scale && g_native_scale; }
+constexpr uint32_t kWorldHintLayer = 0xCBDF6E1Du; // hints over creatures ("to learn to charm"), placed by projection
+static std::vector<std::pair<Win, uint32_t>> g_ws_done; // layers with our proc
+struct WsMoved {
+    Win w;
+    uint32_t id;
+    sui::Rect was;
+};
+static std::vector<WsMoved> g_ws_moved; // pieces placed in code that we moved (their own place, to go back)
+static bool ws_skip(Win layer)
+{
+    return layer == g_ph.root || layer == D.root || layer == g_dh.root || sui::control_id(layer) == kWorldHintLayer;
+}
+static bool ws_handle(Win w, const sui::Msg& m)
+{
+    if (m.type != sui::kMsgTransformed || !m.d || g_ns_factor == 1.f || !ws_on() || ws_skip(w)) return false;
+    float* x = (float*)(uintptr_t)m.d;
+    if (IsBadWritePtr(x, 64)) return false;
+    const sui::Rect own = sui::screen_rect(w);
+    const float mx = (own.x1 + own.x2) / 2, my = (own.y1 + own.y2) / 2, f = g_ns_factor;
+    x[0] *= f; // (the game scales about the window's middle: the pivot goes to the screen's top left)
+    x[5] *= f;
+    x[12] += (0 - mx) * (1 - f);
+    x[13] += (0 - my) * (1 - f);
+    return false;
+}
+static void whole_scale_tick(float want)
+{
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    Win main = sui::main_window();
+    if (!main || sw <= 0 || sh <= 0) return;
+    const float W = (float)sw, Hh = (float)sh, was = g_ns_factor, f = want;
+    if (f == 1.f && was == 1.f && g_ws_moved.empty()) return;
+    auto full = [&](const sui::Rect& r, float k) {
+        return std::abs(r.x1) < 1 && std::abs(r.y1) < 1 && std::abs(r.w() - W / k) < 2 && std::abs(r.h() - Hh / k) < 2;
+    };
+    const sui::Rect virt{0, 0, W / f, Hh / f};
+    if (f != was) { // a new size: the pieces placed in code go back first
+        for (auto& m : g_ws_moved)
+            if (sui::control_id(m.w) == m.id) sui::set_area(m.w, m.was);
+        g_ws_moved.clear();
+    }
+    std::vector<Win> relaid;
+    for (Win layer : sui::children(main)) {
+        if (ws_skip(layer)) continue;
+        const uint32_t id = sui::control_id(layer);
+        bool done = false;
+        for (auto& d : g_ws_done) done |= d.first == layer && d.second == id;
+        if (!done) {
+            sui::add_handler(layer, ws_handle, 0xFFFF);
+            g_ws_done.push_back({layer, id});
+            if (g_ws_done.size() > 400) g_ws_done.erase(g_ws_done.begin(), g_ws_done.begin() + 100);
+            if (f != 1.f) sui::invalidate_transform(layer);
+        }
+        // the holders (full screen at 100 % or at the last size) get the new size; the first windows in them are pieces
+        std::vector<Win> stack{layer};
+        for (int n = 0; !stack.empty() && n < 8000; n++) {
+            Win w = stack.back();
+            stack.pop_back();
+            const sui::Rect r = sui::area(w);
+            if (full(r, 1.f) || full(r, was) || full(r, f)) {
+                if (!full(r, f)) {
+                    sui::set_area(w, virt);
+                    relaid.push_back(w);
+                }
+                for (Win c : sui::children(w)) stack.push_back(c);
+                continue;
+            }
+            // a piece: placed in code for the real screen and reaching past the smaller one: kept at its side
+            if (f <= 1.f || !sui::visible(w)) continue;
+            const bool on_screen = r.x1 > -W * 0.05f && r.y1 > -Hh * 0.05f && r.x2 < W * 1.05f && r.y2 < Hh * 1.05f;
+            if (!on_screen || (r.x2 <= virt.x2 + 1 && r.y2 <= virt.y2 + 1)) continue;
+            auto place = [](float a1, float a2, float real, float small) {
+                const float c = (a1 + a2) / 2;
+                return c > real * 2 / 3 ? small - (real - a1) : c < real / 3 ? a1 : c / real * small - (a2 - a1) / 2;
+            };
+            const float nx = r.x2 > virt.x2 + 1 ? place(r.x1, r.x2, W, virt.x2) : r.x1;
+            const float ny = r.y2 > virt.y2 + 1 ? place(r.y1, r.y2, Hh, virt.y2) : r.y1;
+            g_ws_moved.push_back({w, sui::control_id(w), r});
+            sui::set_area(w, {nx, ny, nx + r.w(), ny + r.h()});
+        }
+    }
+    for (Win h : relaid) { // the windows in a holder with a new size lay themselves out again (anchors)
+        std::vector<Win> stack{h};
+        for (int n = 0; !stack.empty() && n < 8000; n++) {
+            Win w = stack.back();
+            stack.pop_back();
+            if (w != h) sui::revalidate(w);
+            for (Win c : sui::children(w)) stack.push_back(c);
+        }
+    }
+    if (f != was) {
+        H->log(M, SK_INFO,
+               "ui: Spore's UI at %.0f %% as one picture (laid out for %.0f x %.0f, %zu holders, %zu placed pieces moved) "
+               "(3X A)", f * 100, virt.x2, virt.y2, relaid.size(), g_ws_moved.size());
+        g_ns_factor = f;
+        for (Win layer : sui::children(main))
+            if (!ws_skip(layer)) sui::invalidate_transform(layer);
+    }
+}
+
 static void native_scale_tick()
 {
     static double next = 0;
@@ -3560,6 +3680,10 @@ static void native_scale_tick()
     if (g_native_scale)
         want = lineages_graphics::read_ui_scale(slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name) / 100.f;
     mouse::set_remap(ns_remap); // (the short resolution list needs it at 100 % too)
+    if (ws_on()) {
+        whole_scale_tick(want);
+        return;
+    }
     if (want == 1.f && g_ns_factor == 1.f) return; // 100 %: nothing to attach
     Win main = sui::main_window();
     if (!main) return;
