@@ -66,7 +66,7 @@ FAR_OUTSIDE = 100.0  # m: the walkers outside the host's pack / family (BUG-0417
 MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.10
 # D1 (BUG-1114): the p50 follows the guest's frame rate. Lab runs Oct 31 - Nov 14 with the fix (no switch off), p50 by
 # the guest's fps: 0.02-0.04 m at 46-69 fps, 0.04-0.09 at 26-32, 0.11 at 22 (the 0.7.14 final check's FAIL, a loaded
-# lab), 0.11-0.17 at 16-18, 0.12-0.14 at 12-14; with SPORE_FIX_OFF=npc.walk_tribe 0.27-0.29 at 35-56 fps. Limit:
+# lab), 0.11-0.17 at 16-18, 0.12-0.14 at 12-14; with npc.walk_tribe off (retired in 0.7.15) 0.27-0.29 at 35-56 fps. Limit:
 # 3.0 / fps (m) within 0.10 (at 30 fps and faster: unchanged) and 0.20 (under every twin FAIL); fpslimit.scaled.
 # SPORE_NPCWALK_FIXED_P50=1: the fixed 0.10 at any fps (the limit before 0.7.15)
 ERR_P50_TRIBE_PER_FRAME, ERR_P50_TRIBE_CAP = 3.0, 0.20

@@ -8031,7 +8031,7 @@ limit at full speed and a cap under every recorded FAIL of the twin). Evidence: 
 printed fps and the `SPORE_FIX_OFF` lines.
 * **npc_walk_tribe, the drawn error p50 (changed)**: fix on (no switch off), by the guest's fps: 0.02-0.04 m at 46-69
   fps, 0.04-0.09 at 26-32, 0.11 at 22 (the 0.7.14 final check 20261114-005006, failed), 0.11-0.17 at 16-18 (rel/0.7.14
-  20261114-050940 failed at 16 fps, 0.17), 0.12-0.14 at 12-14; twin `SPORE_FIX_OFF=npc.walk_tribe` 0.27-0.29 at 35-56
+  20261114-050940 failed at 16 fps, 0.17), 0.12-0.14 at 12-14; twin npc.walk_tribe off (retired in 0.7.15) 0.27-0.29 at 35-56
   fps (20261101-085037-fix-w30-npc-walk). The fixed 0.10 sat at a quarter of the gap at full speed and under the fix's
   own values below 25 fps. Now `3.0 / fps` within 0.10 (30 fps and faster: unchanged) and 0.20 (every twin value is
   over it at any fps); the check line prints the limit and the fps. `SPORE_NPCWALK_FIXED_P50=1`: the fixed 0.10.
