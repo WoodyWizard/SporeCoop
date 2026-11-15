@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Creature: a guest joining a world where it has no creature of its own makes its first one (the base creature)
+  before the world loads, so no old body, family or cocoon shows at the host's nest (BUG-9208).
 - Creature: guests waiting while the host makes a new world get the creature editor with the base creature; its
   check stays greyed until the host's world is ready, and what they save is their creature there (BUG-9207, decision 3U).
 - Creature (owner play test 2026-11-14): a guest whose old co-op creature pick came along gets its own editor in a new

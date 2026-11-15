@@ -3403,4 +3403,7 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
   983,730 on 1024 x 768). Window flag kFlagEnabled off draws it grey like the disabled undo / redo and it takes no
   clicks. The check of a body with no mouth ("Mouthless") opens the name panel and does not save; the red X asks
   "Exiting will cause your changes to be lost" (Cancel / Quit at 736,449 on 1024 x 768).
+* ✔ (runtime, TITAN, BUG-9208) Opened while a received world was being written into the guest's save slot, the same
+  request gave an editor whose 3D view stayed black (no background, platform or body; the UI fine) for minutes;
+  opened after the transfer (the world held) it rendered normally.
 
