@@ -42,14 +42,14 @@ FIELDS = {
         'pos': (A, 'npc.cpp', r'sp\.pos'),
         'rot': (A, 'npc.cpp', r'sp\.rot'),
         'health': (A, 'npc.cpp', r'sp\.health'),
-        'max_health': (A, 'npc.cpp', r'drive_puppet\(px\.c, s\.health, px\.max_health'),  # BUG-0710
+        'max_health': (A, 'npc.cpp', r'drive_puppet\(pe\.ref\.p, s\.health, px\.max_health'),  # BUG-0710
     },
     'NpcState': {
         'net_id': (A, 'npc.cpp', r's\.net_id'),
         'pos': (A, 'npc.cpp', r's\.pos'),
         'rot': (A, 'npc.cpp', r's\.rot'),
         'vel': (A, 'npc.cpp', r's\.vel'),
-        'health': (A, 'npc.cpp', r'set_health\(px\.c, s\.health\)'),
+        'health': (A, 'npc.cpp', r'set_health\(pe\.ref\.p, s\.health\)'),
         'flags': (A, 'npc.cpp', r's\.flags'),
     },
 }
