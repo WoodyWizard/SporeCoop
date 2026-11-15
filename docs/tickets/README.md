@@ -1164,3 +1164,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1158](BUG-1158-e4-a-guest-s-own-tribe-outfitter-and-civ-design.md) | fixed | bug | Tribe, Civ | 2026-11-15 | unreleased | E4: a guest's own Tribe outfitter and Civ design editors change only its own game and are lost |
 | [BUG-1163](BUG-1163-d3-the-civ-rules-money-vehicle-owners-holds-as-a.md) | open | tooling | Civ | 2026-11-15 |  | D3: the Civ rules (money, vehicle owners, holds) as a portable header civ_logic.h with unit tests |
 | [BUG-1164](BUG-1164-c8-civ-cpp-split-along-the-seams-of-c1-c4-state.md) | open | tooling | Civ | 2026-11-15 |  | C8: civ.cpp split along the seams of C1-C4 (state grouped into structs first) and its debug() into its own file |
+| [BUG-1172](BUG-1172-civ-role-damage-phase-a-often-sees-fewer-than-4.md) | open | test | Civ | 2026-11-15 |  | civ_role_damage: phase A often sees fewer than 4 hits in its 30 s (no damage per hit), the test FAILs without a mod fault |
