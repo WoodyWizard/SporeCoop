@@ -7,12 +7,22 @@
 //     and they read back to the same value with nothing left over;
 //   * the C6 behaviour changes (a malformed payload the old hand parse used and the struct refuses) as rejects().
 // A changed byte here is a wire change: 0.7.14 and 0.7.15 must still play together.
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "fields_wire.h"
 #include "wire/common.h"
+#include "wire/shared_res.h"
+#include "wire/space_allies.h"
+#include "wire/space_contracts.h"
+#include "wire/space_core.h"
+#include "wire/space_diplomacy.h"
+#include "wire/space_finale.h"
+#include "wire/space_planets.h"
 
 static int g_fail = 0;
 static int g_golden = 0;
@@ -94,9 +104,385 @@ static std::vector<uint8_t> cut(std::vector<uint8_t> v, size_t n)
 // ---------------------------------------------------------------- per feature
 // (one function per wire header, in kind order)
 
+
+// spacecoop.cpp: K_DOWN 1 .. K_TERRA_REC 9
+static void test_space_core()
+{
+    namespace c = wire::space_core;
+    {
+        net::Writer w; // the old down(): disabled for kDownTime (20 s)
+        w.u8(1);
+        w.u8((uint8_t)20);
+        golden("core K_DOWN", c::Down{1, 20}, "01 14", &w);
+        rejects<c::Down>("core K_DOWN cut", cut(w.data, 1));
+    }
+    {
+        net::Writer w; // the old raid hook (a raid starts)
+        uint32_t place = 0x03000042;
+        w.u32(place);
+        w.u8(3);
+        golden("core K_RAID", c::Raid{place, 3}, "42000003 03", &w);
+    }
+    {
+        c::Mission m;
+        m.reward = 1.5f;
+        wire::Key3 a, b;
+        a.v[0] = 1; a.v[1] = 2; a.v[2] = 3;
+        b.v[0] = 0x10; b.v[1] = 0x20; b.v[2] = 0x30;
+        m.tools = {a, b};
+        net::Writer w; // the old mission hook: f32 reward, u8 n, the keys
+        w.f32(1.5f);
+        w.u8((uint8_t)m.tools.size());
+        for (auto& kk : m.tools)
+            for (uint32_t v : kk.v)
+                w.u32(v);
+        golden("core K_MISSION", m, "0000c03f 02 01000000 02000000 03000000 10000000 20000000 30000000", &w);
+        rejects<c::Mission>("core K_MISSION fewer bytes than its keys", cut(w.data, 1));
+        rejects<c::Mission>("core K_MISSION no count", {0, 0, 0xc0, 0x3f});
+        auto t = accepts<c::Mission>("core K_MISSION no tools", {0, 0, 0xc0, 0x3f, 0});
+        CHECK(t.tools.empty(), "no tools");
+    }
+    {
+        c::Terra t{0x01000009, {0.5f, -3.f, 10.f}};
+        net::Writer w; // the old terra_tick
+        w.u32(t.place);
+        for (float v : t.v)
+            w.f32(v);
+        golden("core K_TERRA", t, "09000001 0000003f 000040c0 00002041", &w);
+        golden("core K_TERRA_REC", c::TerraRec{0x01000009, {1.f, 2.f, 10.f}}, "09000001 0000803f 00000040 00002041", nullptr);
+        auto nan = enc(t);
+        memset(nan.data() + 4, 0xFF, 4); // not finite: read, the handler refuses it (apply_terra, as before)
+        accepts<c::Terra>("core K_TERRA NaN read (the handler checks)", nan);
+    }
+    {
+        c::Gift g;
+        g.to = 2;
+        g.key.v[0] = 0xAA; g.key.v[1] = 0xBB; g.key.v[2] = 0xCC;
+        g.n = 7;
+        net::Writer w; // the old give_spice
+        w.u8(g.to);
+        for (uint32_t v : g.key.v)
+            w.u32(v);
+        w.u32((uint32_t)g.n);
+        golden("core K_GIFT", g, "02 aa000000 bb000000 cc000000 07000000", &w);
+        golden("core K_GIFT_BACK", g, "02 aa000000 bb000000 cc000000 07000000", &w);
+        c::Gift neg = g;
+        neg.n = -1;
+        accepts<c::Gift>("core K_GIFT count out of range read (the handler checks, space.gift_refund)", enc(neg));
+    }
+    {
+        c::Sculpt sc;
+        sc.place = 0x01000001;
+        sc.effect = 0xDEADBEEF;
+        for (size_t i = 0; i < sizeof sc.xf; i++)
+            sc.xf[i] = (uint8_t)i;
+        net::Writer w; // the old sculpt hook
+        w.u32(sc.place);
+        w.u32(sc.effect);
+        w.raw(sc.xf, 0x38);
+        std::string want = "01000001 efbeadde ";
+        for (int i = 0; i < 0x38; i++) {
+            char b[4];
+            snprintf(b, sizeof b, "%02x", i);
+            want += b;
+        }
+        golden("core K_SCULPT", sc, want.c_str(), &w);
+        rejects<c::Sculpt>("core K_SCULPT cut", cut(w.data, 1));
+    }
+    {
+        net::Writer w; // the old SetColors hook
+        w.u32(0x01000001);
+        w.u32((uint32_t)2);
+        w.u32(0xFF112233);
+        w.u32(0xFF445566);
+        golden("core K_COLOUR", c::Colour{0x01000001, 2, 0xFF112233, 0xFF445566}, "01000001 02000000 332211ff 665544ff", &w);
+    }
+}
+
+// space_contracts.cpp: K_STATE 20, K_ACCEPT 21, K_RESULT 22
+static void test_space_contracts()
+{
+    namespace c = wire::space_contracts;
+    c::State st;
+    st.id = 5; st.type = 1; st.state = 2; st.reason = 0; st.needed = 2;
+    st.money = 10000; st.tool = 0x12345678; st.secs = 90;
+    st.crew = {0, 1};
+    st.targets = {{0x42, 1, 0x02000042}};
+    st.wave = 1; st.waves = 3; st.left = 4; st.up = 4;
+    {
+        net::Writer w; // the old write_state (secs = the deadline from now)
+        w.u32(st.id); w.u8(st.type); w.u8(st.state); w.u8(st.reason); w.u8(st.needed);
+        w.u32(st.money); w.u32(st.tool); w.u32(st.secs);
+        w.u8((uint8_t)st.crew.size());
+        for (uint8_t id : st.crew)
+            w.u8(id);
+        w.u8((uint8_t)st.targets.size());
+        for (auto& tg : st.targets) {
+            w.u32(tg.star); w.u8(tg.done); w.u32(tg.planet);
+        }
+        w.u8(st.wave); w.u8(st.waves); w.u8(st.left); w.u8(st.up);
+        golden("contracts K_STATE", st,
+               "05000000 01 02 00 02 10270000 78563412 5a000000 02 00 01 01 42000000 01 42000002 01 03 04 04", &w);
+        rejects<c::State>("contracts K_STATE cut", cut(w.data, 1));
+    }
+    c::State bad = st;
+    bad.targets.clear();
+    rejects<c::State>("contracts K_STATE armada without a target", enc(bad));
+    bad = st;
+    bad.type = 3;
+    rejects<c::State>("contracts K_STATE unknown type", enc(bad));
+    bad = st;
+    bad.targets.assign(17, {1, 0, 1});
+    rejects<c::State>("contracts K_STATE 17 targets", enc(bad));
+    c::State none; // the host's "no contract"
+    golden("contracts K_STATE none", none, "00000000 00 00 00 00 00000000 00000000 00000000 00 00 00 00 00 00", nullptr);
+    {
+        net::Writer w; // the old accept()
+        w.u32(5);
+        golden("contracts K_ACCEPT", c::Accept{5}, "05000000", &w);
+    }
+    {
+        c::Result res{5, 1, 0, 10000, 0x12345678, 1, {0, 1}};
+        net::Writer w; // the old finish()
+        w.u32(res.id); w.u8(res.ok); w.u8(res.reason); w.u32(res.money); w.u32(res.tool); w.u8(res.type);
+        w.u8((uint8_t)res.crew.size());
+        for (uint8_t id : res.crew)
+            w.u8(id);
+        golden("contracts K_RESULT", res, "05000000 01 00 10270000 78563412 01 02 00 01", &w);
+        rejects<c::Result>("contracts K_RESULT cut crew", cut(w.data, 1));
+    }
+}
+
+// space_diplomacy.cpp: K_EVENT 30, K_STATE 31, K_SNAP 32, K_ASK 33, K_CONTACT 34
+static void test_space_diplomacy()
+{
+    namespace d = wire::space_diplomacy;
+    {
+        d::Event e{0x0A0B0C0D, 1, 0x77, 0.5f, "Grox"};
+        net::Writer w; // the old tick (K_EVENT)
+        w.u32(e.npc); w.u8(e.first); w.u32(e.ev); w.f32(e.scale); w.str8(e.name);
+        golden("diplomacy K_EVENT", e, "0d0c0b0a 01 77000000 0000003f 0447726f78", &w);
+        rejects<d::Event>("diplomacy K_EVENT cut name", cut(w.data, 1));
+    }
+    {
+        d::State st{0x0A0B0C0D, 0, 2, "Grox"};
+        net::Writer w; // the old tick (K_STATE)
+        w.u32(st.npc); w.u8(st.first); w.u8((uint8_t)st.what); w.str8(st.name);
+        golden("diplomacy K_STATE", st, "0d0c0b0a 00 02 0447726f78", &w);
+    }
+    {
+        d::Snap sn;
+        sn.last = 1;
+        sn.reply_to = 2;
+        sn.recs = {{0x100, 0x31, {{7, 1.f}, {9, -3.f}}}, {0x200, 0, {}}};
+        net::Writer b; // the old send_snapshot flush
+        b.u8(sn.last); b.u8(sn.reply_to); b.u16((uint16_t)sn.recs.size());
+        for (auto& r : sn.recs) {
+            b.u32(r.npc); b.u32(r.flags);
+            size_t k = std::min<size_t>(r.ev.size(), 100);
+            b.u8((uint8_t)k);
+            for (size_t i = 0; i < k; i++) {
+                b.u32(r.ev[i].first);
+                b.f32(r.ev[i].second);
+            }
+        }
+        golden("diplomacy K_SNAP", sn,
+               "01 02 0200 00010000 31000000 02 07000000 0000803f 09000000 000040c0 00020000 00000000 00", &b);
+        rejects<d::Snap>("diplomacy K_SNAP cut chunk", cut(b.data, 1));
+        d::Snap big;
+        big.recs = {{1, 0, std::vector<std::pair<uint32_t, float>>(150, {1, 1.f})}};
+        CHECK(enc(big).size() == 4 + 9 + 100 * 8, "K_SNAP is cut at 100 events per empire as before");
+    }
+    golden("diplomacy K_ASK", d::Ask{}, "", nullptr);
+    {
+        d::Contact ct{0x0A0B0C0D, 2, "Grox"};
+        net::Writer w; // the old tick (K_CONTACT): u32 npc, u8 2 contacted / 1 met, name
+        w.u32(ct.npc); w.u8(2); w.str8(ct.name);
+        golden("diplomacy K_CONTACT", ct, "0d0c0b0a 02 0447726f78", &w);
+    }
+}
+
+// space_finale.cpp: K_STATE 40, K_WAIT 41, K_REACHED 42
+static void test_space_finale()
+{
+    namespace f = wire::space_finale;
+    f::State st{2, 5, 0x123, 0x456, 10.f};
+    net::Writer w; // the old send_state
+    w.u8(st.zone); w.u8(st.flags); w.u32(st.star); w.u32(st.prev); w.f32(st.dist);
+    golden("finale K_STATE", st, "02 05 23010000 56040000 00002041", &w);
+    rejects<f::State>("finale K_STATE cut", cut(w.data, 1));
+    golden("finale K_WAIT", f::Wait{}, "", nullptr);
+    golden("finale K_REACHED", f::Reached{}, "", nullptr);
+}
+
+// space_allies.cpp: K_RAIDS 60, K_DEFENDED 61
+static void test_space_allies()
+{
+    namespace a = wire::space_allies;
+    a::Raids rd;
+    rd.raids = {{0x01000005, 3}, {0x02000006, 30}};
+    {
+        net::Writer w; // the old raids_tick
+        w.u8((uint8_t)std::min<size_t>(rd.raids.size(), 50));
+        for (size_t i = 0; i < rd.raids.size() && i < 50; i++) {
+            w.u32(rd.raids[i].first);
+            w.u8(rd.raids[i].second);
+        }
+        golden("allies K_RAIDS", rd, "02 05000001 03 06000002 1e", &w);
+        rejects<a::Raids>("allies K_RAIDS cut list", cut(w.data, 1));
+    }
+    a::Raids many;
+    many.raids.assign(60, {1, 1});
+    CHECK(enc(many).size() == 1 + 50 * 5, "K_RAIDS is cut at 50 raids as before");
+    {
+        net::Writer w; // the old watch_raids win
+        w.u8(1);
+        w.u32(0x01000005);
+        golden("allies K_DEFENDED", a::Defended{1, 0x01000005}, "01 05000001", &w);
+    }
+}
+
+// space_planets.cpp: K_SPICE 80, K_SPICE_TAKEN 81
+static void test_space_planets()
+{
+    namespace p = wire::space_planets;
+    p::Spice sp;
+    sp.pol = 0x77;
+    sp.colonies = {{0x01000005, {1.f, 2.f}}, {0x02000006, {}}};
+    {
+        net::Writer w; // the old host_tick part
+        w.u32(sp.pol);
+        w.u8((uint8_t)sp.colonies.size());
+        for (auto& [id, v] : sp.colonies) {
+            w.u32(id);
+            w.u8((uint8_t)v.size());
+            for (float x : v)
+                w.f32(x);
+        }
+        golden("planets K_SPICE", sp, "77000000 02 05000001 02 0000803f 00000040 06000002 00", &w);
+        rejects<p::Spice>("planets K_SPICE cut", cut(w.data, 1));
+    }
+    // as the old parse: a colony with more than 16 values is not skipped: the next one starts after its 16th
+    net::Writer w17;
+    w17.u32(0x77); w17.u8(2); w17.u32(0x01000005); w17.u8(17);
+    for (int i = 0; i < 16; i++)
+        w17.f32(1.f);
+    w17.u32(0x0000803f); // read as the 17th value by a correct parser, as the next planet id here
+    w17.u8(0);
+    auto s17 = accepts<p::Spice>("planets K_SPICE 17 values (old misparse kept)", w17.data);
+    CHECK(s17.colonies.size() == 2 && s17.colonies[0].second.size() == 16 && s17.colonies[1].first == 0x0000803f,
+          "the old parse of an over-long colony");
+    {
+        p::SpiceTaken t{0x77, 0x01000005, {0.5f}};
+        net::Writer w; // the old guest_check
+        w.u32(t.pol); w.u32(t.id); w.u8((uint8_t)t.left.size());
+        for (float x : t.left)
+            w.f32(x);
+        golden("planets K_SPICE_TAKEN", t, "77000000 05000001 01 0000003f", &w);
+        rejects<p::SpiceTaken>("planets K_SPICE_TAKEN cut", cut(w.data, 1));
+    }
+}
+
+// shared.cpp: MSG_RES 25, MSG_RES_ADD 26 (the body after the type)
+static void test_shared_res()
+{
+    namespace s = wire::shared_res;
+    s::Res r;
+    r.id = 1;
+    r.v = 100.0;
+    r.has_acks = true;
+    r.acks = {{1, 7}, {2, 9}};
+    r.has_causes = true;
+    r.causes = {{0, 3.0}, {2, -25.0}};
+    {
+        net::Writer w; // the old shared tick (host, floor fix and cause fix on)
+        w.u8(r.id);
+        w.f64(r.v);
+        w.u8((uint8_t)r.acks.size());
+        for (auto& [id, seq] : r.acks) {
+            w.u8(id);
+            w.u32(seq);
+        }
+        w.u8((uint8_t)std::min<size_t>(r.causes.size(), 16));
+        size_t i = 0;
+        for (auto& [id, c] : r.causes) {
+            if (i++ >= 16)
+                break;
+            w.u8(id);
+            w.f64(c);
+        }
+        golden("shared MSG_RES", r,
+               "01 0000000000005940 02 01 07000000 02 09000000 02 00 0000000000000840 02 00000000000039c0", &w);
+        // a cut ack list: refused, the head was fine (the handler rejects it after its ledger steps, as before)
+        net::Writer acks;
+        acks.u8(1); acks.f64(100.0); acks.u8(2); acks.u8(1); acks.u32(7); acks.u8(2);
+        net::Reader rr(acks.data.data(), acks.data.size());
+        s::Res x;
+        CHECK(!x.read(rr) && x.head_ok && x.acks.size() == 1, "a cut ack list");
+        // a cut cause list: the causes before the cut, the total taken (as before)
+        auto c = accepts<s::Res>("shared MSG_RES cut cause list", cut(w.data, 1));
+        CHECK(c.has_causes && c.causes.size() == 1 && c.v == 100.0, "the first cause of a cut list");
+    }
+    s::Res old; // an older host: no acks, no causes
+    old.id = 2;
+    old.v = 3.0;
+    {
+        net::Writer w;
+        w.u8(2);
+        w.f64(3.0);
+        golden("shared MSG_RES (older host)", old, "02 0000000000000840", &w);
+    }
+    s::Res nocause = r; // floor fix on, no causes yet (the first total)
+    nocause.has_causes = false;
+    golden("shared MSG_RES (no causes)", nocause, "01 0000000000005940 02 01 07000000 02 09000000", nullptr);
+    s::Res inf = old;
+    inf.v = INFINITY;
+    rejects<s::Res>("shared MSG_RES not finite", enc(inf));
+    s::ResAdd a{1, -25.0, true, 42};
+    {
+        net::Writer w; // the old guest tick (floor fix on)
+        w.u8(a.id);
+        w.f64(a.v);
+        w.u32(a.seq);
+        golden("shared MSG_RES_ADD", a, "01 00000000000039c0 2a000000", &w);
+        auto shortseq = accepts<s::ResAdd>("shared MSG_RES_ADD 3 bytes of a sequence: none", cut(w.data, 1));
+        CHECK(!shortseq.has_seq, "no sequence number in 3 bytes");
+    }
+    golden("shared MSG_RES_ADD (older guest)", s::ResAdd{1, -25.0, false, 0}, "01 00000000000039c0", nullptr);
+    s::ResAdd nan{1, NAN, false, 0};
+    rejects<s::ResAdd>("shared MSG_RES_ADD not finite", enc(nan));
+}
+
+// fields_wire.h (MSG_FIELDS): one packet of encode() is what decode() reads
+static void test_fields_wire()
+{
+    fields_wire::Batch b;
+    b.kind = 3;
+    b.fids = {1, 4};
+    b.ids = {0x10, 0x20};
+    b.vals = {1.f, 2.f, -3.f, 10.f};
+    auto out = fields_wire::encode(b);
+    std::string want = "03 02 0104 0200 1000 0000803f 00000040 2000 000040c0 00002041";
+    want.erase(std::remove(want.begin(), want.end(), ' '), want.end());
+    CHECK(out.size() == 1 && hex(out[0].data) == want,
+          "MSG_FIELDS bytes %s", out.empty() ? "" : hex(out[0].data).c_str());
+    net::Reader r(out[0].data.data(), out[0].size());
+    fields_wire::Batch y;
+    CHECK(fields_wire::decode(r, y) && y.ids == b.ids && y.vals == b.vals && y.fids == b.fids, "MSG_FIELDS read back");
+    g_golden++;
+}
+
 int main()
 {
     printf("wire golden bytes\n");
+    test_space_core();
+    test_space_contracts();
+    test_space_diplomacy();
+    test_space_finale();
+    test_space_allies();
+    test_space_planets();
+    test_shared_res();
+    test_fields_wire();
     printf(g_fail ? "wire_tests: FAILED (%d)\n" : "wire_tests: %d message kinds, ALL OK\n", g_fail ? g_fail : g_golden);
     return g_fail ? 1 : 0;
 }
