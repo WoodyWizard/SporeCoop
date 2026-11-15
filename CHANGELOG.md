@@ -7,9 +7,18 @@
   "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says
   the same and does not install. Update the game through GOG Galaxy, or play on Steam (BUG-1125).
 
+### Added
+- `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
+  why. It may join again.
+
 ### Fixed
 - Logs and problem reports: a Windows user name with letters outside English (Cyrillic, accented, Greek) is now hidden
   in the paths of the log and of report archives, like any other user name (BUG-1124).
+- Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
+  they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
+  not to whoever joins under that name (BUG-1107).
+- Network: more robustness checks on the data between the players' games: the host's game stays stable when another
+  game sends far more than normal play.
 
 ### Development
 - Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
@@ -19,17 +28,6 @@
   reason, one flake history over all worktrees (`lab.py flaky`), `--repeat` stops once the answer is clear, test
   selection by the change (`lab.py run impact`), and a failed campaign segment can be played again from its own save
   (BUG-1115, BUG-1116, BUG-1117, BUG-1118, BUG-1119).
-### Fixed
-- Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
-  they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
-  not to whoever joins under that name (BUG-1107).
-- Network: more robustness checks on the data between the players' games: the host's game stays stable when another
-  game sends far more than normal play.
-
-### Added
-- `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
-  why. It may join again.
-### Development
 - Release path: `make release-dry` builds and checks a release the way GitHub does before every tag, and a tag is
   pushed only on a green main; CI actions and the compiler download are pinned by hash; every release gets a
   debug-symbols download so crash reports name the function that crashed; the DLLs build with stricter compiler
