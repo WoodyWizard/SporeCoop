@@ -115,6 +115,24 @@ def monitor_cases(tmp):
     check(not got, f'monitor: a clean pair has no violation ({got})')
     got = scenario(tmp, 'together', *clean_pair(host_sees=dict(same=0, puppet='hidden: partner in another world')))
     check('together' in got, f'monitor: together: same stage and world by their own games, seen elsewhere ({got})')
+    # BUG-1145: the guest zooms out to the galaxy view (world=-) from s 8.2 to s 20.6, the timings of space_allies
+    # 20261115-042849: its partner lines there say same_place=0 and are no violation; the same stretch with the
+    # guest's own lines in the system (a real separation) still is
+    for name, gw, want in (('together_galaxy', '-', False), ('together_space_apart', '80460035', True),
+                           ('together_both_galaxy', '-', False)):
+        hw = '-' if name == 'together_both_galaxy' else '80460035'
+        sp = dict(stage='Space', world='80460035')
+        h = [own(t, stage='Space', world=hw if 5 < t < 25 else '80460035') for t in (0.0, 10.0, 20.0, 30.0, 40.0)]
+        h += [partner(t + 0.1, stage='Space', world=gw if 5 < t < 25 else '80460035',
+                      same=0 if 5 < t < 25 else 1) for t in (0.0, 10.0, 20.0, 30.0, 40.0)]
+        g = []
+        for t in (5.0, 8.2, 10.0, 20.0, 20.6, 30.0, 40.0):
+            inside = 8 < t < 20.5
+            g += [own(t, role='guest', pid=1, stage='Space', world=gw if inside else '80460035'),
+                  partner(t, pid=0, name='Alice', same=0 if inside else 1,
+                          **dict(sp, world=hw if 5 < t < 25 and name == 'together_both_galaxy' else '80460035'))]
+        got = scenario(tmp, name, h, g)
+        check(('together' in got) == want, f'monitor: together: {name} ({got})')
     got = scenario(tmp, 'puppet', *clean_pair(guest_sees=dict(puppet='hidden: not spawned (yet)')))
     check(got == {'puppet'}, f'monitor: puppet: a partner in the same place not shown ({got})')
     got = scenario(tmp, 'puppet_dead', *clean_pair(guest_sees=dict(puppet='hidden: partner dead', flags=17)))

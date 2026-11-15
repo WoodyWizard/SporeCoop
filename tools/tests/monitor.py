@@ -14,7 +14,7 @@ allow('monitor', ticket, reason, kind='<invariant>')). Invariants (each needs it
 a moment between two reads is no violation):
 
   together      two machines whose own trace lines say the same stage and world for 20 s see each other
-                in the same place (the partner line's same_place=1)
+                in the same place (the partner line's same_place=1); world=- (the galaxy view) is no place
   puppet        a partner in the same place, alive and in a world, is shown (puppet=shown) on 2 trace
                 lines in a row (not "not spawned (yet)" / "state older than 5 s")
   link          on a clean network (no SPORE_NET): resends / sent between two trace lines under 0.5,
@@ -71,10 +71,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
 SESS = re.compile(r'\[s (-?[\d.]+)\]')
-OWN = re.compile(r"trace: (host|guest) id=(\d+) players=(\d+) (.+?) world=([0-9A-F]+) '(.*?)' avatar=(yes|no) "
+# BUG-1145: world=- (the mod's world 0: no planet or star system, the Space galaxy view) is a world too: a pattern
+# for hex only dropped those lines, and the invariants paired the partner lines of the galaxy view with the own
+# line from before or after it (up to 6 s off), which still named the system
+OWN = re.compile(r"trace: (host|guest) id=(\d+) players=(\d+) (.+?) world=([0-9A-F]+|-) '(.*?)' avatar=(yes|no) "
                  r"pos=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) hp=(-?[\d.naif]+)/(-?[\d.naif]+) species=(\S+) "
                  r"flags=0x([0-9A-Fa-f]+) dna=(-?[\d.]+)(.*?) host_away=(\d) vote=(\w+)(.*)$")
-PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+) d=(\S+) same_place=(\d) puppet=(.*?) "
+PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+|-) d=(\S+) same_place=(\d) puppet=(.*?) "
                      r"hp=(-?[\d.naif]+)/(-?[\d.naif]+) species=(\S+) flags=0x([0-9A-Fa-f]+) state_age=([\d.]+) s "
                      r"rtt=(-?\d+) ms(.*)$")
 LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
@@ -92,6 +95,7 @@ WSCALE = re.compile(r' wscale=([-\d.e+naif]+)')
 DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
+NOWHERE = '-'  # world 0: no place (the mod's same_place() is never 1 there, puppets.cpp)
 PF_IN_WORLD, PF_DEAD = 1, 16
 
 DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50, link_pending=400, link_age=5.0,
@@ -332,7 +336,7 @@ class Together(Invariant):
                 p['_subj'] = subj
                 a, b = tl.own_at(viewer, p['t'], 6), tl.own_at(subj, p['t'], 6)
                 agree = a and b and playing(a) and playing(b) and a['stage'] == b['stage'] and a['world'] == b['world'] \
-                    and (b['flags'] & PF_IN_WORLD)
+                    and a['world'] != NOWHERE and (b['flags'] & PF_IN_WORLD)
                 if agree and not p['same']:
                     run.append(p)
                     if len(run) >= 2 and run[-1]['t'] - run[0]['t'] >= self.c['together_s'] - 10:
