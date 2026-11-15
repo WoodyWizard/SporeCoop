@@ -371,3 +371,51 @@ the coop core: mods/coop/coop_state.h, docs/01-architecture.md#arch-start-and-fr
 with its comment; a `static` forward declaration of a moved function loses `static` too (clang: "static declaration
 follows non-static declaration", or the warning "has internal linkage but is not defined", which becomes a link
 error). B2's commits are the worked example (git log --grep BUG-1128).
+
+## Retiring fix switches (2026-11-15, feat/w51-retire)
+<a id="pipeline-fix-retire"></a>
+
+Every bug fix keeps its old code behind a `coop.fix` switch (CLAUDE.md 3, docs/06-testing.md#testing-fix-registry),
+so the lab can show that its test catches the bug. Kept forever, the off paths pile up: 779 switches in 0.7.14, none
+ever removed, and an old switch's off side becomes a mix of code nobody shipped (docs/audit-0.7.15/core.md CORE-1).
+Owner decision 4 of docs/plan-0.7.15.md: retire them by a rule, in batches (B1, BUG-1138).
+
+**The rule.** A switch may retire when all three hold:
+1. its ticket is fixed and was released 3 or more releases before the current one (hotfixes `X.Y.Z.W` count with
+   `X.Y.Z`; for 0.7.15 that is 0.7.12 and older);
+2. a FAIL run with the switch off is on record: the ticket names a FAIL run id (`YYYYMMDD-HHMMSS` in a sentence that
+   says FAIL), or a recorded lab result whose test output says `SPORE_FIX_OFF: <switch> off` failed (what
+   `lab.py fixcheck` reads; an INCONCLUSIVE result is no FAIL);
+3. it is on no keep list.
+
+**The keep list** (a switch stays even when 1 and 2 hold):
+* `untested`: no test or lab tool names it (152 in the audit, owner decision): no FAIL run can be made in the lab;
+* `space`: it is registered in or read by a Space file (space*.cpp, squadron.cpp, spacecoop.cpp) or shared.cpp, or
+  its area is `space` / `fleet` / `squadron` (the Space package of 0.7.15 rewrites these files);
+* `unit`: a portable switch (fix_table.cpp: mods/coop/net/, updater/) or one whose off side the unit tests run
+  (tests/*.cpp, a header function that takes the switch as an argument);
+* `seam`: another test switches it off for its own setup (the monitor's planted faults in coop_monitor_plant, a
+  test that checks the off side in its PASS run, a suite entry run with it off), or its off path is a documented
+  user or debug option; listed with the reason in `KEEP` of tools/fix_retire.py;
+* `manual`: removing the off path is not a plain deletion (the bool is also state, the off and on paths are
+  interleaved, a table or a hook depends on it); found while retiring, added to `KEEP` with the reason.
+
+**The tool.** `python3 tools/lab.py fixcheck --retire [--upto 0.7.9] [--all]` (= `tools/fix_retire.py list`)
+prints the candidates with their evidence (the ticket's run ids, the recorded FAIL runs); `--all` also prints the
+kept ones and why, `--json` the whole inventory. `tools/fix_retired.txt` lists every retired switch (name, ticket,
+fixed in, retired in, the FAIL run on record) and the old toggle commands removed with them.
+`tools/fix_retire.py check` (in `make test`, with `--self-test`) fails when a retired name is registered again (a
+new fix takes a new name), when a test or a lab tool names it (a line that says the switch is retired, with its FAIL
+run, may), when a current doc switches it off (`coop.fix <name>`, `SPORE_FIX_OFF=`; tickets, the CHANGELOG,
+docs/archive, the audits and plans keep their history, and docs/re keeps the name as the fix's label), or when a
+removed command is used anywhere. `tools/tickets.py check` knows the retired names (a ticket's `switch:` stays).
+
+**Retiring one switch.** Delete the `COOP_FIX` line and the bool; at every use the fixed path stays exactly as it
+ran with the switch on (`if (!x) return;` goes, `x && c` becomes `c`, `x ? a : b` becomes `a`, code only the off
+path used goes too, a status line drops its `fix=` field unless a test parses it); the old per-module toggles of
+the switch (`coop.pool fix <alias>`, `coop.civ fix <alias>`, ...) go; comments describe what the code does now with
+the ticket id. Its tests stay as PASS-only regression tests: their `--nofix` / `SPORE_FIX_OFF` twin goes, and the
+claim becomes "<switch> off failed (retired in 0.7.15, BUG-1138: FAIL run <run>)". The ticket's History gets
+"switch retired in 0.7.15, FAIL run <dir> on record". Proof per batch: `make -j8`, `make test`, the refactor dumps
+before and after (docs/10-dev-pipeline.md#pipeline-refactor-proof: the only differences are the retired switches in
+the `fix` section and the removed toggle commands in `commands`), and `lab.py run impact --base <base>`.
