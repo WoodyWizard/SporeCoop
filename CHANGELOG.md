@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Creature: guests waiting while the host makes a new world get the creature editor with the base creature; its
+  check stays greyed until the host's world is ready, and what they save is their creature there (BUG-9207, decision 3U).
 - Creature (owner play test 2026-11-14): a guest whose old co-op creature pick came along gets its own editor in a new
   world too (BUG-9203); the Party cards no longer cover the editor's stats (BUG-9191); one cocoon, the creature shrinking
   with the spin (BUG-9194); partners' bodies have their real size, and a guest's hatchling its hatchling size at once

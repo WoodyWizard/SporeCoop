@@ -3392,3 +3392,15 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
 * Test note: `mod.reload coop` ends the session on both games (host and join again); `coop.abilities put` moves the own
   avatar but the camera keeps its heading, and a downed host's spectator camera leaves a partner who opens an editor.
 
+## A guest's creature editor from the galaxy menu (2026-11-14, feat/lineages-47)
+<a id="creature-pregame-guest-editor"></a>
+
+* ✔ (runtime, TITAN) An EditorRequest for CreatureEditorExtraLarge (0x465C50BA) with no creation key, submitted in the
+  galaxy menu (GalaxyGameEntry 0x02CCD1D2), opens the full Creature Creator ("$2,000" budget, every part, the "Test
+  Drive" tip on a fresh profile) with a base body of a random colour; leaving it returns to the galaxy menu. The host's
+  game in it reports mode Editor 0x00DBDBA1 with the galaxy menu's world id (`Galaxy menu BDBE3B52 -> Editor BDBE3B52`).
+* ✔ The editor's finish button (the check) is control 0x058A3350, 40 x 40 at the bottom right (1239,922 on 1280 x 960;
+  983,730 on 1024 x 768). Window flag kFlagEnabled off draws it grey like the disabled undo / redo and it takes no
+  clicks. The check of a body with no mouth ("Mouthless") opens the name panel and does not save; the red X asks
+  "Exiting will cause your changes to be lost" (Cancel / Quit at 736,449 on 1024 x 768).
+
