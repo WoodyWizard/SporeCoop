@@ -7938,10 +7938,13 @@ tests: tools/tests/labverdict_selftest.py (`make test`, part `unit-verdict`).
   row on rel/* alone), so the rule fails nothing that passed before.
 * Neither half of a twin: `lab.py fixcheck` leaves INCONCLUSIVE results out (also those the streak rule made FAIL):
   before, a fix-off run that only printed RESULT: SKIP counted as the FAIL that confirms a "SPORE_FIX_OFF=x fails"
-  claim. The release rule (`lab.py coverage --commit`) lists an INCONCLUSIVE result as `INCONCLUSIVE (not a pass ...)`
+  claim (2026-11-15: two claims had such a half: cell_chunk_killer, lab 20261113-022622, and mirror_fx_keys, -014333 and
+  -014513; both stay confirmed by a real FAIL). The release rule (`lab.py coverage --commit`) lists an INCONCLUSIVE result as `INCONCLUSIVE (not a pass ...)`
   and fails only on the streak FAIL.
 
-**Failure reasons.** `fails` of a result: the lab's own FAIL lines and the test's FAIL lines as before; a failed test
+**Failure reasons.** `fails` of a result: the lab's own FAIL lines and the test's FAIL lines as before (`make test`, the
+lab's `unit`: its failed part first, `FAIL make[1]: *** [Makefile:177: unit-lint] Error 1`, before the self-tests'
+planted FAIL lines that hid it in lab 20261115-014727); a failed test
 without any gets one from its output: a campaign's findings (`FINDING [stuck] ...` -> `FAIL stuck: ...`, info findings
 never), else the campaign report's `[kind] HH:MM:SS stage/phase: text` lines, else the exception of its last
 traceback (`FAIL harness: TimeoutError: timed out`), `FAIL lab: the test ran past its timeout`, `FAIL harness: no
@@ -8031,7 +8034,8 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   editor or the last save's box is up; then until the slot's files rest, up to 90 s) and the run keeps that slot as
   `<run>/segments/<stage>.tgz` (the fixture layout Games/Game0) and its planet in `segments.json`. Measured: Cell
   start 4 s. A save that is not made (Space on a planet) leaves the stage without one: its rerun starts from the
-  stage's fixture (said in the timeline). After a jump the stage's segment is the jumped fixture. CAMPAIGN_SEGMENTS=0:
+  stage's fixture (said in the timeline). After a jump the stage is saved at its start like any other (lab
+  20261115-012138: Game10, Zorispe). CAMPAIGN_SEGMENTS=0:
   no saves (the old behaviour).
 * **The failed segment.** At the end a failed run prints `CAMPAIGN-SEGMENT {json}` (and writes `<run>/segment.json`):
   the stage of its first failing finding (its `stage/phase`), the next stage (or the end), that stage's save, the

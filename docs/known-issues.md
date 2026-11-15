@@ -3634,3 +3634,13 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: a log line when the captain is set to 0 (hook `SporeCoop::cEmpire_SetCaptainKey`), so the next report
   names the species; then give such a world a captain from a species this game has.
 * Ticket: BUG-1111
+
+## Tools: tickets.py check fails on the other branches while a private ticket lists an unmerged branch's commits (2026-11-15, feat/w51-labverdict)
+<a id="known-ticket-check-private"></a>
+
+* `make test` (unit-lint) fails on every branch of a batch but one: tickets.py check applies the per-branch rules
+  (commits in this branch's history, test names this tree knows) to the private tickets of the main checkout's
+  out/tickets/, which every worktree shares; a private ticket fixed on a branch not merged yet lists that branch's
+  commits.
+* Reproduce: `python3 tools/tickets.py check` on a 0.7.15 branch other than the one that fixed the private tickets.
+* Ticket: BUG-1129

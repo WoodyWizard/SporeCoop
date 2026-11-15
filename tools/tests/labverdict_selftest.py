@@ -92,6 +92,10 @@ def reasons_case(lv):
     r = lv.reasons('started\n\nLAB: TIMEOUT\n', failed=True)
     check(r == ['FAIL lab: the test ran past its timeout'], f'reasons: the lab\'s timeout ({r})')
     check(lv.reasons(CAMPAIGN_OUT.replace('RESULT: FAIL', 'RESULT: OK')) == [], 'reasons: a passed test has none')
+    r = lv.reasons('  FAIL crash_after lane 10 (planted)\nmake[1]: *** [Makefile:177: unit-lint] Error 1\n'
+                   'make[1]: *** Waiting for unfinished jobs....\nmake: *** [Makefile:125: test] Error 2\n', failed=True)
+    check(r[:2] == ['FAIL make[1]: *** [Makefile:177: unit-lint] Error 1', 'FAIL make: *** [Makefile:125: test] Error 2'],
+          f'reasons: make test: the failed part first, before the self-tests\' planted FAIL lines ({r[:2]})')
 
 
 def campaign_case(tmp):

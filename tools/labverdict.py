@@ -58,6 +58,7 @@ def was_inconclusive(r):
 
 
 # ---------------------------------------------------------------- failure reasons
+_MAKE_ERR = re.compile(r'^make(\[\d+\])?: \*\*\* \[[^\]]+\] Error \d+')
 _FINDING = re.compile(r'^\s*FINDING \[(\w+)\] (.*)$')
 # the campaign's report lists every finding as `    [kind] HH:MM:SS stage/phase: text` (coop_campaign.py)
 _BRACKET = re.compile(r'^\s*\[(\w+)\] (\d\d:\d\d:\d\d) (\S+): (.*)$')
@@ -70,6 +71,11 @@ def reasons(text, failed=None):
     timeout. failed: the test failed (default: it printed RESULT: FAIL)"""
     lines = text.splitlines()
     out = [l.strip() for l in lines if l.strip().startswith('FAIL')]
+    # `make test` (the lab's unit test): the part that failed first; its self-tests print planted FAIL lines that
+    # would fill the reasons otherwise (lab 20261115-014727: unit-lint hidden behind lane 10's planted crashes)
+    made = [f'FAIL {l.strip()}' for l in lines if _MAKE_ERR.match(l)]
+    if made:
+        return made + out
     if out:
         return out
     if failed is None:
