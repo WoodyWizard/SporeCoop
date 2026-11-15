@@ -133,6 +133,15 @@ def monitor_cases(tmp):
                           **dict(sp, world=hw if 5 < t < 25 and name == 'together_both_galaxy' else '80460035'))]
         got = scenario(tmp, name, h, g)
         check(('together' in got) == want, f'monitor: together: {name} ({got})')
+    # BUG-1145 / BUG-1147: every trace line the mod writes is a record (a dropped line pairs the invariants with a
+    # line seconds away): the galaxy view's world=-, a NaN position as Windows prints it, a state age of -0.0
+    nan_own = own(30.0, role='guest', pid=1, stage='Space', world='4046000C').replace(
+        'pos=(1.0 2.0 3.0)', 'pos=(-nan(ind) -nan(ind) -nan(ind))')
+    for ln, kind in ((own(20.0, stage='Space', world='-'), 'own'), (nan_own, 'own'),
+                     (partner(20.0, stage='Space', world='-', same=0), 'partner'),
+                     (partner(20.0).replace('state_age=0.1 s', 'state_age=-0.0 s'), 'partner')):
+        r = monitor.parse_line('guest', ln)
+        check(r is not None and r['kind'] == kind, f'monitor: parses {kind} line {ln[40:140]!r}')
     got = scenario(tmp, 'puppet', *clean_pair(guest_sees=dict(puppet='hidden: not spawned (yet)')))
     check(got == {'puppet'}, f'monitor: puppet: a partner in the same place not shown ({got})')
     got = scenario(tmp, 'puppet_dead', *clean_pair(guest_sees=dict(puppet='hidden: partner dead', flags=17)))

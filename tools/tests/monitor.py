@@ -74,11 +74,15 @@ SESS = re.compile(r'\[s (-?[\d.]+)\]')
 # BUG-1145: world=- (the mod's world 0: no planet or star system, the Space galaxy view) is a world too: a pattern
 # for hex only dropped those lines, and the invariants paired the partner lines of the galaxy view with the own
 # line from before or after it (up to 6 s off), which still named the system
+# BUG-1147: the same for a position of NaN (Windows prints `-nan(ind)`: a guest's ship in a world it has no place in
+# yet, 4046000C after a jump) and a state age of `-0.0` (a state stamped this frame on a clock a hair ahead): such lines
+# were dropped too (87 own and 4374 partner lines of 3000 recorded logs). N: a number as the mod's printf writes it
+N = r'[-\d.e+naif]+(?:\(ind\))?'
 OWN = re.compile(r"trace: (host|guest) id=(\d+) players=(\d+) (.+?) world=([0-9A-F]+|-) '(.*?)' avatar=(yes|no) "
-                 r"pos=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) hp=(-?[\d.naif]+)/(-?[\d.naif]+) species=(\S+) "
+                 rf"pos=\(({N}) ({N}) ({N})\) hp=({N})/({N}) species=(\S+) "
                  r"flags=0x([0-9A-Fa-f]+) dna=(-?[\d.]+)(.*?) host_away=(\d) vote=(\w+)(.*)$")
 PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+|-) d=(\S+) same_place=(\d) puppet=(.*?) "
-                     r"hp=(-?[\d.naif]+)/(-?[\d.naif]+) species=(\S+) flags=0x([0-9A-Fa-f]+) state_age=([\d.]+) s "
+                     rf"hp=({N})/({N}) species=(\S+) flags=0x([0-9A-Fa-f]+) state_age=(-?[\d.]+) s "
                      r"rtt=(-?\d+) ms(.*)$")
 LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
 POOL = re.compile(r'cell pool (\d+)/(\d+)')
