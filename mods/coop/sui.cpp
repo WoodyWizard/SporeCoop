@@ -217,6 +217,7 @@ void set_caption(Win w, const std::string& t)
     vcall<void>(w, 0x80 / 4, u.c_str());
 }
 void set_area(Win w, const Rect& r) { vcall<void>(w, 0x60 / 4, &r); }
+void set_layout_area(Win w, const Rect& r) { vcall<void>(w, 0x6C / 4, &r); }
 void set_flag(Win w, uint32_t f, bool on) { vcall<void>(w, 0x7C / 4, f, on); }
 void set_visible(Win w, bool on) { set_flag(w, kFlagVisible, on); }
 void set_enabled(Win w, bool on) { set_flag(w, kFlagEnabled, on); }

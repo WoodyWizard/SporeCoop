@@ -3594,6 +3594,17 @@ static bool ws_handle(Win w, const sui::Msg& m)
     x[13] += (0 - my) * (1 - f);
     return false;
 }
+static void whole_scale_tick(float want);
+static double g_ws_editor_since = -1; // an editor was requested (its UI is built at 100 %), -1: none
+void editor_opening()
+{
+    if (!ws_on() || g_ns_factor == 1.f) {
+        g_ws_editor_since = H->time_seconds();
+        return;
+    }
+    g_ws_editor_since = H->time_seconds();
+    H->run_outside_frame([](void*) { whole_scale_tick(1.f); }, nullptr); // before the editor's own windows are built
+}
 static void whole_scale_tick(float want)
 {
     int sw = 0, sh = 0;
@@ -3603,12 +3614,20 @@ static void whole_scale_tick(float want)
     const float W = (float)sw, Hh = (float)sh, was = g_ns_factor, f = want;
     if (f == 1.f && was == 1.f && g_ws_moved.empty()) return;
     auto full = [&](const sui::Rect& r, float k) {
-        return std::abs(r.x1) < 1 && std::abs(r.y1) < 1 && std::abs(r.w() - W / k) < 2 && std::abs(r.h() - Hh / k) < 2;
+        return std::abs(r.x1) <= 2 && std::abs(r.y1) <= 2 /* (the editors: x 1) */ && std::abs(r.w() - W / k) < 2 && std::abs(r.h() - Hh / k) < 2;
     };
     const sui::Rect virt{0, 0, W / f, Hh / f};
-    if (f != was) { // a new size: the pieces placed in code go back first
+    if (f != was && !g_ws_moved.empty()) { // a new size: the pieces placed in code go back first; only windows still
+        std::set<Win> live;                   // in the tree are touched (a stored pointer can be freed by now)
+        std::vector<Win> stack{main};
+        for (int n = 0; !stack.empty() && n < 30000; n++) {
+            Win w = stack.back();
+            stack.pop_back();
+            live.insert(w);
+            for (Win c : sui::children(w)) stack.push_back(c);
+        }
         for (auto& m : g_ws_moved)
-            if (sui::control_id(m.w) == m.id) sui::set_area(m.w, m.was);
+            if (live.count(m.w) && sui::control_id(m.w) == m.id) sui::set_area(m.w, m.was);
         g_ws_moved.clear();
     }
     std::vector<Win> relaid;
@@ -3631,7 +3650,7 @@ static void whole_scale_tick(float want)
             const sui::Rect r = sui::area(w);
             if (full(r, 1.f) || full(r, was) || full(r, f)) {
                 if (!full(r, f)) {
-                    sui::set_area(w, virt);
+                    sui::set_area(w, {r.x1, r.y1, r.x1 + virt.x2, r.y1 + virt.y2}); // (its own offset kept)
                     relaid.push_back(w);
                 }
                 for (Win c : sui::children(w)) stack.push_back(c);
@@ -3641,12 +3660,16 @@ static void whole_scale_tick(float want)
             if (f <= 1.f || !sui::visible(w)) continue;
             const bool on_screen = r.x1 > -W * 0.05f && r.y1 > -Hh * 0.05f && r.x2 < W * 1.05f && r.y2 < Hh * 1.05f;
             if (!on_screen || (r.x2 <= virt.x2 + 1 && r.y2 <= virt.y2 + 1)) continue;
+            // one offset per side, so pieces placed together stay in order (the Tribe roster column under its "Tribe"
+            // button got reordered when each piece went by its own third, 2026-11-15): the far half keeps its
+            // distance to the far edge, the near half stays, a piece in the middle stays in the middle
             auto place = [](float a1, float a2, float real, float small) {
                 const float c = (a1 + a2) / 2;
-                return c > real * 2 / 3 ? small - (real - a1) : c < real / 3 ? a1 : c / real * small - (a2 - a1) / 2;
+                if (std::abs(c / real - 0.5f) < 0.1f) return c / real * small - (a2 - a1) / 2;
+                return c > real / 2 ? a1 + (small - real) : a1;
             };
-            const float nx = r.x2 > virt.x2 + 1 ? place(r.x1, r.x2, W, virt.x2) : r.x1;
-            const float ny = r.y2 > virt.y2 + 1 ? place(r.y1, r.y2, Hh, virt.y2) : r.y1;
+            const float nx = place(r.x1, r.x2, W, virt.x2);
+            const float ny = place(r.y1, r.y2, Hh, virt.y2);
             g_ws_moved.push_back({w, sui::control_id(w), r});
             sui::set_area(w, {nx, ny, nx + r.w(), ny + r.h()});
         }
@@ -3681,7 +3704,13 @@ static void native_scale_tick()
         want = lineages_graphics::read_ui_scale(slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name) / 100.f;
     mouse::set_remap(ns_remap); // (the short resolution list needs it at 100 % too)
     if (ws_on()) {
-        whole_scale_tick(want);
+        // the editors stay at 100 %: they place their palette (its grid and page control) and bars in code from the
+        // screen's size; laid out for a smaller screen the page control went off the screen, and with their anchored
+        // holders resized too the parts grid kept its old places (2026-11-15)
+        const uint32_t m = game::mode_id();
+        const bool editor = m == modes::kEditor || m == modes::kEdit;
+        if (g_ws_editor_since >= 0 && !editor && now - g_ws_editor_since > 5) g_ws_editor_since = -1; // left (or never came)
+        whole_scale_tick(editor || g_ws_editor_since >= 0 ? 1.f : want);
         return;
     }
     if (want == 1.f && g_ns_factor == 1.f) return; // 100 %: nothing to attach

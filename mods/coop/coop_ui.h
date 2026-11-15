@@ -111,6 +111,9 @@ void draw_tooltip();
 bool step_aside(int x, int y, double secs);
 int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
 void shutdown(); // mod unload: hide our windows
+// 3X A: an editor was requested: Spore's UI goes to 100 % before the editor builds its own (it stays there until
+// the editor is left)
+void editor_opening();
 // BUG-9156 (owner 2026-11-12: "The red button doesn't match our button on the co-op menu. You need to ensure
 // consistency"): the downed screen's box and buttons are the Co-op window's own look (its gold button, its font, the
 // tooltip background). Called every frame (also from the overlay: the change itself runs outside the frame). show:

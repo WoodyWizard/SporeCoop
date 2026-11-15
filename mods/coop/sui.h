@@ -70,6 +70,8 @@ void add_ref(Win w);
 void release(Win w);
 void set_caption(Win w, const std::string& utf8);
 void set_area(Win w, const Rect& r);
+// the area the window has after its layout procs (anchors): they are reverted first (IWindow vt 0x6C, SetLayoutArea)
+void set_layout_area(Win w, const Rect& r);
 void set_visible(Win w, bool on);
 void set_enabled(Win w, bool on);
 void set_flag(Win w, uint32_t flag, bool on);

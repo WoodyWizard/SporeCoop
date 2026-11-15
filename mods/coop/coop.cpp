@@ -1837,6 +1837,7 @@ bool submit_now(void* req)
 {
     const int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     g_vote_bypass = true;
+    coop_ui::editor_opening(); // 3X A
     bool r = submit_native_editor(req);
     g_vote_bypass = false;
     if (r)
@@ -2224,6 +2225,7 @@ bool SK_CDECL h_Submit(void* req)
         hold_submit(req); // the game's own request (alone in the session): after the save
         return false;
     }
+    coop_ui::editor_opening(); // 3X A: the editor's UI is built at 100 %
     bool r = submit_native_editor(req);
     if (r)
         g_editor_submitted_at = H->time_seconds();
