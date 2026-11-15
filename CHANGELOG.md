@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Co-op window: Settings is a button of the World & Session box instead of
+  floating above it; the Ask for Reports button is gone (Report Issue already
+  asks every player for their report) (decision 4I A, BUG-9219).
+- Co-op window: blue buttons go to another page (Settings, Space / Nations >,
+  < Lobby, page arrows), grey ones are small helpers (the color button, Copy
+  Host Address, arrows); "colour" now reads "color" (BUG-9220).
+
 ## [0.7.14.1-lineages56-dev] - 2026-11-15
 
 - Built on upstream SporeCoop 0.7.14.1 (was 0.7.8): its crash guards and network
