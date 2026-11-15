@@ -190,6 +190,8 @@ unit-lint:
 	python3 tools/ci_lint.py
 	python3 tools/ratchet_lint.py
 	python3 tools/ratchet_lint.py --self-test
+	python3 tools/fix_retire.py check
+	python3 tools/fix_retire.py check --self-test
 
 unit-tools:
 	python3 tools/tests/tools_selftest.py

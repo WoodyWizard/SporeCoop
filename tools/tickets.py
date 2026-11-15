@@ -437,6 +437,13 @@ class Ctx:
                 if n.endswith('.cpp'):
                     src = open(os.path.join(cdir, n), encoding='utf-8', errors='replace').read()
                     self.fix_names |= set(re.findall(r'COOP_FIX(?:_UNSAFE)?\(\s*"([^"]+)"', src))
+        # B1 (BUG-1138): a retired switch stays a known name of its ticket's `switch:` (tools/fix_retired.txt)
+        retired = os.path.join(root, 'tools', 'fix_retired.txt')
+        if os.path.exists(retired):
+            for line in open(retired, encoding='utf-8'):
+                line = line.split('#', 1)[0].strip()
+                if line and not line.startswith('command '):
+                    self.fix_names.add(line.split()[0])
 
 
 def in_scope(t, ctx):

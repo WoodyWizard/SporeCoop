@@ -321,7 +321,8 @@ def main(argv=None):
     li.add_argument('--upto', help='only fixes released in this version or earlier (the batch)')
     li.add_argument('--all', action='store_true', help='also the kept switches, with the reason')
     li.add_argument('--json', action='store_true')
-    sub.add_parser('check')
+    ck = sub.add_parser('check')
+    ck.add_argument('--self-test', action='store_true', help='the check against planted cases')
     a = ap.parse_args(argv)
     if a.cmd == 'list':
         return cmd_list(a)
@@ -402,7 +403,40 @@ def check():
     return out
 
 
+def self_test():
+    """the check fails on a planted case of each rule (a registered name, a test's SPORE_FIX_OFF, a doc's coop.fix,
+    a removed command); exit 1 when one is not seen"""
+    import tempfile
+    global RETIRED, test_files, doc_files
+    real = registrations()[0]['name']
+    saved = RETIRED, test_files, doc_files
+    with tempfile.TemporaryDirectory() as d:
+        RETIRED = os.path.join(d, 'retired.txt')
+        open(RETIRED, 'w').write(f'{real} BUG-0000 0.7.3 0.7.15 lab\nzz.probe BUG-0000 0.7.3 0.7.15 lab\n'
+                                 'command coop.zzfix\n')
+        doc = os.path.join(d, 'doc.md')
+        open(doc, 'w').write('run it with `coop.fix zz.probe off`; the label zz.probe stays\n')
+        test_files = lambda: {'tools/tests/probe.py': "env SPORE_FIX_OFF=a.b,zz.probe\nc.call('coop.zzfix 0')\n"}
+        doc_files = lambda: [doc]
+        try:
+            got = check()
+        finally:
+            RETIRED, test_files, doc_files = saved
+    want = [f'retired switch {real} is registered again', 'probe.py:1: names the retired switch zz.probe',
+            'probe.py:2: uses the removed command `coop.zzfix`', 'doc.md:1: switches off the retired switch zz.probe']
+    miss = [w for w in want if not any(w in g for g in got)]
+    extra = [g for g in got if not any(w in g for w in want)]
+    for m in miss:
+        print('fix_retire self-test: not seen: ' + m)
+    for e in extra:
+        print('fix_retire self-test: unexpected: ' + e)
+    print(f'fix_retire self-test: {"ok" if not miss and not extra else "FAILED"}')
+    return 1 if miss or extra else 0
+
+
 def cmd_check(a):
+    if a.self_test:
+        return self_test()
     names, cmds = retired()
     probs = check()
     for x in probs:
