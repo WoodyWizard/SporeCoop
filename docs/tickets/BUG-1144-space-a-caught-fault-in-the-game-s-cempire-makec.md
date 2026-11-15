@@ -59,7 +59,14 @@ cEmpire_SpawnVisitorUFO (the last makes the next report name the real function).
   save the list holds star 4587532 with owner FFFFFFFF, NO EMPIRE (stale 1).
 - PASS: out/lab/20261115-041921 (lane 6), out/lab/20261115-042358 (lane 7): after the save and after the session's end
   the list holds only the home star (rebuilds=1, 2), no fault.
-- REPEATS_PLACEHOLDER
+- FAIL on the original test (SPORE_LAB_FIXOFF=space_allies=allies.near_rebuild): out/lab/20261115-044540 (lane 6):
+  the same fault at 0x00C32817 (now named cEmpire_SpawnVisitorUFO+0x7) 1.5 s after the guest's save, on the first try.
+- PASS space_allies with the fix: 13 of 13 runs without a fault: out/lab/20261115-042358 (1), 20261115-042849 (4,
+  lane 7), 20261115-044146 (8, lane 7). Two of them (042849 #4, 044146 #6) failed only the lab's together monitor
+  over the galaxy-view stretch at s 10-20 (BUG-1145, also in the switch-off run; unrelated to the mirror).
+- Not verified: the session-end path in a real game where the player stays in the system for long (covered by
+  space_allies_near step 4, 20 s); other mod paths that could leave an owned-flag star without an empire (none known).
+
 
 ## History
 - 2026-11-15: opened.

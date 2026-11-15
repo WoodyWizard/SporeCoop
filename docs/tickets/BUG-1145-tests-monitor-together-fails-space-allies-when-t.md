@@ -26,7 +26,8 @@ time); its partner lines at s 10.0 and s 20.0 say same_place=0, and at s 20.6 (b
 Inferred: `Together.check` takes the viewer's own state with `own_at(viewer, t, 6)` (up to 6 s off), so the partner
 line at s 20.0 is paired with the own line of s 20.6 (world 80460035 again) and the one at s 10.0 with a line that
 also says 80460035, which makes a 10 s "run" out of the galaxy-view stretch. Not seen before in any worktree's logs.
-Reproduce: `lab.py run space_allies --repeat 12 --lane N` (1 in 4 here); not fixed (outside the task of fix/w51-space2).
+Seen again in out/lab/20261115-044540 (lane 6, a twin run with allies.near_rebuild off: the same text, "for 10 s from
+s 10"). Reproduce: `lab.py run space_allies --repeat 12 --lane N` (1 in 4 here); not fixed (outside the task of fix/w51-space2).
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->
