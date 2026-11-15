@@ -1,9 +1,9 @@
 {
  "object_alive": {
-  "total": 148,
+  "total": 146,
   "per_file": {
    "mods/coop/census.cpp": 2,
-   "mods/coop/civ.cpp": 13,
+   "mods/coop/civ.cpp": 11,
    "mods/coop/coop.cpp": 1,
    "mods/coop/coop_cmds.cpp": 1,
    "mods/coop/creations.cpp": 1,
