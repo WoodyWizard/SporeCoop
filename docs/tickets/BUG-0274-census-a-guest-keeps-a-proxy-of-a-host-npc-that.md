@@ -3,7 +3,7 @@ id: BUG-0274
 title: census: a guest keeps a proxy of a host NPC that the host has at (0 0 0), 504 m apart (Creature)
 status: fixed
 kind: desync
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 

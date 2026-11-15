@@ -3,7 +3,7 @@ id: BUG-0468
 title: lab: the free lane for uses_free_lane tests can be a lane busy with other work or the owner's lane 8, and two such tests share it at once
 status: fixed
 kind: tooling
-stage: lab
+stage: Tools
 reported: 2026-11-02
 source: final verification of 0.7.3.5 (2026-11-02, out/lab/20261102-163032)
 role: 

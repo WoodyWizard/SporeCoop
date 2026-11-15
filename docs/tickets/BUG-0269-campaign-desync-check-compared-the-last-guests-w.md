@@ -3,7 +3,7 @@ id: BUG-0269
 title: campaign: desync check compared the last guests with a host sample seconds old (false n / c desyncs of Carol and Dave)
 status: fixed
 kind: tooling
-stage: 
+stage: Tools
 reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: 

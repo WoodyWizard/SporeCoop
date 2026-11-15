@@ -3,7 +3,7 @@ id: BUG-0211
 title: update test: fake release 0.5.1 is older than the running version, the setup installs the published release, parallel copies share lane and port
 status: fixed
 kind: test
-stage: installer
+stage: Installer
 reported: 2026-10-28
 source: lab 20261028-043811, 20261028-051522
 role: 

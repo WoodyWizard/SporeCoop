@@ -3,7 +3,7 @@ id: BUG-0743
 title: tests: lab_selftest interrupt_exclusive / free_lane_locked / interrupt_retry fail when the lab runs with SIGINT ignored (a lab started in the background)
 status: fixed
 kind: test
-stage: Tests
+stage: Tools
 reported: 2026-11-08
 source: rel/0.7.11 out/lab/20261108-035548-2 unit#1
 role: 

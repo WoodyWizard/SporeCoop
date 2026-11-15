@@ -3,7 +3,7 @@ id: BUG-0302
 title: lab: the host's coop.host failed silently at the start of a test (no hosting, the guest's join timed out) and twoinst waited 240 s before the test failed far away
 status: fixed
 kind: bug
-stage: lab
+stage: Tools
 reported: 2026-10-30
 source: lab 20261030-074023 space_coop (lane 4)
 role: 

@@ -3,7 +3,7 @@ id: BUG-0605
 title: Detector: coop.wstate faults on freed civilizations while the game changes from Civ to Space (crash in campaign_space)
 status: fixed
 kind: crash
-stage: Civilization
+stage: Civ
 reported: 2026-11-05
 source: lab rel/0.7.8 20261105-134715 campaign_space (detector run)
 role: guest

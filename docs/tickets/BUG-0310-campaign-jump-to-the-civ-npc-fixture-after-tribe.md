@@ -3,7 +3,7 @@ id: BUG-0310
 title: Campaign jump to the civ_npc fixture after tribe: faults while leaving tribe and in cSpaceGfx init, the host never finishes loading
 status: fixed
 kind: bug
-stage: Tribe/Civ
+stage: Tribe, Civ
 reported: 2026-10-30
 source: lab 20261030-104149 campaign#3
 role: host

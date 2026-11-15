@@ -3,7 +3,7 @@ id: BUG-1111
 title: Space: the captain screen crashes the game at 0xA055B5 when the player's empire has no captain (captain key 0): the portrait's animated creature is null
 status: fixed
 kind: crash
-stage: space
+stage: Space
 reported: 2026-11-14
 source: GitHub issue #202
 role: guest

@@ -3,7 +3,7 @@ id: BUG-0442
 title: Report archives include a screenshot of the game at each problem mark
 status: fixed
 kind: feature
-stage: any
+stage: All
 reported: 2026-11-01
 source: owner
 role: both

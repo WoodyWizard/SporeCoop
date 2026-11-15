@@ -3,7 +3,7 @@ id: BUG-0264
 title: Guests fault on a freed avatar while leaving the creature stage for a shared world after the evolution (dc04aee5:coop.dll+0x82858, game::max_health)
 status: fixed
 kind: crash
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: guest

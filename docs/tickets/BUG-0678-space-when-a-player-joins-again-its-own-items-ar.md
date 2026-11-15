@@ -3,7 +3,7 @@ id: BUG-0678
 title: Space: when a player joins again, its own items are gone and it has the host's items instead
 status: fixed
 kind: bug
-stage: space
+stage: Space
 reported: 2026-11-07
 source: player report 2026-11-07 (Discord bug-reports post 'Items are not saved for players.', tag Space, text only, version not given)
 role: 

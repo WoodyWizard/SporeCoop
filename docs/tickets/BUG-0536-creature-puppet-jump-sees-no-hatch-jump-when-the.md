@@ -3,7 +3,7 @@ id: BUG-0536
 title: Creature: puppet_jump sees no hatch jump when the guest plays the world's species (BUG-0345 default)
 status: wontfix
 kind: test
-stage: creature
+stage: Creature
 reported: 2026-11-04
 source: lab final 0.7.5
 role: guest

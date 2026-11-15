@@ -3,7 +3,7 @@ id: BUG-0279
 title: Cell: only one of two new players can eat (Discord report)
 status: fixed
 kind: bug
-stage: cell
+stage: Cell
 reported: 2026-10-29
 source: Discord report 2026-10-29
 role: 

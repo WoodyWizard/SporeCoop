@@ -3,7 +3,7 @@ id: BUG-0940
 title: Civ: a guest's vehicle purchase with the last shared 1000 made no vehicle on the host and no refusal was counted (campaign, four players buying at once)
 status: fixed
 kind: bug
-stage: Civilization
+stage: Civ
 reported: 2026-11-11
 source: final check 2 of 0.7.12, campaign (lab 20261111-090547), play_civ PROBLEM line
 role: guest

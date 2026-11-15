@@ -3,7 +3,7 @@ id: BUG-0704
 title: Civ: an NPC nation's vehicles counted as a second player of a joint siege (a guest and an NPC army captured 50% faster)
 status: fixed
 kind: bug
-stage: Civilization
+stage: Civ
 reported: 2026-11-07
 source: K2a audit of BUG-0420 (0.7.11)
 role: 

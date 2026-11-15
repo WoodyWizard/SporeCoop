@@ -3,7 +3,7 @@ id: BUG-0265
 title: campaign: a nation's trade offer covers History, the civ -> space change never starts
 status: fixed
 kind: tooling
-stage: civ
+stage: Civ
 reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: 

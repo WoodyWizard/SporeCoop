@@ -3,7 +3,7 @@ id: BUG-0284
 title: Loading another save from the galaxy menu after a stage left with a fault: crash in cStarRecord::GetPlanetRecord
 status: fixed
 kind: crash
-stage: Tribe/Civ
+stage: Tribe, Civ
 reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host

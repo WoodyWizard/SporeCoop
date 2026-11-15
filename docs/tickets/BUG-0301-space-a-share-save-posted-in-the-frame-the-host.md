@@ -3,7 +3,7 @@ id: BUG-0301
 title: space: a share save posted in the frame the host's ship left its home planet (the place one frame stale): the guests' ships went down to the planet again
 status: fixed
 kind: bug
-stage: space
+stage: Space
 reported: 2026-10-30
 source: lab 20261030-075052 campaign_space#3 (lane 7)
 role: 

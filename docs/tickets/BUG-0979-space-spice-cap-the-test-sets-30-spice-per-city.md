@@ -3,7 +3,7 @@ id: BUG-0979
 title: space_spice_cap: the test sets 30 spice per city, over the game's cap of 5; the game clamps it back and the guest shows 5 (1 of 3)
 status: fixed
 kind: test
-stage: space
+stage: Space
 reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest

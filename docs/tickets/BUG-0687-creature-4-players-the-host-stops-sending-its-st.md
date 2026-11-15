@@ -3,7 +3,7 @@ id: BUG-0687
 title: Creature, 4 players: the host stops sending its state when a guest rejoins, its share saves for that guest are never written and it freezes about 30 s later
 status: not-reproduced
 kind: freeze
-stage: creature
+stage: Creature
 reported: 2026-11-07
 source: lab
 role: host

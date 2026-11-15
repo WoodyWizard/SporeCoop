@@ -3,7 +3,7 @@ id: BUG-0806
 title: The game saved box with its OK button outside the window (after a video reset) is clicked forever and never confirmed
 status: fixed
 kind: bug
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9057 (Cell recurrence at 800x600, commit b3d24b5, lineages30-dev)
 role: host

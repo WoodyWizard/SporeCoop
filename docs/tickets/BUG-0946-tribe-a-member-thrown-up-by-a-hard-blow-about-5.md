@@ -3,7 +3,7 @@ id: BUG-0946
 title: Tribe: a member thrown up by a hard blow (about 5 m, 1.5 s) stays on the ground on the guests' screens
 status: fixed
 kind: desync
-stage: tribe
+stage: Tribe
 reported: 2026-11-11
 source: fix/w47-final12c, probes and tribe_member_air (lab 20261111-182334)
 role: guest

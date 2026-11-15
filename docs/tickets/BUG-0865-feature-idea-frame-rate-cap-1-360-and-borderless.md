@@ -3,7 +3,7 @@ id: BUG-0865
 title: Feature idea: frame rate cap 1-360 and borderless window in Spore's Graphic Settings
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev, BUG-9102 (sporekit focus.cpp, coop_ui.cpp)
 role: 

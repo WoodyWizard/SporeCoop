@@ -3,7 +3,7 @@ id: BUG-0982
 title: Civ: a guest's purchase of a city opens the specialty question (and the pause) on the host, the guest is never asked
 status: fixed
 kind: bug
-stage: civ
+stage: Civ
 reported: 2026-11-12
 source: lab-final-0.7.13
 role: host

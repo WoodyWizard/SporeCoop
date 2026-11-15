@@ -3,7 +3,7 @@ id: BUG-0305
 title: tribe, 4 players: one animal ~4 m off on every guest at once (campaign desync n 3.7-4.4), not a regression of the view centres
 status: fixed
 kind: desync
-stage: tribe
+stage: Tribe
 reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 

@@ -3,7 +3,7 @@ id: BUG-0916
 title: lab: a test script took 17 GB (the detector's bodyrec read never ended in a 4-player Cell), four campaigns filled the machine's memory
 status: fixed
 kind: tooling
-stage: lab
+stage: Tools
 reported: 2026-11-11
 source: the final check of 0.7.12 (rel/0.7.12 lab out/lab/20261111-000117, 4 lanes)
 role: 

@@ -3,7 +3,7 @@ id: BUG-0919
 title: tests: coop.targets all and coop.status (Tribe) read mod tables of the last tick without checking the game's object list
 status: fixed
 kind: test
-stage: Creature,Tribe
+stage: Creature, Tribe
 reported: 2026-11-11
 source: code audit for BUG-0917
 role: 

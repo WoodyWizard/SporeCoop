@@ -3,7 +3,7 @@ id: BUG-0679
 title: Space: limits of the kept guest cargo hold (host restart, changes while away, cargo slots, non-spice cargo)
 status: fixed
 kind: bug
-stage: space
+stage: Space
 reported: 2026-11-07
 source: fix/w46-space-items (BUG-0678), 2026-11-07
 role: 

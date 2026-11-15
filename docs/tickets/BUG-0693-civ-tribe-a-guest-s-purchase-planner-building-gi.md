@@ -3,7 +3,7 @@ id: BUG-0693
 title: Civ / Tribe: a guest's purchase, planner building, gift or superweapon request is dropped without a word while the host is away from the stage
 status: fixed
 kind: bug
-stage: Civilization
+stage: Civ
 reported: 2026-11-07
 source: K2a audit of BUG-0423 (0.7.11)
 role: 

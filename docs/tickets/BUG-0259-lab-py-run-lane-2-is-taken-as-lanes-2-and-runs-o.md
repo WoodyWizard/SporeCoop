@@ -3,7 +3,7 @@ id: BUG-0259
 title: lab.py run --lane 2 is taken as --lanes 2 and runs on lane 1
 status: fixed
 kind: tooling
-stage: all
+stage: All
 reported: 2026-10-29
 source: fix/w5-cell, 2026-10-28
 role: 

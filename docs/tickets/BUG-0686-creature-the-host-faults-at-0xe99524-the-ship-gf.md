@@ -3,7 +3,7 @@ id: BUG-0686
 title: Creature: the host faults at 0xE99524 (the ship gfx factory, null model) when the Drama Manager's UFO visit brings a ship without a model (campaign_tribe "stopped in creature")
 status: fixed
 kind: crash
-stage: creature
+stage: Creature
 reported: 2026-11-07
 source: lab
 role: host

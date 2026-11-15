@@ -3,7 +3,7 @@ id: BUG-0286
 title: Crash in Wine's nsi.dll (GetAdaptersAddresses) on the main thread after a guest leaves in Space
 status: fixed
 kind: crash
-stage: Space/Any
+stage: All
 reported: 2026-10-29
 source: lab
 role: guest

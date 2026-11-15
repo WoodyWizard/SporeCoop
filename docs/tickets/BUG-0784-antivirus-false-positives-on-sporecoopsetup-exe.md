@@ -3,7 +3,7 @@ id: BUG-0784
 title: Antivirus false positives on SporeCoopSetup.exe, steam_api.sporekit.dll and the zip (VirusTotal 9-11 of 71)
 status: fixed
 kind: tooling
-stage: none
+stage: Installer
 reported: 2026-11-10
 source: GitHub #200, GitHub #201
 role: 

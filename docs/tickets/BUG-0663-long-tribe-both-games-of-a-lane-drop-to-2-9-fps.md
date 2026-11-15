@@ -3,7 +3,7 @@ id: BUG-0663
 title: long_tribe: both games of a lane drop to 2-9 fps in Tribe under a full lab load (shared headless Xwayland saturated), not a 0.7.9 regression
 status: fixed
 kind: test
-stage: tribe
+stage: Tribe
 reported: 2026-11-06
 source: final check 0.7.9
 role: 
