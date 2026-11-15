@@ -1,0 +1,97 @@
+// The rules of the Civ co-op (civ.cpp) as functions of plain inputs, so `make test` can check them (D3 of
+// docs/plan-0.7.15.md, audit STG-8 / TST-9; tests/civ_tests.cpp). civ.cpp reads the game and calls these; no game call
+// and no Windows here.
+//
+//   money    the shared money is the host's: a guest's own income is dropped (its spending still reaches the host
+//            through the shared ledger, shared.cpp), a building or vehicle the mod pays for is not made when the money
+//            does not cover it (BUG-0613: never below 0), a guest's building the host could not build gives its price
+//            back within a bound (BUG-0807).
+//   owners   who owns a vehicle of the host's table: a new vehicle of the player nation is the buyer's or the owner's of
+//            the nearest player city (BUG-0031: never the shared capital, never nobody), an NPC nation's is nobody's;
+//            the vehicles of a player who left go to a player who is here (BUG-0031); a guest orders only its own.
+//   holds    what waits: a mirror the host no longer has is removed now, or waits while the city planner moves it or
+//            a cinematic plays (BUG-0493, BUG-0478); a dead or reused one is only forgotten (BUG-0951); while the host is
+//            away the guest plays locally (BUG-0151).
+#pragma once
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+namespace civlogic {
+
+constexpr uint8_t kNoOwner = 0xFF; // not in a table / no player
+constexpr uint8_t kNpc = 0xFE;     // an NPC nation's vehicle
+constexpr uint8_t kShared = 0xFD;  // the shared capital (a city everybody may use)
+
+// ---------------- money ----------------
+
+// a guest's AddMoney on the player civilization is its local economy (its copy of the derricks, the city income): the
+// host's game earns the same, so the guest's gain is dropped (applying: a host message the mod runs, which may add)
+inline bool guest_income_blocked(bool applying, bool guest, bool in_civ, bool player_civ, float amount)
+{
+    return !applying && guest && in_civ && player_civ && amount > 0;
+}
+// the money covers the cost (BUG-0613: the game's SpendMoney takes the money below 0); a NaN money or cost pays, as the
+// game's own compare
+inline bool can_pay(float money, float cost) { return !(money < cost); }
+// BUG-0807: what a refund of `paid` gives back: the price the guest says it paid, never negative, never more than
+// `max`, nothing for a value that is no number
+inline float refund_amount(float paid, float max)
+{
+    if (!std::isfinite(paid))
+        return 0.f;
+    return std::min(std::max(paid, 0.f), max);
+}
+
+// ---------------- owners ----------------
+
+// the owner the host's table gives a vehicle it lists for the first time. player_nation: its political id is the
+// player civilization's; pending: the player the host is buying it for now (-1 none); nearest_city_owner: the owner
+// of the nearest player city, kNpc when the host has no player city
+inline uint8_t new_vehicle_owner(bool player_nation, int pending, uint8_t nearest_city_owner)
+{
+    if (!player_nation)
+        return kNpc;
+    uint8_t o = pending >= 0 ? (uint8_t)pending : nearest_city_owner;
+    if (o == kNoOwner || o == kShared)
+        o = 0; // built by the shared capital (or no city found): the host's
+    return o;
+}
+inline bool present(const std::vector<uint8_t>& players_sorted, uint8_t id)
+{
+    return std::binary_search(players_sorted.begin(), players_sorted.end(), id);
+}
+// BUG-0031: a vehicle of a player who left (the roster changed) goes to the owner of the nearest player city when that
+// player is here, else to the host. False: the owner stays (an NPC's, nobody's, or a present player's)
+inline bool orphan_owner(uint8_t owner, const std::vector<uint8_t>& players_sorted, uint8_t nearest_city_owner,
+                         uint8_t& out)
+{
+    if (owner >= kNpc || present(players_sorted, owner))
+        return false;
+    uint8_t o = nearest_city_owner;
+    if (o == kNoOwner || o == kShared || !present(players_sorted, o))
+        o = 0;
+    out = o;
+    return true;
+}
+// the host runs a guest's order or gift only on that player's own vehicle; a guest sends an order of its game only
+// for a mirror it owns (its civ AI orders the other nations' mirrors every few frames)
+inline bool owns(uint8_t owner, uint8_t player) { return owner == player; }
+
+// ---------------- holds ----------------
+
+// BUG-0493 / BUG-0478: a removal waits while the city planner moves the vehicle or a cinematic plays
+inline bool hold_removal(bool planner_moves, bool movie) { return planner_moves || movie; }
+// a mirror the host's complete cycle did not name: its vehicle is removed only while it is the object bound and not
+// dead (BUG-0951); what the planner or a cinematic holds waits
+enum class Unseen : uint8_t { Remove, Defer };
+inline Unseen unseen_mirror(bool alive, bool dead, bool held) { return alive && !dead && held ? Unseen::Defer : Unseen::Remove; }
+inline bool kill_unseen(bool alive, bool dead) { return alive && !dead; }
+// the waiting removals, once a frame: one the game removed first (not in its list, dead) is dropped, a held one waits
+inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !dead && held; }
+inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }
+// BUG-0151: while the host is away (its main menu) a guest's vehicles run their own AI and its orders go to its game
+inline bool local_play(bool fix, bool guest, bool host_away) { return fix && guest && host_away; }
+} // namespace civlogic

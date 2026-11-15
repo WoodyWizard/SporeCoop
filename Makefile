@@ -172,6 +172,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/npc_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
 	$(B)/host/space_tests
+	@# D3 of 0.7.15: the Civ rules (civ_logic.h, BUG-1163)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/civ_tests tests/civ_tests.cpp
+	$(B)/host/civ_tests
 	@# E1 of 0.7.15: the per-player store on the host's disk (BUG-1149)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/store_tests tests/store_tests.cpp
 	$(B)/host/store_tests

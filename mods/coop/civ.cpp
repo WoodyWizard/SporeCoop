@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "call_guard.h"
+#include "civ_logic.h"
 #include "squadron.h"
 #include "lifecycle.h"
 #include "mirror_registry.h"
@@ -83,7 +84,7 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 static bool g_fix_away = true;
 COOP_FIX("civ.away", "BUG-0151", g_fix_away, "civ: while the host is away the guest's vehicles run their own AI");
 static uint32_t g_away_orders;
-static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
+static bool local_play() { return civlogic::local_play(g_fix_away, is_guest(), C.host_away && C.host_away()); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
 
 static void* nm() { return game::noun_manager(); }
@@ -1619,7 +1620,7 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
         if (GvRef it = gv_of(v)) {
             // a mirror of another player's or nation's vehicle: the guest's own civ AI orders the
             // other nations' vehicles every few frames (hundreds of rejected commands a minute)
-            if (it.g->owner != C.sess->my_id()) {
+            if (!civlogic::owns(it.g->owner, C.sess->my_id())) {
                 g_orders_dropped++;
                 return 0;
             }
@@ -1646,7 +1647,7 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
         g_away_orders++;
     else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         if (GvRef it = gv_of(v)) {
-            if (it.g->owner != C.sess->my_id()) {
+            if (!civlogic::owns(it.g->owner, C.sess->my_id())) {
                 g_orders_dropped++;
                 return 0;
             }
@@ -2076,7 +2077,8 @@ static AddMoney_t o_AddMoney;
 static uint32_t g_income_blocked;
 static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && civ == player_civ() && amount > 0) {
+    bool in_civ = game::mode_id() == modes::kCiv, guest = is_guest();
+    if (civlogic::guest_income_blocked(g_applying, guest, in_civ, guest && in_civ && civ == player_civ(), amount)) {
         g_income_blocked++;
         return;
     }
@@ -3633,7 +3635,7 @@ static void refund_build(uint8_t from, float paid, const char* why)
     if (!g_fix_build_refund || !C.sess || from == C.sess->my_id())
         return;
     void* pc = player_civ();
-    float back = std::isfinite(paid) ? std::min(std::max(paid, 0.f), kRefundMax) : 0.f;
+    float back = civlogic::refund_amount(paid, kRefundMax);
     if (pc && back > 0 && o_AddMoney) {
         o_AddMoney(pc, back, 0); // the shared money (no difficulty multiplier)
         g_build_refunds++;
@@ -3758,27 +3760,23 @@ static void host_tick(double now)
     if (roster_changed)
         hv_each([&](const HvRef& x) {
             HV& hv = *x.h;
-            if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
+            if (hv.owner >= civlogic::kNpc || civlogic::present(players, hv.owner))
                 return;
-            uint8_t owner = 0;
-            nearest_player_city(veh_pos(x.v), &owner);
-            if (owner == 0xFF || owner == kShared || !std::binary_search(players.begin(), players.end(), owner))
-                owner = 0;
+            uint8_t nearest = 0, owner;
+            nearest_player_city(veh_pos(x.v), &nearest);
+            if (!civlogic::orphan_owner(hv.owner, players, nearest, owner))
+                return;
             hv.owner = owner;
             g_orphans_given++;
         });
     for (void* v : vehicles) {
         if (hv_find(v))
             continue;
-        uint8_t owner = 0xFE;
-        if (pol_of(v) == ppol) {
-            if (g_pending_owner >= 0)
-                owner = (uint8_t)g_pending_owner;
-            else
-                nearest_player_city(veh_pos(v), &owner); // built by that city
-            if (owner == 0xFF || owner == kShared)
-                owner = 0;
-        }
+        bool mine = pol_of(v) == ppol;
+        uint8_t nearest = civlogic::kNpc; // (no player city: kept)
+        if (mine && g_pending_owner < 0)
+            nearest_player_city(veh_pos(v), &nearest); // built by that city
+        uint8_t owner = civlogic::new_vehicle_owner(mine, g_pending_owner, nearest);
         hv_add(v, owner); // BUG-0154: never a live id, never 0
     }
     g_cycle++;
@@ -3925,7 +3923,7 @@ static void* host_buy(void* city, int loco)
         return nullptr;
     float cost = thiscall<float>(a_VehicleCost, civ, purpose, loco);
     g_buy_fail = "not enough money";
-    if (thiscall<float>(a_GetMoney, civ) < cost)
+    if (!civlogic::can_pay(thiscall<float>(a_GetMoney, civ), cost))
         return nullptr;
     g_buy_fail = "the city cannot build it";
     uint32_t* key = thiscall<uint32_t*>(a_DesignKey, civ, skg::cdecl_call<int>(a_DesignId, purpose, loco));
@@ -3967,7 +3965,7 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
     thiscall<void>(a_SetBuildingModel, city, b, type);
     if (pay && g_fix_build_money) { // BUG-0613
         void* civ = player_civ();
-        if (civ && thiscall<float>(a_GetMoney, civ) < vcall<float>(b, 0x5C / 4)) {
+        if (civ && !civlogic::can_pay(thiscall<float>(a_GetMoney, civ), vcall<float>(b, 0x5C / 4))) {
             g_build_fail = "not enough money";
             if (a_DestroyInstance)
                 thiscall<void>(a_DestroyInstance, nm(), o);
@@ -4023,7 +4021,7 @@ static void host_command(uint8_t from, net::Reader& r)
             snprintf(why, sizeof why, " (vehicle %u: gone from the host's game since the last cycle)", (unsigned)id);
             return nullptr;
         }
-        if (x.h->owner != from) {
+        if (!civlogic::owns(x.h->owner, from)) {
             snprintf(why, sizeof why, " (vehicle %u: owner %u%s)", (unsigned)id, (unsigned)x.h->owner,
                      F<uint8_t>(x.v, kVDead) ? ", dead" : "");
             return nullptr;
@@ -4390,7 +4388,7 @@ static void guest_building_hp(net::Reader& r)
 
 // BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them (kill_wait): a removal waits while the planner moves the vehicle, and (BUG-0478: the removal frees it now, Die
 // alone did not) while a cinematic plays (its actors are the game's raw pointers, CLAUDE.md 2)
-static bool hold_removal(void* v) { return planner_moves(v) || movie_playing(); }
+static bool hold_removal(void* v) { return civlogic::hold_removal(planner_moves(v), movie_playing()); }
 
 // BUG-0470: the guest's mirror vehicles are the host's world, not this one's: a save of the guest's
 // game keeps them out (savestrip writes a null reference; the civilization's vehicle lists are cleaned
@@ -5003,14 +5001,17 @@ static void guest_state(net::Reader& r)
         // registry's deferred list while the planner moves it or a cinematic plays (guest_tick's pump)
         g_gvr.sweep([](uint16_t id) { return cycle_saw(id); },
                     [](auto& e, bool alive) {
-                        if (alive && !F<uint8_t>(e.ref.p, kVDead) && hold_removal(e.ref.p)) {
+                        bool dead = alive && F<uint8_t>(e.ref.p, kVDead);
+                        if (civlogic::unseen_mirror(alive, dead, alive && !dead && hold_removal(e.ref.p)) ==
+                            civlogic::Unseen::Defer) {
                             g_planner_kills_held++;
                             return mirror::Unseen::Defer;
                         }
                         return mirror::Unseen::Remove;
                     },
                     [](auto& e, bool alive) {
-                        if (alive && !F<uint8_t>(e.ref.p, kVDead)) { // (BUG-0951: the object bound, not one at its address)
+                        // (BUG-0951: the object bound, not one at its address)
+                        if (civlogic::kill_unseen(alive, alive && F<uint8_t>(e.ref.p, kVDead))) {
                             kill_local(e.ref.p);
                             g_removed++;
                         }
@@ -5054,9 +5055,14 @@ static void guest_tick(double now)
     guest_fire(now); // BUG-0477
     host_buildings_tick(now); // BUG-0670
     if (g_reg_fix) // C1 (BUG-1140): the registry's deferred list (it drops a vehicle that is gone or a mirror again)
-        g_gvr.pump([](const mirror::Ref& r) { return exists(r.p) && !F<uint8_t>(r.p, kVDead) && hold_removal(r.p); },
+        g_gvr.pump(
+            [](const mirror::Ref& r) {
+                bool listed = exists(r.p), dead = listed && F<uint8_t>(r.p, kVDead);
+                return civlogic::pump_waits(listed, dead, listed && !dead && hold_removal(r.p));
+            },
                    [](const mirror::Ref& r) {
-                       if (!exists(r.p) || F<uint8_t>(r.p, kVDead))
+                       bool listed = exists(r.p);
+                       if (!civlogic::pump_kills(listed, listed && F<uint8_t>(r.p, kVDead)))
                            return; // the game removed it first
                        kill_local(r.p);
                        g_removed++;
