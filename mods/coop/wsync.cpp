@@ -43,7 +43,7 @@ struct Row {
     uint8_t id;
     const char* name;
     uint8_t nv;
-    const bool* on;          // the row's fix switch (off: the guest applies nothing of this row)
+    const bool* on;          // the row's fix switch (off: the guest applies nothing of this row; kRowOn: none)
     bool (*active)(uint32_t mode);
     bool (*read)(Table& out); // this game's own values (false: not available now)
     // guest: bring this game to `want`; apply false: only count the differences. Returns the differences seen.
@@ -52,20 +52,14 @@ struct Row {
     std::string (*fmt)(const Entry& e);
 };
 
-// ---- the switches (COOP_FIX; off = the code before the fix)
+// ---- the rows (a row's own switch: COOP_FIX next to its code; off = the code before the fix)
+// the `on` of a row whose fix switch retired (BUG-1138): always in play
+static const bool kRowOn = true;
 // BUG-0579: the sky (planet context orientation) and the day's length as a row, re-applied whenever the guest's
-// differs; off: MSG_WORLD_TIME as before (the sky only, applied once a second while the guest has an avatar)
-static bool g_tod_fix = true;
-COOP_FIX("wsync.tod", "BUG-0579", g_tod_fix, "wsync: a guest's time of day and day length follow the host's after every transition");
-// BUG-0565: how every village feels about the player tribe follows the host's (ApplyRelationship)
-static bool g_rel_fix = true;
-COOP_FIX("wsync.tribe_rel", "BUG-0565", g_rel_fix, "wsync: a guest's villages feel about the player tribe as the host's do");
-// BUG-0564 (goal): the Tribe goal card's village and the stage's goal progress follow the host's
-static bool g_goal_fix = true;
-COOP_FIX("wsync.tribe_goal", "BUG-0564", g_goal_fix, "wsync: a guest's Tribe goal card and goal progress are the host's");
-// BUG-0577: the stages done (cPlayer consequence traits) follow the host's
-static bool g_stages_fix = true;
-COOP_FIX("wsync.stages", "BUG-0577", g_stages_fix, "wsync: a guest's stages done are the host's (also after a rejoin)");
+// differs (row tod / day)
+// BUG-0565: how every village feels about the player tribe follows the host's (ApplyRelationship, row tribe_rel)
+// BUG-0564 (goal): the Tribe goal card's village and the stage's goal progress follow the host's (row tribe_goal)
+// BUG-0577: the stages done (cPlayer consequence traits) follow the host's (row stages)
 
 // ---- game access
 static void* noun_mgr()
@@ -127,13 +121,11 @@ static std::vector<TribeRef> npc_tribes()
     return out;
 }
 // the guest's tribe for a host entry. BUG-0591: a village the host's game formed during play is made on the guest
-// (tribe.npc_tribes, SpawnNpcTribe at the host's centre, 0.0 m) with the guest's own next political id: the host's
+// (BUG-0381, SpawnNpcTribe at the host's centre, 0.0 m) with the guest's own next political id: the host's
 // new villages 2, 3, 4 and the guest's copies got ids in another order, so the host's id of one village was the
 // guest's id of another and its relation and food went to that one (play_tribe lab 20261105-015320, from the host's
 // forming at 418 s on). Villages do not move: the closest within 40 m first, the same political id only when no
-// village is that close. Off (wsync.tribe_pos off): the political id first (0.7.7).
-static bool g_tribe_pos_fix = true;
-COOP_FIX("wsync.tribe_pos", "BUG-0591", g_tribe_pos_fix, "wsync: a village's relation, food and goal card reach the guest's village at the same place (not the same id)");
+// village is that close (BUG-0591).
 static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, float x, float y, float z)
 {
     const TribeRef* best = nullptr;
@@ -143,7 +135,7 @@ static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, f
         if (d < bd)
             bd = d, best = &t;
     }
-    if (g_tribe_pos_fix && best)
+    if (best)
         return best;
     for (auto& t : mine)
         if (t.pol == hpol)
@@ -165,7 +157,7 @@ COOP_FIX("wsync.space_tod", "BUG-0712", g_space_tod_fix,
 static bool sky(uint32_t m)
 {
     if (m == modes::kSpace)
-        return g_tod_fix && g_space_tod_fix && C.space_sky && C.space_sky();
+        return g_space_tod_fix && C.space_sky && C.space_sky();
     return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv;
 }
 static bool sky_day(uint32_t m) { return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv; }
@@ -497,8 +489,6 @@ void village_gone(void* tribe)
 
 // ---- row: Cell, the DNA the host's editors spent (cCellSerializableData +0x2C; the food +0x1C is MSG_CELL_FOOD's):
 // what the guest's Cell DNA shows is DNAForFood(food) - spent (docs/re/cell.md#cell-editor-dna)
-static bool g_cell_spent_fix = true;
-COOP_FIX("wsync.cell_spent", "BUG-0560", g_cell_spent_fix, "wsync: a guest's Cell DNA counts what the host's editor spent");
 static bool cell_mode(uint32_t m) { return m == modes::kCell; }
 static bool r_spent(Table& out)
 {
@@ -531,8 +521,6 @@ static std::string f_spent(const Entry& e)
 // spend nothing of the host's (the detector's Tribe:state:tribe_food, 145 on the host, 0 on the guest). The guest
 // changes its copy by the difference through the game's own cTribe::AddFood (positive: the bundles a gathering
 // makes; negative: the game's spending, RemoveBundles), as res.food_add does for the player tribe.
-static bool g_tribe_food_fix = true;
-COOP_FIX("wsync.tribe_food", "BUG-0580", g_tribe_food_fix, "wsync: a guest's NPC tribes have the host's food");
 static float npc_food(void* t)
 {
     uint8_t* cont = (uint8_t*)t + 0x20C;
@@ -639,8 +627,6 @@ static std::vector<void*> npc_civs()
     return out;
 }
 
-static bool g_civ_rel_fix = true;
-COOP_FIX("wsync.civ_rel", "BUG-0593", g_civ_rel_fix, "wsync: a guest's other nations feel about the player civilization as the host's do");
 static bool r_civ_rel(Table& out)
 {
     void* pc = player_civ();
@@ -690,8 +676,6 @@ static std::string f_civ_rel(const Entry& e)
     return g_fmt;
 }
 
-static bool g_civ_money_fix = true;
-COOP_FIX("wsync.civ_money", "BUG-0593", g_civ_money_fix, "wsync: a guest's other nations have the host's money");
 static bool r_civ_money(Table& out)
 {
     if (!player_civ())
@@ -735,8 +719,6 @@ static std::string f_civ_money(const Entry& e)
 // city_owner: key = the city's owner, v0..2 its position; a guest's city near it whose buildings or turrets have
 // another owner than the city gets them through the game's own City_SetPartsOwner (ChangeOwner's +0x2E2 step:
 // SetPoliticalID of every building, turret and +0x308 part, then the new owner's building models)
-static bool g_city_owner_fix = true;
-COOP_FIX("wsync.city_owner", "BUG-0593", g_city_owner_fix, "wsync: the buildings of a city the host's player took are the player's on a guest");
 static uint32_t g_parts_fixed; // tests: City_SetPartsOwner calls
 static int parts_off(void* city, uint32_t cp)
 {
@@ -1417,16 +1399,16 @@ static std::string f_marker(const Entry& e)
 }
 
 static const Row kRows[] = {
-    {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
-    {2, "day", 1, &g_tod_fix, sky_day, r_day, s_day, false, f_day},
-    {3, "stages", 5, &g_stages_fix, planet, r_stages, s_stages, false, f_stages},
-    {4, "tribe_rel", 4, &g_rel_fix, tribe_mode, r_rel, s_rel, false, f_rel},
-    {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
-    {6, "cell_spent", 2, &g_cell_spent_fix, cell_mode, r_spent, s_spent, false, f_spent},
-    {7, "tribe_food", 4, &g_tribe_food_fix, tribe_mode, r_tfood, s_tfood, false, f_tfood},
-    {8, "civ_rel", 1, &g_civ_rel_fix, civ_mode, r_civ_rel, s_civ_rel, false, f_civ_rel},
-    {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
-    {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
+    {1, "tod", 4, &kRowOn, sky, r_tod, s_tod, true, f_tod},
+    {2, "day", 1, &kRowOn, sky_day, r_day, s_day, false, f_day},
+    {3, "stages", 5, &kRowOn, planet, r_stages, s_stages, false, f_stages},
+    {4, "tribe_rel", 4, &kRowOn, tribe_mode, r_rel, s_rel, false, f_rel},
+    {5, "tribe_goal", 6, &kRowOn, tribe_mode, r_goal, s_goal, false, f_goal},
+    {6, "cell_spent", 2, &kRowOn, cell_mode, r_spent, s_spent, false, f_spent},
+    {7, "tribe_food", 4, &kRowOn, tribe_mode, r_tfood, s_tfood, false, f_tfood},
+    {8, "civ_rel", 1, &kRowOn, civ_mode, r_civ_rel, s_civ_rel, false, f_civ_rel},
+    {9, "civ_money", 1, &kRowOn, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
+    {10, "city_owner", 4, &kRowOn, civ_mode, r_city, s_city, false, f_city},
     {11, "creature_nest", 4, &g_nest_fix, creature_mode, r_nest, s_nest, false, f_nest},
     {12, "tribe_level", 1, &g_tribe_level_fix, tribe_mode, r_tlevel, s_tlevel, false, f_tlevel},
     {13, "tribe_color", 4, &g_tribe_color_fix, tribe_mode, r_tcolor, s_tcolor, false, f_tcolor},
@@ -1468,7 +1450,7 @@ void on_player_join() { g_force = true; }
 
 bool owns_time_of_day()
 {
-    return g_tod_fix && C.sess && C.sess->role() == net::Role::Client;
+    return C.sess && C.sess->role() == net::Role::Client;
 }
 
 static bool same(const Table& a, const Table& b, int nv)
