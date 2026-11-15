@@ -310,8 +310,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b, "drama: mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
              "flock_event=%p forgotten=%u\n",
-             g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed, g_flock_refused, g_flock_updates,
-             g_flock_event, g_flock_forgotten);
+             g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed, g_flock_refused,
+             g_flock_updates, g_flock_event, g_flock_forgotten);
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];

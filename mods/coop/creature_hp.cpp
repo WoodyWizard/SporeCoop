@@ -410,8 +410,8 @@ std::string status()
              g_party_other_callers);
     out += b;
     snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u own_scale=%d own_scales=%u\n",
-             (int)g_partner_hp, (int)g_party_peace, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped, (int)g_own_scale,
-             g_own_scales);
+             (int)g_partner_hp, (int)g_party_peace, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
+             (int)g_own_scale, g_own_scales);
     out += b;
     snprintf(b, sizeof b, "party rules: pack_defends=%d defends=%u posts=%u\n", (int)g_pack_defends, g_defends,
              g_defend_posts);

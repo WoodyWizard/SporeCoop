@@ -426,8 +426,8 @@ std::string status()
              (int)g_fix_own_hut, g_own_hut_kept);
     s += b;
     snprintf(b, sizeof b, "realign role=%s villages=%d tx=%u soon=%u rx=%u compares=%u incomplete=%u host_changes=%u\n",
-             is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, g_tx, g_tx_soon, g_rx, g_compares, g_prx.incomplete,
-             g_host_changes);
+             is_host() ? "host" : is_guest() ? "guest" : "none", (int)g_fix_villages, g_tx, g_tx_soon, g_rx, g_compares,
+             g_prx.incomplete, g_host_changes);
     s += b;
     snprintf(b, sizeof b, "realign older_chunks=%u dup_chunks=%u cycle_order=%d (BUG-0886)\n", g_prx.older, g_prx.dup,
              (int)tribe::g_cycle_order_fix);
