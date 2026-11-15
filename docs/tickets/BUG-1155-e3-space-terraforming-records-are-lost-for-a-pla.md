@@ -1,20 +1,21 @@
 ---
 id: BUG-1155
 title: E3: Space: terraforming records are lost for a player whose planets of that star were not generated or who was not in Space, and after the 30 s send window
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-eco
+commits: 193ff437
+tests: space_terra_late
 signature:
-docs:
-related:
+docs: docs/re/space.md#space-terraform-late, docs/06-testing.md#testing-space-ecosystem
+related: BUG-1148, BUG-0883, BUG-1042
+switch: space.terra_rec_late
 ---
 
 ## Report
@@ -36,8 +37,11 @@ the Space world and the session. No wire change (K_TERRA_REC as before; a 0.7.14
 it did). Switch `space.terra_rec_late` (off: 0.7.14). The ecosystem lists of BUG-1148 use the same pattern.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab, lanes 6 / 7, fixture space_free (out/lab/ of the fix/w51-eco worktree):
+* space_terra_late FAIL with SPORE_FIX_OFF=space.terra_rec_late: 20261115-130846-2 (all three cases: the guest's
+  record stays (0.0, 0.45), the host's and the guest's record of the far planet keep their generated values).
+* space_terra_late PASS: 20261115-131033, 20261115-131540 (final build), 20261115-130735 (first build).
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: pending and kept records, test space_terra_late (fix/w51-eco).

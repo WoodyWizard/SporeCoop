@@ -1,20 +1,21 @@
 ---
 id: BUG-1148
 title: Space: plants and animals a guest places on a planet it terraformed do not reach the host (the planet is not stabilized there)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-15
 source: discord
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-eco
+commits: 193ff437 4a28e113
+tests: space_eco, space_eco_live
 signature:
-docs:
-related:
+docs: docs/re/space.md#space-ecosystem, docs/06-testing.md#testing-space-ecosystem
+related: BUG-1155, BUG-0883, BUG-0749, BUG-1042
+switch: space.eco_sync
 ---
 
 ## Report
@@ -49,8 +50,13 @@ read, net/validate.h). Test seam `coop.space eco [PlanetID] | place <plant|anima
 `coop.space trade cargo` takes a full species key now.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab, lanes 6 / 7, fixture space_free (runs in out/lab/ of the fix/w51-eco worktree):
+* space_eco FAIL with SPORE_FIX_OFF=space.eco_sync: 20261115-131139 (final build), 20261115-130529-2 (first build):
+  the host's record keeps 2 plants / 0 animals, level 0; no creature after landing.
+* space_eco PASS: 20261115-130846, 20261115-131636 (final build), 20261115-130529 (first build).
+* space_eco_live (both on the planet) PASS: 20261115-131105, 20261115-131617; FAIL with the switch off:
+  20261115-131800.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: RE (docs/re/space.md#space-ecosystem), K_ECO sync, tests space_eco / space_eco_live (fix/w51-eco).
