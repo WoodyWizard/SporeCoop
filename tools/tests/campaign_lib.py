@@ -11,6 +11,11 @@ Tested by tools/tests/tools_selftest.py (check `campaign`, in make test).
   Findings               the findings file: one JSON line and one markdown block per finding,
                          repeats of the same key are counted, not written again
   new_reports()          crash / hang report files of the run's instances that appeared since the start
+  fail_line()            the `FAIL <kind> <stage/phase>: <text>` line of a finding that fails the run (A6)
+  newest_slot() / slot_planet() / slot_stamp() / pack_slot() / unpack_slot() / failed_segment()
+                         segment saves (A6, owner decision 10): the host's save at the start of each played stage is
+                         kept in the run folder, so a failed segment can be played again from that save
+                         (coop_campaign.py --save, docs/06-testing.md#testing-campaign-segments)
 """
 import json
 import math
@@ -197,3 +202,106 @@ def timeouts(minutes_per_stage):
     """per phase: how long a stage is played, how long the stage change may take on the host and
     how long the guests may take to follow (a world load each)"""
     return dict(play=minutes_per_stage * 60, host_advance=40 * 60, follow=240, join=180)
+
+
+def fail_line(kind, stage, text):
+    """A6 (TST-1): the line a finding that fails the run prints besides its `FINDING [kind]` line, so the lab's
+    result, summary and ledger carry the reason (a campaign that failed by `[stuck]` showed an empty one)"""
+    return f'FAIL {kind} {stage}: {text}'
+
+
+SLOT = re.compile(r'^Game(\d+)$')
+
+
+def newest_slot(host_dir):
+    """(path, newest file time) of the save slot Games/Game<N> written last in a profile folder, or (None, 0)"""
+    games = os.path.join(host_dir, 'Games')
+    best = (None, 0.0)
+    try:
+        names = os.listdir(games)
+    except OSError:
+        return best
+    for n in names:
+        if not SLOT.match(n):
+            continue
+        t = slot_stamp(os.path.join(games, n))
+        if t > best[1]:
+            best = (os.path.join(games, n), t)
+    return best
+
+
+def slot_stamp(slot):
+    """the newest file time in a save slot (0 when empty or gone)"""
+    t = 0.0
+    for dp, _, fs in os.walk(slot):
+        for f in fs:
+            try:
+                t = max(t, os.path.getmtime(os.path.join(dp, f)))
+            except OSError:
+                pass
+    return t
+
+
+def slot_planet(slot):
+    """the planet of a save slot: its newest <Planet>.spo (snapshot.spo is no planet), or None"""
+    best = (None, -1.0)
+    try:
+        names = os.listdir(slot)
+    except OSError:
+        return None
+    for n in names:
+        if n.lower().endswith('.spo') and n.lower() != 'snapshot.spo':
+            t = os.path.getmtime(os.path.join(slot, n))
+            if t > best[1]:
+                best = (n[:-4], t)
+    return best[0]
+
+
+def pack_slot(slot, dst):
+    """a save slot into dst (.tgz) as Games/Game0, the layout of a fixture (tools/spore.sh fixture slot)"""
+    import tarfile
+    os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
+    tmp = dst + '.part'
+    with tarfile.open(tmp, 'w:gz') as tf:
+        tf.add(slot, arcname='Games/Game0')
+    os.replace(tmp, dst)
+    return dst
+
+
+def unpack_slot(tgz, host_dir, slot):
+    """a packed slot (pack_slot, or a fixture .tgz) into the profile's Games/Game<slot> (never the loaded one: the
+    caller picks a fresh slot number). Only members under Games/Game0 are taken, nothing outside the folder"""
+    import shutil
+    import tarfile
+    import tempfile
+    games = os.path.join(host_dir, 'Games')
+    os.makedirs(games, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix='.segment.', dir=host_dir)
+    try:
+        with tarfile.open(tgz, 'r:gz') as tf:
+            ms = [m for m in tf.getmembers() if (m.name == 'Games/Game0' or m.name.startswith('Games/Game0/'))
+                  and '..' not in m.name.split('/') and (m.isfile() or m.isdir())]
+            tf.extractall(tmp, members=ms)
+        dst = os.path.join(games, f'Game{slot}')
+        shutil.rmtree(dst, ignore_errors=True)
+        shutil.move(os.path.join(tmp, 'Games', 'Game0'), dst)
+        return dst
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def failed_segment(items, segments, end):
+    """the segment to play again after a failed run: the stage of its first finding that failed the run (its
+    `stage/phase`), the save that stage started from (segments: {stage: {save | fixture, planet}}), to the next stage
+    (or end). None when no finding failed the run"""
+    bad = [it for it in items if it['kind'] != 'info']
+    if not bad:
+        return None
+    st = (bad[0].get('stage') or '').split('/')[0]
+    if st not in STAGES:
+        return None
+    seg = dict(segments.get(st) or {})
+    nxt = STAGES[min(STAGES.index(st) + 1, STAGES.index(end))] if st in STAGES and end in STAGES else end
+    seg.update(stage=st, to=nxt if STAGES.index(nxt) >= STAGES.index(st) else st, finding=bad[0]['kind'],
+               text=bad[0]['text'])
+    return seg
