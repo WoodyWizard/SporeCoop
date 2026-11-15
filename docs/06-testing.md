@@ -7912,3 +7912,20 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
+
+## Kept-state key, out-of-range budgets and coop.kick (2026-11-15, fix/w51-net)
+<a id="testing-kept-key-kick"></a>
+
+* `space_kept_key` (coop_space_kept_key.py, Space, cold, about 9 min, two rejoins): Rivals; the guest leaves, another
+  game named Bob joins (`coop.space keptkey other on`: a fresh rejoin token for the next joins, never written to the
+  token slot nor kept) and must start with 0, then Bob's own game again (`keptkey other off`) must get its kept
+  budget back (BUG-1107, twin `SPORE_FIX_OFF=space.kept_token`). Then the guest reports a budget above the game's range
+  for 40 s (`coop.space rivalry fakemoney <v> [s]`, tests only) and the host merges to Allies: both games' own money
+  must be the sum of the real budgets (twin `SPORE_FIX_OFF=space.money_range`).
+* `kick` (coop_kick.py, Creature, warm, about 3 min): `coop.kick` from a guest and for the host itself are refused;
+  `coop.kick Bob` ends the guest's session, its co-op chat log (coop.status `chat:` lines) says "the host removed you
+  from the session", the host is alone; the guest may join again.
+* The per-guest limits of the host (`net.queue_cap`, `net.relay_budget`, docs/04-netcode.md#netcode-limits) are
+  unit tested only (net_tests `test_queue_cap`, `test_relay_budget`, `test_kick`; `--off queue_cap` / `--off
+  relay_budget` fail); a lab run shows the session's peaks in coop.status (`limits:`) and in sporekit.log
+  (`net limits: new peak ...`, at each doubling from 64 KB).

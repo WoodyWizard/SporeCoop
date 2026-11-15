@@ -221,4 +221,17 @@ inline bool money_total(int n, int price, int& out)
     return true;
 }
 
+// BUG-1110: the game's Space money range (cEmpire::AddMoney clamps to it). A budget a player reports outside it is no
+// budget; a sum of budgets is taken in 64 bits and clamped once (several int budgets overflowed an int sum)
+constexpr int kMoneyMax = 99999999;
+inline bool money_in_range(long long v) { return v >= 0 && v <= kMoneyMax; }
+inline int money_clamp(long long v) { return v < 0 ? 0 : v > kMoneyMax ? kMoneyMax : (int)v; }
+template <class It> inline int money_sum(It a, It b)
+{
+    long long s = 0;
+    for (; a != b; ++a)
+        s += (long long)*a;
+    return money_clamp(s);
+}
+
 } // namespace net
