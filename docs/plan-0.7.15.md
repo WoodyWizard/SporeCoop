@@ -117,6 +117,25 @@ refactors stand on), then C (the shared mechanisms, one stage at a time), then D
 | D4 | Shared test harness (`harness.py`: wait, poll, console parsing, wild-NPC pick) and a codemod over the tests; run_all.sh removed | TST-5 |
 | D5 | Test impact selection (`lab.py run impact`) for in-between runs; the final check stays full | TST-7 |
 
+### Wave E: playability over several evenings (added 2026-11-15, owner decision 13)
+
+A Discord report (BUG-1148, BUG-1149: a guest's Space progress lost between sessions, a guest's planet ecosystem not
+on the host) led to three read-only playability audits (Space; Tribe and Civ; Cell, Creature, editors), kept outside
+git in the main checkout's out/audit-0.7.15/playability/. The common root: the shared world is the host's and is
+saved, but "whose is it" (a player's colonies, cities, vehicles, tribe members, badges, budgets) lives only in the
+host's memory. The owner took E1-E4 into 0.7.15 and chose the host's disk for the per-player state.
+
+| Id | What | From |
+|---|---|---|
+| E1 | A per-player store on the host's disk next to its world save (keyed by the rejoin token and the name, written with every host save, read at world load): Space colonies (with their cities, buildings, spice; also colonies on NPC stars), badges and rank, the Rivals budgets and relations; Civ owners of cities and vehicles; Tribe owners of members (children, gifts, the guest's chief). The Space KeptStore (C5) reads and writes it | BUG-1149, playability audits |
+| E2 | Host autosave after milestones and on a timer, "saved N min ago" in F9 | BUG-0864 |
+| E3 | Planet ecosystems (plants and animals placed on a planet, the stabilized T level) synced both ways; terraforming also reaches a player whose planets of that star were not generated yet | BUG-1148 |
+| E4 | Tribe and Civ editors: a lab test first (a guest's outfit / building / vehicle design, the host's new designs after its editor), then the design sync where it fails | playability audit Tribe/Civ |
+
+The other audit findings (a guest's own pack in Creature, its own creature line from Cell, the guest's own cell
+editor DNA cost, commands held while the host is away that expire after their cost was paid) get tickets; the ones
+that are bugs of existing features are fixed in this release by the stage agents of wave C, the design ones go to 0.8.
+
 ### Not in 0.7.15
 
 * A replicated per-member animation state for Tribe (STG-6): a spike first; 0.7.16.
@@ -140,3 +159,5 @@ refactors stand on), then C (the shared mechanisms, one stage at a time), then D
 10. A final-check rerun may run only the failed campaign segment (A6).
 11. INCONCLUSIVE verdict: yes, with the A15 rules.
 12. A second headless Xwayland: yes (A16).
+13. Wave E (2026-11-15, after the Discord report): E1-E4 in 0.7.15; a guest's progress is stored on the host's disk
+    next to its save.
