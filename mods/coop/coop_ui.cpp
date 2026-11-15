@@ -1,5 +1,6 @@
 #include "coop_ui.h"
 #include "trace.h"
+#include "net/utf8.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -182,8 +183,26 @@ COOP_FIX("core.ui_layout", "BUG-0905", g_layout_fix, "ui: labels fitted by the g
 // guest's in the row of its Ready / Create button while that is hidden; no Settings while a vote runs (no free row).
 // Off: Settings top left, the host's Ask for Reports row (upstream 0.7.12 F3 / F4).
 static bool g_settings_in_panel = true;
+// BUG-9221 (the owner 2026-11-15: "ensure consistent spacing", "Copy Host Address is nearly touching the menu border",
+// Settings "way too close to exiting the background panel", the World & Session panel's left / right spacing; "usually
+// stop hosting would be the button on the bottom right"; "Copy Host Address could be simplified to Copy Server IP").
+// On: one grid on the panel image's boxes (Players 34..388, World & Session 406..725, both 156..290; chat 337..407):
+// the panel's buttons 16 px in from both sides and 7 px clear of its bottom, 28 px tall with 5 px between; the bottom
+// rows 32 px tall with 8 px between, the right edge on the boxes' 725, 16 px clear of the window's bottom; Stop Hosting
+// / Leave bottom right, Copy Server IP (and a guest's Send / Don't Send) in the row above. Off: the 56-dev layout.
+static bool g_lobby_grid = true;
 COOP_FIX("ui.settings_in_panel", "BUG-9219", g_settings_in_panel,
          "ui: Settings in the World & Session panel instead of top left; no Ask for Reports button");
+COOP_FIX("ui.lobby_grid", "BUG-9221", g_lobby_grid,
+         "ui: the lobby on one spacing grid, Stop Hosting / Leave bottom right, Copy Server IP");
+// the World & Session panel's rows (row 0 the first under its text line)
+static Rect world_row(int i, float old_y = 0)
+{
+    if (!g_lobby_grid)
+        return Rect{445, old_y, 706, old_y + 32};
+    const float y = 189.f + i * 33.f;
+    return Rect{422, y, 709, y + 28};
+}
 // BUG-9218: the own row's colour button (F2) covered the first letter of the own name. On: names start 6 px further
 // right, the stage column 10 px. Off: the merge's layout (0.7.14.1 + Lineages 55-dev).
 static bool g_color_gap_fix = true;
@@ -1373,7 +1392,7 @@ static void build_dialog()
         g_dirty = true;
     });
     D.session = add_label(L, {40, 103, 530, 129}, "", kWhite);
-    D.invite_btn = add_button(L, "copyinvite", {475, 540, 720, 576}, T("Copy Host Address", "Копировать адрес"), [] {
+    D.invite_btn = add_button(L, "copyinvite", {475, 540, 720, 576}, g_lobby_grid ? T("Copy Server IP", "Копировать IP") : T("Copy Host Address", "Копировать адрес"), [] {
         const auto addresses = A.invite ? A.invite() : std::string{};
         if (addresses.empty()) {
             set_status(T("No local address available", "Нет доступного адреса"), kYellow, 5);
@@ -1396,7 +1415,7 @@ static void build_dialog()
                    copied ? kGreen : kYellow, 5);
     });
     add_label(L, {40, 131, 380, 156}, T("Players", "Игроки"), kGold);
-    add_label(L, {416, 131, 720, 156}, T("World & Session", "Мир и сессия"), kGold);
+    add_label(L, {g_lobby_grid ? 412.f : 416.f, 131, 720, 156}, T("World & Session", "Мир и сессия"), kGold);
     D.rules = add_label(L, {422, 165, 710, 188}, "", kDim);
     D.transfer_mode = add_label(L, {416, 190, 710, 213}, "", kDim);
     D.preview_status = add_label(L, {40, 534, 438, 552}, "", kDim);
@@ -1552,6 +1571,23 @@ static void build_dialog()
             A.report_answer(false);
         g_dirty = true;
     });
+    if (g_lobby_grid) { // BUG-9221: the lobby's grid (see the switch)
+        auto put = [](Win w, Rect r) { if (w) sui::set_area(w, r); };
+        put(D.chat_edit, {40, 453, 565, 485});
+        put(D.send_btn, {575, 453, 725, 485});
+        put(D.creation_prev, {575, 415, 645, 445});
+        put(D.creation_next, {655, 415, 725, 445});
+        put(D.slots_label, {40, 493, 150, 525});
+        put(D.next_seats_edit, {152, 493, 194, 525});
+        put(D.queue_seats, {200, 493, 302, 525});
+        put(D.space_btn, {310, 493, 500, 525});
+        put(D.invite_btn, {508, 493, 725, 525});
+        put(D.rsend, {508, 493, 612, 525});
+        put(D.rnosend, {617, 493, 725, 525});
+        put(D.leave_btn, {508, 533, 725, 565});
+        put(D.leave_caption, {508, 533, 725, 565});
+        put(D.rules, {422, 160, 709, 186});
+    }
 
     // ---- settings page (upstream 0.7.12 F3: settings_core.h kDefs by group; docs/07-modes.md#modes-session-settings) ----
     // laid out as the Space page: the title clear of Report Issue, the page buttons above the version line
@@ -1834,7 +1870,10 @@ static void refresh_lobby()
             continue;
         }
         const auto& p = rows[i];
-        std::string n = p.name;
+        // BUG-9222: the -NoShare- tag is not shown; BUG-9221: a name longer than the column is cut ("...")
+        std::string n = g_lobby_grid ? utf8::shown_name(p.name) : p.name;
+        if (g_lobby_grid && utf8::count(n) > 14)
+            n = utf8::head(n, 12) + "...";
         if (p.host && n.size() <= 12)
             n += T(" (host)", " (хост)");
         text(D.row_name[i], n);
@@ -2033,9 +2072,10 @@ static void refresh_lobby()
     const bool start_now = host && vote;
     const bool cells = host && A.lineage_cells;
     show(D.share_btn, start_now);
-    sui::set_area(D.share_btn, Rect{445, 190, 706, 222});
+    sui::set_area(D.share_btn, world_row(0, 190));
     float row = 190;
-    auto next_row = [&row] { Rect r{445, row, 706, row + 32}; row += 34; return r; };
+    int row_i = 0;
+    auto next_row = [&row, &row_i] { Rect r = world_row(row_i++, row); row += 34; return r; };
     if (start_now) next_row();
     if (D.cells_btn) {
         show(D.cells_btn, cells);
@@ -2047,12 +2087,14 @@ static void refresh_lobby()
     if (D.onward_btn) {
         const bool onward = A.foreign_creations && !(host && vote);
         if (host && onward) sui::set_area(D.onward_btn, next_row());
-        else if (!host) sui::set_area(D.onward_btn, Rect{445, 212, 706, 248});
+        else if (!host) sui::set_area(D.onward_btn, g_lobby_grid ? world_row(0) : Rect{445, 212, 706, 248});
         show(D.onward_btn, onward);
         text(D.onward_btn, A.foreign_creations && A.foreign_creations() ? T("Foreign Creations: On", "Чужие создания: Вкл")
                                                                         : T("Foreign Creations: Off", "Чужие создания: Выкл"));
     }
-    const Rect ready_row = host ? next_row() : Rect{445, 249, 706, 285};
+    const Rect ready_row = host ? next_row() : g_lobby_grid ? world_row(1) : Rect{445, 249, 706, 285};
+    if (g_lobby_grid && D.create_btn && std::abs(sui::area(D.create_btn).y1 - ready_row.y1) > 0.5f)
+        sui::set_area(D.create_btn, ready_row);
     sui::set_area(D.ready_btn, ready_row);
     show(D.ask_btn, host && !vote && !g_settings_in_panel);
     if (host && D.ask_btn)
@@ -2521,9 +2563,10 @@ static void refresh()
         text(D.connect_version, version);
     }
     show(D.version, lobby);
-    const Rect report_area = lobby ? Rect{545, 98, 720, 134} : Rect{545, 107, 720, 142};
+    const Rect report_area = lobby ? (g_lobby_grid ? Rect{550, 98, 725, 132} : Rect{545, 98, 720, 134})
+                                   : Rect{545, 107, 720, 142};
     for (Win control : {D.report_btn, D.report_caption})
-        if (control && sui::area(control).y1 != report_area.y1)
+        if (control && (sui::area(control).y1 != report_area.y1 || sui::area(control).x1 != report_area.x1))
             sui::set_area(control, report_area);
     if (A.lan_scan)
         A.lan_scan(!lobby);
@@ -3160,7 +3203,7 @@ static const char* tip_for(const std::string& name)
         {"hidehostport", "Show or hide", "Показать / скрыть"},
         {"hidehostpassword", "Show or hide", "Показать / скрыть"},
         {"hidehostaddresses", "Show or hide addresses", "Показать / скрыть адреса"},
-        {"copyinvite", "Copy your address for friends", "Копировать адрес"},
+        {"copyinvite", "Copy your server's IP for friends", "Копировать адрес"},
         {"queueseats", "Apply: more slots now, fewer from the next stage", "Применить: больше мест сразу, меньше со следующего этапа"},
         {"chatup", "Older messages", "Ранние сообщения"},
         {"chatdown", "Newer messages", "Новые сообщения"},

@@ -5,6 +5,7 @@
 #include "fixes.h"
 #include "net/dbpf.h"
 #include "net/library_sync.h"
+#include "net/utf8.h"
 #include "slotfs.h"
 #include "sporekit_game.hpp"
 #include <windows.h>
@@ -76,7 +77,15 @@ COOP_FIX("library.split", "BUG-9104", g_split_fix,
 static SRWLOCK g_received_lock = SRWLOCK_INIT;
 static std::set<std::pair<uint32_t, uint32_t>> g_received; // (instance, group) of imported items
 static unsigned g_mine_hidden = 0;
+// BUG-9222: a player named with "-NoShare-" (a QA game joining the owner's) offers none of its own creations, and
+// nobody keeps a creation such a player made or passed on. `coop.fix library.no_share off`: shared as before (56-dev).
+static bool g_no_share_fix = true;
+COOP_FIX("library.no_share", "BUG-9222", g_no_share_fix,
+         "Lineages Cache: a player whose name holds -NoShare- shares no creations, and none of theirs are kept");
+static uint32_t g_no_share_dropped;
 static void offer(const Entry &e) {
+    if (g_no_share_fix && e.local && utf8::no_share_name(S->name_of(S->my_id())))
+        return;
     if (!S->connected() || !g_offered.insert(e.item.hash).second)
         return;
     auto item = e.item;
@@ -625,6 +634,11 @@ static void offer_all() {
 }
 
 static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
+    if (g_no_share_fix && (utf8::no_share_name(S->name_of(peer)) || utf8::no_share_name(item.sharer))) {
+        if (!g_no_share_dropped++)
+            H->log(M, SK_INFO, "library: a creation from a -NoShare- player is not kept (BUG-9222)");
+        return true; // taken and dropped: the sender moves on
+    }
     // BUG-9112: the host keeps a guest's received (foreign) creation only when it wants foreign ones
     if (S->role() == net::Role::Host && !g_foreign && peer != S->my_id() && item.source != "manual-test") {
         auto id = g_peer_identity.find(peer);
@@ -882,7 +896,7 @@ std::string debug(const std::vector<std::string> &args) {
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
            " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) + " provisional=" + std::to_string(g_provisional) +
            " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " foreign=" + (g_foreign ? "on" : "off") + " foreign_offered=" + std::to_string(g_foreign_offered) +
-           " foreign_refused=" + std::to_string(g_foreign_refused) + " peers_foreign=" +
+           " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) + " peers_foreign=" +
            std::to_string(std::count_if(g_peer_foreign.begin(), g_peer_foreign.end(), [](auto &p) { return p.second; })) + " retried=" + std::to_string(g_retried) +
            (g_error.empty() ? "" : " error=" + g_error) + list;
 }

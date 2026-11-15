@@ -35,6 +35,10 @@ pwsh tools/qa_win/launch.ps1 -Instance 9 -Profile DuoQAJiffHost
 pwsh tools/qa_win/msi.ps1 deploy
 pwsh tools/qa_win/msi.ps1 start
 pwsh tools/qa_win/msi.ps1 tunnel        # leave it running
-py tools/qa_win/qa.py 9 coop.host 47839 Host 4
-py tools/qa_win/qa.py msi coop.join <this PC's Tailscale address>:47839 MSI
+py tools/qa_win/qa.py 9 coop.host 47839 Host-NoShare- 4
+py tools/qa_win/qa.py msi coop.join <this PC's Tailscale address>:47839 MSI-NoShare-
 ```
+
+Test players always use a name ending in `-NoShare-` (BUG-9222): their creations are never offered to
+nor kept in anyone's Lineages Cache, so a QA game joining the owner's install leaves nothing in it. The tag is
+hidden in the player list.

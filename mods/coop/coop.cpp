@@ -7106,8 +7106,8 @@ void setup_callbacks()
                               (p.version.rfind("coop ", 0) == 0 ? p.version.substr(5, p.version.find(',') - 5) : p.version) +
                               "): update both games to the same one", "info");
         }
-        feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
-        chat_log("* " + p.name + " joined");
+        feed_kind(utf8::shown_name(p.name) + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
+        chat_log("* " + utf8::shown_name(p.name) + " joined");
         g_lobby_dirty = true;
         bool own_worlds = g_adapter && g_adapter->own_worlds;
         bool playing = g_adapter && g_local && stage_mode(g_mode);
@@ -7602,8 +7602,8 @@ void setup_callbacks()
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
-        feed_kind(it->second.name + " left", "leave");
-        chat_log("* " + it->second.name + " left");
+        feed_kind(utf8::shown_name(it->second.name) + " left", "leave");
+        chat_log("* " + utf8::shown_name(it->second.name) + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
         cellsync::on_player_leave(id);

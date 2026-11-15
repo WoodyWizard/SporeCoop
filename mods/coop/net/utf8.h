@@ -104,6 +104,39 @@ inline int overlay_width(const std::string& s) { return columns(s) * 9; }
 
 // a player name: at most kNameMax code points (the co-op window's limit), no control characters
 constexpr size_t kNameMax = 24;
+// BUG-9222 (the owner 2026-11-15): a player name holding "-NoShare-" (any case) marks a test / QA player: its
+// creations are never offered to nor kept in anyone's Lineages Cache (library.cpp)
+inline bool no_share_name(const std::string& name)
+{
+    static const char kTag[] = "-noshare-";
+    const size_t n = sizeof kTag - 1;
+    for (size_t i = 0; i + n <= name.size(); i++) {
+        size_t k = 0;
+        while (k < n && (name[i + k] >= 'A' && name[i + k] <= 'Z' ? name[i + k] + 32 : name[i + k]) == kTag[k])
+            k++;
+        if (k == n)
+            return true;
+    }
+    return false;
+}
+
+// the name as players read it: "MSI-NoShare-" shows as "MSI" (the tag only marks the player, BUG-9222)
+inline std::string shown_name(std::string name)
+{
+    static const char kTag[] = "-noshare-";
+    const size_t n = sizeof kTag - 1;
+    for (size_t i = 0; i + n <= name.size();) {
+        size_t k = 0;
+        while (k < n && (name[i + k] >= 'A' && name[i + k] <= 'Z' ? name[i + k] + 32 : name[i + k]) == kTag[k])
+            k++;
+        if (k == n)
+            name.erase(i, n);
+        else
+            i++;
+    }
+    return name.empty() ? std::string("Player") : name;
+}
+
 inline std::string player_name(const std::string& in)
 {
     std::string s;
