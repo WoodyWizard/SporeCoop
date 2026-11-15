@@ -3107,3 +3107,44 @@ BUG-1144 (space_allies, lab 20261115-030136 of feat/w51-space: a caught fault at
 * Fix (`allies.near_rebuild`): after unapply() restored stars, call 0xFE6A50 on the near object (vtable checked) the
   way the game's handler does; the list then holds no star of nobody. `coop.space allies near` prints the list
   (owner, flags, `NO EMPIRE` for a stale entry, `stale=<n>`). Test `space_allies_near`.
+
+## A guest colony's cities and an NPC's star at the colony's restore (2026-11-15, feat/w51-store)
+<a id="space-colony-cities"></a>
+
+BUG-1151 (E1 of 0.7.15). GOG 2024, objdump of SporeApp.exe and lab lanes 9 / 10.
+
+* ✔ The cCityData field table (0xC4 bytes, no vtable; the save's serializer: field table built by 0x1397890 into
+  0x15B5510, Read 0xFF0380, Write 0xFF0300): +0x00 position (vec3), +0x0C orientation (quat), +0x1C mSpiceProduction
+  (the stored spice), +0x20 mMaxSize, +0x24 mSize, +0x28 mTurretLocations (a byte of bits), +0x2C mFinalIncome,
+  +0x30 mHappiness, +0x34 mVehicleSpecialty, +0x38 mCaptureID, +0x3C mCapturePercent, +0x40 mName / +0x50
+  mDescription (string16), +0x60..+0x7A 14 u16 (meaning not traced), +0x7C mBuilding (vector of 0x38-byte plain
+  entries), +0x90 mOrnament, +0xA4 mWall, +0xB8 mWallStyle, +0xBC / +0xC0 handles.
+  CORRECTION (2026-11-15, feat/w51-store): docs/re/space.md#space-city-data says "turrets from +0x90": the serializer
+  names +0x90 mOrnament; the turrets are the bits of +0x28. Section 15.2's "cCityData of type 0xFD701F6F" is the
+  mWallStyle value (+0xB8, written by 0xFF0230) FillPlanet gives a city of another empire (0x280852F1: the player's).
+* ✔ cCivData (0x50): +0x14 pol, +0x18 colour, +0x1C wealth, +0x20 turrets, +0x24 buildings, +0x3C the cities.
+  `AddCityData` 0xFF2B20 adds popcount(city +0x28) to +0x20 and (city +0x24 minus that) to +0x24, then the push_back.
+* ✔ FillPlanetDataForTechLevel level 5 (0xB96E90) = GameAlloc(0x50, ...) + cCivData ctor 0xFF32F0 + pol, the species,
+  then per city GameAlloc(0xC4, 0x1465A70, 0, 0, 0, 0) + cCityData ctor 0xFF1B60 (reserves 10 building entries),
+  size 2 or 4 (+ income 150), the wall style, AddCityData; then cPlanetRecord_AddCivData.
+* ✔ 0xFF1500 (the building vector's insert, thiscall(vector, pos, const entry*) ret 8) is an insert before a position:
+  with pos == end it copies downwards from end - 0x38 and runs past the vector's start (lab crash 20261115-132419 at
+  0xFF1550 on an empty list). An append is the game's reserve 0xFF13E0 (thiscall(vector, n) ret 4) and a copy of the
+  plain entry at the end.
+* ✔ The mod writes a guest's own colony cities back into a restored record (space_allies.cpp cities_apply): into the
+  civilization FillPlanet made, a missing city made as FillPlanet makes one; not into the active planet's record (its
+  live cCity objects point at the cCityData, +0x2F0). A planet of the system the ship is in has a cPlanet in the star
+  manager's list (+0x50) but no cities: its record is written.
+* ✔ `TransferStarOwnership` 0xC353A0 (cdecl(star, newPol), plain ret) is the game's change of a star's owner: the old
+  empire's RemoveStarOwnership 0xC35040, the new one's AddStarOwnership 0xC34300 (every tech-5 planet of the star
+  converted, ConvertPlanetOwner 0xC73940), then per planet record 0xCE6AD0 / 0xAEAAC0 / 0xAEA6A0 (not traced). Its
+  callers: 0xAEA092 (a comm event), 0xC8D1E3, 0x1059D2D. The old owner must be an empire (a star of nobody: `this`
+  null). Lab (space_empire fixture, lane 9): the guest's game took an NPC's only star (its home star): the empire was
+  gone from that game (GetEmpire of its pol null), no fault, the planet's 10 cities became the guest's empire's.
+* Restore rule (space.npc_star_colonies): a guest's own colony whose star belongs to an NPC empire in the host's world
+  (bought or conquered in the guest's game) gets the star taken in the guest's copy with TransferStarOwnership; never
+  on the host, never a partner's mirror empire. The host's world keeps the NPC's star: the allies mirror does not show
+  that colony (BUG-0197) and the NPC's AI goes on there in the host's game.
+* ? Not done: the ornaments (+0x90), walls (+0xA4), the 14 u16 and the two handles are not carried (the city maker
+  makes walls and ornaments of its own); a generated city beyond the guest's count stays; a guest colony made from
+  a planet only partly the guest's (some cities captured, the star still the NPC's) is taken whole.

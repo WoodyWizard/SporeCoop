@@ -24,6 +24,7 @@
 #include "stage_epoch.h"
 #include "world.h"
 #include "owner_claims.h"
+#include "autosave_glue.h"
 #include "store.h"
 #include "wsync.h"
 #include "net/held_cmds.h"
@@ -5556,6 +5557,7 @@ static void epic_tick(double now)
         int food = g_epic_hitters.size() >= 2 ? 80 : 30;
         bonus_food(food);
         g_epic_kills++;
+        autosave::milestone("an epic killed"); // E2 (BUG-0864)
         if (C.notice)
             C.notice(std::string("epic creature down: +") + std::to_string(food) + " food");
         g_epic = nullptr;

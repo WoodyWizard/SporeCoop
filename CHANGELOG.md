@@ -12,10 +12,25 @@
   versions; update both games to the same version then (BUG-1137).
 
 ### Added
+- Play over several evenings: the host's game now remembers what belongs to each player of its world, in a file next
+  to its save, and gives it back the next time you play together: a guest's Space colonies (with their cities,
+  buildings and spice, also colonies on stars it took from an alien empire), its badges and captain rank, the Rivals
+  mode with every player's own budget and their alliances and wars, whose cities and vehicles are whose in
+  Civilization, and whose tribe members are whose in Tribe. The guest gets them as long as it plays from the same game
+  (its game remembers for 30 days that it was you). A guest who comes back from another PC or a new install starts
+  fresh; the host is told and can hand that player its things with `coop.store adopt <name>` (BUG-1149, BUG-1151,
+  BUG-1152, BUG-1153, BUG-1154).
+- The host's game saves itself while it hosts: every 10 minutes (Settings, "Host autosave": off, 5, 10, 15, 30 or 60
+  minutes) and a few seconds after a new stage, a colony founded, a city captured or an epic killed. A crash or a
+  lost connection no longer takes the whole evening; the co-op window shows "saved N min ago" (BUG-0864).
 - `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
   why. It may join again.
 
 ### Fixed
+- Tribe: tribe members no longer change hands every time a player joins or leaves, or after a game over: a child you
+  bought or members you were given stay yours; a new player gets a fair share (BUG-1154).
+- Civilization: a city or vehicle of a player who left is kept for that player (the host looks after it) instead of
+  going to another player for good (BUG-1153).
 - Logs and problem reports: a Windows user name with letters outside English (Cyrillic, accented, Greek) is now hidden
   in the paths of the log and of report archives, like any other user name (BUG-1124).
 - Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
@@ -29,6 +44,9 @@
   game sends far more than normal play.
 
 ### Development
+- Tests across sessions: `twoinst.session_restart()` plays "a new evening" in a test (save, both quit, the host loads
+  its save, the guest joins again); tests space_session, space_session_npc, civ_owners_session, tribe_owners_session,
+  autosave_milestone, autosave_timer (docs/06-testing.md#testing-session-restart).
 - Network: one message manifest (`net/messages.def`, `net/space_kinds.def`) generates the message ids, classes,
   directions, the dispatch and the docs tables; the host drops a host-only message a guest sends; every message
   family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).

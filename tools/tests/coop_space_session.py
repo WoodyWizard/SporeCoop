@@ -42,8 +42,8 @@ from twoinst import Checks, session_restart, start
 
 
 def city_lines(con, planet):
-    """the guest's own cities on a planet as its game's record has them (`allies cities`): one line per city"""
-    out = sp(con, 'allies cities', planet)
+    """the guest's own cities on a planet as its game's record has them (`allies colonycities`): one line per city"""
+    out = sp(con, 'allies colonycities', planet)
     return [re.sub(r'^\s+city \d+ ', '', ln).strip() for ln in out.splitlines() if ln.strip().startswith('city ')]
 
 
@@ -186,8 +186,8 @@ def main():
           flush=True)
     ck(r is not None, f'next session: {planet} is a colony of the guest\'s empire again (tech {tech}, civs {civs}, its pol {gpol})')
     c2 = wait(lambda: city_lines(guest, planet) == cities0 and cities0, 30, 2) if planet else None
-    print('  next session: guest cities ' + ' | '.join(city_lines(guest, planet)) + ' (before: ' + ' | '.join(cities0) + ')',
-          flush=True)
+    print('  next session: guest cities ' + ' | '.join(city_lines(guest, planet)) + ' (before: ' + ' | '.join(cities0) + ') | '
+          + next((ln.strip() for ln in sp(guest, 'map kept').splitlines() if 'cities:' in ln), '-'), flush=True)
     ck(c2 is not None, f'next session: the colony has its own cities again (spice, size, turrets, buildings, names)')
 
     def badges_back():

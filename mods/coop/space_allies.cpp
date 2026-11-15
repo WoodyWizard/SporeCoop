@@ -1805,7 +1805,7 @@ static std::string debug(const std::vector<std::string>& a)
         }
         return o.empty() ? "none\n" : o;
     }
-    if (a[0] == "cities" && a.size() > 1) // the cities of my civilization on a planet (BUG-1151)
+    if (a[0] == "colonycities" && a.size() > 1) // the cities of my civilization on a planet (BUG-1151)
         return describe_cities((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
     if (a[0] == "citytest" && a.size() > 1) { // tests (BUG-1151): my colony's cities as a player's would be after a while
         uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);

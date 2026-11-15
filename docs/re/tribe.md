@@ -4096,3 +4096,19 @@ with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not 
   still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
   member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
   `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.
+
+## Member owners across joins, leaves, a game over and sessions: claims (2026-11-15, feat/w51-store)
+<a id="tribe-owner-claims"></a>
+
+BUG-1154 (E1 of 0.7.15), lab lanes 9 / 10 (coop_tribe_owners_session.py).
+* The member owner table (g_hm) lived in the host's memory only: every change of the players re-dealt every member in
+  turns (tribe.cpp host_tick), and a session end or a world change (a game over reloads the last save) emptied it.
+* ✔ Now each player-tribe member has a claim (tribe.cpp g_member_claim: its owner's stable key; flags 1 born for a
+  player (a guest's hut purchase, BUG-0671), 2 a gift), written with every save into the host's per-player store
+  (world record `tribe.owners` v1, owner_claims.h spots) and paired with the members after a load (2.5 m, the saved
+  positions; also the game over's reload).
+* A claimed member goes to its player whenever that player is here, the host holds it while it is away; members
+  without a claim are dealt in turns as before; a player who is here with no member gets an even share
+  (members / players) from the player with the most, members without a flag first.
+* ? The guest's own chief is "the lowest id adult member of the owner" (tribe.cpp): it follows the claims, not a
+  claim of its own.
