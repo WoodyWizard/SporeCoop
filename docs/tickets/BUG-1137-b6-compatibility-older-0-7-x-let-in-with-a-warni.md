@@ -1,16 +1,16 @@
 ---
 id: BUG-1137
 title: B6: compatibility: older 0.7.x let in with a warning, message family revisions refuse an explicit conflict
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-manifest
-commits:
+commits: 911cbf15, 5389d944, e8f08925, bd4fd00b
 tests: net_tests test_families_wire, test_family_check (--off family_check fails); validate_tests test_compat; msg_manifest.py --self-test; lab compat, mixed_plant_guest, mixed_plant_host, mixed_plant_unused, mixed_version_guest, mixed_version_host (v0.7.14)
 signature:
 docs: docs/04-netcode.md#netcode-compat, docs/06-testing.md#testing-manifest-compat
@@ -53,9 +53,20 @@ Nothing could tell where two versions' messages really differ.
 ## Verification
 - Unit: net_tests test_family_check PASS, `--off family_check` FAIL (8 checks); test_families_wire PASS;
   validate_tests test_compat PASS; fuzz_decoders with families PASS.
-- Lab `compat` (lane 10): PASS 20261115-031537; SPORE_FIX_OFF=net.family_check FAIL 20261115-031742 (the planted
-  Creature conflict joined).
-- Mixed against v0.7.14 (lanes 10 + 9): see History.
+- Lab `compat` (lane 10): PASS 20261115-031537, 20261115-032912, 20261115-034921; SPORE_FIX_OFF=net.family_check
+  FAIL 20261115-031742 (the planted Creature conflict joined).
+- Mixed against v0.7.14 (lanes 10 + 9 as lane B): mixed_version_guest / mixed_version_host PASS 20261115-032035 and
+  20261115-034921 (the joins work; this build's feed "Carol plays SporeCoop 0.7.14; you have SporeCoop 0.7.14.1: some
+  things may not match", the old game logs "versions differ"); mixed_plant_guest (this build hosts with Creature rev 2:
+  the v0.7.14 guest shows "rejected: Alice plays SporeCoop 0.7.14.1; you have SporeCoop 0.7.14: the Creature messages
+  of these versions do not fit together (revision 2 there, 1 here) ...") PASS 20261115-032035, 20261115-034921;
+  mixed_plant_host (this build's guest refuses the v0.7.14 Creature host by its first state) PASS 20261115-032035,
+  20261115-034921; mixed_plant_unused (a Space revision, the Creature join works) PASS 20261115-034921 and
+  20261115-040030 (its first run 20261115-032035 failed only on a test bug: it read the warning from coop.status instead
+  of the log; fixed in the test). SPORE_FIX_OFF=net.family_check: mixed_plant_guest FAIL 20261115-035619 (the old guest
+  got in, players=3/4).
+- play_creature --quick PASS 20261115-032912; make test PASS.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: fixed on feat/w51-manifest (revisions, CAP_FAMILIES, refusal and warnings, reports, lock).

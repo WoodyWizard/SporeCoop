@@ -8295,3 +8295,8 @@ B3 / B6 of 0.7.15 (BUG-1136, BUG-1137; docs/04-netcode.md#netcode-manifest, #net
   (`mixed_plant_unused`): an unused family does not stop the join, and every check of the normal run follows.
 * Pitfall: COOP_VERSION is bumped only at the release, so a branch of 0.7.15 still says `coop 0.7.14.1` and v0.7.14
   says `coop 0.7.14`: the texts name 0.7.14.1 and 0.7.14 (the coop parts differ, so the warning fires).
+* Results (2026-11-15, feat/w51-manifest, lanes 10 + 9): `compat` PASS 20261115-031537 / -032912 / -034921,
+  SPORE_FIX_OFF=net.dir_gate FAIL 20261115-031637, net.family_check FAIL 20261115-031742. Against v0.7.14:
+  `mixed_version_guest`, `mixed_version_host`, `mixed_plant_guest`, `mixed_plant_host` PASS 20261115-032035 and
+  -034921, `mixed_plant_unused` PASS -034921 and -040030; SPORE_FIX_OFF=net.family_check `mixed_plant_guest` FAIL
+  20261115-035619 (the v0.7.14 guest got in). A v0.7.14 guest shows this build's refusal text as is ("rejected: ...").

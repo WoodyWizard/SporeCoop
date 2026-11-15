@@ -1,16 +1,16 @@
 ---
 id: BUG-1136
 title: B3: one message manifest (messages.def, space_kinds.def) and a host-side direction gate
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-manifest
-commits:
+commits: 911cbf15, 5389d944, e8f08925, bd4fd00b
 tests: validate_tests test_manifest; net_tests test_dir_gate (--off dir_gate fails); tools/msg_manifest.py check / --self-test; lab compat
 signature:
 docs: docs/04-netcode.md#netcode-manifest, docs/01-architecture.md#arch-message-manifest, docs/06-testing.md#testing-manifest-compat
@@ -47,8 +47,14 @@ No single description of the message layer.
 ## Verification
 - Unit: validate_tests test_manifest PASS; a mutated row (ROLE recv, SPECIES class, space kind 12 direction) fails it
   (checked by hand). net_tests test_dir_gate PASS, `--off dir_gate` FAIL (host-only types delivered 3, dropped 0).
-- Lab `compat` (lane 10): PASS 20261115-031537; SPORE_FIX_OFF=net.dir_gate FAIL 20261115-031637 ("dir_drops 0 -> 0").
-- refactor_dump: see History.
+- Lab `compat` (lane 10): PASS 20261115-031537, 20261115-032912, 20261115-034921 (after merging rel/0.7.15);
+  SPORE_FIX_OFF=net.dir_gate FAIL 20261115-031637 ("dir_drops 0 -> 0").
+- refactor_dump before 20261115-025133 / after 20261115-032912 (`tools/refactor_dump.py compare`): lifecycle, players,
+  guards, hooks identical on both games; fix list +2 (net.dir_gate, net.family_check), commands +1 (coop.manifest);
+  source.msgtable differs as intended (the if chain became `case net::Route::X`, each MSG_ name's count one lower
+  where the chain named it), source.manifest new. The routing itself is proven equal by the golden unit test.
+- play_creature --quick PASS 20261115-032912; make test PASS.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: fixed on feat/w51-manifest (manifest, golden tests, direction gate, docs tables).
