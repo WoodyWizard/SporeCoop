@@ -51,7 +51,7 @@ away, no new violation (with BUG-1147 one campaign_ct ground, see there).
   (#1): "guest sees host elsewhere (same_place=0) for 10 s from s 10"; replayed with the old monitor the same, and the
   old monitor over this branch's PASS run 20261115-051528 flags #2 and #5 the same way.
 - PASS (new monitor): out/lab/20261115-051528 (space_allies --repeat 5, lane 7, 5/5; every run went through the
-  galaxy view, 2-3 own lines with world=-), RERUN2; replayed: the three FAIL runs above have no violation.
+  galaxy view, 2-3 own lines with world=-), out/lab/20261115-052922 (again 5/5 with the BUG-1147 monitor; the old monitor over its logs flags #4); replayed: the three FAIL runs above have no violation.
 - A real separation still fails: gates_selftest `together_space_apart` (the same timings with the guest's own lines
   in the system) and the logs of 20261115-051528 space_allies#1 with the guest's partner lines set to same_place=0
   and its own lines to the host's system after the zoom: replay reports together for the guest (from s 20) and the
