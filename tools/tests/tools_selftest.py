@@ -32,6 +32,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   laa       tools/laa.py on a fake 32-bit exe: set writes a verified backup and changes only the
             Characteristics flag and the PE checksum (still valid), set again and a Steam .bind exe are
             refused, restore brings back the original's sha256; a damaged backup is refused (BUG-0862)
+  wtgc      tools/wt_gc.py on a temporary repository: only merged, clean, unused, old worktrees and merged branches
+            go, and only with --apply (BUG-1127)
   symlist   upd::kSymbolFiles (updater/winupdate.h, what the uninstall deletes) names every
             data/symbols/*.sym a release installs (BUG-0851)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
@@ -56,6 +58,7 @@ RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'releas
 TRIAGE = os.environ.get('SELFTEST_TRIAGE', os.path.join(ROOT, 'tools', 'crash_triage.py'))
 LAATOOL = os.environ.get('SELFTEST_LAA', os.path.join(ROOT, 'tools', 'laa.py'))
 HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
+WTGC = os.environ.get('SELFTEST_WTGC', os.path.join(ROOT, 'tools', 'wt_gc.py'))
 fails = []
 
 
@@ -1095,11 +1098,94 @@ def test_bootfault():
         check(want_ok == (not counted or counted.group(1) == '0'), f'faults line the lab reads, {what}')
 
 
+# ---------------------------------------------------------------- wt_gc (BUG-1127)
+def test_wtgc():
+    """BUG-1127: wt_gc.py removes only merged, clean, unused, old worktrees (and merged branches), never with a dry
+    run; a tree in use (a process in it, a held lab lane lock), with uncommitted work, unmerged, kept by a glob or
+    recently changed stays"""
+    print('wtgc: wt_gc.py on a temporary repository')
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('wt_gc', WTGC)
+    gc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gc)
+    env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+               GIT_COMMITTER_EMAIL='t@t')
+    base = os.path.join(TMP, 'w')
+    repo = os.path.join(base, 'repo')
+    os.makedirs(repo)
+    g = lambda *a, cwd=repo: subprocess.run(['git', '-C', cwd, *a], env=env, capture_output=True, text=True,
+                                            check=True).stdout
+    g('init', '-q', '-b', 'main')
+    open(os.path.join(repo, '.gitignore'), 'w').write('build/\nout/\n')
+    open(os.path.join(repo, 'a.txt'), 'w').write('a')
+    g('add', '-A')
+    g('commit', '-qm', 'init')
+    wt = lambda b: os.path.join(base, 'wt', b.replace('/', '-'))
+    for b in ('fix/a', 'fix/b', 'fix/c', 'fix/d', 'fix/h', 'x/keep-1', 'rel/1'):
+        g('worktree', 'add', '-q', wt(b), '-b', b)
+    g('branch', 'fix/f')
+    open(os.path.join(wt('fix/c'), 'c.txt'), 'w').write('c')  # an unmerged commit
+    g('add', '-A', cwd=wt('fix/c'))
+    g('commit', '-qm', 'c', cwd=wt('fix/c'))
+    open(os.path.join(wt('fix/b'), 'new.txt'), 'w').write('work')  # untracked: uncommitted work
+    os.makedirs(os.path.join(wt('fix/a'), 'build'))
+    open(os.path.join(wt('fix/a'), 'build', 'blob'), 'wb').write(os.urandom(200_000))
+    os.makedirs(os.path.join(wt('fix/a'), 'out', 'lab', '20260101-000000'))
+    busy = subprocess.Popen(['sleep', '60'], cwd=wt('fix/d'))  # an agent / lab in fix/d
+    # a lab run of fix/h holds a lane lock (the lock files sit next to the lane-1 game folder: the main
+    # checkout's parent's parent)
+    lock = os.path.join(TMP, '.lab-run-lane7.lock')
+    holder = subprocess.Popen([sys.executable, '-c', 'import fcntl, os, sys, time\n'
+                               f'f = open({lock!r}, "a+"); fcntl.flock(f, fcntl.LOCK_EX)\n'
+                               'f.write(f"run 1 pid {os.getpid()} since 00:00\\n"); f.flush()\n'
+                               'print("held", flush=True); time.sleep(60)'],
+                              cwd=wt('fix/h'), stdout=subprocess.PIPE, text=True)
+    holder.stdout.readline()
+    try:
+        here = os.getcwd()
+        os.chdir(TMP)
+        later = time.time() + 72 * 3600
+        p = gc.plan(repo, keep=['x/keep-*'], now=later)
+        gone = {w['branch'] for w in p['remove']}
+        why = dict((k.split(' [')[1].rstrip(']'), v) for k, v in p['kept'])
+        check(gone == {'fix/a'}, f'only the merged, clean, unused, old tree goes ({sorted(gone)})')
+        check(why.get('fix/b', '').startswith('uncommitted'), f'uncommitted work stays ({why.get("fix/b")})')
+        check(why.get('fix/c', '').startswith('not merged'), f'an unmerged branch stays ({why.get("fix/c")})')
+        check(why.get('fix/d', '').startswith('in use'), f'a tree a process uses stays ({why.get("fix/d")})')
+        check(why.get('fix/h', '').startswith('a lab run holds'), f'a held lane lock keeps it ({why.get("fix/h")})')
+        check(why.get('x/keep-1', '').startswith('kept branch') and why.get('rel/1', '').startswith('kept branch'),
+              'a --keep glob and rel/* stay')
+        check(set(p['branches']) == {'fix/a', 'fix/f'}, f'merged branches to delete: fix/a, fix/f ({p["branches"]})')
+        check('fix/c' in p['unmerged'], 'the unmerged branch is listed for a person')
+        check(p['remove'][0].get('bytes', 0) >= 200_000, f'the size of build/ and out/ is counted '
+              f'({p["remove"][0].get("bytes")})')
+        now = gc.plan(repo, keep=['x/keep-*'], sizes=False)
+        check(not now['remove'] and dict((k.split(' [')[1].rstrip(']'), v) for k, v in now['kept'])
+              .get('fix/a', '').startswith('changed'), 'a tree changed in the last 48 hours stays')
+        r = subprocess.run([sys.executable, '-I', WTGC, '--repo', repo, '--keep', 'x/keep-*', '--min-age', '0'],
+                           capture_output=True, text=True)
+        check(r.returncode == 0 and 'dry run' in r.stdout and os.path.isdir(wt('fix/a'))
+              and 'fix/f' in g('branch'), f'the dry run changes nothing ({r.stdout.strip().splitlines()[-1:]})')
+        r = subprocess.run([sys.executable, '-I', WTGC, '--repo', repo, '--keep', 'x/keep-*', '--min-age', '0',
+                            '--apply'], capture_output=True, text=True)
+        branches = g('branch', '--format=%(refname:short)').split()
+        check(r.returncode == 0 and not os.path.exists(wt('fix/a')) and 'fix/a' not in branches
+              and 'fix/f' not in branches, f'--apply removes the tree and both branches ({r.stdout[-300:]})')
+        check(all(os.path.isdir(wt(b)) for b in ('fix/b', 'fix/c', 'fix/d', 'fix/h', 'x/keep-1', 'rel/1'))
+              and 'fix/c' in branches and 'fix/b' in branches, 'every kept tree and branch is still there')
+    finally:
+        os.chdir(here)
+        for pr in (busy, holder):
+            pr.kill()
+            pr.wait()
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
           'worldstate': test_worldstate, 'testlint': test_testlint,
-          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist, 'bootfault': test_bootfault}
+          'trail': test_trail, 'laa': test_laa, 'symlist': test_symlist, 'bootfault': test_bootfault,
+          'wtgc': test_wtgc}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

@@ -11,6 +11,11 @@
 - Logs and problem reports: a Windows user name with letters outside English (Cyrillic, accented, Greek) is now hidden
   in the paths of the log and of report archives, like any other user name (BUG-1124).
 
+### Development
+- Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
+  open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
+  and branches that can go (BUG-1127).
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update

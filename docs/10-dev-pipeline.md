@@ -211,3 +211,22 @@ that never applies) or when CHANGELOG.md has no `## [X.Y.Z]` section, and writes
 section as the release notes (not the X.Y.Z.N sections after it) (BUG-0097). Before a release
 also check README (Compatibility, footnotes) and INSTALL, which name no patch versions any more
 (BUG-0165).
+
+## Worktrees and branches that are done: wt_gc.py (2026-11-15, feat/w51-hygiene)
+<a id="pipeline-wt-gc"></a>
+
+Every agent and `lab.py run --branch` makes a worktree in `../SporeCoop-wt/`; nothing removed them (KIT-9 of
+docs/audit-0.7.15/kit_build.md: 400 trees, about 100 GB in their build/ and out/). `tools/wt_gc.py` (BUG-1127)
+prints what can go and how many bytes of build/ and out/ that frees; only `--apply` deletes (`git worktree remove`
+without `--force`, `git branch -d`, `git worktree prune`). A tree goes when its branch is merged into main (not main,
+not `rel/*`, not a `--keep` glob, no detached HEAD), `git status` is empty and no merge / rebase / bisect is in
+progress, nothing uses it (a process's cwd, PWD, open file or command-line path in it; a held lab lane lock
+`.lab-run-laneN.lock` or a game console port 47800+ of a process started from it) and nothing in it changed for
+`--min-age` hours (48: its git HEAD / index, top folder, out/, out/lab/*, build/). Merged branches without a tree go
+with `git branch -d`; unmerged ones are listed for a person. Run the dry run first and read its "kept" lines; during a
+release batch keep its trees: `tools/wt_gc.py --keep '*/w51-*'`. Self-test: `tools_selftest.py wtgc` (a temporary
+repository with a busy tree, a held lane lock, uncommitted work, an unmerged branch).
+
+Dry run on 2026-11-15 (main 74611a57, `--keep '*/w51-*'`, nothing deleted): 307 worktrees to remove with 77.5 GB of
+build/ and out/, 342 merged branches; kept 108 trees (68 changed in the last 48 h, 16 `rel/*`, 8 unmerged, 6
+detached, 6 `*/w51-*`, 3 in use by a process, 1 with uncommitted work); 16 unmerged branches left for a person.
