@@ -63,3 +63,4 @@ nothing else grounds it then. `coop.tribe lift` now applies to a new mirror's po
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w36-tribe-ground (tribe.mirror_ground), test tribe_mirror_ground.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `tribe.mirror_ground` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-233335:campaign_ct#1 on record; its test runs PASS-only.

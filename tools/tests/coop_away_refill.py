@@ -13,7 +13,7 @@ a time: 0-1 own NPCs near the guest 30 s later (coop_exit_menu.py, docs/known-is
    game's creatures, not ours). PASS: 10 s after the guest learned the host is away it has at least
    60 % of the count it showed before (and at least 2).
 
-  coop_away_refill.py   (SPORE_FIX_OFF=npc.away_locals must FAIL)"""
+  coop_away_refill.py   (npc.away_locals off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-140802:away_refill))"""
 import math
 import time
 

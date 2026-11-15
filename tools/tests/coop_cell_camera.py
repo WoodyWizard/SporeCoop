@@ -16,7 +16,7 @@ own cell's position +0x4C, `coop.pool cam`):
 2. the host is knocked out (`coop.pool selfhit 250`) with the guest 40 m away, nobody comes, it
    respawns small next to the guest: 3 s later the host's view is centred on its cell.
 
-  coop_cell_camera.py   (SPORE_FIX_OFF=cell.camera_snap: the view stays 4-8 m off, it FAILS)"""
+  coop_cell_camera.py   (cell.camera_snap off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-020658:cell_camera): the view stays 4-8 m off, it FAILS)"""
 import re
 import time
 

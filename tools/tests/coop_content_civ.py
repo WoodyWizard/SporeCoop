@@ -14,7 +14,7 @@ model is built from a copy with a base game part (creations::ensure_model), and 
 guest then saves its game, its game is restarted WITHOUT a co-op session and loads that save: the saved
 mirror vehicles load (no bake fault) and the saved files hold no model key of the mod's own (0x7D......).
 FAIL (`SPORE_FIX_OFF=content.all_kinds`, the switch off: 0.7.3.5): the guest builds the model with the
-pack part and faults at 0x41F3B. FAIL (`SPORE_FIX_OFF=content.model_key`, the first version of the fix:
+pack part and faults at 0x41F3B. FAIL (content.model_key off failed (retired in 0.7.15, BUG-1138: FAIL run 20261102-212644:content_civ), the first version of the fix:
 the copy under a key of ours): the save holds that key and the reloaded world cannot build the vehicles.
 
   SPORE_LANE=4 SPORE_LANE_B=5 python3 tools/tests/coop_content_civ.py
@@ -254,7 +254,7 @@ def main():
         # BUG-0469 review: a save never gets a key only the mod has. The guest saves its game (the
         # game's own save, as the pause menu's), its game is restarted WITHOUT a co-op session and
         # loads that save: the saved mirror vehicles must load (no fault on the guest), and no
-        # 0x7D...... model key (the first version's copy, `coop.fix content.model_key off`) may be in
+        # 0x7D...... model key (the first version's copy, content.model_key, retired in 0.7.15) may be in
         # the saved files.
         slot, folder, planet = save_slot(carol, carol_dir)
         ck(slot != '' and planet != '', f'the guest plays a save of its own ({slot}/{planet})')
@@ -294,7 +294,7 @@ def main():
         print('  after the reload:', (out2.strip().splitlines() or ['-'])[0][:120], '| vehicles', len(veh), flush=True)
         ck('total faults: 0' in out2 and '0x0046C82A' not in out2 and '0x0041F3B' not in out2,
            f'the saved vehicles load without a model bake fault ({(out2.strip().splitlines() or ["-"])[0][:90]})')
-        # BUG-0470: the session's mirror vehicles are no longer saved (civ.save_strip): the loaded world
+        # BUG-0470: the session's mirror vehicles are no longer saved (civ.save_strip (retired)): the loaded world
         # has at most the game's own free first vehicle; their model bake on load is not reached here
         print(f'  vehicles in the loaded world: {len(veh)} (mirrors are kept out of the save, BUG-0470)', flush=True)
     finally:

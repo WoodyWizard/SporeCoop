@@ -31,7 +31,7 @@ check, the caption of TRG2CVG_PreEditor, the guest's "I'm ready". Checked:
     lost drag or the name's dice click released over "done" keeps the host in the City Hall editor.
 
   SPORE_FIX_OFF=core.editor_own_pause: the old gate: FAIL (the editor opens 60 s or more after the vote).
-  SPORE_FIX_OFF=tribe.food_fx_mat: FAIL (the host faults at cTribe::UpdateFoodVisuals+0x28 and freezes).
+  tribe.food_fx_mat off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-224915:tribe_civ) (the host faults at cTribe::UpdateFoodVisuals+0x28 and freezes).
 """
 import os
 import re

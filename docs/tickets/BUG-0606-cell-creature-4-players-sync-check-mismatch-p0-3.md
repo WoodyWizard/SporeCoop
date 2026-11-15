@@ -53,3 +53,4 @@ cell_end_sync PASS again in the regression run lab 20261106-015141 (23/23; play_
 - 2026-11-05: opened.
 - 2026-11-06 (fix/w45-cell): a sync-check artifact (world scales), fix diag.cell_scale, test cell_end_sync.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `diag.cell_scale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-004419:cell_end_sync on record; its test runs PASS-only.

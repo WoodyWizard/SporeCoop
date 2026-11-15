@@ -12,7 +12,7 @@ submitted, with the sound id and the caller), not our bookkeeping.
 2. The theme plays (Audio::PlayProceduralAudio called from TribeTheme_Play, return address 0xBC2414) of each game.
 PASS: the host's game played at least 2, the guest's game at least 80 % as many, with the same sound ids.
 
-SPORE_FIX_OFF=tribe.theme_music: the guest's game plays none (FAIL).
+tribe.theme_music off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-115653:tribe_theme_music): the guest's game plays none (FAIL).
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_theme_music.py
 """

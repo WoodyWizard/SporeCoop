@@ -120,3 +120,5 @@ the 1-3 of the original run).
   cells on one centre) and fixed (`cell.contact_finite`, test cell_contact_nan); the address space drain split off as
   BUG-0621. Status fixed.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `cell.contact_finite` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-110109:cell_levelups on record; its test runs PASS-only.
+- 2026-11-15: switch `cell.nan_heal_all` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-133256:cell_nan_drain on record; its test runs PASS-only.

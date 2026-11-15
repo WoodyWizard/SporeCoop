@@ -51,3 +51,4 @@ avatar must hold stimulus 0x1000; then the guest's CreatureStun on a proxy must 
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), cause inferred from the logs and npc.cpp, not reproduced in the lab.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: CreatureStun relayed both ways (creature.stun_relay).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `creature.stun_relay` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-210333:creature_stun on record; its test runs PASS-only.

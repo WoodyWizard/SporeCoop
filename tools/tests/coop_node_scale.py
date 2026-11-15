@@ -11,9 +11,9 @@ live the placement's scale (0xBC05F3 .. SetScale from 0xBC0641: 10), a node read
    live-made node has on the host).
 3. For 15 s: the guest's node at that place, its scale (the game's GetScale, `coop.wobj list node`).
 PASS: within 8 s the guest's node has the host's scale (10) and keeps it.
---nofix (`coop.fix wobj.node_scale off`): must FAIL (1.0 stays).
+wobj.node_scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-061822:civ_vehicle_scale); the test runs PASS-only.
 
-  SPORE_LANE=4 python3 tools/tests/coop_node_scale.py [--nofix]
+  SPORE_LANE=4 python3 tools/tests/coop_node_scale.py
 """
 import argparse
 import math
@@ -36,14 +36,10 @@ def nodes(con, where=''):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--fixture', default='creature')
     a = ap.parse_args()
     host, guest = start(a.fixture)
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix wobj.node_scale off')['out'].strip(), flush=True)
     time.sleep(3)
     gn = nodes(guest)
     hn = nodes(host, ' '.join(f'{v:.1f}' for v in gn[0][1])) if gn else []

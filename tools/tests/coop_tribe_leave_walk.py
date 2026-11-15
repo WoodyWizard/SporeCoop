@@ -16,8 +16,8 @@ the guard skips that citizen (and puts +0xB54 back).
   the tribe fixture again. Checks: the stand-in fired, no fault and no crash on either game, the host
   reached each stage, the guest followed.
 
-  coop_tribe_leave_walk.py [--nofix] [--rounds N]   (--nofix: coop.fix tribe.leave_walk off: must
-  FAIL with the campaign's fault 0xC0DB23)
+  coop_tribe_leave_walk.py [--rounds N]   (tribe.leave_walk off failed with the campaign's fault 0xC0DB23:
+  retired in 0.7.15, BUG-1138, FAIL run 20261030-132850-fix-w13-tribe-civ:tribe_leave_walk; PASS-only now)
 """
 import argparse
 import re
@@ -86,7 +86,6 @@ def jump(host, guest, fx, stage, slot, arm):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--rounds', type=int, default=2)
     ap.add_argument('--play', type=float, default=90, help='seconds of play_tribe bots before each leave of Tribe')
     a = ap.parse_args()
@@ -95,8 +94,6 @@ def main():
     if 'off-stage checks' not in host.call('coop.status')['out']:
         print('RESULT: SKIP (no citizen off-stage guard on this build)')
         return 0
-    if a.nofix:  # (SPORE_FIX_OFF=tribe.leave_walk does the same through start())
-        print(' ', host.call('coop.fix tribe.leave_walk off')['out'].strip())
     print('  setup:', host.call('coop.tribe spawn 3')['out'].strip(), flush=True)
     time.sleep(10)
     n = 0

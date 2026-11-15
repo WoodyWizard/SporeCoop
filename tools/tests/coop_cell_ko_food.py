@@ -18,7 +18,7 @@ touched it was eaten (event 0x12, EatFood 0xE7DF40 -> AvatarEat -> AddFoodPoints
    mouth on meat one level smaller: StartEatSwallow 0xE7E020 -> SwallowWhole -> OnEat, not EatFood):
    `coop.pool swallow <key>` runs the game's interaction executor 0xE7E7F0 with that kind for the
    nearest meat (no meat on screen: kind 9 on a plant, the same swallow); no food either.
-SPORE_FIX_OFF=cell.ko_no_eat must FAIL (the knocked-out cell eats: +12 per plant).
+cell.ko_no_eat off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-093513:cell_ko_food) (the knocked-out cell eats: +12 per plant).
 SPORE_FIX_OFF=cell.ko_no_swallow must FAIL (the knocked-out cell swallows meat: food grows).
 
   SPORE_LANE=7 python3 tools/tests/coop_cell_ko_food.py

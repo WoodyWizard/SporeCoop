@@ -118,3 +118,4 @@ The test must fail on main and with `coop.fix session_end off`, and pass with th
   and a coop.host / coop.join while a session is open; `coop.sessionfix 0` restores the old lists.
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: session.end (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `session.end` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261115-030257:leave_cleanup on record; its test runs PASS-only.

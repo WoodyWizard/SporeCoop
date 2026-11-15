@@ -111,3 +111,5 @@ records from the host only on demand, after the load).
 - 2026-10-31: reproduced on GOG lanes 5/6 (missing pack -> 0x441F3B); fixed on fix/w22-reports (creations.missing_parts).
 - 2026-10-31 (fix/w24-parts): the owner chose substitution over refusal: BUG-0354 shows the pack's parts as similar base parts on a game without it (`creations.part_substitute`); the refusal stays as the fallback for a part without a substitute.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `creations.missing_parts` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-130951:guest_missing_pack on record; its test runs PASS-only.
+- 2026-11-15: switch `creations.part_substitute` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-135611-fix-w24-parts:guest_missing_pack on record; its test runs PASS-only.

@@ -72,3 +72,4 @@ player reset is inferred from the one campaign crash.
 ## History
 - 2026-10-29: opened; root cause, fix and test on fix/w8-planet.
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `world.menu_player` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-191412-fix-w8-planet:menu_stale_player on record; its test runs PASS-only.

@@ -66,3 +66,4 @@ docs/re/creations.md#creations-evolve-in-place:
 - 2026-11-03: opened from the 0.7.3.4 forum post and its logs (w40 triage).
 - 2026-11-03: fixed on fix/w40-no-reload (evolve in place, Cell and Creature; FAIL / PASS runs above).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `world.evolve_in_place` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-173049:evolve_in_place_cell on record; its test runs PASS-only.

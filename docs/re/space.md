@@ -1832,7 +1832,7 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   faulted at 0x65 from 0x959049. Which window and why the game destroyed it without PopModal is
   open (?): the guest had been taken from Space to the galaxy menu by the mod and loaded the world
   from there. gamefixes.cpp drops such a window (both slots must lead into executable code) before
-  UpdateHover (`coop.fix game.dead_modal`).
+  UpdateHover (`coop.fix game.dead_modal` (retired in 0.7.15)).
 
 ## The captain screen and its game fault (2026-10-30, fix/w11-finale)
 <a id="space-captain-screen-fault"></a>
@@ -1973,7 +1973,7 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   writing (once per serializer and frame, main thread, whether or not the strip is on); world.cpp
   notes the time when the Space context is 0 then. A share whose save was written on a planet saves
   again (`save_game` refuses until the ship is off the planet, the guest waits with "leave the
-  planet to save"). Switch `coop.fix world.share_planet_save`; test knob `coop.worldfix landsave <ms>`
+  planet to save"). Switch `coop.fix world.share_planet_save` (retired in 0.7.15); test knob `coop.worldfix landsave <ms>`
   (LandOnActivePlanet <ms> after the next Space share save is posted; -1 off); `coop.status`
   world line "shares saved again (written on a planet) N".
 * Frequency: 1 of 182 Space share saves in the lab history up to 2026-10-31 (a test bot clicked a
@@ -2189,7 +2189,7 @@ BUG-0546, follow-up of [lane 5's cache](#space-lane5-pollination).
 
 * ✔ The game's own bug, not the mod's: one game, no co-op session (`coop.status`: offline), the space_empire
   fixture and lane 5's Sporepedia cache, `coop.space jumpto 4849684` (star 004A0014): fault at 0xE98DD0 (lab
-  test space_npc_model with `SPORE_FIX_OFF=game.ufo_model`).
+  test space_npc_model with game.ufo_model off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-130233:space_npc_model)).
 * ✔ The path (Ghidra, GOG 2024): `UfoGfx_InitFromUfo` 0xE9B180 (thiscall(gfx, ufo) ret 4) reads the ship's model
   key (0xC37390 on the cGameDataUFO cast 0xB033B403). Only a key of all zeros gets the default
   {0x9D5DB21A, 0x476A98C7, [0x015A8B3C] = 0x40656200}. Then `UfoGfx_SetModel` 0xE9A920 (thiscall(gfx, const

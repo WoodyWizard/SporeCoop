@@ -56,3 +56,4 @@ why the game does that is not known).
 - 2026-10-30: opened (fix/w11-space-join) from lab 20261030-075052 campaign_space#3; reproduced with
   a 2-player test, fixed.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `world.share_settle_context` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-100130:space_share_takeoff on record; its test runs PASS-only.

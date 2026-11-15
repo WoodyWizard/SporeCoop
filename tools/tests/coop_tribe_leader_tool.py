@@ -5,16 +5,16 @@ Lab (fix/w43-realign, realign_tribe_rejoin): 18 s after a rejoin the guest's gam
 in GetAbilityIndexByType (cCreatureCitizen::Update): a citizen counted 21 abilities and its 21st was null, ECX = 1 at
 the fault = the leader branch of the getter 0xC24E40. A leader (its tribe's +0x11C) with a tool of type 1..6 counts
 one ability more than the getter serves (docs/re/tribe.md#tribe-leader-tool). The game never gives its leader such
-a tool; the mirrors' tool field (tribe.tool_hold) copies the host's member's.
+a tool; the mirrors' tool field (tribe.tool_hold (retired)) copies the host's member's.
 
 1. Tribe fixture. The host forms an NPC tribe (`coop.tribe form`: the guest's game makes its own copy of it,
-   tribe.npc_tribes). --rejoin: the guest leaves and joins again.
+   tribe.npc_tribes (retired)). --rejoin: the guest leaves and joins again.
 2. Each game's tribe leaders (`coop.tribe`: `leader=1` from the game's own 0xC23430). A member that leads its tribe
    in the guest's game and not in the host's is the case (picked; none: SKIP).
 3. In the host's game that member gets a spear (`coop.tribe settool <id> 1`: the game's SetSpecializedTool, as a
    rack's weapon taken).
 --direct (the suite's case): when no member leads in the guest's game only, the guest's leader mirror gets the spear
-through tribe.tool_hold's own apply (`coop.tribe applytool <id> 1`, the state of the lab's fault made on purpose).
+through tribe.tool_hold's (retired) own apply (`coop.tribe applytool <id> 1`, the state of the lab's fault made on purpose).
 PASS: the guest's game never faults, its leader keeps a tool outside 1..6 and the guest's game keeps drawing.
 
 Not in the suite: the natural case (a guest-only leader) did not happen in 3 runs (with and without --rejoin), and
@@ -77,7 +77,7 @@ def main():
     direct = '--direct' in sys.argv
     if pick is None and direct:
         # the state of the lab's fault made on purpose: the guest's leader mirror gets the field's spear through
-        # tribe.tool_hold's own apply (as if the host's member it mirrors held one)
+        # tribe.tool_hold's (retired) own apply (as if the host's member it mirrors held one)
         pick = next((i for i, v in gm.items() if v[2] and i in hm), None)
     if pick is None:
         print('  no member leads in the guest\'s game only: the scenario did not happen')

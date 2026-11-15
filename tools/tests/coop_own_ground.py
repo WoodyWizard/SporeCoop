@@ -16,7 +16,7 @@ from the planet's centre, stood 0.69 m under the terrain until it walked (lab 20
    again by itself, lab 20261105-113116 / 113250), 4 s of samples.
 Checks: B's push put it in the ground at first (a test without that proves nothing); after the first second neither
 own creature is more than UNDER m under its ground on 2 samples in a row (the monitor's rule is 0.5 m on 2 trace
-lines: this is stricter). SPORE_FIX_OFF=creature.own_ground must FAIL.
+lines: this is stricter). creature.own_ground off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-112714:own_ground).
 
   SPORE_LANE=4 python3 tools/tests/coop_own_ground.py [--secs 8]
 """

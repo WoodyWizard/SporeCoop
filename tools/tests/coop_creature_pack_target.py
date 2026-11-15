@@ -17,7 +17,7 @@ the puppet's combatant, as the attack node's enter does.
 3. ROUNDS times every pack member gets the puppet as its target (`coop.hp packtarget 1 combatant`); 0.5 s
    later and for 4 s the host's game must hold no pack member aimed at the puppet.
 
-  coop_creature_pack_target.py   (SPORE_FIX_OFF=npc.pack_spares_partners: the pack keeps the target, FAILS)"""
+  coop_creature_pack_target.py   (npc.pack_spares_partners off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-172853:pack_target): the pack keeps the target, FAILS)"""
 import re
 import struct
 import time

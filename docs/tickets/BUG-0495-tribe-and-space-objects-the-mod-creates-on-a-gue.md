@@ -53,3 +53,4 @@ The Space half (UFO puppets) moved to BUG-0522: not done here (needs its own sav
 - 2026-11-03: opened.
 - 2026-11-03: Tribe half fixed on fix/w41-tribe-world (tribe.save_strip); Space half split into BUG-0522.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `tribe.save_strip` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-234621:tribe_save_strip on record; its test runs PASS-only.

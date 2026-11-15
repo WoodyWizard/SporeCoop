@@ -16,7 +16,7 @@ first, the other when the first is in it.
 3. BUG-0845, the act change: the host's game jumps to the next act (`coop.adventure act 1`: the game's JumpToAct,
    what the act's end does: SetCurrentAct rebuilds the cast; play state 3 needed: the intro card is closed with Enter
    first), then the guest's; 15 s later both are still in the adventure, in act 1, with no fault and no crash report (the lab checks the reports too).
-SPORE_FIX_OFF=wsync.tod,wsync.adventure_sky must FAIL at 2 (the legacy MSG_WORLD_TIME applied in an adventure).
+wsync.tod + wsync.adventure_sky off failed (wsync.tod retired in 0.7.15, BUG-1138: FAIL run 20261104-205648:wsync_transitions) at 2 (the legacy MSG_WORLD_TIME applied in an adventure).
 
   SPORE_LANE=N python3 tools/tests/coop_adventure_duo.py [--first host|guest|both] [--walk 200] [--no-act]
 """

@@ -3,7 +3,7 @@
 
 play_creature (0.7.6 final check, out/lab/20261104-135838) lost a host's chat line typed while the host was
 paused saving the world for a guest coming back: the box is a modal window, so the mod takes the typing
-(core.ui_locked_edit / core.ui_modal_edit, BUG-0482), but
+(core.ui_locked_edit (retired) / core.ui_modal_edit (retired), BUG-0482), but
  a) the mod's own click on the box's OK button (world.cpp confirms the box) ended the mod's typing like a
     click of the player elsewhere: what the player typed after it went nowhere;
  b) a frame held by the save took the click on the line and the keys after it at once, and the keys of the
@@ -16,7 +16,7 @@ The host, through real input (the window's own chat line text is checked, then b
  2. the box again; the main thread is held (`kit.test.hang`), during the hold a click on the chat line and a
     line typed (the queue keeps both, the next frame takes them at once): the line holds it.
 
-SPORE_FIX_OFF=core.ui_locked_edit_keep: the second half (1) and the whole line (2) are lost: FAILS.
+core.ui_locked_edit_keep off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-100106:chat_pause): the second half (1) and the whole line (2) are lost: FAILS.
 """
 import re
 import time

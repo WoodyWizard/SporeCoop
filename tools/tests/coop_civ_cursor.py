@@ -15,7 +15,7 @@ logged `MISMATCH ... p: 1 apart (p0 23.5)` (548 times in campaigns, Civ `p apart
    own pointer (what the guest sees), and a sync-check now is OK.
 PASS: no sync-check MISMATCH on the host while the pointer moves, step 3.
 
-SPORE_FIX_OFF=diag.rts_cursor: FAILS (a MISMATCH p0 apart while the mouse moves).
+diag.rts_cursor off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-094724:civ_cursor) (a MISMATCH p0 apart while the mouse moves).
 
   SPORE_LANE=9 python3 tools/tests/coop_civ_cursor.py
 """

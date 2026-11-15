@@ -10,7 +10,7 @@ Real input on the guest: the social stance, a click on a Kook (the game's social
 mirror), then a click on the social ability's button (sing: the first slot of the green row, 1440x1080:
 550,1020), never a key. Checked on both games (the game's own state): the host's Kook has its impressed
 flag, the guest's proxy of it too, and the species table counts one more impressed Kook on both.
-SPORE_FIX_OFF=social.bar_click must FAIL (nothing reaches the host)."""
+social.bar_click off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-181651:creature_social_bar) (nothing reaches the host)."""
 import re
 import time
 

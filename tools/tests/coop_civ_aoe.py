@@ -14,7 +14,7 @@ but never stopped its copy of the weapon, so the area and its cultural projectil
 3. Every ~0.15 s, the AoE areas and cultural projectiles of both games (by object), the whole time and 20 s after.
 PASS: the host's game made an AoE area; after the host's last area ended, the guest's ended within 2.5 s; at most
 15 % of the samples have an area in the guest's game only.
-SPORE_FIX_OFF=civ.shot_release: the guest's areas stay after the host's ended (FAIL).
+civ.shot_release off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-124527:civ_aoe): the guest's areas stay after the host's ended (FAIL).
 
   SPORE_LANE=6 python3 tools/tests/coop_civ_aoe.py
 """

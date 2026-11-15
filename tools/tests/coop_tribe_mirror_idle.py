@@ -3,7 +3,7 @@
 
 The 0.7.12 final check's same-view key frames: members at rest at the village stood on one game and sat or crouched
 at the fire on the other (BUG-0936), and the host's chief swung its staff while the guest's copy held it upright in
-the resting grip (BUG-0914). A mirror plays the behaviour animations the host relays (tribe.mirror_anims) and keeps
+the resting grip (BUG-0914). A mirror plays the behaviour animations the host relays (tribe.mirror_anims (retired)) and keeps
 each until it ends: the host's member, whose behaviour tree cut it short, already stood or walked in its own idle
 (probe, lane 4: the host in its idle choice, the guest's mirror the same or in its own idle / walk in 30 % of the
 samples). And the staff is held in the hand only while the animation it was taken in plays (the hold modifier,

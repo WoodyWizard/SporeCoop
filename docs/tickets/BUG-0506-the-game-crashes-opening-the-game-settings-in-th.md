@@ -47,3 +47,4 @@ Follow-up (GitHub #190): the fallback runs right after the game's own startup ma
 - 2026-11-03: cause found and fixed on fix/w40-misc (game.save_areas), reproduced in the lab.
 - 2026-11-03: GitHub issue #190: the editor crash, the ru-ru PlayerDir cause reproduced; the fallback moved to right after the game's startup (fix/w40-misc).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `game.save_areas` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-180851:save_areas on record; its test runs PASS-only.

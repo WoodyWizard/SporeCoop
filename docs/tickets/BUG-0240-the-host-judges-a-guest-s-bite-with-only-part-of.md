@@ -42,3 +42,4 @@ Two-game `tools/tests/coop_cell_guest_bite.py` (suite `cell_guest_bite`), lane 2
 - 2026-10-28: fixed on fix/w5-cell (71eb1c7): IsDamageable's cell type / AI type copied into the guest-bite gate; lock rate left open (known issue).
 - 2026-10-29: released in 0.7.3.1.
 - 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: since BUG-0714 (cell.guest_hit_game) a guest's hit goes through the game's DamageCell before this gate (cellsync.cpp:4107), so SPORE_FIX_OFF=pool.guestbite_type no longer makes cell_guest_bite fail; new test ticket BUG-0888.
+- 2026-11-15: switch `pool.guestbite_type` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261028-235236:cell_guest_bite on record; its test runs PASS-only.

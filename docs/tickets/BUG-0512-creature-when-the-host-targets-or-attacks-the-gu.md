@@ -53,3 +53,4 @@ reproduced); the host's own click on the guest is checked as well (no pack targe
 - 2026-11-03: opened (w40 triage); the 0.7.3.4 fix BUG-0374 covers another path.
 - 2026-11-03: fixed on fix/w40-guest-combat (npc.pack_spares_partners); trigger not reproduced, the state made by the test.
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `npc.pack_spares_partners` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-172853:pack_target on record; its test runs PASS-only.

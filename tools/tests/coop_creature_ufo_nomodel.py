@@ -6,7 +6,7 @@ The visit's ship comes from the host's Sporepedia cache (`Pollination.package`).
 leave the ship gfx without a model; the factory then wrote GetModel()+4: a fault at 0xE99524 (data 0x4) on the host,
 seen at the campaign's Creature -> Tribe advance (lab 20261107-171750, 20261107-175737-2). The test starts the visit
 the game's own way (`coop.drama start 2`, as creature_ufo_mirror does) until one ship gfx is made without a model, up
-to TRIES visits (the ship is picked at random from the cache; before each visit game.ufo_model forgets a known
+to TRIES visits (the ship is picked at random from the cache; before each visit game.ufo_model (retired) forgets a known
 ship model an earlier visit had, `coop.ufoforget`, as in a Creature game that has none), then lets the visit go on for HOLD s:
   1. no fault on the host (0xE99524 at the start, 0xE9A908 later), the games answer;
   2. the case happened: a ship gfx without a model (the guard's counter, or the fault with the fix off); else SKIP.
@@ -59,7 +59,7 @@ def run():
     case = False
     for i in range(TRIES):
         n0 = gfx_null(host)[0]
-        host.call('coop.ufoforget')  # a Creature game has no own ship: no known ship model for game.ufo_model
+        host.call('coop.ufoforget')  # a Creature game has no own ship: no known ship model for game.ufo_model (retired)
         out = host.call('coop.drama start 2')['out']
         print(f'  visit {i + 1}: ' + ' | '.join(ln for ln in out.splitlines() if 'ufo' in ln)[:200], flush=True)
         time.sleep(5)

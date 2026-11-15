@@ -38,7 +38,7 @@ def actions_run(p):
 
 def ran_once(p, n0, secs=10, settle=2.0):
     """the action vote's result ran on the host after the vote ended: it may wait there at the busy
-    gate (core.vote_action_busy, BUG-0404: the host's game paused, a cinematic, a load; the "game
+    gate (core.vote_action_busy (retired), BUG-0404: the host's game paused, a cinematic, a load; the "game
     saved" box of the mod's own world share pauses it for about a second), so this waits up to `secs`
     for the count to rise, then `settle` s more so a second run shows too. Returns the count."""
     wait_until(lambda: actions_run(p) > n0, secs)

@@ -17,7 +17,7 @@ fix. The ring is the game's own state: an entry for that cell in the cell UI's r
    each time the creature has a ring in the guest's game, read in the same frame and again 0.1 s later,
    and the host took the hp (the bite still goes to the host).
 
-SPORE_FIX_OFF=cell.bite_ring: the run that must FAIL at 2.
+cell.bite_ring off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-125228:cell_bite_ring): the run that must FAIL at 2.
 """
 import re
 import time

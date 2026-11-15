@@ -61,3 +61,5 @@ their old `c missing` is not reproduced on 15539ad.
 - 2026-11-01: opened.
 - 2026-11-01: analysed and fixed on fix/w31-cell-gate (check changes, test marks).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `diag.cell_margin` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-095302:cell_sync_check on record; its test runs PASS-only.
+- 2026-11-15: switch `diag.total_lag` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-095302:cell_sync_check on record; its test runs PASS-only.

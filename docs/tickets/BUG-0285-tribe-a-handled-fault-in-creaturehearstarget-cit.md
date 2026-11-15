@@ -83,3 +83,4 @@ Not verified: which citizen the game cleaned up while its action still ran, and 
 - 2026-10-30: fix/w9-tribe: the fault's function and caller chain read (game code only), not reproduced; not-reproduced.
 - 2026-10-30: seen again (BUG-0310); fixed on fix/w13-tribe-civ by the guard tribe.leave_walk (stand-in test FAIL 20261030-135912, PASS 20261030-140307 2x); not-reproduced -> fixed.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `tribe.leave_walk` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-132850-fix-w13-tribe-civ:tribe_leave_walk on record; its test runs PASS-only.

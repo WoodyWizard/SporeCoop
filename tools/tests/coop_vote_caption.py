@@ -12,7 +12,7 @@ dropped and the vote ended by its timer. Every cinematic (a caption) holds the g
 4. a second vote right after the first, the caption still up: the click counts again
 5. the caption ends; a third vote without a caption: the click counts (no double toggle)
 
-SPORE_FIX_OFF=core.ui_locked_clicks: the clicks are dropped again (the test fails).
+core.ui_locked_clicks off failed (retired in 0.7.15, BUG-1138: FAIL run 20261029-143459:vote_caption): the clicks are dropped again (the test fails).
 """
 import re
 import time

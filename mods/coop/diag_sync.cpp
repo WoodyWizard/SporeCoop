@@ -246,7 +246,9 @@ struct GuestCheck {
 // within kTotalLag s before it asked is no difference.
 // BUG-0588: after the City Hall editor of the end of Tribe the host's game has every animal at (0 0 0) (it takes the
 // Tribe world down for Civ) while the guests' proxies stay: "n: 46 apart" MISMATCH (lab 20261104-224338). The check
-// does not compare while the host's stage ends.
+// does not compare while the host's stage ends. Off: compared (0.7.7).
+static bool g_stage_end_fix = true;
+COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
 // BUG-0754: a guest the host shares its world with is not compared for kShareQuiet s after the share was asked for: the
 // host saves (a 0.8 s hitch), the transfer runs and the guest loads the received world. In campaign_ct (lab
 // 20261108-085348-2 #2 of fix/w46-k4-ground) a check of that moment took the host's family members (moved with the
@@ -619,7 +621,7 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         own_path_check(hd, gconv, lim, c, now, rtt);
         guest_path_check(from, hd, gconv, lim, c, now, rtt); // BUG-0758
     }
-    if (g_P.stage_end && g_P.stage_end())
+    if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
     if (g_share_quiet_fix && g_P.since_share && g_P.since_share(from) < kShareQuiet)
         c.other_place = true; // BUG-0754

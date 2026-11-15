@@ -88,3 +88,5 @@ Observed (fix/w30-npc-walk, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`; coop.
 - 2026-11-01: opened.
 - 2026-11-01: fix/w30-npc-walk: causes measured, creature.puppet_path, npc.path, test fixes.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `creature.puppet_path` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-122732-fix-w30-npc-walk:puppet_walk_novel#1 on record; its test runs PASS-only.
+- 2026-11-15: switch `npc.path` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-124932-fix-w30-npc-walk:npc_walk_novel#1 on record; its test runs PASS-only.

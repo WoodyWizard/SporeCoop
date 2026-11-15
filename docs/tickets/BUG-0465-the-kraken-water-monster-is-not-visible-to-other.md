@@ -79,3 +79,4 @@ planet's up). The guest stands on the shore 65 m away and turns its camera to th
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): not fixed; the time went to BUG-0557 / BUG-0383, BUG-0558 and BUG-0458 (by player impact: the monster is the drowning player's own death cinematic, seen by the partner as the puppet dying in deep water). Next step unchanged: read CRG_AvatarDied_SeaMonster's actors (the cinematic's data) and show that model at the puppet without the camera.
 - 2026-11-06 (fix/w45-creature-reports, follow-up of P3): the monster found (an effect of the death cinematic), shown upright on the partner (effects.world_xform); fixed.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `effects.world_xform` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-030048:creature_sea_monster on record; its test runs PASS-only.

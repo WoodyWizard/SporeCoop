@@ -5,7 +5,7 @@ A guest crashed about 10 s into a Civ fight with tanks: guest_fire took a turret
 (+0x120), where a turret holds no object, and weapon_of called vt 0x14 of that word (execute of 0xCCCCCCCC).
 
 1. Two games on civ_npc. The host's game adds two turrets to the NPC city nearest to its army
-   (`coop.civ addturret`: the game's City_AddTurret); civ.turrets (BUG-0484) puts them in the guest's game too.
+   (`coop.civ addturret`: the game's City_AddTurret); civ.turrets (retired) (BUG-0484) puts them in the guest's game too.
 2. The turret objects of both games: where each holds its combatant (a dword of the turret combatant vtable,
    probed with `mem.read`).
 3. The host's military vehicles attack that city (`coop.civ attack`), so its turrets fire at them; for 60 s the
@@ -73,7 +73,7 @@ def main():
     for _ in range(2):
         print('  host addturret:', host.call(f'coop.civ addturret {tgt}')['out'].strip(), flush=True)
     ht = []
-    for _ in range(10):  # civ.turrets sends a city's turrets when they changed and every 3 s
+    for _ in range(10):  # civ.turrets (retired) sends a city's turrets when they changed and every 3 s
         time.sleep(2)
         ht, gt = turrets(host, tgt), turrets(guest, tgt)
         if ht and len(gt) >= len(ht):

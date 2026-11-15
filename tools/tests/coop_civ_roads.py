@@ -10,7 +10,7 @@ type 0, docs/re/civ.md#civ-roads-citizens); the host's AI makes routes, the gues
    (`coop.civ roads 0 1`: the game's own AddTradeRoute, as its AI does).
 3. 8 s later, the game objects of the road noun (0x2B8A4E7) in each game (`coop.civ nouns 2B8A4E7`): the
    guest has as many roads as the host, and the guest's two cities list the route.
-PASS: 3. SPORE_FIX_OFF=civ.roads: the guest has no road (FAIL).
+PASS: 3. civ.roads off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-235005:civ_roads): the guest has no road (FAIL).
 
   SPORE_LANE=2 python3 tools/tests/coop_civ_roads.py
 """

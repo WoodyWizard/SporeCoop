@@ -34,7 +34,7 @@ VOICE = ('C1B0CC', 'C1B170')     # Creature_CombatVoice's PlayProceduralAudio ca
 # the feedback of the player who gave the order, in that player's game only (not a member's sound)
 ORDER_MARKER = {'CE5F2ED0'}
 # the hit impacts of an attack animation's per-target events (0xD05B58ED = effect 0x682E8D4B; 0xA7E3E1FB inferred the
-# same): a mirror's relayed animation has no target (BUG-0603, effects.hit_targets: tribe_hit_impacts); left out here
+# same): a mirror's relayed animation has no target (BUG-0603, effects.hit_targets (retired): tribe_hit_impacts); left out here
 PER_TARGET = {'D05B58ED', 'A7E3E1FB'}
 
 

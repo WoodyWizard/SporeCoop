@@ -20,7 +20,7 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py).
    did hold over 1024 open objects (`coop.pool sap` sweep_peak, so the case was reached), and each
    guest's game shows the host's cell swimming (its puppet of the host moves as much).
 4. No caught fault in any game (the lab checks the logs too).
-SPORE_FIX_OFF=cell.sap_sweep must FAIL (faults at small addresses on the host, its cell stops).
+cell.sap_sweep off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-000232:cell_sap#1) (faults at small addresses on the host, its cell stops).
 
   SPORE_LANE=5 python3 tools/tests/coop_cell_sap.py [--food 300] [--cells 1100] [--seconds 40]
 """

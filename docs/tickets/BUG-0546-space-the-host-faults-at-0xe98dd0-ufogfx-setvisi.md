@@ -45,3 +45,4 @@ Test tools/tests/coop_space_npc_model.py (one game, `--solo`; suite space_npc_mo
 - 2026-11-04: opened.
 - 2026-11-04: fixed on fix/w42-infra: a game fix (game.ufo_model) and its twin test; BUG-0545 closed as a duplicate.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `game.ufo_model` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-130233:space_npc_model on record; its test runs PASS-only.

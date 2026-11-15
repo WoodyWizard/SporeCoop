@@ -2,13 +2,13 @@
 """Tribe: the ground of an NPC village the host's game forms during play is the host's in the guest's game (BUG-0332).
 
 In 4-player campaigns (campaign_ct, lab 20261105-233903 and 20261106-000530 of fix/w45-tribe) the host's game formed
-an NPC tribe during Tribe play (cNpcTribeController); the guests made their copy of it (tribe.npc_tribes,
+an NPC tribe during Tribe play (cNpcTribeController); the guests made their copy of it (tribe.npc_tribes (retired),
 SpawnNpcTribe at the host's position) and the logs said "made it ... at 5.1 m" / "at 5.9 m": the guests' ground
 there was 5.1 / 5.9 m higher than the host's, and the host's members that went there stood 5 m higher on the guests.
 
 1. Two games on the tribe fixture.
 2. The host's game forms its next NPC tribe (`coop.tribe form`: the controller's own forming, as in play); the guest's
-   game makes its copy of it (tribe.npc_tribes).
+   game makes its copy of it (tribe.npc_tribes (retired)).
 3. On both games the game's own ground (`coop.ground`, cPlanetModel::GetHeightAt) at the new village's centre and on rings of 10, 25 and 50 m round it (8 directions),
    twice 10 s apart, and the distance of the guest's village from the host's.
 PASS: the two grounds within 50 m of the new village differ by less than LIMIT, the guest's village within 2 m.

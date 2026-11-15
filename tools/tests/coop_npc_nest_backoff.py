@@ -159,7 +159,7 @@ def main():
     host_in = {i: sum(1 for x in rows if x[1] == i and x[2] is not None and x[2] < -SUNK) * dt for i in ids}
     print(f'  host NPCs inside their game\'s surface over {SUNK} m: { {i: round(v, 1) for i, v in host_in.items()} } s', flush=True)
     ml = re.search(r'mound_lifts=(\d+)', guest.call('coop.npc')['out'])
-    print(f'  guest: proxy targets put onto the mound (npc.proxy_mound) {ml.group(1) if ml else "?"}', flush=True)
+    print(f'  guest: proxy targets put onto the mound (npc.proxy_mound (retired)) {ml.group(1) if ml else "?"}', flush=True)
     if not a.host_near:
         ck(any(v > 1.0 for v in host_in.values()), 'the host\'s game has an NPC of that nest inside its mound (the case: '
                                                    'the host far, its game without the mound there)')

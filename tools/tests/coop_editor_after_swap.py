@@ -15,7 +15,7 @@ being built stayed black for good and could not be left (seen at 2-17 fps in leg
 --no-swap: the guest plays the world's own creature (no swap after the load: only the new avatar of
 the loaded world, lab 20261030-162204 showed the same black editor 1.7 s after such a load).
 
-  coop_editor_after_swap.py [--no-swap]   (SPORE_FIX_OFF=creations.editor_after_swap must FAIL)"""
+  coop_editor_after_swap.py [--no-swap]   (creations.editor_after_swap off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-161437:editor_after_swap))"""
 import re
 import sys
 import time

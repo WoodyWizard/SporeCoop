@@ -14,7 +14,7 @@ The window's own label texts and the button's enabled flag are checked, through 
     load a game now and friends join any time; a click never says "Sending".
 Screenshots: out/shots/ui_explain_*.png (the layout of the new texts).
 
-  SPORE_FIX_OFF=core.ui_share_explain,core.ui_creation_hint: the old texts and the always enabled button: FAILS
+  core.ui_share_explain, core.ui_creation_hint off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-095220:ui_explain): the old texts and the always enabled button: FAILS
 """
 import time
 

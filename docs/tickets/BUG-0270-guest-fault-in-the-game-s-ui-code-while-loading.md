@@ -39,3 +39,4 @@ Simulated state (`coop.deadmodal` puts an object with 0x65 vtable slots at WM+0x
 - 2026-10-29: opened.
 - 2026-10-30: analysed and contained on fix/w9-space (dead modal window guard, test dead_modal).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `game.dead_modal` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-002848:dead_modal on record; its test runs PASS-only.

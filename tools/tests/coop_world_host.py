@@ -6,21 +6,21 @@ position), not the mod's bookkeeping:
   --case fruit      (BUG-0497, creature) a host fruit whose copy the guest's game lost (gone there only, as its flora's
                     recycling does), and a fruit the guest's game rolled elsewhere (moved 8.5 m there only): both lie
                     at the host's places in the guest's game (within 1.5 m), the rolled one not where it rolled to.
-                    SPORE_FIX_OFF=wobj.fruit_place fails.
+                    wobj.fruit_place off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-041115:host_fruit).
 
   --case ornament   (BUG-0541, space) both players land on the home planet: the ornaments (noun 0x18C88E4: the
                     cities' decorations, 9 per city) are the same on both planets (every one of each game has one of
                     the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
-                    layouts differed in 2 of 3 loads). SPORE_FIX_OFF=wobj.city_ornament fails.
+                    layouts differed in 2 of 3 loads). wobj.city_ornament off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-045654:host_space_ornament).
 
   --case bundle_drop (BUG-0661, tribe) a host member carrying food dies: the food lies on the ground at the host's place
                     in the guest's game too, no copy is still carried (SPORE_FIX_OFF=wobj.bundle_reclass fails)
   --case bundle_civ (BUG-0548, civ) food on the ground by the host's city (as a fight's loot): the host's lies at
                     its place in the guest's game, one only the guest's game dropped is gone from it.
-                    SPORE_FIX_OFF=wobj.bundle fails.
+                    wobj.bundle off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-044559:host_bundle).
 
   --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
-                    guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
+                    guest's game (within 1 m, as many as on the host). wobj.cultural_target off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-043659:host_cultural).
 
   coop_world_host.py --case fruit
 """

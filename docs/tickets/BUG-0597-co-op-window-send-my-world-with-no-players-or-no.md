@@ -50,3 +50,4 @@ ui_explain_alone_world.png (English and Russian fit one line).
 - 2026-11-05: opened.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_share_explain).
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `core.ui_share_explain` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-095220:ui_explain on record; its test runs PASS-only.

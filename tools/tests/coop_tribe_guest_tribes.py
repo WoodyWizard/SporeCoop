@@ -3,7 +3,7 @@
 
 The detector found whole villages (tribe, hut, tools, food mat, members) in a guest's game only after the live
 Creature -> Tribe change (campaign_ct). A guest's own NPC tribe controller formed tribes of its own (the host
-forms its own and the guests make each of the host's: tribe.npc_tribes), and a guest's tribe the host no
+forms its own and the guests make each of the host's: tribe.npc_tribes (retired)), and a guest's tribe the host no
 longer had was never emptied.
 
 1. Two games on the tribe fixture. The guest's game's NPC tribe controller forms its next tribe

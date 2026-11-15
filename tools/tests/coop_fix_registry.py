@@ -7,7 +7,7 @@ One game of the lane, at the galaxy menu:
   * `coop.fix all off` turns every safe one off and skips the unsafe ones ("N off, M unsafe
     skipped"), `all off --unsafe` turns every one off, `coop.fix all on` back on;
   * a switch and its old command see the same bool (`coop.pool fix`, `coop.npc strays`,
-    `coop.worldfix`, `coop.creations worlddrop`), both ways (`coop.corefix` is gone since 0.7.15, BUG-1138);
+    `coop.worldfix`, `coop.creations worlddrop`), both ways;
   * an unknown name is refused, an old issue's name gets the registry name as a hint.
 
   SPORE_LANE=6 python3 tools/tests/coop_fix_registry.py"""
@@ -97,8 +97,8 @@ def main():
             c.call(f'coop.fix {name} on')
         r = c.call('coop.fix no.such off')
         ck('unknown fix' in r['out'], 'an unknown name is refused')
-        r = c.call('coop.fix session_end off')
-        ck('did you mean session.end' in r['out'], 'an old name gets the registry name as a hint')
+        r = c.call('coop.fix id_reuse off')
+        ck('did you mean core.id_reuse' in r['out'], 'an old name gets the registry name as a hint')
         _, st = states(c)
         ck(st and all(st.values()), 'every switch on at the end')
     finally:

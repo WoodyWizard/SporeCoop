@@ -16,7 +16,7 @@ one of them at all.
 Then a fight: an NPC of another species attacks the guest's puppet on the host (the guest hit it); its proxy must
 show the attack animations.
 
-  coop_npc_anims.py   (SPORE_FIX_OFF=npc.anims fails: 15-22 % of the samples, fight 0 %; the behaviour tree starts
+  coop_npc_anims.py   (npc.anims off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-154027:npc_anims): 15-22 % of the samples, fight 0 %; the behaviour tree starts
                        its animations with CreaturePlayAnim 0xC122F0, docs/re/creature.md#creature-bt-anims)"""
 import collections
 import re

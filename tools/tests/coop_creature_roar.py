@@ -17,7 +17,7 @@ ability's +0xA0 seconds: the creature runs away) and the stimulus (0, 0x4000000)
 4. The host's game: the behaviour tree of each of them is in node 0x02D852E0 (its answer to the roar) within 3 s,
    and they back away: their mean distance from the puppet grows by 1.5 m or more in 10 s.
 
-  coop_creature_roar.py   (SPORE_FIX_OFF=creature.roar_relay: no host NPC gets the slot or runs, FAILS)"""
+  coop_creature_roar.py   (creature.roar_relay off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-110044:creature_roar): no host NPC gets the slot or runs, FAILS)"""
 import math
 import re
 import struct

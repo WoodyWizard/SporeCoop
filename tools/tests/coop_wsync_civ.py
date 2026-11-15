@@ -11,7 +11,7 @@ guest's game (BUG-0593, wsync rows city_owner, civ_rel, civ_money; mods/coop/wsy
    planet_owner:building_* row, no state:relation, no state:civ_money row. The host's game itself must show the
    change (the captured city's buildings are the player's, the relation moved by 3 or more, the money by 1000).
 
-SPORE_FIX_OFF=wsync.city_owner,wsync.civ_rel,wsync.civ_money: the guest keeps the NPC's buildings, relation and
+wsync.city_owner, wsync.civ_rel, wsync.civ_money off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-122815:wsync_civ): the guest keeps the NPC's buildings, relation and
 money: must FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_wsync_civ.py

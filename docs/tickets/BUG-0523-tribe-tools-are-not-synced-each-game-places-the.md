@@ -63,3 +63,4 @@ purchase does); tools made by the mod are not put into a village layout slot.
 - 2026-11-03 (fix/w41-tribe-actions, BUG-0514): the PLAYER tribe's tools are host-owned world objects now (worldobj kind `tribe_tool`, `wobj.tribe_tool`): a guest makes a copy (same type, the host's position, upright) of every host tool it has none of within 2 m. Left for this ticket: NPC tribes' tools (needs the host tribe -> guest tribe mapping, tribe.cpp g_local_tribe_of); a guest's own copy at another spot is neither moved to the host's place nor removed (the kind has no apply / drop_own); tools a guest buys (BUG-0524).
 - 2026-11-04 (fix/w42-tribe-left): every tribe's tools host-owned, own copies removed, dragged tools not sent; fixed.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `wobj.tribe_tools_all` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-101214:tribe_tools_all on record; its test runs PASS-only.

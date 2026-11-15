@@ -70,3 +70,4 @@ that is in the world (the game's own objects of both machines, `coop.census`).
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w7-npc (cause: the NPC was back in the game's creature pool; BUG-0280 opened for the culling itself).
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `npc.pooled` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-144839:npc_pooled on record; its test runs PASS-only.

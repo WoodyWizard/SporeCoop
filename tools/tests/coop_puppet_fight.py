@@ -19,7 +19,7 @@ Checks per direction over the fight (FIGHT_S s):
   the other player sees half a second late: the bite lands before the creature arrives).
 
   coop_puppet_fight.py [--dir host|guest|both] [--seed N] [--secs S]
-  (SPORE_FIX_OFF=creature.puppet_path,creature.puppet_walk fails)"""
+  (creature.puppet_path, creature.puppet_walk off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-122732-fix-w30-npc-walk:puppet_walk_novel#1))"""
 import argparse
 import json
 import math

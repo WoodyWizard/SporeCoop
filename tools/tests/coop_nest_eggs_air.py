@@ -17,7 +17,7 @@ is; an egg 2 m up stayed there until a creature came close (docs/re/creature.md#
    PASS: within 6 s it lies on the surface again on the host and stays there, every egg of the nest lies
    on the surface (none pushed into it) and the guest's copy lies on its surface.
 
-SPORE_FIX_OFF=nest.egg_ground fails: the eggs hang over the nest on the host, the lifted one 2 m.
+nest.egg_ground off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-184259:nest_eggs_air): the eggs hang over the nest on the host, the lifted one 2 m.
 
   coop_nest_eggs_air.py [--lift M]"""
 import argparse

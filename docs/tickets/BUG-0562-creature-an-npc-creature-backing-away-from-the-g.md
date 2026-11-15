@@ -66,3 +66,4 @@ the host's animal 0.54-0.72 m in the mound, 0 s on the guest). Control npc_nest_
 - 2026-11-06 (fix/w45-creature-reports, P3 of 0.7.9): not reproduced (video only); likely the 0.7.8 height class or BUG-0434; npc_walk run as the regression check; left open.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): reproduced (the host's nest animal inside the mound when the host is far, drawn so on the guest's screen); fixed by npc.proxy_mound; test npc_nest_backoff.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `npc.proxy_mound` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-125820:npc_nest_backoff#1 on record; its test runs PASS-only.

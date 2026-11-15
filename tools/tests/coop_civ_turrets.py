@@ -14,7 +14,7 @@ from the civilization's budget) and the snapshot carried none.
 4. 25 s later, the turrets of both cities in both games.
 PASS: the guest's city of step 2 has the host's turrets (no turret of its own growth), the host's new turret of
 step 3 stands in the guest's game too (each host turret has a guest turret within 6 m and the counts match).
-SPORE_FIX_OFF=civ.turrets: the host's new turret is missing on the guest (FAIL).
+civ.turrets off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-095739:civ_turrets): the host's new turret is missing on the guest (FAIL).
 
   SPORE_LANE=9 python3 tools/tests/coop_civ_turrets.py
 """

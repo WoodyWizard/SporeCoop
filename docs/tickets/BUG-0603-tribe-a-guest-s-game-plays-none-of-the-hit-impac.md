@@ -67,3 +67,4 @@ guest's game played, per sound id, at least 80 % of the host's (`coop.audio`, th
 - 2026-11-05: opened (fix/w44-guest-player3, P2b of 0.7.8), analysed, not fixed.
 - 2026-11-05 (fix/w45-tribe, T2 of 0.7.9): root cause corrected (the event's object, not a target list); fixed behind effects.hit_targets.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `effects.hit_targets` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-225207:tribe_hit_impacts on record; its test runs PASS-only.

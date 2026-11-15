@@ -48,3 +48,4 @@ noise 0, alpha within 0.15 of the actor's own).
 - 2026-11-02: opened.
 - 2026-11-03: fixed on fix/w40-creature-acts (creature.sneak).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `creature.sneak` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-151356:creature_sneak on record; its test runs PASS-only.

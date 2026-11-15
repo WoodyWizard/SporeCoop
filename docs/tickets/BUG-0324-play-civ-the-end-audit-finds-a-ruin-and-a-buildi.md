@@ -52,3 +52,4 @@ Not verified: the host's rebuilding after a siege itself (the stand-in makes the
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-tribe-civ): fixed (civ.ruin_repair), stand-in test FAIL 20261030-162619, PASS 20261030-162734.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `civ.ruin_repair` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-162619-fix-w14-tribe-civ:civ_ruin_repair on record; its test runs PASS-only.

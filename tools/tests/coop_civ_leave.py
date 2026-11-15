@@ -8,9 +8,10 @@
    it: the game's position changes.
 4. A capture next to it would name the owner of the nearest vehicle: no vehicle has an absent owner.
 
---nofix: `coop.civ fix orphans 0` (the old code): must FAIL.
+civ.orphans off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-011312:party_civ_own); the test runs
+PASS-only.
 
-  SPORE_LANE=7 python3 tools/tests/coop_civ_leave.py [--nofix]
+  SPORE_LANE=7 python3 tools/tests/coop_civ_leave.py
 """
 import argparse
 import time
@@ -21,12 +22,9 @@ from twoinst import Checks, start
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('civ')
     ck = Checks()
-    if a.nofix:
-        print(' ', host.call('coop.civ fix orphans 0')['out'].strip())
     time.sleep(4)
     hc, hv = civ(host)
     pcities = [k for k, v in hc.items() if v['player']]

@@ -19,7 +19,7 @@
      (Before BUG-0954 the share came from the host's evolution itself; since BUG-0508 it no longer does.)
 
   coop_world_queue.py [--without share_one_save,share_drop_peer,load_in_editor,world_reset | all]
-  (the named fixes off: each part with its fix off must FAIL; SPORE_FIX_OFF=world.world_reset works as well)
+  (the named fixes off: each part with its fix off must FAIL; world.world_reset off failed (retired in 0.7.15, BUG-1138: FAIL run 20261112-065338:world_queue) works as well)
 """
 import glob
 import os

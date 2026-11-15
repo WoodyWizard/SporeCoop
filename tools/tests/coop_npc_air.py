@@ -17,7 +17,7 @@ proxy back onto its terrain.
    * the guest drew the proxy in the air in at least AIR_SHARE of its rows of the air phase (over 1 m);
    * the median drawn height on the guest within HEIGHT_TOL m of the host's;
    * on the ground before and after (the landing): the proxy on the guest's ground (median under 0.3 m).
-SPORE_FIX_OFF=npc.air must FAIL (the proxy drawn on the guest's ground).
+npc.air off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-112120:npc_air) (the proxy drawn on the guest's ground).
 
 Tribe (--fixture tribe) is not a test of this: the host's Tribe game puts a lifted animal back onto its terrain in
 its own update (the host's rows 0.00 m with the animal lifted 4 m at every mod frame, lab 20261105-112236), so the

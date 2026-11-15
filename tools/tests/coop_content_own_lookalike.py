@@ -13,7 +13,7 @@ set-up), the guest lacks its first part, the host's ships fly X: the guest build
 
 PASS: the model the receiving game reads names no lacked part, and in its place the part its lookalike chose from the
 sender's description (`coop.creations looks`), not a fixed fallback.
-FAIL (SPORE_FIX_OFF=content.lookalike): a fixed fallback part.
+FAIL (content.lookalike off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-232034:content_lookalike)): a fixed fallback part.
 
   SPORE_LANE=7 python3 tools/tests/coop_content_own_lookalike.py cell|ufo
 """

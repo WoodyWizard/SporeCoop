@@ -49,3 +49,5 @@ minimized game (SporeKit background mode) is not done.
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03: fixed on fix/w40-guest-combat (creature.puppet_deep, core.partner_silent).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `core.partner_silent` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-174020:partner_silent on record; its test runs PASS-only.
+- 2026-11-15: switch `creature.puppet_deep` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-174020:partner_silent on record; its test runs PASS-only.

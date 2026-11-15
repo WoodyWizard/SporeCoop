@@ -4,7 +4,7 @@
 Player report 2026-11-06 (0.7.8): "village color is desynced", "other villages have different color for guest
 and host". A village's colour is its identity colour (cTribe +0x230: mIDColorID +4, a colour id 0x053DBCxx of the
 game's colour list; mCachedColor +0x24). A new tribe takes the next colour of the list, so a guest that makes the
-host's villages (tribe.npc_tribes) in another order or with a village of its own picks other colours.
+host's villages (tribe.npc_tribes (retired)) in another order or with a village of its own picks other colours.
 
 1. Two games on the tribe fixture; the host's game forms a village (`coop.tribe npc_tribe`), the guest makes it.
 2. The guest's game gives that village another colour (`coop.tribe color`: the state a different pick leaves).

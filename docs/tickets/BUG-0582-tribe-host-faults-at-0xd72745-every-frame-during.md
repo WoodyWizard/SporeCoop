@@ -43,3 +43,4 @@ the guard, 0 faults).
 - 2026-11-04: opened.
 - 2026-11-05: cause found (null spot record), fix tribe.attack_spot, test tribe_attack_spot (fix/w43-crashes).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `tribe.attack_spot` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-235517:tribe_attack_spot on record; its test runs PASS-only.

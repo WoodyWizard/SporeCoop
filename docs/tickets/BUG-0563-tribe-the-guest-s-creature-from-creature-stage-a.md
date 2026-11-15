@@ -42,3 +42,4 @@ tribe_epic_species (the live Creature -> Tribe change from the creature fixture,
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2), cause inferred from the logs.
 - 2026-11-04 (fix/w43-realign): fixed (tribe.epic_species); runs above.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `tribe.epic_species` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-205319:tribe_bounce_world on record; its test runs PASS-only.

@@ -26,7 +26,7 @@ then 1-4 as above, and in 3 the guest's own editor offers exactly the host's par
 the same hash).
 
 Runs that must FAIL: SPORE_FIX_OFF=parts.shared (each game keeps its own parts: 1 and 2 time out, the
-rejoin loses the guest's find); --from-cell with SPORE_FIX_OFF=parts.census_states (0: the guest counts 6
+rejoin loses the guest's find); --from-cell with parts.census_states off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-190047:parts_transition) (0: the guest counts 6
 parts fewer, the host's twins)."""
 import argparse
 import random

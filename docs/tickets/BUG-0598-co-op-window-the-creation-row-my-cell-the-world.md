@@ -41,3 +41,4 @@ editor to pick it)", no arrows). Layout: out/lane6/shots/ui_explain_creation.png
 - 2026-11-05: opened.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_creation_hint).
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `core.ui_creation_hint` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-095220:ui_explain on record; its test runs PASS-only.

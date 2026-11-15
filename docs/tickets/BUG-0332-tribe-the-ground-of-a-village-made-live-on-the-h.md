@@ -92,3 +92,4 @@ PASS: every point within 0.3 m.
   creature_cadian fixture with ground maps; terrain stamp hooks; root cause: live stamp render != loaded render (the
   host's own reload gives the guests' ground). Fixed with tribe.host_reload.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `tribe.host_reload` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-045914:tribe_village_cadian on record; its test runs PASS-only.

@@ -47,3 +47,4 @@ guest's own table and every herd of the species in the guest's game must follow 
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), no evidence beyond the text.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: the guest's herds follow the alliance (social.nest_ally).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `social.nest_ally` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-212719:creature_nest_ally on record; its test runs PASS-only.

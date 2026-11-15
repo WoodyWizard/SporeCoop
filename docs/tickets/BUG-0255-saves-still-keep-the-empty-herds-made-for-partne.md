@@ -43,3 +43,4 @@ Observed (lane 5): after the partner left, the herd made for its puppet stayed w
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (1337ccf); test save_hygiene_leave: FAIL 20261029-003144 with savestrip.empty_herds off, PASS 20261028-232442, 20261028-235458, 20261029-003648
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `savestrip.empty_herds` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-003144:save_hygiene_leave on record; its test runs PASS-only.

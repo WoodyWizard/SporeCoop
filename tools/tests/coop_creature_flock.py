@@ -14,7 +14,7 @@ does not read the pack bit; the guest's proxies were strangers of another herd, 
 3. In the guest's own game every proxy of a flock member answers the game's vt 0xD4 "friendly" and wears the
    hearts effect (GetEffectFromPools 0x6A17B05A), as the host's members wear it.
 
-  coop_creature_flock.py   (SPORE_FIX_OFF=creature.party_allies,npc.flock_hearts: strangers without hearts, FAILS)"""
+  coop_creature_flock.py   (creature.party_allies, npc.flock_hearts off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-212613:creature_flock): strangers without hearts, FAILS)"""
 import re
 import time
 

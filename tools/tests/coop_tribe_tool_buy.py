@@ -2,7 +2,7 @@
 """Tribe: a tool a guest buys and places is placed in the host's game too, and its members use it (BUG-0524).
 
 The palette's placement made the tool in the buyer's game only: the host had no rack there, a guest's GrabTool
-order on it was rejected on the host ("no such target here"). With wobj.tribe_tool_buy the guest's new tool is a
+order on it was rejected on the host ("no such target here"). With wobj.tribe_tool_buy (retired) the guest's new tool is a
 request to the host, which places the same (the old one of the type goes, as the palette does).
 
 1. Tribe fixture. The guest buys a weapon rack (`coop.tribe buy 1 9 120`: the palette's placement in its game,
@@ -14,7 +14,7 @@ request to the host, which places the same (the old one of the type goes, as the
 4. A guest's member is ordered to the rack (`coop.tribe grab`, the order a click gives, run on the host): within
    90 s it holds the weapon in the host's game and on the guest's screen.
 
-SPORE_FIX_OFF=wobj.tribe_tool_buy: must FAIL (no rack in the host's game).
+wobj.tribe_tool_buy off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-101357:tribe_tool_buy) (no rack in the host's game).
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_tool_buy.py [--type 1]
 """

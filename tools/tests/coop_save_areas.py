@@ -15,8 +15,9 @@ startup), then opens Options -> Settings with real clicks. The game must not fau
 save areas must exist and the settings window must be on screen (the window manager's modal window).
 The profile folder is put back at the end.
 
-  coop_save_areas.py   (SPORE_FIX_OFF=game.save_areas: also written to the profile's SporeCoop\fixes_off.txt,
-  as the fix acts while the game starts; the read of 0 at 0x6025A9 comes back, it FAILS)"""
+  coop_save_areas.py   (game.save_areas off, through the profile's SporeCoop\fixes_off.txt as the fix acts while
+  the game starts, failed: the read of 0 at 0x6025A9 came back. Retired in 0.7.15, BUG-1138: FAIL run
+  20261103-180851:save_areas; the test runs PASS-only)"""
 import os
 import re
 import shutil
@@ -63,9 +64,6 @@ def main():
             f.write('not a folder (coop_save_areas.py)\n')
     offfile = os.path.join(lane.GUEST_DIR, 'SporeCoop', 'fixes_off.txt')
     os.makedirs(os.path.dirname(offfile), exist_ok=True)
-    if 'game.save_areas' in os.environ.get('SPORE_FIX_OFF', ''):
-        with open(offfile, 'w') as f:
-            f.write('game.save_areas\n')
     try:
         lane.run_guest()
         con = Console(lane.GUEST, timeout=60)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A running NPC's health and death reach the guest (BUG-0334).
 
-npc.kinematic (BUG-0281) places the guest's proxy of a moving host NPC on the host's path. Its first
+npc.kinematic (retired) (BUG-0281) places the guest's proxy of a moving host NPC on the host's path. Its first
 version went on to the next proxy right after placing it, so the health, the death and the impressed
 flag of a running NPC were not applied on the guest until it stood still: an NPC that fled after a
 joint hit kept its old health on the guest (`team`: "the guest's mirror shows the health after the
@@ -13,7 +13,7 @@ joint hit (4.2 / host 1.95)", smoke 20261030-235253).
    game shows the same health on its proxy (the game's health of the creature, `coop.npc list`).
 3. Still running, the host kills it: within 3 s the guest's proxy is dead in the guest's game.
 
-  coop_npc_run_hp.py   (SPORE_FIX_OFF=npc.kinematic_sync must FAIL)"""
+  coop_npc_run_hp.py   (npc.kinematic_sync off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-020145:npc_run_hp))"""
 import re
 import time
 

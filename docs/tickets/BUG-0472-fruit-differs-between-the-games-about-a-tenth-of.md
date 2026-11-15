@@ -54,3 +54,5 @@ was already empty is not made on the guest; Tribe food bundles (`game_bundle`) h
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: released in 0.7.4.
 - 2026-11-06 (fix/w45-world-objects): the detector's Tribe game_bundle rows (mapped here) are now BUG-0548's (the host's ground and carried food), its fruit rows BUG-0497's.
+- 2026-11-15: switch `wobj.fruit` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-123122:wobj_fruit on record; its test runs PASS-only.
+- 2026-11-15: switch `wobj.tree` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-123223:wobj_tree on record; its test runs PASS-only.

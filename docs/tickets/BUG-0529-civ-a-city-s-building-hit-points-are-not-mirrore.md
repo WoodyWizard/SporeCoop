@@ -46,3 +46,4 @@ PASS (host 4972 / guest 4976 at 30 s, 4462 / 4470 at the end): out/lab/20261104-
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): fixed (civ.building_hp).
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `civ.building_hp` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-095130:civ_shots on record; its test runs PASS-only.

@@ -13,7 +13,7 @@ guest" for minutes; the players on the guests did not see these tribes at all.
    members of it (the same number, the same species), each within 8 m of the host's member: the
    game's own tribe list and member vectors on the guest, not a counter of the mod.
 
-SPORE_FIX_OFF=tribe.npc_tribes (the guest has only the tribes its own game formed): must FAIL.
+tribe.npc_tribes off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-122850:tribe_npc_form).
 
   SPORE_LANE=7 python3 tools/tests/coop_tribe_npc_form.py
 """

@@ -13,7 +13,7 @@ its siblings 0xF0D5A994 / 0xCFECC623, 0xA7E3E1FB), played through an effect's so
 2. PASS: the host's game played at least 4 impact sounds; the guest's game played each impact sound id at least
    80 % as often as the host's (counted per id, at most the host's count each).
 
-SPORE_FIX_OFF=effects.hit_targets: the guest's game plays none of them (FAIL). HIT_LOG=1: `coop.effects log on`.
+effects.hit_targets off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-225207:tribe_hit_impacts): the guest's game plays none of them (FAIL). HIT_LOG=1: `coop.effects log on`.
 
   SPORE_LANE=9 python3 tools/tests/coop_tribe_hit_impacts.py
 """

@@ -13,7 +13,7 @@ session (the detector's `Creature:host_only:creature`), its death and health nev
    own=proxy with that id, alive as on the host, within 6 m of the host's NPC) and the detector finds no
    host NPC near the guest without a proxy.
 
-SPORE_FIX_OFF=npc.resync fails: the forgotten NPCs stay missing on the guest.
+npc.resync off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-124409:npc_resync): the forgotten NPCs stay missing on the guest.
 
 --fixture tribe (BUG-0328, the Tribe rejoin's coverage loss): the same on the tribe fixture. The census lists
 Tribe animals as plain `g` rows without net ids, so the ids come from the guest's `coop.npc` list (spawned

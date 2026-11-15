@@ -17,7 +17,7 @@ Both: the oracle is the census of both games (the host's NPC objects and the gue
 id, within 15 m of each other), not a mod counter.
 
   SPORE_LANE=N python3 tools/tests/coop_npc_frozen.py --case death|caption
-  SPORE_FIX_OFF=npc.frozen_send must FAIL (the host sends nothing while frozen: 0.7.8).
+  npc.frozen_send off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-014526:join_during_host_editor) (the host sends nothing while frozen: 0.7.8).
 """
 import argparse
 import math

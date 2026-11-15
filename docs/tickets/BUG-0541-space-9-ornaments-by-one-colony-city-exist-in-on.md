@@ -55,3 +55,4 @@ both games' lists):
 - 2026-11-04: opened.
 - 2026-11-06 (fix/w45-world-objects): fixed (kind city_ornament), test host_space_ornament.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `wobj.city_ornament` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-045654:host_space_ornament on record; its test runs PASS-only.

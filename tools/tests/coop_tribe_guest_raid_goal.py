@@ -117,7 +117,7 @@ def main():
     ck(g2 and g2['progress'][0] > pbefore + 0.5,
        f"the village only the guest raided counted for the host's goal ({pbefore} -> {g2 and g2['progress'][0]})")
     gg = goal(guest)
-    print(f'  guest goal: {gg and gg["raw"]} (wsync.tribe_goal: the host\'s, a row cycle later)', flush=True)
+    print(f'  guest goal: {gg and gg["raw"]} (wsync.tribe_goal (retired): the host\'s, a row cycle later)', flush=True)
     frame_point({'host': host, 'guest': guest}, hp)
     keyframe('conquered', "the fixture's village the guest's members conquered, on both screens; the goal bar")
 

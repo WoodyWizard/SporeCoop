@@ -12,7 +12,7 @@ host and outside its tiles (player report 2026-10-31).
    host's cell as the guest's game draws it (the host's puppet), and the host's game has the
    guest's puppet within 15 m of its own cell.
 
-SPORE_FIX_OFF=cell.join_after_load: the run that must FAIL (the guest stays at the start).
+cell.join_after_load off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-131104:cell_reload_join): the run that must FAIL (the guest stays at the start).
 """
 import re
 import time

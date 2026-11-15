@@ -21,7 +21,7 @@ graphics pool hands out 0, the cell keeps its particles with no object, the next
 4. The host ends the Cell stage the players' way (food 1000: the guest's cell grows in its own
    cinematic, History, the next stage); the guest keeps over 10 fps all along and follows into the
    Creature stage; no fault.
-SPORE_FIX_OFF=cell.gfx_full must FAIL (step 3: ~600-1500 particles lost in each game).
+cell.gfx_full off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-180500:cell_spare) (step 3: ~600-1500 particles lost in each game).
 
   SPORE_LANE=5 python3 tools/tests/coop_cell_spare.py [--crowd 1000] [--radius 8] [--sample]
 """

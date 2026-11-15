@@ -52,3 +52,4 @@ out/lab/20261107-015219 (OK 2/2); make -j8 and make test pass.
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-tribe-missing): a 0.7.9 regression of tribe.member_body; fixed by tribe.sync_bodies; test tribe_dead_rejoin.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `tribe.sync_bodies` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261107-013812:tribe_dead_rejoin#1 on record; its test runs PASS-only.

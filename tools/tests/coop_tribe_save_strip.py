@@ -15,7 +15,7 @@ came back after a load as members and tribes of that world, with nothing to driv
    WITHOUT a co-op session and loads that save.
 4. The loaded world: the player tribe has the members of Carol's own game only (those she had when
    saved minus the mirrors the mod spawned), no tribe where the made tribe stood, no fault for 10 s.
-PASS: 2 to 4. SPORE_FIX_OFF=tribe.save_strip: the loaded world has the mirrors and the made tribe (FAIL).
+PASS: 2 to 4. tribe.save_strip off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-234621:tribe_save_strip): the loaded world has the mirrors and the made tribe (FAIL).
 
   SPORE_LANE=4 SPORE_FREE_LANE=5 python3 tools/tests/coop_tribe_save_strip.py
 """

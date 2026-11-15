@@ -95,3 +95,4 @@ evo_bar_editors: 27/28; `creature` failed only on the first form of `coop.dna` (
 - 2026-11-06: opened from the Discord report 2026-11-06 (0.7.8); root cause from the logs and the disassembly (fix/w45-intake).
 - 2026-11-06: fixed on fix/w45-evo-bar (creature.bar_spend), tests evo_bar and evo_bar_editors.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `creature.bar_spend` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-174018:evo_bar on record; its test runs PASS-only.

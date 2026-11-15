@@ -12,7 +12,7 @@ Here the guest goes to the main menu (pause menu, Exit to Main Menu, Don't Save,
 calls: played + failed). When the guest is back in the host's world, the host's effects reach it
 again (the guest's game creates them, active).
 
-  coop_effects_here.py   (SPORE_FIX_OFF=effects.here fails)
+  coop_effects_here.py   (effects.here off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-141143:effects_here))
 """
 import re
 import time

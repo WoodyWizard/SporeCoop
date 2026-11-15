@@ -75,3 +75,5 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
 - 2026-11-04 (fix/w43-content, C1 of 0.7.7): root causes found in the lab (species data, the cell paint, the
   fallback without a role); fixed behind `content.species_data` and `content.lookalike`; test content_lookalike.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `content.lookalike` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-232034:content_lookalike on record; its test runs PASS-only.
+- 2026-11-15: switch `content.species_data` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-231837:content_lookalike on record; its test runs PASS-only.

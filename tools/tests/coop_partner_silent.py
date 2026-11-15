@@ -11,7 +11,7 @@ the game keeps a puppet on its ground by itself, only a walking one went under).
 The guest's game stalls (`frame.limit 9000`: a frame every 9 s, its states stop) for ~16 s: the host's screen
    shows a notice that the guest is not responding (a toast in `coop.status`), and another when it is back.
 
-  coop_partner_silent.py   (SPORE_FIX_OFF=core.partner_silent: FAILS)"""
+  coop_partner_silent.py   (core.partner_silent off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-174020:partner_silent))"""
 import re
 import time
 

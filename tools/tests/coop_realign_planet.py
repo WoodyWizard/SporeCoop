@@ -12,7 +12,7 @@ hut, tool, food mat, nest, city with its position, the player flag, a building's
    its last save (`coop.tribe form` on the host: the controller's own forming; the guest makes it), a hut the
    host's members damaged (an NPC hut at 40 % on the host: within 10 s the guest's hut has the host's health,
    BUG-0566), and huts damaged in the guest's game only (every other NPC hut at 30 %: the old world's damage,
-   BUG-0567). Without the fix (realign.buildings) the guest keeps its damage.
+   BUG-0567). Without the fix (realign.buildings (retired)) the guest keeps its damage.
 3. The transition (`--case`): `gameover` (Tribe: the host's player tribe knocked out, OK on the caption: the
    host's game reloads its last save while the guest's stays in its world) or `rejoin` (the guest leaves,
    joins again and loads the host's world).
@@ -20,8 +20,8 @@ hut, tool, food mat, nest, city with its position, the player flag, a building's
    as realign_rule.h), none the host has not, and each hut's health within 5 % of the host's; checked twice 6 s
    apart.
 
-SPORE_FIX_OFF=realign.villages,realign.buildings: step 2's village and hut stay (FAIL) on `gameover`;
-SPORE_FIX_OFF=wobj.tools_planet: the far villages' tools differ (FAIL) on the tribe `rejoin` (BUG-0488).
+realign.villages + realign.buildings off failed (realign.buildings retired in 0.7.15, BUG-1138: FAIL run 20261104-205319:tribe_bounce_world): step 2's village and hut stay (FAIL) on `gameover`;
+wobj.tools_planet off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-212803:realign_tribe_rejoin): the far villages' tools differ (FAIL) on the tribe `rejoin` (BUG-0488).
 
   SPORE_LANE=6 python3 tools/tests/coop_realign_planet.py --fixture tribe --case gameover
 """

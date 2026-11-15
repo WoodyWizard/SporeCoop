@@ -58,3 +58,4 @@ dna_pace_cell, lab 20261103-180425 (+20 food on both, dna_pace=0 +40).
 - 2026-11-03: opened (w40 triage), three reports merged.
 - 2026-11-03: fix/w40-dna-social: each gain counts 1/N players (core.dna_pace, coop.ini dna_pace); fixed (unreleased).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `core.dna_pace` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-180306:dna_pace on record; its test runs PASS-only.

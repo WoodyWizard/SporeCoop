@@ -10,7 +10,7 @@ actor's world position) from the relayed message.
 
   coop_effects_party.py [--fixture cell|creature|tribe|civ|space] [--old-cost]   (SPORE_FIX_OFF=creature.effects_relay must FAIL;
                          in Space SPORE_FIX_OFF=effects.space must FAIL, BUG-0895;
-                         in Tribe / Civ SPORE_FIX_OFF=effects.main_world faults the games: the skin painter's effect)
+                         in Tribe / Civ effects.main_world off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-004532:effects_party_tribe) faults the games: the skin painter's effect)
 
 Every stage (BUG-0471): the same three cases in the stage's fixture, the effect id is the last one the
 stage's game created (`coop.effects load ... 0`; Creature keeps the mating call E1B24DDB), the actor's
@@ -187,7 +187,7 @@ def main():
     print(f'  fixture {a.fixture}', flush=True)
     # Space (BUG-0895): the relay is on by default since 0.7.13; SPORE_FIX_OFF=effects.space must FAIL
     if a.fixture != 'creature':
-        # the last effect id this stage's game created in its own effect world (with effects.main_world off:
+        # the last effect id this stage's game created in its own effect world (with effects.main_world (retired) off:
         # in any world, so also a skin painter's paint effect, which faulted the games in Tribe / Civ, BUG-0451)
         FX_ID = '0'
         OWN_POS = p.own_pos
@@ -221,7 +221,7 @@ def main():
             ck(share is not None and share < SLOW_SHARE,
                f'{x.name}: the relay takes 5 ms or more in under {SLOW_SHARE * 100:.0f} % of the frames '
                f'({share and round(share * 100, 2)} %)')
-    for x in p.all:  # the skin painter's own effects each game saw (never relayed with effects.main_world)
+    for x in p.all:  # the skin painter's own effects each game saw (never relayed with effects.main_world (retired))
         m = re.search(r'effects foreign world: .*', x.call('coop.effects'))
         print(f'  {x.name}: {m.group(0) if m else "?"}', flush=True)
     ck.faults(host=host.con, guest=bob.con, extra=carol.con)

@@ -15,7 +15,7 @@ leader is given a dead chase target (its own slot with another generation).
 
 1. AI cells follow such a leader.
 2. Within 10 s the host logs no new caught fault (`exc`), and its game still draws.
-SPORE_FIX_OFF=cell.pick_guard must FAIL (faults at 0x00E52949, one per frame).
+cell.pick_guard off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-121112:cell_stale) (faults at 0x00E52949, one per frame).
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_stale.py
 """

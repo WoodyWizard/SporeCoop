@@ -59,3 +59,4 @@ than both caps).
 - 2026-11-03: analysed from the logs on fix/w41-tribe-world (time box), not fixed.
 - 2026-11-04 (fix/w43-tests): cause found (the placing's 0.1 s frame cap on slow guests), fixed behind npc.proxy_slow_frames, test npc_walk_slow.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `npc.proxy_slow_frames` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-232034:npc_walk_slow on record; its test runs PASS-only.

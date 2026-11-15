@@ -45,3 +45,4 @@ GetHeightAt and the puppet on the screen, at most 10 % drawn more than 0.15 m un
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04: fixed on fix/w41-puppet-look (creature.puppet_mound).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `creature.puppet_mound` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-025830:puppet_mound on record; its test runs PASS-only.

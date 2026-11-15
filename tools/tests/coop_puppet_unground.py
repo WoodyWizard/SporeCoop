@@ -5,7 +5,7 @@ campaign_tribe (rel/0.7.5, rel/0.7.10): after the evolution editor all four crea
 while the brain upgrade caption played the game separated the stacked creatures sideways and pressed one partner's
 puppet 0.55-0.74 m under its terrain on another game. The partner stood still, so the mod's driving placed nothing and
 the puppet stayed in the ground (agl -0.65 on two trace lines, the monitor's ground gate) until the caption ended.
-creature.own_ground (BUG-0592) covers the own creature only.
+creature.own_ground (retired) (BUG-0592) covers the own creature only.
 
 Two games on the creature fixture, team off, both creatures standing 6 m apart. On the host the guest's puppet is put
 as the separation left it: 0.7 m to the side and 0.69 m under its terrain there (`coop.puppet sink 0.69 0.7`, a

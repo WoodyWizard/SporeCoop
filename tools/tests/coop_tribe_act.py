@@ -12,9 +12,9 @@ docs/re/tribe.md 2). The command now refuses the object actions (3, 12, 15, 24) 
    check the members walk to the target and fault there, 160 faults in 20 s on lane 8).
 3. `coop.tribe act 7 <NPC member>` (attack): ordered, no fault.
 
---nofix: `coop.fix tribe.act_check off` (the old command): must FAIL (the host faults).
+tribe.act_check off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-010933:tribe_act); the test runs PASS-only.
 
-  SPORE_LANE=8 python3 tools/tests/coop_tribe_act.py [--nofix]
+  SPORE_LANE=8 python3 tools/tests/coop_tribe_act.py
 """
 import argparse
 import re
@@ -43,12 +43,9 @@ def settle(con, f0, secs=40):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if a.nofix:
-        print(' ', host.call('coop.fix tribe.act_check off')['out'].strip())
     time.sleep(5)
     print(' ', host.call('coop.tribe spawn 12')['out'].strip())  # the probe's setup: 8 of 15 selected
     time.sleep(4)

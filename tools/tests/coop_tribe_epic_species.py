@@ -12,7 +12,7 @@ the animal nearest the village).
 2. Together in Tribe, the host's game calls the co-op epic now (`coop.tribe epic`, what its timer does after
    8 minutes together). PASS: the epic is not of a player's species (`player_species=0`).
 
-SPORE_FIX_OFF=tribe.epic_species: the nearest animal (0.7.6).
+tribe.epic_species off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-205319:tribe_bounce_world): the nearest animal (0.7.6).
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_epic_species.py
 """

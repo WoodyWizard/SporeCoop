@@ -50,3 +50,5 @@ the guest's game must answer vt 0xD4 true and hold the hearts effect for every p
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), not reproduced.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: the host's pack / flock is friendly on the guest and shows its hearts.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `creature.party_allies` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-212613:creature_flock on record; its test runs PASS-only.
+- 2026-11-15: switch `npc.flock_hearts` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-212613:creature_flock on record; its test runs PASS-only.

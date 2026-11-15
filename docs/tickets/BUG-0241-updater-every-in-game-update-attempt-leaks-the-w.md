@@ -41,3 +41,4 @@ update_leak on lane 6: PASS out/lab/20261028-224927 (committed private memory 23
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `core.update_unwind` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261028-225154 (BUG-0241) on record; its test runs PASS-only.

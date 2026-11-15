@@ -101,3 +101,4 @@ the condition that leads to it (a boost entry that outlives its world or session
 - 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test civ_reload (FAIL with --nofix, PASS with the fix).
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: civ.boost (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `civ.boost` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-002050:civ_reload on record; its test runs PASS-only.

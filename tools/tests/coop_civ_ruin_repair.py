@@ -11,9 +11,9 @@ the guest kept the ruin (its reconciliation only made ruins, never undid one).
 3. For 20 s: that city's ruins and buildings on the guest's game against the host's (`coop.civ`
    city lines, the game's building states).
 PASS: within 10 s the guest has the host's ruins and building count, and keeps them.
---nofix (`coop.fix civ.ruin_repair off`): must FAIL (the ruin stays).
+civ.ruin_repair off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-162619-fix-w14-tribe-civ:civ_ruin_repair); the test runs PASS-only.
 
-  SPORE_LANE=7 python3 tools/tests/coop_civ_ruin_repair.py [--nofix]
+  SPORE_LANE=7 python3 tools/tests/coop_civ_ruin_repair.py
 """
 import argparse
 import time
@@ -24,13 +24,9 @@ from twoinst import Checks, start
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix civ.ruin_repair off')['out'].strip(), flush=True)
     time.sleep(3)
     hc = civ_state(host)[0]
     npc = sorted(i for i, c in hc.items() if not c['player'] and c['buildings'] >= 2 and c['ruins'] == 0)

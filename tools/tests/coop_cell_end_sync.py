@@ -19,7 +19,7 @@ in the guest's metres: positions times their game's world scale, divided by the 
 reports no position apart and no MISMATCH (at least 3 checks done). Cells the level change removes
 and adds may differ for one check (extra / missing, rechecked 3 s later): not this bug.
 
-  coop_cell_end_sync.py   (SPORE_FIX_OFF=diag.cell_scale: p apart while the scales differ, it FAILS)"""
+  coop_cell_end_sync.py   (diag.cell_scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-004419:cell_end_sync): p apart while the scales differ, it FAILS)"""
 import math
 import os
 

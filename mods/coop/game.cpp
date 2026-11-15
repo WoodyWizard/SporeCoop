@@ -1519,7 +1519,10 @@ bool in_creature_stage() { return mode_id() == 0x1654C01; }
 // noun manager's avatar field kept the freed avatar for about a second and every guest of a
 // 4-player campaign faulted in max_health (its vtable read 0x01) from creature_fill. From the moment
 // the quit is posted or handled until the mode changes (30 s at most) there is no avatar, and an
-// avatar whose vtables are no longer the game's is never handed out.
+// avatar whose vtables are no longer the game's is never handed out. `coop.fix world.leave_avatar
+// off`: the avatar field as it is (tests).
+static bool g_leave_fix = true;
+COOP_FIX("world.leave_avatar", "BUG-0264", g_leave_fix, "creature: no avatar while the game leaves the stage for the galaxy menu (it is freed before the mode changes)");
 constexpr double kLeaveMax = 30.0;
 static uint32_t g_leave_mode = 0; // the stage being left, 0 = none
 static double g_leave_at = 0;
@@ -1580,7 +1583,7 @@ void* avatar()
     uint32_t m = mode_id();
     if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
         return nullptr;
-    if (leaving_stage()) {
+    if (g_leave_fix && leaving_stage()) {
         g_leave.refused++;
         return nullptr;
     }
@@ -1590,7 +1593,7 @@ void* avatar()
     if (!nm)
         return nullptr;
     void* av = field<void*>(nm, kNounAvatarOff);
-    if (av && !creature_vtables_ok(av)) {
+    if (g_leave_fix && av && !creature_vtables_ok(av)) {
         g_leave.bad_vtable++;
         return nullptr;
     }

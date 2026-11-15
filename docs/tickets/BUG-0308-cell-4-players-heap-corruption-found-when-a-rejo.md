@@ -76,3 +76,4 @@ joins, the host's world arrives and the guest leaves Cell to load it.
 - 2026-10-31 (fix/w22-cell): BUG-0348 reproduces this exact signature (FreeInternal+0x64 freeing pool G+0x8C, return 0xE7FA8D, then 0x00DDA358) by overflowing the cell broadphase's pending arrays (a guest that creates mirrors while its game does not simulate), guarded by `cell.sap_pending`; whether this report's guest was in that state is not shown, so it stays open.
 - 2026-11-05 (fix/w45-crashes): root cause observed: the campaign guest sat in the pause menu while its mirrors churned (BUG-0348's state); the same path with cell.sap_pending off reproduces the three faults in order; test cell_pause_rejoin; fixed by cell.sap_pending (0.7.3.2).
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `cell.leave_guard` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-143913:cell_rejoin_leave on record; its test runs PASS-only.

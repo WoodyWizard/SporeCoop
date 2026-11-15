@@ -128,3 +128,4 @@ key as they get it).
   loads the save (PASS out/lab/20261102-213135, FAIL with `content.model_key` off out/lab/20261102-213354);
   BUG-0470 opened for the mirror vehicles that stay in the guest's save.
 - 2026-11-02: released in 0.7.3.6.
+- 2026-11-15: switch `content.model_key` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261102-212644:content_civ on record; its test runs PASS-only.

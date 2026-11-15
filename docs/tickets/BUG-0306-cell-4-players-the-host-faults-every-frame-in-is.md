@@ -64,3 +64,4 @@ behaviours), so nobody copied anything; the test now makes AI cells join such a 
 - 2026-10-30: opened.
 - 2026-10-30: fix/w12-cell-fault: root cause by disassembly, guard `cell.pick_guard`, test cell_stale (not run yet).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.pick_guard` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-121112:cell_stale on record; its test runs PASS-only.

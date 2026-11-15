@@ -47,3 +47,4 @@ the planner; a vehicle in the planner's moved-objects map is removed only when t
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-civ-crashes (civ.planner_hold).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `civ.planner_hold` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-131021:civ_planner on record; its test runs PASS-only.

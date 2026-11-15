@@ -44,3 +44,4 @@ puppet_mound_view (the host on the fixture's nest mound, the guest 10 m away tur
   (drive.lead) cannot change it. Not touched, stays open.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): F90 / LOD probe disproved the simple-path theory; fixed by a lift after the physics update (creature.culled_ground); FAIL 20261106-050722, PASS 20261106-045947.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `creature.culled_ground` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-050722:puppet_mound_view on record; its test runs PASS-only.

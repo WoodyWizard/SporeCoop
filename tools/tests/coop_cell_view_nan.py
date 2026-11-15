@@ -15,7 +15,7 @@ later and again 6 s after the guest swam 15 m: its camera point is finite and wi
 (`coop.pool cam`), and the game's projection puts cells on its screen (`coop.pool see`, the game's
 world-to-screen of every cell: at least 5, its own cell among them). The host's view is unchanged.
 
-  coop_cell_view_nan.py   (SPORE_FIX_OFF=cell.camera_heal: the camera stays NaN, it FAILS)"""
+  coop_cell_view_nan.py   (cell.camera_heal off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-002913:cell_view_nan): the camera stays NaN, it FAILS)"""
 import math
 import re
 import time

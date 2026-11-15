@@ -50,3 +50,4 @@ realign_tribe_rejoin: FAIL with `SPORE_FIX_OFF=wobj.tools_planet` out/lab/202611
   within 15 m on the guest); the remaining row is a host citizen in no tribe's member list that the mod never mirrors,
   split into BUG-0620 with its evidence. Probes added: tribe_member_place (quiet: lab 20261106-062912, PASS),
   tribe_dead_member (lab 20261106-072628), tribe_dead_tribe (lab 20261106-072755).
+- 2026-11-15: switch `wobj.tools_planet` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-212803:realign_tribe_rejoin on record; its test runs PASS-only.

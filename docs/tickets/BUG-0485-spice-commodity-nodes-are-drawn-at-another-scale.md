@@ -48,3 +48,4 @@ out/lab/20261106-061822 (guest 1.0 for 15 s), PASS out/lab/20261106-062301 (10 w
 - 2026-11-06 (fix/w45-placement): setter found (0xBC0641, the live node placement; the scale is not saved), fixed with wobj.node_scale; runs above.
 - 2026-11-06 (fix/w45-placement): regression with SPORE_DETECTOR=20: smoke out/lab/20261106-074134 (14/14), play_tribe out/lab/20261106-073013, play_civ / play_space and the touched tests out/lab/20261106-080336 (9/9; play_civ: no planet:building or scale:vehicle row, the guest's buildings_fixed=+0/-8 off_slot=0).
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `wobj.node_scale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-061822:civ_vehicle_scale on record; its test runs PASS-only.

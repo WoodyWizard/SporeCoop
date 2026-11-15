@@ -9,15 +9,15 @@ then stops with "the release pack is not newer" (nothing is installed). The pack
 file. The committed private memory of the game (SporeKit `mem.commit`, a VirtualQuery walk) is
 compared before and after 5 attempts.
 
-  SPORE_LANE=N python3 tools/tests/coop_update_leak.py [--without-fix]
-  (--without-fix or SPORE_FIX_OFF=core.update_unwind: the 0.7.3.0 threads, must FAIL)"""
+  SPORE_LANE=N python3 tools/tests/coop_update_leak.py
+  (core.update_unwind off, the 0.7.3.0 threads, failed: retired in 0.7.15, BUG-1138, FAIL run 20261028-225154;
+  the test runs PASS-only)"""
 import hashlib
 import http.server
 import json
 import os
 import re
 import struct
-import sys
 import threading
 import time
 
@@ -87,7 +87,6 @@ def low(c, n=3):
 
 
 def main():
-    without = '--without-fix' in sys.argv or 'core.update_unwind' in os.environ.get('SPORE_FIX_OFF', '')
     ck = Checks()
     ver = running_version()
     srv, url = serve(ver)
@@ -109,7 +108,6 @@ def main():
                 break
             time.sleep(1)
         c.call('wait.frames 60 60000')
-        print(' ', c.call(f'coop.fix core.update_unwind {"off" if without else "on"}')['out'].strip()[:120])
         state = ''
         for _ in range(60):
             state = c.call('coop.update')['out']

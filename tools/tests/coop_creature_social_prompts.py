@@ -11,7 +11,7 @@ its key / bar path sends them (`coop.social act`, `coop.social answer` for an ab
 3. an answer of another kind (a combat ability) does not impress it, the game fails (the host's count) and the
    mirror stays not impressed;
 4. engaged again, the guest's social ability as the answer to the prompt impresses the Kook on both games.
-SPORE_FIX_OFF=social.prompts must FAIL (checks 1-3)."""
+social.prompts off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-112706:creature_social_prompts) (checks 1-3)."""
 import re
 import time
 

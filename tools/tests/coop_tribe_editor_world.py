@@ -10,14 +10,15 @@
    no share save follows the editor and the epic stays alive and tracked in the host's game. The
    test then makes a share due (`coop.share due`, with the share save of a joining guest): the epic
    left before that save (BUG-0121's guard), so the host's game has no co-op epic any more.
-   (With `world.evolve_in_place` off the editor's own share does it, as before 0.7.10; BUG-1090.)
+   (With `world.evolve_in_place` (retired) off the editor's own share does it, as before 0.7.10; BUG-1090.)
    (The guest's game lists no live epic at all, the planet's own one included: printed only.)
 4. The host ends its session: no co-op epic stays.
 
---nofix: `coop.fix tribe.editor_world off` (the old trigger: every editor frame is a world change):
-the editor visit drops the epic untracked, so it stays alive through the share save; must FAIL.
+tribe.editor_world (the old trigger: every editor frame is a world change; the editor visit dropped the epic
+untracked, so it stayed alive through the share save) was retired in 0.7.15 (BUG-1138: FAIL run
+20261029-003144:save_hygiene_leave on record); the test runs PASS-only.
 
-  SPORE_LANE=5 python3 tools/tests/coop_tribe_editor_world.py [--nofix]
+  SPORE_LANE=5 python3 tools/tests/coop_tribe_editor_world.py
 """
 import argparse
 import re
@@ -50,14 +51,10 @@ def num(v, k, d=-1):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
     gu = Ui(guest, 'guest')
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix tribe.editor_world off')['out'].strip())
     t0 = time.time()
     while time.time() - t0 < 90:  # the split of the player tribe arrives with the first states
         if any(v[0] == 1 for v in members(host).values()):
@@ -108,7 +105,7 @@ def main():
         return ck.result()
 
     # 3. after the editor ("evolved the species") the guest keeps its world in place (BUG-0508) or,
-    # with world.evolve_in_place off, gets the world again. Kept in place: the epic is still the tracked
+    # with world.evolve_in_place (retired) off, gets the world again. Kept in place: the epic is still the tracked
     # one (no save was made); then a share save of the test's own (coop.share due) must leave it out.
     def loaded():
         return num(herds(guest)[0], 'resets', 0) > g0 and mode(guest) == m0 and guest.call('coop.tribe')['ok']

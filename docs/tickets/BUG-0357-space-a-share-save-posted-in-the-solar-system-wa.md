@@ -72,3 +72,4 @@ out with that save, 0.7.3.1). Test knob `coop.worldfix landsave <ms>|-1`.
 - 2026-10-31: opened (fix/w27-space-fault) from lab 20261031-185843 campaign_space#3; reproduced with
   a 2-player test, fixed.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `world.share_planet_save` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-204700:space_share_landing on record; its test runs PASS-only.

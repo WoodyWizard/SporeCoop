@@ -16,7 +16,7 @@ creature is another species in its own game and kept level 0's.
    max health must rise by the level's step like the host's, and the host's puppet of the guest must
    show the guest's new max health.
 
-  coop_creature_brain_hp.py   (SPORE_FIX_OFF=creature.own_brain_hp must FAIL)"""
+  coop_creature_brain_hp.py   (creature.own_brain_hp off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-080931-fix-w30-creature-hp:creature_brain_hp))"""
 import re
 import time
 

@@ -10,7 +10,7 @@ The host's My Creations: the fixture with 'Tiger Horse' (290229B9) changed to us
 
   SPORE_LANE=4 SPORE_LANE_B=5 python3 tools/tests/coop_unknown_parts.py
 
-Runs that must FAIL: SPORE_FIX_OFF=creations.unknown_parts (the fix off: Carol registers the species
+Runs that must FAIL: creations.unknown_parts off failed (retired in 0.7.15, BUG-1138: FAIL run 20261102-115543:unknown_parts#1) (the fix off: Carol registers the species
 and faults at 0x41F3B in the load). PASS: Carol does not crash, the unknown id is logged, and the
 creature is shown as a fallback (the puppet falls back as for an unknown creation) or with a base
 game part substituted."""

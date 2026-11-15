@@ -60,3 +60,4 @@ Lab: FAIL 20261031-125112 (fix off), PASS 20261031-125210. Not tested: the edito
 - 2026-10-31: opened from the host's report zip (mark, creations and trace lines).
 - 2026-10-31: fixed on fix/w22-reports (creations.host_world_species); the second batch (fix/w22-reports2 evidence) adds: every load re-swapped the host.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `creations.host_world_species` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-125112:host_old_choice on record; its test runs PASS-only.

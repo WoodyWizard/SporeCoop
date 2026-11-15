@@ -14,7 +14,7 @@ without a check in 0xD72720 (its sibling 0xD72690 checks it). docs/re/tribe.md#t
 PASS: no caught fault on the host or the guest, the host's attackers that met the missing spot ended their attack
 (the game's own "no free spot" branch), the host's game keeps drawing.
 
-  SPORE_LANE=2 python3 tools/tests/coop_tribe_attack_spot.py [--cut]   (SPORE_FIX_OFF=tribe.attack_spot fails --cut)
+  SPORE_LANE=2 python3 tools/tests/coop_tribe_attack_spot.py [--cut]   (tribe.attack_spot off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-235517:tribe_attack_spot) --cut)
 """
 import re
 import sys

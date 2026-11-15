@@ -3,11 +3,11 @@
 
 Each game made the tools its tribes buy at its own spots (an NPC tribe's planner, a tribe the guest's game
 spawned for the host's with its own starting tools): the detector's `unmatched:tribe_tool`. With
-wobj.tribe_tools_all the tools of every tribe are the host's world objects: the guest makes the host's in its
+wobj.tribe_tools_all (retired) the tools of every tribe are the host's world objects: the guest makes the host's in its
 mapped tribe and removes its own the host has not.
 
 1. Tribe fixture. The host forms an NPC tribe 70 m off (`coop.tribe npc_tribe 3 70`, what its tribe controller
-   does in play); the guest's game makes the tribe for it (tribe.npc_tribes), with tools of its own.
+   does in play); the guest's game makes the tribe for it (tribe.npc_tribes (retired)), with tools of its own.
 2. The host places a rack for that NPC tribe (`coop.tribe place <tribe> 1 9 45`: CreateTool as a tribe's
    purchase); the guest places a tool of its own for the same tribe at another spot (type 2, `place` on the
    guest: what its own planner would buy).
@@ -15,7 +15,7 @@ mapped tribe and removes its own the host has not.
    100 m of the village has a tool of the same type within 3 m; the guest's own type-2 tool is gone; the host's
    rack is there.
 
-SPORE_FIX_OFF=wobj.tribe_tools_all: must FAIL (no rack on the guest, its own tool stays).
+wobj.tribe_tools_all off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-101214:tribe_tools_all) (no rack on the guest, its own tool stays).
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_tools_all.py
 """

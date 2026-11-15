@@ -61,3 +61,4 @@ host old_sent=1); again in the regression run of the branch, lab 20261101-100420
 - 2026-11-01: opened from the 2026-11-01 reports (found while checking the "cubes" mark).
 - 2026-11-01: reproduced and fixed (fix/w31-creature-gate, creations.old_species).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `creations.old_species` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-094534:old_species on record; its test runs PASS-only.

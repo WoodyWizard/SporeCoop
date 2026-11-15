@@ -47,3 +47,4 @@ take it without a fault and go on to Civ.
 ## History
 - 2026-11-04: opened (fix/w43-transitions, found by the BUG-0576 test); fixed the same day.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `tribe.food_fx_mat` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-224915:tribe_civ on record; its test runs PASS-only.

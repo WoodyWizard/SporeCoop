@@ -7,7 +7,7 @@ does not exist before the main menu: the first send after `coop host` crashed th
 0x01020F35, read of 0x10; players suite creature_fps15burst, lab 20261101-160125).
 
 1. Start the lane's host game alone and send `cheat coop host` as soon as its console accepts a connection
-   (the line runs on the game's first frame, inside cSporeApp::Init: mode 0). SPORE_FIX_OFF=core.tod_guard
+   (the line runs on the game's first frame, inside cSporeApp::Init: mode 0). core.tod_guard off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-175729:tod_early)
    switches the guard off first on that console.
 2. For 10 s the game must keep answering and write no crash report, then it must reach its galaxy menu with
    the session still hosting (`coop.status` says host).
@@ -15,7 +15,7 @@ does not exist before the main menu: the first send after `coop host` crashed th
   SPORE_LANE=9 python3 tools/tests/coop_tod_early.py [--ui]
   --ui: the player's way instead of the console line: F9 and a real click on the window's Host, as early as the
   window shows (reachability of BUG-0433 for players)
-  SPORE_FIX_OFF=core.tod_guard: the game crashes (must FAIL)
+  core.tod_guard off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-175729:tod_early): the game crashes (must FAIL)
 """
 import glob
 import os

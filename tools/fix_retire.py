@@ -58,6 +58,19 @@ KEEP = {
     'core.editor_own_pause': SEAM + ': coop_exit_editor_held --held (its default)',
     'world.intro_at_once': SEAM + ': coop_tribe_camera_null',
     'creations.guest_world_species': 'seam (suite guest_spot_swap runs its scenario with it off)',
+    # found while retiring the first batch (0.7.15, BUG-1138)
+    'creature.effects_relay': 'manual (a feature switch: the whole effects relay, game::set_effect_relay_enabled; '
+                              'tests parse its `effects: fix=`)',
+    'mirror.fx': 'manual (a feature switch: the whole MSG_MIRROR_FX relay)',
+    'nest.eggs': 'manual (a feature switch: the whole MSG_NEST egg relay)',
+    'parts.shared_cell': 'manual (a feature switch: MSG_PARTS kinds 3/4; shares a gate with parts.shared)',
+    'npc.play_death': 'manual (also set by `coop.npc deathfix`, a seed of coop_creature_desync)',
+    'npc.partners': 'manual (also set by `coop.npc partners`, the twin of coop_creature_aggression)',
+    'pool.ko_grace': 'unit (cell_logic::ko_stale takes it; tests/cell_tests.cpp runs grace=false)',
+    'drive.own_height': 'unit (drive::at_own_height takes it; tests/npc_tests.cpp runs it off)',
+    'world.snapshot_name': 'unit (world_name::effective takes it; tests/npc_tests.cpp runs it off)',
+    'role.fix': 'unit (net/lobby.h write_lobby / read_lobby take it; net_tests and fuzz_decoders run it off)',
+    'content.all_kinds': 'space (squadron.cpp reads it through creations::content_all_kinds())',
 }
 
 
@@ -191,8 +204,8 @@ def ticket_fail_runs(t, name, only_switch):
     text = t['_text'].split('\n---\n', 1)[-1]
     runs = []
     for sent in re.split(r'(?<=[.;])\s+|\n\s*[-*]\s|\n\n', text):
-        if not FAIL_WORD.search(sent) or not RUN_ID.search(sent):
-            continue
+        if not FAIL_WORD.search(sent) or not RUN_ID.search(sent) or re.search(r'\bpass(ed|es)?\b|\bPASS|no FAIL', sent):
+            continue  # (a sentence that also tells of a PASS run cannot say which run failed)
         if name in sent or (only_switch and re.search(r'SPORE_FIX_OFF|\boff\b|coop\.fix|--old|without the fix|'
                                                       r'fix off|switch', sent)):
             runs += RUN_ID.findall(sent)
@@ -244,7 +257,9 @@ def inventory(upto=None, lab=True):
     by_ticket = {}
     for s in regs:
         for t in s['tickets']:
-            by_ticket.setdefault(t, []).append(s['name'])
+            by_ticket.setdefault(t, set()).add(s['name'])
+    for t, meta in tk.items():  # also the switches the ticket names (retired ones are no longer registered)
+        by_ticket.setdefault(t, set()).update(n for n in re.split(r'[,\s]+', meta.get('switch', '')) if '.' in n)
     rows = []
     for s in regs:
         ts = [tk[t] for t in s['tickets'] if t in tk]
@@ -289,6 +304,8 @@ def inventory(upto=None, lab=True):
             why.append(KEEP[s['name']])
         if not ev:
             why.append('no FAIL run on record')
+        elif passes and not fails:
+            why.append(f'contradicted (the lab has {len(passes)} PASS run(s) with it off and no FAIL)')
         s['keep'] = why
         rows.append(s)
     return rows, cur
@@ -380,19 +397,24 @@ def check():
     cmd = [(c, re.compile(r'(?<![\w.])' + re.escape(c) + r'(?![\w])')) for c in cmds]
     uses = {n: re.compile(DOC_USE.format(n=re.escape(n))) for n in names}
     for p, text in test_files().items():
-        for i, line in enumerate(text.split('\n'), 1):
+        lines = text.split('\n')
+        for i, line in enumerate(lines, 1):
+            # a text that says the switch is retired (on this line or the two after it: a wrapped sentence) may name it
+            # (a test's history: its FAIL run); no use of it may stay
+            said = 'retired' in ' '.join(lines[i - 1:i + 2]).lower()
             for n, rx in tok.items():
-                # a line that says the switch is retired may name it (a test's history: its FAIL run); no other
-                if rx.search(line) and ('retired' not in line or uses[n].search(line) or re.search(
-                        r"['\"]" + re.escape(n) + r"['\",]", line)):
+                if rx.search(line) and (not said or uses[n].search(line) or re.search(
+                        r"['\"]" + re.escape(n) + r"['\",\\]", line)):
                     out.append(f'{p}:{i}: names the retired switch {n}')
             for c, rx in cmd:
                 if rx.search(line):
                     out.append(f'{p}:{i}: uses the removed command `{c}`')
     for p in doc_files():
-        for i, line in enumerate(open(os.path.join(ROOT, p), encoding='utf-8', errors='replace'), 1):
+        lines = open(os.path.join(ROOT, p), encoding='utf-8', errors='replace').read().split('\n')
+        for i, line in enumerate(lines, 1):
+            said = 'retired' in ' '.join(lines[i - 1:i + 2]).lower()
             for n, rx in uses.items():
-                if rx.search(line):
+                if rx.search(line) and not said:
                     out.append(f'{p}:{i}: switches off the retired switch {n}')
             for c, rx in cmd:
                 if rx.search(line):

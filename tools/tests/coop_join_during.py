@@ -10,8 +10,8 @@ joining guest's game (not the mod's counters) every second until it agrees with 
 --case editor   the host opens its creature editor alone (`coop.vote editor` with nobody to wait for),
                 the guest joins while it edits, the host leaves the editor with "done" 25 s later. While the
                 host edits, the guest's planet must have its creatures, run by its own game (BUG-0412: the guest's
-                leave and the rejoin left it without any; SPORE_FIX_OFF=npc.leave_locals fails), and no proxies
-                standing frozen (BUG-0205: the host sends no NPC states then; SPORE_FIX_OFF=core.away_editor).
+                leave and the rejoin left it without any; npc.leave_locals off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-014526:join_during_host_editor)), and no proxies
+                standing frozen (BUG-0205: the host sends no NPC states then; core.away_editor off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-145308:join_during_host_editor)).
 
 Consistent (all at once, read on the joining guest's game against the host's game):
   * the guest plays the host's stage with an avatar and the host has it in its world;
@@ -134,7 +134,7 @@ def consistent(host, guest, nid=None):
         elif hav and pup['key'] != hav['key']:
             bad.append(f'the guest draws the host as {pup["key"]}, the host plays {hav["key"]}')
     pups = [r for r in gc.rows if r['own'] == 'puppet']
-    if len(pups) != 1:  # one partner: one puppet (a puppet left over after the host's editor, core.strays)
+    if len(pups) != 1:  # one partner: one puppet (a puppet left over after the host's editor, core.strays (retired))
         bad.append(f'{len(pups)} player creatures drawn on the guest, 1 partner: '
                    + ', '.join(f'{r["key"]} at {[round(x) for x in r["pos"]]}' for r in pups[:4]))
     bad += cl.census_problems(hc, gc)

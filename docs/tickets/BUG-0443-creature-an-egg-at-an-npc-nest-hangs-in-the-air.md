@@ -68,3 +68,4 @@ guest's copy lies on its surface.
 - 2026-11-01: opened.
 - 2026-11-01: eggs without gravity found and fixed with `nest.egg_ground` on fix/w35-egg-kick (lane 4).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `nest.egg_ground` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-184259:nest_eggs_air on record; its test runs PASS-only.

@@ -102,3 +102,4 @@ from the galaxy menu faulted twice in space gfx and the guest stayed loading. Tw
   (tribe.body_teardown) and the freeze after a caught frame fault fixed in SporeKit (kit.frameunwind).
 - 2026-11-07: long_tribe_short failed after the merge (rel/0.7.9 lab 20261107-043030): the fallback did not stop the exits and the bodies outlived their tribes at the menu exit; fixed at the source (detach ends the tree), test tribe_body_menu.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `tribe.body_teardown` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261107-031255:tribe_body_teardown on record; its test runs PASS-only.

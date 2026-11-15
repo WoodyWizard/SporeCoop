@@ -5,9 +5,9 @@ The host starts its UFO event the game's own way (`coop.drama start 2`, StartKin
 event makes its ship 20 m over the host's creature. Checked on the guest's game, in the game's own object list (the
 UFO nouns and their spatial position, `coop.rules ufo`):
   1. within 3 s the guest's game has a ship within 3 m of the host's ship, and keeps it there (8 samples over 4 s);
-  2. the guest's own Drama Manager started no event (the ship is the host's: creature.guest_events stays);
+  2. the guest's own Drama Manager started no event (the ship is the host's: creature.guest_events (retired) stays);
   3. when the host's ship is gone, the guest's goes within 3 s (if the host's goes within 90 s).
-SPORE_FIX_OFF=creature.ufo_mirror fails 1.
+creature.ufo_mirror off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-231058:creature_ufo_mirror) 1.
 
   SPORE_LANE=N python3 tools/tests/coop_creature_ufo_mirror.py
 """

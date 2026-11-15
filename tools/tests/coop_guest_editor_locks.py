@@ -11,7 +11,7 @@ request without it as "every part available"). Checked on the guest while its ow
 to every unlockable part of the collected parts: the number the palette shows locked must be > 0
 (the fixture's species has collected few parts), and "done" still leaves the editor.
 
-Runs that must FAIL: SPORE_FIX_OFF=creations.own_editor_items (the request without the collected
+Runs that must FAIL: creations.own_editor_items off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-075820:guest_editor_locks) (the request without the collected
 parts: locked 0, every part offered)."""
 import re
 import time

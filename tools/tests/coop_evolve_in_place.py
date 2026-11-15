@@ -21,7 +21,7 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
     Creature: the avatar's species key), and in Creature the world's player species of its game
     (cSpeciesManager +0xA4) is the host's new species.
 
-  SPORE_FIX_OFF=world.evolve_in_place: the old reload: FAIL (the guest goes through the galaxy menu).
+  world.evolve_in_place off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-173049:evolve_in_place_cell): the old reload: FAIL (the guest goes through the galaxy menu).
 
   --species-late N (Creature, BUG-1057): the guest's game takes the host's evolved species as not known for the first N
   frames it tries to write the world's player species (`coop.creations ps_null N`, as a species registered a little

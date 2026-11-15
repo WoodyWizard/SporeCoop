@@ -2,11 +2,11 @@
 """BUG-0486: the game's random UFO visit (Drama Manager event kind 2, cUFOAbductionEvent) ran in each
 game by itself: a guest saw a UFO the host never had (the detector's noun_only_guest:ufo /
 guest_only:ufo), and that UFO took the guest's mirrors of the host's creatures in the guest's game only.
-The host owns the world: a guest's own Drama Manager starts no UFO visit (creature.guest_events).
+The host owns the world: a guest's own Drama Manager starts no UFO visit (creature.guest_events (retired)).
 
 The test starts every idle UFO event the game's own way (`coop.drama start 2`: the Drama Manager's
 StartKind, as the stage start does for its events) and counts the UFOs in the game's object list:
-  1. the guest: no UFO of its own, the event stays inactive (SPORE_FIX_OFF=creature.guest_events FAILS)
+  1. the guest: no UFO of its own, the event stays inactive (creature.guest_events off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-033630:drama_guest))
   2. the host (control: the command makes a UFO where it may): its UFO is there
 
   SPORE_LANE=N python3 tools/tests/coop_drama_guest.py

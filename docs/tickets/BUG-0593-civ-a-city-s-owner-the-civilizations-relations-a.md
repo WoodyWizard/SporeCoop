@@ -65,3 +65,6 @@ planet:building_* rows (a building at another place, not its owner) are BUG-0602
 - 2026-11-05: opened.
 - 2026-11-05: fixed by the wsync rows city_owner, civ_rel, civ_money (fix/w44-world-state2).
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `wsync.city_owner` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-122815:wsync_civ on record; its test runs PASS-only.
+- 2026-11-15: switch `wsync.civ_money` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-122815:wsync_civ on record; its test runs PASS-only.
+- 2026-11-15: switch `wsync.civ_rel` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-122815:wsync_civ on record; its test runs PASS-only.

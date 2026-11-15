@@ -9,7 +9,7 @@ and lifted it one update after it was back in view: one frame drawn ~1 m low eac
 (26-28 in 70 s, docs/re/creature.md#creature-out-of-view-ground).
 Checks on the guest's own drawn puppet (coop.track: its height over this game's GetHeightAt, hd, against the
 host's height there, ht): no frame on the screen drawn low (hd < 0.1 m while ht > 0.5 m); the puppet was off and on
-the screen often enough. (SPORE_FIX_OFF=creature.culled_ground must FAIL)"""
+the screen often enough. (creature.culled_ground off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-050722:puppet_mound_view))"""
 import argparse
 import math
 import re

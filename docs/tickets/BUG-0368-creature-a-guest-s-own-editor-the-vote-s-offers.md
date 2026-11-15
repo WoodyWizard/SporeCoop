@@ -49,3 +49,4 @@ and without (every mouth offered).
 - 2026-11-01: opened from the host's mark in the 2026-11-01 reports.
 - 2026-11-01: fix/w30-progress: the own editor request gets the collected parts; fixed (unreleased).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `creations.own_editor_items` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-075820:guest_editor_locks on record; its test runs PASS-only.

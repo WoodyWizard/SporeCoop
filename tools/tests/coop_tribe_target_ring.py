@@ -12,7 +12,7 @@ of each selected player citizen, a map of live rings keyed by the target (docs/r
 3. Within 3 s the guest's own HUD holds a live ring under that enemy (`coop.tribe ring <id>`: the ring map of the
    game's HUD, an effect in it) while its members stay selected; deselected, the ring goes within 2 s.
 
-  coop_tribe_target_ring.py   (SPORE_FIX_OFF=tribe.target_ring: no ring on the guest, FAILS)"""
+  coop_tribe_target_ring.py   (tribe.target_ring off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-212825:tribe_target_ring): no ring on the guest, FAILS)"""
 import re
 import time
 

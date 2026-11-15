@@ -41,3 +41,4 @@ The host reads a guest's MSG_CELL_EAT / MSG_CELL_FOOD before the `!cell` return 
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-cell (b8bc761): the host acknowledges a meal it cannot count; test cell_food_away FAIL without / PASS with.
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `pool.food_ack_away` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261028-235143:cell_food_away on record; its test runs PASS-only.

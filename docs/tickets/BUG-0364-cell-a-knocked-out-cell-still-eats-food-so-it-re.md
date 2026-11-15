@@ -50,3 +50,4 @@ food totals of both games): FAIL with `SPORE_FIX_OFF=cell.ko_no_eat` in lab 2026
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w31-cell-gate (cell.ko_no_eat, test cell_ko_food).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `cell.ko_no_eat` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-093513:cell_ko_food on record; its test runs PASS-only.

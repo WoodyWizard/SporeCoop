@@ -4,7 +4,7 @@
 While the host is away (main menu, an editor, a load) the guest's own game runs its members' behaviour trees
 (tribe.away); when the host is back the trees of the guest's mirrors are skipped again, frozen in whatever node they
 were, and the world-object sync removes the food bundles of the guest's game that the host's game does not have (an
-own ground bundle after kOwnGrace snapshots, an own carried one: wobj.bundle_carried). At the host's next away the
+own ground bundle after kOwnGrace snapshots, an own carried one: wobj.bundle_carried (retired)). At the host's next away the
 frozen node goes on with a bundle that is gone. The campaign's faults (caught at 0xC23469 on a guest, campaign_tribe_end
 with the host in the Tribe end's City Hall editor and then the Civ editors) came from the bundle node 0x04623E0C,
 state 3 (0xC25BB0 with its bundle: amount 0 or less -> the pick-up animation -> Citizen_HoldBundle 0xC23460 with the

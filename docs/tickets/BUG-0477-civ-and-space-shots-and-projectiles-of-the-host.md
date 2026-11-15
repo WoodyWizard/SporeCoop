@@ -51,3 +51,5 @@ PASS (cold, 45 of 45 samples, 102 / 104 projectiles, city 5200 -> 5200): out/lab
   (out/lab/20261104-013631), 3 % after (out/lab/20261104-024331); the guest now shows religious shots / AoE areas
   the host does not have (BUG-0530).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `civ.shot_damage` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-015254:civ_shots on record; its test runs PASS-only.
+- 2026-11-15: switch `civ.shots` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-015446:civ_shots on record; its test runs PASS-only.

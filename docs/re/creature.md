@@ -827,7 +827,7 @@ BUG-0255. GOG 2024, lane 5. Adds to [the save filter](#creature-save-strip).
 * CORRECTION (2026-10-28, fix/w5-world): section 12's "the empty herds stay (harmless: target 0)"
   is superseded. After the partner left (`coop.leave`), the herd made for its puppet stayed with
   `members=0` and went into the save (`coop.npc archless` 1 after the load with
-  `coop.fix savestrip.empty_herds off`). Now an own-kind herd (no archetype, nest or avatar flag)
+  `coop.fix savestrip.empty_herds off` (retired in 0.7.15)). Now an own-kind herd (no archetype, nest or avatar flag)
   with no members is stripped too, but only when its member list (+0x40 / +0x44) is readable and
   empty, no creature of the save points at it (`herd_of`, every creature counted, the avatar and
   the pack included) and every creature of the save was readable. The load after it: no fault
@@ -1134,7 +1134,7 @@ BUG-0339. Extends [the pool cull](#creature-npc-pool-cull).
   fixture alone (world bar highest index 7, smallest own creature 9) no slot is past the abilities
   but the slots map keys to other abilities: why the creature tests never faulted, and why the
   campaign (a world species evolved in the session, with more abilities) did.
-* Co-op (creations.cpp `bar_tick`, `coop.fix creations.ability_bar`): the bar is built again (outside
+* Co-op (creations.cpp `bar_tick`, `coop.fix creations.ability_bar` (retired in 0.7.15)): the bar is built again (outside
   the frame) when the avatar's abilities change under the same avatar (our SetSpecies) or a slot
   points past them. `coop.creations bar [rebuild]` prints the bar (`abilities= used= stale=
   max_index= slots=row.col:index,...`) or has the game build it for the current avatar.
@@ -1828,7 +1828,7 @@ out/lab/20261103-124913 off; table and parser `out/ab_parse.py` in out/REPORT.md
 * So the 1-of-5 of 2026-11-02 was play_creature's own flakiness plus a loaded machine (7 lanes),
   not the relay.
 
-Found on the way (fixed, switch `coop.fix effects.here`, BUG-0471): the relay sent every effect to
+Found on the way (fixed, switch `coop.fix effects.here` (retired in 0.7.15), BUG-0471): the relay sent every effect to
 every partner and the receiver created a world effect in whatever world its game had then. A guest
 in the main menu (play_creature's guest leaves and comes back), an editor, a loading screen or at
 another star got the host's effects created there. Now a start is sent only while some partner
@@ -1838,7 +1838,7 @@ is played only while its owner plays in the receiver's place; stops are always p
 (`effects_here`): the guest in the main menu, the host making 2 effects a second: fix on, host
 `not sent` 24 and the guest's game called 0 times; back in the world the effects reach it again.
 
-With `SPORE_FIX_OFF=effects.here` the guest's game in the main menu (GalaxyGameEntry) did create
+With effects.here off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-141143:effects_here) the guest's game in the main menu (GalaxyGameEntry) did create
 12 of the host's world effects (`played` +12, none failed: the menu's effect world accepts them),
 out/lab/20261103-141143; on, 0 (out/lab/20261103-133351). Three players in every stage
 (`coop_effects_party.py --fixture cell|creature|tribe|civ|space`, out/lab/20261103-134650): the
@@ -2226,7 +2226,7 @@ BUG-0510 (players: "3-4x the DNA of a solo game", Cell and Creature). Code: `mod
 coop.cpp `dna_pace_gain` / `dna_pace_meal`, cellsync.cpp `h_AddFood`; test `coop_dna_pace.py`
 (suite `dna_pace`, `dna_pace_cell`).
 
-* ✔ observed (lab 20261103-180306, `SPORE_FIX_OFF=core.dna_pace`): two players' gains of 20 each
+* ✔ observed (lab 20261103-180306, core.dna_pace off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-180306:dna_pace)): two players' gains of 20 each
   (AddEvolutionPoints, the game's reward call) made the shared total grow by 40 on both games; Cell: two
   meals of 20 (AddFoodPoints) +40 food on both (lab 20261103-180539). The party's total is the sum of
   every player's progress, so N players evolve about N times faster than the game is tuned for.
@@ -2473,11 +2473,11 @@ BUG-0451, the other stages (docs/archive/known-issues-2026.md#issue-effects-civ-
   last id of any world) relayed one. The rule is still needed: nothing else keeps a painter effect out.
 * ? Not reproduced on lane 4 on 2026-11-04: the 0.7.4 release build itself (e396d1cb, its own test with
   `effects.other_stages on`) ran effects_party_civ twice without a fault, and rel/0.7.5 with
-  `SPORE_FIX_OFF=effects.main_world` relayed `D723B947` to both partners without a fault
+  effects.main_world off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-004532:effects_party_tribe) relayed `D723B947` to both partners without a fault
   (out/lab/20261104-004532; also -003023, -003205). The 0.7.4 faults were on lane 2. So the fault needs a state
   of the receiving game that these runs did not have (~ inferred: StartRender reads the painter's render target
   state, set only while a paint is under way).
-* Fix (`coop.fix effects.main_world`, on): the hook marks an effect made in another world than manager +0x244
+* Fix (`coop.fix effects.main_world` (retired in 0.7.15), on): the hook marks an effect made in another world than manager +0x244
   (`game::effect_foreign`); effects.cpp never sends it, the perf load uses the last id of the game's own world
   (`game::last_effect_id(true)`), and a receiver does not play a world start of an id it saw only in a painter
   world (`not played=`). `effects foreign world: created= queued= near=` counts them; `near` is how many a
@@ -3090,7 +3090,7 @@ BUG-1094. coop.npctrack rows of npc_walk (out/lane4/track/npc_walk_creature_*.js
     20261113-223254 #1, -224612 #1, -225641; "holds put back so far 122" in 1.5 s); so something after the physics
     update and before the drawing puts it back, too;
   - no velocity written while kept: 75 of 87 (lab 20261113-230443 #4);
-  - the relayed animations off (`SPORE_FIX_OFF=npc.anims`): 74 of 88 and 69 of 81 (lab 20261113-223923): not the relay.
+  - the relayed animations off (npc.anims off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-154027:npc_anims)): 74 of 88 and 69 of 81 (lab 20261113-223923): not the relay.
   Open: which update after the physics restores the position (the 0.1 s period, the growing offset per window).
 * ✔ (fix/w49-throw, the same rows split into the radial and the sideways part) **Not the game: the mod's own target
   height.** The throw is straight up (sideways 0.00-0.01 m between `d`, `p` and the target). In every standing frame
@@ -3434,7 +3434,7 @@ with the collision objects: the terrain or a nest mound / rock).
   #creature-out-of-view-ground: a game simulates creatures far from its own camera without the mound (on the plain
   `GetHeightAt` terrain).
 * ✔ (runtime) The guest's proxy of it was drawn at the host's place, inside the guest's mound: on the guest's screen
-  11.2 and 13.3 s of 24 s, 0.47-0.76 m in it (`SPORE_FIX_OFF=npc.proxy_mound`, lab 20261106-131754; also
+  11.2 and 13.3 s of 24 s, 0.47-0.76 m in it (npc.proxy_mound off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-125820:npc_nest_backoff#1), lab 20261106-131754; also
   -130629). The guest's camera is at the nest, so its mound is solid there and the game does not lift a creature put
   that far in it. Off the guest's screen the guest's game draws it on the plain terrain anyway (no matter the fix).
 * ✔ The roar's backing away (node 0x02D852E0) takes it out of the mound on the host within 3-5 s (moved 5-7 m); it
@@ -3463,7 +3463,7 @@ BUG-0630. GOG 2024 (dc04aee5), objdump of the exe.
 <a id="creature-bar-spend"></a>
 
 BUG-0630, GOG 2024 (dc04aee5), lab lane 4.
-* ✔ (runtime, lab 20261106-174018, `coop.fix creature.bar_spend off` = 0.7.8) the mechanism of
+* ✔ (runtime, lab 20261106-174018, `coop.fix creature.bar_spend off` (retired in 0.7.15) = 0.7.8) the mechanism of
   #creature-evolution-bar seen in the game: a spend made the game's way (`coop.dna spend 30` = SetEvolutionPoints,
   as the editor's result) left the spender's bar (cPlayer +0x10F0) at 130 and lowered the partner's to 100, in both
   directions; two spends of 20 at once lowered both bars by 40; an overspend lowered them by the part above 0 only

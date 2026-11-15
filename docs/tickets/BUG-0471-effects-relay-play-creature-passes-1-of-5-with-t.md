@@ -73,3 +73,4 @@ All run dirs in SporeCoop-wt/fix/w40-effects, lane 4.
 - 2026-11-03: on main 0.7.3.6 (no relay) play_creature failed 2 of 3 in the nightly run (chat line lost, n missing, joint hunts): its flakiness is not only the relay's; the A/B must be repeated with more runs per side before blaming the relay.
 - 2026-11-03: A/B on one build (4+4 runs): the relay does not worsen play_creature or its net numbers; fixed the relay into other places (effects.here) on fix/w40-effects.
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `effects.here` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-141143:effects_here on record; its test runs PASS-only.

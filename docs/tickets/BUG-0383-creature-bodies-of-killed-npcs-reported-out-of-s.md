@@ -73,3 +73,4 @@ puts a killed proxy where the host's body is every frame).
 - 2026-11-04: fix/w41-puppet-look: checked again, no new cause.
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the eaten-body cause reproduced and fixed with BUG-0557 (npc.body_meat); status fixed for the class.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `npc.dead_proxy` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-135546:corpse_positions on record; its test runs PASS-only.

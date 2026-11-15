@@ -17,7 +17,7 @@ Creature, then froze.
    order, `open_at_end=0`), the guest mirrors the host's cells again.
 4. The guest leaves the session and then the Cell stage for the galaxy menu (`coop.menu`: the game
    frees the Cell pools and the broadphase, 0xE7F9B0): its game still answers, and no game faulted (the lab checks the logs and crash reports too).
-SPORE_FIX_OFF=cell.sap_pending must FAIL (pending grows past 20000 entries, objects left open).
+cell.sap_pending off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-123042-fix-w22-cell:cell_pause) (pending grows past 20000 entries, objects left open).
 The churn holds the guest's mirrors on purpose (BUG-0348: no new cell while the pending list is near
 full): the guest really lacks the host's cells until it resumes, a sync-check MISMATCH the test makes
 itself (BUG-0379: `c: 700 missing` in 6 of 6 runs). The rounds are marked `LAB-MARK sync-force`
@@ -28,7 +28,7 @@ open for a minute while its mirrors churned, then a leave and join and the host'
 churn, still paused, the guest leaves the session and joins again (all mirrors made at once), the
 host's world arrives and the guest leaves the stage for the galaxy menu to load it (the teardown
 0xE7F9B0 under SimUpdate, where Dave's game found the corrupted heap). Its game must come back with
-the world in Cell and no game may fault. SPORE_FIX_OFF=cell.sap_pending must FAIL.
+the world in Cell and no game may fault. cell.sap_pending off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-123042-fix-w22-cell:cell_pause).
 
   SPORE_LANE=8 python3 tools/tests/coop_cell_pause.py [--rounds 12] [--rejoin]
 """

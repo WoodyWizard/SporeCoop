@@ -16,7 +16,7 @@ the guest) and the guest's buildings_fixed counter climbing by hundreds after th
    (`coop.civ blist <i>`: noun, position).
 PASS: in the last 20 s every building of a host city has one of the same noun within 4 m on the guest and the
 other way round, and the guest's game does not replace buildings any more.
-SPORE_FIX_OFF=civ.city_layout: must FAIL.
+civ.city_layout off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-065338:civ_city_burst).
 
   SPORE_LANE=4 python3 tools/tests/coop_civ_city_layout.py [--cities 3]
 """

@@ -4,7 +4,7 @@
 A guest crashed on 0.7.3.6 in drive_puppet -> creature_drive -> walk_place -> game::set_speed on a
 puppet whose memory held another object (a cModelObject vtable at +0xC0), right after a 4 s hitch and a
 device Reset: the game had freed the partner's puppet, and the Creature adapter had no liveness check,
-so the mod drove the freed pointer every frame. With creature.puppet_alive the puppet is checked against
+so the mod drove the freed pointer every frame. With creature.puppet_alive (retired) the puppet is checked against
 the game's own object list (and its cGameData serial) and a freed one is replaced by a new puppet.
 
 1. The guest toggles fullscreen twice (Alt+Enter: two device Resets, as in the report): the puppet of
@@ -14,7 +14,7 @@ the game's own object list (and its cGameData serial) and a freed one is replace
    guest's mod holds must be a live creature in the guest's game's object list (`puppet_listed`), placed
    at the host's own position (read from the host's game), and neither game faults.
 
-  coop_puppet_freed.py   (SPORE_FIX_OFF=creature.puppet_alive: the freed puppet stays in use, FAILS)"""
+  coop_puppet_freed.py   (creature.puppet_alive off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-171411:puppet_freed): the freed puppet stays in use, FAILS)"""
 import math
 import re
 import time

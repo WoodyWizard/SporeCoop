@@ -49,3 +49,4 @@ and lose it when the members are deselected.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), inferred.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: the guest draws the HUD ring of its own attack order (tribe.target_ring).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `tribe.target_ring` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-212825:tribe_target_ring on record; its test runs PASS-only.

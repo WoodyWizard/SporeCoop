@@ -93,3 +93,4 @@ Creepy & Cute list):
   0x41F3B crash in them (crashes/crash-20261031-192709, coop 0.7.3.1, before the fix) is an old report the zips carry
   along. The content_lookalike runs (a Spore_Pack_03 part and Creepy & Cute parts on a guest without both) fault 0
   times. Stays fixed.
+- 2026-11-15: switch `creations.unknown_parts` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261102-115543:unknown_parts#1 on record; its test runs PASS-only.

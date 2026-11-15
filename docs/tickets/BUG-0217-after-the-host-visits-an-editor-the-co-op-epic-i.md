@@ -45,3 +45,4 @@ Observed (lane 5, GOG 2024): the Tribe stage has no adapter for the editors, so 
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (374e0f5 0e80051); test tribe_editor_world: FAIL 20261029-003144 with tribe.editor_world off, PASS 20261028-232442, 20261028-235458, 20261029-003648
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `tribe.editor_world` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-003144:save_hygiene_leave on record; its test runs PASS-only.

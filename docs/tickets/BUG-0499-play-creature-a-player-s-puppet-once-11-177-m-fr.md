@@ -58,3 +58,4 @@ puppet_jump (tools/tests/coop_puppet_jump.py): each player dies, the other recor
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-play (no blend across the respawn and the egg jump, the puppet jumps too).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `creature.puppet_jump` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-153844:puppet_jump on record; its test runs PASS-only.

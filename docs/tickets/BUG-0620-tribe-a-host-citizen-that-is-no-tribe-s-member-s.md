@@ -62,3 +62,4 @@ out/lab/20261106-144737 (2 of 2).
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): the lone citizen named (a dead player member out of its tribe's list); fixed by tribe.member_body; test tribe_dead_player.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `tribe.member_body` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-135809:tribe_dead_player#1 on record; its test runs PASS-only.

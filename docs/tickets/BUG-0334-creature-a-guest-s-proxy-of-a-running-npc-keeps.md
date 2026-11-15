@@ -46,3 +46,4 @@ killed while it runs; the guest's game must show the health within 3 s and the d
 - 2026-10-31: opened.
 - 2026-10-31: found and fixed on fix/w18-creature (regression of BUG-0281).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `npc.kinematic_sync` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-020145:npc_run_hp on record; its test runs PASS-only.

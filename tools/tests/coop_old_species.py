@@ -12,7 +12,7 @@ own creation B (`coop.creations next creature`: the same replacement as an edito
 game spawns a creature of species A next to the host (`coop.npc spawn A`). Checked on the guest's
 game (its census): an NPC proxy of species A is in its world.
 
-  coop_old_species.py   (SPORE_FIX_OFF=creations.old_species must FAIL)"""
+  coop_old_species.py   (creations.old_species off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-094534:old_species))"""
 import re
 import time
 

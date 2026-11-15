@@ -13,7 +13,7 @@ moves more than JUMP m within 0.25 s) the time from its start until the drawn pu
 where the target landed must be at most CATCH s; and when the puppet shows again after the death, its
 first drawn frames are within NEAR m of the target.
 
-SPORE_FIX_OFF=creature.puppet_jump: blended and walked again (the catch takes 0.5-1 s: the test fails).
+creature.puppet_jump off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-153844:puppet_jump): blended and walked again (the catch takes 0.5-1 s: the test fails).
 """
 import math
 import os

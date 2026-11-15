@@ -45,3 +45,4 @@ Observed (lane 5): `movie_tick` ended any cinematic of the host after 8 s with 2
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (ad7d76d); test civ_caption: FAIL 20261029-003144 with civ.caption_only off, PASS 20261028-232442, 20261028-235458, 20261029-003648
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `civ.caption_only` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-003144:save_hygiene_leave on record; its test runs PASS-only.

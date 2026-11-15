@@ -10,9 +10,9 @@ guest. The guest's own game sets the 10 (the vehicle's model-ready handler 0xCA4
    game's own handler leaves).
 3. For 15 s: that vehicle's scale in both games (`coop.civ` veh lines, the game's GetScale).
 PASS: within 6 s the guest's vehicle has the host's scale again (2 %) and keeps it.
---nofix (`coop.fix civ.vehicle_scale off`): must FAIL (the 10 stays).
+civ.vehicle_scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-061822:civ_vehicle_scale); the test runs PASS-only.
 
-  SPORE_LANE=4 python3 tools/tests/coop_civ_vehicle_scale.py [--nofix]
+  SPORE_LANE=4 python3 tools/tests/coop_civ_vehicle_scale.py
 """
 import argparse
 import re
@@ -32,13 +32,9 @@ def scales(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix civ.vehicle_scale off')['out'].strip(), flush=True)
     t0 = time.time()
     both = []
     while time.time() - t0 < 30 and not both:

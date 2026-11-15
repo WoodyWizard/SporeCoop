@@ -17,8 +17,8 @@ animals in the world in most samples.
 Then BUG-0291 (npc.cpp): the host's NPCs within 100 m of the guest's point must have proxies on
 the guest (the host used to send Tribe animals only within 250 m of its tribe).
 
-  coop_tribe_far.py   (SPORE_FIX_OFF=npc.view_centres_tribe fails both checks: no animals there;
-                       SPORE_FIX_OFF=npc.rts_views fails only the BUG-0291 check)"""
+  coop_tribe_far.py   (npc.view_centres_tribe off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-013630-fix-w9-creature:tribe_far) both checks: no animals there;
+                       npc.rts_views off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-013817-fix-w9-creature:tribe_far) only the BUG-0291 check)"""
 import math
 import re
 import time

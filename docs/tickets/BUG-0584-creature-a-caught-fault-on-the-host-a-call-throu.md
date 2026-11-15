@@ -71,3 +71,5 @@ Reproduced (fix/w44-crashes): crash_fruit_eat, the host eats a fruit of the save
 - 2026-11-05: analysed (fruit pool RE), not reproduced, no fix (fix/w43-crashes).
 - 2026-11-05 (fix/w44-crashes, X2): reproduced (crash_fruit_eat), root cause the mod's fruit_eat on a fruit of the save; fixed (wobj.fruit_saved) with a pool guard (game.fruit_pool); status fixed.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `game.fruit_pool` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-101857:crash_model_fx on record; its test runs PASS-only.
+- 2026-11-15: switch `wobj.fruit_saved` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-101857:crash_model_fx on record; its test runs PASS-only.

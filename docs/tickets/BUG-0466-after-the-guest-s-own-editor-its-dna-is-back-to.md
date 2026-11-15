@@ -58,3 +58,5 @@ PASS dna_spend, lab 20261103-142938 (host and guest 15).
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-editor: the own editor charges its price (creations.own_editor_dna) and a guest's spend reaches the host (core.dna_spend); fixed (unreleased).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `core.dna_spend` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-143105:dna_spend on record; its test runs PASS-only.
+- 2026-11-15: switch `creations.own_editor_dna` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-143445:editor_sync_guest on record; its test runs PASS-only.

@@ -8,14 +8,14 @@
                    a moment: the game stops it; then its component vector points at one freed component, a vtable of
                    nulls, and the threshold is back: the range check starts it, as the camera jump did).
                    PASS: the guard dropped it, no fault, the guest keeps drawing.
-                   SPORE_FIX_OFF=game.model_fx fails (a call through null in VisualEffect_Start).
+                   game.model_fx off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-101857:crash_model_fx) (a call through null in VisualEffect_Start).
   --case fruit_pool (BUG-0584, Creature, the host; reproduced) the host eats a fruit of the save the way a guest's
                    "took fruit" request does (`coop.wobj eat`, worldobj's fruit_eat), then a fruit falls from a tree
                    (`coop.wobj drop`, the flora's DropFruit). Without the fixes the eaten fruit lies in the plants'
                    free fruit with one reference and the fall's take frees it: a call through null at 0xB097C2.
-                   PASS: no fault, the fruit fell. SPORE_FIX_OFF=wobj.fruit_saved,game.fruit_pool fails; either
-                   switch alone passes (wobj.fruit_saved: the fruit is destroyed as the game's eating does;
-                   game.fruit_pool: the take does not get it).
+                   PASS: no fault, the fruit fell. wobj.fruit_saved + game.fruit_pool off failed (wobj.fruit_saved retired in 0.7.15, BUG-1138: FAIL run 20261105-101857:crash_model_fx); either
+                   switch alone passes (wobj.fruit_saved (retired): the fruit is destroyed as the game's eating does;
+                   game.fruit_pool (retired): the take does not get it).
 
   coop_crash_guards.py --case model_fx|fruit_pool
 """

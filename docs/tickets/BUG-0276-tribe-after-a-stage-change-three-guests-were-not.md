@@ -82,3 +82,4 @@ the save was posted (`g_saved_base`). The host logs each share save with its set
 - 2026-10-29: reopened by fix/w8-stuck: the same stuck finding in lab 20261029-174717 campaign#1 with the fix in (its settle clock did not restart at a stage change with an avatar in both stages).
 - 2026-10-29: fixed again on fix/w8-stuck (1e5edc8, `world.share_settle_reset`): FAIL run 20261029-192222, PASS run 20261029-194928 (2 of 2 campaign_tribe, 2 of 2 campaign_space).
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `world.share_settle_reset` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-192222:campaign_tribe#1 on record; its test runs PASS-only.

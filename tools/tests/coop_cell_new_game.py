@@ -14,7 +14,7 @@ at the screen, go for food) and the test asserts the game's own state on both ma
 
   SPORE_LANE=N python3 tools/tests/coop_cell_new_game.py [--diet herb|carn] [--early] [--minutes 3]
       [--probe 6] [--apart 70 [--far-probe 4]]
-  BUG-0174 (cell_far_guest): --apart 70 --far-probe 4; SPORE_FIX_OFF=cell.partner_tiles must FAIL
+  BUG-0174 (cell_far_guest): --apart 70 --far-probe 4; cell.partner_tiles off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-004115-fix-w9-cell-food:cell_far_guest)
 """
 import argparse
 import os

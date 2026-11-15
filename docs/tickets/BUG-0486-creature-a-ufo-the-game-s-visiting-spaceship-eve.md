@@ -48,3 +48,4 @@ list and the event stays inactive; the host's makes one (control).
 - 2026-11-03: opened.
 - 2026-11-04: the guest's own UFO held back on fix/w41-infra (creature.guest_events); the host's UFO on the guest not done.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `creature.guest_events` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-033630:drama_guest on record; its test runs PASS-only.

@@ -94,3 +94,4 @@ range: host_act refuses acts from more than kActRange + 4 m) instead of moving o
 - 2026-10-28: fix/w4-tests: refused games are played again; still 1 of 4 OK (Kooks die during the ally phase); not in the suite; left open.
 - 2026-11-01: feat/w33-tests-creature: creature_social_ally (stance from the game); the record fell (4, 2) -> (3, 1) with no kill in 1 of 2 runs; diagnostics added.
 - 2026-11-08 (fix/w46-g4-tests): G4: the status was stale (BUG-0430's audit): fixed by social.no_bite (released 0.7.3.4; FAIL SPORE_FIX_OFF=social.no_bite 3 of 3 in 20261101-152905, PASS 20261101-153820 / -154734, about 20 passing runs 2026-11-01..07). 3 of 3 again on lane 2 (out/lab/20261108-074443, the ally (6, 3, 0) on both games each time). Closed fixed.
+- 2026-11-15: switch `social.no_bite` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-152905:creature_social_ally#1 on record; its test runs PASS-only.

@@ -769,7 +769,7 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
   answers, so the caller never builds a model that would fault and never sees a key of ours.
   Nothing of the game was found that resolves a model key once and keeps it: the model bake re-reads the
   parts on every build and the earlier FAIL run faults on every attempt (456 faults in one civ run), and
-  the runtime runs below show the copy in use at once. `coop.fix content.model_key off` keeps the first
+  the runtime runs below show the copy in use at once. `coop.fix content.model_key off` (retired in 0.7.15) keeps the first
   version (a key of our own) for the lab. Runtime (civ, lane 4 + guest lane 5): the guest's save names
   the design's own key 0x29030001 and no 0x7D instance, and the save loads in a game restarted without a
   session with the mirror vehicles (`out/lab/20261102-213135`); with `content.model_key` off the save

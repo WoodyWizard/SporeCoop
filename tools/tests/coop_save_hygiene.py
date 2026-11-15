@@ -15,7 +15,7 @@ SPORE_SAVE_FIX=0 switches the fix off on the host (`coop.savestrip 0`): the run 
 --leave (suite save_hygiene_leave, BUG-0255): the guest leaves before the host saves. Its puppet is
 gone, the herd made for it stays in the world with no member (herds are reused, never destroyed).
 The loaded save must hold no herd without an archetype either, the host's avatar must be there and
-nothing faults. SPORE_FIX_OFF=savestrip.empty_herds (the owner rule of 0.7.3.0 kept empty herds):
+nothing faults. savestrip.empty_herds off failed (retired in 0.7.15, BUG-1138: FAIL run 20261029-003144:save_hygiene_leave) (the owner rule of 0.7.3.0 kept empty herds):
 must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_save_hygiene.py

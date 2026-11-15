@@ -67,3 +67,4 @@ cell_respawn_swap, creations_cell, cell); `make test` PASS.
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, code reading).
 - 2026-10-31: the ring fixed on fix/w22-reports2 (cell.bite_ring); hurt and eat animations not done.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.bite_ring` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-125228:cell_bite_ring on record; its test runs PASS-only.

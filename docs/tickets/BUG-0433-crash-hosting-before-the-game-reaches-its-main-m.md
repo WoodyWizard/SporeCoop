@@ -64,3 +64,4 @@ exist (the first frame), then `cheat coop host` at once: the line runs on frame 
 ## History
 - 2026-11-01: opened.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `core.tod_guard` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-175729:tod_early on record; its test runs PASS-only.

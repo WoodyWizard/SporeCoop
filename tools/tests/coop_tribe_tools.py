@@ -16,11 +16,12 @@ mirror's own +0x102C).
    +0x102C), and it is in its hand on both screens (BUG-0906: the game draws the hand's item +0xFFC with a model
    attached, `item=` / `model=` of coop.tribe, not the tool type; a key frame).
 
---nofix (or SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold): must FAIL (no rack on the guest).
+wobj.tribe_tool + tribe.tool_hold off failed (no rack on the guest): retired in 0.7.15, BUG-1138, FAIL run
+20261103-234416:tribe_tools; the test runs PASS-only.
 SPORE_FIX_OFF=tribe.grab_spot: fails in some runs (BUG-0505: the member walks to a grab spot ~7 m round the rack,
 stops short of it and never takes the weapon; seen in 3 of 8 runs before the fix).
 
-  SPORE_LANE=2 python3 tools/tests/coop_tribe_tools.py [--nofix] [--type 1] [--dist 9]
+  SPORE_LANE=2 python3 tools/tests/coop_tribe_tools.py [--type 1] [--dist 9]
 """
 import argparse
 import re
@@ -63,17 +64,12 @@ def dist(a, b):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--type', type=int, default=1)
     ap.add_argument('--dist', type=float, default=9.0)
     ap.add_argument('--own', action='store_true', help='the host orders one of its own members (a control, BUG-0505)')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if a.nofix:
-        for con in (host, guest):
-            for name in ('wobj.tribe_tool', 'tribe.tool_hold'):
-                print(' ', con.call(f'coop.fix {name} off')['out'].strip())
     time.sleep(5)
     h0, _ = tools(host)
     g0, _ = tools(guest)
@@ -144,7 +140,7 @@ def main():
     print('  shots:', shot(host, 'tribe_tools_host.png'), shot(guest, 'tribe_tools_guest.png'))
     ck(held_g == a.type, f'the guest sees member #{pick} hold the weapon (its game\'s tool {held_g}, '
        f'{time.time() - t0:.0f} s)')
-    if held_h == a.type and held_g == a.type and not a.nofix:
+    if held_h == a.type and held_g == a.type:
         # BUG-0906: the tool type is not what the game draws: the hand's item and its attached model are
         import coop_tribe_looks as looks
         hh_, gh_, t1 = None, None, time.time()

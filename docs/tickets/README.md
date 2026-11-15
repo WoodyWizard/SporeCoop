@@ -1133,3 +1133,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1130](BUG-1130-a14-one-game-on-main-a-counter-of-game-calls-mad.md) | fixed | tooling | All | 2026-11-15 | unreleased | A14: one game::on_main(), a counter of game calls made off the main thread, a Threads section |
 | [BUG-1131](BUG-1131-b4-ratchet-lints-in-make-test-object-alive-count.md) | fixed | tooling | All | 2026-11-15 | unreleased | B4: ratchet lints in make test: object_alive count, CALL_GUARD around o_* calls, lifecycle registration of on_* functions |
 | [BUG-1134](BUG-1134-two-re-entrancy-flags-around-game-calls-are-no-c.md) | open | bug | All | 2026-11-15 |  | Two re-entrancy flags around game calls are no CALL_GUARD: game.cpp g_in_puppet_anim and the effect relay's g_in_relay |
+| [BUG-1138](BUG-1138-b1-fix-switch-retirement-the-rule-the-tool-and-t.md) | open | tooling | All | 2026-11-15 |  | B1: fix-switch retirement, the rule, the tool and the first batch (0.7.9 and older) |

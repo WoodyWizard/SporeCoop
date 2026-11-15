@@ -62,3 +62,4 @@ own_ground (coop_own_ground.py): FAIL with SPORE_FIX_OFF=creature.own_ground out
 - 2026-11-05: opened.
 - 2026-11-05 (fix/w44-height): fixed (creature.own_ground); own_ground FAIL/PASS.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `creature.own_ground` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-112714:own_ground on record; its test runs PASS-only.

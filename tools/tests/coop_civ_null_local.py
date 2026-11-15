@@ -13,9 +13,9 @@ guests' games destroyed and rebuilt every vehicle), every city owner and the boo
    guest's order still drives its vehicle in the host's game (the game's position).
 A real load still clears every table: civ_reload (BUG-0059).
 
---nofix: `coop.fix civ.world_epoch off` (the old trigger): must FAIL.
+civ.world_epoch off failed (retired in 0.7.15, BUG-1138: FAIL run 20261029-003144:save_hygiene_leave); the test runs PASS-only.
 
-  SPORE_LANE=5 python3 tools/tests/coop_civ_null_local.py [--nofix]
+  SPORE_LANE=5 python3 tools/tests/coop_civ_null_local.py
 """
 import argparse
 import re
@@ -42,13 +42,9 @@ def tables(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('civ')
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix civ.world_epoch off')['out'].strip())
     time.sleep(4)
     hc, hv = civ(host)
     pcities = [k for k, v in hc.items() if v['player']]

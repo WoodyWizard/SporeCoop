@@ -61,3 +61,4 @@ species, each within 8 m (the guest's game's own tribe list and member vectors).
 - 2026-11-01 (fix/w32-tribe-sync): t missing = NPC tribes the host's game formed and the guests' did not; fixed (tribe.npc_tribes). p apart -> BUG-0393 / BUG-0380, n apart -> BUG-0402.
 - 2026-11-01 (feat/w33-tests-session): transition_net (Cell -> Creature -> Tribe the players' way, SPORE_NET=player, guest 30 fps; lab 20261101-142943, lane 10): 58 s after the guest followed into Tribe both games logged `sync-check: MISMATCH ... t: 3 missing on the guest (t4 t5 t6)` (34 objects compared). Reproduced 2 of 2 on main a05d1f6 (also lab 20261101-145528) before the fix was merged; transition_net allowed it by name until then.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `tribe.npc_tribes` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-122850:tribe_npc_form on record; its test runs PASS-only.

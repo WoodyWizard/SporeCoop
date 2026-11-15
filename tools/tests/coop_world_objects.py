@@ -8,19 +8,19 @@ kind has two ways:
                    interact end: 0xC40360, +0xA3, message 0xD3353638 -> the reward); the host's copy of it is
                    used up (its reward +0x24), and when the host's avatar uses it too nobody gets a second
                    part: both games have one part more than before, not two.
-                   SPORE_FIX_OFF=wobj.ornament fails.
+                   wobj.ornament off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-123009:wobj_ornament).
   --kind fruit     (BUG-0472, creature) the host eats a fruit on the ground (cFruit_SetState 5, the eat node's
                    end): the guest's copy is gone from the guest's game; the guest eats another: the host's is
-                   gone. SPORE_FIX_OFF=wobj.fruit fails.
+                   gone. wobj.fruit off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-123122:wobj_fruit).
   --kind tree      (BUG-0472, creature) a fruit falls from a tree in the host's game (the flora's DropFruit):
                    the same slot falls in the guest's game (its tree's fruit mask, a fruit on the ground near
-                   it); the other way round from the guest. SPORE_FIX_OFF=wobj.tree fails.
+                   it); the other way round from the guest. wobj.tree off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-123223:wobj_tree).
   --kind herd      (BUG-0460, creature) the host's avatar kills a species at its nest until the species is
                    extinct (the game's own TakeDamage -> ApplyEvent -> 0xBA4750): the nest is extinct in the
                    guest's game too (herd +0x190, nest +0x120, what the minimap shows).
-                   SPORE_FIX_OFF=wobj.herd fails.
+                   wobj.herd off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-130323:wobj_herd).
   --kind eggs      (BUG-0474, tribe) the eggs at the animal nests in the host's game are in the guest's game
-                   at the same places (coop.census all: the game's noun list). SPORE_FIX_OFF=nest.eggs_tribe
+                   at the same places (coop.census all: the game's noun list). nest.eggs_tribe off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-123633:nest_eggs_tribe)
                    fails.
 
   coop_world_objects.py --kind ornament|fruit|tree|herd|eggs

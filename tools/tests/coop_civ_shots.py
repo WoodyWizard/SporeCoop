@@ -14,8 +14,8 @@ half of the samples in which the host's had; no building of the target city is r
 host's game has standing (the guest's copies of the shots hurt nothing); the target city's building hit points
 on the guest are the host's (BUG-0529: within 3 % or 60 when the host's fell, at 30 s and at the end) and not
 below them (the guest's copies took nothing extra).
-SPORE_FIX_OFF=civ.shots: the guest's game has no projectile at all (FAIL); SPORE_FIX_OFF=civ.building_hp: the
-guest's city stands at full hit points while the host's fell (FAIL); SPORE_FIX_OFF=civ.shot_damage,civ.building_hp:
+civ.shots off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-015446:civ_shots): the guest's game has no projectile at all (FAIL); civ.building_hp off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-095130:civ_shots): the
+guest's city stands at full hit points while the host's fell (FAIL); civ.shot_damage, civ.building_hp off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-015254:civ_shots):
 the guest's copies of the shots hurt the city there (FAIL).
 
   SPORE_LANE=2 python3 tools/tests/coop_civ_shots.py

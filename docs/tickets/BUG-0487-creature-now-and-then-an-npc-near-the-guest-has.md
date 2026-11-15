@@ -40,3 +40,4 @@ FAIL with SPORE_FIX_OFF=npc.resync: out/lab/20261103-124409 (back [], missing [4
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `npc.resync` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-124409:npc_resync on record; its test runs PASS-only.

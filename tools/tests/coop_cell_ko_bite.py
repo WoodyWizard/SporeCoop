@@ -12,7 +12,7 @@ still ran for the avatar: its bites hurt and killed (a guest's through MSG_CELL_
 3. The same with the host knocked out (`coop.pool selfhit 50`, the guest far away): the host's bites change
    nothing in its own game.
 
-  coop_cell_ko_bite.py   (SPORE_FIX_OFF=cell.ko_no_bite: the knocked-out cell's bites land, FAILS)"""
+  coop_cell_ko_bite.py   (cell.ko_no_bite off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-173329:cell_ko_bite): the knocked-out cell's bites land, FAILS)"""
 import re
 import time
 

@@ -20,7 +20,7 @@ world's evolved species).
    and the bar is the one the game builds for this avatar.
 5. Keys of the creature stage (W, 1, 2, E) are pressed on the guest: no caught fault in any game.
 
-  coop_ability_bar.py   (SPORE_FIX_OFF=creations.ability_bar must FAIL)"""
+  coop_ability_bar.py   (creations.ability_bar off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-205235:ability_bar))"""
 import re
 import struct
 import time

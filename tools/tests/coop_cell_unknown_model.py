@@ -15,7 +15,7 @@ Checks:
 * the guest made no cell with the unknown model (`unknown_models` counts the refused ones);
 * the guest mirrors the cell once its model is one it has (the mirror count goes up).
 
-  coop_cell_unknown_model.py   (SPORE_FIX_OFF=cell.unknown_model: the guest faults at 0xE83EC8, FAILS)"""
+  coop_cell_unknown_model.py   (cell.unknown_model off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-144746:cell_unknown_model): the guest faults at 0xE83EC8, FAILS)"""
 import re
 import time
 

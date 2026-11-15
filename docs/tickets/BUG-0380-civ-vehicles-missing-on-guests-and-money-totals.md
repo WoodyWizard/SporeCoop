@@ -83,3 +83,5 @@ Three separate things behind the three symptoms:
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): three causes found and fixed (above); the campaign's Civ shortcut founds with (ex, 0, 0) now (broadcast, as the game's tick).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `civ.city_burst` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-094048:civ_city_burst on record; its test runs PASS-only.
+- 2026-11-15: switch `diag.rts_cursor` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-094724:civ_cursor on record; its test runs PASS-only.

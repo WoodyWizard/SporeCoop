@@ -73,3 +73,4 @@ more in 10 s.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed. New (Ghidra, from the BUG-0556 analysis): the ability handler 0xD8E840 runs kind 0x31 (roar: stimuli to the enemies around the roaring creature), 0x32 (siren song), 0x33 (summon flock -> drama kind 8). A guest's roar posts its stimuli to the AI-less proxies in its own game only; a fix is a guest -> host MSG_PLAYER_RULE kind that runs the same kind on the puppet in the host's game.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): fixed (creature.roar_relay), test creature_roar.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `creature.roar_relay` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-110044:creature_roar on record; its test runs PASS-only.

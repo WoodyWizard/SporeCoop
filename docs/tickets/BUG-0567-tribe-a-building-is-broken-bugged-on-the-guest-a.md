@@ -40,3 +40,4 @@ realign_tribe: every NPC hut but one damaged to 30 % in the guest's game only, t
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2), the class reproduced by tribe_bounce_world.
 - 2026-11-04 (fix/w43-realign): fixed (realign.buildings); runs above.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `realign.buildings` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-205319:tribe_bounce_world on record; its test runs PASS-only.

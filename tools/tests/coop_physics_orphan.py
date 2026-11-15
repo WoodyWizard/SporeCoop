@@ -10,7 +10,7 @@ refers to, in the slot past the pool's high water) on the
 guest in Tribe, lets the game run, and asserts the game's own exception counter (`exc`) stays at 0 and
 the game keeps drawing frames. With the fix the guard leaves that body out of the update (kind 3).
 
-  coop_physics_orphan.py   (SPORE_FIX_OFF=game.physics_owner: the fault at 0xB4C5B4 in every frame, it FAILS)"""
+  coop_physics_orphan.py   (game.physics_owner off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-224546-fix-w37-tribe-fault:physics_orphan#1): the fault at 0xB4C5B4 in every frame, it FAILS)"""
 import re
 import time
 

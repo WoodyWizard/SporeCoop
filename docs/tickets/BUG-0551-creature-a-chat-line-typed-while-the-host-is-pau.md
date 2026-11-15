@@ -50,3 +50,4 @@ in both players' chat).
 - 2026-11-04 (fix/w43-tests): G1: read coop_ui.cpp's locked-edit path (locked_edit_tick / locked_edit_apply); not reproduced, not changed.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_locked_edit_keep), test coop_chat_pause.py.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `core.ui_locked_edit_keep` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-100106:chat_pause on record; its test runs PASS-only.

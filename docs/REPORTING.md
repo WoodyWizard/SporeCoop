@@ -499,5 +499,5 @@ docs/06-testing.md#testing-session-report.
   status` has a `write worker=... jobs_worker= jobs_main= last_ms=` line.
 * Test knobs: `coop.sreport test stall` (the guest's upload of the round it is asked stops halfway, once),
   `stallwait <s>` (the host's wait for the next piece, 2-60 s), `writedelay <ms>` (a slow disk: that long per MB of
-  the session zip), `coop.corefix settings_in 0` (a guest drops the host's settings tables: a host older than 0.7.12).
+  the session zip), `coop.settingsin 0` (a guest drops the host's settings tables: a host older than 0.7.12).
   Test: `tools/tests/coop_sreport_leave.py` (suite `sreport_leave`).

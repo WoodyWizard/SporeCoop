@@ -10,7 +10,7 @@ effect object, its transform at effect +0x9C). Checked on the guest's game:
   2. with the host's orientation and size: each of the 9 rotation entries within 0.05 of the host's effect's and the
      scale within 5 % (the monster rises out of the water on the planet's surface, not tilted into it);
   3. the effect's up axis is the planet's up at that point there too (|cos| >= 0.95), as in the host's game.
-SPORE_FIX_OFF=effects.world_xform fails 2 and 3 (identity rotation: the monster lies tilted in the water).
+effects.world_xform off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-030048:creature_sea_monster) 2 and 3 (identity rotation: the monster lies tilted in the water).
 """
 import math
 import re

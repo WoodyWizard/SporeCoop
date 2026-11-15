@@ -53,3 +53,4 @@ walker's target over 0.4 m above the host's ground, the next frame draws the pup
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w41-puppet-look (creature.puppet_air).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `creature.puppet_air` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-025342:puppet_air on record; its test runs PASS-only.

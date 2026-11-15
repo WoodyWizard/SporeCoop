@@ -35,3 +35,4 @@ coop_editor_strays.py FAIL before (homes inside the planet, left-over puppets), 
 - 2026-10-25: fixed on fix/creature-ai-crash, released in 0.7.2.3.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: switch: core.strays (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `core.strays` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261028-052840-fix-rel-strays:editor_strays on record; its test runs PASS-only.

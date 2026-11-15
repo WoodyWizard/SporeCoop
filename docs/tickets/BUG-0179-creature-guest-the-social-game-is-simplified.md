@@ -48,3 +48,5 @@ creature_social_meter (tools/tests/coop_creature_social_meter.py), real input on
 - 2026-11-03: fix/w40-dna-social measured it with the relations fix (BUG-0462) merged: the social path works for every socializable species of the fixture by key, but a CLICK on the social ability's button did nothing for a guest: BUG-0518 (fixed, social.bar_click). Still open here: the meter and the NPC's prompts on the guest, any social ability counts as the answer, 0x60B4123 not posted.
 - 2026-11-03: meter and win message fixed on fix/w41-creature-left (social.guest_meter); prompts split into BUG-0525.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `social.bar_click` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-181651:creature_social_bar on record; its test runs PASS-only.
+- 2026-11-15: switch `social.guest_meter` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-234903:creature_social_meter on record; its test runs PASS-only.

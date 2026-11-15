@@ -24,7 +24,7 @@ animation plays, through the creature's own SetTarget (vt 0x84, null), as the ga
 the host must go on (ARMED_CUTS times).
 
   coop_npc_lost_target.py [--rounds N]
-  (SPORE_FIX_OFF=npc.attack_lost_target,npc.stale_sender: the host crashes or a stale sender stays, FAILS)"""
+  (npc.attack_lost_target, npc.stale_sender off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-143947:npc_lost_target): the host crashes or a stale sender stays, FAILS)"""
 import argparse
 import random
 import re

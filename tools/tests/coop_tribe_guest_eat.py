@@ -3,7 +3,7 @@
 members do not eat on their own, they have to be ordered to eat").
 
 A guest's mirrors run no behaviour tree (tribe.cpp h_BTTick): a member eats only in the host's game, by the host's
-copy's own tree, and the guest sees it through the relays (the eat animation, tribe.mirror_anims; the hunger,
+copy's own tree, and the guest sees it through the relays (the eat animation, tribe.mirror_anims (retired); the hunger,
 tribe.mirror_hunger). Two games on the tribe fixture:
 1. a member the guest owns (`owner=` of the host's `coop.tribe` rows; members are dealt round-robin) is made hungry
    in the host's game (`coop.tribe hunger <id> 15`, the game's own setter) and given no order;
@@ -11,7 +11,7 @@ tribe.mirror_hunger). Two games on the tribe fixture:
 3. the guest's mirror shows it: its hunger in the guest's game is the host's member's before the meal (25 or less)
    and after it (within 5), and the animation the host's member's tree started for the meal (`bhv=` of the host's
    `coop.tribe anims` while its hunger rose) is the mirror's current animation in the guest's game at least once.
-SPORE_FIX_OFF=tribe.mirror_anims,tribe.mirror_hunger must FAIL at 3 (the guest sees no meal).
+tribe.mirror_anims + tribe.mirror_hunger off failed (tribe.mirror_anims retired in 0.7.15, BUG-1138: FAIL run 20261105-112215:tribe_mirror_anims) at 3 (the guest sees no meal).
 
   SPORE_LANE=N python3 tools/tests/coop_tribe_guest_eat.py
 """

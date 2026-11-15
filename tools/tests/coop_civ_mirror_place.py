@@ -12,10 +12,9 @@ back: the guest showed it 13-15 m off at times.
 3. For 40 s, every 0.5 s: every mirrored NPC vehicle's position on the guest's game against the
    host's (the guest's `coop.civ` line, read right after the host's).
 PASS: no mirror farther than 4 m from the host's vehicle (a vehicle driving at 12 u/s between the
-two reads is ~1 m) and the vehicle at the node was seen. --nofix (`coop.fix civ.mirror_place off`):
-must FAIL (13 m).
+two reads is ~1 m) and the vehicle at the node was seen. civ.mirror_place off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-154424-fix-w14-tribe-civ:civ_mirror_place); the test runs PASS-only.
 
-  SPORE_LANE=7 python3 tools/tests/coop_civ_mirror_place.py [--nofix]
+  SPORE_LANE=7 python3 tools/tests/coop_civ_mirror_place.py
 """
 import argparse
 import math
@@ -29,14 +28,10 @@ NODE = (-336.0, 132.0, 354.0)  # the spice node of the civ_npc fixture the vehic
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--seconds', type=float, default=40)
     a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix civ.mirror_place off')['out'].strip(), flush=True)
     time.sleep(3)
     print('  guest:', guest.call('coop.civ pushprobe')['out'].strip(), flush=True)
     worst, worst_id, n, near_node = 0.0, None, 0, 0

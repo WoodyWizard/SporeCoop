@@ -47,3 +47,4 @@ Observed with a forced trigger (`coop.civ nulllocal 1`, lane 5): one frame witho
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (e68f6b8); test civ_null_local: FAIL 20261029-003144 with civ.world_epoch off, PASS 20261028-232442, 20261028-235458, 20261029-003648
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `civ.world_epoch` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-003144:save_hygiene_leave on record; its test runs PASS-only.

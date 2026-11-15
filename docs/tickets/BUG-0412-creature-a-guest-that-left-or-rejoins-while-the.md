@@ -62,3 +62,4 @@ PASS in the same run). Not verified: whether the creatures made by away_locals w
 - 2026-11-01 (fix/w37-vote-leaver, seen, not analysed): party_creature4 in lab 20261101-224704 (lane 5) failed only the sync-check gate: Dave rejoined after leaving during a vote (Loading -> Creature at s 85.8), `sync-check: MISMATCH with the host ... n: 16 missing on the guest` at s 93.5 (7.7 s after his load), `sync-check: OK ... 26 objects` at s 123.8. A transient after a rejoin, not the permanent empty planet of this ticket; same area. The test's own checks passed.
 - 2026-11-06 (fix/w45-one-game-objects, L1): fixed (npc.leave_locals): the leave hands the proxies over, a rejoin keeps the own NPCs until the host is here.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `npc.leave_locals` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-014526:join_during_host_editor on record; its test runs PASS-only.

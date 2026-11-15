@@ -180,7 +180,7 @@ A message is used and passed on only when it fits the player it came from. Share
 * **A player's creations leave with the player** (BUG-0076): `creations::on_player_leave` forgets the
   owner's bundles (host store, received pieces, applied keys), so the next player of the id is shown
   with its own creature or the world's species, and later joiners do not get the old one.
-* Fix switches (tests): `coop.corefix big_reliable|state_roster|offset_window|sender_time|id_reuse|creations_leave 0|1`;
+* Fix switches (tests): `coop.fix net.big_reliable|net.state_roster|net.offset_window|net.sender_time|core.id_reuse|core.creations_leave off|on`;
   unit tests: `net_tests --nofix` runs the wave 2 cases on the code before the fixes (they fail).
 
 ## Decoder fuzzing and the transport seam (2026-10-28, fix/w4-census)

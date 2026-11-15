@@ -12,11 +12,10 @@ The guest stays where both start (at the nest), the host walks 300 m away and wa
 same net id that is in the world (not at the planet's centre). A proxy without one in two samples
 in a row is a ghost.
 
-  coop_npc_pooled.py [--without-fix]   (--without-fix: `coop.fix npc.pooled off`, must FAIL;
-                                        SPORE_FIX_OFF=npc.pooled does the same)"""
+  coop_npc_pooled.py   (npc.pooled off failed: retired in 0.7.15, BUG-1138, FAIL run 20261029-144839:npc_pooled;
+                        the test runs PASS-only)"""
 import math
 import re
-import sys
 import time
 
 import census
@@ -85,11 +84,8 @@ def drawn_apart(host, guest):
 
 
 def main():
-    without = '--without-fix' in sys.argv
     host, guest = start()
     ck = Checks()
-    if without:
-        print(' ', host.call('coop.fix npc.pooled off')['out'].strip())
     hc = census.dump(host)
     av = next(r for r in hc.rows if r['own'] == 'avatar')
     a = list(av['pos'])
@@ -144,7 +140,6 @@ def main():
     ck(apart is not None and apart < 3.0, 'the guest draws the host\'s creature where the host is (BUG-0377)')
     ck(samples >= 40, f'censuses of both games compared ({samples})')
     ck(not ghosts, f'every proxy of the guest is an NPC the host has in its world ({len(ghosts)} ghosts)')
-    host.call('coop.fix npc.pooled on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

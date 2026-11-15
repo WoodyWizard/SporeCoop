@@ -8,7 +8,7 @@ value (GetEvolutionPoints; the Cell food total S+0x1C that the cell editor's DNA
   1. with the pace (default): the shared total grows by ONE player's amount (20), not the sum;
   2. a spend (-10, the guest's own) is not scaled: both lose 10;
   3. coop.ini dna_pace=0 on the host (`coop.dna pace 0`, the player's choice): the full sum (40).
-SPORE_FIX_OFF=core.dna_pace must FAIL step 1 (the sum, 40).
+core.dna_pace off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-180306:dna_pace) step 1 (the sum, 40).
 
   coop_dna_pace.py [--cell]
 """

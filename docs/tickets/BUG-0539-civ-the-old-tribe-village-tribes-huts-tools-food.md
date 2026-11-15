@@ -49,3 +49,4 @@ Corrected test (the village's own objects; bundles: BUG-0548): FAIL with the swi
 - 2026-11-04 (fix/w42-civ-left): opened (split from BUG-0484's bundles).
 - 2026-11-04 (fix/w42-civ-left, round 2): analysed and fixed (civ.tribe_ruins).
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `civ.tribe_ruins` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-130804:civ_tribe_left on record; its test runs PASS-only.

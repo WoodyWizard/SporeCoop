@@ -15,7 +15,7 @@ here (a new Space stage needs the whole campaign).
    planet") and the host's own trace line says `share_wait=planet` (what the monitor reads).
 4. The host takes off: the guest loads the host's world and plays Space in the host's system.
 
-SPORE_FIX_OFF=world.share_wait_notice: FAILS (no notice on the guest, no share_wait on the host).
+world.share_wait_notice off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-095159:space_share_wait) (no notice on the guest, no share_wait on the host).
 
   SPORE_LANE=9 python3 tools/tests/coop_space_share_wait.py
 """

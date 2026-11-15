@@ -43,3 +43,4 @@ puppet_stops judges the slide on coop.bodyrec (past where the walker's own creat
   thing this ticket is about); not touched, stays open (not reproduced in 21 stops on 2026-11-04).
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): reproduced on both games' own positions (coop.bodyrec in coop_puppet_walk, suite puppet_stops); creature.puppet_stop again, the hold from the target's own stop; FAIL 20261106-083248, PASS 20261106-083011.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `creature.puppet_stop` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-060035:puppet_stops#1 on record; its test runs PASS-only.

@@ -7,9 +7,9 @@
 3. The co-op epic is put next to a member of the player tribe; its blows are read for up to 60 s.
 Checks: the co-op epic's herd has the game's epic's damage multiplier (the fixture's epic: x15), and its blows on
 the members are hard (> --min-blow: without the fix the co-op epic hit for 1.5-8, an animal's blows).
---nofix (`coop.fix tribe.epic_tuning off`) must FAIL.
+tribe.epic_tuning off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-000238:tribe_epic_damage); the test runs PASS-only.
 
-  SPORE_LANE=2 python3 tools/tests/coop_tribe_epic_damage.py [--nofix]
+  SPORE_LANE=2 python3 tools/tests/coop_tribe_epic_damage.py
 """
 import argparse
 import re
@@ -34,13 +34,10 @@ def epics(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--min-blow', type=float, default=30.0)
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if a.nofix:
-        print(' ', host.call('coop.fix tribe.epic_tuning off')['out'].strip())
     time.sleep(4)
     print('  host:', host.call('coop.tribe epic')['out'].strip())
     time.sleep(2)

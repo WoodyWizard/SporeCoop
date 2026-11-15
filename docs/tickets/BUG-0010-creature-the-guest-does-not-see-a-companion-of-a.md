@@ -33,3 +33,4 @@ coop_creature_desync.py: the companion stayed pending 3x before, built after.
 - 2026-10-25: reported (player screenshots).
 - 2026-10-25: fixed on fix/creature-desync, released in 0.7.2.3.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-11-15: switch `creations.ask_species` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261108-074108:creature_desync on record; its test runs PASS-only.

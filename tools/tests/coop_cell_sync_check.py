@@ -18,7 +18,7 @@ B. A crowded pool: the host sends a guest its 900 nearest cells, picked around t
 
 Each phase: no new MISMATCH on the host's sync-check, and at least 2 checks with an OK. The guest's
 own game must hold the host's cells (more than 500 mirrors) and the same food total.
-SPORE_FIX_OFF=diag.total_lag fails A. diag.cell_margin off did not fail B in 2 players (the send is
+diag.total_lag off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-095302:cell_sync_check) A. diag.cell_margin off did not fail B in 2 players (the send is
 capped in a few rounds at most): its check is net_tests' test_diag_compare.
 
   SPORE_LANE=7 python3 tools/tests/coop_cell_sync_check.py [--phase a|b|ba]

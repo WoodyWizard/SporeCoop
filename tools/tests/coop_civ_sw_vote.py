@@ -21,9 +21,10 @@ vote, the host passes the vote: again 2000, not 16000.
 Before the fix the second request overwrote the statics the vote read: type 1 fired under the
 first vote (16000 taken). Spice income during the few seconds is small (tolerance 600).
 
---nofix: `coop.civ fix sw_vote 0` (the old statics): must FAIL (as SPORE_FIX_OFF=civ.sw_vote).
+civ.sw_vote (the old statics) off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-001330:civ_sw_vote); the
+test runs PASS-only.
 
-  SPORE_LANE=7 python3 tools/tests/coop_civ_sw_vote.py [--nofix] [--case guest|host|both]
+  SPORE_LANE=7 python3 tools/tests/coop_civ_sw_vote.py [--case guest|host|both]
 """
 import argparse
 import re
@@ -130,13 +131,10 @@ def run_case(ck, host, guest, case):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--case', choices=('guest', 'host', 'both'), default='both')
     a = ap.parse_args()
     host, guest = start('civ')
     ck = Checks()
-    if a.nofix:
-        print(' ', host.call('coop.civ fix sw_vote 0')['out'].strip())
     time.sleep(3)
     for case in (('guest', 'host') if a.case == 'both' else (a.case,)):
         run_case(ck, host, guest, case)

@@ -46,3 +46,4 @@ Found by the lab (no player report). Target: 0.7.4.
 - 2026-11-03: opened.
 - 2026-11-03: vehicle half fixed on fix/w40-civ-crashes (civ.mirror_remove); roads moved to BUG-0494.
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `civ.mirror_remove` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-131214:civ_mirror_remove on record; its test runs PASS-only.

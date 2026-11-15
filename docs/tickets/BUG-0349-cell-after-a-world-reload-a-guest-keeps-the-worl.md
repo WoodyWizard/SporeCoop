@@ -60,3 +60,4 @@ applied again after every load.
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, guest log).
 - 2026-10-31: fixed on fix/w22-reports (creations.cell_reapply).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `creations.cell_reapply` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-130115:cell_own_load on record; its test runs PASS-only.

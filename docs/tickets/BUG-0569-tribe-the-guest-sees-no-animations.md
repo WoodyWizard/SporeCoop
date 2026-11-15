@@ -57,3 +57,4 @@ Same mechanism as BUG-0564 (tribe_bounce_world out/lab/20261104-202045 FAIL). Pa
 - 2026-11-04 (fix/w43-realign): analysed; covered by the W2 re-alignment (BUG-0564), not verified on its own: stays open until a test shows a village's members after a reload (coop_realign_planet.py checks villages, not their members).
 - 2026-11-05 (fix/w44-tribe-guest, A1 of 0.7.8): root cause observed (mirrors play no behaviour animation), fixed by tribe.mirror_anims.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `tribe.mirror_anims` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-112215:tribe_mirror_anims on record; its test runs PASS-only.

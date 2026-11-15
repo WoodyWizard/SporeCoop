@@ -3,14 +3,14 @@
 
 play_creature (rel/0.7.4, out/lab/20261103-224540) lost a chat line typed while the host's "game saved" box was
 up (the host saved the world for a guest coming back): the box is the window manager's modal window and takes
-every click, like the input lock of a caption, so the chat line never took the focus. core.ui_locked_edit
+every click, like the input lock of a caption, so the chat line never took the focus. core.ui_locked_edit (retired)
 covered the input lock only.
 
 The host, through real input: saves (`coop.save hold`: the mod does not confirm the box), the box is up and is
 the window manager's modal window, opens the co-op window (F9 held), clicks the chat line, types a line, clicks
 Send: the line is in the chat line and in both players' chat. Then the box is confirmed and the same without it
 (the normal path still works, typed once).
-SPORE_FIX_OFF=core.ui_modal_edit: the click is dropped, nothing is typed (the test fails).
+core.ui_modal_edit off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-235548:chat_modal): the click is dropped, nothing is typed (the test fails).
 """
 import re
 import time

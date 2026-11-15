@@ -11,7 +11,7 @@ problem" report.
 
 1. Tribe fixture. The host's world gets a new NPC tribe its last save does not have (`coop.tribe form`), and the
    host's goal card goes onto it (`coop.wsync goal`, the game's SetTargetTribe: what an attack order or a gift does).
-   The guest's goal card follows (wsync.tribe_goal).
+   The guest's goal card follows (wsync.tribe_goal (retired)).
 2. The host knocks out its own player tribe, OK on the game-over caption: its game reloads the last save, without
    the new tribe. The guest's realign removes that village.
 3. A goal event in the guest's game (`coop.wsync goal dirty`: the manager's own "refresh the cards" call, vt 0x28,

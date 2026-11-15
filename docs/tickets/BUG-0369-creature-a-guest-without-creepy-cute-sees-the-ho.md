@@ -48,3 +48,4 @@ painted).
 - 2026-11-01: opened from the host's mark in the 2026-11-01 reports.
 - 2026-11-01: fix/w30-progress: pack paints substituted; fixed (unreleased). "Cubes" not reproduced.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `creations.paint_substitute` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-080710:guest_pack_paints on record; its test runs PASS-only.

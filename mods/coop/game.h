@@ -52,7 +52,7 @@ void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
 void* avatar();
 // BUG-0264: the stage is being left for the galaxy menu (the quit message 0x4715068 posted or
-// handled): avatar() returns null until the mode changes (30 s at most).
+// handled): avatar() returns null until the mode changes (30 s at most). world.leave_avatar.
 struct LeaveStats {
     unsigned windows = 0;    // stages left
     unsigned frames = 0;     // frames seen while leaving

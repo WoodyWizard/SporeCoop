@@ -49,3 +49,4 @@ off (not reproduced).
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the stages done (`All:state:stage_done`, cPlayer +0x10FC..+0x110C); not seen in the D0 runs: the creature and tribe fixtures start at their stage (no trait set on either game).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `wsync.stages` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-205424:wsync_stages on record; its test runs PASS-only.

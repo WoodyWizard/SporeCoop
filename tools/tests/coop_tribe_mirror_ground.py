@@ -17,7 +17,7 @@ a 60 m walk up a 7-9 m rise: 9 m under).
    (`coop.tribe lift -2`: as if the guest's ground were 2 m higher, BUG-0329/BUG-0332): the new mirrors'
    heights over the guest's ground.
 PASS: the walked mirror never under -0.5 m nor over 1 m (and on the host's path at the end, under 3 m off), the new
-mirrors not under -0.5 m. `SPORE_FIX_OFF=tribe.mirror_ground` must FAIL.
+mirrors not under -0.5 m. tribe.mirror_ground off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-233335:campaign_ct#1).
 
   SPORE_LANE=10 python3 tools/tests/coop_tribe_mirror_ground.py [--rise 60]
 """

@@ -19,7 +19,7 @@ Creature fixture. Checked on both games, the game's own values (GetEvolutionPoin
       editor open at once, each adds a part (real input) and presses done: both bars unchanged, the same DNA
       on both, the pool lower and not below 0 (two mouths of 25 on a pool of 45: the players' overspend).
 
-  coop_evo_bar.py [--case script|editors]    (SPORE_FIX_OFF=creature.bar_spend fails)
+  coop_evo_bar.py [--case script|editors]    (creature.bar_spend off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-174018:evo_bar))
 """
 import re
 import sys

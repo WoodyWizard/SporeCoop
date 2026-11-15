@@ -2,7 +2,7 @@
 """Cell stage with four players far apart and close together (BUG-0295, BUG-0298).
 
 Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py). The host keeps the world
-populated around every partner (BUG-0174, `cell.partner_tiles`) and sends each guest the cells
+populated around every partner (BUG-0174, `cell.partner_tiles` (retired)) and sends each guest the cells
 around it. With four players the pools grew past what the game's cell broadphase holds (~2048
 cells: a 4096-endpoint stack buffer in the sweep-and-prune merge 0xBBAF10): a fault at 0xBBB07B
 on every game, then crashes (DestroyCell at 0xA81FE6, a worker thread at 0xA479B7) and frozen
@@ -18,7 +18,7 @@ Checked on every game after each phase: its live cell count (the pool header, th
 count) stayed under 1800 the whole time (`peak=`, the highest seen per frame), each guest sees
 the host's cells around itself (coverage within 60 m, as the campaign measures it), cells of
 the host's world on each guest's screen (not an empty pool, BUG-0174), and no fault in any log (the lab).
-SPORE_FIX_OFF=cell.budget must FAIL (a pool over 2000, the fault at 0xBBB07B).
+cell.budget off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-052851:cell_4p) (a pool over 2000, the fault at 0xBBB07B).
 
 --jumps S (BUG-0307 hunt): before the phases, Carol runs at --jump-ms per frame and jumps to a new
 place 150-250 m from the host every 3 s for S s (the guest's reported centre jumped like this while

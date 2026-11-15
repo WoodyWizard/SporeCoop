@@ -44,3 +44,4 @@ FAIL with SPORE_FIX_OFF=civ.roads: out/lab/20261103-235005 (host 1 road, guest 0
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-citizens): fixed (the host's trade routes are added on the guests).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `civ.roads` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-235005:civ_roads on record; its test runs PASS-only.

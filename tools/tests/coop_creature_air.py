@@ -16,7 +16,7 @@ look again. On the host the guest's puppet stands in for the guest; the hits on 
    damage log: the hits applied from the host with the avatar's grounded byte +0x137 at that moment; a hit in a
    moment it touched the ground between two lifts is the game's rule and not counted).
 
-  coop_creature_air.py   (SPORE_FIX_OFF=creature.air_immune: the NPC's bites land in the air, FAILS)"""
+  coop_creature_air.py   (creature.air_immune off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-212457:creature_air): the NPC's bites land in the air, FAILS)"""
 import re
 import time
 

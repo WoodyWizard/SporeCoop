@@ -19,7 +19,7 @@ PASS when, after the mirrors settled, at most 5 % of the pairs differ by more th
 detector's tolerance) and there were enough pairs. The divergence detector's signature
 (`<stage>:scale:<kind>`, tools/tests/worlddiff.py) is printed for the record.
 
-SPORE_FIX_OFF=npc.scale (--kind npc), tribe.scale (tribe_member), space.puppet_scale (ufo) fail.
+npc.scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-125642:mirror_scale_npc) (--kind npc), tribe.scale (tribe_member), space.puppet_scale (ufo) fail.
 
   coop_mirror_scale.py --kind npc|tribe_member|ufo [--fixture f] [--rounds 4]"""
 import argparse

@@ -55,3 +55,4 @@ mirrors back, the guest reaches the galaxy menu, no fault); also 20261031-123047
 - 2026-10-31: opened.
 - 2026-10-31: fix/w22-cell: root cause (pending arrays of the cell broadphase overflow while the guest is paused), cell.sap_pending, cell_pause; fixed (unreleased).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.sap_pending` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-123042-fix-w22-cell:cell_pause on record; its test runs PASS-only.

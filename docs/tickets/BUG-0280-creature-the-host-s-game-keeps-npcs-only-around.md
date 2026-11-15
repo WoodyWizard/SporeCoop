@@ -67,3 +67,4 @@ Tribe (`coop_tribe_far.py`, the guest's pointer 332 m from the host's camera at 
 - 2026-10-30: fixed on fix/w9-creature (npc.view_centres), the cull found (Relevance_Update).
 - 2026-10-30: extended to the Tribe stage (npc.view_centres_tribe).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `npc.view_centres_tribe` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-013630-fix-w9-creature:tribe_far on record; its test runs PASS-only.

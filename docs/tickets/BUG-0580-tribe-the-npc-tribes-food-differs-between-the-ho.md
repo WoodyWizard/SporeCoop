@@ -46,3 +46,4 @@ later).
 - 2026-11-04: opened.
 - 2026-11-05: fixed by the W1 row tribe_food (fix/w43-crashes).
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `wsync.tribe_food` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-000612:tribe_npc_food on record; its test runs PASS-only.

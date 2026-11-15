@@ -12,7 +12,7 @@ sending totals). The food total is the game's own S+0x1C on each machine (`food=
 1. Host away, the guest eats 10 points, host back: within 3 s the guest's game has the host's total.
 2. A normal meal of the guest (1 point) still arrives on the host, and the guest has no dip.
 
-SPORE_FIX_OFF=pool.food_ack_away must FAIL (the guest stays 10 above, then drops by 10).
+pool.food_ack_away off failed (retired in 0.7.15, BUG-1138: FAIL run 20261028-235143:cell_food_away) (the guest stays 10 above, then drops by 10).
 """
 import re
 import time

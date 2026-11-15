@@ -47,3 +47,4 @@ coop_cell_ko_bite.py (suite cell_ko_bite).
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03: fixed on fix/w40-guest-combat (cell.ko_no_bite).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `cell.ko_no_bite` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-173329:cell_ko_bite on record; its test runs PASS-only.

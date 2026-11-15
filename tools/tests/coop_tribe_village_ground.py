@@ -177,8 +177,8 @@ def main():
         time.sleep(3)
     if not ck(good, 'the guest plays the Tribe stage together with the host'):
         return ck.result()
-    # BUG-0332 (tribe.host_reload): the host loads its own share save once it has gone out; measure after that load
-    if 'tribe.host_reload' not in os.environ.get('SPORE_FIX_OFF', '') and '--no-reload-wait' not in sys.argv:
+    # BUG-0332 (tribe.host_reload (retired)): the host loads its own share save once it has gone out; measure after that load
+    if '--no-reload-wait' not in sys.argv:
         tr = time.time()
         while time.time() - tr < 150 and 'host_reloads=0' in out(host, 'coop.terrain').splitlines()[0]:
             time.sleep(3)
@@ -205,7 +205,7 @@ def main():
     # BUG-0332: every tribe's village, the NPC tribes' too (in the campaigns the guests' ground was 5-6 m higher at
     # NPC tribe members, not at the player's village)
     # --npc-at=x,y,z;x,y,z: the host's game makes an NPC tribe of 2 there (SpawnNpcTribe, as its controller does
-    # during play); the guest makes its copy of it (tribe.npc_tribes) (BUG-0332: the campaigns' new villages)
+    # during play); the guest makes its copy of it (tribe.npc_tribes (retired)) (BUG-0332: the campaigns' new villages)
     for spec in next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--npc-at=')), '').split(';'):
         if spec.strip():
             q = tuple(float(x) for x in spec.split(','))

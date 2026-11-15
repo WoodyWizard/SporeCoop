@@ -14,7 +14,7 @@ game's position times its world scale (`world_scale=` of coop.pool, read around 
 point on both games, divided by the guest's scale. Checks: both games reach the same level, and the
 90th percentile of the mirror errors stays under 2 m in every sample (0.0-0.2 m before a level change).
 
-  coop_cell_grow.py   (SPORE_FIX_OFF=cell.world_scale: errors of 4-10 m, it FAILS)"""
+  coop_cell_grow.py   (cell.world_scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-181829:cell_grow): errors of 4-10 m, it FAILS)"""
 import math
 import re
 import time

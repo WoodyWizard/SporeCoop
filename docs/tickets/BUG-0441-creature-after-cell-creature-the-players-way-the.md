@@ -73,3 +73,4 @@ guest_editor_locks, creations, guest_editor and smoke: 18/19 OK, `ui` skipped (e
   The test found the host's Creature intro caption (cinematic 0A34E41F) waiting for its check after the
   transition, and a vote during it stuck the host's editor (BUG-0404, fixed on fix/w34-vote-cinematic).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `parts.census_states` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-190047:parts_transition on record; its test runs PASS-only.

@@ -56,3 +56,4 @@ a guest selling a tool (not sent: the host keeps it and the guest gets its copy 
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w42-tribe-left): a guest's purchase is placed by the host; fixed.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `wobj.tribe_tool_buy` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-101357:tribe_tool_buy on record; its test runs PASS-only.

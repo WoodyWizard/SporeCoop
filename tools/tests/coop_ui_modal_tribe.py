@@ -4,14 +4,14 @@
 The fork PandizeLive/SporeCoop-Lineages (based on our 0.7.3.6) saw the co-op window (F9) open in Tribe with the
 game's input lock at 0 while no button took its click: a native modal (a registration dialog, an online-service
 error box) took them. 0.7.3.6 forwarded a swallowed click only while the input lock was held (BUG-0273); since 0.7.4
-a modal window of the game (cWindowManager +0x82C, BUG-0482 `core.ui_modal_edit`) counts as well.
+a modal window of the game (cWindowManager +0x82C, BUG-0482 `core.ui_modal_edit` (retired)) counts as well.
 
 1. Two games on the tribe fixture. The host saves with the box held (`coop.save hold`: the "game saved" box stays up,
    the window manager's modal window); the game's input lock is 0.
 2. The host opens the co-op window (F9 held) and clicks its "Settings" button (a real click).
 3. PASS: the window shows the settings page within 3 s (the button's own action), then "Back" brings the lobby back;
    the box is confirmed and the same click works without it.
-SPORE_FIX_OFF=core.ui_modal_edit: the click is dropped, the page stays the lobby (FAIL).
+core.ui_modal_edit off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-235548:chat_modal): the click is dropped, the page stays the lobby (FAIL).
 """
 import re
 import time

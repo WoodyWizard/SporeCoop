@@ -102,3 +102,6 @@ the guest's load).
   vote's editor, the guest's own editor, action votes and shares (widened on the coordinator's request after
   the ticket audit's class C15).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `core.editor_cinematic` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-161342:vote_during_cinematic on record; its test runs PASS-only.
+- 2026-11-15: switch `core.own_editor_busy` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-164848:vote_during_cinematic on record; its test runs PASS-only.
+- 2026-11-15: switch `core.vote_action_busy` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-165714:busy_gate on record; its test runs PASS-only.

@@ -66,3 +66,4 @@ The campaign's own case was not reproduced (see Root cause).
 - 2026-10-31: opened.
 - 2026-10-31: fix/w20-cell: root cause (UpdatePairs' open list on the stack), cell.sap_sweep, cell_sap; fixed (unreleased). The broken order on the guest stays open (known-issues).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.sap_sweep` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-000232:cell_sap#1 on record; its test runs PASS-only.

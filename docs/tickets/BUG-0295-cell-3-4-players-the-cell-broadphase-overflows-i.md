@@ -40,3 +40,4 @@ Steps on the way: cap 1400 -> host peak 1714 (lab 20261030-053258); a far guest'
 - 2026-10-30: opened.
 - 2026-10-30: fix/w10-cell-4p: root cause (broadphase stack buffer), budget fix, cell_4p; fixed (unreleased).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.budget` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-052851:cell_4p on record; its test runs PASS-only.

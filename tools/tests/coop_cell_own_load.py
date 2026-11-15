@@ -17,10 +17,10 @@ the guest still eats.
 BUG-0915: the test sets the guest's record of this world (worlds.ini, the per-world rule of BUG-0345 / BUG-0638) and
 loads the world once more before the first checks.
 
-SPORE_FIX_OFF=creations.cell_reapply: the guest keeps the world's cell after the reload (must FAIL).
-SPORE_FIX_OFF=cell.puppet_index: the rebuilt avatar can sit at the old puppet's address and is taken
+creations.cell_reapply off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-130115:cell_own_load): the guest keeps the world's cell after the reload (must FAIL).
+cell.puppet_index off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-145028:cell_own_load#2): the rebuilt avatar can sit at the old puppet's address and is taken
 for the puppet: its collision pairs are dropped (fails in about a third of the runs: the address).
-SPORE_FIX_OFF=cell.own_rebuild: the rebuild comes on the first frames of the reload and the guest's
+cell.own_rebuild off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-130455:cell_own_load): the rebuild comes on the first frames of the reload and the guest's
 game does not eat what it swims into (must FAIL at "after the reload ... still eats"; the switch goes
 off after the first load, so only the reload checks the old timing)."""
 import random
@@ -114,7 +114,7 @@ def main():
        'the guest plays its own cell after the load')
     time.sleep(8)
     # BAF1AD40 eats plants (meat stays where it is: runs of 2026-10-31)
-    # BUG-0342: after the first load the own cell did not eat in 12 of 34 runs before cell.puppet_index
+    # BUG-0342: after the first load the own cell did not eat in 12 of 34 runs before cell.puppet_index (retired)
     eaten, tried = eat_plants(guest, host)
     ck(tried >= 2 and eaten >= 2, f"after the first load the guest's own game eats plants it swims into ({eaten} of {tried})")
     # a bite through the game's Bite on the nearest host NPC: the host's game takes its hp

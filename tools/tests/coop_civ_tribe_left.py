@@ -11,7 +11,7 @@ the tribe, 0xDCB2B2); the guest's mirrors run no behaviour tree, so its villages
 4. 15 s later, the counts and places of both games.
 PASS: the guest's game has no more tribe objects than the host's after each step, and none where the host's two
 are gone.
-SPORE_FIX_OFF=civ.tribe_ruins: the guest keeps the two villages (FAIL).
+civ.tribe_ruins off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-130804:civ_tribe_left): the guest keeps the two villages (FAIL).
 
   SPORE_LANE=6 python3 tools/tests/coop_civ_tribe_left.py [--fast]
 

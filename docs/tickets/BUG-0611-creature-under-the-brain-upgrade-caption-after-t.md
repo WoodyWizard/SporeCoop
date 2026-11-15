@@ -62,3 +62,4 @@ the scenario test).
 - 2026-11-06: opened.
 - 2026-11-06: fix/w45-leftovers: the stale rule after a freeze found, fix npc.thaw_stale, tests npc_frozen_thaw / npc_frozen_live; fixed.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `npc.thaw_stale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-110717:npc_frozen_thaw on record; its test runs PASS-only.

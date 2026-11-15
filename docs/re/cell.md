@@ -624,7 +624,7 @@ for verification and its limits.
   as the game's does. Before, the arguments were swapped and nothing was checked. `coop.pool fix
   guestbite 0|1`; test helper `coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>` (host).
 * Knockout helpers (BUG-0131): `nearest_partner` skips partners whose knockout state is KO_OUT
-  (`coop.pool fix rescue 0|1`); `coop.pool selfhit <dmg>` bites our own cell (tests).
+  (switch pool.rescue, retired in 0.7.15); `coop.pool selfhit <dmg>` bites our own cell (tests).
 
 ## Knockout grace, meals while the host is away, IsDamageable's resource part (2026-10-28, fix/w5-cell)
 <a id="cell-ko-grace"></a>
@@ -823,7 +823,7 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   and goes (a level change flushes all our tiles), the shadow is populated right then (`hand_over`):
   without it the host's own area stayed empty after a level-up (`cell_new_game`, the host found no
   meat on its screen, lab 20261030-022912).
-* The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
+* The fix (`coop.fix cell.partner_tiles` (retired in 0.7.15), cellsync.cpp `h_PopTiles`): on the host, after the game's
   own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
   moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
   another list (the host's or another partner's) already holds only once (and remembers the skipped
@@ -909,7 +909,7 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
 * ✔ Where the cells came from: at level 4 the host alone with three partners next to it held ~1400
   to 2200 cells; with the partners 200 m apart (BUG-0174's partner passes, one screen of tiles each)
   it grew past 4000; and a guest got every host cell within 120 m of itself (up to 3140 mirrors).
-* The bound (`coop.fix cell.budget`, cellsync.cpp): (1) a partner's tile is populated only while the
+* The bound (`coop.fix cell.budget` (retired in 0.7.15), cellsync.cpp): (1) a partner's tile is populated only while the
   host has fewer than 1100 live cells (kPopCap; first 1400: host peak 1714, lab 20261030-053258; then 1250: peaks 1759-1776, lab 20261030-063326) (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
   and populated, 4 per frame, when the pool has room; a tile on the partner's own screen waits
   only above 1300 (kPopCapScreen; `partner_core`: IsTileActive reads the gameplay range as the visible box
@@ -950,7 +950,7 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   per frame while the list held 12), then 90 s later the level-up's RemoveCellsOfOldScale crashed in
   PopulateTile+0x8A. `coop.pool nanself` (tests) makes the same state: without the guard the
   guest's game hung after the level-ups (hang report, lab 20261030-055502). The guard
-  (`coop.fix cell.nan_guard`): no PopulateTiles / PopulateTile while the own view boxes are not
+  (`coop.fix cell.nan_guard` (retired in 0.7.15)): no PopulateTiles / PopulateTile while the own view boxes are not
   finite, and the own cell is written back to its last finite position (`+0x4C`, `+0x84`, the
   soft-body particles `G+0x4108` on a ring of 0.4 x size around it, at rest). ? Where the NaN came
   from is still not known (the guest held 900 mirrors, none NaN).
@@ -994,7 +994,7 @@ BUG-0306. GOG 2024, Ghidra (REA), lab 20261030-104149 campaign#2 (host, 4 player
   follower's 0xE70E30 clears the copy, sets `+0x238 = 0`, calls PickTargets at once, copies the dead
   target again and faults again: 8616 faults in 5 min at the host's frame rate, every cell after
   the follower frozen on the host, until the stage was left.
-* Fix (`coop.fix cell.pick_guard`, cellsync.cpp h_PickTargets, both roles, puppets left alone):
+* Fix (`coop.fix cell.pick_guard` (retired in 0.7.15), cellsync.cpp h_PickTargets, both roles, puppets left alone):
   after PickTargets a flee / chase target that is not a live cell is dropped with its timer, as
   0xE70E30 would do one frame later. `coop.pool` prints `stale_targets=` (cell_contacts line);
   `coop.pool staletarget [n]` (tests, host) makes n group leaders chase a dead cell and rest 60 s.
@@ -1102,7 +1102,7 @@ report) and `tools/tests/coop_cell_sap.py` (suite `cell_sap`). Answers the "? No
   (the own cell stops, 500-750 ms per fault on Wine, lab: 2642 faults in 40 s), the stack above is
   overwritten.
 * ✔ Reproduced: `coop.pool column 1100` on a host with ~1300 cells (food 300) puts 1100 cells on one
-  40 m line: `coop.fix cell.sap_sweep off` -> the same fault signature at once (esp=0012D394, small
+  40 m line: `coop.fix cell.sap_sweep off` (retired in 0.7.15) -> the same fault signature at once (esp=0012D394, small
   EIPs, edi=01639470), the host's cell stops, a guest lost its mirrors (lab 20261031-075501).
 * The fix `cell.sap_sweep` (cellsync.cpp `h_UpdatePairs`, hook on 0xBBB450): the same two
   MergeAxis calls, the same sweep with the open list in a heap vector, the same pair test (the
@@ -1349,7 +1349,7 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
 <a id="cell-ko-eat"></a>
 
 * ✔ observed (BUG-0364, lab 20261101-023131 cell_coop; reproduced by cell_ko_food with
-  `coop.fix cell.ko_no_eat off`, lab 20261101-093513 and 20261101-094736): the knockout
+  `coop.fix cell.ko_no_eat off` (retired in 0.7.15), lab 20261101-093513 and 20261101-094736): the knockout
   (`go_down` / `downed_tick`: hp held at 1, invulnerable, `stop_at` its spot every frame) does not
   stop the game's contact events. EatFood 0xE7DF40 (event 0x12) still ran for the avatar: OnEat ->
   AvatarEat -> AddFoodPoints, +12 per plant, shared with the partner, the plant shrank or was

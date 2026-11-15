@@ -104,3 +104,5 @@ than half + 1 m/s x dt <= 10 %; walk gait >= 80 % on screen.
 - 2026-11-01: measured and fixed on fix/w30-tribe-walk (tribe.mirror_walk, tribe.mirror_time); BUG-0386
   opened on the way.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `tribe.mirror_time` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-080315:tribe_walk#2 on record; its test runs PASS-only.
+- 2026-11-15: switch `tribe.mirror_walk` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-233335:campaign_ct#1 on record; its test runs PASS-only.

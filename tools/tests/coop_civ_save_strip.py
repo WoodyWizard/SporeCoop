@@ -14,7 +14,7 @@ came back after a load as vehicles of that world, with nothing to drive them.
    no null in any civilization's vehicle lists (`coop.civ civlists`: what a stripped reference becomes
    on load), no fault for 10 s.
    BUG-0973: no wild creature where one of the host's wild creatures' proxies stood when Carol saved.
-PASS: 2 to 4. SPORE_FIX_OFF=civ.save_strip: the loaded world has the mirror vehicles (FAIL).
+PASS: 2 to 4. civ.save_strip off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-131305:civ_save_strip): the loaded world has the mirror vehicles (FAIL).
 
   SPORE_LANE=2 SPORE_FREE_LANE=3 python3 tools/tests/coop_civ_save_strip.py
 """

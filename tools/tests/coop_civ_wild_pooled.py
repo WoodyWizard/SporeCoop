@@ -3,7 +3,7 @@
 (BUG-1089, the Tribe / Civ side of BUG-0339).
 
 Before: in Tribe and Civ the host sent nothing while its simulation stood (the pause menu): host_tick returned at
-once, and the Creature stage's frozen pass (npc.frozen_pooled) did not run there. A creature its game took back into
+once, and the Creature stage's frozen pass (npc.frozen_pooled (retired)) did not run there. A creature its game took back into
 the pool meanwhile (the planet's centre, no herd) kept its proxy on every guest where it had stood, for the whole
 pause (the full campaign, lab 20261113-160426: 14 proxies on Bob's ground, 525 m from the host's objects at (0 0 0),
 sync-check MISMATCH). In Civ no distance rule drops it either (every guest gets every wild creature).

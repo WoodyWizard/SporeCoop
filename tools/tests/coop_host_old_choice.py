@@ -3,7 +3,7 @@
 session). Loading this world and hosting must leave the host's avatar on the world's species, in the
 host's game and on the guest; a choice made now, in this world, still swaps it (the feature).
 
-SPORE_FIX_OFF=creations.host_world_species: the host plays the old creature (the run that must FAIL)."""
+creations.host_world_species off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-125112:host_old_choice): the host plays the old creature (the run that must FAIL)."""
 import re
 import time
 

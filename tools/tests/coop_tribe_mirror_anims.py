@@ -14,7 +14,7 @@ those trees: the mirrors played only their locomotion's idle and walk.
 PASS: at least 60 such samples, and the guest's mirror plays the host's animation in at least 80 % of them
 (a start on the host must be seen there for two samples in a row: the relay comes with the next cycle; with the fix 94 %, without 0 %).
 
-SPORE_FIX_OFF=tribe.mirror_anims: the mirrors play their own idle / walk (FAIL).
+tribe.mirror_anims off failed (retired in 0.7.15, BUG-1138: FAIL run 20261105-112215:tribe_mirror_anims): the mirrors play their own idle / walk (FAIL).
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_mirror_anims.py
 """

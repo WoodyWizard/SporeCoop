@@ -11,7 +11,7 @@ The way it was seen (fix/w5-core, coop_vote_drop_editor.py with both cases in on
      Herd_Update+0x61.
 Checked: the guest is back in the host's world, plays 20 s there, and neither game faulted.
 
-  coop_rejoin_saved_puppet.py   (SPORE_FIX_OFF=npc.herd_nulls must FAIL)"""
+  coop_rejoin_saved_puppet.py   (npc.herd_nulls off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-003045-fix-w9-creature:rejoin_saved_puppet))"""
 import time
 
 import lane

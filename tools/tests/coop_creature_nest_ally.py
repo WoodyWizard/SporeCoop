@@ -14,7 +14,7 @@ ApplyEvent runs in its game (docs/re/creature.md#creature-player-rules).
 3. The relation back to 0: the guest's herds lose the flag again (warm runs reuse these games).
 Not checked: the drawn icon itself (the minimap's icon cache 0xE0DF10 is not read by the test).
 
-  coop_creature_nest_ally.py   (SPORE_FIX_OFF=social.nest_ally: +0x191 stays 0 on the guest, FAILS)"""
+  coop_creature_nest_ally.py   (social.nest_ally off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-212719:creature_nest_ally): +0x191 stays 0 on the guest, FAILS)"""
 import re
 import time
 

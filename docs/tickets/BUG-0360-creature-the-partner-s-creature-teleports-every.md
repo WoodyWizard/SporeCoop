@@ -78,3 +78,4 @@ windows, walk gait >= 80 % of the frames on screen.
 - 2026-11-01: root cause found and fixed on fix/w29-puppet-move (creature.puppet_walk); BUG-0361 and
   BUG-0362 and BUG-0363 opened on the way.
 - 2026-11-01: released in 0.7.3.3.
+- 2026-11-15: switch `creature.puppet_walk` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-010809-fix-w29-puppet-move:puppet_walk on record; its test runs PASS-only.

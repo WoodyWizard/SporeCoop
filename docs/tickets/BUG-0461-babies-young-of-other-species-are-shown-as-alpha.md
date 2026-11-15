@@ -41,3 +41,4 @@ FAIL with SPORE_FIX_OFF=npc.scale: out/lab/20261103-125642 (16 of 52 pairs diffe
 - 2026-11-03: the divergence detector shows it in 94% of 343 Creature comparisons (`Creature:scale:creature`, e.g. 0.59 host / 0.68 guest), without a player (out/lab/20261103-012624).
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `npc.scale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-125642:mirror_scale_npc on record; its test runs PASS-only.

@@ -85,3 +85,4 @@ The planned test was:
 - 2026-10-28: fixed on fix/w2-world: the session end drops the guest's queued world loads (coop_world_queue).
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: world.world_reset (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `world.world_reset` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261112-065338:world_queue on record; its test runs PASS-only.

@@ -14,7 +14,7 @@ the placed proxy (not only the drawn one) fell 0.2-0.4 m further behind every fr
    * enough frames: at least MIN_ROWS walked rows per walker (a test that saw nothing proves nothing);
    * no walked proxy over 3 m off the host's animal for 2 s (the monitor's rule);
    * the placed position (after the mod's placing) within PLACED_P90 m of the host's state in 90 % of the walked rows.
-SPORE_FIX_OFF=npc.proxy_slow_frames must FAIL (the 0.1 s cap).
+npc.proxy_slow_frames off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-232034:npc_walk_slow) (the 0.1 s cap).
 
   SPORE_LANE=4 python3 tools/tests/coop_npc_walk_slow.py [--secs 40] [--fps-ms 250]
 """

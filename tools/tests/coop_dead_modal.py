@@ -10,7 +10,7 @@ object whose vtable slots hold 0x65, as the destroyed one's did) on the guest in
 mouse over the game window. The game's own exception counter (`exc`) must stay at 0 and the game
 must keep handling the UI (a click on the co-op window still works afterwards).
 
-  coop_dead_modal.py   (SPORE_FIX_OFF=game.dead_modal: the fault at 0x65 comes back, it FAILS)"""
+  coop_dead_modal.py   (game.dead_modal off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-002848:dead_modal): the fault at 0x65 comes back, it FAILS)"""
 import re
 import time
 

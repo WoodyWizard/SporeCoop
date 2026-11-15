@@ -41,3 +41,5 @@ FAIL with SPORE_FIX_OFF=tribe.scale: out/lab/20261103-125805 (4 of 28 pairs, 14 
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
 - 2026-11-03: released in 0.7.4.
 - 2026-11-04 (fix/w41-civ-citizens): Civ half: fields kind `civ_citizen` on the citizens bound by BUG-0476 (`coop.fix civ.citizen_scale off`). FAIL with SPORE_FIX_OFF=civ.citizen_scale: out/lab/20261104-001130 (17 of 40 unambiguous pairs of another size); PASS out/lab/20261104-000735. The detector's `scale:citizen` stays in part: its greedy pairs cross in a crowd (docs/archive/known-issues-2026.md#issue-civ-citizen-scale).
+- 2026-11-15: switch `civ.citizen_scale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-001130:civ_citizens on record; its test runs PASS-only.
+- 2026-11-15: switch `tribe.scale` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-125805:mirror_scale_tribe on record; its test runs PASS-only.

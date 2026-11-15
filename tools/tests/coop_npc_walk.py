@@ -2,7 +2,7 @@
 """What a guest sees of the host's walking and running NPCs, frame by frame (BUG-0361).
 
 The guest shows the host's NPC animals as proxies (mods/coop/npc.cpp): standing they are driven by
-drive::step, moving (Creature stage, npc.kinematic, BUG-0281) they were teleported onto the host's
+drive::step, moving (Creature stage, npc.kinematic (retired), BUG-0281) they were teleported onto the host's
 path every frame. coop_puppet_walk.py (BUG-0360) measures the partner's puppet this way; this test
 does the same for NPC proxies (`coop.npctrack`: every frame, every proxy within RADIUS m of the
 guest's avatar: the position the game drew, the interpolated host state, the game's speed, the
@@ -37,7 +37,7 @@ animation's walk gait, on the screen or not).
   The walkers are NPCs outside the host avatar's pack and family (BUG-0417: the flee phase's hit by the host's
   avatar on its own family made the family fight the host back, the monitor's posse_damage). NPC_WALK_PARTY=1:
   the family / pack first (the test before the fix; the monitor gate must fail when one was hit).
-  (SPORE_FIX_OFF=npc.walk must FAIL)"""
+  (npc.walk off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-080452-fix-w30-npc-walk:npc_walk#1))"""
 import argparse
 import json
 import math

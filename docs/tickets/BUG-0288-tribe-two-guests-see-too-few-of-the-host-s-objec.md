@@ -55,3 +55,4 @@ coop_multi.measure `missed`).
 - 2026-10-29: opened.
 - 2026-10-30: root cause (the BUG-0172 guard on a guest's mirror tribe), fix and test on fix/w9-tribe.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `tribe.mirror_out` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-001746:tribe_bounce_mirrors on record; its test runs PASS-only.

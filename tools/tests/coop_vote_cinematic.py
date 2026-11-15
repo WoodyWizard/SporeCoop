@@ -29,9 +29,9 @@ host's game plays (a caption, a brain upgrade, the evolution's cinematic).
    itself at a stage start, after an editor and under captions: a share held for it came 120 s late,
    guest_editor_hold in lab 20261101-172428; a save during a pause is the game's own way to save).
 
-SPORE_FIX_OFF=core.editor_cinematic: cases 1, 2, 4 fail (the host's editor opens during the cinematic and
+core.editor_cinematic off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-161342:vote_during_cinematic): cases 1, 2, 4 fail (the host's editor opens during the cinematic and
 stays without its buttons; the cinematic is then ended by hand so that the games are usable again).
-SPORE_FIX_OFF=core.own_editor_busy: case 5 fails. SPORE_FIX_OFF=core.vote_action_busy: case 6 fails.
+core.own_editor_busy off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-164848:vote_during_cinematic): case 5 fails. core.vote_action_busy off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-165714:busy_gate): case 6 fails.
 share_cinematic fails with SPORE_FIX_OFF=npc.sharecine (BUG-0019's switch).
 
   coop_vote_cinematic.py [--part vote|gate|all]

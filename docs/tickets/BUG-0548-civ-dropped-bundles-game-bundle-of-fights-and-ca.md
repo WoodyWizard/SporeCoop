@@ -57,3 +57,4 @@ and faulted the host on a null vtable, lab 20261106-042445). Switch `coop.fix wo
 - 2026-11-04 (fix/w42-civ-left): opened.
 - 2026-11-06 (fix/w45-world-objects): fixed for ground and carried food (Tribe, Civ), tests host_bundle and host_bundle_civ; rows left in BUG-0617.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `wobj.bundle` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-044559:host_bundle on record; its test runs PASS-only.

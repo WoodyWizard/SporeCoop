@@ -48,3 +48,4 @@ its herd and its blows (host TakeDamage).
 - 2026-11-03: opened (w40 triage), needs the player's details.
 - 2026-11-03 (fix/w41-tribe-actions): the co-op epic's damage multiplier was 1 (game's epic 15); fixed.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `tribe.epic_tuning` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-000238:tribe_epic_damage on record; its test runs PASS-only.

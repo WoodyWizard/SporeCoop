@@ -13,24 +13,24 @@ PASS: whenever the host's game has a citizen there, the guest's has one within 1
 SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe] [--player: a member of
-  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL] [--rejoin: BUG-0664, below]
+  the host's own tribe, BUG-0620; tribe.member_body off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-135809:tribe_dead_player#1)] [--rejoin: BUG-0664, below]
   [--join-body: --rejoin, and the guest's game has a citizen within 3 m of the host's body all the time it lies there
   (BUG-0665: a guest spawned no mirror for a body entry; SPORE_FIX_OFF=tribe.join_body must FAIL)]
 
 --rejoin (BUG-0664): the guest leaves and joins again; once the host has saved the world for it, the host's own
 member is killed, so the guest loads a world where that member is a body out of its tribe's list on the host. The
 host's sync-check is asked again and again while the body lies there. PASS: no MISMATCH (long_tribe on rel/0.7.9:
-"t: 1 missing on the guest" twice, after the restart and after the rejoin). SPORE_FIX_OFF=tribe.sync_bodies must FAIL.
+"t: 1 missing on the guest" twice, after the restart and after the rejoin). tribe.sync_bodies off failed (retired in 0.7.15, BUG-1138: FAIL run 20261107-013812:tribe_dead_rejoin#1).
 
 --eat (BUG-0667): before the host's own member is killed, the guest's mirror of it starts eating at its food mat in the
 guest's own game (`coop.tribe localbt` + `coop.tribe eat`: its tree runs as while the host is away, long_tribe's
 editor visit), so the eat node 0x0461300F is active on the mirror when its body is destroyed. PASS: the body goes on the
-guest with no caught fault and the guest keeps drawing frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL (the fault
+guest with no caught fault and the guest keeps drawing frames. tribe.body_teardown off failed (retired in 0.7.15, BUG-1138: FAIL run 20261107-031255:tribe_body_teardown) (the fault
 at 0xAC9C7D, data 0x39C; long_tribe's guest froze after it).
 --eat --menu (BUG-0667, long_tribe_short 20261107-043030): as --eat, but once the guest has taken the body out of its
 tribe (bodies_detached), the guest leaves to the main menu through the pause menu (Exit to Main Menu, Don't Save x2)
 while the body still lies: the world's teardown destroys the tribes first and the body after them. PASS: no caught
-fault, the guest reaches the main menu and runs frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL.
+fault, the guest reaches the main menu and runs frames. tribe.body_teardown off failed (retired in 0.7.15, BUG-1138: FAIL run 20261107-031255:tribe_body_teardown).
 """
 import math
 import re
@@ -181,7 +181,7 @@ def rejoin_with_body(host, guest, ck, victim, attacker):
         in_list = victim in members(host)
         hk, gk = sync_keys(host), sync_keys(guest)
         key = f't{victim}'
-        # the host's game keeps the body: its snapshot still sends one (tribe.member_body, bodies_sent grows)
+        # the host's game keeps the body: its snapshot still sends one (tribe.member_body (retired), bodies_sent grows)
         now_sent = bodies_sent(host)
         body = not in_list and now_sent > sent
         sent = now_sent

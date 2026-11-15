@@ -104,3 +104,4 @@ from its registry; 1b46016: shared tiles hand over after a level change), lane 2
   crashes on the way recorded in docs/re/cell.md#cell-partner-tiles (the erase bound to the host's
   list, the full tile pool, the world scale step refilling the host's list from every tile).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.partner_tiles` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-004115-fix-w9-cell-food:cell_far_guest on record; its test runs PASS-only.

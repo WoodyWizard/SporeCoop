@@ -73,3 +73,5 @@ fix/w9-core (lane 4, GOG 2024):
 - 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
 - 2026-10-30 (fix/w9-core): the rest fixed: host_world.h with Welcome::world, host_absent_for, DNA row 2 (core.world_dna), shared hold (res.elsewhere), share retry (core.share_retry), city_catch_up guard; FAIL/PASS runs in Verification.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `core.share_retry` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-002615:share_retry on record; its test runs PASS-only.
+- 2026-11-15: switch `core.world_dna` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-003137:join_other_world on record; its test runs PASS-only.

@@ -53,3 +53,4 @@ both games.
 - 2026-11-03: opened.
 - 2026-11-06 (fix/w45-world-objects): fixed (place / relocate / make from a tree slot), test host_fruit.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `wobj.fruit_place` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-041115:host_fruit on record; its test runs PASS-only.

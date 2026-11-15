@@ -53,3 +53,4 @@ them as before. `coop.fix npc.away_locals off`: the proxies just go (0.7.3.1).
 - 2026-10-28: fix/w3-creature (wave 3): not worked on beyond reading; still open. What is left is how the game's own population refills a planet (its respawn rate of removed herds), which needs reverse engineering of the creature spawner; the known fallback (mirrors made local NPCs) failed before (docs/re/creature.md 8.3). Not a quick fix.
 - 2026-10-30: fix/w13-creature: reproduced (0 own NPCs near the guest for 25 s) and fixed by npc.away_locals.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `npc.away_locals` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-140802:away_refill on record; its test runs PASS-only.

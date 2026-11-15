@@ -39,3 +39,4 @@ evolve_key (coop_evolve_in_place.py --case creature --nosave: the host's in-plac
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w41-creature-left (creature.evolve_key).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `creature.evolve_key` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-000929:evolve_key on record; its test runs PASS-only.

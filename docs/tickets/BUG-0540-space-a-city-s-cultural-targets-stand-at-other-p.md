@@ -49,3 +49,4 @@ host_cultural (civ_npc, a rejoin after 60 s, the targets near the guest compared
 - 2026-11-04 (fix/w42-civ-left): opened (split from BUG-0484).
 - 2026-11-06 (fix/w45-world-objects): fixed (kind cultural_target), test host_cultural.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `wobj.cultural_target` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-043659:host_cultural on record; its test runs PASS-only.

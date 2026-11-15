@@ -23,7 +23,7 @@ AI type other than 0 (meat). On a non-solid cell (a plant, given hp to lose) and
 is there (`coop.pool kill <key> anyhit`, DamageCell on a cell of any kind):
   5. the host's own bite takes nothing (the game's rule);
   6. the guest's bite takes nothing in the host's game.
-SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type must FAIL at 6 (BUG-0888: pool.guestbite_type alone is only
+cell.guest_hit_game + pool.guestbite_type off failed (pool.guestbite_type retired in 0.7.15, BUG-1138: FAIL run 20261028-235236:cell_guest_bite) at 6 (BUG-0888: pool.guestbite_type alone is only
 read on the hand-made path and passes, lab 20261112-115921; with cell.guest_hit_game too it fails, 20261112-115922).
 With every switch on the game's own DamageCell decides (cell.guest_hit_game): the default path.
 """

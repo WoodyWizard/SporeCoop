@@ -15,9 +15,9 @@ new mirror for good, also after the dead ones had been removed (an empty tribe c
    player tribe as the host's (the game's own tribe list, `coop.tribe`), and the guest shows every
    member of the host (coop.sync t keys).
 
---nofix: `coop.fix tribe.mirror_out off` (the guard as in 0.7.3.1): must FAIL.
+tribe.mirror_out off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-001746:tribe_bounce_mirrors); the test runs PASS-only.
 
-  SPORE_LANE=8 python3 tools/tests/coop_tribe_bounce_mirrors.py [--nofix]
+  SPORE_LANE=8 python3 tools/tests/coop_tribe_bounce_mirrors.py
 """
 import argparse
 import re
@@ -47,13 +47,9 @@ def t_missing(host, guest):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if a.nofix:
-        for c in (host, guest):
-            print(' ', c.call('coop.fix tribe.mirror_out off')['out'].strip())
     time.sleep(6)
     print(' ', host.call('coop.tribe spawn 3')['out'].strip())
     time.sleep(6)

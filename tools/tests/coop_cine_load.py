@@ -3,7 +3,7 @@
 
 The live Creature -> Tribe change turns the game's cinematics off after CRG2TRG (cCinematicManager_SetEnabled(0)) and
 the Tribe start turns them on again; the mod's own reload of the host's Tribe right after that change
-(tribe.host_reload) could come first, and a load does not turn them on: the whole Tribe ran without a cinematic, and
+(tribe.host_reload (retired)) could come first, and a load does not turn them on: the whole Tribe ran without a cinematic, and
 so did every stage loaded later in that game (campaign_tribe_end lab 20261113-133357 lane 5: the flag 0 from the
 CRG2TRG at 13:40:52 on, through the galaxy menu and the reload; the four jump campaigns of fix/w49-tests). In Civ a
 capture's cinematic never played and the city never changed hands (its ChangeOwner waits for the cinematic's end).

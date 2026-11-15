@@ -84,3 +84,4 @@ Lane 8, GOG 2024, `tools/tests/coop_legless_guest.py`:
 - 2026-10-29: opened.
 - 2026-10-29: fix/w7-legless: reproduced (Save New, Replace), fixed behind creations.pre_editor; BUG-0283 opened for the own editor showing the host's new parts.
 - 2026-10-29: released in 0.7.3.1.
+- 2026-11-15: switch `creations.pre_editor` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261029-154403:legless_guest on record; its test runs PASS-only.

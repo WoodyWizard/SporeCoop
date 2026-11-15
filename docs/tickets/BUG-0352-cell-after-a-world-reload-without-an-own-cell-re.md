@@ -54,3 +54,4 @@ cell_respawn_swap, creations_cell, cell); `make test` PASS.
 - 2026-10-31: opened from the guest's log of the second batch of the 2026-10-31 report zips.
 - 2026-10-31: fixed on fix/w22-reports2 (cell.join_after_load).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.join_after_load` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-131104:cell_reload_join on record; its test runs PASS-only.

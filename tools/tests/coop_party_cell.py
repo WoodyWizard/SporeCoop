@@ -12,7 +12,7 @@ from Alice and stay side by side (`coop.pool tp <dx> <dy> <id>`: next to that pl
 3. Two knocked out at once (#110, BUG-0131): Carol is knocked out again, then Bob: both lie side by
    side, Alice is far. Neither may revive the other (a knocked-out cell is no helper): within 4 s
    no revive on either game, both still knocked out on all three machines.
-   SPORE_FIX_OFF=pool.rescue must FAIL here (they revive each other).
+   pool.rescue off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-010849:party_cell_ko) (they revive each other).
 
   SPORE_LANE=6 python3 tools/tests/coop_party_cell.py
 """

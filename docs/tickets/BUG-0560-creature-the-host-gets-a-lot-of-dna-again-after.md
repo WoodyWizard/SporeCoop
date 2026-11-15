@@ -53,3 +53,5 @@ host's spent 0 -> -100 after a free edit), PASS out/lab/20261104-210201 (spent s
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the Cell food / spent DNA (`Cell:state:dna`, `dna_spent`); not run on Cell in D0.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `cell.editor_budget` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-210158:cell_editor_budget on record; its test runs PASS-only.
+- 2026-11-15: switch `wsync.cell_spent` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-210158:cell_editor_budget on record; its test runs PASS-only.

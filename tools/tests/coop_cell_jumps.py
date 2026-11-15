@@ -14,7 +14,7 @@ any more (0 of the host's cells on its screen).
    every --gap s; `coop.pool census` of the jumper every 5 jumps.
 3. 15 s after the last jump: the jumper's pool holds at most --max background cells, and (a guest)
    it mirrors the host's cells around it again (`see`: cells of the host's world on its screen).
-SPORE_FIX_OFF=cell.bg_cull must FAIL.
+cell.bg_cull off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-135947:cell_jumps).
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_jumps.py [--who guest] [--jumps 40] [--gap 3] [--food 300]
 """

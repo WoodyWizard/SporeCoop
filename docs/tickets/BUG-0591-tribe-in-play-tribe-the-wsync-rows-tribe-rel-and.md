@@ -58,3 +58,4 @@ not met: play_tribe is no check of this fix).
 - 2026-11-05: opened.
 - 2026-11-05: fixed by wsync.tribe_pos (fix/w44-world-state2).
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `wsync.tribe_pos` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-123323:tribe_new_villages on record; its test runs PASS-only.

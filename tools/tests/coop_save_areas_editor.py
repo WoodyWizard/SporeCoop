@@ -14,8 +14,9 @@ checks that the guest's game has the three save areas, then the guest's own mati
 editor (real clicks, coop_editor_desync.py's way). The guest must not fault and must reach the editor and
 stay in it; then it cancels. The profile folder is put back at the end.
 
-  coop_save_areas_editor.py   (SPORE_FIX_OFF=game.save_areas: the startup check is off too, through the
-  profile's SporeCoop\\fixes_off.txt; the fault at 0x633765 comes back, it FAILS)"""
+  coop_save_areas_editor.py   (game.save_areas off, the startup check too through the profile's
+  SporeCoop\\fixes_off.txt, failed: the fault at 0x633765 came back. Retired in 0.7.15, BUG-1138: FAIL run
+  20261103-180851:save_areas; the test runs PASS-only)"""
 import os
 import re
 import shutil
@@ -34,7 +35,6 @@ def area(con, aid):
 
 
 def main():
-    off = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     docs = os.path.join(os.path.dirname(lane.GUEST_DIR), 'Documents')
     msc = os.path.join(docs, 'My Spore Creations')
     keep = os.path.join(docs, 'My Spore Creations.w-save-areas')
@@ -50,9 +50,6 @@ def main():
         with open(msc, 'w') as f:
             f.write('not a folder (coop_save_areas_editor.py)\n')
     os.makedirs(os.path.dirname(offfile), exist_ok=True)
-    if 'game.save_areas' in off:
-        with open(offfile, 'w') as f:
-            f.write('game.save_areas\n')
     ck = Checks()
     try:
         host, guest = start('cell', guest_creations=False)

@@ -3,7 +3,7 @@
 
 The host's NPC tribe controller (FormTribe 0xCC6440) forms a tribe at the nearest tribe spawn marker
 (cGameplayMarker, +0x108 == 0x57F09E5E) and destroys that marker; the guest makes its copy of the
-host's new tribe (tribe.npc_tribes, BUG-0381) without FormTribe, so its game kept the marker: the
+host's new tribe (tribe.npc_tribes (retired), BUG-0381) without FormTribe, so its game kept the marker: the
 Tribe detector's unpaired gameplay marker (1 guest / 0 host). A guest controller that ever formed
 tribes could then form one on a site already used.
 

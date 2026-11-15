@@ -52,3 +52,4 @@ after).
 - 2026-11-04 (fix/w43-tests): G1: not reached (no run, no change).
 - 2026-11-05 (fix/w44-height): fixed (npc.air, drive.sender_agl); npc_air FAIL/PASS.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-15: switch `npc.air` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261105-112120:npc_air on record; its test runs PASS-only.

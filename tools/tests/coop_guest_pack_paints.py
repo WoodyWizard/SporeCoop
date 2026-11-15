@@ -14,7 +14,7 @@ its game reads for the host's creature): no effect of the pack left, the base la
 substitute; the guest builds the species (`coop.creations parts`: species=1) and plays on without a
 fault. Screenshots of the guest's view of the host.
 
-Runs that must FAIL: SPORE_FIX_OFF=creations.paint_substitute (the pack's effect ids stay: cc=2)."""
+Runs that must FAIL: creations.paint_substitute off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-080710:guest_pack_paints) (the pack's effect ids stay: cc=2)."""
 import os
 import re
 import time

@@ -15,7 +15,7 @@ velocity: the game's own collision and solver do the rest). Checks on that game:
 (`own_nf=`: the own-cell probes inside the cell step and our tick saw no non-finite field) and the cell
 that was put there too (its pose from `coop.pool see`/`coop.pool`), and the game still runs.
 
-  coop_cell_contact_nan.py   (SPORE_FIX_OFF=cell.contact_finite: the own cell goes NaN, it FAILS)"""
+  coop_cell_contact_nan.py   (cell.contact_finite off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-110109:cell_levelups): the own cell goes NaN, it FAILS)"""
 import math
 import re
 import time

@@ -8,7 +8,7 @@ the win's message 0x60B4123 (the creature-stage handler rolls the species' part 
 on the guest. Real input on the guest: the social stance, a click on a Kook, clicks on the sing button.
 Checked on the guest's game: the meter object is opened with the Kook's rounds when the Kook is engaged, the
 meter's layout is visible when the host's win arrives, hidden after it, and the creature-stage handler of the guest's game got 0x60B4123.
-SPORE_FIX_OFF=social.guest_meter must FAIL.
+social.guest_meter off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-234903:creature_social_meter).
 
 --meter-null N (BUG-1058): the guest's first N meter tasks find no meter window (`coop.social meter_null N`, as an
 engagement in a frame the creature HUD is not up yet); the meter must still open for the engaged Kook.

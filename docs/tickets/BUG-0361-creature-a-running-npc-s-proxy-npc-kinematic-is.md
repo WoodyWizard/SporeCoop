@@ -93,3 +93,5 @@ moving frames on screen; Tribe also drawn error p50 <= 0.1 m.
 - 2026-11-01: opened.
 - 2026-11-01: measured and fixed on fix/w30-npc-walk (npc.walk, npc.walk_tribe).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `npc.walk` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-080452-fix-w30-npc-walk:npc_walk#1 on record; its test runs PASS-only.
+- 2026-11-15: switch `npc.walk_tribe` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-233335:campaign_ct#1 on record; its test runs PASS-only.

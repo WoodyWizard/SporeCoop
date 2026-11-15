@@ -15,7 +15,7 @@ NPCs' AI hear on the host):
    by the setter's force flag.
 2. The same for the host and the guest's puppet of the host.
 
-  coop_creature_sneak.py   (SPORE_FIX_OFF=creature.sneak must FAIL)"""
+  coop_creature_sneak.py   (creature.sneak off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-151356:creature_sneak))"""
 import re
 import time
 

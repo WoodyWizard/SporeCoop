@@ -15,8 +15,8 @@ game parts (content_packs.h kCreepyCuteSubstitutes) and plays the world: checked
 of the model (`coop.creations parts`: no pack part left, the species profile built) on Carol and the
 original part on Bob.
 
-Runs that must FAIL: SPORE_FIX_OFF=creations.part_substitute (the refusal of BUG-0341: Carol is told
-and stays in the galaxy menu); SPORE_FIX_OFF=creations.missing_parts,creations.part_substitute (0.7.3.1:
+Runs that must FAIL: creations.part_substitute off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-135611-fix-w24-parts:guest_missing_pack) (the refusal of BUG-0341: Carol is told
+and stays in the galaxy menu); creations.missing_parts, creations.part_substitute off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-130951:guest_missing_pack) (0.7.3.1:
 Carol faults at 0x441F3B in the load and stays in it under Wine; Windows crashes)."""
 import os
 import re

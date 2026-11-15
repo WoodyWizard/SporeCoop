@@ -20,7 +20,7 @@ Checks, per kind over the samples where the host's body moves (body_trail.MOVING
 * the guest's copy is within LIMIT m of the host's body in 90 % of them;
 * it is never more than TRAIL_M m off for longer than TRAIL_S s (a copy that falls behind and stays there).
 * tribe: no member steps over 5 m in one frame on either game (BUG-0610: the arrival's chief placing teleported a
-  walking member; SPORE_FIX_OFF=tribe.place_still must FAIL).
+  walking member; tribe.place_still off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-042658:body_trail_tribe)).
 (SPORE_FIX_OFF=drive.lead must FAIL)"""
 import argparse
 import collections
@@ -268,7 +268,7 @@ def main():
            f'(longest {r["trail"][0]:.2f} s, {r["trail"][1]})')
     if a.stage == 'tribe':
         # BUG-0610: the arrival's chief placing (tribe.place_chiefs) teleported a walking member 9-22 m on the host,
-        # and the guest's copy followed (SPORE_FIX_OFF=tribe.place_still must FAIL)
+        # and the guest's copy followed (tribe.place_still off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-042658:body_trail_tribe))
         for side, rows in (('host', hr), ('guest', gr)):
             st = body_trail.steps(rows, 't')
             ck(not st, f'{side}: no Tribe member steps over 5 m in one frame of its own game ({len(st)}'

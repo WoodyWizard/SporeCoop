@@ -14,11 +14,10 @@ id, so nothing is mirrored on the guest; h_NPCTickAI skips puppets, so no AI). A
 On the guest: no new creature of its old species appears in its game while the cinematic plays (the ghost
 the players saw).
 
-  coop_cinematic_puppet.py [--without-fix]   (--without-fix: coop.npc deferpuppet off, the old
-                                              behaviour, so the test must FAIL; SPORE_FIX_OFF=npc.deferpuppet
-                                              the same)"""
+  coop_cinematic_puppet.py   (npc.deferpuppet off failed: retired in 0.7.15 with its toggle
+                              command, BUG-1138, FAIL run 20261108-075500:cinematic_puppet;
+                              the test runs PASS-only)"""
 import re
-import sys
 import time
 
 from twoinst import Checks, start
@@ -91,11 +90,8 @@ def wait(cond, secs, step=0.5):
 
 
 def main():
-    without = '--without-fix' in sys.argv
     host, guest = start()
     ck = Checks()
-    if without:
-        print(' ', host.call('coop.npc deferpuppet off')['out'].strip())
     old = wait(lambda: puppet(host), 20)
     ck(bool(old), f'the host has the guest\'s puppet ({old and hex(old)})')
     cm = eax(host, 'Simulator::cCinematicManager::Get cdecl')
@@ -143,7 +139,6 @@ def main():
     ck(cinematic(host) is None, 'the cinematic is over')
     gone = wait(lambda: creature_pos(host, old) is None, 10)
     ck(gone, 'after the cinematic the old puppet is gone')
-    host.call('coop.npc deferpuppet on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

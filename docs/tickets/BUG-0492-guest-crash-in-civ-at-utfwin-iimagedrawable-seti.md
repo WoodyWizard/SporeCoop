@@ -50,3 +50,4 @@ owner that names no civilization in the guest's game is not applied to the guest
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-civ-crashes (civ.discovery_card).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `civ.discovery_card` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-131121:civ_discovery on record; its test runs PASS-only.

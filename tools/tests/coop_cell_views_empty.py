@@ -3,7 +3,7 @@
 
 Audit 0.7.14 (WLD-3). The host's h_PopTiles builds its view set from its own view box centre and the
 partners' cells; a centre that views::finite_pos refuses (not finite, or |x| = 1e7: view_bad lets a box
-with both edges at exactly 1e7 through, also with cell.nan_guard on) left the set empty, and the partner
+with both edges at exactly 1e7 through, also with cell.nan_guard (retired) on) left the set empty, and the partner
 pass computed `np = size() - 1` = SIZE_MAX and read both lists past their end (a fault, or a hang, on the
 host).
 

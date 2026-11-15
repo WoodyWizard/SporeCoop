@@ -17,7 +17,7 @@ the guest's puppet, which has no AI (docs/re/creature.md#creature-player-rules).
 4. The other way: the guest's game stuns a proxy (`coop.rules stun 2 <id>`, the game's CreatureStun through the
    hook, as its own charge's effect calls it): the host's NPC holds the stimulus 0x1000 within 2 s.
 
-  coop_creature_stun.py   (SPORE_FIX_OFF=creature.stun_relay: the stun stays on the puppet / proxy, FAILS)"""
+  coop_creature_stun.py   (creature.stun_relay off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-210333:creature_stun): the stun stays on the puppet / proxy, FAILS)"""
 import re
 import struct
 import time

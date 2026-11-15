@@ -11,7 +11,7 @@ The race of the lab (the share's retry every 2 s landing in that one frame) is m
 place after the load is the host's solar system, not a planet.
 
   SPORE_LANE=7 python3 tools/tests/coop_space_share_takeoff.py
-  (SPORE_FIX_OFF=world.share_settle_context: FAILS, the guest's ship lands on the planet)
+  (world.share_settle_context off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-100130:space_share_takeoff), the guest's ship lands on the planet)
 """
 import os
 import re

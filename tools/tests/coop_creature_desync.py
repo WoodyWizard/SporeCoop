@@ -20,7 +20,7 @@ and after the reload:
 
   coop_creature_desync.py [--no-crash] [--seed-nodeath]
 
-  SPORE_FIX_OFF=creations.ask_species,creations.own_species: the guest never gets the host-only species
+  creations.ask_species, creations.own_species off failed (retired in 0.7.15, BUG-1138: FAIL run 20261108-074108:creature_desync): the guest never gets the host-only species
                   (BUG-0010, BUG-0017): the companion checks must FAIL
   --seed-nodeath  the guest's mirrors do not play the game's death (`coop.npc deathfix off`, the
                   bug BUG-0015 fixed): the kill check must FAIL
@@ -120,7 +120,7 @@ def checks(ck, host, guest, tag, edited=True):
               f'{[npcs(guest).get(i) for i in pack]}; {guest.call("coop.creations")["out"].splitlines()[0]})')
     # BUG-0430: "spawned" is the mod's state of the mirror; the game must have built a creature of that species
     # (its object list, `coop.npc creatures`: a species profile and a body; FAIL with
-    # SPORE_FIX_OFF=creations.ask_species,creations.own_species)
+    # creations.ask_species, creations.own_species off failed (retired in 0.7.15, BUG-1138: FAIL run 20261108-074108:creature_desync))
     # The guest's game knows the host's creation under its own instance key (lab 20261108-073449: "the host's own
     # creation 29020CC4 'Judge' of its world is 7DBEADED here"): the species of the mirror as the guest lists it
     sp_here = lambda i: npcs(guest).get(i, (HOST_ONLY,))[0]

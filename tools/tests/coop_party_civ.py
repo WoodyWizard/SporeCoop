@@ -12,9 +12,9 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py), on the `civ`
 4. weapons  two guests ask for superweapons during one vote (#96): Bob type 3 (2000), then Carol
             type 1 (16000); the vote passes: the game's money (+0x98, host and guests) went down by
             2000, not 16000, and Carol was told her request was not taken.
-            SPORE_FIX_OFF=civ.sw_vote must FAIL here.
+            civ.sw_vote off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-001330:civ_sw_vote).
 5. leave    Dave leaves: his vehicle goes to a present player on every machine (BUG-0031).
-            SPORE_FIX_OFF=civ.orphans must FAIL here.
+            civ.orphans off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-011312:party_civ_own).
 
   SPORE_LANE=7 python3 tools/tests/coop_party_civ.py
 """

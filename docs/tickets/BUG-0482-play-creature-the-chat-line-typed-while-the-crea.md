@@ -62,3 +62,5 @@ chat_modal (tools/tests/coop_chat_modal.py), the host under its "game saved" box
   (a modal box of the game takes the click), not covered by core.ui_locked_edit. Next: 0.7.5.
 - 2026-11-03: released in 0.7.4.
 - 2026-11-03: the modal-box half fixed on fix/w41-creature-left: the "game saved" box is the window manager's modal window (+0x82C, no input lock); core.ui_modal_edit takes it like the input lock (buttons and text lines).
+- 2026-11-15: switch `core.ui_locked_edit` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-151853:chat_caption on record; its test runs PASS-only.
+- 2026-11-15: switch `core.ui_modal_edit` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-235548:chat_modal on record; its test runs PASS-only.

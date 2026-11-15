@@ -10,7 +10,7 @@ Checked in the OTHER game, on the game's own state (`coop.rules carry`: the hold
   1. while carried: the carrier's puppet holds a rock in its hold slot there, and that rock is within 2 m of the
      puppet's position (carried, not lying where it was);
   2. after the release: the other game's rock lies within 1 m (two samples in a row, within 15 s) of where the thrower's rock came to rest.
-First the host carries and throws, then the guest. SPORE_FIX_OFF=creature.carry_relay fails 1 and 2.
+First the host carries and throws, then the guest. creature.carry_relay off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-002005:creature_carry) 1 and 2.
 """
 import math
 import re

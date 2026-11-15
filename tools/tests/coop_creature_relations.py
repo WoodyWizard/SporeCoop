@@ -12,7 +12,7 @@ the host has near the guest and the guest has a proxy of, read in both games (`c
 game's own GetRelationship(avatar, npc) and CreatureSocialMode(npc)):
   the relation and the social mode on the guest's proxy equal the host's NPC.
 
-  coop_creature_relations.py   (SPORE_FIX_OFF=creature.relations and SPORE_FIX_OFF=npc.tuning must FAIL)"""
+  coop_creature_relations.py   (creature.relations off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-152525:creature_relations) and npc.tuning off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-152848:creature_relations))"""
 import re
 import time
 
@@ -46,7 +46,7 @@ def main():
             break
         time.sleep(2)
     # the guest's proxies made again after the test's switches (SPORE_FIX_OFF acts after the join): the guest
-    # forgets them, gets their states, asks the host for the spawns again (npc.resync, BUG-0487)
+    # forgets them, gets their states, asks the host for the spawns again (npc.resync (retired), BUG-0487)
     ids = sorted(rel(guest))
     for i in ids:
         guest.call(f'coop.npc forget {i}')

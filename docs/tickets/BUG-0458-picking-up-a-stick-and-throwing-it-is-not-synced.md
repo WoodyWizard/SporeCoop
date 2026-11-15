@@ -76,3 +76,4 @@ thrower's (two samples in a row within 15 s of the rest).
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): not reached (the time went to BUG-0600 and BUG-0465).
 - 2026-11-06 (fix/w45-creature-reports, P3 of 0.7.9): reproduced in the lab; fixed behind creature.carry_relay.
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `creature.carry_relay` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-002005:creature_carry on record; its test runs PASS-only.

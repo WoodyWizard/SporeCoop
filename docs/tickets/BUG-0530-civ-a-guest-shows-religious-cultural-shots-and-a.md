@@ -75,3 +75,5 @@ SPORE_FIX_OFF=civ.shot_fired did not fail (out/lab/20261104-095320: 126 / 126).
   religious attack on a city (the test has no AoE area at all so far).
 - 2026-11-04 (fix/w42-civ-left, round 2): the guest-only areas are copies of AoE weapons never stopped on the guest; fixed (civ.shot_release).
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `civ.shot_now` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-104530:civ_religious on record; its test runs PASS-only.
+- 2026-11-15: switch `civ.shot_release` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-124527:civ_aoe on record; its test runs PASS-only.

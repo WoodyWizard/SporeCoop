@@ -45,3 +45,4 @@ PASS: cell_camera, lab 20261104-020550 (0.08 m / 0.22 m).
 - 2026-11-03: reported again (0.7.3.4 forum post): 'decentered screen in the Cell stage (after the editor)'; the trigger the player names is the editor, not a death: maybe a second path. No log evidence in the reports.
 - 2026-11-04: fix/w41-cell-left: the camera reset after every jump of the own cell (cell.camera_snap); fixed (unreleased).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `cell.camera_snap` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-020658:cell_camera on record; its test runs PASS-only.

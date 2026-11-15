@@ -5475,9 +5475,12 @@ static void place_chiefs(double now)
 // stands there for good, for the host's own orders as for a guest's (a second order with the same tool makes
 // the same record and does not restart the node). Here a player tribe member standing still for 4 s in that
 // state within 3 m of its walk's goal is set onto the goal facing the tool, and the game's behaviour goes on
-// (arrival, the grab animation, SetSpecializedTool).
+// (arrival, the grab animation, SetSpecializedTool). `coop.fix tribe.grab_spot off`: it stands there.
 static uint32_t bt_node(void* c);
 static uint32_t cur_anim(void* c);
+static bool g_grab_spot_fix = true;
+COOP_FIX("tribe.grab_spot", "BUG-0505", g_grab_spot_fix,
+         "tribe: a member that cannot reach its spot at a tool rack is set onto it and takes the tool");
 constexpr uint32_t kGrabNode = 0x0462854D;
 static uint32_t g_grab_spot_moves;
 struct GrabWatch {
@@ -5550,7 +5553,7 @@ static net::Quat facing(const net::Vec3& at, const net::Vec3& to)
 
 static void grab_spot_tick(double now)
 {
-    if (now < g_grab_next)
+    if (!g_grab_spot_fix || now < g_grab_next)
         return;
     g_grab_next = now + 0.5;
     void* pt = player_tribe();
@@ -6653,8 +6656,8 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         char b[192];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u moves=%u leader_kept=%u\n", u.i, g_tool_sets, g_grab_spot_moves,
-                 g_leader_tools_kept);
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u grab_spot=%d moves=%u leader_kept=%u\n", u.i, g_tool_sets,
+                 (int)g_grab_spot_fix, g_grab_spot_moves, g_leader_tools_kept);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought

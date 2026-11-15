@@ -60,3 +60,5 @@ the hooked step under it); a player's own palette purchase (the fixture's palett
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03 (fix/w41-tribe-actions): host tools on the guests, held tools replicated; fixed.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `tribe.tool_hold` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-234416:tribe_tools on record; its test runs PASS-only.
+- 2026-11-15: switch `wobj.tribe_tool` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-234416:tribe_tools on record; its test runs PASS-only.

@@ -18,9 +18,9 @@ no fault. Screenshots of Carol's view of the host (shots/).
 
   SPORE_LANE=9 SPORE_LANE_B=10 python3 tools/tests/coop_content_lookalike.py
 
-Runs that must FAIL: SPORE_FIX_OFF=content.lookalike (the 0.7.6 choice: the fixed tables and the
+Runs that must FAIL: content.lookalike off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-232034:content_lookalike) (the 0.7.6 choice: the fixed tables and the
 paint lists of the mod: the Spore_Pack_03 foot becomes a detail, the base game's cell paint is replaced)
-and SPORE_FIX_OFF=content.species_data (the species data of the host's creature still names the pack's
+and content.species_data off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-231837:content_lookalike) (the species data of the host's creature still names the pack's
 parts: Carol's game draws them as blocks)."""
 import os
 import re

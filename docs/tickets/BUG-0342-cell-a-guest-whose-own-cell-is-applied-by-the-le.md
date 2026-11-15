@@ -78,3 +78,5 @@ Earlier notes (kept for the record):
   `coop.pool sapme [c<key>]`, `own_pairs=` in `coop.pool`, `pairs=` / `pairs_full=` in `coop.pool sap`.
 - 2026-10-31: cause found and fixed on fix/w25-reports (cell.puppet_index).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.own_rebuild` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-130455:cell_own_load on record; its test runs PASS-only.
+- 2026-11-15: switch `cell.puppet_index` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-145028:cell_own_load#2 on record; its test runs PASS-only.

@@ -50,3 +50,4 @@ the prompt does not impress (host and guest), the guest's mirror plays the promp
 - 2026-11-03: opened (split from BUG-0179).
 - 2026-11-04: fixed on fix/w42-creature-left (social.prompts).
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `social.prompts` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-112706:creature_social_prompts on record; its test runs PASS-only.

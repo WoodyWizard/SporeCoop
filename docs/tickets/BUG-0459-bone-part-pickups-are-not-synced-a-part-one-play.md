@@ -47,3 +47,4 @@ reward (the interact node's end), the host's reward is used up, the host's avata
 - 2026-11-03: the detector sees the pickups themselves differ: `Creature:host_only:interactive_ornament` (bones / skeletons only in the host's game) in 6% of Creature comparisons (out/lab/20261103-012624).
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `wobj.ornament` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-123009:wobj_ornament on record; its test runs PASS-only.

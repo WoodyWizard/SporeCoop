@@ -386,7 +386,7 @@ def game_log_case(tree, tmp):
             'else "present    1  x"}\n'
             'twoinst.lane_state(build="b", start_state={"host": twoinst.start_state(G("none")), "guest": None})\n'
             'print("same:", repr(twoinst.warm_refusal(twoinst.lane_state(), G("none"), G("x"))))\n'
-            'print("game:", repr(twoinst.warm_refusal(twoinst.lane_state(), G("civ.ruin_repair"), None)))\n')
+            'print("game:", repr(twoinst.warm_refusal(twoinst.lane_state(), G("pool.ko_grace"), None)))\n')
     r = subprocess.run([sys.executable, '-c', code], cwd=wt, env=dict(os.environ, SPORE_LANE='2'),
                        capture_output=True, text=True)
     got = dict(ln.split(': ', 1) for ln in r.stdout.splitlines() if ': ' in ln)
@@ -394,7 +394,7 @@ def game_log_case(tree, tmp):
     check('coop.worldfix retry 0' in got.get('knob', ''),
           f'knobs: `coop.worldfix retry 0`, also set back later, refuses a warm reuse (BUG-0430): {got.get("knob")}')
     check(got.get('same') == "''", f'knobs: the game reports the switches of its cold start: warm (BUG-0430): {got.get("same")}')
-    check('civ.ruin_repair' in got.get('game', ''),
+    check('pool.ko_grace' in got.get('game', ''),
           f'knobs: a switch the game reports off since its cold start refuses a warm reuse (BUG-0430): {got.get("game")}')
 
 

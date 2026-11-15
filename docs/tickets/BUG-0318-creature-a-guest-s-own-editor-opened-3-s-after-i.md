@@ -71,3 +71,4 @@ later; the editor must draw (screenshot not black) and one red-cross click must 
 - 2026-10-30: opened on fix/w13-creature (not analysed, outside the batch time).
 - 2026-10-30: fix/w14-creature: reproduced at 6.7 fps after a rejoin (an editor during the avatar swap), fixed by creations.editor_after_swap.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `creations.editor_after_swap` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-161437:editor_after_swap on record; its test runs PASS-only.

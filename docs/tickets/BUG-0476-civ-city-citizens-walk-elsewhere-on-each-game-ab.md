@@ -40,3 +40,4 @@ FAIL with SPORE_FIX_OFF=civ.citizens: out/lab/20261104-001329 (99 of 152 host ci
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-citizens): fixed (world-object kind `citizen`, docs/re/civ.md#civ-roads-citizens).
 - 2026-11-04: released in 0.7.5.
+- 2026-11-15: switch `civ.citizens` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-235237:civ_citizens on record; its test runs PASS-only.

@@ -630,7 +630,7 @@ Runtime findings (✔ = seen working in the game), with what the co-op code does
   them (`modes::kEdit`, `kEditor`) so the owners survive an editor visit.
 * `HV.pol`: the political id a vehicle had when the host listed it; an entry whose `pol_of(v)`
   changed is listed anew (a new owner from the nearest player city, a new net id).
-* Test commands: `coop.civ tables` (sizes of every pointer table), `coop.civ fix boost|world 0|1`.
+* Test commands: `coop.civ tables` (sizes of every pointer table), (the switches civ.boost and civ.world were retired in 0.7.15).
 
 ## Shared money and food across sessions and crossing spends (2026-10-28, fix/w2-civ)
 <a id="civ-shared-pool-sessions"></a>
@@ -699,10 +699,10 @@ GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`)
 
 * Co-op (BUG-0031): when the player set changes the host gives every vehicle of an absent owner
   to the owner of the nearest player city (after the new city split; shared capital: the host);
-  `h_Capture` never picks a vehicle of an absent owner. `coop.civ fix orphans 0`.
+  `h_Capture` never picks a vehicle of an absent owner. Switch civ.orphans (retired in 0.7.15).
 * Co-op (BUG-0117): the superweapon vote captures civ, type and target by value; a request during
   another vote is refused with a notice to its sender. `coop.civ sw` shows the last request and the
-  type the last guest vote fired. `coop.civ fix sw_vote 0`.
+  type the last guest vote fired. Switch civ.sw_vote (retired in 0.7.15).
 * ✔ `cCinematicManager::EndCinematic` (0xADFF50, GOG 2024) ends a capture caption cleanly: called
   8 s into the caption of a capture made through `Capture` (`coop.civ capture <city>`, return 6), the
   cinematic state +0x2C went to 0, the HUD came back without the caption, the city belonged to the
@@ -737,7 +737,7 @@ BUG-0223, BUG-0224. GOG 2024, lane 5.
   got new ids (`next_id` 3 -> 5), the guest's game destroyed and rebuilt every vehicle (new object
   addresses), the guest's own vehicle lost its owner. Now `civ::world_check` decides from
   `game::stage_epoch(kCiv)`, leaving Civ for a non-editor mode, and the in-stage signals (another
-  player civilization object, another save name); switch `coop.fix civ.world_epoch`.
+  player civilization object, another save name); switch `coop.fix civ.world_epoch` (retired in 0.7.15).
   `host_tick` prunes `g_hv` against the game's vehicle list before it reads a vehicle (`pol`, the
   orphan loop).
 * ✔ `Simulator::cCivExpansion::SpawnNextCity(ex, 0, 0)` on civ_npc founds a city with no cinematic:
@@ -750,7 +750,7 @@ BUG-0223, BUG-0224. GOG 2024, lane 5.
 * ✔ `coop.civ capture <city>`: +0x2C is set within 0.3 s after `Capture` returns. BUG-0224: only a
   capture (`h_Capture`, host, any nation) arms the 8 s close of BUG-0187; the 8 s count from the
   arm, the arm ends when the cinematic ends, when none came within 3 s, after the close, at a world
-  change or session end. Switch `coop.fix civ.caption_only`. Not measured: the purchase chain
+  change or session end. Switch `coop.fix civ.caption_only` (retired in 0.7.15). Not measured: the purchase chain
   (BuyCity, FinishBuyCity, Capture) and whether +0x2C drops between its cinematics; an NPC capture
   of an NPC city arms too (accepted: its caption would stop everybody the same way).
 ## Superweapon fields and the boost speed on GOG 2024 (2026-10-30, fix/w9-tests)
@@ -776,7 +776,7 @@ Measured for BUG-0222 (the civ_reload / civ_sw_vote tests read these now):
   (0xB897A7, read of 0x8F04CAB0, lab 20261030-001517; via launch 0xBE5D30 → 0xBDC2F0). Types 1, 3
   and 9 at the zero vector worked. Tests use 1, 3, 9 only.
 * ✔ The alarm boost writes the vehicle's speed +0x218 (x1.5). The game does NOT bring it back by
-  itself: with `coop.fix civ.boost off` the boosted vehicles kept 1.5x for 30 s after `coop.leave`
+  itself: with `coop.fix civ.boost off` (retired in 0.7.15) the boosted vehicles kept 1.5x for 30 s after `coop.leave`
   (lab 20261030-002050); with the fix the session end restores them within 2 s. So the speed is a
   FAIL criterion of BUG-0040, read with `mem.read <vehicle+0x218> 4` (`coop.civ boosts` lists the
   boosted vehicles and their own speed).
@@ -886,7 +886,7 @@ docs/re/creations.md#creations-content-all-kinds.
 * ✔ The guest saves its world after the mirror was built (`coop.save`, the game's SaveGame), its game is
   restarted without a co-op session and loads that save: the saved mirror vehicles load with no bake
   fault, the save slot names the design's own key (0x29030001) and no key of the mod's
-  (`out/lab/20261102-213135`; with `coop.fix content.model_key off`, the first version's 0x7D72C793:
+  (`out/lab/20261102-213135`; with `coop.fix content.model_key off` (retired in 0.7.15), the first version's 0x7D72C793:
   `out/lab/20261102-213354` FAIL). The mirror vehicles themselves stay in the save, which is BUG-0470.
 
 ## The city planner, discovery cards and vehicle removal on a guest (2026-11-03, fix/w40-civ-crashes)

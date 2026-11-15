@@ -14,7 +14,7 @@ kind (`citizen`, worldobj.cpp: bound by position, walked to the host's) and thei
    within 15 m (the detector's rule); the sizes (GetScale) of the unambiguous pairs (each the other's nearest,
    within 3 m, the next citizen 2 m farther) compared at 12 % (the detector's greedy pairs cross in a crowd).
 PASS: over all rounds at most 10 % of the host's citizens without a partner and at most 10 % of the unambiguous pairs
-with another size. SPORE_FIX_OFF=civ.citizens: about half unpaired (FAIL); SPORE_FIX_OFF=civ.citizen_scale:
+with another size. civ.citizens off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-235237:civ_citizens): about half unpaired (FAIL); civ.citizen_scale off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-001130:civ_citizens):
 the sizes differ (FAIL).
 
   SPORE_LANE=2 python3 tools/tests/coop_civ_citizens.py [--rounds 5]

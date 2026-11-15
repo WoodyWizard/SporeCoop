@@ -13,7 +13,7 @@ Before the fix two things went wrong when the players came back from the editor:
 The checks wait until the host's evolution cinematic is over and the guest loaded the world the host
 sends after it (BUG-0019 holds that share, BUG-0018 holds the removal of the old puppet until then):
 checked earlier, the guest is in its galaxy menu and the old puppet still waits (BUG-0212).
-`SPORE_FIX_OFF=core.strays,npc.strays` must FAIL (left-over puppets).
+core.strays + npc.strays off failed (core.strays retired in 0.7.15, BUG-1138: FAIL run 20261028-052840-fix-rel-strays:editor_strays) (left-over puppets).
 
   coop_editor_strays.py [--rounds N]
 """

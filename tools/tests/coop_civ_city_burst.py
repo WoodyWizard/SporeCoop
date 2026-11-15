@@ -14,7 +14,7 @@ guest" in every campaign_space.
    host has (by net id, bound to a game object of the guest: `coop.civ` vehicle lines).
 3. 15 s later the guest has no more cities than the host (no city founded twice).
 
-SPORE_FIX_OFF=civ.city_burst: FAILS (one city per 15 s, step 2 times out).
+civ.city_burst off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-094048:civ_city_burst) (one city per 15 s, step 2 times out).
 
   SPORE_LANE=9 python3 tools/tests/coop_civ_city_burst.py [--cities 3]
 """

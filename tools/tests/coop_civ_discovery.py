@@ -13,7 +13,7 @@ data (0xBA5B60) is null when the city's political id names no civilization in th
 3. Guest: its game meets a political id no civilization of it has (the state of a city whose owner
    the guest's game does not know): no card, no crash, the game goes on (a console answer, frames).
 PASS: 2 and 3, no fault or crash on either game.
-SPORE_FIX_OFF=civ.discovery_card: step 3 crashes the guest (the 0.7.3.6 signature).
+civ.discovery_card off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-131121:civ_discovery): step 3 crashes the guest (the 0.7.3.6 signature).
 
   SPORE_LANE=2 python3 tools/tests/coop_civ_discovery.py
 """

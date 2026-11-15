@@ -75,3 +75,4 @@ Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agen
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
 - 2026-10-28: switch: civ.sw_vote (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `civ.sw_vote` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-001330:civ_sw_vote on record; its test runs PASS-only.

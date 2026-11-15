@@ -71,3 +71,4 @@ against the avatar's abilities / the game builds it now (tests).
 ## History
 - 2026-10-31: opened (lab 20261031-185843 campaign#2); root cause, fix and test on fix/w27-creature-fault.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `creations.ability_bar` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261031-205235:ability_bar on record; its test runs PASS-only.

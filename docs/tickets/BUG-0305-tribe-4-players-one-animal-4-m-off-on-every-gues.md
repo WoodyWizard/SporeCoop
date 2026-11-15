@@ -86,3 +86,4 @@ npc_far, creature, creature_kills, creature_death, npc_pooled, tribe_npc_dash: 1
 - 2026-10-30: root cause found with the `coop.npc list` probe (proxies of a running herd pushed off the path), fixed by `npc.trail`, test tribe_npc_dash (fix/w12-tribe-npc).
 - 2026-10-30: fix/w12-cell-fault: lab 20261030-104149 campaign#3 (main 813f8cd, overloaded machine, host fps 17-27): kind t (tribe members) 4.1-4.8 m off on all three guests at every check from 11:07 for 7 minutes (n stayed under 2 m mostly); recorded in BUG-0310's report.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `npc.trail` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-113308:tribe_npc_dash on record; its test runs PASS-only.

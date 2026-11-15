@@ -153,6 +153,7 @@ Verification of the review shape:
 - 2026-11-02: review fix on the same branch: setter hook replaced by an O(1) table and a position
   read in the tick, main-thread-only hook bodies, hooks installed once (no churn). Measured under
   1 % frame time, 0 faults in every stage and in both editors. Tests and docs updated.
+- 2026-11-15: switch `effects.main_world` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-004532:effects_party_tribe on record; its test runs PASS-only.
 
 ## Second review fix (2026-11-02)
 

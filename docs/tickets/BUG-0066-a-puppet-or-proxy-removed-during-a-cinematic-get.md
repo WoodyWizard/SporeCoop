@@ -90,3 +90,4 @@ new puppet during the cinematic; the old one must have no host NPC id (none is s
 - 2026-10-28: confirmed in the game (host NPC id 23 for the old puppet) and fixed on fix/w2-creature; test cinematic_puppet.
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: switch: npc.deferpuppet (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-11-15: switch `npc.deferpuppet` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261108-075500:cinematic_puppet on record; its test runs PASS-only.

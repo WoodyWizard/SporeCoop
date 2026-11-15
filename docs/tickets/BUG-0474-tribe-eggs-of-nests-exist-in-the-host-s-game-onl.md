@@ -45,3 +45,4 @@ of an RTS pointer). Switch `nest.eggs_tribe`.
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `nest.eggs_tribe` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-123633:nest_eggs_tribe on record; its test runs PASS-only.

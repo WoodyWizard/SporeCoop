@@ -17,7 +17,9 @@ done without a change.
   --case spend  BUG-0466's class (G6): the guest's own game spends DNA (AddEvolutionPoints -25, no
                 editor): the host's total loses it and the guest's game keeps it.
 
-  coop_editor_sync.py --case host|guest|spend   (host: SPORE_FIX_OFF=creations.editor_species, guest: creations.own_editor_dna, spend: core.dna_spend fail)
+  coop_editor_sync.py --case host|guest|spend   (host: SPORE_FIX_OFF=creations.editor_species fails; guest:
+  creations.own_editor_dna and spend: core.dna_spend off failed, both retired in 0.7.15, BUG-1138: FAIL runs
+  20261103-143445:editor_sync_guest and 20261103-143105:dna_spend)
 """
 import re
 import sys

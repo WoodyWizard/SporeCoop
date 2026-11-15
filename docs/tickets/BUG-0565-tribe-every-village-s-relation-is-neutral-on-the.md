@@ -51,3 +51,4 @@ out/lab/20261104-204941 (guest -7 within 1 s, 10 s later too). Class: wsync_tran
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:relation` in 34 % of the Tribe comparisons of long_tribe / play_tribe on rel/0.7.7 (0.7.6 code), labs 20261104-203017 and 20261104-210208: e.g. the tribe at (446 -150 185) -7.00 (aggressive) on the host, 0.00 (neutral) on the guest, the report's picture.
 - 2026-11-05: released in 0.7.7.
+- 2026-11-15: switch `wsync.tribe_rel` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-205053:tribe_rel on record; its test runs PASS-only.

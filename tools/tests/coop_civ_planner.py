@@ -15,7 +15,7 @@ the city it edits; the mod changed that city and removed vehicles under it.
 4. The guest closes the planner (the green check): within 15 s it has the host's buildings and
    vehicles.
 PASS: 3 and 4, no fault or crash on either game.
-SPORE_FIX_OFF=civ.planner_hold: step 3 fails (the host's building is built into the city under the
+civ.planner_hold off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-131021:civ_planner): step 3 fails (the host's building is built into the city under the
 open planner, the state both 0.7.3.6 crashes came from).
 Not driven here: a building dropped from the palette (the civ_npc designs open the building editor,
 docs/known-issues.md BUG-0189), so the moved-objects map is usually empty in this test and the

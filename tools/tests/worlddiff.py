@@ -122,7 +122,7 @@ CELL_BRACKET = os.environ.get('SPORE_DETECTOR_BRACKET', '1') != '0'
 CELL_GAP = 1.5
 # BUG-0662: Cell: a level change rescales every position about the origin (WorldScaleStep, BUG-0511), on each game at
 # its own moment; the guest's positions are compared in the host's world scale (census `me ... wscale=`, the
-# sync-check's diag.cell_scale, BUG-0606). SPORE_DETECTOR_CELL_SCALE=0: raw positions (0.7.9)
+# sync-check's diag.cell_scale (retired), BUG-0606). SPORE_DETECTOR_CELL_SCALE=0: raw positions (0.7.9)
 CELL_SCALE = os.environ.get('SPORE_DETECTOR_CELL_SCALE', '1') != '0'
 # BUG-0596: a guest's Creature state is read twice, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: once)
 STATE_BRACKET = CELL_BRACKET

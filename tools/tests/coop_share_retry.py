@@ -13,7 +13,7 @@ world for good.
      missing"), the guest joins: the share of its join fails
   3. within 120 s the guest plays the host's world (the retry comes 30 s after the failure)
 
-  SPORE_FIX_OFF=core.share_retry coop_share_retry.py   (no retry: the guest stays: must FAIL)
+  core.share_retry off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-002615:share_retry) coop_share_retry.py   (no retry: the guest stays: must FAIL)
 """
 import glob
 import os

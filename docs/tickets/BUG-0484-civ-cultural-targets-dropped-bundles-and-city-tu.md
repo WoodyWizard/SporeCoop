@@ -58,3 +58,4 @@ the test with the switch off (the half that blocks it stays unverified at runtim
 - 2026-11-04 (fix/w41-civ-combat): analysed (above), not fixed (time box).
 - 2026-11-04 (fix/w42-civ-left): turrets fixed (civ.turrets); bundles / tribe leftovers -> BUG-0539, cultural targets -> BUG-0540.
 - 2026-11-04: released in 0.7.6.
+- 2026-11-15: switch `civ.turrets` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-095739:civ_turrets on record; its test runs PASS-only.

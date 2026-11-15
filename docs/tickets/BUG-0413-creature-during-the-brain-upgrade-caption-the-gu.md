@@ -72,3 +72,4 @@ only when the guest moves far while the host is frozen. For 0.7.9 (L1): while th
 send the NPCs near a guest that moved (their states do not change, so one snapshot of the newly near ones suffices).
 - 2026-11-06 (fix/w45-one-game-objects, L1): the frozen host runs the guests' relevance (npc.frozen_send); death caption case reproduced and fixed, brain caption loss not reproduced on the fixture (diagnostic log added).
 - 2026-11-07: released in 0.7.9.
+- 2026-11-15: switch `npc.frozen_send` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261106-014526:join_during_host_editor on record; its test runs PASS-only.

@@ -92,3 +92,4 @@ switched off.
   vehicles; reproducible with `content_civ`'s save and reload step).
 - 2026-11-03: Civ half fixed on fix/w40-civ-crashes (civ.save_strip); Tribe / Space moved to BUG-0495.
 - 2026-11-03: released in 0.7.4.
+- 2026-11-15: switch `civ.save_strip` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261103-131305:civ_save_strip on record; its test runs PASS-only.

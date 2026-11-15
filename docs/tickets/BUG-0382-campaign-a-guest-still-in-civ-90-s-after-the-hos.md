@@ -61,3 +61,4 @@ when the host's ship leaves the planet (not changed: a planet save does not load
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): cause found (the game's planet rule + the Space cinematic wait), the wait declared and told to everybody.
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-15: switch `world.share_wait_notice` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261101-095159:space_share_wait on record; its test runs PASS-only.

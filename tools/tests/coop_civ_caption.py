@@ -17,7 +17,7 @@ itself after 8 s (the game's EndCinematic, as Enter does).
    caption is closed. The test then ends it (EndCinematic, as the OK does).
 
 --nofix: `coop.civ fix caption 0` (the old wait for the OK): must FAIL.
-SPORE_FIX_OFF=civ.caption_only: every cinematic is closed after 8 s (0.7.3.0): must FAIL (step 0).
+civ.caption_only off failed (retired in 0.7.15, BUG-1138: FAIL run 20261029-003144:save_hygiene_leave): every cinematic is closed after 8 s (0.7.3.0): must FAIL (step 0).
 
   SPORE_LANE=7 python3 tools/tests/coop_civ_caption.py [--nofix]
 """

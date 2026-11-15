@@ -9,7 +9,7 @@ leaves the dead vehicle in the world (the noun list, the civilization's lists, d
 2. The host's game removes two vehicles (`coop.civ remove`: the game's own removal, 0xCAA7B0).
 3. 6 s later, every vehicle object in each game (the game's noun list, dead ones included:
    `coop.civ nouns 18C6DE8`): the guest has no vehicle the host does not have (within 15 m).
-PASS: 3. SPORE_FIX_OFF=civ.mirror_remove: the guest keeps the two dead vehicles (FAIL).
+PASS: 3. civ.mirror_remove off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-131214:civ_mirror_remove): the guest keeps the two dead vehicles (FAIL).
 
   SPORE_LANE=2 python3 tools/tests/coop_civ_mirror_remove.py
 """

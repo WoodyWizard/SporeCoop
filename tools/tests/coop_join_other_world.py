@@ -15,7 +15,7 @@ the host's world applied (DNA total, its own NPCs removed, ...): its own game wo
      not; then the guest loads the host's world (coop.share) and its DNA becomes the host's total
 
   coop_join_other_world.py [--without-fix]   (coop.fix core.same_place off: must FAIL)
-  SPORE_FIX_OFF=core.world_dna coop_join_other_world.py   (the DNA goes to the host: must FAIL)
+  core.world_dna off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-003137:join_other_world) coop_join_other_world.py   (the DNA goes to the host: must FAIL)
 """
 import glob
 import os

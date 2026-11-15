@@ -722,7 +722,7 @@ BUG-0217. GOG 2024, lane 5.
   stage is entered from anything but its editors (kEdit, kEditor; kScenario keeps Space only).
   `tribe::world_check` (top of on_frame, before messages) forgets the Tribe world when the mode
   leaves Tribe for a mode that is not an editor, and on the in-stage signals (another player tribe
-  object, another save name). Switch `coop.fix tribe.editor_world`. Limit: a reload of the same
+  object, another save name). Switch `coop.fix tribe.editor_world` (retired in 0.7.15). Limit: a reload of the same
   save that reuses the player tribe's address and never shows a non-stage frame is not seen.
 * ✔ On a guest `coop.tribe epic herds` lists `live_epics=0` before and after the host's world
   arrives, the planet's own epic included: the guest's game is no oracle for "the epic came with
@@ -1097,7 +1097,7 @@ BUG-0402. GOG 2024, lane 7.
   fix/w33-proxy-ground.
 * ✔ A co-op epic on the tribe fixture hit for 1 hp every 12 s (walks and fights at up to 6.5 m/s): its proxy, compared
   at the proxy's distance from the centre, p50 0.13 / p90 0.99 / max 2.08 m with walk_place, p50 0.51 / p90 0.61 / max
-  2.57 m with the old drive::step (`coop.fix npc.walk_tribe off`). The epic alone does not explain 8-25 m.
+  2.57 m with the old drive::step (`coop.fix npc.walk_tribe off` (retired in 0.7.15)). The epic alone does not explain 8-25 m.
 * ~ The sync-check compares absolute positions; a guest's Tribe proxies are at its own ground height (BUG-0329,
   3.9-5.3 m radial in live campaign worlds), so a running herd's lag plus that radial part can pass the 8 m limit
   (inferred, no current run showed it). The 510 m case is BUG-0339's NPC at the planet's
@@ -1984,7 +1984,7 @@ GOG 2024 addresses (dc04aee5). Kind `game_bundle` of mods/coop/worldobj.cpp (BUG
   the copy 1-3.5 m behind it (coop.wobj list on both every 0.7 s), and the copy is removed when the host's is.
 * ✔ host_bundle: the host's ground food lies at its place on the guest, the guest's copy of the member carries the
   food, the food a guest's member takes from the ground is gone on the host (PASS lab 20261106-044500, FAIL with
-  `SPORE_FIX_OFF=wobj.bundle` lab 20261106-044559).
+  wobj.bundle off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-044559:host_bundle) lab 20261106-044559).
 
 ## The host's extra ornament in Tribe: not reproduced (2026-11-06, fix/w45-world-objects)
 <a id="tribe-ornament-not-reproduced"></a>
@@ -2211,7 +2211,7 @@ BUG-0664. GOG 2024, lab lanes 4-5 (tribe_dead_rejoin), long_tribe out/lab/202611
   lay on the host had none. 0.7.8 dropped the body from `g_hm` at once: no such key, no mismatch (long_tribe on 0.7.8
   and 0.7.7: 0 MISMATCH lines).
 * ✔ tribe.sync_bodies: both sides leave bodies (host: `body_since != 0`, guest: the entry's body bit) out of the
-  sync-check; the check compares members. `coop.fix tribe.sync_bodies off`: the host lists them again.
+  sync-check; the check compares members. `coop.fix tribe.sync_bodies off` (retired in 0.7.15): the host lists them again.
 * ? a guest that joins while a body lies on the host does not show that body (at most the 10-20 s the game keeps it);
   not checked whether the shared save holds it.
 

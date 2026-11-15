@@ -57,3 +57,4 @@ most 600 background cells and (guest) the host's cells on its screen again.
 - 2026-10-30: opened (fix/w13-cell, found hunting BUG-0307).
 - 2026-10-30: fixed by cell.bg_cull (fix/w13-cell).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `cell.bg_cull` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-135947:cell_jumps on record; its test runs PASS-only.

@@ -57,3 +57,4 @@ orders are untouched. Switch: `coop.fix tribe.act_check off`.
 - 2026-10-29: opened by dev/campaign (seen once while probing; not used by the campaign).
 - 2026-10-30: fix/w9-tribe: reproduced on lane 8 (action 15 = RaidHuts on a citizen), the command refuses object actions on members; fixed.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-15: switch `tribe.act_check` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261030-010933:tribe_act on record; its test runs PASS-only.
