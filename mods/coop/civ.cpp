@@ -31,6 +31,9 @@
 #include "creations.h"
 #include "savestrip.h"
 #include "world.h"
+#include "owner_claims.h"
+#include "autosave_glue.h"
+#include "store.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -356,6 +359,28 @@ struct HV {
     uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
     uint32_t serial = 0; // BUG-0951: its cGameData::mID then (a reused address of the same nation too)
 };
+// E1 (BUG-1153): the owners of the players' cities and vehicles across sessions. They lived only in the host's memory
+// (BUG-0950 kept them for a reload in the same session, by the owner's name): every new session dealt the cities anew
+// in turns, a guest's army went to the owner of the nearest city, and a guest that left lost its captured and given
+// cities for good. Now every player city and vehicle has a claim: its owner's stable key (store.h key_of; the host is
+// "host"). A claim's object goes to that player whenever it is here; while it is away the host holds it for it (never
+// another guest), and its join gives it back. The claims go into the per-player store on the host's disk with every
+// save (owner_claims.h: by position: world record civ.owners) and come back to the same cities and vehicles after the
+// world's load. `coop.fix store.civ_owners off`: dealt as before (0.7.14).
+static bool g_store_fix = true;
+COOP_FIX("store.civ_owners", "BUG-1153", g_store_fix,
+         "civ: the players' cities and vehicles keep their owners across sessions (kept on the host's disk) and wait for an absent owner");
+static std::unordered_map<void*, std::string> g_city_claim, g_veh_claim; // host: object -> its owner's stable key
+static std::vector<claims::Spot> g_city_spots, g_veh_spots; // host: read from the store, not matched yet
+static uint32_t g_claims_serial;                             // host: the store read (0: read again)
+static bool g_cities_matched, g_vehs_matched;
+static std::map<std::string, uint8_t> g_present;             // host: stable key -> session id, this tick
+static uint32_t g_claim_cities, g_claim_vehs, g_claims_held, g_claims_back;
+static int present_id(const std::string& key)
+{
+    auto it = g_present.find(key);
+    return it == g_present.end() ? -1 : it->second;
+}
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
 static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
@@ -1946,6 +1971,9 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
             g_city_owner[city] = owner;
             g_city_captured.insert(city); // BUG-0875 (used with civ.capture_keeps)
             g_capture_by[city] = {owner, H->time_seconds()};
+            if (g_store_fix && !store::key_of(owner).empty())
+                g_city_claim[city] = store::key_of(owner); // E1 (BUG-1153): the captor's
+            autosave::milestone("a city captured"); // E2 (BUG-0864)
             if (C.feed)
                 C.feed(C.sess->name_of(owner) + " captured a city");
         }
@@ -2820,6 +2848,159 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host ----------------
+// E1 (BUG-1153), every host tick: who is here; the store's claims of a world just opened go to its cities and vehicles
+static void claims_tick()
+{
+    g_present.clear();
+    for (auto& p : C.sess->players()) {
+        std::string k = store::key_of(p.id);
+        if (!k.empty())
+            g_present[k] = p.id;
+    }
+    if (!g_store_fix)
+        return;
+    pstore::Store* w = store::world();
+    if (w && store::serial() != g_claims_serial) {
+        g_claims_serial = store::serial();
+        g_city_spots.clear();
+        g_veh_spots.clear();
+        g_city_claim.clear();
+        g_veh_claim.clear();
+        g_cities_matched = g_vehs_matched = false;
+        if (const pstore::Record* r = w->get_world("civ.owners"); r && r->ver == 1) {
+            pstore::In in(r->data);
+            if (!claims::get_spots(in, g_city_spots) || !claims::get_spots(in, g_veh_spots)) {
+                g_city_spots.clear();
+                g_veh_spots.clear();
+            }
+        }
+    }
+    void* pc = player_civ();
+    if (!pc)
+        return;
+    if (!g_cities_matched) {
+        auto cities = vec_of((uint8_t*)pc + kCivCities);
+        if (cities.empty())
+            return;
+        std::vector<std::array<float, 3>> pos;
+        for (void* c : cities) {
+            net::Vec3 q = city_pos(c);
+            pos.push_back({q.x, q.y, q.z});
+        }
+        auto m = claims::match(pos, g_city_spots, 5.0f);
+        for (size_t i = 0; i < cities.size(); i++)
+            if (m[i] >= 0) {
+                const auto& sp = g_city_spots[m[i]];
+                g_city_claim[cities[i]] = sp.key;
+                if (sp.flags & 1)
+                    g_city_gifted.insert(cities[i]);
+                if (sp.flags & 2)
+                    g_city_captured.insert(cities[i]);
+                g_claim_cities++;
+            }
+        g_cities_matched = true;
+        g_city_spots.clear();
+    }
+    if (!g_vehs_matched && !g_hv.empty()) {
+        uint32_t ppol = pol_of(pc);
+        std::vector<void*> vs;
+        std::vector<std::array<float, 3>> pos;
+        for (auto& [v, hv] : g_hv)
+            if (hv.pol == ppol) {
+                vs.push_back(v);
+                net::Vec3 q = veh_pos(v);
+                pos.push_back({q.x, q.y, q.z});
+            }
+        auto m = claims::match(pos, g_veh_spots, 6.0f);
+        for (size_t i = 0; i < vs.size(); i++)
+            if (m[i] >= 0) {
+                const auto& sp = g_veh_spots[m[i]];
+                g_veh_claim[vs[i]] = sp.key;
+                int id = present_id(sp.key);
+                g_hv[vs[i]].owner = id >= 0 ? (uint8_t)id : C.sess->my_id();
+                g_claim_vehs++;
+            }
+        g_vehs_matched = true;
+        g_veh_spots.clear();
+    }
+}
+
+// every 2 s: the claims follow the owners of the objects whose claimed player is here (a gift, a capture, a deal); an
+// absent player's claim stays
+static void claims_refresh()
+{
+    if (!g_store_fix || !g_cities_matched)
+        return;
+    void* pc = player_civ();
+    if (!pc)
+        return;
+    std::unordered_map<void*, std::string> cc;
+    for (void* c : vec_of((uint8_t*)pc + kCivCities)) {
+        auto old = g_city_claim.find(c);
+        bool away = old != g_city_claim.end() && old->second != "shared" && present_id(old->second) < 0;
+        auto o = g_city_owner.find(c);
+        if (away)
+            cc[c] = old->second;
+        else if (o != g_city_owner.end() && o->second == kShared)
+            cc[c] = "shared";
+        else if (o != g_city_owner.end() && o->second < 0xFE && !store::key_of(o->second).empty())
+            cc[c] = store::key_of(o->second);
+    }
+    g_city_claim = std::move(cc);
+    uint32_t ppol = pol_of(pc);
+    std::unordered_map<void*, std::string> vc;
+    for (auto& [v, hv] : g_hv) {
+        if (hv.pol != ppol)
+            continue;
+        auto old = g_veh_claim.find(v);
+        if (old != g_veh_claim.end() && present_id(old->second) < 0)
+            vc[v] = old->second;
+        else if (hv.owner < 0xFE && !store::key_of(hv.owner).empty())
+            vc[v] = store::key_of(hv.owner);
+    }
+    if (g_vehs_matched)
+        g_veh_claim = std::move(vc);
+}
+
+// the game saves: the claims by position into the store (world record civ.owners v1: city spots, vehicle spots)
+static void claims_save(pstore::Store& s, int64_t)
+{
+    if (!g_store_fix || !g_claims_serial || g_claims_serial != store::serial() || &s != store::world() ||
+        game::mode_id() != modes::kCiv)
+        return;
+    void* pc = player_civ();
+    if (!pc)
+        return;
+    std::vector<claims::Spot> cs = g_city_spots, vs = g_veh_spots; // (not matched yet: as they were read)
+    for (void* c : vec_of((uint8_t*)pc + kCivCities))
+        if (auto it = g_city_claim.find(c); it != g_city_claim.end()) {
+            net::Vec3 q = city_pos(c);
+            cs.push_back({q.x, q.y, q.z, it->second,
+                          (uint8_t)((g_city_gifted.count(c) ? 1 : 0) | (g_city_captured.count(c) ? 2 : 0))});
+        }
+    for (auto& [v, k] : g_veh_claim)
+        if (g_hv.count(v)) {
+            net::Vec3 q = veh_pos(v);
+            vs.push_back({q.x, q.y, q.z, k, 0});
+        }
+    if (cs.empty() && vs.empty() && !s.get_world("civ.owners"))
+        return;
+    pstore::Out o;
+    claims::put_spots(o, cs);
+    claims::put_spots(o, vs);
+    s.put_world("civ.owners", 1, o.d);
+}
+static bool g_claims_reg = store::add({"civ.owners", claims_save, [](const std::string& from, const std::string& to) {
+                                           for (auto* m : {&g_city_claim, &g_veh_claim})
+                                               for (auto& [o, k] : *m)
+                                                   if (k == from)
+                                                       k = to;
+                                           for (auto* v : {&g_city_spots, &g_veh_spots})
+                                               for (auto& sp : *v)
+                                                   if (sp.key == from)
+                                                       sp.key = to;
+                                       }});
+
 static void host_assign_cities(const std::vector<uint8_t>& players)
 {
     void* pc = player_civ();
@@ -2844,7 +3025,8 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
             it = here || now - it->second.at > 120.0 ? g_capture_by.erase(it) : std::next(it);
         }
     }
-    if (g_fix_owners_kept && !g_kept_tried && !cities.empty()) { // BUG-0950: the first split after a world change
+    // (E1: a world whose claims came from the host's disk gets its owners from them, by key, not by name)
+    if (g_fix_owners_kept && !g_kept_tried && !cities.empty() && !(g_store_fix && !g_city_claim.empty())) { // BUG-0950
         g_kept_tried = true;
         g_kept_key = world::current_game_key();
         auto it = g_kept_cities.find(g_kept_key);
@@ -2898,12 +3080,23 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
         return it != g_city_owner.end() && present(it->second) &&
                (g_city_gifted.count(c) || (g_fix_capture_keeps && g_city_captured.count(c)));
     };
+    // E1 (BUG-1153): a claimed city's holder (its player, or the host while that player is away); -1: no claim
+    auto claimed = [&](void* c) -> int {
+        if (!g_store_fix)
+            return -1;
+        auto it = g_city_claim.find(c);
+        if (it == g_city_claim.end() || it->second == "shared")
+            return -1;
+        return claims::holder(it->second, present_id, C.sess->my_id());
+    };
     std::vector<uint8_t> first; // capture_keeps: the players without a city get the free ones first
     if (g_fix_capture_keeps) {
         std::unordered_set<uint8_t> has{0}; // the host: the capital
         size_t free = 0;
         for (size_t i = 1; i < cities.size(); i++)
-            if (kept(cities[i]))
+            if (int cl = claimed(cities[i]); cl >= 0)
+                has.insert((uint8_t)cl);
+            else if (kept(cities[i]))
                 has.insert(g_city_owner[cities[i]]);
             else
                 free++;
@@ -2922,6 +3115,12 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
     for (size_t i = 0; i < cities.size(); i++) {
         if (!resplit && g_city_owner.count(cities[i]))
             continue;
+        if (int cl = i > 0 ? claimed(cities[i]) : -1; cl >= 0) { // E1: its player's, or the host's while it is away
+            if (g_city_owner.count(cities[i]) && g_city_owner[cities[i]] != cl)
+                (cl == C.sess->my_id() ? g_claims_held : g_claims_back)++;
+            g_city_owner[cities[i]] = (uint8_t)cl;
+            continue;
+        }
         if (kept(cities[i]) && (i > 0 || g_city_gifted.count(cities[i])))
             continue; // a gift (or a capture: capture_keeps) stays with its owner while that player is here
         g_city_owner[cities[i]] = i == 0 ? (shared ? kShared : 0) : next();
@@ -3321,9 +3520,11 @@ static void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     bool roster_changed = players != g_split_for;
+    claims_tick(); // E1 (BUG-1153)
     host_assign_cities(players);
     if (g_fix_owners_kept && now - g_kept_at > 2.0) { // BUG-0950: the owners of this world, by position and name
         g_kept_at = now;
+        claims_refresh(); // E1 (BUG-1153)
         if (void* pc = player_civ()) {
             if (g_kept_key.empty())
                 g_kept_key = world::current_game_key();
@@ -3368,6 +3569,10 @@ static void host_tick(double now)
         } else
             ++it;
     }
+    if (roster_changed && g_store_fix) // E1 (BUG-1153): a claimed vehicle goes to its player, or the host holds it
+        for (auto& [v, hv] : g_hv)
+            if (auto it = g_veh_claim.find(v); it != g_veh_claim.end())
+                hv.owner = claims::holder(it->second, present_id, C.sess->my_id());
     if (roster_changed && g_fix_orphans)
         for (auto& [v, hv] : g_hv) {
             if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
@@ -3667,12 +3872,16 @@ static void host_command(uint8_t from, net::Reader& r)
             if (what == 0) {
                 if (void* v = own_vehicle(id)) {
                     g_hv[v].owner = to;
+                    if (g_store_fix && !store::key_of(to).empty())
+                        g_veh_claim[v] = store::key_of(to); // E1: the receiver's from now on
                     given++;
                 }
             } else if (void* city = host_city(id)) { // (BUG-1053)
                 if (owner_of_city(city) == from) {
                     g_city_owner[city] = to;
                     g_city_gifted.insert(city);
+                    if (g_store_fix && !store::key_of(to).empty())
+                        g_city_claim[city] = store::key_of(to);
                     given++;
                 }
             }
@@ -5220,6 +5429,10 @@ void on_world_change()
     g_host_cities.clear();
     g_split_for.clear();
     g_kept_tried = false; // BUG-0950: the next split gives the new world's kept owners back
+    g_claims_serial = 0; // E1 (BUG-1153): the claims of the world loaded now come from the store again
+    g_city_claim.clear();
+    g_veh_claim.clear();
+    g_cities_matched = g_vehs_matched = false;
     g_kept_key.clear();
     g_kept_at = H->time_seconds() + 3.0; // nothing is written over the kept owners before that
     g_city_short_since = -1;
@@ -5664,7 +5877,11 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(sp, sizeof sp, "specialty: fix=%d asked=%u shown=%u answered=%u applied=%u rejected=%u queued=%u open=%d\n",
                  (int)g_fix_specialty_buyer, g_spec_asked, g_spec_shown, g_spec_answered, g_spec_applied, g_spec_rejected,
                  (unsigned)g_spec_queue.size(), g_spec_open);
-        return std::string(b) + k + sp + c;
+        char cl[240]; // E1 (BUG-1153)
+        snprintf(cl, sizeof cl, "claims: fix=%d serial=%u cities=%u vehicles=%u matched=%d/%d from_disk=%u/%u held=%u back=%u\n",
+                 (int)g_store_fix, g_claims_serial, (unsigned)g_city_claim.size(), (unsigned)g_veh_claim.size(),
+                 (int)g_cities_matched, (int)g_vehs_matched, g_claim_cities, g_claim_vehs, g_claims_held, g_claims_back);
+        return std::string(b) + k + sp + cl + c;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)

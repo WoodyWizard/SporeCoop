@@ -62,7 +62,7 @@ static uintptr_t a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit
     a_Save, a_Expand, a_PlayerEmpire, a_Color, a_NounMgr, a_GetData, a_MissionCb[4], a_SetState, a_StartRaid,
     a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt, a_AllUFOs, a_TakeDamage, a_PlayerUFO, a_SpacePlayerData,
     a_SpaceGame, a_NearRebuild, a_NearVt, a_TransferStar, a_GameAlloc, a_CityName, a_CityCtor, a_AddCityData,
-    a_BuildingInsert;
+    a_BuildingReserve;
 
 // ---- what each mirror changed (to undo it exactly) ----
 struct StarSnap {
@@ -1363,7 +1363,8 @@ static std::string colonize(uint32_t id, bool restore)
 // wire/space_map.h City), the host keeps them with the colony (also on its disk), and the restore writes them back
 // into the generated civilization: the same cities (a missing one made the way the game makes one: its allocator and
 // constructor, then AddCityData), each with its position, size, turrets, spice, name and building entries. Only into a
-// record whose planet is not loaded (no live cCity points at its cCityData). The civilization's turret and building
+// record whose planet is not the active one (the city maker builds the live cCity objects of the active planet only,
+// docs/re/space.md#space-city-data; a planet of the system the ship is in has a cPlanet but no cities). The civilization's turret and building
 // counts are made again from the cities. `coop.fix space.colony_cities off`: the generated city only (0.7.14).
 static bool g_cities_fix = true;
 COOP_FIX("space.colony_cities", "BUG-1151", g_cities_fix,
@@ -1433,12 +1434,12 @@ static std::string cities_apply(uint32_t id, const std::vector<uint8_t>& blob)
     void* rec = planet_record(id);
     if (!rec)
         return "no such planet";
-    if (active_planet_record() == rec || loaded_planet(rec))
+    if (active_planet_record() == rec) // its cities are live (cCity +0x2F0 points at its cCityData): not now
         return "wait";
     void* civ = my_civ(rec);
     if (!civ)
         return "no civilization of mine there";
-    if (!a_GameAlloc || !a_CityName || !a_CityCtor || !a_AddCityData || !a_BuildingInsert || !a_StrAssign)
+    if (!a_GameAlloc || !a_CityName || !a_CityCtor || !a_AddCityData || !a_BuildingReserve || !a_StrAssign)
         return "symbols missing";
     auto cities = ptr_vec((uint8_t*)civ + 0x3C, 64);
     for (size_t i = 0; i < v.size(); i++) {
@@ -1473,10 +1474,19 @@ static std::string cities_apply(uint32_t id, const std::vector<uint8_t>& blob)
                 MultiByteToWideChar(CP_UTF8, 0, x.name.data(), (int)x.name.size(), (wchar_t*)w.data(), n);
             thiscall<void>(a_StrAssign, (uint8_t*)c + 0x40, w.data(), w.data() + w.size());
         }
-        // the building list: plain 0x38-byte entries (no destructor): emptied, then the game's own insert
+        // the building list: plain 0x38-byte entries (no destructor): emptied, room made by the game's own reserve
+        // (its allocator), then the entries copied in (0xFF1500, the game's insert, takes a position before the end
+        // only: an append through it ran past the vector's start, lab 20261115-132419)
         F<uint8_t*>(c, 0x80) = F<uint8_t*>(c, 0x7C);
-        for (auto& e : x.buildings)
-            thiscall<void>(a_BuildingInsert, (uint8_t*)c + 0x7C, F<void*>(c, 0x80), e.data());
+        thiscall<void>(a_BuildingReserve, (uint8_t*)c + 0x7C, (uint32_t)x.buildings.size());
+        uint8_t* end = F<uint8_t*>(c, 0x80);
+        if (x.buildings.size() && (!end || F<uint8_t*>(c, 0x84) < end + x.buildings.size() * 0x38))
+            continue; // (no room: the reserve failed)
+        for (auto& e : x.buildings) {
+            memcpy(end, e.data(), 0x38);
+            end += 0x38;
+        }
+        F<uint8_t*>(c, 0x80) = end;
         if (fresh)
             thiscall<void>(a_AddCityData, civ, c);
     }
@@ -1963,7 +1973,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_CityName = S("SporeCoop::cCityData_AllocName");
     a_CityCtor = S("SporeCoop::cCityData_ctor");
     a_AddCityData = S("SporeCoop::cCivData_AddCityData");
-    a_BuildingInsert = S("SporeCoop::cCityData_BuildingInsert");
+    a_BuildingReserve = S("SporeCoop::cCityData_BuildingReserve");
     uintptr_t need[] = {a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit, a_AddStar, a_SetHomeStar,
                         a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt,
                         a_HomeStarMap, a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove,

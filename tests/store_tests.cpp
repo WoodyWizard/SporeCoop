@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "autosave.h"
+#include "owner_claims.h"
 #include "player_store.h"
 #include "rejoin_kept.h"
 #include "space_kept.h"
@@ -271,9 +272,43 @@ static void test_autosave()
           autosave::ago_text(185, false) == "saved 3 min ago" && autosave::ago_text(7300, false) == "saved 2 h ago");
 }
 
+// BUG-1153 / BUG-1154: owners by position across a load
+static void test_claims()
+{
+    printf("owner claims\n");
+    using claims::Spot;
+    std::vector<Spot> spots{{0, 0, 0, "host", 0}, {10, 0, 0, "s:00000000000000aa", 1}, {20, 0, 0, "s:00000000000000bb", 2}};
+    // today's objects: a little moved, in another order, one new, one gone
+    std::vector<std::array<float, 3>> objs{{20.5f, 0, 0}, {0.2f, 0, 0}, {100, 0, 0}, {9.0f, 0.5f, 0}};
+    auto m = claims::match(objs, spots, 3.0f);
+    CHECK(m == (std::vector<int>{2, 0, -1, 1}));
+    // two objects near one spot: only the nearer one takes it
+    std::vector<std::array<float, 3>> two{{10.4f, 0, 0}, {10.1f, 0, 0}};
+    CHECK(claims::match(two, spots, 3.0f) == (std::vector<int>{-1, 1}));
+    // nothing within the radius
+    CHECK(claims::match({{50, 50, 50}}, spots, 3.0f) == (std::vector<int>{-1}));
+    // the record round trip; a bad key or position is no record
+    pstore::Out o;
+    claims::put_spots(o, spots);
+    pstore::In in(o.d);
+    std::vector<Spot> back;
+    CHECK(claims::get_spots(in, back) && in.end() && back.size() == 3 && back[1].key == "s:00000000000000aa" &&
+          back[2].flags == 2 && back[1].x == 10);
+    std::vector<Spot> bad{{0, 0, 0, "Bob", 0}};
+    pstore::Out ob;
+    claims::put_spots(ob, bad);
+    pstore::In ib(ob.d);
+    CHECK(!claims::get_spots(ib, back));
+    // the holder: the present player of the key, else the host holds it for the absent one (never another guest)
+    auto present = [](const std::string& k) { return k == "host" ? 0 : k == "s:00000000000000aa" ? 2 : -1; };
+    CHECK(claims::holder("s:00000000000000aa", present) == 2 && claims::holder("s:00000000000000bb", present) == 0 &&
+          claims::holder("host", present) == 0);
+}
+
 int main()
 {
     test_autosave();
+    test_claims();
     test_keys();
     test_round_trip();
     test_bad_files();
