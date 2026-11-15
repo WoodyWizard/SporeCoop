@@ -17,118 +17,110 @@ constexpr uint16_t kDefaultPort = 47810;
 constexpr int kMaxPlayers = 4; // host + 3 guests (Spore pack size)
 constexpr size_t kMaxPacket = 1200;
 
+// The message types: generated from net/messages.def (B3 of 0.7.15, BUG-1136), which lists each type exactly once with
+// its direction, class, route and family (net/manifest.h). A new type is a new row there. Payload notes of 0.7.14:
+//   MSG_PING (8): unused (BUG-0144): nothing sends it, the host answers one; RTT comes from acks
+//   MSG_PONG (9): unused, the answer to MSG_PING
+//   MSG_ABILITY (11): reserved, never sent or handled (BUG-0144)
+//   MSG_DAMAGE (12): M2
+//   MSG_NPC_STATE (13): M2
+//   MSG_WORLD_OFFER (14): host -> guest: a save folder follows
+//   MSG_WORLD_FILE (15): file header
+//   MSG_WORLD_CHUNK (16): file data
+//   MSG_WORLD_DONE (17): end of transfer
+//   MSG_ANIM (18): a player's creature played an animation (attack, social, ...)
+//   MSG_NPC_SPAWN (19): host -> guest: start mirroring an NPC
+//   MSG_NPC_DESPAWN (20): host -> guest: stop mirroring an NPC
+//   MSG_DAMAGE_REQ (21): guest -> host: my attack hit NPC net_id
+//   MSG_WORLD_TIME (22): host -> guests: time of day (sky orientation quaternion)
+//   MSG_DNA (23): host -> guests: shared DNA total (f32), then (optional) u8 n x {u8 cause, u8 player, f32 amount}
+//       (dna_ledger.h)
+//   MSG_DNA_ADD (24): guest -> host: DNA the guest earned (f32 delta)
+//   MSG_RES (25): host -> guests: shared resource total (u8 id, f64)
+//   MSG_RES_ADD (26): guest -> host: local change of a shared resource (u8 id, f64 delta)
+//   MSG_PING_MARK (27): any: "look here" marker (vec3), relayed by the host
+//   MSG_READY (28): guest -> host: u8 ready
+//   MSG_LOBBY (29): host -> guests: u8 count, {u8 id, u8 ready, u16 rtt_ms}
+//   MSG_NOTICE (30): any: str8 text everybody sees (phase events, rescues), relayed by the host
+//   MSG_TRIBE_STATE (31): host -> guests: tribes + citizens snapshot (chunked)
+//   MSG_TRIBE_CMD (32): guest -> host: order for own tribe members
+//   MSG_CELL_STATE (33): host -> guests: NPC cells and food snapshot (chunked)
+//   MSG_CELL_HIT (34): guest -> host: u32 host cell index, u8 damage, u8 type
+//   MSG_CELL_EAT (35): guest -> host: u32 host cell index (eaten / destroyed by the guest)
+//   MSG_CELL_FOOD (36): host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant
+//   MSG_CIV_STATE (37): host -> guests: cities (owners, political ids) + vehicles snapshot (chunked)
+//   MSG_CIV_CMD (38): guest -> host: vehicle order / move / purchase / building
+//   MSG_CIV_BUILD (39): host -> guests: a building appeared in a city (city index, noun, position)
+//   MSG_UFO_STATE (40): host -> guests in its place: NPC ships snapshot (chunked)
+//   MSG_UFO_HIT (41): guest -> host: u16 ship id, f32 damage, i32 type, vec3 dir
+//   MSG_UFO_DAMAGE (42): host -> guest: f32 damage, i32 type, vec3 dir, u16 attacker ship id
+//   MSG_VOTE (43): host -> guests: u8 active, u8 seconds left, str8 text (evolution vote), u32 editor, u8 flags (1:
+//       an evolve offer with active 0, BUG-0516; older senders stop before the flags)
+//   MSG_CREATION (45): reliable chunks of a player's creation (owner, kind, id, total, offset, data)
+//   MSG_ROLE (46): guest -> host: u8 role (civilization: 0 none, 1 military, 2 economic, 3 religious)
+//   MSG_CIV_ALARM (47): host -> guests: u8 city index, u8 kind (0 military, 1 religious), u8 owner
+//   MSG_SPACE (48): any -> (host relays) -> all: u8 kind, u8 origin, payload (spacecoop.cpp)
+//   MSG_CELL_BITTEN (49): guest -> host: u32 host cell index of the NPC whose mirror bit the guest's cell
+//   MSG_SPECIES (50): host -> guests: species relationship table (u16 n, {key[3], i32 relation, u32 x, u32 impressed,
+//       u32 killed}) of the creature stage (social.cpp)
+//   MSG_SOCIAL (51): u8 kind: 0 guest -> host act {u16 npc, u32 ability type}; 1 host -> guest progress {u16 npc, u8
+//       done, u8 needed}; 2 host -> all result {u16 npc, u8 player, u8 ok, u32 reaction anim, f32 dna}; 3 guest ->
+//       host goal reward {u16 0, key[3], u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
+//   MSG_NEST (52): u8 kind: 0 host -> guest eggs at the NPC nests near it (unreliable, 1 Hz) {u8 n, n x {u32 id, vec3
+//       pos, u8 state, f32 scale}}; 1 guest -> host u32 id: the guest ate it (nest.cpp)
+//   MSG_PARTS (53): the party's collected creature parts (parts.cpp, BUG-0401): u8 kind (0 host -> guests the host's
+//       set, 1 host -> guests news, 2 guest -> host found here), u8 origin, u32 world, u16 n, n x {u32 lo, u32 hi}.
+//       Older SporeCoop ignores it (an unknown type).
+//   MSG_FIELDS (56): host -> guests: replicated state fields of mirrored objects (fields.h, BUG-0419 G2): u8 kind, u8
+//       nf, nf x u8 field, u16 n, n x {u16 id, nf x f32}; unreliable, deltas + refresh. Older SporeCoop ignores it
+//       (an unknown type).
+//   MSG_NPC_RESYNC (57): guest -> host: u8 n, n x u16 NPC id the guest gets states for and has no spawn of (BUG-0487
+//       / G5): the host sends that spawn again. Older SporeCoop ignores it.
+//   MSG_NPC_ANIM (59): host -> guest: animations the host's NPCs' behaviour trees started (BUG-0464, npc.cpp): u8
+//       kind 0 (started, at most once a frame): u8 n, n x {u16 NPC id, u32 anim, u8 how (0 CreaturePlayAnim, 1
+//       PlayAnimation, 2 PlayAnimationTo), u8 arg, u32 arg2}; kind 1 (1 Hz: what they play now, a BT's animation or a
+//       body's): u8 n, n x {u16 id, u32 anim}. Unreliable. Older SporeCoop ignores it (an unknown type).
+//   MSG_WOBJ (54): world objects owned by the host (worldobj.cpp, BUG-0472 / BUG-0459): u8 kind (0 host -> guest
+//       snapshot {u8 obj kind, vec3 centre, f32 r, u8 n, n x {u32 id, vec3 pos, u32 state}}, unreliable 1 Hz; 1 guest
+//       -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.
+//   MSG_CELL_KO (44): any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned), u8 tenths of a
+//       second left, u8 revive progress 0..255
+//   MSG_DIAG (60): support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug marks, sync self-check.
+//       Older SporeCoop ignores it (an unknown type).
+//   MSG_EFFECT (61): a player's own creature started / stopped a visual effect (BUG-0451, effects.h): u8 player, u8
+//       stop, u8 pool (1/2), u32 effect id, u32 key. The host relays a guest's message to the other guests; the
+//       receiver plays it on that player's puppet with the game's own effect pools. Older SporeCoop ignores it (an
+//       unknown type).
+//   MSG_PLAYER_RULE (63): the game's rules for a player that one game decides on the other player's creature
+//       (player_rules.cpp, BUG-0418 / P1 of 0.7.7): u8 kind; kind 0 host -> guest "stunned" {u8 player, f32 seconds}
+//       (an NPC's charge stunned its puppet: CreatureStun vt 0x94), kind 1 guest -> host {u16 NPC id, f32 seconds}
+//       (the guest's charge stunned a proxy). Older SporeCoop ignores it (an unknown type).
+//   MSG_MIRROR_FX (64): host -> guests: what the host's game did to a creature a guest mirrors (mirror_fx.h,
+//       BUG-0600): u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect, u32
+//       key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}. Older SporeCoop ignores it (an
+//       unknown type).
+//   MSG_NPC_MEAT (65): the meat left on bodies of killed NPCs (BUG-0557 / BUG-0383, npc.cpp): u8 kind; 0 host ->
+//       guest {u8 n, n x {u16 NPC id, f32 meat}} (unreliable, on a change and every 2 s), 1 guest -> host {u8 n, n x
+//       {u16 NPC id, f32 eaten}} (reliable: what the guest's creature ate of its proxy). Older SporeCoop ignores it
+//       (an unknown type).
+//   MSG_WSTATE (62): host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 / BUG-0579
+//       / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key, nv x u32}}. Older
+//       SporeCoop ignores it (an unknown type).
+//   MSG_SETTINGS (66): host -> guests (reliable): the session settings (settings_core.h, F3 of 0.7.12): u8 kind 0, u8
+//       flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}; on a join and on every change. Older
+//       SporeCoop ignores it (an unknown type).
+//   MSG_COLORS (67): the player colours (find_core.h, F2 of 0.7.12): u8 kind; 0 host -> guests (reliable) the table
+//       u8 n, n x {u8 id, u8 colour}; 1 guest -> host u8 colour (the guest asks for it). Older SporeCoop ignores it
+//       (an unknown type).
+//   MSG_REPORT (68): the session report (net/sreport.h, F4 of 0.7.12, BUG-0767): u8 kind; host -> guest the question
+//       / a stop, guest -> host the answer and its report zip in pieces (reliable). Older SporeCoop ignores it (an
+//       unknown type).
+//   MSG_HOST_WORLD (69): host -> guests (reliable): u32 world, the world id of WELCOME again (host_world.h
+//       welcome_world: the CRC of the host's save name), sent when the host's save changes during the session and
+//       after a join (BUG-0933). Older SporeCoop ignores it (an unknown type).
 enum MsgType : uint8_t {
-    MSG_HELLO = 1,
-    MSG_WELCOME = 2,
-    MSG_REJECT = 3,
-    MSG_PLAYER_JOIN = 4,
-    MSG_PLAYER_LEAVE = 5,
-    MSG_PLAYER_STATE = 6,
-    MSG_CHAT = 7,
-    MSG_PING = 8,       // unused (BUG-0144): nothing sends it, the host answers one; RTT comes from acks
-    MSG_PONG = 9,       // unused, the answer to MSG_PING
-    MSG_BYE = 10,
-    MSG_ABILITY = 11,  // reserved, never sent or handled (BUG-0144)
-    MSG_DAMAGE = 12,   // M2
-    MSG_NPC_STATE = 13, // M2
-    MSG_WORLD_OFFER = 14, // host -> guest: a save folder follows
-    MSG_WORLD_FILE = 15,  // file header
-    MSG_WORLD_CHUNK = 16, // file data
-    MSG_WORLD_DONE = 17,  // end of transfer
-    MSG_ANIM = 18,        // a player's creature played an animation (attack, social, ...)
-    MSG_NPC_SPAWN = 19,   // host -> guest: start mirroring an NPC
-    MSG_NPC_DESPAWN = 20, // host -> guest: stop mirroring an NPC
-    MSG_DAMAGE_REQ = 21,  // guest -> host: my attack hit NPC net_id
-    MSG_WORLD_TIME = 22,  // host -> guests: time of day (sky orientation quaternion)
-    MSG_DNA = 23,         // host -> guests: shared DNA total (f32), then (optional) u8 n x {u8 cause, u8 player, f32 amount} (dna_ledger.h)
-    MSG_DNA_ADD = 24,     // guest -> host: DNA the guest earned (f32 delta)
-    MSG_RES = 25,         // host -> guests: shared resource total (u8 id, f64)
-    MSG_RES_ADD = 26,     // guest -> host: local change of a shared resource (u8 id, f64 delta)
-    MSG_PING_MARK = 27,   // any: "look here" marker (vec3), relayed by the host
-    MSG_READY = 28,       // guest -> host: u8 ready
-    MSG_LOBBY = 29,       // host -> guests: u8 count, {u8 id, u8 ready, u16 rtt_ms}
-    MSG_NOTICE = 30,      // any: str8 text everybody sees (phase events, rescues), relayed by the host
-    MSG_TRIBE_STATE = 31, // host -> guests: tribes + citizens snapshot (chunked)
-    MSG_TRIBE_CMD = 32,   // guest -> host: order for own tribe members
-    MSG_CELL_STATE = 33,  // host -> guests: NPC cells and food snapshot (chunked)
-    MSG_CELL_HIT = 34,    // guest -> host: u32 host cell index, u8 damage, u8 type
-    MSG_CELL_EAT = 35,    // guest -> host: u32 host cell index (eaten / destroyed by the guest)
-    MSG_CELL_FOOD = 36,   // host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant
-    MSG_CIV_STATE = 37,   // host -> guests: cities (owners, political ids) + vehicles snapshot (chunked)
-    MSG_CIV_CMD = 38,     // guest -> host: vehicle order / move / purchase / building
-    MSG_CIV_BUILD = 39,   // host -> guests: a building appeared in a city (city index, noun, position)
-    MSG_UFO_STATE = 40,   // host -> guests in its place: NPC ships snapshot (chunked)
-    MSG_UFO_HIT = 41,     // guest -> host: u16 ship id, f32 damage, i32 type, vec3 dir
-    MSG_UFO_DAMAGE = 42,  // host -> guest: f32 damage, i32 type, vec3 dir, u16 attacker ship id
-    MSG_VOTE = 43,        // host -> guests: u8 active, u8 seconds left, str8 text (evolution vote), u32 editor, u8 flags (1: an
-                          // evolve offer with active 0, BUG-0516; older senders stop before the flags)
-    MSG_CREATION = 45,    // reliable chunks of a player's creation (owner, kind, id, total, offset, data)
-    MSG_ROLE = 46,        // guest -> host: u8 role (civilization: 0 none, 1 military, 2 economic, 3 religious)
-    MSG_CIV_ALARM = 47,   // host -> guests: u8 city index, u8 kind (0 military, 1 religious), u8 owner
-    MSG_SPACE = 48,       // any -> (host relays) -> all: u8 kind, u8 origin, payload (spacecoop.cpp)
-    MSG_CELL_BITTEN = 49, // guest -> host: u32 host cell index of the NPC whose mirror bit the guest's cell
-    MSG_SPECIES = 50,     // host -> guests: species relationship table (u16 n, {key[3], i32 relation, u32 x,
-                          // u32 impressed, u32 killed}) of the creature stage (social.cpp)
-    MSG_SOCIAL = 51,      // u8 kind: 0 guest -> host act {u16 npc, u32 ability type}; 1 host -> guest progress
-                          // {u16 npc, u8 done, u8 needed}; 2 host -> all result {u16 npc, u8 player, u8 ok,
-                          // u32 reaction anim, f32 dna}; 3 guest -> host goal reward {u16 0, key[3],
-                          // u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
-    MSG_NEST = 52,        // u8 kind: 0 host -> guest eggs at the NPC nests near it (unreliable, 1 Hz) {u8 n, n x
-                          // {u32 id, vec3 pos, u8 state, f32 scale}}; 1 guest -> host u32 id: the guest ate it (nest.cpp)
-    MSG_PARTS = 53,       // the party's collected creature parts (parts.cpp, BUG-0401): u8 kind (0 host -> guests the
-                          // host's set, 1 host -> guests news, 2 guest -> host found here), u8 origin, u32 world,
-                          // u16 n, n x {u32 lo, u32 hi}. Older SporeCoop ignores it (an unknown type).
-    MSG_FIELDS = 56,      // host -> guests: replicated state fields of mirrored objects (fields.h, BUG-0419 G2):
-                          // u8 kind, u8 nf, nf x u8 field, u16 n, n x {u16 id, nf x f32}; unreliable, deltas + refresh.
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_NPC_RESYNC = 57,  // guest -> host: u8 n, n x u16 NPC id the guest gets states for and has no spawn of
-                          // (BUG-0487 / G5): the host sends that spawn again. Older SporeCoop ignores it.
-    MSG_NPC_ANIM = 59,    // host -> guest: animations the host's NPCs' behaviour trees started (BUG-0464, npc.cpp):
-                          // u8 kind 0 (started, at most once a frame): u8 n, n x {u16 NPC id, u32 anim, u8 how (0 CreaturePlayAnim,
-                          // 1 PlayAnimation, 2 PlayAnimationTo), u8 arg, u32 arg2};
-                          // kind 1 (1 Hz: what they play now, a BT's animation or a body's): u8 n, n x {u16 id, u32 anim}.
-                          // Unreliable.
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_WOBJ = 54,        // world objects owned by the host (worldobj.cpp, BUG-0472 / BUG-0459): u8 kind (0 host -> guest
-                          // snapshot {u8 obj kind, vec3 centre, f32 r, u8 n, n x {u32 id, vec3 pos, u32 state}}, unreliable 1 Hz;
-                          // 1 guest -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.
-    MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
-                          // u8 tenths of a second left, u8 revive progress 0..255
-    MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
-                          // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
-    MSG_EFFECT = 61,      // a player's own creature started / stopped a visual effect (BUG-0451,
-                          // effects.h): u8 player, u8 stop, u8 pool (1/2), u32 effect id, u32 key.
-                          // The host relays a guest's message to the other guests; the receiver
-                          // plays it on that player's puppet with the game's own effect pools.
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_PLAYER_RULE = 63, // the game's rules for a player that one game decides on the other player's creature
-                          // (player_rules.cpp, BUG-0418 / P1 of 0.7.7): u8 kind; kind 0 host -> guest "stunned"
-                          // {u8 player, f32 seconds} (an NPC's charge stunned its puppet: CreatureStun vt 0x94),
-                          // kind 1 guest -> host {u16 NPC id, f32 seconds} (the guest's charge stunned a proxy).
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_MIRROR_FX = 64,   // host -> guests: what the host's game did to a creature a guest mirrors (mirror_fx.h, BUG-0600):
-                          // u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect,
-                          // u32 key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}.
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_NPC_MEAT = 65,    // the meat left on bodies of killed NPCs (BUG-0557 / BUG-0383, npc.cpp): u8 kind; 0 host -> guest
-                          // {u8 n, n x {u16 NPC id, f32 meat}} (unreliable, on a change and every 2 s), 1 guest -> host
-                          // {u8 n, n x {u16 NPC id, f32 eaten}} (reliable: what the guest's creature ate of its proxy).
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
-                          // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
-                          // nv x u32}}. Older SporeCoop ignores it (an unknown type).
-    MSG_SETTINGS = 66,    // host -> guests (reliable): the session settings (settings_core.h, F3 of 0.7.12): u8 kind 0,
-                          // u8 flags (1: the host plays its world), u8 n, n x {str8 key, u32 value}; on a join and on
-                          // every change. Older SporeCoop ignores it (an unknown type).
-    MSG_COLORS = 67,      // the player colours (find_core.h, F2 of 0.7.12): u8 kind; 0 host -> guests (reliable) the table
-                          // u8 n, n x {u8 id, u8 colour}; 1 guest -> host u8 colour (the guest asks for it). Older
-                          // SporeCoop ignores it (an unknown type).
-    MSG_REPORT = 68,      // the session report (net/sreport.h, F4 of 0.7.12, BUG-0767): u8 kind; host -> guest the
-                          // question / a stop, guest -> host the answer and its report zip in pieces (reliable).
-                          // Older SporeCoop ignores it (an unknown type).
-    MSG_HOST_WORLD = 69,  // host -> guests (reliable): u32 world, the world id of WELCOME again (host_world.h welcome_world:
-                          // the CRC of the host's save name), sent when the host's save changes during the session and
-                          // after a join (BUG-0933). Older SporeCoop ignores it (an unknown type).
+#define MSG(id, name, chan, dir, cls, route, recv, family, what) MSG_##name = id,
+#include "messages.def"
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
@@ -203,8 +195,48 @@ enum Caps : uint32_t {
     // the versions of the game and the mod (support logs, 0.7.4): HELLO: str8 "coop X, SporeKit Y, <build>";
     // WELCOME: str8 of the host, u8 n, n x (u8 player id, str8 version) of the players the host knows
     CAP_VERSION = 4,
+    // B6 of 0.7.15 (BUG-1137): the sender's message family revisions (net/messages.def FAMILY, net/compat.h): u8 n,
+    // n x {u8 family, u16 rev, u16 minor}; in HELLO and WELCOME after CAP_VERSION's payload. Older readers ignore it
+    // (unknown bit, trailing bytes); a peer without it counts as rev 1 minor 0 of every family
+    CAP_FAMILIES = 8,
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_FAMILIES; // what this build supports (the token bit is per HELLO)
+
+struct FamilyRev {
+    uint8_t family = 0;
+    uint16_t rev = 0, minor = 0;
+    bool operator==(const FamilyRev&) const = default;
+};
+constexpr size_t kMaxFamilies = 64; // a list longer than this is a bad payload (the read fails, the HELLO stays readable)
+inline void write_families(Writer& w, const std::vector<FamilyRev>& f)
+{
+    size_t n = f.size() < kMaxFamilies ? f.size() : kMaxFamilies;
+    w.u8((uint8_t)n);
+    for (size_t i = 0; i < n; i++) {
+        w.u8(f[i].family);
+        w.u16(f[i].rev);
+        w.u16(f[i].minor);
+    }
+}
+// reads the list from a copy of `r`; true and `r` past it when the whole list was there
+inline bool read_families(Reader& r, std::vector<FamilyRev>& out)
+{
+    Reader v = r;
+    unsigned n = v.u8();
+    if (!v.ok() || n > kMaxFamilies || v.left() < n * 5u)
+        return false;
+    std::vector<FamilyRev> f(n);
+    for (auto& x : f) {
+        x.family = v.u8();
+        x.rev = v.u16();
+        x.minor = v.u16();
+    }
+    if (!v.ok())
+        return false;
+    out = std::move(f);
+    r = v;
+    return true;
+}
 
 struct Hello {
     uint16_t proto = kProtoVersion;
@@ -215,6 +247,8 @@ struct Hello {
     bool has_token = false;
     uint64_t token = 0;
     std::string version; // CAP_VERSION ("" read: an older peer)
+    bool has_families = false; // CAP_FAMILIES read (false: an older peer, or a bad payload)
+    std::vector<FamilyRev> families; // written when caps has CAP_FAMILIES
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
@@ -226,6 +260,8 @@ struct Hello {
             w.raw(&token, 8);
         if (c & CAP_VERSION)
             w.str8(version);
+        if (c & CAP_FAMILIES)
+            write_families(w, families);
     }
     bool read(Reader& r)
     {
@@ -243,14 +279,18 @@ struct Hello {
             has_token = true;
         }
         version.clear();
+        bool at_families = !(caps & CAP_VERSION); // the families follow the version's payload
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the HELLO readable
             std::string s = v.str8();
             if (v.ok()) {
                 version = s;
                 r = v;
+                at_families = true;
             }
         }
+        families.clear();
+        has_families = at_families && (caps & CAP_FAMILIES) && read_families(r, families);
         return true;
     }
 };
@@ -268,6 +308,8 @@ struct Welcome {
     bool ext = true;         // write the extension (false: a 0.7.2-shaped WELCOME, tests)
     uint32_t caps = kMyCaps; // the host's (read: 0 = an older host)
     std::string host_version; // CAP_VERSION (read: "" = an older host); the players' in `players`
+    bool has_families = false;       // CAP_FAMILIES read (false: an older host, or a bad payload)
+    std::vector<FamilyRev> families; // the host's (written when caps has CAP_FAMILIES)
     void write(Writer& w) const
     {
         w.u8(your_id);
@@ -289,6 +331,8 @@ struct Welcome {
                     w.str8(p.version);
                 }
         }
+        if (caps & CAP_FAMILIES)
+            write_families(w, families);
     }
     bool read(Reader& r)
     {
@@ -307,6 +351,7 @@ struct Welcome {
         ext = r.left() >= 4;
         caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
         host_version.clear();
+        bool at_families = !(caps & CAP_VERSION); // the families follow the versions' payload
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the WELCOME readable
             std::string hv = v.str8();
@@ -319,6 +364,7 @@ struct Welcome {
             }
             if (v.ok()) {
                 r = v;
+                at_families = true;
                 host_version = hv;
                 for (auto& p : players) {
                     if (p.id == 0)
@@ -329,6 +375,8 @@ struct Welcome {
                 }
             }
         }
+        families.clear();
+        has_families = at_families && (caps & CAP_FAMILIES) && read_families(r, families);
         return true;
     }
 };

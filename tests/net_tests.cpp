@@ -29,6 +29,8 @@
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/shared_ledger.h"
+#include "net/compat.h"
+#include "net/manifest.h"
 #include "net/session.h"
 #include "net/ipmask.h"
 #include "net/kick.h"
@@ -4365,6 +4367,257 @@ static void test_kick()
     b.leave();
 }
 
+// ---- 0.7.15 B3 / B6: the message manifest's direction gate and the message family revisions ----
+
+// BUG-1136: a guest that sends a type only the host sends (net/messages.def dir Host): the host drops it before any
+// handler and counts it; a guest's own type still arrives. FAILS with `--off dir_gate` (the host's handler gets it)
+static void test_dir_gate()
+{
+    printf("the host drops a host-only message type a guest sends (BUG-1136)\n");
+    Session h, a;
+    std::string err;
+    int dna = 0, dna_add = 0, unknown = 0;
+    h.cb.custom = [&](uint8_t t, uint8_t, Reader&) {
+        dna += t == MSG_DNA || t == MSG_SETTINGS || t == MSG_WELCOME;
+        dna_add += t == MSG_DNA_ADD;
+        unknown += t == 200;
+    };
+    CHECK(h.host(0, "Alice", err));
+    CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+    tick({&h, &a}, 300);
+    Writer w;
+    w.f32(99999.f);
+    a.broadcast_reliable(MSG_DNA, w);      // host-only: the shared DNA total
+    a.broadcast_reliable(MSG_SETTINGS, w); // host-only: the session settings
+    a.broadcast_reliable(MSG_WELCOME, w);  // host-only, a session type
+    a.broadcast_reliable(MSG_DNA_ADD, w);  // a guest's own
+    a.broadcast_reliable(200, w);          // a type this build does not know (a newer guest): passes as before
+    tick({&h, &a}, 300);
+    printf("  host: host-only types delivered %d, guest type %d, unknown %d, dropped %u\n", dna, dna_add, unknown,
+           h.dir_drops());
+    CHECK(dna == 0 && h.dir_drops() == 3);
+    CHECK(dna_add == 1 && unknown == 1);
+    CHECK(h.status().find("manifest: dir_drops=3") != std::string::npos);
+    h.leave();
+    a.leave();
+}
+
+// v0.7.14's HELLO / WELCOME readers (protocol.h of the tag, verbatim): they must read a 0.7.15 HELLO / WELCOME
+// (CAP_FAMILIES after CAP_VERSION) exactly as one of 0.7.14
+struct Hello0714 {
+    uint16_t proto = 0;
+    uint32_t build = 0;
+    std::string name;
+    bool ext = false;
+    uint32_t caps = 0;
+    bool has_token = false;
+    uint64_t token = 0;
+    std::string version;
+    bool read(Reader& r)
+    {
+        proto = r.u16(); build = r.u32(); name = r.str8();
+        if (!r.ok())
+            return false;
+        caps = 0;
+        has_token = false;
+        token = 0;
+        ext = r.left() >= 4;
+        if (ext)
+            caps = r.u32();
+        if ((caps & CAP_TOKEN) && r.left() >= 8) { // a short payload: no token, not a failed read
+            r.raw(&token, 8);
+            has_token = true;
+        }
+        version.clear();
+        if ((caps & CAP_VERSION) && r.left() >= 1) {
+            Reader v = r; // a bad payload leaves the HELLO readable
+            std::string s = v.str8();
+            if (v.ok()) {
+                version = s;
+                r = v;
+            }
+        }
+        return true;
+    }
+};
+
+// B6 (BUG-1137): CAP_FAMILIES in HELLO / WELCOME: read back, ignored by 0.7.14's readers, absent from a 0.7.14-shaped
+// message, and a cut or overlong list leaves the message readable without families
+static void test_families_wire()
+{
+    printf("HELLO / WELCOME family revisions (CAP_FAMILIES): round trip, old readers, bad payloads (BUG-1137)\n");
+    std::vector<FamilyRev> fams = {{1, 1, 0}, {3, 2, 5}, {8, 1, 1}};
+    Hello h;
+    h.name = "Bob";
+    h.build = 0xdc04aee5;
+    h.has_token = true;
+    h.token = 0x1122334455667788ull;
+    h.version = "coop 0.7.15, SporeKit 0.7.15, GOG 2024 dc04aee5";
+    h.families = fams;
+    Writer w;
+    h.write(w);
+    {
+        Reader r(w.data.data(), w.size());
+        Hello g;
+        CHECK(g.read(r) && g.has_families && g.families == fams && g.version == h.version && g.token == h.token &&
+              (g.caps & CAP_FAMILIES) && r.left() == 0);
+        Reader r2(w.data.data(), w.size());
+        Hello0714 o;
+        CHECK(o.read(r2) && o.name == "Bob" && o.version == h.version && o.has_token && o.token == h.token &&
+              o.proto == kProtoVersion && o.build == h.build);
+    }
+    { // 0.7.14's shape (no CAP_FAMILIES): no families, the rest as before
+        Hello o = h;
+        o.caps &= ~(uint32_t)CAP_FAMILIES;
+        Writer wo;
+        o.write(wo);
+        Reader r(wo.data.data(), wo.size());
+        Hello g;
+        CHECK(g.read(r) && !g.has_families && g.families.empty() && g.version == h.version);
+    }
+    for (size_t cut = w.size() - 1; cut + 16 > w.size() && cut > 0; cut--) { // a cut list: readable, no families
+        Reader r(w.data.data(), cut);
+        Hello g;
+        CHECK(g.read(r) && !g.has_families && g.name == "Bob");
+    }
+    { // a count over kMaxFamilies: no families
+        Hello o = h;
+        o.families.clear();
+        Writer wo;
+        o.write(wo);
+        wo.data.back() = (uint8_t)(kMaxFamilies + 1);
+        for (size_t i = 0; i < (kMaxFamilies + 1) * 5; i++)
+            wo.u8(1);
+        Reader r(wo.data.data(), wo.size());
+        Hello g;
+        CHECK(g.read(r) && !g.has_families && g.version == h.version);
+    }
+    Welcome wl;
+    wl.your_id = 2;
+    wl.world = 77;
+    wl.players = {{0, "H", "vh"}, {2, "B", "vb"}};
+    wl.host_version = "vh";
+    wl.families = fams;
+    Writer ww;
+    wl.write(ww);
+    Reader rw(ww.data.data(), ww.size());
+    Welcome got;
+    CHECK(got.read(rw) && got.has_families && got.families == fams && got.host_version == "vh" && got.world == 77 &&
+          got.players.size() == 2 && got.players[1].version == "vb" && rw.left() == 0);
+    // what 0.7.14's Welcome::read reads (the same code up to the versions; it stops there): the 0.7.14 fields
+    Welcome old = wl;
+    old.caps &= ~(uint32_t)CAP_FAMILIES;
+    Writer wo;
+    old.write(wo);
+    CHECK(wo.size() + 1 + fams.size() * 5 == ww.size() &&
+          std::equal(wo.data.begin() + 9 + 1 + 2 + 1 + 2, wo.data.end(), ww.data.begin() + 9 + 1 + 2 + 1 + 2));
+}
+
+// B6 (BUG-1137, owner decision 7): a guest of another family revision in a family the host's stage uses is refused with
+// a text naming both versions; one in a family the stage does not use joins and is warned when the host goes there; an
+// older guest (no revisions: rev 1 of each) against a bumped host family is refused; a guest refuses an older host by
+// the host's first state. FAILS with `--off family_check` (everybody joins, as in 0.7.14)
+static void test_family_check()
+{
+    printf("message family revisions: refused only for a family the stage uses (BUG-1137)\n");
+    constexpr uint32_t kCreature = 0x1654C01, kSpace = 0x1654C05;
+    auto plant = [](Session& s, uint8_t fam, uint16_t rev) {
+        for (auto& f : s.families)
+            if (f.family == fam)
+                f.rev = rev;
+    };
+    std::string err;
+    { // the host plays Creature with Creature rev 2; the guest has rev 1
+        Session h, a;
+        h.version = "coop 0.7.16, SporeKit 0.7.16, GOG 2024 dc04aee5";
+        a.version = "coop 0.7.15, SporeKit 0.7.15, GOG 2024 dc04aee5";
+        h.mode = kCreature;
+        plant(h, (uint8_t)Family::creature, 2);
+        std::string why, host_line;
+        a.cb.disconnected = [&](const std::string& w) { why = w; };
+        h.cb.compat = [&](uint8_t, const std::string& t, bool refused) { host_line = refused ? t : ""; };
+        CHECK(h.host(0, "Alice", err));
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &a}, 400);
+        printf("  guest: '%s'\n  host: '%s'\n", why.c_str(), host_line.c_str());
+        CHECK(!a.connected() && h.players().size() == 1 && h.compat_refused() == 1);
+        CHECK(why.find("Alice plays SporeCoop 0.7.16; you have SporeCoop 0.7.15: the Creature messages") != std::string::npos &&
+              why.find("revision 2 there, 1 here") != std::string::npos);
+        CHECK(host_line.find("Bob (SporeCoop 0.7.15) was not let in: the Creature messages") != std::string::npos &&
+              host_line.find("revision 1 there, 2 here; you have SporeCoop 0.7.16") != std::string::npos);
+        h.leave();
+        a.leave();
+    }
+    { // Space rev 2 on the host while it plays Creature: joins; the host going to Space warns both
+        Session h, a;
+        h.mode = kCreature;
+        plant(h, (uint8_t)Family::space, 2);
+        std::string warn, notice;
+        h.cb.compat = [&](uint8_t, const std::string& t, bool refused) { warn = refused ? "REFUSED " + t : t; };
+        a.cb.custom = [&](uint8_t t, uint8_t, Reader& r) {
+            if (t == MSG_NOTICE)
+                notice = r.str8();
+        };
+        CHECK(h.host(0, "Alice", err));
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &a}, 400);
+        CHECK(a.connected() && warn.empty());
+        h.mode = kSpace;
+        tick({&h, &a}, 300);
+        printf("  host to Space: '%s' / guest's notice '%s'\n", warn.c_str(), notice.c_str());
+        CHECK(a.connected() && warn.find("the Space messages") != std::string::npos &&
+              notice.find("the Space messages") != std::string::npos);
+        h.leave();
+        a.leave();
+    }
+    { // an older guest (no revisions) against a host whose Creature family is rev 2: refused; unplanted: joins
+        Session h, a, b;
+        a.send_families = false;
+        b.send_families = false;
+        h.mode = kCreature;
+        plant(h, (uint8_t)Family::creature, 2);
+        CHECK(h.host(0, "Alice", err));
+        std::string addr = "127.0.0.1:" + std::to_string(h.port());
+        CHECK(a.join(addr, "Old", err));
+        tick({&h, &a}, 400);
+        CHECK(!a.connected());
+        h.families = compat::my_families();
+        CHECK(b.join(addr, "Old2", err));
+        tick({&h, &b}, 400);
+        CHECK(b.connected());
+        h.leave();
+        a.leave();
+        b.leave();
+    }
+    { // an older host (no revisions): the guest refuses it for an always-used family at WELCOME, for a stage family at
+      // the host's first state
+        Session h, a, b;
+        h.send_families = false;
+        plant(a, (uint8_t)Family::session, 3);
+        plant(b, (uint8_t)Family::creature, 2);
+        std::string wa, wb;
+        a.cb.disconnected = [&](const std::string& w) { wa = w; };
+        b.cb.disconnected = [&](const std::string& w) { wb = w; };
+        b.cb.player_state = [](const PlayerState&) {};
+        CHECK(h.host(0, "Alice", err));
+        std::string addr = "127.0.0.1:" + std::to_string(h.port());
+        CHECK(a.join(addr, "Bob", err) && b.join(addr, "Carol", err));
+        tick({&h, &a, &b}, 400);
+        CHECK(!a.connected() && wa.find("the session messages") != std::string::npos);
+        CHECK(b.connected());
+        PlayerState st;
+        st.mode = kCreature;
+        h.send_state(st);
+        tick({&h, &b}, 300);
+        printf("  older host: '%s' / '%s'\n", wa.c_str(), wb.c_str());
+        CHECK(!b.connected() && wb.find("the Creature messages") != std::string::npos &&
+              wb.find("revision 1 there, 2 here") != std::string::npos);
+        h.leave();
+        a.leave();
+        b.leave();
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -4387,6 +4640,8 @@ int main(int argc, char** argv)
                                                {"recv_skip_big", &g_fix.recv_skip_big},
                                                {"queue_cap", &g_fix.queue_cap},
                                                {"relay_budget", &g_fix.relay_budget},
+                                               {"dir_gate", &g_fix.dir_gate},
+                                               {"family_check", &g_fix.family_check},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -4518,6 +4773,9 @@ int main(int argc, char** argv)
         {"test_restart_in_callback", test_restart_in_callback},
         {"test_join_seen", test_join_seen},
         {"test_replace_checked", test_replace_checked},
+        {"test_dir_gate", test_dir_gate},
+        {"test_families_wire", test_families_wire},
+        {"test_family_check", test_family_check},
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
         {"test_dbpf_flag4", test_dbpf_flag4},

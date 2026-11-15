@@ -1,0 +1,13 @@
+# The wire lock of each message family (B6 of 0.7.15, BUG-1137): family rev minor hash. Written by
+# tools/msg_manifest.py lock after a bump; `make test` (msg_manifest.py check) fails when a family's rows
+# or wire files changed and its rev / minor in net/messages.def did not.
+session 1 0 27214e4d9396f2f2
+world 1 0 ea800256062e0a48
+creature 1 0 f707e2440a8f90fe
+npc 1 0 7a6dd3c2ea2ecf5a
+cell 1 0 7fbf9d5eda123743
+tribe 1 0 a6eb598ce32e518d
+civ 1 0 48e0f86eae490081
+space 1 0 b9a37b48861adbc8
+shared 1 0 5f62436591c31a62
+creations 1 0 606c630c37dd957b

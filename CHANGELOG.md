@@ -6,6 +6,10 @@
 - The old GOG 2016 build of Spore is no longer supported at all: on it the game now starts without co-op and shows
   "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says
   the same and does not install. Update the game through GOG Galaxy, or play on Steam (BUG-1125).
+- Players with different SporeCoop versions (0.7.x) can play together, each game shows "<player> plays SporeCoop
+  0.7.13; you have SporeCoop 0.7.15: some things may not match". Only when the two versions really send a part of the
+  game differently (from 0.7.15 on each part has its own revision) is the join refused, with a message naming both
+  versions; update both games to the same version then (BUG-1137).
 
 ### Added
 - `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
@@ -21,6 +25,9 @@
   game sends far more than normal play.
 
 ### Development
+- Network: one message manifest (`net/messages.def`, `net/space_kinds.def`) generates the message ids, classes,
+  directions, the dispatch and the docs tables; the host drops a host-only message a guest sends; every message
+  family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
   main thread (none in the smoke tests); `make test` has ratchet lints for `object_alive` calls, call guards around
   the game's original functions and lifecycle registration (BUG-1130, BUG-1131).

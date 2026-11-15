@@ -18,7 +18,10 @@
 //   60..69  space_allies   partner colonies as an allied empire
 //   70..79  space_trade    tool gifts and trade between players
 //   80..84  space_planets  a shared colony's stored spice (BUG-0537)
-//   85..99  free
+//   85..89  space_badges   badges kept across a rejoin
+//   90..    free
+// The table of every kind (owner feature, who may send it) is net/space_kinds.def (B3 of 0.7.15): a new kind is a row
+// there, with its direction; tests/validate_tests.cpp checks the rows against each feature's enum Kind and kind range.
 #pragma once
 
 #include <cstdint>

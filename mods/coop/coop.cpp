@@ -934,6 +934,7 @@ static void frame_receive(double now)
     // guests never read it
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
+    g_sess.mode = g_mode; // B6 (BUG-1137): the stage whose message families a joining guest must match
     host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
     g_sess.update();
     partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame

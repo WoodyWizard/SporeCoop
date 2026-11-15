@@ -24,6 +24,8 @@ Sections of `capture` (per game: host, guest):
 Source sections (the tree the build came from):
   msgtable   the message dispatch of the session's custom-message callback (`g_sess.cb.custom`), one line per
              `MSG_` test or `on_message` call, in order, and the count of every `net::MSG_` name over mods/coop
+  manifest   the rows of net/messages.def and net/space_kinds.def (B3: the dispatch routes, classes, directions and
+             families come from them; the description strings left out)
   callbacks  the session callbacks wired (`g_sess.cb.<name> =`, in order, each with a hash of its lambda's body) and
              the frame / event subscriptions
 """
@@ -80,13 +82,25 @@ def source_tables(rev=None):
         m = re.search(r'g_sess\.cb\.custom\s*=\s*\[', text)
         if m:
             for ln in _body(text, m.end()).splitlines():
-                if 'MSG_' in ln or 'on_message(' in ln:
+                if 'MSG_' in ln or 'on_message(' in ln or 'Route::' in ln:
                     disp.append(re.sub(r'\s+', ' ', ln.split('//')[0]).strip())
     counts = collections.Counter()
     for path, text in files.items():
         if path.endswith('.cpp'):
             counts.update(re.findall(r'net::(MSG_[A-Z0-9_]+)', text))
     sec['msgtable'] = ['dispatch:'] + disp + ['counts:'] + [f'{k} {v}' for k, v in sorted(counts.items())]
+    # B3 (BUG-1136): the manifest rows the dispatch and the classes come from (net/messages.def, net/space_kinds.def)
+    rows = []
+    for rel in ('mods/coop/net/messages.def', 'mods/coop/net/space_kinds.def'):
+        try:
+            text = open(os.path.join(ROOT, rel), encoding='utf-8').read() if rev is None else subprocess.run(
+                ['git', '-C', ROOT, 'show', f'{rev}:{rel}'], check=True, capture_output=True, text=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        rows += [re.sub(r'\s+', ' ', ln.split('"')[0]).strip() for ln in text.splitlines()
+                 if ln.startswith(('MSG(', 'FAMILY(', 'KIND(', 'FEATURE('))]
+    if rows:
+        sec['manifest'] = rows
     cbs, subs = [], []
     for path, text in files.items():
         if not path.endswith('.cpp'):

@@ -8280,3 +8280,37 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   comments), and each planted violation fails: a second `object_alive(` call, a bare `g_applying = true; o_Apply();`,
   a `++g_hook_depth` around `o_Ev`, an unregistered `on_player_leave`; `--lower` refuses each and lowers a count that
   went down.
+
+## The message manifest and version compatibility tests (2026-11-15, feat/w51-manifest)
+<a id="testing-manifest-compat"></a>
+
+B3 / B6 of 0.7.15 (BUG-1136, BUG-1137; docs/04-netcode.md#netcode-manifest, #netcode-compat).
+
+* Unit (`make test`): `validate_tests` `test_manifest` (every type and Space kind once; the generated class, Space
+  direction and dispatch tables equal 0.7.14's verbatim copies in `tests/manifest_golden.h` for 0..255 and both roles;
+  the direction gate drops exactly the 31 host-only types; the space kinds against each feature's `enum Kind` and its
+  registered range) and `test_compat` (conflicts by stage, older peers, the texts); `net_tests` `test_dir_gate`
+  (FAILS with `--off dir_gate`), `test_families_wire` (0.7.14's `Hello::read`, verbatim, reads a 0.7.15 HELLO; cut and
+  overlong family lists), `test_family_check` (FAILS with `--off family_check`); `fuzz_decoders` (HELLO / WELCOME with
+  families); `tools/msg_manifest.py check` and `--self-test` (the docs tables and the family locks: a changed row or
+  wire file without a bump fails).
+* Lab `compat` (`coop_compat.py`, warm Creature, about 1 min): a guest's crafted host-only MSG_DNA through
+  `coop.manifest send 23 <hex>` is dropped and counted by the host; a planted Creature revision on the Creature host
+  (`coop.manifest plant creature 2`) refuses the rejoining guest with a text naming both versions (guest's co-op feed,
+  host's "was not let in"); a planted Space revision does not. `SPORE_FIX_OFF=net.dir_gate` and
+  `SPORE_FIX_OFF=net.family_check` fail. The test resets the revisions at its end (`coop.manifest reset`), also on a
+  failure, so a warm lane's next test has the build's own.
+* Lab `mixed` suite (`coop_mixed_version.py`, lane B = SPORE_LANE_B): the default old release is now the previous tag
+  (v0.7.14; `--old-tag` / MIXED_OLD_TAG another). New checks: the warning on both sides (this build's co-op feed "<old
+  player> plays SporeCoop ...: some things may not match", the old release's log "versions differ"). `--plant FAMILY`
+  (tests `mixed_plant_guest`, `mixed_plant_host`): this build plants revision 2 of a family the stage uses before Carol
+  joins; the join is refused and the refused game's log names both versions (an old guest shows this build's REJECT
+  text; this build's guest refuses an old host by the host's first state). `--plant space --expect-join`
+  (`mixed_plant_unused`): an unused family does not stop the join, and every check of the normal run follows.
+* Pitfall: COOP_VERSION is bumped only at the release, so a branch of 0.7.15 still says `coop 0.7.14.1` and v0.7.14
+  says `coop 0.7.14`: the texts name 0.7.14.1 and 0.7.14 (the coop parts differ, so the warning fires).
+* Results (2026-11-15, feat/w51-manifest, lanes 10 + 9): `compat` PASS 20261115-031537 / -032912 / -034921,
+  SPORE_FIX_OFF=net.dir_gate FAIL 20261115-031637, net.family_check FAIL 20261115-031742. Against v0.7.14:
+  `mixed_version_guest`, `mixed_version_host`, `mixed_plant_guest`, `mixed_plant_host` PASS 20261115-032035 and
+  -034921, `mixed_plant_unused` PASS -034921 and -040030; SPORE_FIX_OFF=net.family_check `mixed_plant_guest` FAIL
+  20261115-035619 (the v0.7.14 guest got in). A v0.7.14 guest shows this build's refusal text as is ("rejected: ...").

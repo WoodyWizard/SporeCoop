@@ -8,6 +8,8 @@
 #include "version.h"
 #define COOP_VERSION SC_VER_STR
 #include "coop_state.h"
+#include "net/compat.h"
+#include "net/manifest.h"
 
 namespace coop_core {
 
@@ -750,10 +752,10 @@ void setup_callbacks()
             // but behaves differently: a support report needs to see it at once
             H->log(M, SK_WARN, "versions differ: player %u '%s' runs %s, this game %s", p.id, p.name.c_str(),
                    p.version.c_str(), g_sess.version.c_str());
+            // B6 (BUG-1137, owner decision 7): another 0.7.x is let in with this warning on both sides (a family of
+            // another revision that the stage uses was refused by net::Session already)
             if (p.version.substr(0, p.version.find(',')) != g_sess.version.substr(0, g_sess.version.find(',')))
-                feed_kind(p.name + " has another SporeCoop version (" +
-                              (p.version.rfind("coop ", 0) == 0 ? p.version.substr(5, p.version.find(',') - 5) : p.version) +
-                              "): update both games to the same one", "info");
+                feed_kind(net::compat::warn_text(p.name, p.version, g_sess.version), "info");
         }
         feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
         chat_log("* " + p.name + " joined");
@@ -780,45 +782,15 @@ void setup_callbacks()
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
-        if (type == net::MSG_DIAG) { // support diagnostics: clock, marks, sync-check (diag_coop.h)
-            support::on_message(from, r);
-            return;
-        }
-        if (type == net::MSG_ANIM) {
-            net::AnimEvent ev;
-            if (ev.read(r))
-                on_remote_anim(ev);
-            return;
-        }
-        if (type == net::MSG_SETTINGS) { // F3: the host's session settings (Session class: wherever we play)
-            if (!g_settings_in)
-                return; // tests (coop.corefix settings_in 0): a host older than 0.7.12 sends no table
-            settings::on_message(type, from, r);
-            return;
-        }
-        if (type == net::MSG_COLORS) { // F2: the player colours (Session class)
-            pfind::on_message(type, from, r);
-            return;
-        }
-        if (type == net::MSG_REPORT) { // F4: the session report (BUG-0767)
-            sreport::on_message(from, r);
-            return;
-        }
-        if (type == net::MSG_HOST_WORLD) { // BUG-0933: the host's save now (Session class)
-            uint32_t w = r.u32();
-            if (from == 0 && r.ok() && w != 0 && g_sess.role() == net::Role::Client) {
-                g_host_save = w;
-                g_host_save_heard++;
-            }
-            return;
-        }
-        if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
-            effects::on_message(type, from, r);
-            return;
-        }
-        // (also before the host's first state when the host named no world in WELCOME: one Civ
-        // cycle applied in that window bound the guest's own vehicles for good, BUG-0231; with
-        // Welcome::world a guest in the host's world is Same from WELCOME on and loses nothing)
+        // B3 of 0.7.15 (BUG-1136): the route of every type comes from net/messages.def (net::dispatch_route: the type's
+        // handler, and for the handlers of one role only that role, as the hand-written chain of 0.7.14 had them; the
+        // golden test in tests/validate_tests.cpp compares the two for every type and role). The host's direction gate
+        // (a host-only type from a guest) is in net::Session, before this callback.
+        // The world gate: a guest elsewhere drops the host's world state (also before the host's first state when the
+        // host named no world in WELCOME: one Civ cycle applied in that window bound the guest's own vehicles for good,
+        // BUG-0231; with Welcome::world a guest in the host's world is Same from WELCOME on and loses nothing). B3: it
+        // comes first, before every route: it only drops HostWorld and unknown types, and none of the routes the 0.7.14
+        // chain tested before it takes one of those (tests/validate_tests.cpp checks that)
         if (from == 0 && gate_drops(type)) {
             if (type == net::MSG_DNA) {
                 float total = r.f32();
@@ -828,7 +800,46 @@ void setup_callbacks()
             g_place_dropped++;
             return;
         }
-        if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
+        switch (net::dispatch_route(type, g_sess.role() == net::Role::Host)) {
+        case net::Route::None:
+            return;
+        case net::Route::Diag: { // support diagnostics: clock, marks, sync-check (diag_coop.h)
+            support::on_message(from, r);
+            return;
+        }
+        case net::Route::Anim: {
+            net::AnimEvent ev;
+            if (ev.read(r))
+                on_remote_anim(ev);
+            return;
+        }
+        case net::Route::Settings: { // F3: the host's session settings (Session class: wherever we play)
+            if (!g_settings_in)
+                return; // tests (coop.corefix settings_in 0): a host older than 0.7.12 sends no table
+            settings::on_message(type, from, r);
+            return;
+        }
+        case net::Route::Colors: { // F2: the player colours (Session class)
+            pfind::on_message(type, from, r);
+            return;
+        }
+        case net::Route::Report: { // F4: the session report (BUG-0767)
+            sreport::on_message(from, r);
+            return;
+        }
+        case net::Route::HostWorld: { // BUG-0933: the host's save now (Session class)
+            uint32_t w = r.u32();
+            if (from == 0 && r.ok() && w != 0 && g_sess.role() == net::Role::Client) {
+                g_host_save = w;
+                g_host_save_heard++;
+            }
+            return;
+        }
+        case net::Route::Effect: { // BUG-0451: a partner's creature made an effect
+            effects::on_message(type, from, r);
+            return;
+        }
+        case net::Route::Dna: {
             float total = r.f32(); // (row 6, elsewhere, is the gate above: kept as g_dna_pending)
             std::vector<dna_ledger::Part> parts; // the host's causes (an older host sends none)
             if (r.ok() && r.left() >= 1) {
@@ -875,7 +886,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_DNA_ADD && g_sess.role() == net::Role::Host) {
+        case net::Route::DnaAdd: {
             float d = r.f32();
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
@@ -898,7 +909,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
+        case net::Route::WorldTime: {
             net::Quat q;
             q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
             if (r.ok() && game::avatar() && !wsync::owns_time_of_day() && // BUG-0579: else the wsync row
@@ -906,7 +917,7 @@ void setup_callbacks()
                 game::set_time_of_day(q);
             return;
         }
-        if (type == net::MSG_VOTE && g_sess.role() == net::Role::Client) {
+        case net::Route::Vote: {
             bool on = r.u8() != 0;
             int left = r.u8();
             std::string text = r.str8();
@@ -970,7 +981,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_NOTICE) {
+        case net::Route::Notice: {
             std::string t = r.str8();
             if (!r.ok())
                 return;
@@ -982,7 +993,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_ROLE && g_sess.role() == net::Role::Host) {
+        case net::Route::Role: {
             uint8_t role = r.u8();
             if (r.ok() && role < 4) {
                 g_roles[from] = role;
@@ -990,7 +1001,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_READY && g_sess.role() == net::Role::Host) {
+        case net::Route::Ready: {
             uint8_t on = r.u8();
             if (r.ok()) {
                 g_ready[from] = on != 0;
@@ -999,7 +1010,7 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_LOBBY && g_sess.role() == net::Role::Client) {
+        case net::Route::Lobby: {
             std::vector<net::LobbyEntry> t;
             bool has_roles = false;
             if (net::read_lobby(r, t, has_roles, g_role_fix)) {
@@ -1024,11 +1035,11 @@ void setup_callbacks()
             }
             return;
         }
-        if (type == net::MSG_RES || type == net::MSG_RES_ADD) {
+        case net::Route::Shared: {
             shared::on_message(g_sess, type, from, r);
             return;
         }
-        if (type == net::MSG_PING_MARK) { // u8 origin, vec3, u32 mode
+        case net::Route::PingMark: { // u8 origin, vec3, u32 mode
             uint8_t origin = r.u8();
             net::Vec3 p;
             p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
@@ -1045,68 +1056,70 @@ void setup_callbacks()
             add_mark(origin, p, mode);
             return;
         }
-        if (type == net::MSG_SPACE) {
+        case net::Route::Space: {
             spacecoop::on_message(type, from, r);
             return;
         }
-        if (type >= net::MSG_UFO_STATE && type <= net::MSG_UFO_DAMAGE) {
+        case net::Route::Squadron: {
             squadron::on_message(type, from, r);
             return;
         }
-        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM) {
+        case net::Route::Civ: {
             civ::on_message(type, from, r);
             return;
         }
-        if (type == net::MSG_CREATION) {
+        case net::Route::Creation: {
             creations::on_message(type, from, r);
             return;
         }
-        if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
-            type == net::MSG_CELL_BITTEN) {
-            cellsync::on_message(type, from, r);
-            return;
-        }
-        if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD) {
+        case net::Route::Tribe: {
             tribe::on_message(type, from, r);
             return;
         }
-        switch (type) {
-        case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_NPC_STATE:
-        case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE: case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM:
-        case net::MSG_NPC_MEAT:
+        case net::Route::Cell:
+            cellsync::on_message(type, from, r);
+            return;
+        case net::Route::Npc:
             npc::on_message(type, from, r);
             return;
-        case net::MSG_SPECIES: case net::MSG_SOCIAL:
+        case net::Route::Social:
             social::on_message(type, from, r);
             return;
-        case net::MSG_NEST: // BUG-0384
+        case net::Route::Nest: // BUG-0384
             nest::on_message(type, from, r);
             return;
-        case net::MSG_FIELDS: // BUG-0419 G2: replicated fields of mirrored objects
+        case net::Route::Fields: // BUG-0419 G2: replicated fields of mirrored objects
             fields::on_message(type, from, r);
             return;
-        case net::MSG_WSTATE: // W1: host-owned world state
+        case net::Route::Wsync: // W1: host-owned world state
             wsync::on_message(type, from, r);
             return;
-        case net::MSG_PARTS: // BUG-0401
+        case net::Route::Parts: // BUG-0401
             parts::on_message(type, from, r);
             return;
-        case net::MSG_WOBJ: // BUG-0472, BUG-0459
+        case net::Route::Wobj: // BUG-0472, BUG-0459
             wobj::on_message(type, from, r);
             return;
-        case net::MSG_PLAYER_RULE: // P1 of 0.7.7: stun (BUG-0554)
+        case net::Route::PlayerRule: // P1 of 0.7.7: stun (BUG-0554)
             player_rules::on_message(type, from, r);
             return;
-        case net::MSG_MIRROR_FX: // BUG-0600: the host's creature effects, sprints and voices on the mirrors
+        case net::Route::MirrorFx: // BUG-0600: the host's creature effects, sprints and voices on the mirrors
             mirror_fx::on_message(type, from, r);
             return;
+        case net::Route::World: // the host's save (a guest's game only)
+            if (from == 0)
+                world::on_message(type, r, g_sess.name_of(0));
+            return;
         }
-        if (g_sess.role() == net::Role::Client && from == 0)
-            world::on_message(type, r, g_sess.name_of(0));
     };
     g_sess.cb.old_peer = [](uint8_t, const std::string& name) { // BUG-0219: once per player and join
         // the log line (net: ... older SporeCoop) says what is lost: long chat cut, no species table
-        feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
+        feed_kind(net::compat::warn_text(name, "", g_sess.version), "info"); // B6: the warning of every other version
+    };
+    g_sess.cb.compat = [](uint8_t, const std::string& text, bool refused) { // B6 (BUG-1137)
+        H->log(M, SK_WARN, "compat: %s", text.c_str());
+        feed_kind(text, refused ? "leave" : "info");
+        chat_log("* " + text);
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",

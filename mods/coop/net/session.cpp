@@ -10,6 +10,8 @@
 
 #include "fixes.h"
 #include "ipmask.h"
+#include "compat.h"
+#include "manifest.h"
 
 namespace net {
 
@@ -52,6 +54,9 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err)
     welcomed_ = true;
     seen_names_.clear();
     seen_tokens_.clear();
+    host_mode_seen_ = 0; // B6: the first update() checks the stage
+    host_state_seen_ = false;
+    compat_warned_.clear();
     dropped_names_.clear();
     lan_id_ = new_conn_id(now(), tr_->local_port() ^ 0x4C414E00u); // BUG-0210: new per hosted game
     logf(cb, "hosting on UDP port %u", tr_->local_port());
@@ -106,6 +111,9 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     my_name_ = name;
     welcomed_ = false;
     welcome_world_ = 0;
+    host_mode_seen_ = 0;
+    host_state_seen_ = false;
+    compat_warned_.clear();
     join_started_ = now();
     if (!host_name.empty()) {
         auto l = std::make_shared<Lookup>();
@@ -142,6 +150,9 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.version = version;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
+    h.families = families; // B6 (BUG-1137)
+    if (!send_families)
+        h.caps &= ~(uint32_t)CAP_FAMILIES;
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
@@ -419,6 +430,17 @@ std::string Session::status() const
                      p->conn.stats.too_big_old, p->conn.stats.frag_lost);
             s += b;
         }
+    // B6 (BUG-1137): the versions and message family revisions of this game and of every peer (also in every report's
+    // state), the direction gate's drops and the refused joins (BUG-1136)
+    s += "versions: this game " + (version.empty() ? std::string("?") : version) + "; wire " + compat::families_text(families) + "\n";
+    for (auto& p : peers_)
+        if (p->accepted || role_ == Role::Client)
+            s += "versions: peer " + std::to_string(p->id) + " " + (p->version.empty() ? std::string("unknown (before 0.7.4)") : p->version) +
+                 "; wire " + compat::families_text(p->families, p->has_families) + "\n";
+    if (dir_drops_ || compat_refused_) {
+        snprintf(b, sizeof b, "manifest: dir_drops=%u compat_refused=%u\n", dir_drops_, compat_refused_);
+        s += b;
+    }
     return s;
 }
 
@@ -744,6 +766,16 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             } else if (build && h.build && h.build != build) {
                 rej.reason = REJ_BUILD;
                 rej.text = "different SporeApp.exe build";
+            } else if (compat::Conflict c = compat::conflict(families, h.families, h.has_families, mode);
+                       g_fix.family_check && c.any) {
+                // B6 (BUG-1137): another revision of a message family the host's stage uses. REJ_VERSION: every 0.7.x
+                // guest shows the text
+                rej.reason = REJ_VERSION;
+                rej.text = compat::refuse_text(my_name_, version, h.version, c.family, c.mine, c.theirs);
+                compat_refused_++;
+                if (cb.compat)
+                    cb.compat(0xFF, compat::not_let_in_text(h.name.empty() ? "a player" : h.name, h.version, version, c.family,
+                                                            c.theirs, c.mine), true);
             } else if (alloc_id() == 0xFF) {
                 rej.reason = REJ_FULL;
                 rej.text = "session is full";
@@ -830,12 +862,17 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             }
             p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
             p.version = h.version;
+            p.has_families = h.has_families;
+            p.families = h.families;
             Welcome wl;
             wl.your_id = p.id;
             wl.world = world;
             wl.players = players();
             wl.ext = send_caps;
             wl.host_version = version;
+            wl.families = families;
+            if (!send_families)
+                wl.caps &= ~(uint32_t)CAP_FAMILIES;
             Writer w;
             wl.write(w);
             p.conn.send_reliable(MSG_WELCOME, w);
@@ -859,6 +896,13 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         }
         if (!p.accepted)
             return;
+        if (dir_gate_drops(type, g_fix.dir_gate)) { // BUG-1136: a type only the host sends, from a guest
+            dir_drops_++;
+            if (dir_drops_ <= 5 || dir_drops_ % 100 == 0)
+                logf(cb, "player %u sent %s (%u), which only the host sends: dropped (%u so far)", p.id, msg_name(type), type,
+                     dir_drops_);
+            return;
+        }
         switch (type) {
         case MSG_PLAYER_STATE: {
             PlayerState st;
@@ -921,6 +965,24 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         Welcome wl;
         if (!wl.read(r))
             return;
+        if (g_fix.name_clean) // BUG-0774 (again below: the conflict text names the host's version)
+            wl.host_version = utf8::clean_text(wl.host_version, kVersionMax);
+        // B6 (BUG-1137): the families every stage uses now (the host's stage is known with its first state, below)
+        if (compat::Conflict c = compat::conflict(families, wl.families, wl.has_families, 0); g_fix.family_check && c.any) {
+            std::string host_name = "the host";
+            for (auto& pl : wl.players)
+                if (pl.id == 0 && !pl.name.empty())
+                    host_name = utf8::net_name(pl.name);
+            std::string why = "rejected: " + compat::refuse_text(host_name, wl.host_version, version, c.family, c.theirs, c.mine);
+            logf(cb, "%s", why.c_str());
+            compat_refused_++;
+            if (!leave_pending_)
+                pending_disc_ = why;
+            leave("rejected");
+            return;
+        }
+        p.has_families = wl.has_families;
+        p.families = wl.families;
         my_id_ = wl.your_id;
         welcome_world_ = wl.world; // BUG-0231: the host's world before its first state
         welcomed_ = true;
@@ -1007,6 +1069,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         if (g_fix.state_roster && std::none_of(roster_.begin(), roster_.end(),
                                                [&](const PlayerInfo& x) { return x.id == st.id; }))
             break;
+        if (st.id == 0 && (!host_state_seen_ || st.mode != host_mode_seen_) && !host_compat(p, st.mode))
+            break; // B6: left (the host's stage uses a family of another revision)
         cb.player_state(st);
         break;
     }
@@ -1025,6 +1089,67 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     default:
         if (cb.custom)
             cb.custom(type, 0, r);
+    }
+}
+
+std::vector<FamilyRev> compat_families() { return compat::my_families(); }
+
+// B6 (BUG-1137), guest: the host's state names a stage (its first state, or a stage change). The first one decides the
+// join: a family of another revision that stage uses ends it with the text (a host of 0.7.15 or later refused such a
+// guest already; this is for an older host, which sends no revisions); a later change only warns, once per family.
+// false: the session ends
+bool Session::host_compat(Peer& p, uint32_t host_mode)
+{
+    const bool first = !host_state_seen_;
+    host_state_seen_ = true;
+    host_mode_seen_ = host_mode;
+    compat::Conflict c = compat::conflict(families, p.families, p.has_families, host_mode);
+    if (!g_fix.family_check || !c.any)
+        return true;
+    if (first) {
+        std::string why = "rejected: " + compat::refuse_text(p.name.empty() ? "the host" : p.name, p.version, version, c.family,
+                                                             c.theirs, c.mine);
+        logf(cb, "%s", why.c_str());
+        compat_refused_++;
+        if (!leave_pending_)
+            pending_disc_ = why;
+        leave("rejected");
+        return false;
+    }
+    if (std::find(compat_warned_.begin(), compat_warned_.end(), c.family) == compat_warned_.end()) {
+        compat_warned_.push_back(c.family);
+        std::string t = compat::stage_warn_text(p.name.empty() ? "the host" : p.name, p.version, c);
+        logf(cb, "%s", t.c_str());
+        if (cb.compat)
+            cb.compat(0, t, false);
+    }
+    return true;
+}
+
+// B6 (BUG-1137), host: its stage changed; a guest whose families of that stage differ gets a warning (both games), once
+// per guest and family
+void Session::stage_compat()
+{
+    if (role_ != Role::Host || mode == host_mode_seen_)
+        return;
+    host_mode_seen_ = mode;
+    if (!g_fix.family_check)
+        return;
+    for (auto& o : peers_) {
+        if (!o->accepted || o->bye)
+            continue;
+        compat::Conflict c = compat::conflict(families, o->families, o->has_families, mode);
+        uint32_t key = ((uint32_t)o->id << 8) | c.family;
+        if (!c.any || std::find(compat_warned_.begin(), compat_warned_.end(), key) != compat_warned_.end())
+            continue;
+        compat_warned_.push_back(key);
+        std::string t = compat::stage_warn_text(o->name, o->version, c);
+        logf(cb, "%s", t.c_str());
+        if (cb.compat)
+            cb.compat(o->id, t, false);
+        Writer w; // the guest (any version) sees the host's line too: a notice is shown by every 0.7.x
+        w.str8(compat::stage_warn_text(my_name_, version, compat::Conflict{true, c.family, c.theirs, c.mine}));
+        o->conn.send_reliable(MSG_NOTICE, w);
     }
 }
 
@@ -1148,6 +1273,7 @@ void Session::update()
     uint32_t now = this->now();
     if (lookup_ && !poll_lookup(now))
         return;
+    stage_compat(); // B6 (BUG-1137), host: a stage change into a family a guest has in another revision
     const uint32_t frame_gen = gen_;
     uint8_t buf[2048];
     for (auto& p : peers_) // BUG-0651: when this game read the socket before

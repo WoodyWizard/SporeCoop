@@ -20,6 +20,7 @@
 
 #include <cstdint>
 
+#include "net/manifest.h"
 #include "net/protocol.h"
 
 namespace host_world {
@@ -113,10 +114,10 @@ inline bool host_in_other_stage(bool connected_guest, uint32_t my_mode, bool has
     return connected_guest && gated(my_mode) && has_state && st_mode != my_mode && (gated(st_mode) || st_mode == kSpace);
 }
 
-// BUG-0420 (class: world state applied without a world filter): every message type has one class here, so that
-// a new message is never open by default. The switch below has no default: GCC fails the build of coop.dll and of
-// tests/validate_tests.cpp on a MsgType that is not listed (-Werror=switch), which is the "every MSG_ classified"
-// check of docs/generalisation-plan.md G3. A value that is not a MsgType at all (a newer peer) is Unknown.
+// BUG-0420 (class: world state applied without a world filter): every message type has one class, so that a new
+// message is never open by default. B3 of 0.7.15 (BUG-1136): the class is the `cls` column of net/messages.def, which
+// lists every type exactly once (the enum MsgType is generated from it); tests/validate_tests.cpp compares the table
+// with the 0.7.14 switch it replaced. A value that is not a MsgType at all (a newer peer) is Unknown.
 enum class MsgClass {
     Session,   // the session itself or a player's own data (join, chat, ready, a creation, a guest's report to
                // the host): applied wherever the guest plays
@@ -125,42 +126,10 @@ enum class MsgClass {
                // civ: host_away; Space: squadron / spacecoop with_host, my_place; effects: C.here)
     Unknown,   // not a message type of this build: a guest elsewhere drops it (default deny)
 };
+static_assert((int)MsgClass::Session == (int)net::MsgCls::Session && (int)MsgClass::HostWorld == (int)net::MsgCls::HostWorld &&
+              (int)MsgClass::Module == (int)net::MsgCls::Module && (int)MsgClass::Unknown == (int)net::MsgCls::Unknown);
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wswitch"
-inline MsgClass msg_class(uint8_t type)
-{
-    switch (static_cast<net::MsgType>(type)) {
-    case net::MSG_HELLO: case net::MSG_WELCOME: case net::MSG_REJECT: case net::MSG_PLAYER_JOIN:
-    case net::MSG_PLAYER_LEAVE: case net::MSG_PLAYER_STATE: case net::MSG_CHAT: case net::MSG_PING: case net::MSG_PONG:
-    case net::MSG_BYE: case net::MSG_WORLD_OFFER: case net::MSG_WORLD_FILE: case net::MSG_WORLD_CHUNK:
-    case net::MSG_WORLD_DONE: case net::MSG_DNA_ADD: case net::MSG_RES_ADD: case net::MSG_PING_MARK: case net::MSG_READY:
-    case net::MSG_LOBBY: case net::MSG_NOTICE: case net::MSG_ROLE: case net::MSG_CREATION: case net::MSG_DIAG:
-    case net::MSG_ABILITY: case net::MSG_ANIM: case net::MSG_DAMAGE: // a partner's own creature (its puppet)
-        return MsgClass::Session;
-    case net::MSG_SETTINGS: // the host's session settings: the session's rules wherever the guest plays
-        return MsgClass::Session;
-    case net::MSG_COLORS: // the player colours (F2): the session's, wherever the guest plays
-    case net::MSG_REPORT: // the session report (BUG-0767): a player's own report, asked wherever the guest plays
-    case net::MSG_HOST_WORLD: // the host's save now (BUG-0933): what "elsewhere" is measured against, wherever we play
-        return MsgClass::Session;
-    case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
-    case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch
-        return MsgClass::Session;
-    case net::MSG_DNA: case net::MSG_WORLD_TIME: case net::MSG_CELL_STATE: case net::MSG_CELL_HIT:
-    case net::MSG_CELL_EAT: case net::MSG_CELL_FOOD: case net::MSG_CELL_KO: case net::MSG_CELL_BITTEN:
-    case net::MSG_TRIBE_STATE: case net::MSG_TRIBE_CMD: case net::MSG_SPECIES: case net::MSG_SOCIAL: case net::MSG_NEST:
-    case net::MSG_PARTS: case net::MSG_FIELDS: case net::MSG_WSTATE: case net::MSG_PLAYER_RULE: case net::MSG_MIRROR_FX:
-    case net::MSG_CIV_STATE: case net::MSG_CIV_BUILD: case net::MSG_CIV_ALARM:
-        return MsgClass::HostWorld;
-    case net::MSG_NPC_STATE: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
-    case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM: case net::MSG_NPC_MEAT: case net::MSG_WOBJ: case net::MSG_EFFECT:
-    case net::MSG_CIV_CMD: case net::MSG_UFO_STATE: case net::MSG_UFO_HIT: case net::MSG_UFO_DAMAGE: case net::MSG_SPACE:
-        return MsgClass::Module;
-    }
-    return MsgClass::Unknown;
-}
-#pragma GCC diagnostic pop
+inline MsgClass msg_class(uint8_t type) { return static_cast<MsgClass>(net::msg_info(type).cls); }
 
 // does a guest elsewhere drop the host's message at dispatch? `classes` off (core.msg_classes): the hand list of
 // 0.7.10 (the HostWorld rows; the Civ rows only with `civ_rows`, core.world_gate)
