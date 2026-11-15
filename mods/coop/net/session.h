@@ -61,7 +61,7 @@ public:
     std::string version;     // ours for HELLO / WELCOME (CAP_VERSION): "coop X, SporeKit Y, <game build> <exe hash>"
     // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
-    // the same (default) name. false = the old behaviour (tests: coop.corefix unique_names 0)
+    // the same (default) name. false = the old behaviour (tests: coop.fix core.unique_names off)
     bool unique_names = true;
     // a new player with the name of an entry silent for 2 s replaces it (a rejoin after a crash)
     // instead of getting "name 2". false = rename (tests: coop.fix core.rejoin_name off, BUG-0209)

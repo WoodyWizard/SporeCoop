@@ -18,15 +18,13 @@ extern uint32_t g_solo_mode, g_mode;
 // BUG-0151: a goal card's reward a guest earns while the host is away is kept like any other DNA
 // (social::goal_dna sent it to a host that drops it); the host keeps a guest's MSG_DNA_ADD that
 // arrives while it has no creature (editor, load) and pays it when it has one again.
-// `coop.corefix away_dna 0`: the old behaviour (tests).
+// `coop.fix core.away_dna off`: the old behaviour (tests).
 bool g_away_dna_fix = true;
 COOP_FIX("core.away_dna", "BUG-0151", g_away_dna_fix, "core: DNA a guest earns while the host is away is kept");
 float g_dna_owed = 0;     // host: guests' DNA that arrived without an avatar
 uint32_t g_dna_owed_paid; // tests
 // BUG-0231 (GitHub #165, dna_route.h row 2): DNA a guest earns while it plays another world of
-// the host's stage stays in that world (0.7.3.0 sent it to the host's world). Off: forwarded.
-bool g_world_dna_fix = true;
-COOP_FIX("core.world_dna", "BUG-0231", g_world_dna_fix, "core: DNA a guest earns in its own world stays in that world");
+// the host's stage stays in that world (0.7.3.0 sent it to the host's world).
 uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
 // BUG-0466 (class G6, BUG-0423): a guest's own DNA spend (its own creature editor of a vote: the
 // editor takes the price from the game's GetEvolutionPoints when it closes) was never sent: the guest
@@ -36,9 +34,7 @@ uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
 // made itself (not a host total, not a load) is a spend; it is kept across the editor (the stage
 // epoch: an editor and its Done keep it, a load does not), held while the host is away, sent once
 // to the host as a negative MSG_DNA_ADD (an older host ignores it: d > 0 only) and taken off the
-// party's total there (never below 0). Off: only gains go to the host (0.7.3.6).
-bool g_dna_spend_fix = true;
-COOP_FIX("core.dna_spend", "BUG-0466", g_dna_spend_fix, "core: the DNA a guest spends in its own editor leaves the party's total and is not given back");
+// party's total there (never below 0).
 float g_dna_seen = 0;           // guest: the game's DNA after the last sample / host total / own gain
 bool g_dna_seen_ok = false;
 static uint32_t g_dna_seen_epoch = 0;  // the Creature stage epoch of g_dna_seen (a load starts a new one)
@@ -87,9 +83,6 @@ bool guest_space_other();
 // players playing the host's world now, so a party evolves at the single-player pace. The host
 // decides (coop.ini [coop] dna_pace, 0 = the full sum) and announces the divisor with its totals
 // (MSG_DNA's and MSG_CELL_FOOD's optional tail); each gain is scaled once, where its game made it.
-// Off (`coop.fix core.dna_pace off`): every gain whole, the sum of all players (0.7.3.6).
-bool g_dna_pace_fix = true;
-COOP_FIX("core.dna_pace", "BUG-0510", g_dna_pace_fix, "core: the party's DNA grows at the single-player pace (each gain / N players)");
 int g_pace_heard = 1;          // guest: the host's divisor (1 until a total with one, or from an older host)
 uint32_t g_paced = 0;          // tests: gains scaled here
 float g_paced_in = 0, g_paced_out = 0; // tests: their sum before / after
@@ -112,12 +105,12 @@ static int pace_playing()
 // the divisor the host announces
 int dna_pace_announce()
 {
-    return dna_pace::divisor(g_dna_pace_fix && settings::on(settings::kDnaPace), pace_playing());
+    return dna_pace::divisor(settings::on(settings::kDnaPace), pace_playing());
 }
 // the divisor for a gain of this machine's game now (1: whole)
 int pace_div()
 {
-    if (!g_dna_pace_fix || dna_pace::g_bypass || !g_sess.connected())
+    if (dna_pace::g_bypass || !g_sess.connected())
         return 1;
     if (g_sess.role() == net::Role::Host)
         return dna_pace_announce();
@@ -155,7 +148,7 @@ void dna_pace_heard(int div) { g_pace_heard = std::clamp(div, 1, 255); }
 bool on_dna(float& delta)
 {
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
-    auto g = dna_route::guest_gain(guest, delta > 0, g_world_dna_fix && guest_elsewhere(), g_away_dna_fix && g_host_away);
+    auto g = dna_route::guest_gain(guest, delta > 0, guest_elsewhere(), g_away_dna_fix && g_host_away);
     if (g == dna_route::Gain::Own) {
         g_dna_own++;
         trace::ev("dna", "own", "+%.0f kept in this world (the host plays another one)", delta);
@@ -200,10 +193,10 @@ float g_solo_await = 0;          // the solo DNA sent at the away end, its total
 double g_solo_await_until = 0;
 uint32_t g_solo_stale_totals = 0; // tests: host totals older than the solo DNA, not applied
 
-// BUG-0466: the guest's own spends (see g_dna_spend_fix)
+// BUG-0466: the guest's own spends (see g_dna_spend above)
 void dna_spend_sample()
 {
-    if (!g_dna_spend_fix || g_sess.role() != net::Role::Client || !g_sess.connected()) {
+    if (g_sess.role() != net::Role::Client || !g_sess.connected()) {
         g_dna_seen_ok = false;
         g_dna_spend = 0;
         return;
@@ -232,7 +225,7 @@ void dna_spend_sample()
 // sample (a host total can arrive before the next tick: it would undo it)
 void dna_spend_note(float d)
 {
-    if (!g_dna_spend_fix || g_sess.role() != net::Role::Client || !g_sess.connected() || d >= 0)
+    if (g_sess.role() != net::Role::Client || !g_sess.connected() || d >= 0)
         return;
     if (g_dna_spend == 0)
         g_dna_spend_world = g_stage_world; // (an editor has no world of its own)

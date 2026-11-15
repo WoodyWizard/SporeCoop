@@ -47,8 +47,6 @@ void* g_local = nullptr; // entity the local player controls (adapter specific)
 
 std::vector<Stray> g_strays;
 uint32_t g_strays_removed = 0;
-bool g_strays_fix = true; // tests: off = left-over puppets stay (the bug of BUG-0007, coop_editor_strays.py)
-COOP_FIX("core.strays", "BUG-0007", g_strays_fix, "creature: a partner's puppet left over after an editor is removed");
 
 // BUG-1055: every module's session and world state registered in lifecycle.h is reset on every session end and on
 // every new world (the stage counters moved), and `coop.lifecycle held` lists what a reset left. Off: each module's
@@ -76,10 +74,6 @@ void remove_strays(double now)
 {
     if (g_strays.empty() || g_mode != modes::kCreature || !g_local)
         return;
-    if (!g_strays_fix) {
-        g_strays.clear();
-        return;
-    }
     for (auto& s : g_strays) {
         // the same creature (pointer still listed, same herd), the same world, not ours again, not
         // destroyed already (npc.cpp remove_saved_strays meets it too: untuned, in a herd like ours)
@@ -579,10 +573,8 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
 }
 
 // BUG-0513: a partner whose game stops sending (minimized, alt-tabbed full screen, a stall of 17-38 s) was hidden
-// after 5 s without a word ("the guest is bugged into the ground"). With core.partner_silent the others are told
-// once that the partner is not responding and when it plays again. Off: 0.7.3.6.
-static bool g_partner_silent_fix = true;
-COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
+// after 5 s without a word ("the guest is bugged into the ground"). Now the others are told
+// once that the partner is not responding and when it plays again.
 // BUG-0923: a partner's creation record arrives 0.3-0.4 s after its first puppet (at a join) or later (a new body):
 // the puppet is rebuilt with that look, and each making told "<name> appeared in the world" (twice at every join on
 // the host). Off: every puppet made is told (0.7.11)
@@ -592,7 +584,7 @@ uint32_t g_appeared_told = 0, g_appeared_quiet = 0; // coop.status
 
 static void silent_tick(Remote& r, double now)
 {
-    if (!g_partner_silent_fix || r.echo || r.buf.empty())
+    if (r.echo || r.buf.empty())
         return;
     double age = r.buf.age(now);
     if (!r.silent_said && age > 5.0 && g_sess.connected()) {

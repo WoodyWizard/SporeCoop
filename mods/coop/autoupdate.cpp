@@ -47,7 +47,7 @@ static std::wstring game_root()
 // quiet after on_unload (it only finishes its own copy of the state).
 static std::atomic<bool> g_unloaded{false};
 static std::atomic<int> g_threads{0};
-bool g_pin_fix = true; // tests: `coop.corefix update_pin 0` = threads without a module reference
+bool g_pin_fix = true; // tests: `coop.fix core.update_pin off` = threads without a module reference
 COOP_FIX_UNSAFE("core.update_pin", "BUG-0060", g_pin_fix, "update: its threads hold a reference to their module (hot reload)");
 
 static bool start_thread(LPTHREAD_START_ROUTINE fn)
@@ -112,11 +112,7 @@ static void set_final(State s, const std::string& err = {})
 // that called end_thread() with its locals in scope leaked them (the whole decoded update pack, several
 // MB, at every Update / Try again). The work runs in a function of its own whose locals are destroyed
 // when it returns; the thread functions hold no objects and only call it and end_thread().
-// Off (coop.fix core.update_unwind off): end_thread() inside the work function, the 0.7.3.0 leak.
-static bool g_unwind_fix = true;
-COOP_FIX("core.update_unwind", "BUG-0241", g_unwind_fix, "update: the threads free the downloaded pack before they end");
-
-static void check_work(bool exit_inside, void* self)
+static void check_work()
 {
     upd::Release r;
     std::string err;
@@ -137,17 +133,15 @@ static void check_work(bool exit_inside, void* self)
         }
         set_final(st);
     }
-    if (exit_inside)
-        end_thread(self); // the 0.7.3.0 leak (r, err never destroyed)
 }
 
 static DWORD WINAPI check_thread(void* self)
 {
-    check_work(!g_unwind_fix, self);
+    check_work();
     end_thread(self);
 }
 
-static void apply_work(bool exit_inside, void* self)
+static void apply_work()
 {
     upd::Release r;
     {
@@ -175,13 +169,11 @@ static void apply_work(bool exit_inside, void* self)
     if (!g_unloaded)
         H->log(M, ok ? SK_INFO : SK_WARN, "update to %s: %s", r.version.c_str(), ok ? "installed" : err.c_str());
     set_final(ok ? Ready : Failed, err);
-    if (exit_inside)
-        end_thread(self); // the 0.7.3.0 leak (the pack p never freed)
 }
 
 static DWORD WINAPI apply_thread(void* self)
 {
-    apply_work(!g_unwind_fix, self);
+    apply_work();
     end_thread(self);
 }
 

@@ -35,7 +35,7 @@ COOP_FIX("net.welcome_split", "BUG-1005", net::g_fix.welcome_split, "net: a join
 COOP_FIX("net.queue_cap", "BUG-1108", net::g_fix.queue_cap, "net: the host drops a guest whose waiting data grows far past normal play (a memory guard)");
 COOP_FIX("net.relay_budget", "BUG-1108", net::g_fix.relay_budget, "net: the host drops a guest whose messages make it send far more than normal play (a memory guard)");
 COOP_FIX("net.recv_skip_big", "BUG-1007", net::g_fix.recv_skip_big, "net: a datagram too big for the read buffer is skipped, the other datagrams of the frame are still read");
-COOP_FIX("net.async_resolve", "BUG-0204",net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
+COOP_FIX("net.async_resolve", "BUG-0204",net::g_fix.async_resolve, "net: a host name is looked up on a worker thread");
 
 // updater/ (FIX_SWITCH)
 COOP_FIX("update.dup", "BUG-0089", upd::g_dup_fix, "update: a pack that lists a path twice is refused");

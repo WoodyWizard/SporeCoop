@@ -115,12 +115,12 @@ bool game_modal_up(); // a modal window of the game is up (UTFWin window manager
 void shutdown(); // mod unload: hide our windows
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
-extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)
-extern bool g_status_fix; // tests: `coop.corefix ui_status 0` keeps the status of the last button (BUG-0104)
+extern bool g_lan_pages_fix; // tests: `coop.fix core.lan_pages off` lists the first three games only (BUG-0183)
+extern bool g_status_fix; // tests: `coop.fix core.ui_status off` keeps the status of the last button (BUG-0104)
 // the session was joined (connected) or ended (why): replaces the status line of the join
 void session_event(bool connected, const std::string& why);
-extern bool g_recenter_fix;  // tests: `coop.corefix window_recenter 0` keeps the first position (BUG-0113)
-extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu item pointer after the menu (BUG-0163)
+extern bool g_recenter_fix;  // tests: `coop.fix core.window_recenter off` keeps the first position (BUG-0113)
+extern bool g_menu_drop_fix; // tests: `coop.fix core.menu_drop off` keeps the menu item pointer after the menu (BUG-0163)
 // tests: the window goes back to its first start (the name step), as with no name chosen yet
 void first_start();
 // tests / layout shots (coop.uistate color <argb>): the lobby's colour of players without one (0 = "-")

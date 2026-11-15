@@ -123,7 +123,7 @@ struct Remote {
     const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
     uint32_t puppet_world = 0; // the place `puppet` was made in
     bool echo = false; // local loopback test remote
-    bool silent_said = false; // BUG-0513: "is not responding" was told (core.partner_silent)
+    bool silent_said = false; // BUG-0513: "is not responding" was told
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
@@ -216,7 +216,6 @@ struct Vote {
 
 // ---- defined in coop.cpp ----
 extern bool g_anim_log;
-extern bool g_away_editor_fix;
 extern bool g_away_test;
 extern bool g_disc_on;
 extern bool g_echo;
@@ -233,7 +232,6 @@ extern bool g_role_fix;
 extern bool g_share_world;
 extern bool g_status_block_fix;
 extern bool g_tag_self;
-extern bool g_text_fix;
 extern bool g_vote_world_fix;
 extern bool g_world_gate_fix;
 extern double g_echo_delay;
@@ -309,9 +307,7 @@ void register_commands_ui();
 
 // ---- defined in dna.cpp ----
 extern bool g_away_dna_fix;
-extern bool g_dna_pace_fix;
 extern bool g_dna_seen_ok;
-extern bool g_dna_spend_fix;
 extern bool g_solo_await_fix;
 extern dna_ledger::Notices g_dna_notices;
 extern dna_pace::Carry g_pace_carry;

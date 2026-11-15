@@ -252,9 +252,7 @@ COOP_FIX("core.host_away_reset", "BUG-0085", g_host_away_fix, "core: the away st
 // BUG-0205: the host in an editor of its own (the guest left its editor first, or did not get one)
 // or on a loading screen is away too: it sends no NPC, vehicle or citizen states meanwhile, and the
 // guest's proxies stood frozen. Not while this guest's own editor of the same vote is still due (it
-// opens up to ~20 s after the host's). `coop.corefix away_editor 0`: only the main menu (tests).
-bool g_away_editor_fix = true;
-COOP_FIX("core.away_editor", "BUG-0205", g_away_editor_fix, "core: the host in an editor or a load for 4 s counts as away");
+// opens up to ~20 s after the host's).
 extern uint32_t g_own_editor_due;
 // BUG-0233: an editor or a load of the host counts as away only in the stages whose modules play
 // on locally meanwhile (npc in Creature, tribe / civ local_play); in Cell and Space the guest got
@@ -290,7 +288,7 @@ char host_out_of_stage()
     uint32_t m = it->second.buf.latest().mode;
     if (m == modes::kMenu)
         return 'm';
-    if (!g_away_editor_fix || g_own_editor_due)
+    if (g_own_editor_due)
         return 0;
     if (g_away_stages_fix && !dna_route::away_stage(g_mode, kAwayStages, (int)std::size(kAwayStages)))
         return 0; // BUG-0233
@@ -313,7 +311,7 @@ bool host_here() // the host plays in our world again (not loading it any more)
 // BUG-0130: the guest plays another world of the host's stage (joined from its own game, loaded
 // a save of its own, or the host loaded another save): nothing of the host's world is applied to
 // it (DNA, food, cells, tribe, relations, time of day, NPCs), its game would save the changes.
-// `coop.corefix same_place 0` = the old behaviour (tests).
+// `coop.fix core.same_place off` = the old behaviour (tests).
 bool g_place_fix = true;
 COOP_FIX("core.same_place", "BUG-0130", g_place_fix, "core: nothing of the host's world is applied to a guest in another world");
 uint32_t g_place_dropped = 0;
@@ -649,7 +647,7 @@ std::atomic<bool> g_keepalive_run{false}, g_keepalive_queued{false};
 // BUG-0107: a joinable std::thread in a global aborted the game at exit (~thread() calls
 // std::terminate when the process ends through ExitProcess without cSporeApp::Shutdown, so
 // on_unload never joined it). The thread is held through a pointer whose object is only destroyed
-// after a join; at process exit nothing is destroyed. `coop.corefix keepalive_ptr 0`: the old
+// after a join; at process exit nothing is destroyed. `coop.fix core.keepalive_ptr off`: the old
 // global object (tests: coop.exittest then aborts).
 bool g_keepalive_ptr_fix = true;
 COOP_FIX_UNSAFE("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: the keepalive thread cannot abort the game at exit");
@@ -1287,8 +1285,6 @@ std::atomic<bool> g_menu_up{false};
 // window (control id 0x014A4606, its text edit 0x014A4608) exists only while it is open.
 constexpr uint32_t kCheatConsoleId = 0x014A4606;
 std::atomic<bool> g_text_up{false};
-bool g_text_fix = true; // coop.social textfix off: the old key poll (tests)
-COOP_FIX("social.text", "BUG-0149", g_text_fix, "creature: ability keys are not taken while the cheat console is open");
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
@@ -1348,7 +1344,7 @@ void menu_check_task(void*)
             up = shown_chain(sui::find(root, kPauseMenuId));
     g_menu_up = up;
     sui::Win root = sui::main_window();
-    g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
+    g_text_up = root && shown_chain(sui::find(root, kCheatConsoleId));
 }
 
 void menu_tick(double now)
@@ -1553,7 +1549,7 @@ void on_overlay(void*, int, void*)
     else if (g_echo)
         head = "CO-OP echo test";
     // BUG-0155: the block is not drawn over the co-op window or a menu (the lobby shows the same),
-    // and the notification panels start below it; `coop.corefix status_block 0` = the old way
+    // and the notification panels start below it; `coop.fix core.status_block off` = the old way
     // (g_menu_up is only refreshed in a game: in the main menu the window's own flag counts)
     bool covered = coop_ui::is_open() || (!labels && g_local);
     if (head.empty() || (covered && g_status_block_fix)) {
@@ -2136,9 +2132,6 @@ void on_unload()
 
 // ---- support diagnostics (diag_coop.h, docs/REPORTING.md#reporting-support) ----
 // BUG-0380: the sync-check leaves out a Tribe / Civ pointer that moved within kCursorStill s
-static bool g_cursor_check_fix = true;
-COOP_FIX("diag.rts_cursor", "BUG-0380", g_cursor_check_fix,
-         "sync-check: a Tribe / Civ player's pointer is compared only after it stood still for a second");
 constexpr double kCursorStill = 1.0;
 
 int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_update = 1, g_ini_sync = 30;
@@ -2163,16 +2156,15 @@ void support_init()
         // mouse and by the camera); a partner's copy is ~0.1 s + half a round trip behind it, so a
         // moving pointer was "apart" (median 23 m in campaigns, sync-check `p apart`). Left out while
         // it moved in the last second on this machine; a pointer that stands still is compared.
-        bool cursor = g_cursor_check_fix;
         if (!local_now() || (own.flags & net::PF_DEAD) || !(own.flags & net::PF_IN_WORLD) ||
-            (cursor && modes::rts_marker_moving(g_adapter, local_now(), kCursorStill)))
+            modes::rts_marker_moving(g_adapter, local_now(), kCursorStill))
             v.push_back(g_sess.my_id());
         for (auto& [id, r] : g_remotes) {
             if (r.echo)
                 continue;
             if (r.buf.empty() || r.buf.age(now) >= 5.0 || (r.buf.latest().flags & net::PF_DEAD) ||
                 !(r.buf.latest().flags & net::PF_IN_WORLD) ||
-                (cursor && modes::rts_marker_moving(r.puppet_adapter, puppet_now(r), kCursorStill)))
+                modes::rts_marker_moving(r.puppet_adapter, puppet_now(r), kCursorStill))
                 v.push_back(id);
         }
         return v;

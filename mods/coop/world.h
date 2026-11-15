@@ -44,7 +44,7 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
-extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
+extern bool g_share_reset_fix; // tests: `coop.fix core.share_reset off` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 void guest_tick(); // guests: load a world that arrived while in an editor

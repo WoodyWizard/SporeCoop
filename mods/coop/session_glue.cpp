@@ -34,10 +34,6 @@ COOP_FIX("npc.sharecine_each", "BUG-0232", g_share_cine_each_fix, "world: the wa
 // goes when the evolution needs it (docs/re/creations.md#creations-evolve-in-place): a migration started
 // (the brain grew, BUG-0019), the guest in another world or stage, an older guest, or (Creature) a guest
 // whose avatar still plays the pre-editor species 30 s later.
-// Off: every guest gets the world after every editor (0.7.3.6).
-static bool g_evolve_inplace_fix = true;
-COOP_FIX("world.evolve_in_place", "BUG-0508", g_evolve_inplace_fix,
-         "world: after the host's editor a guest in the same world and stage takes the new body without loading the world again");
 static uint32_t g_evo_key_before = 0; // host: its avatar's species when its editor opened (Creature)
 static int g_evo_age_before = -1;     // host: its avatar's age (+0xB34) then
 static bool g_evo_cine = false;       // host: a cinematic held a share since the last evolution
@@ -64,9 +60,7 @@ static bool g_evo_save_due = false;
 // mod's trace and state, the relations of GetRelationship) saw the old species for minutes on a host that
 // did not save (docs/re/creations.md#creations-evolve-key). The key of every creature whose profile is
 // the avatar's and whose key is the pre-editor one is set to the profile's, once, within 60 s after the
-// editor; then the host's save of BUG-0508 is not needed. Any role, also alone. Off: the save (0.7.4).
-static bool g_evo_key_fix = true;
-COOP_FIX("creature.evolve_key", "BUG-0517", g_evo_key_fix, "creature: after an evolution editor the own creature takes the new species at once (no save needed)");
+// editor; then the host's save of BUG-0508 is not needed. Any role, also alone.
 double g_evo_key_until = 0;   // watch after an editor (Creature)
 uint32_t g_evo_keys_set = 0;  // tests: creatures given the new key
 bool g_evo_key_done = false;  // this evolution's keys were set (the host's save is skipped)
@@ -90,7 +84,7 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
     // (called from on_mode_change too, before g_adapter / g_world follow the new mode)
     const modes::Adapter* ad = modes::for_mode(stage);
     uint32_t world = ad ? modes::current_place(ad) : 0;
-    if (!g_evolve_inplace_fix || r.echo || r.buf.empty() || !ad || ad->own_worlds)
+    if (r.echo || r.buf.empty() || !ad || ad->own_worlds)
         return false;
     const std::string* v = peer_version(id);
     if (!v || v->empty())
@@ -191,7 +185,7 @@ void on_mode_change(uint32_t from, uint32_t to)
 
 void evo_key_tick(double now)
 {
-    if (!g_evo_key_fix || g_evo_key_until <= 0)
+    if (g_evo_key_until <= 0)
         return;
     if (now > g_evo_key_until) {
         g_evo_key_until = 0;
@@ -239,9 +233,7 @@ void evo_key_tick(double now)
 // never retried in that phase: follow_phase / player_join had already set world_sent, so a guest
 // in another world of the host's stage stayed there for good. Retried at most 3 times per phase
 // and guest, 30 s apart; then the host is told to use coop.share. A "planet file missing" failure
-// is not retried (world.cpp already saved 3 times). Off: as in 0.7.3.0.
-bool g_share_retry_fix = true;
-COOP_FIX("core.share_retry", "BUG-0231", g_share_retry_fix, "core: a failed world share is retried (3 times, 30 s apart)");
+// is not retried (world.cpp already saved 3 times).
 uint32_t g_join_serial = 0;   // host: counts joins (Remote::join_serial)
 uint32_t g_share_retries = 0; // tests
 constexpr int kShareRetries = 3;
@@ -249,7 +241,7 @@ constexpr double kShareRetryGap = 30.0;
 
 void share_failed(uint8_t peer, uint32_t tag, bool planet_missing)
 {
-    if (!g_share_retry_fix || planet_missing || !tag || g_sess.role() != net::Role::Host)
+    if (planet_missing || !tag || g_sess.role() != net::Role::Host)
         return;
     auto it = g_remotes.find(peer);
     if (it == g_remotes.end() || it->second.join_serial != tag)
@@ -280,16 +272,13 @@ void share_failed(uint8_t peer, uint32_t tag, bool planet_missing)
 // (BUG-0019) and then for the host's ship to leave the home planet (the Space stage saves only off a
 // planet, docs/07-modes.md 7.2). The host now tells everybody once per wait that the world goes out
 // when its ship leaves the planet, and its trace line says why the share waits (`share_wait=planet`
-// or `cinematic`, read by the monitor). Off: only the host's own feed line (0.7.3.3).
-static bool g_share_wait_fix = true;
-COOP_FIX("world.share_wait_notice", "BUG-0382", g_share_wait_fix,
-         "world: everybody is told that the host's world goes out when its ship leaves the planet; the trace says why a share waits");
+// or `cinematic`, read by the monitor).
 static double g_share_cine_held_at = -1e9; // host: a share was held for a cinematic (follow_phase)
 static bool g_planet_wait_told;
 // host: why a share waits now ("planet", "cinematic"), nullptr when none does
 const char* share_wait_reason()
 {
-    if (!g_share_wait_fix || g_sess.role() != net::Role::Host)
+    if (g_sess.role() != net::Role::Host)
         return nullptr;
     if (world::share_waits_for_planet())
         return "planet";
@@ -297,7 +286,7 @@ const char* share_wait_reason()
 }
 void share_wait_tick()
 {
-    bool planet = g_share_wait_fix && g_sess.role() == net::Role::Host && world::share_waits_for_planet();
+    bool planet = g_sess.role() == net::Role::Host && world::share_waits_for_planet();
     if (planet && !g_planet_wait_told)
         notice(g_name + "'s world goes to the others when " + g_name +
                    "'s ship leaves the planet (the Space stage saves only in a solar system or the galaxy)",
@@ -360,7 +349,7 @@ void follow_phase(double now)
                     // the share's save it stayed the pre-editor species for minutes while the world's player
                     // species (cSpeciesManager +0xA4) was the new one (lab 20261103-173652). The save is made,
                     // only not sent (once per evolution, docs/re/creations.md#creations-evolve-in-place).
-                    if (g_mode == modes::kCreature && g_evo_save_due && g_evo_key_fix && g_evo_key_done) {
+                    if (g_mode == modes::kCreature && g_evo_save_due && g_evo_key_done) {
                         g_evo_save_due = false; // BUG-0517: the avatar has its new species already
                         LOG("evolved in place: no save needed (the avatar's species key was set, BUG-0517)");
                     }
@@ -523,10 +512,8 @@ void lobby_tick(double now)
 // (Session::host/join only close the socket) and the mod unload. Before, each path cleaned its own
 // subset of the stage modules: after a Leave the Space mirror ships flew on with their own AI, the
 // tribe and civ tables and the creations of the others stayed, and a new session inherited the old
-// remotes. `coop.sessionfix 0` restores the old per-path lists (tests).
-bool g_session_end_fix = true;
-bool g_id_reuse_fix = true; // coop.corefix id_reuse 0: a joining player inherits an old entry of its id
-COOP_FIX("session.end", "BUG-0033", g_session_end_fix, "core: every session end runs the same cleanup (coop.sessionfix)");
+// remotes.
+bool g_id_reuse_fix = true; // coop.fix core.id_reuse off: a joining player inherits an old entry of its id
 COOP_FIX("core.id_reuse", "BUG-0076", g_id_reuse_fix, "core: a joining player does not inherit an old entry of its id");
 COOP_FIX("core.unique_names", "BUG-0141", g_sess.unique_names, "net: players with the same name get unique names");
 COOP_FIX("core.rejoin_name", "BUG-0209", g_sess.rejoin_by_name, "net: a rejoin after a crash replaces the silent entry of its name");
@@ -540,67 +527,40 @@ COOP_FIX("give.pick_reset", "BUG-0234", g_give_pick_reset_fix, "civ: the Give pi
 // BUG-0770: the session settings of the host and the session report's round / question / upload end on every session
 // end (a Leave, a new host or join, the unload), not only when the network drops it (cb.disconnected)
 bool g_session_state_end_fix = true;
-bool g_settings_in = true; // not a lab switch: tests (coop.corefix settings_in 0) drop the host's settings tables
+bool g_settings_in = true; // not a lab switch: tests (coop.settingsin 0) drop the host's settings tables
 COOP_FIX("core.session_state_end", "BUG-0770", g_session_state_end_fix, "core: the host's settings table and the session report end with every session");
 
 // The session-end structure (BUG-0214, GitHub #148; docs/06-testing.md#testing-fix-registry):
-//  block 1, the module calls: with session.end on every path calls every module; off, a path calls
-//    only what it called before BUG-0033 (Disconnect always called them all);
-//  block 2, the remotes: despawned and cleared, except on Restart with session.end off (the "new
-//    session inherits the old remotes" part of BUG-0033);
-//  block 3, always: every reset of coop.cpp state, on every path and with every session.end
-//    setting, each gated only by its own switch. It may run inside g_sess.update() (Disconnect,
-//    BUG-0029): mod state only, no game calls, no sends, no waiting; idempotent.
+//  block 1, the module calls: every path calls every module (BUG-0033);
+//  block 2, the remotes: despawned and cleared on every path (BUG-0033);
+//  block 3: every reset of coop.cpp state, on every path, each gated only by its own switch. It may run
+//    inside g_sess.update() (Disconnect, BUG-0029): mod state only, no game calls, no sends, no waiting;
+//    idempotent.
 // A new coop.cpp reset goes into block 3; a module's reset into its own on_session_end().
 void end_session(EndPath path, bool cell)
 {
     pfind::on_session_end(); // F2: the colour table was the session's
     support::on_session_end(path == EndPath::Leave ? "left" : path == EndPath::Unload ? "mod unload"
                             : path == EndPath::Restart ? "a new session" : "disconnected");
-    if (g_session_end_fix || path == EndPath::Disconnect) {
-        npc::on_session_end();
-        nest::on_session_end(); // BUG-0384: our egg mirrors
-        fields::on_session_end();
-        wobj::on_session_end();
-        realign::on_session_end();
-        parts::on_session_end(); // BUG-0401
-        effects::on_session_end(); // BUG-0451
-        social::on_session_end();
-        tribe::on_session_end();
-        if (cell)
-            cellsync::on_session_end();
-        creations::on_session_end();
-        civ::on_session_end();
-        squadron::on_session_end();
-        spacecoop::on_session_end();
-    } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
-        npc::on_session_end();
-        nest::on_session_end(); // BUG-0384: our egg mirrors
-        fields::on_session_end();
-        wobj::on_session_end();
-        realign::on_session_end();
-        parts::on_session_end(); // BUG-0401
-        effects::on_session_end(); // BUG-0451
-        social::on_session_end();
-        if (cell)
-            cellsync::on_session_end();
-        spacecoop::on_session_end();
-    } else if (path == EndPath::Unload) {
-        npc::on_session_end();
-        nest::on_session_end(); // BUG-0384: our egg mirrors
-        fields::on_session_end();
-        wobj::on_session_end();
-        realign::on_session_end();
-        parts::on_session_end(); // BUG-0401
-        effects::on_session_end(); // BUG-0451
-        social::on_session_end();
-    }
-    if (g_session_end_fix || path != EndPath::Restart) {
-        for (auto& [id, r] : g_remotes)
-            despawn(r);
-        g_remotes.clear();
-        views::clear();
-    }
+    npc::on_session_end();
+    nest::on_session_end(); // BUG-0384: our egg mirrors
+    fields::on_session_end();
+    wobj::on_session_end();
+    realign::on_session_end();
+    parts::on_session_end(); // BUG-0401
+    effects::on_session_end(); // BUG-0451
+    social::on_session_end();
+    tribe::on_session_end();
+    if (cell)
+        cellsync::on_session_end();
+    creations::on_session_end();
+    civ::on_session_end();
+    squadron::on_session_end();
+    spacecoop::on_session_end();
+    for (auto& [id, r] : g_remotes)
+        despawn(r);
+    g_remotes.clear();
+    views::clear();
     if (g_vote_scope_fix)
         drop_vote("the session ended");
     g_vote_action_due = nullptr; // BUG-0404: a result still waiting at the busy gate ends with its session
@@ -792,7 +752,7 @@ void setup_callbacks()
         }
         if (type == net::MSG_SETTINGS) { // F3: the host's session settings (Session class: wherever we play)
             if (!g_settings_in)
-                return; // tests (coop.corefix settings_in 0): a host older than 0.7.12 sends no table
+                return; // tests (coop.settingsin 0): a host older than 0.7.12 sends no table
             settings::on_message(type, from, r);
             return;
         }
@@ -861,8 +821,7 @@ void setup_callbacks()
             }
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
-                if (g_dna_spend_fix)
-                    total = std::max(0.f, total + g_dna_spend); // a spend not sent yet stays off
+                total = std::max(0.f, total + g_dna_spend); // a spend not sent yet stays off
                 float before = game::dna(), d = total - before;
                 if (d != 0) {
                     LOG("dna: %.0f -> %.0f cause=%s", before, total, dna_ledger::causes_text(parts).c_str());
@@ -882,7 +841,7 @@ void setup_callbacks()
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
-            } else if (g_dna_spend_fix && r.ok() && d < 0 && d > -100000) { // BUG-0466: a guest's own spend
+            } else if (r.ok() && d < 0 && d > -100000) { // BUG-0466: a guest's own spend
                 g_dna_spends_got++;
                 if (add == dna_route::Add::Pay) {
                     float dd = std::max(d, -game::dna()); // the total never goes below 0
@@ -1168,8 +1127,7 @@ void reset_lobby()
 void end_open_session()
 {
     if (g_sess.role() != net::Role::None) {
-        if (g_session_end_fix) // off: Session::host / join close the old session themselves
-            g_sess.leave("restart");
+        g_sess.leave("restart");
         end_session(EndPath::Restart, true);
     }
 }

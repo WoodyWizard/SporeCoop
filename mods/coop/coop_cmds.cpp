@@ -102,7 +102,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
     SAY("dna spend: unsent=%.1f sent=%u got=%u owed=%.1f seen=%.1f/%d\n", g_dna_spend, g_dna_spends_sent, g_dna_spends_got,
         g_dna_spend_owed, g_dna_seen, (int)g_dna_seen_ok); // BUG-0466
-    SAY("dna pace: div=%d fix=%d setting=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), (int)g_dna_pace_fix, settings::get(settings::kDnaPace),
+    SAY("dna pace: div=%d setting=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), settings::get(settings::kDnaPace),
         g_pace_heard, g_paced, g_paced_in, g_paced_out); // BUG-0510
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
@@ -836,11 +836,6 @@ static int c_guard(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_social(void*, int argc, const char* const* argv, SkOut* out)
 {
-    if (argc > 2 && !strcmp(argv[1], "textfix")) { // tests: off = ability keys also while the cheat console is open (BUG-0149)
-        g_text_fix = strcmp(argv[2], "off") != 0;
-        SAY("textfix %s", argv[2]);
-        return 0;
-    }
     if (argc > 1 && !strcmp(argv[1], "keys")) { // tests: whether the ability keys are taken now
         SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
         return 0;
@@ -1082,36 +1077,6 @@ int c_framefix(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
-// the core's fix switches (tests: 0 = the old behaviour, so a test can show the bug)
-int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
-{
-    struct Sw {
-        const char* name;
-        bool* on;
-    } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
-                {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
-                {"update_pin", &autoupdate::g_pin_fix}, {"big_reliable", &net::g_fix.big_reliable},
-                {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
-                {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
-                {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}, {"rejoin_name", &g_sess.rejoin_by_name},
-                {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
-                {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
-                {"async_resolve", &net::g_fix.async_resolve},
-                {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
-                {"lan_pages", &coop_ui::g_lan_pages_fix},
-                {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
-                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix},
-                {"away_dna", &g_away_dna_fix}, {"away_editor", &g_away_editor_fix},
-                {"away_goal", &social::g_goal_owe_fix}, {"settings_in", &g_settings_in}};
-    for (auto& x : sw)
-        if (argc > 2 && !strcmp(argv[1], x.name))
-            *x.on = atoi(argv[2]) != 0;
-    for (auto& x : sw)
-        SAY("%s %d\n", x.name, *x.on ? 1 : 0);
-    return 0;
-}
-
 // coop.fix: every fix switch of the mod in one place (fixes.h, BUG-0116)
 int c_fix(void*, int argc, const char* const* argv, SkOut* out)
 {
@@ -1125,14 +1090,6 @@ int c_fix(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s\n", r.substr(a, b - a).c_str());
     }
     return ok ? 0 : 1;
-}
-
-int c_sessionfix(void*, int argc, const char* const* argv, SkOut* out)
-{
-    if (argc > 1)
-        g_session_end_fix = atoi(argv[1]) != 0;
-    SAY("session end fix %s\n", g_session_end_fix ? "on" : "off");
-    return 0;
 }
 
 void register_commands_core()
@@ -1282,8 +1239,6 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME); // (inside a frame the outside-frame tasks, the keepalive too, wait for its end)
-    H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
-                   c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        g_lan_fake_n = argc > 1 ? std::clamp(atoi(argv[1]), 0, 64) : 0;
@@ -1307,8 +1262,14 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.corefix", "coop.corefix [name 0|1] - the core's fix switches (tests: 0 = the old behaviour)",
-                   c_corefix, nullptr, MT);
+    H->command_add(M, "coop.settingsin", "coop.settingsin [0|1] - tests: 0 = the host's settings tables are dropped (a host older than 0.7.12, BUG-0762)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1)
+                           g_settings_in = atoi(argv[1]) != 0;
+                       SAY("settings tables %s\n", g_settings_in ? "taken" : "dropped (tests)");
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.fix", "coop.fix [list] | <name> [on|off] | all on|off - every fix switch (tests: off = the code before the fix)",
                    c_fix, nullptr, MT);
     H->command_add(M, "coop.exittest", "coop.exittest [old] - end the game with ExitProcess(0) without Shutdown (tests, BUG-0107)",

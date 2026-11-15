@@ -21,7 +21,7 @@ bool g_was_in_editor = false;
 
 Vote g_vote;
 // BUG-0043: a vote ends with its stage, its world and its session (its action or editor request is
-// dropped, not run later on a freed civilization or in another save). `coop.corefix vote_scope 0`
+// dropped, not run later on a freed civilization or in another save). `coop.fix core.vote_scope off`
 // restores the old behaviour (tests).
 bool g_vote_scope_fix = true;
 COOP_FIX_UNSAFE("core.vote_scope", "BUG-0043", g_vote_scope_fix, "core: a vote ends with its stage, world and session");
@@ -235,9 +235,7 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 // BUG-0368: the creature stage's own evolution request (0xD42F2C) gives the editor the parts the
 // species has collected (cPlayer +0x10E8, a cCollectableItems, at request +0x94); the palette shows a
 // part locked only with that object (0x5C6820: null = every part available). The guest's own editor
-// had none, so it offered every part. Off: the request without it (0.7.3.3).
-bool g_own_editor_items_fix = true;
-COOP_FIX("creations.own_editor_items", "BUG-0368", g_own_editor_items_fix, "creations: a guest's own creature editor locks the parts the species has not collected");
+// had none, so it offered every part. The guest's own request gets it too.
 unsigned g_own_editor_items_set; // tests: own editor requests that got the collected parts
 
 // the cPlayer's collected creature parts (cCollectableItems), or null
@@ -298,7 +296,7 @@ void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k
     bool creature = game::mode_id() == modes::kCreature;
     uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign"), push = H->sym("SporeCoop::VectorU32_PushBack");
     void* pl = the_player();
-    if (creature && (kind == EditKind::Evolve || (kind == EditKind::Own && g_own_editor_items_fix))) {
+    if (creature && (kind == EditKind::Evolve || kind == EditKind::Own)) {
         // the native request's intrusive pointer assignment (AddRef the new, Release the old)
         if (void* items = collected_parts(); items && assign) {
             skg::thiscall<void*>(assign, (char*)req + 0x94, items);
@@ -390,10 +388,7 @@ bool share_save_due() { return (world::save_busy() || world::save_pending()) && 
 // it). A held request (the vote, a save, the avatar's new body) let the game post it at once with no editor
 // listening: the editor opened with the config's start budget (100) and the game booked spent = budget - remaining
 // on the way out, a negative spent that paid again on every visit. On: the budget is posted again after the held
-// request's Submit, queued behind it as the game does. Off: as before.
-bool g_editor_budget_fix = true;
-COOP_FIX("cell.editor_budget", "BUG-0560", g_editor_budget_fix,
-         "cell: an editor opened after the vote gets the stage's DNA budget, not the editor's start budget");
+// request's Submit, queued behind it as the game does.
 void post_editor_budget(int budget)
 {
     uintptr_t get = H->sym("App::IMessageManager::Get"), nw = H->sym("GeneralAllocator::new_");
@@ -416,7 +411,7 @@ void post_editor_budget(int budget)
 
 bool submit_now(void* req)
 {
-    int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
+    int budget = game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     bool r{};
     {
         callguard::Hold vote_bypass(g_vote_bypass);
@@ -436,10 +431,7 @@ bool submit_now(void* req)
 // whatever the host's game plays. The held request now waits at the busy gate (busy::kEditorGate: a
 // cinematic, the input lock, the game time paused) and for 3 s after the game came back from an
 // editor (the evolution's cinematic starts then). A pause waits as long as it lasts; a cinematic at
-// most 60 s, then it is ended natively (EndCinematic) right before the editor opens. Off: the editor
-// opens at once (0.7.3.3).
-bool g_editor_cine_fix = true;
-COOP_FIX("core.editor_cinematic", "BUG-0404", g_editor_cine_fix, "core: a vote's editor waits at the busy gate (cinematic, input lock, pause)");
+// most 60 s, then it is ended natively (EndCinematic) right before the editor opens.
 constexpr double kEditorCineWait = 60.0;
 
 // BUG-0576: the game opens some editors from a paused game: at the end of Tribe the stage's listener 0xCD1D60 takes
@@ -505,7 +497,7 @@ void submit_tick(double now)
     if (creations::avatar_swap_settling(now) && now - g_submit_held_at < 90.0)
         return;
     bool end_cine = false;
-    if (g_editor_cine_fix && stage_mode(game::mode_id())) { // BUG-0404: the busy gate
+    if (stage_mode(game::mode_id())) { // BUG-0404: the busy gate
         unsigned all = game_busy() & busy::kEditorGate;
         unsigned b = all & ~req_own_bits();
         if (b != all && !g_own_told) {
@@ -533,7 +525,7 @@ void submit_tick(double now)
         g_submit_busy_told = false;
     }
     void* req = g_submit_later;
-    if (g_editor_cine_fix && req_own_bits() & (game_busy() & busy::kEditorGate))
+    if (req_own_bits() & (game_busy() & busy::kEditorGate))
         g_submits_own_pause++;
     g_submit_later = nullptr;
     g_submit_wait = {};
@@ -629,11 +621,8 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
 // evolution tag 0x64AA168 (then the stage's return sets GetEvolutionPoints to the result's
 // remaining DNA, +0x34, 0xD445AA). The guest kept its DNA and the host's total stayed the same:
 // free parts. Now the result of the own editor (not cancelled, +0x44 == 0) charges the price
-// through the game (the remaining DNA at +0x34), and core.dna_spend sends it to the host.
-// `coop.fix creations.own_editor_dna off`: the own editor costs nothing (0.7.3.6).
+// through the game (the remaining DNA at +0x34), and the guest sends the spend to the host (BUG-0466).
 void dna_spend_note(float d);
-bool g_own_editor_dna_fix = true;
-COOP_FIX("creations.own_editor_dna", "BUG-0466", g_own_editor_dna_fix, "creature: the parts a guest adds in its own editor cost DNA (the editor's price is charged)");
 CreatureGameMsg_t o_CreatureGameMsg;
 void* g_creature_game; // BUG-0720 tests: the creature game whose handler builds the evolution request
 bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
@@ -644,13 +633,12 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
         int left = skg::field<int32_t>(data, 0x34);
         uint8_t cancelled = skg::field<uint8_t>(data, 0x44);
         float now = game::dna();
-        LOG("own editor result: tag %08X remaining DNA %d cancelled %u, DNA here %.0f%s", tag, left, (unsigned)cancelled, now,
-            g_own_editor_dna_fix ? "" : " (creations.own_editor_dna off)");
+        LOG("own editor result: tag %08X remaining DNA %d cancelled %u, DNA here %.0f", tag, left, (unsigned)cancelled, now);
         if (tag != 0x64AA168u && tag != 0x12191CAu) {
             g_own_editor_charge_due = false;
-            if (g_own_editor_dna_fix && !cancelled && left >= 0 && left < now) {
+            if (!cancelled && left >= 0 && left < now) {
                 game::dna_add_raw((float)left - now); // the editor's price, as the evolution's return sets it
-                dna_spend_note((float)left - now); // a spend of ours: to the host (core.dna_spend)
+                dna_spend_note((float)left - now); // a spend of ours: to the host (BUG-0466)
                 feed("your new parts cost " + std::to_string((int)(now - left)) + " DNA");
             }
         }
@@ -827,10 +815,7 @@ void SK_CDECL h_CellToCreature()
 
 // BUG-0404 (the busy gate): an action vote's result (a superweapon ...) ran the moment the vote
 // ended, also during a cinematic, a pause or a load. It now waits at the gate (busy::kActionGate):
-// a pause as long as it lasts, the rest at most 60 s; it is dropped when the stage was left. Off: at
-// once (0.7.3.3).
-bool g_vote_action_busy_fix = true;
-COOP_FIX("core.vote_action_busy", "BUG-0404", g_vote_action_busy_fix, "core: an action vote's result waits at the busy gate");
+// a pause as long as it lasts, the rest at most 60 s; it is dropped when the stage was left.
 std::function<void()> g_vote_action_due;
 busy::Wait g_vote_action_wait;
 bool g_vote_action_told = false;
@@ -885,18 +870,13 @@ void finish_vote(const char* why)
     g_vote_opened_ui = false;
     notice(g_vote_done + " (" + why + ")", -1);
     if (g_vote_action) {
-        static std::function<void()> run;
-        run = std::move(g_vote_action);
+        // BUG-0404: vote_action_tick runs it at the busy gate
+        g_vote_action_due = std::move(g_vote_action);
         g_vote_action = nullptr;
-        if (g_vote_action_busy_fix) { // BUG-0404: vote_action_tick runs it at the busy gate
-            g_vote_action_due = std::move(run);
-            run = nullptr;
-            g_vote_action_wait = {};
-            g_vote_action_told = false;
-            g_vote_action_mode = game::mode_id();
-            vote_action_tick(H->time_seconds());
-        } else
-            H->run_outside_frame([](void*) { g_vote_actions_run++; run(); }, nullptr);
+        g_vote_action_wait = {};
+        g_vote_action_told = false;
+        g_vote_action_mode = game::mode_id();
+        vote_action_tick(H->time_seconds());
     }
     if (req) { // the editor opens from submit_tick (outside the frame) once no world save is written
         hold_submit(req);
@@ -1114,10 +1094,7 @@ void evo_flag_tick(double now)
 // while the guest's game time stood (the pause menu, the Sporepedia, My Collections) it was dropped
 // for good ("your editor did not open (pause menu)") or opened under the Sporepedia. It now waits at
 // the gate (busy::kEditorGate) while the 90 s limit counts only the time the game was not paused, and
-// a pause menu found by the outside-frame check makes it wait again instead of dropping it. Off: as
-// in 0.7.3.3.
-bool g_own_editor_busy_fix = true;
-COOP_FIX("core.own_editor_busy", "BUG-0404", g_own_editor_busy_fix, "core: a guest's own editor after a vote waits through a pause");
+// a pause menu found by the outside-frame check makes it wait again instead of dropping it.
 double g_own_editor_last_tick = 0;
 
 void own_editor_tick(double now)
@@ -1135,7 +1112,7 @@ void own_editor_tick(double now)
         g_own_editor_due = 0;
         return;
     }
-    unsigned b = g_own_editor_busy_fix ? game_busy() & busy::kEditorGate : 0u;
+    unsigned b = game_busy() & busy::kEditorGate;
     if ((b & busy::kPaused) && dt > 0 && dt < 5.0)
         g_own_editor_due_at += dt; // a pause does not count against the 90 s (all in all 300 s)
     if (now - g_own_editor_due_at > 90.0 || now - g_own_editor_due_first > 300.0 ||
@@ -1163,14 +1140,8 @@ void own_editor_tick(double now)
                 return; // own_editor_tick decides again
             // an editor opened under the pause menu or its "save your game?" boxes: a click on
             // "Don't Save" right after left the guest in a black editor for good
-            if (pause_ui_up() && g_own_editor_busy_fix)
+            if (pause_ui_up())
                 return; // BUG-0404: own_editor_tick waits for the pause (or a message box) to go
-            if (pause_ui_up()) {
-                LOG("own editor not opened: the pause menu is open");
-                feed("evolution: your editor did not open (pause menu); evolve at your nest later");
-                g_own_editor_due = 0;
-                return;
-            }
             g_own_editor_due = 0;
             bool ok = open_own_editor(id);
             LOG("own editor %s (%.1f s after the vote)", ok ? "opened" : "not opened",
