@@ -825,6 +825,7 @@ add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, 
 add('space_gift_reload', P + 'coop_space_gift_reload.py', minutes=6, fixture='space')  # a spice gift that comes back is matched to the newest gift, not one of the world before a load (BUG-0828; SPORE_FIX_OFF=space.gift_match_newest fails)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
+add('space_allies_near', P + 'coop_space_allies_near.py', minutes=5, fixture='space')  # the game's list of owned stars nearby has no star of nobody after the allies mirror goes for a save or the session's end (BUG-1144; SPORE_FIX_OFF=allies.near_rebuild fails)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
 add('space_allies_reload_addr', P + 'coop_space_allies_reload.py --same-address', minutes=5, fixture='space')  # the same, with the new player cEmpire at the old address: the Space world epoch sees the reload (BUG-0225; SPORE_FIX_OFF=allies.reload_id fails)
 # 0.7.14 S2 (fix/w49-space2): Space rejoin window and contracts

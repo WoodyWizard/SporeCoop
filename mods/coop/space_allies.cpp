@@ -58,7 +58,8 @@ static uintptr_t a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit
     a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt, a_HomeStarMap,
     a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove, a_EnemyAdd, a_EnemyRemove, a_StrAssign,
     a_Save, a_Expand, a_PlayerEmpire, a_Color, a_NounMgr, a_GetData, a_MissionCb[4], a_SetState, a_StartRaid,
-    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt, a_AllUFOs, a_TakeDamage, a_PlayerUFO, a_SpacePlayerData;
+    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt, a_AllUFOs, a_TakeDamage, a_PlayerUFO, a_SpacePlayerData,
+    a_SpaceGame, a_NearRebuild, a_NearVt;
 
 // ---- what each mirror changed (to undo it exactly) ----
 struct StarSnap {
@@ -495,6 +496,36 @@ static void forget(Mirror& m)
     m.stars.clear();
 }
 
+// BUG-1144: the Space game keeps a list of the stars near the current one that an empire owns (cSimulatorSpaceGame +0x30
+// -> +0x7C, star flag 0x10 or 0x20; rebuilt by 0xFE6A50 only on the game's own star messages, docs/re/space.md#space-near-stars).
+// The NPC visitor spawn 0x1009070 picks a star of that list and calls 0xC32810 on GetEmpire(its owner), with no null
+// check: the game never lists a star nobody owns. unapply() gives the mirror's star back to nobody (a save, the
+// session's end) while the list still holds it: the next visitor spawn faulted at 0xC32817 (data 0xB8). After the stars
+// are restored the list is rebuilt the way the game rebuilds it. `coop.fix allies.near_rebuild off`: the list keeps the
+// star until the game's next rebuild (entering another system).
+static bool g_near_fix = true;
+COOP_FIX("allies.near_rebuild", "BUG-1144", g_near_fix,
+         "space: after the allies mirror goes (a save, the end of the session) the game's list of owned stars nearby is "
+         "rebuilt without its star (possible crash when an NPC ship would visit)");
+static uint32_t g_near_rebuilds;
+
+static void* near_stars()
+{
+    void* sg = a_SpaceGame ? cdecl_call<void*>(a_SpaceGame) : nullptr;
+    void* ns = readable(sg, 0x34) ? F<void*>(sg, 0x30) : nullptr; // (`near` is a macro of windows.h)
+    return readable(ns, 0x84) && a_NearVt && F<uintptr_t>(ns, 0) == a_NearVt ? ns : nullptr;
+}
+
+static void rebuild_near()
+{
+    if (!g_near_fix || !a_NearRebuild || !spaceext::in_space())
+        return;
+    if (void* ns = near_stars()) {
+        thiscall<void>(a_NearRebuild, ns);
+        g_near_rebuilds++;
+    }
+}
+
 // undo everything of one mirror (the cEmpire leaves the star manager, our reference keeps it)
 static void unapply(Mirror& m)
 {
@@ -510,6 +541,7 @@ static void unapply(Mirror& m)
     set_relation(m, false);
     for (auto& [id, s] : m.planets)
         restore_planet(m, id);
+    bool had_stars = !m.stars.empty();
     for (auto& [id, s] : m.stars)
         restore_star(m, id);
     m.stars.clear();
@@ -517,6 +549,8 @@ static void unapply(Mirror& m)
     thiscall<void>(a_HomeStarMap, sm, m.pol, (void*)nullptr); // home star map +0x12C: erase
     thiscall<int>(a_MapErase, (uint8_t*)sm + 0x150, &key);   // the empire map: erase (releases its ref)
     g_unmirrors++;
+    if (had_stars)
+        rebuild_near(); // BUG-1144: no star of nobody in the game's list of owned stars nearby
 }
 
 static bool add_star(Mirror& m, void* s)
@@ -1356,6 +1390,25 @@ static std::string debug(const std::vector<std::string>& a)
                        std::to_string(it->second.civ.size()) + " on=" + std::to_string((int)it->second.on);
         return out + " dropped=" + std::to_string(g_snaps_dropped) + "\n";
     }
+    if (a[0] == "near") { // BUG-1144: the game's list of owned stars nearby (cSimulatorSpaceGame +0x30 -> +0x7C)
+        void* ns = near_stars();
+        if (!ns)
+            return "no near list\n";
+        std::vector<void*> v = ptr_vec((uint8_t*)ns + 0x7C, 256);
+        uint32_t me = my_pol();
+        std::string o = "near " + std::to_string(v.size()) + " rebuilds=" + std::to_string(g_near_rebuilds) + "\n";
+        int stale = 0;
+        for (void* s : v) {
+            if (!readable(s, 0x74))
+                continue;
+            uint32_t pol = F<uint32_t>(s, 0x54);
+            bool ok = pol == me || empire_of(pol);
+            stale += !ok;
+            o += "star " + std::to_string(F<uint32_t>(s, 0x70)) + " owner=" + hex(pol) + " flags=" + hex(F<uint32_t>(s, 0x5C)) +
+                 (pol == me ? " (mine)" : ok ? " empire" : " NO EMPIRE") + "\n";
+        }
+        return o + "stale=" + std::to_string(stale) + "\n";
+    }
     if (a[0] == "remove") { // unmirror (as before a save), no re-apply until "apply"
         unapply_all();
         g_hold = true;
@@ -1553,7 +1606,7 @@ static std::string debug(const std::vector<std::string>& a)
         return "colonized " + hex(id) + "\n" + describe_star(id & 0xFFFFFFu);
     }
     return "usage: coop.space allies [list | star <StarID> | planet <PlanetID> | empire <pol> | raids | raid <PlanetID> [n] |"
-           " apply | remove | drop | fake <name> <PlanetID>... | free | colonize [PlanetID]]\n";
+           " apply | remove | drop | near | fake <name> <PlanetID>... | free | colonize [PlanetID]]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)
@@ -1609,6 +1662,9 @@ static bool init(const SkHost* h, SkMod* m)
     a_PlayerUFO = S("Simulator::cSimulatorPlayerUFO::Get");
     a_SpacePlayerData = S("Simulator::SpacePlayerData::ptr");
     a_FlagsAt = S("SporeCoop::VectorMapUint_At");
+    a_SpaceGame = S("Simulator::cSimulatorSpaceGame::Get");
+    a_NearRebuild = S("SporeCoop::SpaceNearStars_Rebuild");
+    a_NearVt = S("SporeCoop::SpaceNearStars_vftable");
     uintptr_t need[] = {a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit, a_AddStar, a_SetHomeStar,
                         a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt,
                         a_HomeStarMap, a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove,
