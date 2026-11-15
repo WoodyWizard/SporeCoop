@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Interface Size: checked in every stage and the galaxy menu; editors open at 100 % (BUG-9191). A new world from the
+  galaxy wizard (its stage start editor) also sends waiting guests into their editor (BUG-9207).
 - Interface Size: Spore's UI grows as one picture (laid out for a smaller screen, then scaled), so HUD pieces stay
   together and on the screen edges (decision 3X A, BUG-9191).
 - Creature: a guest joining a world where it has no creature of its own makes its first one (the base creature)

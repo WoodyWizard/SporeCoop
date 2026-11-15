@@ -3407,3 +3407,21 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
   request gave an editor whose 3D view stayed black (no background, platform or body; the UI fine) for minutes;
   opened after the transfer (the world held) it rendered normally.
 
+## The Creature stage start editor of a new world (2026-11-15, feat/lineages-47)
+<a id="creature-stage-start-editor"></a>
+
+* ✔ (runtime, TITAN, fresh profile with `cheat levels -unlock`) A new Creature world from the galaxy wizard: an empty
+  planet slot, "Choose A Stage" (the paw), "Choose Your Diet" (a card goes on by itself), the Sporepedia "Create or
+  Choose a Creature", "Create Your Own" opens **editor 0xE46C381E** (not the Creature Creator 0x465C50BA): the
+  underwater stage, two part tabs (legs, hands), three legs, a 145 budget, a random-colour body. The request from the
+  galaxy menu (logged by h_Submit): +0x1C 0x02CCD1D2 (back to the galaxy menu), +0x20 / +0x24 two words that differ
+  by diet, bytes +0x34..+0x3F 00 00 01 01 01 01 00 01 00 01 00 00, +0x6C 0x00010100, +0x90 tag 0x13C5A95E, +0x94 a
+  parts list (cCollectableItems) made by the wizard.
+* ✔ The same request built by the mod with no parts list (`coop.newcreature E46C381E`) opens the same editor with the
+  same palette and budget on any profile (a guest's too).
+* ? In every profile tried (fresh, DuoQAJiffStand, DuoQAStageGuest) the start editor offers no mouth, and its check
+  says "Your creation needs a mouth": no creature can be finished there. The owner's own run (2026-11-14, 308 s in
+  the editor, a new creation 'Griscale' after it) finished one: how it got a mouth is not known (a Sporepedia creature
+  picked and edited? the owner's profile's parts?).
+* A test profile's first start shows the Spore account dialog; closing it asks "Quit registration?" (OK).
+
