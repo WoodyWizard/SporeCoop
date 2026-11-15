@@ -5352,18 +5352,13 @@ void on_world_change()
 
 // BUG-0223: which Civ world is open. Before, a single frame without the stage's local entity (an
 // anchor built from the player civ's first city) counted as a world change: the host dropped the
-// vehicle table (every vehicle a new id, rebuilt on the guests), every city's owner (captures and
-// gifts) and the boosts while the world was still there. Now: the stage counter
-// (game::stage_epoch: a load, a received world, another stage), leaving Civ for a mode that is not
-// an editor, and the in-stage signals (another player civilization object, another save name).
-// Limit: a reload of the same save that reuses the player civ's address and never shows a
-// non-stage frame is not seen.
-static stage_epoch::Watch g_world_watch;
-static bool g_world_left = true;
+// vehicle table, every city's owner and the boosts while the world was still there. C2 (BUG-1141):
+// world_id.h is the one answer (the stage counter, leaving Civ for a mode that is not an editor,
+// another player civilization object or save file); coop.cpp fires the hook below.
 static uint32_t g_world_checks_fired;
 
-// C2 (BUG-1141, `core.world_id` on): the Civ world that was open changed or closed (world_id.h fires it; an editor
-// visit keeps it, decision 2); world_check below stands down
+// C2 (BUG-1141): the Civ world that was open changed or closed (world_id.h fires it; an editor
+// visit keeps it, decision 2)
 LIFECYCLE_HOOK("civ.world", lifecycle::kWorldChange, -44, [](const lifecycle::Ctx& c) {
     if (c.from_stage != stage_epoch::index_of(modes::kCiv))
         return;
@@ -5376,30 +5371,6 @@ LIFECYCLE_HOOK("civ.world", lifecycle::kWorldChange, -44, [](const lifecycle::Ct
 // the Civ world's root object for world_id.h (coop.cpp): the player civilization, null outside Civ
 const void* world_anchor() { return game::mode_id() == modes::kCiv && g_ok && nm() ? player_civ() : nullptr; }
 
-void world_check()
-{
-    if (lifecycle::world_events_on())
-        return;
-    uint32_t m = game::mode_id();
-    bool in = m == modes::kCiv;
-    bool editor = m == modes::kEdit || m == modes::kEditor;
-    void* pc = in && g_ok && nm() ? player_civ() : nullptr;
-    bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kCiv), in, pc, in ? modes::current_world() : 0);
-    bool fire = false;
-    if (!in && !editor) {
-        fire = !g_world_left;
-        g_world_left = true;
-    } else if (in) {
-        fire = ch && !g_world_left;
-        g_world_left = false;
-    }
-    if (fire) {
-        g_world_checks_fired++;
-        if (g_ok)
-            H->log(M, SK_INFO, "civ: the world changed (mode %08X, epoch %u)", m, game::stage_epoch(modes::kCiv));
-        on_world_change();
-    }
-}
 
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)
 {
