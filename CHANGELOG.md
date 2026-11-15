@@ -27,9 +27,6 @@
 - Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
   open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
   and branches that can go (BUG-1127).
-- Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
-  open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
-  and branches that can go (BUG-1127).
 - Lab: a test whose scenario did not happen is INCONCLUSIVE (never a pass, three in a row fail), every failure has a
   reason, one flake history over all worktrees (`lab.py flaky`), `--repeat` stops once the answer is clear, test
   selection by the change (`lab.py run impact`), and a failed campaign segment can be played again from its own save
