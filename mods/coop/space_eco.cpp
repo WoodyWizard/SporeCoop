@@ -262,10 +262,8 @@ static void send_tick(double now)
 {
     if (!g_dirty_place || now > g_dirty_until || now - g_last_send < kSendGap)
         return;
-    if (my_place() != g_dirty_place)
-        return;
-    void* rec = record_of(active_planet());
-    if (!rec || F<uint32_t>(rec, 0x184) != (g_dirty_place & 0x3FFFFFFFu))
+    void* rec = record_checked(g_dirty_place & 0x3FFFFFFFu); // also right after the ship left the planet
+    if (!rec)
         return;
     we::Eco m;
     m.planet = g_dirty_place & 0x3FFFFFFFu;

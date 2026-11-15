@@ -18,9 +18,12 @@ off that planet sets its record's lists, a game on it adds the species through t
 PASS: the guest's planet is stabilized (level 1); the host's record has the guest's plant and animal species in the
 same order and the game's own stabilized level 1 while away and after landing, and the host's planet shows creatures
 of each of the guest's animal species. SPORE_FIX_OFF=space.eco_sync must FAIL (the host keeps 2 plants, level 0).
+--live: the host lands on the planet first, so the guest's species reach a game that is on it (the game's placement
+functions and a herd there, not the record alone); the same checks on the planet.
 
-  SPORE_LANE=6 python3 tools/tests/coop_space_eco.py
+  SPORE_LANE=6 python3 tools/tests/coop_space_eco.py [--live]
 """
+import sys
 import re
 import time
 
@@ -55,12 +58,20 @@ def main():
     pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1200, stats)
     ph.partner, pg.partner = pg, ph
     want = 0x40000000 | int(PLANET, 16)
+    live = '--live' in sys.argv
     for _ in range(3):
         pg.land_retry(PLANET)
         if pg.place()[0] == want:
             break
-    ck(pg.place()[0] == want and ph.place() != pg.place(),
-       f'the guest is on the planet {PLANET}, the host elsewhere ({pg.place()}, {ph.place()})')
+    if live:
+        for _ in range(3):
+            ph.land_retry(PLANET)
+            if ph.place()[0] == want:
+                break
+        ck(pg.place()[0] == want and ph.place()[0] == want, f'both are on the planet {PLANET} ({pg.place()}, {ph.place()})')
+    else:
+        ck(pg.place()[0] == want and ph.place() != pg.place(),
+           f'the guest is on the planet {PLANET}, the host elsewhere ({pg.place()}, {ph.place()})')
     time.sleep(3)
     lv0, p0, a0, t0 = eco(guest)
     _, hp0, ha0, _ = eco(host, PLANET)
@@ -87,6 +98,21 @@ def main():
     gp = [k for k, _ in p1]
     ga = [k for k, _, _ in a1]
     hl = None
+    if live:
+        t_end = time.time() + 30
+        while time.time() < t_end:
+            time.sleep(3)
+            hl, hp, ha, ht = eco(host)
+            if hl == 1 and ha and all(n for _, _, n in ha):
+                break
+        print(f'  host on the planet: {ht}', flush=True)
+        print('  ' + sp(host, 'eco').splitlines()[0], flush=True)
+        ck(hl == 1 and sorted(k for k, _ in hp) == sorted(gp) and sorted(k for k, _, _ in ha) == sorted(ga),
+           f"the host's planet has the guest's species and is stabilized (level {hl})")
+        ck(ha and all(n for _, _, n in ha),
+           f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     t_end = time.time() + 20
     while time.time() < t_end:
         hl, hp, ha, ht = eco(host, PLANET)

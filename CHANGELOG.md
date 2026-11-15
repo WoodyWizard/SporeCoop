@@ -24,6 +24,12 @@
   same host too: your game remembers for a day that it was you, for that host and your name only (BUG-1135).
 - Space: a rare crash when an NPC ship would visit your star system right after you saved, or after the host left,
   while a partner's colony was shown as an allied empire nearby (BUG-1144).
+- Space: plants and animals a player places on a planet are now on that planet in every player's game, and the
+  planet counts as stabilized there too (more colony cities); a player who flies there later finds the animals. Before,
+  a planet a guest terraformed and populated was empty and not stabilized for the host (BUG-1148).
+- Space: terraforming done by a partner is no longer lost for a player who was in an editor or an adventure at the
+  time, or whose game had never been near that star; the host also hands it to a player who arrives in that star
+  system later, so it reaches the host's save as well (BUG-1155).
 - Network: more robustness checks on the data between the players' games: the host's game stays stable when another
   game sends far more than normal play.
 
