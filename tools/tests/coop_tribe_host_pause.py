@@ -11,7 +11,8 @@ Two games on the tribe fixture.
    notification panels (the game's own windows, `coop.status` toast lines) show "<host> paused the game". A key frame
    of both games.
 3. The host resumes (Resume Game, as a player): the guest's game runs again within 10 s, with the note that it goes on.
-Without the fix (SPORE_FIX_OFF=tribe.host_pause_wait) the guest plays on with no word: step 2 FAILS.
+Without the fix (SPORE_FIX_OFF=tribe.host_pause_wait,tribe.busy_model: since 0.7.15 the host's pause also comes as
+MSG_HOST_BUSY, BUG-1142) the guest plays on with no word: step 2 FAILS.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_host_pause.py
 """

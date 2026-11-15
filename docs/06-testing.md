@@ -8420,3 +8420,16 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
   space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
   ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.
+
+## The host's pause in every stage (2026-11-15, feat/w51-core2)
+<a id="testing-host-pause"></a>
+
+C3 of 0.7.15 (BUG-1142): `coop_host_pause.py --stage cell|creature|tribe|civ|space` (suite `host_pause_<stage>`, warm,
+the stage's fixture, ~1 min each on a quiet lane): the host's Esc (pause menu); within 6 s (Cell 8 s) the guest's game
+stands and its toast says "Alice paused the game"; after Resume Game it runs. "Stands" is the game's own state: the
+guest's `busy: paused` (cGameTimeManager), in Cell the guest's own cell sent to swim 40 m (`coop.pool goto 40 0`)
+moving under 0.5 m in 3 s (the Cell stage has no game-time pause). `--rivals` (Space, `host_pause_rivals`): Rivals mode
+on, the guest does not wait and shows no line. `--guest-pause` (`host_pause_guest`): the guest's Esc, the host's game
+runs on. FAIL twins: SPORE_FIX_OFF=cell.busy_model / npc.busy_model / civ.busy_model / space.busy_model, Tribe
+tribe.busy_model,tribe.host_pause_wait (its 0.7.14 kind-21 wait still answers alone). `coop.status` "host busy:"
+shows the host's classified state, what the guest heard and its wait.

@@ -63,6 +63,10 @@
   host's with a message (BUG-1158).
 
 ### Development
+- One answer to "did the world change?" (`world_id.h`: another stage, save or root object, the stage entered again; an
+  editor visit is none) fires every module's world change, and a session end runs every module's end, through one
+  ordered list of hooks (`LIFECYCLE_HOOK`, `coop.lifecycle hooks`); Tribe's and Civilization's own world checks and
+  the hand-written lists are gone (BUG-1141).
 - Tests across sessions: `twoinst.session_restart()` plays "a new evening" in a test (save, both quit, the host loads
   its save, the guest joins again); tests space_session, space_session_npc, civ_owners_session, tribe_owners_session,
   autosave_milestone, autosave_timer (docs/06-testing.md#testing-session-restart).
