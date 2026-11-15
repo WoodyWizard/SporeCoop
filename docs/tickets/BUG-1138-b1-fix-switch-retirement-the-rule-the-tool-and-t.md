@@ -58,7 +58,22 @@ second surface on the same bools.
   coop.corefix and coop.sessionfix gone, coop.settingsin added; `callbacks`: the custom-message lambda's hash
   (its DNA-spend branch lost the switch).
 * `make -j8`, `make test` pass; object_alive ratchet 149 -> 148.
+* After the merge of rel/0.7.15 5206247b: dumps lane 6 base 20261115-143613 (5206247b), lane 3 after 20261115-143451:
+  the same picture (fix 802 -> 581, the 221 retired names plus net.async_resolve's text; commands: corefix /
+  sessionfix gone, settingsin added; callbacks: the custom lambda's hash; lifecycle, players, guards, hooks, msgtable,
+  manifest identical). The tests of the merged files PASS: 20261115-142551 (civ_owners_session, tribe_owners_session,
+  civ_designs, tribe_outfit, play_civ --quick, play_tribe --quick, multi4_tribe_slow).
+* `lab.py run impact --base rel/0.7.15` (lanes 2, 3, 20261115-034753): stopped by the orchestrator after ~10 h (995
+  tests picked, 199 run, 15 failed). Reruns on the branch (20261115-133237, lanes 2, 3, 6, 7): 9 PASS. The five that
+  failed again, each on rel/0.7.15 on the same lane: sync_mobile (lane 6, 20261115-141528 FAIL the same: civ vehicles
+  p90 over 3 m, BUG-0438's class), puppet_far_jump_caption (lane 7, 20261115-141533 FAIL the same, 5.3 m), editor_desync
+  (lane 3, 20261115-141538 FAIL the same check), multi4_tribe_slow (lane 7 base PASS; the branch PASS after the merge,
+  20261115-142551 lane 3: flaky, other reasons each time), campaign_tribe_noclick (lane 2 base 20261115-141543 PASS;
+  then the branch PASS on lane 2 and rel/0.7.15 5206247b FAIL on lane 3, both 20261115-145821, the same stuck raid:
+  a known flake, 4 of 6 before). campaign_segment needs `--segment <run>` (picked by the impact selection, not
+  runnable alone). None of them comes from B1.
 
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: rule, tool and first batch on feat/w51-retire (five file groups in parallel worktrees, merged).
+- 2026-11-15: rel/0.7.15 5206247b merged (E1 claims kept next to the retired civ switches); impact run triaged.
