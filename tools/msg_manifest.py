@@ -254,7 +254,9 @@ def lock(root=ROOT, rebase=None, reason=''):
 def self_test():
     bad = 0
     with tempfile.TemporaryDirectory() as d:
-        for rel in (f'{NET}/messages.def', f'{NET}/space_kinds.def', f'{NET}/protocol.h', LOCK, DOCS):
+        # every family's wire files too (C6's wire/*.h), else they hash as missing and the copy is not the tree
+        wire = sorted({f'mods/coop/{f}' for fam in parse(ROOT)[1] for f in fam['files']})
+        for rel in (f'{NET}/messages.def', f'{NET}/space_kinds.def', f'{NET}/protocol.h', LOCK, DOCS, *wire):
             os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
             shutil.copy(os.path.join(ROOT, rel), os.path.join(d, rel))
 
