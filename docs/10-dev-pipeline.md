@@ -232,3 +232,37 @@ also check README (Compatibility, footnotes) and INSTALL, which name no patch ve
 * `tools/ci_lint.py` (in `make test`) fails on an action without a SHA or tag comment, a workflow
   that does not check the tarball or pins a toolchain version of its own, unpinned Pillow, or a
   malformed `toolchain.env` (BUG-1121).
+
+## Release dry run, and tag only on a green main (2026-11-15, feat/w51-build)
+<a id="pipeline-release-dry"></a>
+
+3 of 9 tags before 0.7.15 failed only in CI (v0.7.3.4: libstdc++ 12 headers; v0.7.11: Python 3.12
+f-strings that the runner's 3.10 cannot parse; v0.7.14: a private ticket id in the notes, invisible
+without out/tickets), and v0.7.14 was moved after its failure. `make release-dry`
+(`tools/release_dry.sh [--rev <commit>] [--keep]`, about 95 s) runs the tag workflow locally (BUG-1120):
+
+* a `git archive` copy of the commit (HEAD by default; uncommitted changes are not in it) in an empty
+  folder, made a depth-1 shallow repository of the same commit, as CI's checkout: no history, no
+  out/ (no private tickets, lab results or old dist), no untracked files;
+* CI's Python (`CI_PYTHON` of tools/toolchain.env, through `uv run --no-project --python 3.10`) as
+  `python3`, Pillow `PILLOW_VERSION`, the pinned llvm-mingw, `env -i` with `CI=true` and `LANG=C.UTF-8`;
+* the workflow's steps in order: the Python check, `release_check.sh v<COOP_VERSION>` (version, notes,
+  notes-check), `make`, `make test`, `package.sh`, then the release job's checks (every asset the
+  publish step names, SHA256SUMS.txt, the zip holds the attested binaries).
+* Not covered: CI's host compiler for `make test` (ubuntu-22.04's clang 14 with libstdc++ 12, here
+  Fedora's clang++: the v0.7.3.4 class of missing includes still shows only in CI), the upload and the
+  attestation.
+* Proof (2026-11-15): HEAD PASS; a commit with a 3.12 f-string in a game test (3.14 parses it) FAIL in
+  `make test` (test_lint: does not parse); a commit naming a private ticket under Fixed FAIL in
+  release_check (no ticket docs/tickets/BUG-1003-*.md).
+* The copy is removed after a PASS and kept with `release-dry.log` after a FAIL; uv's relocatable
+  Python gets `PYTHONHOME` there (a test starts it under a fake argv[0]).
+
+**The release order** (replaces "push main and the tag together"):
+
+1. On main: CHANGELOG section, `COOP_VERSION`, `tools/tickets.py release X.Y.Z`, commit.
+2. `make release-dry` on that commit: PASS.
+3. Push main only, then wait for its CI run: `gh run watch $(gh run list -b main -L 1 --json databaseId
+   --jq '.[0].databaseId') --exit-status`.
+4. Only on a green main: push the tag `vX.Y.Z` on exactly that commit.
+5. A published tag is never moved or re-pushed: a broken release gets the next version (X.Y.Z.1).

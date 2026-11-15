@@ -215,6 +215,12 @@ $(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.
 clean:
 	rm -rf $(B)
 
+# A2 (BUG-1120): the release build of HEAD as CI makes it (a git archive copy, CI's Python and toolchain,
+# every step of the tag workflow that runs locally); before every tag: docs/10-dev-pipeline.md#pipeline-release-dry
+.PHONY: release-dry
+release-dry:
+	tools/release_dry.sh
+
 # the toolchain folder this Makefile uses (tools/package.sh, tools/tests/update_check.py ask here)
 .PHONY: toolchain-path
 toolchain-path:

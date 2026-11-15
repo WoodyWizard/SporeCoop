@@ -124,8 +124,9 @@ anything new, write it down in the same change.**
   merge button: it writes the account's e-mail into the merge commit. Commits use the GitHub
   no-reply address.
 * Releases: add the version's section to `CHANGELOG.md`, bump `COOP_VERSION` (mods/coop/coop.cpp),
-  run `tools/tickets.py release X.Y.Z` (fixed tickets get the version), push a tag `vX.Y.Z`: GitHub
-  Actions builds the zip and publishes the release.
+  run `tools/tickets.py release X.Y.Z` (fixed tickets get the version), `make release-dry` must pass, push
+  main, and only when main's CI run is green push the tag `vX.Y.Z`: GitHub Actions builds the zip and
+  publishes the release. A published tag is never moved (docs/10-dev-pipeline.md#pipeline-release-dry).
 * Shared append-only files (`CHANGELOG.md`, `docs/known-issues.md`, `docs/06-testing.md`,
   `docs/re/*.md`) merge with git's `union` driver (`.gitattributes`): parallel additions do not
   conflict. After such a merge check the file for duplicated or interleaved text.
