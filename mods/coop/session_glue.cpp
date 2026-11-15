@@ -8,6 +8,7 @@
 #include "version.h"
 #define COOP_VERSION SC_VER_STR
 #include "coop_state.h"
+#include "store.h"
 #include "net/compat.h"
 #include "net/manifest.h"
 
@@ -720,6 +721,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         support::on_player_join(p);
         settings::on_player_join(p.id); // F3: the host's session settings first
+        store::on_player_join(p.id);    // E1: a stored name under a new key: the host is told
         pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
         g_world_announced = 0; // BUG-0933: the newcomer's WELCOME may have named no world (the host in an editor)

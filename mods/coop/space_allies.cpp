@@ -29,6 +29,7 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "store.h"
 #include "space_logic.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
@@ -805,8 +806,10 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     o_Save(mgr, name, flag);
     // BUG-0225: the game wrote the file synchronously (<name>.tmp, then its own rename; the function
     // returns nothing, docs/re/space.md#space-owed-refund-identity). An empty name writes nothing.
-    if (name && *name)
+    if (name && *name) {
         spaceext::note_saved();
+        store::after_save(); // E1 (BUG-1149): the per-player store follows every save of the game (any stage)
+    }
 }
 
 // NPC empires grow (colonise more stars) on their own: not the mirror (it would leave stars behind)

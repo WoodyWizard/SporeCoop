@@ -30,6 +30,7 @@
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
+#include "kept_disk.h"
 #include "wire/space_badges.h"
 
 using skg::cdecl_call;
@@ -141,6 +142,35 @@ static int rank()
 // ---- host: the badges kept per player (spaceext::kept_key: its rejoin token, BUG-1107), space_kept.h (C5) ----
 static uint32_t g_tables, g_sent_back, g_done;
 static spacekept::KeptStore<Badges> g_store;
+// E1 (BUG-1149): the kept badges also go into the per-player store on the host's disk (store.h, written with every
+// save of the game) and are read from it when the Space world opens: a guest's badges and rank come back the next
+// evening, not only after a rejoin. `coop.fix store.space_badges off`: memory only (a host restart loses them, 0.7.14).
+static bool g_disk_fix = true;
+COOP_FIX("store.space_badges", "BUG-1149", g_disk_fix,
+         "space: a guest's own badges and rank are kept on the host's disk next to its save and come back in the next session");
+static kept_disk::Backend<Badges> g_disk{"space.badges", 1,
+                                         [](const Badges& b) {
+                                             net::Writer w;
+                                             bw::put_badges(w, b);
+                                             return w.data;
+                                         },
+                                         [](const std::vector<uint8_t>& d, Badges& b) {
+                                             net::Reader r(d.data(), d.size());
+                                             return bw::get_badges(r, b) && r.left() == 0;
+                                         }};
+static void send_kept(spacekept::Entry<Badges>& k);
+static bool g_store_reg = store::add({"space.badges",
+                                      [](pstore::Store& s, int64_t now) {
+                                          if (g_disk_fix && g_fix)
+                                              g_disk.save(g_store, s, now, false);
+                                      },
+                                      [](const std::string& from, const std::string& to) {
+                                          if (!g_store.rekey(from, to))
+                                              return;
+                                          for (auto& [k, e] : g_store.entries())
+                                              if (k == to && e.id != spacekept::kNoId)
+                                                  send_kept(e);
+                                      }});
 // ---- guest: the Space world of its join, the fresh and restored worlds (C5: space_kept.h) ----
 static spacekept::RestoreWindow g_win;
 static uint32_t g_sent, g_restored, g_own_held;
@@ -202,7 +232,9 @@ static void tick(double now)
     if (!spaceext::connected())
         return;
     if (spaceext::is_host()) {
-        g_store.world(spaceext::world_epoch()); // another Space world: the badges kept were of the old one
+        bool emptied = g_store.world(spaceext::world_epoch()); // another Space world: the badges kept were of the old one
+        if (g_disk_fix)
+            g_disk.sync(g_store, emptied, spaceext::in_space()); // E1: what the host's disk keeps for this world
         g_store.tick(now, partner_here, [](spacekept::Entry<Badges>& k) { send_kept(k); });
         return;
     }
@@ -325,7 +357,7 @@ static std::string status()
     snprintf(b, sizeof b,
              "badges: fix=%d rank=%d kept=%u tables=%u sent_back=%u done=%u | guest sent=%u restored=%u own_save=%u",
              (int)g_fix, rank(), (unsigned)g_store.size(), g_tables, g_sent_back, g_done, g_sent, g_restored, g_own_held);
-    return b;
+    return std::string(b) + " | disk fix=" + std::to_string((int)g_disk_fix) + " " + g_disk.status();
 }
 
 static std::string debug(const std::vector<std::string>& a)

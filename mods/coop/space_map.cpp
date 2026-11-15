@@ -22,6 +22,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
+#include "kept_disk.h"
 #include "wire/space_map.h"
 #include "cell_logic.h"
 #include "find.h"
@@ -481,6 +482,43 @@ static bool g_kept_leave_fix = true;
 COOP_FIX("space.kept_leave", "BUG-0810", g_kept_leave_fix,
          "space: a guest's kept colonies come back after a crash rejoin that keeps its player id");
 static uint32_t g_kept_left;
+// E1 (BUG-1149): the host's list also goes into the per-player store on its disk (store.h: next to its save, written
+// with every save of the game) and is read from it when the Space world opens, so a guest's colonies come back the next
+// evening (both quit, the host loads its save again, the guest joins again) the way they come back after a rejoin.
+// `coop.fix store.space_colonies off`: memory only (a host restart loses them, 0.7.14).
+static bool g_disk_fix = true;
+COOP_FIX("store.space_colonies", "BUG-1149", g_disk_fix,
+         "space: a guest's own colonies are kept on the host's disk next to its save and come back in the next session");
+static kept_disk::Backend<std::vector<uint32_t>> g_disk{
+    "space.colonies", 1,
+    [](const std::vector<uint32_t>& v) {
+        pstore::Out o;
+        for (uint32_t p : v)
+            o.u32(p);
+        return o.d;
+    },
+    [](const std::vector<uint8_t>& d, std::vector<uint32_t>& v) {
+        if (d.size() % 4 || d.size() > 4 * 2000)
+            return false;
+        pstore::In in(d);
+        v.clear();
+        while (in.ok && in.p < d.size())
+            v.push_back(in.u32());
+        return in.end();
+    }};
+static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k);
+static bool g_store_reg = store::add({"space.colonies",
+                                      [](pstore::Store& s, int64_t now) {
+                                          if (g_disk_fix && g_keep_fix)
+                                              g_disk.save(g_store, s, now, true);
+                                      },
+                                      [](const std::string& from, const std::string& to) {
+                                          if (!g_store.rekey(from, to))
+                                              return;
+                                          for (auto& [k, e] : g_store.entries())
+                                              if (k == to && e.id != spacekept::kNoId && !e.value.empty())
+                                                  send_kept(e); // the player is here: its colonies at once
+                                      }});
 PLAYER_STATE("space_map_kept",
              [](uint8_t id) {
                  if (g_kept_leave_fix)
@@ -528,7 +566,9 @@ static void kept_roster(uint8_t id)
 static void kept_tick(double now)
 {
     if (spaceext::is_host()) {
-        g_store.world(spaceext::world_epoch()); // another Space world: its players' colonies are not this one's
+        bool emptied = g_store.world(spaceext::world_epoch()); // another Space world: its players' colonies are not this one's
+        if (g_disk_fix && g_keep_fix)
+            g_disk.sync(g_store, emptied, spaceext::in_space()); // E1: what the host's disk keeps for this world
         std::set<uint8_t> here;
         for (auto& p : spaceext::ctx().sess->players())
             here.insert(p.id);
@@ -593,6 +633,8 @@ static std::string kept_status()
              (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
              g_kept_left);
     s += b;
+    s += "  disk: fix=" + std::to_string((int)g_disk_fix) + " " + g_disk.status() + " (restored " +
+         std::to_string(g_store.restored()) + ")\n";
     for (auto& [n, k] : g_store.entries()) {
         snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", k.name.c_str(), k.id == spacekept::kNoId ? -1 : k.id,
                  (int)k.restoring, (unsigned)k.value.size());

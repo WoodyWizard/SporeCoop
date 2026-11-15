@@ -85,6 +85,7 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "settings.h"
+#include "store.h"
 #include "sreport.h"
 #include "space_ext.h"
 #include "host_world.h"
@@ -1047,6 +1048,7 @@ static void frame_local_update(double now)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
+    store::tick();    // E1 (BUG-1149): the host's world opened: its per-player store
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
@@ -2543,6 +2545,11 @@ static void init_player_modules()
         sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
         sc.feed = feed;
         settings::init(H, M, sc);
+        store::Ctx stc; // E1 (BUG-1149): the per-player store on the host's disk
+        stc.sess = &g_sess;
+        stc.feed = feed;
+        stc.notice = feed; // the host only (the hint names a console command of the host)
+        store::init(H, M, stc);
         g_sess.join_closed = [] { return !settings::on(settings::kLateJoin) && settings::started(); };
     }
     { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap

@@ -41,6 +41,7 @@
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
+#include "store.h"
 #include "wire/space_rivalry.h"
 
 using spaceext::Relation;
@@ -137,6 +138,21 @@ static const int* budget_find(const std::string& key)
     return e ? &e->value : nullptr;
 }
 static void budget_clear() { g_store.clear(); }
+// E1 (BUG-1152): Rivals over several evenings. The end of a session switched the mode off and dropped the guests'
+// budgets and the relations between the players, so the next session began in Allies mode with the guests' money gone.
+// Now the host keeps them for the world (the mode, the relations by player key, each player's budget), in memory across
+// the session's end and in the per-player store on its disk (store.h: written with every save, read when its Space world
+// opens); the next session of that world goes on in Rivals mode (a guest's K_ASK gets its budget back, the relations
+// come back when both players are here). `coop.fix store.space_rivals off`: reset at the session's end (0.7.14).
+static bool g_disk_fix = true;
+COOP_FIX("store.space_rivals", "BUG-1152", g_disk_fix,
+         "space rivals: the mode, the players' budgets and their relations go on in the next session of the world (kept on the host's disk)");
+static std::map<std::pair<std::string, std::string>, Relation> g_rel_keys; // host: sorted player key pair -> relation
+static bool g_kept_rivals;      // host: the last session of g_state_world ended in Rivals mode
+static std::string g_state_world; // host: the store world (store::world_name) the Rivals state above belongs to
+static uint32_t g_store_serial; // host: the store read last
+static uint32_t g_mode_resumed, g_rel_resumed, g_disk_read;
+static bool g_was_host;
 // BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
 // budget store keeps a rejoiner's own)
 PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
@@ -230,6 +246,21 @@ static void host_rebuild()
     spaceext::clear_relations();
     g_props.clear();
     auto r = roster();
+    if (g_disk_fix && spaceext::rivals()) // E1 (BUG-1152): the relations by player key, both ways
+        for (size_t i = 0; i < r.size(); i++)
+            for (size_t j = i + 1; j < r.size(); j++) {
+                auto kp = key(spaceext::kept_key(r[i].first), spaceext::kept_key(r[j].first));
+                if (kp.first.empty() || kp.second.empty())
+                    continue;
+                auto nk = key(r[i].second, r[j].second);
+                auto it = g_rel_names.find(nk);
+                if (it != g_rel_names.end())
+                    g_rel_keys[kp] = it->second;
+                else if (auto k = g_rel_keys.find(kp); k != g_rel_keys.end()) {
+                    g_rel_names[nk] = k->second; // kept from the last session: these two are back
+                    g_rel_resumed++;
+                }
+            }
     for (size_t i = 0; i < r.size(); i++)
         for (size_t j = i + 1; j < r.size(); j++) {
             auto it = g_rel_names.find(key(r[i].second, r[j].second));
@@ -321,6 +352,8 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
             g_splits++;
             spaceext::set_rivals(true);
             g_rel_names.clear();
+            g_rel_keys.clear();
+            g_kept_rivals = false;
             g_props_names.clear();
             g_merge_credit_of.clear();
         } else {
@@ -350,6 +383,8 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
             g_merges++;
             spaceext::set_rivals(false);
             g_rel_names.clear();
+            g_rel_keys.clear();
+            g_kept_rivals = false;
             g_props_names.clear();
         }
         g_budget.clear();
@@ -739,10 +774,106 @@ static void puppets_tick()
     g_enemy_puppets = n;
 }
 
+// E1 (BUG-1152), the host in Space: the Rivals state of the world from its disk, once per store opened
+static void disk_read()
+{
+    pstore::Store* w = store::world();
+    if (!w || store::serial() == g_store_serial)
+        return;
+    g_store_serial = store::serial();
+    if (spaceext::rivals() || g_kept_rivals ? g_state_world == w->world : false)
+        return; // this session's own state of this world is newer than the disk's
+    g_rel_keys.clear();
+    g_kept_rivals = false;
+    budget_clear();
+    g_state_world = w->world;
+    const pstore::Record* r = w->get_world("space.rivals");
+    if (!r || r->ver != 1)
+        return;
+    pstore::In in(r->data);
+    bool rivals = in.u8() != 0;
+    uint16_t n = in.u16();
+    std::map<std::pair<std::string, std::string>, Relation> rels;
+    for (uint16_t i = 0; i < n && in.ok && i < 1000; i++) {
+        std::string a = in.str(), b = in.str();
+        uint8_t v = in.u8();
+        if (in.ok && v <= 2 && pstore::key_ok(a) && pstore::key_ok(b))
+            rels[key(a, b)] = (Relation)v;
+    }
+    if (!in.end() || !rivals)
+        return;
+    g_kept_rivals = true;
+    g_rel_keys = std::move(rels);
+    for (auto& k : w->keys_with("space.budget"))
+        if (const pstore::Record* b = w->get(k, "space.budget"); b && b->ver == 1 && b->data.size() == 4) {
+            pstore::In bi(b->data);
+            int v = bi.i32();
+            if (!g_money_range_fix || net::money_in_range(v))
+                g_store.restore(k, w->name_of(k), v);
+        }
+    g_disk_read++;
+    H->log(M, SK_INFO, "rivalry: world %s was in Rivals mode: %u budgets, %u relations from the host's disk", w->world.c_str(),
+           (unsigned)g_store.size(), (unsigned)g_rel_keys.size());
+}
+
+// the game saves: the Rivals state of this world (store.h)
+static void disk_save(pstore::Store& s, int64_t now)
+{
+    if (!g_disk_fix || g_state_world.empty() || s.world != g_state_world)
+        return;
+    bool rivals = spaceext::rivals() || g_kept_rivals;
+    pstore::Out o;
+    o.u8(rivals);
+    uint16_t n = rivals ? (uint16_t)std::min<size_t>(g_rel_keys.size(), 1000) : 0;
+    o.u16(n);
+    uint16_t i = 0;
+    for (auto& [kp, rel] : g_rel_keys)
+        if (i++ < n) {
+            o.str(kp.first);
+            o.str(kp.second);
+            o.u8((uint8_t)rel);
+        }
+    if (rivals || s.get_world("space.rivals")) // (a world never played in Rivals mode gets no record)
+        s.put_world("space.rivals", 1, o.d);
+    if (!rivals) { // Allies: no budgets of their own
+        for (auto& k : s.keys_with("space.budget"))
+            s.erase(k, "space.budget");
+        return;
+    }
+    for (auto& [k, e] : g_store.entries())
+        if (e.have && pstore::key_ok(k)) {
+            pstore::Out b;
+            b.i32(e.value);
+            s.put(k, e.name, "space.budget", 1, b.d, now);
+        }
+}
+static bool g_store_reg = store::add({"space.rivals", disk_save, [](const std::string& from, const std::string& to) {
+                                          g_store.rekey(from, to); // its budget (its K_ASK, or the next one, gets it)
+                                          std::map<std::pair<std::string, std::string>, Relation> m;
+                                          for (auto& [kp, r] : g_rel_keys)
+                                              m[key(kp.first == from ? to : kp.first, kp.second == from ? to : kp.second)] = r;
+                                          g_rel_keys = std::move(m);
+                                      }});
+
 static void tick(double now)
 {
     if (!spaceext::connected())
         return;
+    if (spaceext::is_host() && g_disk_fix && money_ptr()) {
+        g_was_host = true;
+        disk_read();
+        if (spaceext::rivals())
+            g_state_world = store::world_name();
+        if (g_kept_rivals && !spaceext::rivals() && g_state_world == store::world_name() && !g_state_world.empty()) {
+            // the last session of this world ended in Rivals mode: it goes on (no split: everybody's money is its own)
+            g_kept_rivals = false;
+            spaceext::set_rivals(true);
+            g_mode_resumed++;
+            host_broadcast();
+            spaceext::notice(spaceext::tr("Rivals mode goes on from the last session: every player is an empire of its own again",
+                                          "Режим соперников продолжается с прошлой сессии: каждый игрок снова своя империя"));
+        }
+    }
     if (spaceext::is_host()) {
         auto r = roster();
         if (r != g_roster || now - g_last_state > 5.0) { // a player joined or left; and a safety net
@@ -797,6 +928,14 @@ static void tick(double now)
 
 static void session_end()
 {
+    bool keep = g_disk_fix && g_was_host && spaceext::rivals() && !store::world_name().empty();
+    if (keep) { // E1 (BUG-1152): the next session of this world goes on in Rivals mode
+        g_kept_rivals = true;
+        g_state_world = store::world_name();
+        H->log(M, SK_INFO, "rivalry: the session ended in Rivals mode: kept for the next session of %s (%u budgets, %u relations)",
+               g_state_world.c_str(), (unsigned)g_store.size(), (unsigned)g_rel_keys.size());
+    }
+    g_was_host = false;
     spaceext::set_rivals(false);
     spaceext::clear_relations();
     g_props.clear();
@@ -805,7 +944,13 @@ static void session_end()
     g_split_pending = g_merge_pending = false;
     g_win.known = g_was_in_space = false;
     g_win.applied = 0;
-    budget_clear();
+    if (keep)
+        g_store.session_end(); // the budgets stay (nobody bound)
+    else {
+        budget_clear();
+        if (g_disk_fix && !g_kept_rivals)
+            g_rel_keys.clear();
+    }
     g_last_reported = -1;
     g_rel_names.clear();
     g_props_names.clear();
@@ -923,7 +1068,11 @@ static std::string status()
              g_hits_sent, g_hits_got, g_dmg_got, g_pvp_deaths, g_enemy_puppets, g_splits, g_merges, g_puppet_hits,
              g_last_hit_type, g_last_hit_att == 1 ? "me" : g_last_hit_att == 2 ? "other" : "none", g_restored, g_budget_kept,
              g_newcomers, g_merge_fix_skipped, g_money_refused);
-    return s + b;
+    char d[240]; // E1 (BUG-1152)
+    snprintf(d, sizeof d, "  disk: fix=%d kept_rivals=%d world=%s kept_budgets=%u key_relations=%u read=%u mode_resumed=%u rel_resumed=%u\n",
+             (int)g_disk_fix, (int)g_kept_rivals, g_state_world.empty() ? "-" : g_state_world.c_str(), (unsigned)g_store.size(),
+             (unsigned)g_rel_keys.size(), g_disk_read, g_mode_resumed, g_rel_resumed);
+    return s + b + d;
 }
 
 static std::string debug(const std::vector<std::string>& a)
