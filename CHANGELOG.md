@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Development
+- Test lab: the games start without fixed pauses (each step waits for the game to be ready), the lab draws on two hidden test displays and starts a test only when the machine has room for its games (BUG-1112, BUG-1113, BUG-1114).
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update
