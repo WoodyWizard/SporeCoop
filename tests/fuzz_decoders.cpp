@@ -36,6 +36,10 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "wire/common.h"
+#include "wire/space_badges.h"
+#include "wire/space_map.h"
+#include "wire/space_rivalry.h"
+#include "wire/space_trade.h"
 
 using namespace net;
 
@@ -1015,14 +1019,156 @@ static void fuzz_session(uint64_t seed, int iters)
 template <class T> static bool wire_dec(Reader& r) { T x; return x.read(r); }
 using WireDec = bool (*)(Reader&);
 static const WireDec kWireDecoders[] = {
-    nullptr, // (no struct yet)
+    // wire/space_map.h
+    wire_dec<wire::space_map::Roster>, wire_dec<wire::space_map::RosterReq>, wire_dec<wire::space_map::Kept>,
+    wire_dec<wire::space_map::KeptDone>,
+    // wire/space_trade.h
+    wire_dec<wire::space_trade::Tool>, wire_dec<wire::space_trade::ToolAck>, wire_dec<wire::space_trade::Sell>,
+    wire_dec<wire::space_trade::SellAck>, wire_dec<wire::space_trade::Offer>, wire_dec<wire::space_trade::OfferAck>,
+    wire_dec<wire::space_trade::OfferCancel>, wire_dec<wire::space_trade::InvMsg>, wire_dec<wire::space_trade::InvKept>,
+    wire_dec<wire::space_trade::InvDone>,
+    // wire/space_badges.h
+    wire_dec<wire::space_badges::Table>, wire_dec<wire::space_badges::Kept>, wire_dec<wire::space_badges::Done>,
+    // wire/space_rivalry.h
+    wire_dec<wire::space_rivalry::State>, wire_dec<wire::space_rivalry::Req>, wire_dec<wire::space_rivalry::Event>,
+    wire_dec<wire::space_rivalry::Hit>, wire_dec<wire::space_rivalry::Money>, wire_dec<wire::space_rivalry::MergeFix>,
+    wire_dec<wire::space_rivalry::Ask>, wire_dec<wire::space_rivalry::Set>,
 };
+
+static wire::Key3 key3(Rng& R)
+{
+    wire::Key3 k;
+    for (auto& x : k.v) x = R.u32();
+    return k;
+}
+
+// wire/space_map.h
+static void fuzz_wire_space_map(Rng& R, int iters)
+{
+    namespace m = wire::space_map;
+    auto colony = [](Rng& R) {
+        spacemap::Colony c;
+        c.planet = R.u32(); c.star = c.planet & 0xFFFFFFu; c.name = R.str(64); c.star_name = R.str(64);
+        for (auto& k : c.spice) k = R.u32();
+        c.spice_name = R.str(32); c.cities = R.u16(); c.home = R.below(2);
+        return c;
+    };
+    fuzz_struct<m::Roster>("map Roster", R, iters, [&](Rng& R) {
+        m::Roster x; x.version = R.u32(); x.parts = (uint8_t)(1 + R.below(255)); x.part = (uint8_t)R.below(x.parts);
+        if (R.below(2)) x.part = 0;
+        if (x.part == 0) {
+            x.head.home_star = R.u32(); x.head.home_planet = R.u32(); x.head.place = R.u32();
+            x.head.galaxy_pos = v3(R); x.head.empire_name = R.str(64); x.head.star_now_name = R.str(64);
+            x.head.color = R.u32(); x.head.political_id = R.u32(); x.head.money = (int)R.u32();
+        }
+        for (int n = (int)R.below(R.below(32) ? 6 : 256), i = 0; i < n; i++) x.colonies.push_back(colony(R));
+        return x;
+    });
+    fuzz_struct<m::Kept>("map Kept", R, iters, [](Rng& R) {
+        m::Kept x; x.to = R.u8();
+        for (int n = (int)R.below(R.below(16) ? 12 : 201), i = 0; i < n; i++) x.planets.push_back(R.u32());
+        return x;
+    });
+    fuzz_struct<m::KeptDone>("map KeptDone", R, iters, [](Rng& R) {
+        m::KeptDone x;
+        for (int n = (int)R.below(R.below(16) ? 12 : 201), i = 0; i < n; i++) x.failed.push_back(R.u32());
+        return x;
+    });
+}
+
+// wire/space_trade.h
+static void fuzz_wire_space_trade(Rng& R, int iters)
+{
+    namespace t = wire::space_trade;
+    auto inv = [](Rng& R) {
+        t::Inv v; v.slots = R.u16();
+        for (int n = (int)R.below(R.below(32) ? 12 : 251), i = 0; i < n; i++)
+            v.items.push_back({R.u8(), key3(R), (int)R.below(100001), (int)R.below(100002) - 1});
+        return v;
+    };
+    fuzz_struct<t::Tool>("trade Tool", R, iters, [](Rng& R) {
+        t::Tool x; x.to = R.u8(); x.id = R.u32(); x.key = key3(R); x.n = 1 + (int)R.below(999); x.name = R.str(255); return x;
+    });
+    fuzz_struct<t::ToolAck>("trade ToolAck", R, iters, [](Rng& R) {
+        t::ToolAck x; x.to = R.u8(); x.id = R.u32(); x.got = (int)R.u32(); x.back = (int)R.u32(); return x;
+    });
+    auto sell = [](Rng& R) {
+        t::Sell x; x.to = R.u8(); x.id = R.u32(); x.planet = R.u32(); x.key = key3(R); x.n = 1 + (int)R.below(999);
+        x.price = (int)R.below(2000000); x.name = R.str(255); return x;
+    };
+    fuzz_struct<t::Sell>("trade Sell", R, iters, sell);
+    fuzz_struct<t::Offer>("trade Offer", R, iters, [&](Rng& R) { t::Offer x; static_cast<t::Sell&>(x) = sell(R); return x; });
+    fuzz_struct<t::SellAck>("trade SellAck", R, iters, [](Rng& R) {
+        t::SellAck x; x.to = R.u8(); x.id = R.u32(); x.got = (int)R.u32(); return x;
+    });
+    fuzz_struct<t::OfferAck>("trade OfferAck", R, iters, [](Rng& R) {
+        t::OfferAck x; x.to = R.u8(); x.id = R.u32(); x.got = (int)R.u32(); x.reason = R.u8(); return x;
+    });
+    fuzz_struct<t::OfferCancel>("trade OfferCancel", R, iters, [](Rng& R) { t::OfferCancel x; x.to = R.u8(); x.id = R.u32(); return x; });
+    fuzz_struct<t::InvMsg>("trade InvMsg", R, iters, [&](Rng& R) {
+        t::InvMsg x; x.to = R.u8(); x.id = R.u32(); x.fresh = R.below(2); x.inv = inv(R); return x;
+    });
+    fuzz_struct<t::InvKept>("trade InvKept", R, iters, [&](Rng& R) {
+        t::InvKept x; x.to = R.u8(); x.id = R.u32(); x.have = R.below(3) != 0; if (x.have) x.inv = inv(R); return x;
+    });
+    fuzz_struct<t::InvDone>("trade InvDone", R, iters, [](Rng& R) {
+        t::InvDone x; x.to = R.u8(); x.id = R.u32(); x.restored = R.u16(); x.failed = R.u16(); return x;
+    }, [](const t::InvDone&) { return (size_t)5; }); // the two counts were never read: an older shape is used
+}
+
+// wire/space_badges.h
+static void fuzz_wire_space_badges(Rng& R, int iters)
+{
+    namespace b = wire::space_badges;
+    auto list = [](Rng& R, bool state) {
+        std::vector<std::pair<uint32_t, int32_t>> v;
+        for (int n = (int)R.below(R.below(64) ? 20 : 1001), i = 0; i < n; i++)
+            v.push_back({R.u32(), state ? (int32_t)R.below(17) : (int32_t)R.u32()});
+        return v;
+    };
+    auto tables = [&](Rng& R) {
+        b::Badges t; t.badge = list(R, true); t.stage = list(R, false); t.event = list(R, false); t.card = R.u32(); return t;
+    };
+    fuzz_struct<b::Table>("badges Table", R, iters / 2, [&](Rng& R) {
+        b::Table x; x.to = R.u8(); x.serial = R.u32(); x.fresh = R.below(2); x.b = tables(R); return x;
+    });
+    fuzz_struct<b::Kept>("badges Kept", R, iters / 2, [&](Rng& R) {
+        b::Kept x; x.to = R.u8(); x.serial = R.u32(); x.have = R.below(3) != 0; if (x.have) x.b = tables(R); return x;
+    });
+    fuzz_struct<b::Done>("badges Done", R, iters, [](Rng& R) { b::Done x; x.to = R.u8(); x.serial = R.u32(); return x; });
+}
+
+// wire/space_rivalry.h
+static void fuzz_wire_space_rivalry(Rng& R, int iters)
+{
+    namespace v = wire::space_rivalry;
+    fuzz_struct<v::State>("rivalry State", R, iters, [](Rng& R) {
+        v::State x; x.rivals = R.below(2); x.split = R.u16(); x.total = (int32_t)R.u32(); x.share = (int32_t)R.u32(); x.merge = R.u16();
+        for (int n = (int)R.below(R.below(32) ? 5 : 256), i = 0; i < n; i++) x.credits.push_back({R.u8(), (int32_t)R.u32()});
+        for (int n = (int)R.below(7), i = 0; i < n; i++) x.rels.push_back({R.u8(), R.u8(), R.u8()});
+        for (int n = (int)R.below(5), i = 0; i < n; i++) x.props.push_back({R.u8(), R.u8(), R.u8()});
+        return x;
+    });
+    fuzz_struct<v::Req>("rivalry Req", R, iters, [](Rng& R) { v::Req x; x.action = R.u8(); x.target = R.u8(); return x; });
+    fuzz_struct<v::Event>("rivalry Event", R, iters, [](Rng& R) { v::Event x; x.what = R.u8(); x.a = R.u8(); x.b = R.u8(); return x; });
+    fuzz_struct<v::Hit>("rivalry Hit", R, iters, [](Rng& R) {
+        v::Hit x; x.victim = R.u8(); x.dmg = 0.5f + (float)R.below(100000); x.type = (int)R.u32();
+        for (auto& d : x.dir) d = R.f32();
+        return x;
+    });
+    fuzz_struct<v::Money>("rivalry Money", R, iters, [](Rng& R) { v::Money x; x.v = (int)R.u32(); return x; });
+    fuzz_struct<v::MergeFix>("rivalry MergeFix", R, iters, [](Rng& R) { v::MergeFix x; x.d = (int)R.below(199999999) - 99999999; return x; });
+    fuzz_struct<v::Set>("rivalry Set", R, iters, [](Rng& R) { v::Set x; x.to = R.u8(); x.have = R.u8(); x.v = (int)R.u32(); return x; });
+}
 
 static void fuzz_wire(uint64_t seed, int iters)
 {
     printf("game module payloads, mods/coop/wire (%d mutations each)\n", iters);
     Rng R(seed);
-    (void)R;
+    fuzz_wire_space_map(R, iters);
+    fuzz_wire_space_trade(R, iters);
+    fuzz_wire_space_badges(R, iters);
+    fuzz_wire_space_rivalry(R, iters);
 }
 
 #ifdef FUZZ_LIBFUZZER
