@@ -55,7 +55,7 @@ struct Follow {
 };
 struct Kind {
     const char* name;  // as the divergence detector names the noun (tools/tests/worlddiff.py)
-    bool* fix;         // its coop.fix switch (off: each game keeps its own, the old behaviour)
+    bool* fix;         // its coop.fix switch (off: each game keeps its own, the old behaviour; nullptr: always on)
     uint8_t stages;    // kStCreature | kStTribe
     float tol;         // m: a guest's copy is the host's object within this distance
     float range;       // m around a guest: the objects the host sends
@@ -109,6 +109,7 @@ struct Kind {
     bool* reclass = nullptr;
     uint8_t reclass_stages = 0; // the stages it acts in
 };
+static bool kind_on(const Kind& K) { return !K.fix || *K.fix; }
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
 static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), bool (*take)(void*) = nullptr,
@@ -145,8 +146,6 @@ static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), boo
 // (kind "tree" below) and are made and freed by the flora as it likes: only fruit that left the tree are
 // objects of this kind. +0x158 the plant species, +0x160 the tree's index, +0x164 the slot (-1: fallen).
 constexpr uint32_t kFruitNoun = 0x02C9CC91;
-static bool g_fruit_fix = true;
-COOP_FIX("wobj.fruit", "BUG-0472", g_fruit_fix, "creature / tribe: fallen fruit are the host's: one a player eats is gone for everybody");
 
 static uint32_t fruit_state(void* o) { return IsBadReadPtr(o, 0x170) ? 6 : field<uint32_t>(o, 0x16C); }
 static bool fruit_loose(void* o) { uint32_t s = fruit_state(o); return s >= 1 && s <= 4; }
@@ -157,15 +156,11 @@ static void fruit_collect(Items& out) { collect_noun(kFruitNoun, out, fruit_stat
 // it from the free fruit and freed it (Flora_TakeFruitForDrop's pop releases the pool's reference and its own):
 // the host faulted at 0xB097C2 with a call through null. The eat node 0xD87590 destroys such a fruit
 // (cGameNounManager::DestroyInstance) before its SetState(5); so does this now.
-// `coop.fix wobj.fruit_saved off`: SetState(5) alone (0.7.7).
-static bool g_fruit_saved_fix = true;
-COOP_FIX("wobj.fruit_saved", "BUG-0584", g_fruit_saved_fix,
-         "creature / tribe: a fruit of the save eaten in another player's game is destroyed as the game's eating does (a host faulted when the next fruit fell)");
 static void fruit_eat(void* o)
 {
     if (fruit_done(fruit_state(o)))
         return;
-    if (g_fruit_saved_fix && game::noun_id(o) == kFruitNoun && (field<uint32_t>(o, 0x148) & 1))
+    if (game::noun_id(o) == kFruitNoun && (field<uint32_t>(o, 0x148) & 1))
         game::destroy_instance(o); // as the eat node 0xD87590 at the meal's end (state 3)
     thiscall<void>(a_FruitSetState, o, 5, 0); // what the eat node 0xD87590 does when the meal ends
 }
@@ -178,8 +173,6 @@ static void fruit_act(const Item& o, uint32_t) { fruit_eat(o.p); }
 // cTreeData (not in the noun list, the flora's patches: docs/re/tribe.md trees) +0x10 position (the planet's:
 // the same on every game), +0x48 / +0x4C the fruit left (a bit per slot). A fruit falls with the flora's
 // DropFruit 0xB09AE0 thiscall(flora, tree, slot, 1): the bit is cleared and a falling cFruit made.
-static bool g_tree_fix = true;
-COOP_FIX("wobj.tree", "BUG-0472", g_tree_fix, "creature / tribe: fruit falls from a tree in every game when it falls in one");
 
 static bool is_tree(void* t) { return t && !IsBadReadPtr(t, 0x80) && *(uintptr_t*)t == a_TreeVt; }
 static void tree_collect(Items& out)
@@ -234,10 +227,6 @@ static void tree_act(const Item& o, uint32_t now) { tree_drop(o.p, tree_mask(o.s
 // fruit still without a copy is made the game's way: a free slot of the nearest tree gets its bit for the drop
 // (Flora_DropFruit 0xB09AE0 checks it and 0xB09790 makes the falling cFruit from the free fruit) and the tree's
 // mask is put back as it was (no fruit lost from the tree), then the fruit is put at the host's place.
-// `coop.fix wobj.fruit_place off`: bound by position only, the host's fruit without a copy stay missing (0.7.8).
-static bool g_fruit_place_fix = true;
-COOP_FIX("wobj.fruit_place", "BUG-0497", g_fruit_place_fix,
-         "creature / tribe: a fruit on the ground in the host's game lies at the same place in every game (moved there, or made from the nearest tree)");
 static bool fruit_rest(uint32_t s) { return s == 1 || s == 2; } // falling or on the ground (not held, not hidden)
 static bool fruit_place(const Item& l, const net::Vec3& hp, uint32_t host_st)
 {
@@ -250,7 +239,7 @@ static bool is_tree(void* t);
 static uint32_t g_fruit_made_drops, g_fruit_made_fail;
 static int fruit_make(const net::Vec3& pos, uint32_t host)
 {
-    if (!g_fruit_place_fix || !fruit_rest(host) || !a_FloraGet || !a_DropFruit)
+    if (!fruit_rest(host) || !a_FloraGet || !a_DropFruit)
         return 0;
     void* fl = cdecl_call<void*>(a_FloraGet);
     if (!fl)
@@ -304,8 +293,6 @@ static int fruit_make(const net::Vec3& pos, uint32_t host)
 // Only ornaments with a reward are of this kind (+0x110 = 2 on the fixture: bones and skeletons).
 constexpr uint32_t kOrnNoun = 0x03A2511E;
 constexpr uint32_t kOrnMsg = 0xD3353638;
-static bool g_orn_fix = true;
-COOP_FIX("wobj.ornament", "BUG-0459 BUG-0473", g_orn_fix, "creature: a bone or skeleton one player used is used for everybody (one part, not two)");
 
 static void* reward_handler() // the listener of cCreatureModeStrategy that pays rewards
 {
@@ -358,8 +345,6 @@ static void orn_act(const Item& o, uint32_t) { orn_use(o.p); }
 // 0xC6AED0 on every herd of the species (+0x190 = 1, nest +0x120 = 1: the extinct nest of the minimap). A guest
 // gets the host's relationship table (social.cpp, MSG_SPECIES) but writes it, it never runs 0xBA4750: its herds
 // and nests stayed alive. Extinction is the host's: a guest only applies it (no request).
-static bool g_herd_fix = true;
-COOP_FIX("wobj.herd", "BUG-0460", g_herd_fix, "creature: a nest whose species died out in the host's game is extinct in every game");
 
 static void herd_collect(Items& out)
 {
@@ -402,18 +387,13 @@ static void herd_act(const Item&, uint32_t) {}
 // it has none of (the same type at the host's place, upright), so its click on the rack becomes the host's
 // GrabTool there.
 // State: the tool type (vt 0x58) | the host's index of its tribe << 8 | 1 << 16 for the player tribe.
-// BUG-0523 (`wobj.tribe_tools_all`): every tribe's tools, not the player tribe's only; a tool the palette drags
+// BUG-0523: every tribe's tools, not the player tribe's only; a tool the palette drags
 // is not sent (it is not placed yet); a guest's own tool the host has not (another spot, a tribe the host has
 // not) goes with the game's RemoveTool, the host's is made in the mapped tribe.
-// BUG-0524 (`wobj.tribe_tool_buy`): a tool a guest bought for the player tribe (its own copy without a host
+// BUG-0524: a tool a guest bought for the player tribe (its own copy without a host
 // partner) is a request to the host, which places the same there (the old one of the type goes, as the
 // palette does); the guest's copy is bound to it at the next snapshot. The food was paid in the guest's game
 // (the shared food ledger takes its change to the host).
-static bool g_tool_fix = true, g_tool_all_fix = true, g_tool_buy_fix = true;
-COOP_FIX("wobj.tribe_tool", "BUG-0514", g_tool_fix, "tribe: a tool building (weapon rack, ...) the host built is in every player's game");
-COOP_FIX("wobj.tribe_tools_all", "BUG-0523", g_tool_all_fix,
-         "tribe: every tribe's tools stand where the host's stand (NPC tribes too); a guest's own copy elsewhere goes");
-COOP_FIX("wobj.tribe_tool_buy", "BUG-0524", g_tool_buy_fix, "tribe: a tool a guest buys and places is placed in the host's game too");
 constexpr uint32_t kToolPlayer = 1u << 16;
 static uint32_t tool_state(int type, int tribe, bool player)
 {
@@ -432,14 +412,14 @@ static void tool_collect(Items& out)
             false, [](void* t, int, int, bool, const net::Vec3&, void*) { g_tool_base.insert({t, game::object_serial(t)}); }, nullptr);
     }
     tribe::for_each_tool(
-        g_tool_all_fix,
+        true,
         [](void* t, int type, int ix, bool player, const net::Vec3& pos, void* u) {
             ((Items*)u)->push_back(Item{t, game::object_serial(t), pos, tool_state(type, ix, player)});
         },
         &out);
 }
 static uint32_t g_tools_removed, g_tool_buys_tx, g_tool_buys_rx, g_tool_buys_done;
-static bool tool_behind(uint32_t local, uint32_t host) { return g_tool_all_fix && host == kGone && local != kGone; }
+static bool tool_behind(uint32_t local, uint32_t host) { return host == kGone && local != kGone; }
 static void tool_apply(const Item& l, uint32_t host)
 {
     if (host != kGone || !tribe::remove_tool(l.p))
@@ -455,17 +435,12 @@ static int tool_make(const net::Vec3& pos, uint32_t host)
     int type = (int)(host & 0xFF), ix = (int)(host >> 8 & 0xFF);
     if (host == kGone || type < 1 || type > 10)
         return 0;
-    void* t = nullptr;
-    if (!g_tool_all_fix) // BUG-0514 alone: the player tribe's
-        t = (host & kToolPlayer) || host <= 10 ? tribe::make_player_tool(type, pos) : nullptr;
-    else {
-        // this game's tribe has one of the type elsewhere (its own, to be removed, or one the palette drags:
-        // a guest's purchase on its way to the host): one per type, as the palette keeps it
-        int has = tribe::has_tool_type(ix, type);
-        if (has != 0)
-            return -1; // (-1: no such tribe here yet)
-        t = tribe::make_tool(ix, type, pos);
-    }
+    // this game's tribe has one of the type elsewhere (its own, to be removed, or one the palette drags:
+    // a guest's purchase on its way to the host): one per type, as the palette keeps it
+    int has = tribe::has_tool_type(ix, type);
+    if (has != 0)
+        return -1; // (-1: no such tribe here yet)
+    void* t = tribe::make_tool(ix, type, pos);
     if (t)
         g_tool_base.insert({t, game::object_serial(t)});
     if (t)
@@ -483,8 +458,6 @@ static bool tool_own(const Item& l, double now)
 {
     if (!(l.st & kToolPlayer))
         return false;
-    if (!g_tool_buy_fix)
-        return true; // the old behaviour: it stays in this game only
     if (g_tool_base.count({l.p, l.id}))
         return false; // not bought in this session: an own copy as any other
     ToolBuy& b = g_tool_buys[{l.p, l.id}];
@@ -504,7 +477,7 @@ static bool tool_own(const Item& l, double now)
 static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
 {
     g_tool_buys_rx++;
-    if (!g_tool_buy_fix || !(st & kToolPlayer))
+    if (!(st & kToolPlayer))
         return;
     if (tribe::buy_player_tool((int)(st & 0xFF), pos)) {
         g_tool_buys_done++;
@@ -524,12 +497,8 @@ static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
 // container, CreateBundles, at the host's place), the bundles its creatures carry are carried by the guest's copy of
 // the creature (the nearest one within 4 m of the host's carrier), a guest's own ground bundle the host has not is
 // removed (RemoveBundles of the bundle) and one a guest's member took is taken on the host too.
-// `coop.fix wobj.bundle off`: each game keeps its own (0.7.8).
 constexpr uint32_t kBundleNoun = 0x018C431C;
 constexpr uint32_t kBundleCarried = 0x100; // class bit: carried by a creature (else on the ground)
-static bool g_bundle_fix = true;
-COOP_FIX("wobj.bundle", "BUG-0548", g_bundle_fix,
-         "tribe / civ: food dropped on the ground and carried by the tribes' members is the host's: the same in every game");
 static uintptr_t a_BundleMgrGet, a_CreateBundles, a_RemoveBundles;
 static uint8_t* bundle_mgr() { return a_BundleMgrGet ? cdecl_call<uint8_t*>(a_BundleMgrGet) : nullptr; }
 static void* ground_container()
@@ -669,12 +638,8 @@ static void bundle_act(const Item& o, uint32_t now)
 // the member, drawn 1-3.5 m behind the host's member: at the next snapshot it was often more than `tol` (3 m) from the
 // host's bundle, stayed unbound, and as an own carried bundle it stayed for good: the mirror kept carrying food the
 // host's member had delivered (`Tribe:guest_only:game_bundle_carried`), and with its hand full the next copy could not be
-// made (`host_only`). With wobj.bundle_carried a carried bundle binds (and its copy finds the carrier) within kCarriedTol and a guest's unbound carried
+// made (`host_only`). Now a carried bundle binds (and its copy finds the carrier) within kCarriedTol and a guest's unbound carried
 // bundle is not kept (dropped as any own copy: the guest's members run no behaviour of their own while the host plays).
-// `coop.fix wobj.bundle_carried off`: as in 0.7.9 L2.
-static bool g_bundle_carried_fix = true;
-COOP_FIX("wobj.bundle_carried", "BUG-0617", g_bundle_carried_fix,
-         "tribe: the food a member carries on a guest's screen is the food the host's member carries");
 constexpr float kCarriedTol = 8.f;
 // BUG-0661 (docs/re/tribe.md#tribe-bundle-reclass): the host's game moves a carried bundle into its ground container (the
 // carrier died, or put it down) as the same object: the guest's copy stayed bound and carried by the copy of the member
@@ -688,12 +653,12 @@ COOP_FIX("wobj.bundle_reclass", "BUG-0661", g_bundle_reclass_fix,
          "tribe / civ: food a host member drops lies on the ground in every game, not carried on by the member's copy");
 static bool bundle_own(const Item& l, double)
 {
-    return carried_left_alone(l.cls) || (!g_bundle_carried_fix && (l.cls & kBundleCarried) != 0);
+    return carried_left_alone(l.cls);
 }
-static float bundle_tol(uint32_t cls) { return g_bundle_carried_fix && (cls & kBundleCarried) ? kCarriedTol : 3.f; }
+static float bundle_tol(uint32_t cls) { return (cls & kBundleCarried) ? kCarriedTol : 3.f; }
 static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
 {
-    if (!g_bundle_fix || host == kGone || !a_CreateBundles || !bundle_mgr())
+    if (host == kGone || !a_CreateBundles || !bundle_mgr())
         return 0;
     if (carried_left_alone(cls)) { // BUG-0684: no hand of the guest's own creatures gets the host's carried food
         g_bundles_left_alone++;
@@ -709,7 +674,7 @@ static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const 
             net::Vec3 at;
             float best;
             void* c;
-        } q{aux, g_bundle_carried_fix ? kCarriedTol : 4.f, nullptr}; // BUG-0617: the copy of the carrier lags
+        } q{aux, kCarriedTol, nullptr}; // BUG-0617: the copy of the carrier lags
         game::for_each_object(
             [](void* o, uint32_t n, void* u) {
                 auto* q = (Q*)u;
@@ -748,11 +713,8 @@ static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const 
 // `unmatched:cultural_target` in campaign_space, 2 of 3 without a partner within 3 m). On: a guest's target binds to
 // the host's within 3 m, else the nearest unbound one of its own within 120 m is put at the host's place (the
 // spatial object's SetPosition), and a bound one that drifts more than 0.5 m is put back. No make, no removal (both
-// games have 4 per city). `coop.fix wobj.cultural_target off`: each game's own places (0.7.8).
+// games have 4 per city).
 constexpr uint32_t kCultTargetNoun = 0x03D5C325;
-static bool g_cult_fix = true;
-COOP_FIX("wobj.cultural_target", "BUG-0540", g_cult_fix,
-         "civ / space: a city's cultural targets stand where the host's stand in every game");
 static uint32_t cult_state(void*) { return 0; }
 static void cult_collect(Items& out) { collect_noun(kCultTargetNoun, out, cult_state); }
 static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return game::set_object_position(l.p, hp); }
@@ -775,9 +737,6 @@ static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return ga
 // removed the way City_RemoveTurret removes a turret: its layout slot cleared (0xAFADD0 on city +0x4B4),
 // DestroyInstance, erased from the city's decoration vector (+0x308..+0x30C, 0xD5AA90). The model variant (the
 constexpr uint32_t kOrnamentNoun = 0x018C88E4, kCityOrnModel = 0x02AE5BA7;
-static bool g_corn_fix = true;
-COOP_FIX("wobj.city_ornament", "BUG-0541", g_corn_fix,
-         "space: the decorations of a planet's cities are the host's: the same ones at the same places in every game");
 static uintptr_t a_PlanetModelGet, a_PlanetUpAt, a_CityDecorate, a_LayoutClear, a_VecErase;
 constexpr uint32_t kCityNounW = 0x018C43E8;
 constexpr uintptr_t kCityDecor = 0x308, kCityLayout = 0x4B4;
@@ -846,7 +805,7 @@ static void corn_apply(const Item& l, uint32_t host)
 }
 static int corn_make(const net::Vec3& pos, uint32_t)
 {
-    if (!g_corn_fix || !a_CityDecorate)
+    if (!a_CityDecorate)
         return 0;
     void* best = nullptr;
     float bd = 120.f;
@@ -878,10 +837,7 @@ static int corn_make(const net::Vec3& pos, uint32_t)
 // are sent like the other kinds; a guest binds its own citizens to them by position (both games spawn the
 // same number per city) and walks each bound one to the host's (the game's own MoveTo, so it animates), or
 // puts it there when it is far. Their size is the fields kind `civ_citizen` (below, BUG-0475's Civ half).
-// `coop.fix civ.citizens off`: each game walks its own (0.7.4).
 constexpr uint32_t kCitizenNoun = 0x018EB4B7;
-static bool g_citizen_fix = true;
-COOP_FIX("civ.citizens", "BUG-0476", g_citizen_fix, "civ: city citizens walk where the host's walk (the host's citizens near a guest)");
 static uint32_t citizen_state(void*) { return 0; }
 static void citizen_collect(Items& out) { collect_noun(kCitizenNoun, out, citizen_state); }
 static bool citizen_behind(uint32_t, uint32_t) { return false; }
@@ -1030,10 +986,7 @@ static void space_vehicle_drive(const Item& l, const net::Vec3& hp, const net::V
 // 0x14699E8) has that scale; the same node read from a planet save (a guest's shared world, any loaded
 // game) has 1.0: the scale is not saved. Each player saw the node at another size. The state is the
 // host's scale (float bits); a guest's node at another scale takes it (cSpatialObject::SetScale).
-// `coop.fix wobj.node_scale off`: each game keeps its own (0.7.8).
 constexpr uint32_t kNodeNoun = 0x0403DF5C;
-static bool g_node_fix = true;
-COOP_FIX("wobj.node_scale", "BUG-0485", g_node_fix, "a spice node has the host's size on every guest (live-made nodes were 10x bigger on the host)");
 static uint32_t node_state(void* o)
 {
     float s = game::object_scale(o);
@@ -1059,17 +1012,16 @@ static void node_apply(const Item& l, uint32_t host)
 }
 
 static Kind g_kinds[] = {
-    {.name = "fruit", .fix = &g_fruit_fix, .stages = kStCreature | kStTribe, .tol = 3.0f, .range = 70.f, .max = 48,
+    {.name = "fruit", .stages = kStCreature | kStTribe, .tol = 3.0f, .range = 70.f, .max = 48,
      .collect = fruit_collect, .behind = fruit_behind, .apply = fruit_apply, .acted = fruit_acted, .act = fruit_act,
-     .gone_acted = true, .drop_own = true, .make = fruit_make, .place = fruit_place, .relocate = 25.f, .place_eps = 1.0f,
-     .place_fix = &g_fruit_place_fix},
-    {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
-    {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
-    {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
+     .gone_acted = true, .drop_own = true, .make = fruit_make, .place = fruit_place, .relocate = 25.f, .place_eps = 1.0f},
+    {"tree", nullptr, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
+    {"herd", nullptr, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
+    {"interactive_ornament", nullptr, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
-    {"citizen", &g_citizen_fix, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
+    {"citizen", nullptr, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
      citizen_follow, 0.5},
-    {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
+    {"tribe_tool", nullptr, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
      tool_own, tool_buy},
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
     {.name = "space_citizen", .fix = &g_space_cit_fix, .stages = kStSpace, .tol = 30.f, .range = 400.f, .max = 56,
@@ -1081,22 +1033,21 @@ static Kind g_kinds[] = {
      .collect = space_vehicle_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .every = 0.4, .classes = true, .vmax = 60.f, .drive = space_vehicle_drive},
     // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
-    {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
+    {.name = "game_bundle", .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
      .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
      .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol, .reclass = &g_bundle_reclass_fix,
      .reclass_stages = kStTribe},
     // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
-    {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
+    {.name = "cultural_target", .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
-     .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f, .place_fix = &g_cult_fix},
+     .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f},
     // BUG-0541 (0.7.9 L2b): the cities' decorations at the host's places (the whole planet, as space_vehicle; one packet
     // holds 56, 6 cities' sets: on a planet with more the farthest from the guest's ship stay its own)
-    {.name = "city_ornament", .fix = &g_corn_fix, .stages = kStSpace, .tol = 1.5f, .range = 2500.f, .max = 56,
+    {.name = "city_ornament", .stages = kStSpace, .tol = 1.5f, .range = 2500.f, .max = 56,
      .collect = corn_collect, .behind = corn_behind, .apply = corn_apply, .acted = none_acted, .act = none_act,
-     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f,
-     .place_fix = &g_corn_fix},
+     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f},
     // BUG-0485: the planet's spice nodes (static, the whole planet), the host's scale
-    {.name = "node", .fix = &g_node_fix, .stages = kStCreature | kStTribe | kStCiv, .tol = 3.f, .range = 3000.f, .max = 48,
+    {.name = "node", .stages = kStCreature | kStTribe | kStCiv, .tol = 3.f, .range = 3000.f, .max = 48,
      .collect = node_collect, .behind = node_behind, .apply = node_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .every = 2.0},
 };
@@ -1182,17 +1133,15 @@ static void guest_reset()
 // W2 (BUG-0488): a tool of a far village was never the host's (the snapshot covered 150 m around a guest): after a
 // rejoin the guest's planet lacked 8 of the host's tools (coop_realign_planet.py, lab 20261104-212408) and each
 // game's far tribes kept the tools they bought themselves. The tools' snapshot covers the whole planet (the 48
-// nearest a guest; the tribe fixture's planet has 10-20). `coop.fix wobj.tools_planet off`: 150 m (0.7.6).
-static bool g_tools_planet_fix = true;
-COOP_FIX("wobj.tools_planet", "BUG-0488", g_tools_planet_fix, "tribe: every village's tools on the planet are the host's in a guest's game, not only those near it");
-static float kind_range(int k) { return k == tool_kind() && g_tools_planet_fix ? 3000.f : g_kinds[k].range; }
+// nearest a guest; the tribe fixture's planet has 10-20).
+static float kind_range(int k) { return k == tool_kind() ? 3000.f : g_kinds[k].range; }
 
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
     for (int k = 0; k < kKinds && k < 16; k++) {
         Kind& K = g_kinds[k];
-        if (!*K.fix || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
+        if (!kind_on(K) || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
             continue;
         g_last_tx[k] = now;
         Items all;
@@ -1450,7 +1399,7 @@ static void drive_frame(double now, uint8_t sb, bool away)
     for (int k = 0; k < kKinds; k++) {
         Kind& K = g_kinds[k];
         GuestKind& G = g_g[k];
-        if (!K.drive || !*K.fix || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
+        if (!K.drive || !kind_on(K) || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
             continue;
         Items local;
         K.collect(local);
@@ -1479,7 +1428,7 @@ static void guest_tick(double now)
     bool away = C.host_away && C.host_away();
     for (int k = 0; k < kKinds; k++) {
         GuestKind& G = g_g[k];
-        if (!*g_kinds[k].fix || !(g_kinds[k].stages & sb) || away || now - G.snap.at > kStale) {
+        if (!kind_on(g_kinds[k]) || !(g_kinds[k].stages & sb) || away || now - G.snap.at > kStale) {
             G.binds.clear();
             G.own.clear();
             continue;
@@ -1515,7 +1464,7 @@ static void on_snap(net::Reader& r, double now)
         s.objs[id] = {p, st, cls, aux};
     }
     Kind& K = g_kinds[k];
-    if (!*K.fix || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
+    if (!kind_on(K) || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
         return;
     g_st[k].rx++;
     g_g[k].snap = std::move(s);
@@ -1531,7 +1480,7 @@ static void on_act(uint8_t from, net::Reader& r)
     if (!r.ok() || k >= kKinds)
         return;
     Kind& K = g_kinds[k];
-    if (!*K.fix || !(K.stages & stage_bit()))
+    if (!kind_on(K) || !(K.stages & stage_bit()))
         return;
     g_st[k].req_rx++;
     Items all;
@@ -1590,7 +1539,7 @@ std::string status()
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
         snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u reclassed=%u\n",
-                 g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
+                 g_kinds[k].name, (int)kind_on(g_kinds[k]), g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated, t.reclassed);
         s += b;
     }
@@ -1600,8 +1549,8 @@ std::string status()
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
              g_space_cit_puts, g_veh_drives);
     s += b;
-    snprintf(b, sizeof b, "tools all=%d buy=%d removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", (int)g_tool_all_fix, (int)g_tool_buy_fix,
-             g_tools_removed, g_tool_buys_tx, g_tool_buys_rx, g_tool_buys_done);
+    snprintf(b, sizeof b, "tools removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", g_tools_removed, g_tool_buys_tx,
+             g_tool_buys_rx, g_tool_buys_done);
     s += b;
     return s;
 }
@@ -1769,8 +1718,6 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
 // The fields engine's ids are u16: a citizen's id is the low half of the host's object serial (a second
 // citizen with the same low half is left out on the host: rare, 1 in ~65000 per pair)
 static int citizen_kind() { return kind_of_name("citizen"); }
-static bool g_cit_scale_fix = true;
-COOP_FIX("civ.citizen_scale", "BUG-0475", g_cit_scale_fix, "civ: a guest's bound city citizen gets the host citizen's size");
 static const fields::Field kCitizenFields[] = {fields::kScale};
 static void citizen_each(void (*cb)(uint16_t, void*, void*), void* u)
 {
@@ -1787,7 +1734,7 @@ static std::set<void*> g_cit_live;
 static void* citizen_mirror(uint16_t id)
 {
     int k = citizen_kind();
-    if (k < 0 || !*g_kinds[k].fix)
+    if (k < 0 || !kind_on(g_kinds[k]))
         return nullptr;
     for (auto& [hid, b] : g_g[k].binds) {
         if ((uint16_t)(hid & 0xFFFF) != id)
@@ -1816,7 +1763,7 @@ struct LiveSet {
 static void* bound_mirror(const char* kind, uint16_t id, LiveSet& ls)
 {
     int k = kind_of_name(kind);
-    if (k < 0 || !*g_kinds[k].fix)
+    if (k < 0 || !kind_on(g_kinds[k]))
         return nullptr;
     for (auto& [hid, b] : g_g[k].binds) {
         if ((uint16_t)(hid & 0xFFFF) != id)
@@ -1876,7 +1823,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
-    fields::add_kind({fields::K_CIV_CITIZEN, "civ_citizen", &g_cit_scale_fix, kCitizenFields, 1, citizen_each, citizen_mirror,
+    fields::add_kind({fields::K_CIV_CITIZEN, "civ_citizen", nullptr, kCitizenFields, 1, citizen_each, citizen_mirror,
                       [] { return game::mode_id() == modes::kCiv; }});
     fields::add_kind({fields::K_SPACE_CITIZEN, "space_citizen", &g_space_scale_fix, kCitizenFields, 1, space_citizen_each,
                       space_citizen_mirror, space_planet_active});

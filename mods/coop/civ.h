@@ -43,10 +43,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change(); // a load: the tables of game pointers are cleared (BUG-0059)
 // BUG-0223: once per frame at the top of on_frame (after game::stage_epoch_tick, before messages):
-// calls on_world_change when the Civ world changed; with civ.world_epoch off it does nothing and
-// coop.cpp's avatar_change_check keeps the old trigger
+// calls on_world_change when the Civ world changed
 void world_check();
-bool world_epoch_fix();
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 // diagnostics (coop.bodyrec start diag, K3): per vehicle mirror of a guest rows `w<id>` (where it is put: the estimate
