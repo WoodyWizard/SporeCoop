@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "net/buffer.h"
+#include "../net/buffer.h"
 
 namespace wire {
 

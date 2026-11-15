@@ -30,6 +30,7 @@
 #include "space_ext.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
+#include "wire/space_finale.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -574,11 +575,7 @@ static void fly_tick(double now)
 static void send_state()
 {
     net::Writer w;
-    w.u8(g_zone);
-    w.u8(g_flags);
-    w.u32(g_star);
-    w.u32(g_prev);
-    w.f32(g_dist);
+    wire::space_finale::State{g_zone, g_flags, g_star, g_prev, (float)g_dist}.write(w);
     spaceext::send(K_STATE, w);
     g_sent_zone = g_zone;
     g_sent_flags = g_flags;
@@ -588,12 +585,13 @@ static void on_message(uint8_t kind, uint8_t from, net::Reader& r)
 {
     std::string who = spaceext::name_of(from);
     if (kind == K_STATE) {
-        Peer& p = g_peer[from];
-        uint8_t zone = r.u8(), flags = r.u8();
-        uint32_t star = r.u32(), prev = r.u32();
-        float dist = r.f32();
-        if (!r.ok())
+        Peer& p = g_peer[from]; // (also for a cut message, as before)
+        wire::space_finale::State msg;
+        if (!msg.read(r))
             return;
+        uint8_t zone = msg.zone, flags = msg.flags;
+        uint32_t star = msg.star, prev = msg.prev;
+        float dist = msg.dist;
         bool first = p.t == 0;
         p.zone = zone;
         p.flags = flags;

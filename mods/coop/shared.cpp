@@ -11,6 +11,7 @@
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "wire/shared_res.h"
 
 namespace shared {
 
@@ -348,28 +349,23 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
             // broadcast the total when it changed (and once per 2 s as a safety net)
             if (!r.have || r.ack_dirty || std::fabs(v - r.synced) > 1e-3 || now - r.last_send > 2.0) {
                 net::Writer w;
-                w.u8(r.id);
-                w.f64(v);
+                wire::shared_res::Res msg;
+                msg.id = r.id;
+                msg.v = v;
                 if (g_floor_fix) { // older guests stop reading here
-                    w.u8((uint8_t)r.acked.size());
-                    for (auto& [id, seq] : r.acked) {
-                        w.u8(id);
-                        w.u32(seq);
-                    }
+                    msg.has_acks = true;
+                    for (auto& [id, seq] : r.acked)
+                        msg.acks.push_back({id, seq});
                     if (g_cause_fix && r.have) { // BUG-0696: whose changes these are (older guests stop before)
                         double own = v - r.synced - r.applied;
                         if (std::fabs(own) >= kCauseMin)
                             r.causes[0] += own;
-                        w.u8((uint8_t)std::min<size_t>(r.causes.size(), 16));
-                        size_t i = 0;
-                        for (auto& [id, c] : r.causes) {
-                            if (i++ >= 16)
-                                break;
-                            w.u8(id);
-                            w.f64(c);
-                        }
+                        msg.has_causes = true;
+                        for (auto& [id, c] : r.causes) // (the struct sends the first 16)
+                            msg.causes.push_back({id, c});
                     }
                 }
+                msg.write(w);
                 r.causes.clear();
                 r.applied = 0;
                 r.ack_dirty = false;
@@ -392,13 +388,16 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         }
         if (r.led.pending != 0 && now - r.last_send > 0.25) {
             net::Writer w;
-            w.u8(r.id);
-            w.f64(r.led.pending);
+            wire::shared_res::ResAdd msg;
+            msg.id = r.id;
+            msg.v = r.led.pending;
             uint32_t seq = r.led.send();
-            if (g_floor_fix)
-                w.u32(seq); // older hosts stop reading before it
-            else
+            if (g_floor_fix) { // older hosts stop reading before it
+                msg.has_seq = true;
+                msg.seq = seq;
+            } else
                 r.led.in_flight.clear();
+            msg.write(w);
             s.send_reliable_to(0, net::MSG_RES_ADD, w);
             r.last_send = now;
         }
@@ -407,10 +406,14 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
 
 void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
 {
-    uint8_t id = rd.u8();
-    double v = rd.f64();
-    if (!rd.ok() || !std::isfinite(v))
+    // decode first (wire/shared_res.h); the cut ack list of a MSG_RES is refused where it was before (below)
+    wire::shared_res::Res res;
+    wire::shared_res::ResAdd add;
+    bool full = type == net::MSG_RES_ADD ? add.read(rd) : res.read(rd);
+    if (type == net::MSG_RES_ADD ? !full : !res.head_ok)
         return;
+    uint8_t id = type == net::MSG_RES_ADD ? add.id : res.id;
+    double v = type == net::MSG_RES_ADD ? add.v : res.v;
     for (auto& r : g_res) {
         if (r.id != id)
             continue;
@@ -422,12 +425,9 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             if (!(g_owed_fix && type == net::MSG_RES_ADD && s.role() == net::Role::Host))
                 return;
             // BUG-0691: the host's game cannot hold the change now (a load, the menu): ack it, pay it when back
-            if (rd.left() >= 4) {
-                uint32_t seq = rd.u32();
-                if (rd.ok()) {
-                    r.acked[from] = seq;
-                    r.ack_dirty = true;
-                }
+            if (add.has_seq) {
+                r.acked[from] = add.seq;
+                r.ack_dirty = true;
             }
             if (std::fabs(v) < 1e7) {
                 r.owed += v;
@@ -453,26 +453,18 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             // keep changes made since our last report and those the host has not counted yet
             bool has_ack = false;
             uint32_t ack = 0;
-            if (rd.left() >= 1) {
-                uint8_t n = rd.u8();
-                for (int i = 0; i < n && rd.ok(); i++) {
-                    uint8_t pid = rd.u8();
-                    uint32_t q = rd.u32();
-                    if (rd.ok() && pid == s.my_id()) {
+            if (res.has_acks) {
+                for (auto& [pid, q] : res.acks)
+                    if (pid == s.my_id()) {
                         has_ack = true;
                         ack = q;
                     }
-                }
-                if (!rd.ok())
-                    return;
-                if (g_cause_fix && rd.left() >= 1) { // BUG-0696: whose changes moved the total
-                    uint8_t nc = rd.u8();
-                    for (int i = 0; i < nc && rd.ok(); i++) {
-                        uint8_t pid = rd.u8();
-                        double c = rd.f64();
-                        if (rd.ok() && std::isfinite(c))
+                if (!full)
+                    return; // a cut ack list
+                if (g_cause_fix && res.has_causes) { // BUG-0696: whose changes moved the total
+                    for (auto& [pid, c] : res.causes)
+                        if (std::isfinite(c))
                             say_cause(s, r, pid, c);
-                    }
                 }
                 if (!has_ack) { // the host counted nothing of ours in this session yet
                     has_ack = true;
@@ -489,12 +481,9 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             if (g_away_due)
                 H->log(M, SK_INFO, "shared %s: a host total %.1f taken (test)", r.name, v);
         } else if (type == net::MSG_RES_ADD && s.role() == net::Role::Host) {
-            if (rd.left() >= 4) {
-                uint32_t seq = rd.u32();
-                if (rd.ok()) {
-                    r.acked[from] = seq;
-                    r.ack_dirty = true;
-                }
+            if (add.has_seq) {
+                r.acked[from] = add.seq;
+                r.ack_dirty = true;
             }
             if (std::fabs(v) < 1e7) {
                 double d = add_counted(r, cur, v); // BUG-1009: the part the floor / the cap let through
