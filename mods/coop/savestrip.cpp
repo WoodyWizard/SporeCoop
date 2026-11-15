@@ -19,7 +19,6 @@ static SkMod* M;
 static bool g_on = true;
 COOP_FIX("savestrip.on", "BUG-0020", g_on, "saves: our puppets, proxies and their herds are kept out of saves (coop.savestrip 0|1)");
 static std::vector<Filter> g_filters;
-static DWORD g_main_tid;
 static void* g_last_ser;      // the COMSerializer of the save being written
 static double g_last_write;   // when Write ran last
 // BUG-0255: one list per save: a new serializer or a new frame starts it (savestrip_rule.h), not a
@@ -172,14 +171,14 @@ using Write_t = bool(SK_THISCALL*)(void*, void*, void*);
 static Write_t o_Write;
 static bool SK_THISCALL h_Write(void* self, void* stream, void* obj)
 {
-    if (g_write_watch && (self != g_watch_ser || g_frame != g_watch_frame) && GetCurrentThreadId() == g_main_tid) {
+    if (g_write_watch && (self != g_watch_ser || g_frame != g_watch_frame) && game::on_main()) {
         g_watch_ser = self;
         g_watch_frame = g_frame;
         g_write_watch();
     }
     if (!g_on || !obj)
         return o_Write(self, stream, obj);
-    if (GetCurrentThreadId() != g_main_tid) { // not a save of the world (those run on the main thread)
+    if (!game::on_main()) { // not a save of the world (those run on the main thread)
         g_offthread++;
         return o_Write(self, stream, obj);
     }
@@ -248,7 +247,6 @@ static int SK_THISCALL h_BhvRead(void* mgr, void* stream)
 
 void tick()
 {
-    g_main_tid = GetCurrentThreadId();
     g_frame++;
     if (!g_hooks_ended) {
         g_hooks_ended = true;
@@ -282,7 +280,6 @@ bool init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
-    g_main_tid = GetCurrentThreadId();
     add_filter(creature_filter);
     H->command_add(M, "coop.savestrip", "coop.savestrip [0|1] - keep our objects out of saves (tests: 0 = the old behaviour, BUG-0020)",
                    c_savestrip, nullptr, SK_CMD_MAIN_THREAD);

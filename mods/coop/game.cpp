@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include "sporekit_game.hpp"
 #include "lifecycle.h"
 #include "call_guard.h"
+#include "off_main.h"
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
@@ -26,6 +28,59 @@ namespace game {
 static const SkHost* H;
 static SkMod* M;
 static bool g_ready;
+
+// ---- the game's main thread (A14, CORE-6, BUG-1130; docs/01-architecture.md#arch-threads) ----
+// One id for every module (it was kept four times: the effect hooks, debug.cpp, savestrip.cpp, spacecoop.cpp).
+// Noted by init() and every frame (stage_epoch_tick, set_effect_relay_enabled): both run on the main thread.
+static std::atomic<unsigned long> g_main_tid{0};
+void note_main_thread() { g_main_tid.store(GetCurrentThreadId(), std::memory_order_relaxed); }
+unsigned long main_thread() { return g_main_tid.load(std::memory_order_relaxed); }
+bool on_main()
+{
+    unsigned long t = main_thread();
+    return t && t == GetCurrentThreadId();
+}
+// skg::call_probe (sporekit_game.hpp): a game call through the skg helpers off the main thread is counted per call
+// site (off_main.h); the first one of a site writes a log line. Before the main thread is known nothing is counted.
+static std::mutex g_off_mu;
+static offmain::Table g_off;
+static uintptr_t g_self_base; // coop.dll's load address (the sites print as coop.dll+0x..., as crash_triage reads them)
+static __attribute__((noinline)) void off_main_probe(uintptr_t fn)
+{
+    unsigned long t = main_thread(), me = GetCurrentThreadId();
+    if (!t || t == me)
+        return;
+    uintptr_t from = (uintptr_t)__builtin_return_address(0);
+    bool first;
+    {
+        std::lock_guard<std::mutex> lk(g_off_mu);
+        first = g_off.note(from, fn, me);
+    }
+    if (first && H)
+        H->log(M, SK_INFO, "threads: game call 0x%X from coop.dll+0x%X on thread %lu, not the main thread %lu (A14, "
+               "coop.threads)", (unsigned)fn, (unsigned)(from - g_self_base), me, t);
+}
+uint64_t off_main_calls()
+{
+    std::lock_guard<std::mutex> lk(g_off_mu);
+    return g_off.total;
+}
+// coop.threads [reset|on|off]: the main thread and the off-main game calls (any thread: it only reads under the lock)
+static int c_threads(void*, int argc, const char* const* argv, SkOut* out)
+{
+    std::string a = argc > 1 ? argv[1] : "";
+    if (a == "on" || a == "off")
+        skg::call_probe = a == "on" ? off_main_probe : nullptr;
+    std::string st;
+    {
+        std::lock_guard<std::mutex> lk(g_off_mu);
+        if (a == "reset")
+            g_off.clear();
+        st = g_off.status(g_self_base);
+    }
+    H->out_printf(out, "main_thread=%lu probe=%s\n%s", main_thread(), skg::call_probe ? "on" : "off", st.c_str());
+    return 0;
+}
 
 static uintptr_t a_NounGet, a_DestroyInstance, a_CreatureCreate, a_NPCTickAI, a_ModeMgrGet;
 static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd, a_CinematicGet;
@@ -667,13 +722,11 @@ static FxFrom fx_from()
 // The game calls effect creation from its UI skinner's render thread too (Tribe/Civ, measured in
 // Skinner::cSkinPainterPipeline::ExecutePipeline). Everything of ours that touches game objects,
 // the effect table or the network happens on the game's main thread only; on any other thread a
-// hook body calls the original and returns. The id is set from the frame callback (main thread).
-static std::atomic<unsigned long> g_main_tid{0};
-static inline bool fx_main_thread() { return GetCurrentThreadId() == g_main_tid.load(std::memory_order_relaxed); }
+// hook body calls the original and returns (on_main(), docs/01-architecture.md#arch-threads).
 static std::atomic<bool> g_fx_relay_on{false}; // effects.cpp's switch, read by the hooks
 void set_effect_relay_enabled(bool on)
 {
-    g_main_tid.store(GetCurrentThreadId(), std::memory_order_relaxed); // effects::tick: main thread
+    note_main_thread(); // effects::tick: main thread
     g_fx_relay_on.store(on, std::memory_order_relaxed);
 }
 // effect object -> id. A world effect created inside a creature effect creator must not be relayed
@@ -803,7 +856,7 @@ static MgrCreateFx_t o_MgrCreateFx;
 static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_MgrCreateFx(mgr, id, a3, out);
-    if (!fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed))
+    if (!on_main() || !g_fx_relay_on.load(std::memory_order_relaxed))
         return r;
     if (t_in_anim_fx) {
         g_fx_anim++;
@@ -843,7 +896,7 @@ static std::atomic<bool> g_world_on{false}; // the stage logic's gate (set_world
 static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_WorldCreateFx(world, id, a3, out);
-    if (!g_world_on.load(std::memory_order_relaxed) || !fx_main_thread()
+    if (!g_world_on.load(std::memory_order_relaxed) || !on_main()
         || !g_fx_relay_on.load(std::memory_order_relaxed))
         return r;
     if (g_fx_log) {
@@ -904,7 +957,7 @@ static int SK_CDECL h_AnimFxCreate(void* world, int a, uint32_t id, uint32_t b, 
     t_in_anim_fx = was;
     if (out && *out) { // BUG-0603: an event's effect on another object than the animating one
         anim_event_effect(*out, id);
-        if (g_fx_log && fx_main_thread()) {
+        if (g_fx_log && on_main()) {
             net::Vec3 p{};
             bool ok = effect_position(*out, p);
             FxFrom f = fx_from();
@@ -949,7 +1002,7 @@ static void SK_CDECL h_AnimEvent(void* w, void* self, void* obj, uint32_t a4, ui
 // from h_AnimFxCreate: an animation event's effect was made
 static void anim_event_effect(void* fx, uint32_t id)
 {
-    if (!t_in_evt || !fx_main_thread() || g_in_relay)
+    if (!t_in_evt || !on_main() || g_in_relay)
         return;
     g_hit_calls++;
     if (!t_evt_obj || t_evt_obj == t_evt_self) { // on the animating object itself: its remote copies make it too
@@ -983,7 +1036,7 @@ static CreateCreatureFx_t o_CreateCreatureFx;
 static void* SK_THISCALL h_CreateCreatureFx(void* self, int bone, uint32_t id, uint32_t extra)
 {
     void* fx = o_CreateCreatureFx ? o_CreateCreatureFx(self, bone, id, extra) : nullptr;
-    if (!fx_main_thread()) // the UI skinner's render thread: the original only
+    if (!on_main()) // the UI skinner's render thread: the original only
         return fx;
     if (g_fx_log)
         { FxFrom f = fx_from(); H->log(M, SK_INFO, "fxcr: self %p avatar %p id %08X bone %d fx %p from %X,%X,%X,%X", self, avatar(), id, bone, fx, f.a[0], f.a[1], f.a[2], f.a[3]); }
@@ -1011,7 +1064,7 @@ static void report_effect(void* c, const EffectEvent& ev)
 static void* SK_THISCALL h_CreateFx1(void* self, uint32_t id)
 {
     void* fx = o_CreateFx1(self, id);
-    if (!fx_main_thread())
+    if (!on_main())
         return fx;
     if (g_fx_log) { FxFrom f = fx_from(); H->log(M, SK_INFO, "fx1: self %p avatar %p id %08X from %X,%X,%X,%X", self, avatar(), id, f.a[0], f.a[1], f.a[2], f.a[3]); }
     if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
@@ -1025,7 +1078,7 @@ static void* SK_THISCALL h_CreateFx1(void* self, uint32_t id)
 static void* SK_THISCALL h_CreateFx1Keyed(void* self, uint32_t id, uint32_t key)
 {
     void* fx = o_CreateFx1Keyed(self, id, key);
-    if (!fx_main_thread())
+    if (!on_main())
         return fx;
     if (g_fx_log) { FxFrom f = fx_from(); H->log(M, SK_INFO, "fx1k: self %p avatar %p id %08X key %08X from %X,%X,%X,%X", self, avatar(), id, key, f.a[0], f.a[1], f.a[2], f.a[3]); }
     if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
@@ -1039,7 +1092,7 @@ static void* SK_THISCALL h_CreateFx1Keyed(void* self, uint32_t id, uint32_t key)
 static void* SK_THISCALL h_CreateFx2Keyed(void* self, uint32_t id, uint32_t key)
 {
     void* fx = o_CreateFx2Keyed(self, id, key);
-    if (!fx_main_thread())
+    if (!on_main())
         return fx;
     if (g_fx_log) { FxFrom f = fx_from(); H->log(M, SK_INFO, "fx2k: self %p avatar %p id %08X key %08X from %X,%X,%X,%X", self, avatar(), id, key, f.a[0], f.a[1], f.a[2], f.a[3]); }
     if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
@@ -1053,7 +1106,7 @@ static void* SK_THISCALL h_CreateFx2Keyed(void* self, uint32_t id, uint32_t key)
 static int SK_THISCALL h_StopFx(void* self, uint32_t key, uint32_t arg)
 {
     int r = o_StopFx(self, key, arg);
-    if (r && fx_main_thread() && g_fx_relay_on.load(std::memory_order_relaxed))
+    if (r && on_main() && g_fx_relay_on.load(std::memory_order_relaxed))
         report_effect(self, {0, key, 0, true});
     return r;
 }
@@ -1331,6 +1384,14 @@ bool init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
+    note_main_thread(); // the mod is loaded on the main thread; every frame notes it again
+    HMODULE self = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCWSTR)(void*)&off_main_probe, &self))
+        g_self_base = (uintptr_t)self;
+    skg::call_probe = off_main_probe;
+    H->command_add(M, "coop.threads", "coop.threads [reset|on|off] - the main thread and the game calls made off it (A14)",
+                   c_threads, nullptr, SK_CMD_ANY_THREAD);
     static const char* req[] = {
         "Simulator::cGameNounManager::Get",
         "Simulator::cGameNounManager::DestroyInstance",
@@ -1600,7 +1661,11 @@ uint32_t world_epoch()
 }
 
 static stage_epoch::State g_stage_epochs;
-void stage_epoch_tick() { stage_epoch::step(g_stage_epochs, mode_id()); }
+void stage_epoch_tick()
+{
+    note_main_thread(); // the top of the mod's frame (A14)
+    stage_epoch::step(g_stage_epochs, mode_id());
+}
 uint32_t stage_epoch(uint32_t stage_mode) { return stage_epoch::get(g_stage_epochs, stage_mode); }
 
 net::Vec3 position(void* c)
@@ -2551,7 +2616,7 @@ bool listed(const void* obj, uint32_t noun)
     // only inside the mod's own frame tick (LiveScope): there no game update runs between the walk and the question.
     // In the game's update (our hooks) the game may tear objects down without DestroyInstance (a world's end) after
     // the walk: there every question walks the list as before.
-    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !g_main_tid.load() || !fx_main_thread() ||
+    if (!g_listed_frame_fix || !gamefixes::destroy_hooked() || !H || !on_main() ||
         !g_live_scope)
         return scan_listed(obj, noun);
     uint64_t f = H->frame_index();

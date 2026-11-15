@@ -28,6 +28,13 @@ constexpr uintptr_t kNounAvatarHerdOff = 0x58; // cGameNounManager::mpAvatarHerd
 constexpr uintptr_t kHerdOff = 0x1674;     // cCreatureAnimal::mHerd
 
 bool init(const SkHost* host, SkMod* mod); // resolve symbols; false = coop disabled
+// A14 (CORE-6, BUG-1130): the game's main thread, one id for every module (docs/01-architecture.md#arch-threads).
+// on_main(): the calling thread is the main thread (false before init); a hook the game may call from another thread
+// starts with `if (!game::on_main()) return <the original's result>;`. main_thread(): its id (0 before init).
+bool on_main();
+unsigned long main_thread();
+void note_main_thread();   // init() and the frame (stage_epoch_tick, set_effect_relay_enabled): main thread only
+uint64_t off_main_calls(); // game calls through the skg helpers made off the main thread (coop.threads lists them)
 bool ready();                              // symbols ok
 uint32_t mode_id();
 bool in_creature_stage();

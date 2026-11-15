@@ -19,6 +19,7 @@
 #include "realign_rule.h"
 #include "lifecycle.h"
 #include "call_guard.h"
+#include "off_main.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -622,6 +623,27 @@ static void test_call_guard()
     g_cg_b = false;
 }
 
+// A14 (BUG-1130): the off-main game calls, per call site and game function; the first call of a site is reported
+static void test_off_main()
+{
+    offmain::Table t;
+    CHECK(t.note(0x10001000, 0xC1A520, 7));   // first of its site
+    CHECK(!t.note(0x10001000, 0xC1A520, 8));  // the same site again: counted, not reported
+    CHECK(t.note(0x10001000, 0x9FBF00, 7));   // the same place calling another game function is another site
+    CHECK(t.note(0x10002000, 0xC1A520, 7));
+    CHECK(t.total == 4 && t.used == 3 && t.sites[0].n == 2 && t.sites[0].tid == 7);
+    CHECK(t.status(0x10000000) == "off_main calls=4 sites=3\n"
+                                  "  coop.dll+0x1000 -> game 0xC1A520 calls=2 first_thread=7\n"
+                                  "  coop.dll+0x1000 -> game 0x9FBF00 calls=1 first_thread=7\n"
+                                  "  coop.dll+0x2000 -> game 0xC1A520 calls=1 first_thread=7\n");
+    for (uintptr_t i = 0; i < offmain::Table::kMax; i++)
+        t.note(0x20000000 + i, 1, 9);
+    CHECK(t.used == offmain::Table::kMax && t.dropped == 3 && t.total == 4 + offmain::Table::kMax);
+    CHECK(t.status(0).find(" dropped=3\n") != std::string::npos);
+    t.clear();
+    CHECK(t.total == 0 && t.used == 0 && t.status(0) == "off_main calls=0 sites=0\n");
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -640,6 +662,7 @@ int main(int argc, char** argv)
     test_realign_rule();
     test_lifecycle();
     test_call_guard();
+    test_off_main();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
