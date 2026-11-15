@@ -1,6 +1,9 @@
 #include "tribe.h"
 #include "call_guard.h"
 #include "lifecycle.h"
+#include "host_busy.h"
+#include "busy_model.h"
+#include "world_id.h"
 #include "player_life.h"
 
 #include <algorithm>
@@ -2684,7 +2687,7 @@ static std::string reasons_text(const std::vector<std::pair<uint32_t, int>>& rs)
 
 static void pause_net_release(void*)
 {
-    if (game::mode_id() != modes::kTribe || world::cinematic_playing() || g_go_paused)
+    if (game::mode_id() != modes::kTribe || world::cinematic_playing() || g_go_paused || host_busy::waiting())
         return;
     std::string before = reasons_text(world::pause_reasons()), how;
     if (world::cinematic_pause_slot() && world::cinematic_pause_resume())
@@ -2735,7 +2738,8 @@ static void pause_net_tick(double now)
     bool paused = world::time_paused();
     if (!paused)
         g_net_ran_at = now; // (the stage's own entry stand, BUG-0313, comes before the game ever ran)
-    bool held = world::cinematic_playing() || coop_ui::input_lock_now() > 0 || coop_ui::game_modal_up() || g_go_paused;
+    bool held = world::cinematic_playing() || coop_ui::input_lock_now() > 0 || coop_ui::game_modal_up() || g_go_paused ||
+                host_busy::waiting(); // C3 (BUG-1142): the wait for the host's pause is ours
     bool own = false; // a reason of the player's (P, the pause menu), an editor's, the stage card's ...
     for (auto& [r, c] : rs)
         own |= c > 0 && !net_reason(r);
@@ -2762,6 +2766,10 @@ void on_member_anims(uint8_t kind, net::Reader& r)
         if (!r.ok() || !g_ok || !is_guest())
             return;
         bool fix = kind == kGameOverKind ? g_gameover_wait_fix : g_host_pause_wait_fix;
+        // C3 (BUG-1142): a 0.7.15 host's pause comes as MSG_HOST_BUSY (host_busy.cpp waits for it): kind 21 is the
+        // 0.7.14 host's (its end still ends a wait it started)
+        if (kind == kHostPauseKind && up && host_busy::takes_tribe_pause())
+            return;
         if (!up && kind == kHostPauseKind && g_go_paused && g_go_why != kGoHostPaused)
             return; // the pause's end does not end a game over's wait
         if (up) {
@@ -5949,14 +5957,11 @@ static void frame_tool_run()
 static bool g_cmd_hold_fix = true;
 COOP_FIX("tribe.cmd_hold", "BUG-0693", g_cmd_hold_fix,
          "tribe: a guest's command made while the host is in an editor or a menu runs when the host is back");
-static net::HeldCommands g_cmd_held;
-PLAYER_STATE("tribe.held_cmds", [](uint8_t id) { g_cmd_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
-             [](uint8_t id) -> size_t {
-                 size_t n = 0;
-                 for (auto& c : g_cmd_held.q)
-                     n += c.from == id;
-                 return n;
-             });
+// C3 (BUG-1142): the one held-command pump of busy_model.h (Tribe's row: held, run after kSettle s back in the stage)
+static busy_model::HeldPump g_held;
+static const busy_model::Row& held_row() { return *busy_model::row_of(stage_epoch::index_of(modes::kTribe)); }
+PLAYER_STATE("tribe.held_cmds", [](uint8_t id) { g_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
+             [](uint8_t id) -> size_t { return g_held.held_of(id); });
 static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
 
 // tests (BUG-0844, class BUG-0426): mirror <id>'s citizen is removed by the game (RemoveMember with destroy on its
@@ -6064,16 +6069,12 @@ void tick(double now)
     if (!active())
         return;
     g_cmd_world = modes::current_world();
-    static double active_at, active_since;
-    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
-        active_since = now;
-    active_at = now;
-    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle && game::mode_id() == modes::kTribe) // BUG-0693
-        g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
-            net::Reader r(c.bytes.data(), c.bytes.size());
-            H->log(M, SK_INFO, "tribe: a command of player %u held while away runs now", c.from);
-            host_command(c.from, r);
-        });
+    // BUG-0693: the commands that came while this game was away run once the stage settled again (a load, an editor)
+    g_held.tick(held_row(), game::mode_id() == modes::kTribe, modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
+        net::Reader r(c.bytes.data(), c.bytes.size());
+        H->log(M, SK_INFO, "tribe: a command of player %u held while away runs now", c.from);
+        host_command(c.from, r);
+    });
     drop_foreign_selection();
     away_conquest_tick(now); // BUG-0879 (guest)
     if (is_host())
@@ -6102,7 +6103,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     else if (type == net::MSG_TRIBE_CMD && is_host() && game::mode_id() == modes::kTribe)
         host_command(from, r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && g_cmd_hold_fix && r.left()) { // BUG-0693: run when back
-        g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
+        g_held.hold(held_row(), from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
         H->log(M, SK_INFO, "tribe: a command of player %u held: this game is not in Tribe (mode %08X)", from, game::mode_id());
     }
 }
@@ -6165,7 +6166,7 @@ void before_save()
 
 void on_session_end()
 {
-    g_cmd_held.clear(); // BUG-0693
+    g_held.clear(); // BUG-0693
     g_hold_seen.clear(); // BUG-0906
     for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
         if (game::object_alive(c))
@@ -6192,6 +6193,7 @@ void on_session_end()
     if (g_world_map_fix)
         g_local_tribe_of.clear(); // BUG-0672: the old world's tribes are freed; the next tribe state maps the new ones
 }
+LIFECYCLE_HOOK("tribe.session", lifecycle::kSessionEnd, -50, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 // a world of the Tribe stage is gone (a load, a received world, the stage left, the game-over
 // bounce back): every pointer of it is forgotten, with no game call (BUG-0217: no longer through
@@ -6233,8 +6235,24 @@ static stage_epoch::Watch g_world_watch;
 static bool g_world_left = true; // the Tribe world is not open (forgotten when it was left)
 static uint32_t g_world_checks_fired;
 
+// C2 (BUG-1141, `core.world_id` on): the Tribe world that was open changed or closed (world_id.h fires it; an editor
+// visit keeps it, decision 2); world_check below stands down
+LIFECYCLE_HOOK("tribe.world", lifecycle::kWorldChange, -50, [](const lifecycle::Ctx& c) {
+    if (c.from_stage != stage_epoch::index_of(modes::kTribe))
+        return;
+    g_world_checks_fired++;
+    if (g_ok)
+        H->log(M, SK_INFO, "tribe: the world changed (%s, epoch %u)", world_id::why_name((world_id::Why)c.why),
+               game::stage_epoch(modes::kTribe));
+    on_world_change();
+}, true);
+// the Tribe world's root object for world_id.h (coop.cpp): the player tribe, null outside Tribe
+const void* world_anchor() { return g_ok && game::mode_id() == modes::kTribe ? player_tribe() : nullptr; }
+
 void world_check()
 {
+    if (lifecycle::world_events_on())
+        return;
     uint32_t m = game::mode_id();
     bool in = m == modes::kTribe;
     bool editor = m == modes::kEdit || m == modes::kEditor;

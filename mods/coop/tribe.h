@@ -36,6 +36,8 @@ void on_world_change();
 // BUG-0217: once per frame at the top of on_frame (after game::stage_epoch_tick, before messages):
 // calls on_world_change when the Tribe world changed
 void world_check();
+// C2 (BUG-1141): the stage's root object for world_id.h (null outside the stage)
+const void* world_anchor();
 void before_save(); // host: the co-op epic leaves before the game saves (BUG-0121)
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
