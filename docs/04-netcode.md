@@ -127,7 +127,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 67 | `COLORS` | R | any | Session | Colors | session | u8 kind: the player colour table, a guest's choice |
 | 68 | `REPORT` | R | any | Session | Report | session | the session report (net/sreport.h) |
 | 69 | `HOST_WORLD` | R | host | Session | HostWorld | session | u32 world: the host's save changed (BUG-0933) |
-| 70 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
+| 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
@@ -747,7 +747,7 @@ restarted game sent a fresh token and got nothing back (0.7.14 keyed by the name
 C7 of docs/plan-0.7.15.md (audit STG-5, BUG-1160). Until 0.7.14 the host sent the Tribe members' animations, holds,
 phases and tracks, their height in the air, the theme and party music and the game-over and pause waits (kinds 2-12,
 14-16, 20, 21) as sub-kinds of MSG_NPC_ANIM; npc.cpp passed them on to tribe.cpp through a whitelist, and every new
-kind needed an edit there. Since 0.7.15 they are `MSG_TRIBE_ANIM` (id 70, Host -> guests, class Module: tribe.cpp
+kind needed an edit there. Since 0.7.15 they are `MSG_TRIBE_ANIM` (id 71, Host -> guests, class Module: tribe.cpp
 decides per kind whether it applies outside Tribe, `wire::tribe_anim::any_mode`: the party music's stop of BUG-0890
 and the waits), the tribe family at revision 1.1 (a minor bump: older versions ignore a type they do not know). The
 bytes after the type are the same as after MSG_NPC_ANIM's type (`u8 kind`, then the kind's payload;

@@ -53,7 +53,8 @@ FAMILY(creations, 10, 1, 0, STAGE_ALWAYS, "creations", "")
 // puppet); SETTINGS, COLORS, REPORT, HOST_WORLD: the session's, wherever the guest plays (HOST_WORLD is what
 // "elsewhere" is measured against); VOTE: session-wide, the editor start it brings is gated in its handler
 // (core.vote_world); RES: held inside shared.cpp (res.elsewhere), not at dispatch.
-// Ids 55 and 58 are free (never used; a new type takes the next free id after the last row).
+// Ids 55 and 58 are free (never used; a new type takes the next free id after the last row). Id 70 is taken by
+// HOST_BUSY of feat/w51-core2 (C3, BUG-1142), not merged here yet.
 MSG(1,  HELLO,       R,  Guest, Session,   None,        Both,   session,   "u16 protocol, u32 exe build id, str8 name; then u32 caps and their payloads (#netcode-hello-caps)")
 MSG(2,  WELCOME,      R,  Host,  Session,   None,        Both,   session,   "u8 your id, u32 world id, u8 n, n x {u8 id, str8 name}; then u32 caps and their payloads")
 MSG(3,  REJECT,       R,  Host,  Session,   None,        Both,   session,   "u8 reason (1 version, 2 full, 3 another exe build, 4 started, 5 kicked), str8 text")
@@ -121,7 +122,7 @@ MSG(66, SETTINGS,     R,  Host,  Session,   Settings,    Both,   session,   "the
 MSG(67, COLORS,       R,  Any,   Session,   Colors,      Both,   session,   "u8 kind: the player colour table, a guest's choice")
 MSG(68, REPORT,       R,  Any,   Session,   Report,      Both,   session,   "the session report (net/sreport.h)")
 MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32 world: the host's save changed (BUG-0933)")
-MSG(70, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
+MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 
 #undef MSG
 #undef FAMILY

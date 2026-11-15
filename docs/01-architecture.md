@@ -633,7 +633,7 @@ C1, C4, C7 and D3 of docs/plan-0.7.15.md for the Tribe stage (BUG-1140, BUG-1143
   local members of the mapped tribes that are not bound (stage-specific, as before). The save filter keeps its own
   `g_ours_c` (spawned mirrors by serial): it must outlive the table, which a session end clears while the mirrors stay
   in the guest's world until it leaves it.
-* **Member animations** (C7, [netcode](04-netcode.md#netcode-tribe-anim)): `MSG_TRIBE_ANIM` (70, tribe family 1.1)
+* **Member animations** (C7, [netcode](04-netcode.md#netcode-tribe-anim)): `MSG_TRIBE_ANIM` (71, tribe family 1.1)
   with `wire/tribe_anim.h`; `anim_send` picks the type per guest from its HELLO's family list.
 * **Rules** (D3): `mods/coop/tribe_logic.h`, tests/tribe_tests.cpp.
 * Status: `coop.status` lines `tribe registry:` (both tables' `status()`), `tribe snapshot rx:` and `tribe anim msg:`.

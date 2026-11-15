@@ -1102,13 +1102,13 @@ static void test_manifest()
 {
     printf("message manifest: every type once, the 0.7.14 tables, the direction gate (BUG-1136)\n");
     // the wire values: the 67 types of 0.7.14 with their names, and the types added since (a 0.7.14 peer ignores an
-    // unknown type): 70 TRIBE_ANIM (C7, BUG-1160)
+    // unknown type): 71 TRIBE_ANIM (C7, BUG-1160)
     int known = 0;
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
-    const std::set<int> added = {70};
+    const std::set<int> added = {71};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added.size()));
-    CHECK(MSG_TRIBE_ANIM == 70 && std::string(msg_info(70).name) == "TRIBE_ANIM" && msg_info(70).family == Family::tribe);
+    CHECK(MSG_TRIBE_ANIM == 71 && std::string(msg_info(71).name) == "TRIBE_ANIM" && msg_info(71).family == Family::tribe);
     for (int t : added)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1152,7 +1152,7 @@ static void test_manifest()
     CHECK(bad == 0);
     // the direction gate: exactly the types only the host sends (the sender inventory of the B3 review), off: none
     const std::set<int> host_only = {2, 3, 4, 5, 9, 13, 14, 15, 16, 17, 19, 20, 22, 23, 25, 29, 31, 33, 37, 39, 40, 42, 43, 47,
-                                     50, 56, 59, 62, 64, 66, 69, 70};
+                                     50, 56, 59, 62, 64, 66, 69, 71};
     for (int t = 0; t < 256; t++) {
         CHECK(dir_gate_drops((uint8_t)t) == (host_only.count(t) == 1));
         CHECK(!dir_gate_drops((uint8_t)t, false));
