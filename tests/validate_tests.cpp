@@ -1101,11 +1101,17 @@ static void test_model_paint_runs()
 static void test_manifest()
 {
     printf("message manifest: every type once, the 0.7.14 tables, the direction gate (BUG-1136)\n");
-    // the wire values: the 67 types of 0.7.14 with their names, nothing else
+    // the wire values: the 67 types of 0.7.14 with their names, and the types added since (a 0.7.14 peer ignores an
+    // unknown type): 70 TRIBE_ANIM (C7, BUG-1160)
     int known = 0;
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
-    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0]));
+    const std::set<int> added = {70};
+    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added.size()));
+    CHECK(MSG_TRIBE_ANIM == 70 && std::string(msg_info(70).name) == "TRIBE_ANIM" && msg_info(70).family == Family::tribe);
+    for (int t : added)
+        for (auto& g : golden0714::kTypes)
+            CHECK(g.id != t);
     for (auto& g : golden0714::kTypes)
         CHECK(msg_info(g.id).known && std::string(msg_info(g.id).name) == g.name);
     CHECK(MSG_HELLO == 1 && MSG_SPACE == 48 && MSG_NPC_ANIM == 59 && MSG_HOST_WORLD == 69);
@@ -1113,6 +1119,11 @@ static void test_manifest()
     int bad = 0;
     for (int t = 0; t < 256; t++) {
         uint8_t u = (uint8_t)t;
+        if (added.count(t)) { // (a new type: its class and route are its row's, checked below)
+            CHECK(host_world::msg_class(u) == host_world::MsgClass::Module && dispatch_route(u, false) == Route::Tribe &&
+                  dispatch_route(u, true) == Route::None);
+            continue;
+        }
         if (host_world::msg_class(u) != golden0714::msg_class(u)) {
             printf("  type %d: class %d, 0.7.14 %d\n", t, (int)host_world::msg_class(u), (int)golden0714::msg_class(u));
             bad++;
@@ -1141,7 +1152,7 @@ static void test_manifest()
     CHECK(bad == 0);
     // the direction gate: exactly the types only the host sends (the sender inventory of the B3 review), off: none
     const std::set<int> host_only = {2, 3, 4, 5, 9, 13, 14, 15, 16, 17, 19, 20, 22, 23, 25, 29, 31, 33, 37, 39, 40, 42, 43, 47,
-                                     50, 56, 59, 62, 64, 66, 69};
+                                     50, 56, 59, 62, 64, 66, 69, 70};
     for (int t = 0; t < 256; t++) {
         CHECK(dir_gate_drops((uint8_t)t) == (host_only.count(t) == 1));
         CHECK(!dir_gate_drops((uint8_t)t, false));

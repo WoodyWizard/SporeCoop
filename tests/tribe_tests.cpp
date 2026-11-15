@@ -1,0 +1,162 @@
+// Native tests for tribe_logic.h (make test, D3 of 0.7.15): the Tribe stage's rules of owner dealing, member hold and
+// snapshot apply, and the per-peer message type of the member animations (wire/tribe_anim.h, C7). Where a rule has a
+// switch, the case runs with it off too and must show the old behaviour, so the test is known to catch it.
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <string>
+#include <vector>
+
+#include "tribe_logic.h"
+#include "wire/tribe_anim.h"
+
+using namespace tribe_logic;
+
+static int g_fail = 0;
+#define CHECK(c)                                                  \
+    do {                                                          \
+        if (!(c)) {                                               \
+            printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); \
+            g_fail++;                                             \
+        }                                                         \
+    } while (0)
+
+// a member met first: its claim, else the players in turns (the player tribe only), a purchase over both
+static void owners()
+{
+    printf("owner dealing: claims, turns, purchases, the split (E1 BUG-1154, BUG-0671)\n");
+    std::vector<uint8_t> pl = {0, 1, 2};
+    uint32_t turn = 0;
+    CHECK(new_owner(true, -1, pl, turn, -1, false) == 0);
+    CHECK(new_owner(true, -1, pl, turn, -1, false) == 1);
+    CHECK(new_owner(true, 2, pl, turn, -1, false) == 2 && turn == 2); // a claim takes no turn
+    CHECK(new_owner(true, -1, pl, turn, -1, false) == 2);
+    CHECK(new_owner(true, -1, pl, turn, -1, false) == 0 && turn == 4); // the turns wrap
+    // another tribe's member is nobody's, and takes no turn (a claim is only asked for the player tribe)
+    CHECK(new_owner(false, -1, pl, turn, -1, false) == kNobody && turn == 4);
+    // BUG-0671: bought for guest 2, still a player: its own, over a claim and over the turn (the turn still counts)
+    CHECK(new_owner(true, -1, pl, turn, 2, true) == 2 && turn == 5);
+    CHECK(new_owner(true, 1, pl, turn, 2, true) == 2 && turn == 5);
+    // ... gone since: the turn's, and in another tribe never
+    CHECK(new_owner(true, -1, pl, turn, 2, false) == pl[5 % 3]);
+    CHECK(new_owner(false, -1, pl, turn, 2, true) == kNobody);
+    // no players (a host alone before its session): nobody, no division by zero
+    std::vector<uint8_t> none;
+    uint32_t t0 = 0;
+    CHECK(new_owner(true, -1, none, t0, -1, false) == kNobody && t0 == 0);
+    // the split when the players change: claims first, the rest in turns from 0
+    uint32_t t = 0;
+    CHECK(resplit_owner(-1, pl, t) == 0 && resplit_owner(1, pl, t) == 1 && resplit_owner(-1, pl, t) == 1 && t == 2);
+    CHECK(resplit_owner(-1, none, t) == kNobody);
+}
+
+// E1: a newcomer gets an even share, plain members first, nobody below the share
+static void balance_share()
+{
+    printf("owner dealing: a newcomer's even share (E1 BUG-1154)\n");
+    // 7 members, host 0 has 6 (two of them born for it: 10, 11), guest 1 has 1, guest 2 joins with none
+    std::map<uint8_t, std::vector<int>> by = {{0, {10, 11, 12, 13, 14, 15}}, {1, {16}}};
+    std::vector<uint8_t> pl = {0, 1, 2};
+    auto plain = [](int m) { return m != 10 && m != 11; };
+    auto mv = balance(by, pl, 7, plain);
+    CHECK(mv.size() == 2); // share 7 / 3 = 2
+    CHECK(mv.size() == 2 && mv[0].first == 12 && mv[0].second == 2 && mv[1].first == 13 && mv[1].second == 2);
+    CHECK(by[0].size() == 4 && by[2].size() == 2 && by[1].size() == 1); // guest 1 had one: no newcomer, gets nothing
+    // the richest gives, never below the share: 0 has 3, 1 has 3, 2 joins: share 2, one from each? the richest each time
+    std::map<uint8_t, std::vector<int>> b2 = {{0, {1, 2, 3}}, {1, {4, 5, 6}}};
+    auto m2 = balance(b2, pl, 6, [](int) { return true; });
+    CHECK(m2.size() == 2 && b2[0].size() == 2 && b2[1].size() == 2 && b2[2].size() == 2);
+    // only born members left: the first one is taken (plain first, then any)
+    std::map<uint8_t, std::vector<int>> b3 = {{0, {10, 11, 12, 13}}};
+    auto m3 = balance(b3, std::vector<uint8_t>{0, 1}, 4, [](int m) { return m == 13; });
+    CHECK(m3.size() == 2 && m3[0].first == 13 && m3[1].first == 10);
+    // a player who has members is no newcomer; no players: nothing
+    std::map<uint8_t, std::vector<int>> b4 = {{0, {1, 2, 3, 4}}, {1, {5}}};
+    CHECK(balance(b4, std::vector<uint8_t>{0, 1}, 5, [](int) { return true; }).empty());
+    CHECK(balance(b4, std::vector<uint8_t>{}, 5, [](int) { return true; }).empty());
+}
+
+// BUG-0620: the host keeps a dead member's body while the game does, at most kBodyMax s
+static void bodies()
+{
+    printf("member hold: the bodies of BUG-0620\n");
+    BodyHold h = body_hold(true, true, 0, 0, 100.0);
+    CHECK(h.keep && h.since == 100.0); // first seen now
+    h = body_hold(true, true, 0, h.since, 150.0);
+    CHECK(h.keep && h.since == 100.0);
+    h = body_hold(true, true, 0, h.since, 160.0);
+    CHECK(h.keep); // exactly kBodyMax: still sent
+    h = body_hold(true, true, 0, 100.0, 160.5);
+    CHECK(!h.keep && h.since == 100.0); // longer: the entry goes
+    CHECK(!body_hold(false, true, 0, 0, 100).keep);      // the object gone (or another one at its address)
+    CHECK(!body_hold(true, false, 0, 0, 100).keep);      // alive and out of every list: not a body (it goes)
+    CHECK(!body_hold(true, true, -1, 0, 100).keep);      // its tribe is gone
+    CHECK(!body_hold(true, true, kMaxTribes, 0, 100).keep); // beyond the snapshot's tribe table
+    CHECK(body_hold(true, true, kMaxTribes - 1, 0, 100).keep);
+    CHECK(body_hold(true, false, 0, 0, 100).since == 0); // not a body: its time is not started
+}
+
+// the guest's per-entry decisions of a snapshot
+static void apply()
+{
+    printf("snapshot apply: grow up, make a mirror, the bind candidate, the knock-out (BUG-0857, BUG-0665, BUG-0173)\n");
+    CHECK(grow_up(true, 1, false, 0, false));
+    CHECK(!grow_up(false, 1, false, 0, false)); // tribe.mirror_grow off: by its own timer
+    CHECK(!grow_up(true, 0, false, 0, false) && !grow_up(true, 1, true, 0, false) && !grow_up(true, 1, false, 1, false) &&
+          !grow_up(true, 1, false, 0, true));
+    CHECK(make_mirror(false, false, false) && make_mirror(false, true, true));
+    CHECK(!make_mirror(false, true, false)); // tribe.join_body off: no mirror for a body (0.7.10)
+    CHECK(!make_mirror(true, false, true));
+    std::vector<Candidate> v = {{0, 0, 0, false}, {3, 0, 0, true}, {4, 0, 0, false}, {10, 0, 0, false}};
+    CHECK(pick_bind(v, 3.2f, 0, 0) == 2); // the nearest unbound (index 1 is bound to another mirror)
+    CHECK(pick_bind(v, 0.5f, 0, 0) == 0);
+    CHECK(pick_bind(v, 20, 0, 0) == -1);  // none within 6 m: spawn
+    CHECK(pick_bind(v, 16, 0, 0) == -1);  // exactly 6 m: not nearer than 6 m
+    CHECK(pick_bind(v, 15.9f, 0, 0) == 3);
+    CHECK(pick_bind({}, 0, 0, 0) == -1);
+    CHECK(ko(true, 0, false) == Ko::Death && ko(true, -1, true) == Ko::Death);
+    CHECK(ko(true, 50, true) == Ko::Replace && ko(true, 50, false) == Ko::None);
+    CHECK(ko(false, 0, true) == Ko::None); // tribe.ko off: the mirror stands with its last health
+}
+
+// C7 (BUG-1160): the member animations' own message type for a peer that knows it, MSG_NPC_ANIM for an older one
+static void anim_type()
+{
+    printf("member animations: MSG_TRIBE_ANIM for a peer with the tribe family's minor, MSG_NPC_ANIM for 0.7.14 (C7)\n");
+    using namespace wire::tribe_anim;
+    std::vector<net::FamilyRev> none, old15 = {{6, 1, 0}}, new15 = {{6, 1, kMinor}}, later = {{6, 1, kMinor + 3}},
+                                       rev2 = {{6, 2, 0}}, other = {{7, 1, 5}};
+    CHECK(type_for(false, none, true) == net::MSG_NPC_ANIM);   // 0.7.14 and older: no families sent
+    CHECK(type_for(true, old15, true) == net::MSG_NPC_ANIM);   // a 0.7.15 build before C7 (tribe 1.0)
+    CHECK(type_for(true, new15, true) == net::MSG_TRIBE_ANIM);
+    CHECK(type_for(true, later, true) == net::MSG_TRIBE_ANIM); // a later minor reads it too
+    CHECK(type_for(true, rev2, true) == net::MSG_NPC_ANIM);    // another rev: refused anyway; never the new type
+    CHECK(type_for(true, other, true) == net::MSG_NPC_ANIM);   // no tribe family in the list
+    CHECK(type_for(true, new15, false) == net::MSG_NPC_ANIM);  // tribe.anim_msg off: 0.7.14's type for everyone
+    // the kinds: exactly npc.cpp's whitelist of 0.7.14 (2..12, 14, 15, 16, 20, 21); the NPC's own kinds 1 and 13 are not
+    int n = 0;
+    for (int k = 0; k < 256; k++) {
+        bool want = (k >= 2 && k <= 12) || k == 14 || k == 15 || k == 16 || k == 20 || k == 21;
+        CHECK(is_tribe_kind((uint8_t)k) == want);
+        n += want;
+    }
+    CHECK(n == 16);
+    // the kinds a guest takes outside Tribe: the party music's stop (BUG-0890), the game-over and pause waits
+    for (int k = 0; k < 256; k++)
+        CHECK(any_mode((uint8_t)k) == (k == K_PARTY_STOP || k == K_GAMEOVER || k == K_HOST_PAUSE));
+}
+
+int main()
+{
+    owners();
+    balance_share();
+    bodies();
+    apply();
+    anim_type();
+    if (g_fail) {
+        printf("tribe_tests: %d FAILED\n", g_fail);
+        return 1;
+    }
+    printf("tribe_tests: all passed\n");
+    return 0;
+}

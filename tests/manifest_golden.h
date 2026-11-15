@@ -63,6 +63,8 @@ inline host_world::MsgClass msg_class(uint8_t type)
     case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM: case net::MSG_NPC_MEAT: case net::MSG_WOBJ: case net::MSG_EFFECT:
     case net::MSG_CIV_CMD: case net::MSG_UFO_STATE: case net::MSG_UFO_HIT: case net::MSG_UFO_DAMAGE: case net::MSG_SPACE:
         return host_world::MsgClass::Module;
+    case net::MSG_TRIBE_ANIM: // added after 0.7.14 (C7, BUG-1160): 0.7.14 did not know it (test_manifest's `added`)
+        break;
     }
     return host_world::MsgClass::Unknown;
 }

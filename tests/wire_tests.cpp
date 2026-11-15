@@ -28,6 +28,7 @@
 #include "wire/space_eco.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
+#include "wire/tribe_anim.h"
 
 static int g_fail = 0;
 static int g_golden = 0;
@@ -797,6 +798,60 @@ static void test_space_eco()
 }
 
 // shared.cpp: MSG_RES 25, MSG_RES_ADD 26 (the body after the type)
+// C7 (BUG-1160): the Tribe member kinds, the same bytes under MSG_TRIBE_ANIM as under MSG_NPC_ANIM before (the old
+// writers of tribe.cpp copied as `legacy`)
+static void test_tribe_anim()
+{
+    namespace t = wire::tribe_anim;
+    {
+        net::Writer w; // gameover_host_tick's send(kind, v)
+        w.u8(20);
+        w.u8(3);
+        golden("tribe K_GAMEOVER", t::Wait{t::K_GAMEOVER, 3}, "14 03", &w);
+        net::Writer w2;
+        w2.u8(21);
+        w2.u8(1);
+        golden("tribe K_HOST_PAUSE", t::Wait{t::K_HOST_PAUSE, 1}, "15 01", &w2);
+        rejects<t::Wait>("tribe wait of another kind", {0x09, 0x01});
+        rejects<t::Wait>("tribe wait cut", {0x14});
+    }
+    {
+        std::vector<std::pair<uint16_t, float>> v = {{5, 3.0f}, {0x1234, 0.f}};
+        net::Writer w; // send_member_air
+        w.u8(9);
+        w.u8((uint8_t)v.size());
+        for (size_t i = 0; i < v.size(); i++) {
+            w.u16(v[i].first);
+            w.f32(v[i].second);
+        }
+        t::Air a;
+        a.v = v;
+        golden("tribe K_AIR", a, "09 02 0500 00004040 3412 00000000", &w);
+        rejects<t::Air>("tribe air cut", {0x09, 0x02, 0x05, 0x00, 0x00, 0x00, 0x40, 0x40, 0x34});
+    }
+    {
+        net::Writer w; // send_member_holds, a start with its item (BUG-0971)
+        w.u8(12);
+        w.u8(1);
+        w.u16(7);
+        w.u32(0x04C6CB02u);
+        w.u8(3);
+        t::Hold h;
+        h.with_item = true;
+        h.v.push_back({7, 0x04C6CB02u, 3});
+        golden("tribe K_HOLD_ITEM", h, "0c 01 0700 02cbc604 03", &w);
+        net::Writer w2; // ... and an end (reliable, no item)
+        w2.u8(11);
+        w2.u8(1);
+        w2.u16(7);
+        w2.u32(0);
+        t::Hold e;
+        e.v.push_back({7, 0, 0});
+        golden("tribe K_HOLD end", e, "0b 01 0700 00000000", &w2);
+        rejects<t::Hold>("tribe hold of another kind", {0x02, 0x00});
+    }
+}
+
 static void test_shared_res()
 {
     namespace s = wire::shared_res;
@@ -901,6 +956,7 @@ int main()
     test_space_trade();
     test_space_badges();
     test_space_rivalry();
+    test_tribe_anim();
     printf(g_fail ? "wire_tests: FAILED (%d)\n" : "wire_tests: %d message kinds, ALL OK\n", g_fail ? g_fail : g_golden);
     return g_fail ? 1 : 0;
 }

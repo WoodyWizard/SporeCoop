@@ -151,6 +151,9 @@ public:
     uint8_t my_id() const { return my_id_; }
     bool connected() const { return role_ == Role::Host || (role_ == Role::Client && welcomed_); }
     std::string name_of(uint8_t id) const;
+    // C7 (BUG-1160), host: the message family revisions an accepted guest's HELLO listed (`has` false: it listed none,
+    // a version before 0.7.15); false when there is no such guest
+    bool peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) const;
     // BUG-1107, host: a stable key of a player for state the host keeps across its rejoin (Space colonies, cargo hold,
     // badges, Rivals budget). From its rejoin token when its HELLO had one (hashed: the key is never sent or shown),
     // else from its session name (an older SporeCoop). The same game after a crash or a leave has the same key; a

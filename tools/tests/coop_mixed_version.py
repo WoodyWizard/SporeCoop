@@ -201,6 +201,33 @@ def nest_eggs(host, carol):
     return True
 
 
+def tribe_anims(ps, ck, old_side):
+    """C7 (BUG-1160): the host's members' animations reach each guest by the message type its version reads: this build
+    hosting sends MSG_TRIBE_ANIM to this build's Bob and MSG_NPC_ANIM to the old Carol; an old host sends MSG_NPC_ANIM,
+    which this build's Carol still takes. Every guest plays them on its mirrors (`coop.tribe anims` rx: relayed starts
+    and the members' animations now, counted where the guest applies them)"""
+    def rx(p):
+        m = re.search(r'anims fix=\d+ sent=(\d+) rx=(\d+)', p.call('coop.tribe anims'))
+        return int(m.group(2)) if m else -1
+
+    def anim_line(p):
+        m = re.search(r'tribe anim msg: fix=\d sent_new=(\d+) sent_old=(\d+) rx_new=(\d+)', p.call('coop.status'))
+        return tuple(int(x) for x in m.groups()) if m else None
+    if not old_side:
+        hl, bl = anim_line(ps[0]), anim_line(ps[1])
+        ck(hl and hl[0] > 0 and hl[1] > 0, f'[tribe anims] the host sends MSG_TRIBE_ANIM to this build and MSG_NPC_ANIM to '
+           f'the old release (sent new / old {hl[:2] if hl else "no line"})')
+        ck(bl and bl[2] > 0, f'[tribe anims] Bob (this build) takes MSG_TRIBE_ANIM (rx {bl[2] if bl else "no line"})')
+    else:
+        cl = anim_line(ps[2])
+        ck(cl is not None and cl[2] == 0, f'[tribe anims] Carol (this build) gets no MSG_TRIBE_ANIM from the old host '
+           f'(rx {cl[2] if cl else "no line"})')
+    for p in ps[1:]:
+        n = rx(p)
+        ck(n > 0, f'[tribe anims] {p.name} ({"old" if p.old else "this build"}) plays the host members\' animations '
+           f'(rx {n})')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--old', choices=('guest', 'host'), required=True)
@@ -310,6 +337,7 @@ def main():
     if a.fixture == 'tribe':
         time.sleep(30)  # tribe chunks with the host's time trailer
         views(ps, ck, 'tribe 30 s', near)
+        tribe_anims(ps, ck, old_side)
     # health
     for p in ps:
         out = p.call('exc').splitlines()

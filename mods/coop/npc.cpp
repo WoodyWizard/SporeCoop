@@ -4,6 +4,7 @@
 #include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
+#include "wire/tribe_anim.h"
 #include "settings.h"
 #include "teamplay.h"
 
@@ -2908,7 +2909,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!is_guest())
             return;
         uint8_t kind = r.u8();
-        if ((kind >= 2 && kind <= 12) || kind == 14 || kind == 15 || kind == 16 || kind == 20 || kind == 21) { // (21: BUG-1086, the host's pause; 16: BUG-1072, the members' other animation tracks; 12: BUG-0971, a hold start with its item; 14: BUG-0988, the members' animation times; 15: BUG-1069, the same for other animations; 20: BUG-0960, the host's game-over caption) // BUG-0569 / BUG-0568 / BUG-0646 / BUG-0946 / BUG-0936 / BUG-0914: the tribe members' animations, the theme and party music, the members in the air (tribe.cpp)
+        // C7 (BUG-1160): since 0.7.15 a host sends these as MSG_TRIBE_ANIM to a guest that knows it; a 0.7.14 host (and a
+        // 0.7.15 host to an older guest) still sends them here
+        if (wire::tribe_anim::is_tribe_kind(kind)) { // (21: BUG-1086, the host's pause; 16: BUG-1072, the members' other animation tracks; 12: BUG-0971, a hold start with its item; 14: BUG-0988, the members' animation times; 15: BUG-1069, the same for other animations; 20: BUG-0960, the host's game-over caption) // BUG-0569 / BUG-0568 / BUG-0646 / BUG-0946 / BUG-0936 / BUG-0914: the tribe members' animations, the theme and party music, the members in the air (tribe.cpp)
             tribe::on_member_anims(kind, r);
             return;
         }

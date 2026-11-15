@@ -127,6 +127,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 67 | `COLORS` | R | any | Session | Colors | session | u8 kind: the player colour table, a guest's choice |
 | 68 | `REPORT` | R | any | Session | Report | session | the session report (net/sreport.h) |
 | 69 | `HOST_WORLD` | R | host | Session | HostWorld | session | u32 world: the host's save changed (BUG-0933) |
+| 70 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
@@ -135,7 +136,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | creature (Creature) | 3 | 1.0 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
 | npc (mirrored creature and world state) | 4 | 1.0 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.0 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN` |
-| tribe (Tribe) | 6 | 1.0 | Tribe | `TRIBE_STATE`, `TRIBE_CMD` |
+| tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
 | space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
@@ -739,3 +740,29 @@ restarted game sent a fresh token and got nothing back (0.7.14 keyed by the name
   (BUG-1107, `space_kept_key`).
 * Switch `coop.fix net.rejoin_disk off`: memory only (a restart sends a fresh token). Lab: `space_badges_rejoin`
   (it restarts the guest; FAIL with the switch off).
+
+## The Tribe members' animations get their own message type (2026-11-15, feat/w51-tribe)
+<a id="netcode-tribe-anim"></a>
+
+C7 of docs/plan-0.7.15.md (audit STG-5, BUG-1160). Until 0.7.14 the host sent the Tribe members' animations, holds,
+phases and tracks, their height in the air, the theme and party music and the game-over and pause waits (kinds 2-12,
+14-16, 20, 21) as sub-kinds of MSG_NPC_ANIM; npc.cpp passed them on to tribe.cpp through a whitelist, and every new
+kind needed an edit there. Since 0.7.15 they are `MSG_TRIBE_ANIM` (id 70, Host -> guests, class Module: tribe.cpp
+decides per kind whether it applies outside Tribe, `wire::tribe_anim::any_mode`: the party music's stop of BUG-0890
+and the waits), the tribe family at revision 1.1 (a minor bump: older versions ignore a type they do not know). The
+bytes after the type are the same as after MSG_NPC_ANIM's type (`u8 kind`, then the kind's payload;
+tests/wire_tests.cpp `test_tribe_anim` pins the waits, the air list and the holds against the old writers).
+
+Which type a guest gets (`wire::tribe_anim::type_for`, tests/tribe_tests.cpp `anim_type`): MSG_TRIBE_ANIM when its
+HELLO listed the tribe family at rev 1 minor >= 1, MSG_NPC_ANIM otherwise. So with a 0.7.14 peer:
+
+* a 0.7.15 host and a 0.7.14 guest: the guest sent no family list; it gets MSG_NPC_ANIM exactly as from a 0.7.14
+  host (the same kinds and bytes) and plays the animations as before. The other guests of 0.7.15 get MSG_TRIBE_ANIM.
+* a 0.7.14 host and a 0.7.15 guest: the host sends MSG_NPC_ANIM; the 0.7.15 guest still passes those kinds on
+  (npc.cpp, `wire::tribe_anim::is_tribe_kind`, the old whitelist) and plays them as before.
+* the minor bump is no conflict: nobody is refused for it (only another `rev` refuses); B6's usual warning
+  ("... some things may not match") is all a player sees.
+
+Lab: `mixed_version_tribe` (and `--old host --fixture tribe`) checks `[tribe anims]`: the host's `tribe anim msg:`
+line counts both types sent, this build's guest counts MSG_TRIBE_ANIM taken, every guest plays the relayed
+animations. Switch `coop.fix tribe.anim_msg off`: MSG_NPC_ANIM to everyone (0.7.14).

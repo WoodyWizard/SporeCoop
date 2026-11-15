@@ -43,7 +43,7 @@ FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 0, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 0, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 0, STAGE_CELL, "Cell", "")
-FAMILY(tribe,     6, 1, 0, STAGE_TRIBE, "Tribe", "")
+FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
@@ -121,6 +121,7 @@ MSG(66, SETTINGS,     R,  Host,  Session,   Settings,    Both,   session,   "the
 MSG(67, COLORS,       R,  Any,   Session,   Colors,      Both,   session,   "u8 kind: the player colour table, a guest's choice")
 MSG(68, REPORT,       R,  Any,   Session,   Report,      Both,   session,   "the session report (net/sreport.h)")
 MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32 world: the host's save changed (BUG-0933)")
+MSG(70, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 
 #undef MSG
 #undef FAMILY

@@ -283,6 +283,19 @@ uint8_t Session::alloc_id() const
     return 0xFF;
 }
 
+bool Session::peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) const
+{
+    if (role_ != Role::Host)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == id) {
+            has = p->has_families;
+            out = p->families;
+            return true;
+        }
+    return false;
+}
+
 std::string Session::name_of(uint8_t id) const
 {
     if (id == my_id_ && role_ != Role::None)

@@ -605,3 +605,35 @@ Tribe and Space on a planet (tried again every 5 s); a posted save whose write i
 is tried again 15 s later. The co-op window's session line (host) shows "saved N min ago". Switch
 `coop.fix world.autosave off`: no autosave (0.7.14). Status: `coop.autosave`; test seams `coop.autosave interval <s>`,
 `coop.autosave milestone [<why>]`.
+
+## Tribe on the wave-C mechanisms (2026-11-15, feat/w51-tribe)
+<a id="arch-tribe-wave-c"></a>
+
+C1, C4, C7 and D3 of docs/plan-0.7.15.md for the Tribe stage (BUG-1140, BUG-1143, BUG-1160, BUG-1161), following
+[the recipe](#arch-wave-c):
+
+* **Tables** ([mirror registry](#arch-mirror-registry)): the host's member table is `mirror::Registry<uint16_t,
+  HMember> g_hm("tribe.hm")`, the guest's mirrors `mirror::Registry<uint16_t, GMember> g_gm("tribe.gm")`; the hand-kept
+  reverse maps `g_hm_by_id` and `g_gid_of` and the `c` / `serial` / `id` fields of the entries are gone (the entry's
+  `ref` and `id`). Liveness is injected: the host's `hm_alive` = `kept_alive` (game::LiveRef with the serial;
+  `tribe.kept_refs` off: the object's memory), the guest's `gm_alive` (LiveRef; `tribe.mirror_member_lifetime` off:
+  the object's memory). Lookups by object are `hm_of(c)` / `gm_of(c)` (a pointer compare), checks of a kept entry
+  `hm_ok(e)` / `mirror_ok(e)` (no detach: guest_state alone forgets a dead mirror, with its air hold, BUG-0946).
+* **Host pass** (host_tick): every member of the first 32 tribes is `adopt`ed (another serial at a known address
+  retires the old id and gets a new one: BUG-0951; `tribe.kept_refs` off: the entry at the address stays); a new
+  entry's owner is `tribe_logic::new_owner` (E1's claim from owner_claims.h, else the players in turns; a purchase of
+  BUG-0671 over both); the re-split when the players change is `resplit_owner`, a newcomer's share `balance`. Then
+  `sweep(seen this pass)`: an unseen entry whose object is a dead member's body is `Keep` (sent with health 0, BUG-0620,
+  `tribe_logic::body_hold`: at most kBodyMax 60 s, its last tribe in the table), every other one `Remove` (no game call).
+* **Guest snapshot** (guest_state) on `net::SnapshotReceiver<uint16_t> g_snap` ([C4](#arch-snapshot-rx), policy
+  `{255, net.cycle_order, 0x8000, sweep_once, last chunk}`; `tribe.cycle` resets it with the session and the world,
+  BUG-1051): per entry `g_gm.at(id)`, a dead object detached (`tribe_logic` decides grow up, make a mirror, the bind
+  candidate `pick_bind`: the nearest unbound member of the mapped tribe within 6 m, else `spawn_member`, bound with
+  `made`); on the completing chunk `g_snap.finish(g_gm, Remove, remove_member when alive)`, then the orphan sweep of
+  local members of the mapped tribes that are not bound (stage-specific, as before). The save filter keeps its own
+  `g_ours_c` (spawned mirrors by serial): it must outlive the table, which a session end clears while the mirrors stay
+  in the guest's world until it leaves it.
+* **Member animations** (C7, [netcode](04-netcode.md#netcode-tribe-anim)): `MSG_TRIBE_ANIM` (70, tribe family 1.1)
+  with `wire/tribe_anim.h`; `anim_send` picks the type per guest from its HELLO's family list.
+* **Rules** (D3): `mods/coop/tribe_logic.h`, tests/tribe_tests.cpp.
+* Status: `coop.status` lines `tribe registry:` (both tables' `status()`), `tribe snapshot rx:` and `tribe anim msg:`.
