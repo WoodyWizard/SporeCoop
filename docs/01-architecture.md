@@ -605,3 +605,46 @@ Tribe and Space on a planet (tried again every 5 s); a posted save whose write i
 is tried again 15 s later. The co-op window's session line (host) shows "saved N min ago". Switch
 `coop.fix world.autosave off`: no autosave (0.7.14). Status: `coop.autosave`; test seams `coop.autosave interval <s>`,
 `coop.autosave milestone [<why>]`.
+
+## Civ on the mirror registry and the snapshot receiver (2026-11-15, feat/w51-civ)
+<a id="arch-civ-registry"></a>
+
+C1 and C4 of 0.7.15 for Civ (BUG-1140, BUG-1143), D3 (BUG-1163). The hand-made maps of civ.cpp are gone:
+
+* Host table: `g_hvr` = `mirror::Registry<uint16_t, HV>("civ.hv", game::alive)`, HV = {owner, pol}; the entry's ref
+  carries the vehicle and its serial (BUG-0951). The table pass in host_tick (every 0.1 s) is `g_hvr.sweep`: an entry
+  is seen while its vehicle is in the game's list with the same political id (BUG-0059) and, with
+  civ.mirror_lifetime, the same serial; the rest goes without a game call. A vehicle the table does not know gets its
+  id by `adopt` (`hv_add`, `net::alloc_id` over the registry: never a live id, never 0, BUG-0154) with the owner of
+  `civlogic::new_vehicle_owner`; the orphans of a player who left go by `civlogic::orphan_owner` (BUG-0031); E1's
+  claims (owner_claims.h, BUG-1153) stay keyed by the vehicle.
+* Guest mirrors: `g_gvr` = `mirror::Registry<uint16_t, GV>("civ.gv", gv_alive)`. `gv_alive` is the guest's own rule
+  (the vehicle's memory says it is not destroyed and, with civ.mirror_lifetime, its serial is the one bound): a
+  vehicle the mod just made joins the game's list later, and `prune_gone` (the game's list, every Civ frame) detaches
+  one the game took out of its list before it is freed. It is the one `object_alive` the registry keeps. Binding:
+  `gv_bind` (a local vehicle of the same nation / purpose / locomotion within 25 m, else CreateVehicle; an address
+  still bound to another mirror loses it to the new vehicle), `gv_unbind` (dead or another object at the address).
+* The snapshot: `g_rx` = `net::SnapshotReceiver<uint16_t>` with Tribe's policy (255 chunks, `keep_order` = net.cycle_order
+  read every chunk, older within 0x8000, only the last chunk completes, once). After a complete cycle
+  `g_rx.finish(g_gvr, decide, remove)`: an unseen mirror whose vehicle is alive and not dead is removed now
+  (`kill_local`), or `Defer` while the planner moves it or a cinematic plays (`civlogic::unseen_mirror`, BUG-0493);
+  the guest's own vehicles the host has not go through the same deferred list (`kill_wait` = `defer`). guest_tick runs
+  `g_gvr.pump` (a vehicle no longer in the game's list or dead is dropped without a call).
+* Save filter (BUG-0470): `g_gvr.ours(o, kVehicleNoun, true)` (any bound vehicle, or one waiting for its removal).
+* Status: `coop.civ tables` ends with a `registry:` line (both registries' `status()` and the receiver's counters);
+  the guest's `incomplete=` / `older_chunks=` in `coop.civ` are the receiver's.
+* Squadron (squadron.cpp): `g_rx` with the squadron's policy `{31, true, 99, true, false}` replaced the mask, the
+  older window and the done flag; its mirror table is not on the registry (not in C1's order). `coop.fleet chunkfix 0`
+  (fleet.chunk, BUG-0037's twin) keeps its own path: by the B1 rule (docs/10-dev-pipeline.md#pipeline-fix-retire)
+  fleet.chunk may not retire (a Space-file switch on the keep list, and no FAIL run id on record in its ticket).
+* Rules: civ_logic.h (money: the guest's own income dropped, `can_pay` BUG-0613, `refund_amount` BUG-0807; owners;
+  holds; `local_play` BUG-0151), unit tests tests/civ_tests.cpp.
+* Behaviour differences, on purpose: a duplicate of a completed cycle's last chunk does not sweep again (sweep_once);
+  the guest's `older_chunks` counter survives a world change (the receiver keeps its counters).
+* Files (C8, BUG-1164, pure moves after the counters were grouped): `civ.cpp` (the stage: hooks, host and guest ticks,
+  messages, cities, buildings, shots, Space builds), `civ_tables.cpp` (the two registries with their accessors, the
+  guest's liveness rule `gv_alive`, the snapshot receiver `g_rx`), `civ_debug.cpp` (`debug()`, the `coop.civ` command),
+  `civ_internal.h` (what they share: includes, layout constants, the types, the `hv_each` / `gv_each` templates,
+  the declarations), `civ_logic.h` (the rules). The 129 diagnostic counters are one struct, `g_n` (`g_n.created`, ...).
+  Registrations (COOP_FIX, LIFECYCLE / SESSION_STATE, CALL_GUARD, store::add, the hooks) all stay in civ.cpp, so the
+  lifecycle table, the hook list and the switch list keep their order (refactor_dump identical, BUG-1164).

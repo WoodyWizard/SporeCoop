@@ -1162,3 +1162,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1156](BUG-1156-e4-tribe-the-host-s-new-tribe-outfit-never-reach.md) | fixed | desync | Tribe | 2026-11-15 | unreleased | E4: Tribe: the host's new tribe outfit never reaches a guest kept in place after the outfitter |
 | [BUG-1157](BUG-1157-e4-civ-the-host-s-new-building-and-vehicle-desig.md) | fixed | desync | Civ | 2026-11-15 | unreleased | E4: Civ: the host's new building and vehicle designs never reach a guest kept in place |
 | [BUG-1158](BUG-1158-e4-a-guest-s-own-tribe-outfitter-and-civ-design.md) | fixed | bug | Tribe, Civ | 2026-11-15 | unreleased | E4: a guest's own Tribe outfitter and Civ design editors change only its own game and are lost |
+| [BUG-1163](BUG-1163-d3-the-civ-rules-money-vehicle-owners-holds-as-a.md) | open | tooling | Civ | 2026-11-15 |  | D3: the Civ rules (money, vehicle owners, holds) as a portable header civ_logic.h with unit tests |
+| [BUG-1164](BUG-1164-c8-civ-cpp-split-along-the-seams-of-c1-c4-state.md) | open | tooling | Civ | 2026-11-15 |  | C8: civ.cpp split along the seams of C1-C4 (state grouped into structs first) and its debug() into its own file |

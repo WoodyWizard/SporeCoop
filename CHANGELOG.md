@@ -93,6 +93,10 @@
 - Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
   one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
   the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
+- Civ: the vehicle tables of the host and the guest's mirrors are one shared mirror table, the host's snapshots and
+  the Space squadron's ship snapshots arrive through the shared snapshot receiver, the Civ rules (shared money, vehicle
+  owners, removals that wait) have unit tests, and civ.cpp is split into smaller files by pure moves (BUG-1140,
+  BUG-1143, BUG-1163, BUG-1164). No change on the wire.
 - Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
   instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
   golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
