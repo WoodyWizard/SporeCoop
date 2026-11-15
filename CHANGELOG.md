@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-### Development
-- Test lab: the games start without fixed pauses (each step waits for the game to be ready), the lab draws on two hidden test displays and starts a test only when the machine has room for its games (BUG-1112, BUG-1113, BUG-1114).
 ### Changed
 - The old GOG 2016 build of Spore is no longer supported at all: on it the game now starts without co-op and shows
   "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says
@@ -36,6 +34,8 @@
   settings and warnings as errors.
 - The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
   phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
+- Test lab: the games start without fixed pauses (each step waits for the game to be ready), the lab draws on two
+  hidden test displays and starts a test only when the machine has room for its games (BUG-1112, BUG-1113, BUG-1114).
 
 ## [0.7.14.1] - 2026-11-14
 

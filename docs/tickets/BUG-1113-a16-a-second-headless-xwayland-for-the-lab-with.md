@@ -3,7 +3,7 @@ id: BUG-1113
 title: A16: a second headless Xwayland for the lab with its own runtime folder; lanes spread over the displays
 status: fixed
 kind: tooling
-stage: lab
+stage: Tools
 reported: 2026-11-15
 source: plan
 role: 

@@ -3,7 +3,7 @@ id: BUG-1114
 title: D1: lab scheduler budgets games, VRAM and Xwayland; fps-sensitive thresholds between measured PASS and FAIL ranges
 status: fixed
 kind: test
-stage: lab
+stage: Tools
 reported: 2026-11-15
 source: plan
 role: 

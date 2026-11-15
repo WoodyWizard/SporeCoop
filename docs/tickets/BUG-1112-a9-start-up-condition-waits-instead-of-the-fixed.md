@@ -3,7 +3,7 @@ id: BUG-1112
 title: A9: start-up: condition waits instead of the fixed settle sleeps of cold start and warm reset
 status: fixed
 kind: tooling
-stage: lab
+stage: Tools
 reported: 2026-11-15
 source: plan
 role: 
