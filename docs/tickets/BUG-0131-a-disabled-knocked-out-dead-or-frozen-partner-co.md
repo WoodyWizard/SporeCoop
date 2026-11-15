@@ -3,7 +3,7 @@ id: BUG-0131
 title: a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you
 status: fixed
 kind: bug
-stage: Space, Cell
+stage: Cell, Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#110
 role: both

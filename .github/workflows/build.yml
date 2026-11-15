@@ -15,32 +15,40 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       LLVM_MINGW: ${{ github.workspace }}/llvm-mingw
-      LLVM_MINGW_VERSION: "20261006"
     steps:
-      - uses: actions/checkout@v4
+      # A3 (BUG-1121): every action pinned by its commit SHA (the tag it was in the comment); resolve a
+      # new one with `gh api repos/<owner>/<action>/commits/<tag> --jq .sha`
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: pinned versions (tools/toolchain.env), the runner's Python is the one make release-dry uses
+        run: |
+          grep -E '^[A-Z_][A-Z0-9_]*=' tools/toolchain.env >> "$GITHUB_ENV"
+          . tools/toolchain.env
+          python3 -c "import sys; v = '%d.%d' % sys.version_info[:2]; sys.exit(0 if v == '$CI_PYTHON' else 'python3 is ' + v + ', tools/toolchain.env CI_PYTHON says $CI_PYTHON')"
       - name: release tag matches COOP_VERSION and has a CHANGELOG section (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         run: tools/release_check.sh "$GITHUB_REF_NAME" notes.md
-      - name: llvm-mingw toolchain
+      - name: llvm-mingw toolchain (its SHA-256 from tools/toolchain.env)
         run: |
           n=llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64
-          curl -sSL -o t.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/$n.tar.xz
+          curl -sSfL -o t.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/$n.tar.xz
+          echo "${LLVM_MINGW_SHA256}  t.tar.xz" | sha256sum -c -
           tar -xf t.tar.xz && mv $n llvm-mingw
       - name: Pillow (the setup's icon)
-        run: python3 -m pip install --user pillow
+        run: python3 -m pip install --user "pillow==${PILLOW_VERSION}"
       - name: build (loader, SporeKit, coop, resources)
         run: make -j4 LLVM_MINGW=$LLVM_MINGW
       - name: unit tests + knowledge check
         run: make test HOSTCXX=clang++
       - name: release zip, update pack, setup
         run: tools/package.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sporecoop-zip
           path: |
             out/dist/SporeCoop-*.zip
             out/dist/SporeCoop-*.pack
             out/dist/SporeCoopSetup.exe
+            out/dist/SporeCoop-*-debug-symbols.tar.xz
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -52,8 +60,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: sporecoop-zip
           path: dist
@@ -64,8 +72,12 @@ jobs:
           ver="${GITHUB_REF_NAME#v}"
           # the tag must be COOP_VERSION; the notes: exactly this version's section of CHANGELOG.md
           tools/release_check.sh "$GITHUB_REF_NAME" notes.md
-          (cd dist && sha256sum SporeCoop-*.zip SporeCoop-*.pack SporeCoopSetup.exe > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SporeCoop-*.pack dist/SporeCoopSetup.exe dist/SHA256SUMS.txt \
+          # B5 (BUG-1123): the debug symbols (the unstripped DLLs) go up with the release, for
+          # tools/crash_triage.py; the zip, the pack and the setup keep their stripped DLLs
+          sym="dist/SporeCoop-$ver-debug-symbols.tar.xz"
+          test -s "$sym" || { echo "release: $sym is missing (tools/package.sh writes it)" >&2; exit 1; }
+          (cd dist && sha256sum SporeCoop-*.zip SporeCoop-*.pack SporeCoopSetup.exe "SporeCoop-$ver-debug-symbols.tar.xz" > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SporeCoop-*.pack dist/SporeCoopSetup.exe "$sym" dist/SHA256SUMS.txt \
             --title "SporeCoop $ver" --notes-file notes.md
       # BUG-0784: a signed build provenance for every release file and for each binary inside the zip,
       # so anyone can check that a file was built by this workflow from the tag:
@@ -76,12 +88,13 @@ jobs:
         run: mkdir -p inzip && unzip -q dist/SporeCoop-*.zip -d inzip
       - name: attest the build provenance
         continue-on-error: true
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             dist/SporeCoop-*.zip
             dist/SporeCoop-*.pack
             dist/SporeCoopSetup.exe
+            dist/SporeCoop-*-debug-symbols.tar.xz
             inzip/SporeCoop/steam_api.sporekit.dll
             inzip/SporeCoop/sporekit.dll
             inzip/SporeCoop/mods/coop.dll

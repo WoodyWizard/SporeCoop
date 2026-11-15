@@ -517,11 +517,12 @@ static bool g_keep_fix = true;
 COOP_FIX("space.keep_colonies", "BUG-0195", g_keep_fix, "space: a guest's own colonies come back when it rejoins (the host keeps them)");
 struct Kept {
     std::vector<uint32_t> planets;
+    std::string name;       // its session name when last seen (status only; the map's key is spaceext::kept_key)
     uint8_t id = 0xFF;      // the session id it has now, 0xFF = not here
     bool restoring = false; // sent, no answer yet
     double sent = 0;
 };
-static std::map<std::string, Kept> g_kept; // host: player name -> its own colonies
+static std::map<std::string, Kept> g_kept; // host: player key (spaceext::kept_key, BUG-1107) -> its own colonies
 static uint32_t g_kept_epoch;
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
 // BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
@@ -570,10 +571,11 @@ static void kept_roster(uint8_t id)
 {
     if (!g_keep_fix || !spaceext::is_host() || id == spaceext::my_id() || !roster_of(spaceext::my_id()))
         return;
-    std::string name = spaceext::name_of(id);
-    if (name.empty())
+    std::string key = spaceext::kept_key(id);
+    if (key.empty())
         return;
-    Kept& k = g_kept[name];
+    Kept& k = g_kept[key];
+    k.name = spaceext::name_of(id);
     if (k.id != id) { // this player's first roster since it joined: its colonies back first
         for (auto& [n, o] : g_kept)
             if (o.id == id)
@@ -686,7 +688,7 @@ static std::string kept_status()
              g_kept_left);
     s += b;
     for (auto& [n, k] : g_kept) {
-        snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", n.c_str(), k.id == 0xFF ? -1 : k.id,
+        snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", k.name.c_str(), k.id == 0xFF ? -1 : k.id,
                  (int)k.restoring, (unsigned)k.planets.size());
         s += b;
         for (uint32_t p : k.planets) {

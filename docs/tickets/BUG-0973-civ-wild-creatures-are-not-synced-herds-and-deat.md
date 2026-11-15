@@ -3,7 +3,7 @@ id: BUG-0973
 title: Civ: wild creatures are not synced, herds and deaths drift apart between host and guest
 status: fixed
 kind: desync
-stage: civ
+stage: Civ
 reported: 2026-11-12
 source: lab
 role: 

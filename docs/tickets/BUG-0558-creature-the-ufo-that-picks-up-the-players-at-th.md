@@ -13,7 +13,7 @@ branch: fix/w44-guest-player2, fix/w45-creature-reports
 commits: 265ec57c, 946cc573
 tests: creature_ufo_mirror (coop_creature_ufo_mirror.py)
 signature:
-docs: docs/re/creature.md#creature-ufo-puppet, docs/re/creature.md#creature-ufo-pick, docs/known-issues.md#issue-ufo-puppet, docs/re/creature.md#creature-ufo-mirror
+docs: docs/re/creature.md#creature-ufo-puppet, docs/re/creature.md#creature-ufo-pick, docs/archive/known-issues-2026.md#issue-ufo-puppet, docs/re/creature.md#creature-ufo-mirror
 related: BUG-0486
 switch: creature.ufo_mirror, creature.ufo_puppet
 ---

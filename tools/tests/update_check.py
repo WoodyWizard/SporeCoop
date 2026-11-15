@@ -68,8 +68,7 @@ class Checks:
 
 def build_new(dist):
     """coop.dll that calls itself 0.5.1 + the current stage -> SporeCoop-0.5.1.pack"""
-    llvm = run('sed', '-n', 's/^LLVM_MINGW ?= //p', os.path.join(ROOT, 'Makefile')).strip().replace('$(HOME)',
-                                                                                                    os.environ['HOME'])
+    llvm = run('make', '-s', '--no-print-directory', '-C', ROOT, 'toolchain-path').strip()  # tools/toolchain.env
     cxx = f'{llvm}/bin/i686-w64-mingw32-clang++ -DCOOP_VERSION=\\"{NEW}\\"'
     subprocess.run(['make', '-s', '-j16', 'B=build-v' + NEW.replace('.', ''), 'coop', f'CXX={cxx}'], cwd=ROOT,
                    check=True)

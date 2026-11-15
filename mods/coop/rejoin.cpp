@@ -115,8 +115,20 @@ static uint64_t join_token(int instance, uint64_t kept)
     return t;
 }
 
+static bool g_other, g_cur_other; // tests (BUG-1107): this join comes as another game (see rejoin.h)
+
+void test_other(bool on) { g_other = on; }
+bool test_other_on() { return g_other; }
+
 uint64_t token_for_join(int instance, const std::string& host, const std::string& name)
 {
+    g_cur_other = g_other;
+    if (g_other) { // a token of its own, never written to the slot and never kept for this host and name
+        g_cur = fresh();
+        g_cur_host = host;
+        g_cur_name = name;
+        return g_cur;
+    }
     g_cur = join_token(instance, kept_for(host, name));
     g_cur_host = host;
     g_cur_name = name;
@@ -125,7 +137,7 @@ uint64_t token_for_join(int instance, const std::string& host, const std::string
 
 void clear(bool keep)
 {
-    if (keep && g_cur) {
+    if (keep && g_cur && !g_cur_other) {
         auto it = g_kept.begin();
         while (it != g_kept.end() && !(it->host == g_cur_host && it->name == g_cur_name))
             ++it;

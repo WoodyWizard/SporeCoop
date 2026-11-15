@@ -3,7 +3,7 @@ id: BUG-0266
 title: campaign: the game logs of the extra guests (instances 20+N, 30+N) are looked up in a wrong lane and never saved
 status: fixed
 kind: tooling
-stage: 
+stage: Tools
 reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: 

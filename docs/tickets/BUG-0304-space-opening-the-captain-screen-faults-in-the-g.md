@@ -3,7 +3,7 @@ id: BUG-0304
 title: Space: opening the captain screen faults in the game at 0x5971D4 (cCollectableItems method with a null this), also without coop
 status: game-bug
 kind: crash
-stage: space
+stage: Space
 reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 

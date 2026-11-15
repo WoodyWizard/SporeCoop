@@ -3,7 +3,7 @@ id: BUG-0768
 title: F3 step 3: every co-op mechanic of the settings table is a session setting
 status: fixed
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-08
 source: plan-0.7.12 F3 (Discord suggestions 2026-10-31..11-04)
 role: all

@@ -3,7 +3,7 @@ id: BUG-0284
 title: Loading another save from the galaxy menu after a stage left with a fault: crash in cStarRecord::GetPlanetRecord
 status: fixed
 kind: crash
-stage: Tribe/Civ
+stage: Tribe, Civ
 reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host
@@ -13,7 +13,7 @@ branch: fix/w8-planet
 commits: 48324e9 302a898
 tests: coop_menu_stale_player.py (suite menu_stale_player)
 signature: 0xC0000005 at 0x00BBABE2 Simulator::cStarRecord::GetPlanetRecord+0x12 read of 0 (eax=ecx=0) < cStarManager::GetPlanetRecord+0x3B < cEmpire_RequireHomePlanet+0x65 < GetPlayerHomePlanetRecord+0x15 < 0xBB4E8A (stars.db write 0xBB4D40, labelled RequirePlanetsForStar+0x1FA), mode GalaxyGameEntry
-docs: docs/re/space.md#space-menu-player-reset, docs/06-testing.md#testing-menu-stale-player, docs/known-issues.md#issue-tribe-leave-hears-fault
+docs: docs/re/space.md#space-menu-player-reset, docs/06-testing.md#testing-menu-stale-player, docs/archive/known-issues-2026.md#issue-tribe-leave-hears-fault
 related: BUG-0285
 ---
 

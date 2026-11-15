@@ -13,7 +13,7 @@ branch: fix/w44-crashes
 commits: b37ea975, f3b238dc, 0570e27d
 tests: crash_model_fx (tools/tests/coop_crash_guards.py --case model_fx)
 signature: 0xC0000005 at 0xA826F3 (GOG 2024; Steam +0x6826F3), read of 0x94, VisualEffect_Start <- SpatialEffects_UpdateByDistance 0xC8ACC4 <- CreatureView_Update 0xE8C96E
-docs: docs/re/tribe.md#tribe-model-effects-crash, docs/re/tribe.md#tribe-model-fx-guard, docs/known-issues.md#issue-tribe-effect-list-crash
+docs: docs/re/tribe.md#tribe-model-effects-crash, docs/re/tribe.md#tribe-model-fx-guard, docs/archive/known-issues-2026.md#issue-tribe-effect-list-crash
 related:
 ---
 

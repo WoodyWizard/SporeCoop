@@ -3,7 +3,7 @@ id: BUG-0282
 title: cell: at a low frame rate a guest's mirrors trail the host's moving cells by ~0.65 s (2 m at 3 m/s, 15 fps)
 status: not-reproduced
 kind: desync
-stage: cell
+stage: Cell
 reported: 2026-10-29
 source: fix/w7-sync BUG-0275 measurement
 role: 

@@ -3,7 +3,7 @@ id: BUG-0873
 title: Feature idea: a shared creations library (received creations in their own Sporepedia tab, kept between sessions)
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42/43-dev, BUG-9093..9095, 9104..9106, 9112 (library.cpp, net/library_sync.cpp)
 role: 

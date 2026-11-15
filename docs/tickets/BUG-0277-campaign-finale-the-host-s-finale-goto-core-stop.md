@@ -3,7 +3,7 @@ id: BUG-0277
 title: campaign finale: the host's 'finale goto core' stopped near the core while a cinematic ran (zone 2, busy=1)
 status: fixed
 kind: tooling
-stage: space
+stage: Space
 reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 

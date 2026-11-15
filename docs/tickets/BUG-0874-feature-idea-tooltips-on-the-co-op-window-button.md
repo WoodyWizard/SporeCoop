@@ -3,7 +3,7 @@ id: BUG-0874
 title: Feature idea: tooltips on the co-op window buttons in Spore's own style
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42-dev, BUG-9107 (coop_ui.cpp)
 role: 

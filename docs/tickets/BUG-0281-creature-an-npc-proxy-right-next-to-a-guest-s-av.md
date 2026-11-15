@@ -3,7 +3,7 @@ id: BUG-0281
 title: creature: an NPC proxy right next to a guest's avatar stays ~4 m from where the host has it
 status: fixed
 kind: desync
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: fix/w7-sync BUG-0275 measurement
 role: 

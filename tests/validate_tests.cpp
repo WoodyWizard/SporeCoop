@@ -299,6 +299,21 @@ static void test_numbers()
     CHECK(!money_total(3, 0x40000000, t));
     CHECK(!money_total(-1, 5, t) && !money_total(5, -1, t));
     CHECK(money_total(0, 0, t) && t == 0);
+    // BUG-1110: reported budgets in the game's range, the merge sum in 64 bits and clamped once
+    CHECK(money_in_range(0) && money_in_range(kMoneyMax) && !money_in_range(-1) && !money_in_range(kMoneyMax + 1ll));
+    CHECK(!money_in_range(0x7FFFFFFF) && !money_in_range(-99999999));
+    std::vector<int> big = {0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF};
+    int wrapped = 0;
+    for (int v : big)
+        wrapped = (int)((unsigned)wrapped + (unsigned)v); // the 0.7.14 int sum (as the hardware wraps it)
+    int s = money_sum(big.begin(), big.end());
+    printf("  merge of three INT_MAX budgets: int sum %d, money_sum %d\n", wrapped, s);
+    CHECK(s == kMoneyMax && !money_in_range(wrapped)); // the int sum is outside the game range (or negative)
+    std::vector<int> mixed = {5000, -99999999, 7000};
+    CHECK(money_sum(mixed.begin(), mixed.end()) == 0);
+    std::vector<int> ok = {1000, 2000, 3000};
+    CHECK(money_sum(ok.begin(), ok.end()) == 6000);
+    CHECK(money_clamp(-5) == 0 && money_clamp(123) == 123 && money_clamp(1ll << 40) == kMoneyMax);
 }
 
 struct FakeSess {

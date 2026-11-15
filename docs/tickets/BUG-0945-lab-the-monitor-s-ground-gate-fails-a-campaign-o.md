@@ -3,7 +3,7 @@ id: BUG-0945
 title: Lab: the monitor's ground gate fails a campaign on 'the tribe members 5.62 m over the ground': which member and why is not in the logs
 status: fixed
 kind: test
-stage: tribe
+stage: Tribe
 reported: 2026-11-11
 source: final check of 0.7.12 (lab 20261111-151535, campaign)
 role: host

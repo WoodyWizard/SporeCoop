@@ -3,7 +3,7 @@ id: BUG-0357
 title: space: a share save posted in the solar system was written after the host landed on a planet: the guest that loaded it faults every frame at 0xEBDD12 (and 0xFD9420)
 status: fixed
 kind: bug
-stage: space
+stage: Space
 reported: 2026-10-31
 source: lab 20261031-185843 campaign_space#3 (lane 7)
 role: guest

@@ -8,6 +8,7 @@
   tickets.py find <text>                 tickets whose fields or text match (an address, a symptom, a test)
   tickets.py log BUG-0012                git commits that name the ticket ("BUG-0012" in the message)
   tickets.py index                       rewrite docs/tickets/README.md (the table of all tickets)
+  tickets.py stages [--fix]              the stage spellings in use; --fix writes every alias as its stage
   tickets.py release 0.7.3               fixed tickets with fixed_in "unreleased" get that version
   tickets.py notes-check X.Y.Z notes.md  the release notes name under "### Fixed" only fixed tickets (BUG-0216)
   tickets.py check [--all]               (in make test) fields valid, ids unique, index up to date, and the
@@ -48,6 +49,38 @@ FIELDS = ['id', 'title', 'status', 'kind', 'stage', 'reported', 'source', 'role'
 LAST_OLD_RELEASE = (0, 7, 3, 0)  # the evidence rules apply to fixes released after it (BUG-0215)
 STATUS = ['open', 'fixed', 'not-reproduced', 'game-bug', 'wontfix', 'duplicate']
 KIND = ['crash', 'freeze', 'desync', 'bug', 'feature', 'security', 'test', 'tooling']
+# BUG-1126 (A12): the `stage` field is one of these, or several of them as "Creature, Tribe" (in this order). All:
+# every stage, no stage in particular, or the stage is not known; UI: the mod's windows in any stage; Tools: the
+# lab, tests, build, release tools; Installer: setup, updater, install.bat.
+STAGES = ['Cell', 'Creature', 'Tribe', 'Civ', 'Space', 'Adventure', 'Editor', 'Menu', 'Boot', 'UI', 'All',
+          'Installer', 'Tools']
+STAGE_ALIASES = {
+    'civilization': 'Civ', 'civilisation': 'Civ', 'any': 'All', 'core': 'All', 'network': 'All', 'net': 'All',
+    'game': 'All', 'none': 'All', 'lab': 'Tools', 'tests': 'Tools', 'test': 'Tools', 'tooling': 'Tools',
+    'tool': 'Tools', 'setup': 'Installer', 'updater': 'Installer', 'editors': 'Editor', 'adventures': 'Adventure',
+    # SporeKit's game mode names (a crash report's "game mode:", tools/crash_triage.py suggests it as the stage)
+    'scenario': 'Adventure', 'gameeditmode': 'Editor', 'galaxygameentry': 'Menu', 'loadgame': 'All',
+    'cinematics': 'All', 'unknown': 'All',
+}
+
+
+def normal_stage(text):
+    """the stage field written as it should be ("Creature, Tribe"), or None when a part is no stage or alias"""
+    parts = [p.strip() for p in re.split(r'\s*(?:[,/+;&]|\band\b)\s*', text or '')]
+    if not any(parts):
+        return None
+    out = []
+    for p in parts:
+        if not p:
+            return None
+        s = next((c for c in STAGES if c.lower() == p.lower()), None) or STAGE_ALIASES.get(p.lower())
+        if not s:
+            return None
+        if s not in out:
+            out.append(s)
+    if 'All' in out:  # every stage: the others say nothing more
+        return 'All'
+    return ', '.join(sorted(out, key=STAGES.index))
 ID_RE = re.compile(r'^BUG-(\d{4})$')
 
 INDEX_HEAD = """# Tickets
@@ -188,6 +221,11 @@ def index_text():
 
 
 def cmd_new(a):
+    stage = normal_stage(a.stage)
+    if stage is None:
+        sys.exit(f'--stage "{a.stage}": one of {", ".join(STAGES)} (or a list: "Creature, Tribe"; aliases such as '
+                 f'civilization, any, lab are taken)')
+    a.stage = stage
     import fcntl
     d = PRIVATE if a.private else PUBLIC
     os.makedirs(d, exist_ok=True)
@@ -216,7 +254,7 @@ def cmd_list(a):
             continue
         if a.kind and t.get('kind') != a.kind:
             continue
-        if a.stage and t.get('stage', '').lower() != a.stage.lower():
+        if a.stage and (normal_stage(a.stage) or a.stage) not in [s.strip() for s in t.get('stage', '').split(',')]:
             continue
         p = ' (private)' if t['_private'] else ''
         print(f"{t.get('id')}  {t.get('status', ''):<14} {t.get('kind', ''):<8} {t.get('stage', ''):<12} "
@@ -251,6 +289,41 @@ def cmd_log(a):
         if c:
             subprocess.run(['git', '-C', ROOT, 'log', '-1', '--format=%h %ad %s', '--date=short', c],
                            stderr=subprocess.DEVNULL)
+
+
+def set_stage(t, stage):
+    """BUG-1126: rewrite only the stage line of a ticket's header"""
+    text = t['_text']
+    m = re.match(r'---\n(.*?)\n---\n', text, re.S)
+    head = re.sub(r'^stage:.*$', 'stage: ' + stage, m.group(1), count=1, flags=re.M)
+    with open(t['_path'], 'w', encoding='utf-8') as f:
+        f.write('---\n' + head + '\n---\n' + text[m.end():])
+
+
+def cmd_stages(a):
+    """BUG-1126: the stage spellings in use; --fix writes each alias as its stage (public tickets only: a private
+    one is named by its id and left alone); spellings that are no alias are listed for a person to decide"""
+    from collections import Counter
+    count, todo, fixed = Counter(), [], 0
+    for t in all_tickets():
+        st = t.get('stage', '')
+        count[st] += 1
+        ns = normal_stage(st)
+        if ns == st:
+            continue
+        if ns is None or t['_private'] or not a.fix:
+            todo.append((t.get('id'), st, ns))
+            continue
+        set_stage(t, ns)
+        fixed += 1
+    for st, n in sorted(count.items(), key=lambda x: (-x[1], x[0])):
+        ns = normal_stage(st)
+        print(f'{n:5}  {st!r}' + ('' if ns == st else f' -> {ns!r}' if ns else '  (no stage: decide by hand)'))
+    for tid, st, ns in todo:
+        print(f'{tid}: stage {st!r} ' + (f'-> {ns!r}' if ns else 'is no stage: set one of ' + ', '.join(STAGES)))
+    if a.fix:
+        print(f'stages: {fixed} ticket(s) rewritten, {sum(1 for x in todo if x[2] is None)} left to decide by hand')
+    return 1 if any(ns is None for _, _, ns in todo) else 0
 
 
 def cmd_index(a):
@@ -396,6 +469,12 @@ def rule_fields(t, ctx):
         p.append(f'status "{t.get("status")}" not one of {STATUS}')
     if t.get('kind') not in KIND:
         p.append(f'kind "{t.get("kind")}" not one of {KIND}')
+    st = t.get('stage', '')
+    ns = normal_stage(st)
+    if ns is None:
+        p.append(f'stage "{st}" is not one of {", ".join(STAGES)} (or a list of them: "Creature, Tribe")')
+    elif ns != st:
+        p.append(f'stage "{st}" is written "{ns}" (tools/tickets.py stages --fix)')
     if not re.match(r'^\d{4}-\d{2}-\d{2}$', t.get('reported', '')):
         p.append('reported is not a date')
     if t.get('status') == 'fixed' and not (t.get('fixed_in') and t.get('tests')):
@@ -534,6 +613,11 @@ def run_checks(tickets, ctx):
         for rule, fn in CHECKS:
             for msg in fn(t, ctx):
                 # a private ticket's text never goes into public output beyond its id
+                if t['_private'] and rule in ('commits', 'tests'):
+                    # BUG-1129: out/tickets/ is shared by every worktree, so a private ticket names commits and
+                    # tests of a branch the others do not have yet; there it is a note, not a problem
+                    ctx.notes.append(f'{tid}: {rule}: {msg} (private ticket, shared by all worktrees)')
+                    continue
                 problems.append(f'{tid if t["_private"] else name}: {rule}: {msg}')
     return problems, seen
 
@@ -595,7 +679,7 @@ def main():
     n = sp.add_parser('new')
     n.add_argument('title')
     n.add_argument('--kind', default='bug', choices=KIND)
-    n.add_argument('--stage', default='')
+    n.add_argument('--stage', required=True, help='one of ' + ', '.join(STAGES) + ' (or "Creature, Tribe")')
     n.add_argument('--source', default='')
     n.add_argument('--role', default='')
     n.add_argument('--versions', default='')
@@ -608,6 +692,7 @@ def main():
         sp.add_parser(c).add_argument('id')
     sp.add_parser('find').add_argument('text')
     sp.add_parser('index')
+    sp.add_parser('stages').add_argument('--fix', action='store_true')
     rl = sp.add_parser('release')
     rl.add_argument('version')
     rl.add_argument('--force', action='store_true', help='release although tickets lack commits of this release')

@@ -13,7 +13,7 @@ branch: fix/w49-space2
 commits: daac928c, 8d73e8a9
 tests: space_allies_end_pending
 signature:
-docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-allies-end-pending
+docs: docs/re/space.md#space-restore-window, docs/archive/known-issues-2026.md#issue-allies-end-pending
 related: BUG-0038, BUG-0197
 ---
 

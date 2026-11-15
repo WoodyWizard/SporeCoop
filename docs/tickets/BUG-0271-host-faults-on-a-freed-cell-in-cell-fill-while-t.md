@@ -3,7 +3,7 @@ id: BUG-0271
 title: Host faults on a freed cell in cell_fill while the game goes Cell -> Creature (dc04aee5:coop.dll+0x88951)
 status: fixed
 kind: crash
-stage: cell
+stage: Cell
 reported: 2026-10-29
 source: lab 20261029-111744 campaign_short
 role: host

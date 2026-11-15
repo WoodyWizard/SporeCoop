@@ -61,11 +61,25 @@ mechanic runs for real):
     goes to the core with `coop.space finale goto near|core` (crossing the galaxy takes hours); the
     guests fly there with the real "Fly to Alice" button.
 
+  * Reporting (A6 of 0.7.15, docs/06-testing.md#testing-campaign-segments): every finding that fails the run also
+    prints `FAIL <kind> <stage/phase>: <text>`, so the lab's result carries the reason. A stage change that does not
+    finish jumps to the next stage's fixture by default (--no-jump stops there), so one stuck stage does not end the
+    run.
+  * Segment saves: at the start of every played stage the host saves (`coop.save`, as a player) and the run keeps that
+    save (<run>/segments/<stage>.tgz, segments.json; CAMPAIGN_SEGMENTS=0: none). A failed run prints
+    `CAMPAIGN-SEGMENT {...}` with the stage of its first failing finding, that stage's save and the command that plays
+    the segment again from it: `--from <stage> --to <next> --save <that .tgz>` (the host starts on the stage's fixture,
+    loads the save in game, the guests follow by the world share, as after a jump). `lab.py run campaign_segment
+    --segment <lab run>` does that in the lab (owner decision 10: a final-check rerun may run only the failed segment).
+    CAMPAIGN_PLANT_STUCK=<stage>: that stage's change is not tried and counts as stuck (the reporting's own twin).
+
   SPORE_LANE=7 python3 tools/tests/coop_campaign.py [--from cell] [--to space] [--minutes 8]
-        [--advance-minutes M] [--no-finale] [--no-jump] [--seed N] [--players 4]
-Resume a late failure from its stage: --from tribe (the fixture of that stage, campaign_lib.FIXTURE).
+        [--advance-minutes M] [--no-finale] [--no-jump] [--seed N] [--players 4] [--save <segment .tgz>]
+Resume a late failure from its stage: --from tribe (the fixture of that stage, campaign_lib.FIXTURE), or from the save
+that stage had in the failed run: --from tribe --save <run>/segments/tribe.tgz.
 """
 import argparse
+import json
 import os
 import random
 import math
@@ -114,6 +128,8 @@ PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
 # BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
 # or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
+# A6: CAMPAIGN_PLANT_STUCK=<stage>[,<stage>]: that stage change is not tried and counts as stuck (the reporting's twin)
+PLANT_STUCK = [x.strip() for x in os.environ.get('CAMPAIGN_PLANT_STUCK', '').split(',') if x.strip()]
 HOME_GUARD = 3              # members (besides the chiefs) that stay home in the Tribe end raids (tribe_order)
 # default time of a stage change; Tribe (Q1 of 0.7.14): five conquests of 1.5-5 min each and the two editors (3 min):
 # 13-19 min in the runs on the fixture and the campaign's own planet, so 30
@@ -234,6 +250,7 @@ class Campaign:
         self.cap = {}  # player -> (caption seen since, last OK)
         self.talks = {}  # player -> answers to a Civ talk that is still up (BUG-0290)
         self.edits = {}  # player -> "done" clicks in the current editor
+        self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})
 
     # ---------------- findings and evidence ----------------
     def finding(self, kind, key, text, players=(), evidence=()):
@@ -245,6 +262,7 @@ class Campaign:
         print(f'  FINDING [{kind}] {text}', flush=True)
         if kind == 'info':
             return True
+        print('  ' + cl.fail_line(kind, f'{self.stage}/{self.phase}', text), flush=True)  # A6: the lab's reason
         more = []
         for p in (players or self.P):
             more += self.evidence(p, f'{len(self.F.items):02d}_{kind}')
@@ -929,6 +947,9 @@ class Campaign:
         nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
         self.stage, self.phase = stage, 'advance'
         self.note(f'advance {stage} -> {nxt}')
+        if stage in PLANT_STUCK:  # A6's twin: this change counts as stuck
+            self.note(f'planted (CAMPAIGN_PLANT_STUCK): the {stage} -> {nxt} change is not tried')
+            return False
         for p in self.P:  # BUG-0263: a pause menu left open by the play phase blocks the stage change
             self.close_pause(p.con)
         t0 = time.time()
@@ -1652,8 +1673,78 @@ class Campaign:
         self.stage, self.phase = nxt, 'jump'
         self.note(f'jump: the host loads the {fx} fixture in game (slot {slot}), the guests follow')
         self.jumps.append(nxt)
+        self.segments[nxt] = dict(fixture=fx, planet=planet)
+        return self.load_world(nxt, planet, slot, f'the {fx} fixture', f'jump:{nxt}',
+                               lambda: lane.sh('fixture', 'slot', fx, lane.HOST_PROFILE, str(slot)))
+
+    def load_save(self, stage, tgz):
+        """A6: the segment's save of a failed run (--save) loaded by the host in game, the guests follow"""
+        planet = os.path.basename(tgz)
+        meta = os.path.join(os.path.dirname(tgz), 'segments.json')
+        try:
+            planet = (json.load(open(meta)).get(stage) or {}).get('planet') or ''
+        except (OSError, ValueError):
+            planet = ''
+        if not planet:  # without its segments.json: the planet from the packed slot itself
+            import tarfile
+            with tarfile.open(tgz) as tf:
+                spo = [m.name.rsplit('/', 1)[1][:-4] for m in tf.getmembers()
+                       if m.name.lower().endswith('.spo') and not m.name.lower().endswith('snapshot.spo')]
+            planet = spo[0] if spo else ''
+        slot = 30
+        self.stage, self.phase = stage, 'segment'
+        self.note(f'segment: the host loads the save {os.path.relpath(tgz, lane.ROOT) if tgz.startswith(lane.ROOT) else tgz} '
+                  f'({planet}, slot {slot}), the guests follow')
+        self.segments[stage] = dict(save=tgz, planet=planet, rerun=True)
+        return self.load_world(stage, planet, slot, f'the segment save {os.path.basename(tgz)}', f'segment:{stage}',
+                               lambda: cl.unpack_slot(tgz, lane.HOST_DIR, slot))
+
+    def segment_save(self, stage):
+        """A6: the host saves at the start of a played stage (as a player does) and the run keeps that save, so the
+        segment can be played again from it (failed_segment, --save). Not saved: the fixture it came from is recorded"""
+        if os.environ.get('CAMPAIGN_SEGMENTS') == '0' or self.segments.get(stage, {}).get('rerun'):
+            return
+        before = time.time()
+        ans = ''
+        for _ in range(6):  # a save is refused while an editor, a mode switch or the last save's box is up
+            ans = self.host.call('coop.save')
+            if ans.startswith('saved'):
+                break
+            time.sleep(5)
+        slot, t, last = None, 0.0, None
+        if ans.startswith('saved'):
+            t1 = time.time()
+            while time.time() - t1 < 90:  # the save runs in the game's message processing: until its files rest
+                slot, t = cl.newest_slot(lane.HOST_DIR)
+                if slot and t >= before - 2 and last == t:
+                    break
+                last = t
+                time.sleep(4)
+            else:
+                slot = None
+        if not slot:
+            self.note(f'segment save of {stage}: not made ({ans.strip()[:80] or "no new save files"}); the stage keeps '
+                      f'{self.segments.get(stage, {}).get("fixture") or "no save"}')
+            if stage == self.a.start and stage not in self.segments:
+                self.segments[stage] = dict(fixture=cl.FIXTURE[stage],
+                                            planet=(fixtures.planet_of(cl.FIXTURE[stage]) or '/').split('/')[1])
+            self.write_segments()
+            return
+        dst = os.path.join(self.run_dir, 'segments', f'{stage}.tgz')
+        cl.pack_slot(slot, dst)
+        self.segments[stage] = dict(save=dst, planet=cl.slot_planet(slot), slot=os.path.basename(slot), at=now())
+        self.note(f'segment save of {stage}: {os.path.basename(slot)} ({self.segments[stage]["planet"]}) kept as '
+                  f'{os.path.relpath(dst, lane.ROOT)}')
+        self.write_segments()
+
+    def write_segments(self):
+        with open(os.path.join(self.run_dir, 'segments.json'), 'w') as f:
+            json.dump(self.segments, f, indent=1)
+
+    def load_world(self, nxt, planet, slot, what, key, put):
+        """the host loads a save slot in game (put() writes it first), the guests follow through the world share"""
         self.quiet_until = time.time() + 600
-        lane.sh('fixture', 'slot', fx, lane.HOST_PROFILE, str(slot))
+        put()
         self.host.call(f'coop.load Game{slot} {planet}')
         t0 = time.time()
         left = False
@@ -1664,7 +1755,7 @@ class Campaign:
                 break
             time.sleep(0.5)
         else:
-            self.finding('stuck', f'jump:{nxt}', f'the host did not load the {fx} fixture within 180 s', [self.host])
+            self.finding('stuck', key, f'the host did not load {what} within 180 s', [self.host])
             return False
         time.sleep(5)  # the host saves and sends its world to the guests now
         self.follow(nxt)
@@ -1903,8 +1994,30 @@ def main():
     ap.add_argument('--finale-from-galaxy', action='store_true',
                     help='tests (BUG-0335): the guests go to the galaxy view before their finale steps')
     ap.add_argument('--no-jump', dest='jump', action='store_false', help='stop at a stage change that does not finish')
+    ap.add_argument('--jump', dest='jump', action='store_true', help='(the default) a stage change that does not finish '
+                    'jumps to the next stage\'s fixture')
+    ap.add_argument('--save', help='A6: start the --from stage from this segment save of a failed run '
+                    '(<run>/segments/<stage>.tgz) instead of its fixture')
+    ap.add_argument('--segment', help='A6: a failed run\'s segment.json: --from, --to, --save, '
+                    '--seed from it')
     ap.add_argument('--seed', type=int, default=int(os.environ['CAMPAIGN_SEED']) if os.environ.get('CAMPAIGN_SEED') else None)  # CAMPAIGN_SEED: a lab replay
     a = ap.parse_args()
+    seg_file = a.segment  # (the suite entry passes $CAMPAIGN_SEGMENT: other campaigns of that run ignore it)
+    if seg_file is not None and not seg_file.strip():
+        print('RESULT: FAIL (no segment: lab.py run campaign_segment --segment <lab run of a failed campaign>)')
+        return 1
+    if seg_file:  # A6: play only the failed segment of another run, from its save
+        seg = json.load(open(seg_file))
+        a.start, a.end = seg['stage'], seg['to']
+        a.save = a.save or seg.get('save')
+        if a.seed is None and seg.get('seed') is not None:
+            a.seed = seg['seed']
+        if seg.get('minutes'):
+            a.minutes = seg['minutes']
+        a.finale = a.finale and seg.get('finale', True) and a.end == 'space'
+        print(f'  segment of {seg.get("run", "?")}: {a.start} -> {a.end} from '
+              f'{seg.get("save") or "the " + cl.FIXTURE[a.start] + " fixture"} (its first failure: [{seg.get("finding")}] '
+              f'{seg.get("text", "")[:120]})', flush=True)
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     run = time.strftime('%Y%m%d-%H%M%S')
     run_dir = lane.out_dir('campaign', run)
@@ -1942,6 +2055,9 @@ def main():
     for cmd in filter(None, os.environ.get('CAMPAIGN_GUEST_CMDS', '').split(';')):
         for p in camp.guests:
             camp.note(f'planted on {p.name}: {cmd}: {p.call(cmd).strip()[:120]}')
+    if a.save:  # A6: the failed segment's own save, loaded in game (the guests follow)
+        if not camp.load_save(a.start, os.path.abspath(a.save)):
+            camp.finding('dead', 'segment:load', f'the segment save {a.save} did not load', players)
     camp.health()  # fault baselines
     camp.note(f'{len(players)} players in {cl.FIXTURE[a.start]} after {time.time() - t_start:.0f} s: '
               + ', '.join(f'{p.name}={p.pid} (instance {p.inst})' for p in players))
@@ -1954,6 +2070,7 @@ def main():
             if kind == 'play':
                 if stage != camp.stage and stage not in reached:
                     break  # the stage change before it failed and no jump was allowed
+                camp.segment_save(stage)  # A6: the save this segment starts from
                 camp.play(stage, a.minutes)
             elif kind == 'advance':
                 nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
@@ -1965,6 +2082,7 @@ def main():
                     sure = stage != 'tribe' or os.environ.get('CAMPAIGN_STRICT_TRIBE') != '0'
                     camp.finding('stuck' if sure else 'info', f'advance:{stage}',
                                  f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
+                                 + (' (planted: CAMPAIGN_PLANT_STUCK)' if stage in PLANT_STUCK else '')
                                  + ('' if stage != 'tribe' else f' (goal bar {camp.tribe_progress()})'),
                                  camp.P)
                     if a.jump:
@@ -2006,6 +2124,15 @@ def main():
     full = reached[-1] == a.end
     if not full:
         print(f'  FAIL the campaign stopped in {reached[-1]} (wanted {a.end})')
+    seg = cl.failed_segment(camp.F.items, camp.segments, a.end)
+    if seg and seg_file is None and not a.save:
+        seg.update(run=os.path.relpath(run_dir, lane.ROOT), seed=seed, minutes=a.minutes, finale=a.finale)
+        path = os.path.join(run_dir, 'segment.json')
+        with open(path, 'w') as f:
+            json.dump(seg, f, indent=1)
+        print('CAMPAIGN-SEGMENT ' + json.dumps(dict(seg, file=path)), flush=True)
+        print(f'  rerun the failed segment from its save: SPORE_LANE={lane.LANE} python3 tools/tests/coop_campaign.py '
+              f'--segment {os.path.relpath(path, lane.ROOT)}   (lab: lab.py run campaign_segment --segment <lab run>)')
     print('RESULT:', 'OK' if not bad and full and not camp.dead else 'FAIL')
     return 0 if not bad and full and not camp.dead else 1
 

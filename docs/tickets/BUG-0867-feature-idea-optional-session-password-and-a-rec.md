@@ -3,7 +3,7 @@ id: BUG-0867
 title: Feature idea: optional session password and a recent servers list in the co-op window
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (net/session.cpp, coop_ui.cpp)
 role: 

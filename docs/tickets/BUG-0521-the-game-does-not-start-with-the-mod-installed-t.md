@@ -28,7 +28,7 @@ Inferred, not verified: the cause is on the game's side (a damaged or partial in
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
-SporeKit (gamehooks.cpp, diag.cpp `diag_init_failed`): when App::cSporeApp::Init returns 0, a report and its archive are written (SporeCoop-report-*.zip, named in last-problem.txt: "could not start"), an ERROR log line says the game's own start failed and what to check, and a message box tells the player (start once without mods, repair the game files in GOG Galaxy / Steam, attach the report). Lab instances (instance > 1, or SPOREKIT_NO_DIALOGS) get no box. Switch `kit.fix initfail off` (0.7.3.6: nothing). The cause itself is documented in docs/known-issues.md#issue-game-start-fails.
+SporeKit (gamehooks.cpp, diag.cpp `diag_init_failed`): when App::cSporeApp::Init returns 0, a report and its archive are written (SporeCoop-report-*.zip, named in last-problem.txt: "could not start"), an ERROR log line says the game's own start failed and what to check, and a message box tells the player (start once without mods, repair the game files in GOG Galaxy / Steam, attach the report). Lab instances (instance > 1, or SPOREKIT_NO_DIALOGS) get no box. Switch `kit.fix initfail off` (0.7.3.6: nothing). The cause itself is documented in docs/archive/known-issues-2026.md#issue-game-start-fails.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification

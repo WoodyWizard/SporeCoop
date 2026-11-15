@@ -586,6 +586,8 @@ static void on_frame_begin_present()
                 g_overlay_active = true;
                 present_fault_test(2);
                 fire(SK_EV_OVERLAY, g_dev);
+                if (const char* u = unsupported_build_text(); *u) // BUG-1125: no mod runs, the reason stays on screen
+                    overlay_text(24, 24, 0xFFFFD040u, u);
                 if (g_tri_test_frames > 0) { // tests (kit.test.tri, BUG-1026): a magenta triangle at the top left
                     g_tri_test_frames--;
                     const float xy[6] = {0.f, 0.f, 400.f, 0.f, 0.f, 400.f};

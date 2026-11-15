@@ -3,7 +3,7 @@ id: BUG-0969
 title: Tests: the unit suite's LAN discovery check (net_tests.cpp:1322) fails when another lane runs unit at the same time (fixed localhost port)
 status: fixed
 kind: test
-stage: Network
+stage: Tools
 reported: 2026-11-12
 source: fix/w48-walk lab 20261112-154553 (smoke, lane 2)
 role: 

@@ -3,7 +3,7 @@ id: BUG-1096
 title: tests: the campaign driver loops on editor done for 30 min when its parts drag is lost at low fps
 status: fixed
 kind: test
-stage: tribe
+stage: Tribe
 reported: 2026-11-14
 source: lab 20261113-231423-2 campaign_tribe_end
 role: host

@@ -1571,7 +1571,6 @@ static AddFood_t o_AddFood;
 static bool g_fix_food_in_step = true;
 COOP_FIX("cell.food_in_step", "BUG-0633 BUG-0316", g_fix_food_in_step, "cell: food from a partner or the host's total is added inside the cell step, so a level-up over a world scale line does not leave the avatar's locks set (no part token could be collected)");
 static std::vector<std::pair<double, std::function<void()>>> g_food_q;
-static uint32_t g_food_deferred, g_food_late;
 // a host total or a partner's meal of the last frame of a session or a Cell world is not applied after it
 LIFECYCLE_STATE("cell.food_queue", lifecycle::kSession | lifecycle::kWorld, &g_fix_session_reset, [] { g_food_q.clear(); },
                 []() -> size_t { return g_food_q.size(); });
@@ -1582,7 +1581,6 @@ static void food_in_step(std::function<void()> f)
         f();
         return;
     }
-    g_food_deferred++;
     g_food_q.push_back({H->time_seconds(), std::move(f)});
 }
 static void food_drain(bool late_only)
@@ -1594,7 +1592,6 @@ static void food_drain(bool late_only)
         return;
     auto q = std::move(g_food_q);
     g_food_q.clear();
-    g_food_late += late_only ? (uint32_t)q.size() : 0;
     for (auto& e : q)
         e.second();
 }

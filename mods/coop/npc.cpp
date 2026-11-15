@@ -1940,7 +1940,6 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 // species; else the noun list is searched again. Old (`coop.fix npc.herd_identity off`): object_alive.
 static bool g_herd_identity_fix = true;
 COOP_FIX("npc.herd_identity", "BUG-0843", g_herd_identity_fix, "creature: a guest's copy of a host animal is never put into another herd that the game built where the species' herd was");
-static uint32_t g_herd_stale;
 static void note_herd(void* h)
 {
     if (g_herd_serial.size() > 512)
@@ -1973,8 +1972,6 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
             g_proxies_in_nest++;
             return lh->second;
         }
-        if (g_herd_identity_fix)
-            g_herd_stale++;
         g_local_herds.erase(lh);
     }
     // not seen on a local NPC yet (proxies made before the game's NPCs ran an update): the nest
@@ -2003,7 +2000,6 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     if (it != g_herds.end()) {
         if (!g_herd_identity_fix || herd_is(it->second, species))
             return it->second;
-        g_herd_stale++;
         g_herds.erase(it);
     }
     void* h = game::create_herd(pos, species);

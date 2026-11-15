@@ -3,7 +3,7 @@ id: BUG-1053
 title: Tribe and Civ: the host runs a guest's command on member, vehicle and target pointers of the last table cycle without the frame's object list
 status: fixed
 kind: bug
-stage: Tribe,civ
+stage: Tribe, Civ
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-6
 role: host

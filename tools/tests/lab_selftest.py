@@ -148,7 +148,7 @@ def lab_cases(tree, tmp):
     check(not res['fails_once']['ok'], 'fails_once: a FAIL result is not made a pass by a retry (BUG-0073)')
     check(res['harness_once']['ok'] and res['harness_once'].get('flaky'),
           'harness_once: no RESULT line, then OK on the retry: ok (flaky)')
-    check(res['skipper'].get('skipped') and '| skipper | skip' in summary,
+    check(res['skipper'].get('skipped') and '| skipper | INCONCLUSIVE' in summary,
           'skipper: a SKIP result is a skip in results.json and summary.md, not a pass (BUG-0100)')
     check(not res['warm_lost']['ok'] and res['warm_refused']['ok'] and res['warm_slow']['ok']
           and any('timed out' in g for g in res['warm_slow'].get('gates', [])),
@@ -291,8 +291,8 @@ def worktree_case(tree, tmp):
     """lab.worktree() of a branch whose name is a prefix of another checked-out branch; the tree's
     lab.py runs from a copy inside a scratch repository (it never sees the real one)"""
     repo = os.path.join(tmp, 'wt', 'SporeCoop')
-    for f in ('tools/lab.py', 'tools/loggates.py', 'tools/tests/suite.py', 'tools/labbudget.py'):
-        if not os.path.exists(os.path.join(tree, f)):  # (labbudget.py: not in a tree before BUG-1114)
+    for f in ('tools/lab.py', 'tools/loggates.py', 'tools/labverdict.py', 'tools/tests/suite.py', 'tools/labbudget.py'):
+        if not os.path.exists(os.path.join(tree, f)):  # (labverdict.py: not before A15 of 0.7.15, labbudget.py: BUG-1114)
             continue
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))

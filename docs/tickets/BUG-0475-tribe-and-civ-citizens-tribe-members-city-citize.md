@@ -13,7 +13,7 @@ branch: fix/w40-scale
 commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: mirror_scale_tribe (tools/tests/coop_mirror_scale.py --kind tribe_member)
 signature:
-docs: docs/re/tribe.md#tribe-member-scale, docs/known-issues.md#issue-civ-citizen-scale
+docs: docs/re/tribe.md#tribe-member-scale, docs/archive/known-issues-2026.md#issue-civ-citizen-scale
 related: BUG-0419, BUG-0461, BUG-0476
 switch: tribe.scale
 ---
@@ -40,4 +40,4 @@ FAIL with SPORE_FIX_OFF=tribe.scale: out/lab/20261103-125805 (4 of 28 pairs, 14 
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
 - 2026-11-03: released in 0.7.4.
-- 2026-11-04 (fix/w41-civ-citizens): Civ half: fields kind `civ_citizen` on the citizens bound by BUG-0476 (`coop.fix civ.citizen_scale off`). FAIL with SPORE_FIX_OFF=civ.citizen_scale: out/lab/20261104-001130 (17 of 40 unambiguous pairs of another size); PASS out/lab/20261104-000735. The detector's `scale:citizen` stays in part: its greedy pairs cross in a crowd (docs/known-issues.md#issue-civ-citizen-scale).
+- 2026-11-04 (fix/w41-civ-citizens): Civ half: fields kind `civ_citizen` on the citizens bound by BUG-0476 (`coop.fix civ.citizen_scale off`). FAIL with SPORE_FIX_OFF=civ.citizen_scale: out/lab/20261104-001130 (17 of 40 unambiguous pairs of another size); PASS out/lab/20261104-000735. The detector's `scale:citizen` stays in part: its greedy pairs cross in a crowd (docs/archive/known-issues-2026.md#issue-civ-citizen-scale).

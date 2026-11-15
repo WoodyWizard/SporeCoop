@@ -13,7 +13,7 @@ branch: fix/w9-cell-food
 commits: de617d3
 tests: cell_new_game, cell_far_guest
 signature: 0x00E7C74A PopulateTile+0x8A (GOG 2024)
-docs: docs/known-issues.md#issue-cell-guest-nan-populate, docs/re/cell.md#cell-partner-tiles
+docs: docs/archive/known-issues-2026.md#issue-cell-guest-nan-populate, docs/re/cell.md#cell-partner-tiles
 related: BUG-0174
 ---
 

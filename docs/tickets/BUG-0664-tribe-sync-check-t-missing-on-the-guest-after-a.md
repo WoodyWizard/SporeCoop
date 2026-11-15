@@ -13,7 +13,7 @@ branch: fix/w46-tribe-missing
 commits: f165530b, 8ec44b21
 tests: tribe_dead_rejoin (coop_tribe_dead_member.py --rejoin)
 signature: sync-check: MISMATCH with the host (Tribe ...): t: 1 missing on the guest (t<id>); t<id> here: not listed (on the host too)
-docs: docs/re/tribe.md#tribe-sync-bodies, docs/06-testing.md#testing-tribe-dead-rejoin, docs/known-issues.md#issue-tribe-join-body
+docs: docs/re/tribe.md#tribe-sync-bodies, docs/06-testing.md#testing-tribe-dead-rejoin, docs/archive/known-issues-2026.md#issue-tribe-join-body
 related: BUG-0620, BUG-0381, BUG-0665
 ---
 

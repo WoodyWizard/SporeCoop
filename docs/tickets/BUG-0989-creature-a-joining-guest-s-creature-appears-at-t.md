@@ -13,7 +13,7 @@ branch: fix/w49-mirror
 commits: 0db432fb
 tests: creature_join_apart, play_creature
 signature:
-docs: docs/re/creature.md#creature-join-apart, docs/known-issues.md#issue-join-same-spot, docs/06-testing.md#testing-t2-mirror
+docs: docs/re/creature.md#creature-join-apart, docs/archive/known-issues-2026.md#issue-join-same-spot, docs/06-testing.md#testing-t2-mirror
 related: BUG-0340
 switch: core.join_apart
 ---

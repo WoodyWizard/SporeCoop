@@ -3,7 +3,7 @@ id: BUG-0358
 title: Creature (guest): caught fault at every key press after the own creature swap, stale ability bar (dc04aee5:0xD4A397)
 status: fixed
 kind: crash
-stage: creature
+stage: Creature
 reported: 2026-10-31
 source: lab 20261031-185843 campaign#2 (lane 4, 4 players, final 0.7.3.2 verification, main 55da78b)
 role: guest

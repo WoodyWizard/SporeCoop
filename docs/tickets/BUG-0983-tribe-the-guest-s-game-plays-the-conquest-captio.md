@@ -3,7 +3,7 @@ id: BUG-0983
 title: Tribe: the guest's game plays the conquest caption of a village the host conquered and stands paused until the guest clicks it
 status: fixed
 kind: bug
-stage: tribe
+stage: Tribe
 reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest

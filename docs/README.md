@@ -14,8 +14,7 @@
 
 * [Reporting a problem](REPORTING.md) (for players), [known issues](known-issues.md), [contributing](../CONTRIBUTING.md). Release trust (antivirus false positives, provenance, signing; owner steps): [release-trust.md](release-trust.md); security: [SECURITY.md](../SECURITY.md).
 
-Target game versions: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`:
-the 2016 build, SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`,
-24,888,320 bytes (not supported by Spore ModAPI, which only knows Disk and March2017, so its
-addresses are ported separately), and the 2024 build, SHA-256 `dc04aee5…`, 24,895,536 bytes, which
-has the March2017 layout - see section 5. Where each was tested: [INSTALL.md section 2](INSTALL.md#where-sporecoop-has-been-tested).
+Target game version: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`, the 2024 build, SHA-256
+`dc04aee5…`, 24,895,536 bytes, which has ModAPI's March2017 layout (see section 5), and Steam (the same
+code). The old GOG 2016 build (`922af7c7…`, 24,888,320 bytes) is not supported; its addresses were
+removed in 0.7.15 and the mod tells such a game that it is not supported. Where each was tested: [INSTALL.md section 2](INSTALL.md#where-sporecoop-has-been-tested).

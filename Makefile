@@ -1,12 +1,17 @@
 # SporeCoop build (Linux host, llvm-mingw cross toolchain, 32-bit Windows targets)
-LLVM_MINGW ?= $(HOME)/.local/opt/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64
+# the pinned toolchain version (and its tarball's SHA-256 for CI): tools/toolchain.env (A3, BUG-1121)
+include tools/toolchain.env
+LLVM_MINGW ?= $(HOME)/.local/opt/llvm-mingw-$(LLVM_MINGW_VERSION)-ucrt-ubuntu-22.04-x86_64
 CC  := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang
 CXX := $(LLVM_MINGW)/bin/i686-w64-mingw32-clang++
 HOSTCXX ?= clang++
 
 B := build
 comma := ,
-COMMON  := -O2 -g -Wall -Werror=misleading-indentation -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
+# A4 (BUG-1122): the code reads and writes game objects through casts at fixed offsets and SporeKit lets code go on
+# after a repaired fault: no type-based aliasing assumptions, no null checks dropped after a dereference. Warnings
+# are errors (the toolchain is pinned, tools/toolchain.env); printf-style functions carry format attributes (SK_PRINTF).
+COMMON  := -O2 -g -fno-strict-aliasing -fno-delete-null-pointer-checks -Wall -Wimplicit-fallthrough -Werror -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
 CFLAGS  := $(COMMON)
 CXXFLAGS:= $(COMMON) -std=c++20
 LDDLL   := -shared -static -Wl,--kill-at -Wl,--enable-stdcall-fixup
@@ -68,6 +73,10 @@ $(B)/obj/%.o: %.cpp
 $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ) $(B)/obj/sporekit/sporekit_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
+# session_glue.cpp takes COOP_VERSION from build/version.h (it is defined in coop.cpp, where the tools read it)
+$(B)/obj/mods/coop/session_glue.o: $(B)/version.h
+$(B)/obj/mods/coop/session_glue.o: CXXFLAGS += -I$(B)
+
 $(B)/coop.dll: $(COOP_OBJ) $(B)/obj/mods/coop/coop_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 
@@ -112,7 +121,7 @@ endif
 # docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
 TEST_JOBS ?= 8
 NET_SHARDS ?= 8
-UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols unit-verdict
 ifneq ($(SKIP_SANITIZERS),1)
 UNIT_PARTS += test-asan test-tsan unit-fuzz
 endif
@@ -143,6 +152,11 @@ unit-lab:
 	python3 tools/tests/dash_selftest.py
 	python3 tools/tests/labstart_selftest.py
 
+# the lab's verdicts, reasons, flaky ledger, repeat rule and impact selection (0.7.15 A6-A8, A15, D5): its own part (its
+# fake lab runs wait ~40 s, beside unit-lab's)
+unit-verdict:
+	python3 tools/tests/labverdict_selftest.py
+
 unit-fuzz: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_decoders mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
@@ -160,6 +174,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/space_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/path_mask_tests tests/path_mask_tests.cpp
+	$(B)/host/path_mask_tests
+	@! $(B)/host/path_mask_tests --old > $(B)/host/path_mask_tests_old.txt || { echo "path_mask_tests --old must fail (BUG-1124)"; exit 1; }
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg
 	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
@@ -171,12 +188,18 @@ unit-lint:
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
+	python3 tools/ci_lint.py
 
 unit-tools:
 	python3 tools/tests/tools_selftest.py
 	python3 tools/tests/visual_selftest.py
 	python3 tools/tests/state_fields_check.py
 	python3 tools/tests/test_lint.py
+
+# B5 (BUG-1123): crash_triage.py symbolises coop.dll / sporekit.dll frames with the debug symbols of the
+# report's version (symbols_pack.sh of the local build, a fake gh for the download; no network)
+unit-symbols: $(B)/coop.dll $(B)/sporekit.dll $(B)/steam_api.dll
+	python3 tools/tests/triage_symbols_check.py $(B) $(LLVM_MINGW)
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
 test-asan: sanitizer-probe
@@ -212,5 +235,16 @@ $(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.
 
 clean:
 	rm -rf $(B)
+
+# A2 (BUG-1120): the release build of HEAD as CI makes it (a git archive copy, CI's Python and toolchain,
+# every step of the tag workflow that runs locally); before every tag: docs/10-dev-pipeline.md#pipeline-release-dry
+.PHONY: release-dry
+release-dry:
+	tools/release_dry.sh
+
+# the toolchain folder this Makefile uses (tools/package.sh, tools/tests/update_check.py ask here)
+.PHONY: toolchain-path
+toolchain-path:
+	@echo $(LLVM_MINGW)
 
 -include $(KIT_OBJ:.o=.d) $(COOP_OBJ:.o=.d)

@@ -13,7 +13,7 @@ branch: fix/w26-cell-spare (the fix), fix/w46-addr-space (the evidence and test)
 commits: 0b1e55e, cd89fd4, 1e827ed, cd75347
 tests: mem_census_cell_crowd, cell_spare, cell_nan_drain, cell_churn, cell_nan_all
 signature:
-docs: docs/re/graphics.md#graphics-address-space, docs/known-issues.md#issue-cell-own-nan
+docs: docs/re/graphics.md#graphics-address-space, docs/archive/known-issues-2026.md#issue-cell-own-nan
 related: BUG-0307, BUG-0314, BUG-0355, BUG-0631
 ---
 

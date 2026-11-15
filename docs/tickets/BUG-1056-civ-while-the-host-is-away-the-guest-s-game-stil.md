@@ -3,7 +3,7 @@ id: BUG-1056
 title: Civ: while the host is away the guest's game still skips the ground check of its mirror vehicles, which its own AI drives then
 status: fixed
 kind: bug
-stage: civ
+stage: Civ
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-14
 role: guest

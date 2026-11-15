@@ -13,7 +13,7 @@ branch: fix/w49-reuse
 commits: 9b1a6c93
 tests: npc_ai_lookup, proxy_identity, proxy_identity_tribe
 signature: "FAIL a social click on a new creature at a freed proxy's address (0 reuses, 0 posted)"
-docs: docs/re/creature.md#creature-reuse-merged, docs/06-testing.md#testing-w49-reuse, docs/known-issues.md#issue-npc-ai-lookup-reuse
+docs: docs/re/creature.md#creature-reuse-merged, docs/06-testing.md#testing-w49-reuse, docs/archive/known-issues-2026.md#issue-npc-ai-lookup-reuse
 related: BUG-0994, BUG-1097, BUG-0842
 ---
 

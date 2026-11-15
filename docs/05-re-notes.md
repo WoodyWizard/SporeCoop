@@ -10,8 +10,9 @@ build known to Spore ModAPI (Disk: 24 904 192 / 24 909 584; March2017: 24 885 24
 
 ### 5.1.1 The GOG 2024 build (dc04aee5)
 
-**The only supported build from 0.8 on** (decided 2026-10-23, CLAUDE.md). `overrides_922af7c7.sym`
-and `gog2016_922af7c7.sym` are frozen: `tools/re_lint.py` only notes symbols missing there.
+**The only supported build** (CLAUDE.md "Builds"). `overrides_922af7c7.sym` and `gog2016_922af7c7.sym`
+(GOG 2016) were frozen from 0.7.8 and removed in 0.7.15 (BUG-1125), with `frozen_off_922af7c7.txt` and
+`tools/addrport/port_modapi.py`; the GOG 2016 facts below are history (git history has the files).
 
 The current GOG download (an update with PE timestamp 2024-09-30) ships another
 `SporeApp.exe`: 24 895 536 bytes, SHA-256 `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37`,
@@ -94,7 +95,7 @@ every page (encrypted), and an 8th section `.bind` (0x29CD0 bytes, SteamStub) ho
 2b. **Private full Ghidra projects and batch queries** (`tools/ghidra/`, 2026-10-23). One project
    per build in the main checkout's `out/` (not in git, ~330 MB each): `out/ghidra-full/` (GOG 2016)
    and `out/ghidra-2024/` (GOG 2024). They are our own, not the shared REA session other agents use.
-   * Build: `tools/ghidra/mkproject.sh --build 2016|2024 [--exe <SporeApp.exe>]` (defaults:
+   * Build: `tools/ghidra/mkproject.sh [--build 2024] [--exe <SporeApp.exe>]` (2016 refused since 0.7.15; defaults:
      `_ref/gog2016/SporeApp.exe` next to the SPORE folder, and `SporebinEP1/SporeApp.exe` of
      the main game; the exe is only read and must have the build's sha256). Ghidra 12.1.4
      (`~/.local/opt/ghidra_12.1.4_PUBLIC`, JDK 21 in `~/.local/opt`) auto-analysis takes 8-11 min,
@@ -109,15 +110,14 @@ every page (encrypted), and an 8th section `.bind` (0x29CD0 bytes, SteamStub) ho
      comments. Check after the build: every named function address but the `_Ret` return
      addresses is a function entry. The new project replaces the old one at the end, so queries
      keep working meanwhile. After editing `.sym` files: `mkproject.sh --build … --names` (~5 s).
-   * Query: `tools/ghidra/q.sh [--build 2016|2024] <queries-file|-> <output-file>` (default 2016,
-     works from any worktree). One batch takes 3-5 s (JVM and project open; a decompile ~0.5 s,
+   * Query: `tools/ghidra/q.sh [--build 2024] <queries-file|-> <output-file>` (default 2024 since
+     0.7.15, BUG-1125; `--build 2016` is refused; works from any worktree). One batch takes 3-5 s (JVM and project open; a decompile ~0.5 s,
      an `info`/`xref` ~1 ms; the first run after a change of Q.java compiles it, +4 s), so put many
      queries in one file. Example:
 
      ```
      printf 'dec Simulator::cGameDataUFO::TakeDamage\ncallers 0x00C3CEA0\n' > q.txt
-     tools/ghidra/q.sh q.txt out.txt                 # GOG 2016
-     tools/ghidra/q.sh --build 2024 q.txt out24.txt  # same names, GOG 2024 addresses
+     tools/ghidra/q.sh q.txt out.txt                 # GOG 2024
      ```
 
      One query per line (`#` comments). `<a>` is a hex address (`0x00C3CEA0`, `C3CEA0`), a

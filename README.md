@@ -199,7 +199,7 @@ You need **Spore with Galactic Adventures**. SporeCoop runs its game, `SporebinE
 
 GOG and Steam players can play together; every player needs the same SporeCoop 0.7 version.
 The **EA app / Origin** and **disc** versions are not supported (co-op stays off), and the older
-**GOG 2016** build is no longer supported since 0.7.8: update the game through GOG.
+**GOG 2016** build is not supported (the mod tells you so and stays off): update the game through GOG.
 Which build you have, file sizes and hashes, the Steam overlay, mixing versions and every test:
 [INSTALL.md, compatibility details](docs/INSTALL.md#compatibility-details).
 

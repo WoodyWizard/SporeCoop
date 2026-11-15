@@ -3,7 +3,7 @@ id: BUG-0997
 title: Creature, Tribe: npc.place_now switches off the snap of a walked NPC proxy (a host animal thrown aside is closed at catch-up speed, not teleported)
 status: fixed
 kind: desync
-stage: Creature,Tribe
+stage: Creature, Tribe
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) WLD-15
 role: guest
@@ -13,7 +13,7 @@ branch: fix/w49-small
 commits: f4aca716
 tests: npc_snap
 signature:
-docs: docs/known-issues.md#issue-npc-snap-dead, docs/06-testing.md#testing-t1-small
+docs: docs/archive/known-issues-2026.md#issue-npc-snap-dead, docs/06-testing.md#testing-t1-small
 related: BUG-0757, BUG-0361
 ---
 
