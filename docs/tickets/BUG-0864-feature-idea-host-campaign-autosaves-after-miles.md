@@ -62,6 +62,8 @@ game killed (session_restart(save=False)), its save loaded again.
   out/lab/20261115-133522, out/lab/20261115-135226
 * unit: store_tests test_autosave (timer, milestone delay, retries, lost saves, off).
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-141103 (autosave_milestone).
+
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-15: done on feat/w51-store (E2).

@@ -33,6 +33,8 @@ FAIL (SPORE_FIX_OFF=store.civ_owners): out/lab/20261115-133100 (the host's bough
 vehicle the host's); PASS: out/lab/20261115-132804, out/lab/20261115-134728. unit: store_tests test_claims.
 Not run in the lab: a guest leaving and rejoining within a session (the same code path: a change of the roster).
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-140843 (civ_owners_session).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store.

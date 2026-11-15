@@ -54,6 +54,8 @@ twoinst.session_restart() (save, both quit, the host loads its save, the guest j
 Not run in the lab: `coop.store adopt` (unit tested); a host whose store file is damaged (unit tested: empty store,
 moved to .bad).
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-141219, out/lab/20261115-141234 (space_session).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store (E1): the per-player store on the host's disk, Space colonies and badges.

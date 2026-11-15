@@ -33,6 +33,8 @@ FAIL (SPORE_FIX_OFF=store.tribe_owners): out/lab/20261115-134340 (dealt in turns
 out/lab/20261115-133846, out/lab/20261115-135042. unit: store_tests test_claims.
 Not run in the lab: a game over's reload, a join of a third player (the even share).
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-140955 (tribe_owners_session).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store.

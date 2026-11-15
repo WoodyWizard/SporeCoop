@@ -45,6 +45,8 @@ Observed in code: space_allies.cpp colonize(restore) made the colony with FillPl
 Not verified: a landing on the restored colony (the city maker building the written buildings; the record is checked);
 ornaments and walls are not carried (docs/re/space.md#space-colony-cities).
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-141219, out/lab/20261115-141234 (space_session).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store: colony cities and NPC stars at the restore.

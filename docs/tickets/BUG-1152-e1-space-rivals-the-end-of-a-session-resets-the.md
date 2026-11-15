@@ -32,6 +32,8 @@ space_session: FAIL (SPORE_FIX_OFF=store.space_rivals): out/lab/20261115-125647 
 50000 not 57000, no war); PASS: out/lab/20261115-124902, out/lab/20261115-130851, out/lab/20261115-133047,
 out/lab/20261115-134708.
 
+* PASS post-merge of E3 / E4 (rel/0.7.15 at 94118b08): out/lab/20261115-141219, out/lab/20261115-141234 (space_session).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store.
