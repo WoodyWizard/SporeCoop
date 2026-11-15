@@ -2737,6 +2737,8 @@ void on_world_change()
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
 }
+// C2 (BUG-1141): a world that was open changed or closed (world_id.h; not an editor visit, decision 2)
+LIFECYCLE_HOOK("npc.world", lifecycle::kWorldChange, -90, [](const lifecycle::Ctx& c) { if (c.from_stage >= 0) on_world_change(); }, true);
 
 // BUG-0125: host_tick forgets what a guest mirrors only while the simulation runs; a guest that
 // left and joined again (the same id) while the host was paused kept the old set and got no spawns
@@ -2775,6 +2777,7 @@ void on_session_end()
     g_unknown_ids.clear();
     teamplay::reset();
 }
+LIFECYCLE_HOOK("npc.session", lifecycle::kSessionEnd, -90, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 // F3 (BUG-0768): all.friendly_fire (session, default off): a player's hit on a partner's creature hurts that partner
 static bool friendly_fire() { return settings::on(settings::kFriendlyFire); }
