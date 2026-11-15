@@ -1677,7 +1677,11 @@ static bool late_create_offered()
            (tribe::late_prompt() != 0 || tribe::late_needs_creature()); // BUG-9159: before the window's prompt too
 }
 // the creature editor with the base creature (CreatureEditorExtraLarge 0x465C50BA, no creation key); outside the frame
-static bool submit_new_creature_request()
+// decision 3Z B: the Creature stage's own start editor (the galaxy wizard's "Create Your Own", the first creature out
+// of the sea: legs and hands only, a few parts, a small budget), as the game asks for it from the galaxy menu (the
+// host's request logged 2026-11-14: editor 0xE46C381E, return mode +0x1C the galaxy menu, the tag +0x90 0x13C5A95E)
+constexpr uint32_t kCreatureStartEditor = 0xE46C381Eu;
+static bool submit_new_creature_request(uint32_t editor = 0x465C50BAu)
 {
     uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
     if (!ctor || !submit) return false;
@@ -1688,6 +1692,24 @@ static bool submit_new_creature_request()
     skg::field<uint32_t>(req, 0x10) = 0;          // no creation: a new creature
     skg::field<uint32_t>(req, 0x14) = 0;
     skg::field<uint32_t>(req, 0x18) = 0;
+    if (editor == kCreatureStartEditor) {
+        std::string hex; // (the constructor's defaults, against the game's own request)
+        char b[12];
+        for (int o = 0x1C; o < 0x9C; o += 4) {
+            snprintf(b, sizeof b, "%08X ", skg::field<uint32_t>(req, o));
+            hex += b;
+        }
+        LOG("start editor request: the constructor's +0x1C..: %s", hex.c_str());
+        skg::field<uint32_t>(req, 0xC) = kCreatureStartEditor;
+        skg::field<uint32_t>(req, 0x1C) = modes::kMenu;
+        skg::field<uint32_t>(req, 0x20) = 0x02140700u;
+        skg::field<uint32_t>(req, 0x24) = 0x0C3645FFu;
+        const uint8_t flags[12] = {0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0}; // +0x34..+0x3F as the game's
+        for (int i = 0; i < 12; i++) skg::field<uint8_t>(req, 0x34 + i) = flags[i];
+        skg::field<uint32_t>(req, 0x64) = 1;
+        skg::field<uint32_t>(req, 0x6C) = 0x00010100u;
+        skg::field<uint32_t>(req, 0x90) = 0x13C5A95Eu;
+    }
     g_vote_bypass = true; // the player's own editor, no vote
     g_own_editor = true;  // the part-list error is waived as in the own editor (h_BlockingErrors)
     const bool r = skg::cdecl_call<bool>(submit, req);
@@ -2155,6 +2177,15 @@ bool SK_CDECL h_Submit(void* req)
     }
     if (req && skg::readable(req, 0x10))
         g_last_editor_req = skg::field<uint32_t>(req, 0xC);
+    if (req && mode == modes::kMenu && skg::readable(req, 0x9C)) { // 3Z B / ships: a new world's editor, as the game asks
+        std::string hex;
+        char b[12];
+        for (int o = 0; o < 0x9C; o += 4) {
+            snprintf(b, sizeof b, "%08X ", skg::field<uint32_t>(req, o));
+            hex += b;
+        }
+        LOG("editor request from the galaxy menu: %s", hex.c_str());
+    }
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
     // the vote had ended, before the held one reached the game, and started a second vote that
@@ -2599,7 +2630,8 @@ static void pregame_editor_tick(double now)
         late = true;
     } else {
         if (s_done || !host_editing || s_host_before != modes::kMenu || world::load_queued() || receiving) return;
-        if (!g_remotes[0].buf.latest().editor || g_remotes[0].buf.latest().editor != 0x465C50BAu) return; // creatures only
+        const uint32_t he = g_remotes[0].buf.latest().editor; // creatures only: the Creator, or the stage start editor (a new
+        if (he != 0x465C50BAu && he != kCreatureStartEditor) return; // world from the galaxy wizard, 2026-11-14)
         s_done = true;
     }
     H->run_outside_frame([](void* late) {
@@ -8101,8 +8133,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    nullptr, MT);
     H->command_add(M, "coop.newcreature", "coop.newcreature - tests (BUG-9207): the creature editor with the base creature, "
                    "here (from the galaxy menu: as a new world's first editor)",
-                   [](void*, int, const char* const*, SkOut* out) {
-                       const bool r = submit_new_creature_request();
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       const bool r = submit_new_creature_request(argc > 1 ? (uint32_t)strtoul(argv[1], nullptr, 16) : 0x465C50BAu);
                        SAY("new creature editor -> %d\n", (int)r);
                        return 0;
                    },
