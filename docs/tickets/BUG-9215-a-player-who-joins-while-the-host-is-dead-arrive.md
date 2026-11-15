@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: overnight stage tour 2026-11-15
 role: 
 versions: 0.7.8-lineages54-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages58-dev
 branch: feat/lineages-47
 commits: cd602569
 tests: manual Windows QA: the MSI hosts Vandh.spo dead (coop.giveup down, coop.giveup), TITAN joins

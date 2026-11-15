@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: overnight stage tour 2026-11-15
 role: 
 versions: 0.7.8-lineages54-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages58-dev
 branch: feat/lineages-47
 commits: a0f0d121
 tests: manual Windows QA: the MSI hosts a copied Creature save (Vandh.spo), TITAN joins; TITAN hosts Cellqa.spo, the MSI joins
