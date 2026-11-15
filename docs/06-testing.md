@@ -7955,7 +7955,10 @@ agents' lanes): four run pairs, 56 start-ups a side.
 
 The one FAIL on each side is frames_loop's frame count at a load of 34-40 (old and new alike, see
 [the budget](#testing-lab-budget)); every other run of each test (14 on the new code: team, select, frames_loop) passed.
-The cold figures include the second display (lane 4 of the new code drew on it, see below). Earlier on the same day
+The cold figures include the second display (lane 4 of the new code drew on it, see below). The other stages on the
+new code, 5 runs each of tribe_coop, cell_coop, civ_coop and space_coop (labs 20261115-022047 on lane 5,
+20261115-022517 on lane 4, cold and warm): 20 of 20 passed, the settles 0.3-1.7 s, 2 at the 4 s bound. The twin
+`SPORE_START_FIXED=1` (lab 20261115-022027, team x3 cold): 29-32 s, every settle at its bound, as before. Earlier on the same day
 on a calmer machine (load 6-10, old code): cold 29-38 s (labs 20261115-010610, -011356), warm 18-21 s; the 0.7.14
 record (docs/audit-0.7.15/tests.md): cold median 33 s (p90 45), warm 19 s (p90 23).
 
