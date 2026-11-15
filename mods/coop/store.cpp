@@ -274,6 +274,7 @@ void after_save()
     write_now(false);
 }
 
+// lifecycle-exempt: no state of the player: only the host's hint (the name fallback), called from player_join
 void on_player_join(uint8_t id)
 {
     if (!is_host() || !g_open || id == C.sess->my_id())
