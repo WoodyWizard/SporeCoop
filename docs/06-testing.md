@@ -7940,6 +7940,25 @@ test needs it). `SPORE_START_FIXED=1` is the twin: every wait sleeps its old tim
 `tools/tests/labstart_selftest.py` (fake consoles and clock: a signal at once, later, never; a frozen counter; a game
 that does not answer; the menu frames).
 
+Measured 2026-11-15 (lanes 4 and 5, `team,select,frames_loop`, the old code from a detached checkout of rel/0.7.15
+beside the new one at the same moment, then the lanes swapped; the machine at load 14-40 on 12 cores from other
+agents' lanes): four run pairs, 56 start-ups a side.
+
+| | old (labs 20261115-012709, -014126, -015204, -020417) | new (20261115-012729, -014106, -015224, -020357) |
+|---|---|---|
+| cold start, median (min-max) | 39.5 s (27-71), n 28 | 25.5 s (18-74), n 28 |
+| of it: after the host is in, before the join, after the guest is in | 4 + 4 + 4 = 12 s | 2 + 0 + 2 = 4 s |
+| warm reset, median (min-max) | 20 s (18-23), n 14 | 17 s (15-22), n 14 |
+| of it: the settle after the guest is in | 3 s | 1 s |
+| the four runs together | 2831 s | 2488 s (-12 %) |
+| results | 41 OK, 1 FAIL | 41 OK, 1 FAIL |
+
+The one FAIL on each side is frames_loop's frame count at a load of 34-40 (old and new alike, see
+[the budget](#testing-lab-budget)); every other run of each test (14 on the new code: team, select, frames_loop) passed.
+The cold figures include the second display (lane 4 of the new code drew on it, see below). Earlier on the same day
+on a calmer machine (load 6-10, old code): cold 29-38 s (labs 20261115-010610, -011356), warm 18-21 s; the 0.7.14
+record (docs/audit-0.7.15/tests.md): cold median 33 s (p90 45), warm 19 s (p90 23).
+
 ## A second headless display (2026-11-15, feat/w51-labstart)
 <a id="testing-two-displays"></a>
 
@@ -7961,6 +7980,9 @@ own Wayland or D-Bus sockets.
   games' worth. With both shells up the card holds about 16 games, not 18: the budget below reads the VRAM, so it
   holds the line by itself.
 * Games of other worktrees on code before this branch still draw on `sporecoop-headless`, whatever their lane.
+* The load it takes off: in the A/B of [the start waits](#testing-start-waits) the shared Xwayland (old code on lane 5,
+  with every other agent's games) peaked at 70-88 % of a core per test (lab 20261115-014126), the second one serving
+  lane 4 alone at 4-5 % (20261115-014106, `xwayland.display` sporecoop-headless-2), at the same time.
 
 ## The machine budget and fps-scaled limits (2026-11-15, feat/w51-labstart)
 <a id="testing-lab-budget"></a>
@@ -7986,6 +8008,9 @@ is a second gate after the memory gate: a test starts only when the machine has 
 * A lane whose worker has nothing left ends its warm games at once (they counted against the lanes still running).
 * The lane cap of 6.19 (`SPORE_MAX_LANES`, 6) stays as an upper bound; the final check stays on 4 lanes.
 * The 5 s between the lanes' starts waits for the lane's first game process instead ([start waits](#testing-start-waits)).
+* Seen at work (lab 20261115-012729, lane 5, other agents' runs on the old code all on the first display):
+  `(budget: team#3 on lane 5 waits: 10 games on its display sporecoop-headless, 0 starting there, 2 of its own: over
+  10 on one Xwayland (BUG-0663))`, then `starts after 5 s: 8 games run`.
 
 **fps-scaled limits** (`tools/tests/fpslimit.py scaled(fps, base, per_frame, cap)`: `per_frame / fps` kept between the
 limit at full speed and a cap under every recorded FAIL of the twin). Evidence: the logs of every lab run under
