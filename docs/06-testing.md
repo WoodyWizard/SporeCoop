@@ -6890,7 +6890,7 @@ of 0.00 s. play_tribe has no known FAIL case now.
 **2. Unit: `make test` runs its parts at once (355-360 s -> 49 s on a loaded machine).**
 `make test` runs `unit-parts` with `-j$(TEST_JOBS)` (8) and `-Otarget` (each part's output when it ends): `unit-net`
 (net_tests + fakepeer_check), `unit-lab` (lab, gates, walk, dash self-tests), `unit-cpp` (validate, cell, npc, space,
-text, jpeg, fixes tests), `unit-lint` (re, docs, glyph, tickets), `unit-tools` (tools, visual, state fields, test lint),
+text, jpeg, fixes tests), `unit-lint` (re, docs, glyph, tickets, ci, ratchet), `unit-tools` (tools, visual, state fields, test lint),
 `test-asan` (with `--nofix`, `--old-dbbf`, `--old-refpack`), `test-tsan`, `unit-fuzz`. `make test TEST_JOBS=1` runs them
 one after the other. Before (per part, serial, one run): lab_selftest 87 s, the three net_tests runs 34 + 37 + 39 s,
 their compiles 20 + 28 + 21 s, tools_selftest 23 s, tickets check 21 s.
@@ -7960,3 +7960,35 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   network): fetch + sha256 + cache, cache reuse with gh failing, a wrong sha256, gh failing without a
   cache, a pre-0.7.15 report that never calls gh. Against the old tool (`SELFTEST_TRIAGE=<copy>`) 12
   checks FAIL.
+
+## Ratchet lints: object_alive, call guards, lifecycle functions (2026-11-15, feat/w51-guards)
+<a id="testing-ratchet-lints"></a>
+
+* `tools/ratchet_lint.py` (in `make test`, part `unit-lint`; B4 of docs/plan-0.7.15.md, BUG-1131) reads every
+  `mods/coop/*.cpp` and `*.h` (a glob, no file list) and compares with `tools/ratchet_baseline.json`: what is there
+  today passes, more fails. Entries are keyed by namespace (`game::g_in_relay`, `tribe::on_session_end`; a function
+  outside a namespace by its file stem), so moving code to another file (the coop.cpp split) changes nothing.
+  * `alive`: the number of `object_alive(` calls (comments, strings and the declaration not counted) may only go
+    down. A new one fails with the replacement to use (`game::live_ref` / `game::alive`, `game::listed`). Baseline
+    2026-11-15: 149 (tribe 39, npc 22, civ 14, game 12, worldobj 8, nest 7, ...; `-v` lists every call).
+  * `guard`: a namespace-scope flag named like a re-entrancy guard (`g_in_*`, `*_applying`, `*_depth`, `g_inside*`,
+    `*_relaying`, `*_guard`, `*_bypass`; thread_local ones are not checked) that a function sets (`= true`, `= 1`,
+    `++`, `callguard::Hold` / `Depth`) while it calls an original-function trampoline `o_Xxx(...)` (between the set
+    and the next assignment of the flag, or to the end of the Hold's block) must be registered with `CALL_GUARD` /
+    `CALL_GUARD_DEPTH` in its file (docs/06-testing.md#testing-call-guards), or carry `// not a call guard: <reason>`
+    on its definition (or the line above) or on the set line. Counters (`g_x++` of a statistic) are not guards: the
+    name pattern keeps them out (about 130 counters are incremented before trampoline calls). Baseline 2026-11-15:
+    `game::g_in_puppet_anim` (2 functions) and `game::g_in_relay` (the effect relay's, 2 functions): BUG-1134.
+  * `lifecycle`: a function named `on_session_*`, `on_world_change` / `_end` / `_reset` / `_start`,
+    `on_player_join`, `on_player_leave`, `on_disconnect(ed)` must be named in a `LIFECYCLE_STATE` / `SESSION_STATE`
+    / `WORLD_STATE` / `LIFECYCLE_HOOK` of its file (lifecycle.h), or carry `// lifecycle-exempt: <reason>` on its
+    definition line or the line above. Baseline 2026-11-15: 51 (every one of them; the registry has no observer
+    slots yet: they come with C2, which then burns the list down).
+* A count below its baseline passes and prints `lower it with python3 tools/ratchet_lint.py --lower`, which writes
+  the lower numbers (refused while anything is above its baseline). An entry whose key changed with a move to
+  another namespace is renamed by hand in the baseline file.
+* `python3 tools/ratchet_lint.py --self-test` (also in `make test`): a clean temporary tree passes (a registered
+  guard, a marked one, a thread_local one, a registered and an exempt lifecycle function, code inside strings and
+  comments), and each planted violation fails: a second `object_alive(` call, a bare `g_applying = true; o_Apply();`,
+  a `++g_hook_depth` around `o_Ev`, an unregistered `on_player_leave`; `--lower` refuses each and lowers a count that
+  went down.

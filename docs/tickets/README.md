@@ -1125,3 +1125,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1127](BUG-1127-a13-tools-wt-gc-py-lists-merged-worktrees-and-br.md) | fixed | tooling | Tools | 2026-11-15 | unreleased | A13: tools/wt_gc.py lists merged worktrees and branches to delete |
 | [BUG-1130](BUG-1130-a14-one-game-on-main-a-counter-of-game-calls-mad.md) | open | tooling | All | 2026-11-15 |  | A14: one game::on_main(), a counter of game calls made off the main thread, a Threads section |
 | [BUG-1131](BUG-1131-b4-ratchet-lints-in-make-test-object-alive-count.md) | open | tooling | All | 2026-11-15 |  | B4: ratchet lints in make test: object_alive count, CALL_GUARD around o_* calls, lifecycle registration of on_* functions |
+| [BUG-1134](BUG-1134-two-re-entrancy-flags-around-game-calls-are-no-c.md) | open | bug | All | 2026-11-15 |  | Two re-entrancy flags around game calls are no CALL_GUARD: game.cpp g_in_puppet_anim and the effect relay's g_in_relay |
