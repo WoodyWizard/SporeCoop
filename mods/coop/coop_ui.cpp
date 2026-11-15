@@ -2009,6 +2009,9 @@ static void move_win(Win w, float dy, float grow = 0)
 // the dialog `d` pixels taller and up by half of it (centered; 800x600 still holds it). Its root holds the frame
 // (pieces relative to it: the lower ones move, the tall edges grow), two backgrounds, Accept, Cancel and the settings
 // window (tabs, title, the pages' container).
+static bool g_settings_once = true;
+COOP_FIX("ui.settings_once", "BUG-9211", g_settings_once,
+         "ui: Spore's Settings dialog is rearranged once, not again when it is opened after Accept");
 static void grow_settings_dialog(Win settings, float d)
 {
     Win root = sui::parent(settings);
@@ -2070,9 +2073,16 @@ static bool build_graphic_page(Win settings, Win panel, const uint32_t* ids, Win
     // even spacing (the owner 2026-11-13: "a little inconsistent with spacing"): 8 px between the boxes, rows 8 px
     // under a box's title band (30 px) and 10 px above its bottom; the two check boxes centred in theirs
     constexpr float kGrow = 72, kShift = 65, kBoxH = 98;
-    grow_settings_dialog(settings, kGrow);
-    for (Win c : sui::children(panel)) // everything under the quality table makes room for the Interface box
-        if (sui::area(c).y1 >= 240) move_win(c, kShift);
+    // BUG-9211: after Accept the game drops our controls but keeps the dialog it was built on: the page is built again
+    // and the moves below (relative) were made twice (the quality table's buttons, Defaults and Full Screen moved off,
+    // the resolution list open). The Screen Size box at our height says the dialog has them already.
+    const bool again = g_settings_once && std::abs(sui::area(screen_box).h() - kBoxH) < 0.5f;
+    if (again) H->log(M, SK_INFO, "ui: Graphic page: the dialog was laid out before, only our controls again (BUG-9211)");
+    if (!again) {
+        grow_settings_dialog(settings, kGrow);
+        for (Win c : sui::children(panel)) // everything under the quality table makes room for the Interface box
+            if (sui::area(c).y1 >= 240) move_win(c, kShift);
+    }
     for (Win b : {screen_box, full_box}) { // a second row in each
         const auto a = sui::area(b);
         sui::set_area(b, {a.x1, a.y1, a.x2, a.y1 + kBoxH});
@@ -3611,7 +3621,12 @@ static void whole_scale_tick(float want)
     H->screen_size(&sw, &sh);
     Win main = sui::main_window();
     if (!main || sw <= 0 || sh <= 0) return;
-    const float W = (float)sw, Hh = (float)sh, was = g_ns_factor, f = want;
+    // BUG-9211: Spore's menus and dialogs are made for a screen of at least 1024 x 768; laid out for a smaller one they
+    // do not fit (Settings at 150 % on 1280 x 960). The size goes no higher than that (140 % on 1920 x 1080).
+    const float cap = std::max(1.f, std::min(sw / 1024.f, sh / 768.f));
+    const float W = (float)sw, Hh = (float)sh, was = g_ns_factor, f = std::min(want, cap);
+    if (want > cap && f != was) H->log(M, SK_INFO, "ui: %.0f %% asked, %.0f %% on this screen (laid out for 1024 x 768 at least)",
+                                       want * 100, cap * 100);
     if (f == 1.f && was == 1.f && g_ws_moved.empty()) return;
     auto full = [&](const sui::Rect& r, float k) {
         return std::abs(r.x1) <= 2 && std::abs(r.y1) <= 2 /* (the editors: x 1) */ && std::abs(r.w() - W / k) < 2 && std::abs(r.h() - Hh / k) < 2;
@@ -3674,15 +3689,12 @@ static void whole_scale_tick(float want)
             sui::set_area(w, {nx, ny, nx + r.w(), ny + r.h()});
         }
     }
-    for (Win h : relaid) { // the windows in a holder with a new size lay themselves out again (anchors)
-        std::vector<Win> stack{h};
-        for (int n = 0; !stack.empty() && n < 8000; n++) {
-            Win w = stack.back();
-            stack.pop_back();
-            if (w != h) sui::revalidate(w);
-            for (Win c : sui::children(w)) stack.push_back(c);
-        }
-    }
+    // the windows right in a holder with a new size lay themselves out again (their anchors are on it); deeper ones
+    // keep theirs (their parents kept their size): revalidating them all undid the Settings page's own layout
+    // (decision 3I) in a dialog kept between openings (BUG-9211: the quality table's buttons, Defaults and Full Screen
+    // gone, the resolution list open, after the size was changed in it)
+    for (Win h : relaid)
+        for (Win c : sui::children(h)) sui::revalidate(c);
     if (f != was) {
         H->log(M, SK_INFO,
                "ui: Spore's UI at %.0f %% as one picture (laid out for %.0f x %.0f, %zu holders, %zu placed pieces moved) "
