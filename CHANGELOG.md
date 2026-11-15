@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Creature (owner play test 2026-11-14): a guest whose old co-op creature pick came along gets its own editor in a new
+  world too (BUG-9203); the Party cards no longer cover the editor's stats (BUG-9191); one cocoon, the creature shrinking
+  with the spin (BUG-9194); partners' bodies have their real size, and a guest's hatchling its hatchling size at once
+  (BUG-9206); a loading screen over the black after the editor (BUG-9205); every party nest is discovered on the minimap
+  (BUG-9204); a stalled mating restarts sooner and more often (BUG-9175).
 - Joining: a partner who joins now sees the loading screen ("Joining <host>",
   the host saving, the world arriving, loading) instead of the plain galaxy
   menu and a black screen. It and the mid-game reload screen stay up until the

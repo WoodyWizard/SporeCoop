@@ -3375,3 +3375,20 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
 * ✔ `H->world_to_screen` gives a creature's feet with the stock lens: with the wider FoV the drawn creature is elsewhere
   (the MSI: 200 px off at 11 m); hover the body seen in a picture, not that point.
 
+## Party nests on the minimap and the hatchling's size (2026-11-14, feat/lineages-47)
+<a id="creature-party-nests-hatchling-size"></a>
+
+* ✔ (runtime, TITAN) The minimap update 0xD425A0 gives a nest icon the flags 0x80020, or 0x20 when nest +0x124 bit 0 is
+  set (0xD4294D): 0x80000 is the "?" of a nest not discovered. Writing +0x124 = 1 on a party seat's nest turned its "?"
+  into the friendly face at the next update; 0 brought the "?" back. The bit is saved with the world (a share carries
+  it). Further flags there: 0x200000 the ally face (herd +0x191 or the player species), 0x100000 herd +0x190 (extinct),
+  0x8 the own herd (or the nest's vt 0x58).
+* ✔ (disassembly) The family's greeting of a hatchling (BT node 0xD64A30), state 2 at 0xD64C6A: `x = creature->vt[0x80](0)`
+  (a float in ST0), then the spatial (creature +0xC0) vt 0x40 SetScale(x). On a guest's hatchling: 0.587 for a creature
+  whose adult size is 0.98 (the egg's is 0.1). game::hatchling_scale calls it.
+* ✔ A partner's body made by `game::spawn_creature` gets its own game's random adult size; modes.cpp made it 15 % bigger
+  (a guest's body on the host: radius 2.14 against its own 2.04). Each player's own size now travels in
+  PlayerState.captain_scale in Creature too.
+* Test note: `mod.reload coop` ends the session on both games (host and join again); `coop.abilities put` moves the own
+  avatar but the camera keeps its heading, and a downed host's spectator camera leaves a partner who opens an editor.
+

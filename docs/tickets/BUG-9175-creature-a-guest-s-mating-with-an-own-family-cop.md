@@ -10,8 +10,8 @@ role: guest
 versions: 0.7.8-lineages54-dev
 fixed_in:
 branch: feat/lineages-47
-commits:
-tests: tools/qa_win (manual, TITAN host + TITAN guest + the MSI as a guest, 2026-11-13, Samuth: the mate clicked on the MSI twice, the host's own mating, coop.nest kill <h> 9 raw)
+commits: a8a3ceca
+tests: tools/qa_win (TITAN, host 9 + guest 8 over 127.0.0.1, 2026-11-14)
 signature:
 docs: docs/re/creature.md#creature-mate-keeper
 related: BUG-9174 BUG-9160 BUG-9161 BUG-0177
@@ -32,6 +32,8 @@ Review first (owner, decision 2S: "Investigate if we're over engineering ... pre
 * coop.cpp mate_keeper offers no copy while the game's own gates are closed (the avatar not grown, +0xB5E, +0x1678 = eggs to lay): an offer to a hatchling was cleared every frame (29 offers in 15 s).
 * Tests: `coop.nest kill <h> <n> raw` (past the damage filter: the host cannot hurt a party species), `coop.evolve` prints "mating: direct stage finished_by_mod".
 
+Second fix (2026-11-14, a8a3ceca): the paired approach is restarted every 2.5 s, 5 times (was every 4 s, twice), each restart logged with the state words, both spots and the distance; the direct fallback to the editor comes after 18 s (was 30 s). Switch: `coop.fix creature.mate_retries off`.
+
 ## Verification
 no-fail-run: manual on two PCs (no Windows lab lane). FAIL (08:17, before): the MSI's click: action 02D852F0, target 00000000, the mating step state 0 -1 -256 0 for minutes, no editor. PASS (08:44 and 08:58, the MSI as a guest): the mate clicked: hearts, the cocoon (screenshot), "MSIGuest evolves its own creature", Editor 4 s after the click; Done: the hatch at its own nest, "mating: direct=1 stage=0 finished_by_mod=1", action 9413EDEB (no second editor). The host's own mating after it (TITAN, a real click): the game's pairing (target 2083A150, state 2 1 -> 2 2), Editor after 12 s, finished_by_mod=0. The own nest herd: FAIL "#94 species=7CD76455 ... herd=38C84698" at the nest, the slot empty; PASS the copy in the avatar's herd, class 9, hearts. The family back: FAIL (08:50, the rate only): both members killed, 2 min later no living member (an egg with 129 s); PASS (08:55): 10 s after the kill the egg hatched, a living member, the rate 120000 again. 0 faults on the three games. Not seen: the host's 15 s fallback (the pairing did not stall); the hover card's icon.
 
@@ -40,3 +42,4 @@ no-fail-run: manual on two PCs (no Windows lab lane). FAIL (08:17, before): the 
 - 2026-11-13: fixed on feat/lineages-47 (decision 2S A), live on two PCs.
 - 2026-11-13 (later): the copies join the nest herd the host told us as home (nest::home_herd), not the avatar's herd: before the avatar had joined its own nest that was the host's nest, the copies went there and the own nest stayed empty ("no members here yet", joins=0 fails=8 on the TITAN guest); after: joins=1.
 - 2026-11-14 (evening): owner play test: a guest still had to click its mate many times. Guest log: `restarting the paired mating approach (retry 1)` at 18:48:16, then the mate copy `moved 0.0 m` for 20 s, sitting on the avatar at the nest centre; the egg scene came only after more clicks. Inferred: the retry only clears `state[1]`, weaker than a click, which re-issues the mate's answer and a fresh walk goal. Fix idea: the retry repeats what a click does, sooner and more than 2 times.
+- 2026-11-14 (night): retries and the 18 s fallback built (decision 3V A, a8a3ceca); not tested live: the stall did not happen on demand (it needs a guest mating at its nest). Left open for the owner's next play test; the new log line says what the pair was doing.
