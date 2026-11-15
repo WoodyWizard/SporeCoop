@@ -47,6 +47,7 @@ import re
 import threading
 import time
 
+import fpslimit
 import lane
 from twoinst import Checks, shot, start
 
@@ -63,6 +64,12 @@ FAR_OUTSIDE = 100.0  # m: the walkers outside the host's pack / family (BUG-0417
 # MATCHED_MIN_TRIBE and up to JUMPS_TRIBE steps under JUMP_MAX_TRIBE m; on the path instead: the drawn proxy's
 # median distance from the host's path at most ERR_P50_TRIBE (with the fix 0.01-0.03 m, without 0.23-0.33 m).
 MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.10
+# D1 (BUG-1114): the p50 follows the guest's frame rate. Lab runs Oct 31 - Nov 14 with the fix (no switch off), p50 by
+# the guest's fps: 0.02-0.04 m at 46-69 fps, 0.04-0.09 at 26-32, 0.11 at 22 (the 0.7.14 final check's FAIL, a loaded
+# lab), 0.11-0.17 at 16-18, 0.12-0.14 at 12-14; with SPORE_FIX_OFF=npc.walk_tribe 0.27-0.29 at 35-56 fps. Limit:
+# 3.0 / fps (m) within 0.10 (at 30 fps and faster: unchanged) and 0.20 (under every twin FAIL); fpslimit.scaled.
+# SPORE_NPCWALK_FIXED_P50=1: the fixed 0.10 at any fps (the limit before 0.7.15)
+ERR_P50_TRIBE_PER_FRAME, ERR_P50_TRIBE_CAP = 3.0, 0.20
 # BUG-1094: a proxy placed in the air (coop.npctrack how 5: the flee hit threw its host NPC 9-10 m/s off its ground for
 # 1-2 s) while its target moves over AIR_MOVE m in the frame stands (moves under a quarter of the target's step) in at
 # most AIR_STILL of those frames, on the guest's screen or off it (placed without the teleport mark the guest's game put
@@ -541,7 +548,10 @@ def main():
         ck(not r['jumps'], f'no jump of a moving proxy ({len(r["jumps"])})')
     if FIXTURE == 'tribe':
         e50 = pct(r['errs'], 0.5)
-        ck(e50 <= ERR_P50_TRIBE, f'the proxies are on the host\'s path (drawn error p50 {e50:.2f} m <= {ERR_P50_TRIBE} m)')
+        lim = ERR_P50_TRIBE if os.environ.get('SPORE_NPCWALK_FIXED_P50') == '1' else \
+            fpslimit.scaled(fps, ERR_P50_TRIBE, ERR_P50_TRIBE_PER_FRAME, ERR_P50_TRIBE_CAP)
+        ck(e50 <= lim, f'the proxies are on the host\'s path (drawn error p50 {e50:.2f} m <= {lim:.2f} m at '
+           f'{fps:.0f} fps)')
     mmin = MATCHED_MIN_TRIBE if FIXTURE == 'tribe' else MATCHED_MIN
     ck(stand <= STAND_MAX and matched >= mmin,
        f'the proxies move with the host\'s NPCs, not in steps (stand in {stand:.0%} <= {STAND_MAX:.0%}, '

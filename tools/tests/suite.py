@@ -92,6 +92,21 @@ def games(t):
     return 4 if 'coop_campaign.py' in cmd or '_4p' in cmd else 2
 
 
+# D1 (BUG-1114, docs/06-testing.md#testing-lab-budget): the motion tests whose measures follow the observer's fps (the
+# top of the mixed-result list of docs/audit-0.7.15/tests.md TST-3: tribe_walk_mobile, puppet_walk, npc_walk,
+# tribe_npc_dash, puppet_stops, body_trail_tribe_player; npc_walk_tribe failed the 0.7.14 final check at 22 fps): while
+# one runs the lab keeps the machine at most labbudget.LS_GAMES games
+LOAD_SENSITIVE = ('npc_walk', 'puppet_walk', 'puppet_stops', 'tribe_walk', 'tribe_npc_dash', 'creature_npc_dash',
+                  'body_trail')
+
+
+def load_sensitive(t):
+    """does the test measure motion against the observer's frame rate (the lab's budget keeps the machine calmer)"""
+    if t.get('load_sensitive') is not None:
+        return bool(t['load_sensitive'])
+    return t.get('name', '').split('#')[0].startswith(LOAD_SENSITIVE)
+
+
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
 add('unit_parallel', P + 'unit_parallel.py', minutes=2, gates=NO_GAME)  # BUG-0969: 3 copies of the native net tests at once, 2 rounds: all ALL OK (a fixed localhost port collided; old code: 1 of 2 copies failed)

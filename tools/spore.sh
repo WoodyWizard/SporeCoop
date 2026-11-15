@@ -162,7 +162,8 @@ cmd_run() {
     local display=()
     if [[ "${SPORE_HEADLESS:-1}" == 1 ]] && command -v gnome-shell >/dev/null; then
         local hl
-        hl=$("$ROOT/tools/headless.sh" up) || { echo "the headless test display did not start" >&2; exit 1; }
+        # A16 (BUG-1113): the lane's own one of the lab's headless shells (headless.sh: lane N on (N - 1) % displays)
+        hl=$(SPORE_LANE="$LANE" "$ROOT/tools/headless.sh" up) || { echo "the headless test display did not start" >&2; exit 1; }
         # shellcheck disable=SC2206
         display=(env -u WAYLAND_DISPLAY $hl)
         sk_ini_set test_monitor grid

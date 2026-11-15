@@ -7,23 +7,41 @@
 #   headless.sh up      start it (once) and print DISPLAY=... XAUTHORITY=...
 #   headless.sh env     print the variables if it runs (exit 1 if not)
 #   headless.sh down    stop it and everything it started (its process group)
+#   headless.sh name    print the shell's name (its runtime folder under $XDG_RUNTIME_DIR)
+#   headless.sh list    every lab shell that runs: "<name> DISPLAY=... XAUTHORITY=..."
+#
+# A16 (BUG-1113, docs/06-testing.md#testing-two-displays): the lab has SPORE_HEADLESS_DISPLAYS shells (default 2),
+# each with its own Xwayland, runtime folder, config and D-Bus session; lane N draws on shell (N - 1) % displays:
+# index 0 is "sporecoop-headless" (lanes 1, 3, 5, 7, 9), index k > 0 "sporecoop-headless-<k+1>" (lanes 2, 4, ...).
+# One Xwayland for every lane saturated at 10-14 games (BUG-0663). SPORE_HEADLESS_NAME names one shell outright;
+# SPORE_HEADLESS_DISPLAYS=1: one shared shell (the lab before 0.7.15). tools/labbudget.py has the same rule.
 #
 # The display comes from the live Xwayland of this shell (its -auth file is in our runtime folder),
 # never from a log: a stale value once sent test games to the user's desktop.
 set -euo pipefail
-RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${SPORE_HEADLESS_NAME:-sporecoop-headless}"
+RTROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+DISPLAYS="${SPORE_HEADLESS_DISPLAYS:-2}"
+[[ "$DISPLAYS" =~ ^[1-9]$ ]] || DISPLAYS=1
+lane_name() {
+    local lane="${SPORE_LANE:-1}" k
+    [[ "$lane" =~ ^[0-9]+$ && "$lane" -ge 1 ]] || lane=1
+    k=$(( (lane - 1) % DISPLAYS ))
+    if [[ "$k" == 0 ]]; then echo sporecoop-headless; else echo "sporecoop-headless-$((k + 1))"; fi
+}
+NAME="${SPORE_HEADLESS_NAME:-$(lane_name)}"
+RT="$RTROOT/$NAME"
 # two virtual monitors side by side; SporeKit puts game windows in a grid of 1440x1080 cells (8x3:
 # 24 games, lanes 1-8 need 16). Keep 5760x3240 per monitor: Wine offers 1440x1080 there (5760x4320
 # does not). SPORE_HEADLESS_NAME starts a second shell beside the shared one (trials).
 SIZE="${SPORE_HEADLESS_SIZE:-5760x3240}"
 MONITORS="${SPORE_HEADLESS_MONITORS:-2}"
 
-# "DISPLAY=:N XAUTHORITY=..." of the Xwayland that serves our shell, or nothing
+# "DISPLAY=:N XAUTHORITY=..." of the Xwayland that serves our shell (or the one of runtime folder $1), or nothing
 envvars() {
-    local p args disp auth
+    local p args disp auth rt="${1:-$RT}"
     for p in $(pgrep -x Xwayland || true); do
         args=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)
-        [[ "$args" == *"-auth $RT/"* ]] || continue
+        [[ "$args" == *"-auth $rt/"* ]] || continue
         disp=$(awk '{print $2}' <<< "$args")
         auth=$(grep -oP -- '-auth \K\S+' <<< "$args")
         [[ "$disp" == :* && -S "/tmp/.X11-unix/X${disp#:}" && -f "$auth" ]] || continue
@@ -80,6 +98,13 @@ for a in ('\0/tmp/.X11-unix/X' + sys.argv[1], '/tmp/.X11-unix/X' + sys.argv[1]):
         exit 1
         ;;
     env) envvars ;;
+    name) echo "$NAME" ;;
+    list)
+        for d in "$RTROOT"/sporecoop-headless "$RTROOT"/sporecoop-headless-*; do
+            [[ -d "$d" ]] || continue
+            v=$(envvars "$d") && echo "$(basename "$d") $v"
+        done
+        ;;
     down)
         if running; then
             kill -- "-$(group)" 2>/dev/null || true
@@ -88,5 +113,5 @@ for a in ('\0/tmp/.X11-unix/X' + sys.argv[1], '/tmp/.X11-unix/X' + sys.argv[1]):
         fi
         rm -f "$RT/pgid"
         ;;
-    *) echo "usage: headless.sh up|env|down"; exit 1 ;;
+    *) echo "usage: [SPORE_LANE=N] headless.sh up|env|down|name|list"; exit 1 ;;
 esac
